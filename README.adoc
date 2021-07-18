@@ -1,0 +1,24 @@
+= Tebako a image packager
+
+== Purpose
+
+This software packages a set of files into a dwarFS file system for
+read-only purposes.
+
+After packaging the file system, Tebako produces a single executable
+binary that allows the user to execute a selected file from the packaged
+software from a point in the file system.
+
+== Goals
+
+The packaged binary should support:
+
+* Packaging a default dwarFS image inside the binary
+* Support signing of the binary on macOS (via notarization)
+
+In the future:
+
+* Downloading new dwarFS images to be stored in the local home directory
+* Allowing loading multiple dwarFS images in a stacked way
+* Supporting a COW mechanism that the newly written files are stored
+  in a separate image that can be loaded on top of the read-only file systems.
