@@ -21,6 +21,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - uses: actions/cache@v2
+      with:
+        path: ${{github.workspace}}/deps
+        key: ${{runner.os}}-deps
+
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
       run: |
