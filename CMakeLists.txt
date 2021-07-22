@@ -3,13 +3,19 @@ include(ExternalProject)
 
 project(tebako)
 
-set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
+if(NOT ${DEPS})
+   set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
+endif()
+
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)
 
 
 set (DWARFS_NAME dwarfs)
-set (DWARFS_VERSION 0.5.6)
+if(NOT ${DWARFS_VERSION})
+   set (DWARFS_VERSION 0.5.6)
+endif()
+
 set (DWARFS_TARGET _${DWARFS_NAME})
 
 ExternalProject_Add(${DWARFS_TARGET}

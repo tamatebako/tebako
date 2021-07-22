@@ -11,8 +11,12 @@ on:
   workflow_dispatch:
 
 env:
-  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+# Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
+# The folder for dwarfs and other dependenies
+  DEPS: deps
+# dwarfs version )
+  DWARFS_VERSION: 0.5.6
 
 jobs:
   Ubuntu-build:
@@ -22,12 +26,12 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Create deps folder
-      run: mkdir ${{github.workspace}}/deps
+      run: mkdir ${{github.workspace}}/${{env.DEPS}}
 
     - uses: actions/cache@v2
       with:
-        path: ${{github.workspace}}/deps
-        key: ${{runner.os}}-deps-2
+        path: ${{github.workspace}}/${{env.DEPS}}
+        key: ${{runner.os}}-deps-${{env.DWARFS_VERSION}}-1
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
@@ -40,7 +44,11 @@ jobs:
         libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
 
     - name: CMake Configure
-      run: cmake -B ${{github.workspace}} -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      run: | 
+        cmake -B ${{github.workspace}}  \
+              -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}  \
+              -DDEPS=${{github.workspace}}/${{env.DEPS}} \
+              -DDWARFS_VERSION=${{env.DWARFS_VERSION}}
 
     - name: CMake Build
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
