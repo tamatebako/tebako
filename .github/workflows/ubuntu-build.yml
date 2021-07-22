@@ -21,6 +21,9 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Create deps folder
+      run: mkdir ${{github.workspace}}/deps
+
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/deps
