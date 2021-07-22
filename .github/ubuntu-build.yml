@@ -4,7 +4,7 @@ on:
   push:
     branches:
     - master
-    - maxirmx
+    - issue-1
   pull_request:
 
 env:
