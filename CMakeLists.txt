@@ -16,7 +16,7 @@ ExternalProject_Add(${DWARFS_TARGET}
    PREFIX ${DEPS}
    URL https://github.com/mhx/dwarfs/releases/download/v${DWARFS_VERSION}/dwarfs-${DWARFS_VERSION}.tar.xz
    DOWNLOAD_NO_PROGRESS true
-   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DWITH_TESTS=1
+   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} 
 )
 
 
