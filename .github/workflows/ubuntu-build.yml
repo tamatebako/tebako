@@ -24,10 +24,5 @@ jobs:
     - name: Install packages Ubuntu
       run: |
         sudo apt-get install \
-        bison flex ronn fuse3 pkg-config binutils-dev libarchive-dev \
-        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-        libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
-        libevent-dev libjemalloc-dev libdouble-conversion-dev libiberty-dev \
-        liblz4-dev liblzma-dev libssl-dev libunwind-dev libdwarf-dev \ 
-        libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
+        bison flex ronn fuse3 pkg-config binutils-dev libarchive-dev 
 
