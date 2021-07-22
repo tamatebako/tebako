@@ -26,5 +26,6 @@ jobs:
       run: |
         sudo apt-get install \
         ronn binutils-dev libarchive-dev \
+        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
         libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev 
 
