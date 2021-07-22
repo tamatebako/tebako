@@ -27,7 +27,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/deps
-        key: ${{runner.os}}-deps
+        key: ${{runner.os}}-deps-2
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
