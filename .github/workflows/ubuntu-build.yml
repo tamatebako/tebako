@@ -31,7 +31,9 @@ jobs:
         libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
         libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
 
-    - name: CMake configure
+    - name: CMake Configure
       run: cmake -B ${{github.workspace}} -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
 
+    - name: CMake Build
+      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
 
