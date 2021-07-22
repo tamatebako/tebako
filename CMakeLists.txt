@@ -28,7 +28,7 @@ ExternalProject_Add(${DWARFS_TARGET}
 
 add_executable(tebako-0 src/tebako-0.cpp)
 add_dependencies(tebako-0 ${DWARFS_TARGET})
-target_link_libraries(tebako-0 ${DWARFS_NAME})
+#target_link_libraries(tebako-0 ${DWARFS_NAME})
 
 
 

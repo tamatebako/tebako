@@ -31,7 +31,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{runner.os}}-deps-${{env.DWARFS_VERSION}}-1
+        key: ${{runner.os}}-deps-${{env.DWARFS_VERSION}}
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
