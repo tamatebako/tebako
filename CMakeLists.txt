@@ -26,7 +26,35 @@ ExternalProject_Add(${DWARFS_PRJ}
    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} 
 )
 
+## -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ???
+
 ExternalProject_Get_property(${DWARFS_PRJ} BINARY_DIR)
+
+
+# ...................................................................
+# The libraries that are build by dwarfs project
+# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
+# ...................................................................
+add_library(_LIBDWARFS STATIC IMPORTED)
+set_target_properties(_LIBDWARFS PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libdwarfs.a")
+
+add_library(_LIBFOLLY STATIC IMPORTED)
+set_target_properties(_LIBFOLLY PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/libfolly.a")
+
+add_library(_LIBFSST STATIC IMPORTED)
+set_target_properties(_LIBFSST PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libfsst.a")
+
+add_library(_LIBXXHASH STATIC IMPORTED)
+set_target_properties(_LIBXXHASH PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libxxhash.a")
+
+add_library(_LIBT_METADATA STATIC IMPORTED)
+set_target_properties(_LIBT_METADATA PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libmetadata_thrift.a")
+
+add_library(_LIBT_LIGHT STATIC IMPORTED)
+set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libthrift_light.a")
+
+# zstd/build/cmake/lib/libzstd.a  --> ${libzstd_static} 
+# set by child project of ${DWARFS_TARGET}
 
 # ...................................................................
 # Each library name given to the NAMES option is first considered
@@ -34,15 +62,17 @@ ExternalProject_Get_property(${DWARFS_PRJ} BINARY_DIR)
 # prefixes (e.g. lib) and suffixes (e.g. .so). Therefore one may 
 # specify library file names such as libfoo.a directly. This can be 
 # used to locate static libraries on UNIX-like systems.
+#
+#        sudo apt-get install \
+#        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
+#        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+#        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+#        libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
+#        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
+#    ++  Already installed at GHA but may require local installation: bison flex fuse3 pkg-config libxml2-dev 
 # ...................................................................
 
-find_library(_LIBFMT "libdwarfs.a" HINTS "${BINARY_DIR}" REQUIRED)
 find_library(_LIBFMT "libfmt.a" REQUIRED)
-find_library(_LIBFMT "libfolly.a" HINTS "${BINARY_DIR}/folly" REQUIRED)
-find_library(_LIBFSST "libfsst.a" HINTS "${BINARY_DIR}" REQUIRED)
-find_library(_LIBXXHASH "libxxhash.a" HINTS "${BINARY_DIR}" REQUIRED)
-find_library(_LIBT_METADATA "libmetadata_thrift.a" HINTS "${BINARY_DIR}" REQUIRED)
-find_library(_LIBT_LIGHT "libthrift_light.a" HINTS "${BINARY_DIR}" REQUIRED)
 find_library(_LIBB_CONTEXT "libboost_context.a" REQUIRED)
 find_library(_LIBB_REGEX "libboost_regex.a" REQUIRED)
 find_library(_LIBB_THREAD "libboost_thread.a" REQUIRED)
@@ -68,27 +98,33 @@ find_library(_LIBDL "libdl.a" REQUIRED)
 find_library(_LIBC "libc.a" REQUIRED)
 find_library(_LIBM "libm.a" REQUIRED)
 find_library(_LIBRT "librt.a" REQUIRED)
-#find_library(_LIBEH "libgcc_eh.a" REQUIRED)
+# find_library(_LIBEH "libgcc_eh.a" REQUIRED)
 #	!/usr/lib/gcc/x86_64-linux-gnu/10/libgcc_eh.a \
-#find_library(_LIBUNWIND "libunwind.a" REQUIRED)
+find_library(_LIBUNWIND "libunwind.a" REQUIRED)
 
-# zstd/build/cmake/lib/libzstd.a  --> ${libzstd_static} 
-# set by child project of ${DWARFS_TARGET}
+
+message(${_LIBLZMA})
+
+add_compile_options(-static -fdiagnostics-color=always)
+set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2 -g")
+set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O2 -g")
 
 add_executable(tebako-0 src/tebako-0.cpp)
 add_dependencies(tebako-0 ${DWARFS_PRJ})
 #target_link_libraries(tebako-0 ${DWARFS_NAME})
 target_link_libraries(tebako-0 
-  ${_LIBFMT}          ${_LIBFSST}         ${_LIBT_METADATA}  ${_LIBT_LIGHT}
-  ${_LIBXXHASH}       ${libzstd_static} 
-  ${_LIBACL}          ${_LIBDC}           ${_LIBGFLAGS}      ${_LIBEVENT}
-  ${_LIBCRYPTO}       ${_LIBIBERTY}       ${_LIBXML2}        ${_LIBLZMA}
-  ${_LIBLZ4}          ${_LIBZ}            ${_LIBJEMALLOC}    ${_LIBPTHREAD}
-  ${_LIBDL}           ${_LIBC}            ${_LIBM}           ${_LIBRT}
-  ${_LIBARCH}         ${_LIBFUSE}
-  ${_LIBB_CONTEXT}    ${_LIBB_REGEX}      ${_LIBB_THREAD}    ${_LIBB_DATE_TIME}
-  ${_LIBB_FILESYSTEM} ${_LIBB_SYSTEM}     ${_LIBB_PROGRAM_OPTIONS} 
-     
+  ${_LIBDWARFS}       ${_LIBFOLLY}        ${_LIBXXHASH}       ${libzstd_static} 
+  ${_LIBFMT}          ${_LIBFSST}         ${_LIBT_METADATA}   ${_LIBT_LIGHT}
+  ${_LIBACL}          ${_LIBDC}           ${_LIBGFLAGS}       ${_LIBEVENT}
+  ${_LIBCRYPTO}       ${_LIBIBERTY}       ${_LIBXML2}         ${_LIBLZMA}
+  ${_LIBLZ4}          ${_LIBZ}            ${_LIBJEMALLOC}     ${_LIBPTHREAD}
+  ${_LIBDL}           ${_LIBC}            ${_LIBM}            ${_LIBRT}
+  ${_LIBARCH}         ${_LIBFUSE}         ${_LIBB_CONTEXT}    ${_LIBB_REGEX}      
+  ${_LIBB_THREAD}     ${_LIBB_DATE_TIME}  ${_LIBB_FILESYSTEM} ${_LIBB_SYSTEM}     
+  ${_LIBUNWIND}       ${_LIBB_PROGRAM_OPTIONS}     
   )
+
+
+
 
 

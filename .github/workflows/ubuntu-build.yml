@@ -40,7 +40,7 @@ jobs:
 # Already installed: bison flex fuse3 pkg-config 
       run: |
         sudo apt-get install \
-        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
+        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
         libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
         libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
         libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
