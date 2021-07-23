@@ -17,6 +17,9 @@ env:
   DEPS: deps
 # dwarfs version )
   DWARFS_VERSION: 0.5.6
+# force gcc 10 (imposed by dwarfs)
+  CC:   gcc-10
+  CXX:  g++-10
 
 jobs:
   Ubuntu-build:
@@ -31,7 +34,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{runner.os}}-deps-${{env.DWARFS_VERSION}}
+        key: ${{runner.os}}-deps-${{env.DWARFS_VERSION}}-GCC10
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
@@ -49,9 +52,6 @@ jobs:
               -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}  \
               -DDEPS=${{github.workspace}}/${{env.DEPS}} \
               -DDWARFS_VERSION=${{env.DWARFS_VERSION}}
-      env:
-        CC:   gcc-10
-        CXX:  g++-10
 
     - name: CMake Build
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
