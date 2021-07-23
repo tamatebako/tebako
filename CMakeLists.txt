@@ -69,17 +69,13 @@ set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/li
 #        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
 #        libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
 #        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
-#    ++  Already installed at GHA but may require local installation: bison flex fuse3 pkg-config libxml2-dev 
+#    ++  Already installed at GHA but may require local installation: bison flex fuse3 pkg-config libxml2-dev libsodium-dev
 # ...................................................................
 
+set(Boost_USE_STATIC_LIBS ON) # only find static libs
+find_package(Boost REQUIRED COMPONENTS context regex thread date_time filesystem program_options system)
+
 find_library(_LIBFMT "libfmt.a" REQUIRED)
-find_library(_LIBB_CONTEXT "libboost_context.a" REQUIRED)
-find_library(_LIBB_REGEX "libboost_regex.a" REQUIRED)
-find_library(_LIBB_THREAD "libboost_thread.a" REQUIRED)
-find_library(_LIBB_DATE_TIME "libboost_date_time.a" REQUIRED)
-find_library(_LIBB_FILESYSTEM "libboost_filesystem.a" REQUIRED)
-find_library(_LIBB_PROGRAM_OPTIONS "libboost_program_options.a" REQUIRED)
-find_library(_LIBB_SYSTEM "libboost_system.a" REQUIRED)
 find_library(_LIBDC "libdouble-conversion.a" REQUIRED)
 find_library(_LIBGFLAGS "libgflags.a" REQUIRED)
 find_library(_LIBEVENT "libevent.a" REQUIRED)
@@ -111,17 +107,20 @@ set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O2 -g")
 
 add_executable(tebako-0 src/tebako-0.cpp)
 add_dependencies(tebako-0 ${DWARFS_PRJ})
-#target_link_libraries(tebako-0 ${DWARFS_NAME})
+
+# ...................................................................
+#  IMPORTANT !!!
+#  ${_LIBUNWIND} ${_LIBLZMA}  -- MUST be in this order otherwise link step fails
+# ...................................................................
 target_link_libraries(tebako-0 
   ${_LIBDWARFS}       ${_LIBFOLLY}        ${_LIBXXHASH}       ${libzstd_static} 
   ${_LIBFMT}          ${_LIBFSST}         ${_LIBT_METADATA}   ${_LIBT_LIGHT}
   ${_LIBACL}          ${_LIBDC}           ${_LIBGFLAGS}       ${_LIBEVENT}
-  ${_LIBCRYPTO}       ${_LIBIBERTY}       ${_LIBXML2}         ${_LIBLZMA}
+  ${_LIBCRYPTO}       ${_LIBIBERTY}       ${_LIBXML2}         ${Boost_LIBRARIES}
   ${_LIBLZ4}          ${_LIBZ}            ${_LIBJEMALLOC}     ${_LIBPTHREAD}
   ${_LIBDL}           ${_LIBC}            ${_LIBM}            ${_LIBRT}
-  ${_LIBARCH}         ${_LIBFUSE}         ${_LIBB_CONTEXT}    ${_LIBB_REGEX}      
-  ${_LIBB_THREAD}     ${_LIBB_DATE_TIME}  ${_LIBB_FILESYSTEM} ${_LIBB_SYSTEM}     
-  ${_LIBUNWIND}       ${_LIBB_PROGRAM_OPTIONS}     
+  ${_LIBARCH}         ${_LIBFUSE}                   
+  ${_LIBUNWIND}       ${_LIBLZMA}         ${_LIBB_PROGRAM_OPTIONS}     
   )
 
 
