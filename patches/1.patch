@@ -1,0 +1,50 @@
+diff --git a/_dwarfs/CMakeLists.txt b/dwarfs-0.5.6/CMakeLists.txt
+index 27a8cf8..323923d 100755
+--- a/_dwarfs/CMakeLists.txt
++++ b/dwarfs-0.5.6/CMakeLists.txt
+@@ -16,6 +16,7 @@
+ # dwarfs.  If not, see <https://www.gnu.org/licenses/>.
+ #
+ 
++cmake_policy(SET CMP0077 NEW)
+ project(dwarfs)
+ 
+ cmake_minimum_required(VERSION 3.13.4)
+@@ -273,9 +274,9 @@ add_library(dwarfs ${LIBDWARFS_SRC})
+ add_executable(mkdwarfs src/mkdwarfs.cpp)
+ add_executable(dwarfsck src/dwarfsck.cpp)
+ add_executable(dwarfsbench src/dwarfsbench.cpp)
+-add_executable(dwarfsextract src/dwarfsextract.cpp)
++# tebako patch-1 .. add_executable(dwarfsextract src/dwarfsextract.cpp)
+ 
+-list(APPEND BINARY_TARGETS mkdwarfs dwarfsck dwarfsbench dwarfsextract)
++list(APPEND BINARY_TARGETS mkdwarfs dwarfsck dwarfsbench) # tebako patch-1 .. dwarfsextract)
+ 
+ if(FUSE3_FOUND)
+   add_executable(dwarfs-bin src/dwarfs.cpp)
+@@ -635,7 +636,7 @@ add_custom_target(
+     compile_commands.json)
+ 
+ install(
+-  TARGETS mkdwarfs dwarfsck dwarfsbench dwarfsextract
++  TARGETS mkdwarfs dwarfsck dwarfsbench # tebako patch-1 .. dwarfsextract
+   RUNTIME DESTINATION bin
+   LIBRARY DESTINATION lib
+   ARCHIVE DESTINATION lib)
+diff --git a/_dwarfs/cmake/static_link.sh b/dwarfs-0.5.6/cmake/static_link.sh
+index 3353f10..4f9f79e 100755
+--- a/_dwarfs/cmake/static_link.sh
++++ b/dwarfs-0.5.6/cmake/static_link.sh
+@@ -42,9 +42,9 @@ g++ -static "$@" -o "$target" \
+ 	/usr/lib/x86_64-linux-gnu/libglog.a \
+ 	/usr/lib/x86_64-linux-gnu/libgflags.a \
+ 	/usr/lib/x86_64-linux-gnu/libevent.a \
+-	/usr/local/lib/libarchive.a \
+-	/usr/lib/libacl.a \
+-	/usr/local/lib/libxml2.a \
++	/usr/lib/x86_64-linux-gnu/libarchive.a \
++	/usr/lib/x86_64-linux-gnu/libacl.a \
++	/usr/lib/x86_64-linux-gnu/libxml2.a \
+ 	/usr/lib/x86_64-linux-gnu/libssl.a \
+ 	/usr/lib/x86_64-linux-gnu/libcrypto.a \
+ 	/usr/lib/x86_64-linux-gnu/libiberty.a \

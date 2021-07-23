@@ -3,7 +3,7 @@ name: Ubuntu build
 on:
   # Triggers the workflow on push or pull request events but only for the master branch
   push:
-    branches: [ issue-1 ]
+    branches: [ master, issue-1 ]
   pull_request:
     branches: [ master ]
 
@@ -15,8 +15,9 @@ env:
   BUILD_TYPE: Release
 # The folder for dwarfs and other dependenies
   DEPS: deps
-# dwarfs version )
+# dwarfs version and archive checksum 
   DWARFS_VERSION: 0.5.6
+  DWARFS_CHECKSUM: 4cf477b934567ac1e3d0f0da463dfd37
 
 jobs:
   Ubuntu-build:
@@ -31,13 +32,13 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{runner.os}}-deps-${{env.DWARFS_VERSION}}
+        key: ${{runner.os}}-deps-v4
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
       run: |
         sudo apt-get install \
-        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev \
+        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
         libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
         libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
         libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
@@ -45,10 +46,15 @@ jobs:
 
     - name: CMake Configure
       run: | 
-        cmake -B ${{github.workspace}}  \
-              -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}  \
-              -DDEPS=${{github.workspace}}/${{env.DEPS}} \
-              -DDWARFS_VERSION=${{env.DWARFS_VERSION}}
+        cmake -B ${{github.workspace}}                       \
+              -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
+<<<<<<< HEAD
+              -DDEPS=${{github.workspace}}/${{env.DEPS}}     
+=======
+              -DDEPS=${{github.workspace}}/${{env.DEPS}}     \
+              -DGHA_DWARFS_VERSION=${{env.DWARFS_VERSION}}   \
+              -DGHA_DWARFS_CHECKSUM=${{env.DWARFS_CHECKSUM}}
+>>>>>>> 8ed0ece (Dwarfs static build (#6))
 
     - name: CMake Build
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
