@@ -1,3 +1,5 @@
+![Build status](https://github.com/metanorma/tebaco/actions/workflows/ubuntu-build.yml/badge.svg)
+
 = Tebako: a image packager
 
 == Purpose
