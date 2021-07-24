@@ -1,4 +1,4 @@
-![Build status](https://github.com/metanorma/tebaco/actions/workflows/ubuntu-build.yml/badge.svg)
+[![Ubuntu build](https://github.com/metanorma/tebako/actions/workflows/ubuntu-build.yml/badge.svg?branch=issue-1)](https://github.com/metanorma/tebako/actions/workflows/ubuntu-build.yml)
 
 = Tebako: a image packager
 
