@@ -30,31 +30,39 @@ ExternalProject_Add(${DWARFS_PRJ}
 
 ExternalProject_Get_property(${DWARFS_PRJ} BINARY_DIR)
 
-
 # ...................................................................
 # The libraries that are build by dwarfs project
 # libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
 # ...................................................................
-add_library(_LIBDWARFS STATIC IMPORTED)
-set_target_properties(_LIBDWARFS PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libdwarfs.a")
+#add_library(_LIBDWARFS STATIC IMPORTED)
+#set_target_properties(_LIBDWARFS PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libdwarfs.a")
+set(_LIBDWARFS "${BINARY_DIR}/libdwarfs.a")
 
-add_library(_LIBFOLLY STATIC IMPORTED)
-set_target_properties(_LIBFOLLY PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/libfolly.a")
+#add_library(_LIBFOLLY STATIC IMPORTED)
+#set_target_properties(_LIBFOLLY PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/libfolly.a")
+set(_LIBFOLLY "${BINARY_DIR}/folly/libfolly.a")
+set(_LIBFOLLY_E1 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
+set(_LIBFOLLY_E2 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
 
-add_library(_LIBFSST STATIC IMPORTED)
-set_target_properties(_LIBFSST PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libfsst.a")
+#add_library(_LIBFSST STATIC IMPORTED)
+#set_target_properties(_LIBFSST PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libfsst.a")
+set(_LIBFSST "${BINARY_DIR}/libfsst.a")
 
-add_library(_LIBXXHASH STATIC IMPORTED)
-set_target_properties(_LIBXXHASH PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libxxhash.a")
+#add_library(_LIBXXHASH STATIC IMPORTED)
+#set_target_properties(_LIBXXHASH PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libxxhash.a")
+set(_LIBXXHASH "${BINARY_DIR}/libxxhash.a")
 
-add_library(_LIBT_METADATA STATIC IMPORTED)
-set_target_properties(_LIBT_METADATA PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libmetadata_thrift.a")
+#add_library(_LIBT_METADATA STATIC IMPORTED)
+#set_target_properties(_LIBT_METADATA PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libmetadata_thrift.a")
+set(_LIBT_METADATA "${BINARY_DIR}/libmetadata_thrift.a")
 
-add_library(_LIBT_LIGHT STATIC IMPORTED)
-set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libthrift_light.a")
+#add_library(_LIBT_LIGHT STATIC IMPORTED)
+#set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libthrift_light.a")
+set(_LIBT_LIGHT "${BINARY_DIR}/libthrift_light.a")
 
 # zstd/build/cmake/lib/libzstd.a  --> ${libzstd_static} 
 # set by child project of ${DWARFS_TARGET}
+set(_LIBZSTD "${BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
 
 # ...................................................................
 # Each library name given to the NAMES option is first considered
@@ -75,6 +83,7 @@ set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/li
 set(Boost_USE_STATIC_LIBS ON) # only find static libs
 find_package(Boost REQUIRED COMPONENTS context regex thread date_time filesystem program_options system)
 
+find_library(_LIBGLOG "libglog.a" REQUIRED)
 find_library(_LIBFMT "libfmt.a" REQUIRED)
 find_library(_LIBDC "libdouble-conversion.a" REQUIRED)
 find_library(_LIBGFLAGS "libgflags.a" REQUIRED)
@@ -98,12 +107,14 @@ find_library(_LIBRT "librt.a" REQUIRED)
 #	!/usr/lib/gcc/x86_64-linux-gnu/10/libgcc_eh.a \
 find_library(_LIBUNWIND "libunwind.a" REQUIRED)
 
-
-message(${_LIBLZMA})
-
 add_compile_options(-static -fdiagnostics-color=always)
 set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2 -g")
 set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O2 -g")
+
+ExternalProject_Get_property(${DWARFS_PRJ} SOURCE_DIR)
+ExternalProject_Get_property(${DWARFS_PRJ} BINARY_DIR)
+include_directories(${SOURCE_DIR}/folly ${BINARY_DIR}/folly ${SOURCE_DIR}/fbthrift ${BINARY_DIR}/thrift ${BINARY_DIR} ${SOURCE_DIR}/include)
+add_compile_definitions(FUSE_USE_VERSION=32)
 
 add_executable(tebako-0 src/tebako-0.cpp)
 add_dependencies(tebako-0 ${DWARFS_PRJ})
@@ -111,17 +122,22 @@ add_dependencies(tebako-0 ${DWARFS_PRJ})
 # ...................................................................
 #  IMPORTANT !!!
 #  ${_LIBUNWIND} ${_LIBLZMA}  -- MUST be in this order otherwise link step fails
+#  ${_LIBFUSE}   ${_LIBDL}
 # ...................................................................
 target_link_libraries(tebako-0 
-  ${_LIBDWARFS}       ${_LIBFOLLY}        ${_LIBXXHASH}       ${libzstd_static} 
+  ${_LIBDWARFS}       ${_LIBFOLLY}        ${_LIBXXHASH}       ${_LIBZSTD} 
   ${_LIBFMT}          ${_LIBFSST}         ${_LIBT_METADATA}   ${_LIBT_LIGHT}
   ${_LIBACL}          ${_LIBDC}           ${_LIBGFLAGS}       ${_LIBEVENT}
   ${_LIBCRYPTO}       ${_LIBIBERTY}       ${_LIBXML2}         ${Boost_LIBRARIES}
   ${_LIBLZ4}          ${_LIBZ}            ${_LIBJEMALLOC}     ${_LIBPTHREAD}
-  ${_LIBDL}           ${_LIBC}            ${_LIBM}            ${_LIBRT}
-  ${_LIBARCH}         ${_LIBFUSE}                   
-  ${_LIBUNWIND}       ${_LIBLZMA}         ${_LIBB_PROGRAM_OPTIONS}     
+  ${_LIBC}            ${_LIBM}            ${_LIBRT}           ${_LIBDL}
+  ${_LIBFUSE}         ${_LIBARCH}         ${_LIBUNWIND}       ${_LIBLZMA}          
+  ${_LIBGLOG}         ${_LIBFOLLY_E1}     ${_LIBFOLLY_E2}     ${_LIBB_PROGRAM_OPTIONS}     
   )
+
+  set_property(TARGET tebako-0 PROPERTY CXX_STANDARD 17)
+  set_property(TARGET tebako-0 PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET tebako-0 PROPERTY CXX_EXTENSIONS OFF)
 
 
 
