@@ -1,0 +1,58 @@
+name: Ubuntu build
+
+on:
+  # Triggers the workflow on push or pull request events but only for the master branch
+  push:
+    branches: [ issue-1 ]
+  pull_request:
+    branches: [ master ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+# Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+# The folder for dwarfs and other dependenies
+  DEPS: deps
+# dwarfs version )
+  DWARFS_VERSION: 0.5.6
+# force gcc 10 (imposed by dwarfs)
+  CC:   gcc-10
+  CXX:  g++-10
+
+jobs:
+  Ubuntu-build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Create deps folder
+      run: mkdir ${{github.workspace}}/${{env.DEPS}}
+
+    - uses: actions/cache@v2
+      with:
+        path: ${{github.workspace}}/${{env.DEPS}}
+        key: ${{runner.os}}-deps-${{env.DWARFS_VERSION}}-GCC10
+
+    - name: Install packages Ubuntu
+# Already installed: bison flex fuse3 pkg-config 
+      run: |
+        sudo apt-get install \
+        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
+        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+        libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
+        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
+
+    - name: CMake Configure
+      run: | 
+        cmake -B ${{github.workspace}}  \
+              -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}  \
+              -DDEPS=${{github.workspace}}/${{env.DEPS}} \
+              -DDWARFS_VERSION=${{env.DWARFS_VERSION}}
+
+    - name: CMake Build
+      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
+
