@@ -1,5 +1,3 @@
-[![Ubuntu build](https://github.com/metanorma/tebako/actions/workflows/ubuntu-build.yml/badge.svg?branch=master)](https://github.com/metanorma/tebako/actions/workflows/ubuntu-build.yml)
-
 = Tebako: a image packager
 
 == Purpose
