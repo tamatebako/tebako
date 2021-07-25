@@ -12,57 +12,27 @@ set(DEPS_LIB_DIR ${DEPS}/lib)
 
 
 set (DWARFS_NAME dwarfs)
-if(NOT DEFINED(DWARFS_VERSION))
-   set (DWARFS_VERSION "0.5.6")
+set (DWARFS_VERSION "0.5.6")
+set (DWARFS_CHECKSUM "4cf477b934567ac1e3d0f0da463dfd37")
+
+# As of today only version "0.5.6" is supported 
+# But potentially GHA may request to build someting diffferent
+if(DEFINED(GHA_DWARFS_VERSION) AND (NOT DWARFS_VERSION EQUAL GHA_DWARFS_VERSION)) 
+  message(FATAL_ERROR "DwarFs version ${DWARFS_VERSION} does not match GHA version ${GHA_DWARFS_VERSION}" )
 endif()
 
+if(DEFINED(GHA_DWARFS_CHECKSUM) AND (NOT DWARFS_CHECKSUM EQUAL GHA_DWARFS_CHECKSUM)) 
+  message(FATAL_ERROR "DwarFs version ${DWARFS_CHECKSUM} does not match GHA version ${GHA_DWARFS_CHECKSUM}" )
+endif()
 
 set (DWARFS_PRJ _${DWARFS_NAME})
 
-ExternalProject_Add(${DWARFS_PRJ}
-   PREFIX ${DEPS}
-   URL https://github.com/mhx/dwarfs/releases/download/v${DWARFS_VERSION}/dwarfs-${DWARFS_VERSION}.tar.xz
-   DOWNLOAD_NO_PROGRESS true
-   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} 
-)
+set(BOOST_USE_STATIC_LIBS   ON)
+set(BOOST_LINK_STATIC       ON)
+set(USE_STATIC_DEPS_ON_UNIX ON)
+set(GFLAGS_SHARED          OFF)
 
-## -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ???
-
-ExternalProject_Get_property(${DWARFS_PRJ} BINARY_DIR)
-
-# ...................................................................
-# The libraries that are build by dwarfs project
-# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
-# ...................................................................
-#add_library(_LIBDWARFS STATIC IMPORTED)
-#set_target_properties(_LIBDWARFS PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libdwarfs.a")
-set(_LIBDWARFS "${BINARY_DIR}/libdwarfs.a")
-
-#add_library(_LIBFOLLY STATIC IMPORTED)
-#set_target_properties(_LIBFOLLY PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/libfolly.a")
-set(_LIBFOLLY "${BINARY_DIR}/folly/libfolly.a")
-set(_LIBFOLLY_E1 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
-set(_LIBFOLLY_E2 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
-
-#add_library(_LIBFSST STATIC IMPORTED)
-#set_target_properties(_LIBFSST PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libfsst.a")
-set(_LIBFSST "${BINARY_DIR}/libfsst.a")
-
-#add_library(_LIBXXHASH STATIC IMPORTED)
-#set_target_properties(_LIBXXHASH PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libxxhash.a")
-set(_LIBXXHASH "${BINARY_DIR}/libxxhash.a")
-
-#add_library(_LIBT_METADATA STATIC IMPORTED)
-#set_target_properties(_LIBT_METADATA PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libmetadata_thrift.a")
-set(_LIBT_METADATA "${BINARY_DIR}/libmetadata_thrift.a")
-
-#add_library(_LIBT_LIGHT STATIC IMPORTED)
-#set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libthrift_light.a")
-set(_LIBT_LIGHT "${BINARY_DIR}/libthrift_light.a")
-
-# zstd/build/cmake/lib/libzstd.a  --> ${libzstd_static} 
-# set by child project of ${DWARFS_TARGET}
-set(_LIBZSTD "${BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
+find_package(Boost 1.67 REQUIRED COMPONENTS context regex thread atomic date_time filesystem program_options system)
 
 # ...................................................................
 # Each library name given to the NAMES option is first considered
@@ -79,9 +49,6 @@ set(_LIBZSTD "${BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
 #        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
 #    ++  Already installed at GHA but may require local installation: bison flex fuse3 pkg-config libxml2-dev libsodium-dev
 # ...................................................................
-
-set(Boost_USE_STATIC_LIBS ON) # only find static libs
-find_package(Boost REQUIRED COMPONENTS context regex thread date_time filesystem program_options system)
 
 find_library(_LIBGLOG "libglog.a" REQUIRED)
 find_library(_LIBFMT "libfmt.a" REQUIRED)
@@ -106,6 +73,63 @@ find_library(_LIBRT "librt.a" REQUIRED)
 # find_library(_LIBEH "libgcc_eh.a" REQUIRED)
 #	!/usr/lib/gcc/x86_64-linux-gnu/10/libgcc_eh.a \
 find_library(_LIBUNWIND "libunwind.a" REQUIRED)
+
+# ...................................................................
+
+
+
+ExternalProject_Add(${DWARFS_PRJ}
+   PREFIX ${DEPS}
+   URL https://github.com/mhx/dwarfs/releases/download/v${DWARFS_VERSION}/dwarfs-${DWARFS_VERSION}.tar.xz
+   DOWNLOAD_NO_PROGRESS true
+   URL_HASH MD5=${DWARFS_CHECKSUM}
+   PATCH_COMMAND cd ${DEPS}/src && patch -p1 < ../patch/1.patch
+   CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DSTATIC_BUILD_DO_NOT_USE=ON
+)
+
+## -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ???
+
+ExternalProject_Get_property(${DWARFS_PRJ} BINARY_DIR)
+
+# ...................................................................
+# The libraries that are build by dwarfs project
+# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
+# ...................................................................
+add_library(_LIBDWARFS STATIC IMPORTED)
+set_target_properties(_LIBDWARFS PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libdwarfs.a")
+#set(_LIBDWARFS "${BINARY_DIR}/libdwarfs.a")
+
+add_library(_LIBFOLLY STATIC IMPORTED)
+set_target_properties(_LIBFOLLY PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/libfolly.a")
+#set(_LIBFOLLY "${BINARY_DIR}/folly/libfolly.a")
+add_library(_LIBFOLLY_E1 STATIC IMPORTED)
+set_target_properties(_LIBFOLLY_E1 PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
+#set(_LIBFOLLY_E1 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
+add_library(_LIBFOLLY_E2 STATIC IMPORTED)
+set_target_properties(_LIBFOLLY_E2 PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
+#set(_LIBFOLLY_E2 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
+
+add_library(_LIBFSST STATIC IMPORTED)
+set_target_properties(_LIBFSST PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libfsst.a")
+#set(_LIBFSST "${BINARY_DIR}/libfsst.a")
+
+add_library(_LIBXXHASH STATIC IMPORTED)
+set_target_properties(_LIBXXHASH PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libxxhash.a")
+#set(_LIBXXHASH "${BINARY_DIR}/libxxhash.a")
+
+add_library(_LIBT_METADATA STATIC IMPORTED)
+set_target_properties(_LIBT_METADATA PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libmetadata_thrift.a")
+#set(_LIBT_METADATA "${BINARY_DIR}/libmetadata_thrift.a")
+
+add_library(_LIBT_LIGHT STATIC IMPORTED)
+set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libthrift_light.a")
+#set(_LIBT_LIGHT "${BINARY_DIR}/libthrift_light.a")
+
+# zstd/build/cmake/lib/libzstd.a  --> ${libzstd_static} 
+# set by child project of ${DWARFS_TARGET}
+# set(_LIBZSTD "${BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
+set(_LIBZSTD ${libzstd_static})
+# ...................................................................
 
 add_compile_options(-static -fdiagnostics-color=always)
 set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2 -g")
