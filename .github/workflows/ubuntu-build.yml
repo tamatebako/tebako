@@ -48,7 +48,13 @@ jobs:
       run: | 
         cmake -B ${{github.workspace}}                       \
               -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
+<<<<<<< HEAD
               -DDEPS=${{github.workspace}}/${{env.DEPS}}     
+=======
+              -DDEPS=${{github.workspace}}/${{env.DEPS}}     \
+              -DGHA_DWARFS_VERSION=${{env.DWARFS_VERSION}}   \
+              -DGHA_DWARFS_CHECKSUM=${{env.DWARFS_CHECKSUM}}
+>>>>>>> 8ed0ece (Dwarfs static build (#6))
 
     - name: CMake Build
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
