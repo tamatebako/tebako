@@ -472,6 +472,7 @@ namespace dwarfs {
 
     void usage(const char* progname) {
         std::cerr
+            << "Welcome to tebako !!!!\n\n"
             << "dwarfs (" << PRJ_GIT_ID << ", fuse version " << FUSE_USE_VERSION
             << ")\n\n"
             << "usage: " << progname << " image mountpoint [options]\n\n"

@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 3.12)
+cmake_minimum_required (VERSION 3.13.4)
 include(ExternalProject)
 
 project(tebako)
@@ -9,7 +9,6 @@ endif()
 
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)
-
 
 set (DWARFS_NAME dwarfs)
 set (DWARFS_VERSION "0.5.6")
@@ -27,7 +26,7 @@ endif()
 
 set (DWARFS_PRJ _${DWARFS_NAME})
 
-set(BOOST_USE_STATIC_LIBS   ON)
+set(Boost_USE_STATIC_LIBS   ON)
 set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
@@ -67,96 +66,121 @@ find_library(_LIBLJEMALLOC "libjemalloc.a" REQUIRED)
 find_library(_LIBPTHREAD "libpthread.a" REQUIRED) 
 find_library(_LIBFUSE "libfuse3.a" REQUIRED) 
 find_library(_LIBDL "libdl.a" REQUIRED) 
-find_library(_LIBC "libc.a" REQUIRED)
+find_library(_LIBC "libc.a" REQUIRED)  
 find_library(_LIBM "libm.a" REQUIRED)
 find_library(_LIBRT "librt.a" REQUIRED)
-# find_library(_LIBEH "libgcc_eh.a" REQUIRED)
-#	!/usr/lib/gcc/x86_64-linux-gnu/10/libgcc_eh.a \
+find_library(_LIBSSL "libssl.a" REQUIRED)
 find_library(_LIBUNWIND "libunwind.a" REQUIRED)
 
 # ...................................................................
+# -- Release archive is used (and not git clone) since the repo misses version files 
+#    that are generated but generated outside of normal build script (
+# -- The patch:
+#    - excludes dwarfsextract target that fails in static build because of libarchive problem (possible TODO)
+#    - changes static_link.sh to point to /usr/lib/x86_64-linux-gnu  for all libaries (this is most likely related to the previous item and IS NOT PORTABLE)
+#      TODO -- generate static_link.sh although it looks impossible  because of a ref to libgcc_eh that is version specific   <<<<<<<<<<<< BE CAREFUL    
+#    - adds cmake_policy(SET CMP0077 NEW)  that is required to overwrite option from the command line [DSTATIC_BUILD_DO_NOT_USE=ON]
 
+set(DWARFS_BINARY_DIR ${DEPS}/src/${DWARFS_PRJ}-build/)
 
+# ...................................................................
+# The libraries that are build by dwarfs project
+# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
+# These forward-declarations and BUILD_BYPRODICTS are required to support 'Ninja'
+# Otherwise add_dependencies would be enough for 'Unix makefiles' generator
+# ...................................................................
+
+set(__LIBDWARFS "${DWARFS_BINARY_DIR}/libdwarfs.a")
+set(__LIBFOLLY "${DWARFS_BINARY_DIR}/folly/libfolly.a")
+set(__LIBFSST "${DWARFS_BINARY_DIR}/libfsst.a")
+set(__LIBT_METADATA "${DWARFS_BINARY_DIR}/libmetadata_thrift.a")
+set(__LIBT_LIGHT "${DWARFS_BINARY_DIR}/libthrift_light.a")
+set(__LIBXXHASH "${DWARFS_BINARY_DIR}/libxxhash.a")
+set(__LIBZSTD "${DWARFS_BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
 
 ExternalProject_Add(${DWARFS_PRJ}
    PREFIX ${DEPS}
    URL https://github.com/mhx/dwarfs/releases/download/v${DWARFS_VERSION}/dwarfs-${DWARFS_VERSION}.tar.xz
    DOWNLOAD_NO_PROGRESS true
    URL_HASH MD5=${DWARFS_CHECKSUM}
-   PATCH_COMMAND cd ${DEPS}/src && patch -p1 < ../patch/1.patch
+   PATCH_COMMAND cd ${DEPS}/src && patch -p1 < ../../patches/1.patch
    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DSTATIC_BUILD_DO_NOT_USE=ON
+   BINARY_DIR ${DWARFS_BINARY_DIR}
+   BUILD_BYPRODUCTS ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA} ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD}
 )
 
 ## -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE} ???
-
-ExternalProject_Get_property(${DWARFS_PRJ} BINARY_DIR)
 
 # ...................................................................
 # The libraries that are build by dwarfs project
 # libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
 # ...................................................................
-#add_library(_LIBDWARFS STATIC IMPORTED)
-#set_target_properties(_LIBDWARFS PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libdwarfs.a")
-set(_LIBDWARFS "${BINARY_DIR}/libdwarfs.a")
+add_library(_LIBDWARFS STATIC IMPORTED)
+set_target_properties(_LIBDWARFS PROPERTIES IMPORTED_LOCATION ${__LIBDWARFS})
+add_dependencies(_LIBDWARFS ${DWARFS_PRJ})
 
-#add_library(_LIBFOLLY STATIC IMPORTED)
-#set_target_properties(_LIBFOLLY PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/libfolly.a")
-set(_LIBFOLLY "${BINARY_DIR}/folly/libfolly.a")
+add_library(_LIBFSST STATIC IMPORTED)
+set_target_properties(_LIBFSST PROPERTIES IMPORTED_LOCATION ${__LIBFSST})
+add_dependencies(_LIBFSST ${DWARFS_PRJ})
+
+add_library(_LIBFOLLY STATIC IMPORTED)
+set_target_properties(_LIBFOLLY PROPERTIES IMPORTED_LOCATION ${__LIBFOLLY})
+add_dependencies(_LIBFOLLY ${DWARFS_PRJ})
+
+# ....................................................................
+# It looks like thee too are not require for static build
 #add_library(_LIBFOLLY_E1 STATIC IMPORTED)
 #set_target_properties(_LIBFOLLY_E1 PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
-set(_LIBFOLLY_E1 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
+#set(_LIBFOLLY_E1 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
 #add_library(_LIBFOLLY_E2 STATIC IMPORTED)
 #set_target_properties(_LIBFOLLY_E2 PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
-set(_LIBFOLLY_E2 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
+#set(_LIBFOLLY_E2 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
 
-#add_library(_LIBFSST STATIC IMPORTED)
-#set_target_properties(_LIBFSST PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libfsst.a")
-set(_LIBFSST "${BINARY_DIR}/libfsst.a")
+add_library(_LIBT_METADATA STATIC IMPORTED)
+set_target_properties(_LIBT_METADATA PROPERTIES IMPORTED_LOCATION ${__LIBT_METADATA})
+add_dependencies(_LIBT_METADATA ${DWARFS_PRJ})
 
-#add_library(_LIBXXHASH STATIC IMPORTED)
-#set_target_properties(_LIBXXHASH PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libxxhash.a")
-set(_LIBXXHASH "${BINARY_DIR}/libxxhash.a")
+add_library(_LIBT_LIGHT STATIC IMPORTED)
+set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION ${__LIBT_LIGHT})
+add_dependencies(_LIBT_LIGHT ${DWARFS_PRJ})
 
-#add_library(_LIBT_METADATA STATIC IMPORTED)
-#set_target_properties(_LIBT_METADATA PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libmetadata_thrift.a")
-set(_LIBT_METADATA "${BINARY_DIR}/libmetadata_thrift.a")
+add_library(_LIBXXHASH STATIC IMPORTED)
+set_target_properties(_LIBXXHASH PROPERTIES IMPORTED_LOCATION ${__LIBXXHASH})
+add_dependencies(_LIBXXHASH ${DWARFS_PRJ})
 
-#add_library(_LIBT_LIGHT STATIC IMPORTED)
-#set_target_properties(_LIBT_LIGHT PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/libthrift_light.a")
-set(_LIBT_LIGHT "${BINARY_DIR}/libthrift_light.a")
+add_library(_LIBZSTD STATIC IMPORTED)
+set_target_properties(_LIBZSTD PROPERTIES IMPORTED_LOCATION ${__LIBZSTD})
+add_dependencies(_LIBZSTD ${DWARFS_PRJ})
 
-# zstd/build/cmake/lib/libzstd.a  --> ${libzstd_static} 
-# set by child project of ${DWARFS_TARGET}
- set(_LIBZSTD "${BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
-#set(_LIBZSTD ${libzstd_static})
 # ...................................................................
 
-add_compile_options(-static -fdiagnostics-color=always)
+add_compile_options(-fdiagnostics-color=always)
+add_link_options(-static -static-libgcc )
 set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2 -g")
 set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O2 -g")
 
 ExternalProject_Get_property(${DWARFS_PRJ} SOURCE_DIR)
 ExternalProject_Get_property(${DWARFS_PRJ} BINARY_DIR)
 include_directories(${SOURCE_DIR}/folly ${BINARY_DIR}/folly ${SOURCE_DIR}/fbthrift ${BINARY_DIR}/thrift ${BINARY_DIR} ${SOURCE_DIR}/include)
-add_compile_definitions(FUSE_USE_VERSION=32)
+add_compile_definitions(FUSE_USE_VERSION=35)
 
 add_executable(tebako-0 src/tebako-0.cpp)
-add_dependencies(tebako-0 ${DWARFS_PRJ})
+add_dependencies(tebako-0 ${DWARFS_PRJ} ${_LIBDWARFS})
 
 # ...................................................................
 #  IMPORTANT !!!
-#  ${_LIBUNWIND} ${_LIBLZMA}  -- MUST be in this order otherwise link step fails
-#  ${_LIBFUSE}   ${_LIBDL}
+#  MUST be in this order otherwise link may fail
+#  -static-libgcc and gcc_eh below is all together an ugly trick to enforce static linking
 # ...................................................................
 target_link_libraries(tebako-0 
-  ${_LIBDWARFS}       ${_LIBFOLLY}        ${_LIBXXHASH}       ${_LIBZSTD} 
-  ${_LIBFMT}          ${_LIBFSST}         ${_LIBT_METADATA}   ${_LIBT_LIGHT}
-  ${_LIBACL}          ${_LIBDC}           ${_LIBGFLAGS}       ${_LIBEVENT}
-  ${_LIBCRYPTO}       ${_LIBIBERTY}       ${_LIBXML2}         ${Boost_LIBRARIES}
-  ${_LIBLZ4}          ${_LIBZ}            ${_LIBJEMALLOC}     ${_LIBPTHREAD}
-  ${_LIBC}            ${_LIBM}            ${_LIBRT}           ${_LIBDL}
-  ${_LIBFUSE}         ${_LIBARCH}         ${_LIBUNWIND}       ${_LIBLZMA}          
-  ${_LIBGLOG}              ${_LIBB_PROGRAM_OPTIONS}     
+  _LIBDWARFS          _LIBFSST            _LIBT_METADATA      _LIBT_LIGHT                            
+  _LIBXXHASH          _LIBFOLLY           _LIBZSTD                             
+  ${_LIBFMT}          ${Boost_LIBRARIES}  ${_LIBDC}           ${_LIBFUSE}                    
+  ${_LIBGLOG}         ${_LIBGFLAGS}       ${_LIBEVENT}        ${_LIBARCH}
+  ${_LIBACL}          ${_LIBXML2}         ${_LIBSSL}          ${_LIBCRYPTO}       
+  ${_LIBIBERTY}       ${_LIBLZ4}          ${_LIBZ}            ${_LIBJEMALLOC}     
+  ${_LIBPTHREAD}      ${_LIBDL}           ${_LIBC}            ${_LIBM}                       
+  ${_LIBRT}			  gcc_eh			  ${_LIBUNWIND}       ${_LIBLZMA}
   )
 
   set_property(TARGET tebako-0 PROPERTY CXX_STANDARD 17)
