@@ -1,5 +1,6 @@
 cmake_minimum_required (VERSION 3.13.4)
 include(ExternalProject)
+include(FetchContent)
 
 project(tebako)
 
@@ -127,15 +128,6 @@ add_library(_LIBFOLLY STATIC IMPORTED)
 set_target_properties(_LIBFOLLY PROPERTIES IMPORTED_LOCATION ${__LIBFOLLY})
 add_dependencies(_LIBFOLLY ${DWARFS_PRJ})
 
-# ....................................................................
-# It looks like thee too are not require for static build
-#add_library(_LIBFOLLY_E1 STATIC IMPORTED)
-#set_target_properties(_LIBFOLLY_E1 PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
-#set(_LIBFOLLY_E1 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer_base.a")
-#add_library(_LIBFOLLY_E2 STATIC IMPORTED)
-#set_target_properties(_LIBFOLLY_E2 PROPERTIES IMPORTED_LOCATION "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
-#set(_LIBFOLLY_E2 "${BINARY_DIR}/folly/folly/experimental/exception_tracer/libfolly_exception_tracer.a")
-
 add_library(_LIBT_METADATA STATIC IMPORTED)
 set_target_properties(_LIBT_METADATA PROPERTIES IMPORTED_LOCATION ${__LIBT_METADATA})
 add_dependencies(_LIBT_METADATA ${DWARFS_PRJ})
@@ -155,7 +147,7 @@ add_dependencies(_LIBZSTD ${DWARFS_PRJ})
 # ...................................................................
 
 add_compile_options(-fdiagnostics-color=always)
-add_link_options(-static -static-libgcc )
+add_link_options(-static -static-libgcc)
 set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2 -g")
 set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O2 -g")
 
@@ -182,6 +174,22 @@ target_link_libraries(tebako-0
   ${_LIBPTHREAD}      ${_LIBDL}           ${_LIBC}            ${_LIBM}                       
   ${_LIBRT}			  gcc_eh			  ${_LIBUNWIND}       ${_LIBLZMA}
   )
+
+
+FetchContent_Declare(
+  incbin
+  GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
+  GIT_TAG main
+  )
+
+# Check if population has already been performed
+FetchContent_GetProperties(incbin)
+string(TOLOWER "incbin" lcName)
+if(NOT ${lcName}_POPULATED)
+  FetchContent_Populate(incbin)
+endif()
+
+
 
   set_property(TARGET tebako-0 PROPERTY CXX_STANDARD 17)
   set_property(TARGET tebako-0 PROPERTY CXX_STANDARD_REQUIRED ON)
