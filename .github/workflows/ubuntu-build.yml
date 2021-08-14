@@ -32,7 +32,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{runner.os}}-deps-v4
+        key: ${{ github.workflow }}-${{ hashFiles('CMakeLists.txt') }}-v5
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
