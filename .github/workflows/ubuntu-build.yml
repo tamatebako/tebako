@@ -32,7 +32,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{runner.os}}-deps-${{env.DWARFS_CHECKSUM}}-v3
+        key: ${{runner.os}}-deps-v4
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
@@ -48,9 +48,7 @@ jobs:
       run: | 
         cmake -B ${{github.workspace}}                       \
               -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
-              -DDEPS=${{github.workspace}}/${{env.DEPS}}     \
-              -DGHA_DWARFS_VERSION=${{env.DWARFS_VERSION}}   \
-              -DGHA_DWARFS_CHECKSUM=${{env.DWARFS_CHECKSUM}}
+              -DDEPS=${{github.workspace}}/${{env.DEPS}}     
 
     - name: CMake Build
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
