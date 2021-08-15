@@ -38,7 +38,7 @@ jobs:
         ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
         libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
         libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-        libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
+        libboost-regex-dev libboost-system-dev libboost-thread-dev \
         libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
         
     - name: CMake Configure
