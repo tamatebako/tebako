@@ -53,5 +53,8 @@ jobs:
     - name: Create mount point
       run: |
         sudo mkdir -p /home/tebako 
-        sudo a+w chmod /home/tebako
-        sudo g+w chmod /home/tebako
+        sudo chmod a+w /home/tebako
+        sudo chmod g+w /home/tebako
+
+    - name: Create mount point
+      run: sudo make install
