@@ -27,9 +27,61 @@
  *
  */
 
-#include <incbin.h>
+#include <cerrno>
+
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#include <boost/system/error_code.hpp>
+
+#include "tebako-mfs.h"
 
 namespace tebako {
-	const char * fs_mount_point = "@FS_MOUNT_POINT@";
-	INCBIN(fs, "@DATA_BIN_FILE@");
+
+boost::system::error_code mfs::lock(off_t offset, size_t size) {
+  boost::system::error_code ec;
+  auto addr = reinterpret_cast<const uint8_t*>(addr_) + offset;
+  if (::mlock(addr, size) != 0) {
+    ec.assign(errno, boost::system::generic_category());
+  }
+  return ec;
 }
+
+boost::system::error_code mfs::release(off_t offset, size_t size) {
+  boost::system::error_code ec;
+  auto misalign = offset % page_size_;
+
+  offset -= misalign;
+  size += misalign;
+  size -= size % page_size_;
+
+  auto addr = reinterpret_cast<const uint8_t*>(addr_) + offset;
+  if (::madvise((void *)addr, size, MADV_DONTNEED) != 0) {
+    ec.assign(errno, boost::system::generic_category());
+  }
+  return ec;
+}
+
+boost::system::error_code mfs::release_until(off_t offset) {
+  boost::system::error_code ec;
+
+  offset -= offset % page_size_;
+
+  if (::madvise((void *)addr_, offset, MADV_DONTNEED) != 0) {
+    ec.assign(errno, boost::system::generic_category());
+  }
+  return ec;
+}
+
+void const* mfs::addr() const { return addr_; }
+
+size_t mfs::size() const { return size_; }
+
+mfs::mfs(const void* addr, size_t size):
+      size_(size),
+      addr_(addr),
+      page_size_(::sysconf(_SC_PAGESIZE)) {}
+
+} 
