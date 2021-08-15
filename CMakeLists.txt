@@ -58,6 +58,8 @@ set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
 
+find_package(Boost 1.67 REQUIRED COMPONENTS date_time filesystem program_options system)
+
 # ...................................................................
 # incbin
 # ExternalProject_Add is used for incbin project since we do not need 
@@ -205,8 +207,6 @@ add_dwarfs_library(_LIBARCHIVE ${DWARFS_PRJ})
 # specify library file names such as libfoo.a directly. This can be 
 # used to locate static libraries on UNIX-like systems.
 #
-
-find_package(Boost 1.67 REQUIRED COMPONENTS context regex thread atomic date_time filesystem program_options system)
 
 find_library(_LIBGLOG "libglog.a" REQUIRED)
 find_library(_LIBFMT "libfmt.a" REQUIRED)
