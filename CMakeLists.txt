@@ -239,14 +239,3 @@ target_link_libraries(tebako
   ${_LIBUNWIND}       ${_LIBLZMA}
  )
 
-
-install(
-  TARGETS tebako
-  RUNTIME DESTINATION bin
-)
-
-
-
-
-
-
