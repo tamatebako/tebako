@@ -2,7 +2,8 @@
 # Copyright (c) 2021 The Unknown Fathers
 # This file is a part of tebako
 #
-
+# ...................................................................
+#
 # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
 # ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
 # TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
@@ -28,7 +29,6 @@ project(tebako)
 #        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
 #    ++  Already installed at GHA but may require local installation: 
 #        bison flex fuse3 pkg-config libsodium-dev
-# ...................................................................
 
 include(ExternalProject)
 include(FetchContent)
@@ -56,36 +56,31 @@ find_package(Boost 1.67 REQUIRED COMPONENTS context regex thread atomic date_tim
 
 # ...................................................................
 # incbin
+# ExternalProject_Add is used for incbin project since we do not need 
+# anything at configure step. We want to fetch some files before the 
+# build, that's it.  
 
 set (INCBIN_NAME incbin)
 set (INCBIN_PRJ _${INCBIN_NAME})
 set (INCBIN_SOURCE_DIR ${DEPS}/src/${INCBIN_PRJ})
 
-ExternalProject_Add(${INCBIN_PRJ}
+if(NOT DEVELOPER_MODE)
+ ExternalProject_Add(${INCBIN_PRJ}
    PREFIX ${DEPS}
    GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
-   GIT_TAG main
+   GIT_TAG 348e36b
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
    INSTALL_COMMAND ""
-)
-
-
-#FetchContent_Declare(
-#  incbin
-#  GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
-#  GIT_TAG main
-#)
-
-# Check if population has already been performed
-#FetchContent_GetProperties(incbin)
-#string(TOLOWER "incbin" lcName)
-#if(NOT ${lcName}_POPULATED)
-#  FetchContent_Populate(incbin)
-#endif()
+ )
+endif(NOT DEVELOPER_MODE)
 
 # ...................................................................
 # DwarFS
+# ExternakProject_Add is used for incbin project since we do not need 
+# anything at configure step. We want to fetch some files before the 
+# build. that;s it.
+
 
 set (DWARFS_NAME dwarfs)
 set (DWARFS_PRJ _${DWARFS_NAME})
@@ -93,11 +88,10 @@ set (DWARFS_SOURCE_DIR ${DEPS}/src/${DWARFS_PRJ})
 set (DWARFS_BINARY_DIR ${DEPS}/src/${DWARFS_PRJ}-build/)
 
 # ...................................................................
-# The libraries that are build by dwarfs project
+# The libraries that are build by DwarFS project
 # libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
 # These forward-declarations and BUILD_BYPRODICTS are required to support 'Ninja'
 # Otherwise add_dependencies would be enough for 'Unix makefiles' generator
-# ...................................................................
 
 set(__LIBDWARFS "${DWARFS_BINARY_DIR}/libdwarfs.a")
 set(__LIBFOLLY "${DWARFS_BINARY_DIR}/folly/libfolly.a")
@@ -145,6 +139,7 @@ configure_file(
 )
 
 # ...................................................................
+# Executable
 
 add_compile_options(-fdiagnostics-color=always)
 add_link_options(-static -static-libgcc)
@@ -157,8 +152,6 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
                     ${DWARFS_BINARY_DIR}/thrift ${DWARFS_BINARY_DIR} ${DWARFS_SOURCE_DIR}/include)
 add_compile_definitions(FUSE_USE_VERSION=35)
 
-# ...................................................................
-
 add_executable(
     tebako-0 
     "src/tebako-0.cpp"
@@ -167,7 +160,7 @@ add_executable(
 )
 
 if(NOT DEVELOPER_MODE)
- add_dependencies(tebako-0 ${DWARFS_PRJ} _PACKAGED_FILESYSTEM)
+ add_dependencies(tebako-0 ${DWARFS_PRJ})
 endif(NOT DEVELOPER_MODE)
 
 add_dependencies(tebako-0 _PACKAGED_FILESYSTEM)
@@ -178,7 +171,6 @@ set_property(TARGET tebako-0 PROPERTY CXX_EXTENSIONS OFF)
 # ...................................................................
 # The libraries that are build by dwarfs project
 # libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light libarchive
-# ...................................................................
 
 function(ADD_DWARFS_LIBRARY NAME PRJ)
   add_library(${NAME} STATIC IMPORTED)
@@ -232,7 +224,7 @@ find_library(_LIBIBERTY "libiberty.a" REQUIRED)
 #  IMPORTANT !!!
 #  MUST be in this order otherwise link may fail
 #  -static-libgcc and gcc_eh below is all together an ugly trick to enforce static linking
-# ...................................................................
+
 target_link_libraries(tebako-0                              
   ${_LIBFMT}          ${Boost_LIBRARIES}  ${_LIBDC}           ${_LIBFUSE}                    
   ${_LIBGLOG}         ${_LIBGFLAGS}       ${_LIBEVENT}        ${_LIBIBERTY}
