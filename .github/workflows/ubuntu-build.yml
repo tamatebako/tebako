@@ -60,7 +60,7 @@ jobs:
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
       run: |
-        sudo apt-get install \
+        sudo apt-get install bison flex fuse3 pkg-config \
         ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
         libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
         libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
