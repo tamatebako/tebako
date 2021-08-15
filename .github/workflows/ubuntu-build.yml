@@ -64,4 +64,4 @@ jobs:
         sudo g+w chmod /home/tebako
 
     - name: Execute
-      run: ${{github.workspace}}\tebaco
+      run: ${{github.workspace}}\tebako

@@ -241,7 +241,7 @@ target_link_libraries(tebako
 
 
 install(
-  TARGETS tebaco
+  TARGETS tebako
   RUNTIME DESTINATION bin
 )
 
