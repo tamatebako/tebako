@@ -25,7 +25,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 cmake_minimum_required (VERSION 3.13.4)
-project(tebako_packager)
+project(tebako)
 # ...................................................................
 #        sudo apt-get install \
 #        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
@@ -58,7 +58,7 @@ set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
 
-find_package(Boost 1.67 REQUIRED COMPONENTS date_time filesystem program_options system)
+find_package(Boost 1.67 REQUIRED COMPONENTS context regex thread atomic date_time filesystem program_options system)
 
 # ...................................................................
 # incbin
@@ -162,21 +162,22 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
 add_compile_definitions(FUSE_USE_VERSION=35)
 
 add_executable(
-    tebako 
+    tebako-0 
     "src/tebako.cpp"
     "src/tebako-0.cpp"
     "src/tebako-fs.cpp"
     "include/tebako-fs.h"
-    "include/tebako-dfs.h")
+    "include/tebako-dfs.h"
+)
 
 if(NOT DEVELOPER_MODE)
- add_dependencies(tebako ${DWARFS_PRJ})
+ add_dependencies(tebako-0 ${DWARFS_PRJ})
 endif(NOT DEVELOPER_MODE)
 
-add_dependencies(tebako _PACKAGED_FILESYSTEM)
-set_property(TARGET tebako PROPERTY CXX_STANDARD 17)
-set_property(TARGET tebako PROPERTY CXX_STANDARD_REQUIRED ON)
-set_property(TARGET tebako PROPERTY CXX_EXTENSIONS OFF)
+add_dependencies(tebako-0 _PACKAGED_FILESYSTEM)
+set_property(TARGET tebako-0 PROPERTY CXX_STANDARD 17)
+set_property(TARGET tebako-0 PROPERTY CXX_STANDARD_REQUIRED ON)
+set_property(TARGET tebako-0 PROPERTY CXX_EXTENSIONS OFF)
 
 # ...................................................................
 # The libraries that are build by dwarfs project
@@ -186,7 +187,7 @@ function(ADD_DWARFS_LIBRARY NAME PRJ)
   add_library(${NAME} STATIC IMPORTED)
   set_target_properties(${NAME} PROPERTIES IMPORTED_LOCATION ${_${NAME}})
   add_dependencies(${NAME} ${PRJ})
-  target_link_libraries(tebako ${NAME})
+  target_link_libraries(tebako-0 ${NAME})
 endfunction()
 
 add_dwarfs_library(_LIBDWARFS ${DWARFS_PRJ})
@@ -235,19 +236,11 @@ find_library(_LIBIBERTY "libiberty.a" REQUIRED)
 #  MUST be in this order otherwise link may fail
 #  -static-libgcc and gcc_eh below is all together an ugly trick to enforce static linking
 
-target_link_libraries(tebako                              
+target_link_libraries(tebako-0                              
   ${_LIBFMT}          ${Boost_LIBRARIES}  ${_LIBDC}           ${_LIBFUSE}                    
   ${_LIBGLOG}         ${_LIBGFLAGS}       ${_LIBEVENT}        ${_LIBIBERTY}
   ${_LIBACL}          ${_LIBSSL}          ${_LIBCRYPTO}       ${_LIBLZ4}
   ${_LIBZ}            ${_LIBJEMALLOC}     ${_LIBPTHREAD}      ${_LIBDL}           
   ${_LIBC}            ${_LIBM}            ${_LIBRT}           gcc_eh		                 
   ${_LIBUNWIND}       ${_LIBLZMA}
- )
-
-# ...................................................................
-#  Install
-
-install(
-  TARGETS tebako
-  RUNTIME DESTINATION bin
  )
