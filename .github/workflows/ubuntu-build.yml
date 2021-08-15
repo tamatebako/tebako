@@ -57,4 +57,4 @@ jobs:
         sudo chmod g+w /home/tebako
 
     - name: Run
-      run: /usr/local/bin/tebako
+      run: sudo /usr/local/bin/tebako
