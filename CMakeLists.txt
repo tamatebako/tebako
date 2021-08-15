@@ -1,3 +1,4 @@
+# ...................................................................
 #
 # Copyright (c) 2021 The Unknown Fathers
 # This file is a part of tebako
@@ -119,8 +120,11 @@ endif(NOT DEVELOPER_MODE)
 
 # ...................................................................
 # Packaged filesystem
+# TODO: the chain of dependencies for fs is not correct and requires rethinking
+
 set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
 set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+set(FS_MOUNT_POINT "/home/tebako")
 
 add_custom_target(_PACKAGED_FILESYSTEM 
    COMMAND mkdir -p ${DATA_BIN_DIR}
@@ -153,20 +157,21 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
 add_compile_definitions(FUSE_USE_VERSION=35)
 
 add_executable(
-    tebako-0 
+    tebako 
+    "src/tebako.cpp"
     "src/tebako-0.cpp"
     "src/tebako-fs.cpp"
-    "include/tebako.h"
-)
+    "include/tebako-fs.h"
+    "include/tebako-dfs.h")
 
 if(NOT DEVELOPER_MODE)
- add_dependencies(tebako-0 ${DWARFS_PRJ})
+ add_dependencies(tebako ${DWARFS_PRJ})
 endif(NOT DEVELOPER_MODE)
 
-add_dependencies(tebako-0 _PACKAGED_FILESYSTEM)
-set_property(TARGET tebako-0 PROPERTY CXX_STANDARD 17)
-set_property(TARGET tebako-0 PROPERTY CXX_STANDARD_REQUIRED ON)
-set_property(TARGET tebako-0 PROPERTY CXX_EXTENSIONS OFF)
+add_dependencies(tebako _PACKAGED_FILESYSTEM)
+set_property(TARGET tebako PROPERTY CXX_STANDARD 17)
+set_property(TARGET tebako PROPERTY CXX_STANDARD_REQUIRED ON)
+set_property(TARGET tebako PROPERTY CXX_EXTENSIONS OFF)
 
 # ...................................................................
 # The libraries that are build by dwarfs project
@@ -176,7 +181,7 @@ function(ADD_DWARFS_LIBRARY NAME PRJ)
   add_library(${NAME} STATIC IMPORTED)
   set_target_properties(${NAME} PROPERTIES IMPORTED_LOCATION ${_${NAME}})
   add_dependencies(${NAME} ${PRJ})
-  target_link_libraries(tebako-0 ${NAME})
+  target_link_libraries(tebako ${NAME})
 endfunction()
 
 add_dwarfs_library(_LIBDWARFS ${DWARFS_PRJ})
@@ -225,7 +230,7 @@ find_library(_LIBIBERTY "libiberty.a" REQUIRED)
 #  MUST be in this order otherwise link may fail
 #  -static-libgcc and gcc_eh below is all together an ugly trick to enforce static linking
 
-target_link_libraries(tebako-0                              
+target_link_libraries(tebako                              
   ${_LIBFMT}          ${Boost_LIBRARIES}  ${_LIBDC}           ${_LIBFUSE}                    
   ${_LIBGLOG}         ${_LIBGFLAGS}       ${_LIBEVENT}        ${_LIBIBERTY}
   ${_LIBACL}          ${_LIBSSL}          ${_LIBCRYPTO}       ${_LIBLZ4}
@@ -234,6 +239,11 @@ target_link_libraries(tebako-0
   ${_LIBUNWIND}       ${_LIBLZMA}
  )
 
+
+install(
+  TARGETS tebaco
+  RUNTIME DESTINATION bin
+)
 
 
 

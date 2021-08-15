@@ -14,10 +14,13 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
+ *
  */
 
 #include <incbin.h>
 
 namespace tebako {
+	const char * fs_mount_point = "@FS_MOUNT_POINT@";
+	const char * fs_file_name = "@DATA_BIN_FILE@";
 	INCBIN(fs, "@DATA_BIN_FILE@");
 }

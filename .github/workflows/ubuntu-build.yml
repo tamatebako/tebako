@@ -48,8 +48,20 @@ jobs:
       run: | 
         cmake -B ${{github.workspace}}                       \
               -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
-              -DDEPS=${{github.workspace}}/${{env.DEPS}}     
+              -DDEPS=${{github.workspace}}/${{env.DEPS}}     \
+              -DPREFIX=${{github.workspace}}
 
     - name: CMake Build
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
 
+    - name: CMake Install
+      run: cmake install
+
+    - name: Create mount point
+      run: |
+        sudo mkdir -p /home/tebako 
+        sudo a+w chmod /home/tebako
+        sudo g+w chmod /home/tebako
+
+    - name: Execute
+      run: ${{github.workspace}}\tebaco
