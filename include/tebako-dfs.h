@@ -43,7 +43,6 @@ namespace dwarfs {
 
     struct options {
         const char* progname{ nullptr };
-        std::string fsimage;
         int seen_mountpoint{ 0 };
         const char* cachesize_str{ nullptr };        // TODO: const?? -> use string?
         const char* debuglevel_str{ nullptr };       // TODO: const?? -> use string?

@@ -60,14 +60,13 @@ int main(int argc, char** argv) {
         {
             using namespace std::chrono_literals;
             int wait_cycle = 0;
-            char* _argv[3];
+            char* _argv[2];
 
             // TODO:
             // use dealloc provided by fuse lib ?
             _argv[0] = argv[0];
-            _argv[1] = strdup(tebako::fs_file_name);
-            _argv[2] = strdup(tebako::fs_mount_point);
-            struct fuse_args args = FUSE_ARGS_INIT(3, _argv);
+            _argv[1] = strdup(tebako::fs_mount_point);
+            struct fuse_args args = FUSE_ARGS_INIT(2, _argv);
 
             std::thread dfs(dwarfs_starter, &args);
 
@@ -80,7 +79,6 @@ int main(int argc, char** argv) {
                 std::cerr << "Exceeded startup time. Exiting ..." << std::endl;
                 // No attempts to free memory. It is a crash state already
                 // free(_argv[1]);
-                // free(_argv[2]);
                 ::exit(-1);
             }
 
@@ -100,7 +98,6 @@ int main(int argc, char** argv) {
                 std::cerr << "dwarFS startup failed. Exiting ..." << std::endl;
             }
             free(_argv[1]);
-            free(_argv[2]);
 
             return (int)ret;
         });

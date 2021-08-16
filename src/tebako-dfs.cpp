@@ -446,7 +446,7 @@ namespace dwarfs {
             << "Welcome to tebako !!!!\n\n"
             << "dwarfs (" << PRJ_GIT_ID << ", fuse version " << FUSE_USE_VERSION
             << ")\n\n"
-            << "usage: " << progname << " image mountpoint [options]\n\n"
+            << "usage: " << progname << " mountpoint [options]\n\n"
             << "DWARFS options:\n"
             << "    -o cachesize=SIZE      set size of block cache (512M)\n"
             << "    -o workers=NUM         number of worker threads (2)\n"
@@ -484,15 +484,8 @@ namespace dwarfs {
             if (opts->seen_mountpoint) {
                 return -1;
             }
-
-            if (!opts->fsimage.empty()) {
-                opts->seen_mountpoint = 1;
-                return 1;
-            }
-
-            opts->fsimage = arg;
-
-            return 0;
+            opts->seen_mountpoint = 1;
+            break;
 
         case FUSE_OPT_KEY_OPT:
             if (::strncmp(arg, "-h", 2) == 0 || ::strncmp(arg, "--help", 6) == 0) {
@@ -707,8 +700,6 @@ namespace dwarfs {
 
         try {
             // TODO: foreground mode, stderr vs. syslog?
-
-            opts.fsimage = std::filesystem::canonical(opts.fsimage).native();
 
             opts.debuglevel = opts.debuglevel_str
                 ? logger::parse_level(opts.debuglevel_str)
