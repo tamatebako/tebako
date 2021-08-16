@@ -46,6 +46,8 @@
 #include <fuse/fuse_lowlevel.h>
 #endif
 
+#include "tebako-fs.h"
+#include "tebako-mfs.h"
 #include "tebako-dfs.h"
 
 namespace dwarfs {
@@ -658,8 +660,12 @@ namespace dwarfs {
             }
         }
 
+//        userdata.fs = filesystem_v2(
+//            userdata.lgr, std::make_shared<mmap>(opts.fsimage), fsopts, FUSE_ROOT_ID);
+
         userdata.fs = filesystem_v2(
-            userdata.lgr, std::make_shared<mmap>(opts.fsimage), fsopts, FUSE_ROOT_ID);
+            userdata.lgr, std::make_shared<tebako::mfs>(&tebako::gfsData, tebako::gfsSize), fsopts, FUSE_ROOT_ID);
+
 
         ti << "file system initialized";
     }

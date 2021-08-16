@@ -55,7 +55,6 @@ void dwarfs_starter(void* args) {
     ret = dwarfs::run_dwarfs(reinterpret_cast<struct fuse_args*>(args));
 }
 
-
 int main(int argc, char** argv) {
     return dwarfs::safe_main([&]
         {
@@ -83,8 +82,11 @@ int main(int argc, char** argv) {
             }
 
             if (ret == 0) {
-                std::string cmd("sudo ");
+                std::string cmd("ls -l ");
                 cmd += tebako::fs_mount_point;
+                system(cmd.c_str());
+
+                cmd = tebako::fs_mount_point;
                 cmd += "/test-0.sh";
                 system(cmd.c_str());
                 dwarfs::stop_fuse_session();
@@ -92,7 +94,7 @@ int main(int argc, char** argv) {
 
             }
             else {
-                std::cerr << "DwarFS startup failed. Exiting ..." << std::endl;
+                std::cerr << "dwarFS startup failed. Exiting ..." << std::endl;
             }
             free(_argv[1]);
             free(_argv[2]);

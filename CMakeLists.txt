@@ -164,8 +164,11 @@ add_executable(
     "src/tebako.cpp"
     "src/tebako-0.cpp"
     "src/tebako-fs.cpp"
+    "src/tebako-mfs.cpp"
     "include/tebako-fs.h"
-    "include/tebako-dfs.h")
+    "include/tebako-dfs.h"
+    "include/tebako-mfs.h"
+    )
 
 if(NOT DEVELOPER_MODE)
  add_dependencies(tebako ${DWARFS_PRJ})
