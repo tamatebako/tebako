@@ -43,7 +43,6 @@ include(FetchContent)
 # Use with caution, please
 option(DEVELOPER_MODE "Developer mode" OFF)
 
-
 if(NOT DEFINED(DEPS))
  set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
 endif()
@@ -231,7 +230,6 @@ find_library(_LIBRT "librt.a" REQUIRED)
 find_library(_LIBSSL "libssl.a" REQUIRED)
 find_library(_LIBUNWIND "libunwind.a" REQUIRED)
 find_library(_LIBIBERTY "libiberty.a" REQUIRED)
-
 
 # ...................................................................
 #  IMPORTANT !!!
