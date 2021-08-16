@@ -41,7 +41,7 @@ class mfs : public dwarfs::mmif {
  public:
   mfs(const void* addr, size_t size);
 
-  ~mfs() noexcept override;
+  ~mfs() = default;
 
   void const* addr() const override;
   size_t size() const override;

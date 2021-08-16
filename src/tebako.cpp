@@ -61,6 +61,9 @@ int main(int argc, char** argv) {
             using namespace std::chrono_literals;
             int wait_cycle = 0;
             char* _argv[3];
+
+            // TODO:
+            // use dealloc provided by fuse lib ?
             _argv[0] = argv[0];
             _argv[1] = strdup(tebako::fs_file_name);
             _argv[2] = strdup(tebako::fs_mount_point);
@@ -82,11 +85,11 @@ int main(int argc, char** argv) {
             }
 
             if (ret == 0) {
-                std::string cmd("ls -l ");
-                cmd += tebako::fs_mount_point;
-                system(cmd.c_str());
+//                std::string cmd("ls -l ");
+//                cmd += tebako::fs_mount_point;
+//                system(cmd.c_str());
 
-                cmd = tebako::fs_mount_point;
+                std::string cmd = tebako::fs_mount_point;
                 cmd += "/test-0.sh";
                 system(cmd.c_str());
                 dwarfs::stop_fuse_session();

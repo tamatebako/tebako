@@ -162,7 +162,7 @@ add_compile_definitions(FUSE_USE_VERSION=35)
 add_executable(
     tebako 
     "src/tebako.cpp"
-    "src/tebako-0.cpp"
+    "src/tebako-dfs.cpp"
     "src/tebako-fs.cpp"
     "src/tebako-mfs.cpp"
     "include/tebako-fs.h"
