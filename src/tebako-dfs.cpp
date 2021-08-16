@@ -1,21 +1,30 @@
 /**
- * \author     Marcus Holland-Moritz (github@mhxnet.de)
- * \copyright  Copyright (c) Marcus Holland-Moritz
  *
- * This file is part of dwarfs.
+ * Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+ * All rights reserved.
+ * This file is a part of tebako
  *
- * dwarfs is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
  *
- * dwarfs is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with dwarfs.  If not, see <https://www.gnu.org/licenses/>.
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+ * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+ * BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ * 
  */
 
 #include <array>
@@ -37,50 +46,12 @@
 #include <fuse/fuse_lowlevel.h>
 #endif
 
-#include "dwarfs/error.h"
-#include "dwarfs/filesystem_v2.h"
-#include "dwarfs/fstypes.h"
-#include "dwarfs/logger.h"
-#include "dwarfs/metadata_v2.h"
-#include "dwarfs/mmap.h"
-#include "dwarfs/options.h"
-#include "dwarfs/util.h"
-#include "dwarfs/version.h"
+#include "tebako-fs.h"
+#include "tebako-mfs.h"
+#include "tebako-dfs.h"
 
 namespace dwarfs {
-
-    struct options {
-        const char* progname{ nullptr };
-        std::string fsimage;
-        int seen_mountpoint{ 0 };
-        const char* cachesize_str{ nullptr };        // TODO: const?? -> use string?
-        const char* debuglevel_str{ nullptr };       // TODO: const?? -> use string?
-        const char* workers_str{ nullptr };          // TODO: const?? -> use string?
-        const char* mlock_str{ nullptr };            // TODO: const?? -> use string?
-        const char* decompress_ratio_str{ nullptr }; // TODO: const?? -> use string?
-        const char* image_offset_str{ nullptr };     // TODO: const?? -> use string?
-        int enable_nlink{ 0 };
-        int readonly{ 0 };
-        int cache_image{ 0 };
-        int cache_files{ 0 };
-        size_t cachesize{ 0 };
-        size_t workers{ 0 };
-        mlock_mode lock_mode{ mlock_mode::NONE };
-        double decompress_ratio{ 0.0 };
-        logger::level_type debuglevel{ logger::level_type::ERROR };
-    };
-
-    struct dwarfs_userdata {
-        dwarfs_userdata(std::ostream& os)
-            : lgr{ os } {}
-
-        options opts;
-        stream_logger lgr;
-        filesystem_v2 fs;
-    };
-
-    // TODO: better error handling
-
+ 
 #define DWARFS_OPT(t, p, v)                                                    \
   { t, offsetof(struct options, p), v }
 
@@ -475,7 +446,7 @@ namespace dwarfs {
             << "Welcome to tebako !!!!\n\n"
             << "dwarfs (" << PRJ_GIT_ID << ", fuse version " << FUSE_USE_VERSION
             << ")\n\n"
-            << "usage: " << progname << " image mountpoint [options]\n\n"
+            << "usage: " << progname << " mountpoint [options]\n\n"
             << "DWARFS options:\n"
             << "    -o cachesize=SIZE      set size of block cache (512M)\n"
             << "    -o workers=NUM         number of worker threads (2)\n"
@@ -513,15 +484,8 @@ namespace dwarfs {
             if (opts->seen_mountpoint) {
                 return -1;
             }
-
-            if (!opts->fsimage.empty()) {
-                opts->seen_mountpoint = 1;
-                return 1;
-            }
-
-            opts->fsimage = arg;
-
-            return 0;
+            opts->seen_mountpoint = 1;
+            break;
 
         case FUSE_OPT_KEY_OPT:
             if (::strncmp(arg, "-h", 2) == 0 || ::strncmp(arg, "--help", 6) == 0) {
@@ -553,6 +517,27 @@ namespace dwarfs {
 
 #if FUSE_USE_VERSION > 30
 
+//  TODO:
+//  This set of fuse operations shall be wrapped in a class ???
+//  or  something like it
+
+    std::atomic<fuse_session*> session = NULL;
+    std::atomic_bool session_ready = false;
+
+
+    void stop_fuse_session(void) {
+        if (session) {
+            fuse_session_exit(session);
+            fuse_session_unmount(session);
+            session_ready = false;
+        }
+    }
+
+    bool is_fuse_session_ready(void) {
+        return session != NULL && !fuse_session_exited(session) && session_ready;
+    }
+
+
     int run_fuse(struct fuse_args& args, struct fuse_cmdline_opts const& fuse_opts,
         dwarfs_userdata& userdata) {
         struct fuse_lowlevel_ops fsops;
@@ -568,10 +553,11 @@ namespace dwarfs {
 
         int err = 1;
 
-        if (auto session =
+        if (session =
             fuse_session_new(&args, &fsops, sizeof(fsops), &userdata)) {
             if (fuse_set_signal_handlers(session) == 0) {
                 if (fuse_session_mount(session, fuse_opts.mountpoint) == 0) {
+                    session_ready = true;
                     if (fuse_daemonize(fuse_opts.foreground) == 0) {
                         if (fuse_opts.singlethread) {
                             err = fuse_session_loop(session);
@@ -583,11 +569,13 @@ namespace dwarfs {
                             err = fuse_session_loop_mt(session, &config);
                         }
                     }
+                    session_ready = false;
                     fuse_session_unmount(session);
                 }
                 fuse_remove_signal_handlers(session);
             }
             fuse_session_destroy(session);
+            session = NULL;
         }
 
         ::free(fuse_opts.mountpoint);
@@ -665,29 +653,34 @@ namespace dwarfs {
             }
         }
 
+//        userdata.fs = filesystem_v2(
+//            userdata.lgr, std::make_shared<mmap>(opts.fsimage), fsopts, FUSE_ROOT_ID);
+
         userdata.fs = filesystem_v2(
-            userdata.lgr, std::make_shared<mmap>(opts.fsimage), fsopts, FUSE_ROOT_ID);
+            userdata.lgr, std::make_shared<tebako::mfs>(&tebako::gfsData, tebako::gfsSize), fsopts, FUSE_ROOT_ID);
+
 
         ti << "file system initialized";
     }
 
-    int run_dwarfs(int argc, char** argv) {
-        struct fuse_args args = FUSE_ARGS_INIT(argc, argv);
+    int run_dwarfs(struct fuse_args* args) {
         dwarfs_userdata userdata(std::cerr);
         auto& opts = userdata.opts;
 
-        opts.progname = argv[0];
+        opts.progname = args->argv[0];
         opts.cache_image = 0;
         opts.cache_files = 1;
 
-        fuse_opt_parse(&args, &opts, dwarfs_opts, option_hdl);
+        fuse_opt_parse(args, &opts, dwarfs_opts, option_hdl);
 
 #if FUSE_USE_VERSION >= 30
         struct fuse_cmdline_opts fuse_opts;
 
-        if (fuse_parse_cmdline(&args, &fuse_opts) == -1 || !fuse_opts.mountpoint) {
+        if (fuse_parse_cmdline(args, &fuse_opts) == -1 || !fuse_opts.mountpoint) {
             usage(opts.progname);
         }
+
+        fuse_opts.foreground = true;
 
         if (fuse_opts.foreground) {
             folly::symbolizer::installFatalSignalHandler();
@@ -696,7 +689,7 @@ namespace dwarfs {
         char* mountpoint = nullptr;
         int mt, fg;
 
-        if (fuse_parse_cmdline(&args, &mountpoint, &mt, &fg) == -1 || !mountpoint) {
+        if (fuse_parse_cmdline(args, &mountpoint, &mt, &fg) == -1 || !mountpoint) {
             usage(opts.progname);
         }
 
@@ -707,8 +700,6 @@ namespace dwarfs {
 
         try {
             // TODO: foreground mode, stderr vs. syslog?
-
-            opts.fsimage = std::filesystem::canonical(opts.fsimage).native();
 
             opts.debuglevel = opts.debuglevel_str
                 ? logger::parse_level(opts.debuglevel_str)
@@ -764,14 +755,11 @@ namespace dwarfs {
         }
 
 #if FUSE_USE_VERSION >= 30
-        return run_fuse(args, fuse_opts, userdata);
+        return run_fuse(*args, fuse_opts, userdata);
 #else
-        return run_fuse(args, mountpoint, mt, fg, userdata);
+        return run_fuse(*args, mountpoint, mt, fg, userdata);
 #endif
     }
 
 } // namespace dwarfs
 
-int main(int argc, char** argv) {
-    return dwarfs::safe_main([&] { return dwarfs::run_dwarfs(argc, argv); });
-}

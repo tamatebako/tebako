@@ -4,9 +4,9 @@
 
 namespace dwarfs {
 
-char const* PRJ_GIT_REV = "2a51edb";
+char const* PRJ_GIT_REV = "78fd324";
 char const* PRJ_GIT_DESC = "v0.5.6";
-char const* PRJ_GIT_BRANCH = "main";
+char const* PRJ_GIT_BRANCH = "metanorma/main";
 char const* PRJ_GIT_ID = "v0.5.6";
 
 } // namespace dwarfs

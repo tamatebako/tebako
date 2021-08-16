@@ -24,19 +24,23 @@
 *.out
 *.app
 
-# cMake files
+# CMake files
 CMakeCache.txt
 CMakeFiles
 Makefile
 cmake_install.cmake
 install_manifest.txt
 
-# out directory
+# Build files
 out
+
+# External dependencies
+deps
+
+# Generated files
+src/tebako-fs.cpp
 
 # VS files
 .vs
 
-# Dependencies
-deps
 

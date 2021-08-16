@@ -1,4 +1,4 @@
-= Tebako: a image packager
+= Tebako: an image packager
 
 == Purpose
 

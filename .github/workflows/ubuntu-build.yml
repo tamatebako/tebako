@@ -15,9 +15,6 @@ env:
   BUILD_TYPE: Release
 # The folder for dwarfs and other dependenies
   DEPS: deps
-# dwarfs version and archive checksum 
-  DWARFS_VERSION: 0.5.6
-  DWARFS_CHECKSUM: 4cf477b934567ac1e3d0f0da463dfd37
 
 jobs:
   Ubuntu-build:
@@ -32,7 +29,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{runner.os}}-deps-v4
+        key: ${{ github.workflow }}-${{ hashFiles('CMakeLists.txt') }}-v5
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
@@ -41,15 +38,23 @@ jobs:
         ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
         libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
         libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-        libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
+        libboost-regex-dev libboost-system-dev libboost-thread-dev \
         libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
-
+        
     - name: CMake Configure
       run: | 
         cmake -B ${{github.workspace}}                       \
               -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
-              -DDEPS=${{github.workspace}}/${{env.DEPS}}     
+              -DDEPS=${{github.workspace}}/${{env.DEPS}}      
+              
+    - name: CMake build and install
+      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
 
-    - name: CMake Build
-      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}}
+    - name: Create mount point
+      run: |
+        sudo mkdir -p /home/tebako 
+        sudo chmod a+w /home/tebako
+        sudo chmod g+w /home/tebako
 
+    - name: Run
+      run: sudo /usr/local/bin/tebako
