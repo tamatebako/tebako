@@ -43,7 +43,6 @@ include(FetchContent)
 # Use with caution, please
 option(DEVELOPER_MODE "Developer mode" OFF)
 
-
 if(NOT DEFINED(DEPS))
  set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
 endif()
@@ -162,10 +161,13 @@ add_compile_definitions(FUSE_USE_VERSION=35)
 add_executable(
     tebako 
     "src/tebako.cpp"
-    "src/tebako-0.cpp"
+    "src/tebako-dfs.cpp"
     "src/tebako-fs.cpp"
+    "src/tebako-mfs.cpp"
     "include/tebako-fs.h"
-    "include/tebako-dfs.h")
+    "include/tebako-dfs.h"
+    "include/tebako-mfs.h"
+    )
 
 if(NOT DEVELOPER_MODE)
  add_dependencies(tebako ${DWARFS_PRJ})
@@ -228,7 +230,6 @@ find_library(_LIBRT "librt.a" REQUIRED)
 find_library(_LIBSSL "libssl.a" REQUIRED)
 find_library(_LIBUNWIND "libunwind.a" REQUIRED)
 find_library(_LIBIBERTY "libiberty.a" REQUIRED)
-
 
 # ...................................................................
 #  IMPORTANT !!!

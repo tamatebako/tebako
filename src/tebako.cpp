@@ -55,17 +55,18 @@ void dwarfs_starter(void* args) {
     ret = dwarfs::run_dwarfs(reinterpret_cast<struct fuse_args*>(args));
 }
 
-
 int main(int argc, char** argv) {
     return dwarfs::safe_main([&]
         {
             using namespace std::chrono_literals;
             int wait_cycle = 0;
-            char* _argv[3];
+            char* _argv[2];
+
+            // TODO:
+            // use dealloc provided by fuse lib ?
             _argv[0] = argv[0];
-            _argv[1] = strdup(tebako::fs_file_name);
-            _argv[2] = strdup(tebako::fs_mount_point);
-            struct fuse_args args = FUSE_ARGS_INIT(3, _argv);
+            _argv[1] = strdup(tebako::fs_mount_point);
+            struct fuse_args args = FUSE_ARGS_INIT(2, _argv);
 
             std::thread dfs(dwarfs_starter, &args);
 
@@ -78,13 +79,15 @@ int main(int argc, char** argv) {
                 std::cerr << "Exceeded startup time. Exiting ..." << std::endl;
                 // No attempts to free memory. It is a crash state already
                 // free(_argv[1]);
-                // free(_argv[2]);
                 ::exit(-1);
             }
 
             if (ret == 0) {
-                std::string cmd("sudo ");
-                cmd += tebako::fs_mount_point;
+//                std::string cmd("ls -l ");
+//                cmd += tebako::fs_mount_point;
+//                system(cmd.c_str());
+
+                std::string cmd = tebako::fs_mount_point;
                 cmd += "/test-0.sh";
                 system(cmd.c_str());
                 dwarfs::stop_fuse_session();
@@ -92,10 +95,9 @@ int main(int argc, char** argv) {
 
             }
             else {
-                std::cerr << "DwarFS startup failed. Exiting ..." << std::endl;
+                std::cerr << "dwarFS startup failed. Exiting ..." << std::endl;
             }
             free(_argv[1]);
-            free(_argv[2]);
 
             return (int)ret;
         });
