@@ -162,11 +162,13 @@ add_executable(
     tebako 
     "src/tebako.cpp"
     "src/tebako-dfs.cpp"
+    "src/tebako-dfs-ops.cpp"
     "src/tebako-fs.cpp"
     "src/tebako-mfs.cpp"
     "include/tebako-fs.h"
     "include/tebako-dfs.h"
     "include/tebako-mfs.h"
+    "include/version.h"
     )
 
 if(NOT DEVELOPER_MODE)
