@@ -43,8 +43,19 @@ include(FetchContent)
 # Use with caution, please
 option(DEVELOPER_MODE "Developer mode" OFF)
 
-option(INCBIN_TAG "incbin git tag" "348e36b")
-option(DWARFS_TAG "dwarfs git tag" "78401c3")
+if (NOT DEFINED(INCBIN_TAG))
+ set(INCBIN_TAG "348e36b")
+endif()
+if (NOT DEFINED(DWARFS_TAG))
+ set(DWARFS_TAG "78401c3")
+endif()
+if (NOT DEFINED(RUBY_VER))
+ set (RUBY_VER "2.6.3")
+endif()
+if (NOT DEFINED(RUBY_HASH))
+ set(RUBY_HASH "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c")
+endif()
+string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 
 if(NOT DEFINED(DEPS))
  set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
@@ -59,6 +70,23 @@ set(Boost_USE_STATIC_LIBS   ON)
 set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
+
+# ...................................................................
+# Ruby
+
+set (RUBY_NAME ruby)
+set (RUBY_PRJ _${RUBY_NAME})
+set (RUBY_SOURCE_DIR ${DEPS}/src/${RUBY_PRJ})
+
+ ExternalProject_Add(${RUBY_PRJ}
+   PREFIX ${DEPS}
+   URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
+   URL_HASH SHA1=${RUBY_HASH}
+   CONFIGURE_COMMAND ""
+   BUILD_COMMAND ""
+   INSTALL_COMMAND ""
+ )
+
 
 # ...................................................................
 # incbin
@@ -140,6 +168,7 @@ add_custom_target(_PACKAGED_FILESYSTEM
 if(NOT DEVELOPER_MODE)
  add_dependencies(_PACKAGED_FILESYSTEM ${DWARFS_PRJ})
 endif(NOT DEVELOPER_MODE)
+ add_dependencies(_PACKAGED_FILESYSTEM ${RUBY_PRJ})
 
 configure_file(
    ${CMAKE_CURRENT_SOURCE_DIR}/resources/tebako-fs.cpp.in 

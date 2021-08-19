@@ -18,6 +18,8 @@ env:
 # Dependencies' tags
   INCBIN_TAG: 348e36b
   DWARFS_TAG: 78401c3
+  RUBY_VER:   2.6.3
+  RUBY_HASH:  2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c
 
 
 jobs:
@@ -50,8 +52,10 @@ jobs:
         cmake -B ${{github.workspace}}                       \
               -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
               -DDEPS=${{github.workspace}}/${{env.DEPS}}     \
-              -DINCBIN_TAG:STRING=${{github.workspace}}/${{env.INCBIN_TAG}}  \   
-              -DDWARFS_TAG:STRING=${{github.workspace}}/${{env.DWARFS_TAG}}              
+              -DINCBIN_TAG=${{github.workspace}}/${{env.INCBIN_TAG}}  \   
+              -DDWARFS_TAG=${{github.workspace}}/${{env.DWARFS_TAG}}  \            
+              -DRUBY_VER=${{github.workspace}}/${{env.RUBY_VER}}      \            
+              -DRUBY_HASH=${{github.workspace}}/${{env.RUBY_HASH}}                  
 
     - name: CMake build and install
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
