@@ -49,8 +49,7 @@ jobs:
         
     - name: CMake Configure
       run: | 
-        cmake -B ${{github.workspace}}                       \
-              -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
+        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
               -DDEPS=${{github.workspace}}/${{env.DEPS}}     \    
               -DRUBY_VER=${{env.RUBY_VER}}                  
 
