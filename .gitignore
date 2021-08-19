@@ -39,6 +39,7 @@ deps
 
 # Generated files
 src/tebako-fs.cpp
+resources/fs/ruby
 
 # VS files
 .vs

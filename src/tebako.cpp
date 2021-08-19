@@ -95,6 +95,10 @@ int main(int argc, char** argv) {
                 std::string cmd = tebako::fs_mount_point;
                 cmd += "/test-0.sh";
                 system(cmd.c_str());
+                
+                cmd = std::string(tebako::fs_mount_point) + "/test-1.rb";
+                system(cmd.c_str());
+
                 dwarfs::stop_fuse_session();
                 dfs.join();
 
