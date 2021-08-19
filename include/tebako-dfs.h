@@ -37,7 +37,6 @@
 #include "dwarfs/mmap.h"
 #include "dwarfs/options.h"
 #include "dwarfs/util.h"
-#include "dwarfs/version.h"
 
 namespace dwarfs {
 
@@ -74,4 +73,8 @@ namespace dwarfs {
     void stop_fuse_session(void);
     bool is_fuse_session_ready(void);
 
+}
+
+namespace tebako {
+    void init_fuse_ops(struct fuse_lowlevel_ops& ops, dwarfs::logger::level_type debuglevel);
 }

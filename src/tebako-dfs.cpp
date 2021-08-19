@@ -46,6 +46,7 @@
 #include <fuse/fuse_lowlevel.h>
 #endif
 
+#include "version.h"
 #include "tebako-fs.h"
 #include "tebako-mfs.h"
 #include "tebako-dfs.h"
@@ -71,381 +72,8 @@ namespace dwarfs {
         DWARFS_OPT("no_cache_files", cache_files, 0),
         FUSE_OPT_END };
 
-#define dUSERDATA                                                              \
-  auto userdata = reinterpret_cast<dwarfs_userdata*>(fuse_req_userdata(req))
-
-    template <typename LoggerPolicy>
-    void op_init(void* data, struct fuse_conn_info* /*conn*/) {
-        auto userdata = reinterpret_cast<dwarfs_userdata*>(data);
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__;
-
-        // we must do this *after* the fuse driver has forked into background
-        userdata->fs.set_num_workers(userdata->opts.workers);
-    }
-
-    template <typename LoggerPolicy>
-    void op_lookup(fuse_req_t req, fuse_ino_t parent, const char* name) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__ << "(" << parent << ", " << name << ")";
-
-        int err = ENOENT;
-
-        try {
-            auto entry = userdata->fs.find(parent, name);
-
-            if (entry) {
-                struct ::fuse_entry_param e;
-
-                err = userdata->fs.getattr(*entry, &e.attr);
-
-                if (err == 0) {
-                    e.generation = 1;
-                    e.ino = e.attr.st_ino;
-                    e.attr_timeout = std::numeric_limits<double>::max();
-                    e.entry_timeout = std::numeric_limits<double>::max();
-
-                    fuse_reply_entry(req, &e);
-
-                    return;
-                }
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
-    template <typename LoggerPolicy>
-    void op_getattr(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info*) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__ << "(" << ino << ")";
-
-        int err = ENOENT;
-
-        // TODO: merge with op_lookup
-        try {
-            auto entry = userdata->fs.find(ino);
-
-            if (entry) {
-                struct ::stat stbuf;
-
-                err = userdata->fs.getattr(*entry, &stbuf);
-
-                if (err == 0) {
-                    fuse_reply_attr(req, &stbuf, std::numeric_limits<double>::max());
-
-                    return;
-                }
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
-    template <typename LoggerPolicy>
-    void op_access(fuse_req_t req, fuse_ino_t ino, int mode) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__;
-
-        int err = ENOENT;
-
-        // TODO: merge with op_lookup
-        try {
-            auto entry = userdata->fs.find(ino);
-
-            if (entry) {
-                auto ctx = fuse_req_ctx(req);
-                err = userdata->fs.access(*entry, mode, ctx->uid, ctx->gid);
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
-    template <typename LoggerPolicy>
-    void op_readlink(fuse_req_t req, fuse_ino_t ino) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__;
-
-        int err = ENOENT;
-
-        try {
-            auto entry = userdata->fs.find(ino);
-
-            if (entry) {
-                std::string str;
-
-                err = userdata->fs.readlink(*entry, &str);
-
-                if (err == 0) {
-                    fuse_reply_readlink(req, str.c_str());
-
-                    return;
-                }
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
-    template <typename LoggerPolicy>
-    void op_open(fuse_req_t req, fuse_ino_t ino, struct fuse_file_info* fi) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__;
-
-        int err = ENOENT;
-
-        try {
-            auto entry = userdata->fs.find(ino);
-
-            if (entry) {
-                if (S_ISDIR(entry->mode())) {
-                    err = EISDIR;
-                }
-                else if (fi->flags & (O_APPEND | O_CREAT | O_TRUNC)) {
-                    err = EACCES;
-                }
-                else {
-                    fi->fh = FUSE_ROOT_ID + entry->inode_num();
-                    fi->direct_io = !userdata->opts.cache_files;
-                    fi->keep_cache = userdata->opts.cache_files;
-                    fuse_reply_open(req, fi);
-                    return;
-                }
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
-    template <typename LoggerPolicy>
-    void op_read(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off,
-        struct fuse_file_info* fi) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__;
-
-        int err = ENOENT;
-
-        try {
-            if (fi->fh == ino) {
-                iovec_read_buf buf;
-                ssize_t rv = userdata->fs.readv(ino, buf, size, off);
-
-                // std::cerr << ">>> " << rv << std::endl;
-
-                if (rv >= 0) {
-                    fuse_reply_iov(req, buf.buf.empty() ? nullptr : &buf.buf[0],
-                        buf.buf.size());
-
-                    return;
-                }
-
-                err = -rv;
-            }
-            else {
-                err = EIO;
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
-    template <typename LoggerPolicy>
-    void op_readdir(fuse_req_t req, fuse_ino_t ino, size_t size, off_t off,
-        struct fuse_file_info* /*fi*/) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__;
-
-        int err = ENOENT;
-
-        try {
-            auto dirent = userdata->fs.find(ino);
-
-            if (dirent) {
-                auto dir = userdata->fs.opendir(*dirent);
-
-                if (dir) {
-                    off_t lastoff = userdata->fs.dirsize(*dir);
-                    struct stat stbuf;
-                    std::vector<char> buf(size);
-                    size_t written = 0;
-
-                    while (off < lastoff) {
-                        auto res = userdata->fs.readdir(*dir, off);
-                        assert(res);
-
-                        auto [entry, name_view] = *res;
-                        std::string name(name_view);
-
-                        userdata->fs.getattr(entry, &stbuf);
-
-                        size_t needed =
-                            fuse_add_direntry(req, &buf[written], buf.size() - written,
-                                name.c_str(), &stbuf, off + 1);
-
-                        if (written + needed > size) {
-                            break;
-                        }
-
-                        written += needed;
-                        ++off;
-                    }
-
-                    fuse_reply_buf(req, written > 0 ? &buf[0] : nullptr, written);
-
-                    return;
-                }
-
-                err = ENOTDIR;
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
-    template <typename LoggerPolicy>
-    void op_statfs(fuse_req_t req, fuse_ino_t /*ino*/) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__;
-
-        int err = EIO;
-
-        try {
-            struct ::statvfs buf;
-
-            err = userdata->fs.statvfs(&buf);
-
-            if (err == 0) {
-                fuse_reply_statfs(req, &buf);
-
-                return;
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
-    template <typename LoggerPolicy>
-    void op_getxattr(fuse_req_t req, fuse_ino_t ino, char const* name,
-        size_t size) {
-        dUSERDATA;
-        LOG_PROXY(LoggerPolicy, userdata->lgr);
-
-        LOG_DEBUG << __func__ << "(" << ino << ", " << name << ", " << size << ")";
-
-        static constexpr std::string_view pid_xattr{ "user.dwarfs.driver.pid" };
-        int err = ENODATA;
-
-        try {
-            if (ino == FUSE_ROOT_ID && name == pid_xattr) {
-                auto pidstr = std::to_string(::getpid());
-                if (size > 0) {
-                    fuse_reply_buf(req, pidstr.data(), pidstr.size());
-                }
-                else {
-                    fuse_reply_xattr(req, pidstr.size());
-                }
-                return;
-            }
-        }
-        catch (dwarfs::system_error const& e) {
-            LOG_ERROR << e.what();
-            err = e.get_errno();
-        }
-        catch (std::exception const& e) {
-            LOG_ERROR << e.what();
-            err = EIO;
-        }
-
-        fuse_reply_err(req, err);
-    }
-
     void usage(const char* progname) {
         std::cerr
-            << "Welcome to tebako !!!!\n\n"
-            << "dwarfs (" << PRJ_GIT_ID << ", fuse version " << FUSE_USE_VERSION
-            << ")\n\n"
             << "usage: " << progname << " mountpoint [options]\n\n"
             << "DWARFS options:\n"
             << "    -o cachesize=SIZE      set size of block cache (512M)\n"
@@ -500,20 +128,6 @@ namespace dwarfs {
         return 1;
     }
 
-    template <typename LoggerPolicy>
-    void init_lowlevel_ops(struct fuse_lowlevel_ops& ops) {
-        ops.init = &op_init<LoggerPolicy>;
-        ops.lookup = &op_lookup<LoggerPolicy>;
-        ops.getattr = &op_getattr<LoggerPolicy>;
-        ops.access = &op_access<LoggerPolicy>;
-        ops.readlink = &op_readlink<LoggerPolicy>;
-        ops.open = &op_open<LoggerPolicy>;
-        ops.read = &op_read<LoggerPolicy>;
-        ops.readdir = &op_readdir<LoggerPolicy>;
-        ops.statfs = &op_statfs<LoggerPolicy>;
-        ops.getxattr = &op_getxattr<LoggerPolicy>;
-        // ops.listxattr = &op_listxattr<LoggerPolicy>;
-    }
 
 #if FUSE_USE_VERSION > 30
 
@@ -542,15 +156,7 @@ namespace dwarfs {
         dwarfs_userdata& userdata) {
         struct fuse_lowlevel_ops fsops;
 
-        ::memset(&fsops, 0, sizeof(fsops));
-
-        if (userdata.opts.debuglevel >= logger::DEBUG) {
-            init_lowlevel_ops<debug_logger_policy>(fsops);
-        }
-        else {
-            init_lowlevel_ops<prod_logger_policy>(fsops);
-        }
-
+        tebako::init_fuse_ops(fsops, userdata.opts.debuglevel);
         int err = 1;
 
         if (session =
@@ -593,10 +199,10 @@ namespace dwarfs {
         ::memset(&fsops, 0, sizeof(fsops));
 
         if (userdata.opts.debuglevel >= logger::DEBUG) {
-            init_lowlevel_ops<debug_logger_policy>(fsops);
+            tebako::init_fuse_ops<debug_logger_policy>(fsops);
         }
         else {
-            init_lowlevel_ops<prod_logger_policy>(fsops);
+            tebako::init_fuse_ops<prod_logger_policy>(fsops);
         }
 
         int err = 1;
@@ -653,9 +259,6 @@ namespace dwarfs {
             }
         }
 
-//        userdata.fs = filesystem_v2(
-//            userdata.lgr, std::make_shared<mmap>(opts.fsimage), fsopts, FUSE_ROOT_ID);
-
         userdata.fs = filesystem_v2(
             userdata.lgr, std::make_shared<tebako::mfs>(&tebako::gfsData, tebako::gfsSize), fsopts, FUSE_ROOT_ID);
 
@@ -667,7 +270,7 @@ namespace dwarfs {
         dwarfs_userdata userdata(std::cerr);
         auto& opts = userdata.opts;
 
-        opts.progname = args->argv[0];
+        opts.progname = PRJ_NAME;
         opts.cache_image = 0;
         opts.cache_files = 1;
 
@@ -738,8 +341,9 @@ namespace dwarfs {
 
         LOG_PROXY(debug_logger_policy, userdata.lgr);
 
-        LOG_INFO << "dwarfs (" << PRJ_GIT_ID << ", fuse version " << FUSE_USE_VERSION
-            << ")";
+        LOG_INFO << PRJ_NAME
+            << " version " << PRJ_VERSION_STRING
+            << ", fuse version " << FUSE_USE_VERSION;
 
         try {
             if (userdata.opts.debuglevel >= logger::DEBUG) {
