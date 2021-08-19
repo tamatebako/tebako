@@ -43,6 +43,9 @@ include(FetchContent)
 # Use with caution, please
 option(DEVELOPER_MODE "Developer mode" OFF)
 
+option(INCBIN_TAG "incbin git tag" "348e36b")
+option(DWARFS_TAG "dwarfs git tag" "78401c3")
+
 if(NOT DEFINED(DEPS))
  set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
 endif()
@@ -71,7 +74,7 @@ if(NOT DEVELOPER_MODE)
  ExternalProject_Add(${INCBIN_PRJ}
    PREFIX ${DEPS}
    GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
-   GIT_TAG 348e36b
+   GIT_TAG ${INCBIN_TAG}
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
    INSTALL_COMMAND ""
@@ -109,7 +112,7 @@ if(NOT DEVELOPER_MODE)
  ExternalProject_Add(${DWARFS_PRJ}
     PREFIX ${DEPS}
     GIT_REPOSITORY https://github.com/metanorma/dwarfs.git
-    GIT_TAG 78401c3
+    GIT_TAG ${DWARFS_TAG}
     PATCH_COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.cpp ${DEPS}/src/_dwarfs/src/dwarfs && 
                   cp ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.h ${DEPS}/src/_dwarfs/include/dwarfs   
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DSTATIC_BUILD_DO_NOT_USE:BOOL=ON
