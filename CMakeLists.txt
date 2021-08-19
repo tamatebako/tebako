@@ -166,7 +166,7 @@ add_custom_target(_PACKAGED_FILESYSTEM
 )
 
 if(NOT DEVELOPER_MODE)
- add_dependencies(_PACKAGED_FILESYSTEM ${DWARFS_PRJ})
+ add_dependencies(_PACKAGED_FILESYSTEM ${DWARFS_PRJ} ${INCBIN_PRJ})
 endif(NOT DEVELOPER_MODE)
  add_dependencies(_PACKAGED_FILESYSTEM ${RUBY_PRJ})
 
