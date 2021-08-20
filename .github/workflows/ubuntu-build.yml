@@ -52,7 +52,7 @@ jobs:
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
               -DDWARFS_TAG:STRING=${{env.DWARFS_TAG}}                \
-              -DINCBIN_TAG:STRING=${{env.INCBIN_TAG}}                
+              -DINCBIN_TAG:STRING=${{env.INCBIN_TAG}}                \
               -B ${{github.workspace}}
 
 
