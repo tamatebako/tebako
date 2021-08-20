@@ -49,10 +49,9 @@ jobs:
         
     - name: CMake Configure
       run: | 
-        cmake -B                                                     \
-              -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
+        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              ${{github.workspace}}
+              -B ${{github.workspace}}
 # Adding any of the valuse below causes CMAke failure ???
 #              -DRUBY_VER:STRING=${{env.RUBY_VER}}                   \ 
 #              -DRUBY_HASH:STRING=${{env.RUBY_HASH}}                 \ 
