@@ -54,10 +54,11 @@ jobs:
               -DDWARFS_TAG:STRING=${{env.DWARFS_TAG}}                \
               -DINCBIN_TAG:STRING=${{env.INCBIN_TAG}}                \
               -DRUBY_VER:STRING=${{env.RUBY_VER}}                    \
+              -DRUBY_HASH:STRING=${{env.RUBY_HASH}}                  \
               -B ${{github.workspace}}
 
 #              -DRUBY_VER:STRING=${{env.RUBY_VER}}                    \ 
-#              -DRUBY_HASH:STRING=${{env.RUBY_HASH}}                  \ 
+#               
             
 
     - name: CMake build and install
