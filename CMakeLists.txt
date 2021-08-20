@@ -72,6 +72,7 @@ set (RUBY_SOURCE_DIR ${DEPS}/src/${RUBY_PRJ})
    PREFIX ${DEPS}
    URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
    URL_HASH SHA1=${RUBY_HASH}
+   DOWNLOAD_NO_PROGRESS true
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
    INSTALL_COMMAND ""
