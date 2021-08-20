@@ -19,7 +19,7 @@ env:
   INCBIN_TAG: 348e36b
   DWARFS_TAG: 78401c3
   RUBY_VER:   2.6.3
-  RUBY_HASH:  2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c
+  RUBY_HASH:  "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c"
 
 
 jobs:
