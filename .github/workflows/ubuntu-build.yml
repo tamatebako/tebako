@@ -52,10 +52,13 @@ jobs:
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
               -DDWARFS_TAG:STRING=${{env.DWARFS_TAG}}                \
-              -DINCBIN_TAG:STRING=${{env.INCBIN_TAG}}                \
-              -DRUBY_VER:STRING=${{env.RUBY_VER}}                    \ 
-              -DRUBY_HASH:STRING=${{env.RUBY_HASH}}                  \ 
+              -DINCBIN_TAG:STRING=${{env.INCBIN_TAG}}                
               -B ${{github.workspace}}
+
+
+              
+#              -DRUBY_VER:STRING=${{env.RUBY_VER}}                    \ 
+#              -DRUBY_HASH:STRING=${{env.RUBY_HASH}}                  \ 
 
     - name: CMake build and install
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
