@@ -37,29 +37,19 @@ project(tebako_packager)
 #        bison flex fuse3 pkg-config libsodium-dev
 
 include(ExternalProject)
-include(FetchContent)
 
 # Developer mode removes the burden of nested projects which takes a lot under WSL/VisualStudio/Ninja environment
 # Use with caution, please
 option(DEVELOPER_MODE "Developer mode" OFF)
 
-if (NOT DEFINED(INCBIN_TAG))
- set(INCBIN_TAG "348e36b")
-endif()
-if (NOT DEFINED(DWARFS_TAG))
- set(DWARFS_TAG "78401c3")
-endif()
-if (NOT DEFINED(RUBY_VER))
- set (RUBY_VER "2.6.3")
-endif()
-if (NOT DEFINED(RUBY_HASH))
- set(RUBY_HASH "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c")
-endif()
+set(INCBIN_TAG "348e36b" CACHE STRING "incbin git tag")
+set(DWARFS_TAG "78401c3" CACHE STRING "dwarFS git tag")
+set(RUBY_VER "2.6.3" CACHE STRING "Ruby version")
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
+set(RUBY_HASH "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c" CACHE STRING "Ruby archive hash")
 
-if(NOT DEFINED(DEPS))
- set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
-endif()
+set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
+
 
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)

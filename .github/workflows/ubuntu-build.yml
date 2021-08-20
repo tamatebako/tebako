@@ -49,10 +49,10 @@ jobs:
         
     - name: CMake Configure
       run: | 
-        cmake -B ${{github.workspace}}                       \
-              -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}         \
-              -DDEPS=${{github.workspace}}/${{env.DEPS}}         
-#              -DRUBY_VER=${{env.RUBY_VER}}                  
+        cmake -B ${{github.workspace}}                              \
+              -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                \
+              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}     \    
+              -DRUBY_VER:STRING=${{env.RUBY_VER}}                  
 
 #              -DINCBIN_TAG:STRING=${{env.INCBIN_TAG}}     
 #              -DDWARFS_TAG=${{env.DWARFS_TAG}}  \            
