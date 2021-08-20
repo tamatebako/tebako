@@ -56,7 +56,7 @@ jobs:
               -DRUBY_HASH:STRING=${{env.RUBY_HASH}}                  \ 
               -B ${{github.workspace}}
 
-№              -DRUBY_VER:STRING=${{env.RUBY_VER}}                    \ 
+#              -DRUBY_VER:STRING=${{env.RUBY_VER}}                    \ 
             
 
     - name: CMake build and install
