@@ -47,19 +47,19 @@ jobs:
     - name: Create deps folder
       run: |
         mkdir ${{github.workspace}}/${{env.DEPS}}
-        type "Keys:" >> key.txt
-        type  ${{ env.INCBIN_TAG }} >> key.txt
-        type  ${{ env.DWARFS_TAG }} >> key.txt
-        type  ${{ env.RUBY_HASH }} >> key.txt
-        type  ${{ env.BUNDLER_HASH }} >> key.txt
-        type  ${{ env.GDBM_HASH }} >> key.txt
-        type  ${{ env.LIBFFI_HASH }} >> key.txt
-        type  ${{ env.NCURSES_HASH }} >> key.txt
-        type  ${{ env.OPENSSL_HASH }} >> key.txt
-        type  ${{ env.READLINE_HASH }} >> key.txt
-        type  ${{ env.YAML_HASH }} >> key.txt
-        type  ${{ env.ZLIB_HASH }} >> key.txt
-        type keys.txt
+        echo "Keys:" >> key.txt
+        echo  ${{ env.INCBIN_TAG }} >> key.txt
+        echo  ${{ env.DWARFS_TAG }} >> key.txt
+        echo  ${{ env.RUBY_HASH }} >> key.txt
+        echo  ${{ env.BUNDLER_HASH }} >> key.txt
+        echo  ${{ env.GDBM_HASH }} >> key.txt
+        echo  ${{ env.LIBFFI_HASH }} >> key.txt
+        echo  ${{ env.NCURSES_HASH }} >> key.txt
+        echo  ${{ env.OPENSSL_HASH }} >> key.txt
+        echo  ${{ env.READLINE_HASH }} >> key.txt
+        echo  ${{ env.YAML_HASH }} >> key.txt
+        echo  ${{ env.ZLIB_HASH }} >> key.txt
+        tail  keys.txt
 
     - uses: actions/cache@v2
       with:
