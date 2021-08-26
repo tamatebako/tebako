@@ -59,7 +59,7 @@ jobs:
         echo  ${{ env.READLINE_HASH }} >> key.txt
         echo  ${{ env.YAML_HASH }} >> key.txt
         echo  ${{ env.ZLIB_HASH }} >> key.txt
-        tail  keys.txt
+        tail  key.txt
 
     - uses: actions/cache@v2
       with:
