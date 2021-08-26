@@ -287,7 +287,7 @@ set(__LIBARCHIVE "${DWARFS_BINARY_DIR}/libarchive/lib/libarchive.a")
 if(NOT DEVELOPER_MODE)
  ExternalProject_Add(${DWARFS_PRJ}
     PREFIX ${DEPS}
-    GIT_REPOSITORY https://github.com/metanorma/dwarfs.git
+    GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git
     GIT_TAG ${DWARFS_TAG}
     PATCH_COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.cpp ${DEPS}/src/_dwarfs/src/dwarfs && 
                   cp ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.h ${DEPS}/src/_dwarfs/include/dwarfs   
@@ -430,7 +430,9 @@ target_link_libraries(tebako
 # ...................................................................
 #  Install
 #
-#install(
-#  TARGETS tebako
-#  RUNTIME DESTINATION bin
-# )
+if(NOT DEVELOPER_MODE)
+install(
+  TARGETS tebako
+  RUNTIME DESTINATION bin
+ )
+endif()
