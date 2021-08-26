@@ -18,9 +18,24 @@ env:
 # Dependencies' tags
   INCBIN_TAG: 348e36b
   DWARFS_TAG: 78401c3
-  RUBY_VER:   2.6.3
+  RUBY_VER:   "2.6.3"
   RUBY_HASH:  "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c"
-
+  BUNDLER_VER: "2.2.3"
+  BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
+  GDBM_VER: "1.13"
+  GDBM_HASH: "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253"
+  LIBFFI_VER: "3.2.1"
+  LIBFFI_HASH:"980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483"
+  NCURSES_VER: "6.2"
+  NCURSES_HASH: "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d"
+  OPENSSL_VER: "1.1.0f"
+  OPENSSL_HASH: "12f746f3f2493b2f39da7ecf63d7ee19c6ac9ec6a4fcd8c229da8a522cb12765"
+  READLINE_VER: "7.0"
+  READLINE_HASH:"750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334"
+  YAML_VER: "0.1.7"
+  YAML_HASH: "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729"
+  ZLIB_VER: "1.2.11"
+  ZLIB_HASH: "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1"
 
 jobs:
   Ubuntu-build:
@@ -30,12 +45,26 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Create deps folder
-      run: mkdir ${{github.workspace}}/${{env.DEPS}}
+      run: |
+        mkdir ${{github.workspace}}/${{env.DEPS}}
+        type "Keys:" >> key.txt
+        type  ${{ env.INCBIN_TAG }} >> key.txt
+        type  ${{ env.DWARFS_TAG }} >> key.txt
+        type  ${{ env.RUBY_HASH }} >> key.txt
+        type  ${{ env.BUNDLER_HASH }} >> key.txt
+        type  ${{ env.GDBM_HASH }} >> key.txt
+        type  ${{ env.LIBFFI_HASH }} >> key.txt
+        type  ${{ env.NCURSES_HASH }} >> key.txt
+        type  ${{ env.OPENSSL_HASH }} >> key.txt
+        type  ${{ env.READLINE_HASH }} >> key.txt
+        type  ${{ env.YAML_HASH }} >> key.txt
+        type  ${{ env.ZLIB_HASH }} >> key.txt
+        type keys.txt
 
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{env.INCBIN_TAG}}-${{env.DWARFS_TAG}}-${{env.RUBY_HASH}}-v6
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v7
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
@@ -53,14 +82,8 @@ jobs:
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
               -DDWARFS_TAG:STRING=${{env.DWARFS_TAG}}                \
               -DINCBIN_TAG:STRING=${{env.INCBIN_TAG}}                \
-              -DRUBY_VER:STRING=${{env.RUBY_VER}}                    \
-              -DRUBY_HASH:STRING=${{env.RUBY_HASH}}                  \
               -B ${{github.workspace}}
-
-#              -DRUBY_VER:STRING=${{env.RUBY_VER}}                    \ 
-#               
-            
-
+                                            
     - name: CMake build and install
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
 

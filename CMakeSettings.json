@@ -7,11 +7,11 @@
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
       "cmakeExecutable": "cmake",
-      "cmakeCommandArgs": "-DRUBY_HASH:STRING=\"2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c\" -DDEVELOPER_MODE:BOOL=ON -DRUBY_VER=2.6.3 ",
+      "cmakeCommandArgs": "-DDEVELOPER_MODE:BOOL=ON",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "linux_x64" ],
-      "wslPath": "C:\\Users\\Maxim\\AppData\\Local\\Microsoft\\WindowsApps\\ubuntu2004.exe"
+      "wslPath": "C:\\Users\\maxirmx\\AppData\\Local\\Microsoft\\WindowsApps\\ubuntu2004.exe"
     }
   ]
 }

@@ -42,14 +42,7 @@ include(ExternalProject)
 # Use with caution, please
 option(DEVELOPER_MODE "Developer mode" OFF)
 
-set(INCBIN_TAG "348e36b" CACHE STRING "incbin git tag")
-set(DWARFS_TAG "78401c3" CACHE STRING "dwarFS git tag")
-set(RUBY_VER "2.6.3" CACHE STRING "Ruby version")
-string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
-set(RUBY_HASH "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c" CACHE STRING "Ruby archive hash")
-
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
-
 
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)
@@ -61,22 +54,186 @@ set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
 
+
+
+set(INCBIN_TAG "348e36b" CACHE STRING "incbin git tag")
+set(DWARFS_TAG "78401c3" CACHE STRING "dwarFS git tag")
+
+# ...................................................................
+# DEF_VENDOR_PRJ
+# This function defines version number and archieve hash for
+# vendor code that is required to build Ruby
+# For external project XXX this function will set the following variables:
+# XXX_VER                -- package version
+# XXX_HASH               -- tarball hash
+# Version and hash value come from environment variables (GHA case)
+# If environment variables are not set then default values are used
+# XXX_NAME = xxx  (lowercase)   
+# XXX_PRJ  = _xxx (lowercase)       -- CMake ExternalProject name
+# XXX_SOURCE_DIR = ${DEPS}/src/_xxx -- Source folder for ExternalProject_Add 
+
+
+
+function(DEF_VENDOR_PRJ NAME DEFAULT_VER DEFAULT_HASH)
+  set(VER ${NAME}_VER)
+  if (DEFINED ENV{${VER}})
+    set(${VER} $ENV{${VER}} PARENT_SCOPE)
+  else ()
+    set(${VER} ${DEFAULT_VER} PARENT_SCOPE)
+  endif()
+
+  set(HASH ${NAME}_HASH)
+  if (DEFINED ENV{${HASH})
+    set(${HASH} $ENV{${HASH}} PARENT_SCOPE)
+  else()
+    set(${HASH} ${DEFAULT_HASH} PARENT_SCOPE)
+  endif()
+ 
+  set(R_NAME ${NAME}_NAME)
+  string(TOLOWER ${NAME} TMP)
+  set(${R_NAME} ${TMP} PARENT_SCOPE)
+  set(R_PRJ  ${NAME}_PRJ)
+  set(${R_PRJ} _${TMP} PARENT_SCOPE)
+  set(R_DIR ${NAME}_SOURCE_DIR)
+  set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
+endfunction()
+
+def_vendor_prj(RUBY     "2.6.3" "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c")
+string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
+def_vendor_prj(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1")
+def_vendor_prj(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
+def_vendor_prj(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
+def_vendor_prj(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
+def_vendor_prj(OPENSSL  "1.1.0f" "12f746f3f2493b2f39da7ecf63d7ee19c6ac9ec6a4fcd8c229da8a522cb12765")
+string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
+def_vendor_prj(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
+def_vendor_prj(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
+def_vendor_prj(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
+
+message("Collecting packages:")
+message("ruby     - " ${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
+message("zlib     - " ${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
+message("gdbm     - " ${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
+message("libffi   - " ${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
+message("ncurses  - " ${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
+message("openssl  - " ${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
+message("readline - " ${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
+message("yaml     - " ${YAML_VER}           " at " ${YAML_SOURCE_DIR})
+message("bundler  - " ${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
+
 # ...................................................................
 # Ruby
-
-set (RUBY_NAME ruby)
-set (RUBY_PRJ _${RUBY_NAME})
-set (RUBY_SOURCE_DIR ${DEPS}/src/${RUBY_PRJ})
 
  ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
    URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
    URL_HASH SHA1=${RUBY_HASH}
    DOWNLOAD_NO_PROGRESS true
-   CONFIGURE_COMMAND ""
-   BUILD_COMMAND ""
-   INSTALL_COMMAND ""
+   SOURCE_DIR ${RUBY_SOURCE_DIR}
+   CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure --srcdir=${RUBY_SOURCE_DIR} --prefix=${CMAKE_CURRENT_SOURCE_DIR}/resources/fs-1/ruby
  )
+
+
+#set (R_BUNDLER_NAME bundler)
+#set (R_BUNDLER_PRJ _${R_BUNDLER_NAME})
+#set (R_BUNDLER_SOURCE_DIR ${DEPS}/src/${R_BUNDLER_PRJ})
+
+# ExternalProject_Add(${R_BUNDLER_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://rubygems.org/downloads/bundler-$(BUNDLER_VER).gem
+#   URL_HASH SHA256=${R_BUNDLER_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${R_BUNDLER_SOURCE_DIR}
+#   CONFIGURE_COMMAND ${R_BUNDLER_SOURCE_DIR}/configure --srcdir=${R_BUNDLER_SOURCE_DIR} --prefix=${CMAKE_CURRENT_SOURCE_DIR}/resources/fs-1/ruby
+# )
+
+ ExternalProject_Add(${ZLIB_PRJ}
+   PREFIX ${DEPS}
+   URL https://zlib.net/zlib-${ZLIB_VER}.tar.gz
+   URL_HASH SHA256=${ZLIB_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${ZLIB_SOURCE_DIR}
+   CONFIGURE_COMMAND cd ${ZLIB_SOURCE_DIR} && 
+                     ./configure --static --prefix=${DEPS}
+   BUILD_COMMAND      cd ${ZLIB_SOURCE_DIR} && make 
+   INSTALL_COMMAND    cd ${ZLIB_SOURCE_DIR} && make install
+ )
+
+#  ExternalProject_Add(${R_OPENSSL_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://www.openssl.org/source/old/${OPENSSL_VER_BASE}/openssl-${OPENSSL_VER}.tar.gz
+#   URL_HASH SHA256=${OPENSSL_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${R_OPENSSL_SOURCE_DIR}
+#   CONFIGURE_COMMAND cd ${R_OPENSSL_SOURCE_DIR} && 
+#                     ./Configure ---prefix=${RUBY_SOURCE_DIR}/vendor
+#   BUILD_COMMAND     cd ${R_OPENSSL_SOURCE_DIR} && make 
+#   INSTALL_COMMAND   cd ${R_OPENSSL_SOURCE_DIR} && make install
+# )
+
+  ExternalProject_Add(${GDBM_PRJ}
+   PREFIX ${DEPS}
+   URL https://ftp.gnu.org/pub/gnu/gdbm/gdbm-${GDBM_VER}.tar.gz
+   URL_HASH SHA256=${GDBM_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${GDBM_SOURCE_DIR}
+   CONFIGURE_COMMAND cd ${GDBM_SOURCE_DIR} && 
+                     ./configure --with-pic --enable-libgdbm-compat --disable-shared 
+                                 --enable-static --without-readline --prefix=${DEPS}
+   BUILD_COMMAND     cd ${GDBM_SOURCE_DIR} && make 
+   INSTALL_COMMAND   cd ${GDBM_SOURCE_DIR} && make install
+ )
+
+  ExternalProject_Add(${YAML_PRJ}
+   PREFIX ${DEPS}
+   URL https://pyyaml.org/download/libyaml/yaml-${YAML_VER}.tar.gz
+   URL_HASH SHA256=${YAML_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${YAML_SOURCE_DIR}
+   CONFIGURE_COMMAND cd ${YAML_SOURCE_DIR} && 
+                     ./configure --with-pic --disable-shared --enable-static --prefix=${DEPS}
+   BUILD_COMMAND     cd ${YAML_SOURCE_DIR} && make 
+   INSTALL_COMMAND   cd ${YAML_SOURCE_DIR} && make install
+ )
+
+   ExternalProject_Add(${LIBFFI_PRJ}
+   PREFIX ${DEPS}
+   URL https://gcc.gnu.org/pub/libffi/libffi-${LIBFFI_VER}.tar.gz
+   URL_HASH SHA512=${LIBFFI_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${LIBFFI_SOURCE_DIR}
+   CONFIGURE_COMMAND ${LIBFFI_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
+                                 --srcdir=${LIBFFI_SOURCE_DIR} --prefix=${DEPS}
+   BUILD_COMMAND     make 
+   INSTALL_COMMAND   make install
+ )
+
+   ExternalProject_Add(${NCURSES_PRJ}
+   PREFIX ${DEPS}
+   URL https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VER}.tar.gz
+   URL_HASH SHA256=${NCURSES_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${NCURSES_SOURCE_DIR}
+   CONFIGURE_COMMAND cd ${NCURSES_SOURCE_DIR} && 
+                     ./configure --without-shared --without-cxx-shared --prefix=${DEPS}
+   BUILD_COMMAND     cd ${NCURSES_SOURCE_DIR} && make 
+   INSTALL_COMMAND   cd ${NCURSES_SOURCE_DIR} && make install
+ )
+
+ ExternalProject_Add(${READLINE_PRJ}
+   PREFIX ${DEPS}
+   URL https://ftp.gnu.org/gnu/readline/readline-${READLINE_VER}.tar.gz
+   URL_HASH SHA256=${READLINE_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${READLINE_SOURCE_DIR}
+   CONFIGURE_COMMAND cd ${READLINE_SOURCE_DIR} && 
+                     ./configure --with-pic --disable-shared --enable-static --prefix=${DEPS}
+   BUILD_COMMAND     cd ${READLINE_SOURCE_DIR} && make 
+   INSTALL_COMMAND   cd ${READLINE_SOURCE_DIR} && make install
+ )
+
+
+ add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} ${NCURSES_PRJ} ${READLINE_PRJ})
 
 
 # ...................................................................
@@ -272,8 +429,8 @@ target_link_libraries(tebako
 
 # ...................................................................
 #  Install
-
-install(
-  TARGETS tebako
-  RUNTIME DESTINATION bin
- )
+#
+#install(
+#  TARGETS tebako
+#  RUNTIME DESTINATION bin
+# )
