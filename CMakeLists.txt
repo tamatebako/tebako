@@ -104,7 +104,7 @@ def_vendor_prj(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2d
 def_vendor_prj(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
 def_vendor_prj(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
 def_vendor_prj(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
-def_vendor_prj(OPENSSL  "1.1.0f" "12f746f3f2493b2f39da7ecf63d7ee19c6ac9ec6a4fcd8c229da8a522cb12765")
+def_vendor_prj(OPENSSL  "1.1.0h" "12f746f3f2493b2f39da7ecf63d7ee19c6ac9ec6a4fcd8c229da8a522cb12765")
 string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
 def_vendor_prj(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
 def_vendor_prj(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
