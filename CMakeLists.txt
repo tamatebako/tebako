@@ -104,7 +104,8 @@ def_vendor_prj(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2d
 def_vendor_prj(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
 def_vendor_prj(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
 def_vendor_prj(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
-def_vendor_prj(OPENSSL  "1.1.0h" "12f746f3f2493b2f39da7ecf63d7ee19c6ac9ec6a4fcd8c229da8a522cb12765")
+def_vendor_prj(OPENSSL  "1.1.0h" "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517")
+#def_vendor_prj(OPENSSL  "1.1.0f" "12f746f3f2493b2f39da7ecf63d7ee19c6ac9ec6a4fcd8c229da8a522cb12765")
 string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
 def_vendor_prj(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
 def_vendor_prj(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
@@ -159,24 +160,43 @@ message("bundler  - " ${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR})
    INSTALL_COMMAND    cd ${ZLIB_SOURCE_DIR} && make install
  )
 
-#  ExternalProject_Add(${R_OPENSSL_PRJ}
-#   PREFIX ${DEPS}
-#   URL https://www.openssl.org/source/old/${OPENSSL_VER_BASE}/openssl-${OPENSSL_VER}.tar.gz
-#   URL_HASH SHA256=${OPENSSL_HASH}
-#   DOWNLOAD_NO_PROGRESS true
-#   SOURCE_DIR ${R_OPENSSL_SOURCE_DIR}
-#   CONFIGURE_COMMAND cd ${R_OPENSSL_SOURCE_DIR} && 
-#                     ./Configure ---prefix=${RUBY_SOURCE_DIR}/vendor
-#   BUILD_COMMAND     cd ${R_OPENSSL_SOURCE_DIR} && make 
-#   INSTALL_COMMAND   cd ${R_OPENSSL_SOURCE_DIR} && make install
-# )
+  ExternalProject_Add(${OPENSSL_PRJ}
+   PREFIX ${DEPS}
+   URL https://www.openssl.org/source/old/${OPENSSL_VER_BASE}/openssl-${OPENSSL_VER}.tar.gz
+   URL_HASH SHA256=${OPENSSL_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${OPENSSL_SOURCE_DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND cd ${OPENSSL_SOURCE_DIR} && ./config --prefix=${DEPS}
+   BUILD_COMMAND     cd ${OPENSSL_SOURCE_DIR} && export LD_LIBRARY_PATH="${DEPS}/lib:$LD_LIBRARY_PATH" && make 
+   INSTALL_COMMAND   "" #cd ${OPENSSL_SOURCE_DIR} && make install
+ )
 
-  ExternalProject_Add(${GDBM_PRJ}
+function (add_vendor_prj PRJ URL HASH DIR CFG)
+  ExternalProject_Add(${PRJ}
+   PREFIX ${DEPS}
+   URL    ${URL}
+   URL_HASH SHA256=${HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND cd ${DIR} && ./configure ${CFG}  --prefix=${DEPS}
+   BUILD_COMMAND     cd ${DIR} && make 
+   INSTALL_COMMAND   cd ${DIR} && make install
+ )
+endfunction()
+
+ #add_vendor_prj(${GDBM_PRJ} "https://ftp.gnu.org/pub/gnu/gdbm/gdbm-${GDBM_VER}.tar.gz"
+ #                ${GDBM_HASH} ${GDBM_SOURCE_DIR}
+ #                " --with-pic --enable-libgdbm-compat --disable-shared --enable-static --without-readline")
+
+ ExternalProject_Add(${GDBM_PRJ}
    PREFIX ${DEPS}
    URL https://ftp.gnu.org/pub/gnu/gdbm/gdbm-${GDBM_VER}.tar.gz
    URL_HASH SHA256=${GDBM_HASH}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${GDBM_SOURCE_DIR}
+  UPDATE_COMMAND ""
    CONFIGURE_COMMAND cd ${GDBM_SOURCE_DIR} && 
                      ./configure --with-pic --enable-libgdbm-compat --disable-shared 
                                  --enable-static --without-readline --prefix=${DEPS}
@@ -190,6 +210,7 @@ message("bundler  - " ${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR})
    URL_HASH SHA256=${YAML_HASH}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${YAML_SOURCE_DIR}
+   UPDATE_COMMAND ""
    CONFIGURE_COMMAND cd ${YAML_SOURCE_DIR} && 
                      ./configure --with-pic --disable-shared --enable-static --prefix=${DEPS}
    BUILD_COMMAND     cd ${YAML_SOURCE_DIR} && make 
@@ -202,6 +223,7 @@ message("bundler  - " ${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR})
    URL_HASH SHA512=${LIBFFI_HASH}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${LIBFFI_SOURCE_DIR}
+   UPDATE_COMMAND ""
    CONFIGURE_COMMAND ${LIBFFI_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
                                  --srcdir=${LIBFFI_SOURCE_DIR} --prefix=${DEPS}
    BUILD_COMMAND     make 
@@ -214,6 +236,7 @@ message("bundler  - " ${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR})
    URL_HASH SHA256=${NCURSES_HASH}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${NCURSES_SOURCE_DIR}
+   UPDATE_COMMAND ""
    CONFIGURE_COMMAND cd ${NCURSES_SOURCE_DIR} && 
                      ./configure --without-shared --without-cxx-shared --prefix=${DEPS}
    BUILD_COMMAND     cd ${NCURSES_SOURCE_DIR} && make 
@@ -226,6 +249,7 @@ message("bundler  - " ${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR})
    URL_HASH SHA256=${READLINE_HASH}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${READLINE_SOURCE_DIR}
+   UPDATE_COMMAND ""
    CONFIGURE_COMMAND cd ${READLINE_SOURCE_DIR} && 
                      ./configure --with-pic --disable-shared --enable-static --prefix=${DEPS}
    BUILD_COMMAND     cd ${READLINE_SOURCE_DIR} && make 
@@ -233,7 +257,8 @@ message("bundler  - " ${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR})
  )
 
 
- add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} ${NCURSES_PRJ} ${READLINE_PRJ})
+ add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
+                              ${NCURSES_PRJ} ${READLINE_PRJ} ${OPENSSL_PRJ})
 
 
 # ...................................................................

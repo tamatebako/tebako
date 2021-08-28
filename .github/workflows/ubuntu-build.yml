@@ -15,9 +15,10 @@ env:
   BUILD_TYPE: Release
 # The folder for dwarfs and other dependenies
   DEPS: deps
-# Dependencies' tags
+# GitHub dependencies' 
   INCBIN_TAG: 348e36b
   DWARFS_TAG: 78401c3
+# Tarball dependencies
   RUBY_VER:   "2.6.3"
   RUBY_HASH:  "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c"
   BUNDLER_VER: "2.2.3"
@@ -28,8 +29,10 @@ env:
   LIBFFI_HASH: "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483"
   NCURSES_VER: "6.2"
   NCURSES_HASH: "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d"
-  OPENSSL_VER: "1.1.0f"
-  OPENSSL_HASH: "12f746f3f2493b2f39da7ecf63d7ee19c6ac9ec6a4fcd8c229da8a522cb12765"
+# OpenSSL upgraded from 1.0.0f to 1.0.0h because 1.0.0f requires Perl version less then 3.20
+# [ <"glob" is not exported by the File::Glob module> issue ]  
+  OPENSSL_VER: "1.1.0h"
+  OPENSSL_HASH: "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517"
   READLINE_VER: "7.0"
   READLINE_HASH: "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334"
   YAML_VER: "0.1.7"
@@ -44,7 +47,7 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Create deps folder
+    - name: Create deps folder and cache key
       run: |
         mkdir ${{github.workspace}}/${{env.DEPS}}
         echo "Keys:" >> key.txt
@@ -59,7 +62,6 @@ jobs:
         echo  ${{ env.READLINE_HASH }} >> key.txt
         echo  ${{ env.YAML_HASH }} >> key.txt
         echo  ${{ env.ZLIB_HASH }} >> key.txt
-        tail  key.txt
 
     - uses: actions/cache@v2
       with:
