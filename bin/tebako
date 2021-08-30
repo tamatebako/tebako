@@ -1,0 +1,203 @@
+#! /bin/bash
+# This file is a part of tebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+
+run_help() {
+echo "Usage: "
+echo "  tebako setup [-p |--prefix=<path>]"
+echo "         Tebako prefix defaults to current directory"
+echo "  tebako press [-p |--prefix=<path>] -r |--root=<path> -e |--entry-point=<path> [-m |--mount-point=<path>] [-o |--output=<file name>]"
+echo "         Tebako prefix defaults to current directory"
+echo "         Mount point defaults to '/home/tebako'"
+echo "         Output file defaults to 'tebako'"
+}
+
+# More safety, by turning some bugs into errors.
+# Without `errexit` you don’t need ! and can replace
+# PIPESTATUS with a simple $?, but I don’t do that.
+set -o errexit -o pipefail -o noclobber -o nounset
+
+# -allow a command to fail with !’s side effect on errexit
+# -use return value from ${PIPESTATUS[0]}, because ! hosed $?
+! getopt --test > /dev/null 
+if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
+    echo '`getopt --test` failed in this environment.'
+    exit 1
+fi
+
+OPTIONS=hp:c:r:e:m:o:
+LONGOPTS=help,prefix:,config:,root:,entry-point:,mount-point:,output:
+
+# -regarding ! and PIPESTATUS see above
+# -temporarily store output to be able to check for errors
+# -activate quoting/enhanced mode (e.g. by writing out “--options”)
+# -pass arguments only via   -- "$@"   to separate them correctly
+! PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$0" -- "$@")
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    # e.g. return value is 1
+    #  then getopt has complained about wrong arguments to stdout
+    exit 2
+fi
+# read getopt’s output this way to handle the quoting right:
+eval set -- "$PARSED"
+
+h=n prefix=- config=- root=- mountPoint=- entryPoint=- output=-
+# now enjoy the options in order and nicely split until we see --
+while true; do
+    case "$1" in
+        -p|--prefix)
+            prefix="$2"
+            shift
+            ;;
+        -c|--config)
+            config="$2"
+            shift
+            ;;
+        -r|--root)
+            root="$2"
+            shift 2
+            ;;
+        -e|--entry-point)
+            entryPoint="$2"
+            shift 2
+            ;;
+        -m|--mount-point)
+            mountPoint="$2"
+            shift 2
+            ;;
+        -o|--output)
+            output="$2"
+            shift 2
+            ;;
+        -h|--help)
+            run_help
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        *)
+            echo "Programming error"
+            exit 3
+            ;;
+    esac
+done
+
+# handle non-option arguments
+if [ $# -ne 1 ]; then
+    echo "Missing command"
+    run_help    
+    exit 4
+fi
+
+cmk=`which cmake`
+
+if [ $? -ne 0 ]; then
+  echo "Failed to find cmake"
+else
+  echo "Using cmake at $cmk"
+  cmake --version
+fi
+
+if [ "$prefix" == "-" ]; then
+  prefix="$( pwd )"
+fi
+
+case "$1" in
+	setup)
+        if [ "$config" == "-" ]; then
+          echo "Setting up tebako at $prefix with default configuration"  
+		else
+          echo "Setting up tebako at $prefix with custom configuration from $config"
+        fi 
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DDEPS:STRING=$prefix/deps \
+              -DSETUP_MODE:BOOLEAN=ON    \
+              -G "Unix Makefiles"        \
+              -S $prefix                 \
+              -B $prefix/output	 && rc=$? || rc=$?
+        if [ $rc -ne 0 ]; then
+          echo "'tebako setup' configure step failed" 
+          exit 101 
+        fi
+        cmake --build $prefix/output --target setup && rc=$? || rc=$?	     
+        if [ $rc -ne 0 ]; then
+          echo "'tebako setup' build step failed" 
+          exit 102  
+        fi
+        ;;
+	press)
+        if [ "$root" == "-" ]; then
+          echo "Running tebako press requires project root"
+          run_help 
+          exit 5 
+		fi
+        if [ "$entryPoint" == "-" ]; then
+          echo "Running tebako press requires entry point"
+          run_help 
+          exit 6 
+		fi
+        if [ "$mountPoint" == "-" ]; then
+          mountPoint="/home/tebako"
+		fi
+        if [ "$output" == "-" ]; then
+          output="tebako"
+		fi
+
+		echo "Running tebako press at $prefix"
+        echo "   Project root:            $root"
+        echo "   Application entry point: $entryPoint"
+        echo "   Mount point:             $mountPoint"
+        echo "   Output file:             $output"
+		cmake -DCMAKE_BUILD_TYPE=Release      \
+              -DDEPS:STRING=$prefix/deps      \
+              -DROOT:STRING=$root             \
+              -DENTRANCE:STRING=$entryPoint   \
+              -DMOUNTPOINT:STRING=$mountPoint \
+              -DOUTPUT:STRING=$output         \
+              -DSETUP_MODE:BOOLEAN=OFF        \
+              -G "Unix Makefiles"             \
+              -S $prefix                      \
+              -B $prefix/output && rc=$? || rc=$?
+        if [ $rc -ne 0 ]; then
+          echo "'tebako press' configure step failed" 
+          exit 103  
+        fi
+
+        cmake --build $prefix/output --target $output && rc=$? || rc=$?
+        if [ $rc -ne 0 ]; then
+          echo "'tebako press' build step failed" 
+          exit 104  
+        fi
+        ;;
+	*)
+		echo "Unknown command '$1'"
+		run_help
+		exit 5
+		;;
+esac
+
+exit 0;
+

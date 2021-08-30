@@ -33,15 +33,19 @@ install_manifest.txt
 
 # Build files
 out
+output
 
 # External dependencies
 deps
 
 # Generated files
 src/tebako-fs.cpp
-resources/fs/ruby
+include/version.h
 
 # VS files
 .vs
+
+#
+tests/shunit2
 
 

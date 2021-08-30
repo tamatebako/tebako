@@ -1,5 +1,11 @@
+tebako text eol=lf
 *.giattributes text eol=lf
 *.c text eol=lf
 *.cpp text eol=lf
 *.h text eol=lf
 *.sh text eol=lf
+*.rb text eol=lf
+*.gemspec text eol=lf
+Gemspec text eol=lf
+Rakefile text eol=lf
+rails text eof=lf
