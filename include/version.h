@@ -24,37 +24,17 @@
  * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
- * 
+ *
  */
+
 
 #pragma once
 
-#include <cstddef>
-#include <string>
+#define PRJ_VERSION_MAJOR 0
+#define PRJ_VERSION_MINOR 1
+#define PRJ_VERSION_PATCH 0
 
-#include "dwarfs/mmif.h"
+#define PRJ_VERSION_STRING "0.1.0"
 
-
-namespace tebako {
-
-class mfs : public dwarfs::mmif {
- public:
-  mfs(const void* addr, size_t size);
-  ~mfs() = default;
-
-  void const* addr() const override;
-  size_t size() const override;
-
-  boost::system::error_code lock(off_t offset, size_t size) override;
-  boost::system::error_code release(off_t offset, size_t size) override;
-  boost::system::error_code release_until(off_t offset) override;
-
- private:
-  size_t size_;
-  const void* addr_;
-  off_t const page_size_;
-};
-
-
-} // namespace tebako
+#define PRJ_NAME          "tebako"
 

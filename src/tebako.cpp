@@ -40,6 +40,7 @@
 #include <fuse/fuse_lowlevel.h>
 #endif
 
+#include "version.h"
 #include "tebako-fs.h"
 #include "tebako-dfs.h"
 
@@ -58,6 +59,10 @@ void dwarfs_starter(void* args) {
 int main(int argc, char** argv) {
     return dwarfs::safe_main([&]
         {
+
+            std::cerr << "Starting " << PRJ_NAME << " version " << PRJ_VERSION_STRING << "..." << std::endl;
+
+
             using namespace std::chrono_literals;
             int wait_cycle = 0;
             char* _argv[2];
@@ -90,6 +95,10 @@ int main(int argc, char** argv) {
                 std::string cmd = tebako::fs_mount_point;
                 cmd += "/test-0.sh";
                 system(cmd.c_str());
+                
+                cmd = std::string(tebako::fs_mount_point) + "/test-1.rb";
+                system(cmd.c_str());
+
                 dwarfs::stop_fuse_session();
                 dfs.join();
 

@@ -31,21 +31,19 @@ project(tebako_packager)
 #        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
 #        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
 #        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-#        libboost-python-dev libboost-regex-dev libboost-system-dev libboost-thread-dev \
+#        libboost-regex-dev libboost-system-dev libboost-thread-dev \
 #        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
 #    ++  Already installed at GHA but may require local installation: 
 #        bison flex fuse3 pkg-config libsodium-dev
 
 include(ExternalProject)
-include(FetchContent)
 
 # Developer mode removes the burden of nested projects which takes a lot under WSL/VisualStudio/Ninja environment
 # Use with caution, please
 option(DEVELOPER_MODE "Developer mode" OFF)
+option(RUBY_DEBUG_BUILD "Ruby debug build" OFF)
 
-if(NOT DEFINED(DEPS))
- set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps)
-endif()
+set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
 
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)
@@ -58,37 +56,272 @@ set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
 
 # ...................................................................
+# DEF_EXT_PRJ_T
+# This function defines version number and archieve hash for
+# external project that is build from tarball
+# For external project XXX this function will set the following variables:
+# XXX_VER                -- package version
+# XXX_HASH               -- tarball hash
+# Version and hash value come from environment variables (GHA case)
+# If environment variables are not set then default values are used
+# XXX_NAME = xxx  (lowercase)   
+# XXX_PRJ  = _xxx (lowercase)       -- CMake ExternalProject name
+# XXX_SOURCE_DIR = ${DEPS}/src/_xxx -- Source folder for ExternalProject_Add 
+
+function(DEF_EXT_PRJ_T NAME DEFAULT_VER DEFAULT_HASH)
+  set(VER ${NAME}_VER)
+  if (DEFINED ENV{${VER}})
+    set(${VER} $ENV{${VER}} PARENT_SCOPE)
+  else ()
+    set(${VER} ${DEFAULT_VER} PARENT_SCOPE)
+  endif()
+
+  set(HASH ${NAME}_HASH)
+  if (DEFINED ENV{${HASH})
+    set(${HASH} $ENV{${HASH}} PARENT_SCOPE)
+  else()
+    set(${HASH} ${DEFAULT_HASH} PARENT_SCOPE)
+  endif()
+ 
+  set(R_NAME ${NAME}_NAME)
+  string(TOLOWER ${NAME} TMP)
+  set(${R_NAME} ${TMP} PARENT_SCOPE)
+  set(R_PRJ  ${NAME}_PRJ)
+  set(${R_PRJ} _${TMP} PARENT_SCOPE)
+  set(R_DIR ${NAME}_SOURCE_DIR)
+  set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
+endfunction()
+
+# ...................................................................
+# DEF_EXT_PRJ_G
+# This function defines git tag for external project that is build from git
+# For external project XXX this function will set the following variables:
+# XXX_TAG                -- git tag
+# Version and tag come from environment variables (GHA case)
+# If environment variables are not set then default values are used
+# XXX_NAME = xxx  (lowercase)   
+# XXX_PRJ  = _xxx (lowercase)       -- CMake ExternalProject name
+# XXX_SOURCE_DIR = ${DEPS}/src/_xxx -- Source folder for ExternalProject_Add 
+
+function(DEF_EXT_PRJ_G NAME DEFAULT_TAG)
+  set(TAG ${NAME}_TAG)
+  if (DEFINED ENV{${TAG})
+    set(${TAG} $ENV{${TAG}} PARENT_SCOPE)
+  else()
+    set(${TAG} ${DEFAULT_TAG} PARENT_SCOPE)
+  endif()
+ 
+  set(R_NAME ${NAME}_NAME)
+  string(TOLOWER ${NAME} TMP)
+  set(${R_NAME} ${TMP} PARENT_SCOPE)
+  set(R_PRJ  ${NAME}_PRJ)
+  set(${R_PRJ} _${TMP} PARENT_SCOPE)
+  set(R_DIR ${NAME}_SOURCE_DIR)
+  set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
+endfunction()
+
+# ...................................................................
+# External projects
+
+def_ext_prj_t(RUBY     "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
+string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
+def_ext_prj_t(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1")
+def_ext_prj_t(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
+def_ext_prj_t(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
+def_ext_prj_t(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
+def_ext_prj_t(OPENSSL  "1.1.0h" "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517")
+string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
+def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
+def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
+def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
+def_ext_prj_g(DWARFS "78401c3")
+set (DWARFS_BINARY_DIR ${DEPS}/src/${DWARFS_PRJ}-build/)
+def_ext_prj_g(INCBIN "348e36b")
+
+
+message("Collecting packages:")
+message("ruby     - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
+message("zlib     - " v${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
+message("gdbm     - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
+message("libffi   - " v${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
+message("ncurses  - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
+message("openssl  - " v${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
+message("readline - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
+message("yaml     - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
+message("bundler  - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
+message("incbin   - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR}) 
+message("dwarfs   - " @${DWARFS_TAG}         " at " ${DWARFS_SOURCE_DIR}) 
+
+# ...................................................................
+# Filesystem locations
+
+set(DATA_SRC_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources/fs)
+set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
+set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+set(FS_MOUNT_POINT "/home/tebako")
+
+# ...................................................................
+# Ruby dependencies
+
+ExternalProject_Add(${ZLIB_PRJ}
+   PREFIX ${DEPS}
+   URL https://zlib.net/zlib-${ZLIB_VER}.tar.gz
+   URL_HASH SHA256=${ZLIB_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${ZLIB_SOURCE_DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND cd ${ZLIB_SOURCE_DIR} && 
+                     ./configure --static --prefix=${DEPS}
+   BUILD_COMMAND      cd ${ZLIB_SOURCE_DIR} && make 
+   INSTALL_COMMAND    cd ${ZLIB_SOURCE_DIR} && make install
+)
+
+ExternalProject_Add(${OPENSSL_PRJ}
+   PREFIX ${DEPS}
+   URL https://www.openssl.org/source/old/${OPENSSL_VER_BASE}/openssl-${OPENSSL_VER}.tar.gz
+   URL_HASH SHA256=${OPENSSL_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${OPENSSL_SOURCE_DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND cd ${OPENSSL_SOURCE_DIR} && ./config no-shared --prefix=${DEPS}
+   BUILD_COMMAND     cd ${OPENSSL_SOURCE_DIR} && export LD_LIBRARY_PATH="${DEPS}/lib:$LD_LIBRARY_PATH" && make 
+   INSTALL_COMMAND   cd ${OPENSSL_SOURCE_DIR} && make install
+)
+
+ExternalProject_Add(${GDBM_PRJ}
+   PREFIX ${DEPS}
+   URL https://ftp.gnu.org/pub/gnu/gdbm/gdbm-${GDBM_VER}.tar.gz
+   URL_HASH SHA256=${GDBM_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${GDBM_SOURCE_DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND cd ${GDBM_SOURCE_DIR} && 
+                     ./configure --with-pic --enable-libgdbm-compat --disable-shared 
+                                 --enable-static --without-readline --prefix=${DEPS}
+   BUILD_COMMAND     cd ${GDBM_SOURCE_DIR} && make 
+   INSTALL_COMMAND   cd ${GDBM_SOURCE_DIR} && make install
+)
+
+ExternalProject_Add(${YAML_PRJ}
+   PREFIX ${DEPS}
+   URL https://pyyaml.org/download/libyaml/yaml-${YAML_VER}.tar.gz
+   URL_HASH SHA256=${YAML_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${YAML_SOURCE_DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND ${YAML_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
+                     --prefix=${DEPS} --srcdir=${YAML_SOURCE_DIR}
+   BUILD_COMMAND     make 
+   INSTALL_COMMAND   make install
+)
+
+ExternalProject_Add(${LIBFFI_PRJ}
+   PREFIX ${DEPS}
+   URL https://gcc.gnu.org/pub/libffi/libffi-${LIBFFI_VER}.tar.gz
+   URL_HASH SHA512=${LIBFFI_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${LIBFFI_SOURCE_DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND ${LIBFFI_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
+                                 --srcdir=${LIBFFI_SOURCE_DIR} --prefix=${DEPS}
+   BUILD_COMMAND     make 
+   INSTALL_COMMAND   make install
+)
+
+ExternalProject_Add(${NCURSES_PRJ}
+   PREFIX ${DEPS}
+   URL https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VER}.tar.gz
+   URL_HASH SHA256=${NCURSES_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${NCURSES_SOURCE_DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND ${NCURSES_SOURCE_DIR}/configure --without-shared --without-cxx-shared 
+                     --prefix=${DEPS} --srcdir=${NCURSES_SOURCE_DIR}
+   BUILD_COMMAND     make 
+   INSTALL_COMMAND   make install
+)
+
+ExternalProject_Add(${READLINE_PRJ}
+   PREFIX ${DEPS}
+   URL https://ftp.gnu.org/gnu/readline/readline-${READLINE_VER}.tar.gz
+   URL_HASH SHA256=${READLINE_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${READLINE_SOURCE_DIR}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND ${READLINE_SOURCE_DIR}/configure --disable-shared --enable-static 
+                     --srcdir=${READLINE_SOURCE_DIR} --prefix=${DEPS} cflags=-fPIC
+   BUILD_COMMAND     make 
+   INSTALL_COMMAND   make install
+)
+
+#  ExternalProject_Add(${BUNDLER_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://rubygems.org/downloads/bundler-${BUNDLER_VER}.gem
+#   URL_HASH SHA256=${BUNDLER_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${BUNDLER_SOURCE_DIR}
+#   UPDATE_COMMAND ""
+#   CONFIGURE_COMMAND ${BUNDLER_SOURCE_DIR}/configure 
+#                     --srcdir=${BUNDLER_SOURCE_DIR} 
+#                     --prefix=${DEPS}
+# )
+
+# ...................................................................
+# Ruby
+
+set(RID ${DEPS}/include)
+set(RLD ${DEPS}/lib)
+if(RUBY_DEBUG_BUILD)
+  set(RUBY_C_FLAGS_1 "-fPIC -g -O0 -pipe")
+else()
+  set(RUBY_C_FLAGS_1 "-fPIC -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections -pipe")
+ # set(RUBY_C_FLAGS_1 "-fPIC -O0 -g -pipe")
+endif()
+set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} -I${RID}/${OPENSSL_NAME} \
+                  -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
+string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
+set(RUBY_L_FLAGS "-L${RLD}")
+
+ExternalProject_Add(${RUBY_PRJ}
+   PREFIX ${DEPS}
+   URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
+   URL_HASH SHA256=${RUBY_HASH}
+   DOWNLOAD_NO_PROGRESS true
+   SOURCE_DIR ${RUBY_SOURCE_DIR}
+   CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure 
+                     --enable-bundled-libyaml 
+                     --without-gmp 
+                     --disable-dtrace 
+                     --enable-debug-env 
+                     --disable-install-doc
+                     --with-static-linked-ext
+                     --srcdir=${RUBY_SOURCE_DIR} 
+                     --prefix=${CMAKE_CURRENT_SOURCE_DIR}/resources/fs/ruby
+                     cflags=${RUBY_C_FLAGS} 
+                     LDFLAGS=${RUBY_L_FLAGS}
+)
+ 
+add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
+                             ${NCURSES_PRJ} ${READLINE_PRJ} ${OPENSSL_PRJ})
+
+# ...................................................................
 # incbin
 # ExternalProject_Add is used for incbin project since we do not need 
 # anything at configure step. We want to fetch some files before the 
 # build, that's it.  
 
-set (INCBIN_NAME incbin)
-set (INCBIN_PRJ _${INCBIN_NAME})
-set (INCBIN_SOURCE_DIR ${DEPS}/src/${INCBIN_PRJ})
-
-if(NOT DEVELOPER_MODE)
- ExternalProject_Add(${INCBIN_PRJ}
+ExternalProject_Add(${INCBIN_PRJ}
    PREFIX ${DEPS}
    GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
-   GIT_TAG 348e36b
+   GIT_TAG ${INCBIN_TAG}
+   UPDATE_COMMAND ""
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
    INSTALL_COMMAND ""
- )
-endif(NOT DEVELOPER_MODE)
+)
 
 # ...................................................................
 # DwarFS
-# ExternakProject_Add is used for incbin project since we do not need 
-# anything at configure step. We want to fetch some files before the 
-# build. that;s it.
-
-
-set (DWARFS_NAME dwarfs)
-set (DWARFS_PRJ _${DWARFS_NAME})
-set (DWARFS_SOURCE_DIR ${DEPS}/src/${DWARFS_PRJ})
-set (DWARFS_BINARY_DIR ${DEPS}/src/${DWARFS_PRJ}-build/)
 
 # ...................................................................
 # The libraries that are build by DwarFS project
@@ -108,10 +341,11 @@ set(__LIBARCHIVE "${DWARFS_BINARY_DIR}/libarchive/lib/libarchive.a")
 if(NOT DEVELOPER_MODE)
  ExternalProject_Add(${DWARFS_PRJ}
     PREFIX ${DEPS}
-    GIT_REPOSITORY https://github.com/metanorma/dwarfs.git
-    GIT_TAG 78401c3
+    GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git
+    GIT_TAG ${DWARFS_TAG}
     PATCH_COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.cpp ${DEPS}/src/_dwarfs/src/dwarfs && 
                   cp ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.h ${DEPS}/src/_dwarfs/include/dwarfs   
+    UPDATE_COMMAND ""
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DSTATIC_BUILD_DO_NOT_USE:BOOL=ON
     SOURCE_DIR ${DWARFS_SOURCE_DIR}
     BINARY_DIR ${DWARFS_BINARY_DIR}
@@ -124,19 +358,16 @@ endif(NOT DEVELOPER_MODE)
 # Packaged filesystem
 # TODO: the chain of dependencies for fs is not correct and requires rethinking
 
-set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
-set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
-set(FS_MOUNT_POINT "/home/tebako")
-
 add_custom_target(_PACKAGED_FILESYSTEM 
    COMMAND mkdir -p ${DATA_BIN_DIR}
-   COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${CMAKE_CURRENT_SOURCE_DIR}/resources/fs-0
+   COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${CMAKE_CURRENT_SOURCE_DIR}/resources/fs
    BYPRODUCTS ${DATA_BIN_FILE}
 )
 
 if(NOT DEVELOPER_MODE)
  add_dependencies(_PACKAGED_FILESYSTEM ${DWARFS_PRJ})
 endif(NOT DEVELOPER_MODE)
+ add_dependencies(_PACKAGED_FILESYSTEM ${RUBY_PRJ})
 
 configure_file(
    ${CMAKE_CURRENT_SOURCE_DIR}/resources/tebako-fs.cpp.in 
@@ -162,18 +393,20 @@ add_executable(
     tebako 
     "src/tebako.cpp"
     "src/tebako-dfs.cpp"
+    "src/tebako-dfs-ops.cpp"
     "src/tebako-fs.cpp"
     "src/tebako-mfs.cpp"
     "include/tebako-fs.h"
     "include/tebako-dfs.h"
     "include/tebako-mfs.h"
+    "include/version.h"
     )
 
 if(NOT DEVELOPER_MODE)
  add_dependencies(tebako ${DWARFS_PRJ})
 endif(NOT DEVELOPER_MODE)
 
-add_dependencies(tebako _PACKAGED_FILESYSTEM)
+add_dependencies(tebako _PACKAGED_FILESYSTEM  ${INCBIN_PRJ})
 set_property(TARGET tebako PROPERTY CXX_STANDARD 17)
 set_property(TARGET tebako PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET tebako PROPERTY CXX_EXTENSIONS OFF)
@@ -197,7 +430,6 @@ add_dwarfs_library(_LIBT_LIGHT ${DWARFS_PRJ})
 add_dwarfs_library(_LIBXXHASH ${DWARFS_PRJ})
 add_dwarfs_library(_LIBZSTD ${DWARFS_PRJ})
 add_dwarfs_library(_LIBARCHIVE ${DWARFS_PRJ})
-
 
 # ...................................................................
 # System libraries
@@ -247,8 +479,10 @@ target_link_libraries(tebako
 
 # ...................................................................
 #  Install
-
+#
+if(NOT DEVELOPER_MODE)
 install(
   TARGETS tebako
   RUNTIME DESTINATION bin
  )
+endif()
