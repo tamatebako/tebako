@@ -19,8 +19,8 @@ env:
   INCBIN_TAG: 348e36b
   DWARFS_TAG: 78401c3
 # Tarball dependencies
-  RUBY_VER:   "2.6.3"
-  RUBY_HASH:  "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c"
+  RUBY_VER:   "2.7.4"
+  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
   BUNDLER_VER: "2.2.3"
   BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
   GDBM_VER: "1.13"
@@ -50,7 +50,7 @@ jobs:
     - name: Create deps folder and cache key
       run: |
         mkdir ${{github.workspace}}/${{env.DEPS}}
-        echo "Keys:" >> key.txt
+        echo "Keys" > key.txt
         echo  ${{ env.INCBIN_TAG }} >> key.txt
         echo  ${{ env.DWARFS_TAG }} >> key.txt
         echo  ${{ env.RUBY_HASH }} >> key.txt
@@ -66,7 +66,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v8
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v9
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 

@@ -43,7 +43,6 @@ include(ExternalProject)
 option(DEVELOPER_MODE "Developer mode" OFF)
 option(RUBY_DEBUG_BUILD "Ruby debug build" OFF)
 
-
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
 
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
@@ -56,15 +55,10 @@ set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
 
-
-
-set(INCBIN_TAG "348e36b" CACHE STRING "incbin git tag")
-set(DWARFS_TAG "78401c3" CACHE STRING "dwarFS git tag")
-
 # ...................................................................
 # DEF_EXT_PRJ_T
 # This function defines version number and archieve hash for
-# extrenal project that is build from tarball
+# external project that is build from tarball
 # For external project XXX this function will set the following variables:
 # XXX_VER                -- package version
 # XXX_HASH               -- tarball hash
@@ -98,8 +92,38 @@ function(DEF_EXT_PRJ_T NAME DEFAULT_VER DEFAULT_HASH)
   set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
 endfunction()
 
+# ...................................................................
+# DEF_EXT_PRJ_G
+# This function defines git tag for external project that is build from git
+# For external project XXX this function will set the following variables:
+# XXX_TAG                -- git tag
+# Version and tag come from environment variables (GHA case)
+# If environment variables are not set then default values are used
+# XXX_NAME = xxx  (lowercase)   
+# XXX_PRJ  = _xxx (lowercase)       -- CMake ExternalProject name
+# XXX_SOURCE_DIR = ${DEPS}/src/_xxx -- Source folder for ExternalProject_Add 
 
-def_ext_prj_t(RUBY     "2.6.3" "2347ed6ca5490a104ebd5684d2b9b5eefa6cd33c")
+function(DEF_EXT_PRJ_G NAME DEFAULT_TAG)
+  set(TAG ${NAME}_TAG)
+  if (DEFINED ENV{${TAG})
+    set(${TAG} $ENV{${TAG}} PARENT_SCOPE)
+  else()
+    set(${TAG} ${DEFAULT_TAG} PARENT_SCOPE)
+  endif()
+ 
+  set(R_NAME ${NAME}_NAME)
+  string(TOLOWER ${NAME} TMP)
+  set(${R_NAME} ${TMP} PARENT_SCOPE)
+  set(R_PRJ  ${NAME}_PRJ)
+  set(${R_PRJ} _${TMP} PARENT_SCOPE)
+  set(R_DIR ${NAME}_SOURCE_DIR)
+  set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
+endfunction()
+
+# ...................................................................
+# External projects
+
+def_ext_prj_t(RUBY     "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 def_ext_prj_t(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1")
 def_ext_prj_t(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
@@ -110,15 +134,10 @@ string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
 def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
 def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
-
-set (INCBIN_NAME incbin)
-set (INCBIN_PRJ _${INCBIN_NAME})
-set (INCBIN_SOURCE_DIR ${DEPS}/src/${INCBIN_PRJ})
-
-set (DWARFS_NAME dwarfs)
-set (DWARFS_PRJ _${DWARFS_NAME})
-set (DWARFS_SOURCE_DIR ${DEPS}/src/${DWARFS_PRJ})
+def_ext_prj_g(DWARFS "78401c3")
 set (DWARFS_BINARY_DIR ${DEPS}/src/${DWARFS_PRJ}-build/)
+def_ext_prj_g(INCBIN "48e36b")
+
 
 message("Collecting packages:")
 message("ruby     - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
@@ -132,6 +151,14 @@ message("yaml     - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
 message("bundler  - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
 message("incbin   - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR}) 
 message("dwarfs   - " @${DWARFS_TAG}         " at " ${DWARFS_SOURCE_DIR}) 
+
+# ...................................................................
+# Filesystem locations
+
+set(DATA_SRC_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources/fs)
+set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
+set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+set(FS_MOUNT_POINT "/home/tebako")
 
 # ...................................................................
 # Ruby dependencies
@@ -253,12 +280,12 @@ endif()
 set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} -I${RID}/${OPENSSL_NAME} \
                   -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
-set(RUBY_L_FLAGS "-L${RLD}" )
+set(RUBY_L_FLAGS "-L${RLD}")
 
 ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
    URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
-   URL_HASH SHA1=${RUBY_HASH}
+   URL_HASH SHA256=${RUBY_HASH}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure 
@@ -266,20 +293,16 @@ ExternalProject_Add(${RUBY_PRJ}
                      --without-gmp 
                      --disable-dtrace 
                      --enable-debug-env 
-                     --disable-install-rdoc
+                     --disable-install-doc
                      --with-static-linked-ext
                      --srcdir=${RUBY_SOURCE_DIR} 
-                     --prefix=${CMAKE_CURRENT_SOURCE_DIR}/resources/fs-0/ruby
+                     --prefix=${CMAKE_CURRENT_SOURCE_DIR}/resources/fs/ruby
                      cflags=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
 )
-#                     LDFLAGS=${RUBY_L_FLAGS}
-#                     --with-vendordir=${RLD}
-
  
 add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
                              ${NCURSES_PRJ} ${READLINE_PRJ} ${OPENSSL_PRJ})
-
 
 # ...................................................................
 # incbin
@@ -335,13 +358,9 @@ endif(NOT DEVELOPER_MODE)
 # Packaged filesystem
 # TODO: the chain of dependencies for fs is not correct and requires rethinking
 
-set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
-set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
-set(FS_MOUNT_POINT "/home/tebako")
-
 add_custom_target(_PACKAGED_FILESYSTEM 
    COMMAND mkdir -p ${DATA_BIN_DIR}
-   COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${CMAKE_CURRENT_SOURCE_DIR}/resources/fs-0
+   COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${CMAKE_CURRENT_SOURCE_DIR}/resources/fs
    BYPRODUCTS ${DATA_BIN_FILE}
 )
 
@@ -411,7 +430,6 @@ add_dwarfs_library(_LIBT_LIGHT ${DWARFS_PRJ})
 add_dwarfs_library(_LIBXXHASH ${DWARFS_PRJ})
 add_dwarfs_library(_LIBZSTD ${DWARFS_PRJ})
 add_dwarfs_library(_LIBARCHIVE ${DWARFS_PRJ})
-
 
 # ...................................................................
 # System libraries
