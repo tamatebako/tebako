@@ -136,7 +136,7 @@ def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 def_ext_prj_g(DWARFS "78401c3")
 set (DWARFS_BINARY_DIR ${DEPS}/src/${DWARFS_PRJ}-build/)
-def_ext_prj_g(INCBIN "48e36b")
+def_ext_prj_g(INCBIN "348e36b")      
 
 
 message("Collecting packages:")
@@ -280,7 +280,7 @@ endif()
 set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} -I${RID}/${OPENSSL_NAME} \
                   -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
-set(RUBY_L_FLAGS "-L${RLD}")
+set(RUBY_L_FLAGS "-L${RLD} -static -static-libgcc -pthread")
 
 ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
