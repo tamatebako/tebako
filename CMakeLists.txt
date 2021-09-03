@@ -345,14 +345,17 @@ add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ}
 file(GLOB GEMSPECS LIST_DIRECTORIES false ${ROOT}/*.gemspec)
 file(GLOB gemfiles LIST_DIRECTORIES false ${ROOT}/Gemfile)
 file(GLOB gems     LIST_DIRECTORIES false ${ROOT}/*.gem)
-execute_process(COMMAND ${DATA_SRC_DIR}/bin/ruby 
-                        ${DATA_RES_DIR}/ruby_program_version.rb 
-                        OUTPUT_VARIABLE RUBY_VERSION)
 
-execute_process(COMMAND ${DATA_SRC_DIR}/bin/ruby 
-                        ${DATA_RES_DIR}/ruby_api_version.rb 
-                        OUTPUT_VARIABLE RUBY_API_VERSION)
+#execute_process(COMMAND ${DATA_SRC_DIR}/bin/ruby 
+#                        ${DATA_RES_DIR}/ruby_program_version.rb 
+#                        OUTPUT_VARIABLE RUBY_VERSION)
 
+#execute_process(COMMAND ${DATA_SRC_DIR}/bin/ruby 
+#                        ${DATA_RES_DIR}/ruby_api_version.rb 
+#                        OUTPUT_VARIABLE RUBY_API_VERSION)
+
+set(RUBY_VERSION "2.7.4")
+set(RUBY_API_VERSION "2.7.0")
 message("Ruby version: " ${RUBY_VERSION})
 message("Ruby API version: " ${RUBY_API_VERSION})
 if ("-${RUBY_API_VERSION}" STREQUAL "-")
