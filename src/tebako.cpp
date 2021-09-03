@@ -31,8 +31,6 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
-
-
 #if FUSE_USE_VERSION >= 30
 #include <fuse3/fuse_lowlevel.h>
 #else
@@ -92,11 +90,11 @@ int main(int argc, char** argv) {
 //                cmd += tebako::fs_mount_point;
 //                system(cmd.c_str());
 
-                std::string cmd = tebako::fs_mount_point;
-                cmd += "/tests/test-0.sh";
-                system(cmd.c_str());
+//                std::string cmd = tebako::fs_mount_point;
+//                cmd += "/tests/test-0.sh";
+//                system(cmd.c_str());
                 
-                cmd = std::string(tebako::fs_mount_point) + "/tests/test-1.rb";
+                std::string cmd = std::string(tebako::fs_mount_point) + tebako::fs_entry_point;
                 system(cmd.c_str());
 
                 dwarfs::stop_fuse_session();

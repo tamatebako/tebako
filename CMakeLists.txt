@@ -43,17 +43,55 @@ include(ExternalProject)
 option(DEVELOPER_MODE "Developer mode" OFF)
 option(RUBY_DEBUG_BUILD "Ruby debug build" OFF)
 
-set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
+if ("-${ROOT}" STREQUAL "-")
+  message(FATAL_ERROR "Project ROOT is not specified.")
+endif()
 
-set(DEPS_INCLUDE_DIR ${DEPS}/include)
-set(DEPS_LIB_DIR ${DEPS}/lib)
-set(DEPS_BIN_DIR ${DEPS}/bin)
-set(DEPS_SBIN_DIR ${DEPS}/sbin)
+if ("-${ENTRANCE}" STREQUAL "-")
+  message(FATAL_ERROR "Project ENTRANCE is not specified.")
+endif()
+
+cmake_path(SET FS_ENTRANCE NORMALIZE ${ENTRANCE})
+cmake_path(SET FS_ROOT NORMALIZE ${CMAKE_CURRENT_SOURCE_DIR}/${ROOT})
+
+message("Welcome to tebako packager configuration script!")
+message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point")
+message("................................................")
 
 set(Boost_USE_STATIC_LIBS   ON)
 set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
+
+
+# Various locations for external projects 
+set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
+set(DEPS_INCLUDE_DIR ${DEPS}/include)
+set(DEPS_LIB_DIR ${DEPS}/lib)
+set(DEPS_BIN_DIR ${DEPS}/bin)
+set(DEPS_SBIN_DIR ${DEPS}/sbin)
+
+# Project resources that are used during CMake configuration stage
+set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
+
+# ...................................................................
+# Filesystem locations
+
+# DATA_SRC_DIR folder is used to collect all files that need to be packaged
+set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
+# DATA_BIN_DIR folder is used to create packaged filesystem  
+set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
+# DATA_BIN_FILE is packaged filesystem itself
+set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+# This is a mount point for packaged filesystem at the target computer
+# TODO: this is supposed to become obsolete when fuse dependency is eliminated
+#       otherwise it shall be reconsidered 
+set(FS_MOUNT_POINT "/home/tebako")
+
+# TODO:
+file(REMOVE ${DATA_SRC_DIR}/local)
+file(REMOVE ${DATA_BIN_DIR})
+file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
 
 # ...................................................................
 # DEF_EXT_PRJ_T
@@ -136,7 +174,7 @@ def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 def_ext_prj_g(DWARFS "78401c3")
 set (DWARFS_BINARY_DIR ${DEPS}/src/${DWARFS_PRJ}-build/)
-def_ext_prj_g(INCBIN "348e36b")      
+def_ext_prj_g(INCBIN "348e36b")
 
 
 message("Collecting packages:")
@@ -151,14 +189,23 @@ message("yaml     - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
 message("bundler  - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
 message("incbin   - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR}) 
 message("dwarfs   - " @${DWARFS_TAG}         " at " ${DWARFS_SOURCE_DIR}) 
+message("................................................")
 
 # ...................................................................
-# Filesystem locations
+# incbin
+# ExternalProject_Add is used for incbin project since we do not need 
+# anything at configure step. We want to fetch some files before the 
+# build, that's it.  
 
-set(DATA_SRC_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources/fs)
-set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
-set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
-set(FS_MOUNT_POINT "/home/tebako")
+ExternalProject_Add(${INCBIN_PRJ}
+   PREFIX ${DEPS}
+   GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
+   GIT_TAG ${INCBIN_TAG}
+   UPDATE_COMMAND ""
+   CONFIGURE_COMMAND ""
+   BUILD_COMMAND ""
+   INSTALL_COMMAND ""
+)
 
 # ...................................................................
 # Ruby dependencies
@@ -254,18 +301,6 @@ ExternalProject_Add(${READLINE_PRJ}
    INSTALL_COMMAND   make install
 )
 
-#  ExternalProject_Add(${BUNDLER_PRJ}
-#   PREFIX ${DEPS}
-#   URL https://rubygems.org/downloads/bundler-${BUNDLER_VER}.gem
-#   URL_HASH SHA256=${BUNDLER_HASH}
-#   DOWNLOAD_NO_PROGRESS true
-#   SOURCE_DIR ${BUNDLER_SOURCE_DIR}
-#   UPDATE_COMMAND ""
-#   CONFIGURE_COMMAND ${BUNDLER_SOURCE_DIR}/configure 
-#                     --srcdir=${BUNDLER_SOURCE_DIR} 
-#                     --prefix=${DEPS}
-# )
-
 # ...................................................................
 # Ruby
 
@@ -275,12 +310,15 @@ if(RUBY_DEBUG_BUILD)
   set(RUBY_C_FLAGS_1 "-fPIC -g -O0 -pipe")
 else()
   set(RUBY_C_FLAGS_1 "-fPIC -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections -pipe")
- # set(RUBY_C_FLAGS_1 "-fPIC -O0 -g -pipe")
 endif()
 set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} -I${RID}/${OPENSSL_NAME} \
                   -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
-set(RUBY_L_FLAGS "-L${RLD} -static -static-libgcc -pthread")
+set(RUBY_L_FLAGS "-L${RLD}")
+
+#   COMMAND           sed -i "s/\#option nodynamic/option nodynamic/g" ${RUBY_SOURCE_DIR}/ext/Setup
+#   --disable-shared
+#   --with-vendordir = ${DEPS}/lib
 
 ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
@@ -296,7 +334,7 @@ ExternalProject_Add(${RUBY_PRJ}
                      --disable-install-doc
                      --with-static-linked-ext
                      --srcdir=${RUBY_SOURCE_DIR} 
-                     --prefix=${CMAKE_CURRENT_SOURCE_DIR}/resources/fs/ruby
+                     --prefix=${DATA_SRC_DIR}
                      cflags=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
 )
@@ -304,21 +342,53 @@ ExternalProject_Add(${RUBY_PRJ}
 add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
                              ${NCURSES_PRJ} ${READLINE_PRJ} ${OPENSSL_PRJ})
 
-# ...................................................................
-# incbin
-# ExternalProject_Add is used for incbin project since we do not need 
-# anything at configure step. We want to fetch some files before the 
-# build, that's it.  
+file(GLOB GEMSPECS LIST_DIRECTORIES false ${ROOT}/*.gemspec)
+file(GLOB gemfiles LIST_DIRECTORIES false ${ROOT}/Gemfile)
+file(GLOB gems     LIST_DIRECTORIES false ${ROOT}/*.gem)
+execute_process(COMMAND ${DATA_SRC_DIR}/bin/ruby 
+                        ${DATA_RES_DIR}/ruby_program_version.rb 
+                        OUTPUT_VARIABLE RUBY_VERSION)
 
-ExternalProject_Add(${INCBIN_PRJ}
-   PREFIX ${DEPS}
-   GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
-   GIT_TAG ${INCBIN_TAG}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ""
-   BUILD_COMMAND ""
-   INSTALL_COMMAND ""
-)
+execute_process(COMMAND ${DATA_SRC_DIR}/bin/ruby 
+                        ${DATA_RES_DIR}/ruby_api_version.rb 
+                        OUTPUT_VARIABLE RUBY_API_VERSION)
+
+message("Ruby version: " ${RUBY_VERSION})
+message("Ruby API version: " ${RUBY_API_VERSION})
+if ("-${RUBY_API_VERSION}" STREQUAL "-")
+  message(FATAL_ERROR "Failed to peek ruby API version.")
+endif ()
+
+list(LENGTH GEMSPECS GLENGTH)
+if(GLENGTH GREATER 0)
+   if (GLENGTH GREATER 1)
+      message(FATAL_ERROR "Multiple gemspecs detected in ${ROOT}")
+   else()
+      list(GET GEMSPECS 0 GEMSPEC)
+      message("Collecting gem from gemspec ${FS_ROOT}/${GEMSPEC}")
+      ExternalProject_Add(${BUNDLER_PRJ}
+        PREFIX ${DEPS}
+        URL https://rubygems.org/downloads/bundler-${BUNDLER_VER}.gem
+        URL_HASH SHA256=${BUNDLER_HASH}
+        DOWNLOAD_NO_PROGRESS true
+        SOURCE_DIR ${BUNDLER_SOURCE_DIR}
+        UPDATE_COMMAND ""
+        CONFIGURE_COMMAND ""
+        BUILD_COMMAND ""
+        INSTALL_COMMAND ${DEPS}\bin\gem install 
+                        ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem
+                        --verbose --no-document
+                        --install-dir ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VERSION}
+       )
+   endif()  
+else()
+   message("Collecting simple Ruby script from ${FS_ROOT}")
+   add_custom_target(_SOURCE_FILESYSTEM ALL
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}/local
+           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_SRC_DIR}/local
+   )
+   set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
+endif()
 
 # ...................................................................
 # DwarFS
@@ -338,36 +408,29 @@ set(__LIBXXHASH "${DWARFS_BINARY_DIR}/libxxhash.a")
 set(__LIBZSTD "${DWARFS_BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
 set(__LIBARCHIVE "${DWARFS_BINARY_DIR}/libarchive/lib/libarchive.a")
 
-if(NOT DEVELOPER_MODE)
- ExternalProject_Add(${DWARFS_PRJ}
+ExternalProject_Add(${DWARFS_PRJ}
     PREFIX ${DEPS}
     GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git
     GIT_TAG ${DWARFS_TAG}
-    PATCH_COMMAND cp ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.cpp ${DEPS}/src/_dwarfs/src/dwarfs && 
-                  cp ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.h ${DEPS}/src/_dwarfs/include/dwarfs   
+    PATCH_COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.cpp ${DEPS}/src/_dwarfs/src/dwarfs  
+    COMMAND       ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.h ${DEPS}/src/_dwarfs/include/dwarfs   
     UPDATE_COMMAND ""
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DSTATIC_BUILD_DO_NOT_USE:BOOL=ON
     SOURCE_DIR ${DWARFS_SOURCE_DIR}
     BINARY_DIR ${DWARFS_BINARY_DIR}
     BUILD_BYPRODUCTS ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA} 
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
- )
-endif(NOT DEVELOPER_MODE)
+)
 
 # ...................................................................
 # Packaged filesystem
-# TODO: the chain of dependencies for fs is not correct and requires rethinking
 
-add_custom_target(_PACKAGED_FILESYSTEM 
-   COMMAND mkdir -p ${DATA_BIN_DIR}
-   COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${CMAKE_CURRENT_SOURCE_DIR}/resources/fs
+add_custom_target(_PACKAGED_FILESYSTEM  
+   COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
+   COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+   DEPENDS ${DWARFS_PRJ} ${RUBY_PRJ} _SOURCE_FILESYSTEM
    BYPRODUCTS ${DATA_BIN_FILE}
 )
-
-if(NOT DEVELOPER_MODE)
- add_dependencies(_PACKAGED_FILESYSTEM ${DWARFS_PRJ})
-endif(NOT DEVELOPER_MODE)
- add_dependencies(_PACKAGED_FILESYSTEM ${RUBY_PRJ})
 
 configure_file(
    ${CMAKE_CURRENT_SOURCE_DIR}/resources/tebako-fs.cpp.in 
@@ -402,11 +465,7 @@ add_executable(
     "include/version.h"
     )
 
-if(NOT DEVELOPER_MODE)
- add_dependencies(tebako ${DWARFS_PRJ})
-endif(NOT DEVELOPER_MODE)
-
-add_dependencies(tebako _PACKAGED_FILESYSTEM  ${INCBIN_PRJ})
+add_dependencies(tebako _PACKAGED_FILESYSTEM  ${INCBIN_PRJ} ${DWARFS_PRJ})
 set_property(TARGET tebako PROPERTY CXX_STANDARD 17)
 set_property(TARGET tebako PROPERTY CXX_STANDARD_REQUIRED ON)
 set_property(TARGET tebako PROPERTY CXX_EXTENSIONS OFF)

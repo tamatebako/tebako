@@ -33,5 +33,6 @@
 
 namespace tebako {
 	extern const char* fs_mount_point;
+	extern const char* fs_entry_point;
 	INCBIN_EXTERN(fs);
 }
