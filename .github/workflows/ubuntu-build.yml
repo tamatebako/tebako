@@ -88,7 +88,7 @@ jobs:
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="tests/test-1" -DENTRANCE="test-1.rb"
+              -DROOT="tests/test-1" -DENTRANCE="test-1.rb"           \
               -B ${{github.workspace}}
                                             
     - name: Build and install packaged solution for simple Ruby script
