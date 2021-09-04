@@ -85,7 +85,6 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 # Filesystem locations
 
 # DATA_SRC_DIR folder is used to collect all files that need to be packaged
-# We keep it under ${DEPS} so that GHA caches it 
 set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
 # DATA_PRE_DIR folder is used to build gems  that need to be packaged
 set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
@@ -174,6 +173,7 @@ endfunction()
 
 def_ext_prj_t(RUBY     "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
+string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 def_ext_prj_t(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1")
 def_ext_prj_t(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
 def_ext_prj_t(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
@@ -353,49 +353,46 @@ ExternalProject_Add(${RUBY_PRJ}
 add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
                              ${NCURSES_PRJ} ${READLINE_PRJ} ${OPENSSL_PRJ})
 
+# DATA_GEMS_DIR folder is used to install gems 
+set(DATA_GEMS_DIR "${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER}")
+
 file(GLOB GEMSPECS LIST_DIRECTORIES false ${ROOT}/*.gemspec)
-file(GLOB gemfiles LIST_DIRECTORIES false ${ROOT}/Gemfile)
+file(GLOB GEMFILES LIST_DIRECTORIES false ${ROOT}/Gemfile)
 file(GLOB gems     LIST_DIRECTORIES false ${ROOT}/*.gem)
 
-#execute_process(COMMAND ${DATA_SRC_DIR}/bin/ruby 
-#                        ${DATA_RES_DIR}/ruby_program_version.rb 
-#                        OUTPUT_VARIABLE RUBY_VERSION)
-
-#execute_process(COMMAND ${DATA_SRC_DIR}/bin/ruby 
-#                        ${DATA_RES_DIR}/ruby_api_version.rb 
-#                        OUTPUT_VARIABLE RUBY_API_VERSION)
-
-set(RUBY_VERSION "2.7.4")
-set(RUBY_API_VERSION "2.7.0")
-message("Ruby version: " ${RUBY_VERSION})
-message("Ruby API version: " ${RUBY_API_VERSION})
-if ("-${RUBY_API_VERSION}" STREQUAL "-")
-  message(FATAL_ERROR "Failed to peek ruby API version.")
-endif ()
-
-list(LENGTH GEMSPECS GLENGTH)
-if(GLENGTH GREATER 0)
-   if (GLENGTH GREATER 1)
+list(LENGTH GEMSPECS GSLENGTH)
+if(GSLENGTH GREATER 0)
+   if(GSLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gemspecs detected in ${ROOT}")
-   else()
+   else(GSLENGTH GREATER 1)
       list(GET GEMSPECS 0 GEMSPEC)
       message("Collecting gem from gemspec ${FS_ROOT}/${GEMSPEC}")
-      ExternalProject_Add(${BUNDLER_PRJ}
-        PREFIX ${DEPS}
-        URL https://rubygems.org/downloads/bundler-${BUNDLER_VER}.gem
-        URL_HASH SHA256=${BUNDLER_HASH}
-        DOWNLOAD_NO_PROGRESS true
-        SOURCE_DIR ${BUNDLER_SOURCE_DIR}
-        UPDATE_COMMAND ""
-        CONFIGURE_COMMAND ""
-        BUILD_COMMAND ""
-        INSTALL_COMMAND ${DEPS}\bin\gem install 
-                        ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem
-                        --verbose --no-document
-                        --install-dir ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VERSION}
-       )
-   endif()  
-else()
+      
+      list(LENGTH GEMFILES GFLENGTH)
+      if(GFLENGTH GREATER 0)
+        ExternalProject_Add(${BUNDLER_PRJ}
+          PREFIX ${DEPS}
+          URL https://rubygems.org/downloads/bundler-${BUNDLER_VER}.gem
+          URL_HASH SHA256=${BUNDLER_HASH}
+          DOWNLOAD_NO_PROGRESS true
+          SOURCE_DIR ${BUNDLER_SOURCE_DIR}
+          UPDATE_COMMAND ""
+          CONFIGURE_COMMAND ""
+          BUILD_COMMAND ""
+          INSTALL_COMMAND ${DEPS}\bin\gem install 
+                          ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem
+                          --verbose --no-document
+                          --install-dir ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER}
+         )
+      else(GFLENGTH GREATER 0)
+         add_custom_target(_PREPARE_FILESYSTEM 
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
+            COMMAND env --unset=GEM_HOME --unset=GEM_PATH "cd ${DATA_PRE_DIR} && ${DEPS}/bin/gem build ${GEMSPEC}"
+            DEPENDS ${RUBY_PRJ}
+         )
+      endif(GFLENGTH GREATER 0)
+   endif(GSLENGTH GREATER 1)  
+else(GSLENGTH GREATER 0)
    cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
    if(${IS_EN_ABSOLUTE})
       cmake_path(IS_PREFIX FS_ROOT ${FS_ENTRANCE} IS_FS_EN_PREFIX)
