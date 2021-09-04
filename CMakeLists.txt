@@ -96,8 +96,8 @@ set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 set(FS_MOUNT_POINT "/home/tebako")
 
 # TODO:
-file(REMOVE ${DATA_SRC_DIR}/local)
-file(REMOVE ${DATA_BIN_DIR})
+file(REMOVE_RECURSE ${DATA_SRC_DIR}/local)
+file(REMOVE_RECURSE ${DATA_BIN_DIR})
 file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
 
 # ...................................................................

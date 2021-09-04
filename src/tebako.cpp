@@ -87,16 +87,24 @@ int main(int argc, char** argv) {
             if (ret == 0) {
                 std::string cmd("ls -l ");
                 cmd += tebako::fs_mount_point;
+                std::cerr << "Running " << cmd << std::endl;
                 system(cmd.c_str());
 
                 cmd += "/local";
+                std::cerr << "Running " << cmd << std::endl;
                 system(cmd.c_str());
 
 //                std::string cmd = tebako::fs_mount_point;
 //                cmd += "/tests/test-0.sh";
 //                system(cmd.c_str());
                 
+                cmd = std::string("ls -l ") + tebako::fs_mount_point + "/bin";
+                std::cerr << "Running " << cmd << std::endl;
+                ret = system(cmd.c_str());
+
+                    
                 cmd = std::string(tebako::fs_mount_point) + tebako::fs_entry_point;
+                std::cerr << "Running " << cmd << std::endl;
                 ret = system(cmd.c_str());
 
                 if (ret) {
@@ -112,6 +120,6 @@ int main(int argc, char** argv) {
             }
             free(_argv[1]);
 
-            return ret?-1:0;
+            return (int)ret;
         });
 }
