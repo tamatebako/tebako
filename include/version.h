@@ -30,11 +30,14 @@
 
 #pragma once
 
+#define _HELPER(x) #x
+#define _STR(x) _HELPER(x)
+
 #define PRJ_VERSION_MAJOR 0
 #define PRJ_VERSION_MINOR 1
-#define PRJ_VERSION_TEENY 1
+#define PRJ_VERSION_TEENY 2
 
-#define PRJ_VERSION_STRING "0.1.1"
+#define PRJ_VERSION_STRING _STR(PRJ_VERSION_MAJOR) "." _STR(PRJ_VERSION_MINOR) "." _STR(PRJ_VERSION_TEENY)
 
 #define PRJ_NAME          "tebako"
 
