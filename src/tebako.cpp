@@ -57,7 +57,6 @@ void dwarfs_starter(void* args) {
 int main(int argc, char** argv) {
     return dwarfs::safe_main([&]
         {
-
             std::cerr << "Starting " << PRJ_NAME << " version " << PRJ_VERSION_STRING << "..." << std::endl;
 
 
@@ -113,6 +112,6 @@ int main(int argc, char** argv) {
             }
             free(_argv[1]);
 
-            return (int)ret;
+            return ret?-1:0;
         });
 }

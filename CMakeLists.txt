@@ -45,9 +45,6 @@ include(ExternalProject)
 option(DEVELOPER_MODE "Developer mode" OFF)
 option(RUBY_DEBUG_BUILD "Ruby debug build" OFF)
 
-cmake_path(SET FS_ENTRANCE NORMALIZE ${ENTRANCE})
-cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
-
 message("Welcome to tebako packager configuration script!")
 if ("-${ROOT}" STREQUAL "-")
   message(FATAL_ERROR "Project ROOT is not specified.")
@@ -56,6 +53,9 @@ endif()
 if ("-${ENTRANCE}" STREQUAL "-")
   message(FATAL_ERROR "Project ENTRANCE is not specified.")
 endif()
+
+cmake_path(SET FS_ENTRANCE NORMALIZE ${ENTRANCE})
+cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
 
 cmake_path(IS_RELATIVE FS_ROOT IS_RT_RELATIVE)
 if(${IS_RT_RELATIVE})
