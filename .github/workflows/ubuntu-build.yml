@@ -127,7 +127,7 @@ jobs:
       run: | 
         ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
-              "${{github.workspace}}/tests/test-1" "${{github.workspace}}/tests/test-1/test-1.rb"                \
+              "tests/test-1" "${{github.workspace}}/tests/test-1/test-1.rb"                \
               ${{github.workspace}}
                                             
     - name: Test5 - Configure[only] - [Simple Ruby script, absolute path to entry point, not within root]
