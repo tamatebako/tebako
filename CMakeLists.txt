@@ -43,6 +43,10 @@ include(ExternalProject)
 option(DEVELOPER_MODE "Developer mode" OFF)
 option(RUBY_DEBUG_BUILD "Ruby debug build" OFF)
 
+cmake_path(SET FS_ENTRANCE NORMALIZE ${ENTRANCE})
+cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
+
+message("Welcome to tebako packager configuration script!")
 if ("-${ROOT}" STREQUAL "-")
   message(FATAL_ERROR "Project ROOT is not specified.")
 endif()
@@ -51,11 +55,14 @@ if ("-${ENTRANCE}" STREQUAL "-")
   message(FATAL_ERROR "Project ENTRANCE is not specified.")
 endif()
 
-cmake_path(SET FS_ENTRANCE NORMALIZE ${ENTRANCE})
-cmake_path(SET FS_ROOT NORMALIZE ${CMAKE_CURRENT_SOURCE_DIR}/${ROOT})
+cmake_path(IS_RELATIVE FS_ROOT IS_RT_RELATIVE)
+if (${IS_RT_RELATIVE})
+  message(FATAL_ERROR "Please provide absolute path to root folder. '${FS_ROOT}' is relative path and cannot be handled properly")
+endif()
 
-message("Welcome to tebako packager configuration script!")
+
 message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point")
+
 message("................................................")
 
 set(Boost_USE_STATIC_LIBS   ON)

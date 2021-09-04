@@ -7,7 +7,7 @@
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
       "cmakeExecutable": "cmake",
-      "cmakeCommandArgs": "-DDEVELOPER_MODE:BOOL=OFF -DROOT=tests/test-1 -DENTRANCE=test-1.rb",
+      "cmakeCommandArgs": "-DDEVELOPER_MODE:BOOL=OFF -DROOT=/mnt/d/Projects/5.Projects/tebako/tests/test-1 -DENTRANCE=test-1.rb",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "linux_x64" ],
