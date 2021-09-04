@@ -85,7 +85,10 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 # Filesystem locations
 
 # DATA_SRC_DIR folder is used to collect all files that need to be packaged
+# We keep it under ${DEPS} so that GHA caches it 
 set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
+# DATA_PRE_DIR folder is used to build gems  that need to be packaged
+set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
 # DATA_BIN_DIR folder is used to create packaged filesystem  
 set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
 # DATA_BIN_FILE is packaged filesystem itself
@@ -95,8 +98,9 @@ set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 #       otherwise it shall be reconsidered 
 set(FS_MOUNT_POINT "/home/tebako")
 
-# TODO:
-file(REMOVE_RECURSE ${DATA_SRC_DIR}/local)
+# Clean previous run if any
+file(REMOVE_RECURSE ${DATA_SRC_DIR})
+file(REMOVE_RECURSE ${DATA_PRE_DIR})
 file(REMOVE_RECURSE ${DATA_BIN_DIR})
 file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
 
@@ -341,7 +345,7 @@ ExternalProject_Add(${RUBY_PRJ}
                      --disable-install-doc
                      --with-static-linked-ext
                      --srcdir=${RUBY_SOURCE_DIR} 
-                     --prefix=${DATA_SRC_DIR}
+                     --prefix=${DEPS}
                      cflags=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
 )
@@ -404,8 +408,11 @@ else()
          message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
    endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
    add_custom_target(_SOURCE_FILESYSTEM ALL
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}/bin
+           COMMAND ${CMAKE_COMMAND} -E copy ${DEPS}/bin/ruby ${DATA_SRC_DIR}/bin
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}/local
            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_SRC_DIR}/local
+           DEPENDS ${RUBY_PRJ}
    )
    set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
    message("Collecting simple Ruby script from ${FS_ROOT}. Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
@@ -449,7 +456,7 @@ ExternalProject_Add(${DWARFS_PRJ}
 add_custom_target(_PACKAGED_FILESYSTEM  
    COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
    COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-   DEPENDS ${DWARFS_PRJ} ${RUBY_PRJ} _SOURCE_FILESYSTEM
+   DEPENDS ${DWARFS_PRJ} _SOURCE_FILESYSTEM
    BYPRODUCTS ${DATA_BIN_FILE}
 )
 

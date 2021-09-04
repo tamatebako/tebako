@@ -66,7 +66,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v11
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v12
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
@@ -108,7 +108,7 @@ jobs:
 
     - name: Test2 - Configure[only] - [Simple Ruby script, relative path to entry point, non exisitng entrance]
       run: | 
-        ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
+        ${{github.workspace}}/.github/scripts/configure_with_failure.sh        \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}          \
               "${{github.workspace}}/tests/test-1" "test-does-not-exist.rb"    \
               ${{github.workspace}}
