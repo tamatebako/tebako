@@ -82,26 +82,27 @@ jobs:
       run: |
         sudo mkdir -p /home/tebako 
         sudo chmod a+w /home/tebako
-        sudo chmod g+w /home/tebako
+
 # Tests
-#   1. Simple Ruby script, relative path to entry point  
+#   1. [Also the baseline] Simple Ruby script, relative path to entry point  
 #   2. Simple Ruby script, relative path to entry point, non exisitng entrance      Expected error at configure step
 #   3. Simple Ruby script, absolute path to entry point 
 #   4. Simple Ruby script, absolute path to entry point, relative path to root      Expected error at configure step
 #   5. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
 #
-    - name: Test1 - Configure - [Simple Ruby script, relative path to entry point]
+
+    - name: Baseline & Test1 - Configure - [Simple Ruby script, relative path to entry point]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-1" -DENTRANCE="test-1.rb"           \
+              -DROOT="${{github.workspace}}/tests/test-1" -DENTRANCE="test.rb"           \
               -B ${{github.workspace}}
                                             
     - name: Test1 - Build and install packaged solution - [Simple Ruby script, relative path to entry point]
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
 
     - name: Test1 - Run packaged solution - [Simple Ruby script, relative path to entry point]
-      run: sudo /usr/local/bin/tebako
+      run:  /usr/local/bin/tebako
 
     - name: Test2 - Configure[only] - [Simple Ruby script, relative path to entry point, non exisitng entrance]
       run: | 
@@ -114,7 +115,7 @@ jobs:
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-1" -DENTRANCE="${{github.workspace}}/tests/test-1/test-1.rb"           \
+              -DROOT="${{github.workspace}}/tests/test-1" -DENTRANCE="${{github.workspace}}/tests/test-1/test.rb"           \
               -B ${{github.workspace}}
                                             
     - name: Test3 - Build and install packaged solution - [Simple Ruby script, absolute path to entry point]
@@ -127,13 +128,13 @@ jobs:
       run: | 
         ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
-              "tests/test-1" "${{github.workspace}}/tests/test-1/test-1.rb"                \
+              "tests/test-1" "${{github.workspace}}/tests/test-1/test.rb"     \
               ${{github.workspace}}
                                             
     - name: Test5 - Configure[only] - [Simple Ruby script, absolute path to entry point, not within root]
       run: | 
         ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
-              "${{github.workspace}}/tests/test-1" "${{github.workspace}}/tests/test-0/test-1.rb"                \
+              "${{github.workspace}}/tests/test-1" "${{github.workspace}}/tests/test-0/test.rb"                \
               ${{github.workspace}}
 
