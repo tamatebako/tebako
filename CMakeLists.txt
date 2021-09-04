@@ -386,6 +386,17 @@ if(GLENGTH GREATER 0)
    endif()  
 else()
    message("Collecting simple Ruby script from ${FS_ROOT}")
+   cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
+   if(${IS_EN_ABSOLUTE})
+      cmake_path(IS_PREFIX FS_ROOT FS_ENTRANCE IS_FS_EN_PREFIX)
+      if(NOT ${IS_FS_EN_PREFIX})
+         message(FATAL_ERROR "Entry point ${FS_ENTRANCE} is not in the project root ${FS_ROOT}")
+      endif(NOT ${IS_FS_EN_PREFIX})
+      cmake_path(RELATIVE_PATH FS_ENTRANCE BASE_DIRECTORY FS_ROOT)
+   endif(${IS_EN_ABSOLUTE})
+   if(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
+         message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
+   endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
    add_custom_target(_SOURCE_FILESYSTEM ALL
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}/local
            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_SRC_DIR}/local

@@ -11,7 +11,7 @@
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "linux_x64" ],
-      "wslPath": "C:\\Users\\maxirmx\\AppData\\Local\\Microsoft\\WindowsApps\\ubuntu2004.exe"
+      "wslPath": "C:\\Users\\Maxim\\AppData\\Local\\Microsoft\\WindowsApps\\ubuntu2004.exe"
     }
   ]
 }

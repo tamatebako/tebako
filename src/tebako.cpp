@@ -90,6 +90,9 @@ int main(int argc, char** argv) {
 //                cmd += tebako::fs_mount_point;
 //                system(cmd.c_str());
 
+//                cmd += "/local";
+//                system(cmd.c_str());
+
 //                std::string cmd = tebako::fs_mount_point;
 //                cmd += "/tests/test-0.sh";
 //                system(cmd.c_str());
