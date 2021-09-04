@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 #
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
@@ -32,10 +32,11 @@
 
 echo Expecting "cmake -DCMAKE_BUILD_TYPE=$1  -DDEPS:STRING=$2  -DROOT=$3 -DENTRANCE=$4 -B $5" to fail 
 cmake -DCMAKE_BUILD_TYPE=$1  -DDEPS:STRING=$2  -DROOT=$3 -DENTRANCE=$4 -B $5
-if [ ${rc} -ne 0 ]; then 
-  echo Failed as exected [OK]
-  exit 0 
+
+if  [ $? -eq 0 ] ; then 
+  echo CMake has succeeded unexpectedly [Test failed]
+  exit -1 
 else 
-  echo Succeeded [Test failed]
-  exit -1
+  echo CMake failed as expected [Test OK]
+  exit 0
 fi
