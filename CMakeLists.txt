@@ -24,7 +24,9 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-cmake_minimum_required (VERSION 3.13.4)
+cmake_minimum_required (VERSION 3.20)
+# Version 3.20 for cmake_path
+
 project(tebako_packager)
 # ...................................................................
 #        sudo apt-get install \
@@ -56,13 +58,11 @@ if ("-${ENTRANCE}" STREQUAL "-")
 endif()
 
 cmake_path(IS_RELATIVE FS_ROOT IS_RT_RELATIVE)
-if (${IS_RT_RELATIVE})
+if(${IS_RT_RELATIVE})
   message(FATAL_ERROR "Please provide absolute path to root folder. '${FS_ROOT}' is relative path and cannot be handled properly")
 endif()
 
-
 message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point")
-
 message("................................................")
 
 set(Boost_USE_STATIC_LIBS   ON)
@@ -392,14 +392,13 @@ if(GLENGTH GREATER 0)
        )
    endif()  
 else()
-   message("Collecting simple Ruby script from ${FS_ROOT}")
    cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
    if(${IS_EN_ABSOLUTE})
-      cmake_path(IS_PREFIX FS_ROOT FS_ENTRANCE IS_FS_EN_PREFIX)
+      cmake_path(IS_PREFIX FS_ROOT ${FS_ENTRANCE} IS_FS_EN_PREFIX)
       if(NOT ${IS_FS_EN_PREFIX})
          message(FATAL_ERROR "Entry point ${FS_ENTRANCE} is not in the project root ${FS_ROOT}")
       endif(NOT ${IS_FS_EN_PREFIX})
-      cmake_path(RELATIVE_PATH FS_ENTRANCE BASE_DIRECTORY FS_ROOT)
+      cmake_path(RELATIVE_PATH FS_ENTRANCE BASE_DIRECTORY ${FS_ROOT})
    endif(${IS_EN_ABSOLUTE})
    if(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
          message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
@@ -409,6 +408,7 @@ else()
            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_SRC_DIR}/local
    )
    set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
+   message("Collecting simple Ruby script from ${FS_ROOT}. Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
 endif()
 
 # ...................................................................

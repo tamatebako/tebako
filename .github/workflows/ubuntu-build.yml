@@ -90,47 +90,47 @@ jobs:
 #   4. Simple Ruby script, absolute path to entry point, relative path to root      Expected error at configure step
 #   5. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
 #
-    - name: CMake Configure for Test 1 - [Simple Ruby script, relative path to entry point]
+    - name: Test1 - Configure - [Simple Ruby script, relative path to entry point]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
               -DROOT="${{github.workspace}}/tests/test-1" -DENTRANCE="test-1.rb"           \
               -B ${{github.workspace}}
                                             
-    - name: Build and install packaged solution for Test 1 - [simple Ruby script, relative path to entry point]
+    - name: Test1 - Build and install packaged solution - [Simple Ruby script, relative path to entry point]
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
 
-    - name: Run packaged solution for Test 1 - [Simple Ruby script, relative path to entry point]
+    - name: Test1 - Run packaged solution - [Simple Ruby script, relative path to entry point]
       run: sudo /usr/local/bin/tebako
 
-    - name: CMake Configure for Test 2 - [Simple Ruby script, relative path to entry point, non exisitng entrance]
+    - name: Test2 - Configure[only] - [Simple Ruby script, relative path to entry point, non exisitng entrance]
       run: | 
         ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}          \
               "${{github.workspace}}/tests/test-1" "test-does-not-exist.rb"    \
               ${{github.workspace}}
               
-    - name: CMake Configure for Test 3 - [Simple Ruby script, absolute path to entry point]
+    - name: Test3 - Configure - [Simple Ruby script, absolute path to entry point]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
               -DROOT="${{github.workspace}}/tests/test-1" -DENTRANCE="${{github.workspace}}/tests/test-1/test-1.rb"           \
               -B ${{github.workspace}}
                                             
-    - name: Build and install packaged solution for Test 3 - [Simple Ruby script, absolute path to entry point]
+    - name: Test3 - Build and install packaged solution - [Simple Ruby script, absolute path to entry point]
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
 
-    - name: Run packaged solution for Test 3 - [Simple Ruby script, absolute path to entry point]
+    - name: Test3 - Run packaged solution - [Simple Ruby script, absolute path to entry point]
       run: sudo /usr/local/bin/tebako
 
-    - name: CMake Configure for Test 4 - [Simple Ruby script, absolute path to entry point, relative path to root ]
+    - name: Test4 - Configure[only] - [Simple Ruby script, absolute path to entry point, relative path to root ]
       run: | 
         ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
               "${{github.workspace}}/tests/test-1" "${{github.workspace}}/tests/test-1/test-1.rb"                \
               ${{github.workspace}}
                                             
-    - name: CMake Configure for Test 5 - [Simple Ruby script, absolute path to entry point, not within root]
+    - name: Test5 - Configure[only] - [Simple Ruby script, absolute path to entry point, not within root]
       run: | 
         ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
