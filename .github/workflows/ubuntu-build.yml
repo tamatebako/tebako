@@ -91,7 +91,7 @@ jobs:
 #   5. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
 #   6-12  reserved
 #  12. Ruby gem, multiple gemspecs                                                  Expected error at configure step
-#  13. Ruby gem, gemspecs error                                                     Expected error at build step  
+#  13. Ruby gem, gemspec error                                                      Expected error at build step  
 #
 
     - name: Baseline & Test1 - Configure - [Simple Ruby script, relative path to entry point]
@@ -143,19 +143,26 @@ jobs:
               "${{github.workspace}}/tests/test-1" "${{github.workspace}}/tests/test-0/test.rb"                \
               ${{github.workspace}}
 
-    - name: Test12 - Configure[only] - [Ruby gem, multiple gemspecs]
+    - name: Test11 - Configure - [Ruby gem, no gemfile]
+      run: | 
+        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
+              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
+              -DROOT="${{github.workspace}}/tests/test-11" -DENTRANCE="test.rb"           \
+              -B ${{github.workspace}}
+
+    - name: Test12 - Configure[only] - [Ruby gem, no gemfile, multiple gemspecs]
       run: | 
         ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
               "${{github.workspace}}/tests/test-12" "test.rb"               \
               ${{github.workspace}}
 
-    - name: Test13 - Configure - [Ruby gem, gemspecs error]
+    - name: Test13 - Configure - [Ruby gem, no gemfile, gemspec error]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
               -DROOT="${{github.workspace}}/tests/test-13" -DENTRANCE="test.rb"           \
               -B ${{github.workspace}}
 
-    - name: Test13 - Build and install packaged solution - [Ruby gem, gemspecs error]
+    - name: Test13 - Build and install packaged solution - [Ruby gem, gemspec error]
       run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh {{github.workspace}} ${{env.BUILD_TYPE}}

@@ -347,7 +347,8 @@ if(GSLENGTH GREATER 0)
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TBD}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
             COMMAND ${CMAKE_COMMAND} -E copy ${RBD}/ruby ${TBD}
-            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${RBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
+            COMMAND ${CMAKE_COMMAND} -E copy ${RBD}/gem  ${TBD}
+            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
             DEPENDS ${RUBY_PRJ} _PREPARE_FILESYSTEM
          )
       endif(GFLENGTH GREATER 0)

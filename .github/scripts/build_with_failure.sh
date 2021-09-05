@@ -1,7 +1,3 @@
-#!/bin/sh
-#
-# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
-# All rights reserved.
 # This file is a part of tebako
 #
 # Redistribution and use in source and binary forms, with or without
@@ -24,19 +20,18 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-# 
+#
 
 # This script is a simple workaround for the following issue:
 # https://github.com/actions/toolkit/issues/399
 
 
-echo Expecting "cmake --build $1 --config $2 --target install" to fail 
+echo Expecting "cmake --build $1 --config $2 --target install" to fail
 cmake --build $1 --config $2 --target install
 
-if  [ $? -eq 0 ] ; then 
+if  [ $? -eq 0 ] ; then
   echo CMake has succeeded unexpectedly [Test failed]
-  exit -1 
-else 
+  exit -1
+else
   echo CMake failed as expected [Test OK]
   exit 0
-fi
