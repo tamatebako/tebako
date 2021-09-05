@@ -1,3 +1,4 @@
+#!/bin/sh
 #
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
@@ -23,17 +24,19 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+# 
 
-require 'rbconfig'
+# This script is a simple workaround for the following issue:
+# https://github.com/actions/toolkit/issues/399
 
-  ##
-  # API version of ruby.  This includes the static vs non-static
-  # distinction as extensions cannot be shared between the two.
 
-    @v = RbConfig::CONFIG['RUBY_API_VERSION']
-#    if 'no' == RbConfig::CONFIG['ENABLE_SHARED']
-#      @v = @v + '-static'
-#    end
-    
-    @v = @v + ".0"
-    print @v
+echo Expecting "cmake --build $1 --config $2 --target install" to fail 
+cmake --build $1 --config $2 --target install
+
+if  [ $? -eq 0 ] ; then 
+  echo CMake has succeeded unexpectedly [Test failed]
+  exit -1 
+else 
+  echo CMake failed as expected [Test OK]
+  exit 0
+fi

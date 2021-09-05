@@ -1,4 +1,3 @@
-#
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -26,8 +25,10 @@
 
 cmake_minimum_required (VERSION 3.20)
 # Version 3.20 for cmake_path
+cmake_policy(SET CMP0048 NEW)
+# For project( ... VERSION ... )
 
-project(tebako_packager)
+project(tebako_packager VERSION 0.1.2)
 # ...................................................................
 #        sudo apt-get install \
 #        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
@@ -39,6 +40,8 @@ project(tebako_packager)
 #        bison flex fuse3 pkg-config libsodium-dev
 
 include(ExternalProject)
+include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
+
 
 # Developer mode removes the burden of nested projects which takes a lot under WSL/VisualStudio/Ninja environment
 # Use with caution, please
@@ -81,6 +84,14 @@ set(DEPS_SBIN_DIR ${DEPS}/sbin)
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
+# Inject version information to C++ code
+configure_file(
+   ${DATA_RES_DIR}/version.h.in 
+   ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h
+   @ONLY
+)
+
+
 # ...................................................................
 # Filesystem locations
 
@@ -102,71 +113,6 @@ file(REMOVE_RECURSE ${DATA_SRC_DIR})
 file(REMOVE_RECURSE ${DATA_PRE_DIR})
 file(REMOVE_RECURSE ${DATA_BIN_DIR})
 file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
-
-# ...................................................................
-# DEF_EXT_PRJ_T
-# This function defines version number and archieve hash for
-# external project that is build from tarball
-# For external project XXX this function will set the following variables:
-# XXX_VER                -- package version
-# XXX_HASH               -- tarball hash
-# Version and hash value come from environment variables (GHA case)
-# If environment variables are not set then default values are used
-# XXX_NAME = xxx  (lowercase)   
-# XXX_PRJ  = _xxx (lowercase)       -- CMake ExternalProject name
-# XXX_SOURCE_DIR = ${DEPS}/src/_xxx -- Source folder for ExternalProject_Add 
-
-function(DEF_EXT_PRJ_T NAME DEFAULT_VER DEFAULT_HASH)
-  set(VER ${NAME}_VER)
-  if (DEFINED ENV{${VER}})
-    set(${VER} $ENV{${VER}} PARENT_SCOPE)
-  else ()
-    set(${VER} ${DEFAULT_VER} PARENT_SCOPE)
-  endif()
-
-  set(HASH ${NAME}_HASH)
-  if (DEFINED ENV{${HASH})
-    set(${HASH} $ENV{${HASH}} PARENT_SCOPE)
-  else()
-    set(${HASH} ${DEFAULT_HASH} PARENT_SCOPE)
-  endif()
- 
-  set(R_NAME ${NAME}_NAME)
-  string(TOLOWER ${NAME} TMP)
-  set(${R_NAME} ${TMP} PARENT_SCOPE)
-  set(R_PRJ  ${NAME}_PRJ)
-  set(${R_PRJ} _${TMP} PARENT_SCOPE)
-  set(R_DIR ${NAME}_SOURCE_DIR)
-  set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
-endfunction()
-
-# ...................................................................
-# DEF_EXT_PRJ_G
-# This function defines git tag for external project that is build from git
-# For external project XXX this function will set the following variables:
-# XXX_TAG                -- git tag
-# Version and tag come from environment variables (GHA case)
-# If environment variables are not set then default values are used
-# XXX_NAME = xxx  (lowercase)   
-# XXX_PRJ  = _xxx (lowercase)       -- CMake ExternalProject name
-# XXX_SOURCE_DIR = ${DEPS}/src/_xxx -- Source folder for ExternalProject_Add 
-
-function(DEF_EXT_PRJ_G NAME DEFAULT_TAG)
-  set(TAG ${NAME}_TAG)
-  if (DEFINED ENV{${TAG})
-    set(${TAG} $ENV{${TAG}} PARENT_SCOPE)
-  else()
-    set(${TAG} ${DEFAULT_TAG} PARENT_SCOPE)
-  endif()
- 
-  set(R_NAME ${NAME}_NAME)
-  string(TOLOWER ${NAME} TMP)
-  set(${R_NAME} ${TMP} PARENT_SCOPE)
-  set(R_PRJ  ${NAME}_PRJ)
-  set(${R_PRJ} _${TMP} PARENT_SCOPE)
-  set(R_DIR ${NAME}_SOURCE_DIR)
-  set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
-endfunction()
 
 # ...................................................................
 # External projects
@@ -315,8 +261,10 @@ ExternalProject_Add(${READLINE_PRJ}
 # ...................................................................
 # Ruby
 
+set(RBD ${DEPS}/bin)
 set(RID ${DEPS}/include)
 set(RLD ${DEPS}/lib)
+
 if(RUBY_DEBUG_BUILD)
   set(RUBY_C_FLAGS_1 "-fPIC -g -O0 -pipe")
 else()
@@ -329,7 +277,7 @@ set(RUBY_L_FLAGS "-L${RLD}")
 
 #   COMMAND           sed -i "s/\#option nodynamic/option nodynamic/g" ${RUBY_SOURCE_DIR}/ext/Setup
 #   --disable-shared
-#   --with-vendordir = ${DEPS}/lib
+#   --with-vendordir = ${RLD}
 
 ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
@@ -353,8 +301,11 @@ ExternalProject_Add(${RUBY_PRJ}
 add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
                              ${NCURSES_PRJ} ${READLINE_PRJ} ${OPENSSL_PRJ})
 
-# DATA_GEMS_DIR folder is used to install gems 
-set(DATA_GEMS_DIR "${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER}")
+
+set (TBD ${DATA_SRC_DIR}/bin)
+set (TLD ${DATA_SRC_DIR}/local)
+# TGD folder is used to install gems 
+set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
 
 file(GLOB GEMSPECS LIST_DIRECTORIES false ${ROOT}/*.gemspec)
 file(GLOB GEMFILES LIST_DIRECTORIES false ${ROOT}/Gemfile)
@@ -366,7 +317,7 @@ if(GSLENGTH GREATER 0)
       message(FATAL_ERROR "Multiple gemspecs detected in ${ROOT}")
    else(GSLENGTH GREATER 1)
       list(GET GEMSPECS 0 GEMSPEC)
-      message("Collecting gem from gemspec ${FS_ROOT}/${GEMSPEC}")
+      message("Collecting gem from gemspec ${GEMSPEC}")
       
       list(LENGTH GEMFILES GFLENGTH)
       if(GFLENGTH GREATER 0)
@@ -382,13 +333,22 @@ if(GSLENGTH GREATER 0)
           INSTALL_COMMAND ${DEPS}\bin\gem install 
                           ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem
                           --verbose --no-document
-                          --install-dir ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER}
+                          --install-dir ${TGD}
          )
       else(GFLENGTH GREATER 0)
+#  Found x.gemspec but no Gemfile
          add_custom_target(_PREPARE_FILESYSTEM 
             COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
-            COMMAND env --unset=GEM_HOME --unset=GEM_PATH "cd ${DATA_PRE_DIR} && ${DEPS}/bin/gem build ${GEMSPEC}"
+            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
+            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${RBD}/gem build ${GEMSPEC}
             DEPENDS ${RUBY_PRJ}
+         )
+         add_custom_target(_SOURCE_FILESYSTEM 
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${TBD}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
+            COMMAND ${CMAKE_COMMAND} -E copy ${RBD}/ruby ${TBD}
+            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${RBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
+            DEPENDS ${RUBY_PRJ} _PREPARE_FILESYSTEM
          )
       endif(GFLENGTH GREATER 0)
    endif(GSLENGTH GREATER 1)  
@@ -404,11 +364,12 @@ else(GSLENGTH GREATER 0)
    if(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
          message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
    endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
-   add_custom_target(_SOURCE_FILESYSTEM ALL
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}/bin
-           COMMAND ${CMAKE_COMMAND} -E copy ${DEPS}/bin/ruby ${DATA_SRC_DIR}/bin
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}/local
-           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_SRC_DIR}/local
+
+   add_custom_target(_SOURCE_FILESYSTEM 
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${TBD}
+           COMMAND ${CMAKE_COMMAND} -E copy ${RBD}/ruby ${TBD}
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
+           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
            DEPENDS ${RUBY_PRJ}
    )
    set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
@@ -458,7 +419,7 @@ add_custom_target(_PACKAGED_FILESYSTEM
 )
 
 configure_file(
-   ${CMAKE_CURRENT_SOURCE_DIR}/resources/tebako-fs.cpp.in 
+   ${DATA_RES_DIR}/tebako-fs.cpp.in 
    ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
    @ONLY
 )
