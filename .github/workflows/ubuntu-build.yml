@@ -89,7 +89,8 @@ jobs:
 #   3. Simple Ruby script, absolute path to entry point 
 #   4. Simple Ruby script, absolute path to entry point, relative path to root      Expected error at configure step
 #   5. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
-#   6-12  reserved
+#   6-10  reserved
+#  11. Ruby gem, no gemfile
 #  12. Ruby gem, multiple gemspecs                                                  Expected error at configure step
 #  13. Ruby gem, gemspec error                                                      Expected error at build step  
 #
@@ -150,6 +151,9 @@ jobs:
               -DROOT="${{github.workspace}}/tests/test-11" -DENTRANCE="test.rb"           \
               -B ${{github.workspace}}
 
+    - name: Test11 - Build and install packaged solution - [Ruby gem, no gemfile]
+      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+
     - name: Test12 - Configure[only] - [Ruby gem, no gemfile, multiple gemspecs]
       run: | 
         ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
@@ -165,4 +169,4 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test13 - Build and install packaged solution - [Ruby gem, gemspec error]
-      run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh {{github.workspace}} ${{env.BUILD_TYPE}}
+      run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
