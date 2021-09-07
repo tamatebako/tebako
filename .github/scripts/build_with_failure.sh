@@ -31,7 +31,7 @@ cmake --build $1 --config $2 --target install
 
 if  [ $? -eq 0 ] ; then
   echo CMake has succeeded unexpectedly [Test failed]
-  exit -1
+  exit 1
 else
   echo CMake failed as expected [Test OK]
   exit 0

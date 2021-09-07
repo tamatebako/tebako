@@ -35,7 +35,7 @@ cmake -DCMAKE_BUILD_TYPE=$1  -DDEPS:STRING=$2  -DROOT=$3 -DENTRANCE=$4 -B $5
 
 if  [ $? -eq 0 ] ; then 
   echo CMake has succeeded unexpectedly [Test failed]
-  exit -1 
+  exit 1 
 else 
   echo CMake failed as expected [Test OK]
   exit 0

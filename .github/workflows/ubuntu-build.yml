@@ -4,8 +4,16 @@ on:
   # Triggers the workflow on push or pull request events but only for the master branch
   push:
     branches: [ master, issue-1 ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
   pull_request:
     branches: [ master ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -43,6 +51,7 @@ env:
 jobs:
   Ubuntu-build:
     runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
 
     steps:
     - uses: actions/checkout@v2
@@ -66,7 +75,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v12
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v14
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 
@@ -175,9 +184,9 @@ jobs:
     - name: Test13 - Build and install packaged solution - [Ruby gem, no gemfile, gemspec error]
       run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
 
-    - name: Test14 - Configure[only] - [Ruby gem, no gemfile, entry point does not exist]
+    - name: Test14 - Configure - [Ruby gem, no gemfile, entry point does not exist]
       run: | 
-        ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
-              ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
-              "${{github.workspace}}/tests/test-11" "tebako-test-no-entry-point.rb"      \
-              ${{github.workspace}}
+        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
+              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
+              -DROOT="${{github.workspace}}/tests/test-11" -DENTRANCE="tebako-test-no-entry-point.rb"     \
+              -B ${{github.workspace}}
