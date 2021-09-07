@@ -35,3 +35,5 @@ if  [ $? -eq 0 ] ; then
 else
   echo CMake failed as expected [Test OK]
   exit 0
+fi
+
