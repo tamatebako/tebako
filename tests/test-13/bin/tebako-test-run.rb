@@ -1,10 +1,10 @@
 #!/home/tebako/bin/ruby
 
 $LOAD_PATH.unshift File.expand_path("../../lib", __FILE__)
-require "tebako_test"
+require "tebako-test"
 
 begin
-  instance = tebako_test.new
+  instance = TebakoTest.new
   instance.run!
 end 
 

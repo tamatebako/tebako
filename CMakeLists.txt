@@ -130,7 +130,6 @@ def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a7
 def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 def_ext_prj_g(DWARFS "78401c3")
-set (DWARFS_BINARY_DIR ${DEPS}/src/${DWARFS_PRJ}-build/)
 def_ext_prj_g(INCBIN "348e36b")
 
 
@@ -285,6 +284,7 @@ ExternalProject_Add(${RUBY_PRJ}
    URL_HASH SHA256=${RUBY_HASH}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${RUBY_SOURCE_DIR}
+   BINARY_DIR ${RUBY_BINARY_DIR}
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure 
                      --enable-bundled-libyaml 
                      --without-gmp 
@@ -293,9 +293,10 @@ ExternalProject_Add(${RUBY_PRJ}
                      --disable-install-doc
                      --with-static-linked-ext
                      --srcdir=${RUBY_SOURCE_DIR} 
-                     --prefix=${DEPS}
+                     --prefix=${DATA_SRC_DIR}
                      cflags=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
+   INSTALL_COMMAND ""  
 )
  
 add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
@@ -337,23 +338,23 @@ if(GSLENGTH GREATER 0)
          )
       else(GFLENGTH GREATER 0)
 #  Found x.gemspec but no Gemfile
-         add_custom_target(_PREPARE_FILESYSTEM 
+         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
+         message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
+         add_custom_target(_SOURCE_FILESYSTEM 
+            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
             COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${RBD}/gem build ${GEMSPEC}
-            DEPENDS ${RUBY_PRJ}
-         )
-         add_custom_target(_SOURCE_FILESYSTEM 
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${TBD}
+            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND ${CMAKE_COMMAND} -E copy ${RBD}/ruby ${TBD}
-            COMMAND ${CMAKE_COMMAND} -E copy ${RBD}/gem  ${TBD}
             COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
-            DEPENDS ${RUBY_PRJ} _PREPARE_FILESYSTEM
-         )
+            DEPENDS ${RUBY_PRJ} 
+         )  # !!!! Check entry point !!!
       endif(GFLENGTH GREATER 0)
    endif(GSLENGTH GREATER 1)  
 else(GSLENGTH GREATER 0)
+# No gemspecs
+# Simple ruby script
+   message("Collecting simple Ruby script from ${FS_ROOT}") 
    cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
    if(${IS_EN_ABSOLUTE})
       cmake_path(IS_PREFIX FS_ROOT ${FS_ENTRANCE} IS_FS_EN_PREFIX)
@@ -365,16 +366,14 @@ else(GSLENGTH GREATER 0)
    if(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
          message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
    endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
-
-   add_custom_target(_SOURCE_FILESYSTEM 
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${TBD}
-           COMMAND ${CMAKE_COMMAND} -E copy ${RBD}/ruby ${TBD}
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
-           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-           DEPENDS ${RUBY_PRJ}
-   )
    set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
-   message("Collecting simple Ruby script from ${FS_ROOT}. Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
+   message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
+   add_custom_target(_SOURCE_FILESYSTEM 
+            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
+            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
+            DEPENDS ${RUBY_PRJ}
+   )
 endif()
 
 # ...................................................................
@@ -413,6 +412,9 @@ ExternalProject_Add(${DWARFS_PRJ}
 # Packaged filesystem
 
 add_custom_target(_PACKAGED_FILESYSTEM  
+   COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
+                                      ${DATA_SRC_DIR}/bin/b*  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem ${DATA_SRC_DIR}/bin/irb 
+                                      ${DATA_SRC_DIR}/bin/ra* ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri  ${DATA_SRC_DIR}/bin/y2racc
    COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
    COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
    DEPENDS ${DWARFS_PRJ} _SOURCE_FILESYSTEM

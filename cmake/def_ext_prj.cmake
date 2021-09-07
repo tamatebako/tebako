@@ -34,8 +34,9 @@
 # Version and hash value come from environment variables (GHA case)
 # If environment variables are not set then default values are used
 # XXX_NAME = xxx  (lowercase)   
-# XXX_PRJ  = _xxx (lowercase)       -- CMake ExternalProject name
-# XXX_SOURCE_DIR = ${DEPS}/src/_xxx -- Source folder for ExternalProject_Add 
+# XXX_PRJ  = _xxx (lowercase)             -- CMake ExternalProject name
+# XXX_SOURCE_DIR = ${DEPS}/src/_xxx       -- Source folder for ExternalProject_Add 
+# XXX_BINARY_DIR = ${DEPS}/src/_xxx-build -- Build folder for ExternalProject_Add 
 
 function(DEF_EXT_PRJ_T NAME DEFAULT_VER DEFAULT_HASH)
   set(VER ${NAME}_VER)
@@ -59,6 +60,8 @@ function(DEF_EXT_PRJ_T NAME DEFAULT_VER DEFAULT_HASH)
   set(${R_PRJ} _${TMP} PARENT_SCOPE)
   set(R_DIR ${NAME}_SOURCE_DIR)
   set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
+  set(R_DIR ${NAME}_BINARY_DIR)
+  set(${R_DIR} ${DEPS}/src/_${TMP}-build PARENT_SCOPE)
 endfunction()
 
 # ...................................................................
@@ -69,8 +72,9 @@ endfunction()
 # Version and tag come from environment variables (GHA case)
 # If environment variables are not set then default values are used
 # XXX_NAME = xxx  (lowercase)   
-# XXX_PRJ  = _xxx (lowercase)       -- CMake ExternalProject name
-# XXX_SOURCE_DIR = ${DEPS}/src/_xxx -- Source folder for ExternalProject_Add 
+# XXX_PRJ  = _xxx (lowercase)             -- CMake ExternalProject name
+# XXX_SOURCE_DIR = ${DEPS}/src/_xxx       -- Source folder for ExternalProject_Add 
+# XXX_BINARY_DIR = ${DEPS}/src/_xxx-build -- Build folder for ExternalProject_Add 
 
 function(DEF_EXT_PRJ_G NAME DEFAULT_TAG)
   set(TAG ${NAME}_TAG)
@@ -87,4 +91,6 @@ function(DEF_EXT_PRJ_G NAME DEFAULT_TAG)
   set(${R_PRJ} _${TMP} PARENT_SCOPE)
   set(R_DIR ${NAME}_SOURCE_DIR)
   set(${R_DIR} ${DEPS}/src/_${TMP} PARENT_SCOPE)
+  set(R_DIR ${NAME}_BINARY_DIR)
+  set(${R_DIR} ${DEPS}/src/_${TMP}-build PARENT_SCOPE)
 endfunction()
