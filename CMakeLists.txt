@@ -333,10 +333,9 @@ if(GSLENGTH GREATER 0)
           UPDATE_COMMAND ""
           CONFIGURE_COMMAND ""
           BUILD_COMMAND ""
-          INSTALL_COMMAND ${DEPS}\bin\gem install 
+          INSTALL_COMMAND ${TBD}\bin\gem install 
                           ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem
                           --verbose --no-document
-                          --install-dir ${TGD}
          )
       else(GFLENGTH GREATER 0)
 #  Found x.gemspec but no Gemfile
@@ -348,7 +347,7 @@ if(GSLENGTH GREATER 0)
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
             COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
+            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document 
             COMMAND ${CMAKE_COMMAND} -E touch ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
