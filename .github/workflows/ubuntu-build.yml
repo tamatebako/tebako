@@ -217,4 +217,4 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test14 - Configure - [Ruby gem, no gemfile, entry point does not exist]
-      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE} 
+      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
