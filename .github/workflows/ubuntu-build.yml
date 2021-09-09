@@ -177,7 +177,7 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test10 - Configure - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
-      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE} 
+      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
 
     - name: Test11 - Configure - [Ruby gem, no gemfile]
       run: | 
