@@ -176,7 +176,7 @@ jobs:
               -DROOT="${{github.workspace}}/tests/test-09" -DENTRANCE="tebako-test-no-entry-point.rb"     \
               -B ${{github.workspace}}
 
-    - name: Test10 - Configure - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
+    - name: Test10 - Build - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
       run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
 
     - name: Test11 - Configure - [Ruby gem, no gemfile]

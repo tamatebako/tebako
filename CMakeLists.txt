@@ -348,7 +348,7 @@ if(GSLENGTH GREATER 0)
             COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
             COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document 
-            COMMAND ${CMAKE_COMMAND} -E touch ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
+            COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
             DEPENDS ${RUBY_PRJ} 
@@ -361,7 +361,7 @@ elseif(GLENGTH GREATER 0)
    if(GLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gems detected in ${FS_ROOT}")
    else()
-      message("Collecting simple Ruby script from ${FS_ROOT}/${GEM}") 
+      message("Installing Ruby gem from ${FS_ROOT}/${GEM}") 
       set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(_SOURCE_FILESYSTEM  
@@ -369,7 +369,7 @@ elseif(GLENGTH GREATER 0)
           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document 
-          COMMAND ${CMAKE_COMMAND} -E touch ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
+          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
           DEPENDS ${RUBY_PRJ} 
