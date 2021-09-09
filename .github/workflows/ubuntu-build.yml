@@ -99,10 +99,12 @@ jobs:
 #   4. Simple Ruby script, absolute path to entry point, relative path to root      Expected error at configure step
 #   5. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
 #   6-10  reserved
-#  11. Ruby gem, no gemfile
+#  09. Ruby gem (xxx.gem file)  
+#  10. Ruby gem (xxx.gem file), no entry point 
+#  11. Ruby gem, no gemfile, with gemspec                                           Expected error at build step  
 #  12. Ruby gem, no gemfile, multiple gemspecs                                      Expected error at configure step
 #  13. Ruby gem, no gemfile, gemspec error                                          Expected error at build step  
-#  13. Ruby gem, no gemfile, no entry point                                         Expected error at build step  
+#  14. Ruby gem, no gemfile, gemspec, no entry point                                         Expected error at build step  
 #
 
     - name: Baseline & Test1 - Configure - [Simple Ruby script, relative path to entry point]
@@ -154,6 +156,29 @@ jobs:
               "${{github.workspace}}/tests/test-1" "${{github.workspace}}/tests/test-0/test.rb" \
               ${{github.workspace}}
 
+    - name: Test09 - Configure - [xxx.gem, no gemspec, no gemfile]
+      run: | 
+        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
+              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
+              -DROOT="${{github.workspace}}/tests/test-09" -DENTRANCE="tebako-test-run.rb"     \
+              -B ${{github.workspace}}
+
+    - name: Test09 - Build and install packaged solution - [xxx.gem, no gemspec, no gemfile]
+      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+
+    - name: Test09 - Run packaged solution - [xxx.gem, no gemspec, no gemfile]
+      run:  /usr/local/bin/tebako
+
+    - name: Test10 - Configure - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
+      run: | 
+        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
+              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
+              -DROOT="${{github.workspace}}/tests/test-09" -DENTRANCE="tebako-test-run.rb"     \
+              -B ${{github.workspace}}
+
+    - name: Test10 - Configure - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
+      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE} 
+
     - name: Test11 - Configure - [Ruby gem, no gemfile]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
@@ -190,3 +215,6 @@ jobs:
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
               -DROOT="${{github.workspace}}/tests/test-11" -DENTRANCE="tebako-test-no-entry-point.rb"     \
               -B ${{github.workspace}}
+
+    - name: Test14 - Configure - [Ruby gem, no gemfile, entry point does not exist]
+      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE} 
