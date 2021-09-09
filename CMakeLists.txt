@@ -29,6 +29,8 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 project(tebako_packager VERSION 0.1.2)
+execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
+
 # ...................................................................
 #        sudo apt-get install \
 #        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
@@ -58,11 +60,13 @@ if ("-${ENTRANCE}" STREQUAL "-")
 endif()
 
 cmake_path(SET FS_ENTRANCE NORMALIZE ${ENTRANCE})
-cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
 
-cmake_path(IS_RELATIVE FS_ROOT IS_RT_RELATIVE)
+cmake_path(IS_RELATIVE ROOT IS_RT_RELATIVE)
 if(${IS_RT_RELATIVE})
-  message(FATAL_ERROR "Please provide absolute path to root folder. '${FS_ROOT}' is relative path and cannot be handled properly")
+  cmake_path(SET FS_ROOT NORMALIZE ${FS_CURRENT}/${ROOT})
+  message(FATAL_ERROR "Relative path to root '${ROOT}' will be extended to ${FS_ROOT}")
+else()
+  cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
 endif()
 
 message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point")
