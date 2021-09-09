@@ -30,6 +30,7 @@ cmake_policy(SET CMP0048 NEW)
 
 project(tebako_packager VERSION 0.1.2)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
+string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
 # ...................................................................
 #        sudo apt-get install \
@@ -64,7 +65,7 @@ cmake_path(SET FS_ENTRANCE NORMALIZE ${ENTRANCE})
 cmake_path(IS_RELATIVE ROOT IS_RT_RELATIVE)
 if(${IS_RT_RELATIVE})
   cmake_path(SET FS_ROOT NORMALIZE ${FS_CURRENT}/${ROOT})
-  message(FATAL_ERROR "Relative path to root '${ROOT}' will be extended to ${FS_ROOT}")
+  message(FATAL_ERROR "Relative path to root '${ROOT}' will be extended to '${FS_ROOT}'")
 else()
   cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
 endif()
