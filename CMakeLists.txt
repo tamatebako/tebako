@@ -308,16 +308,16 @@ set (TLD ${DATA_SRC_DIR}/local)
 # TGD folder is used to install gems 
 set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
 
-file(GLOB GEMSPECS LIST_DIRECTORIES false ${ROOT}/*.gemspec)
-file(GLOB GEMFILES LIST_DIRECTORIES false ${ROOT}/Gemfile)
-file(GLOB GEMS     LIST_DIRECTORIES false ${ROOT}/*.gem)
+file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
+file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
+file(GLOB GEMS     LIST_DIRECTORIES false ${FS_ROOT}/*.gem)
 
 list(LENGTH GEMSPECS GSLENGTH)
-list(LENGTH GEMS     GLENGS)
+list(LENGTH GEMS     GLENGTH)
 
 if(GSLENGTH GREATER 0)
    if(GSLENGTH GREATER 1)
-      message(FATAL_ERROR "Multiple gemspecs detected in ${ROOT}")
+      message(FATAL_ERROR "Multiple gemspecs detected in ${FS_ROOT}")
    else(GSLENGTH GREATER 1)
       list(GET GEMSPECS 0 GEMSPEC)
       message("Collecting gem from gemspec ${GEMSPEC}")
@@ -358,16 +358,18 @@ if(GSLENGTH GREATER 0)
    endif()  
 elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, nogemfile
+   list(GET GEM 0 GEMS)
    if(GLENGTH GREATER 1)
-      message(FATAL_ERROR "Multiple gems detected in ${ROOT}")
+      message(FATAL_ERROR "Multiple gems detected in ${FS_ROOT}")
    else()
+      message("Collecting simple Ruby script from ${FS_ROOT}/${GEM}") 
       set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(_SOURCE_FILESYSTEM  
           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-          COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
+          COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document 
           COMMAND ${CMAKE_COMMAND} -E touch ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
