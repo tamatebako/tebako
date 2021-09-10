@@ -44,7 +44,7 @@ string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
 include(ExternalProject)
 include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
-
+include(${CMAKE_SOURCE_DIR}/cmake/ensure_bundler.cmake)
 
 # Developer mode removes the burden of nested projects which takes a lot under WSL/VisualStudio/Ninja environment
 # Use with caution, please
@@ -325,43 +325,52 @@ if(GSLENGTH GREATER 0)
       message(FATAL_ERROR "Multiple gemspecs detected in ${FS_ROOT}")
    else(GSLENGTH GREATER 1)
       list(GET GEMSPECS 0 GEMSPEC)
-      message("Collecting gem from gemspec ${GEMSPEC}")
-      
       list(LENGTH GEMFILES GFLENGTH)
       if(GFLENGTH GREATER 0)
-        ExternalProject_Add(${BUNDLER_PRJ}
-          PREFIX ${DEPS}
-          URL https://rubygems.org/downloads/bundler-${BUNDLER_VER}.gem
-          URL_HASH SHA256=${BUNDLER_HASH}
-          DOWNLOAD_NO_PROGRESS true
-          SOURCE_DIR ${BUNDLER_SOURCE_DIR}
-          UPDATE_COMMAND ""
-          CONFIGURE_COMMAND ""
-          BUILD_COMMAND ""
-          INSTALL_COMMAND ${TBD}\bin\gem install 
-                          ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem
-                          --verbose --no-document
+#  Found x.gemspec and Gemfile
+        message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
+        set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
+        ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
+        add_custom_target(_SOURCE_FILESYSTEM  
+           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
+           COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
+           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
+           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle install
+           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle exec gem build ${GEMSPEC} 
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
+           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
+                   gem install *.gem --verbose --no-document --install-dir ${TGD}
+           COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
+                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
+                    ${CMAKE_COMMAND} -E false )
+           DEPENDS ${RUBY_PRJ}
          )
-      else(GFLENGTH GREATER 0)
+     else(GFLENGTH GREATER 0)
 #  Found x.gemspec but no Gemfile
+         message("Collecting gem from gemspec ${GEMSPEC}")
          set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
          add_custom_target(_SOURCE_FILESYSTEM  
             COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
             COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem build ${GEMSPEC}
+            COMMAND unset GEM_HOME && unset GEM_PATH && export PATH=${TBD}:$PATH && cd ${DATA_PRE_DIR} && gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document 
+            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
+                    gem install *.gem --verbose --no-document --install-dir ${TGD}
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
             DEPENDS ${RUBY_PRJ} 
          )
       endif()
-   endif()  
+   endif()
+elseif(GFLENGTH GREATER 0)
+   message("Collecting gem from Gemfile")
+   ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
 elseif(GLENGTH GREATER 0)
-# xxx.gem, no gemspec, nogemfile
+# xxx.gem, no gemspec, no gemfile
    list(GET GEM 0 GEMS)
    if(GLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gems detected in ${FS_ROOT}")
@@ -373,7 +382,8 @@ elseif(GLENGTH GREATER 0)
           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-          COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && ${TBD}/gem install *.gem --verbose --no-document 
+          COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
+                  gem install ${GEM} --verbose --no-document --install-dir ${TGD}
           COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
@@ -381,7 +391,7 @@ elseif(GLENGTH GREATER 0)
          )
    endif()
 else()
-# No gemspecs
+# No xxx.gem, no gemspec, no gemfile
 # Simple ruby script
    message("Collecting simple Ruby script from ${FS_ROOT}") 
    cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)

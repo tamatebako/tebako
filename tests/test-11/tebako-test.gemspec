@@ -2,8 +2,8 @@ Gem::Specification.new do |s|
   s.name        = "tebako-test"
   s.version     = "0.0.1"
   s.summary     = "A simple gem for tebako testing"
-  s.authors     = ["Maxim Samsonov"] 
-  s.email       = "m.samsonov@computer.org"
+  s.authors     = ["Ribose"]
+  s.email       = ["open.source@ribose.com"]
   s.files       = ['bin/tebako-test-run.rb', 'lib/tebako-test.rb'] 
   s.homepage    = "https://github.com/tamitebako"
   s.license     = "Unlicense"

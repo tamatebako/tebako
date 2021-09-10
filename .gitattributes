@@ -5,3 +5,5 @@
 *.sh text eol=lf
 *.rb text eol=lf
 *.gemspec text eol=lf
+Gemspec text eol=lf
+Rakefile text eol=lf
