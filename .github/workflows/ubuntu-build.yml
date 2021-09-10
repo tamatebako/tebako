@@ -224,8 +224,6 @@ jobs:
               -DROOT="${{github.workspace}}/tests/test-11" -DENTRANCE="tebako-test-no-entry-point.rb"     \
               -B ${{github.workspace}}
 
-    - name: Test14 - Build and install packaged solution - [Ruby gem, gemspec, no gemfile, entry point does not exist]
-      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
 
     - name: Test15 - Configure - [Ruby gem, gemspec, gemfile]
       run: | 
@@ -234,12 +232,21 @@ jobs:
               -DROOT="${{github.workspace}}/tests/test-15" -DENTRANCE="tebako-test-run.rb"     \
               -B ${{github.workspace}}
 
+    - name: Test15 - Build and install packaged solution - [Ruby gem, gemspec, gemfile]
+      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+
+    - name: Test15 - Run packaged solution - [Ruby gem, gemspec, gemfile]
+      run:  /usr/local/bin/tebako
+
     - name: Test16 - Configure[only] - [Ruby gem, gemspec, gemfile with error]
       run: | 
-        ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
-              ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
-              "${{github.workspace}}/tests/test-16" "tebako-test-run.rb"      \
-              ${{github.workspace}}
+        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
+              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
+              -DROOT="${{github.workspace}}/tests/test-15" -DENTRANCE="tebako-test-run.rb"     \
+              -B ${{github.workspace}}
+
+    - name: Test16 - Build and install packaged solution - [Ruby gem, gemspec, gemfile with error]
+      run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
 
     - name: Test17 - Configure - [Ruby gem, gemspec, gemfile, entry point does not exist]
       run: | 
