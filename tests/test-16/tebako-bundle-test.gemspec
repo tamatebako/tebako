@@ -4,7 +4,7 @@ Gem::Specification.new do |spec|
   spec.name          = "tebako-bundle-test"
   spec.version       = Tebako::Bundle::Test::VERSION
   spec.authors       = ["Ribose"]
-  spec.email         = ["open.source@ribose.com"]
+  spec.email         = [open.source@ribose.com]
 
   spec.summary       = "A simple gem for tebako testing"
   spec.homepage      = "https://github.com/tamitebako"
@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = Gem::Requirement.new(">= 2.3.0")
   spec.metadata["homepage_uri"] = spec.homepage
 
-  spec.files       = Dir["bin/**/*.rb"], Dir["lib/**/*.rb"] 
+  spec.files       = Dir["bin/**/*.rb"] + Dir["lib/**/*.rb"] 
 
   spec.bindir        = "bin"
   spec.executables   << "tebako-test-run.rb"
