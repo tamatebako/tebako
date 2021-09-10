@@ -75,7 +75,7 @@ jobs:
     - uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v14
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v15
 
     - name: Install packages Ubuntu
 # Already installed: bison flex fuse3 pkg-config 

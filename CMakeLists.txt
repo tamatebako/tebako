@@ -371,11 +371,11 @@ elseif(GFLENGTH GREATER 0)
    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
 elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile
-   list(GET GEM 0 GEMS)
+   list(GET GEMS 0 GEM)
    if(GLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gems detected in ${FS_ROOT}")
    else()
-      message("Installing Ruby gem from ${FS_ROOT}/${GEM}") 
+      message("Installing Ruby gem from ${GEM}") 
       set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(_SOURCE_FILESYSTEM  
