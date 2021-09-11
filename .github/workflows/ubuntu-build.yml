@@ -238,7 +238,7 @@ jobs:
     - name: Test15 - Run packaged solution - [Ruby gem, gemspec, gemfile]
       run:  /usr/local/bin/tebako
 
-    - name: Test16 - Configure[only] - [Ruby gem, gemspec, gemfile with error]
+    - name: Test16 - Configure - [Ruby gem, gemspec, gemfile with error]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
               -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
