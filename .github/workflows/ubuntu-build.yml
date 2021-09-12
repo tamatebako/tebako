@@ -81,6 +81,7 @@ jobs:
 # Already installed: bison flex fuse3 pkg-config
 # libsqlite3-dev  is required for Rails packaging tests only
       run: |
+        sudo apt-get update
         sudo apt-get install \
         ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
         libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
@@ -169,10 +170,10 @@ jobs:
 
     - name: Test06 - Configure - [Rails project]
       run: | 
-        ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
-              ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
-              "${{github.workspace}}/tests/test-01" "${{github.workspace}}/tests/test-00/test.rb" \
-              ${{github.workspace}}
+        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
+              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
+              -DROOT="${{github.workspace}}/tests/test-06" -DENTRANCE="test.rb"           \
+              -B ${{github.workspace}}
     
     - name: Test09 - Configure - [xxx.gem, no gemspec, no gemfile]
       run: | 
