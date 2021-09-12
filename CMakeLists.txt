@@ -28,7 +28,7 @@ cmake_minimum_required (VERSION 3.20)
 cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
-project(tebako_packager VERSION 0.1.2)
+project(tebako_packager VERSION 0.1.3)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -41,6 +41,8 @@ string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 #        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
 #    ++  Already installed at GHA but may require local installation: 
 #        bison flex fuse3 pkg-config libsodium-dev
+#    ++  For Rails testing only
+#        libsqlite3-dev
 
 include(ExternalProject)
 include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
