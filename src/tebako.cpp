@@ -31,8 +31,6 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
-
-
 #if FUSE_USE_VERSION >= 30
 #include <fuse3/fuse_lowlevel.h>
 #else
@@ -59,7 +57,6 @@ void dwarfs_starter(void* args) {
 int main(int argc, char** argv) {
     return dwarfs::safe_main([&]
         {
-
             std::cerr << "Starting " << PRJ_NAME << " version " << PRJ_VERSION_STRING << "..." << std::endl;
 
 
@@ -90,14 +87,29 @@ int main(int argc, char** argv) {
             if (ret == 0) {
 //                std::string cmd("ls -l ");
 //                cmd += tebako::fs_mount_point;
+//                std::cerr << "Running " << cmd << std::endl;
 //                system(cmd.c_str());
 
-                std::string cmd = tebako::fs_mount_point;
-                cmd += "/test-0.sh";
-                system(cmd.c_str());
+//                cmd += "/local";
+//                std::cerr << "Running " << cmd << std::endl;
+//                system(cmd.c_str());
+
+//                std::string cmd = tebako::fs_mount_point;
+//                cmd += "/tests/test-0.sh";
+//                system(cmd.c_str());
                 
-                cmd = std::string(tebako::fs_mount_point) + "/test-1.rb";
-                system(cmd.c_str());
+//                cmd = std::string("ls -l ") + tebako::fs_mount_point + "/bin";
+//                std::cerr << "Running " << cmd << std::endl;
+//                ret = system(cmd.c_str());
+
+                    
+                std::string cmd = std::string(tebako::fs_mount_point) + tebako::fs_entry_point;
+                std::cerr << "Running " << cmd << std::endl;
+                ret = system(cmd.c_str());
+
+                if (ret) {
+                    std::cerr << "Packaged program exited with error code " << ret << std::endl;
+                } 
 
                 dwarfs::stop_fuse_session();
                 dfs.join();

@@ -58,8 +58,8 @@ boost::system::error_code mfs::release(off_t offset, size_t size) {
   size -= size % page_size_;
 
   auto addr = reinterpret_cast<const uint8_t*>(addr_) + offset;
-  if (::madvise((void *)addr, size, MADV_DONTNEED) != 0) {
-    ec.assign(errno, boost::system::generic_category());
+  if (::munlock(addr, size) != 0) {
+      ec.assign(errno, boost::system::generic_category());
   }
   return ec;
 }
@@ -69,8 +69,8 @@ boost::system::error_code mfs::release_until(off_t offset) {
 
   offset -= offset % page_size_;
 
-  if (::madvise((void *)addr_, offset, MADV_DONTNEED) != 0) {
-    ec.assign(errno, boost::system::generic_category());
+  if (::munlock(addr_, offset) != 0) {
+      ec.assign(errno, boost::system::generic_category());
   }
   return ec;
 }
