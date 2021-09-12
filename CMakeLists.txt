@@ -370,17 +370,24 @@ if(GSLENGTH GREATER 0)
 elseif(GFLENGTH GREATER 0)
 #  Found Gemfile but no gemspec 
    message("Deploying Gemfile")
+   set(FS_ENTRY_POINT "/local/bin/${FS_ENTRANCE}")
+   message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
    add_custom_target(_SOURCE_FILESYSTEM  
      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
+     COMMAND ${CMAKE_COMMAND} -E echo "Ruby ++"
      COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
-     COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
-     COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-     COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle install --deployment
-     COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
-               ( unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle install --deployment --binstubs &&
-                 test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ) ||
-               ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
+     COMMAND ${CMAKE_COMMAND} -E echo "Bundler ++"
+     COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
+     COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
+     COMMAND ${CMAKE_COMMAND} -E echo "Copy ${FS_ROOT} --> ${TLD}"
+     COMMAND unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH && bundle install --deployment
+     COMMAND ${CMAKE_COMMAND} -E echo "bundle install --deployment"
+     COMMAND test -f  ${TLD}${FS_ENTRY_POINT} ||
+               ( unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH && bundle install --deployment --binstubs)
+     COMMAND ${CMAKE_COMMAND} -E echo "bundle install --deployment --binstubs"
+     COMMAND test -f  ${TLD}${FS_ENTRY_POINT} ||
+               ( ${CMAKE_COMMAND} -E echo "Entry point ${TLD}${FS_ENTRY_POINT} does not exist" &&
                  ${CMAKE_COMMAND} -E false )
              DEPENDS ${RUBY_PRJ} 
    )

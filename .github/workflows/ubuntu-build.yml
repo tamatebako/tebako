@@ -95,12 +95,13 @@ jobs:
         sudo chmod a+w /home/tebako
 
 # Tests
-#   1. [Also the baseline] Simple Ruby script, relative path to entry point  
-#   2. Simple Ruby script, relative path to entry point, non exisitng entrance      Expected error at configure step
-#   3. Simple Ruby script, absolute path to entry point 
-#   4. Simple Ruby script, absolute path to entry point, relative path to root      
-#   5. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
-#   6-8  reserved
+#  01. [Also the baseline] Simple Ruby script, relative path to entry point  
+#  02. Simple Ruby script, relative path to entry point, non exisitng entrance      Expected error at configure step
+#  03. Simple Ruby script, absolute path to entry point 
+#  04. Simple Ruby script, absolute path to entry point, relative path to root      
+#  05. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
+#  06. Rails project
+#  07-08  reserved
 #  09. Ruby gem (xxx.gem file)  
 #  10. Ruby gem (xxx.gem file), no entry point                                      Expected error at build step
 #  11. Ruby gem, no gemfile, with gemspec                                             
