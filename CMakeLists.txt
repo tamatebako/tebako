@@ -114,9 +114,6 @@ set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 set(FS_MOUNT_POINT "/home/tebako")
 
 # Clean previous run if any
-file(REMOVE_RECURSE ${DATA_SRC_DIR})
-file(REMOVE_RECURSE ${DATA_PRE_DIR})
-file(REMOVE_RECURSE ${DATA_BIN_DIR})
 file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
 
 # ...................................................................
@@ -321,6 +318,15 @@ list(LENGTH GEMSPECS GSLENGTH)
 list(LENGTH GEMFILES GFLENGTH)
 list(LENGTH GEMS     GLENGTH)
 
+add_custom_target(_CLEAN_FILESYSTEM
+           COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
+           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
+           DEPENDS ${RUBY_PRJ} 
+)
+
 if(GSLENGTH GREATER 0)
    if(GSLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gemspecs detected in ${FS_ROOT}")
@@ -333,9 +339,7 @@ if(GSLENGTH GREATER 0)
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
         add_custom_target(_SOURCE_FILESYSTEM  
-           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
            COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle install
            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle exec gem build ${GEMSPEC} 
@@ -345,7 +349,7 @@ if(GSLENGTH GREATER 0)
            COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                    (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                     ${CMAKE_COMMAND} -E false )
-           DEPENDS ${RUBY_PRJ}
+           DEPENDS _CLEAN_FILESYSTEM
          )
      else(GFLENGTH GREATER 0)
 #  Found xxx.gemspec but no Gemfile
@@ -353,8 +357,6 @@ if(GSLENGTH GREATER 0)
          set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
          add_custom_target(_SOURCE_FILESYSTEM  
-            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
             COMMAND unset GEM_HOME && unset GEM_PATH && export PATH=${TBD}:$PATH && cd ${DATA_PRE_DIR} && gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
@@ -363,7 +365,7 @@ if(GSLENGTH GREATER 0)
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
-            DEPENDS ${RUBY_PRJ} 
+            DEPENDS _CLEAN_FILESYSTEM 
          )
       endif()
    endif()
@@ -374,8 +376,6 @@ elseif(GFLENGTH GREATER 0)
    message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
    add_custom_target(_SOURCE_FILESYSTEM  
-     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
-     COMMAND ${CMAKE_COMMAND} -E echo "Ruby ++"
      COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
      COMMAND ${CMAKE_COMMAND} -E echo "Bundler ++"
      COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
@@ -389,7 +389,7 @@ elseif(GFLENGTH GREATER 0)
      COMMAND test -f  ${TLD}${FS_ENTRY_POINT} ||
                ( ${CMAKE_COMMAND} -E echo "Entry point ${TLD}${FS_ENTRY_POINT} does not exist" &&
                  ${CMAKE_COMMAND} -E false )
-             DEPENDS ${RUBY_PRJ} 
+             DEPENDS _CLEAN_FILESYSTEM 
    )
 elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile
@@ -401,15 +401,13 @@ elseif(GLENGTH GREATER 0)
       set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(_SOURCE_FILESYSTEM  
-          COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
-          COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
                   gem install ${GEM} --verbose --no-document --install-dir ${TGD}
           COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
-          DEPENDS ${RUBY_PRJ} 
+          DEPENDS _CLEAN_FILESYSTEM 
          )
    endif()
 else()
@@ -430,10 +428,9 @@ else()
    set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
    message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
    add_custom_target(_SOURCE_FILESYSTEM  
-            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-            DEPENDS ${RUBY_PRJ}
+            DEPENDS _CLEAN_FILESYSTEM
    )
 endif()
 
@@ -476,7 +473,6 @@ add_custom_target(_PACKAGED_FILESYSTEM
    COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
 #                                      ${DATA_SRC_DIR}/bin/b*  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem ${DATA_SRC_DIR}/bin/irb 
 #                                      ${DATA_SRC_DIR}/bin/ra* ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri  ${DATA_SRC_DIR}/bin/y2racc
-   COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
    COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
    DEPENDS ${DWARFS_PRJ} _SOURCE_FILESYSTEM
    BYPRODUCTS ${DATA_BIN_FILE}
