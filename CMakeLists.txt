@@ -318,6 +318,7 @@ file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
 file(GLOB GEMS     LIST_DIRECTORIES false ${FS_ROOT}/*.gem)
 
 list(LENGTH GEMSPECS GSLENGTH)
+list(LENGTH GEMFILES GFLENGTH)
 list(LENGTH GEMS     GLENGTH)
 
 if(GSLENGTH GREATER 0)
@@ -327,7 +328,7 @@ if(GSLENGTH GREATER 0)
       list(GET GEMSPECS 0 GEMSPEC)
       list(LENGTH GEMFILES GFLENGTH)
       if(GFLENGTH GREATER 0)
-#  Found x.gemspec and Gemfile
+#  Found xxx.gemspec and Gemfile
         message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
@@ -347,7 +348,7 @@ if(GSLENGTH GREATER 0)
            DEPENDS ${RUBY_PRJ}
          )
      else(GFLENGTH GREATER 0)
-#  Found x.gemspec but no Gemfile
+#  Found xxx.gemspec but no Gemfile
          message("Collecting gem from gemspec ${GEMSPEC}")
          set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
@@ -367,8 +368,22 @@ if(GSLENGTH GREATER 0)
       endif()
    endif()
 elseif(GFLENGTH GREATER 0)
-   message("Collecting gem from Gemfile")
+#  Found Gemfile but no gemspec 
+   message("Deploying Gemfile")
    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
+   add_custom_target(_SOURCE_FILESYSTEM  
+     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
+     COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+     COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
+     COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
+     COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle install --deployment
+     COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
+               ( unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle install --deployment --binstubs &&
+                 test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ) ||
+               ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
+                 ${CMAKE_COMMAND} -E false )
+             DEPENDS ${RUBY_PRJ} 
+   )
 elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile
    list(GET GEMS 0 GEM)
@@ -391,7 +406,7 @@ elseif(GLENGTH GREATER 0)
          )
    endif()
 else()
-# No xxx.gem, no gemspec, no gemfile
+# No gem, no gemspec, no gemfile
 # Simple ruby script
    message("Collecting simple Ruby script from ${FS_ROOT}") 
    cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
