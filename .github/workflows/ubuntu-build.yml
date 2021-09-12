@@ -81,6 +81,7 @@ jobs:
 # Already installed: bison flex fuse3 pkg-config
 # libsqlite3-dev  is required for Rails packaging tests only
       run: |
+        sudo apt-get update
         sudo apt-get install \
         ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
         libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
