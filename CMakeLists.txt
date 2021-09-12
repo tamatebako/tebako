@@ -310,6 +310,8 @@ set (TLD ${DATA_SRC_DIR}/local)
 # TGD folder is used to install gems 
 set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
 
+set(BUNDLER_CPATH "${DATA_SRC_DIR}/include/ruby-${RUBY_API_VER}:${RID}:${RID}/${NCURSES_NAME}:${RID}/${OPENSSL_NAME}:${RID}/${READLINE_NAME}:${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
+
 file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
 file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
 file(GLOB GEMS     LIST_DIRECTORIES false ${FS_ROOT}/*.gem)
@@ -377,19 +379,17 @@ elseif(GFLENGTH GREATER 0)
    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
    add_custom_target(_SOURCE_FILESYSTEM  
      COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
-     COMMAND ${CMAKE_COMMAND} -E echo "Bundler ++"
      COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
      COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-     COMMAND ${CMAKE_COMMAND} -E echo "Copy ${FS_ROOT} --> ${TLD}"
-     COMMAND unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH && bundle install --deployment
-     COMMAND ${CMAKE_COMMAND} -E echo "bundle install --deployment"
-     COMMAND test -f  ${TLD}${FS_ENTRY_POINT} ||
-               ( unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH && bundle install --deployment --binstubs)
-     COMMAND ${CMAKE_COMMAND} -E echo "bundle install --deployment --binstubs"
-     COMMAND test -f  ${TLD}${FS_ENTRY_POINT} ||
-               ( ${CMAKE_COMMAND} -E echo "Entry point ${TLD}${FS_ENTRY_POINT} does not exist" &&
+     COMMAND unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH  && bundle install --deployment
+#    && export CPATH=${BUNDLER_CPATH}:$CPATH 
+     COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
+               ( unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH && export CPATH=${BUNDLER_CPATH}:$CPATH && bundle install --deployment --binstubs)
+     COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
+               ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                  ${CMAKE_COMMAND} -E false )
-             DEPENDS _CLEAN_FILESYSTEM 
+#     COMMAND ${CMAKE_COMMAND} -E echo "Here we go ..." && ${CMAKE_COMMAND} -E false  
+     DEPENDS _CLEAN_FILESYSTEM 
    )
 elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile

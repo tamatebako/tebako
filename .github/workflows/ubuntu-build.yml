@@ -101,8 +101,9 @@ jobs:
 #  03. Simple Ruby script, absolute path to entry point 
 #  04. Simple Ruby script, absolute path to entry point, relative path to root      
 #  05. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
-#  06. Rails project
-#  07-08  reserved
+#  06. Rails project                                                                
+#  07. Rails project, ruby and bundler version mismatch                             Expected error at configure step
+#  08. Rails project, no entry point                                                Expected error at build step
 #  09. Ruby gem (xxx.gem file)  
 #  10. Ruby gem (xxx.gem file), no entry point                                      Expected error at build step
 #  11. Ruby gem, no gemfile, with gemspec                                             
@@ -175,6 +176,13 @@ jobs:
               -DROOT="${{github.workspace}}/tests/test-06" -DENTRANCE="test.rb"           \
               -B ${{github.workspace}}
     
+    - name: Test07 - Configure[only] - [Rails project, ruby and bundler version mismatch]
+      run: | 
+        ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
+              ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
+              "${{github.workspace}}/tests/test-07" "test.rb" \
+              ${{github.workspace}}
+
     - name: Test09 - Configure - [xxx.gem, no gemspec, no gemfile]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
