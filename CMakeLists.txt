@@ -383,8 +383,10 @@ elseif(GFLENGTH GREATER 0)
      COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
      COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
      COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-     COMMAND unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH  && bundle install --deployment
+     COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} &&
+             ${CMAKE_COMMAND} -E env --unset GEM_HOME --unset GEM_PATH PATH=${TBD}:$PATH bundle install --deployment
 #    && export CPATH=${BUNDLER_CPATH}:$CPATH 
+#     COMMAND ${PROJECT_SOURCE_DIR}/scripts/bundle_in_environment.sh ${TLD} ${TBD}
      COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                ( unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH && export CPATH=${BUNDLER_CPATH}:$CPATH && bundle install --deployment --binstubs)
      COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
