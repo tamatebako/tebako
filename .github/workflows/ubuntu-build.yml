@@ -131,7 +131,7 @@ jobs:
 
     - name: Test02 - Configure[only] - [Simple Ruby script, relative path to entry point, non exisitng entrance]
       run: | 
-        ${{github.workspace}}/.github/scripts/configure_with_failure.sh        \
+        ${{github.workspace}}/bin/configure_with_failure.sh        \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}          \
               "${{github.workspace}}/tests/test-01" "test-does-not-exist.rb"    \
               ${{github.workspace}}
@@ -164,7 +164,7 @@ jobs:
                                            
     - name: Test05 - Configure[only] - [Simple Ruby script, absolute path to entry point, not within root]
       run: | 
-        ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
+        ${{github.workspace}}/bin/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
               "${{github.workspace}}/tests/test-01" "${{github.workspace}}/tests/test-00/test.rb" \
               ${{github.workspace}}
@@ -184,7 +184,7 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test07 - Build - [Rails project, ruby and bundler version mismatch]
-      run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
+      run:  ${{github.workspace}}/bin/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
 
     - name: Test08 - Configure - [Rails project, no entry point]
       run: | 
@@ -194,7 +194,7 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test08 - Build - [Rails project, no entry point]
-      run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
+      run:  ${{github.workspace}}/bin/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
 
     - name: Test09 - Configure - [xxx.gem, no gemspec, no gemfile]
       run: | 
@@ -217,7 +217,7 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test10 - Build - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
-      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
+      run: ${{github.workspace}}/bin/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
 
     - name: Test11 - Configure - [Ruby gem, gemspec, no gemfile]
       run: | 
@@ -234,7 +234,7 @@ jobs:
 
     - name: Test12 - Configure[only] - [Ruby gem, multiple gemspecs]
       run: | 
-        ${{github.workspace}}/.github/scripts/configure_with_failure.sh       \
+        ${{github.workspace}}/bin/configure_with_failure.sh       \
               ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
               "${{github.workspace}}/tests/test-12" "tebako-test-run.rb"      \
               ${{github.workspace}}
@@ -247,7 +247,7 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test13 - Build and install packaged solution - [Ruby gem, no gemfile, gemspec error]
-      run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
+      run:  ${{github.workspace}}/bin/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
 
     - name: Test14 - Configure - [Ruby gem, gemspec, no gemfile, entry point does not exist]
       run: | 
@@ -278,7 +278,7 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test16 - Build and install packaged solution - [Ruby gem, gemspec, gemfile with error]
-      run:  ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
+      run:  ${{github.workspace}}/bin/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
 
     - name: Test17 - Configure - [Ruby gem, gemspec, gemfile, entry point does not exist]
       run: | 
@@ -288,5 +288,5 @@ jobs:
               -B ${{github.workspace}}
 
     - name: Test17 - Build and install packaged solution - [Ruby gem, gemspec, gemfile, entry point does not exist]
-      run: ${{github.workspace}}/.github/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
+      run: ${{github.workspace}}/bin/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
 
