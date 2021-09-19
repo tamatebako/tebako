@@ -112,12 +112,10 @@ case "$1" in
 	setup)
 		echo "Running setup"
                 echo "prefix: $prefix, config: $config"
-		break
 		;;
 	press)
 		echo "Running press"
                 echo "prefix: $prefix, root: $root, entry point: $entryPoint, mount point: $mountPoint, output: $output"
-		break
 		;;
 	*)
 		echo "Unknown command '$1'"
