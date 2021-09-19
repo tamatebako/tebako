@@ -176,6 +176,9 @@ jobs:
               -DROOT="${{github.workspace}}/tests/test-06" -DENTRANCE="test.rb"           \
               -B ${{github.workspace}}
     
+    - name: Test06 - Build and install packaged solution - [Rails project]
+      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+
     - name: Test07 - Configure - [Rails project, ruby and bundler version mismatch]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \

@@ -35,6 +35,6 @@ cd $1
 #echo Running "env --unset=GEM_HOME --unset=GEM_PATH PATH='$2:$PATH' bundle config set --local path '$3'"
 #env --unset=GEM_HOME --unset=GEM_PATH PATH="$2:$PATH" bundle config set --local path '$3'
 
-echo Running "env --unset=GEM_HOME --unset=GEM_PATH PATH='$2:$PATH' bundle install --deployment"
+echo Running "env --unset=GEM_HOME --unset=GEM_PATH PATH='$2:$PATH' bundle install --jobs=4 --deployment"
 env --unset=GEM_HOME --unset=GEM_PATH PATH="$2:$PATH" bundle install --jobs=4 --deployment
 

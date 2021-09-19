@@ -114,6 +114,7 @@ set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 # TODO: this is supposed to become obsolete when fuse dependency is eliminated
 #       otherwise it shall be reconsidered 
 set(FS_MOUNT_POINT "/home/tebako")
+set(FS_APP_HOME "/.")
 
 # Clean previous run if any
 file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
@@ -377,7 +378,9 @@ elseif(GFLENGTH GREATER 0)
 #  Found Gemfile but no gemspec 
    message("Deploying Gemfile")
    set(FS_ENTRY_POINT "/local/bin/${FS_ENTRANCE}")
+   set(FS_APP_HOME "/local")
    message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
+   message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
    add_custom_target(_SOURCE_FILESYSTEM  
      COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
