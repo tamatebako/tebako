@@ -23,6 +23,12 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
+run_help() {
+echo "Usage: "
+echo "  tebako setup --prefix=<path> --config=<YAML file>"
+echo "  tebako press --prefix=<path> --root=<path> --entry-point=<path> --mount-point=<path> --output=<file name>"
+}
+
 # More safety, by turning some bugs into errors.
 # Without `errexit` you don’t need ! and can replace
 # PIPESTATUS with a simple $?, but I don’t do that.
@@ -81,8 +87,8 @@ while true; do
             shift 2
             ;;
         -h|--help)
-            h=y
-            shift
+            run_help()
+            exit 0
             ;;
         --)
             shift
@@ -98,9 +104,27 @@ done
 # handle non-option arguments
 if [[ $# -ne 1 ]]; then
     echo "$0: Either 'setup' or 'press' is required"
+    run_help()   
     exit 4
 fi
 
-echo "prefix: $prefix, config: $config, root: $root, entry point: $entryPoint, mount point: $mountPoint, output: $output"
-echo "command: $1"
+case "$1" in
+	setup)
+		echo "Running setup"
+                echo "prefix: $prefix, config: $config"
+		break
+		;;
+	press)
+		echo "Running press"
+                echo "prefix: $prefix, root: $root, entry point: $entryPoint, mount point: $mountPoint, output: $output"
+		break
+		;;
+	*)
+		echo "Unknown command '$1'"
+		run_help()
+		exit 5
+		;;
+esac
+
+exit 0;
 
