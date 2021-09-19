@@ -386,9 +386,7 @@ elseif(GFLENGTH GREATER 0)
      COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
      COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
      COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-     COMMAND ${PROJECT_SOURCE_DIR}/bin/bundle_in_env.sh ${TLD} ${TBD} ${TGD}
-#     COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
-#               ( unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH && export CPATH=${BUNDLER_CPATH}:$CPATH && bundle install --deployment --binstubs)
+     COMMAND ${PROJECT_SOURCE_DIR}/bin/bundle_in_env.sh ${TLD} ${TBD}
      COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                  ${CMAKE_COMMAND} -E false )

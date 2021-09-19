@@ -28,12 +28,8 @@
 # $2 -- the directory to add to $PATH (presumably location of ruby binary at source filesystem)
 # $3 -- the location to install the specified gems to
 
-
 echo  Changing current directory to $1
 cd $1
-
-#echo Running "env --unset=GEM_HOME --unset=GEM_PATH PATH='$2:$PATH' bundle config set --local path '$3'"
-#env --unset=GEM_HOME --unset=GEM_PATH PATH="$2:$PATH" bundle config set --local path '$3'
 
 echo Running "env --unset=GEM_HOME --unset=GEM_PATH PATH='$2:$PATH' bundle install --jobs=4 --deployment"
 env --unset=GEM_HOME --unset=GEM_PATH PATH="$2:$PATH" bundle install --jobs=4 --deployment

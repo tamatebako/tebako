@@ -179,6 +179,9 @@ jobs:
     - name: Test06 - Build and install packaged solution - [Rails project]
       run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
 
+    - name: Test06 - Run packaged solution - [Rails project]
+      run:  /usr/local/bin/tebako
+
     - name: Test07 - Configure - [Rails project, ruby and bundler version mismatch]
       run: | 
         cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \

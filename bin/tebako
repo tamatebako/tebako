@@ -87,7 +87,7 @@ while true; do
             shift 2
             ;;
         -h|--help)
-            run_help()
+            run_help
             exit 0
             ;;
         --)
@@ -103,8 +103,8 @@ done
 
 # handle non-option arguments
 if [[ $# -ne 1 ]]; then
-    echo "$0: Either 'setup' or 'press' is required"
-    run_help()   
+    echo "Missing command"
+    run_help   
     exit 4
 fi
 
@@ -121,7 +121,7 @@ case "$1" in
 		;;
 	*)
 		echo "Unknown command '$1'"
-		run_help()
+		run_help
 		exit 5
 		;;
 esac
