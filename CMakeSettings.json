@@ -7,11 +7,11 @@
       "buildRoot": "${projectDir}\\out\\build\\${name}",
       "installRoot": "${projectDir}\\out\\install\\${name}",
       "cmakeExecutable": "cmake",
-      "cmakeCommandArgs": "-DDEVELOPER_MODE:BOOL=OFF -DROOT=/mnt/d/Projects/5.Projects/tebako/tests/test-06 -DENTRANCE=tebako-test-run-no-entry.rb",
+      "cmakeCommandArgs": "-DDEVELOPER_MODE:BOOL=OFF -DROOT=/mnt/c/maxirmx/Projects/tebako/tests/test-06 -DENTRANCE=rails",
       "buildCommandArgs": "",
       "ctestCommandArgs": "",
       "inheritEnvironments": [ "linux_x64" ],
-      "wslPath": "C:\\Users\\Maxim\\AppData\\Local\\Microsoft\\WindowsApps\\ubuntu2004.exe"
+      "wslPath": "C:\\Users\\maxirmx\\AppData\\Local\\Microsoft\\WindowsApps\\ubuntu2004.exe"
     }
   ]
 }

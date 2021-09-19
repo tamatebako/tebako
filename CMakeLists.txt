@@ -28,7 +28,7 @@ cmake_minimum_required (VERSION 3.20)
 cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
-project(tebako_packager VERSION 0.1.2)
+project(tebako_packager VERSION 0.1.3)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -41,6 +41,8 @@ string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 #        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
 #    ++  Already installed at GHA but may require local installation: 
 #        bison flex fuse3 pkg-config libsodium-dev
+#    ++  For Rails testing only
+#        libsqlite3-dev
 
 include(ExternalProject)
 include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
@@ -112,6 +114,7 @@ set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 # TODO: this is supposed to become obsolete when fuse dependency is eliminated
 #       otherwise it shall be reconsidered 
 set(FS_MOUNT_POINT "/home/tebako")
+set(FS_APP_HOME "/.")
 
 # Clean previous run if any
 file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
@@ -375,20 +378,18 @@ elseif(GFLENGTH GREATER 0)
 #  Found Gemfile but no gemspec 
    message("Deploying Gemfile")
    set(FS_ENTRY_POINT "/local/bin/${FS_ENTRANCE}")
+   set(FS_APP_HOME "/local")
    message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
+   message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
    add_custom_target(_SOURCE_FILESYSTEM  
      COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
      COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
      COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-     COMMAND unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH  && bundle install --deployment
-#    && export CPATH=${BUNDLER_CPATH}:$CPATH 
-     COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
-               ( unset GEM_HOME && unset GEM_PATH && cd ${TLD} && export PATH=${TBD}:$PATH && export CPATH=${BUNDLER_CPATH}:$CPATH && bundle install --deployment --binstubs)
+     COMMAND ${PROJECT_SOURCE_DIR}/bin/bundle_in_env.sh ${TLD} ${TBD}
      COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                  ${CMAKE_COMMAND} -E false )
-#     COMMAND ${CMAKE_COMMAND} -E echo "Here we go ..." && ${CMAKE_COMMAND} -E false  
      DEPENDS _CLEAN_FILESYSTEM 
    )
 elseif(GLENGTH GREATER 0)

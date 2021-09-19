@@ -102,8 +102,10 @@ int main(int argc, char** argv) {
 //                std::cerr << "Running " << cmd << std::endl;
 //                ret = system(cmd.c_str());
 
-                    
-                std::string cmd = std::string(tebako::fs_mount_point) + tebako::fs_entry_point;
+                std::string cmd = 
+                    std::string("cd ") + tebako::fs_mount_point + tebako::fs_app_home + " && " +
+                    tebako::fs_mount_point +"/bin/ruby " +
+                    tebako::fs_mount_point + tebako::fs_entry_point;
                 std::cerr << "Running " << cmd << std::endl;
                 ret = system(cmd.c_str());
 

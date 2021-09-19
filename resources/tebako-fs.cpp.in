@@ -32,5 +32,6 @@
 namespace tebako {
 	const char * fs_mount_point = "@FS_MOUNT_POINT@";
 	const char * fs_entry_point = "@FS_ENTRY_POINT@";
+	const char * fs_app_home    = "@FS_APP_HOME@";
 	INCBIN(fs, "@DATA_BIN_FILE@");
 }
