@@ -28,7 +28,7 @@ cmake_minimum_required (VERSION 3.20)
 cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
-project(tebako_packager VERSION 0.1.3)
+project(tebako_packager VERSION 0.1.4)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
