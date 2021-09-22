@@ -131,7 +131,7 @@ case "$1" in
         cmake -DCMAKE_BUILD_TYPE=Release \
               -DDEPS:STRING=$prefix/deps \
               -DSETUP_MODE:BOOLEAN=ON    \
-              -G Ninja                   \
+              -G "Unix Makefiles"        \
               -S $prefix                 \
               -B $prefix/output	
 
@@ -146,7 +146,7 @@ case "$1" in
               -DENTRANCE:STRING=$entryPoint   \
               -DMOUNTPOINT:STRING=$mountPoint \
               -DOUTPUT:STRING=$output         \
-              -G Ninja                        \
+              -G "Unix Makefiles"             \
               -S $prefix                      \
               -B $prefix/output
 
