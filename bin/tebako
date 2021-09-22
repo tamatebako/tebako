@@ -102,21 +102,56 @@ while true; do
 done
 
 # handle non-option arguments
-if [[ $# -ne 1 ]]; then
+if [ $# -ne 1 ]; then
     echo "Missing command"
-    run_help   
+    run_help    
     exit 4
+fi
+
+cmk=`which cmake`
+
+if [ $? -ne 0 ]; then
+  echo "Failed to find cmake"
+else
+  echo "Using cmake at $cmk"
+  cmake --version
+fi
+
+if [ "$prefix" == "-" ]; then
+  prefix="$( pwd )"
 fi
 
 case "$1" in
 	setup)
-		echo "Running setup"
-                echo "prefix: $prefix, config: $config"
-		;;
+        if [ "$config" == "-" ]; then
+          echo "Setting up tebako at $prefix with default configuration"  
+		else
+          echo "Setting up tebako at $prefix with custom configuration from $config"
+        fi 
+        cmake -DCMAKE_BUILD_TYPE=Release \
+              -DDEPS:STRING=$prefix/deps \
+              -DSETUP_MODE:BOOLEAN=ON    \
+              -G Ninja                   \
+              -S $prefix                 \
+              -B $prefix/output	
+
+        cmake --build $prefix/output --target setup	     
+        ;;
 	press)
 		echo "Running press"
-                echo "prefix: $prefix, root: $root, entry point: $entryPoint, mount point: $mountPoint, output: $output"
-		;;
+        echo "prefix: $prefix, root: $root, entry point: $entryPoint, mount point: $mountPoint, output: $output"
+		cmake -DCMAKE_BUILD_TYPE=Release      \
+              -DDEPS:STRING=$prefix/deps      \
+              -DROOT:STRING=$root             \
+              -DENTRANCE:STRING=$entryPoint   \
+              -DMOUNTPOINT:STRING=$mountPoint \
+              -DOUTPUT:STRING=$output         \
+              -G Ninja                        \
+              -S $prefix                      \
+              -B $prefix/output
+
+        cmake --build $prefix/output          
+        ;;
 	*)
 		echo "Unknown command '$1'"
 		run_help

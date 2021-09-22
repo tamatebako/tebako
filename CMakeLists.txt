@@ -73,7 +73,7 @@ if (NOT ${SETUP_MODE})
 
   message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point")
 else()
-  message("Running tebako setup")
+  message("Creating tebako configuration")
 endif()
 
 message("................................................")

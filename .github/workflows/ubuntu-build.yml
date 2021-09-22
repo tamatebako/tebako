@@ -103,6 +103,9 @@ jobs:
     - name: Basic CLI tests
       run: ${{github.workspace}}/tests/test-sh/cli-tests.sh
 
+    - name: tebako setup
+      run: ${{github.workspace}}/bin/tebako setup
+
 # Tests
 #  01. [Also the baseline] Simple Ruby script, relative path to entry point  
 #  02. Simple Ruby script, relative path to entry point, non exisitng entrance      Expected error at configure step
