@@ -72,7 +72,12 @@ jobs:
         echo  ${{ env.YAML_HASH }} >> key.txt
         echo  ${{ env.ZLIB_HASH }} >> key.txt
 
-    - uses: actions/cache@v2
+
+    - name: Clone shell test framework
+      run: git clone git@github.com:kward/shunit2.git ${{github.workspace}}/shunit2
+      
+    - name: Process cache
+      uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
         key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v15
@@ -94,6 +99,9 @@ jobs:
       run: |
         sudo mkdir -p /home/tebako 
         sudo chmod a+w /home/tebako
+
+    - name: Basic CLI tests
+      run: ${{github.workspace}}/tests/tests-sh/cli-tests.sh
 
 # Tests
 #  01. [Also the baseline] Simple Ruby script, relative path to entry point  
