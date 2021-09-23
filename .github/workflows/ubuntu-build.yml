@@ -101,7 +101,7 @@ jobs:
         sudo chmod a+w /home/tebako
 
     - name: Basic CLI tests
-      run: ${{github.workspace}}/test/tests-sh/cli-tests.sh
+      run: ${{github.workspace}}/tests/test-sh/cli-tests.sh
 
 # Tests
 #  01. [Also the baseline] Simple Ruby script, relative path to entry point  
