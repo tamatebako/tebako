@@ -44,4 +44,7 @@ include/version.h
 # VS files
 .vs
 
+#
+tests/shunit2
+
 
