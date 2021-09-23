@@ -126,24 +126,21 @@ jobs:
 #  17. Ruby gem, gemfile, gemspec, no entry point                                   Expected error at build step  
 #
 
-    - name: Baseline & Test01 - Configure - [Simple Ruby script, relative path to entry point]
+    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-01" -DENTRANCE="test.rb"           \
-              -B ${{github.workspace}}
+        ${{github.workspace}}/bin/tebako press                 \
+              --root="${{github.workspace}}/tests/test-01"     \
+              --entry-point="test.rb"                          \
+              --install         
                                             
-    - name: Test01 - Build and install packaged solution - [Simple Ruby script, relative path to entry point]
-      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
-
     - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
       run:  /usr/local/bin/tebako
 #        echo Tebako exit code $?
 
-    - name: Test02 - Configure[only] - [Simple Ruby script, relative path to entry point, non exisitng entrance]
+    - name: Test02 - tebako press - [Simple Ruby script, relative path to entry point, non exisitng entrance]
       run: | 
-        ${{github.workspace}}/tests/scripts/configure_with_failure.sh        \
-              ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}          \
+        ${{github.workspace}}/tests/scripts/configure_with_failure.sh           \
+              ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}           \
               "${{github.workspace}}/tests/test-01" "test-does-not-exist.rb"    \
               ${{github.workspace}}
               

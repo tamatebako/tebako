@@ -25,8 +25,12 @@
 
 run_help() {
 echo "Usage: "
-echo "  tebako setup --prefix=<path> --config=<YAML file>"
-echo "  tebako press --prefix=<path> --root=<path> --entry-point=<path> --mount-point=<path> --output=<file name>"
+echo "  tebako setup [--prefix|-p=<path>] [--config|-c=<YAML file>]"
+echo "         Tebako prefix defaults to current directory"
+echo "  tebako press [--prefix=<path>] --root=<path> --entry-point=<path> [--mount-point=<path>] [--output=<file name>] [--install]"
+echo "         Tebako prefix defaults to current directory"
+echo "         Mount point defaults to '/home/tebako'"
+echo "         Output file defaults to 'tebako'"
 }
 
 # More safety, by turning some bugs into errors.
@@ -42,8 +46,8 @@ if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
     exit 1
 fi
 
-OPTIONS=hp:c:r:e:m:o:
-LONGOPTS=help,prefix:,config:,root:,entry-point:,mount-point:,output:
+OPTIONS=hp:c:r:e:m:o:i
+LONGOPTS=help,prefix:,config:,root:,entry-point:,mount-point:,output:,install
 
 # -regarding ! and PIPESTATUS see above
 # -temporarily store output to be able to check for errors
@@ -58,7 +62,7 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-h=n prefix=- config=- root=- mountPoint=- entryPoint=- output=- 
+h=n prefix=- config=- root=- mountPoint=- entryPoint=- output=- i=n 
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
@@ -89,6 +93,9 @@ while true; do
         -h|--help)
             run_help
             exit 0
+            ;;
+        -i|--install)
+            i=y
             ;;
         --)
             shift
@@ -138,19 +145,44 @@ case "$1" in
         cmake --build $prefix/output --target setup	     
         ;;
 	press)
-		echo "Running press"
-        echo "prefix: $prefix, root: $root, entry point: $entryPoint, mount point: $mountPoint, output: $output"
+        if [ "$root" == "-" ]; then
+          echo "Running tebako press requires project root"
+          run_help 
+          exit 6 
+		fi
+        if [ "$entryPoint" == "-" ]; then
+          echo "Running tebako press requires entry point"
+          run_help 
+          exit 6 
+		fi
+        if [ "$mountPoint" == "-" ]; then
+          mountPoint="/home/tebako"
+		fi
+        if [ "$output" == "-" ]; then
+          output="tebako"
+		fi
+
+		echo "Running tebako press at $prefix"
+        echo "   Project root:            $root"
+        echo "   Application entry point: $entryPoint"
+        echo "   Mount point:             $mountPoint"
+        echo "   Output file:             $output"
 		cmake -DCMAKE_BUILD_TYPE=Release      \
               -DDEPS:STRING=$prefix/deps      \
               -DROOT:STRING=$root             \
               -DENTRANCE:STRING=$entryPoint   \
               -DMOUNTPOINT:STRING=$mountPoint \
               -DOUTPUT:STRING=$output         \
+              -DSETUP_MODE:BOOLEAN=OFF        \
               -G "Unix Makefiles"             \
               -S $prefix                      \
               -B $prefix/output
 
-        cmake --build $prefix/output          
+        if [ "$i" == "y" ]; then
+          cmake --build $prefix/output --target install  
+        else    
+          cmake --build $prefix/output --target $output
+        fi
         ;;
 	*)
 		echo "Unknown command '$1'"

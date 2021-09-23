@@ -101,26 +101,34 @@ configure_file(
    @ONLY
 )
 
-
+if (NOT ${SETUP_MODE})
 # ...................................................................
 # Filesystem locations
 
 # DATA_SRC_DIR folder is used to collect all files that need to be packaged
-set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
+  set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
 # DATA_PRE_DIR folder is used to build gems  that need to be packaged
-set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
+  set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
 # DATA_BIN_DIR folder is used to create packaged filesystem  
-set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
+  set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
 # DATA_BIN_FILE is packaged filesystem itself
-set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+  set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+
 # This is a mount point for packaged filesystem at the target computer
 # TODO: this is supposed to become obsolete when fuse dependency is eliminated
 #       otherwise it shall be reconsidered 
-set(FS_MOUNT_POINT "/home/tebako")
-set(FS_APP_HOME "/.")
+  if ("-${MOUNTPOINT}" STREQUAL "-")
+    set(FS_MOUNT_POINT "/home/tebako")
+  else()
+    set(FS_MOUNT_POINT ${MOUNTPOINT})
+  endif()
+  
+  set(FS_APP_HOME "/.")
 
 # Clean previous run if any
-file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
+  file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
+
+endif(NOT ${SETUP_MODE})
 
 # ...................................................................
 # External projects
