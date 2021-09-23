@@ -49,7 +49,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/ensure_bundler.cmake)
 
 option(DEVELOPER_MODE "Developer mode" OFF)
-option(SETUP_MODE "Tebako setup" OFF NOCACHE)
+option(SETUP_MODE "Tebako setup" OFF)
 
 if (NOT ${SETUP_MODE})
   message("Welcome to tebako packager configuration script!")
