@@ -130,11 +130,10 @@ jobs:
       run: | 
         ${{github.workspace}}/bin/tebako press                 \
               --root="${{github.workspace}}/tests/test-01"     \
-              --entry-point="test.rb"                          \
-              --install         
+              --entry-point="test.rb"                              
                                             
     - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
-      run:  /usr/local/bin/tebako
+      run:  ${{github.workspace}}/output/tebako
 #        echo Tebako exit code $?
 
     - name: Test02 - tebako press - [Simple Ruby script, relative path to entry point, non exisitng entrance]
