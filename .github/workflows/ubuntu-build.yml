@@ -100,14 +100,10 @@ jobs:
         sudo mkdir -p /home/tebako 
         sudo chmod a+w /home/tebako
 
-    - name: Basic CLI tests
-      run: ${{github.workspace}}/tests/test-sh/cli-tests.sh
-
-    - name: tebako setup
-      run: ${{github.workspace}}/bin/tebako setup
-
 # Tests
-#  01. [Also the baseline] Simple Ruby script, relative path to entry point  
+#  00. Very basic tebako CLI tests (error handling)
+#  --  tebako setup (baseline for tests 01-17)
+#  01. Simple Ruby script, relative path to entry point  
 #  02. Simple Ruby script, relative path to entry point, non exisitng entrance      Expected error at configure step
 #  03. Simple Ruby script, absolute path to entry point 
 #  04. Simple Ruby script, absolute path to entry point, relative path to root      
@@ -125,6 +121,12 @@ jobs:
 #  16. Ruby gem, gemfile, gemspec error                                             Expected error at build step  
 #  17. Ruby gem, gemfile, gemspec, no entry point                                   Expected error at build step  
 #
+
+    - name: Basic CLI tests
+      run: ${{github.workspace}}/tests/test-00/cli-tests.sh
+
+    - name: tebako setup
+      run: ${{github.workspace}}/bin/tebako setup
 
     - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
       run: | 

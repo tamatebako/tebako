@@ -26,8 +26,11 @@
 # POSSIBILITY OF SUCH DAMAGE.
 # 
 
+# tebako test scrip
+# executes tebako press with given root and entry point expecting failure
+
 echo Expecting "bin/tebako press --root=$1 --entry=point=$2 to fail" 
-bin/tebako press --root=$1 --entry=point=$2
+bin/tebako press --root=$1 --entry-point=$2
 
 if  [ $? -eq 0 ] ; then 
   echo "'tebako press' has succeeded unexpectedly [Test failed]"
