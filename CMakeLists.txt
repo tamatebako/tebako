@@ -71,7 +71,13 @@ if (NOT ${SETUP_MODE})
     cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
   endif()
 
-  message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point")
+  if ("-${OUTPUT}" STREQUAL "-")
+    set(APP_NAME "tebako")
+  else()
+    set(APP_NAME ${OUTPUT})
+  endif()
+
+  message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point to ${APP_NAME}")
 else()
   message("Creating tebako configuration")
 endif()
@@ -513,7 +519,7 @@ if(NOT ${SETUP_MODE})
   add_compile_definitions(FUSE_USE_VERSION=35)
 
   add_executable(
-    tebako 
+    ${APP_NAME} 
     "src/tebako.cpp"
     "src/tebako-dfs.cpp"
     "src/tebako-dfs-ops.cpp"
@@ -525,30 +531,30 @@ if(NOT ${SETUP_MODE})
     "include/version.h"
   )
 
-  add_dependencies(tebako _PACKAGED_FILESYSTEM  ${INCBIN_PRJ} ${DWARFS_PRJ})
-  set_property(TARGET tebako PROPERTY CXX_STANDARD 17)
-  set_property(TARGET tebako PROPERTY CXX_STANDARD_REQUIRED ON)
-  set_property(TARGET tebako PROPERTY CXX_EXTENSIONS OFF)
+  add_dependencies(${APP_NAME} _PACKAGED_FILESYSTEM  ${INCBIN_PRJ} ${DWARFS_PRJ})
+  set_property(TARGET ${APP_NAME} PROPERTY CXX_STANDARD 17)
+  set_property(TARGET ${APP_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
+  set_property(TARGET ${APP_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
 # ...................................................................
 # The libraries that are build by dwarfs project
 # libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light libarchive
 
- function(ADD_DWARFS_LIBRARY NAME PRJ)
+ function(ADD_DWARFS_LIBRARY NAME PRJ APP_NM)
    add_library(${NAME} STATIC IMPORTED)
    set_target_properties(${NAME} PROPERTIES IMPORTED_LOCATION ${_${NAME}})
    add_dependencies(${NAME} ${PRJ})
-   target_link_libraries(tebako ${NAME})
+   target_link_libraries(${APP_NM} ${NAME})
  endfunction()
 
- add_dwarfs_library(_LIBDWARFS ${DWARFS_PRJ})
- add_dwarfs_library(_LIBFSST ${DWARFS_PRJ})
- add_dwarfs_library(_LIBFOLLY ${DWARFS_PRJ})
- add_dwarfs_library(_LIBT_METADATA ${DWARFS_PRJ})
- add_dwarfs_library(_LIBT_LIGHT ${DWARFS_PRJ})
- add_dwarfs_library(_LIBXXHASH ${DWARFS_PRJ})
- add_dwarfs_library(_LIBZSTD ${DWARFS_PRJ})
- add_dwarfs_library(_LIBARCHIVE ${DWARFS_PRJ})
+ add_dwarfs_library(_LIBDWARFS ${DWARFS_PRJ} ${APP_NAME})
+ add_dwarfs_library(_LIBFSST ${DWARFS_PRJ} ${APP_NAME})
+ add_dwarfs_library(_LIBFOLLY ${DWARFS_PRJ} ${APP_NAME})
+ add_dwarfs_library(_LIBT_METADATA ${DWARFS_PRJ} ${APP_NAME})
+ add_dwarfs_library(_LIBT_LIGHT ${DWARFS_PRJ} ${APP_NAME})
+ add_dwarfs_library(_LIBXXHASH ${DWARFS_PRJ} ${APP_NAME})
+ add_dwarfs_library(_LIBZSTD ${DWARFS_PRJ} ${APP_NAME})
+ add_dwarfs_library(_LIBARCHIVE ${DWARFS_PRJ} ${APP_NAME})
 
 # ...................................................................
 # System libraries
@@ -587,7 +593,7 @@ if(NOT ${SETUP_MODE})
 #  MUST be in this order otherwise link may fail
 #  -static-libgcc and gcc_eh below is all together an ugly trick to enforce static linking
 
- target_link_libraries(tebako                              
+ target_link_libraries(${APP_NAME}                              
    ${_LIBFMT}          ${Boost_LIBRARIES}  ${_LIBDC}           ${_LIBFUSE}                    
    ${_LIBGLOG}         ${_LIBGFLAGS}       ${_LIBEVENT}        ${_LIBIBERTY}
    ${_LIBACL}          ${_LIBSSL}          ${_LIBCRYPTO}       ${_LIBLZ4}
@@ -602,14 +608,3 @@ add_custom_target(setup
    ${CMAKE_COMMAND} -E echo "tebako setup completed"
    DEPENDS ${RUBY_PRJ} ${DWARFS_PRJ} ${INCBIN_PRJ}
 )
-
-
-# ...................................................................
-#  Install
-#
-if(NOT ${DEVELOPER_MODE} AND NOT ${SETUP_MODE})
-install(
-  TARGETS tebako
-  RUNTIME DESTINATION bin
- )
-endif()

@@ -120,7 +120,10 @@ jobs:
 #  15. Ruby gem, gemfile, gemspec                                             
 #  16. Ruby gem, gemfile, gemspec error                                             Expected error at build step  
 #  17. Ruby gem, gemfile, gemspec, no entry point                                   Expected error at build step  
-#
+#  18 - 39  -- reserved
+#  40. CLI.  Change output name                                                     [depends on Test-01] 
+#  41 - 49  reserved
+#  50. AUC. Check that it is possible to verify content of package fs               [depends on Test-01] 
 
     - name: Basic CLI tests
       run: ${{github.workspace}}/tests/test-00/test-00.sh
@@ -130,8 +133,8 @@ jobs:
 
     - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
       run: | 
-        ${{github.workspace}}/bin/tebako press                 \
-              --root="${{github.workspace}}/tests/test-01"     \
+        ${{github.workspace}}/bin/tebako press                   \
+              --root="${{github.workspace}}/tests/test-01"       \
               --entry-point="test.rb"                              
                                             
     - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
@@ -147,8 +150,8 @@ jobs:
               
     - name: Test03 - tebako press - [Simple Ruby script, absolute path to entry point]
       run: | 
-        ${{github.workspace}}/bin/tebako press                 \
-              --root="${{github.workspace}}/tests/test-01"     \
+        ${{github.workspace}}/bin/tebako press                   \
+              --root="${{github.workspace}}/tests/test-01"       \
               --entry-point="${{github.workspace}}/tests/test-01/test.rb"                              
 
     - name: Test03 - Run packaged solution - [Simple Ruby script, absolute path to entry point]
@@ -156,8 +159,8 @@ jobs:
 
     - name: Test04 - tebako press - [Simple Ruby script, absolute path to entry point, relative path to root ]
       run: | 
-        ${{github.workspace}}/bin/tebako press                 \
-              --root="tests/test-01"                           \
+        ${{github.workspace}}/bin/tebako press                   \
+              --root="tests/test-01"                             \
               --entry-point="test.rb"                              
 
     - name: Test04 - Run packaged solution - [Simple Ruby script, absolute path to entry point, relative path to root ]
@@ -172,8 +175,8 @@ jobs:
 
     - name: Test06 - tebako press - [Rails project]
       run: | 
-        ${{github.workspace}}/bin/tebako press                 \
-              --root="${{github.workspace}}/tests/test-06"     \
+        ${{github.workspace}}/bin/tebako press                    \
+              --root="${{github.workspace}}/tests/test-06"        \
               --entry-point="rails"                              
 
     - name: Test06 - Run packaged solution - [Rails project]
@@ -195,8 +198,8 @@ jobs:
 
     - name: Test09 - tebako press - [xxx.gem, no gemspec, no gemfile]
       run: | 
-        ${{github.workspace}}/bin/tebako press                 \
-              --root="${{github.workspace}}/tests/test-09"     \
+        ${{github.workspace}}/bin/tebako press                    \
+              --root="${{github.workspace}}/tests/test-09"        \
               --entry-point="tebako-test-run.rb"                              
 
     - name: Test09 - Run packaged solution - [xxx.gem, no gemspec, no gemfile]
@@ -211,8 +214,8 @@ jobs:
 
     - name: Test11 - tebako press - [Ruby gem, gemspec, no gemfile]
       run: | 
-        ${{github.workspace}}/bin/tebako press                 \
-              --root="${{github.workspace}}/tests/test-11"     \
+        ${{github.workspace}}/bin/tebako press                    \
+              --root="${{github.workspace}}/tests/test-11"        \
               --entry-point="tebako-test-run.rb"                              
 
     - name: Test11 - Run packaged solution - [Ruby gem, no gemfile]
@@ -241,8 +244,8 @@ jobs:
 
     - name: Test15 - tebako press - [Ruby gem, gemspec, gemfile]
       run: | 
-        ${{github.workspace}}/bin/tebako press                 \
-              --root="${{github.workspace}}/tests/test-15"     \
+        ${{github.workspace}}/bin/tebako press                   \
+              --root="${{github.workspace}}/tests/test-15"       \
               --entry-point="tebako-test-run.rb"                              
 
     - name: Test15 - Run packaged solution - [Ruby gem, gemspec, gemfile]
@@ -262,3 +265,14 @@ jobs:
               "test-does-not-exist.rb"                            \
               104  
 
+    - name: Test40. CLI. Change output name         
+        ${{github.workspace}}/bin/tebako press                    \
+              --r "${{github.workspace}}/tests/test-01"           \
+              --e "test.rb" -o "tamatebako" 
+        ${{github.workspace}}/output/tamatebako                          
+    
+    - name: Test50. AUC. Check that it is possible to verify content of package fs          
+        ${{github.workspace}}/bin/tebako press                    \
+              --root="${{github.workspace}}/tests/test-01"        \
+              --entry-point="test.rb"  
+#        deps/bin/dwarfs output/tebako home/tebako                           
