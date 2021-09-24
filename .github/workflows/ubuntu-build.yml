@@ -265,13 +265,15 @@ jobs:
               "test-does-not-exist.rb"                            \
               104  
 
-    - name: Test40. CLI. Change output name         
+    - name: Test40. CLI. Change output name     
+      run: |    
         ${{github.workspace}}/bin/tebako press                    \
               --r "${{github.workspace}}/tests/test-01"           \
               --e "test.rb" -o "tamatebako" 
         ${{github.workspace}}/output/tamatebako                          
     
     - name: Test50. AUC. Check that it is possible to verify content of package fs          
+      run: |
         ${{github.workspace}}/bin/tebako press                    \
               --root="${{github.workspace}}/tests/test-01"        \
               --entry-point="test.rb"  
