@@ -26,16 +26,20 @@
 # POSSIBILITY OF SUCH DAMAGE.
 # 
 
-# tebako test scrip
+# tebako test script
 # executes tebako press with given root and entry point expecting failure
+# $1  tebako press --root=$1
+# $2  tebako press --entry-point=$2
+# $3  expected exit code (103 or 104)
 
-echo Expecting "bin/tebako press --root=$1 --entry=point=$2 to fail" 
-bin/tebako press --root=$1 --entry-point=$2
+testTebakoPressFailure() {
+  result="$( $DIR/tebako press --root=$1 --entry-point=$2 )"
+  assertEquals $3 $?
+}
 
-if  [ $? -eq 0 ] ; then 
-  echo "'tebako press' has succeeded unexpectedly [Test failed]"
-  exit 1 
-else 
-  echo "'tebako press' failed as expected [Test OK]"
-  exit 0
-fi
+# .......................................
+DIR0="$( cd "$( dirname "$0" )" && pwd )"
+DIR="$( cd $DIR0/../../bin && pwd )"
+echo Expecting "$DIR/tebako press --root=$1 --entry=point=$2 to fail with exit code $3" 
+. $DIR0/../shunit2/shunit2
+

@@ -142,7 +142,8 @@ jobs:
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-01"               \
-              "test-does-not-exist.rb"                              
+              "test-does-not-exist.rb"                            \
+              103                   
               
     - name: Test03 - tebako press - [Simple Ruby script, absolute path to entry point]
       run: | 
@@ -166,7 +167,8 @@ jobs:
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-01"               \
-              "${{github.workspace}}/tests/test-00/test.rb"                              
+              "${{github.workspace}}/tests/test-00/test.rb"       \
+              103                           
 
     - name: Test06 - tebako press - [Rails project]
       run: | 
@@ -181,13 +183,15 @@ jobs:
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-07"               \
-              "rails"                              
+              "rails"                                             \
+              104   
 
     - name: Test08 - tebako press - [Rails project, no entry point]
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-06"               \
-              "test-does-not-exist.rb"                              
+              "test-does-not-exist.rb"                            \
+              104                            
 
     - name: Test09 - tebako press - [xxx.gem, no gemspec, no gemfile]
       run: | 
@@ -202,7 +206,8 @@ jobs:
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-09"               \
-              "test-does-not-exist.rb"                              
+              "test-does-not-exist.rb"                            \
+              104                              
 
     - name: Test11 - tebako press - [Ruby gem, gemspec, no gemfile]
       run: | 
@@ -217,19 +222,22 @@ jobs:
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-12"               \
-              "tebako-test-run.rb"                              
+              "tebako-test-run.rb"                                \
+              103                            
 
     - name: Test13 - tebako press - [Ruby gem, no gemfile, gemspec error]
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-13"               \
-              "tebako-test-run.rb"                              
+              "tebako-test-run.rb"                                \
+              104                      
 
     - name: Test14 - tebako press - [Ruby gem, gemspec, no gemfile, entry point does not exist]
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-11"               \
-              "test-does-not-exist.rb"                              
+              "test-does-not-exist.rb"                            \
+              104  
 
     - name: Test15 - tebako press - [Ruby gem, gemspec, gemfile]
       run: | 
@@ -244,11 +252,13 @@ jobs:
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-16"               \
-              "tebako-test-run.rb"                              
+              "tebako-test-run.rb"                                \
+              104                   
 
     - name: Test17 - tebako press - [Ruby gem, gemspec, gemfile, entry point does not exist]
       run: | 
         ${{github.workspace}}/tests/scripts/press_with_failure.sh \
               "${{github.workspace}}/tests/test-15"               \
-              "test-does-not-exist.rb"                              
+              "test-does-not-exist.rb"                            \
+              104  
 
