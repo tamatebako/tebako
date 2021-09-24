@@ -141,8 +141,14 @@ case "$1" in
               -G "Unix Makefiles"        \
               -S $prefix                 \
               -B $prefix/output	
+        if [ $? -ne 0 ]; then
+          echo "'tebako setup' configure step failed" 
+          exit 102  
 
         cmake --build $prefix/output --target setup	     
+        if [ $? -ne 0 ]; then
+          echo "'tebako setup' build step failed" 
+          exit 102  
         ;;
 	press)
         if [ "$root" == "-" ]; then
@@ -178,10 +184,15 @@ case "$1" in
               -S $prefix                      \
               -B $prefix/output
 
-        if [ "$i" == "y" ]; then
-          cmake --build $prefix/output --target install  
-        else    
-          cmake --build $prefix/output --target $output
+        if [ $? -ne 0 ]; then
+          echo "'tebako press' configure step failed" 
+          exit 103  
+        fi
+
+        cmake --build $prefix/output --target $output
+        if [ $? -ne 0 ]; then
+          echo "'tebako press' build step failed" 
+          exit 104  
         fi
         ;;
 	*)

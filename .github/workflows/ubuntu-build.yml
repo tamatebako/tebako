@@ -138,23 +138,18 @@ jobs:
 
     - name: Test02 - tebako press - [Simple Ruby script, relative path to entry point, non exisitng entrance]
       run: | 
-        ${{github.workspace}}/tests/scripts/configure_with_failure.sh           \
-              ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}           \
-              "${{github.workspace}}/tests/test-01" "test-does-not-exist.rb"    \
-              ${{github.workspace}}
+        ${{github.workspace}}/bin/tebako press                 \
+              --root="${{github.workspace}}/tests/test-01"     \
+              --entry-point="test-does-not-exist.rb"                              
               
-    - name: Test03 - Configure - [Simple Ruby script, absolute path to entry point]
+    - name: Test03 - tebako press - [Simple Ruby script, absolute path to entry point]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-01" -DENTRANCE="${{github.workspace}}/tests/test-01/test.rb"           \
-              -B ${{github.workspace}}
-                                            
-    - name: Test03 - Build and install packaged solution - [Simple Ruby script, absolute path to entry point]
-      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+        ${{github.workspace}}/bin/tebako press                 \
+              --root="${{github.workspace}}/tests/test-01"     \
+              --entry-point="${{github.workspace}}/tests/test-01/test.rb"                              
 
     - name: Test03 - Run packaged solution - [Simple Ruby script, absolute path to entry point]
-      run:  /usr/local/bin/tebako
+      run:  ${{github.workspace}}/output/tebako
 
     - name: Test04 - Configure - [Simple Ruby script, absolute path to entry point, relative path to root ]
       run: | 
