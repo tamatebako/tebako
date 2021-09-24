@@ -25,9 +25,9 @@
 
 run_help() {
 echo "Usage: "
-echo "  tebako setup [--prefix|-p=<path>] [--config|-c=<YAML file>]"
+echo "  tebako setup [-p |--prefix=<path>]"
 echo "         Tebako prefix defaults to current directory"
-echo "  tebako press [--prefix=<path>] --root=<path> --entry-point=<path> [--mount-point=<path>] [--output=<file name>] [--install]"
+echo "  tebako press [-p |--prefix=<path>] -r |--root=<path> -e |--entry-point=<path> [-m |--mount-point=<path>] [-o |--output=<file name>]"
 echo "         Tebako prefix defaults to current directory"
 echo "         Mount point defaults to '/home/tebako'"
 echo "         Output file defaults to 'tebako'"
@@ -42,12 +42,12 @@ set -o errexit -o pipefail -o noclobber -o nounset
 # -use return value from ${PIPESTATUS[0]}, because ! hosed $?
 ! getopt --test > /dev/null 
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-    echo 'I’m sorry, `getopt --test` failed in this environment.'
+    echo '`getopt --test` failed in this environment.'
     exit 1
 fi
 
-OPTIONS=hp:c:r:e:m:o:i
-LONGOPTS=help,prefix:,config:,root:,entry-point:,mount-point:,output:,install
+OPTIONS=hp:c:r:e:m:o:
+LONGOPTS=help,prefix:,config:,root:,entry-point:,mount-point:,output:
 
 # -regarding ! and PIPESTATUS see above
 # -temporarily store output to be able to check for errors
@@ -62,7 +62,7 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-h=n prefix=- config=- root=- mountPoint=- entryPoint=- output=- i=n 
+h=n prefix=- config=- root=- mountPoint=- entryPoint=- output=-
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
@@ -93,9 +93,6 @@ while true; do
         -h|--help)
             run_help
             exit 0
-            ;;
-        -i|--install)
-            i=y
             ;;
         --)
             shift
@@ -155,7 +152,7 @@ case "$1" in
         if [ "$root" == "-" ]; then
           echo "Running tebako press requires project root"
           run_help 
-          exit 6 
+          exit 5 
 		fi
         if [ "$entryPoint" == "-" ]; then
           echo "Running tebako press requires entry point"

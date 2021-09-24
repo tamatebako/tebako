@@ -272,9 +272,9 @@ jobs:
               --e "test.rb" -o "tamatebako" 
         ${{github.workspace}}/output/tamatebako                          
     
-    - name: Test50 -AUC - Check that it is possible to verify content of packaged fs          
-      run: |
-        ${{github.workspace}}/bin/tebako press                    \
-              --root="${{github.workspace}}/tests/test-01"        \
-              --entry-point="test.rb"  
+#    - name: Test50 -AUC - Check that it is possible to verify content of packaged fs          
+#      run: |
+#        ${{github.workspace}}/bin/tebako press                    \
+#              --root="${{github.workspace}}/tests/test-01"        \
+#              --entry-point="test.rb"  
 #        deps/bin/dwarfs output/tebako home/tebako                           
