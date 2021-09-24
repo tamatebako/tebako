@@ -74,7 +74,7 @@ jobs:
 
 
     - name: Clone shell test framework
-      run: git clone https://github.com/kward/shunit2.git ${{github.workspace}}/tests/shunit2
+      run: git clone https://github.com/kward/shunit2.git ${{github.workspace}}/tests/shunit2 --depth 1
       
     - name: Process cache
       uses: actions/cache@v2
@@ -123,7 +123,7 @@ jobs:
 #
 
     - name: Basic CLI tests
-      run: ${{github.workspace}}/tests/test-00/cli-tests.sh
+      run: ${{github.workspace}}/tests/test-00/test-00.sh
 
     - name: tebako setup
       run: ${{github.workspace}}/bin/tebako setup

@@ -140,13 +140,13 @@ case "$1" in
               -DSETUP_MODE:BOOLEAN=ON    \
               -G "Unix Makefiles"        \
               -S $prefix                 \
-              -B $prefix/output	
-        if [ $? -ne 0 ]; then
+              -B $prefix/output	 && rc=$? || rc=$?
+        if [ $rc -ne 0 ]; then
           echo "'tebako setup' configure step failed" 
           exit 101 
         fi
-        cmake --build $prefix/output --target setup	     
-        if [ $? -ne 0 ]; then
+        cmake --build $prefix/output --target setup && rc=$? || rc=$?	     
+        if [ $rc -ne 0 ]; then
           echo "'tebako setup' build step failed" 
           exit 102  
         fi
@@ -183,15 +183,14 @@ case "$1" in
               -DSETUP_MODE:BOOLEAN=OFF        \
               -G "Unix Makefiles"             \
               -S $prefix                      \
-              -B $prefix/output
-
-        if [ $? -ne 0 ]; then
+              -B $prefix/output && rc=$? || rc=$?
+        if [ $rc -ne 0 ]; then
           echo "'tebako press' configure step failed" 
           exit 103  
         fi
 
-        cmake --build $prefix/output --target $output
-        if [ $? -ne 0 ]; then
+        cmake --build $prefix/output --target $output && rc=$? || rc=$?
+        if [ $rc -ne 0 ]; then
           echo "'tebako press' build step failed" 
           exit 104  
         fi
