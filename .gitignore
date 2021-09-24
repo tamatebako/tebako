@@ -33,6 +33,7 @@ install_manifest.txt
 
 # Build files
 out
+output
 
 # External dependencies
 deps
@@ -43,5 +44,8 @@ include/version.h
 
 # VS files
 .vs
+
+#
+tests/shunit2
 
 
