@@ -175,25 +175,17 @@ jobs:
     - name: Test06 - Run packaged solution - [Rails project]
       run:  ${{github.workspace}}/output/tebako
 
-    - name: Test07 - Configure - [Rails project, ruby and bundler version mismatch]
+    - name: Test07 - tebako press - [Rails project, ruby and bundler version mismatch]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-07" -DENTRANCE="test.rb"           \
-              -B ${{github.workspace}}
+        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
+              "${{github.workspace}}/tests/test-07"               \
+              "rails"                              
 
-    - name: Test07 - Build - [Rails project, ruby and bundler version mismatch]
-      run:  ${{github.workspace}}/tests/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
-
-    - name: Test08 - Configure - [Rails project, no entry point]
+    - name: Test08 - tebako press - [Rails project, no entry point]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-06" -DENTRANCE="no-entry-point.sh"           \
-              -B ${{github.workspace}}
-
-    - name: Test08 - Build - [Rails project, no entry point]
-      run:  ${{github.workspace}}/tests/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
+        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
+              "${{github.workspace}}/tests/test-06"               \
+              "test-does-not-exist.rb"                              
 
     - name: Test09 - Configure - [xxx.gem, no gemspec, no gemfile]
       run: | 
