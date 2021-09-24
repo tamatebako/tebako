@@ -33,7 +33,7 @@
 # $3  expected exit code (103 or 104)
 
 testTebakoPressFailure() {
-  result="$( $DIR/tebako press --root=$1 --entry-point=$2 )"
+  $DIR/tebako press --root=$1 --entry-point=$2
   assertEquals $3 $?
 }
 
