@@ -143,12 +143,13 @@ case "$1" in
               -B $prefix/output	
         if [ $? -ne 0 ]; then
           echo "'tebako setup' configure step failed" 
-          exit 102  
-
+          exit 101 
+        fi
         cmake --build $prefix/output --target setup	     
         if [ $? -ne 0 ]; then
           echo "'tebako setup' build step failed" 
           exit 102  
+        fi
         ;;
 	press)
         if [ "$root" == "-" ]; then

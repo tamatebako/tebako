@@ -151,18 +151,14 @@ jobs:
     - name: Test03 - Run packaged solution - [Simple Ruby script, absolute path to entry point]
       run:  ${{github.workspace}}/output/tebako
 
-    - name: Test04 - Configure - [Simple Ruby script, absolute path to entry point, relative path to root ]
+    - name: Test04 - tebako press - [Simple Ruby script, absolute path to entry point, relative path to root ]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="tests/test-01" -DENTRANCE="test.rb"           \
-              -B ${{github.workspace}}
-                                            
-    - name: Test04 - Build and install packaged solution - [Simple Ruby script, absolute path to entry point, relative path to root ]
-      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+        ${{github.workspace}}/bin/tebako press                 \
+              --root="tests/test-01"                           \
+              --entry-point="test.rb"                              
 
     - name: Test04 - Run packaged solution - [Simple Ruby script, absolute path to entry point, relative path to root ]
-      run:  /usr/local/bin/tebako
+      run:  ${{github.workspace}}/output/tebako
                                            
     - name: Test05 - Configure[only] - [Simple Ruby script, absolute path to entry point, not within root]
       run: | 
