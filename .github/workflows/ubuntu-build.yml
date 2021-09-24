@@ -187,97 +187,66 @@ jobs:
               "${{github.workspace}}/tests/test-06"               \
               "test-does-not-exist.rb"                              
 
-    - name: Test09 - Configure - [xxx.gem, no gemspec, no gemfile]
+    - name: Test09 - tebako press - [xxx.gem, no gemspec, no gemfile]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-09" -DENTRANCE="tebako-test-run.rb"     \
-              -B ${{github.workspace}}
-
-    - name: Test09 - Build and install packaged solution - [xxx.gem, no gemspec, no gemfile]
-      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+        ${{github.workspace}}/bin/tebako press                 \
+              --root="${{github.workspace}}/tests/test-09"     \
+              --entry-point="tebako-test-run.rb"                              
 
     - name: Test09 - Run packaged solution - [xxx.gem, no gemspec, no gemfile]
-      run:  /usr/local/bin/tebako
+      run:  ${{github.workspace}}/output/tebako
 
-    - name: Test10 - Configure - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
+    - name: Test10 - tebako press - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-09" -DENTRANCE="tebako-test-no-entry-point.rb"     \
-              -B ${{github.workspace}}
+        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
+              "${{github.workspace}}/tests/test-09"               \
+              "test-does-not-exist.rb"                              
 
-    - name: Test10 - Build - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
-      run: ${{github.workspace}}/tests/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
-
-    - name: Test11 - Configure - [Ruby gem, gemspec, no gemfile]
+    - name: Test11 - tebako press - [Ruby gem, gemspec, no gemfile]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-11" -DENTRANCE="tebako-test-run.rb"     \
-              -B ${{github.workspace}}
-
-    - name: Test11 - Build and install packaged solution - [Ruby gem, no gemfile]
-      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+        ${{github.workspace}}/bin/tebako press                 \
+              --root="${{github.workspace}}/tests/test-11"     \
+              --entry-point="tebako-test-run.rb"                              
 
     - name: Test11 - Run packaged solution - [Ruby gem, no gemfile]
-      run:  /usr/local/bin/tebako
+      run:  ${{github.workspace}}/output/tebako
 
-    - name: Test12 - Configure[only] - [Ruby gem, multiple gemspecs]
+    - name: Test12 - tebako press - [Ruby gem, multiple gemspecs]
       run: | 
-        ${{github.workspace}}/tests/scripts/configure_with_failure.sh       \
-              ${{env.BUILD_TYPE}} ${{github.workspace}}/${{env.DEPS}}         \
-              "${{github.workspace}}/tests/test-12" "tebako-test-run.rb"      \
-              ${{github.workspace}}
+        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
+              "${{github.workspace}}/tests/test-12"               \
+              "tebako-test-run.rb"                              
 
-    - name: Test13 - Configure - [Ruby gem, no gemfile, gemspec error]
+    - name: Test13 - tebako press - [Ruby gem, no gemfile, gemspec error]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-13" -DENTRANCE="tebako-test-run.rb"    \
-              -B ${{github.workspace}}
+        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
+              "${{github.workspace}}/tests/test-13"               \
+              "tebako-test-run.rb"                              
 
-    - name: Test13 - Build and install packaged solution - [Ruby gem, no gemfile, gemspec error]
-      run:  ${{github.workspace}}/tests/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
-
-    - name: Test14 - Configure - [Ruby gem, gemspec, no gemfile, entry point does not exist]
+    - name: Test14 - tebako press - [Ruby gem, gemspec, no gemfile, entry point does not exist]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-11" -DENTRANCE="tebako-test-no-entry-point.rb"     \
-              -B ${{github.workspace}}
+        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
+              "${{github.workspace}}/tests/test-11"               \
+              "test-does-not-exist.rb"                              
 
-
-    - name: Test15 - Configure - [Ruby gem, gemspec, gemfile]
+    - name: Test15 - tebako press - [Ruby gem, gemspec, gemfile]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-15" -DENTRANCE="tebako-test-run.rb"     \
-              -B ${{github.workspace}}
-
-    - name: Test15 - Build and install packaged solution - [Ruby gem, gemspec, gemfile]
-      run: cmake --build ${{github.workspace}} --config ${{env.BUILD_TYPE}} --target install
+        ${{github.workspace}}/bin/tebako press                 \
+              --root="${{github.workspace}}/tests/test-15"     \
+              --entry-point="tebako-test-run.rb"                              
 
     - name: Test15 - Run packaged solution - [Ruby gem, gemspec, gemfile]
-      run:  /usr/local/bin/tebako
+      run:  ${{github.workspace}}/output/tebako
 
-    - name: Test16 - Configure - [Ruby gem, gemspec, gemfile with error]
+    - name: Test16 - tebako press - [Ruby gem, gemspec, gemfile with error]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-16" -DENTRANCE="tebako-test-run.rb"     \
-              -B ${{github.workspace}}
+        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
+              "${{github.workspace}}/tests/test-16"               \
+              "tebako-test-run.rb"                              
 
-    - name: Test16 - Build and install packaged solution - [Ruby gem, gemspec, gemfile with error]
-      run:  ${{github.workspace}}/tests/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}}
-
-    - name: Test17 - Configure - [Ruby gem, gemspec, gemfile, entry point does not exist]
+    - name: Test17 - tebako press - [Ruby gem, gemspec, gemfile, entry point does not exist]
       run: | 
-        cmake -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}                 \
-              -DDEPS:STRING=${{github.workspace}}/${{env.DEPS}}      \
-              -DROOT="${{github.workspace}}/tests/test-15" -DENTRANCE="tebako-test-run-no-entry.rb"     \
-              -B ${{github.workspace}}
-
-    - name: Test17 - Build and install packaged solution - [Ruby gem, gemspec, gemfile, entry point does not exist]
-      run: ${{github.workspace}}/tests/scripts/build_with_failure.sh ${{github.workspace}} ${{env.BUILD_TYPE}} 
+        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
+              "${{github.workspace}}/tests/test-15"               \
+              "test-does-not-exist.rb"                              
 
