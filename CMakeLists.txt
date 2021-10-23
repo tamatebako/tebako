@@ -28,6 +28,7 @@ cmake_minimum_required (VERSION 3.20)
 cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
+
 project(tebako_packager VERSION 0.1.4)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
@@ -48,7 +49,6 @@ include(ExternalProject)
 include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/ensure_bundler.cmake)
 
-option(DEVELOPER_MODE "Developer mode" OFF)
 option(SETUP_MODE "Tebako setup" OFF)
 
 if (NOT ${SETUP_MODE})
@@ -151,38 +151,72 @@ string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
 def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
 def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
-def_ext_prj_g(DWARFS "78401c3")
+
 def_ext_prj_g(INCBIN "348e36b")
+def_ext_prj_g(DWARFS_WR "05ca314")
 
 
 message("Collecting packages:")
-message("ruby     - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
-message("zlib     - " v${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
-message("gdbm     - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
-message("libffi   - " v${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
-message("ncurses  - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
-message("openssl  - " v${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
-message("readline - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
-message("yaml     - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
-message("bundler  - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
-message("incbin   - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR}) 
-message("dwarfs   - " @${DWARFS_TAG}         " at " ${DWARFS_SOURCE_DIR}) 
+message("ruby                        - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
+message("zlib                        - " v${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
+message("gdbm                        - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
+message("libffi                      - " v${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
+message("ncurses                     - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
+message("openssl                     - " v${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
+message("readline                    - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
+message("yaml                        - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
+message("bundler                     - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
+message("incbin                      - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR}) 
+message("dwarfs with tebako wrapper  - " @${DWARFS_WR_TAG}      " at " ${DWARFS_WR_SOURCE_DIR}) 
 message("................................................")
 
 # ...................................................................
 # incbin
-# ExternalProject_Add is used for incbin project since we do not need 
-# anything at configure step. We want to fetch some files before the 
-# build, that's it.  
 
 ExternalProject_Add(${INCBIN_PRJ}
    PREFIX ${DEPS}
    GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
+   GIT_SHALLOW true
    GIT_TAG ${INCBIN_TAG}
    UPDATE_COMMAND ""
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
    INSTALL_COMMAND ""
+)
+
+
+# ...................................................................
+# DwarFS with tebako wrapper
+
+# ...................................................................
+# The libraries that are build by DwarFS project
+# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
+# These forward-declarations and BUILD_BYPRODICTS are required to support 'Ninja'
+# Otherwise add_dependencies would be enough for 'Unix makefiles' generator
+
+set(__LIBDWARFS_WR "${DEPS_LIB_DIR}/libdwarfs-wr.a")
+set(__LIBDWARFS "${DEPS_LIB_DIR}/libdwarfs.a")
+set(__LIBFOLLY "${DEPS_LIB_DIR}/libfolly.a")
+set(__LIBFSST "${DEPS_LIB_DIR}/libfsst.a")
+set(__LIBT_METADATA "${DEPS_LIB_DIR}/libmetadata_thrift.a")
+set(__LIBT_LIGHT "${DEPS_LIB_DIR}/libthrift_light.a")
+set(__LIBXXHASH "${DEPS_LIB_DIR}/libxxhash.a")
+set(__LIBZSTD "${DEPS_LIB_DIR}/libzstd.a")
+set(__LIBARCHIVE "${DEPS_LIB_DIR}/libarchive.a")
+
+
+ExternalProject_Add(${DWARFS_WR_PRJ}
+    PREFIX ${DEPS}
+    GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
+    GIT_SHALLOW true
+    GIT_TAG ${DWARFS_WR_TAG}
+    UPDATE_COMMAND ""
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} 
+    SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
+    BINARY_DIR ${DWARFS_WR_BINARY_DIR}
+    BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
+                     ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA} 
+                     ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
 )
 
 # ...................................................................
@@ -292,7 +326,7 @@ else()
   set(RUBY_C_FLAGS_1 "-fPIC -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections -pipe")
 endif()
 set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} -I${RID}/${OPENSSL_NAME} \
-                  -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
+                   -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
 set(RUBY_L_FLAGS "-L${RLD}")
 
@@ -454,38 +488,6 @@ if (NOT ${SETUP_MODE})
 endif(NOT ${SETUP_MODE})
 
 # ...................................................................
-# DwarFS
-
-# ...................................................................
-# The libraries that are build by DwarFS project
-# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
-# These forward-declarations and BUILD_BYPRODICTS are required to support 'Ninja'
-# Otherwise add_dependencies would be enough for 'Unix makefiles' generator
-
-set(__LIBDWARFS "${DWARFS_BINARY_DIR}/libdwarfs.a")
-set(__LIBFOLLY "${DWARFS_BINARY_DIR}/folly/libfolly.a")
-set(__LIBFSST "${DWARFS_BINARY_DIR}/libfsst.a")
-set(__LIBT_METADATA "${DWARFS_BINARY_DIR}/libmetadata_thrift.a")
-set(__LIBT_LIGHT "${DWARFS_BINARY_DIR}/libthrift_light.a")
-set(__LIBXXHASH "${DWARFS_BINARY_DIR}/libxxhash.a")
-set(__LIBZSTD "${DWARFS_BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
-set(__LIBARCHIVE "${DWARFS_BINARY_DIR}/libarchive/lib/libarchive.a")
-
-ExternalProject_Add(${DWARFS_PRJ}
-    PREFIX ${DEPS}
-    GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git
-    GIT_TAG ${DWARFS_TAG}
-    PATCH_COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.cpp ${DEPS}/src/_dwarfs/src/dwarfs  
-    COMMAND       ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.h ${DEPS}/src/_dwarfs/include/dwarfs   
-    UPDATE_COMMAND ""
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DSTATIC_BUILD_DO_NOT_USE:BOOL=ON
-    SOURCE_DIR ${DWARFS_SOURCE_DIR}
-    BINARY_DIR ${DWARFS_BINARY_DIR}
-    BUILD_BYPRODUCTS ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA} 
-                     ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
-)
-
-# ...................................................................
 # Packaged filesystem
 
 if(NOT ${SETUP_MODE})
@@ -503,38 +505,6 @@ if(NOT ${SETUP_MODE})
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
     @ONLY
   )
-
-# ...................................................................
-# Executable
-
-  add_compile_options(-fdiagnostics-color=always)
-  add_link_options(-static -static-libgcc)
-  set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2 -g")
-  set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O2 -g")
-
-  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
-                      ${INCBIN_SOURCE_DIR}
-                      ${DWARFS_SOURCE_DIR}/folly ${DWARFS_BINARY_DIR}/folly ${DWARFS_SOURCE_DIR}/fbthrift 
-                      ${DWARFS_BINARY_DIR}/thrift ${DWARFS_BINARY_DIR} ${DWARFS_SOURCE_DIR}/include)
-  add_compile_definitions(FUSE_USE_VERSION=35)
-
-  add_executable(
-    ${APP_NAME} 
-    "src/tebako.cpp"
-    "src/tebako-dfs.cpp"
-    "src/tebako-dfs-ops.cpp"
-    "src/tebako-fs.cpp"
-    "src/tebako-mfs.cpp"
-    "include/tebako-fs.h"
-    "include/tebako-dfs.h"
-    "include/tebako-mfs.h"
-    "include/version.h"
-  )
-
-  add_dependencies(${APP_NAME} _PACKAGED_FILESYSTEM  ${INCBIN_PRJ} ${DWARFS_PRJ})
-  set_property(TARGET ${APP_NAME} PROPERTY CXX_STANDARD 17)
-  set_property(TARGET ${APP_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
-  set_property(TARGET ${APP_NAME} PROPERTY CXX_EXTENSIONS OFF)
 
 # ...................................................................
 # The libraries that are build by dwarfs project
@@ -606,5 +576,32 @@ endif(NOT ${SETUP_MODE})
 
 add_custom_target(setup
    ${CMAKE_COMMAND} -E echo "tebako setup completed"
-   DEPENDS ${RUBY_PRJ} ${DWARFS_PRJ} ${INCBIN_PRJ}
+   DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
 )
+
+#   def_ext_prj_t(RUBY_P "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
+
+# Tebako patches
+# (1) Add extra libraries to tebako build
+#set(TEBAKO_LIBRARIES "-ldwarfs")
+
+#ExternalProject_Add(${RUBY_P_PRJ}
+##   SOURCE_DIR ${RUBY_P_SOURCE_DIR}
+#   BINARY_DIR ${RUBY_P_BINARY_DIR}
+#   DOWNLOAD_COMMAND  ${CMAKE_COMMAND} -E copy_directory ${RUBY_SOURCE_DIR} ${RUBY_P_SOURCE_DIR}
+#   CONFIGURE_COMMAND ${RUBY_P_SOURCE_DIR}/configure 
+#                     --enable-bundled-libyaml 
+#                     --without-gmp 
+#                     --disable-dtrace 
+#                     --enable-debug-env 
+#                     --disable-install-doc
+#                     --with-static-linked-ext
+#                     --srcdir=${RUBY_P_SOURCE_DIR} 
+#                     --prefix=${DATA_SRC_DIR}
+#                     cflags=${RUBY_C_FLAGS} 
+#                     LDFLAGS=${RUBY_L_FLAGS}
+#                     LIBS=${TEBAKO_LIBRARIES}
+#   INSTALL_COMMAND ""  
+#)
+
+#add_dependencies(${DWARFS_WR_PRJ} ${RUBY_PRJ} ${INCBIN_PRJ} )
