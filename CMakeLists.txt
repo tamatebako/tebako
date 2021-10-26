@@ -29,7 +29,7 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 
-project(tebako_packager VERSION 0.1.4)
+project(tebako_packager VERSION 0.2.0)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -84,7 +84,7 @@ endif()
 
 message("................................................")
 
-set(Boost_USE_STATIC_LIBS   ON)
+set(BOOST_USE_STATIC_LIBS   ON)
 set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
@@ -96,6 +96,9 @@ set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)
 set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
+
+set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
+
 
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
@@ -146,14 +149,18 @@ def_ext_prj_t(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd
 def_ext_prj_t(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
 def_ext_prj_t(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
 def_ext_prj_t(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
-def_ext_prj_t(OPENSSL  "1.1.0h" "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517")
-string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
+# ---------------------------------------------------------------------------------------------------
+# 2: Relying on system openssl due to dwarfs requirements
+#
+# def_ext_prj_t(OPENSSL  "1.1.0h" "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517")
+# string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
+# ---------------------------------------------------------------------------------------------------
 def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
 def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "d16d17c") 
+def_ext_prj_g(DWARFS_WR "757d376") 
 
 
 message("Collecting packages:")
@@ -162,7 +169,11 @@ message("zlib                        - " v${ZLIB_VER}           " at " ${ZLIB_SO
 message("gdbm                        - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
 message("libffi                      - " v${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
 message("ncurses                     - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
-message("openssl                     - " v${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
+# ---------------------------------------------------------------------------------------------------
+# 2: Relying on system openssl due to dwarfs requirements
+#
+# message("openssl                     - " v${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
+# ---------------------------------------------------------------------------------------------------
 message("readline                    - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
 message("yaml                        - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
 message("bundler                     - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
@@ -234,17 +245,21 @@ ExternalProject_Add(${ZLIB_PRJ}
    INSTALL_COMMAND    cd ${ZLIB_SOURCE_DIR} && make install
 )
 
-ExternalProject_Add(${OPENSSL_PRJ}
-   PREFIX ${DEPS}
-   URL https://www.openssl.org/source/old/${OPENSSL_VER_BASE}/openssl-${OPENSSL_VER}.tar.gz
-   URL_HASH SHA256=${OPENSSL_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${OPENSSL_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND cd ${OPENSSL_SOURCE_DIR} && ./config no-shared --prefix=${DEPS}
-   BUILD_COMMAND     cd ${OPENSSL_SOURCE_DIR} && export LD_LIBRARY_PATH="${DEPS}/lib:$LD_LIBRARY_PATH" && make 
-   INSTALL_COMMAND   cd ${OPENSSL_SOURCE_DIR} && make install
-)
+# ---------------------------------------------------------------------------------------------------
+# 2: Relying on system openssl due to dwarfs requirements
+#
+#ExternalProject_Add(${OPENSSL_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://www.openssl.org/source/old/${OPENSSL_VER_BASE}/openssl-${OPENSSL_VER}.tar.gz
+#   URL_HASH SHA256=${OPENSSL_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${OPENSSL_SOURCE_DIR}
+#   UPDATE_COMMAND ""
+#   CONFIGURE_COMMAND cd ${OPENSSL_SOURCE_DIR} && ./config no-shared --prefix=${DEPS}
+#   BUILD_COMMAND     cd ${OPENSSL_SOURCE_DIR} && export LD_LIBRARY_PATH="${DEPS}/lib:$LD_LIBRARY_PATH" && make 
+#   INSTALL_COMMAND   cd ${OPENSSL_SOURCE_DIR} && make install
+#)
+# ---------------------------------------------------------------------------------------------------
 
 ExternalProject_Add(${GDBM_PRJ}
    PREFIX ${DEPS}
@@ -320,26 +335,28 @@ set(RID ${DEPS}/include)
 set(RLD ${DEPS}/lib)
 
 if(RUBY_DEBUG_BUILD)
-  set(RUBY_C_FLAGS_1 "-fPIC -g -O0 -pipe")
+  set(RUBY_C_FLAGS_1 "-fPIC -g -O0 -pipe -static -static-libgcc")
 else()
-  set(RUBY_C_FLAGS_1 "-fPIC -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections -pipe")
+  set(RUBY_C_FLAGS_1 "-fPIC -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections -pipe -static -static-libgcc")
 endif()
-set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} -I${RID}/${OPENSSL_NAME} \
+set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} \
                    -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
 set(RUBY_L_FLAGS "-L${RLD}")
 
-#   COMMAND           sed -i "s/\#option nodynamic/option nodynamic/g" ${RUBY_SOURCE_DIR}/ext/Setup
 #   --disable-shared
 #   --with-vendordir = ${RLD}
+#    -static-libgcc
 
 ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
    URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
    URL_HASH SHA256=${RUBY_HASH}
-   DOWNLOAD_NO_PROGRESS true
+   DOWNLOAD_NO_PROGRESS true   
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
+   PATCH_COMMAND ${PATCHES}/ruby/pre_config.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+   UPDATE_COMMAND ""
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure 
                      --enable-bundled-libyaml 
                      --without-gmp 
@@ -347,6 +364,7 @@ ExternalProject_Add(${RUBY_PRJ}
                      --enable-debug-env 
                      --disable-install-doc
                      --with-static-linked-ext
+                     --with-jemalloc
                      --srcdir=${RUBY_SOURCE_DIR} 
                      --prefix=${DATA_SRC_DIR}
                      cflags=${RUBY_C_FLAGS} 
@@ -355,15 +373,14 @@ ExternalProject_Add(${RUBY_PRJ}
 )
  
 add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
-                             ${NCURSES_PRJ} ${READLINE_PRJ} ${OPENSSL_PRJ})
+                             ${NCURSES_PRJ} ${READLINE_PRJ} 
+                             ${DWARFS_WR_PRJ})
 
 if (NOT ${SETUP_MODE})
   set (TBD ${DATA_SRC_DIR}/bin)
   set (TLD ${DATA_SRC_DIR}/local)
 # TGD folder is used to install gems 
   set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
-
-  set(BUNDLER_CPATH "${DATA_SRC_DIR}/include/ruby-${RUBY_API_VER}:${RID}:${RID}/${NCURSES_NAME}:${RID}/${OPENSSL_NAME}:${RID}/${READLINE_NAME}:${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
 
   file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
   file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
@@ -557,7 +574,7 @@ if(NOT ${SETUP_MODE})
  find_library(_LIBUNWIND "libunwind.a" REQUIRED)
  find_library(_LIBIBERTY "libiberty.a" REQUIRED)
 
-# ...................................................................
+ # ...................................................................
 #  IMPORTANT !!!
 #  MUST be in this order otherwise link may fail
 #  -static-libgcc and gcc_eh below is all together an ugly trick to enforce static linking
@@ -578,29 +595,3 @@ add_custom_target(setup
    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
 )
 
-#   def_ext_prj_t(RUBY_P "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
-
-# Tebako patches
-# (1) Add extra libraries to tebako build
-#set(TEBAKO_LIBRARIES "-ldwarfs")
-
-#ExternalProject_Add(${RUBY_P_PRJ}
-##   SOURCE_DIR ${RUBY_P_SOURCE_DIR}
-#   BINARY_DIR ${RUBY_P_BINARY_DIR}
-#   DOWNLOAD_COMMAND  ${CMAKE_COMMAND} -E copy_directory ${RUBY_SOURCE_DIR} ${RUBY_P_SOURCE_DIR}
-#   CONFIGURE_COMMAND ${RUBY_P_SOURCE_DIR}/configure 
-#                     --enable-bundled-libyaml 
-#                     --without-gmp 
-#                     --disable-dtrace 
-#                     --enable-debug-env 
-#                     --disable-install-doc
-#                     --with-static-linked-ext
-#                     --srcdir=${RUBY_P_SOURCE_DIR} 
-#                     --prefix=${DATA_SRC_DIR}
-#                     cflags=${RUBY_C_FLAGS} 
-#                     LDFLAGS=${RUBY_L_FLAGS}
-#                     LIBS=${TEBAKO_LIBRARIES}
-#   INSTALL_COMMAND ""  
-#)
-
-#add_dependencies(${DWARFS_WR_PRJ} ${RUBY_PRJ} ${INCBIN_PRJ} )

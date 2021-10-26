@@ -25,7 +25,7 @@ env:
   DEPS: deps
 # GitHub dependencies' 
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "d16d17c"
+  DWARFS_WR_TAG: "757d376"
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
@@ -37,10 +37,13 @@ env:
   LIBFFI_HASH: "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483"
   NCURSES_VER: "6.2"
   NCURSES_HASH: "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d"
-# OpenSSL upgraded from 1.0.0f to 1.0.0h because 1.0.0f requires Perl version less then 3.20
-# [ <"glob" is not exported by the File::Glob module> issue ]  
-  OPENSSL_VER: "1.1.0h"
-  OPENSSL_HASH: "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517"
+# ---------------------------------------------------------------------------------------------------
+# 1: OpenSSL upgraded from 1.0.0f to 1.0.0h because 1.0.0f requires Perl version less then 3.20
+#    [ <"glob" is not exported by the File::Glob module> issue ]  
+# 2: Relying on system openssl due to dwarfs requirements
+#  OPENSSL_VER: "1.1.0h"
+#  OPENSSL_HASH: "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517"
+# ---------------------------------------------------------------------------------------------------
   READLINE_VER: "7.0"
   READLINE_HASH: "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334"
   YAML_VER: "0.1.7"
@@ -67,7 +70,10 @@ jobs:
         echo  ${{ env.GDBM_HASH }} >> key.txt
         echo  ${{ env.LIBFFI_HASH }} >> key.txt
         echo  ${{ env.NCURSES_HASH }} >> key.txt
-        echo  ${{ env.OPENSSL_HASH }} >> key.txt
+# ---------------------------------------------------------------------------------------------------
+# 2: Relying on system openssl due to dwarfs requirements
+#        echo  ${{ env.OPENSSL_HASH }} >> key.txt
+# ---------------------------------------------------------------------------------------------------
         echo  ${{ env.READLINE_HASH }} >> key.txt
         echo  ${{ env.YAML_HASH }} >> key.txt
         echo  ${{ env.ZLIB_HASH }} >> key.txt
