@@ -70,14 +70,13 @@ jobs:
         echo  ${{ env.GDBM_HASH }} >> key.txt
         echo  ${{ env.LIBFFI_HASH }} >> key.txt
         echo  ${{ env.NCURSES_HASH }} >> key.txt
+        echo  ${{ env.READLINE_HASH }} >> key.txt
+        echo  ${{ env.YAML_HASH }} >> key.txt
+        echo  ${{ env.ZLIB_HASH }} >> key.txt
 # ---------------------------------------------------------------------------------------------------
 # 2: Relying on system openssl due to dwarfs requirements
 #        echo  ${{ env.OPENSSL_HASH }} >> key.txt
 # ---------------------------------------------------------------------------------------------------
-        echo  ${{ env.READLINE_HASH }} >> key.txt
-        echo  ${{ env.YAML_HASH }} >> key.txt
-        echo  ${{ env.ZLIB_HASH }} >> key.txt
-
 
     - name: Clone shell test framework
       run: git clone https://github.com/kward/shunit2.git ${{github.workspace}}/tests/shunit2 --depth 1
