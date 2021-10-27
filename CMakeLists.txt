@@ -160,7 +160,7 @@ def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "757d376") 
+def_ext_prj_g(DWARFS_WR "dac1a7e") 
 
 
 message("Collecting packages:")
@@ -220,10 +220,11 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     PREFIX ${DEPS}
     GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
     GIT_TAG ${DWARFS_WR_TAG}
-    UPDATE_COMMAND ""
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DWITH_TESTS:BOOL=OFF 
     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
+    UPDATE_COMMAND ""
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DWITH_TESTS:BOOL=OFF 
+    INSTALL_COMMAND ${CMAKE_COMMAND} --install ${DWARFS_WR_BINARY_DIR} --prefix ${DEPS}
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA} 
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
