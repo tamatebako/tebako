@@ -25,9 +25,8 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 restore_and_save() {
-  nm = $1
-  test -e $nm.old && cp -f $nm.old $nm
-  cp -f $nm $nm.old
+  test -e $1.old && cp -f $1.old $1
+  cp -f $1 $1.old
 
 }
 
@@ -57,12 +56,15 @@ restore_and_save $1/dir.c
 
 # ruby/dln.c                        
 restore_and_save $1/dln.c
+sed -i "s/static st_table \*sym_tbl;/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\nstatic st_table *sym_tbl;/g" $1/dln.c
+
 
 # ruby/ext/openssl/ossl_x509store.c 
 # ---
 
 # ruby/file.c                       
 restore_and_save $1/file.c
+sed -i "s/VALUE rb_cFile;/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\nVALUE rb_cFile;/g" $1/io.c
 
 # ruby/io.c  
 restore_and_save $1/io.c
@@ -73,7 +75,7 @@ restore_and_save $1/lib/rubygems/path_support.rb
 # ----
 
 # ruby/prelude.c        
-restore_and_save $1/prelude.c            
+#restore_and_save $1/prelude.c            
 # ---
 
 # ruby/process.c             
@@ -81,7 +83,7 @@ restore_and_save $1/process.c
 # ---
 
 # ruby/tool/mkconfig.rb             
-restore_and_save $1/process.ctool/mkconfig.rb       
+restore_and_save $1/tool/mkconfig.rb       
 # ---
 
 # ruby/util.c                       
