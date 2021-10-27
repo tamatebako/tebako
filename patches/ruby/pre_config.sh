@@ -24,26 +24,70 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+restore_and_save() {
+  nm = $1
+  test -e $nm.old && cp -f $nm.old $nm
+  cp -f $nm $nm.old
+
+}
 
 # Copy make script include file that list all libraries required for tebako static build
 PATCH_DIR="$( cd "$( dirname "$0" )" && pwd )"
-cp $PATCH_DIR/mainlibs.mk $2/mainlibs.mk 
+cp -f $PATCH_DIR/mainlibs.mk $2/mainlibs.mk 
 
 # Pin tebako static build libraries
-cp $1/template/Makefile.in $1/template/Makefile.in.old
+restore_and_save $1/template/Makefile.in
 sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs.mk/g" $1/template/Makefile.in
 
-
-cp $PATCH_DIR/bd-patch.h $1/ext/bigdecimal/bd-patch.h
-cp $1/ext/bigdecimal/bigdecimal.h $1/ext/bigdecimal/bigdecimal.h.old
+cp -f $PATCH_DIR/bd-patch.h $1/ext/bigdecimal/bd-patch.h
+restore_and_save $1/ext/bigdecimal/bigdecimal.h
 sed -i "s/#include <float.h>/#include <float.h>\n#include \"bd-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h 
 
 
 # [????] not sure if it is required
-cp $1/ext/Setup $1/ext/Setup.old
+restore_and_save $1/ext/Setup
 sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
 
 # Put lidwarfs IO bindings to Ruby files
-cp $1/io.c $1/io.c.old
+
+
+# ruby/dir.c                 
+restore_and_save $1/dir.c       
+# ---
+
+# ruby/dln.c                        
+restore_and_save $1/dln.c
+
+# ruby/ext/openssl/ossl_x509store.c 
+# ---
+
+# ruby/file.c                       
+restore_and_save $1/file.c
+
+# ruby/io.c  
+restore_and_save $1/io.c
 sed -i "s/VALUE rb_cIO;/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\nVALUE rb_cIO;/g" $1/io.c
 
+# ruby/lib/rubygems/path_support.rb 
+restore_and_save $1/lib/rubygems/path_support.rb
+# ----
+
+# ruby/prelude.c        
+restore_and_save $1/prelude.c            
+# ---
+
+# ruby/process.c             
+restore_and_save $1/process.c       
+# ---
+
+# ruby/tool/mkconfig.rb             
+restore_and_save $1/process.ctool/mkconfig.rb       
+# ---
+
+# ruby/util.c                       
+restore_and_save $1/util.c
+
+
+# [TODO] Windows
+# ruby/win32/file.c                 
+# ruby/win32/win32.c                

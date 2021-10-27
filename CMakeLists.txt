@@ -160,7 +160,7 @@ def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "dac1a7e") 
+def_ext_prj_g(DWARFS_WR "4a31523") 
 
 
 message("Collecting packages:")
@@ -189,7 +189,6 @@ ExternalProject_Add(${INCBIN_PRJ}
    GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
    GIT_SHALLOW true
    GIT_TAG ${INCBIN_TAG}
-   UPDATE_COMMAND ""
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
    INSTALL_COMMAND ""
@@ -224,7 +223,6 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
     UPDATE_COMMAND ""
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DWITH_TESTS:BOOL=OFF 
-    INSTALL_COMMAND ${CMAKE_COMMAND} --install ${DWARFS_WR_BINARY_DIR} --prefix ${DEPS}
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA} 
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
@@ -239,7 +237,6 @@ ExternalProject_Add(${ZLIB_PRJ}
    URL_HASH SHA256=${ZLIB_HASH}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${ZLIB_SOURCE_DIR}
-   UPDATE_COMMAND ""
    CONFIGURE_COMMAND cd ${ZLIB_SOURCE_DIR} && 
                      ./configure --static --prefix=${DEPS}
    BUILD_COMMAND      cd ${ZLIB_SOURCE_DIR} && make 
