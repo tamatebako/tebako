@@ -137,8 +137,7 @@ jobs:
       run:  ${{github.workspace}}/bin/tebako setup
           
     - name: Check that ruby is not a dynamic executable
-#      run:  ldd ${{github.workspace}}/deps/src/_ruby-build 2>&1 >/dev/null | grep -i 'not a dynamic executable' 
-      run:  ls ${{github.workspace}}/deps/src/_ruby-build 
+      run:  ldd ${{github.workspace}}/deps/src/_ruby-build/ruby 2>&1 >/dev/null | grep -i 'not a dynamic executable' 
       
 
 #    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
