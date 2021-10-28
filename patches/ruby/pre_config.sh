@@ -38,9 +38,9 @@ cp -f $PATCH_DIR/mainlibs.mk $2/mainlibs.mk
 restore_and_save $1/template/Makefile.in
 sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs.mk/g" $1/template/Makefile.in
 
-cp -f $PATCH_DIR/bd-patch.h $1/ext/bigdecimal/bd-patch.h
+cp -f $PATCH_DIR/bigdecimal-patch.h $1/ext/bigdecimal/bigdecimal-patch.h
 restore_and_save $1/ext/bigdecimal/bigdecimal.h
-sed -i "s/#include <float.h>/#include <float.h>\n#include \"bd-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h 
+sed -i "s/#include <float.h>/#include <float.h>\n#include \"bigdecimal-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h 
 
 
 # [????] not sure if it is required
@@ -50,23 +50,26 @@ sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
 # Put lidwarfs IO bindings to Ruby files
 
 
-# ruby/dir.c                 
-restore_and_save $1/dir.c       
-# ---
+# ruby/dir.c
+restore_and_save $1/dir.c
+# Replace only the first occurence
+# https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
+sed -i "0,/#ifdef __APPLE__/s//#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\n#ifdef __APPLE__/" $1/dir.c
+#  [TODO MacOS]  libdwarfs issues 45,46
 
-# ruby/dln.c                        
+# ruby/dln.c
 restore_and_save $1/dln.c
 sed -i "s/static st_table \*sym_tbl;/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\nstatic st_table *sym_tbl;/g" $1/dln.c
 
 
-# ruby/ext/openssl/ossl_x509store.c 
+# ruby/ext/openssl/ossl_x509store.c
 # ---
 
-# ruby/file.c                       
+# ruby/file.c
 restore_and_save $1/file.c
-sed -i "s/VALUE rb_cFile;/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\nVALUE rb_cFile;/g" $1/io.c
+sed -i "s/VALUE rb_cFile;/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\nVALUE rb_cFile;/g" $1/file.c
 
-# ruby/io.c  
+# ruby/io.c
 restore_and_save $1/io.c
 sed -i "s/VALUE rb_cIO;/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\nVALUE rb_cIO;/g" $1/io.c
 
@@ -86,10 +89,12 @@ restore_and_save $1/process.c
 restore_and_save $1/tool/mkconfig.rb       
 # ---
 
-# ruby/util.c                       
+# ruby/util.c
 restore_and_save $1/util.c
+sed -i  "s/#ifndef S_ISDIR/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\n#ifndef S_ISDIR/g" $1/util.c
 
 
-# [TODO] Windows
-# ruby/win32/file.c                 
-# ruby/win32/win32.c                
+# [TODO Windows]
+# ruby/win32/file.c
+# ruby/win32/win32.c
+

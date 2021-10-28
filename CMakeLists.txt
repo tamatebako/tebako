@@ -145,34 +145,34 @@ endif(NOT ${SETUP_MODE})
 def_ext_prj_t(RUBY     "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
-def_ext_prj_t(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1")
 def_ext_prj_t(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
 def_ext_prj_t(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
 def_ext_prj_t(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
 # ---------------------------------------------------------------------------------------------------
-# 2: Relying on system openssl due to dwarfs requirements
+# 2: Relying on system openssl and zlib 
 #
 # def_ext_prj_t(OPENSSL  "1.1.0h" "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517")
 # string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
+# def_ext_prj_t(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1")
 # ---------------------------------------------------------------------------------------------------
 def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
 def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "4a31523") 
+def_ext_prj_g(DWARFS_WR "05152ad") 
 
 
 message("Collecting packages:")
 message("ruby                        - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
-message("zlib                        - " v${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
 message("gdbm                        - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
 message("libffi                      - " v${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
 message("ncurses                     - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
 # ---------------------------------------------------------------------------------------------------
-# 2: Relying on system openssl due to dwarfs requirements
+# 2: Relying on system openssl and zlib
 #
 # message("openssl                     - " v${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
+#message("zlib                        - " v${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
 # ---------------------------------------------------------------------------------------------------
 message("readline                    - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
 message("yaml                        - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
@@ -231,20 +231,8 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
 # ...................................................................
 # Ruby dependencies
 
-ExternalProject_Add(${ZLIB_PRJ}
-   PREFIX ${DEPS}
-   URL https://zlib.net/zlib-${ZLIB_VER}.tar.gz
-   URL_HASH SHA256=${ZLIB_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${ZLIB_SOURCE_DIR}
-   CONFIGURE_COMMAND cd ${ZLIB_SOURCE_DIR} && 
-                     ./configure --static --prefix=${DEPS}
-   BUILD_COMMAND      cd ${ZLIB_SOURCE_DIR} && make 
-   INSTALL_COMMAND    cd ${ZLIB_SOURCE_DIR} && make install
-)
-
 # ---------------------------------------------------------------------------------------------------
-# 2: Relying on system openssl due to dwarfs requirements
+# 2: Relying on system openssl and zlib
 #
 #ExternalProject_Add(${OPENSSL_PRJ}
 #   PREFIX ${DEPS}
@@ -257,6 +245,20 @@ ExternalProject_Add(${ZLIB_PRJ}
 #   BUILD_COMMAND     cd ${OPENSSL_SOURCE_DIR} && export LD_LIBRARY_PATH="${DEPS}/lib:$LD_LIBRARY_PATH" && make 
 #   INSTALL_COMMAND   cd ${OPENSSL_SOURCE_DIR} && make install
 #)
+#
+#ExternalProject_Add(${ZLIB_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://zlib.net/zlib-${ZLIB_VER}.tar.gz
+#   URL_HASH SHA256=${ZLIB_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${ZLIB_SOURCE_DIR}
+#   CONFIGURE_COMMAND cd ${ZLIB_SOURCE_DIR} && 
+#                     ./configure --static --prefix=${DEPS}
+#   BUILD_COMMAND      cd ${ZLIB_SOURCE_DIR} && make 
+#   INSTALL_COMMAND    cd ${ZLIB_SOURCE_DIR} && make install
+#)
+
+
 # ---------------------------------------------------------------------------------------------------
 
 ExternalProject_Add(${GDBM_PRJ}
@@ -370,7 +372,7 @@ ExternalProject_Add(${RUBY_PRJ}
    INSTALL_COMMAND ""  
 )
  
-add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
+add_dependencies(${RUBY_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
                              ${NCURSES_PRJ} ${READLINE_PRJ} 
                              ${DWARFS_WR_PRJ})
 
