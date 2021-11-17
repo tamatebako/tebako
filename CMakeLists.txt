@@ -370,6 +370,11 @@ add_dependencies(${RUBY_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ}
                              ${NCURSES_PRJ} ${READLINE_PRJ} 
                              ${DWARFS_WR_PRJ})
 
+add_custom_target(setup
+   ${CMAKE_COMMAND} -E echo "tebako setup completed"
+   DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
+)
+
 if (NOT ${SETUP_MODE})
   set (TBD ${DATA_SRC_DIR}/bin)
   set (TLD ${DATA_SRC_DIR}/local)
@@ -495,18 +500,16 @@ if (NOT ${SETUP_MODE})
        DEPENDS _CLEAN_FILESYSTEM
     )
   endif()
-endif(NOT ${SETUP_MODE})
 
 # ...................................................................
 # Packaged filesystem
 
-if(NOT ${SETUP_MODE})
   add_custom_target(_PACKAGED_FILESYSTEM  
      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
 #                                       ${DATA_SRC_DIR}/bin/b*  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem ${DATA_SRC_DIR}/bin/irb 
 #                                       ${DATA_SRC_DIR}/bin/ra* ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri  ${DATA_SRC_DIR}/bin/y2racc
      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-     DEPENDS ${DWARFS_PRJ} _SOURCE_FILESYSTEM
+     DEPENDS ${DWARFS_WR_PRJ} _SOURCE_FILESYSTEM
      BYPRODUCTS ${DATA_BIN_FILE}
   )
 
@@ -516,76 +519,15 @@ if(NOT ${SETUP_MODE})
     @ONLY
   )
 
-# ...................................................................
-# The libraries that are build by dwarfs project
-# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light libarchive
-
- function(ADD_DWARFS_LIBRARY NAME PRJ APP_NM)
-   add_library(${NAME} STATIC IMPORTED)
-   set_target_properties(${NAME} PROPERTIES IMPORTED_LOCATION ${_${NAME}})
-   add_dependencies(${NAME} ${PRJ})
-   target_link_libraries(${APP_NM} ${NAME})
- endfunction()
-
- add_dwarfs_library(_LIBDWARFS ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBFSST ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBFOLLY ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBT_METADATA ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBT_LIGHT ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBXXHASH ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBZSTD ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBARCHIVE ${DWARFS_PRJ} ${APP_NAME})
-
-# ...................................................................
-# System libraries
-# Each library name given to the NAMES option is first considered
-# as a library file name and then considered with platform-specific 
-# prefixes (e.g. lib) and suffixes (e.g. .so). Therefore one may 
-# specify library file names such as libfoo.a directly. This can be 
-# used to locate static libraries on UNIX-like systems.
-#
-
- find_package(Boost 1.67 REQUIRED COMPONENTS context regex thread atomic date_time filesystem program_options system)
-
- find_library(_LIBGLOG "libglog.a" REQUIRED)
- find_library(_LIBFMT "libfmt.a" REQUIRED)
- find_library(_LIBDC "libdouble-conversion.a" REQUIRED)
- find_library(_LIBGFLAGS "libgflags.a" REQUIRED)
- find_library(_LIBEVENT "libevent.a" REQUIRED)
- find_library(_LIBACL "libacl.a" REQUIRED) 
- find_library(_LIBCRYPTO "libcrypto.a" REQUIRED) 
- find_library(_LIBLZ4 "liblz4.a" REQUIRED) 
- find_library(_LIBLZMA "liblzma.a" REQUIRED) 
- find_library(_LIBZ "libz.a" REQUIRED) 
- find_library(_LIBLJEMALLOC "libjemalloc.a" REQUIRED) 
- find_library(_LIBPTHREAD "libpthread.a" REQUIRED) 
- find_library(_LIBFUSE "libfuse3.a" REQUIRED) 
- find_library(_LIBDL "libdl.a" REQUIRED) 
- find_library(_LIBC "libc.a" REQUIRED)  
- find_library(_LIBM "libm.a" REQUIRED)
- find_library(_LIBRT "librt.a" REQUIRED)
- find_library(_LIBSSL "libssl.a" REQUIRED)
- find_library(_LIBUNWIND "libunwind.a" REQUIRED)
- find_library(_LIBIBERTY "libiberty.a" REQUIRED)
-
- # ...................................................................
-#  IMPORTANT !!!
-#  MUST be in this order otherwise link may fail
-#  -static-libgcc and gcc_eh below is all together an ugly trick to enforce static linking
-
- target_link_libraries(${APP_NAME}                              
-   ${_LIBFMT}          ${Boost_LIBRARIES}  ${_LIBDC}           ${_LIBFUSE}                    
-   ${_LIBGLOG}         ${_LIBGFLAGS}       ${_LIBEVENT}        ${_LIBIBERTY}
-   ${_LIBACL}          ${_LIBSSL}          ${_LIBCRYPTO}       ${_LIBLZ4}
-   ${_LIBZ}            ${_LIBJEMALLOC}     ${_LIBPTHREAD}      ${_LIBDL}           
-   ${_LIBC}            ${_LIBM}            ${_LIBRT}           gcc_eh		                 
-   ${_LIBUNWIND}       ${_LIBLZMA}
- )
+#add_custom_target(package
+#   ${CMAKE_COMMAND} -E echo "tebako packaging completed"
+#   DEPENDS setup ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} _PACKAGED_FILESYSTEM
+#)
 
 endif(NOT ${SETUP_MODE})
 
-add_custom_target(setup
-   ${CMAKE_COMMAND} -E echo "tebako setup completed"
-   DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
+add_custom_target(package
+   ${CMAKE_COMMAND} -E echo "tebako packaging completed"
+   DEPENDS setup ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} _PACKAGED_FILESYSTEM
 )
 
