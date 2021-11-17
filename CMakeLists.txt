@@ -123,14 +123,8 @@ if (NOT ${SETUP_MODE})
 # DATA_BIN_FILE is packaged filesystem itself
   set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 
-# This is a mount point for packaged filesystem at the target computer
-# TODO: this is supposed to become obsolete when fuse dependency is eliminated
-#       otherwise it shall be reconsidered 
-  if ("-${MOUNTPOINT}" STREQUAL "-")
-    set(FS_MOUNT_POINT "/home/tebako")
-  else()
-    set(FS_MOUNT_POINT ${MOUNTPOINT})
-  endif()
+# This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
+set(FS_MOUNT_POINT "/__tebako_memfs__")
   
   set(FS_APP_HOME "/.")
 
@@ -160,7 +154,7 @@ def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "05152ad") 
+def_ext_prj_g(DWARFS_WR "f218d83") 
 
 
 message("Collecting packages:")
@@ -347,6 +341,7 @@ set(RUBY_L_FLAGS "-L${RLD}")
 #   --disable-shared
 #   --with-vendordir = ${RLD}
 #    -static-libgcc
+#    --prefix=${DATA_SRC_DIR} 
 
 ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
@@ -366,10 +361,9 @@ ExternalProject_Add(${RUBY_PRJ}
                      --with-static-linked-ext
                      --with-jemalloc
                      --srcdir=${RUBY_SOURCE_DIR} 
-                     --prefix=${DATA_SRC_DIR}
+                     --prefix=${DEPS}
                      cflags=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
-   INSTALL_COMMAND ""  
 )
  
 add_dependencies(${RUBY_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
@@ -390,12 +384,12 @@ if (NOT ${SETUP_MODE})
   list(LENGTH GEMFILES GFLENGTH)
   list(LENGTH GEMS     GLENGTH)
 
+#            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
   add_custom_target(_CLEAN_FILESYSTEM
            COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
-           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
            DEPENDS ${RUBY_PRJ} 
   )
 

@@ -46,8 +46,8 @@ if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
     exit 1
 fi
 
-OPTIONS=hp:c:r:e:m:o:
-LONGOPTS=help,prefix:,config:,root:,entry-point:,mount-point:,output:
+OPTIONS=hp:c:r:e:o:
+LONGOPTS=help,prefix:,config:,root:,entry-point:,output:
 
 # -regarding ! and PIPESTATUS see above
 # -temporarily store output to be able to check for errors
@@ -62,7 +62,7 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-h=n prefix=- config=- root=- mountPoint=- entryPoint=- output=-
+h=n prefix=- config=- root=- entryPoint=- output=-
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
@@ -80,10 +80,6 @@ while true; do
             ;;
         -e|--entry-point)
             entryPoint="$2"
-            shift 2
-            ;;
-        -m|--mount-point)
-            mountPoint="$2"
             shift 2
             ;;
         -o|--output)
@@ -175,7 +171,6 @@ case "$1" in
               -DDEPS:STRING=$prefix/deps      \
               -DROOT:STRING=$root             \
               -DENTRANCE:STRING=$entryPoint   \
-              -DMOUNTPOINT:STRING=$mountPoint \
               -DOUTPUT:STRING=$output         \
               -DSETUP_MODE:BOOLEAN=OFF        \
               -G "Unix Makefiles"             \
