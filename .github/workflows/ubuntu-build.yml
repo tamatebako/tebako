@@ -106,11 +106,11 @@ jobs:
       run:  ldd ${{github.workspace}}/deps/src/_ruby-build/ruby 2>&1 >/dev/null | grep -i 'not a dynamic executable' 
       
 
-#    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
-#      run: | 
-#        ${{github.workspace}}/bin/tebako press                   \
-#              --root="${{github.workspace}}/tests/test-01"       \
-#              --entry-point="test.rb"                              
+    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
+      run: | 
+        ${{github.workspace}}/bin/tebako press                   \
+              --root="${{github.workspace}}/tests/test-01"       \
+              --entry-point="test.rb"                              
                                             
 #    - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
 #      run:  ${{github.workspace}}/output/tebako

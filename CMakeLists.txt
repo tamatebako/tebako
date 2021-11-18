@@ -263,7 +263,7 @@ if (NOT ${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
 #            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
-  add_custom_target(_CLEAN_FILESYSTEM_
+  add_custom_target(clean_filesystem
            COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
@@ -309,7 +309,7 @@ if (NOT ${SETUP_MODE})
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
-            DEPENDS _CLEAN_FILESYSTEM_ 
+            DEPENDS clean_filesystem 
          )
       endif()
     endif()
@@ -329,7 +329,7 @@ if (NOT ${SETUP_MODE})
        COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                  ${CMAKE_COMMAND} -E false )
-       DEPENDS _CLEAN_FILESYSTEM_ 
+       DEPENDS clean_filesystem 
     )
   elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile
@@ -347,7 +347,7 @@ if (NOT ${SETUP_MODE})
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
-         DEPENDS _CLEAN_FILESYSTEM_ 
+         DEPENDS clean_filesystem 
       )
     endif() 
   else()
@@ -370,7 +370,7 @@ if (NOT ${SETUP_MODE})
     add_custom_target(_SOURCE_FILESYSTEM_  
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-       DEPENDS _CLEAN_FILESYSTEM_
+       DEPENDS clean_filesystem
     )
   endif()
 
@@ -392,9 +392,9 @@ if (NOT ${SETUP_MODE})
     @ONLY
   )
 
-  add_custom_target(_PRESS_
+  add_custom_target(${APP_NAME}
     ${CMAKE_COMMAND} -E echo "tebako packaging completed"
-    DEPENDS _SETUP_ _CLEAN_FILESYSTEM_
+    DEPENDS setup clean_filesystem
   )
 
 endif(NOT ${SETUP_MODE})
