@@ -71,10 +71,13 @@ jobs:
         echo  ${{ env.READLINE_HASH }} >> key.txt
         echo  ${{ env.YAML_HASH }} >> key.txt
         echo  ${{ env.ZLIB_HASH }} >> key.txt
-
-
-    - name: Clone shell test framework
-      run: git clone https://github.com/kward/shunit2.git ${{github.workspace}}/tests/shunit2 --depth 1
+    
+    - name: Checkout shell test framework
+      uses: actions/checkout@v2
+      with:
+        repository: https://github.com/kward/shunit2.git
+        path: ${{github.workspace}}/tests/shunit2
+        fetch-depth: 1
       
     - name: Process cache
       uses: actions/cache@v2
