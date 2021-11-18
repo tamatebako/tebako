@@ -75,7 +75,7 @@ jobs:
     - name: Checkout shell test framework
       uses: actions/checkout@v2
       with:
-        repository: https://github.com/kward/shunit2.git
+        repository: kward/shunit2
         path: ${{github.workspace}}/tests/shunit2
         fetch-depth: 1
       
