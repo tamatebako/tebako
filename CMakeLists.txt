@@ -243,7 +243,7 @@ ExternalProject_Add(${RUBY_PRJ}
  
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 
-add_custom_target(_SETUP_
+add_custom_target(setup
    ${CMAKE_COMMAND} -E echo "tebako setup completed"
    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
 )
