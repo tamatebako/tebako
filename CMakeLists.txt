@@ -40,9 +40,11 @@ string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 #        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
 #        libboost-regex-dev libboost-system-dev libboost-thread-dev \
 #        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
+#    ++  Ruby dependencies:
+#        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev 
 #    ++  Already installed at GHA but may require local installation: 
 #        bison flex fuse3 pkg-config libsodium-dev
-#    ++  For Rails testing only
+#    ++  For Rails testing only:
 #        libsqlite3-dev
 
 include(ExternalProject)
@@ -139,37 +141,37 @@ endif(NOT ${SETUP_MODE})
 def_ext_prj_t(RUBY     "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
-def_ext_prj_t(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
-def_ext_prj_t(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
-def_ext_prj_t(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
 # ---------------------------------------------------------------------------------------------------
-# 2: Relying on system openssl and zlib 
+# Relying on system-installed openssl, zlib, libffi, gdbm, yaml, ncurses, readline 
 #
 # def_ext_prj_t(OPENSSL  "1.1.0h" "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517")
 # string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
 # def_ext_prj_t(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1")
+# def_ext_prj_t(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
+# def_ext_prj_t(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
+# def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
+# def_ext_prj_t(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
+# def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
 # ---------------------------------------------------------------------------------------------------
-def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
-def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "f218d83") 
+def_ext_prj_g(DWARFS_WR "16bcac1") 
 
 
 message("Collecting packages:")
 message("ruby                        - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
-message("gdbm                        - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
-message("libffi                      - " v${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
-message("ncurses                     - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
 # ---------------------------------------------------------------------------------------------------
-# 2: Relying on system openssl and zlib
+# Relying on system-installed openssl, zlib, libffi, gdbm, yaml, readline 
 #
 # message("openssl                     - " v${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
-#message("zlib                        - " v${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
+# message("zlib                        - " v${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
+# message("libffi                      - " v${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
+# message("gdbm                        - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
+# message("yaml                        - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
+# message("ncurses                     - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
+#message("readline                    - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
 # ---------------------------------------------------------------------------------------------------
-message("readline                    - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
-message("yaml                        - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
 message("bundler                     - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
 message("incbin                      - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR}) 
 message("dwarfs with tebako wrapper  - " @${DWARFS_WR_TAG}      " at " ${DWARFS_WR_SOURCE_DIR}) 
@@ -181,13 +183,11 @@ message("................................................")
 ExternalProject_Add(${INCBIN_PRJ}
    PREFIX ${DEPS}
    GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
-   GIT_SHALLOW true
    GIT_TAG ${INCBIN_TAG}
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
    INSTALL_COMMAND ""
 )
-
 
 # ...................................................................
 # DwarFS with tebako wrapper
@@ -226,7 +226,7 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
 # Ruby dependencies
 
 # ---------------------------------------------------------------------------------------------------
-# 2: Relying on system openssl and zlib
+# Relying on system-installed openssl, zlib, libffi, gdbm, yaml, ncurses 
 #
 #ExternalProject_Add(${OPENSSL_PRJ}
 #   PREFIX ${DEPS}
@@ -251,75 +251,73 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
 #   BUILD_COMMAND      cd ${ZLIB_SOURCE_DIR} && make 
 #   INSTALL_COMMAND    cd ${ZLIB_SOURCE_DIR} && make install
 #)
-
-
+#
+#ExternalProject_Add(${LIBFFI_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://gcc.gnu.org/pub/libffi/libffi-${LIBFFI_VER}.tar.gz
+#   URL_HASH SHA512=${LIBFFI_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${LIBFFI_SOURCE_DIR}
+#   UPDATE_COMMAND ""
+#   CONFIGURE_COMMAND ${LIBFFI_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
+#                                 --srcdir=${LIBFFI_SOURCE_DIR} --prefix=${DEPS}
+#   BUILD_COMMAND     make 
+#   INSTALL_COMMAND   make install
+#)
+#
+#ExternalProject_Add(${GDBM_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://ftp.gnu.org/pub/gnu/gdbm/gdbm-${GDBM_VER}.tar.gz
+#   URL_HASH SHA256=${GDBM_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${GDBM_SOURCE_DIR}
+#   UPDATE_COMMAND ""
+#   CONFIGURE_COMMAND cd ${GDBM_SOURCE_DIR} && 
+#                     ./configure --with-pic --enable-libgdbm-compat --disable-shared 
+#                                 --enable-static --without-readline --prefix=${DEPS}
+#   BUILD_COMMAND     cd ${GDBM_SOURCE_DIR} && make 
+#   INSTALL_COMMAND   cd ${GDBM_SOURCE_DIR} && make install
+#)
+#
+#ExternalProject_Add(${YAML_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://pyyaml.org/download/libyaml/yaml-${YAML_VER}.tar.gz
+#   URL_HASH SHA256=${YAML_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${YAML_SOURCE_DIR}
+#   UPDATE_COMMAND ""
+#   CONFIGURE_COMMAND ${YAML_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
+#                     --prefix=${DEPS} --srcdir=${YAML_SOURCE_DIR}
+#   BUILD_COMMAND     make 
+#   INSTALL_COMMAND   make install
+#)
+#
+#ExternalProject_Add(${NCURSES_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VER}.tar.gz
+#   URL_HASH SHA256=${NCURSES_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${NCURSES_SOURCE_DIR}
+#   UPDATE_COMMAND ""
+#   CONFIGURE_COMMAND ${NCURSES_SOURCE_DIR}/configure --without-shared --without-cxx-shared 
+#                     --prefix=${DEPS} --srcdir=${NCURSES_SOURCE_DIR}
+#   BUILD_COMMAND     make 
+#   INSTALL_COMMAND   make install
+#)
+#
+#ExternalProject_Add(${READLINE_PRJ}
+#   PREFIX ${DEPS}
+#   URL https://ftp.gnu.org/gnu/readline/readline-${READLINE_VER}.tar.gz
+#   URL_HASH SHA256=${READLINE_HASH}
+#   DOWNLOAD_NO_PROGRESS true
+#   SOURCE_DIR ${READLINE_SOURCE_DIR}
+#   UPDATE_COMMAND ""
+#   CONFIGURE_COMMAND ${READLINE_SOURCE_DIR}/configure --disable-shared --enable-static 
+#                     --srcdir=${READLINE_SOURCE_DIR} --prefix=${DEPS} cflags=-fPIC
+#   BUILD_COMMAND     make 
+#   INSTALL_COMMAND   make install
+#)
 # ---------------------------------------------------------------------------------------------------
-
-ExternalProject_Add(${GDBM_PRJ}
-   PREFIX ${DEPS}
-   URL https://ftp.gnu.org/pub/gnu/gdbm/gdbm-${GDBM_VER}.tar.gz
-   URL_HASH SHA256=${GDBM_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${GDBM_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND cd ${GDBM_SOURCE_DIR} && 
-                     ./configure --with-pic --enable-libgdbm-compat --disable-shared 
-                                 --enable-static --without-readline --prefix=${DEPS}
-   BUILD_COMMAND     cd ${GDBM_SOURCE_DIR} && make 
-   INSTALL_COMMAND   cd ${GDBM_SOURCE_DIR} && make install
-)
-
-ExternalProject_Add(${YAML_PRJ}
-   PREFIX ${DEPS}
-   URL https://pyyaml.org/download/libyaml/yaml-${YAML_VER}.tar.gz
-   URL_HASH SHA256=${YAML_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${YAML_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${YAML_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
-                     --prefix=${DEPS} --srcdir=${YAML_SOURCE_DIR}
-   BUILD_COMMAND     make 
-   INSTALL_COMMAND   make install
-)
-
-ExternalProject_Add(${LIBFFI_PRJ}
-   PREFIX ${DEPS}
-   URL https://gcc.gnu.org/pub/libffi/libffi-${LIBFFI_VER}.tar.gz
-   URL_HASH SHA512=${LIBFFI_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${LIBFFI_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${LIBFFI_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
-                                 --srcdir=${LIBFFI_SOURCE_DIR} --prefix=${DEPS}
-   BUILD_COMMAND     make 
-   INSTALL_COMMAND   make install
-)
-
-ExternalProject_Add(${NCURSES_PRJ}
-   PREFIX ${DEPS}
-   URL https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VER}.tar.gz
-   URL_HASH SHA256=${NCURSES_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${NCURSES_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${NCURSES_SOURCE_DIR}/configure --without-shared --without-cxx-shared 
-                     --prefix=${DEPS} --srcdir=${NCURSES_SOURCE_DIR}
-   BUILD_COMMAND     make 
-   INSTALL_COMMAND   make install
-)
-
-ExternalProject_Add(${READLINE_PRJ}
-   PREFIX ${DEPS}
-   URL https://ftp.gnu.org/gnu/readline/readline-${READLINE_VER}.tar.gz
-   URL_HASH SHA256=${READLINE_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${READLINE_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${READLINE_SOURCE_DIR}/configure --disable-shared --enable-static 
-                     --srcdir=${READLINE_SOURCE_DIR} --prefix=${DEPS} cflags=-fPIC
-   BUILD_COMMAND     make 
-   INSTALL_COMMAND   make install
-)
 
 # ...................................................................
 # Ruby
@@ -329,12 +327,11 @@ set(RID ${DEPS}/include)
 set(RLD ${DEPS}/lib)
 
 if(RUBY_DEBUG_BUILD)
-  set(RUBY_C_FLAGS_1 "-fPIC -g -O0 -pipe -static -static-libgcc")
+  set(RUBY_C_FLAGS_1 "-g -O0")
 else()
-  set(RUBY_C_FLAGS_1 "-fPIC -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections -pipe -static -static-libgcc")
+  set(RUBY_C_FLAGS_1 "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
 endif()
-set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} \
-                   -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
+set(RUBY_C_FLAGS_2 "-I${RID} -pipe -static -static-libgcc -fPIC ")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
 set(RUBY_L_FLAGS "-L${RLD}")
 
@@ -366,14 +363,7 @@ ExternalProject_Add(${RUBY_PRJ}
                      LDFLAGS=${RUBY_L_FLAGS}
 )
  
-add_dependencies(${RUBY_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
-                             ${NCURSES_PRJ} ${READLINE_PRJ} 
-                             ${DWARFS_WR_PRJ})
-
-add_custom_target(setup
-   ${CMAKE_COMMAND} -E echo "tebako setup completed"
-   DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
-)
+add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 
 if (NOT ${SETUP_MODE})
   set (TBD ${DATA_SRC_DIR}/bin)
@@ -526,8 +516,9 @@ if (NOT ${SETUP_MODE})
 
 endif(NOT ${SETUP_MODE})
 
-add_custom_target(package
-   ${CMAKE_COMMAND} -E echo "tebako packaging completed"
-   DEPENDS setup ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} _PACKAGED_FILESYSTEM
+add_custom_target(setup
+   ${CMAKE_COMMAND} -E echo "tebako setup completed"
+   DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
 )
+
 
