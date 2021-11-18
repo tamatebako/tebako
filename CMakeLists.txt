@@ -138,7 +138,7 @@ endif(NOT ${SETUP_MODE})
 # ...................................................................
 # External projects
 
-def_ext_prj_t(RUBY     "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
+def_ext_prj_t(RUBY "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 # ---------------------------------------------------------------------------------------------------
@@ -170,7 +170,7 @@ message("ruby                        - " v${RUBY_VER}           " at " ${RUBY_SO
 # message("gdbm                        - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
 # message("yaml                        - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
 # message("ncurses                     - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
-#message("readline                    - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
+# message("readline                    - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
 # ---------------------------------------------------------------------------------------------------
 message("bundler                     - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
 message("incbin                      - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR}) 
@@ -361,6 +361,7 @@ ExternalProject_Add(${RUBY_PRJ}
                      --prefix=${DEPS}
                      cflags=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
+   COMMAND echo "${RUBY_C_FLAGS}"
 )
  
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
