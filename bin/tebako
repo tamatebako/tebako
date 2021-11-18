@@ -155,9 +155,6 @@ case "$1" in
           run_help 
           exit 6 
 		fi
-        if [ "$mountPoint" == "-" ]; then
-          mountPoint="/home/tebako"
-		fi
         if [ "$output" == "-" ]; then
           output="tebako"
 		fi
@@ -165,7 +162,6 @@ case "$1" in
 		echo "Running tebako press at $prefix"
         echo "   Project root:            $root"
         echo "   Application entry point: $entryPoint"
-        echo "   Mount point:             $mountPoint"
         echo "   Output file:             $output"
 		cmake -DCMAKE_BUILD_TYPE=Release      \
               -DDEPS:STRING=$prefix/deps      \
