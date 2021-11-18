@@ -360,7 +360,7 @@ ExternalProject_Add(${RUBY_PRJ}
                      --with-jemalloc
                      --srcdir=${RUBY_SOURCE_DIR} 
                      --prefix=${DEPS}
-                     cflags=${RUBY_C_FLAGS} 
+                     CFLAGS=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
    COMMAND echo "${RUBY_C_FLAGS}"
 )

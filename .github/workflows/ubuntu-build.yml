@@ -100,10 +100,6 @@ jobs:
         libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
         libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libsqlite3-dev
         
-    - name: Create mount point
-      run: |
-        sudo mkdir -p /home/tebako 
-        sudo chmod a+w /home/tebako
 
 # Tests
 #  00. Very basic tebako CLI tests (error handling)
