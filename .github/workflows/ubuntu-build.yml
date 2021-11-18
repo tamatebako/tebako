@@ -31,25 +31,6 @@ env:
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
   BUNDLER_VER: "2.2.3"
   BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
-# ---------------------------------------------------------------------------------------------------
-# 1: OpenSSL upgraded from 1.0.0f to 1.0.0h because 1.0.0f requires Perl version less then 3.20
-#    [ <"glob" is not exported by the File::Glob module> issue ]  
-# 2: Relying on system openssl, zlib, libffi, gdbm, yaml
-#  OPENSSL_VER: "1.1.0h"
-#  OPENSSL_HASH: "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517"
-#  ZLIB_VER: "1.2.11"
-#  ZLIB_HASH: "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1"
-#  LIBFFI_VER: "3.2.1"
-#  LIBFFI_HASH: "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483"
-#  GDBM_VER: "1.13"
-#  GDBM_HASH: "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253"
-#  YAML_VER: "0.1.7"
-#  YAML_HASH: "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729"
-#  NCURSES_VER: "6.2"
-#  NCURSES_HASH: "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d"
-# ---------------------------------------------------------------------------------------------------
-  READLINE_VER: "7.0"
-  READLINE_HASH: "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334"
 
 jobs:
   Ubuntu-build:
@@ -67,16 +48,6 @@ jobs:
         echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
         echo  ${{ env.RUBY_HASH }} >> key.txt
         echo  ${{ env.BUNDLER_HASH }} >> key.txt
-# ---------------------------------------------------------------------------------------------------
-# 2: Relying on system openssl, zlib, ffi, gdbm, yaml, ncurses, readline
-#        echo  ${{ env.OPENSSL_HASH }} >> key.txt
-#        echo  ${{ env.ZLIB_HASH }} >> key.txt
-#        echo  ${{ env.FFI_HASH }} >> key.txt
-#        echo  ${{ env.GDBM_HASH }} >> key.txt
-#        echo  ${{ env.YAML_HASH }} >> key.txt
-#        echo  ${{ env.NCURSES_HASH }} >> key.txt
-#        echo  ${{ env.READLINE_HASH }} >> key.txt
-# ---------------------------------------------------------------------------------------------------
 
     - name: Clone shell test framework
       run: git clone https://github.com/kward/shunit2.git ${{github.workspace}}/tests/shunit2 --depth 1
@@ -87,9 +58,8 @@ jobs:
         path: ${{github.workspace}}/${{env.DEPS}}
         key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v16
 
+# Ref CMakeLists.txt for comments
     - name: Install packages Ubuntu
-# Already installed: bison flex fuse3 pkg-config
-# libsqlite3-dev  is required for Rails packaging tests only
       run: |
         sudo apt-get update
         sudo apt-get install \
