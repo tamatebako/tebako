@@ -327,11 +327,12 @@ set(RID ${DEPS}/include)
 set(RLD ${DEPS}/lib)
 
 if(RUBY_DEBUG_BUILD)
-  set(RUBY_C_FLAGS_1 "-g -O0")
+  set(RUBY_C_FLAGS_1 "-fPIC -g -O0 -pipe -static -static-libgcc")
 else()
-  set(RUBY_C_FLAGS_1 "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
+  set(RUBY_C_FLAGS_1 "-fPIC -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections -pipe -static -static-libgcc")
 endif()
-set(RUBY_C_FLAGS_2 "-I${RID} -pipe -static -static-libgcc -fPIC ")
+set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} \
+                   -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
 set(RUBY_L_FLAGS "-L${RLD}")
 
