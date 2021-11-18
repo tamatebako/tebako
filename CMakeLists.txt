@@ -33,23 +33,20 @@ project(tebako_packager VERSION 0.2.0)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
+# External dependencies
 # ---------------------------------------------------------------------------------------------------
-#        sudo apt-get install \
+# DwarFS dependencies:
 #        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
 #        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
 #        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
 #        libboost-regex-dev libboost-system-dev libboost-thread-dev \
-#        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
+#        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
+#        bison flex fuse3 pkg-config libsodium-dev 
 # ---------------------------------------------------------------------------------------------------
-#    ++ Ruby dependencies - we are relying on system-installed openssl, zlib, libffi, gdbm, yaml, ncurses, readline 
-#        sudo apt-get install \
+# Ruby dependencies: 
 #        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev 
 # ---------------------------------------------------------------------------------------------------
-#    ++  Already installed at GHA but may require local installation: 
-#        sudo apt-get install \
-#        bison flex fuse3 pkg-config libsodium-dev
-#    ++  For Rails testing only:
-#        sudo apt-get install \
+# For Rails testing only:
 #        libsqlite3-dev
 # ---------------------------------------------------------------------------------------------------
 
@@ -60,7 +57,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/ensure_bundler.cmake)
 option(SETUP_MODE "Tebako setup" OFF)
 
 if (NOT ${SETUP_MODE})
-  message("Welcome to tebako packager configuration script!")
+  message("Running tebako packager configuration script!")
   if ("-${ROOT}" STREQUAL "-")
     message(FATAL_ERROR "Project ROOT is not specified.")
   endif()
@@ -87,16 +84,13 @@ if (NOT ${SETUP_MODE})
 
   message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point to ${APP_NAME}")
 else()
-  message("Creating tebako configuration")
+  message("Running tebako packager setup script")
 endif()
-
-message("................................................")
 
 set(BOOST_USE_STATIC_LIBS   ON)
 set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
-
 
 # Various locations for external projects 
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
@@ -106,7 +100,6 @@ set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
 
 set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
-
 
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
@@ -152,7 +145,7 @@ def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f
 def_ext_prj_g(INCBIN "348e36b")
 def_ext_prj_g(DWARFS_WR "16bcac1") 
 
-
+message("................................................")
 message("Collecting packages:")
 message("ruby                        - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
 message("bundler                     - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
@@ -244,13 +237,13 @@ ExternalProject_Add(${RUBY_PRJ}
                      --with-jemalloc
                      --srcdir=${RUBY_SOURCE_DIR} 
                      --prefix=${DEPS}
-                     CPPFLAGS=${RUBY_C_FLAGS} 
+                     CFLAGS=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
 )
  
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 
-add_custom_target(setup
+add_custom_target(_SETUP_
    ${CMAKE_COMMAND} -E echo "tebako setup completed"
    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
 )
@@ -270,7 +263,7 @@ if (NOT ${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
 #            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
-  add_custom_target(_CLEAN_FILESYSTEM
+  add_custom_target(_CLEAN_FILESYSTEM_
            COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
@@ -289,7 +282,7 @@ if (NOT ${SETUP_MODE})
         message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
-        add_custom_target(_SOURCE_FILESYSTEM  
+        add_custom_target(_SOURCE_FILESYSTEM_  
            COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle install
@@ -300,14 +293,14 @@ if (NOT ${SETUP_MODE})
            COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                    (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                     ${CMAKE_COMMAND} -E false )
-           DEPENDS _CLEAN_FILESYSTEM
+           DEPENDS _CLEAN_FILESYSTEM_
         )
       else(GFLENGTH GREATER 0)
 #  Found xxx.gemspec but no Gemfile
          message("Collecting gem from gemspec ${GEMSPEC}")
          set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
-         add_custom_target(_SOURCE_FILESYSTEM  
+         add_custom_target(_SOURCE_FILESYSTEM_  
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
             COMMAND unset GEM_HOME && unset GEM_PATH && export PATH=${TBD}:$PATH && cd ${DATA_PRE_DIR} && gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
@@ -316,7 +309,7 @@ if (NOT ${SETUP_MODE})
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
-            DEPENDS _CLEAN_FILESYSTEM 
+            DEPENDS _CLEAN_FILESYSTEM_ 
          )
       endif()
     endif()
@@ -328,7 +321,7 @@ if (NOT ${SETUP_MODE})
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
     ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
-    add_custom_target(_SOURCE_FILESYSTEM  
+    add_custom_target(_SOURCE_FILESYSTEM_  
        COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
@@ -336,7 +329,7 @@ if (NOT ${SETUP_MODE})
        COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                  ${CMAKE_COMMAND} -E false )
-       DEPENDS _CLEAN_FILESYSTEM 
+       DEPENDS _CLEAN_FILESYSTEM_ 
     )
   elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile
@@ -347,14 +340,14 @@ if (NOT ${SETUP_MODE})
       message("Installing Ruby gem from ${GEM}") 
       set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
-      add_custom_target(_SOURCE_FILESYSTEM  
+      add_custom_target(_SOURCE_FILESYSTEM_  
          COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
          COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
                   gem install ${GEM} --verbose --no-document --install-dir ${TGD}
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
-         DEPENDS _CLEAN_FILESYSTEM 
+         DEPENDS _CLEAN_FILESYSTEM_ 
       )
     endif() 
   else()
@@ -374,22 +367,22 @@ if (NOT ${SETUP_MODE})
     endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
     set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
-    add_custom_target(_SOURCE_FILESYSTEM  
+    add_custom_target(_SOURCE_FILESYSTEM_  
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-       DEPENDS _CLEAN_FILESYSTEM
+       DEPENDS _CLEAN_FILESYSTEM_
     )
   endif()
 
 # ...................................................................
 # Packaged filesystem
 
-  add_custom_target(_PACKAGED_FILESYSTEM  
+  add_custom_target(_PACKAGED_FILESYSTEM_  
      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
 #                                       ${DATA_SRC_DIR}/bin/b*  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem ${DATA_SRC_DIR}/bin/irb 
 #                                       ${DATA_SRC_DIR}/bin/ra* ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri  ${DATA_SRC_DIR}/bin/y2racc
      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-     DEPENDS ${DWARFS_WR_PRJ} _SOURCE_FILESYSTEM
+     DEPENDS ${DWARFS_WR_PRJ} _SOURCE_FILESYSTEM_
      BYPRODUCTS ${DATA_BIN_FILE}
   )
 
@@ -399,9 +392,9 @@ if (NOT ${SETUP_MODE})
     @ONLY
   )
 
-  add_custom_target(package
+  add_custom_target(_PRESS_
     ${CMAKE_COMMAND} -E echo "tebako packaging completed"
-    DEPENDS setup _PACKAGED_FILESYSTEM
+    DEPENDS _SETUP_ _CLEAN_FILESYSTEM_
   )
 
 endif(NOT ${SETUP_MODE})
