@@ -139,16 +139,7 @@ press_runner() {
    assertContains "$result" "not a dynamic executable"
 }
 
-# ......................................................................
-#  01. Simple Ruby script, relative path to entry point  
-test_tebako_press_01() {
-   echo "tebako press test-01: simple Ruby script, relative path to entry point"
-   press_runner "${DIR_TESTS}/test-01" "test.rb"
-}
-
-# 02. Simple Ruby script, relative path to entry point, non exisitng entrance
-test_tebako_press_02() {
-   echo "tebako press test-02: simple Ruby script, relative path to entry point, non exisitng entrance"
+press_runner_103() {
    if [ "${VERBOSE}" == "yes" ]; then 
      $DIR_BIN/tebako press --root="$1" --entry-point="$2" 2>&1 | tee tebako_test.log
      assertEquals 103 ${PIPESTATUS[0]}
@@ -160,7 +151,20 @@ test_tebako_press_02() {
 
 # Check the first and the last messages expected from CMake script
    assertContains "$result" "Running tebako packager configuration script"
+   assertContains "$result" "'tebako press' configure step failed"
+}
 
+# ......................................................................
+#  01. Simple Ruby script, relative path to entry point  
+test_tebako_press_01() {
+   echo "tebako press test-01: simple Ruby script, relative path to entry point"
+   press_runner "${DIR_TESTS}/test-01" "test.rb"
+}
+
+# 02. Simple Ruby script, relative path to entry point, non exisitng entrance
+test_tebako_press_02() {
+   echo "tebako press test-02: simple Ruby script, relative path to entry point, non exisitng entrance"
+   press_runner_103 "${DIR_TESTS}/test-01" "test-does-not-exist.rb"
 }
 
 # 03. Simple Ruby script, absolute path to entry point
@@ -180,13 +184,7 @@ test_tebako_press_03() {
 #      run:  ${{github.workspace}}/output/tebako
 # [ TODO]        echo Tebako exit code $?
 
-#    - name: Test02 - tebako press - [Simple Ruby script, relative path to entry point, non exisitng entrance]
-#      run: | 
-#        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-#              "${{github.workspace}}/tests/test-01"               \
-#              "test-does-not-exist.rb"                            \
-#              103                   
-              
+            
 #    - name: Test03 - tebako press - [Simple Ruby script, absolute path to entry point]
 #      run: | 
 #        ${{github.workspace}}/bin/tebako press                   \
