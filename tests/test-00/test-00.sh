@@ -29,38 +29,36 @@
 # ......................................................................
 # Very simple CLI tests
 test_CLI_help() {
-  $DIR_BIN/tebako --help  | tee tebako_test.log
-  assertEquals 0 $?
-
+  $DIR_BIN/tebako --help | tee tebako_test.log
+  assertEquals 0 ${PIPESTATUS[0]}
+  
   result="$( cat tebako_test.log )"
   assertContains "$result" "Usage:"
 }
 
 test_CLI_missing_command() {
-  $DIR_BIN/tebako | tee tebako_test.log
+  result="$( $DIR_BIN/tebako )"
   assertEquals 4 $?
-
-  result="$( cat tebako_test.log )"
   assertContains "$result" "Missing command"
   assertContains "$result" "Usage:"
 }
 
 test_CLI_unknown_command() {
-  $DIR_BIN/tebako jump | tee tebako_test.log
+  result="$( $DIR_BIN/tebako jump )"
   assertEquals 5 $?
-
-  result="$( cat tebako_test.log )"
   assertContains "$result" "Unknown command"
   assertContains "$result" "Usage:"
 }
 
 # ......................................................................
-# tebako setup command
+# tebako setup test
 test_tebako_setup() {
-  $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
+  echo "Running tebako setup. Patience ... the output is logged and this step may take up to 1 hour"	
+
+  result="$( $DIR_BIN/tebako setup 2>&1 )"
   assertEquals 0 $?
 
-  result="$( cat tebako_test.log )"
+  echo $result
 
 # Check the first and the last messages expected from CMake script
   assertContains "$result" "Running tebako packager setup script"

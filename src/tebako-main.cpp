@@ -53,9 +53,9 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 		);
 
 		if (fsret == 0) {
-			size_t new_argv_size = strlen(tebako::fs_entry_point);
+			size_t new_argv_size = strlen(tebako::fs_mount_point) + strlen(tebako::fs_entry_point) + 1;
 			for (int i = 0; i < (*argc); i++) {
-				new_argv_size += strlen((*argv)[i]);
+				new_argv_size += (strlen((*argv)[i]) + 1);
 			}
 			/* argv memory should be adjacent */
 			char** new_argv = new char* [(*argc) + 1];
@@ -63,14 +63,16 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 			if (new_argv != NULL && argv_memory != NULL) {
 				memcpy(argv_memory, (*argv)[0], strlen((*argv)[0]) + 1);
 				new_argv[0] = argv_memory;
-				argv_memory += strlen((*argv)[0]) + 1;
-				memcpy(argv_memory, (*argv)[1], strlen(tebako::fs_entry_point) + 1);
+				argv_memory += (strlen((*argv)[0]) + 1);
+				memcpy(argv_memory, tebako::fs_mount_point, strlen(tebako::fs_mount_point));
+				argv_memory += strlen(tebako::fs_mount_point);
+				memcpy(argv_memory, tebako::fs_entry_point, strlen(tebako::fs_entry_point) + 1);
 				new_argv[1] = argv_memory;
-				argv_memory += strlen(tebako::fs_entry_point) + 1;
-				for (int i = 2; i < (*argc); i++) {
-					memcpy(argv_memory, new_argv[i], strlen(new_argv[i]) + 1);
-					new_argv[i] = argv_memory;
-					argv_memory += strlen(new_argv[i]) + 1;
+				argv_memory += (strlen(tebako::fs_entry_point) + 1);
+				for (int i = 1; i < (*argc); i++) {
+					memcpy(argv_memory, argv[i], strlen(argv[i]) + 1);
+					new_argv[i+1] = argv_memory;
+					argv_memory += (strlen(argv[i]) + 1);
 				}
 				*argv = new_argv;
 				(*argc) += 1;
