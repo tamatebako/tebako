@@ -49,12 +49,19 @@ restore_and_save $1/ext/Setup
 sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
 
 # ....................................................
+# Patch main in order to redefine command line
+restore_and_save $1/main.c
+# Replace only the first occurence
+# https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
+# [TODO this looks a kind of risky]
+sed -i "0,/int$/s//#include <tebako-main.h>\n\nint/" $1/main.c
+
+# ....................................................
 # Put lidwarfs IO bindings to Ruby files
 
 # ruby/dir.c
 restore_and_save $1/dir.c
 # Replace only the first occurence
-# https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
 sed -i "0,/#ifdef __APPLE__/s//#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\n#ifdef __APPLE__/" $1/dir.c
 #  [TODO MacOS]  libdwarfs issues 45,46
 

@@ -200,7 +200,7 @@ if(RUBY_DEBUG_BUILD)
 else()
   set(RUBY_C_FLAGS_1 "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
 endif()
-set(RUBY_C_FLAGS_2 "-fPIC -pipe -static -static-libgcc -I${DEPS_INCLUDE_DIR}")
+set(RUBY_C_FLAGS_2 "-fPIC -pipe -static -static-libgcc -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
 
@@ -388,16 +388,14 @@ if (NOT ${SETUP_MODE})
      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
 #                                       ${DATA_SRC_DIR}/bin/b*  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem ${DATA_SRC_DIR}/bin/irb 
 #                                       ${DATA_SRC_DIR}/bin/ra* ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri  ${DATA_SRC_DIR}/bin/y2racc
-     COMMAND ls -l ${DEPS_BIN_DIR}
      COMMAND chmod +x ${DEPS_BIN_DIR}/*
-     COMMAND ls -l ${DEPS_BIN_DIR}
      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
      DEPENDS setup source_filesystem
      BYPRODUCTS ${DATA_BIN_FILE}
   )
 
-  set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+  set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
   
   add_library(tebako-fs STATIC 
     src/tebako-main.cpp
