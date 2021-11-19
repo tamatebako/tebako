@@ -130,11 +130,8 @@ DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
 DIR_DEPS="$( cd $DIR_ROOT/deps && pwd )"
 DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
 
-if [ "$1" = "verbose" ]; then
- LOG_SUFFIX="| tee tebako_test.log"
-else
- LOG_SUFFIX="> tebako_test.log"
-fi
+LOG_SUFFIX="| tee tebako_test.log"
+#LOG_SUFFIX="> tebako_test.log"
 
 echo "Running tebako tests"
 . $DIR_TESTS/shunit2/shunit2
