@@ -54,10 +54,11 @@ test_tebako_setup() {
   $DIR_BIN/tebako setup 2>&1 | tee tebako_setup.log
   assertEquals 0 $?
 
-  cat tebako_setup.log
+  $result="$( cat tebako_setup.log )"
+
+  echo $result
 
 # Check the first and the last messages expected from CMake script
-#  $result = "$( cat tebako_setup.log )"
 #  assertContains "$result" "Running tebako packager setup script"
 #  assertContains "$result" "tebako setup completed"
 
