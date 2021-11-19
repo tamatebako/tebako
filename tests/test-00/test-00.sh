@@ -133,8 +133,8 @@ press_runner() {
    assertContains "$result" "Running tebako press script"
    assertContains "$result" "Tebako packaging has completed"
 
-# Check that ruby is not a dynamic executable
-   result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
+# Check that packaged executable file is not a dynamic executable
+   result="$( ldd tebako 2>&1 )"
    assertEquals 1 $?
    assertContains "$result" "not a dynamic executable"
 }
