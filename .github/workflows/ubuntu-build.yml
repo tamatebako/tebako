@@ -96,15 +96,8 @@ jobs:
 #  41 - 49  reserved
 #  50. AUC. Check that it is possible to verify content of package fs               [depends on Test-01] 
 
-    - name: Basic CLI tests
+    - name: tebako functional tests
       run: ${{github.workspace}}/tests/test-00/test-00.sh
-
-#    - name: tebako setup 
-#      run:  ${{github.workspace}}/bin/tebako setup
-          
-#    - name: Check that ruby is not a dynamic executable
-#      run:  ldd ${{github.workspace}}/deps/src/_ruby-build/ruby 2>&1 >/dev/null | grep -i 'not a dynamic executable' 
-      
 
     - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
       run: | 

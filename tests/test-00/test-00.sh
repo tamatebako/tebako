@@ -29,21 +29,27 @@
 # ......................................................................
 # Very simple CLI tests
 test_CLI_help() {
-  result="$( $DIR_BIN/tebako --help )"
+  $DIR_BIN/tebako --help  | tee tebako_test.log
   assertEquals 0 $?
+
+  result="$( cat tebako_test.log )"
   assertContains "$result" "Usage:"
 }
 
 test_CLI_missing_command() {
-  result="$( $DIR_BIN/tebako )"
+  $DIR_BIN/tebako | tee tebako_test.log
   assertEquals 4 $?
+
+  result="$( cat tebako_test.log )"
   assertContains "$result" "Missing command"
   assertContains "$result" "Usage:"
 }
 
 test_CLI_unknown_command() {
-  result="$( $DIR_BIN/tebako jump )"
+  $DIR_BIN/tebako jump | tee tebako_test.log
   assertEquals 5 $?
+
+  result="$( cat tebako_test.log )"
   assertContains "$result" "Unknown command"
   assertContains "$result" "Usage:"
 }
@@ -51,16 +57,14 @@ test_CLI_unknown_command() {
 # ......................................................................
 # tebako setup command
 test_tebako_setup() {
-  $DIR_BIN/tebako setup 2>&1 | tee tebako_setup.log
+  $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
   assertEquals 0 $?
 
-  $result="$( cat tebako_setup.log )"
-
-  echo $result
+  result="$( cat tebako_test.log )"
 
 # Check the first and the last messages expected from CMake script
-#  assertContains "$result" "Running tebako packager setup script"
-#  assertContains "$result" "tebako setup completed"
+  assertContains "$result" "Running tebako packager setup script"
+  assertContains "$result" "tebako setup completed"
 
 # Check that ruby is not a dynamic executable
   result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
