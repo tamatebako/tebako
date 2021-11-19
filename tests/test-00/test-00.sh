@@ -26,28 +26,48 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 
-testHelp() {
-  result="$( $DIR/tebako --help )"
+# ......................................................................
+# Very simple CLI tests
+test_CLI_help() {
+  result="$( $DIR_BIN/tebako --help )"
   assertEquals 0 $?
   assertContains "$result" "Usage:"
 }
 
-testMissingCommand() {
-  result="$( $DIR/tebako )"
+test_CLI_missing_command() {
+  result="$( $DIR_BIN/tebako )"
   assertEquals 4 $?
   assertContains "$result" "Missing command"
   assertContains "$result" "Usage:"
 }
 
-testUnknownCommand() {
-  result="$( $DIR/tebako jump )"
+test_CLI_unknown_command() {
+  result="$( $DIR_BIN/tebako jump )"
   assertEquals 5 $?
   assertContains "$result" "Unknown command"
   assertContains "$result" "Usage:"
 }
 
-# .......................................
+# ......................................................................
+# tebako setup command
+test_tebako_setup() {
+  result="$( $DIR_BIN/tebako setup )"
+  assertEquals 0 $?
+
+# Check the first and the last messages expected from CMake script
+  assertContains "$result" "Running tebako packager setup script"
+  assertContains "$result" "tebako setup completed"
+
+# Check that ruby is not a dynamic executable
+  result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
+  assertEquals 0 $?
+  assertContains "$result" "Not a dynamic executable"
+}
+
+# ......................................................................
+# main
 DIR0="$( cd "$( dirname "$0" )" && pwd )"
-DIR="$( cd $DIR0/../../bin && pwd )"
+DIR_BIN="$( cd $DIR0/../../bin && pwd )"
+DIR_DEPS="$( cd $DIR0/../../deps && pwd )"
 echo "Running tebako CLI tests at $DIR"
 . $DIR0/../shunit2/shunit2

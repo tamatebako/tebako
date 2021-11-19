@@ -202,7 +202,7 @@ else()
 endif()
 set(RUBY_C_FLAGS_2 "-fPIC -pipe -static -static-libgcc -I${DEPS_INCLUDE_DIR}")
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
-set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR}")
+set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
 
 message("Ruby build CFLAGS='${RUBY_C_FLAGS}'")
 message("Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
@@ -219,7 +219,6 @@ ExternalProject_Add(${RUBY_PRJ}
    DOWNLOAD_NO_PROGRESS true   
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
-   PATCH_COMMAND ${PATCHES}/ruby/pre_config.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
    UPDATE_COMMAND ""
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure 
                      --enable-bundled-libyaml 
@@ -394,23 +393,31 @@ if (NOT ${SETUP_MODE})
      COMMAND ls -l ${DEPS_BIN_DIR}
      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
-     DEPENDS ${DWARFS_WR_PRJ} source_filesystem
+     DEPENDS setup source_filesystem
      BYPRODUCTS ${DATA_BIN_FILE}
   )
 
   set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
   
   add_library(tebako-fs STATIC 
+    src/tebako-main.cpp
     src/tebako-fs.cpp
     include/tebako-fs.h
     include/version.h
-  )
+    include/tebako-main.h) 
 
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
+  add_custom_target(patched_ruby
+     COMMAND ${CMAKE_COMMAND} -E echo "Patching and building Ruby with embedded filesystem"
+     COMMAND ${PATCHES}/ruby/pre_config.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make
+     DEPENDS setup tebako-fs
+  )
+  
   add_custom_target(${APP_NAME} ALL
     ${CMAKE_COMMAND} -E echo "tebako packaging completed"
-    DEPENDS setup tebako-fs 
+    DEPENDS patched_ruby 
   )
 
 endif(NOT ${SETUP_MODE})

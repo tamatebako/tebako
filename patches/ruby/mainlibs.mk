@@ -23,6 +23,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-MAINLIBS = -ldwarfs-wr -ldwarfs -lfolly -lglog -lgflags -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
+MAINLIBS = -ltebako-fs -ldwarfs-wr -ldwarfs -lfolly -lglog -lgflags -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
 -lfmt -ldouble-conversion -lglog -lgflags -levent -liberty -lacl -lssl -lcrypto -llz4 -lz -llzma -lzstd \
 -ljemalloc -lrt -lpthread -ldl -lc -lm -lgcc_eh -lunwind -llzma -lcrypt -lanl -lpthread -lstdc++

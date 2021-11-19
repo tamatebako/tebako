@@ -38,17 +38,18 @@ cp -f $PATCH_DIR/mainlibs.mk $2/mainlibs.mk
 restore_and_save $1/template/Makefile.in
 sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs.mk/g" $1/template/Makefile.in
 
+# Fix bigdecimal extension
+# [I cannot explain why it is required. It does not semm to be related to any patching we do]
 cp -f $PATCH_DIR/bigdecimal-patch.h $1/ext/bigdecimal/bigdecimal-patch.h
 restore_and_save $1/ext/bigdecimal/bigdecimal.h
 sed -i "s/#include <float.h>/#include <float.h>\n#include \"bigdecimal-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h 
 
-
-# [????] not sure if it is required
+# Disable dynamic extensions
 restore_and_save $1/ext/Setup
 sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
 
+# ....................................................
 # Put lidwarfs IO bindings to Ruby files
-
 
 # ruby/dir.c
 restore_and_save $1/dir.c
@@ -63,7 +64,7 @@ sed -i "s/static st_table \*sym_tbl;/#include <tebako\/tebako-defines.h>\n#inclu
 
 
 # ruby/ext/openssl/ossl_x509store.c
-# ---
+#  [TODO ???]
 
 # ruby/file.c
 restore_and_save $1/file.c
@@ -74,20 +75,22 @@ restore_and_save $1/io.c
 sed -i "s/VALUE rb_cIO;/#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\nVALUE rb_cIO;/g" $1/io.c
 
 # ruby/lib/rubygems/path_support.rb 
-restore_and_save $1/lib/rubygems/path_support.rb
-# ----
+# restore_and_save $1/lib/rubygems/path_support.rb
+# #  [TODO ???]
+
 
 # ruby/prelude.c        
-#restore_and_save $1/prelude.c            
-# ---
+# restore_and_save $1/prelude.c            
+# [TODO ???]
+
 
 # ruby/process.c             
 restore_and_save $1/process.c       
-# ---
+# [TODO ???]
 
 # ruby/tool/mkconfig.rb             
 restore_and_save $1/tool/mkconfig.rb       
-# ---
+# [TODO ???]
 
 # ruby/util.c
 restore_and_save $1/util.c
