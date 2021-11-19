@@ -121,11 +121,11 @@ test_tebako_setup() {
 # Helper
 press_runner() {
   if [ "${VERBOSE}" == "yes" ]; then 
-    $DIR_BIN/tebako press --root="${DIR_TESTS}/$1" --entry-point="$2" 2>&1 | tee tebako_test.log
+    $DIR_BIN/tebako press --root="$1" --entry-point="$2" 2>&1 | tee tebako_test.log
     assertEquals 0 ${PIPESTATUS[0]}
     result="$( cat tebako_test.log )"
   else 
-    result="$( $DIR_BIN/tebako press --root=${DIR_TESTS}/$1 --entry-point=$2 2>&1 )"
+    result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 2>&1 )"
     assertEquals 0 $?
   fi
 
@@ -310,8 +310,6 @@ DIR_ROOT="$( cd $DIR0/../.. && pwd )"
 DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
 DIR_DEPS="$( cd $DIR_ROOT/deps && pwd )"
 DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
-
-VERBOSE="0"
 
 echo "Running tebako tests"
 . $DIR_TESTS/shunit2/shunit2
