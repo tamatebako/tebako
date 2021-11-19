@@ -54,12 +54,12 @@
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
 test_CLI_help() {
-  if [ "VERBOSE" = "1" ]; then 
+  if [ "VERBOSE" == "1" ]; then 
     $DIR_BIN/tebako --help | tee tebako_test.log
     assertEquals 0 ${PIPESTATUS[0]}
   else 
-    $DIR_BIN/tebako --help > tee tebako_test.log
-    assertEquals 0 ${PIPESTATUS[0]}
+    $DIR_BIN/tebako --help > tebako_test.log
+    assertEquals 0 $?
   fi
   
   result="$( cat tebako_test.log )"
@@ -67,12 +67,12 @@ test_CLI_help() {
 }
 
 test_CLI_missing_command() {
-  if [ "VERBOSE" = "1" ]; then 
+  if [ "VERBOSE" == "1" ]; then 
     $DIR_BIN/tebako | tee tebako_test.log
     assertEquals 4 ${PIPESTATUS[0]}
   else 
-    $DIR_BIN/tebako > tee tebako_test.log
-    assertEquals 4 ${PIPESTATUS[0]}
+    $DIR_BIN/tebako > tebako_test.log
+    assertEquals 4 $?
   fi
 
   result="$( cat tebako_test.log )"
@@ -81,12 +81,12 @@ test_CLI_missing_command() {
 }
 
 test_CLI_unknown_command() {
-  if [ "VERBOSE" = "1" ]; then 
+  if [ "VERBOSE" == "1" ]; then 
     $DIR_BIN/tebako jump | tee tebako_test.log
     assertEquals 5 ${PIPESTATUS[0]}
   else 
-    $DIR_BIN/tebako jump | tee tebako_test.log
-    assertEquals 5 ${PIPESTATUS[0]}
+    $DIR_BIN/tebako jump > tebako_test.log
+    assertEquals 5 $?
   fi
 
   result="$( cat tebako_test.log )"
@@ -98,12 +98,12 @@ test_CLI_unknown_command() {
 #  --  tebako setup (baseline for tests 01-17)
 test_tebako_setup() {
   echo "tebako setup ... Patience, please. It may take up to 1 hour."
-  if [ "VERBOSE" = "1" ]; then 
+  if [ "VERBOSE" == "1" ]; then 
     $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
     assertEquals 0 ${PIPESTATUS[0]}
   else 
     $DIR_BIN/tebako setup 2>&1 > tebako_test.log
-    assertEquals 0 ${PIPESTATUS[0]}
+    assertEquals 0 $?
   fi
 
 # Check the first and the last messages expected from CMake script
@@ -121,12 +121,12 @@ test_tebako_setup() {
 # ......................................................................
 # Helper
 press_runner() {
-  if [ "VERBOSE" = "1" ]; then 
+  if [ "VERBOSE" == "1" ]; then 
     $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/$1" --entry-point="$2" | tee tebako_test.log
     assertEquals 0 ${PIPESTATUS[0]}
   else 
     $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/$1" --entry-point="$2" > tebako_test.log
-    assertEquals 0 ${PIPESTATUS[0]}
+    assertEquals 0 $?
   fi
 
 # Check the first and the last messages expected from CMake script
