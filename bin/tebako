@@ -27,9 +27,8 @@ run_help() {
 echo "Usage: "
 echo "  tebako setup [-p |--prefix=<path>]"
 echo "         Tebako prefix defaults to current directory"
-echo "  tebako press [-p |--prefix=<path>] -r |--root=<path> -e |--entry-point=<path> [-m |--mount-point=<path>] [-o |--output=<file name>]"
+echo "  tebako press [-p |--prefix=<path>] -r |--root=<path> -e |--entry-point=<path> [-o |--output=<file name>]"
 echo "         Tebako prefix defaults to current directory"
-echo "         Mount point defaults to '/home/tebako'"
 echo "         Output file defaults to 'tebako'"
 }
 

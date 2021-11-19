@@ -120,23 +120,23 @@ test_tebako_setup() {
 # ......................................................................
 # Helper
 press_runner() {
-  if [ "${VERBOSE}" == "yes" ]; then 
-    $DIR_BIN/tebako press --root="$1" --entry-point="$2" 2>&1 | tee tebako_test.log
-    assertEquals 0 ${PIPESTATUS[0]}
-    result="$( cat tebako_test.log )"
-  else 
-    result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 2>&1 )"
-    assertEquals 0 $?
-  fi
+   if [ "${VERBOSE}" == "yes" ]; then 
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" 2>&1 | tee tebako_test.log
+     assertEquals 0 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 2>&1 )"
+     assertEquals 0 $?
+   fi
 
 # Check the first and the last messages expected from CMake script
-  assertContains "$result" "Running tebako packager configuration script"
-  assertContains "$result" "tebako packaging configuration created"
+   assertContains "$result" "Running tebako packager configuration script"
+   assertContains "$result" "tebako packaging configuration created"
 
 # Check that ruby is not a dynamic executable
-  result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
-  assertEquals 1 $?
-  assertContains "$result" "not a dynamic executable"
+   result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
+   assertEquals 1 $?
+   assertContains "$result" "not a dynamic executable"
 }
 
 # ......................................................................
@@ -146,6 +146,24 @@ test_tebako_press_01() {
    press_runner "${DIR_TESTS}/test-01" "test.rb"
 }
 
+# 02. Simple Ruby script, relative path to entry point, non exisitng entrance
+test_tebako_press_02() {
+   echo "tebako press test-02: simple Ruby script, relative path to entry point, non exisitng entrance"
+   if [ "${VERBOSE}" == "yes" ]; then 
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" 2>&1 | tee tebako_test.log
+     assertEquals 103 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 2>&1 )"
+     assertEquals 103 $?
+   fi
+
+# Check the first and the last messages expected from CMake script
+   assertContains "$result" "Running tebako packager configuration script"
+
+}
+
+# 03. Simple Ruby script, absolute path to entry point
 test_tebako_press_03() {
    echo "tebako press test-03: simple Ruby script, absolute path to entry point"
    press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb"
