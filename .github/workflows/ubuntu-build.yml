@@ -99,11 +99,11 @@ jobs:
     - name: tebako functional tests
       run: ${{github.workspace}}/tests/test-00/test-00.sh
 
-    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
-      run: | 
-        ${{github.workspace}}/bin/tebako press                   \
-              --root="${{github.workspace}}/tests/test-01"       \
-              --entry-point="test.rb"                              
+#    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
+#      run: | 
+#        ${{github.workspace}}/bin/tebako press                   \
+#              --root="${{github.workspace}}/tests/test-01"       \
+#              --entry-point="test.rb"                              
                                             
 #    - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
 #      run:  ${{github.workspace}}/output/tebako

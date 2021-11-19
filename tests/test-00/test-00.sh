@@ -33,9 +33,9 @@
 #  03. Simple Ruby script, absolute path to entry point 
 #  04. Simple Ruby script, absolute path to entry point, relative path to root      
 #  05. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
-#  06. Rails project                                                                                                       [TODO]
+#  06. Rails project                                                                                                       
 #  07. Rails project, ruby and bundler version mismatch                             Expected error at build step
-#  08. Rails project, no entry point                                                Expected error at build step           [TODO]
+#  08. Rails project, no entry point                                                Expected error at build step           
 #  09. Ruby gem (xxx.gem file)  
 #  10. Ruby gem (xxx.gem file), no entry point                                      Expected error at build step
 #  11. Ruby gem, no gemfile, with gemspec                                             
@@ -96,9 +96,27 @@ test_tebako_setup() {
   assertContains "$result" "not a dynamic executable"
 }
 
+
+press_runner() {
+   $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/$1" --entry-point="$2" | tee tebako_test.log                                     
+   assertEquals 0 ${PIPESTATUS[0]}
+
+# Check the first and the last messages expected from CMake script
+  result="$( cat tebako_test.log )"
+  assertContains "$result" "Running tebako packager configuration script"
+  assertContains "$result" "tebako packaging configuration created"
+
+# Check that ruby is not a dynamic executable
+  result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
+  assertEquals 1 $?
+  assertContains "$result" "not a dynamic executable"
+}
+
 # ......................................................................
 #  01. Simple Ruby script, relative path to entry point  
 test_tebako_press_01() {
+   press_runner "test-01" "test.rb"
+
    $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/test-01" --entry-point="test.rb" | tee tebako_test.log                                     
    assertEquals 0 ${PIPESTATUS[0]}
 
@@ -116,7 +134,7 @@ test_tebako_press_01() {
 # ......................................................................
 # main
 DIR0="$( cd "$( dirname "$0" )" && pwd )"
-DIR_ROOT = "$( cd $DIR0/../.. && pwd )"
+DIR_ROOT="$( cd $DIR0/../.. && pwd )"
 DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
 DIR_DEPS="$( cd $DIR_ROOT/deps && pwd )"
 DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
