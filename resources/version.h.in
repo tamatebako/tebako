@@ -30,14 +30,8 @@
 
 #pragma once
 
-#define _HELPER(x) #x
-#define _STR(x) _HELPER(x)
+const unsigned int tebako_version_major = @PROJECT_VERSION_MAJOR@;
+const unsigned int tebako_version_minor = @PROJECT_VERSION_MINOR@;
+const unsigned int tebako_version_teeny = @PROJECT_VERSION_PATCH@;
 
-#define PRJ_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
-#define PRJ_VERSION_MINOR @PROJECT_VERSION_MINOR@
-#define PRJ_VERSION_TEENY @PROJECT_VERSION_PATCH@
-
-#define PRJ_VERSION_STRING _STR(PRJ_VERSION_MAJOR) "." _STR(PRJ_VERSION_MINOR) "." _STR(PRJ_VERSION_TEENY)
-
-#define PRJ_NAME          "tebako"
 

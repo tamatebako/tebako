@@ -56,7 +56,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v16
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v17
 
 # Ref CMakeLists.txt for comments
     - name: Install packages Ubuntu
