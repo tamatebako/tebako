@@ -54,7 +54,7 @@
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
 test_CLI_help() {
-  $DIR_BIN/tebako --help | tee tebako_test.log
+  $DIR_BIN/tebako --help ${LOG_SUFFIX}
   assertEquals 0 ${PIPESTATUS[0]}
   
   result="$( cat tebako_test.log )"
@@ -62,7 +62,7 @@ test_CLI_help() {
 }
 
 test_CLI_missing_command() {
-  $DIR_BIN/tebako | tee tebako_test.log
+  $DIR_BIN/tebako ${LOG_SUFFIX}
   assertEquals 4 ${PIPESTATUS[0]}
 
   result="$( cat tebako_test.log )"
@@ -71,7 +71,7 @@ test_CLI_missing_command() {
 }
 
 test_CLI_unknown_command() {
-  $DIR_BIN/tebako jump | tee tebako_test.log
+  $DIR_BIN/tebako jump ${LOG_SUFFIX}
   assertEquals 5 ${PIPESTATUS[0]}
 
   result="$( cat tebako_test.log )"
@@ -82,7 +82,7 @@ test_CLI_unknown_command() {
 # ......................................................................
 #  --  tebako setup (baseline for tests 01-17)
 test_tebako_setup() {
-  $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
+  $DIR_BIN/tebako setup 2>&1 ${LOG_SUFFIX}
   assertEquals 0 ${PIPESTATUS[0]}
 
 # Check the first and the last messages expected from CMake script
@@ -97,8 +97,10 @@ test_tebako_setup() {
 }
 
 
+# ......................................................................
+# Helper
 press_runner() {
-   $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/$1" --entry-point="$2" | tee tebako_test.log                                     
+   $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/$1" --entry-point="$2" ${LOG_SUFFIX}
    assertEquals 0 ${PIPESTATUS[0]}
 
 # Check the first and the last messages expected from CMake script
@@ -115,28 +117,24 @@ press_runner() {
 # ......................................................................
 #  01. Simple Ruby script, relative path to entry point  
 test_tebako_press_01() {
+   echo "tebako press test-01: simple Ruby script, relative path to entry point"
    press_runner "test-01" "test.rb"
-
-   $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/test-01" --entry-point="test.rb" | tee tebako_test.log                                     
-   assertEquals 0 ${PIPESTATUS[0]}
-
-# Check the first and the last messages expected from CMake script
-  result="$( cat tebako_test.log )"
-  assertContains "$result" "Running tebako packager configuration script"
-  assertContains "$result" "tebako packaging configuration created"
-
-# Check that ruby is not a dynamic executable
-  result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
-  assertEquals 1 $?
-  assertContains "$result" "not a dynamic executable"
 }
 
 # ......................................................................
 # main
+
 DIR0="$( cd "$( dirname "$0" )" && pwd )"
 DIR_ROOT="$( cd $DIR0/../.. && pwd )"
 DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
 DIR_DEPS="$( cd $DIR_ROOT/deps && pwd )"
 DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
+
+if [ "$1" = "verbose" ]; then
+ LOG_SUFFIX="| tee tebako_test.log"
+else
+ LOG_SUFFIX="> tee tebako_test.log"
+fi
+
 echo "Running tebako tests"
 . $DIR_TESTS/shunit2/shunit2
