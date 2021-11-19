@@ -27,7 +27,8 @@
  *
  */
 
-#include <incbin.h>
+#include <version.h>
+#include <incbin/incbin.h>
 
 namespace tebako {
 	const char * fs_mount_point = "@FS_MOUNT_POINT@";

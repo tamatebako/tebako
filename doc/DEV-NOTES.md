@@ -66,7 +66,3 @@ These scenarious differ in what files are pacjkaged and where thre entry point i
 | 3 | Gem source, no bundler |  Build the gem using _gem build_ command at the host and install it with _gem install_ to packaged filesystem |_\<mount_point\>/bin/\<entry_point\>_<br>(i.e.: binstub is expected) |
 | 3 | Gem source, bundler |  Collect dependencies at the host with _bundle install_, build the gem using _gem build_ command and install it with _gem install_ to packaged filesystem |_\<mount_point\>/bin/\<entry_point\>_<br>(i.e.: binstub is expected) |
 | 5 | Rails project  | Deploy project to packaged filesystem using _bundle install --deployment [--binstubs]_ |_\<mount_point\>/local/bin/\<entry_point\>_|
-
-
-
-

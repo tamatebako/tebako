@@ -3,7 +3,7 @@ name: Ubuntu build
 on:
   # Triggers the workflow on push or pull request events but only for the master branch
   push:
-    branches: [ master ]
+    branches: [ master, issue-18 ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -24,29 +24,15 @@ env:
 # The folder for dwarfs and other dependenies
   DEPS: deps
 # GitHub dependencies' 
-  INCBIN_TAG: 348e36b
-  DWARFS_TAG: 78401c3
+  INCBIN_TAG:    "348e36b"
+  DWARFS_WR_TAG: "16bcac1"
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
   BUNDLER_VER: "2.2.3"
   BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
-  GDBM_VER: "1.13"
-  GDBM_HASH: "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253"
-  LIBFFI_VER: "3.2.1"
-  LIBFFI_HASH: "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483"
-  NCURSES_VER: "6.2"
-  NCURSES_HASH: "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d"
-# OpenSSL upgraded from 1.0.0f to 1.0.0h because 1.0.0f requires Perl version less then 3.20
-# [ <"glob" is not exported by the File::Glob module> issue ]  
-  OPENSSL_VER: "1.1.0h"
-  OPENSSL_HASH: "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517"
-  READLINE_VER: "7.0"
-  READLINE_HASH: "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334"
-  YAML_VER: "0.1.7"
-  YAML_HASH: "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729"
-  ZLIB_VER: "1.2.11"
-  ZLIB_HASH: "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1"
+# test verbosity (yes/no)
+  VERBOSE: yes
 
 jobs:
   Ubuntu-build:
@@ -61,16 +47,9 @@ jobs:
         mkdir ${{github.workspace}}/${{env.DEPS}}
         echo "Keys" > key.txt
         echo  ${{ env.INCBIN_TAG }} >> key.txt
-        echo  ${{ env.DWARFS_TAG }} >> key.txt
+        echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
         echo  ${{ env.RUBY_HASH }} >> key.txt
         echo  ${{ env.BUNDLER_HASH }} >> key.txt
-        echo  ${{ env.GDBM_HASH }} >> key.txt
-        echo  ${{ env.LIBFFI_HASH }} >> key.txt
-        echo  ${{ env.NCURSES_HASH }} >> key.txt
-        echo  ${{ env.OPENSSL_HASH }} >> key.txt
-        echo  ${{ env.READLINE_HASH }} >> key.txt
-        echo  ${{ env.YAML_HASH }} >> key.txt
-        echo  ${{ env.ZLIB_HASH }} >> key.txt
     
     - name: Checkout shell test framework
       uses: actions/checkout@v2
@@ -83,11 +62,10 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v15
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v17
 
+# Ref CMakeLists.txt for comments
     - name: Install packages Ubuntu
-# Already installed: bison flex fuse3 pkg-config
-# libsqlite3-dev  is required for Rails packaging tests only
       run: |
         sudo apt-get update
         sudo apt-get install \
@@ -96,188 +74,9 @@ jobs:
         libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
         libboost-regex-dev libboost-system-dev libboost-thread-dev \
         libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
-        libsqlite3-dev
+        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libsqlite3-dev
         
-    - name: Create mount point
+    - name: tebako functional tests
       run: |
-        sudo mkdir -p /home/tebako 
-        sudo chmod a+w /home/tebako
-
-# Tests
-#  00. Very basic tebako CLI tests (error handling)
-#  --  tebako setup (baseline for tests 01-17)
-#  01. Simple Ruby script, relative path to entry point  
-#  02. Simple Ruby script, relative path to entry point, non exisitng entrance      Expected error at configure step
-#  03. Simple Ruby script, absolute path to entry point 
-#  04. Simple Ruby script, absolute path to entry point, relative path to root      
-#  05. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
-#  06. Rails project                                                                                                       
-#  07. Rails project, ruby and bundler version mismatch                             Expected error at build step
-#  08. Rails project, no entry point                                                Expected error at build step           
-#  09. Ruby gem (xxx.gem file)  
-#  10. Ruby gem (xxx.gem file), no entry point                                      Expected error at build step
-#  11. Ruby gem, no gemfile, with gemspec                                             
-#  12. Ruby gem, no gemfile, multiple gemspecs                                      Expected error at configure step
-#  13. Ruby gem, no gemfile, gemspec error                                          Expected error at build step  
-#  14. Ruby gem, no gemfile, gemspec, no entry point                                Expected error at build step  
-#  15. Ruby gem, gemfile, gemspec                                             
-#  16. Ruby gem, gemfile, gemspec error                                             Expected error at build step  
-#  17. Ruby gem, gemfile, gemspec, no entry point                                   Expected error at build step  
-#  18 - 39  -- reserved
-#  40. CLI.  Change output name                                                     [depends on Test-01] 
-#  41 - 49  reserved
-#  50. AUC. Check that it is possible to verify content of package fs               [depends on Test-01] 
-
-    - name: Basic CLI tests
-      run: ${{github.workspace}}/tests/test-00/test-00.sh
-
-    - name: tebako setup
-      run: ${{github.workspace}}/bin/tebako setup
-
-    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
-      run: | 
-        ${{github.workspace}}/bin/tebako press                   \
-              --root="${{github.workspace}}/tests/test-01"       \
-              --entry-point="test.rb"                              
-                                            
-    - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
-      run:  ${{github.workspace}}/output/tebako
-#        echo Tebako exit code $?
-
-    - name: Test02 - tebako press - [Simple Ruby script, relative path to entry point, non exisitng entrance]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-01"               \
-              "test-does-not-exist.rb"                            \
-              103                   
-              
-    - name: Test03 - tebako press - [Simple Ruby script, absolute path to entry point]
-      run: | 
-        ${{github.workspace}}/bin/tebako press                   \
-              --root="${{github.workspace}}/tests/test-01"       \
-              --entry-point="${{github.workspace}}/tests/test-01/test.rb"                              
-
-    - name: Test03 - Run packaged solution - [Simple Ruby script, absolute path to entry point]
-      run:  ${{github.workspace}}/output/tebako
-
-    - name: Test04 - tebako press - [Simple Ruby script, absolute path to entry point, relative path to root ]
-      run: | 
-        ${{github.workspace}}/bin/tebako press                   \
-              --root="tests/test-01"                             \
-              --entry-point="test.rb"                              
-
-    - name: Test04 - Run packaged solution - [Simple Ruby script, absolute path to entry point, relative path to root ]
-      run:  ${{github.workspace}}/output/tebako
-                                           
-    - name: Test05 - tebako press - [Simple Ruby script, absolute path to entry point, not within root]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-01"               \
-              "${{github.workspace}}/tests/test-00/test.rb"       \
-              103                           
-
-    - name: Test06 - tebako press - [Rails project]
-      run: | 
-        ${{github.workspace}}/bin/tebako press                    \
-              --root="${{github.workspace}}/tests/test-06"        \
-              --entry-point="rails"                              
-
-    - name: Test06 - Run packaged solution - [Rails project]
-      run:  ${{github.workspace}}/output/tebako
-
-    - name: Test07 - tebako press - [Rails project, ruby and bundler version mismatch]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-07"               \
-              "rails"                                             \
-              104   
-
-    - name: Test08 - tebako press - [Rails project, no entry point]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-06"               \
-              "test-does-not-exist.rb"                            \
-              104                            
-
-    - name: Test09 - tebako press - [xxx.gem, no gemspec, no gemfile]
-      run: | 
-        ${{github.workspace}}/bin/tebako press                    \
-              --root="${{github.workspace}}/tests/test-09"        \
-              --entry-point="tebako-test-run.rb"                              
-
-    - name: Test09 - Run packaged solution - [xxx.gem, no gemspec, no gemfile]
-      run:  ${{github.workspace}}/output/tebako
-
-    - name: Test10 - tebako press - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-09"               \
-              "test-does-not-exist.rb"                            \
-              104                              
-
-    - name: Test11 - tebako press - [Ruby gem, gemspec, no gemfile]
-      run: | 
-        ${{github.workspace}}/bin/tebako press                    \
-              --root="${{github.workspace}}/tests/test-11"        \
-              --entry-point="tebako-test-run.rb"                              
-
-    - name: Test11 - Run packaged solution - [Ruby gem, no gemfile]
-      run:  ${{github.workspace}}/output/tebako
-
-    - name: Test12 - tebako press - [Ruby gem, multiple gemspecs]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-12"               \
-              "tebako-test-run.rb"                                \
-              103                            
-
-    - name: Test13 - tebako press - [Ruby gem, no gemfile, gemspec error]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-13"               \
-              "tebako-test-run.rb"                                \
-              104                      
-
-    - name: Test14 - tebako press - [Ruby gem, gemspec, no gemfile, entry point does not exist]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-11"               \
-              "test-does-not-exist.rb"                            \
-              104  
-
-    - name: Test15 - tebako press - [Ruby gem, gemspec, gemfile]
-      run: | 
-        ${{github.workspace}}/bin/tebako press                   \
-              --root="${{github.workspace}}/tests/test-15"       \
-              --entry-point="tebako-test-run.rb"                              
-
-    - name: Test15 - Run packaged solution - [Ruby gem, gemspec, gemfile]
-      run:  ${{github.workspace}}/output/tebako
-
-    - name: Test16 - tebako press - [Ruby gem, gemspec, gemfile with error]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-16"               \
-              "tebako-test-run.rb"                                \
-              104                   
-
-    - name: Test17 - tebako press - [Ruby gem, gemspec, gemfile, entry point does not exist]
-      run: | 
-        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-              "${{github.workspace}}/tests/test-15"               \
-              "test-does-not-exist.rb"                            \
-              104  
-
-    - name: Test40 - CLI - Change output file name     
-      run: |    
-        ${{github.workspace}}/bin/tebako press                    \
-              --r "${{github.workspace}}/tests/test-01"           \
-              --e "test.rb" -o "tamatebako" 
-        ${{github.workspace}}/output/tamatebako                          
-    
-#    - name: Test50 -AUC - Check that it is possible to verify content of packaged fs          
-#      run: |
-#        ${{github.workspace}}/bin/tebako press                    \
-#              --root="${{github.workspace}}/tests/test-01"        \
-#              --entry-point="test.rb"  
-#        deps/bin/dwarfs output/tebako home/tebako                           
+        chmod +x ${{github.workspace}}/tests/test-00/test-00.sh
+        ${{github.workspace}}/tests/test-00/test-00.sh

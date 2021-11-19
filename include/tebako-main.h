@@ -27,34 +27,10 @@
  * 
  */
 
-#pragma once
-
-#include <cstddef>
-#include <string>
-
-#include "dwarfs/mmif.h"
-
-
-namespace tebako {
-
-class mfs : public dwarfs::mmif {
- public:
-  mfs(const void* addr, size_t size);
-  ~mfs() = default;
-
-  void const* addr() const override;
-  size_t size() const override;
-
-  boost::system::error_code lock(off_t offset, size_t size) override;
-  boost::system::error_code release(off_t offset, size_t size) override;
-  boost::system::error_code release_until(off_t offset) override;
-
- private:
-  size_t size_;
-  const void* addr_;
-  off_t const page_size_;
-};
-
-
-} // namespace tebako
-
+#ifdef __cplusplus 
+extern "C" {
+#endif
+	int tebako_main(int* argc, char*** argv);
+#ifdef __cplusplus 
+}
+#endif
