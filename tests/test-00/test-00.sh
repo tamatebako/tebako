@@ -156,7 +156,7 @@ DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
 DIR_DEPS="$( cd $DIR_ROOT/deps && pwd )"
 DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
 
-VERBOSE="1"
+VERBOSE="0"
 
 echo "Running tebako tests"
 . $DIR_TESTS/shunit2/shunit2
