@@ -414,7 +414,7 @@ if (NOT ${SETUP_MODE})
   )
   
   add_custom_target(${APP_NAME} ALL
-    ${CMAKE_COMMAND} -E echo "tebako packaging completed"
+    ${CMAKE_COMMAND} -E echo "tebako packaging configuration created"
     DEPENDS patched_ruby 
   )
 

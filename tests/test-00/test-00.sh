@@ -25,9 +25,34 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+# Tests
+#  00. Very basic tebako CLI tests (error handling)
+#  --  tebako setup (baseline for tests 01-17)
+#  01. Simple Ruby script, relative path to entry point  
+#  02. Simple Ruby script, relative path to entry point, non exisitng entrance      Expected error at configure step
+#  03. Simple Ruby script, absolute path to entry point 
+#  04. Simple Ruby script, absolute path to entry point, relative path to root      
+#  05. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
+#  06. Rails project                                                                                                       [TODO]
+#  07. Rails project, ruby and bundler version mismatch                             Expected error at build step
+#  08. Rails project, no entry point                                                Expected error at build step           [TODO]
+#  09. Ruby gem (xxx.gem file)  
+#  10. Ruby gem (xxx.gem file), no entry point                                      Expected error at build step
+#  11. Ruby gem, no gemfile, with gemspec                                             
+#  12. Ruby gem, no gemfile, multiple gemspecs                                      Expected error at configure step
+#  13. Ruby gem, no gemfile, gemspec error                                          Expected error at build step  
+#  14. Ruby gem, no gemfile, gemspec, no entry point                                Expected error at build step  
+#  15. Ruby gem, gemfile, gemspec                                             
+#  16. Ruby gem, gemfile, gemspec error                                             Expected error at build step  
+#  17. Ruby gem, gemfile, gemspec, no entry point                                   Expected error at build step  
+#  18 - 39  -- reserved
+#  40. CLI.  Change output name                                                     [depends on Test-01] 
+#  41 - 49  reserved
+#  50. AUC. Check that it is possible to verify content of package fs               [depends on Test-01] 
+
 
 # ......................................................................
-# Very simple CLI tests
+# 00. Very basic tebako CLI tests (error handling)
 test_CLI_help() {
   $DIR_BIN/tebako --help | tee tebako_test.log
   assertEquals 0 ${PIPESTATUS[0]}
@@ -37,30 +62,31 @@ test_CLI_help() {
 }
 
 test_CLI_missing_command() {
-  result="$( $DIR_BIN/tebako )"
-  assertEquals 4 $?
+  $DIR_BIN/tebako | tee tebako_test.log
+  assertEquals 4 ${PIPESTATUS[0]}
+
+  result="$( cat tebako_test.log )"
   assertContains "$result" "Missing command"
   assertContains "$result" "Usage:"
 }
 
 test_CLI_unknown_command() {
-  result="$( $DIR_BIN/tebako jump )"
-  assertEquals 5 $?
+  $DIR_BIN/tebako jump | tee tebako_test.log
+  assertEquals 5 ${PIPESTATUS[0]}
+
+  result="$( cat tebako_test.log )"
   assertContains "$result" "Unknown command"
   assertContains "$result" "Usage:"
 }
 
 # ......................................................................
-# tebako setup test
+#  --  tebako setup (baseline for tests 01-17)
 test_tebako_setup() {
-  echo "Running tebako setup. Patience ... the output is logged and this step may take up to 1 hour"	
-
-  result="$( $DIR_BIN/tebako setup 2>&1 )"
-  assertEquals 0 $?
-
-  echo $result
+  $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
+  assertEquals 0 ${PIPESTATUS[0]}
 
 # Check the first and the last messages expected from CMake script
+  result="$( cat tebako_test.log )"
   assertContains "$result" "Running tebako packager setup script"
   assertContains "$result" "tebako setup completed"
 
@@ -71,9 +97,28 @@ test_tebako_setup() {
 }
 
 # ......................................................................
+#  01. Simple Ruby script, relative path to entry point  
+test_tebako_press_01() {
+   $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/test-01" --entry-point="test.rb" | tee tebako_test.log                                     
+   assertEquals 0 ${PIPESTATUS[0]}
+
+# Check the first and the last messages expected from CMake script
+  result="$( cat tebako_test.log )"
+  assertContains "$result" "Running tebako packager configuration script"
+  assertContains "$result" "tebako packaging configuration created"
+
+# Check that ruby is not a dynamic executable
+  result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
+  assertEquals 1 $?
+  assertContains "$result" "not a dynamic executable"
+}
+
+# ......................................................................
 # main
 DIR0="$( cd "$( dirname "$0" )" && pwd )"
-DIR_BIN="$( cd $DIR0/../../bin && pwd )"
-DIR_DEPS="$( cd $DIR0/../../deps && pwd )"
-echo "Running tebako CLI tests at $DIR"
-. $DIR0/../shunit2/shunit2
+DIR_ROOT = "$( cd $DIR0/../.. && pwd )"
+DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
+DIR_DEPS="$( cd $DIR_ROOT/deps && pwd )"
+DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
+echo "Running tebako tests"
+. $DIR_TESTS/shunit2/shunit2
