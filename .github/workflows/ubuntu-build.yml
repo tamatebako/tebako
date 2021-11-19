@@ -73,4 +73,6 @@ jobs:
         libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libsqlite3-dev
         
     - name: tebako functional tests
-      run: ${{github.workspace}}/tests/test-00/test-00.sh
+      run: |
+        chmod +x ${{github.workspace}}/tests/test-00/test-00.sh
+        ${{github.workspace}}/tests/test-00/test-00.sh
