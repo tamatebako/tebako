@@ -97,7 +97,7 @@ jobs:
 #  50. AUC. Check that it is possible to verify content of package fs               [depends on Test-01] 
 
     - name: tebako functional tests
-      run: ${{github.workspace}}/tests/test-00/test-00.sh
+      run: ${{github.workspace}}/tests/test-00/test-00.sh verbose
 
 #    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
 #      run: | 

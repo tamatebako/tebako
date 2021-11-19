@@ -133,7 +133,7 @@ DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
 if [ "$1" = "verbose" ]; then
  LOG_SUFFIX="| tee tebako_test.log"
 else
- LOG_SUFFIX="> tee tebako_test.log"
+ LOG_SUFFIX="> tebako_test.log"
 fi
 
 echo "Running tebako tests"
