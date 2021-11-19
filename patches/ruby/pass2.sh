@@ -32,14 +32,14 @@ restore_and_save() {
 
 # Copy make script include file that list all libraries required for tebako static build
 PATCH_DIR="$( cd "$( dirname "$0" )" && pwd )"
-cp -f $PATCH_DIR/mainlibs.mk $2/mainlibs.mk 
+cp -f $PATCH_DIR/mainlibs-pass2.mk $2/mainlibs-pass2.mk 
 
 # Pin tebako static build libraries
 restore_and_save $1/template/Makefile.in
-sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs.mk/g" $1/template/Makefile.in
+sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass2.mk/g" $1/template/Makefile.in
 
 # Fix bigdecimal extension
-# [I cannot explain why it is required. It does not semm to be related to any patching we do]
+# [I cannot explain why it is required. It does not seem to be related to any patching we do]
 cp -f $PATCH_DIR/bigdecimal-patch.h $1/ext/bigdecimal/bigdecimal-patch.h
 restore_and_save $1/ext/bigdecimal/bigdecimal.h
 sed -i "s/#include <float.h>/#include <float.h>\n#include \"bigdecimal-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h 
@@ -48,13 +48,13 @@ sed -i "s/#include <float.h>/#include <float.h>\n#include \"bigdecimal-patch.h\"
 restore_and_save $1/ext/Setup
 sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
 
-# ....................................................
 # Patch main in order to redefine command line
 restore_and_save $1/main.c
 # Replace only the first occurence
 # https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
 # [TODO this looks a kind of risky]
 sed -i "0,/int$/s//#include <tebako-main.h>\n\nint/" $1/main.c
+sed -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" $1/main.c
 
 # ....................................................
 # Put lidwarfs IO bindings to Ruby files
@@ -107,4 +107,3 @@ sed -i  "s/#ifndef S_ISDIR/#include <tebako\/tebako-defines.h>\n#include <tebako
 # [TODO Windows]
 # ruby/win32/file.c
 # ruby/win32/win32.c
-

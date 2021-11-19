@@ -28,11 +28,13 @@
  */
 
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 #include <memory.h>
 
 #include <tebako/tebako-io.h>
 
-#include <version.h>
+#include <tebako-version.h>
 #include <tebako-main.h>
 #include <tebako-fs.h>
 
@@ -41,60 +43,69 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 	char** new_argv = NULL;
 	char* argv_memory = NULL;
 
-	try {
-		fsret = load_fs(&gfsData[0],
-			gfsSize,
-			"debug" /*debuglevel*/,
-			NULL	/* cachesize*/,
-			NULL	/* workers */,
-			NULL	/* mlock */,
-			NULL	/* decompress_ratio*/,
-			NULL    /* image_offset */
-		);
-
-		if (fsret == 0) {
-			size_t new_argv_size = strlen(tebako::fs_mount_point) + strlen(tebako::fs_entry_point) + 1;
-			for (int i = 0; i < (*argc); i++) {
-				new_argv_size += (strlen((*argv)[i]) + 1);
-			}
-			/* argv memory should be adjacent */
-			char** new_argv = new char* [(*argc) + 1];
-			char* argv_memory = new char[new_argv_size];
-			if (new_argv != NULL && argv_memory != NULL) {
-				memcpy(argv_memory, (*argv)[0], strlen((*argv)[0]) + 1);
-				new_argv[0] = argv_memory;
-				argv_memory += (strlen((*argv)[0]) + 1);
-				memcpy(argv_memory, tebako::fs_mount_point, strlen(tebako::fs_mount_point));
-				argv_memory += strlen(tebako::fs_mount_point);
-				memcpy(argv_memory, tebako::fs_entry_point, strlen(tebako::fs_entry_point) + 1);
-				new_argv[1] = argv_memory;
-				argv_memory += (strlen(tebako::fs_entry_point) + 1);
-				for (int i = 1; i < (*argc); i++) {
-					memcpy(argv_memory, (*argv)[i], strlen((*argv)[i]) + 1);
-					new_argv[i+1] = argv_memory;
-					argv_memory += (strlen((*argv)[i]) + 1);
-				}
-				*argv = new_argv;
-				(*argc) += 1;
-				ret = 0;
-			}
-		}
+	if (strstr((*argv)[0], "miniruby") != NULL) {
+// Ruby build script is deigned in such a way that this patch is also applied towards miniruby
+// Just pass through in such case
+		ret = 0;
 	}
-	catch (...)
-	{
-
-	}
-
-	if (ret != 0) {
+	else {
 		try {
-			if (new_argv) delete new_argv;
-			if (argv_memory) delete argv_memory;
+			fsret = load_fs(&gfsData[0],
+				gfsSize,
+				"error" /*debuglevel*/,
+				NULL	/* cachesize*/,
+				NULL	/* workers */,
+				NULL	/* mlock */,
+				NULL	/* decompress_ratio*/,
+				NULL    /* image_offset */
+			);
+
 			if (fsret == 0) {
-				drop_fs();
+				size_t new_argv_size = strlen(tebako::fs_mount_point) + strlen(tebako::fs_entry_point) + 1;
+				for (int i = 0; i < (*argc); i++) {
+					new_argv_size += (strlen((*argv)[i]) + 1);
+				}
+				/* argv memory should be adjacent */
+				char** new_argv = new char* [(*argc) + 1];
+				char* argv_memory = new char[new_argv_size];
+				if (new_argv != NULL && argv_memory != NULL) {
+					memcpy(argv_memory, (*argv)[0], strlen((*argv)[0]) + 1);
+					new_argv[0] = argv_memory;
+					argv_memory += (strlen((*argv)[0]) + 1);
+					memcpy(argv_memory, tebako::fs_mount_point, strlen(tebako::fs_mount_point));
+					new_argv[1] = argv_memory;
+					argv_memory += strlen(tebako::fs_mount_point);
+					memcpy(argv_memory, tebako::fs_entry_point, strlen(tebako::fs_entry_point) + 1);
+					argv_memory += (strlen(tebako::fs_entry_point) + 1);
+					for (int i = 1; i < (*argc); i++) {
+						memcpy(argv_memory, (*argv)[i], strlen((*argv)[i]) + 1);
+						new_argv[i+1] = argv_memory;
+						argv_memory += (strlen((*argv)[i]) + 1);
+					}
+					*argv = new_argv;
+					(*argc) += 1;
+					if (atexit(drop_fs)==0) {
+						ret = 0;
+					}
+				}
 			}
 		}
 		catch (...) {
-			// Nested error, no recovery :(
+
+		}
+
+		if (ret != 0) {
+			try {
+				printf("Tebako initialization failed\n");
+				if (new_argv) delete new_argv;
+				if (argv_memory) delete argv_memory;
+				if (fsret == 0) {
+					drop_fs();
+				}
+			}
+			catch (...) {
+				// Nested error, no recovery :(
+			}
 		}
 	}
 	return ret;

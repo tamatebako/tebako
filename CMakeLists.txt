@@ -57,7 +57,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/ensure_bundler.cmake)
 option(SETUP_MODE "Tebako setup" OFF)
 
 if (NOT ${SETUP_MODE})
-  message("Running tebako packager configuration script")
+  message("Running tebako press script")
   if ("-${ROOT}" STREQUAL "-")
     message(FATAL_ERROR "Project ROOT is not specified.")
   endif()
@@ -77,14 +77,19 @@ if (NOT ${SETUP_MODE})
   endif()
 
   if ("-${OUTPUT}" STREQUAL "-")
-    set(APP_NAME "tebako")
+    set(APP_NAME "${FS_CURRENT}/tebako")
   else()
-    set(APP_NAME ${OUTPUT})
+    cmake_path(IS_RELATIVE OUTPUT IS_OU_RELATIVE)
+    if(${IS_OU_RELATIVE})
+      cmake_path(SET APP_NAME NORMALIZE ${FS_CURRENT}/${OUTPUT})
+    else()
+      cmake_path(SET APP_NAME NORMALIZE ${OUTPUT})
+    endif()
   endif()
 
   message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point to ${APP_NAME}")
 else()
-  message("Running tebako packager setup script")
+  message("Running tebako setup script")
 endif()
 
 set(BOOST_USE_STATIC_LIBS   ON)
@@ -119,11 +124,7 @@ if (NOT ${SETUP_MODE})
 
 # This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
   set(FS_MOUNT_POINT "/__tebako_memfs__")
-  
   set(FS_APP_HOME "/.")
-
-# Clean previous run if any
-#  file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
 
 endif(NOT ${SETUP_MODE})
 
@@ -220,6 +221,7 @@ ExternalProject_Add(${RUBY_PRJ}
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
    UPDATE_COMMAND ""
+   PATCH_COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure 
                      --enable-bundled-libyaml 
                      --without-gmp 
@@ -237,7 +239,7 @@ ExternalProject_Add(${RUBY_PRJ}
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 
 add_custom_target(setup
-   ${CMAKE_COMMAND} -E echo "tebako setup completed"
+   ${CMAKE_COMMAND} -E echo "Tebako setup has completed"
    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
 )
 
@@ -372,8 +374,8 @@ if (NOT ${SETUP_MODE})
 # Packaged filesystem
 
   configure_file(
-    ${DATA_RES_DIR}/version.h.in 
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h
+    ${DATA_RES_DIR}/tebako-version.h.in 
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/tebako-version.h
     @ONLY
   )
 
@@ -401,24 +403,23 @@ if (NOT ${SETUP_MODE})
     src/tebako-main.cpp
     src/tebako-fs.cpp
     include/tebako-fs.h
-    include/version.h
+    include/tebako-version.h
     include/tebako-main.h) 
 
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
   add_custom_target(patched_ruby
      COMMAND ${CMAKE_COMMAND} -E echo "Patching and building Ruby with embedded filesystem"
-     COMMAND ${PATCHES}/ruby/pre_config.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+     COMMAND ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make
      DEPENDS setup tebako-fs
   )
   
-  add_custom_target(${APP_NAME} ALL
-    ${CMAKE_COMMAND} -E echo "tebako packaging configuration created"
+  add_custom_target(tebako ALL
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying ${RUBY_BINARY_DIR}/ruby to ${APP_NAME}"
+    COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_BINARY_DIR}/ruby ${APP_NAME}
+    COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
     DEPENDS patched_ruby 
   )
 
 endif(NOT ${SETUP_MODE})
-
-
-

@@ -28,10 +28,10 @@
 # Tests
 #  00. Very basic tebako CLI tests (error handling)
 #  --  tebako setup (baseline for tests 01-17)
-#  01. Simple Ruby script, relative path to entry point  
-#  02. Simple Ruby script, relative path to entry point, non exisitng entrance      Expected error at configure step
-#  03. Simple Ruby script, absolute path to entry point 
-#  04. Simple Ruby script, absolute path to entry point, relative path to root      
+#  01. Simple Ruby script, absolute path to root, relative path to entry point
+#  02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point   [Expected error at configure step]
+#  03. Simple Ruby script, absolute path to root, absolute path to entry point
+#  04. Simple Ruby script, absolute path to entry point, relative path to root
 #  05. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
 #  06. Rails project                                                                                                       
 #  07. Rails project, ruby and bundler version mismatch                             Expected error at build step
@@ -107,8 +107,8 @@ test_tebako_setup() {
   fi
 
 # Check the first and the last messages expected from CMake script
-  assertContains "$result" "Running tebako packager setup script"
-  assertContains "$result" "tebako setup completed"
+  assertContains "$result" "Running tebako setup script"
+  assertContains "$result" "Tebako setup has completed"
 
 # Check that ruby is not a dynamic executable
   result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
@@ -130,8 +130,8 @@ press_runner() {
    fi
 
 # Check the first and the last messages expected from CMake script
-   assertContains "$result" "Running tebako packager configuration script"
-   assertContains "$result" "tebako packaging configuration created"
+   assertContains "$result" "Running tebako press script"
+   assertContains "$result" "Tebako packaging has completed"
 
 # Check that ruby is not a dynamic executable
    result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
@@ -155,15 +155,20 @@ press_runner_103() {
 }
 
 # ......................................................................
-#  01. Simple Ruby script, relative path to entry point  
+#  01. Simple Ruby script, absolute path to root, relative path to entry point  
 test_tebako_press_01() {
-   echo "tebako press test-01: simple Ruby script, relative path to entry point"
+   echo "tebako press test-01: simple Ruby script,  relative path to root, relative path to entry point"
    press_runner "${DIR_TESTS}/test-01" "test.rb"
+
+#    - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
+#      run:  ${{github.workspace}}/output/tebako
+# [ TODO]        echo Tebako exit code $?
+
 }
 
-# 02. Simple Ruby script, relative path to entry point, non exisitng entrance
+# 02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point
 test_tebako_press_02() {
-   echo "tebako press test-02: simple Ruby script, relative path to entry point, non exisitng entrance"
+   echo "tebako press test-02: simple Ruby script, absolute path to root, relative path to entry point, non exisitng entrance"
    press_runner_103 "${DIR_TESTS}/test-01" "test-does-not-exist.rb"
 }
 
@@ -171,28 +176,11 @@ test_tebako_press_02() {
 test_tebako_press_03() {
    echo "tebako press test-03: simple Ruby script, absolute path to entry point"
    press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb"
-}
-
-
-#    - name: Test01 - tebako press - [Simple Ruby script, relative path to entry point]
-#      run: | 
-#        ${{github.workspace}}/bin/tebako press                   \
-#              --root="${{github.workspace}}/tests/test-01"       \
-#              --entry-point="test.rb"                              
-                                            
-#    - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
-#      run:  ${{github.workspace}}/output/tebako
-# [ TODO]        echo Tebako exit code $?
-
-            
-#    - name: Test03 - tebako press - [Simple Ruby script, absolute path to entry point]
-#      run: | 
-#        ${{github.workspace}}/bin/tebako press                   \
-#              --root="${{github.workspace}}/tests/test-01"       \
-#              --entry-point="${{github.workspace}}/tests/test-01/test.rb"                              
-
 #    - name: Test03 - Run packaged solution - [Simple Ruby script, absolute path to entry point]
 #      run:  ${{github.workspace}}/output/tebako
+}
+
+#  04. Simple Ruby script, relative path to root,  relative path to entry point
 
 #    - name: Test04 - tebako press - [Simple Ruby script, absolute path to entry point, relative path to root ]
 #      run: | 

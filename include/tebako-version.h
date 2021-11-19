@@ -13,7 +13,7 @@
  *    notice, this list of conditions and the following disclaimer in the
  *    documentation and/or other materials provided with the distribution.
  *
-* THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
  * ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
  * TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
  * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
@@ -27,11 +27,11 @@
  *
  */
 
-#include <incbin/incbin.h>
 
-namespace tebako {
-	const char * fs_mount_point = "@FS_MOUNT_POINT@";
-	const char * fs_entry_point = "@FS_ENTRY_POINT@";
-	const char * fs_app_home    = "@FS_APP_HOME@";
-	INCBIN(fs, "@DATA_BIN_FILE@");
-}
+#pragma once
+
+const unsigned int tebako_version_major = 0;
+const unsigned int tebako_version_minor = 2;
+const unsigned int tebako_version_teeny = 0;
+
+
