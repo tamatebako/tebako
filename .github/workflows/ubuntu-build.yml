@@ -50,9 +50,13 @@ jobs:
         echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
         echo  ${{ env.RUBY_HASH }} >> key.txt
         echo  ${{ env.BUNDLER_HASH }} >> key.txt
-
-    - name: Clone shell test framework
-      run: git clone https://github.com/kward/shunit2.git ${{github.workspace}}/tests/shunit2 --depth 1
+    
+    - name: Checkout shell test framework
+      uses: actions/checkout@v2
+      with:
+        repository: kward/shunit2
+        path: ${{github.workspace}}/tests/shunit2
+        fetch-depth: 1
       
     - name: Process cache
       uses: actions/cache@v2
