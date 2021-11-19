@@ -51,17 +51,18 @@ test_CLI_unknown_command() {
 # ......................................................................
 # tebako setup command
 test_tebako_setup() {
-  result="$( $DIR_BIN/tebako setup )"
+  $DIR_BIN/tebako setup 2>&1 | tee tebako_setup.log
   assertEquals 0 $?
 
 # Check the first and the last messages expected from CMake script
+  $result = "$( cat tebako_setup.log )"
   assertContains "$result" "Running tebako packager setup script"
   assertContains "$result" "tebako setup completed"
 
 # Check that ruby is not a dynamic executable
   result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
-  assertEquals 0 $?
-  assertContains "$result" "Not a dynamic executable"
+  assertEquals 1 $?
+  assertContains "$result" "not a dynamic executable"
 }
 
 # ......................................................................
