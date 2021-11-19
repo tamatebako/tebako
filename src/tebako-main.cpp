@@ -70,9 +70,9 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 				new_argv[1] = argv_memory;
 				argv_memory += (strlen(tebako::fs_entry_point) + 1);
 				for (int i = 1; i < (*argc); i++) {
-					memcpy(argv_memory, argv[i], strlen(argv[i]) + 1);
+					memcpy(argv_memory, (*argv)[i], strlen((*argv)[i]) + 1);
 					new_argv[i+1] = argv_memory;
-					argv_memory += (strlen(argv[i]) + 1);
+					argv_memory += (strlen((*argv)[i]) + 1);
 				}
 				*argv = new_argv;
 				(*argc) += 1;
