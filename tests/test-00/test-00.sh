@@ -54,16 +54,26 @@
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
 test_CLI_help() {
-  $DIR_BIN/tebako --help ${LOG_SUFFIX}
-  assertEquals 0 ${PIPESTATUS[0]}
+  if [ "VERBOSE" = "1"]; then 
+    $DIR_BIN/tebako --help | tee tebako_test.log
+    assertEquals 0 ${PIPESTATUS[0]}
+  else 
+    $DIR_BIN/tebako --help > tee tebako_test.log
+    assertEquals 0 ${PIPESTATUS[0]}
+  fi
   
   result="$( cat tebako_test.log )"
   assertContains "$result" "Usage:"
 }
 
 test_CLI_missing_command() {
-  $DIR_BIN/tebako ${LOG_SUFFIX}
-  assertEquals 4 ${PIPESTATUS[0]}
+  if [ "VERBOSE" = "1"]; then 
+    $DIR_BIN/tebako | tee tebako_test.log
+    assertEquals 4 ${PIPESTATUS[0]}
+  else 
+    $DIR_BIN/tebako > tee tebako_test.log
+    assertEquals 4 ${PIPESTATUS[0]}
+  fi
 
   result="$( cat tebako_test.log )"
   assertContains "$result" "Missing command"
@@ -71,8 +81,13 @@ test_CLI_missing_command() {
 }
 
 test_CLI_unknown_command() {
-  $DIR_BIN/tebako jump ${LOG_SUFFIX}
-  assertEquals 5 ${PIPESTATUS[0]}
+  if [ "VERBOSE" = "1"]; then 
+    $DIR_BIN/tebako jump | tee tebako_test.log
+    assertEquals 5 ${PIPESTATUS[0]}
+  else 
+    $DIR_BIN/tebako jump | tee tebako_test.log
+    assertEquals 5 ${PIPESTATUS[0]}
+  fi
 
   result="$( cat tebako_test.log )"
   assertContains "$result" "Unknown command"
@@ -82,8 +97,14 @@ test_CLI_unknown_command() {
 # ......................................................................
 #  --  tebako setup (baseline for tests 01-17)
 test_tebako_setup() {
-  $DIR_BIN/tebako setup 2>&1 ${LOG_SUFFIX}
-  assertEquals 0 ${PIPESTATUS[0]}
+  echo "tebako setup ... Patience, please. It may take up to 1 hour."
+  if [ "VERBOSE" = "1"]; then 
+    $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
+    assertEquals 0 ${PIPESTATUS[0]}
+  else 
+    $DIR_BIN/tebako setup 2>&1 > tebako_test.log
+    assertEquals 0 ${PIPESTATUS[0]}
+  fi
 
 # Check the first and the last messages expected from CMake script
   result="$( cat tebako_test.log )"
@@ -100,8 +121,13 @@ test_tebako_setup() {
 # ......................................................................
 # Helper
 press_runner() {
-   $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/$1" --entry-point="$2" ${LOG_SUFFIX}
-   assertEquals 0 ${PIPESTATUS[0]}
+  if [ "VERBOSE" = "1"]; then 
+    $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/$1" --entry-point="$2" | tee tebako_test.log
+    assertEquals 0 ${PIPESTATUS[0]}
+  else 
+    $DIR_BIN/tebako press 2>&1 --root="${DIR_TESTS}/$1" --entry-point="$2" > tebako_test.log
+    assertEquals 0 ${PIPESTATUS[0]}
+  fi
 
 # Check the first and the last messages expected from CMake script
   result="$( cat tebako_test.log )"
@@ -130,8 +156,7 @@ DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
 DIR_DEPS="$( cd $DIR_ROOT/deps && pwd )"
 DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
 
-LOG_SUFFIX="| tee tebako_test.log"
-#LOG_SUFFIX="> tebako_test.log"
+VERBOSE="1"
 
 echo "Running tebako tests"
 . $DIR_TESTS/shunit2/shunit2
