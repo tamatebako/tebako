@@ -54,7 +54,7 @@ test_tebako_setup() {
   $DIR_BIN/tebako setup 2>&1 | tee tebako_setup.log
   assertEquals 0 $?
 
-  ls -l
+  cat tebako_setup.log
 
 # Check the first and the last messages expected from CMake script
 #  $result = "$( cat tebako_setup.log )"
