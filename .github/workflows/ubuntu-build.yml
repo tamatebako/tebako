@@ -82,6 +82,6 @@ jobs:
       run: |
         ${{github.workspace}}/bin/tebako setup
 
-#    - name: tebako functional tests
-#      run: |
-#        ${{github.workspace}}/tests/scripts/functional-tests.sh
+    - name: tebako functional tests
+      run: |
+        ${{github.workspace}}/tests/scripts/functional-tests.sh
