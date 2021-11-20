@@ -172,35 +172,36 @@ press_runner() {
 test_tebako_press_01() {
    echo "tebako press test-01: simple Ruby script,  relative path to root, relative path to entry point"
    press_runner "${DIR_TESTS}/test-01" "test.rb" "test-01-package"
+   ls -l
 #   package_tester "test-01-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
 # 02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point
-#test_tebako_press_02() {
-#   echo "tebako press test-02: simple Ruby script, absolute path to root, relative path to entry point, non exisitng entrance"
-#   press_runner_103 "${DIR_TESTS}/test-01" "test-does-not-exist.rb" "test-02-package"
-#}
+test_tebako_press_02() {
+   echo "tebako press test-02: simple Ruby script, absolute path to root, relative path to entry point, non exisitng entrance"
+   press_runner_103 "${DIR_TESTS}/test-01" "test-does-not-exist.rb" "test-02-package"
+}
 
 # 03. Simple Ruby script, absolute path to root, absolute path to entry point
-#test_tebako_press_03() {
-#   echo "tebako press test-03: simple Ruby script, absolute path to root, absolute path to entry point"
-#   press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb" "test-03-package"
+test_tebako_press_03() {
+   echo "tebako press test-03: simple Ruby script, absolute path to root, absolute path to entry point"
+   press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb" "test-03-package"
 #   package_tester "test-03-package" "Hello!  This is test-1 talking from inside DwarFS"
-#}
+}
 
 #  04. Simple Ruby script, relative path to root, relative path to entry point
-#test_tebako_press_04() {
-#   echo "tebako press test-04: simple Ruby script, relative path to root, relative path to entry point"
-#   pushd ${DIR_ROOT}
-#   press_runner "tests/test-01" "test.rb" "test-04-package"
+test_tebako_press_04() {
+   echo "tebako press test-04: simple Ruby script, relative path to root, relative path to entry point"
+   pushd ${DIR_ROOT}
+   press_runner "tests/test-01" "test.rb" "test-04-package"
 #   package_tester "test-04-package" "Hello!  This is test-1 talking from inside DwarFS"
-#   popd
-#}
+   popd
+}
                                          
-#test_tebako_press_05() {
-#   echo "tebako press test-05: simple Ruby script, absolute path to root absolute path to entry point, not within root"
-#   press_runner_103 "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package"
-#}
+test_tebako_press_05() {
+   echo "tebako press test-05: simple Ruby script, absolute path to root absolute path to entry point, not within root"
+   press_runner_103 "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package"
+}
 
 #    - name: Test06 - tebako press - [Rails project]
 #      run: | 
