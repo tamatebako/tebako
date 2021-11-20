@@ -150,7 +150,7 @@ press_runner_103() {
    fi
 
 # Check the first and the last messages expected from CMake script
-   assertContains "$result" "Running tebako packager configuration script"
+   assertContains "$result" "Running tebako press script"
    assertContains "$result" "'tebako press' configure step failed"
 }
 
@@ -160,10 +160,16 @@ test_tebako_press_01() {
    echo "tebako press test-01: simple Ruby script,  relative path to root, relative path to entry point"
    press_runner "${DIR_TESTS}/test-01" "test.rb"
 
-#    - name: Test01 - Run packaged solution - [Simple Ruby script, relative path to entry point]
-#      run:  ${{github.workspace}}/output/tebako
-# [ TODO]        echo Tebako exit code $?
+   if [ "${VERBOSE}" == "yes" ]; then 
+     tebako | tee tebako_test.log
+     assertEquals 0 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( tebako )"
+     assertEquals 0 $?
+   fi
 
+   assertContains "$result" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
 # 02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point

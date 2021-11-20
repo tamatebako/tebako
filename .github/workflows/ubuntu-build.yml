@@ -1,9 +1,8 @@
 name: Ubuntu build
 
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
   push:
-    branches: [ master, issue-18 ]
+    branches: [ master]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -40,30 +39,6 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'skip ci')"
 
     steps:
-    - uses: actions/checkout@v2
-
-    - name: Create deps folder and cache key
-      run: |
-        mkdir ${{github.workspace}}/${{env.DEPS}}
-        echo "Keys" > key.txt
-        echo  ${{ env.INCBIN_TAG }} >> key.txt
-        echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
-        echo  ${{ env.RUBY_HASH }} >> key.txt
-        echo  ${{ env.BUNDLER_HASH }} >> key.txt
-    
-    - name: Checkout shell test framework
-      uses: actions/checkout@v2
-      with:
-        repository: kward/shunit2
-        path: ${{github.workspace}}/tests/shunit2
-        fetch-depth: 1
-      
-    - name: Process cache
-      uses: actions/cache@v2
-      with:
-        path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v17
-
 # Ref CMakeLists.txt for comments
     - name: Install packages Ubuntu
       run: |
@@ -76,6 +51,33 @@ jobs:
         libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
         libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libsqlite3-dev
         
+    - name: Checkout tebako scripts
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 1
+
+    - name: Checkout shell test framework
+      uses: actions/checkout@v2
+      with:
+        repository: kward/shunit2
+        path: ${{github.workspace}}/tests/shunit2
+        fetch-depth: 1
+      
+    - name: Create deps folder and cache key
+      run: |
+        mkdir ${{github.workspace}}/${{env.DEPS}}
+        echo "Keys" > key.txt
+        echo  ${{ env.INCBIN_TAG }} >> key.txt
+        echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
+        echo  ${{ env.RUBY_HASH }} >> key.txt
+        echo  ${{ env.BUNDLER_HASH }} >> key.txt
+    
+    - name: Process cache
+      uses: actions/cache@v2
+      with:
+        path: ${{github.workspace}}/${{env.DEPS}}
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v17
+
     - name: tebako functional tests
       run: |
         chmod +x ${{github.workspace}}/tests/test-00/test-00.sh
