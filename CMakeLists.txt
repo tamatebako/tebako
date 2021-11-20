@@ -76,14 +76,14 @@ if (NOT ${SETUP_MODE})
     cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
   endif()
 
-  if ("-${OUTPUT}" STREQUAL "-")
+  if ("-${PCKG}" STREQUAL "-")
     set(APP_NAME "${FS_CURRENT}/tebako")
   else()
-    cmake_path(IS_RELATIVE OUTPUT IS_OU_RELATIVE)
-    if(${IS_OU_RELATIVE})
-      cmake_path(SET APP_NAME NORMALIZE ${FS_CURRENT}/${OUTPUT})
+    cmake_path(IS_RELATIVE PCKG IS_PK_RELATIVE)
+    if(${IS_PK_RELATIVE})
+      cmake_path(SET APP_NAME NORMALIZE ${FS_CURRENT}/${PCKG})
     else()
-      cmake_path(SET APP_NAME NORMALIZE ${OUTPUT})
+      cmake_path(SET APP_NAME NORMALIZE ${PCKG})
     endif()
   endif()
 
@@ -339,7 +339,7 @@ if (NOT ${SETUP_MODE})
       add_custom_target(source_filesystem  
          COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
          COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && 
-                  ${DEPS}/bin/gem install ${GEM} --verbose --no-document --install-dir ${TGD}
+                  ${DEPS}/bin/gem install ${GEM} --verbose --no-document --install-dir ${DATA_SRC_DIR}
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
@@ -387,7 +387,6 @@ if (NOT ${SETUP_MODE})
   )
 
   add_custom_target(packaged_filesystem  
-     COMMAND ${CMAKE_COMMAND} -E echo "packaged_filesystem: packaging '${DATA_SRC_DIR}' to '${DATA_BIN_FILE}'"
      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
 #                                       ${DATA_SRC_DIR}/bin/b*  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem ${DATA_SRC_DIR}/bin/irb 
 #                                       ${DATA_SRC_DIR}/bin/ra* ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri  ${DATA_SRC_DIR}/bin/y2racc
@@ -410,14 +409,12 @@ if (NOT ${SETUP_MODE})
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
   add_custom_target(patched_ruby
-     COMMAND ${CMAKE_COMMAND} -E echo "Patching and building Ruby with embedded filesystem"
      COMMAND ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make
      DEPENDS setup tebako-fs
   )
   
   add_custom_target(tebako ALL
-    COMMAND ${CMAKE_COMMAND} -E echo "Copying ${RUBY_BINARY_DIR}/ruby to ${APP_NAME}"
     COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_BINARY_DIR}/ruby ${APP_NAME}
     COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
     DEPENDS patched_ruby 
