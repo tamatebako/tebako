@@ -152,19 +152,27 @@ press_runner() {
 #   assertContains "$result" "$2"
 #}
 
-press_runner_103() {
+press_runner_with_error() {
+# Runs 'tabako press' expecting failure
+# Parameters:
+# $1 -- project root
+# $2 -- entry point
+# $3 -- tebako package name
+# $4 -- expected error code
+# $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then 
      $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
-     assertEquals 103 ${PIPESTATUS[0]}
+     assertEquals $4 ${PIPESTATUS[0]}
      result="$( cat tebako_test.log )"
    else 
      result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
-     assertEquals 103 $?
+     assertEquals $4 $?
    fi
 
    assertContains "$result" "Running tebako press script"
-   assertContains "$result" "'tebako press' configure step failed"
+   assertContains "$result" "$5"
 }
+
 
 # ......................................................................
 #  01. Simple Ruby script, absolute path to root, relative path to entry point  
@@ -178,7 +186,7 @@ test_tebako_press_01() {
 # 02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point
 test_tebako_press_02() {
    echo "tebako press test-02: simple Ruby script, absolute path to root, relative path to entry point, non exisitng entrance"
-   press_runner_103 "${DIR_TESTS}/test-01" "test-does-not-exist.rb" "test-02-package"
+   press_runner_with_error "${DIR_TESTS}/test-01" "test-does-not-exist.rb" "test-02-package" 103 "'tebako press' configure step failed"
 }
 
 # 03. Simple Ruby script, absolute path to root, absolute path to entry point
