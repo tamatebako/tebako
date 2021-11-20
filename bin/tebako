@@ -176,7 +176,7 @@ case "$1" in
           exit 103  
         fi
 
-        cmake --build $prefix/output --target $output && rc=$? || rc=$?
+        cmake --build $prefix/output --target tebako && rc=$? || rc=$?
         if [ $rc -ne 0 ]; then
           echo "'tebako press' build step failed" 
           exit 104  
