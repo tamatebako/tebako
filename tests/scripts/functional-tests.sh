@@ -27,7 +27,7 @@
 
 # Tests
 #  00. Very basic tebako CLI tests (error handling)
-#  --  tebako setup (baseline for tests 01-17)
+#  --  tebako setup
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
 #  02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point   [Expected error at configure step]
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
@@ -94,7 +94,7 @@ test_CLI_unknown_command() {
 }
 
 # ......................................................................
-#  --  tebako setup (baseline for tests 01-17)
+#  --  tebako setup
 test_tebako_setup() {
   echo "tebako setup ... patience, please, it may take up to 1 hour."
   if [ "${VERBOSE}" == "1" ]; then 
@@ -119,25 +119,25 @@ test_tebako_setup() {
 
 # ......................................................................
 # Helper
-#press_runner() {
-#   if [ "${VERBOSE}" == "yes" ]; then 
-#     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
-#     assertEquals 0 ${PIPESTATUS[0]}
-#     result="$( cat tebako_test.log )"
-#   else 
-#     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
-#     assertEquals 0 $?
-#   fi
+press_runner() {
+   if [ "${VERBOSE}" == "yes" ]; then 
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
+     assertEquals 0 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
+     assertEquals 0 $?
+   fi
 
 # Check the first and the last messages expected from CMake script
-#   assertContains "$result" "Running tebako press script"
-#   assertContains "$result" "Tebako packaging has completed"
+   assertContains "$result" "Running tebako press script"
+   assertContains "$result" "Tebako packaging has completed"
 
 # Check that packaged executable file is not a dynamic executable
-#   result="$( ldd $3 2>&1 )"
-#   assertEquals 1 $?
-#   assertContains "$result" "not a dynamic executable"
-#}
+   result="$( ldd $3 2>&1 )"
+   assertEquals 1 $?
+   assertContains "$result" "not a dynamic executable"
+}
 
 #package_tester() {
 #   if [ "${VERBOSE}" == "yes" ]; then 
@@ -169,11 +169,11 @@ test_tebako_setup() {
 
 # ......................................................................
 #  01. Simple Ruby script, absolute path to root, relative path to entry point  
-#test_tebako_press_01() {
-#   echo "tebako press test-01: simple Ruby script,  relative path to root, relative path to entry point"
-#   press_runner "${DIR_TESTS}/test-01" "test.rb" "test-01-package"
+test_tebako_press_01() {
+   echo "tebako press test-01: simple Ruby script,  relative path to root, relative path to entry point"
+   press_runner "${DIR_TESTS}/test-01" "test.rb" "test-01-package"
 #   package_tester "test-01-package" "Hello!  This is test-1 talking from inside DwarFS"
-#}
+}
 
 # 02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point
 #test_tebako_press_02() {
