@@ -37,6 +37,8 @@ cp -f $PATCH_DIR/mainlibs-pass2.mk $2/mainlibs-pass2.mk
 # Pin tebako static build libraries
 restore_and_save $1/template/Makefile.in
 sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass2.mk/g" $1/template/Makefile.in
+sed -i "s/include  mainlibs-pass1.mk/include  mainlibs-pass2.mk/g" $1/template/Makefile.in
+
 
 # Fix bigdecimal extension
 # [I cannot explain why it is required. It does not seem to be related to any patching we do]

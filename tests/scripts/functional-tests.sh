@@ -177,7 +177,7 @@ test_tebako_setup() {
   assertContains "$result" "Tebako setup has completed"
 
 # Check that ruby is not a dynamic executable
-  result="$( ldd ${DIR_DEPS}/bin/ruby 2>&1 )"
+  result="$( ldd ${DIR_DEPS}/src/_ruby-build/ruby 2>&1 )"
   assertEquals 1 $?
   assertContains "$result" "not a dynamic executable"
 }
@@ -185,7 +185,7 @@ test_tebako_setup() {
 # ......................................................................
 #  01. Simple Ruby script, absolute path to root, relative path to entry point  
 test_tebako_press_01() {
-   echo "tebako press test-01: simple Ruby script,  relative path to root, relative path to entry point"
+   echo "tebako press test-01: simple Ruby script,  absolute path to root, relative path to entry point"
    press_runner "${DIR_TESTS}/test-01" "test.rb" "test-01-package"
    package_runner "./test-01-package" "Hello!  This is test-1 talking from inside DwarFS"
 }

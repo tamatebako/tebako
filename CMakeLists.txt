@@ -239,12 +239,17 @@ ExternalProject_Add(${RUBY_PRJ}
  
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 
-add_custom_target(setup
-   ${CMAKE_COMMAND} -E echo "Tebako setup has completed"
-   DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
-)
+if (${SETUP_MODE})
+  add_custom_target(setup
+    ${CMAKE_COMMAND} -E echo "Tebako setup has completed"
+    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
+  )
+else (${SETUP_MODE})
+  add_custom_target(setup
+    ${CMAKE_COMMAND} -E echo "Tebako setup has been verified"
+    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} 
+  )
 
-if (NOT ${SETUP_MODE})
   set (TBD ${DATA_SRC_DIR}/bin)
   set (TLD ${DATA_SRC_DIR}/local)
 # TGD folder is used to install gems 
@@ -264,6 +269,7 @@ if (NOT ${SETUP_MODE})
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
+           COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
            DEPENDS ${RUBY_PRJ} 
   )
@@ -390,9 +396,9 @@ if (NOT ${SETUP_MODE})
 
   add_custom_target(packaged_filesystem  
      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
-#                                       ${DATA_SRC_DIR}/bin/b*  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem ${DATA_SRC_DIR}/bin/irb 
-#                                       ${DATA_SRC_DIR}/bin/ra* ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri  ${DATA_SRC_DIR}/bin/y2racc
-     COMMAND chmod +x ${DEPS_BIN_DIR}/*
+                                        ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
+                                        ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
+                                        ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
      DEPENDS setup source_filesystem
@@ -422,4 +428,4 @@ if (NOT ${SETUP_MODE})
     DEPENDS patched_ruby 
   )
 
-endif(NOT ${SETUP_MODE})
+endif(${SETUP_MODE})
