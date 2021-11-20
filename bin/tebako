@@ -120,6 +120,9 @@ if [ "$prefix" == "-" ]; then
   prefix="$( pwd )"
 fi
 
+export CC=${CC:-gcc}
+export CXX=${CXX:-g++}
+
 case "$1" in
 	setup)
         if [ "$config" == "-" ]; then

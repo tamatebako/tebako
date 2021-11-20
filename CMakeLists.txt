@@ -231,9 +231,10 @@ ExternalProject_Add(${RUBY_PRJ}
                      --with-static-linked-ext
                      --with-jemalloc
                      --srcdir=${RUBY_SOURCE_DIR} 
-                     --prefix=${DEPS}
+                     --prefix=${DATA_SRC_DIR}
                      CFLAGS=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
+   INSTALL_COMMAND ""
 )
  
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
@@ -263,6 +264,7 @@ if (NOT ${SETUP_MODE})
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
            DEPENDS ${RUBY_PRJ} 
   )
 
@@ -339,7 +341,7 @@ if (NOT ${SETUP_MODE})
       add_custom_target(source_filesystem  
          COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
          COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && 
-                  ${DEPS}/bin/gem install ${GEM} --verbose --no-document --install-dir ${DATA_SRC_DIR}
+                  ${DATA_SRC_DIR}/bin/gem install ${GEM} --verbose --no-document --install-dir ${TGD}
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )

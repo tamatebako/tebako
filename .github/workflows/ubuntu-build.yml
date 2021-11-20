@@ -30,7 +30,7 @@ env:
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
   BUNDLER_VER: "2.2.3"
   BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
-# show cmake output (yes/no)
+# show cmake output aka verbose (yes/no)
   VERBOSE: no
 
 jobs:
@@ -76,12 +76,10 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v17
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v18
 
     - name: tebako setup
-      run: |
-        ${{github.workspace}}/bin/tebako setup
+      run:  ${{github.workspace}}/bin/tebako setup
 
     - name: tebako functional tests
-      run: |
-        ${{github.workspace}}/tests/scripts/functional-tests.sh
+      run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
