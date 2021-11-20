@@ -39,8 +39,8 @@ jobs:
     if: "!contains(github.event.head_commit.message, 'skip ci')"
 
     steps:
-# Ref CMakeLists.txt for comments
-    - name: Install packages Ubuntu
+# Ref CMakeLists.txt for the full list and comments
+    - name: Install packages 
       run: |
         sudo apt-get update
         sudo apt-get install \
@@ -78,6 +78,10 @@ jobs:
         path: ${{github.workspace}}/${{env.DEPS}}
         key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v17
 
-    - name: tebako functional tests
+    - name: tebako setup
       run: |
-        ${{github.workspace}}/tests/scripts/functional-tests.sh
+        ${{github.workspace}}/bin/tebako setup
+
+#    - name: tebako functional tests
+#      run: |
+#        ${{github.workspace}}/tests/scripts/functional-tests.sh
