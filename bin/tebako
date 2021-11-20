@@ -132,7 +132,7 @@ case "$1" in
               -DSETUP_MODE:BOOLEAN=ON    \
               -G "Unix Makefiles"        \
               -S $prefix                 \
-              -B $prefix/packageName	 && rc=$? || rc=$?
+              -B $prefix/output	 && rc=$? || rc=$?
         if [ $rc -ne 0 ]; then
           echo "'tebako setup' configure step failed" 
           exit 101 
