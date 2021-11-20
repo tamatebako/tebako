@@ -297,9 +297,9 @@ if (NOT ${SETUP_MODE})
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
          add_custom_target(source_filesystem  
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-            COMMAND unset GEM_HOME && unset GEM_PATH && export PATH=${TBD}:$PATH && cd ${DATA_PRE_DIR} && gem build ${GEMSPEC}
+            COMMAND unset GEM_HOME && unset GEM_PATH && export PATH="${DEPS}/bin:$PATH" && cd ${DATA_PRE_DIR} && gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
+            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export "${DEPS}/bin:$PATH" && 
                     gem install *.gem --verbose --no-document --install-dir ${TGD}
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
@@ -317,7 +317,7 @@ if (NOT ${SETUP_MODE})
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
     ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
     add_custom_target(source_filesystem  
-       COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+       COMMAND ${DEPS}/bin/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
        COMMAND ${PROJECT_SOURCE_DIR}/bin/bundle_in_env.sh ${TLD} ${TBD}
@@ -335,10 +335,11 @@ if (NOT ${SETUP_MODE})
       message("Installing Ruby gem from ${GEM}") 
       set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
+#      && export PATH=${TBD}:$PATH
       add_custom_target(source_filesystem  
          COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-         COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
-                  gem install ${GEM} --verbose --no-document --install-dir ${TGD}
+         COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && 
+                  ${DEPS}/bin/gem install ${GEM} --verbose --no-document --install-dir ${TGD}
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )

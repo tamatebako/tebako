@@ -31,8 +31,8 @@
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
 #  02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point   [Expected error at configure step]
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
-#  04. Simple Ruby script, absolute path to entry point, relative path to root
-#  05. Simple Ruby script, absolute path to entry point, not within root            Expected error at configure step
+#  04. Simple Ruby script, relative path to root, relative path to entry point
+#  05. Simple Ruby script, absolute path to root absolute path to entry point, not within root             [Expected error at configure step]
 #  06. Rails project                                                                                                       
 #  07. Rails project, ruby and bundler version mismatch                             Expected error at build step
 #  08. Rails project, no entry point                                                Expected error at build step           
@@ -121,11 +121,11 @@ test_tebako_setup() {
 # Helper
 press_runner() {
    if [ "${VERBOSE}" == "yes" ]; then 
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" 2>&1 | tee tebako_test.log
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals 0 ${PIPESTATUS[0]}
      result="$( cat tebako_test.log )"
    else 
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 2>&1 )"
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
      assertEquals 0 $?
    fi
 
@@ -134,18 +134,31 @@ press_runner() {
    assertContains "$result" "Tebako packaging has completed"
 
 # Check that packaged executable file is not a dynamic executable
-   result="$( ldd tebako 2>&1 )"
+   result="$( ldd $3 2>&1 )"
    assertEquals 1 $?
    assertContains "$result" "not a dynamic executable"
 }
 
+package_tester() {
+   if [ "${VERBOSE}" == "yes" ]; then 
+     $1 | tee tebako_test.log
+     assertEquals 0 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( $1 )"
+     assertEquals 0 $?
+   fi
+
+   assertContains "$result" "$2"
+}
+
 press_runner_103() {
    if [ "${VERBOSE}" == "yes" ]; then 
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" 2>&1 | tee tebako_test.log
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals 103 ${PIPESTATUS[0]}
      result="$( cat tebako_test.log )"
    else 
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 2>&1 )"
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
      assertEquals 103 $?
    fi
 
@@ -158,51 +171,36 @@ press_runner_103() {
 #  01. Simple Ruby script, absolute path to root, relative path to entry point  
 test_tebako_press_01() {
    echo "tebako press test-01: simple Ruby script,  relative path to root, relative path to entry point"
-   press_runner "${DIR_TESTS}/test-01" "test.rb"
-
-   if [ "${VERBOSE}" == "yes" ]; then 
-     tebako | tee tebako_test.log
-     assertEquals 0 ${PIPESTATUS[0]}
-     result="$( cat tebako_test.log )"
-   else 
-     result="$( tebako )"
-     assertEquals 0 $?
-   fi
-
-   assertContains "$result" "Hello!  This is test-1 talking from inside DwarFS"
+   press_runner "${DIR_TESTS}/test-01" "test.rb" "test-01-package"
+   package_tester "test-01-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
 # 02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point
 test_tebako_press_02() {
    echo "tebako press test-02: simple Ruby script, absolute path to root, relative path to entry point, non exisitng entrance"
-   press_runner_103 "${DIR_TESTS}/test-01" "test-does-not-exist.rb"
+   press_runner_103 "${DIR_TESTS}/test-01" "test-does-not-exist.rb" "test-02-package"
 }
 
-# 03. Simple Ruby script, absolute path to entry point
+# 03. Simple Ruby script, absolute path to root, absolute path to entry point
 test_tebako_press_03() {
-   echo "tebako press test-03: simple Ruby script, absolute path to entry point"
-   press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb"
-#    - name: Test03 - Run packaged solution - [Simple Ruby script, absolute path to entry point]
-#      run:  ${{github.workspace}}/output/tebako
+   echo "tebako press test-03: simple Ruby script, absolute path to root, absolute path to entry point"
+   press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb" "test-03-package"
+   package_tester "test-03-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
-#  04. Simple Ruby script, relative path to root,  relative path to entry point
-
-#    - name: Test04 - tebako press - [Simple Ruby script, absolute path to entry point, relative path to root ]
-#      run: | 
-#        ${{github.workspace}}/bin/tebako press                   \
-#              --root="tests/test-01"                             \
-#              --entry-point="test.rb"                              
-
-#    - name: Test04 - Run packaged solution - [Simple Ruby script, absolute path to entry point, relative path to root ]
-#      run:  ${{github.workspace}}/output/tebako
-                                           
-#    - name: Test05 - tebako press - [Simple Ruby script, absolute path to entry point, not within root]
-#      run: | 
-#        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-#              "${{github.workspace}}/tests/test-01"               \
-#              "${{github.workspace}}/tests/test-00/test.rb"       \
-#              103                           
+#  04. Simple Ruby script, relative path to root, relative path to entry point
+test_tebako_press_04() {
+   echo "tebako press test-04: simple Ruby script, relative path to root, relative path to entry point"
+   pushd ${DIR_ROOT}
+   press_runner "tests/test-01" "test.rb" "test-04-package"
+   package_tester "test-04-package" "Hello!  This is test-1 talking from inside DwarFS"
+   popd
+}
+                                         
+test_tebako_press_05() {
+   echo "tebako press test-05: simple Ruby script, absolute path to root absolute path to entry point, not within root"
+   press_runner_103 "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package"
+}
 
 #    - name: Test06 - tebako press - [Rails project]
 #      run: | 
