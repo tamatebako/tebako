@@ -31,7 +31,7 @@ env:
   BUNDLER_VER: "2.2.3"
   BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
 # show cmake output aka verbose (yes/no)
-  VERBOSE: no
+  VERBOSE: yes
 
 jobs:
   Ubuntu-build:

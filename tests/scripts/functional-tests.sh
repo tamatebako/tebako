@@ -99,22 +99,22 @@ press_runner_with_error() {
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
 #  04. Simple Ruby script, relative path to root, relative path to entry point
 #  05. Simple Ruby script, absolute path to root absolute path to entry point, not within root             [Expected error at configure step]
-#  06. Rails project                                                                                                       
-#  07. Rails project, ruby and bundler version mismatch                             Expected error at build step
-#  08. Rails project, no entry point                                                Expected error at build step           
-#  09. Ruby gem (xxx.gem file)  
-#  10. Ruby gem (xxx.gem file), no entry point                                      Expected error at build step
-#  11. Ruby gem, no gemfile, with gemspec                                             
-#  12. Ruby gem, no gemfile, multiple gemspecs                                      Expected error at configure step
-#  13. Ruby gem, no gemfile, gemspec error                                          Expected error at build step  
-#  14. Ruby gem, no gemfile, gemspec, no entry point                                Expected error at build step  
-#  15. Ruby gem, gemfile, gemspec                                             
-#  16. Ruby gem, gemfile, gemspec error                                             Expected error at build step  
-#  17. Ruby gem, gemfile, gemspec, no entry point                                   Expected error at build step  
+#  -06. Rails project
+#  -07. Rails project, ruby and bundler version mismatch                             Expected error at build step
+#  -08. Rails project, no entry point                                                Expected error at build step
+#  09. Ruby gem (xxx.gem file)
+#  -10. Ruby gem (xxx.gem file), no entry point                                      Expected error at build step
+#  -11. Ruby gem, no gemfile, with gemspec
+#  -12. Ruby gem, no gemfile, multiple gemspecs                                      Expected error at configure step
+#  -13. Ruby gem, no gemfile, gemspec error                                          Expected error at build step
+#  -14. Ruby gem, no gemfile, gemspec, no entry point                                Expected error at build step
+#  -15. Ruby gem, gemfile, gemspec
+#  16. Ruby gem, gemfile, gemspec error                                             [Expected error at build step]
+#  -17. Ruby gem, gemfile, gemspec, no entry point                                   [Expected error at build step]
 #  18 - 39  -- reserved
-#  40. CLI.  Change output name                                                     [depends on Test-01] 
+#  -40. CLI.  Change output name                                                     [depends on Test-01]
 #  41 - 49  reserved
-#  50. AUC. Check that it is possible to verify content of package fs               [depends on Test-01] 
+#  -50. AUC. Check that it is possible to verify content of package fs               [depends on Test-01]
 
 
 # ......................................................................
@@ -240,14 +240,14 @@ test_tebako_press_05() {
 #              "test-does-not-exist.rb"                            \
 #              104                            
 
-#    - name: Test09 - tebako press - [xxx.gem, no gemspec, no gemfile]
-#      run: | 
-#        ${{github.workspace}}/bin/tebako press                    \
-#              --root="${{github.workspace}}/tests/test-09"        \
-#              --entry-point="tebako-test-run.rb"                              
 
-#    - name: Test09 - Run packaged solution - [xxx.gem, no gemspec, no gemfile]
-#      run:  ${{github.workspace}}/output/tebako
+# ......................................................................
+#  09. xxx.gem, no gemspec, no gemfile
+test_tebako_press_09() {
+   echo "tebako press test-09: xxx.gem, no gemspec, no gemfile"
+   press_runner "${DIR_TESTS}/test-09" "tebako-test-run.rb" "test-09-package"
+   package_runner "./test-09-package" "| a1 | b1 |"
+}
 
 #    - name: Test10 - tebako press - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
 #      run: | 
@@ -295,12 +295,11 @@ test_tebako_press_05() {
 #    - name: Test15 - Run packaged solution - [Ruby gem, gemspec, gemfile]
 #      run:  ${{github.workspace}}/output/tebako
 
-#    - name: Test16 - tebako press - [Ruby gem, gemspec, gemfile with error]
-#      run: | 
-#        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-#              "${{github.workspace}}/tests/test-16"               \
-#              "tebako-test-run.rb"                                \
-#              104                   
+# 16. Ruby gem, gemspec, gemfile with error
+test_tebako_press_16() {
+   echo "tebako press test-16: Ruby gem, gemspec, gemfile with error"
+   press_runner_with_error "${DIR_TESTS}/test-16" "tebako-test-run.rb" "test-16-package" 104 "'tebako press' build step failed"
+}
 
 #    - name: Test17 - tebako press - [Ruby gem, gemspec, gemfile, entry point does not exist]
 #      run: | 
