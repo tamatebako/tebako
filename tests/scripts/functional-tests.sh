@@ -121,11 +121,11 @@ test_tebako_setup() {
 # Helper
 press_runner() {
    if [ "${VERBOSE}" == "yes" ]; then 
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
      assertEquals 0 ${PIPESTATUS[0]}
      result="$( cat tebako_test.log )"
    else 
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
      assertEquals 0 $?
    fi
 
@@ -154,11 +154,11 @@ package_tester() {
 
 press_runner_103() {
    if [ "${VERBOSE}" == "yes" ]; then 
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
      assertEquals 103 ${PIPESTATUS[0]}
      result="$( cat tebako_test.log )"
    else 
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
      assertEquals 103 $?
    fi
 
