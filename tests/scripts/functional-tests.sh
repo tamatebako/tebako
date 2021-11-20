@@ -139,18 +139,18 @@ press_runner() {
    assertContains "$result" "not a dynamic executable"
 }
 
-#package_tester() {
-#   if [ "${VERBOSE}" == "yes" ]; then 
-#     $1 | tee tebako_test.log
-#     assertEquals 0 ${PIPESTATUS[0]}
-#     result="$( cat tebako_test.log )"
-#   else 
-#     result="$( $1 )"
-#     assertEquals 0 $?
-#   fi
+package_runner() {
+   if [ "${VERBOSE}" == "yes" ]; then 
+     $1 | tee tebako_test.log
+     assertEquals 0 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( $1 )"
+     assertEquals 0 $?
+   fi
 
-#   assertContains "$result" "$2"
-#}
+   assertContains "$result" "$2"
+}
 
 press_runner_with_error() {
 # Runs 'tabako press' expecting failure
@@ -179,8 +179,7 @@ press_runner_with_error() {
 test_tebako_press_01() {
    echo "tebako press test-01: simple Ruby script,  relative path to root, relative path to entry point"
    press_runner "${DIR_TESTS}/test-01" "test.rb" "test-01-package"
-   ls -l
-#   package_tester "test-01-package" "Hello!  This is test-1 talking from inside DwarFS"
+   package_runner "./test-01-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
 # 02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point
@@ -207,7 +206,7 @@ test_tebako_press_04() {
                                          
 test_tebako_press_05() {
    echo "tebako press test-05: simple Ruby script, absolute path to root absolute path to entry point, not within root"
-   press_runner_103 "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package"
+   press_runner_with_error "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package" 103 "'tebako press' configure step failed"
 }
 
 #    - name: Test06 - tebako press - [Rails project]
