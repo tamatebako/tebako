@@ -25,6 +25,72 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+# ......................................................................
+# Helper functions
+press_runner() {
+# Runs 'tabako press' 
+# Parameters:
+# $1 -- project root
+# $2 -- entry point
+# $3 -- tebako package name
+   if [ "${VERBOSE}" == "yes" ]; then 
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
+     assertEquals 0 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
+     assertEquals 0 $?
+   fi
+
+# Check the first and the last messages expected from CMake script
+   assertContains "$result" "Running tebako press script"
+   assertContains "$result" "Tebako packaging has completed"
+
+# Check that packaged executable file is not a dynamic executable
+   result="$( ldd $3 2>&1 )"
+   assertEquals 1 $?
+   assertContains "$result" "not a dynamic executable"
+}
+
+package_runner() {
+# Runs a package built by tebako
+# Parameters:
+# $1 -- file name
+# $2 -- expected output
+   if [ "${VERBOSE}" == "yes" ]; then 
+     $1 | tee tebako_test.log
+     assertEquals 0 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( $1 )"
+     assertEquals 0 $?
+   fi
+
+   assertContains "$result" "$2"
+}
+
+press_runner_with_error() {
+# Runs 'tabako press' expecting failure
+# Parameters:
+# $1 -- project root
+# $2 -- entry point
+# $3 -- tebako package name
+# $4 -- expected error code
+# $5 -- expected error message
+   if [ "${VERBOSE}" == "yes" ]; then 
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
+     assertEquals $4 ${PIPESTATUS[0]}
+     result="$( cat tebako_test.log )"
+   else 
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
+     assertEquals $4 $?
+   fi
+
+   assertContains "$result" "Running tebako press script"
+   assertContains "$result" "$5"
+}
+
+# ......................................................................
 # Tests
 #  00. Very basic tebako CLI tests (error handling)
 #  --  tebako setup
@@ -116,64 +182,6 @@ test_tebako_setup() {
   assertContains "$result" "not a dynamic executable"
 }
 
-
-# ......................................................................
-# Helper
-press_runner() {
-   if [ "${VERBOSE}" == "yes" ]; then 
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
-     assertEquals 0 ${PIPESTATUS[0]}
-     result="$( cat tebako_test.log )"
-   else 
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
-     assertEquals 0 $?
-   fi
-
-# Check the first and the last messages expected from CMake script
-   assertContains "$result" "Running tebako press script"
-   assertContains "$result" "Tebako packaging has completed"
-
-# Check that packaged executable file is not a dynamic executable
-   result="$( ldd $3 2>&1 )"
-   assertEquals 1 $?
-   assertContains "$result" "not a dynamic executable"
-}
-
-package_runner() {
-   if [ "${VERBOSE}" == "yes" ]; then 
-     $1 | tee tebako_test.log
-     assertEquals 0 ${PIPESTATUS[0]}
-     result="$( cat tebako_test.log )"
-   else 
-     result="$( $1 )"
-     assertEquals 0 $?
-   fi
-
-   assertContains "$result" "$2"
-}
-
-press_runner_with_error() {
-# Runs 'tabako press' expecting failure
-# Parameters:
-# $1 -- project root
-# $2 -- entry point
-# $3 -- tebako package name
-# $4 -- expected error code
-# $5 -- expected error message
-   if [ "${VERBOSE}" == "yes" ]; then 
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
-     assertEquals $4 ${PIPESTATUS[0]}
-     result="$( cat tebako_test.log )"
-   else 
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
-     assertEquals $4 $?
-   fi
-
-   assertContains "$result" "Running tebako press script"
-   assertContains "$result" "$5"
-}
-
-
 # ......................................................................
 #  01. Simple Ruby script, absolute path to root, relative path to entry point  
 test_tebako_press_01() {
@@ -192,16 +200,16 @@ test_tebako_press_02() {
 test_tebako_press_03() {
    echo "tebako press test-03: simple Ruby script, absolute path to root, absolute path to entry point"
    press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb" "test-03-package"
-#   package_tester "test-03-package" "Hello!  This is test-1 talking from inside DwarFS"
+   package_runner "test-03-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
 #  04. Simple Ruby script, relative path to root, relative path to entry point
 test_tebako_press_04() {
    echo "tebako press test-04: simple Ruby script, relative path to root, relative path to entry point"
-   pushd ${DIR_ROOT}
+   pushd ${DIR_ROOT} > /dev/null
    press_runner "tests/test-01" "test.rb" "test-04-package"
-#   package_tester "test-04-package" "Hello!  This is test-1 talking from inside DwarFS"
-   popd
+   package_runner "test-04-package" "Hello!  This is test-1 talking from inside DwarFS"
+   popd > /dev/null
 }
                                          
 test_tebako_press_05() {
