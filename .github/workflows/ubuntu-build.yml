@@ -2,7 +2,7 @@ name: Ubuntu build
 
 on:
   push:
-    branches: [ master, naxirmx-issue-18 ]
+    branches: [ master, maxirmx-issue-18 ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
