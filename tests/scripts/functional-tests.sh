@@ -95,15 +95,15 @@ press_runner_with_error() {
 #  00. Very basic tebako CLI tests (error handling)
 #  --  tebako setup
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
-#  02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point   [Expected error at configure step]
+#  02. Simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist  [Expected error at configure step]
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
 #  04. Simple Ruby script, relative path to root, relative path to entry point
-#  05. Simple Ruby script, absolute path to root absolute path to entry point, not within root             [Expected error at configure step]
+#  05. Simple Ruby script, absolute path to root absolute path to entry point, entry point not within root  [Expected error at configure step]
 #  -06. Rails project
 #  -07. Rails project, ruby and bundler version mismatch                             Expected error at build step
 #  -08. Rails project, no entry point                                                Expected error at build step
-#  09. Ruby gem (xxx.gem file)
-#  -10. Ruby gem (xxx.gem file), no entry point                                      Expected error at build step
+#  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
+#  10. Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist                               [Expected error at build step]
 #  -11. Ruby gem, no gemfile, with gemspec
 #  -12. Ruby gem, no gemfile, multiple gemspecs                                      Expected error at configure step
 #  -13. Ruby gem, no gemfile, gemspec error                                          Expected error at build step
@@ -185,27 +185,27 @@ test_tebako_setup() {
 # ......................................................................
 #  01. Simple Ruby script, absolute path to root, relative path to entry point  
 test_tebako_press_01() {
-   echo "tebako press test-01: simple Ruby script,  absolute path to root, relative path to entry point"
+   echo "==> simple Ruby script,  absolute path to root, relative path to entry point"
    press_runner "${DIR_TESTS}/test-01" "test.rb" "test-01-package"
    package_runner "./test-01-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
-# 02. Simple Ruby script, absolute path to root, relative path to entry point, non exisitng entry point
+# 02. Simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist
 test_tebako_press_02() {
-   echo "tebako press test-02: simple Ruby script, absolute path to root, relative path to entry point, non exisitng entrance"
+   echo "==> simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist"
    press_runner_with_error "${DIR_TESTS}/test-01" "test-does-not-exist.rb" "test-02-package" 103 "'tebako press' configure step failed"
 }
 
 # 03. Simple Ruby script, absolute path to root, absolute path to entry point
 test_tebako_press_03() {
-   echo "tebako press test-03: simple Ruby script, absolute path to root, absolute path to entry point"
+   echo "==> simple Ruby script, absolute path to root, absolute path to entry point"
    press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb" "test-03-package"
    package_runner "./test-03-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
 #  04. Simple Ruby script, relative path to root, relative path to entry point
 test_tebako_press_04() {
-   echo "tebako press test-04: simple Ruby script, relative path to root, relative path to entry point"
+   echo "==> simple Ruby script, relative path to root, relative path to entry point"
    pushd ${DIR_ROOT} > /dev/null
    press_runner "tests/test-01" "test.rb" "test-04-package"
    package_runner "./test-04-package" "Hello!  This is test-1 talking from inside DwarFS"
@@ -213,7 +213,7 @@ test_tebako_press_04() {
 }
                                          
 test_tebako_press_05() {
-   echo "tebako press test-05: simple Ruby script, absolute path to root absolute path to entry point, not within root"
+   echo "==> simple Ruby script, absolute path to root absolute path to entry point, not within root"
    press_runner_with_error "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package" 103 "'tebako press' configure step failed"
 }
 
@@ -242,14 +242,21 @@ test_tebako_press_05() {
 
 
 # ......................................................................
-#  09. xxx.gem, no gemspec, no gemfile
+#  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 test_tebako_press_09() {
-   echo "tebako press test-09: xxx.gem, no gemspec, no gemfile"
+   echo "==> Ruby gem (xxx.gem, no gemspec, no gemfile)"
    press_runner "${DIR_TESTS}/test-09" "tebako-test-run.rb" "test-09-package"
    package_runner "./test-09-package" "| a1 | b1 |"
 }
 
-#    - name: Test10 - tebako press - [xxx.gem, no gemspec, no gemfile, entry point does not exist]
+# ......................................................................
+#  10. Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist
+test_tebako_press_10() {
+   echo "==> Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist"
+   press_runner_with_error "${DIR_TESTS}/test-09" "test-does-not-exist.rb" "test-10-package" 104 "'tebako press' build step failed"
+}
+
+#    - name: Test10 - tebako press - []
 #      run: | 
 #        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
 #              "${{github.workspace}}/tests/test-09"               \
