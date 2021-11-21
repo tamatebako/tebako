@@ -107,7 +107,7 @@ press_runner_with_error() {
 #  11. Ruby gem (no gemfile, with gemspec)
 #  12. Ruby gem (no gemfile, with gemspec), multiple gemspecs                                               [Expected error at configure step]
 #  13. Ruby gem (no gemfile, with gemspec), gemspec error                                                   [Expected error at build step]
-#  14. Ruby gem (no gemfile, with gemspec), entry point does not exist                                      [Expected error at build step]
+#  14. Ruby gem (no gemfile, with gemspec), entry point does not exist                                      [Expected error at configure step]
 #  -15. Ruby gem, gemfile, gemspec
 #  16. Ruby gem, gemfile, gemspec error                                             [Expected error at build step]
 #  -17. Ruby gem, gemfile, gemspec, no entry point                                   [Expected error at build step]
@@ -282,7 +282,7 @@ test_tebako_press_13() {
 #  14. Ruby gem (no gemfile, with gemspec), entry point does not exist
 test_tebako_press_14() {
    echo "==>  Ruby gem (no gemfile, with gemspec), entry point does not exist"
-   press_runner_with_error "${DIR_TESTS}/test-14" "test-does-not-exist.rb" "test-14-package" 104 "'tebako press' build step failed"
+   press_runner_with_error "${DIR_TESTS}/test-14" "test-does-not-exist.rb" "test-14-package" 103 "'tebako press' configure step failed"
 }
 
 #    - name: Test15 - tebako press - [Ruby gem, gemspec, gemfile]
