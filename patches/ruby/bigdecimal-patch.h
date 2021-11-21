@@ -27,61 +27,21 @@
  *
  */
 
-#include <cerrno>
+#ifndef HAVE_RB_SYM2STR
+#define HAVE_RB_SYM2STR  1
+#endif
 
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#ifndef HAVE_RB_ARRAY_CONST_PTR
+#define HAVE_RB_ARRAY_CONST_PTR 1
+#endif
 
-#include <boost/system/error_code.hpp>
+#ifndef HAVE_RB_RATIONAL_NUM
+#define HAVE_RB_RATIONAL_NUM 1
+#endif
 
-#include "tebako-mfs.h"
+#ifndef HAVE_RB_RATIONAL_DEN
+#define HAVE_RB_RATIONAL_DEN 1
+#endif
 
-namespace tebako {
 
-boost::system::error_code mfs::lock(off_t offset, size_t size) {
-  boost::system::error_code ec;
-  auto addr = reinterpret_cast<const uint8_t*>(addr_) + offset;
-  if (::mlock(addr, size) != 0) {
-    ec.assign(errno, boost::system::generic_category());
-  }
-  return ec;
-}
 
-boost::system::error_code mfs::release(off_t offset, size_t size) {
-  boost::system::error_code ec;
-  auto misalign = offset % page_size_;
-
-  offset -= misalign;
-  size += misalign;
-  size -= size % page_size_;
-
-  auto addr = reinterpret_cast<const uint8_t*>(addr_) + offset;
-  if (::munlock(addr, size) != 0) {
-      ec.assign(errno, boost::system::generic_category());
-  }
-  return ec;
-}
-
-boost::system::error_code mfs::release_until(off_t offset) {
-  boost::system::error_code ec;
-
-  offset -= offset % page_size_;
-
-  if (::munlock(addr_, offset) != 0) {
-      ec.assign(errno, boost::system::generic_category());
-  }
-  return ec;
-}
-
-void const* mfs::addr() const { return addr_; }
-
-size_t mfs::size() const { return size_; }
-
-mfs::mfs(const void* addr, size_t size):
-      size_(size),
-      addr_(addr),
-      page_size_(::sysconf(_SC_PAGESIZE)) {}
-
-} 

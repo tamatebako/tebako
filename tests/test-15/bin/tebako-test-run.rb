@@ -6,5 +6,5 @@ require "test"
 begin
   instance = Tebako::Bundle::Test::TebakoTest.new
   instance.run!
-end 
+end
 

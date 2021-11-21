@@ -1,5 +1,4 @@
-#! /bin/bash
-#
+#!/bin/bash
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -25,29 +24,36 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+restore_and_save() {
+  test -e $1.old && cp -f $1.old $1
+  cp -f $1 $1.old
 
-testHelp() {
-  result="$( $DIR/tebako --help )"
-  assertEquals 0 $?
-  assertContains "$result" "Usage:"
 }
 
-testMissingCommand() {
-  result="$( $DIR/tebako )"
-  assertEquals 4 $?
-  assertContains "$result" "Missing command"
-  assertContains "$result" "Usage:"
-}
+# Copy make script include file that list all libraries required for tebako static build
+PATCH_DIR="$( cd "$( dirname "$0" )" && pwd )"
+cp -f $PATCH_DIR/mainlibs-pass1.mk $2/mainlibs-pass1.mk
 
-testUnknownCommand() {
-  result="$( $DIR/tebako jump )"
-  assertEquals 5 $?
-  assertContains "$result" "Unknown command"
-  assertContains "$result" "Usage:"
-}
+# Pin tebako static build libraries
+restore_and_save $1/template/Makefile.in
+sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass1.mk/g" $1/template/Makefile.in
 
-# .......................................
-DIR0="$( cd "$( dirname "$0" )" && pwd )"
-DIR="$( cd $DIR0/../../bin && pwd )"
-echo "Running tebako CLI tests at $DIR"
-. $DIR0/../shunit2/shunit2
+# Fix bigdecimal extension
+# [I cannot explain why it is required. It does not seem to be related to any patching we do]
+cp -f $PATCH_DIR/bigdecimal-patch.h $1/ext/bigdecimal/bigdecimal-patch.h
+restore_and_save $1/ext/bigdecimal/bigdecimal.h
+sed -i "s/#include <float.h>/#include <float.h>\n#include \"bigdecimal-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h
+
+# Disable dynamic extensions
+restore_and_save $1/ext/Setup
+sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
+
+restore_and_save $1/main.c
+restore_and_save $1/dir.c
+restore_and_save $1/dln.c
+restore_and_save $1/file.c
+restore_and_save $1/io.c
+
+restore_and_save $1/process.c
+restore_and_save $1/tool/mkconfig.rb
+restore_and_save $1/util.c

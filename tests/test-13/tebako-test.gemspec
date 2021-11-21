@@ -4,7 +4,7 @@ Gem::Specification.new do |s|
   s.summary     = "A simple gem for tebako testing"
   s.authors     = ["Ribose"]
   s.email       = open.source@ribose.com
-  s.files       = ['bin/tebako-test-run.rb', 'lib/tebako-test.rb'] 
+  s.files       = ['bin/tebako-test-run.rb', 'lib/tebako-test.rb']
   s.homepage    = "https://github.com/tamitebako"
   s.license     = "Unlicense"
   s.add_dependency 'text-table','~> 1.2.4'
