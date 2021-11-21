@@ -6,5 +6,5 @@ require "test"
 begin
   instance = TebakoTest.new
   instance.run!
-end 
+end
 

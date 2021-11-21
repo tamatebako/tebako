@@ -8,7 +8,7 @@ module Tebako
     module Test
       class Error < StandardError; end
 
-      class TebakoTest 
+      class TebakoTest
        def msg
         table = Text::Table.new
         table.head = ['A', 'B']

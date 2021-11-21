@@ -27,10 +27,9 @@ run_help() {
 echo "Usage: "
 echo "  tebako setup [-p |--prefix=<path>]"
 echo "         Tebako prefix defaults to current directory"
-echo "  tebako press [-p |--prefix=<path>] -r |--root=<path> -e |--entry-point=<path> [-m |--mount-point=<path>] [-o |--output=<file name>]"
+echo "  tebako press [-p |--prefix=<path>] -r |--root=<path> -e |--entry-point=<path> [-p |--package-name=<file name>]"
 echo "         Tebako prefix defaults to current directory"
-echo "         Mount point defaults to '/home/tebako'"
-echo "         Output file defaults to 'tebako'"
+echo "         Packaged file defaults to 'tebako'"
 }
 
 # More safety, by turning some bugs into errors.
@@ -46,8 +45,8 @@ if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
     exit 1
 fi
 
-OPTIONS=hp:c:r:e:m:o:
-LONGOPTS=help,prefix:,config:,root:,entry-point:,mount-point:,output:
+OPTIONS=hp:c:r:e:p:
+LONGOPTS=help,prefix:,config:,root:,entry-point:,package-name:
 
 # -regarding ! and PIPESTATUS see above
 # -temporarily store output to be able to check for errors
@@ -62,7 +61,7 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-h=n prefix=- config=- root=- mountPoint=- entryPoint=- output=-
+h=n prefix=- config=- root=- entryPoint=- packageName=-
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
@@ -82,12 +81,8 @@ while true; do
             entryPoint="$2"
             shift 2
             ;;
-        -m|--mount-point)
-            mountPoint="$2"
-            shift 2
-            ;;
-        -o|--output)
-            output="$2"
+        -p|--package-name)
+            packageName="$2"
             shift 2
             ;;
         -h|--help)
@@ -125,6 +120,9 @@ if [ "$prefix" == "-" ]; then
   prefix="$( pwd )"
 fi
 
+export CC=${CC:-gcc}
+export CXX=${CXX:-g++}
+
 case "$1" in
 	setup)
         if [ "$config" == "-" ]; then
@@ -159,24 +157,19 @@ case "$1" in
           run_help 
           exit 6 
 		fi
-        if [ "$mountPoint" == "-" ]; then
-          mountPoint="/home/tebako"
-		fi
-        if [ "$output" == "-" ]; then
-          output="tebako"
+        if [ "$packageName" == "-" ]; then
+          packageName="tebako"
 		fi
 
 		echo "Running tebako press at $prefix"
         echo "   Project root:            $root"
         echo "   Application entry point: $entryPoint"
-        echo "   Mount point:             $mountPoint"
-        echo "   Output file:             $output"
+        echo "   Package file name:       $packageName"
 		cmake -DCMAKE_BUILD_TYPE=Release      \
               -DDEPS:STRING=$prefix/deps      \
               -DROOT:STRING=$root             \
               -DENTRANCE:STRING=$entryPoint   \
-              -DMOUNTPOINT:STRING=$mountPoint \
-              -DOUTPUT:STRING=$output         \
+              -DPCKG:STRING=$packageName    \
               -DSETUP_MODE:BOOLEAN=OFF        \
               -G "Unix Makefiles"             \
               -S $prefix                      \
@@ -186,7 +179,7 @@ case "$1" in
           exit 103  
         fi
 
-        cmake --build $prefix/output --target $output && rc=$? || rc=$?
+        cmake --build $prefix/output --target tebako && rc=$? || rc=$?
         if [ $rc -ne 0 ]; then
           echo "'tebako press' build step failed" 
           exit 104  

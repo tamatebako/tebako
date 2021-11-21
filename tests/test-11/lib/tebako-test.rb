@@ -1,6 +1,6 @@
 require 'text-table'
 
-class TebakoTest 
+class TebakoTest
   def msg
     table = Text::Table.new
     table.head = ['A', 'B']

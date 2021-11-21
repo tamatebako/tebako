@@ -26,7 +26,7 @@
 
 # ...................................................................
 # ENSURE_BUNDLER
-# This function ensures that the bundler gem of given version has been downloaded 
+# This function ensures that the bundler gem of given version has been downloaded
 # VER                -- gem version
 # HASH               -- gem file hash
 # DIR                -- gem file folder
@@ -41,10 +41,10 @@ function(ENSURE_BUNDLER VER HASH DIR)
       set(BUNDLER_LOAD true)
     endif()
   endif()
-     
+
   if (${BUNDLER_LOAD})
     message("Loading bundler from https://rubygems.org/downloads/bundler-${VER}.gem ")
-    file(DOWNLOAD https://rubygems.org/downloads/bundler-${VER}.gem 
+    file(DOWNLOAD https://rubygems.org/downloads/bundler-${VER}.gem
                   ${DIR}/bundler-${VER}.gem
                   EXPECTED_HASH SHA256=${HASH}
     )

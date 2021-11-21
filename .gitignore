@@ -45,7 +45,8 @@ include/version.h
 # VS files
 .vs
 
-#
+# Test artifacts
 tests/shunit2
+test-*-package
 
 
