@@ -104,7 +104,7 @@ press_runner_with_error() {
 #  -08. Rails project, no entry point                                                Expected error at build step
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 #  10. Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist                               [Expected error at build step]
-#  -11. Ruby gem, no gemfile, with gemspec
+#  11. Ruby gem (no gemfile, with gemspec)
 #  -12. Ruby gem, no gemfile, multiple gemspecs                                      Expected error at configure step
 #  -13. Ruby gem, no gemfile, gemspec error                                          Expected error at build step
 #  -14. Ruby gem, no gemfile, gemspec, no entry point                                Expected error at build step
@@ -256,12 +256,13 @@ test_tebako_press_10() {
    press_runner_with_error "${DIR_TESTS}/test-09" "test-does-not-exist.rb" "test-10-package" 104 "'tebako press' build step failed"
 }
 
-#    - name: Test10 - tebako press - []
-#      run: | 
-#        ${{github.workspace}}/tests/scripts/press_with_failure.sh \
-#              "${{github.workspace}}/tests/test-09"               \
-#              "test-does-not-exist.rb"                            \
-#              104                              
+# ......................................................................
+#  11. Ruby gem (no gemfile, with gemspec)
+test_tebako_press_11() {
+   echo "==> Ruby gem (no gemfile, with gemspec)"
+   press_runner "${DIR_TESTS}/test-11" "tebako-test-run.rb" "test-11-package"
+   package_runner "./test-11-package" "| a1 | b1 |"
+}
 
 #    - name: Test11 - tebako press - [Ruby gem, gemspec, no gemfile]
 #      run: | 
@@ -302,9 +303,10 @@ test_tebako_press_10() {
 #    - name: Test15 - Run packaged solution - [Ruby gem, gemspec, gemfile]
 #      run:  ${{github.workspace}}/output/tebako
 
+# ......................................................................
 # 16. Ruby gem, gemspec, gemfile with error
 test_tebako_press_16() {
-   echo "tebako press test-16: Ruby gem, gemspec, gemfile with error"
+   echo "==> Ruby gem (with gemspec), gemfile with error"
    press_runner_with_error "${DIR_TESTS}/test-16" "tebako-test-run.rb" "test-16-package" 104 "'tebako press' build step failed"
 }
 
