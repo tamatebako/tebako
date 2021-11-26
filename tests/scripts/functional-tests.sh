@@ -174,9 +174,11 @@ test_tebako_setup() {
   assertContains "$result" "Tebako setup has completed"
 
 # Check that ruby is not a dynamic executable
-  result="$( ldd ${DIR_DEPS}/src/_ruby-build/ruby 2>&1 )"
-  assertEquals 1 $?
-  assertContains "$result" "not a dynamic executable"
+#  This check is disabled (temporarily ?)  because of https://github.com/tamatebako/tebako/issues/38 
+#  We are using dynamic build for packaging and static build for final integration of patched version
+#  result="$( ldd ${DIR_DEPS}/src/_ruby-build/ruby 2>&1 )"
+#  assertEquals 1 $?
+#  assertContains "$result" "not a dynamic executable"
 }
 
 # ......................................................................
