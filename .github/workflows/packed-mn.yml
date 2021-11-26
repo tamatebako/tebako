@@ -2,7 +2,7 @@ name: Ubuntu build
 
 on:
   push:
-    branches: [ master ]
+    branches: [ maxirmx-issue-23 ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -53,14 +53,7 @@ jobs:
       uses: actions/checkout@v2
       with:
         fetch-depth: 1
-
-    - name: Checkout shell test framework
-      uses: actions/checkout@v2
-      with:
-        repository: kward/shunit2
-        path: ${{github.workspace}}/tests/shunit2
-        fetch-depth: 1
-      
+     
     - name: Create deps folder and cache key
       run: |
         mkdir ${{github.workspace}}/${{env.DEPS}}
@@ -81,8 +74,3 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       run:  ${{github.workspace}}/bin/tebako setup
 
-    - name: tebako functional tests
-# show cmake output aka verbose (yes/no)
-      env:
-        VERBOSE: no
-      run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
