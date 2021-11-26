@@ -183,7 +183,7 @@ test_tebako_setup() {
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
 test_tebako_press_01() {
    echo "==> simple Ruby script,  absolute path to root, relative path to entry point"
-   press_runner "${DIR_TESTS}/test-01" "test.rb" "test-01-package"
+   press_runner "${DIR_TESTS}/test-01" "tebako-test-run.rb" "test-01-package"
    package_runner "./test-01-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
@@ -196,7 +196,7 @@ test_tebako_press_02() {
 # 03. Simple Ruby script, absolute path to root, absolute path to entry point
 test_tebako_press_03() {
    echo "==> simple Ruby script, absolute path to root, absolute path to entry point"
-   press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/test.rb" "test-03-package"
+   press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/tebako-test-run.rb" "test-03-package"
    package_runner "./test-03-package" "Hello!  This is test-1 talking from inside DwarFS"
 }
 
@@ -204,7 +204,7 @@ test_tebako_press_03() {
 test_tebako_press_04() {
    echo "==> simple Ruby script, relative path to root, relative path to entry point"
    pushd ${DIR_ROOT} > /dev/null
-   press_runner "tests/test-01" "test.rb" "test-04-package"
+   press_runner "tests/test-01" "tebako-test-run.rb" "test-04-package"
    package_runner "./test-04-package" "Hello!  This is test-1 talking from inside DwarFS"
    popd > /dev/null
 }
