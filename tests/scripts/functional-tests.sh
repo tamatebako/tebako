@@ -108,7 +108,7 @@ press_runner_with_error() {
 #  12. Ruby gem (no gemfile, with gemspec), multiple gemspecs                                               [Expected error at configure step]
 #  13. Ruby gem (no gemfile, with gemspec), gemspec error                                                   [Expected error at build step]
 #  14. Ruby gem (no gemfile, with gemspec), entry point does not exist                                      [Expected error at configure step]
-#  -15. Ruby gem, gemfile, gemspec                                                  [TODO: this test is failing]
+#  -15. Ruby gem (with gemspec, with gemfile)
 #  16. Ruby gem (with gemspec, with gemfile), gemfile with error                                            [Expected error at build step]
 #  17. Ruby gem (with gemspec, with gemfile), entry point dows not exist                                    [Expected error at build step]
 #  18 - 19  -- reserved
@@ -174,7 +174,7 @@ test_tebako_setup() {
   assertContains "$result" "Tebako setup has completed"
 
 # Check that ruby is not a dynamic executable
-#  This check is disabled (temporarily ?)  because of https://github.com/tamatebako/tebako/issues/38 
+#  This check is disabled (temporarily ?)  because of https://github.com/tamatebako/tebako/issues/38
 #  We are using dynamic build for packaging and static build for final integration of patched version
 #  result="$( ldd ${DIR_DEPS}/src/_ruby-build/ruby 2>&1 )"
 #  assertEquals 1 $?
@@ -216,14 +216,13 @@ test_tebako_press_05() {
    press_runner_with_error "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package" 103 "'tebako press' configure step failed"
 }
 
-#    - name: Test06 - tebako press - [Rails project]
-#      run: |
-#        ${{github.workspace}}/bin/tebako press                    \
-#              --root="${{github.workspace}}/tests/test-06"        \
-#              --entry-point="rails"
-
-#    - name: Test06 - Run packaged solution - [Rails project]
-#      run:  ${{github.workspace}}/output/tebako
+# ......................................................................
+#  06. Ruby gem (Rails project)
+#test_tebako_press_06() {
+#   echo "==> Rails project"
+#   press_runner "${DIR_TESTS}/test-06" "rails" "test-06-package"
+#   ???? package_runner "./test-06-package"  ????
+#}
 
 # ......................................................................
 # 07. Rails project, ruby and bundler version mismatch
@@ -283,14 +282,13 @@ test_tebako_press_14() {
    press_runner_with_error "${DIR_TESTS}/test-14" "test-does-not-exist.rb" "test-14-package" 103 "'tebako press' configure step failed"
 }
 
-#    - name: Test15 - tebako press - [Ruby gem, gemspec, gemfile]
-#      run: |
-#        ${{github.workspace}}/bin/tebako press                   \
-#              --root="${{github.workspace}}/tests/test-15"       \
-#              --entry-point="tebako-test-run.rb"
-
-#    - name: Test15 - Run packaged solution - [Ruby gem, gemspec, gemfile]
-#      run:  ${{github.workspace}}/output/tebako
+# ......................................................................
+#  15. Ruby gem (with gemspec, with gemfile)
+test_tebako_press_11() {
+   echo "==> Ruby gem (with gemspec, with gemfile)"
+   press_runner "${DIR_TESTS}/test-15" "tebako-test-run.rb" "test-15-package"
+   package_runner "./test-15-package" "| a1 | b1 |"
+}
 
 # ......................................................................
 # 16. Ruby gem (with gemspec, with gemfile), gemfile with error
