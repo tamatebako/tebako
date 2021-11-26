@@ -1,4 +1,3 @@
-#
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -29,31 +28,36 @@ cmake_minimum_required (VERSION 3.20)
 cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
-project(tebako_packager VERSION 0.1.4)
+
+project(tebako_packager VERSION 0.2.0)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
-# ...................................................................
-#        sudo apt-get install \
+# External dependencies
+# ---------------------------------------------------------------------------------------------------
+# DwarFS dependencies:
 #        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
 #        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
 #        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
 #        libboost-regex-dev libboost-system-dev libboost-thread-dev \
-#        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev 
-#    ++  Already installed at GHA but may require local installation: 
+#        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
 #        bison flex fuse3 pkg-config libsodium-dev
-#    ++  For Rails testing only
+# ---------------------------------------------------------------------------------------------------
+# Ruby dependencies:
+#        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
+# ---------------------------------------------------------------------------------------------------
+# For Rails testing only:
 #        libsqlite3-dev
+# ---------------------------------------------------------------------------------------------------
 
 include(ExternalProject)
 include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/ensure_bundler.cmake)
 
-option(DEVELOPER_MODE "Developer mode" OFF)
 option(SETUP_MODE "Tebako setup" OFF)
 
 if (NOT ${SETUP_MODE})
-  message("Welcome to tebako packager configuration script!")
+  message("Running tebako press script")
   if ("-${ROOT}" STREQUAL "-")
     message(FATAL_ERROR "Project ROOT is not specified.")
   endif()
@@ -72,41 +76,38 @@ if (NOT ${SETUP_MODE})
     cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
   endif()
 
-  if ("-${OUTPUT}" STREQUAL "-")
-    set(APP_NAME "tebako")
+  if ("-${PCKG}" STREQUAL "-")
+    set(APP_NAME "${FS_CURRENT}/tebako")
   else()
-    set(APP_NAME ${OUTPUT})
+    cmake_path(IS_RELATIVE PCKG IS_PK_RELATIVE)
+    if(${IS_PK_RELATIVE})
+      cmake_path(SET APP_NAME NORMALIZE ${FS_CURRENT}/${PCKG})
+    else()
+      cmake_path(SET APP_NAME NORMALIZE ${PCKG})
+    endif()
   endif()
 
   message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point to ${APP_NAME}")
 else()
-  message("Creating tebako configuration")
+  message("Running tebako setup script")
 endif()
 
-message("................................................")
-
-set(Boost_USE_STATIC_LIBS   ON)
+set(BOOST_USE_STATIC_LIBS   ON)
 set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
 set(GFLAGS_SHARED          OFF)
 
-
-# Various locations for external projects 
+# Various locations for external projects
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)
 set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
 
+set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
+
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
-
-# Inject version information to C++ code
-configure_file(
-   ${DATA_RES_DIR}/version.h.in 
-   ${CMAKE_CURRENT_SOURCE_DIR}/include/version.h
-   @ONLY
-)
 
 if (NOT ${SETUP_MODE})
 # ...................................................................
@@ -116,190 +117,99 @@ if (NOT ${SETUP_MODE})
   set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
 # DATA_PRE_DIR folder is used to build gems  that need to be packaged
   set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
-# DATA_BIN_DIR folder is used to create packaged filesystem  
+# DATA_BIN_DIR folder is used to create packaged filesystem
   set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
 # DATA_BIN_FILE is packaged filesystem itself
   set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 
-# This is a mount point for packaged filesystem at the target computer
-# TODO: this is supposed to become obsolete when fuse dependency is eliminated
-#       otherwise it shall be reconsidered 
-  if ("-${MOUNTPOINT}" STREQUAL "-")
-    set(FS_MOUNT_POINT "/home/tebako")
-  else()
-    set(FS_MOUNT_POINT ${MOUNTPOINT})
-  endif()
-  
+# This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
+  set(FS_MOUNT_POINT "/__tebako_memfs__")
   set(FS_APP_HOME "/.")
-
-# Clean previous run if any
-  file(REMOVE ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp)
 
 endif(NOT ${SETUP_MODE})
 
 # ...................................................................
 # External projects
 
-def_ext_prj_t(RUBY     "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
+def_ext_prj_t(RUBY "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
+#def_ext_prj_t(RUBY "2.6.3" "577fd3795f22b8d91c1d4e6733637b0394d4082db659fccf224c774a2b1c82fb")
+
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
-def_ext_prj_t(ZLIB     "1.2.11" "c3e5e9fdd5004dcb542feda5ee4f0ff0744628baf8ed2dd5d66f8ca1197cb1a1")
-def_ext_prj_t(GDBM     "1.13"   "9d252cbd7d793f7b12bcceaddda98d257c14f4d1890d851c386c37207000a253")
-def_ext_prj_t(LIBFFI   "3.2.1"  "980ca30a8d76f963fca722432b1fe5af77d7a4e4d2eac5144fbc5374d4c596609a293440573f4294207e1bdd9fda80ad1e1cafb2ffb543df5a275bc3bd546483")
-def_ext_prj_t(NCURSES  "6.2"    "30306e0c76e0f9f1f0de987cf1c82a5c21e1ce6568b9227f7da5b71cbea86c9d")
-def_ext_prj_t(OPENSSL  "1.1.0h" "5835626cde9e99656585fc7aaa2302a73a7e1340bf8c14fd635a62c66802a517")
-string(SUBSTRING ${OPENSSL_VER} 0 5 OPENSSL_VER_BASE)
-def_ext_prj_t(READLINE "7.0"    "750d437185286f40a369e1e4f4764eda932b9459b5ec9a731628393dd3d32334")
-def_ext_prj_t(YAML     "0.1.7"  "8088e457264a98ba451a90b8661fcb4f9d6f478f7265d48322a196cec2480729")
 def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
-def_ext_prj_g(DWARFS "78401c3")
+
 def_ext_prj_g(INCBIN "348e36b")
+def_ext_prj_g(DWARFS_WR "b1c1cb3")
 
-
+message("................................................")
 message("Collecting packages:")
-message("ruby     - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
-message("zlib     - " v${ZLIB_VER}           " at " ${ZLIB_SOURCE_DIR})
-message("gdbm     - " v${GDBM_VER}           " at " ${GDBM_SOURCE_DIR})
-message("libffi   - " v${LIBFFI_VER}         " at " ${LIBFFI_SOURCE_DIR})
-message("ncurses  - " v${NCURSES_VER}        " at " ${NCURSES_SOURCE_DIR})
-message("openssl  - " v${OPENSSL_VER}        " at " ${OPENSSL_SOURCE_DIR})
-message("readline - " v${READLINE_VER}       " at " ${READLINE_SOURCE_DIR}) 
-message("yaml     - " v${YAML_VER}           " at " ${YAML_SOURCE_DIR})
-message("bundler  - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR}) 
-message("incbin   - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR}) 
-message("dwarfs   - " @${DWARFS_TAG}         " at " ${DWARFS_SOURCE_DIR}) 
+message("ruby                        - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
+message("bundler                     - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR})
+message("incbin                      - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR})
+message("dwarfs with tebako wrapper  - " @${DWARFS_WR_TAG}      " at " ${DWARFS_WR_SOURCE_DIR})
 message("................................................")
 
 # ...................................................................
 # incbin
-# ExternalProject_Add is used for incbin project since we do not need 
-# anything at configure step. We want to fetch some files before the 
-# build, that's it.  
 
 ExternalProject_Add(${INCBIN_PRJ}
    PREFIX ${DEPS}
    GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
    GIT_TAG ${INCBIN_TAG}
-   UPDATE_COMMAND ""
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
-   INSTALL_COMMAND ""
+   INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INCLUDE_DIR}/incbin
+   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${INCBIN_SOURCE_DIR}/incbin.h ${DEPS_INCLUDE_DIR}/incbin
 )
 
 # ...................................................................
-# Ruby dependencies
+# DwarFS with tebako wrapper
 
-ExternalProject_Add(${ZLIB_PRJ}
-   PREFIX ${DEPS}
-   URL https://zlib.net/zlib-${ZLIB_VER}.tar.gz
-   URL_HASH SHA256=${ZLIB_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${ZLIB_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND cd ${ZLIB_SOURCE_DIR} && 
-                     ./configure --static --prefix=${DEPS}
-   BUILD_COMMAND      cd ${ZLIB_SOURCE_DIR} && make 
-   INSTALL_COMMAND    cd ${ZLIB_SOURCE_DIR} && make install
-)
+# ...................................................................
+# The libraries that are build by DwarFS project
+# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
+# These forward-declarations and BUILD_BYPRODICTS are required to support 'Ninja'
+# Otherwise add_dependencies would be enough for 'Unix makefiles' generator
 
-ExternalProject_Add(${OPENSSL_PRJ}
-   PREFIX ${DEPS}
-   URL https://www.openssl.org/source/old/${OPENSSL_VER_BASE}/openssl-${OPENSSL_VER}.tar.gz
-   URL_HASH SHA256=${OPENSSL_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${OPENSSL_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND cd ${OPENSSL_SOURCE_DIR} && ./config no-shared --prefix=${DEPS}
-   BUILD_COMMAND     cd ${OPENSSL_SOURCE_DIR} && export LD_LIBRARY_PATH="${DEPS}/lib:$LD_LIBRARY_PATH" && make 
-   INSTALL_COMMAND   cd ${OPENSSL_SOURCE_DIR} && make install
-)
+set(__LIBDWARFS_WR "${DEPS_LIB_DIR}/libdwarfs-wr.a")
+set(__LIBDWARFS "${DEPS_LIB_DIR}/libdwarfs.a")
+set(__LIBFOLLY "${DEPS_LIB_DIR}/libfolly.a")
+set(__LIBFSST "${DEPS_LIB_DIR}/libfsst.a")
+set(__LIBT_METADATA "${DEPS_LIB_DIR}/libmetadata_thrift.a")
+set(__LIBT_LIGHT "${DEPS_LIB_DIR}/libthrift_light.a")
+set(__LIBXXHASH "${DEPS_LIB_DIR}/libxxhash.a")
+set(__LIBZSTD "${DEPS_LIB_DIR}/libzstd.a")
+set(__LIBARCHIVE "${DEPS_LIB_DIR}/libarchive.a")
 
-ExternalProject_Add(${GDBM_PRJ}
-   PREFIX ${DEPS}
-   URL https://ftp.gnu.org/pub/gnu/gdbm/gdbm-${GDBM_VER}.tar.gz
-   URL_HASH SHA256=${GDBM_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${GDBM_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND cd ${GDBM_SOURCE_DIR} && 
-                     ./configure --with-pic --enable-libgdbm-compat --disable-shared 
-                                 --enable-static --without-readline --prefix=${DEPS}
-   BUILD_COMMAND     cd ${GDBM_SOURCE_DIR} && make 
-   INSTALL_COMMAND   cd ${GDBM_SOURCE_DIR} && make install
-)
 
-ExternalProject_Add(${YAML_PRJ}
-   PREFIX ${DEPS}
-   URL https://pyyaml.org/download/libyaml/yaml-${YAML_VER}.tar.gz
-   URL_HASH SHA256=${YAML_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${YAML_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${YAML_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
-                     --prefix=${DEPS} --srcdir=${YAML_SOURCE_DIR}
-   BUILD_COMMAND     make 
-   INSTALL_COMMAND   make install
-)
-
-ExternalProject_Add(${LIBFFI_PRJ}
-   PREFIX ${DEPS}
-   URL https://gcc.gnu.org/pub/libffi/libffi-${LIBFFI_VER}.tar.gz
-   URL_HASH SHA512=${LIBFFI_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${LIBFFI_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${LIBFFI_SOURCE_DIR}/configure --with-pic --disable-shared --enable-static 
-                                 --srcdir=${LIBFFI_SOURCE_DIR} --prefix=${DEPS}
-   BUILD_COMMAND     make 
-   INSTALL_COMMAND   make install
-)
-
-ExternalProject_Add(${NCURSES_PRJ}
-   PREFIX ${DEPS}
-   URL https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VER}.tar.gz
-   URL_HASH SHA256=${NCURSES_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${NCURSES_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${NCURSES_SOURCE_DIR}/configure --without-shared --without-cxx-shared 
-                     --prefix=${DEPS} --srcdir=${NCURSES_SOURCE_DIR}
-   BUILD_COMMAND     make 
-   INSTALL_COMMAND   make install
-)
-
-ExternalProject_Add(${READLINE_PRJ}
-   PREFIX ${DEPS}
-   URL https://ftp.gnu.org/gnu/readline/readline-${READLINE_VER}.tar.gz
-   URL_HASH SHA256=${READLINE_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${READLINE_SOURCE_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${READLINE_SOURCE_DIR}/configure --disable-shared --enable-static 
-                     --srcdir=${READLINE_SOURCE_DIR} --prefix=${DEPS} cflags=-fPIC
-   BUILD_COMMAND     make 
-   INSTALL_COMMAND   make install
+ExternalProject_Add(${DWARFS_WR_PRJ}
+    PREFIX ${DEPS}
+    GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
+    GIT_TAG ${DWARFS_WR_TAG}
+    SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
+    BINARY_DIR ${DWARFS_WR_BINARY_DIR}
+    UPDATE_COMMAND ""
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DWITH_TESTS:BOOL=OFF
+    BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
+                     ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
+                     ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
 )
 
 # ...................................................................
 # Ruby
 
-set(RBD ${DEPS}/bin)
-set(RID ${DEPS}/include)
-set(RLD ${DEPS}/lib)
-
 if(RUBY_DEBUG_BUILD)
-  set(RUBY_C_FLAGS_1 "-fPIC -g -O0 -pipe")
+  set(RUBY_C_FLAGS_1 "-g -O0 -pipe")
 else()
-  set(RUBY_C_FLAGS_1 "-fPIC -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections -pipe")
+  set(RUBY_C_FLAGS_1 "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
 endif()
-set(RUBY_C_FLAGS_2 "-I${RID} -I${RID}/${NCURSES_NAME} -I${RID}/${OPENSSL_NAME} \
-                  -I${RID}/${READLINE_NAME} -I${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
-string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
-set(RUBY_L_FLAGS "-L${RLD}")
 
-#   COMMAND           sed -i "s/\#option nodynamic/option nodynamic/g" ${RUBY_SOURCE_DIR}/ext/Setup
-#   --disable-shared
-#   --with-vendordir = ${RLD}
+set(RUBY_C_FLAGS_2 "-fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
+set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
+
+message("Ruby build CFLAGS='${RUBY_C_FLAGS}'")
+message("Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
 
 ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
@@ -308,30 +218,40 @@ ExternalProject_Add(${RUBY_PRJ}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
-   CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure 
-                     --enable-bundled-libyaml 
-                     --without-gmp 
-                     --disable-dtrace 
-                     --enable-debug-env 
+   UPDATE_COMMAND ""
+   PATCH_COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+   CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
+                     --enable-bundled-libyaml
+                     --without-gmp
+                     --disable-dtrace
+                     --enable-debug-env
                      --disable-install-doc
                      --with-static-linked-ext
-                     --srcdir=${RUBY_SOURCE_DIR} 
+                     --with-jemalloc
+                     --srcdir=${RUBY_SOURCE_DIR}
                      --prefix=${DATA_SRC_DIR}
-                     cflags=${RUBY_C_FLAGS} 
+                     CFLAGS=${RUBY_C_FLAGS}
                      LDFLAGS=${RUBY_L_FLAGS}
-   INSTALL_COMMAND ""  
+   INSTALL_COMMAND ""
 )
- 
-add_dependencies(${RUBY_PRJ} ${ZLIB_PRJ} ${GDBM_PRJ} ${YAML_PRJ} ${LIBFFI_PRJ} 
-                             ${NCURSES_PRJ} ${READLINE_PRJ} ${OPENSSL_PRJ})
 
-if (NOT ${SETUP_MODE})
+add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
+
+if (${SETUP_MODE})
+  add_custom_target(setup
+    ${CMAKE_COMMAND} -E echo "Tebako setup has completed"
+    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ}
+  )
+else (${SETUP_MODE})
+  add_custom_target(setup
+    ${CMAKE_COMMAND} -E echo "Tebako setup has been verified"
+    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ}
+  )
+
   set (TBD ${DATA_SRC_DIR}/bin)
   set (TLD ${DATA_SRC_DIR}/local)
-# TGD folder is used to install gems 
+# TGD folder is used to install gems
   set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
-
-  set(BUNDLER_CPATH "${DATA_SRC_DIR}/include/ruby-${RUBY_API_VER}:${RID}:${RID}/${NCURSES_NAME}:${RID}/${OPENSSL_NAME}:${RID}/${READLINE_NAME}:${RLD}/${LIBFFI_NAME}-${LIBFFI_VER}/include")
 
   file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
   file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
@@ -341,13 +261,15 @@ if (NOT ${SETUP_MODE})
   list(LENGTH GEMFILES GFLENGTH)
   list(LENGTH GEMS     GLENGTH)
 
-  add_custom_target(_CLEAN_FILESYSTEM
+  add_custom_target(clean_filesystem
+           COMMAND ${CMAKE_COMMAND} -E echo "clean_filesystem: creating '${DATA_SRC_DIR}', '${DATA_PRE_DIR}', '${DATA_BIN_DIR}'"
            COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
+           COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
-           DEPENDS ${RUBY_PRJ} 
+           DEPENDS ${RUBY_PRJ}
   )
 
   if(GSLENGTH GREATER 0)
@@ -361,78 +283,82 @@ if (NOT ${SETUP_MODE})
         message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
-        add_custom_target(_SOURCE_FILESYSTEM  
+        add_custom_target(source_filesystem
            COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+#           COMMAND ${TBD}/gem install rake -v '13.0.6' --source 'https://rubygems.org/' --install-dir ${TGD}
+#           COMMAND ${TBD}/gem install bundler:2.1.4 --verbose --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle install
-           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && bundle exec gem build ${GEMSPEC} 
+           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 && bundle install
+           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 && bundle exec gem build ${GEMSPEC}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
+           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 &&
                    gem install *.gem --verbose --no-document --install-dir ${TGD}
            COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                    (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                     ${CMAKE_COMMAND} -E false )
-           DEPENDS _CLEAN_FILESYSTEM
+           DEPENDS clean_filesystem
         )
       else(GFLENGTH GREATER 0)
 #  Found xxx.gemspec but no Gemfile
          message("Collecting gem from gemspec ${GEMSPEC}")
          set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
-         add_custom_target(_SOURCE_FILESYSTEM  
+         add_custom_target(source_filesystem
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-            COMMAND unset GEM_HOME && unset GEM_PATH && export PATH=${TBD}:$PATH && cd ${DATA_PRE_DIR} && gem build ${GEMSPEC}
+            COMMAND unset GEM_HOME && unset GEM_PATH && export PATH=${TBD}:$PATH && cd ${DATA_PRE_DIR} && export TEBAKO_PASS_THROUGH=1 && gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
+            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 &&
                     gem install *.gem --verbose --no-document --install-dir ${TGD}
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
-            DEPENDS _CLEAN_FILESYSTEM 
+            DEPENDS clean_filesystem
          )
-      endif()
-    endif()
+      endif(GFLENGTH GREATER 0)
+    endif(GSLENGTH GREATER 1)
   elseif(GFLENGTH GREATER 0)
-#  Found Gemfile but no gemspec 
+#  Found Gemfile but no gemspec
     message("Deploying Gemfile")
     set(FS_ENTRY_POINT "/local/bin/${FS_ENTRANCE}")
     set(FS_APP_HOME "/local")
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
-    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR}) 
-    add_custom_target(_SOURCE_FILESYSTEM  
+    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
+    add_custom_target(source_filesystem
        COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+#       COMMAND ${TBD}/gem install rake -v '13.0.6' --source 'https://rubygems.org/' --install-dir ${TGD}
+#       COMMAND ${TBD}/gem install bundler:2.1.4 --verbose --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
        COMMAND ${PROJECT_SOURCE_DIR}/bin/bundle_in_env.sh ${TLD} ${TBD}
        COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                  ${CMAKE_COMMAND} -E false )
-       DEPENDS _CLEAN_FILESYSTEM 
+       DEPENDS clean_filesystem
     )
   elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile
     list(GET GEMS 0 GEM)
     if(GLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gems detected in ${FS_ROOT}")
-    else()
-      message("Installing Ruby gem from ${GEM}") 
+    else(GLENGTH GREATER 1)
+      message("Installing Ruby gem from ${GEM}")
       set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
-      add_custom_target(_SOURCE_FILESYSTEM  
+      add_custom_target(source_filesystem
          COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-         COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && 
+         COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 &&
                   gem install ${GEM} --verbose --no-document --install-dir ${TGD}
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
-         DEPENDS _CLEAN_FILESYSTEM 
+         DEPENDS clean_filesystem
       )
-    endif() 
+    endif(GLENGTH GREATER 1)
   else()
 # No gem, no gemspec, no gemfile
 # Simple ruby script
-    message("Collecting simple Ruby script from ${FS_ROOT}") 
+    message("Collecting simple Ruby script from ${FS_ROOT}")
     cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
     if(${IS_EN_ABSOLUTE})
       cmake_path(IS_PREFIX FS_ROOT ${FS_ENTRANCE} IS_FS_EN_PREFIX)
@@ -446,166 +372,61 @@ if (NOT ${SETUP_MODE})
     endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
     set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
-    add_custom_target(_SOURCE_FILESYSTEM  
+    add_custom_target(source_filesystem
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-       DEPENDS _CLEAN_FILESYSTEM
+       DEPENDS clean_filesystem
     )
   endif()
-endif(NOT ${SETUP_MODE})
-
-# ...................................................................
-# DwarFS
-
-# ...................................................................
-# The libraries that are build by DwarFS project
-# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
-# These forward-declarations and BUILD_BYPRODICTS are required to support 'Ninja'
-# Otherwise add_dependencies would be enough for 'Unix makefiles' generator
-
-set(__LIBDWARFS "${DWARFS_BINARY_DIR}/libdwarfs.a")
-set(__LIBFOLLY "${DWARFS_BINARY_DIR}/folly/libfolly.a")
-set(__LIBFSST "${DWARFS_BINARY_DIR}/libfsst.a")
-set(__LIBT_METADATA "${DWARFS_BINARY_DIR}/libmetadata_thrift.a")
-set(__LIBT_LIGHT "${DWARFS_BINARY_DIR}/libthrift_light.a")
-set(__LIBXXHASH "${DWARFS_BINARY_DIR}/libxxhash.a")
-set(__LIBZSTD "${DWARFS_BINARY_DIR}/zstd/build/cmake/lib/libzstd.a")
-set(__LIBARCHIVE "${DWARFS_BINARY_DIR}/libarchive/lib/libarchive.a")
-
-ExternalProject_Add(${DWARFS_PRJ}
-    PREFIX ${DEPS}
-    GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git
-    GIT_TAG ${DWARFS_TAG}
-    PATCH_COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.cpp ${DEPS}/src/_dwarfs/src/dwarfs  
-    COMMAND       ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_CURRENT_SOURCE_DIR}/patches/2.patch/version.h ${DEPS}/src/_dwarfs/include/dwarfs   
-    UPDATE_COMMAND ""
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DSTATIC_BUILD_DO_NOT_USE:BOOL=ON
-    SOURCE_DIR ${DWARFS_SOURCE_DIR}
-    BINARY_DIR ${DWARFS_BINARY_DIR}
-    BUILD_BYPRODUCTS ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA} 
-                     ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
-)
 
 # ...................................................................
 # Packaged filesystem
 
-if(NOT ${SETUP_MODE})
-  add_custom_target(_PACKAGED_FILESYSTEM  
-     COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
-#                                       ${DATA_SRC_DIR}/bin/b*  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem ${DATA_SRC_DIR}/bin/irb 
-#                                       ${DATA_SRC_DIR}/bin/ra* ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri  ${DATA_SRC_DIR}/bin/y2racc
-     COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-     DEPENDS ${DWARFS_PRJ} _SOURCE_FILESYSTEM
-     BYPRODUCTS ${DATA_BIN_FILE}
+  configure_file(
+    ${DATA_RES_DIR}/tebako-version.h.in
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/tebako-version.h
+    @ONLY
   )
 
   configure_file(
-    ${DATA_RES_DIR}/tebako-fs.cpp.in 
+    ${DATA_RES_DIR}/tebako-fs.cpp.in
     ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
     @ONLY
   )
 
-# ...................................................................
-# Executable
-
-  add_compile_options(-fdiagnostics-color=always)
-  add_link_options(-static -static-libgcc)
-  set(CMAKE_C_FLAGS_RELEASE "-DNDEBUG -O2 -g")
-  set(CMAKE_CXX_FLAGS_RELEASE "-DNDEBUG -O2 -g")
-
-  include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include
-                      ${INCBIN_SOURCE_DIR}
-                      ${DWARFS_SOURCE_DIR}/folly ${DWARFS_BINARY_DIR}/folly ${DWARFS_SOURCE_DIR}/fbthrift 
-                      ${DWARFS_BINARY_DIR}/thrift ${DWARFS_BINARY_DIR} ${DWARFS_SOURCE_DIR}/include)
-  add_compile_definitions(FUSE_USE_VERSION=35)
-
-  add_executable(
-    ${APP_NAME} 
-    "src/tebako.cpp"
-    "src/tebako-dfs.cpp"
-    "src/tebako-dfs-ops.cpp"
-    "src/tebako-fs.cpp"
-    "src/tebako-mfs.cpp"
-    "include/tebako-fs.h"
-    "include/tebako-dfs.h"
-    "include/tebako-mfs.h"
-    "include/version.h"
+  add_custom_target(packaged_filesystem
+     COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
+                                        ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
+                                        ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
+                                        ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
+     COMMAND chmod +x ${DEPS_BIN_DIR}/*
+     COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+     DEPENDS setup source_filesystem
+     BYPRODUCTS ${DATA_BIN_FILE}
   )
 
-  add_dependencies(${APP_NAME} _PACKAGED_FILESYSTEM  ${INCBIN_PRJ} ${DWARFS_PRJ})
-  set_property(TARGET ${APP_NAME} PROPERTY CXX_STANDARD 17)
-  set_property(TARGET ${APP_NAME} PROPERTY CXX_STANDARD_REQUIRED ON)
-  set_property(TARGET ${APP_NAME} PROPERTY CXX_EXTENSIONS OFF)
+  set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
 
-# ...................................................................
-# The libraries that are build by dwarfs project
-# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light libarchive
+  add_library(tebako-fs STATIC
+    src/tebako-main.cpp
+    src/tebako-fs.cpp
+    include/tebako-fs.h
+    include/tebako-version.h
+    include/tebako-main.h)
 
- function(ADD_DWARFS_LIBRARY NAME PRJ APP_NM)
-   add_library(${NAME} STATIC IMPORTED)
-   set_target_properties(${NAME} PROPERTIES IMPORTED_LOCATION ${_${NAME}})
-   add_dependencies(${NAME} ${PRJ})
-   target_link_libraries(${APP_NM} ${NAME})
- endfunction()
+  add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
- add_dwarfs_library(_LIBDWARFS ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBFSST ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBFOLLY ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBT_METADATA ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBT_LIGHT ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBXXHASH ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBZSTD ${DWARFS_PRJ} ${APP_NAME})
- add_dwarfs_library(_LIBARCHIVE ${DWARFS_PRJ} ${APP_NAME})
+  add_custom_target(patched_ruby
+     COMMAND ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make
+     DEPENDS setup tebako-fs
+  )
 
-# ...................................................................
-# System libraries
-# Each library name given to the NAMES option is first considered
-# as a library file name and then considered with platform-specific 
-# prefixes (e.g. lib) and suffixes (e.g. .so). Therefore one may 
-# specify library file names such as libfoo.a directly. This can be 
-# used to locate static libraries on UNIX-like systems.
-#
+  add_custom_target(tebako ALL
+    COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_BINARY_DIR}/ruby ${APP_NAME}
+    COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
+    DEPENDS patched_ruby
+  )
 
- find_package(Boost 1.67 REQUIRED COMPONENTS context regex thread atomic date_time filesystem program_options system)
-
- find_library(_LIBGLOG "libglog.a" REQUIRED)
- find_library(_LIBFMT "libfmt.a" REQUIRED)
- find_library(_LIBDC "libdouble-conversion.a" REQUIRED)
- find_library(_LIBGFLAGS "libgflags.a" REQUIRED)
- find_library(_LIBEVENT "libevent.a" REQUIRED)
- find_library(_LIBACL "libacl.a" REQUIRED) 
- find_library(_LIBCRYPTO "libcrypto.a" REQUIRED) 
- find_library(_LIBLZ4 "liblz4.a" REQUIRED) 
- find_library(_LIBLZMA "liblzma.a" REQUIRED) 
- find_library(_LIBZ "libz.a" REQUIRED) 
- find_library(_LIBLJEMALLOC "libjemalloc.a" REQUIRED) 
- find_library(_LIBPTHREAD "libpthread.a" REQUIRED) 
- find_library(_LIBFUSE "libfuse3.a" REQUIRED) 
- find_library(_LIBDL "libdl.a" REQUIRED) 
- find_library(_LIBC "libc.a" REQUIRED)  
- find_library(_LIBM "libm.a" REQUIRED)
- find_library(_LIBRT "librt.a" REQUIRED)
- find_library(_LIBSSL "libssl.a" REQUIRED)
- find_library(_LIBUNWIND "libunwind.a" REQUIRED)
- find_library(_LIBIBERTY "libiberty.a" REQUIRED)
-
-# ...................................................................
-#  IMPORTANT !!!
-#  MUST be in this order otherwise link may fail
-#  -static-libgcc and gcc_eh below is all together an ugly trick to enforce static linking
-
- target_link_libraries(${APP_NAME}                              
-   ${_LIBFMT}          ${Boost_LIBRARIES}  ${_LIBDC}           ${_LIBFUSE}                    
-   ${_LIBGLOG}         ${_LIBGFLAGS}       ${_LIBEVENT}        ${_LIBIBERTY}
-   ${_LIBACL}          ${_LIBSSL}          ${_LIBCRYPTO}       ${_LIBLZ4}
-   ${_LIBZ}            ${_LIBJEMALLOC}     ${_LIBPTHREAD}      ${_LIBDL}           
-   ${_LIBC}            ${_LIBM}            ${_LIBRT}           gcc_eh		                 
-   ${_LIBUNWIND}       ${_LIBLZMA}
- )
-
-endif(NOT ${SETUP_MODE})
-
-add_custom_target(setup
-   ${CMAKE_COMMAND} -E echo "tebako setup completed"
-   DEPENDS ${RUBY_PRJ} ${DWARFS_PRJ} ${INCBIN_PRJ}
-)
+endif(${SETUP_MODE})

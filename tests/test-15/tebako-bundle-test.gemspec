@@ -18,7 +18,7 @@ Gem::Specification.new do |spec|
 #    `git ls-files -z`.split("\x0").reject { |f| f.match(%r{\A(?:test|spec|features)/}) }
 #  end
 
-  spec.files       = Dir["bin/**/*.rb"] + Dir["lib/**/*.rb"] 
+  spec.files       = Dir["bin/**/*.rb"] + Dir["lib/**/*.rb"]
 
   spec.bindir        = "bin"
   spec.executables   << "tebako-test-run.rb"

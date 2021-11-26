@@ -1,5 +1,3 @@
-#! /bin/bash
-#
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -25,29 +23,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-
-testHelp() {
-  result="$( $DIR/tebako --help )"
-  assertEquals 0 $?
-  assertContains "$result" "Usage:"
-}
-
-testMissingCommand() {
-  result="$( $DIR/tebako )"
-  assertEquals 4 $?
-  assertContains "$result" "Missing command"
-  assertContains "$result" "Usage:"
-}
-
-testUnknownCommand() {
-  result="$( $DIR/tebako jump )"
-  assertEquals 5 $?
-  assertContains "$result" "Unknown command"
-  assertContains "$result" "Usage:"
-}
-
-# .......................................
-DIR0="$( cd "$( dirname "$0" )" && pwd )"
-DIR="$( cd $DIR0/../../bin && pwd )"
-echo "Running tebako CLI tests at $DIR"
-. $DIR0/../shunit2/shunit2
+MAINLIBS = -ldwarfs-wr -ldwarfs -lfolly -lglog -lgflags -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
+-lfmt -ldouble-conversion -lglog -lgflags -levent -liberty -lacl -lssl -lcrypto -llz4 -lz -llzma -lzstd \
+-ljemalloc -lrt -lpthread -ldl -lc -lm -lgcc_eh -lunwind -llzma -lcrypt -lanl -lpthread -lstdc++

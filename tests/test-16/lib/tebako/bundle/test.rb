@@ -8,7 +8,7 @@ module Tebako
     module Test
       class Error < StandardError; end
 
-      class TebakoTest 
+      class TebakoTest
        def msg
         table = Text::Table.new
         table.head = ['A', 'B']
@@ -18,7 +18,7 @@ module Tebako
       end
 
       def run!
-       puts "Hello! This is test-20 talking from inside DwarFS"
+       puts "Hello! This is test-15 talking from inside DwarFS"
        puts "You will now see a nice table that will be drawn for you by text-table gem."
        self.msg
       end
