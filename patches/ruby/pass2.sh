@@ -24,11 +24,9 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-
 restore_and_save() {
   test -e $1.old && cp -f $1.old $1
   cp -f $1 $1.old
-
 }
 
 # Copy make script include file that list all libraries required for tebako static build
@@ -39,10 +37,6 @@ cp -f $PATCH_DIR/mainlibs-pass2.mk $2/mainlibs-pass2.mk
 # Ruby 2.7.4:
 restore_and_save $1/template/Makefile.in
 sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass2.mk/g" $1/template/Makefile.in
-
-# Ruby 2.6.3:
-#restore_and_save $1/Makefile.in
-#sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass2.mk/g" $1/Makefile.in
 
 # Fix bigdecimal extension
 # [I cannot explain why it is required. It does not seem to be related to any patching we do]
@@ -70,7 +64,6 @@ restore_and_save $1/dir.c
 # Replace only the first occurence
 sed -i "0,/#ifdef __APPLE__/s//#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\n#ifdef __APPLE__/" $1/dir.c
 #  [TODO MacOS]  libdwarfs issues 45,46
-
 
 # Addition to C files
 IFS= read -r -d '' c_sbst << EOM
@@ -123,8 +116,6 @@ EOM
 
 sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/tool/mkconfig.rb
 
-
-
 # ruby/ext/openssl/ossl_x509store.c
 #  [TODO ???]
 
@@ -135,7 +126,6 @@ sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/tool/mkconfig.rb
 # ruby/process.c
 #restore_and_save $1/process.c
 # [TODO ???]
-
 
 # [TODO Windows]
 # ruby/win32/file.c
