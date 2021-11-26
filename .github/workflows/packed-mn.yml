@@ -32,7 +32,7 @@ env:
   BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
 
 jobs:
-  Ubuntu-build:
+  package-metanorma:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'skip ci')"
 
@@ -54,6 +54,13 @@ jobs:
       with:
         fetch-depth: 1
      
+    - name: Checkout packed-mn
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 1
+        repository: metanorma/packed-mn
+        path: ${{github.workspace}}/packed-mn
+
     - name: Create deps folder and cache key
       run: |
         mkdir ${{github.workspace}}/${{env.DEPS}}
@@ -62,6 +69,7 @@ jobs:
         echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
         echo  ${{ env.RUBY_HASH }} >> key.txt
         echo  ${{ env.BUNDLER_HASH }} >> key.txt
+        ls -l ${{github.workspace}}/packed-mn
     
     - name: Process cache
       id: cache
