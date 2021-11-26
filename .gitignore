@@ -26,12 +26,14 @@
 
 # CMake files
 CMakeCache.txt
+CMakeSettings.json
 CMakeFiles
 Makefile
 cmake_install.cmake
 install_manifest.txt
 
 # Build files
+build
 out
 output
 
