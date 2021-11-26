@@ -35,8 +35,12 @@ PATCH_DIR="$( cd "$( dirname "$0" )" && pwd )"
 cp -f $PATCH_DIR/mainlibs-pass1.mk $2/mainlibs-pass1.mk
 
 # Pin tebako static build libraries
+# Ruby 2.7.4:
 restore_and_save $1/template/Makefile.in
 sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass1.mk/g" $1/template/Makefile.in
+# Ruby 2.6.3:
+#restore_and_save $1/Makefile.in
+#sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass1.mk/g" $1/Makefile.in
 
 # Fix bigdecimal extension
 # [I cannot explain why it is required. It does not seem to be related to any patching we do]
@@ -53,6 +57,36 @@ restore_and_save $1/dir.c
 restore_and_save $1/dln.c
 restore_and_save $1/file.c
 restore_and_save $1/io.c
+
+# WE DO NOT ACCEPT OUTSIDE GEM PATHS
+# ruby/lib/rubygems/path_support.rb
+restore_and_save $1/lib/rubygems/path_support.rb
+
+re="@home = env\[\"GEM_HOME\"\] || Gem.default_dir"
+IFS= read -r -d '' sbst << EOM
+    @home = env\["GEM_HOME"\] || Gem.default_dir
+# -- Start of tebako patch --
+    unless env\['TEBAKO_PASS_THROUGH'\]
+      @home = Gem.default_dir unless @home.index('\/__tebako_memfs__') == 0
+    end
+# -- End of tebako patch --
+EOM
+
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/lib/rubygems/path_support.rb
+
+re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
+IFS= read -r -d '' sbst << EOM
+    @path = split_gem_path env\["GEM_PATH"\], @home
+# -- Start of tebako patch --
+    unless env\['TEBAKO_PASS_THROUGH'\]
+      @path.keep_if do |xpath|
+        xpath.index('\/__tebako_memfs__') == 0
+      end
+    end
+# -- End of tebako patch --
+EOM
+
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/lib/rubygems/path_support.rb
 
 restore_and_save $1/process.c
 restore_and_save $1/tool/mkconfig.rb
