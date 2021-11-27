@@ -121,7 +121,7 @@ export CXX=${CXX:-g++}
 
 case "$1" in
 	setup)
-    echo "Setting up tebako at $prefix with custom configuration from $config"
+    echo "Setting up tebako at $prefix"
     cmake -DCMAKE_BUILD_TYPE=Release \
           -DDEPS:STRING=$prefix/deps \
           -DSETUP_MODE:BOOLEAN=ON    \

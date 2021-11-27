@@ -7,12 +7,14 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
+      - .github/workflows/packed-mn.yml
   pull_request:
     branches: [ master ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
+      - .github/workflows/packed-mn.yml
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -81,7 +83,7 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       run:  ${{github.workspace}}/bin/tebako setup
 
-    - name: tebako functional tests
+    - name: tebako tests (#1)
 # show cmake output aka verbose (yes/no)
       env:
         VERBOSE: no
@@ -108,14 +110,7 @@ jobs:
       uses: actions/checkout@v2
       with:
         fetch-depth: 1
-
-    - name: Checkout shell test framework
-      uses: actions/checkout@v2
-      with:
-        repository: kward/shunit2
-        path: ${{github.workspace}}/tests/shunit2
-        fetch-depth: 1
-      
+     
     - name: Create deps folder and cache key
       run: |
         mkdir ${{github.workspace}}/${{env.DEPS}}
@@ -144,7 +139,7 @@ jobs:
 
     - run: bundle update --all
 
-    - name: second test set
+    - name: tebako tests (#2)
       run: |
         cd ${{github.workspace}}/tests-2
         bundle install
