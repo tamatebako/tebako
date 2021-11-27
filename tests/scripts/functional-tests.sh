@@ -34,11 +34,11 @@ press_runner() {
 # $2 -- entry point
 # $3 -- tebako package name
    if [ "${VERBOSE}" == "yes" ]; then
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals 0 ${PIPESTATUS[0]}
      result="$( cat tebako_test.log )"
    else
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
      assertEquals 0 $?
    fi
 

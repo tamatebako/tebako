@@ -137,8 +137,6 @@ jobs:
         bundler: 2.2.3
         bundler-cache: true
 
-    - run: bundle update --all
-
     - name: tebako tests (#2)
       run: |
         cd ${{github.workspace}}/tests-2
