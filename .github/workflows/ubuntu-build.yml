@@ -1,4 +1,4 @@
-name: Ubuntu build
+name: Ubuntu-build-and-test
 
 on:
   push:
@@ -32,7 +32,7 @@ env:
   BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
 
 jobs:
-  build:
+  build-and-test-1:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'skip ci')"
 
@@ -81,24 +81,61 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       run:  ${{github.workspace}}/bin/tebako setup
 
-  test-1:
-    needs: build
-    runs-on: ubuntu-latest
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
-
-    steps:
     - name: tebako functional tests
 # show cmake output aka verbose (yes/no)
       env:
         VERBOSE: no
       run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
-  test-2:
-    needs: build
+  build-and-test-2:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'skip ci')"
 
     steps:
+# Ref CMakeLists.txt for the full list and comments
+    - name: Install packages 
+      run: |
+        sudo apt-get update
+        sudo apt-get install \
+        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
+        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+        libboost-regex-dev libboost-system-dev libboost-thread-dev \
+        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
+        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libsqlite3-dev
+        
+    - name: Checkout tebako packaging environment
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 1
+
+    - name: Checkout shell test framework
+      uses: actions/checkout@v2
+      with:
+        repository: kward/shunit2
+        path: ${{github.workspace}}/tests/shunit2
+        fetch-depth: 1
+      
+    - name: Create deps folder and cache key
+      run: |
+        mkdir ${{github.workspace}}/${{env.DEPS}}
+        echo "Keys" > key.txt
+        echo  ${{ env.INCBIN_TAG }} >> key.txt
+        echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
+        echo  ${{ env.RUBY_HASH }} >> key.txt
+        echo  ${{ env.BUNDLER_HASH }} >> key.txt
+    
+    - name: Process cache
+      id: cache
+      uses: actions/cache@v2
+      with:
+        path: ${{github.workspace}}/${{env.DEPS}}
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v18
+
+    - name: tebako setup
+      if: steps.cache.outputs.cache-hit != 'true'
+      run:  ${{github.workspace}}/bin/tebako setup
+
     - uses: ruby/setup-ruby@v1
       with:
         ruby-version: 2.7.4
