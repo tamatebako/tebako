@@ -46,9 +46,11 @@ include/version.h
 
 # VS files
 .vs
+.vscode
 
 # Test artifacts
 tests/shunit2
 test-*-package
 tests/test-11/tebako-test-0.0.1.gem
 tests/test-15/tebako-bundle-test-0.0.1.gem
+packed-mn

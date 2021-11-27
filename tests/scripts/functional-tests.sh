@@ -78,11 +78,11 @@ press_runner_with_error() {
 # $4 -- expected error code
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
+     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals $4 ${PIPESTATUS[0]}
      result="$( cat tebako_test.log )"
    else
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
+     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
      assertEquals $4 $?
    fi
 

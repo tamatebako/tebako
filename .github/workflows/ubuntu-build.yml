@@ -2,7 +2,7 @@ name: Ubuntu build
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, maxirmx-issue-23 ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -32,7 +32,7 @@ env:
   BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
 
 jobs:
-  Ubuntu-build:
+  build:
     runs-on: ubuntu-latest
     if: "!contains(github.event.head_commit.message, 'skip ci')"
 
@@ -81,8 +81,35 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       run:  ${{github.workspace}}/bin/tebako setup
 
+  test-1:
+    needs: build
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    steps:
     - name: tebako functional tests
 # show cmake output aka verbose (yes/no)
       env:
         VERBOSE: no
       run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
+
+  test-2:
+    needs: build
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+
+    steps:
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: 2.7.4
+        bundler: 2.2.3
+        bundler-cache: true
+
+    - run: bundle update --all
+
+    - name: second test set
+      run: |
+        cd ${{github.workspace}}/tests-2
+        bundle install
+        cd ${{github.workspace}}
+        ruby ${{github.workspace}}/tests-2/tebako-test.rb
