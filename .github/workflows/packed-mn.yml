@@ -83,13 +83,6 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       run:  ${{github.workspace}}/bin/tebako setup
 
-    - name: Checkout packed-mn
-      uses: actions/checkout@v2
-      with:
-        repository: metanorma/packed-mn
-        path: ${{github.workspace}}/packed-mn
-        fetch-depth: 1
-
     - name: Package metanorma
       run: |
         ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=metanorma --output=metanorma-package
