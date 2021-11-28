@@ -83,11 +83,11 @@ jobs:
       if: steps.cache.outputs.cache-hit != 'true'
       run:  ${{github.workspace}}/bin/tebako setup
   
-#    - name: tebako tests (#1)
+    - name: tebako tests (#1)
 # show cmake output aka verbose (yes/no)
-#      env:
-#        VERBOSE: yes
-#      run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
+      env:
+        VERBOSE: yes
+      run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
 #    - uses: ruby/setup-ruby@v1
 #      with:

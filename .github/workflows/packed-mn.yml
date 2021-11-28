@@ -79,7 +79,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v18
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v19
 
     - name: tebako setup
       if: steps.cache.outputs.cache-hit != 'true'
