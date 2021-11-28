@@ -229,7 +229,6 @@ ExternalProject_Add(${RUBY_PRJ}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
-   UPDATE_COMMAND ""
    PATCH_COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
                      --enable-bundled-libyaml
