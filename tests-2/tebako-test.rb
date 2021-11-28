@@ -91,7 +91,7 @@ class TestTebako < MiniTest::Test
     end
 
   # Test that we can build and run executables.
-  # secondary test: testing short options with whitespaces
+  # Test short options with whitespaces
     def test_helloworld
         name = "helloworld"
         package = "#{name}-package"
@@ -105,7 +105,7 @@ class TestTebako < MiniTest::Test
     end
 
   # Test that executable can write a file to the current working directory
-  # secondary test: testing short options without whitespaces
+  # Test short options without whitespaces
   def test_writefile
         name = "writefile"
         package = "#{name}-package"
@@ -150,11 +150,11 @@ class TestTebako < MiniTest::Test
         end
     end
 
-      # Test that arguments are passed correctly to scripts.
+  # Test that arguments are passed correctly to scripts
+  # Test that scripts can exit with a specific exit status code
     def test_arguments
         name = "arguments"
         with_fixture_press_and_run name do |package|
-            system()
             out, st = Open3.capture2("#{package} foo \"bar baz \\\"quote\\\"\"")
             assert_equal 5, st
       end

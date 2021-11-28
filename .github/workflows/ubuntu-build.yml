@@ -86,7 +86,7 @@ jobs:
     - name: tebako tests (#1)
 # show cmake output aka verbose (yes/no)
       env:
-        VERBOSE: no
+        VERBOSE: yes
       run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
   build-and-test-2:
