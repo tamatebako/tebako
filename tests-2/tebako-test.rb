@@ -159,7 +159,6 @@ class TestTebako < MiniTest::Test
             assert_equal 5, st
       end
     end
-  end
 end
 
 
