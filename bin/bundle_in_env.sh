@@ -32,5 +32,5 @@ echo  Changing current directory to $1
 cd $1
 
 echo Running "env --unset=GEM_HOME --unset=GEM_PATH PATH='$2:$PATH' bundle install --jobs=4 --deployment"
-env --unset=GEM_HOME --unset=GEM_PATH PATH="$2:$PATH" TEBAKO_PASS_THROUGH=1 bundle install --jobs=4 # --deployment
+env --unset=GEM_HOME --unset=GEM_PATH PATH="$2:$PATH" TEBAKO_PASS_THROUGH=1 bundle install --jobs=4
 

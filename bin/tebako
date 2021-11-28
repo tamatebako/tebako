@@ -23,6 +23,11 @@
 # POSSIBILITY OF SUCH DAMAGE.
 #
 
+# More safety, by turning some bugs into errors.
+# Without `errexit` you don’t need ! and can replace
+# PIPESTATUS with a simple $?, but I don’t do that.
+set -o errexit -o pipefail -o noclobber -o nounset
+
 run_help() {
 echo "Usage: "
 echo "  tebako setup [-p|--prefix=<path>]"
@@ -31,11 +36,6 @@ echo "  tebako press [-p|--prefix=<path>] -r|--root=<path> -e|--entry-point=<pat
 echo "         Tebako prefix defaults to current directory"
 echo "         Packaged file defaults to 'entry point' file name in the current directory"
 }
-
-# More safety, by turning some bugs into errors.
-# Without `errexit` you don’t need ! and can replace
-# PIPESTATUS with a simple $?, but I don’t do that.
-set -o errexit -o pipefail -o noclobber -o nounset
 
 # -allow a command to fail with !’s side effect on errexit
 # -use return value from ${PIPESTATUS[0]}, because ! hosed $?

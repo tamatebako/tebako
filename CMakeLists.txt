@@ -76,6 +76,17 @@ if (NOT ${SETUP_MODE})
     cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
   endif()
 
+  cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
+  if(${IS_EN_ABSOLUTE})
+    cmake_path(IS_PREFIX FS_ROOT ${FS_ENTRANCE} IS_FS_EN_PREFIX)
+    if(NOT ${IS_FS_EN_PREFIX})
+      message(FATAL_ERROR "Entry point ${FS_ENTRANCE} is not in the project root ${FS_ROOT}")
+    endif(NOT ${IS_FS_EN_PREFIX})
+    set(FS_ENTR_TMP ${FS_ENTRANCE})
+    cmake_path(RELATIVE_PATH FS_ENTRANCE BASE_DIRECTORY ${FS_ROOT})
+    message("Absolute path to entry point '${FS_ENTR_TMP}' will be reduced '${FS_ENTRANCE}' relative to '${FS_ROOT}'")
+  endif(${IS_EN_ABSOLUTE})
+
   if ("-${PCKG}" STREQUAL "-")
     set(APP_NAME "${FS_CURRENT}/tebako")
   else()
@@ -319,21 +330,19 @@ else (${SETUP_MODE})
   elseif(GFLENGTH GREATER 0)
 #  Found Gemfile but no gemspec
     message("Deploying Gemfile")
-    set(FS_ENTRY_POINT "/local/bin/${FS_ENTRANCE}")
-    set(FS_APP_HOME "/local")
+    if(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
+      message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
+    endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
+    set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
+    set(FS_APP_HOME "/local")
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
     ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
     add_custom_target(source_filesystem
        COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
-#       COMMAND ${TBD}/gem install rake -v '13.0.6' --source 'https://rubygems.org/' --install-dir ${TGD}
-#       COMMAND ${TBD}/gem install bundler:2.1.4 --verbose --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-       COMMAND ${PROJECT_SOURCE_DIR}/bin/bundle_in_env.sh ${TLD} ${TBD}
-       COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
-               ( ${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
-                 ${CMAKE_COMMAND} -E false )
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
        DEPENDS clean_filesystem
     )
   elseif(GLENGTH GREATER 0)
@@ -359,14 +368,6 @@ else (${SETUP_MODE})
 # No gem, no gemspec, no gemfile
 # Simple ruby script
     message("Collecting simple Ruby script from ${FS_ROOT}")
-    cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
-    if(${IS_EN_ABSOLUTE})
-      cmake_path(IS_PREFIX FS_ROOT ${FS_ENTRANCE} IS_FS_EN_PREFIX)
-      if(NOT ${IS_FS_EN_PREFIX})
-        message(FATAL_ERROR "Entry point ${FS_ENTRANCE} is not in the project root ${FS_ROOT}")
-      endif(NOT ${IS_FS_EN_PREFIX})
-      cmake_path(RELATIVE_PATH FS_ENTRANCE BASE_DIRECTORY ${FS_ROOT})
-    endif(${IS_EN_ABSOLUTE})
     if(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
       message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
     endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
