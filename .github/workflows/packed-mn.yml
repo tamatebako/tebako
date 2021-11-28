@@ -22,7 +22,7 @@ env:
   BUILD_TYPE: Release
 # The folder for dwarfs and other dependenies
   DEPS: deps
-# GitHub dependencies' 
+# GitHub dependencies'
   INCBIN_TAG:    "348e36b"
   DWARFS_WR_TAG: "b1c1cb3"
 # Tarball dependencies
@@ -38,7 +38,7 @@ jobs:
 
     steps:
 # Ref CMakeLists.txt for the full list and comments
-    - name: Install packages 
+    - name: Install packages
       run: |
         sudo apt-get update
         sudo apt-get install \
@@ -49,12 +49,12 @@ jobs:
         libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
         libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
         texinfo
-        
+
     - name: Checkout tebako packaging environment
       uses: actions/checkout@v2
       with:
         fetch-depth: 1
-     
+
     - name: Checkout packed-mn
       uses: actions/checkout@v2
       with:
@@ -71,7 +71,7 @@ jobs:
         echo  ${{ env.RUBY_HASH }} >> key.txt
         echo  ${{ env.BUNDLER_HASH }} >> key.txt
         ls -l ${{github.workspace}}/packed-mn
-    
+
     - name: Process cache
       id: cache
       uses: actions/cache@v2

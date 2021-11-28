@@ -14,7 +14,7 @@ class TestTebako < MiniTest::Test
     FixturePath = File.expand_path(File.join(File.dirname(__FILE__), 'fixtures'))
     Prefix = File.expand_path(File.join(File.dirname(__FILE__), '..'))
     Tebako = File.join(Prefix, "bin", "tebako")
-
+    
     def initialize(*args)
         super(*args)
         @testnum = 0
@@ -62,18 +62,18 @@ class TestTebako < MiniTest::Test
             FileUtils.rm_rf tempdirname
         end
      end
-
+    
   # Create a pristine environment to test built executables. Files are
-  # copied and the PATH environment is set to the minimal.
+  # copied and the PATH environment is set to the minimal. 
   # yeilds the name for pristine temp dir (as opposed to temp dir used for packaging)
     def pristine_env(*files)
         with_tmpdir files do |tempdirname|
             with_env "PATH" => "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:" do
                 yield(tempdirname)
-            end
+            end 
         end
     end
-
+ 
   # A kind of standart creates names - tmp dir with fixture - press sequence
     def with_fixture_press_and_env(name)
         package = "#{name}-package"
@@ -90,14 +90,13 @@ class TestTebako < MiniTest::Test
     def test_111_smoke
         assert system(Tebako + " --help > /dev/null")
     end
-=begin
 
   # Test that we can build and run executables.
   # Test short options with whitespaces
     def test_121_helloworld
         name = "helloworld"
         package = "#{name}-package"
-        with_fixture name do
+        with_fixture name do               
             assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
             assert File.exist?(package)
             pristine_env package do |tempdirname|
@@ -112,7 +111,7 @@ class TestTebako < MiniTest::Test
         name = "writefile"
         package = "#{name}-package"
         with_fixture_press_and_env name do
-            with_fixture name do
+            with_fixture name do               
                 assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
                 assert File.exist?(package)
                 pristine_env package do |tempdirname|
@@ -120,7 +119,7 @@ class TestTebako < MiniTest::Test
                     assert File.exist?("output.txt")
                     assert_equal "output", File.read("output.txt")
                 end
-            end
+            end      
         end
     end
 
@@ -173,18 +172,15 @@ class TestTebako < MiniTest::Test
         end
     end
 
-=end
-
   # Test that the standard input to a script can be redirected from a file.
     def test_127_stdin_redir
         name = "stdinredir"
         package = "#{name}-package"
-        with_fixture name do
+        with_fixture name do               
             assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
             assert File.exist?(package)
             pristine_env package, "#{name}/input.txt" do |tempdirname|
-                system("ls -l #{tempdirname}/input.txt")
-                out, st = Open3.capture2("#{tempdirname}/#{package} < #{tempdirname}/input.txt")
+                out, st = Open3.capture2("#{tempdirname}/#{package} < #{tempdirname}/input.txt") 
                 assert_equal 104, st.exitstatus
             end
         end
