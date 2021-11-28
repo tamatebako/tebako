@@ -14,7 +14,7 @@ class TestTebako < MiniTest::Test
     FixturePath = File.expand_path(File.join(File.dirname(__FILE__), 'fixtures'))
     Prefix = File.expand_path(File.join(File.dirname(__FILE__), '..'))
     Tebako = File.join(Prefix, "bin", "tebako")
-    
+
     def initialize(*args)
         super(*args)
         @testnum = 0
@@ -62,70 +62,72 @@ class TestTebako < MiniTest::Test
             FileUtils.rm_rf tempdirname
         end
      end
-    
+
   # Create a pristine environment to test built executables. Files are
-  # copied and the PATH environment is set to the minimal. 
+  # copied and the PATH environment is set to the minimal.
+  # yeilds the name for pristine temp dir (as opposed to temp dir used for packaging)
     def pristine_env(*files)
-        with_tmpdir files do
+        with_tmpdir files do |tempdirname|
             with_env "PATH" => "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:" do
-                yield
-            end 
+                yield(tempdirname)
+            end
         end
     end
- 
+
   # A kind of standart creates names - tmp dir with fixture - press sequence
-    def with_fixture_press_and_run(name)
+    def with_fixture_press_and_env(name)
         package = "#{name}-package"
         with_fixture name do
             assert system("#{Tebako} press --output=#{package} --entry-point=#{name}.rb --root=#{name} --prefix='#{Prefix}'")
             assert File.exist?(package)
-            pristine_env package do
-                yield package
+            pristine_env package do |tempdirname|
+                yield "#{tempdirname}/#{package}"
             end
         end
     end
 
   # Should be able to call tebako
-    def test_smoke
+    def test_111_smoke
         assert system(Tebako + " --help > /dev/null")
     end
+=begin
 
   # Test that we can build and run executables.
   # Test short options with whitespaces
-    def test_helloworld
+    def test_121_helloworld
         name = "helloworld"
         package = "#{name}-package"
-        with_fixture name do               
+        with_fixture name do
             assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
             assert File.exist?(package)
-            pristine_env package do
-                assert system(package)
+            pristine_env package do |tempdirname|
+                assert system("#{tempdirname}/#{package}")
             end
         end
     end
 
   # Test that executable can write a file to the current working directory
   # Test short options without whitespaces
-  def test_writefile
+  def test_122_writefile
         name = "writefile"
         package = "#{name}-package"
-        with_fixture_press_and_run name do
-            with_fixture name do               
+        with_fixture_press_and_env name do
+            with_fixture name do
                 assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
                 assert File.exist?(package)
-                pristine_env package do
-                    assert system(package)
+                pristine_env package do |tempdirname|
+                    assert system("#{tempdirname}/#{package}")
                     assert File.exist?("output.txt")
                     assert_equal "output", File.read("output.txt")
                 end
-            end      
+            end
         end
     end
 
   # Test that executable can use ruby standard libraries (i.e. cgi)
-    def test_rubycoreincl
+    def test_123_rubycoreincl
         name = "rubycoreincl"
-        with_fixture_press_and_run name do |package|
+        with_fixture_press_and_env name do |package|
             assert system(package)
             assert File.exist?("output.txt")
             assert_equal "3 &lt; 5", File.read("output.txt")
@@ -133,9 +135,9 @@ class TestTebako < MiniTest::Test
     end
 
   # Specified gems should be automatically included and usable in packaged app
-    def test_gemfile
+    def test_124_gemfile
         name = "bundlerusage"
-        with_fixture_press_and_run name do |package|
+        with_fixture_press_and_env name do |package|
             out, st = Open3.capture2(package)
             assert st
             assert_equal out, "Hello, the magic world of Ruby gems!\n"
@@ -143,21 +145,49 @@ class TestTebako < MiniTest::Test
     end
 
   # Test that subdirectories are recursively included
-    def test_directory_on_cmd_line
+    def test_125_directory
         name = "subdir"
-        with_fixture_press_and_run name do |package|
+        with_fixture_press_and_env name do |package|
             assert system(package)
         end
     end
 
-  # Test that arguments are passed correctly to scripts
-  # Test that scripts can exit with a specific exit status code
-    def test_arguments
+    # Test that arguments are passed correctly to scripts
+    # Test that scripts can exit with a specific exit status code
+    def test_125_arguments
         name = "arguments"
-        with_fixture_press_and_run name do |package|
+        with_fixture_press_and_env name do |package|
             out, st = Open3.capture2("#{package} foo \"bar baz \\\"quote\\\"\"")
-            assert_equal 5, st
+            assert_equal 5, st.exitstatus
       end
+    end
+
+  # Test that the standard output from a script can be redirected to a file.
+    def test_126_stdout_redir
+        name = "stdoutredir"
+        with_fixture_press_and_env name do |package|
+            system("#{package} > output.txt")
+            assert File.exist?("output.txt")
+            o = File.read("output.txt")
+            assert o == "Hello, World!\n" || o == "Hello, World!\r\n"
+        end
+    end
+
+=end
+
+  # Test that the standard input to a script can be redirected from a file.
+    def test_127_stdin_redir
+        name = "stdinredir"
+        package = "#{name}-package"
+        with_fixture name do
+            assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
+            assert File.exist?(package)
+            pristine_env package, "#{name}/input.txt" do |tempdirname|
+                system("ls -l #{tempdirname}/input.txt")
+                out, st = Open3.capture2("#{tempdirname}/#{package} < #{tempdirname}/input.txt")
+                assert_equal 104, st.exitstatus
+            end
+        end
     end
 end
 

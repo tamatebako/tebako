@@ -160,7 +160,7 @@ test_CLI_unknown_command() {
 #  --  tebako setup
 test_tebako_setup() {
   echo "tebako setup ... patience, please, it may take up to 1 hour."
-  if [ "${VERBOSE}" == "1" ]; then
+  if [ "${VERBOSE}" == "yes" ]; then
     $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
     assertEquals 0 ${PIPESTATUS[0]}
     result="$( cat tebako_test.log )"
