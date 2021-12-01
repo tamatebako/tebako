@@ -305,8 +305,24 @@ test_tebako_press_16() {
 # ......................................................................
 # 17. Ruby gem (with gemspec, with gemfile), entry point dows not exist
 test_tebako_press_17() {
-   echo "==> Ruby gem (with gemspec), entry point dows not exist"
+   echo "==> Ruby gem (with gemspec, with gemfile), entry point dows not exist"
    press_runner_with_error "${DIR_TESTS}/test-15" "test-does-not-exist.rb" "test-17-package" 104 "'tebako press' build step failed"
+}
+
+# ......................................................................
+# 18. Ruby project (no gemspec, with gemfile)
+test_tebako_press_18() {
+   echo "==> Ruby project (no gemspec, with gemfile)"
+   press_runner "${DIR_TESTS}/test-18" "tebako-test-run.rb" "test-18-package"
+   package_runner "./test-18-package" "| a1 | b1 |"
+}
+
+# ......................................................................
+# 19. Ruby project (no gemspec, with gemfile, with native extension)
+test_tebako_press_19() {
+   echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
+   press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
+   package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
 }
 
 #    - name: Test20 -AUC - Check that it is possible to verify content of packaged fs
