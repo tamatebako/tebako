@@ -1,4 +1,3 @@
-require 'ffi'
 require "text-table"
 
 table = Text::Table.new

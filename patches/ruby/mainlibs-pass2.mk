@@ -23,6 +23,9 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-MAINLIBS = -static -static-libgcc -ltebako-fs -ldwarfs-wr -ldwarfs -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
--lfmt -ldouble-conversion -lglog -lgflags -levent -liberty -lacl -lssl -lcrypto -llz4 -lz -lzstd \
--lgdbm -lreadline -ltinfo -lffi -lncurses -ljemalloc -lrt -lpthread -ldl -lc -lm -lgcc_eh -lunwind -llzma -lcrypt -lanl -lpthread -lstdc++
+MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
+-l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
+-l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:librt.a -lpthread -ldl -lc -lm \
+-lgcc_eh -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:libstdc++.a -l:liblzma.a 
+
+# -static -static-libgcc 

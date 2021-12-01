@@ -3,4 +3,3 @@
 source "http://rubygems.org"
 
 gem 'text-table','~> 1.2.4'
-gem 'ffi'

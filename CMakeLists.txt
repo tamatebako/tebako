@@ -199,7 +199,7 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     GIT_TAG ${DWARFS_WR_TAG}
     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
-#    UPDATE_COMMAND ""
+    UPDATE_COMMAND ""
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS} -DWITH_TESTS:BOOL=OFF
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
@@ -240,7 +240,7 @@ ExternalProject_Add(${RUBY_PRJ}
                      --with-jemalloc
                      --srcdir=${RUBY_SOURCE_DIR}
                      --prefix=${DATA_SRC_DIR}
-                     CFLAGS=${RUBY_C_FLAGS}
+                     CFLAGS=${RUBY_C_FLAGS} 
                      LDFLAGS=${RUBY_L_FLAGS}
    INSTALL_COMMAND ""
 )
@@ -294,6 +294,7 @@ else (${SETUP_MODE})
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
         add_custom_target(source_filesystem
+#           COMMAND ${TBD}/gem install bundler -v '2.2.3' --source 'https://rubygems.org/' --install-dir ${TGD}
            COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
 #           COMMAND ${TBD}/gem install rake -v '13.0.6' --source 'https://rubygems.org/' --install-dir ${TGD}
 #           COMMAND ${TBD}/gem install bundler:2.1.4 --verbose --no-document --install-dir ${TGD}
@@ -338,7 +339,8 @@ else (${SETUP_MODE})
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
     ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
     add_custom_target(source_filesystem
-       COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+       COMMAND ${TBD}/gem install bundler -v '2.2.3' --source 'https://rubygems.org/' --verbose --no-document --install-dir ${TGD}
+#    COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
