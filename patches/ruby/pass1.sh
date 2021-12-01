@@ -42,12 +42,6 @@ sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass1.mk/g" $1/template/Makefi
 #restore_and_save $1/Makefile.in
 #sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass1.mk/g" $1/Makefile.in
 
-# Fix bigdecimal extension
-# [I cannot explain why it is required. It does not seem to be related to any patching we do]
-cp -f $PATCH_DIR/bigdecimal-patch.h $1/ext/bigdecimal/bigdecimal-patch.h
-restore_and_save $1/ext/bigdecimal/bigdecimal.h
-sed -i "s/#include <float.h>/#include <float.h>\n#include \"bigdecimal-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h
-
 # Disable dynamic extensions
 restore_and_save $1/ext/Setup
 sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
