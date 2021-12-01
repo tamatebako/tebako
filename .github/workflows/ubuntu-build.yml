@@ -30,8 +30,8 @@ env:
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
+# Bundler version  
   BUNDLER_VER: "2.2.3"
-  BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
 
 jobs:
   build-and-test-1:
@@ -70,14 +70,13 @@ jobs:
         echo  ${{ env.INCBIN_TAG }} >> key.txt
         echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
         echo  ${{ env.RUBY_HASH }} >> key.txt
-        echo  ${{ env.BUNDLER_HASH }} >> key.txt
 
     - name: Process cache
       id: cache
       uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v19
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v20
 
     - name: tebako setup
       if: steps.cache.outputs.cache-hit != 'true'
@@ -118,14 +117,13 @@ jobs:
         echo  ${{ env.INCBIN_TAG }} >> key.txt
         echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
         echo  ${{ env.RUBY_HASH }} >> key.txt
-        echo  ${{ env.BUNDLER_HASH }} >> key.txt
 
     - name: Process cache
       id: cache
       uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v18
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v20
 
     - name: tebako setup
       if: steps.cache.outputs.cache-hit != 'true'
@@ -133,8 +131,8 @@ jobs:
 
     - uses: ruby/setup-ruby@v1
       with:
-        ruby-version: 2.7.4
-        bundler: 2.2.3
+        ruby-version: ${{ env.RUBY_VER }}
+        bundler: ${{ env.BUNDLER_VER }}
         bundler-cache: true
 
     - name: tebako tests (#2)

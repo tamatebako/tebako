@@ -223,12 +223,12 @@ test_tebako_press_05() {
 }
 
 # ......................................................................
-#  06. Ruby gem (Rails project)
-#test_tebako_press_06() {
-#   echo "==> Rails project"
-#   press_runner "${DIR_TESTS}/test-06" "rails" "test-06-package"
+#  06. Rails project
+test_tebako_press_06() {
+   echo "==> Rails project"
+   press_runner "${DIR_TESTS}/test-06" "bin/rails" "test-06-package"
 #   ???? package_runner "./test-06-package"  ????
-#}
+}
 
 # ......................................................................
 # 07. Rails project, ruby and bundler version mismatch

@@ -146,17 +146,25 @@ def_ext_prj_t(RUBY "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b2
 
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
-def_ext_prj_t(BUNDLER  "2.2.3"  "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db")
 
 def_ext_prj_g(INCBIN "348e36b")
 def_ext_prj_g(DWARFS_WR "b1c1cb3")
 
+if (DEFINED ENV{${BUNDLER_VER}})
+  set(BUNDLER_VER "2.2.3")
+  set(BUNDLER_ANNOTATION "default")
+else()
+  set(BUNDLER_VER $ENV{BUNDLER_VER})
+  set(BUNDLER_ANNOTATION "environment")
+endif()
+
 message("................................................")
 message("Collecting packages:")
-message("ruby                        - " v${RUBY_VER}           " at " ${RUBY_SOURCE_DIR})
-message("bundler                     - " v${BUNDLER_VER}        " at " ${BUNDLER_SOURCE_DIR})
-message("incbin                      - " @${INCBIN_TAG}         " at " ${INCBIN_SOURCE_DIR})
-message("dwarfs with tebako wrapper  - " @${DWARFS_WR_TAG}      " at " ${DWARFS_WR_SOURCE_DIR})
+message("ruby                        -  v${RUBY_VER}            at  ${RUBY_SOURCE_DIR}")
+message("incbin                      -  @${INCBIN_TAG}          at  ${INCBIN_SOURCE_DIR}")
+message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG}       at  ${DWARFS_WR_SOURCE_DIR}")
+message("................................................")
+message("Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
 message("................................................")
 
 # ...................................................................
