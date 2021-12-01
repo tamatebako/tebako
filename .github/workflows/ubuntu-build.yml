@@ -130,3 +130,16 @@ jobs:
     - name: tebako setup
       if: steps.cache.outputs.cache-hit != 'true'
       run:  ${{github.workspace}}/bin/tebako setup
+
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: 2.7.4
+        bundler: 2.2.3
+        bundler-cache: true
+
+    - name: tebako tests (#2)
+      run: |
+        cd ${{github.workspace}}/tests-2
+        bundle install
+        cd ${{github.workspace}}
+        ruby ${{github.workspace}}/tests-2/tebako-test.rb
