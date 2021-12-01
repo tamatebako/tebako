@@ -62,7 +62,7 @@ restore_and_save $1/io.c
 # ruby/lib/rubygems/path_support.rb
 restore_and_save $1/lib/rubygems/path_support.rb
 
-re="@home = env\[\"GEM_HOME\"\] || Gem.default_dir"
+re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
 IFS= read -r -d '' sbst << EOM
     @home = env\["GEM_HOME"\] || Gem.default_dir
 # -- Start of tebako patch --

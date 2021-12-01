@@ -82,7 +82,7 @@ patch_c_file() {
 }
 
 # ruby/dln.c
-patch_c_file "$1/dln.c"  "static st_table \*sym_tbl;"
+patch_c_file "$1/dln.c"  "static const char funcname_prefix\[sizeof(FUNCNAME_PREFIX) - 1\] = FUNCNAME_PREFIX;"
 
 # ruby/file.c
 patch_c_file "$1/file.c"  "VALUE rb_cFile;"
