@@ -111,7 +111,8 @@ press_runner_with_error() {
 #  15. Ruby gem (with gemspec, with gemfile)
 #  16. Ruby gem (with gemspec, with gemfile), gemfile with error                                            [Expected error at build step]
 #  17. Ruby gem (with gemspec, with gemfile), entry point dows not exist                                    [Expected error at build step]
-#  18 - 19  -- reserved
+#  18. Ruby project (no gemspec, with gemfile)
+#  19. Ruby project (no gemspec, with gemfile, with native extension)
 #  -20. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
 
 # ......................................................................

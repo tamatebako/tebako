@@ -52,7 +52,6 @@ string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
 include(ExternalProject)
 include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
-include(${CMAKE_SOURCE_DIR}/cmake/ensure_bundler.cmake)
 
 option(SETUP_MODE "Tebako setup" OFF)
 
@@ -292,12 +291,8 @@ else (${SETUP_MODE})
 #  Found xxx.gemspec and Gemfile
         message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
-        ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
         add_custom_target(source_filesystem
-#           COMMAND ${TBD}/gem install bundler -v '2.2.3' --source 'https://rubygems.org/' --install-dir ${TGD}
-           COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
-#           COMMAND ${TBD}/gem install rake -v '13.0.6' --source 'https://rubygems.org/' --install-dir ${TGD}
-#           COMMAND ${TBD}/gem install bundler:2.1.4 --verbose --no-document --install-dir ${TGD}
+           COMMAND ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 && bundle install
            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 && bundle exec gem build ${GEMSPEC}
@@ -337,10 +332,8 @@ else (${SETUP_MODE})
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
     set(FS_APP_HOME "/local")
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
-    ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
     add_custom_target(source_filesystem
-       COMMAND ${TBD}/gem install bundler -v '2.2.3' --source 'https://rubygems.org/' --verbose --no-document --install-dir ${TGD}
-#    COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+       COMMAND ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
