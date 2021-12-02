@@ -430,7 +430,7 @@ else (${SETUP_MODE})
 
   add_custom_target(tebako ALL
     COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_BINARY_DIR}/ruby ${APP_NAME}
-    COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
+    COMMAND ${CMAKE_COMMAND} -E echo "${APP_NAME} packaging has completed"
     DEPENDS patched_ruby
   )
 

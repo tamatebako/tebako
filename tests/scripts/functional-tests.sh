@@ -74,11 +74,11 @@ press_runner_with_error() {
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
      "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
-     assertEquals $4 "${PIPESTATUS[0]"}
+     assertEquals $4 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result="$( "$DIR_BIN/tebako" press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
-     assertEquals $4 $?
+     result="$( "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 )"
+     assertEquals "$4" "${PIPESTATUS[0]}"
    fi
 
    assertContains "$result" "Running tebako press script"
@@ -119,7 +119,7 @@ test_CLI_help() {
     result="$( cat tebako_test.log )"
   else
     result="$( "$DIR_BIN/tebako" --help )"
-    assertEquals 0 $?
+    assertEquals 0 "${PIPESTATUS[0]}"
   fi
   assertContains "$result" "Usage:"
 }
@@ -131,7 +131,7 @@ test_CLI_missing_command() {
     result="$( cat tebako_test.log )"
   else
     result="$( "$DIR_BIN/tebako" )"
-    assertEquals 4 $?
+    assertEquals 4 "${PIPESTATUS[0]}"
   fi
 
   assertContains "$result" "Missing command"
@@ -145,7 +145,7 @@ test_CLI_unknown_command() {
     result="$( cat tebako_test.log )"
   else
     result="$( "$DIR_BIN/tebako" jump )"
-    assertEquals 5 $?
+    assertEquals 5 "${PIPESTATUS[0]}"
   fi
 
   assertContains "$result" "Unknown command"
@@ -162,7 +162,7 @@ test_tebako_setup() {
     result="$( cat tebako_test.log )"
   else
     result="$( "$DIR_BIN/tebako" setup 2>&1 )"
-    assertEquals 0 $?
+    assertEquals 0 "${PIPESTATUS[0]}"
   fi
 
 # Check the first and the last messages expected from CMake script
