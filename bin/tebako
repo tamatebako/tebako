@@ -25,7 +25,7 @@
 
 # More safety, by turning some bugs into errors.
 # Without `errexit` you don’t need ! and can replace
-# PIPESTATUS with a simple $?, but I don’t do that.
+# PIPESTATUS with a simple $?
 set -o errexit -o pipefail -o noclobber -o nounset
 
 run_help() {

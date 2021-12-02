@@ -24,24 +24,41 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+# More safety, by turning some bugs into errors.
+# Without `errexit` you don’t need ! and can replace
+# PIPESTATUS with a simple $?
+set -o errexit -o pipefail -o noclobber -o nounset
+
+# ....................................................
 restore_and_save() {
+  echo "Pass 2 processing $1"
   test -e $1.old && cp -f $1.old $1
   cp -f $1 $1.old
 }
 
-# Copy make script include file that list all libraries required for tebako static build
-PATCH_DIR="$( cd "$( dirname "$0" )" && pwd )"
-cp -f $PATCH_DIR/mainlibs-pass2.mk $2/mainlibs-pass2.mk
-
+# ....................................................
 # Pin tebako static build libraries
-# Ruby 2.7.4:
+# Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
+# Ruby 2.6.3:  template is in 'ruby/Makefile.in'
 restore_and_save $1/template/Makefile.in
-sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass2.mk/g" $1/template/Makefile.in
 
+re="MAINLIBS = @MAINLIBS@"
+! IFS= read -r -d '' sbst << EOM
+# -- Start of tebako patch --
+MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
+-l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
+-l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:librt.a -lpthread -ldl -lc -lm \\\\
+-lgcc_eh -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:libstdc++.a -l:liblzma.a 
+# -- End of tebako patch --
+EOM
+
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" $1/template/Makefile.in
+
+# ....................................................
 # Disable dynamic extensions
-restore_and_save $1/ext/Setup
-sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
+# Uses pass1 patch
 
+# ....................................................
 # Patch main in order to redefine command line
 restore_and_save $1/main.c
 # Replace only the first occurence
@@ -53,14 +70,33 @@ sed -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/"
 # ....................................................
 # Put lidwarfs IO bindings to Ruby files
 
+# ....................................................
 # ruby/dir.c
 restore_and_save $1/dir.c
 # Replace only the first occurence
-sed -i "0,/#ifdef __APPLE__/s//#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\n#ifdef __APPLE__/" $1/dir.c
+# As opposed to other c files subsitution inserts includes before the pattern, not after
 #  [TODO MacOS]  libdwarfs issues 45,46
 
-# Addition to C files
-IFS= read -r -d '' c_sbst << EOM
+re="#ifdef __APPLE__"
+! IFS= read -r -d '' sbst << EOM
+
+\/* -- Start of tebako patch -- *\/
+#include <tebako\/tebako-defines.h>
+#include <tebako\/tebako-io.h>
+\/* -- End of tebako patch -- *\/
+
+#ifdef __APPLE__
+EOM
+
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" $1/dir.c
+
+# ....................................................
+# Put lidwarfs IO bindings to other c files
+
+patch_c_file() {
+  restore_and_save $1
+
+! IFS= read -r -d '' c_sbst << EOM
 
 \/* -- Start of tebako patch -- *\/
 #include <tebako\/tebako-defines.h>
@@ -69,8 +105,6 @@ IFS= read -r -d '' c_sbst << EOM
 
 EOM
 
-patch_c_file() {
-  restore_and_save $1
   sbst="${c_sbst}$2"
   sed -i "0,/$2/s//${sbst//$'\n'/"\\n"}/g" $1
 }
@@ -87,10 +121,11 @@ patch_c_file "$1/io.c"  "VALUE rb_cIO;"
 # ruby/util.c
 patch_c_file "$1/util.c"  "#ifndef S_ISDIR"
 
+# ....................................................
 # ruby/tool/mkconfig.rb
 restore_and_save $1/tool/mkconfig.rb
 re="if fast\[name\]"
-IFS= read -r -d '' sbst << EOM
+! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
      v_head_comp = \"  CONFIG\[\\\\\"prefix\\\\\"\] #{eq} \"
      if v_head_comp == v\[0...(v_head_comp.length)\]
@@ -110,6 +145,11 @@ EOM
 
 sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/tool/mkconfig.rb
 
+
+# ....................................................
+# ruby/ext/bigdecimal/bigdecimal.h
+# Uses pass1 patch
+
 # ruby/ext/openssl/ossl_x509store.c
 #  [TODO ???]
 
@@ -122,5 +162,5 @@ sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/tool/mkconfig.rb
 # [TODO ???]
 
 # [TODO Windows]
-# ruby/win32/file.c
-# ruby/win32/win32.c
+# $1/win32/file.c
+# $1/win32/win32.c
