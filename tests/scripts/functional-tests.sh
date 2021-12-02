@@ -44,7 +44,7 @@ press_runner() {
 
 # Check the first and the last messages expected from CMake script
    assertContains "$result" "Running tebako press script"
-   assertContains "$result" "Tebako packaging has completed"
+   assertContains "$result" "packaging has completed"
 }
 
 package_runner() {
@@ -74,7 +74,7 @@ press_runner_with_error() {
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
      "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
-     assertEquals $4 "${PIPESTATUS[0]}"
+     assertEquals "$4" "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
      result="$( "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 )"
@@ -330,4 +330,5 @@ DIR_BIN="$( cd "$DIR_ROOT"/bin && pwd )"
 DIR_TESTS="$( cd "$DIR_ROOT"/tests && pwd )"
 
 echo "Running tebako tests"
+# shellcheck source=/dev/null
 . "$DIR_TESTS/shunit2/shunit2"
