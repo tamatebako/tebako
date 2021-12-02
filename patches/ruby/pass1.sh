@@ -43,6 +43,7 @@ restore_and_save() {
 restore_and_save "$1/template/Makefile.in"
 
 re="MAINLIBS = @MAINLIBS@"
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
 MAINLIBS = -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
@@ -52,6 +53,7 @@ MAINLIBS = -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmet
 # -- End of tebako patch --
 EOM
 
+# 
 sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 # ....................................................
@@ -65,6 +67,7 @@ sed -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
 restore_and_save "$1/lib/rubygems/path_support.rb"
 
 re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
     @home = env\["GEM_HOME"\] || Gem.default_dir
 # -- Start of tebako patch --
@@ -77,6 +80,7 @@ EOM
 sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
     @path = split_gem_path env\["GEM_PATH"\], @home
 # -- Start of tebako patch --
@@ -97,7 +101,7 @@ sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 # ruby/ext/bigdecimal/bigdecimal.h
 restore_and_save "$1/ext/bigdecimal/bigdecimal.h"
 re="#include <float.h>"
-
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 #include <float.h>
 

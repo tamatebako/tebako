@@ -82,6 +82,7 @@ jobs:
         key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v22
 
     - name: tebako setup
+      if: steps.cache.outputs.cache-hit != 'true'
       run:  ${{github.workspace}}/bin/tebako setup
 
     - name: Package metanorma
@@ -89,3 +90,8 @@ jobs:
         ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
         test -f metanorma-package
 
+    - name: tebako prepare cache
+      if: steps.cache.outputs.cache-hit != 'true'
+      run:  |
+        rm -rf ${{github.workspace}}/deps/_ruby*
+        ${{github.workspace}}/bin/tebako setup

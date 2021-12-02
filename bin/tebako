@@ -39,6 +39,7 @@ echo "         Packaged file defaults to 'entry point' file name in the current 
 
 # -allow a command to fail with !’s side effect on errexit
 # -use return value from ${PIPESTATUS[0]}, because ! hosed $?
+# shellcheck disable=SC2251
 ! getopt --test > /dev/null 
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
     echo "'getopt --test' failed in this environment."
@@ -52,6 +53,7 @@ LONGOPTS=help,root:,entry-point:,output:,prefix:
 # -temporarily store output to be able to check for errors
 # -activate quoting/enhanced mode (e.g. by writing out “--options”)
 # -pass arguments only via   -- "$@"   to separate them correctly
+# shellcheck disable=SC2251
 ! PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$0" -- "$@")
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     # e.g. return value is 1

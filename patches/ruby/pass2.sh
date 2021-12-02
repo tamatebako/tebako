@@ -43,6 +43,7 @@ restore_and_save() {
 restore_and_save "$1/template/Makefile.in"
 
 re="MAINLIBS = @MAINLIBS@"
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
 MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
@@ -78,6 +79,7 @@ restore_and_save "$1/dir.c"
 #  [TODO MacOS]  libdwarfs issues 45,46
 
 re="#ifdef __APPLE__"
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 
 \/* -- Start of tebako patch -- *\/
@@ -96,6 +98,7 @@ sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
 patch_c_file() {
   restore_and_save "$1"
 
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' c_sbst << EOM
 
 \/* -- Start of tebako patch -- *\/
@@ -125,6 +128,7 @@ patch_c_file "$1/util.c"  "#ifndef S_ISDIR"
 # ruby/tool/mkconfig.rb
 restore_and_save "$1/tool/mkconfig.rb"
 re="if fast\[name\]"
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
      v_head_comp = \"  CONFIG\[\\\\\"prefix\\\\\"\] #{eq} \"
