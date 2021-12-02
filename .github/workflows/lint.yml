@@ -23,8 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: ludeeus/action-shellcheck@master
-          with:
-            additional_files: 'tebako'
-            ignore_paths: deps 
-          env:
-            SHELLCHECK_OPTS: -x
+        with:
+          additional_files: 'tebako'
+          ignore_paths: deps 
+        env:
+          SHELLCHECK_OPTS: -x
