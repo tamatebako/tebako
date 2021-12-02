@@ -237,19 +237,19 @@ ExternalProject_Add(${RUBY_PRJ}
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
    PATCH_COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-#   UPDATE_COMMAND ""
+   UPDATE_COMMAND ""
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
-                     --enable-bundled-libyaml
-                     --without-gmp
-                     --disable-dtrace
-                     --enable-debug-env
-                     --disable-install-doc
-                     --with-static-linked-ext
-                     --with-jemalloc
-                     --srcdir=${RUBY_SOURCE_DIR}
-                     --prefix=${DATA_SRC_DIR}
-                     CFLAGS=${RUBY_C_FLAGS} 
-                     LDFLAGS=${RUBY_L_FLAGS}
+            --enable-bundled-libyaml
+            --without-gmp
+            --disable-dtrace
+            --enable-debug-env
+            --disable-install-doc
+            --with-static-linked-ext
+            --with-jemalloc
+            --srcdir=${RUBY_SOURCE_DIR}
+            --prefix=${DATA_SRC_DIR}
+            CFLAGS=${RUBY_C_FLAGS} 
+            LDFLAGS=${RUBY_L_FLAGS}
    INSTALL_COMMAND ""
 )
 
@@ -424,6 +424,7 @@ else (${SETUP_MODE})
   add_custom_target(patched_ruby
      COMMAND ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make
+     ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
      DEPENDS setup tebako-fs
   )
 

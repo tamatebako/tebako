@@ -34,11 +34,11 @@ press_runner() {
 # $2 -- entry point
 # $3 -- tebako package name
    if [ "${VERBOSE}" == "yes" ]; then
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
-     assertEquals 0 ${PIPESTATUS[0]}
+     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
+     result="$( "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 )"
      assertEquals 0 $?
    fi
 
@@ -54,7 +54,7 @@ package_runner() {
 # $2 -- expected output
    if [ "${VERBOSE}" == "yes" ]; then
      $1 | tee tebako_test.log
-     assertEquals 0 ${PIPESTATUS[0]}
+     assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
      result="$( $1 )"
@@ -73,11 +73,11 @@ press_runner_with_error() {
 # $4 -- expected error code
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
-     assertEquals $4 ${PIPESTATUS[0]}
+     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     assertEquals $4 "${PIPESTATUS[0]"}
      result="$( cat tebako_test.log )"
    else
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
+     result="$( "$DIR_BIN/tebako" press --root=$1 --entry-point=$2 --output=$3 2>&1 )"
      assertEquals $4 $?
    fi
 
@@ -114,11 +114,11 @@ press_runner_with_error() {
 # 00. Very basic tebako CLI tests (error handling)
 test_CLI_help() {
   if [ "${VERBOSE}" == "yes" ]; then
-    $DIR_BIN/tebako --help | tee tebako_test.log
-    assertEquals 0 ${PIPESTATUS[0]}
+    "$DIR_BIN/tebako" --help | tee tebako_test.log
+    assertEquals 0 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( $DIR_BIN/tebako --help )"
+    result="$( "$DIR_BIN/tebako" --help )"
     assertEquals 0 $?
   fi
   assertContains "$result" "Usage:"
@@ -126,11 +126,11 @@ test_CLI_help() {
 
 test_CLI_missing_command() {
   if [ "${VERBOSE}" == "yes" ]; then
-    $DIR_BIN/tebako | tee tebako_test.log
-    assertEquals 4 ${PIPESTATUS[0]}
+    "$DIR_BIN/tebako" | tee tebako_test.log
+    assertEquals 4 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( $DIR_BIN/tebako )"
+    result="$( "$DIR_BIN/tebako" )"
     assertEquals 4 $?
   fi
 
@@ -140,11 +140,11 @@ test_CLI_missing_command() {
 
 test_CLI_unknown_command() {
   if [ "${VERBOSE}" == "yes" ]; then
-    $DIR_BIN/tebako jump | tee tebako_test.log
-    assertEquals 5 ${PIPESTATUS[0]}
+    "$DIR_BIN/tebako" jump | tee tebako_test.log
+    assertEquals 5 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( $DIR_BIN/tebako jump )"
+    result="$( "$DIR_BIN/tebako" jump )"
     assertEquals 5 $?
   fi
 
@@ -157,11 +157,11 @@ test_CLI_unknown_command() {
 test_tebako_setup() {
   echo "tebako setup ... patience, please, it may take up to 1 hour."
   if [ "${VERBOSE}" == "yes" ]; then
-    $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
-    assertEquals 0 ${PIPESTATUS[0]}
+    "$DIR_BIN/tebako" setup 2>&1 | tee tebako_test.log
+    assertEquals 0 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( $DIR_BIN/tebako setup 2>&1 )"
+    result="$( "$DIR_BIN/tebako" setup 2>&1 )"
     assertEquals 0 $?
   fi
 
@@ -325,9 +325,9 @@ test_tebako_press_19() {
 # main
 
 DIR0="$( cd "$( dirname "$0" )" && pwd )"
-DIR_ROOT="$( cd $DIR0/../.. && pwd )"
-DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
-DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
+DIR_ROOT="$( cd "$DIR0"/../.. && pwd )"
+DIR_BIN="$( cd "$DIR_ROOT"/bin && pwd )"
+DIR_TESTS="$( cd "$DIR_ROOT"/tests && pwd )"
 
 echo "Running tebako tests"
 . "$DIR_TESTS/shunit2/shunit2"
