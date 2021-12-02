@@ -106,6 +106,6 @@ jobs:
     - name: tebako prepare cache
       if: steps.cache.outputs.cache-hit != 'true'
       run:  |
-        rm -rf ${{github.workspace}}/deps/_ruby*
+        rm -rf ${{github.workspace}}/deps/src/_ruby*
         ${{github.workspace}}/bin/tebako setup
 
