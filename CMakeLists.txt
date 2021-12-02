@@ -151,8 +151,8 @@ def_ext_prj_g(INCBIN "348e36b")
 def_ext_prj_g(DWARFS_WR "b1c1cb3")
 
 if (DEFINED ENV{BUNDLER_VER})
-  set(BUNDLER_VER $ENV{BUNDLER_VER})
-  set(BUNDLER_ANNOTATION "environment")
+set(BUNDLER_VER $ENV{BUNDLER_VER})
+set(BUNDLER_ANNOTATION "environment")
 else()
   set(BUNDLER_VER "2.2.3")
   set(BUNDLER_ANNOTATION "default")
@@ -162,7 +162,7 @@ message("................................................")
 message("Collecting packages:")
 message("ruby                        -  v${RUBY_VER}            at  ${RUBY_SOURCE_DIR}")
 message("incbin                      -  @${INCBIN_TAG}          at  ${INCBIN_SOURCE_DIR}")
-message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG}         at  ${DWARFS_WR_SOURCE_DIR}")
+message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG}           at  ${DWARFS_WR_SOURCE_DIR}")
 message("................................................")
 message("Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
 message("................................................")
@@ -237,19 +237,18 @@ ExternalProject_Add(${RUBY_PRJ}
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
    PATCH_COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-   UPDATE_COMMAND ""
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
-            --enable-bundled-libyaml
-            --without-gmp
-            --disable-dtrace
-            --enable-debug-env
-            --disable-install-doc
-            --with-static-linked-ext
-            --with-jemalloc
-            --srcdir=${RUBY_SOURCE_DIR}
-            --prefix=${DATA_SRC_DIR}
-            CFLAGS=${RUBY_C_FLAGS} 
-            LDFLAGS=${RUBY_L_FLAGS}
+                     --enable-bundled-libyaml
+                     --without-gmp
+                     --disable-dtrace
+                     --enable-debug-env
+                     --disable-install-doc
+                     --with-static-linked-ext
+                     --with-jemalloc
+                     --srcdir=${RUBY_SOURCE_DIR}
+                     --prefix=${DATA_SRC_DIR}
+                     CFLAGS=${RUBY_C_FLAGS}
+                     LDFLAGS=${RUBY_L_FLAGS}
    INSTALL_COMMAND ""
 )
 
@@ -424,13 +423,12 @@ else (${SETUP_MODE})
   add_custom_target(patched_ruby
      COMMAND ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make
-     ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
      DEPENDS setup tebako-fs
   )
 
   add_custom_target(tebako ALL
     COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_BINARY_DIR}/ruby ${APP_NAME}
-    COMMAND ${CMAKE_COMMAND} -E echo "${APP_NAME} packaging has completed"
+    COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
     DEPENDS patched_ruby
   )
 
