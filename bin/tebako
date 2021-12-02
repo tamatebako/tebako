@@ -122,18 +122,18 @@ export CXX=${CXX:-g++}
 case "$1" in
 	setup)
     echo "Setting up tebako at $prefix"
-    cmake -DCMAKE_BUILD_TYPE=Release \
-          -DDEPS:STRING=$prefix/deps \
-          -DSETUP_MODE:BOOLEAN=ON    \
-          -G "Unix Makefiles"        \
-          -S $prefix                 \
-          -B $prefix/output	 && rc=$? || rc=$?
+    cmake -DCMAKE_BUILD_TYPE=Release   \
+          -DDEPS:STRING="$prefix/deps" \
+          -DSETUP_MODE:BOOLEAN=ON      \
+          -G "Unix Makefiles"          \
+          -S "$prefix"                 \
+          -B "$prefix/output"	 && rc=$? || rc=$?
     if [ $rc -ne 0 ]; then
       echo "'tebako setup' configure step failed" 
       exit 101 
     fi
  
-    cmake --build $prefix/output --target setup && rc=$? || rc=$?	     
+    cmake --build "$prefix/output" --target setup && rc=$? || rc=$?	     
     if [ $rc -ne 0 ]; then
       echo "'tebako setup' build step failed" 
       exit 102  
@@ -159,21 +159,21 @@ case "$1" in
     echo "   Project root:            $root"
     echo "   Application entry point: $entryPoint"
     echo "   Package file name:       $packageName"
-		cmake -DCMAKE_BUILD_TYPE=Release      \
-              -DDEPS:STRING=$prefix/deps      \
-              -DROOT:STRING=$root             \
-              -DENTRANCE:STRING=$entryPoint   \
-              -DPCKG:STRING=$packageName    \
-              -DSETUP_MODE:BOOLEAN=OFF        \
-              -G "Unix Makefiles"             \
-              -S $prefix                      \
-              -B $prefix/output && rc=$? || rc=$?
+		cmake -DCMAKE_BUILD_TYPE=Release           \
+              -DDEPS:STRING="$prefix/deps"     \
+              -DROOT:STRING="$root"            \
+              -DENTRANCE:STRING="$entryPoint"  \
+              -DPCKG:STRING="$packageName"     \
+              -DSETUP_MODE:BOOLEAN=OFF         \
+              -G "Unix Makefiles"              \
+              -S "$prefix"                     \
+              -B "$prefix/output" && rc=$? || rc=$?
     if [ $rc -ne 0 ]; then
       echo "'tebako press' configure step failed" 
       exit 103  
     fi
 
-    cmake --build $prefix/output --target tebako && rc=$? || rc=$?
+    cmake --build "$prefix/output" --target tebako && rc=$? || rc=$?
       if [[ $rc -ne 0 ]]; then
         echo "'tebako press' build step failed" 
         exit 104  

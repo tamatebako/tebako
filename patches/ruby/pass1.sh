@@ -40,7 +40,7 @@ restore_and_save() {
 # Pin tebako static build libraries
 # Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
 # Ruby 2.6.3:  template is in 'ruby/Makefile.in'
-restore_and_save $1/template/Makefile.in
+restore_and_save "$1/template/Makefile.in"
 
 re="MAINLIBS = @MAINLIBS@"
 ! IFS= read -r -d '' sbst << EOM
@@ -56,7 +56,7 @@ sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 # ....................................................
 # Disable dynamic extensions
-restore_and_save $1/ext/Setup
+restore_and_save "$1/ext/Setup"
 sed -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
 
 # ....................................................

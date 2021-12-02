@@ -162,7 +162,7 @@ message("................................................")
 message("Collecting packages:")
 message("ruby                        -  v${RUBY_VER}            at  ${RUBY_SOURCE_DIR}")
 message("incbin                      -  @${INCBIN_TAG}          at  ${INCBIN_SOURCE_DIR}")
-message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG}       at  ${DWARFS_WR_SOURCE_DIR}")
+message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG}         at  ${DWARFS_WR_SOURCE_DIR}")
 message("................................................")
 message("Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
 message("................................................")
@@ -237,7 +237,7 @@ ExternalProject_Add(${RUBY_PRJ}
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
    PATCH_COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-   UPDATE_COMMAND ""
+#   UPDATE_COMMAND ""
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
                      --enable-bundled-libyaml
                      --without-gmp

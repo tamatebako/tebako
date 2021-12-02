@@ -197,7 +197,7 @@ test_tebako_press_03() {
 #  04. Simple Ruby script, relative path to root, relative path to entry point
 test_tebako_press_04() {
    echo "==> simple Ruby script, relative path to root, relative path to entry point"
-   pushd ${DIR_ROOT} > /dev/null || fail "pushd ${DIR_ROOT} failed"
+   pushd "${DIR_ROOT}" > /dev/null || fail "pushd ${DIR_ROOT} failed"
    press_runner "tests/test-01" "tebako-test-run.rb" "test-04-package"
    package_runner "./test-04-package" "Hello!  This is test-1 talking from inside DwarFS"
    popd > /dev/null || fail "popd failed"
@@ -330,4 +330,4 @@ DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
 DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
 
 echo "Running tebako tests"
-. $DIR_TESTS/shunit2/shunit2
+. "$DIR_TESTS/shunit2/shunit2"
