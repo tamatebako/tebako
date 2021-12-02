@@ -78,7 +78,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v21
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v22
 
     - name: tebako setup
       run:  ${{github.workspace}}/bin/tebako setup
@@ -124,7 +124,7 @@ jobs:
       uses: actions/cache@v2
       with:
         path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v21
+        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v22
 
     - name: tebako setup
       run:  ${{github.workspace}}/bin/tebako setup
