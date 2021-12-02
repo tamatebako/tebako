@@ -1,5 +1,5 @@
 # frozen_string_literal: true
 
-source "http://rubygems.org"
+source "https://rubygems.org"
 
 gem 'text-table','~> 1.2.4'

@@ -32,15 +32,15 @@ set -o errexit -o pipefail -o noclobber -o nounset
 # ....................................................
 restore_and_save() {
   echo "Pass 2 processing $1"
-  test -e $1.old && cp -f $1.old $1
-  cp -f $1 $1.old
+  test -e "$1.old" && cp -f "$1.old" "$1"
+  cp -f "$1" "$1.old"
 }
 
 # ....................................................
 # Pin tebako static build libraries
 # Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
 # Ruby 2.6.3:  template is in 'ruby/Makefile.in'
-restore_and_save $1/template/Makefile.in
+restore_and_save "$1/template/Makefile.in"
 
 re="MAINLIBS = @MAINLIBS@"
 ! IFS= read -r -d '' sbst << EOM
@@ -52,7 +52,7 @@ MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:l
 # -- End of tebako patch --
 EOM
 
-sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" $1/template/Makefile.in
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 # ....................................................
 # Disable dynamic extensions
@@ -60,19 +60,19 @@ sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" $1/template/Makefile.in
 
 # ....................................................
 # Patch main in order to redefine command line
-restore_and_save $1/main.c
+restore_and_save "$1/main.c"
 # Replace only the first occurence
 # https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
 # [TODO this looks a kind of risky]
-sed -i "0,/int$/s//#include <tebako-main.h>\n\nint/" $1/main.c
-sed -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" $1/main.c
+sed -i "0,/int$/s//#include <tebako-main.h>\n\nint/" "$1/main.c"
+sed -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" "$1/main.c"
 
 # ....................................................
 # Put lidwarfs IO bindings to Ruby files
 
 # ....................................................
 # ruby/dir.c
-restore_and_save $1/dir.c
+restore_and_save "$1/dir.c"
 # Replace only the first occurence
 # As opposed to other c files subsitution inserts includes before the pattern, not after
 #  [TODO MacOS]  libdwarfs issues 45,46
@@ -88,13 +88,13 @@ re="#ifdef __APPLE__"
 #ifdef __APPLE__
 EOM
 
-sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" $1/dir.c
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
 
 # ....................................................
 # Put lidwarfs IO bindings to other c files
 
 patch_c_file() {
-  restore_and_save $1
+  restore_and_save "$1"
 
 ! IFS= read -r -d '' c_sbst << EOM
 
@@ -106,7 +106,7 @@ patch_c_file() {
 EOM
 
   sbst="${c_sbst}$2"
-  sed -i "0,/$2/s//${sbst//$'\n'/"\\n"}/g" $1
+  sed -i "0,/$2/s//${sbst//$'\n'/"\\n"}/g" "$1"
 }
 
 # ruby/dln.c
@@ -123,7 +123,7 @@ patch_c_file "$1/util.c"  "#ifndef S_ISDIR"
 
 # ....................................................
 # ruby/tool/mkconfig.rb
-restore_and_save $1/tool/mkconfig.rb
+restore_and_save "$1/tool/mkconfig.rb"
 re="if fast\[name\]"
 ! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
@@ -143,7 +143,7 @@ re="if fast\[name\]"
      if fast\[name\]
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/tool/mkconfig.rb
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/tool/mkconfig.rb"
 
 
 # ....................................................

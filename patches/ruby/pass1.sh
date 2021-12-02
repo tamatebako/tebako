@@ -32,8 +32,8 @@ set -o errexit -o pipefail -o noclobber -o nounset
 # ....................................................
 restore_and_save() {
   echo "Pass 1 processing $1"
-  test -e $1.old && cp -f $1.old $1
-  cp -f $1 $1.old
+  test -e "$1.old" && cp -f "$1.old" "$1"
+  cp -f "$1" "$1.old"
 }
 
 # ....................................................
@@ -52,17 +52,17 @@ MAINLIBS = -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmet
 # -- End of tebako patch --
 EOM
 
-sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" $1/template/Makefile.in
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 # ....................................................
 # Disable dynamic extensions
 restore_and_save $1/ext/Setup
-sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
+sed -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
 
 # ....................................................
 # ruby/lib/rubygems/path_support.rb
 # WE DO NOT ACCEPT OUTSIDE GEM PATHS
-restore_and_save $1/lib/rubygems/path_support.rb
+restore_and_save "$1/lib/rubygems/path_support.rb"
 
 re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
 ! IFS= read -r -d '' sbst << EOM
@@ -74,7 +74,7 @@ re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
 # -- End of tebako patch --
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/lib/rubygems/path_support.rb
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 ! IFS= read -r -d '' sbst << EOM
@@ -88,14 +88,14 @@ re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 # -- End of tebako patch --
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/lib/rubygems/path_support.rb
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 
 # ....................................................
 # This is something that I cannnot explain
 # (this patch does not seem related to static compilation)
 # ruby/ext/bigdecimal/bigdecimal.h
-restore_and_save $1/ext/bigdecimal/bigdecimal.h
+restore_and_save "$1/ext/bigdecimal/bigdecimal.h"
 re="#include <float.h>"
 
 ! IFS= read -r -d '' sbst << EOM
@@ -121,17 +121,17 @@ re="#include <float.h>"
 
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/ext/bigdecimal/bigdecimal.h
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
 
 # ....................................................
 # Roll-back pass2 patches from the previous run
-restore_and_save $1/main.c
-restore_and_save $1/dir.c
-restore_and_save $1/dln.c
-restore_and_save $1/file.c
-restore_and_save $1/io.c
-restore_and_save $1/util.c
-restore_and_save $1/tool/mkconfig.rb
+restore_and_save "$1/main.c"
+restore_and_save "$1/dir.c"
+restore_and_save "$1/dln.c"
+restore_and_save "$1/file.c"
+restore_and_save "$1/io.c"
+restore_and_save "$1/util.c"
+restore_and_save "$1/tool/mkconfig.rb"
 
 # restore_and_save $1/process.c
 # restore_and_save $1/prelude.c

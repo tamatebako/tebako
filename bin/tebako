@@ -41,7 +41,7 @@ echo "         Packaged file defaults to 'entry point' file name in the current 
 # -use return value from ${PIPESTATUS[0]}, because ! hosed $?
 ! getopt --test > /dev/null 
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-    echo '`getopt --test` failed in this environment.'
+    echo "'getopt --test' failed in this environment."
     exit 1
 fi
 
@@ -61,7 +61,7 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-h=n prefix=- root=- entryPoint=- packageName=-
+prefix=- root=- entryPoint=- packageName=-
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
@@ -97,7 +97,7 @@ while true; do
 done
 
 # handle non-option arguments
-if [ $# -ne 1 ]; then
+if [[ $# -ne 1 ]]; then
     echo "Missing command"
     run_help    
     exit 4
@@ -105,14 +105,14 @@ fi
 
 cmk=$( which cmake )
 
-if [ $? -ne 0 ]; then
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
   echo "Failed to find cmake"
 else
   echo "Using cmake at $cmk"
   cmake --version
 fi
 
-if [ "$prefix" == "-" ]; then
+if [[ "$prefix" == "-" ]]; then
   prefix="$( pwd )"
 fi
 
@@ -174,7 +174,7 @@ case "$1" in
     fi
 
     cmake --build $prefix/output --target tebako && rc=$? || rc=$?
-      if [ $rc -ne 0 ]; then
+      if [[ $rc -ne 0 ]]; then
         echo "'tebako press' build step failed" 
         exit 104  
       fi
