@@ -8,6 +8,7 @@ on:
       - '**.adoc'
       - '**.md'
       - .github/workflows/packed-mn.yml
+      - .github/workflows/lint.yml
   pull_request:
     branches: [ master ]
     paths-ignore:
@@ -15,6 +16,7 @@ on:
       - '**.adoc'
       - '**.md'
       - .github/workflows/packed-mn.yml
+      - .github/workflows/lint.yml
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
