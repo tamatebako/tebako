@@ -49,7 +49,7 @@ re="MAINLIBS = @MAINLIBS@"
 MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
 -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
 -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:librt.a -lpthread -ldl -lc -lm \\\\
--lgcc_eh -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:libstdc++.a -l:liblzma.a 
+-lgcc_eh -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:libstdc++.a -l:liblzma.a
 # -- End of tebako patch --
 EOM
 
@@ -57,6 +57,12 @@ sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 # ....................................................
 # Disable dynamic extensions
+# ruby/ext/Setup
+# Uses pass1 patch
+
+# ....................................................
+# WE DO NOT ACCEPT OUTSIDE GEM PATHS
+# ruby/lib/rubygems/path_support.rb
 # Uses pass1 patch
 
 # ....................................................
@@ -148,7 +154,6 @@ re="if fast\[name\]"
 EOM
 
 sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/tool/mkconfig.rb"
-
 
 # ....................................................
 # ruby/ext/bigdecimal/bigdecimal.h
