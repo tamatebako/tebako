@@ -87,21 +87,21 @@ jobs:
     - name: tebako tests (set no. 1)
 # show cmake output aka verbose (yes/no)
       env:
-        VERBOSE: yes
+        VERBOSE: no
       run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
-#
-#    - uses: ruby/setup-ruby@v1
-#      with:
-#        ruby-version: ${{ env.RUBY_VER }}
-#        bundler: ${{ env.BUNDLER_VER }}
-#        bundler-cache: true
 
-#    - name: tebako tests (set no. 2)
-#      run: |
-#        cd ${{github.workspace}}/tests-2
-#        bundle install
-#        cd ${{github.workspace}}
-#        ruby ${{github.workspace}}/tests-2/tebako-test.rb
+    - uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ env.RUBY_VER }}
+        bundler: ${{ env.BUNDLER_VER }}
+        bundler-cache: true
+
+    - name: tebako tests (set no. 2)
+      run: |
+        cd ${{github.workspace}}/tests-2
+        bundle install
+        cd ${{github.workspace}}
+        ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
     - name: tebako prepare cache
       if: steps.cache.outputs.cache-hit != 'true'

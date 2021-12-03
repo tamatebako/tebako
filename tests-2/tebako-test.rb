@@ -29,6 +29,7 @@ require "rbconfig"
 require "pathname"
 require "rubygems"
 require "open3"
+require "minitest/autorun"
 
 include FileUtils
 
