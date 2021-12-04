@@ -2,15 +2,7 @@ name: Ubuntu-package-metanorma
 
 on:
   push:
-    branches: [ maxirmx-issue-23 ]
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - .github/workflows/ubuntu-build.yml
-      - .github/workflows/lint.yml
-  pull_request:
-    branches: [ master ]
+    branches: [ dummy ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
