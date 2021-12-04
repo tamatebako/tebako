@@ -52,11 +52,17 @@ string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
 include(ExternalProject)
 include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
+include(${CMAKE_SOURCE_DIR}/cmake/def_tty_colours.cmake)
 
 option(SETUP_MODE "Tebako setup" OFF)
+set(START_WITH_PACKAGED_FILESYSTEM OFF CACHE BOOL "Start workflow from 'packaged filesystem' target!!!" FORCE)
 
 if (NOT ${SETUP_MODE})
   message("Running tebako press script")
+  if (${START_WITH_PACKAGED_FILESYSTEM})
+    message("${ColourBoldRed}*** Starting workflow from 'packaged filesystem' target ***${ColourReset}")
+  endif(${START_WITH_PACKAGED_FILESYSTEM})
+
   if ("-${ROOT}" STREQUAL "-")
     message(FATAL_ERROR "Project ROOT is not specified.")
   endif()
@@ -397,17 +403,26 @@ else (${SETUP_MODE})
     @ONLY
   )
 
-  add_custom_target(packaged_filesystem
-     COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
-                                        ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
-                                        ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
-                                        ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
-     COMMAND chmod +x ${DEPS_BIN_DIR}/*
-     COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
-     DEPENDS setup source_filesystem
-     BYPRODUCTS ${DATA_BIN_FILE}
-  )
+  if (${START_WITH_PACKAGED_FILESYSTEM})
+    add_custom_target(packaged_filesystem
+      COMMAND chmod +x ${DEPS_BIN_DIR}/*
+      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+      BYPRODUCTS ${DATA_BIN_FILE}
+    )
+  else(${START_WITH_PACKAGED_FILESYSTEM})
+    add_custom_target(packaged_filesystem
+      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
+                                         ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
+                                         ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
+                                         ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
+      COMMAND chmod +x ${DEPS_BIN_DIR}/*
+      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+      DEPENDS setup source_filesystem
+      BYPRODUCTS ${DATA_BIN_FILE}
+    )
+  endif (${START_WITH_PACKAGED_FILESYSTEM})
 
   set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
 
