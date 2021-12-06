@@ -24,49 +24,88 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+# More safety, by turning some bugs into errors.
+# Without `errexit` you don’t need ! and can replace
+# PIPESTATUS with a simple $?
+set -o errexit -o pipefail -o noclobber -o nounset
+
+# ....................................................
 restore_and_save() {
-  test -e $1.old && cp -f $1.old $1
-  cp -f $1 $1.old
+  echo "Pass 2 processing $1"
+  test -e "$1.old" && cp -f "$1.old" "$1"
+  cp -f "$1" "$1.old"
 }
 
-# Copy make script include file that list all libraries required for tebako static build
-PATCH_DIR="$( cd "$( dirname "$0" )" && pwd )"
-cp -f $PATCH_DIR/mainlibs-pass2.mk $2/mainlibs-pass2.mk
-
+# ....................................................
 # Pin tebako static build libraries
-# Ruby 2.7.4:
-restore_and_save $1/template/Makefile.in
-sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass2.mk/g" $1/template/Makefile.in
+# Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
+# Ruby 2.6.3:  template is in 'ruby/Makefile.in'
+restore_and_save "$1/template/Makefile.in"
 
-# Fix bigdecimal extension
-# [I cannot explain why it is required. It does not seem to be related to any patching we do]
-cp -f $PATCH_DIR/bigdecimal-patch.h $1/ext/bigdecimal/bigdecimal-patch.h
-restore_and_save $1/ext/bigdecimal/bigdecimal.h
-sed -i "s/#include <float.h>/#include <float.h>\n#include \"bigdecimal-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h
+re="MAINLIBS = @MAINLIBS@"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+# -- Start of tebako patch --
+MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
+-l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
+-l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:librt.a -lpthread -ldl -lc -lm \\\\
+-lgcc_eh -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:libstdc++.a -l:liblzma.a
+# -- End of tebako patch --
+EOM
 
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+
+# ....................................................
 # Disable dynamic extensions
-restore_and_save $1/ext/Setup
-sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
+# ruby/ext/Setup
+# Uses pass1 patch
 
+# ....................................................
+# WE DO NOT ACCEPT OUTSIDE GEM PATHS
+# ruby/lib/rubygems/path_support.rb
+# Uses pass1 patch
+
+# ....................................................
 # Patch main in order to redefine command line
-restore_and_save $1/main.c
+restore_and_save "$1/main.c"
 # Replace only the first occurence
 # https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
 # [TODO this looks a kind of risky]
-sed -i "0,/int$/s//#include <tebako-main.h>\n\nint/" $1/main.c
-sed -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" $1/main.c
+sed -i "0,/int$/s//#include <tebako-main.h>\n\nint/" "$1/main.c"
+sed -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" "$1/main.c"
 
 # ....................................................
 # Put lidwarfs IO bindings to Ruby files
 
+# ....................................................
 # ruby/dir.c
-restore_and_save $1/dir.c
+restore_and_save "$1/dir.c"
 # Replace only the first occurence
-sed -i "0,/#ifdef __APPLE__/s//#include <tebako\/tebako-defines.h>\n#include <tebako\/tebako-io.h>\n\n#ifdef __APPLE__/" $1/dir.c
+# As opposed to other c files subsitution inserts includes before the pattern, not after
 #  [TODO MacOS]  libdwarfs issues 45,46
 
-# Addition to C files
-IFS= read -r -d '' c_sbst << EOM
+re="#ifdef __APPLE__"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+
+\/* -- Start of tebako patch -- *\/
+#include <tebako\/tebako-defines.h>
+#include <tebako\/tebako-io.h>
+\/* -- End of tebako patch -- *\/
+
+#ifdef __APPLE__
+EOM
+
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
+
+# ....................................................
+# Put lidwarfs IO bindings to other c files
+
+patch_c_file() {
+  restore_and_save "$1"
+
+# shellcheck disable=SC2251
+! IFS= read -r -d '' c_sbst << EOM
 
 \/* -- Start of tebako patch -- *\/
 #include <tebako\/tebako-defines.h>
@@ -75,14 +114,12 @@ IFS= read -r -d '' c_sbst << EOM
 
 EOM
 
-patch_c_file() {
-  restore_and_save $1
   sbst="${c_sbst}$2"
-  sed -i "0,/$2/s//${sbst//$'\n'/"\\n"}/g" $1
+  sed -i "0,/$2/s//${sbst//$'\n'/"\\n"}/g" "$1"
 }
 
 # ruby/dln.c
-patch_c_file "$1/dln.c"  "static st_table \*sym_tbl;"
+patch_c_file "$1/dln.c"  "static const char funcname_prefix\[sizeof(FUNCNAME_PREFIX) - 1\] = FUNCNAME_PREFIX;"
 
 # ruby/file.c
 patch_c_file "$1/file.c"  "VALUE rb_cFile;"
@@ -93,10 +130,12 @@ patch_c_file "$1/io.c"  "VALUE rb_cIO;"
 # ruby/util.c
 patch_c_file "$1/util.c"  "#ifndef S_ISDIR"
 
+# ....................................................
 # ruby/tool/mkconfig.rb
-restore_and_save $1/tool/mkconfig.rb
+restore_and_save "$1/tool/mkconfig.rb"
 re="if fast\[name\]"
-IFS= read -r -d '' sbst << EOM
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
      v_head_comp = \"  CONFIG\[\\\\\"prefix\\\\\"\] #{eq} \"
      if v_head_comp == v\[0...(v_head_comp.length)\]
@@ -114,7 +153,11 @@ IFS= read -r -d '' sbst << EOM
      if fast\[name\]
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/tool/mkconfig.rb
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/tool/mkconfig.rb"
+
+# ....................................................
+# ruby/ext/bigdecimal/bigdecimal.h
+# Uses pass1 patch
 
 # ruby/ext/openssl/ossl_x509store.c
 #  [TODO ???]
@@ -128,5 +171,5 @@ sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/tool/mkconfig.rb
 # [TODO ???]
 
 # [TODO Windows]
-# ruby/win32/file.c
-# ruby/win32/win32.c
+# $1/win32/file.c
+# $1/win32/win32.c

@@ -2,19 +2,13 @@ name: Ubuntu-package-metanorma
 
 on:
   push:
-    branches: [ maxirmx-issue-23 ]
+    branches: [ dummy ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
       - .github/workflows/ubuntu-build.yml
-  pull_request:
-    branches: [ master ]
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - .github/workflows/ubuntu-build.yml
+      - .github/workflows/lint.yml
 
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -30,13 +24,24 @@ env:
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
+# Bundler version  
   BUNDLER_VER: "2.2.3"
-  BUNDLER_HASH: "6acefda4aeb34cb3d69aff06affce10424d69f484402a9f7f5577e8c698070db"
 
 jobs:
   package-metanorma:
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        env:
+          - CC: gcc
+            CXX: g++
+          - CC: clang
+            CXX: clang++
     if: "!contains(github.event.head_commit.message, 'skip ci')"
+    env: ${{ matrix.env }}
 
     steps:
 # Ref CMakeLists.txt for the full list and comments
@@ -71,15 +76,13 @@ jobs:
         echo  ${{ env.INCBIN_TAG }} >> key.txt
         echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
         echo  ${{ env.RUBY_HASH }} >> key.txt
-        echo  ${{ env.BUNDLER_HASH }} >> key.txt
-        ls -l ${{github.workspace}}/packed-mn
 
     - name: Process cache
       id: cache
       uses: actions/cache@v2
       with:
-        path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ hashFiles('key.txt') }}-v19
+        path: ${{github.workspace}}/${{env.DEPS}} 
+        key: ${{ github.workflow }}-${{ matrix.os }}-${{ matrix.env.CC }}-${{ hashFiles('key.txt') }}-v01
 
     - name: tebako setup
       if: steps.cache.outputs.cache-hit != 'true'
@@ -90,3 +93,8 @@ jobs:
         ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
         test -f metanorma-package
 
+    - name: tebako prepare cache
+      if: steps.cache.outputs.cache-hit != 'true'
+      run:  |
+        rm -rf ${{github.workspace}}/deps/src/_ruby*
+        ${{github.workspace}}/bin/tebako setup

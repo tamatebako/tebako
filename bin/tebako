@@ -25,7 +25,7 @@
 
 # More safety, by turning some bugs into errors.
 # Without `errexit` you don’t need ! and can replace
-# PIPESTATUS with a simple $?, but I don’t do that.
+# PIPESTATUS with a simple $?
 set -o errexit -o pipefail -o noclobber -o nounset
 
 run_help() {
@@ -39,9 +39,10 @@ echo "         Packaged file defaults to 'entry point' file name in the current 
 
 # -allow a command to fail with !’s side effect on errexit
 # -use return value from ${PIPESTATUS[0]}, because ! hosed $?
+# shellcheck disable=SC2251
 ! getopt --test > /dev/null 
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
-    echo '`getopt --test` failed in this environment.'
+    echo "'getopt --test' failed in this environment."
     exit 1
 fi
 
@@ -52,6 +53,7 @@ LONGOPTS=help,root:,entry-point:,output:,prefix:
 # -temporarily store output to be able to check for errors
 # -activate quoting/enhanced mode (e.g. by writing out “--options”)
 # -pass arguments only via   -- "$@"   to separate them correctly
+# shellcheck disable=SC2251
 ! PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$0" -- "$@")
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     # e.g. return value is 1
@@ -61,7 +63,7 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-h=n prefix=- root=- entryPoint=- packageName=-
+prefix=- root=- entryPoint=- packageName=-
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
@@ -97,7 +99,7 @@ while true; do
 done
 
 # handle non-option arguments
-if [ $# -ne 1 ]; then
+if [[ $# -ne 1 ]]; then
     echo "Missing command"
     run_help    
     exit 4
@@ -105,14 +107,14 @@ fi
 
 cmk=$( which cmake )
 
-if [ $? -ne 0 ]; then
+if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
   echo "Failed to find cmake"
 else
   echo "Using cmake at $cmk"
   cmake --version
 fi
 
-if [ "$prefix" == "-" ]; then
+if [[ "$prefix" == "-" ]]; then
   prefix="$( pwd )"
 fi
 
@@ -122,18 +124,18 @@ export CXX=${CXX:-g++}
 case "$1" in
 	setup)
     echo "Setting up tebako at $prefix"
-    cmake -DCMAKE_BUILD_TYPE=Release \
-          -DDEPS:STRING=$prefix/deps \
-          -DSETUP_MODE:BOOLEAN=ON    \
-          -G "Unix Makefiles"        \
-          -S $prefix                 \
-          -B $prefix/output	 && rc=$? || rc=$?
+    cmake -DCMAKE_BUILD_TYPE=Release   \
+          -DDEPS:STRING="$prefix/deps" \
+          -DSETUP_MODE:BOOLEAN=ON      \
+          -G "Unix Makefiles"          \
+          -S "$prefix"                 \
+          -B "$prefix/output"	 && rc=$? || rc=$?
     if [ $rc -ne 0 ]; then
       echo "'tebako setup' configure step failed" 
       exit 101 
     fi
  
-    cmake --build $prefix/output --target setup && rc=$? || rc=$?	     
+    cmake --build "$prefix/output" --target setup && rc=$? || rc=$?	     
     if [ $rc -ne 0 ]; then
       echo "'tebako setup' build step failed" 
       exit 102  
@@ -159,22 +161,22 @@ case "$1" in
     echo "   Project root:            $root"
     echo "   Application entry point: $entryPoint"
     echo "   Package file name:       $packageName"
-		cmake -DCMAKE_BUILD_TYPE=Release      \
-              -DDEPS:STRING=$prefix/deps      \
-              -DROOT:STRING=$root             \
-              -DENTRANCE:STRING=$entryPoint   \
-              -DPCKG:STRING=$packageName    \
-              -DSETUP_MODE:BOOLEAN=OFF        \
-              -G "Unix Makefiles"             \
-              -S $prefix                      \
-              -B $prefix/output && rc=$? || rc=$?
+		cmake -DCMAKE_BUILD_TYPE=Release           \
+              -DDEPS:STRING="$prefix/deps"     \
+              -DROOT:STRING="$root"            \
+              -DENTRANCE:STRING="$entryPoint"  \
+              -DPCKG:STRING="$packageName"     \
+              -DSETUP_MODE:BOOLEAN=OFF         \
+              -G "Unix Makefiles"              \
+              -S "$prefix"                     \
+              -B "$prefix/output" && rc=$? || rc=$?
     if [ $rc -ne 0 ]; then
       echo "'tebako press' configure step failed" 
       exit 103  
     fi
 
-    cmake --build $prefix/output --target tebako && rc=$? || rc=$?
-      if [ $rc -ne 0 ]; then
+    cmake --build "$prefix/output" --target tebako && rc=$? || rc=$?
+      if [[ $rc -ne 0 ]]; then
         echo "'tebako press' build step failed" 
         exit 104  
       fi
