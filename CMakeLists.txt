@@ -338,10 +338,12 @@ else (${SETUP_MODE})
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
     ensure_bundler(${BUNDLER_VER} ${BUNDLER_HASH} ${BUNDLER_SOURCE_DIR})
     add_custom_target(source_filesystem
-       COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+#       COMMAND ${TBD}/gem install ${BUNDLER_SOURCE_DIR}/bundler-${BUNDLER_VER}.gem --verbose --no-document --install-dir ${TGD}
+       COMMAND ${TBD}/gem install bundler:2.2.3
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle lock
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --deployment --jobs=4
        DEPENDS clean_filesystem
     )
   elseif(GLENGTH GREATER 0)
@@ -395,10 +397,10 @@ else (${SETUP_MODE})
   )
 
   add_custom_target(packaged_filesystem
-     COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
-                                        ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
-                                        ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
-                                        ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
+#     COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
+#                                        ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
+#                                        ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
+#                                        ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
      COMMAND chmod +x ${DEPS_BIN_DIR}/*
      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
