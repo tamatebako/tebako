@@ -115,7 +115,11 @@ else
 fi
 
 if [[ "$prefix" == "-" ]]; then
-  prefix="$( pwd )"
+  prefix="$( cd "$( dirname "$0" )"/.. && pwd )"
+else 
+  if [[ "$prefix" != /* ]]; then
+    prefix="$( pwd )"/"$prefix"
+  fi
 fi
 
 export CC=${CC:-gcc}
