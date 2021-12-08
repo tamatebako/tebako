@@ -28,7 +28,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.1.1"
+  DWARFS_WR_TAG: "v0.1.2"
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
@@ -46,8 +46,8 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-          - CC: clang
-            CXX: clang++
+#          - CC: clang
+#            CXX: clang++
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     env: ${{ matrix.env }}
     steps:
@@ -97,7 +97,7 @@ jobs:
     - name: tebako tests (set no. 1)
 # show cmake output aka verbose (yes/no)
       env:
-        VERBOSE: no
+        VERBOSE: yes
       run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
     - uses: ruby/setup-ruby@v1
@@ -106,12 +106,12 @@ jobs:
         bundler: ${{ env.BUNDLER_VER }}
         bundler-cache: true
 
-#    - name: tebako tests (set no. 2)
-#      run: |
-#        cd ${{github.workspace}}/tests-2
-#        bundle install
-#        cd ${{github.workspace}}
-#        ruby ${{github.workspace}}/tests-2/tebako-test.rb
+    - name: tebako tests (set no. 2)
+      run: |
+        cd ${{github.workspace}}/tests-2
+        bundle install
+        cd ${{github.workspace}}
+        ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
     - name: tebako prepare cache
       if: steps.cache.outputs.cache-hit != 'true'

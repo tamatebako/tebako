@@ -2,7 +2,7 @@ name: Ubuntu-package-metanorma
 
 on:
   push:
-    branches: [ dummy ]
+    branches: [ maxirmx-issue-23 ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -20,7 +20,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "b1c1cb3"
+  DWARFS_WR_TAG: "v0.1.2"
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
@@ -38,8 +38,8 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-          - CC: clang
-            CXX: clang++
+#          - CC: clang
+#            CXX: clang++
     if: "!contains(github.event.head_commit.message, 'skip ci')"
     env: ${{ matrix.env }}
 
