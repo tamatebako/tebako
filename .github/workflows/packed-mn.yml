@@ -100,6 +100,18 @@ jobs:
         ./metanorma-package list-doctypes
         ./metanorma-package list-extensions
 
+    - name: Checkout metanorma/iso-19156
+      uses: actions/checkout@v2
+      with:
+        repository: metanorma/iso-19156
+        path: iso-19156
+        fetch-depth: 1
+
+    - name: Site generate
+      run: |
+        cd iso-19159
+        ../metanorma-package site generate
+
     - name: tebako prepare cache
       if: steps.cache.outputs.cache-hit != 'true'
       run:  |
