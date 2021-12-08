@@ -306,12 +306,15 @@ else (${SETUP_MODE})
         message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         add_custom_target(source_filesystem
-           COMMAND ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
+           COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 PATH=${TBD}:${PATH}
+                   gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 && bundle install
-           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 && bundle exec gem build ${GEMSPEC}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 PATH=${TBD}:${PATH}
+                   bundle install
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 PATH=${TBD}:${PATH}
+                   bundle exec gem build ${GEMSPEC}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-           COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 &&
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 PATH=${TBD}:${PATH}
                    gem install *.gem --verbose --no-document --install-dir ${TGD}
            COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                    (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
@@ -325,10 +328,11 @@ else (${SETUP_MODE})
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
          add_custom_target(source_filesystem
             COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-            COMMAND unset GEM_HOME && unset GEM_PATH && export PATH=${TBD}:$PATH && cd ${DATA_PRE_DIR} && export TEBAKO_PASS_THROUGH=1 && gem build ${GEMSPEC}
+            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 PATH=${TBD}:${PATH}
+                   gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 &&
-                    gem install *.gem --verbose --no-document --install-dir ${TGD}
+            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1  PATH=${TBD}:${PATH}
+                   gem install *.gem --verbose --no-document --install-dir ${TGD}
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
@@ -347,10 +351,15 @@ else (${SETUP_MODE})
     set(FS_APP_HOME "/local")
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
     add_custom_target(source_filesystem
-       COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
+       COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 PATH=${TBD}:${PATH}
+                   gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 PATH=${TBD}:${PATH}
+                   bundle install --jobs=4
+# [TODO] Open question - how to deploy a project to source filesystem
+#        ruby packer does bundle install --deployment --binstubs
+# [TODO] --jobs=4 probably can be more intellectual
 #       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle lock
 #       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --deployment --jobs=4
        DEPENDS clean_filesystem
@@ -366,8 +375,8 @@ else (${SETUP_MODE})
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(source_filesystem
          COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
-         COMMAND unset GEM_HOME && unset GEM_PATH && cd ${DATA_PRE_DIR} && export PATH=${TBD}:$PATH && export TEBAKO_PASS_THROUGH=1 &&
-                  gem install ${GEM} --verbose --no-document --install-dir ${TGD}
+         COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 PATH=${TBD}:${PATH}
+                   gem install ${GEM} --verbose --no-document --install-dir ${TGD}
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
@@ -414,6 +423,9 @@ else (${SETUP_MODE})
     )
   else(${START_WITH_PACKAGED_FILESYSTEM})
     add_custom_target(packaged_filesystem
+# [TODO] Open question - wheather we shall delete ruby binaries from memfs or not
+#        For debugging purposes it is very handy to have it here
+#
 #      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
 #                                         ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
 #                                         ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake

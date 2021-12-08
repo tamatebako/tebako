@@ -1,15 +1,9 @@
 name: Ubuntu-package-metanorma
 
-on:
-  push:
-    branches: [ maxirmx-issue-23 ]
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - .github/workflows/ubuntu-build.yml
-      - .github/workflows/lint.yml
+#  His workflow is used for manual testing only
+# Please refer to metanorma/packed-mn for any other purposes
 
+on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
