@@ -67,7 +67,7 @@ jobs:
       with:
         repository: metanorma/packed-mn
         path: ${{github.workspace}}/packed-mn
-        tag: maxirmx-tebako-packager
+        ref: maxirmx-tebako-packager
 
     - name: Create deps folder and cache key
       run: |
