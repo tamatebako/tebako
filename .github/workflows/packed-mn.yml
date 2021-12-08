@@ -65,9 +65,9 @@ jobs:
     - name: Checkout packed-mn
       uses: actions/checkout@v2
       with:
-        fetch-depth: 1
         repository: metanorma/packed-mn
         path: ${{github.workspace}}/packed-mn
+        tag: maxirmx-tebako-packager
 
     - name: Create deps folder and cache key
       run: |
@@ -110,7 +110,7 @@ jobs:
     - name: Site generate
       run: |
         cd iso-19159
-        ../metanorma-package site generate
+        ../metanorma-package site generate --agree-to-terms
 
     - name: tebako prepare cache
       if: steps.cache.outputs.cache-hit != 'true'
