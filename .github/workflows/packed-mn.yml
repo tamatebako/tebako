@@ -92,6 +92,13 @@ jobs:
       run: |
         ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
         test -f metanorma-package
+        
+    - name: Run simple commands
+      run: |
+        ./metanorma-package help
+        ./metanorma-package version
+        ./metanorma-package list-doctypes
+        ./metanorma-package list-extensions
 
     - name: tebako prepare cache
       if: steps.cache.outputs.cache-hit != 'true'

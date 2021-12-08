@@ -105,7 +105,7 @@ press_runner_with_error() {
 #  14. Ruby gem (no gemfile, with gemspec), entry point does not exist                                      [Expected error at configure step]
 #  15. Ruby gem (with gemspec, with gemfile)
 #  16. Ruby gem (with gemspec, with gemfile), gemfile with error                                            [Expected error at build step]
-#  17. Ruby gem (with gemspec, with gemfile), entry point dows not exist                                    [Expected error at build step]
+#  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [Expected error at build step]
 #  18. Ruby project (no gemspec, with gemfile)
 #  19. Ruby project (no gemspec, with gemfile, with native extension)
 #  20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)

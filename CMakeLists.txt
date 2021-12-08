@@ -29,7 +29,7 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 
-project(tebako_packager VERSION 0.2.0)
+project(tebako_packager VERSION 0.2.1)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -166,9 +166,9 @@ endif()
 
 message("................................................")
 message("Collecting packages:")
-message("ruby                        -  v${RUBY_VER}            at  ${RUBY_SOURCE_DIR}")
-message("incbin                      -  @${INCBIN_TAG}          at  ${INCBIN_SOURCE_DIR}")
-message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG}          at  ${DWARFS_WR_SOURCE_DIR}")
+message("ruby                        -  v${RUBY_VER} at  ${RUBY_SOURCE_DIR}")
+message("incbin                      -  @${INCBIN_TAG} at  ${INCBIN_SOURCE_DIR}")
+message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at  ${DWARFS_WR_SOURCE_DIR}")
 message("................................................")
 message("Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
 message("................................................")
