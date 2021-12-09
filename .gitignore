@@ -42,7 +42,7 @@ deps
 
 # Generated files
 src/tebako-fs.cpp
-include/version.h
+include/tebako-version.h
 
 # VS files
 .vs
