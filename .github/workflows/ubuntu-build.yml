@@ -163,7 +163,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run:  ${{github.workspace}}/bin/tebako setup
 
-  tests-2:
+  tests-1:
     needs: setup
     name:  tests-1 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
     runs-on: ${{ matrix.os }}
@@ -251,7 +251,7 @@ jobs:
 
   tests-2:
     needs: setup
-    name:  tests-1 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+    name:  tests-2 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
