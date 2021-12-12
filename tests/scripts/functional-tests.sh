@@ -34,22 +34,17 @@ press_runner() {
 # $2 -- entry point
 # $3 -- tebako package name
    if [ "${VERBOSE}" == "yes" ]; then
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
-     assertEquals 0 ${PIPESTATUS[0]}
+     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
+     result="$( "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 )"
      assertEquals 0 $?
    fi
 
 # Check the first and the last messages expected from CMake script
    assertContains "$result" "Running tebako press script"
-   assertContains "$result" "Tebako packaging has completed"
-
-# Check that packaged executable file is not a dynamic executable
-   result="$( ldd $3 2>&1 )"
-   assertEquals 1 $?
-   assertContains "$result" "not a dynamic executable"
+   assertContains "$result" "packaging has completed"
 }
 
 package_runner() {
@@ -59,7 +54,7 @@ package_runner() {
 # $2 -- expected output
    if [ "${VERBOSE}" == "yes" ]; then
      $1 | tee tebako_test.log
-     assertEquals 0 ${PIPESTATUS[0]}
+     assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
      result="$( $1 )"
@@ -78,12 +73,12 @@ press_runner_with_error() {
 # $4 -- expected error code
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
-     $DIR_BIN/tebako press --root="$1" --entry-point="$2" --package-name="$3" 2>&1 | tee tebako_test.log
-     assertEquals $4 ${PIPESTATUS[0]}
+     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     assertEquals "$4" "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result="$( $DIR_BIN/tebako press --root=$1 --entry-point=$2 --package-name=$3 2>&1 )"
-     assertEquals $4 $?
+     result="$( "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 )"
+     assertEquals "$4" "${PIPESTATUS[0]}"
    fi
 
    assertContains "$result" "Running tebako press script"
@@ -110,32 +105,34 @@ press_runner_with_error() {
 #  14. Ruby gem (no gemfile, with gemspec), entry point does not exist                                      [Expected error at configure step]
 #  15. Ruby gem (with gemspec, with gemfile)
 #  16. Ruby gem (with gemspec, with gemfile), gemfile with error                                            [Expected error at build step]
-#  17. Ruby gem (with gemspec, with gemfile), entry point dows not exist                                    [Expected error at build step]
-#  18 - 19  -- reserved
+#  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [Expected error at build step]
+#  18. Ruby project (no gemspec, with gemfile)
+#  19. Ruby project (no gemspec, with gemfile, with native extension)
+#  20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
 #  -20. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
 
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
 test_CLI_help() {
   if [ "${VERBOSE}" == "yes" ]; then
-    $DIR_BIN/tebako --help | tee tebako_test.log
-    assertEquals 0 ${PIPESTATUS[0]}
+    "$DIR_BIN/tebako" --help | tee tebako_test.log
+    assertEquals 0 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( $DIR_BIN/tebako --help )"
-    assertEquals 0 $?
+    result="$( "$DIR_BIN/tebako" --help )"
+    assertEquals 0 "${PIPESTATUS[0]}"
   fi
   assertContains "$result" "Usage:"
 }
 
 test_CLI_missing_command() {
   if [ "${VERBOSE}" == "yes" ]; then
-    $DIR_BIN/tebako | tee tebako_test.log
-    assertEquals 4 ${PIPESTATUS[0]}
+    "$DIR_BIN/tebako" | tee tebako_test.log
+    assertEquals 4 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( $DIR_BIN/tebako )"
-    assertEquals 4 $?
+    result="$( "$DIR_BIN/tebako" )"
+    assertEquals 4 "${PIPESTATUS[0]}"
   fi
 
   assertContains "$result" "Missing command"
@@ -144,12 +141,12 @@ test_CLI_missing_command() {
 
 test_CLI_unknown_command() {
   if [ "${VERBOSE}" == "yes" ]; then
-    $DIR_BIN/tebako jump | tee tebako_test.log
-    assertEquals 5 ${PIPESTATUS[0]}
+    "$DIR_BIN/tebako" jump | tee tebako_test.log
+    assertEquals 5 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( $DIR_BIN/tebako jump )"
-    assertEquals 5 $?
+    result="$( "$DIR_BIN/tebako" jump )"
+    assertEquals 5 "${PIPESTATUS[0]}"
   fi
 
   assertContains "$result" "Unknown command"
@@ -160,25 +157,18 @@ test_CLI_unknown_command() {
 #  --  tebako setup
 test_tebako_setup() {
   echo "tebako setup ... patience, please, it may take up to 1 hour."
-  if [ "${VERBOSE}" == "1" ]; then
-    $DIR_BIN/tebako setup 2>&1 | tee tebako_test.log
-    assertEquals 0 ${PIPESTATUS[0]}
+  if [ "${VERBOSE}" == "yes" ]; then
+    "$DIR_BIN/tebako" setup 2>&1 | tee tebako_test.log
+    assertEquals 0 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( $DIR_BIN/tebako setup 2>&1 )"
-    assertEquals 0 $?
+    result="$( "$DIR_BIN/tebako" setup 2>&1 )"
+    assertEquals 0 "${PIPESTATUS[0]}"
   fi
 
 # Check the first and the last messages expected from CMake script
   assertContains "$result" "Running tebako setup script"
   assertContains "$result" "Tebako setup has completed"
-
-# Check that ruby is not a dynamic executable
-#  This check is disabled (temporarily ?)  because of https://github.com/tamatebako/tebako/issues/38
-#  We are using dynamic build for packaging and static build for final integration of patched version
-#  result="$( ldd ${DIR_DEPS}/src/_ruby-build/ruby 2>&1 )"
-#  assertEquals 1 $?
-#  assertContains "$result" "not a dynamic executable"
 }
 
 # ......................................................................
@@ -208,10 +198,10 @@ test_tebako_press_03() {
 #  04. Simple Ruby script, relative path to root, relative path to entry point
 test_tebako_press_04() {
    echo "==> simple Ruby script, relative path to root, relative path to entry point"
-   pushd ${DIR_ROOT} > /dev/null
+   pushd "${DIR_ROOT}" > /dev/null || fail "pushd ${DIR_ROOT} failed"
    press_runner "tests/test-01" "tebako-test-run.rb" "test-04-package"
    package_runner "./test-04-package" "Hello!  This is test-1 talking from inside DwarFS"
-   popd > /dev/null
+   popd > /dev/null || fail "popd failed"
 }
 
 # ......................................................................
@@ -222,18 +212,18 @@ test_tebako_press_05() {
 }
 
 # ......................................................................
-#  06. Ruby gem (Rails project)
-#test_tebako_press_06() {
-#   echo "==> Rails project"
-#   press_runner "${DIR_TESTS}/test-06" "rails" "test-06-package"
+#  06. Rails project
+test_tebako_press_06() {
+   echo "==> Rails project"
+   press_runner "${DIR_TESTS}/test-06" "bin/rails" "test-06-package"
 #   ???? package_runner "./test-06-package"  ????
-#}
+}
 
 # ......................................................................
 # 07. Rails project, ruby and bundler version mismatch
 test_tebako_press_07() {
    echo "==> Rails project, ruby and bundler version mismatch"
-   press_runner_with_error "${DIR_TESTS}/test-07" "rails" "test-07-package" 104 "'tebako press' build step failed"
+   press_runner_with_error "${DIR_TESTS}/test-07" "rails" "test-07-package" 103 "'tebako press' configure step failed"
 }
 
 # ......................................................................
@@ -305,8 +295,32 @@ test_tebako_press_16() {
 # ......................................................................
 # 17. Ruby gem (with gemspec, with gemfile), entry point dows not exist
 test_tebako_press_17() {
-   echo "==> Ruby gem (with gemspec), entry point dows not exist"
+   echo "==> Ruby gem (with gemspec, with gemfile), entry point dows not exist"
    press_runner_with_error "${DIR_TESTS}/test-15" "test-does-not-exist.rb" "test-17-package" 104 "'tebako press' build step failed"
+}
+
+# ......................................................................
+# 18. Ruby project (no gemspec, with gemfile)
+test_tebako_press_18() {
+   echo "==> Ruby project (no gemspec, with gemfile)"
+   press_runner "${DIR_TESTS}/test-18" "tebako-test-run.rb" "test-18-package"
+   package_runner "./test-18-package" "| a1 | b1 |"
+}
+
+# ......................................................................
+# 19. Ruby project (no gemspec, with gemfile, with native extension)
+test_tebako_press_19() {
+   echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
+   press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
+   package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
+}
+
+# ......................................................................
+# 20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
+test_tebako_press_20() {
+   echo "==> Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)"
+   press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
+   package_runner "./test-20-package" "Hello, it looks like the test has passed"
 }
 
 #    - name: Test20 -AUC - Check that it is possible to verify content of packaged fs
@@ -320,10 +334,10 @@ test_tebako_press_17() {
 # main
 
 DIR0="$( cd "$( dirname "$0" )" && pwd )"
-DIR_ROOT="$( cd $DIR0/../.. && pwd )"
-DIR_BIN="$( cd $DIR_ROOT/bin && pwd )"
-DIR_DEPS="$( cd $DIR_ROOT/deps && pwd )"
-DIR_TESTS="$( cd $DIR_ROOT/tests && pwd )"
+DIR_ROOT="$( cd "$DIR0"/../.. && pwd )"
+DIR_BIN="$( cd "$DIR_ROOT"/bin && pwd )"
+DIR_TESTS="$( cd "$DIR_ROOT"/tests && pwd )"
 
 echo "Running tebako tests"
-. $DIR_TESTS/shunit2/shunit2
+# shellcheck source=/dev/null
+. "$DIR_TESTS/shunit2/shunit2"

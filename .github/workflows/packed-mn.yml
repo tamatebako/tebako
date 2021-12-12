@@ -1,0 +1,113 @@
+name: Ubuntu-package-metanorma
+
+#  His workflow is used for manual testing only
+# Please refer to metanorma/packed-mn for any other purposes
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+# Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+# The folder for dwarfs and other dependenies
+  DEPS: deps
+# GitHub dependencies'
+  INCBIN_TAG:    "348e36b"
+  DWARFS_WR_TAG: "v0.1.2"
+# Tarball dependencies
+  RUBY_VER:   "2.7.4"
+  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
+# Bundler version
+  BUNDLER_VER: "2.2.3"
+
+jobs:
+  package-metanorma:
+    name: ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        env:
+          - CC: gcc
+            CXX: g++
+#          - CC: clang
+#            CXX: clang++
+    if: "!contains(github.event.head_commit.message, 'skip ci')"
+    env: ${{ matrix.env }}
+
+    steps:
+# Ref CMakeLists.txt for the full list and comments
+    - name: Install packages
+      run: |
+        sudo apt-get update
+        sudo apt-get install \
+        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
+        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+        libboost-regex-dev libboost-system-dev libboost-thread-dev \
+        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
+        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
+        texinfo
+
+    - name: Checkout tebako packaging environment
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 1
+
+    - name: Checkout packed-mn
+      uses: actions/checkout@v2
+      with:
+        repository: metanorma/packed-mn
+        path: ${{github.workspace}}/packed-mn
+        ref: maxirmx-tebako-packager
+
+    - name: Create deps folder and cache key
+      run: |
+        mkdir ${{github.workspace}}/${{env.DEPS}}
+        echo "Keys" > key.txt
+        echo  ${{ env.INCBIN_TAG }} >> key.txt
+        echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
+        echo  ${{ env.RUBY_HASH }} >> key.txt
+
+    - name: Process cache
+      id: cache
+      uses: actions/cache@v2
+      with:
+        path: ${{github.workspace}}/${{env.DEPS}}
+        key: ${{ github.workflow }}-${{ matrix.os }}-${{ matrix.env.CC }}-${{ hashFiles('key.txt') }}-v01
+
+    - name: tebako setup
+      if: steps.cache.outputs.cache-hit != 'true'
+      run:  ${{github.workspace}}/bin/tebako setup
+
+    - name: Package metanorma
+      run: |
+        ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
+        test -f metanorma-package
+
+    - name: Run simple commands
+      run: |
+        ./metanorma-package help
+        ./metanorma-package version
+        ./metanorma-package list-doctypes
+        ./metanorma-package list-extensions
+
+    - name: Checkout metanorma/iso-19156
+      uses: actions/checkout@v2
+      with:
+        repository: metanorma/iso-19156
+        path: iso-19156
+        fetch-depth: 1
+
+    - name: Site generate
+      run: |
+        cd iso-19159
+        ../metanorma-package site generate --agree-to-terms
+
+    - name: tebako prepare cache
+      if: steps.cache.outputs.cache-hit != 'true'
+      run:  |
+        rm -rf ${{github.workspace}}/deps/src/_ruby*
+        ${{github.workspace}}/bin/tebako setup

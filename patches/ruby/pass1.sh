@@ -24,46 +24,50 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-restore_and_save() {
-  test -e $1.old && cp -f $1.old $1
-  cp -f $1 $1.old
+# More safety, by turning some bugs into errors.
+# Without `errexit` you don’t need ! and can replace
+# PIPESTATUS with a simple $?
+set -o errexit -o pipefail -o noclobber -o nounset
 
+# ....................................................
+restore_and_save() {
+  echo "Pass 1 processing $1"
+  test -e "$1.old" && cp -f "$1.old" "$1"
+  cp -f "$1" "$1.old"
 }
 
-# Copy make script include file that list all libraries required for tebako static build
-PATCH_DIR="$( cd "$( dirname "$0" )" && pwd )"
-cp -f $PATCH_DIR/mainlibs-pass1.mk $2/mainlibs-pass1.mk
-
+# ....................................................
 # Pin tebako static build libraries
-# Ruby 2.7.4:
-restore_and_save $1/template/Makefile.in
-sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass1.mk/g" $1/template/Makefile.in
-# Ruby 2.6.3:
-#restore_and_save $1/Makefile.in
-#sed -i "s/MAINLIBS = @MAINLIBS@/include  mainlibs-pass1.mk/g" $1/Makefile.in
+# Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
+# Ruby 2.6.3:  template is in 'ruby/Makefile.in'
+restore_and_save "$1/template/Makefile.in"
 
-# Fix bigdecimal extension
-# [I cannot explain why it is required. It does not seem to be related to any patching we do]
-cp -f $PATCH_DIR/bigdecimal-patch.h $1/ext/bigdecimal/bigdecimal-patch.h
-restore_and_save $1/ext/bigdecimal/bigdecimal.h
-sed -i "s/#include <float.h>/#include <float.h>\n#include \"bigdecimal-patch.h\"\n/g" $1/ext/bigdecimal/bigdecimal.h
+re="MAINLIBS = @MAINLIBS@"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+# -- Start of tebako patch --
+MAINLIBS = -l:libssl.a -l:libcrypto.a -l:libz.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a \\\\
+-l:libjemalloc.a -l:libcrypt.a -l:libanl.a -ldl -lrt
+# -- End of tebako patch --
+EOM
 
+#
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+
+# ....................................................
 # Disable dynamic extensions
-restore_and_save $1/ext/Setup
-sed -i "s/\#option nodynamic/option nodynamic/g" $1/ext/Setup
+# ruby/ext/Setup
+restore_and_save "$1/ext/Setup"
+sed -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
 
-restore_and_save $1/main.c
-restore_and_save $1/dir.c
-restore_and_save $1/dln.c
-restore_and_save $1/file.c
-restore_and_save $1/io.c
-
+# ....................................................
 # WE DO NOT ACCEPT OUTSIDE GEM PATHS
 # ruby/lib/rubygems/path_support.rb
-restore_and_save $1/lib/rubygems/path_support.rb
+restore_and_save "$1/lib/rubygems/path_support.rb"
 
-re="@home = env\[\"GEM_HOME\"\] || Gem.default_dir"
-IFS= read -r -d '' sbst << EOM
+re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
     @home = env\["GEM_HOME"\] || Gem.default_dir
 # -- Start of tebako patch --
     unless env\['TEBAKO_PASS_THROUGH'\]
@@ -72,10 +76,11 @@ IFS= read -r -d '' sbst << EOM
 # -- End of tebako patch --
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/lib/rubygems/path_support.rb
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
-IFS= read -r -d '' sbst << EOM
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
     @path = split_gem_path env\["GEM_PATH"\], @home
 # -- Start of tebako patch --
     unless env\['TEBAKO_PASS_THROUGH'\]
@@ -86,8 +91,56 @@ IFS= read -r -d '' sbst << EOM
 # -- End of tebako patch --
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" $1/lib/rubygems/path_support.rb
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
-restore_and_save $1/process.c
-restore_and_save $1/tool/mkconfig.rb
-restore_and_save $1/util.c
+# ....................................................
+# This is something that I cannnot explain
+# (this patch does not seem related to static compilation)
+# ruby/ext/bigdecimal/bigdecimal.h
+restore_and_save "$1/ext/bigdecimal/bigdecimal.h"
+re="#include <float.h>"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+#include <float.h>
+
+\/* -- Start of tebako patch -- *\/
+#ifndef HAVE_RB_SYM2STR
+#define HAVE_RB_SYM2STR  1
+#endif
+
+#ifndef HAVE_RB_ARRAY_CONST_PTR
+#define HAVE_RB_ARRAY_CONST_PTR 1
+#endif
+
+#ifndef HAVE_RB_RATIONAL_NUM
+#define HAVE_RB_RATIONAL_NUM 1
+#endif
+
+#ifndef HAVE_RB_RATIONAL_DEN
+#define HAVE_RB_RATIONAL_DEN 1
+#endif
+\/* -- End of tebako patch -- *\/
+
+EOM
+
+sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
+
+# ....................................................
+# Roll-back pass2 patches from the previous run
+restore_and_save "$1/main.c"
+restore_and_save "$1/dir.c"
+restore_and_save "$1/dln.c"
+restore_and_save "$1/file.c"
+restore_and_save "$1/io.c"
+restore_and_save "$1/util.c"
+restore_and_save "$1/tool/mkconfig.rb"
+
+# restore_and_save $1/process.c
+# restore_and_save $1/prelude.c
+# $1/ext/openssl/ossl_x509store.c
+
+# [TODO Windows]
+# $1/win32/file.c
+# $1/win32/win32.c
+
+
