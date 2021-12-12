@@ -144,8 +144,8 @@ jobs:
       - name: Install ronn
         run: sudo gem install ronn
 
-      - name: Create deps folder 
-        run: mkdir ${{github.workspace}}/${{env.DEPS}}         
+      - name: Create deps folder
+        run: mkdir ${{github.workspace}}/${{env.DEPS}}
 
       - name: Process cache
         id: cache

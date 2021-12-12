@@ -2,7 +2,7 @@ name: lint
 
 on:
   push:
-    branches: [ master, maxirmx-issue-23 ]
+    branches: [ master ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -25,6 +25,6 @@ jobs:
       - uses: ludeeus/action-shellcheck@master
         with:
           additional_files: 'tebako'
-          ignore_paths: deps 
+          ignore_paths: deps
         env:
           SHELLCHECK_OPTS: -x

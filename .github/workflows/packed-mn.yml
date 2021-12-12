@@ -18,7 +18,7 @@ env:
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
-# Bundler version  
+# Bundler version
   BUNDLER_VER: "2.2.3"
 
 jobs:
@@ -75,7 +75,7 @@ jobs:
       id: cache
       uses: actions/cache@v2
       with:
-        path: ${{github.workspace}}/${{env.DEPS}} 
+        path: ${{github.workspace}}/${{env.DEPS}}
         key: ${{ github.workflow }}-${{ matrix.os }}-${{ matrix.env.CC }}-${{ hashFiles('key.txt') }}-v01
 
     - name: tebako setup
@@ -86,7 +86,7 @@ jobs:
       run: |
         ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
         test -f metanorma-package
-        
+
     - name: Run simple commands
       run: |
         ./metanorma-package help
