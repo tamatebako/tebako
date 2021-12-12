@@ -47,6 +47,7 @@ on:
   workflow_dispatch:
 
 env:
+  MAKEFLAGS: -j4
 # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
 # The folder for dwarfs and other dependenies
@@ -75,8 +76,6 @@ jobs:
 #            CXX: clang++
     env: ${{ matrix.env }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2
 
 # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu2004-README.md
 # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu1804-README.md
@@ -151,7 +150,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{github.workspace}}/${{env.DEPS}}
-          key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v01
+          key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v02
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v2
