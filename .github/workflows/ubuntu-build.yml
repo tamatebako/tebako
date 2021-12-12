@@ -1,8 +1,33 @@
-name: Ubuntu-build-and-test
+# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+name: Ubuntu
 
 on:
   push:
-    branches: [ master, maxirmx-issue-23 ]
+    branches: [ master ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -28,7 +53,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.1.2"
+  DWARFS_WR_TAG: "v0.1.3"
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
@@ -36,86 +61,185 @@ env:
   BUNDLER_VER: "2.2.3"
 
 jobs:
-  build-and-test:
+  setup:
     name: ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [ ubuntu-18.04, ubuntu-20.04 ]
         env:
           - CC: gcc
             CXX: g++
 #          - CC: clang
 #            CXX: clang++
-    if: "!contains(github.event.head_commit.message, 'skip ci')"
     env: ${{ matrix.env }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+# https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu2004-README.md
+# https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu1804-README.md
+# Already installed: bison flex pkg-config
+
+# gcc/g++ 9 is also there otherwise we would need:
+# sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+# sudo apt update
+# sudo apt install gcc-9 g++-9
+
+# cmake good enough is also at GHA. Otherswise:
+# sudo apt-get remove --purge --auto-remove cmake
+# sudo apt-get update
+# sudo apt-get install -y software-properties-common lsb-release
+# sudo apt-get clean all
+# wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | sudo tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+# sudo apt-add-repository "deb https://apt.kitware.com/ubuntu/ $(lsb_release -cs) main"
+# sudo apt update
+# sudo apt install kitware-archive-keyring
+# sudo rm /etc/apt/trusted.gpg.d/kitware.gpg
+# sudo apt update
+# sudo apt install cmake
+
+      - name: Switch to gcc-9
+        if: ${{ matrix.env.CC == 'gcc' }}
+        run: |
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9 --slave /usr/bin/gcov gcov /usr/bin/gcov-9
+          sudo update-alternatives --set gcc /usr/bin/gcc-9
+
+      - name: Install packages
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install \
+          binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
+          libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+          libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+          libboost-regex-dev libboost-system-dev libboost-thread-dev \
+          libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
+          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
+
+      - name: Update libfmt (bionic)
+        if: ${{ matrix.os == 'ubuntu-18.04' }}
+        run: |
+          sudo apt-get -y remove libfmt-dev
+          sudo apt-get -y install software-properties-common
+          sudo add-apt-repository ppa:team-xbmc/ppa
+          sudo apt-get -y update
+          sudo apt-get -y install libfmt-dev
+
+      - name: Install libfmt (focal)
+        if: ${{ matrix.os == 'ubuntu-20.04' }}
+        run: sudo apt-get install libfmt-dev
+
+# sudo apt install ronn does not work for bionic
+# On focal  it cannot process one of the files, so we do it natively
+# Note that libruby-dev is required under the hood
+
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VER }}
+          bundler: ${{ env.BUNDLER_VER }}
+
+      - name: Install ronn
+        run: sudo gem install ronn
+
+      - name: Create deps folder 
+        run: mkdir ${{github.workspace}}/${{env.DEPS}}         
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{github.workspace}}/${{env.DEPS}}
+          key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v01
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: tebako setup
+        if: steps.cache.outputs.cache-hit != 'true'
+        run:  ${{github.workspace}}/bin/tebako setup
+
+
+#jobs:
+#  build-and-test:
+#    name: ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        os: [ubuntu-latest]
+#        env:
+#          - CC: gcc
+#            CXX: g++
+#          - CC: clang
+#            CXX: clang++
+#    if: "!contains(github.event.head_commit.message, 'skip ci')"
+#    env: ${{ matrix.env }}
+#    steps:
 # Ref CMakeLists.txt for the full list and comments
-    - name: Install packages
-      run: |
-        sudo apt-get update
-        sudo apt-get install \
-        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
-        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
-        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-        libboost-regex-dev libboost-system-dev libboost-thread-dev \
-        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
-        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libsqlite3-dev
+#    - name: Install packages
+#      run: |
+#        sudo apt-get update
+#        sudo apt-get install \
+#        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
+#        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+#        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+#        libboost-regex-dev libboost-system-dev libboost-thread-dev \
+#        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
+#        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libsqlite3-dev
 
-    - name: Checkout tebako packaging environment
-      uses: actions/checkout@v2
-      with:
-        fetch-depth: 1
 
-    - name: Checkout shell test framework
-      uses: actions/checkout@v2
-      with:
-        repository: kward/shunit2
-        path: ${{github.workspace}}/tests/shunit2
-        fetch-depth: 1
+#    - name: Checkout shell test framework
+#      uses: actions/checkout@v2
+#      with:
+#        repository: kward/shunit2
+#        path: ${{github.workspace}}/tests/shunit2
+#        fetch-depth: 1
 
-    - name: Create deps folder and cache key
-      run: |
-        mkdir ${{github.workspace}}/${{env.DEPS}}
-        echo "Keys" > key.txt
-        echo  ${{ env.INCBIN_TAG }} >> key.txt
-        echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
-        echo  ${{ env.RUBY_HASH }} >> key.txt
+#    - name: Create deps folder and cache key
+#      run: |
+#        mkdir ${{github.workspace}}/${{env.DEPS}}
+#        echo "Keys" > key.txt
+#        echo  ${{ env.INCBIN_TAG }} >> key.txt
+#        echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
+#        echo  ${{ env.RUBY_HASH }} >> key.txt
 
-    - name: Process cache
-      id: cache
-      uses: actions/cache@v2
-      with:
-        path: ${{github.workspace}}/${{env.DEPS}}
-        key: ${{ github.workflow }}-${{ matrix.os }}-${{ matrix.env.CC }}-${{ hashFiles('key.txt') }}-v01
+#    - name: Process cache
+#      id: cache
+#      uses: actions/cache@v2
+#      with:
+#        path: ${{github.workspace}}/${{env.DEPS}}
+#        key: ${{ github.workflow }}-${{ matrix.os }}-${{ matrix.env.CC }}-${{ hashFiles('key.txt') }}-v01
 
-    - name: tebako setup
-      if: steps.cache.outputs.cache-hit != 'true'
-      run:  ${{github.workspace}}/bin/tebako setup
+#    - name: tebako setup
+#      if: steps.cache.outputs.cache-hit != 'true'
+#      run:  ${{github.workspace}}/bin/tebako setup
 
-    - name: tebako tests (set no. 1)
+#    - name: tebako tests (set no. 1)
 # show cmake output aka verbose (yes/no)
-      env:
-        VERBOSE: yes
-      run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
+#      env:
+#        VERBOSE: yes
+#      run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
-    - uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: ${{ env.RUBY_VER }}
-        bundler: ${{ env.BUNDLER_VER }}
-        bundler-cache: true
+#    - uses: ruby/setup-ruby@v1
+#      with:
+#        ruby-version: ${{ env.RUBY_VER }}
+#        bundler: ${{ env.BUNDLER_VER }}
+#        bundler-cache: true
 
-    - name: tebako tests (set no. 2)
-      run: |
-        cd ${{github.workspace}}/tests-2
-        bundle install
-        cd ${{github.workspace}}
-        ruby ${{github.workspace}}/tests-2/tebako-test.rb
+#    - name: tebako tests (set no. 2)
+#      run: |
+#        cd ${{github.workspace}}/tests-2
+#        bundle install
+#        cd ${{github.workspace}}
+#        ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
-    - name: tebako prepare cache
-      if: steps.cache.outputs.cache-hit != 'true'
-      run:  |
-        rm -rf ${{github.workspace}}/deps/src/_ruby*
-        ${{github.workspace}}/bin/tebako setup
+#    - name: tebako prepare cache
+#      if: steps.cache.outputs.cache-hit != 'true'
+#      run:  |
+#        rm -rf ${{github.workspace}}/deps/src/_ruby*
+#        ${{github.workspace}}/bin/tebako setup
 
