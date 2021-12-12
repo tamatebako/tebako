@@ -240,14 +240,17 @@ jobs:
           path: ${{github.workspace}}/tests/shunit2
           fetch-depth: 1
 
-      - name: Ready signal
-        run: echo "tests-1 ready"
-
       - name: Break if failed to load cache
         if: steps.cache.outputs.cache-hit != 'true'
         run: | 
           echo "tests-1 job failed to load cache"
           false
+
+      - name: Run tebako tests (set no. 1)
+# show cmake output aka verbose (yes/no)
+        env:
+          VERBOSE: yes
+        run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
   tests-2:
     needs: setup
@@ -318,93 +321,15 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Ready signal
-        run: echo "tests-2 ready"
-
       - name: Break if failed to load cache
         if: steps.cache.outputs.cache-hit != 'true'
         run: | 
           echo "tests-2 job failed to load cache"
           false
 
-
-#jobs:
-#  build-and-test:
-#    name: ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
-#    runs-on: ${{ matrix.os }}
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        os: [ubuntu-latest]
-#        env:
-#          - CC: gcc
-#            CXX: g++
-#          - CC: clang
-#            CXX: clang++
-#    if: "!contains(github.event.head_commit.message, 'skip ci')"
-#    env: ${{ matrix.env }}
-#    steps:
-# Ref CMakeLists.txt for the full list and comments
-#    - name: Install packages
-#      run: |
-#        sudo apt-get update
-#        sudo apt-get install \
-#        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev libxml2-dev \
-#        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
-#        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-#        libboost-regex-dev libboost-system-dev libboost-thread-dev \
-#        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
-#        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libsqlite3-dev
-
-
-#    - name: Checkout shell test framework
-#      uses: actions/checkout@v2
-#      with:
-#        repository: kward/shunit2
-#        path: ${{github.workspace}}/tests/shunit2
-#        fetch-depth: 1
-
-#    - name: Create deps folder and cache key
-#      run: |
-#        mkdir ${{github.workspace}}/${{env.DEPS}}
-#        echo "Keys" > key.txt
-#        echo  ${{ env.INCBIN_TAG }} >> key.txt
-#        echo  ${{ env.DWARFS_WR_TAG }} >> key.txt
-#        echo  ${{ env.RUBY_HASH }} >> key.txt
-
-#    - name: Process cache
-#      id: cache
-#      uses: actions/cache@v2
-#      with:
-#        path: ${{github.workspace}}/${{env.DEPS}}
-#        key: ${{ github.workflow }}-${{ matrix.os }}-${{ matrix.env.CC }}-${{ hashFiles('key.txt') }}-v01
-
-#    - name: tebako setup
-#      if: steps.cache.outputs.cache-hit != 'true'
-#      run:  ${{github.workspace}}/bin/tebako setup
-
-#    - name: tebako tests (set no. 1)
-# show cmake output aka verbose (yes/no)
-#      env:
-#        VERBOSE: yes
-#      run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
-
-#    - uses: ruby/setup-ruby@v1
-#      with:
-#        ruby-version: ${{ env.RUBY_VER }}
-#        bundler: ${{ env.BUNDLER_VER }}
-#        bundler-cache: true
-
-#    - name: tebako tests (set no. 2)
-#      run: |
-#        cd ${{github.workspace}}/tests-2
-#        bundle install
-#        cd ${{github.workspace}}
-#        ruby ${{github.workspace}}/tests-2/tebako-test.rb
-
-#    - name: tebako prepare cache
-#      if: steps.cache.outputs.cache-hit != 'true'
-#      run:  |
-#        rm -rf ${{github.workspace}}/deps/src/_ruby*
-#        ${{github.workspace}}/bin/tebako setup
-
+      - name: Run tebako tests (set no. 2)
+        run: |
+          cd ${{github.workspace}}/tests-2
+          bundle install
+          cd ${{github.workspace}}
+          ruby ${{github.workspace}}/tests-2/tebako-test.rb
