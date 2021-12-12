@@ -139,7 +139,7 @@ class TestTebako < MiniTest::Test
 #   /lib64/ld-linux-x86-64.so.2 (0x00007f987e164000)
 #   libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f987c5c3000)
 
-                libs = ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so"]
+                libs = ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
                 l = out.lines.map(&:strip)
                 l.delete_if {|ln| libs.any? { |lib| ln.include?(lib) } }
                 assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
