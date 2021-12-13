@@ -160,36 +160,6 @@ jobs:
       - name: tebako setup
         run: ${{github.workspace}}/bin/tebako setup
 
-#      - name: Checkout shell test framework
-#        if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
-#        uses: actions/checkout@v2
-#        with:
-#          repository: kward/shunit2
-#          path: ${{github.workspace}}/tests/shunit2
-#          fetch-depth: 1
-
-#      - name: Run tebako tests (set no. 1)
-#        if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
-# show cmake output aka verbose (yes/no)
-#        env:
-#          VERBOSE: yes
-#        run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
-
-#      - name: Run tebako tests (set no. 2)
-#        if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
-#        run: |
-#          cd ${{github.workspace}}/tests-2
-#          bundle install
-#          cd ${{github.workspace}}
-#          ruby ${{github.workspace}}/tests-2/tebako-test.rb
-
-#      - name: create clean cache
-#        if: steps.cache.outputs.cache-hit != 'true'
-#        run: |
-#          rm -rf ${{github.workspace}}/${{env.DEPS}}/src/_ruby*
-#          tar -xzvf ruby.tar.gz 
-#          ls -l  ${{github.workspace}}/${{env.DEPS}}/src
-  
   tests-1:
     needs: setup
     name: tests-1 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
@@ -376,6 +346,10 @@ jobs:
     needs: tests-1
     runs-on: ubuntu-20.04
     steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
       - name: Download test packages
         uses: actions/download-artifact@v2
         with:
