@@ -159,7 +159,6 @@ jobs:
 
       - name: tebako setup
         run: ${{github.workspace}}/bin/tebako setup
-#          tar -czvf ruby.tar.gz ${{env.DEPS}}/src/_ruby*
 
 #      - name: Checkout shell test framework
 #        if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
@@ -193,7 +192,7 @@ jobs:
   
   tests-1:
     needs: setup
-    name: tests-2 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+    name: tests-1 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -269,7 +268,6 @@ jobs:
           false
 
       - name: Checkout shell test framework
-        if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
         uses: actions/checkout@v2
         with:
           repository: kward/shunit2
@@ -277,11 +275,17 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
 # show cmake output aka verbose (yes/no)
         env:
           VERBOSE: yes
         run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
+
+      - name: Upload tebako test packages
+        if: ${{ matrix.os == 'ubuntu-18.04' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-packages
+          path: test-*-package
 
   tests-2:
     needs: setup
@@ -366,3 +370,17 @@ jobs:
           bundle install
           cd ${{github.workspace}}
           ruby ${{github.workspace}}/tests-2/tebako-test.rb
+
+  cross-test-ubuntu-18-to-ubuntu-20:
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
+    needs: tests-1
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Download test packages
+        uses: actions/download-artifact@v2
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
+ 
