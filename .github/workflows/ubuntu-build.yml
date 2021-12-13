@@ -59,7 +59,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: "04"
+  CACHE_VER: "05"
 
 jobs:
   setup:
@@ -76,6 +76,10 @@ jobs:
 #            CXX: clang++
     env: ${{ matrix.env }}
     steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
 
 # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu2004-README.md
 # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu1804-README.md
@@ -153,11 +157,6 @@ jobs:
           path: ${{github.workspace}}/${{env.DEPS}}
           key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
-        with:
-          fetch-depth: 1
-
       - name: tebako setup
         run: ${{github.workspace}}/bin/tebako setup
           tar -czvf ruby.tar.gz ${{env.DEPS}}/src/_ruby*
@@ -208,6 +207,10 @@ jobs:
 #            CXX: clang++
     env: ${{ matrix.env }}
     steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
 
       - name: Switch to gcc-9
         if: ${{ matrix.env.CC == 'gcc' }}
@@ -296,6 +299,10 @@ jobs:
 #            CXX: clang++
     env: ${{ matrix.env }}
     steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
 
       - name: Switch to gcc-9
         if: ${{ matrix.env.CC == 'gcc' }}
