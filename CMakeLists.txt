@@ -416,7 +416,7 @@ else (${SETUP_MODE})
     )
   else(${START_WITH_PACKAGED_FILESYSTEM})
     add_custom_target(packaged_filesystem
-# [TODO] Open question - wheather we shall delete ruby binaries from memfs or not
+# [TODO] Open question - whether we shall delete ruby binaries from memfs or not
 #        For debugging purposes it is very handy to have it here
 #
 #      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
