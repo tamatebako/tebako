@@ -162,7 +162,7 @@ jobs:
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           ${{github.workspace}}/bin/tebako setup
-          tar -czvf ruby.tar.gz ${{github.workspace}}/${{env.DEPS}}/_ruby*
+          tar -czvf ruby.tar.gz ${{env.DEPS}}/src/_ruby*
 
       - name: Checkout shell test framework
         if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
