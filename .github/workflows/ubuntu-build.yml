@@ -255,7 +255,14 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: test-packages
-          path: test-*-package
+          path: |
+            test-01-package
+            test-09-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package
+            test-20-package
 
   tests-2:
     needs: setup
