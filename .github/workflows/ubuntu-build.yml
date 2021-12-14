@@ -52,7 +52,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.1.3"
+  DWARFS_WR_TAG: "v0.1.4"
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
@@ -450,24 +450,4 @@ jobs:
           ref: maxirmx-tebako-packager
 
       - name: Package metanorma
-        run: |
-          ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
-
-      - name: Run simple commands
-        run: |
-          ./metanorma-package help
-          ./metanorma-package version
-          ./metanorma-package list-doctypes
-          ./metanorma-package list-extensions
-
-      - name: Checkout metanorma/iso-19156
-        uses: actions/checkout@v2
-        with:
-          repository: metanorma/iso-19156
-          path: iso-19156
-          fetch-depth: 1
-
-      - name: Site generate
-        run: |
-          cd iso-19159
-          ../metanorma-package site generate --agree-to-terms
+        run: ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package

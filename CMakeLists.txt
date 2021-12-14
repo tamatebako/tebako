@@ -154,7 +154,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.1.3")
+def_ext_prj_g(DWARFS_WR "v0.1.4")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -424,7 +424,7 @@ else (${SETUP_MODE})
                                          ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
                                          ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
       COMMAND chmod +x ${DEPS_BIN_DIR}/*
-      COMMAND ${DEPS_BIN_DIR}/mkdwarfs --compress-level=1 -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
       COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
       DEPENDS setup source_filesystem
       BYPRODUCTS ${DATA_BIN_FILE}
