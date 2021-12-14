@@ -163,8 +163,7 @@ jobs:
   tests-1:
     needs: setup
     name: tests-1 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
-    if: ${{ !contains(github.event.head_commit.message, '[metanorma only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -268,8 +267,7 @@ jobs:
   tests-2:
     needs: setup
     name: tests-2 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
-    if: ${{ !contains(github.event.head_commit.message, '[metanorma only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -371,8 +369,7 @@ jobs:
   package-metanorma:
     needs: setup
     name: package-metanorma ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') }}
-    if: ${{ !contains(github.event.head_commit.message, '[tests only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[tests only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
