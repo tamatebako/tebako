@@ -257,7 +257,6 @@ jobs:
           name: test-packages
           path: |
             test-01-package
-            test-09-package
             test-11-package
             test-15-package
             test-18-package
