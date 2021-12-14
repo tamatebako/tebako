@@ -213,25 +213,25 @@ test_tebako_press_05() {
 
 # ......................................................................
 #  06. Rails project
-test_tebako_press_06() {
-   echo "==> Rails project"
-   press_runner "${DIR_TESTS}/test-06" "bin/rails" "test-06-package"
+#test_tebako_press_06() {
+#   echo "==> Rails project"
+#   press_runner "${DIR_TESTS}/test-06" "bin/rails" "test-06-package"
 #   ???? package_runner "./test-06-package"  ????
-}
+#}
 
 # ......................................................................
 # 07. Rails project, ruby and bundler version mismatch
-test_tebako_press_07() {
-   echo "==> Rails project, ruby and bundler version mismatch"
-   press_runner_with_error "${DIR_TESTS}/test-07" "rails" "test-07-package" 103 "'tebako press' configure step failed"
-}
+#test_tebako_press_07() {
+#   echo "==> Rails project, ruby and bundler version mismatch"
+#   press_runner_with_error "${DIR_TESTS}/test-07" "rails" "test-07-package" 103 "'tebako press' configure step failed"
+#}
 
 # ......................................................................
 # 08. Rails project, entry point does not exists
-test_tebako_press_08() {
-   echo "==> Rails project, entry point does not exists"
-   press_runner_with_error "${DIR_TESTS}/test-08" "rails" "test-does-not-exist.rb" 103 "'tebako press' configure step failed"
-}
+#test_tebako_press_08() {
+#   echo "==> Rails project, entry point does not exists"
+#   press_runner_with_error "${DIR_TESTS}/test-08" "rails" "test-does-not-exist.rb" 103 "'tebako press' configure step failed"
+#}
 
 # ......................................................................
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
