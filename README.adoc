@@ -1,5 +1,9 @@
 = Tebako: an image packager
 
+image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu-build.yml/badge.svg["Ubuntu", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu-build.yml"]
+image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
+
+
 == Purpose
 
 This software packages a set of files into a dwarFS file system for
