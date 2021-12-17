@@ -6,14 +6,12 @@ image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg[
 
 == Purpose
 
-This software packages a set of files into a dwarFS file system for
-read-only purposes.
+Tebako is an executable packager. It packages a set of files into a dwarFS file
+system for read-only purposes.
 
-After packaging the file system, Tebako produces a single executable
-binary that allows the user to execute a selected file from the packaged
-software from a point in the file system.
-
-== Goals
+After packaging the file system into an image, Tebako produces a single
+executable binary that allows the user to execute a selected file from the
+packaged software from a point in the file system.
 
 The packaged binary should support:
 
@@ -27,8 +25,258 @@ In the future:
 * Supporting a COW mechanism that the newly written files are stored
   in a separate image that can be loaded on top of the read-only file systems.
 
+== Supported platforms
 
-== Origin of name
+The Tebako packager is tested on the following platforms:
+
+* Linux: Ubuntu 18.04; Ubuntu 20.04
+* macOS: TBD
+* Windows: TBD
+
+== Prerequisites
+
+=== Ubuntu
+
+==== GNU C/C++ 9.x
+
+If GNU C/C++ 9.x is not available as a default package, it can be set up as
+follows.
+
+[source,sh]
+----
+add-apt-repository ppa:ubuntu-toolchain-r/test
+apt-get update
+apt-get install gcc-9 g++-9
+----
+
+==== CMake 3.20 or better
+
+Tebako relies on CMake 3.20+, which may not be available as a default package.
+
+If it is not available as default package it can be set up as follows
+----
+apt-get remove --purge --auto-remove cmake
+apt-get update
+apt-get install -y software-properties-common lsb-release
+apt-get clean all
+curl https://apt.kitware.com/kitware-archive.sh | bash
+apt-get install cmake
+----
+
+==== libfmt version 6.x or better
+
+On Ubuntu 20 it can be installed with:
+
+[source,sh]
+----
+apt-get install libfmt-dev
+----
+
+On Ubuntu 18 it requires a backport:
+
+[source,sh]
+----
+apt-get -y remove libfmt-dev
+apt-get -y install software-properties-common
+add-apt-repository ppa:team-xbmc/ppa
+apt-get -y update
+apt-get -y install libfmt-dev
+----
+
+==== Other development tools and libraries
+
+Ubuntu 18 and ubuntu 20 default versions are good enough.
+
+[source,sh]
+----
+apt-get install -y curl git g++ gcc ruby ruby-dev pkg-config bison flex
+apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
+  libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+  libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+  libboost-regex-dev libboost-system-dev libboost-thread-dev \
+  libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
+  libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
+  libsqlite3-dev
+----
+
+=== Supporting Rubygems
+
+==== bundler for packaging
+
+[source,sh]
+----
+gem install bundler
+----
+
+==== ronn for manual compilation
+
+Providing that you have Ruby 2.5+, you can just run:
+
+[source,sh]
+----
+gem install ronn
+----
+
+Verify that the `ronn` executable is available at your `PATH`.
+
+
+== Installation
+
+Just clone this repository, and run `tebako setup` as follows.
+
+[source,sh]
+----
+git clone https://github.com/tamatebako/tebako
+tebako/bin/tebako setup
+----
+
+== Usage
+
+=== Commands
+
+==== Setup
+
+[source,sh]
+----
+<install-folder>/bin/tebako setup [-p |--prefix=<tebako-root-folder>]
+----
+
+Collect and builds Tebako packager and install them for Tebako packager at
+`<tebako root folder>` (defaults to the install folder).
+
+Tebako supports several configurations at a single system given that their root
+directories differ.
+
+=== Press
+
+This command "presses" a Ruby project using the Tebako setup from the Tebako root
+folder (`<tebako-root-folder>`).
+
+[source,sh]
+----
+<install-folder>/bin/tebako press \
+  [-p |--prefix=<tebako-root-folder>] \
+  -r|--root=<project-root-folder> \
+  [-e|--entry-point=<entry-point>] \
+  [-o |--output=<packaged file name>]
+----
+
+Where:
+
+* `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
+folder)
+
+* `<project-root>`, a folder at the host source file system where project files
+are located
+
+* `<entry-point>`, an executable file (binary executable or script) that shall
+be started when packaged file is called
+
+* `output`, the output file name (optional, defaults to `<current folder>/<entry
+point base name`)
+
+
+[example]
+====
+[source,sh]
+----
+bin/tebako press \
+  --root='~/projects/myproject' \
+  --entry=start.rb \
+  --output=/temp/myproject.tebako
+----
+====
+
+
+=== Exit codes
+
+[cols,"a,a"]
+|===
+| Code | Condition
+
+| 0    | No error
+| 1    | `getopts` not supported by OS
+| 2    | Failed to parse command line
+| 3    | Internal error
+| 4    | Missing command (`setup` or `press` is required)
+| 5    | `tebako press` without mandatory `--root` option
+| 6    | `tebako press` without mandatory `--entry-point` option
+| 101  | `tebako setup` failed at configuration step
+| 102  | `tebako setup` failed at build step
+| 103  | `tebako press` failed at configuration step
+| 104  | `tebako press` failed at build step
+
+|===
+
+
+== Ruby packaging specification
+
+This is high-level description of the Tebako Ruby packaging mechanism.
+This specification was inspired by the `ruby-packer` approach.
+
+NOTE: For various reasons, Tebako Ruby is a fully separate implementation,
+no line of code was copied from `ruby-packer`.
+
+Depending on the configuration files that are present in the root project folder,
+the Tebako Ruby packager support five different scenarios:
+
+[cols="a,a,a,a"]
+|===
+| Scenario | `*.gemspec` | `Gemfile`  | `*.gem`
+
+| 1        |     No    |   No     |   No
+| 2        |     No    |   No     |   One
+| 3        |    One    |   No     |   Any
+| 4        |    One    |   One    |   Any
+| 5        |     No    |   One    |   Any
+| Error    |     No    |   No     |Two or more
+| Error    |Two or more|   Any    |   Any
+
+|===
+
+These scenarios differ in what files are packaged and where the entry point is
+located, as follows:
+
+[cols="a,a,a,a"]
+|===
+| Scenario | Description | Packaging | Entry point
+
+| 1
+| Simple ruby script
+| Copy `<project-root>` with all sub-folders to packaged filesystem
+| `<mount_point>/local/<entry_point base name>`
+
+| 2
+| Packaged gem
+| Install the gem with `gem install` to packaged filesystem
+| `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
+
+| 3
+| Gem source, no `bundler`
+|
+. Build the gem using `gem build` command at the host
+. Install it with `gem install` to packaged filesystem
+
+| `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
+
+| 4
+| Gem source, `bundler`
+|
+. Collect dependencies at the host with `bundle install`
+. Build the gem using `gem build` command
+. Install it with `gem install` to packaged file system
+
+| `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
+
+| 5
+| Rails project
+| Deploy project to packaged filesystem using `bundle install`
+| `<mount_point>/local/<entry_point base name>`
+
+|===
+
+
+== Trivia: origin of name
 
 "tamatebako" (玉手箱) is the treasure box given to Urashima Taro in the Ryugu,
 for which he was asked not to open if he wished to return. He opened the box
