@@ -108,7 +108,6 @@ press_runner_with_error() {
 #  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [Expected error at build step]
 #  18. Ruby project (no gemspec, with gemfile)
 #  19. Ruby project (no gemspec, with gemfile, with native extension)
-#  20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
 #  -20. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
 
 # ......................................................................
@@ -313,14 +312,6 @@ test_tebako_press_19() {
    echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
    press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
    package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
-}
-
-# ......................................................................
-# 20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
-test_tebako_press_20() {
-   echo "==> Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)"
-   press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
-   package_runner "./test-20-package" "Hello, it looks like the test has passed"
 }
 
 #    - name: Test20 -AUC - Check that it is possible to verify content of packaged fs

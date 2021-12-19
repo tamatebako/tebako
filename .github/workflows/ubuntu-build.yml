@@ -261,8 +261,7 @@ jobs:
             test-15-package
             test-18-package
             test-19-package
-            test-20-package
-
+           
   tests-2:
     needs: setup
     name: tests-2 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]

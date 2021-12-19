@@ -21,7 +21,7 @@
 # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.require "minitest/autorun"
+# POSSIBILITY OF SUCH DAMAGE.
 
 require "tmpdir"
 require "fileutils"
@@ -110,14 +110,10 @@ class TestTebako < MiniTest::Test
         end
     end
 
-  # Should be able to call tebako
-    def test_111_smoke
-        assert system("#{Tebako} --help > /dev/null")
-    end
-
-  # Test that we can build and run executables.
-  # Test short options with whitespaces
-  # Test that we are linking to known set of shared libraries (https://github.com/tamatebako/tebako/issues/42)
+  # Test :
+  # -- that we can build and run executables.
+  # -- short options with whitespaces
+  # -- that we are linking to known set of shared libraries (https://github.com/tamatebako/tebako/issues/42)
     def test_121_helloworld
         name = "helloworld"
         package = "#{name}-package"
@@ -131,13 +127,14 @@ class TestTebako < MiniTest::Test
                 out, st = Open3.capture2("ldd #{tempdirname}/#{package}")
                 assert_equal 0, st.exitstatus
 
-#   Expecting just 6 references to shared libraries
-#   linux-vdso.so.1 (0x00007fff2098b000)
-#   libpthread.so.0 => /lib/x86_64-linux-gnu/libpthread.so.0 (0x00007f987c90a000)
-#   libdl.so.2 => /lib/x86_64-linux-gnu/libdl.so.2 (0x00007f987c904000)
-#   libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f987c712000)
-#   /lib64/ld-linux-x86-64.so.2 (0x00007f987e164000)
-#   libm.so.6 => /lib/x86_64-linux-gnu/libm.so.6 (0x00007f987c5c3000)
+#   Expecting no more then 7 references to shared libraries
+#   linux-vdso.so
+#   libpthread.so
+#   libdl.so
+#   libc.so
+#   libm.so
+#   librt.so
+#   /lib64/ld-linux-x86-64.so
 
                 libs = ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
                 l = out.lines.map(&:strip)
@@ -148,8 +145,9 @@ class TestTebako < MiniTest::Test
         end
     end
 
-  # Test that executable can write a file to the current working directory
-  # Test short options without whitespaces
+  # Test: 
+  #  -- that executable can write a file to the current working directory
+  #  -- short options without whitespaces
   def test_122_writefile
         name = "writefile"
         package = "#{name}-package"
@@ -176,34 +174,6 @@ class TestTebako < MiniTest::Test
         end
     end
 
-  # Specified gems should be automatically included and usable in packaged app
-    def test_124_gemfile
-        name = "bundlerusage"
-        with_fixture_press_and_env name do |package|
-            out, st = Open3.capture2(package)
-            assert_equal 0, st.exitstatus
-            assert_equal out, "Hello, the magic world of Ruby gems!\n"
-        end
-    end
-
-  # Test that subdirectories are recursively included
-    def test_125_directory
-        name = "subdir"
-        with_fixture_press_and_env name do |package|
-            assert system(package)
-        end
-    end
-
-    # Test that arguments are passed correctly to scripts
-    # Test that scripts can exit with a specific exit status code
-    def test_125_arguments
-        name = "arguments"
-        with_fixture_press_and_env name do |package|
-            out, st = Open3.capture2("#{package} foo \"bar baz \\\"quote\\\"\"")
-            assert_equal 5, st.exitstatus
-      end
-    end
-
   # Test that the standard output from a script can be redirected to a file.
     def test_126_stdout_redir
         name = "stdoutredir"
@@ -228,7 +198,43 @@ class TestTebako < MiniTest::Test
             end
         end
     end
+
+  # Specified gems should be automatically included and usable in packaged app
+    def test_212_seven_zip_ruby
+        name = "gems-seven_zip_ruby"
+        with_fixture_press_and_env name do |package|
+            out, st = Open3.capture2(package)
+            assert_equal 0, st.exitstatus
+            assert_equal out, "Hello! SevenZipRuby welcomes you to the magic world of ruby gems.\n"
+        end
+    end
+
+  # Specified gems should be automatically included and usable in packaged app
+    def test_211_bundler
+        name = "gems-bundler"
+        with_fixture_press_and_env name do |package|
+            out, st = Open3.capture2(package)
+            assert_equal 0, st.exitstatus
+            assert_equal out, "Hello! Bundler welcomes you to the magic world of ruby gems.\n"
+        end
+    end
+
+  # Test dir.c patching
+    def test_125_dir
+        name = "patches-dir"
+        with_fixture_press_and_env name do |package|
+            assert system(package)
+        end
+    end
+
+  # Test main.c patching as relates to scrip argument handling
+  # Test that scripts can exit with a specific exit status code
+    def test_121_main
+        name = "patches-main"
+        with_fixture_press_and_env name do |package|
+            out, st = Open3.capture2("#{package} foo \"bar baz \\\"quote\\\"\"")
+            assert_equal 5, st.exitstatus
+      end
+    end
+
 end
-
-
-

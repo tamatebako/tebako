@@ -187,6 +187,29 @@ bin/tebako press \
 ----
 ====
 
+=== Clean
+
+This command deletes tebako artifacts created by setup and press commands. 
+Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own. 
+
+[source,sh]
+----
+bin/tebako press \
+  [-p |--prefix=<tebako-root-folder>]
+----
+
+Where:
+
+* `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
+folder)
+
+[example]
+====
+[source,sh]
+----
+bin/tebako clean --root='~/projects/myproject' 
+----
+====
 
 === Exit codes
 
