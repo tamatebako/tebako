@@ -110,95 +110,6 @@ class TestTebako < MiniTest::Test
         end
     end
 
-  # Test :
-  # -- that we can build and run executables.
-  # -- short options with whitespaces
-  # -- that we are linking to known set of shared libraries (https://github.com/tamatebako/tebako/issues/42)
-    def test_121_helloworld
-        name = "helloworld"
-        package = "#{name}-package"
-        with_fixture name do
-            assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
-            assert File.exist?(package)
-            pristine_env package do |tempdirname|
-                out, st = Open3.capture2("#{tempdirname}/#{package}")
-                assert_equal 0, st.exitstatus
-
-                out, st = Open3.capture2("ldd #{tempdirname}/#{package}")
-                assert_equal 0, st.exitstatus
-
-#   Expecting no more then 7 references to shared libraries
-#   linux-vdso.so
-#   libpthread.so
-#   libdl.so
-#   libc.so
-#   libm.so
-#   librt.so
-#   /lib64/ld-linux-x86-64.so
-
-                libs = ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
-                l = out.lines.map(&:strip)
-                l.delete_if {|ln| libs.any? { |lib| ln.include?(lib) } }
-                assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
-
-            end
-        end
-    end
-
-  # Test: 
-  #  -- that executable can write a file to the current working directory
-  #  -- short options without whitespaces
-  def test_122_writefile
-        name = "writefile"
-        package = "#{name}-package"
-        with_fixture_press_and_env name do
-            with_fixture name do
-                assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
-                assert File.exist?(package)
-                pristine_env package do |tempdirname|
-                    assert system("#{tempdirname}/#{package}")
-                    assert File.exist?("output.txt")
-                    assert_equal "output", File.read("output.txt")
-                end
-            end
-        end
-    end
-
-  # Test that executable can use ruby standard libraries (i.e. cgi)
-    def test_123_rubycoreincl
-        name = "rubycoreincl"
-        with_fixture_press_and_env name do |package|
-            assert system(package)
-            assert File.exist?("output.txt")
-            assert_equal "3 &lt; 5", File.read("output.txt")
-        end
-    end
-
-  # Test that the standard output from a script can be redirected to a file.
-    def test_126_stdout_redir
-        name = "stdoutredir"
-        with_fixture_press_and_env name do |package|
-            system("#{package} > output.txt")
-            assert File.exist?("output.txt")
-            o = File.read("output.txt")
-            assert o == "Hello, World!\n" || o == "Hello, World!\r\n"
-        end
-    end
-
-  # Test that the standard input to a script can be redirected from a file.
-    def test_127_stdin_redir
-        name = "stdinredir"
-        package = "#{name}-package"
-        with_fixture name do
-            assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
-            assert File.exist?(package)
-            pristine_env package, "#{name}/input.txt" do |tempdirname|
-                out, st = Open3.capture2("#{tempdirname}/#{package} < #{tempdirname}/input.txt")
-                assert_equal 104, st.exitstatus
-            end
-        end
-    end
-
   # Specified gems should be automatically included and usable in packaged app
     def test_212_seven_zip_ruby
         name = "gems-seven_zip_ruby"
@@ -219,8 +130,27 @@ class TestTebako < MiniTest::Test
         end
     end
 
+  # Test: 
+  #  -- that executable can write a file to the current working directory (io.c, file.c patching)
+  #  -- short options without whitespaces
+  def test_122_io_and_file
+        name = "patches-io-and-file"
+        package = "#{name}-package"
+        with_fixture_press_and_env name do
+            with_fixture name do
+                assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
+                assert File.exist?(package)
+                pristine_env package do |tempdirname|
+                    assert system("#{tempdirname}/#{package}")
+                    assert File.exist?("output.txt")
+                    assert_equal "output", File.read("output.txt")
+                end
+            end
+        end
+    end
+
   # Test dir.c patching
-    def test_125_dir
+    def test_122_dir
         name = "patches-dir"
         with_fixture_press_and_env name do |package|
             assert system(package)
@@ -236,5 +166,75 @@ class TestTebako < MiniTest::Test
             assert_equal 5, st.exitstatus
       end
     end
+
+  # Test that executable can use ruby standard libraries (i.e. cgi)
+    def test_104_launcher_coreincl
+        name = "launcher-coreincl"
+        with_fixture_press_and_env name do |package|
+            assert system(package)
+            assert File.exist?("output.txt")
+            assert_equal "3 &lt; 5", File.read("output.txt")
+        end
+    end
+
+  # Test that the standard output from a script can be redirected to a file.
+    def test_103_launcher_stdoutredir
+        name = "launcher-stdoutredir"
+        with_fixture_press_and_env name do |package|
+            system("#{package} > output.txt")
+            assert File.exist?("output.txt")
+            o = File.read("output.txt")
+            assert o == "Hello, World!\n" || o == "Hello, World!\r\n"
+        end
+    end
+
+  # Test that the standard input to a script can be redirected from a file.
+    def test_102_launcher_stdinredir
+        name = "launcher-stdinredir"
+        package = "#{name}-package"
+        with_fixture name do
+            assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
+            assert File.exist?(package)
+            pristine_env package, "#{name}/input.txt" do |tempdirname|
+                out, st = Open3.capture2("#{tempdirname}/#{package} < #{tempdirname}/input.txt")
+                assert_equal 104, st.exitstatus
+            end
+        end
+    end
+
+# Test :
+  # -- that we can build and run executables.
+  # -- short options with whitespaces
+  # -- that we are linking to known set of shared libraries (https://github.com/tamatebako/tebako/issues/42)
+  def test_101_launcher
+    name = "launcher-package"
+    package = "#{name}-package"
+    with_fixture name do
+        assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
+        assert File.exist?(package)
+        pristine_env package do |tempdirname|
+            out, st = Open3.capture2("#{tempdirname}/#{package}")
+            assert_equal 0, st.exitstatus
+
+            out, st = Open3.capture2("ldd #{tempdirname}/#{package}")
+            assert_equal 0, st.exitstatus
+
+#   Expecting no more then 7 references to shared libraries
+#   linux-vdso.so
+#   libpthread.so
+#   libdl.so
+#   libc.so
+#   libm.so
+#   librt.so
+#   /lib64/ld-linux-x86-64.so
+
+            libs = ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
+            l = out.lines.map(&:strip)
+            l.delete_if {|ln| libs.any? { |lib| ln.include?(lib) } }
+            assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
+
+        end
+    end
+end
 
 end
