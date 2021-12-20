@@ -23,11 +23,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require 'rubygems'
-require 'bundler'
-#  requires 'bundler/setup'
-require 'rake'
-
-# Just make sure the constant exists
-Rake
-puts "Hello! Bundler welcomes you to the magic world of ruby gems."
+File.open("output.txt", "w") do |f|
+    f.write "output"
+end

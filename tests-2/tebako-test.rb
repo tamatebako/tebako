@@ -130,22 +130,11 @@ class TestTebako < MiniTest::Test
         end
     end
 
-  # Test: 
-  #  -- that executable can write a file to the current working directory (io.c, file.c patching)
-  #  -- short options without whitespaces
+  # Test io.c and file.c patching
   def test_122_io_and_file
         name = "patches-io-and-file"
-        package = "#{name}-package"
-        with_fixture_press_and_env name do
-            with_fixture name do
-                assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
-                assert File.exist?(package)
-                pristine_env package do |tempdirname|
-                    assert system("#{tempdirname}/#{package}")
-                    assert File.exist?("output.txt")
-                    assert_equal "output", File.read("output.txt")
-                end
-            end
+        with_fixture_press_and_env name do |package|
+            assert system(package)
         end
     end
 
@@ -165,6 +154,25 @@ class TestTebako < MiniTest::Test
             out, st = Open3.capture2("#{package} foo \"bar baz \\\"quote\\\"\"")
             assert_equal 5, st.exitstatus
       end
+    end
+
+  # Test: 
+  #  -- that executable can write a file to the current working directory (io.c, file.c patching)
+  #  -- short options without whitespaces
+  def test_105_io_and_file
+        name = "launcher-pwd"
+        package = "#{name}-package"
+        with_fixture_press_and_env name do
+            with_fixture name do
+                assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
+                assert File.exist?(package)
+                pristine_env package do |tempdirname|
+                    assert system("#{tempdirname}/#{package}")
+                    assert File.exist?("output.txt")
+                    assert_equal "output", File.read("output.txt")
+                end
+            end
+        end
     end
 
   # Test that executable can use ruby standard libraries (i.e. cgi)
@@ -206,18 +214,18 @@ class TestTebako < MiniTest::Test
   # -- that we can build and run executables.
   # -- short options with whitespaces
   # -- that we are linking to known set of shared libraries (https://github.com/tamatebako/tebako/issues/42)
-  def test_101_launcher
-    name = "launcher-package"
-    package = "#{name}-package"
-    with_fixture name do
-        assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
-        assert File.exist?(package)
-        pristine_env package do |tempdirname|
-            out, st = Open3.capture2("#{tempdirname}/#{package}")
-            assert_equal 0, st.exitstatus
+    def test_101_launcher
+        name = "launcher-package"
+        package = "#{name}-package"
+        with_fixture name do
+            assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
+            assert File.exist?(package)
+            pristine_env package do |tempdirname|
+                out, st = Open3.capture2("#{tempdirname}/#{package}")
+                assert_equal 0, st.exitstatus
 
-            out, st = Open3.capture2("ldd #{tempdirname}/#{package}")
-            assert_equal 0, st.exitstatus
+                out, st = Open3.capture2("ldd #{tempdirname}/#{package}")
+                assert_equal 0, st.exitstatus
 
 #   Expecting no more then 7 references to shared libraries
 #   linux-vdso.so
@@ -228,13 +236,12 @@ class TestTebako < MiniTest::Test
 #   librt.so
 #   /lib64/ld-linux-x86-64.so
 
-            libs = ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
-            l = out.lines.map(&:strip)
-            l.delete_if {|ln| libs.any? { |lib| ln.include?(lib) } }
-            assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
-
+                libs = ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
+                l = out.lines.map(&:strip)
+                l.delete_if {|ln| libs.any? { |lib| ln.include?(lib) } }
+                assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
+            end
         end
     end
-end
 
 end
