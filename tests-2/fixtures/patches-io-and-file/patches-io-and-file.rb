@@ -71,7 +71,7 @@ print "OK(match)\n"
 print "readlink  ... "
 Dir.chdir("/__tebako_memfs__/local/level-1")
 s = File.lstat("/__tebako_memfs__/local/level-1/link-3").size
-raise "lstat returned '#{s}' while '18' was expected" unless r.eql? "18"
+raise "lstat returned '#{s}' while '18' was expected" unless s.eql? 18
 r = File.readlink("link-3")
 raise "readlink returned '#{r}' while 'level-2/file-3.txt' was expected" unless r.eql? "level-2/file-3.txt"
 print "OK(match)\n"
