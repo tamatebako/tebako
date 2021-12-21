@@ -29,7 +29,7 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 
-project(tebako_packager VERSION 0.2.2)
+project(tebako_packager VERSION 0.2.4)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -154,7 +154,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.1.4")
+def_ext_prj_g(DWARFS_WR "v0.1.5")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -308,7 +308,7 @@ else (${SETUP_MODE})
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         add_custom_target(source_filesystem
            COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
-           COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
+           COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake 
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle exec ${TBD}/gem build ${GEMSPEC}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
@@ -324,7 +324,7 @@ else (${SETUP_MODE})
          set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
          add_custom_target(source_filesystem
-            COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
+            COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake 
             COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
             COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
@@ -348,7 +348,7 @@ else (${SETUP_MODE})
     add_custom_target(source_filesystem
        COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
-       COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
+       COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake 
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config build.ffi --disable-system-libffi
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
 # [TODO] Open question - how to deploy a project to source filesystem
@@ -368,7 +368,7 @@ else (${SETUP_MODE})
       set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(source_filesystem
-         COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${DATA_PRE_DIR}
+         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake 
          COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install ${GEM} --verbose --no-document --install-dir ${TGD}
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
@@ -387,7 +387,7 @@ else (${SETUP_MODE})
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
     add_custom_target(source_filesystem
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
-       COMMAND ${CMAKE_COMMAND} -E copy_directory ${FS_ROOT} ${TLD}
+       COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake 
        DEPENDS clean_filesystem
     )
   endif()

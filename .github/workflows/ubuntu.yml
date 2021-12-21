@@ -34,7 +34,7 @@ on:
       - .github/workflows/packed-mn.yml
       - .github/workflows/lint.yml
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -52,14 +52,14 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.1.4"
+  DWARFS_WR_TAG: "v0.1.5"
 # Tarball dependencies
   RUBY_VER:   "2.7.4"
   RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: "05"
+  CACHE_VER: "06"
 
 jobs:
   setup:
@@ -261,8 +261,7 @@ jobs:
             test-15-package
             test-18-package
             test-19-package
-            test-20-package
-
+           
   tests-2:
     needs: setup
     name: tests-2 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]

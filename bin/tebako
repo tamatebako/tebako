@@ -35,6 +35,10 @@ echo "         Tebako prefix defaults to current directory"
 echo "  tebako press [-p|--prefix=<path>] -r|--root=<path> -e|--entry-point=<path> [-o|--output=<file name>]"
 echo "         Tebako prefix defaults to current directory"
 echo "         Packaged file defaults to 'entry point' file name in the current directory"
+echo "  tebako clean [-p|--prefix=<path>]"
+echo "         Tebako prefix defaults to current directory"
+echo "         This command will delete all artifacts created by setup and press commands."
+echo "         Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own."
 }
 
 # -allow a command to fail with !’s side effect on errexit
@@ -185,6 +189,11 @@ case "$1" in
         exit 104  
       fi
     ;;
+	clean)
+    echo "Cleaning tebako setup and press artifacts at $prefix"
+    rm -rf "$prefix"/output
+    rm -rf "$prefix"/deps
+    ;; 
 	*)
 		echo "Unknown command '$1'"
 		run_help
