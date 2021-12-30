@@ -23,7 +23,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-name: Ubuntu
+name: MacOS
 
 on:
   push:
@@ -63,12 +63,12 @@ env:
 
 jobs:
   setup:
-    name: setup ${{ matrix.os }} [CC ${{ env.CC }}]
+    name: setup ${{ matrix.os }} [CC clang]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-10.15, ubuntu-11.00 ]
+        os: [ macos-10.15, macos-11.00 ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v2
