@@ -32,6 +32,7 @@ on:
       - '**.adoc'
       - '**.md'
       - .github/workflows/lint.yml
+      - .github/workflows/macos.yml
   pull_request:
     branches: [ main ]
     paths-ignore:
@@ -39,8 +40,7 @@ on:
       - '**.adoc'
       - '**.md'
       - .github/workflows/lint.yml
-
-  # Allows you to run this workflow manually from the Actions tab
+      - .github/workflows/macos.yml      
   workflow_dispatch:
 
 env:
@@ -70,8 +70,8 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-#          - CC: clang
-#            CXX: clang++
+          - CC: clang
+            CXX: clang++
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment

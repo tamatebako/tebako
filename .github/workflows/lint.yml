@@ -6,14 +6,16 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
+      - .github/workflows/ubuntu.yml
+      - .github/workflows/macos.yml
   pull_request:
     branches: [ master ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
-
-  # Allows you to run this workflow manually from the Actions tab
+      - .github/workflows/ubuntu.yml      
+      - .github/workflows/macos.yml
   workflow_dispatch:
 
 jobs:
