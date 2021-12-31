@@ -90,3 +90,6 @@ jobs:
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
           key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: ${{ github.workspace }}/bin/tebako setup
