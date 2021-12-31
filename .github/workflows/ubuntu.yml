@@ -148,17 +148,17 @@ jobs:
           sudo make install
 
       - name: Create deps folder
-        run: mkdir ${{github.workspace}}/${{env.DEPS}}
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
 
       - name: Process cache
         id: cache
         uses: actions/cache@v2
         with:
-          path: ${{github.workspace}}/${{env.DEPS}}
+          path: ${{ github.workspace }}/${{ env.DEPS }}
           key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
-        run: ${{github.workspace}}/bin/tebako setup
+        run: ${{ github.workspace }}/bin/tebako setup
 
   tests-1:
     needs: setup
@@ -172,8 +172,8 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-#          - CC: clang
-#            CXX: clang++
+          - CC: clang
+            CXX: clang++
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -191,7 +191,7 @@ jobs:
         run: |
           sudo apt-get -y update
           sudo apt-get -y install \
-          binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
+          binutils-dev libarchive-dev libevent-dev acl-dev \
           libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
           libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
           libboost-regex-dev libboost-system-dev libboost-thread-dev \
@@ -212,6 +212,21 @@ jobs:
         if: ${{ matrix.os == 'ubuntu-20.04' }}
         run: sudo apt-get install libfmt-dev
 
+      - name: Install libjemalloc (not bionic or not clang)
+        if: ${{ matrix.os != 'ubuntu-18.04' || matrix.env.CC != 'clang' }}
+        run: sudo apt-get -y install libjemalloc-dev
+        
+      - name: Install libjemalloc 5 (bionic and clang)
+        if: ${{ matrix.os == 'ubuntu-18.04' && matrix.env.CC == 'clang' }}
+        run: |
+          sudo apt-get remove libjemalloc-dev
+          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+          tar -xf jemalloc-5.2.1.tar.bz2
+          cd jemalloc-5.2.1
+          ./configure --prefix='/usr'
+          make
+          sudo make install
+
       - name: Create deps folder
         run: mkdir ${{github.workspace}}/${{env.DEPS}}
 
@@ -219,7 +234,7 @@ jobs:
         id: cache
         uses: actions/cache@v2
         with:
-          path: ${{github.workspace}}/${{env.DEPS}}
+          path: ${{ github.workspace }}/${{ env.DEPS }}
           key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
@@ -265,8 +280,8 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-#          - CC: clang
-#            CXX: clang++
+          - CC: clang
+            CXX: clang++
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -305,6 +320,21 @@ jobs:
         if: ${{ matrix.os == 'ubuntu-20.04' }}
         run: sudo apt-get install libfmt-dev
 
+      - name: Install libjemalloc (not bionic or not clang)
+        if: ${{ matrix.os != 'ubuntu-18.04' || matrix.env.CC != 'clang' }}
+        run: sudo apt-get -y install libjemalloc-dev
+        
+      - name: Install libjemalloc 5 (bionic and clang)
+        if: ${{ matrix.os == 'ubuntu-18.04' && matrix.env.CC == 'clang' }}
+        run: |
+          sudo apt-get remove libjemalloc-dev
+          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+          tar -xf jemalloc-5.2.1.tar.bz2
+          cd jemalloc-5.2.1
+          ./configure --prefix='/usr'
+          make
+          sudo make install
+
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
         with:
@@ -312,13 +342,13 @@ jobs:
           bundler: ${{ env.BUNDLER_VER }}
 
       - name: Create deps folder
-        run: mkdir ${{github.workspace}}/${{env.DEPS}}
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
 
       - name: Process cache
         id: cache
         uses: actions/cache@v2
         with:
-          path: ${{github.workspace}}/${{env.DEPS}}
+          path: ${{ github.workspace }}/${{ env.DEPS }}
           key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
@@ -402,6 +432,21 @@ jobs:
       - name: Install libfmt (focal)
         if: ${{ matrix.os == 'ubuntu-20.04' }}
         run: sudo apt-get install libfmt-dev
+
+      - name: Install libjemalloc (not bionic or not clang)
+        if: ${{ matrix.os != 'ubuntu-18.04' || matrix.env.CC != 'clang' }}
+        run: sudo apt-get -y install libjemalloc-dev
+        
+      - name: Install libjemalloc 5 (bionic and clang)
+        if: ${{ matrix.os == 'ubuntu-18.04' && matrix.env.CC == 'clang' }}
+        run: |
+          sudo apt-get remove libjemalloc-dev
+          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+          tar -xf jemalloc-5.2.1.tar.bz2
+          cd jemalloc-5.2.1
+          ./configure --prefix='/usr'
+          make
+          sudo make install
 
       - name: Create deps folder
         run: mkdir ${{github.workspace}}/${{env.DEPS}}

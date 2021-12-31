@@ -68,10 +68,25 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-10.15, macos-11.00 ]
+        os: [ macos-10.15, macos-11.0 ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v2
         with:
           fetch-depth: 1
 
+      - name: Install packages
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz
+        run: |
+          brew install \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog zlib
+
+      - name: Create deps folder
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ github.workspace }}/${{ env.DEPS }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
