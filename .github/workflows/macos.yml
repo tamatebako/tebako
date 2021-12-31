@@ -59,7 +59,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: "01"
+  CACHE_VER: "02"
 
 jobs:
   setup:
@@ -79,7 +79,7 @@ jobs:
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog zlib
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog zlib gnu-getopt
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
