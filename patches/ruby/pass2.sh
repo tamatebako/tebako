@@ -49,10 +49,30 @@ re="MAINLIBS = @MAINLIBS@"
 MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
 -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
 -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:liblzma.a \\\\
--l:libboost_system.a -l:libstdc++.a -ldl -lrt
+-l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl
 # -- End of tebako patch --
 EOM
+#
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
+re="LIBS = @LIBS@ \$(EXTLIBS)"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+# -- Start of tebako patch --
+LIBS = @LIBS@
+# -- End of tebako patch --
+EOM
+#
+sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+
+re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(EXTLIBS) \$(OUTFLAG)\$@"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+# -- Start of tebako patch --
+		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(OUTFLAG)\$@
+# -- End of tebako patch --
+EOM
+#
 sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 # ....................................................

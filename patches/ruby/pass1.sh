@@ -47,7 +47,7 @@ re="MAINLIBS = @MAINLIBS@"
 ! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
 MAINLIBS = -l:libssl.a -l:libcrypto.a -l:libz.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a \\\\
--l:libjemalloc.a -l:libcrypt.a -l:libanl.a -ldl -lrt
+-l:libjemalloc.a -l:libcrypt.a -l:libanl.a -l:librt.a -ldl 
 # -- End of tebako patch --
 EOM
 
