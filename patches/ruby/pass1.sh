@@ -36,6 +36,40 @@ restore_and_save() {
   cp -f "$1" "$1.old"
 }
 
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  gSed="sed"
+
+# shellcheck disable=SC2251
+! IFS= read -r -d '' mLibs << EOM
+# -- Start of tebako patch --
+MAINLIBS = -l:libssl.a -l:libcrypto.a -l:libz.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a \\\\
+-l:libjemalloc.a -l:libcrypt.a -l:libanl.a -l:librt.a -ldl 
+# -- End of tebako patch --
+EOM
+
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  gSed="gsed"
+  p_libssl="$(brew --prefix openssl@1.1)/lib/libssl.a"
+  p_libcrypto="$(brew --prefix openssl@1.1)/lib/libcrypto.a"
+  p_libz="$(brew --prefix zlib)/lib/libz.a"
+  p_libgdbm="$(brew --prefix gdbm)/lib/libgdbm.a"
+  p_libreadline="$(brew --prefix readline)/lib/libreadline.a"
+  p_libffi="$(brew --prefix libffi)/lib/libffi.a"
+  p_libncurses="$(brew --prefix ncurses)/lib/libncurses.a"
+  p_libjemalloc="$(brew --prefix jemalloc)/lib/libjemalloc.a"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' mLibs << EOM
+# -- Start of tebako patch --
+MAINLIBS = $p_libssl $p_libcrypto $p_libz $p_libgdbm $p_libreadline \\\\
+$p_libffi $p_libncurses -ljemalloc -ldl
+# -- End of tebako patch --
+EOM
+
+else
+  exit 1
+fi  
+
+
 # ....................................................
 # Pin tebako static build libraries
 # Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
@@ -44,21 +78,21 @@ restore_and_save "$1/template/Makefile.in"
 
 re="MAINLIBS = @MAINLIBS@"
 # shellcheck disable=SC2251
-! IFS= read -r -d '' sbst << EOM
+#! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
-MAINLIBS = -l:libssl.a -l:libcrypto.a -l:libz.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a \\\\
--l:libjemalloc.a -l:libcrypt.a -l:libanl.a -l:librt.a -ldl 
+#MAINLIBS = -l:/opt/homebrew/opt/openssl@1.1/lib/libssl.a -l:libcrypto.a -l:libz.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a \\\\
+#-l:libjemalloc.a -l:libcrypt.a -l:libanl.a -l:librt.a -ldl 
 # -- End of tebako patch --
-EOM
+#EOM
 
 #
-sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+"$gSed" -i "0,/$re/s||${mLibs//$'\n'/"\\n"}|g" "$1/template/Makefile.in"
 
 # ....................................................
 # Disable dynamic extensions
 # ruby/ext/Setup
 restore_and_save "$1/ext/Setup"
-sed -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
+"$gSed" -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
 
 # ....................................................
 # WE DO NOT ACCEPT OUTSIDE GEM PATHS
@@ -76,7 +110,7 @@ re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
 # -- End of tebako patch --
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
+"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 # shellcheck disable=SC2251
@@ -91,7 +125,7 @@ re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 # -- End of tebako patch --
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
+"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 # ....................................................
 # This is something that I cannnot explain
@@ -123,7 +157,7 @@ re="#include <float.h>"
 
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
+"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
 
 # ....................................................
 # Roll-back pass2 patches from the previous run

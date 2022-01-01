@@ -59,7 +59,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: "02"
+  CACHE_VER: "03"
 
 jobs:
   setup:
@@ -76,10 +76,11 @@ jobs:
           fetch-depth: 1
 
       - name: Install packages
-# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog zlib gnu-getopt
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash gdbm
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}

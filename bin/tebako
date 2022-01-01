@@ -41,13 +41,31 @@ echo "         This command will delete all artifacts created by setup and press
 echo "         Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own."
 }
 
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  echo "Setting up Linux environment"
+  gOpt="getopt"
+  uFlags="${CXXFLAGS:=}"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  echo "Setting up MacOS environment"
+  ! gOpt="$(brew --prefix gnu-getopt)/bin/getopt"
+  if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    echo "Could not find gnu getopts, exiting"
+    exit 8
+  fi
+  uFlags="-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0 ${CXXFLAGS:=}"
+else
+  echo "... $OSTYPE is not supported yet, exiting"
+  exit 7
+fi  
+
+
 # -allow a command to fail with !’s side effect on errexit
 # -use return value from ${PIPESTATUS[0]}, because ! hosed $?
 # shellcheck disable=SC2251
-! getopt --test > /dev/null 
+! "$gOpt" --test > /dev/null
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
     echo "'getopt --test' failed in this environment."
-    exit 1
+   exit 1
 fi
 
 OPTIONS=hr:e:o:p:
@@ -58,12 +76,14 @@ LONGOPTS=help,root:,entry-point:,output:,prefix:
 # -activate quoting/enhanced mode (e.g. by writing out “--options”)
 # -pass arguments only via   -- "$@"   to separate them correctly
 # shellcheck disable=SC2251
-! PARSED=$(getopt --options=$OPTIONS --longoptions=$LONGOPTS --name "$0" -- "$@")
+! PARSED=$("$gOpt" --options=$OPTIONS --longoptions=$LONGOPTS --name "$0" -- "$@")
+
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     # e.g. return value is 1
     #  then getopt has complained about wrong arguments to stdout
     exit 2
 fi
+
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
@@ -132,7 +152,7 @@ export CXX=${CXX:-g++}
 case "$1" in
 	setup)
     echo "Setting up tebako at $prefix"
-    cmake -DCMAKE_BUILD_TYPE=Release   \
+    CXXFLAGS="${uFlags:=}" cmake -DCMAKE_BUILD_TYPE=Release   \
           -DDEPS:STRING="$prefix/deps" \
           -DSETUP_MODE:BOOLEAN=ON      \
           -G "Unix Makefiles"          \
@@ -143,7 +163,7 @@ case "$1" in
       exit 101 
     fi
  
-    cmake --build "$prefix/output" --target setup && rc=$? || rc=$?	     
+    CXXFLAGS="${uFlags:=}" cmake --build "$prefix/output" --target setup && rc=$? || rc=$?	     
     if [ $rc -ne 0 ]; then
       echo "'tebako setup' build step failed" 
       exit 102  
@@ -169,7 +189,7 @@ case "$1" in
     echo "   Project root:            $root"
     echo "   Application entry point: $entryPoint"
     echo "   Package file name:       $packageName"
-		cmake -DCMAKE_BUILD_TYPE=Release           \
+		CXXFLAGS="${uFlags:=}" cmake -DCMAKE_BUILD_TYPE=Release           \
               -DDEPS:STRING="$prefix/deps"     \
               -DROOT:STRING="$root"            \
               -DENTRANCE:STRING="$entryPoint"  \
@@ -183,11 +203,11 @@ case "$1" in
       exit 103  
     fi
 
-    cmake --build "$prefix/output" --target tebako && rc=$? || rc=$?
-      if [[ $rc -ne 0 ]]; then
-        echo "'tebako press' build step failed" 
-        exit 104  
-      fi
+    CXXFLAGS="${uFlags:=}" cmake --build "$prefix/output" --target tebako && rc=$? || rc=$?
+    if [[ $rc -ne 0 ]]; then
+      echo "'tebako press' build step failed" 
+      exit 104  
+    fi
     ;;
 	clean)
     echo "Cleaning tebako setup and press artifacts at $prefix"
