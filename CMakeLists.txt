@@ -249,8 +249,6 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
   set(PATCH_BASH "${BREW_PREFIX}/bin/bash")
-else()
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -static-libstdc++")
 endif()
 
 #set(RUBY_C_FLAGS_2 "-pthread -static-libstdc++ -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
