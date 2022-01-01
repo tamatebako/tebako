@@ -47,6 +47,7 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   uFlags="${CXXFLAGS:=}"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   echo "Setting up MacOS environment"
+# shellcheck disable=SC2251  
   ! gOpt="$(brew --prefix gnu-getopt)/bin/getopt"
   if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     echo "Could not find gnu getopts, exiting"

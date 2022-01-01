@@ -56,7 +56,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   p_libreadline="$(brew --prefix readline)/lib/libreadline.a"
   p_libffi="$(brew --prefix libffi)/lib/libffi.a"
   p_libncurses="$(brew --prefix ncurses)/lib/libncurses.a"
-  p_libjemalloc="$(brew --prefix jemalloc)/lib/libjemalloc.a"
+#  p_libjemalloc="$(brew --prefix jemalloc)/lib/libjemalloc.a"
 # shellcheck disable=SC2251
 ! IFS= read -r -d '' mLibs << EOM
 # -- Start of tebako patch --
