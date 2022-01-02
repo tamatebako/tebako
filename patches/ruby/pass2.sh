@@ -1,4 +1,3 @@
-#!/bin/bash
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -58,13 +57,20 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   p_libreadline="$(brew --prefix readline)/lib/libreadline.a"
   p_libffi="$(brew --prefix libffi)/lib/libffi.a"
   p_libncurses="$(brew --prefix ncurses)/lib/libncurses.a"
+  p_libfmt="$(brew --prefix fmt)/lib/libfmt.a"
+  p_liblz4="$(brew --prefix lz4)/lib/liblz4.a"
+  p_liblzma="$(brew --prefix xz)/lib/liblzma.a"
+  p_libdc="$(brew --prefix double-conversion)/lib/libdouble-conversion.a"
   p_libjemalloc="$(brew --prefix jemalloc)/lib/libjemalloc.a"
+  p_cpp="$(brew --prefix llvm)/lib/libc++.a"
+  p_cppabi="$(brew --prefix llvm)/lib/libc++abi.a"
 # shellcheck disable=SC2251
 ! IFS= read -r -d '' mLibs << EOM
 # -- Start of tebako patch --
 MAINLIBS = -ltebako-fs -ldwarfs-wr -ldwarfs -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \\\\
+-lzstd -lglog -lgflags $p_libfmt $p_liblz4 $p_liblzma $p_libdc \\\\
 $p_libssl $p_libcrypto $p_libz $p_libgdbm $p_libreadline \\\\
-$p_libffi $p_libncurses $p_libjemalloc -ldl
+$p_libffi $p_libncurses -ljemalloc -lc++
 # -- End of tebako patch --
 EOM
 
@@ -80,16 +86,8 @@ restore_and_save "$1/template/Makefile.in"
 
 re="MAINLIBS = @MAINLIBS@"
 # shellcheck disable=SC2251
-#! IFS= read -r -d '' sbst << EOM
-# -- Start of tebako patch --
-#MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
-#-l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
-#-l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:liblzma.a \\\\
-#-l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl
-# -- End of tebako patch --
-#EOM
-#
-sed -i "0,/$re/s//${mLibs//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+
+"$gSed" -i "0,/$re/s||${mLibs//$'\n'/"\\n"}|g" "$1/template/Makefile.in"
 
 re="LIBS = @LIBS@ \$(EXTLIBS)"
 # shellcheck disable=SC2251
@@ -99,7 +97,7 @@ LIBS = @LIBS@
 # -- End of tebako patch --
 EOM
 #
-sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(EXTLIBS) \$(OUTFLAG)\$@"
 # shellcheck disable=SC2251
@@ -109,7 +107,7 @@ re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \
 # -- End of tebako patch --
 EOM
 #
-sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 # ....................................................
 # Disable dynamic extensions
@@ -127,8 +125,8 @@ restore_and_save "$1/main.c"
 # Replace only the first occurence
 # https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
 # [TODO this looks a kind of risky]
-sed -i "0,/int$/s//#include <tebako-main.h>\n\nint/" "$1/main.c"
-sed -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" "$1/main.c"
+"$gSed" -i "0,/int$/s//#include <tebako-main.h>\n\nint/" "$1/main.c"
+"$gSed" -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" "$1/main.c"
 
 # ....................................................
 # Put lidwarfs IO bindings to Ruby files
@@ -152,7 +150,7 @@ re="#ifdef __APPLE__"
 #ifdef __APPLE__
 EOM
 
-sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
+"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
 
 # ....................................................
 # Put lidwarfs IO bindings to other c files
@@ -171,7 +169,7 @@ patch_c_file() {
 EOM
 
   sbst="${c_sbst}$2"
-  sed -i "0,/$2/s//${sbst//$'\n'/"\\n"}/g" "$1"
+  "$gSed" -i "0,/$2/s//${sbst//$'\n'/"\\n"}/g" "$1"
 }
 
 # ruby/dln.c
@@ -209,7 +207,7 @@ re="if fast\[name\]"
      if fast\[name\]
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/tool/mkconfig.rb"
+"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/tool/mkconfig.rb"
 
 # ....................................................
 # ruby/ext/bigdecimal/bigdecimal.h

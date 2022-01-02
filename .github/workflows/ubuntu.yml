@@ -52,12 +52,14 @@ env:
   INCBIN_TAG:    "348e36b"
   DWARFS_WR_TAG: "maxirmx-v0.1.6"
 # Tarball dependencies
-  RUBY_VER:   "2.7.4"
-  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
+#  RUBY_VER:   "2.7.4"
+#  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
+  RUBY_VER:   "2.7.5"
+  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"  
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: "08"
+  CACHE_VER: "09"
 
 jobs:
   setup:

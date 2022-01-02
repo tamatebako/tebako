@@ -147,7 +147,8 @@ endif(NOT ${SETUP_MODE})
 # ...................................................................
 # External projects
 
-def_ext_prj_t(RUBY "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")
+def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
+#def_ext_prj_t(RUBY "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")  -- https://bugs.ruby-lang.org/issues/17865
 #def_ext_prj_t(RUBY "2.6.3" "577fd3795f22b8d91c1d4e6733637b0394d4082db659fccf224c774a2b1c82fb")
 
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
@@ -273,7 +274,6 @@ ExternalProject_Add(${RUBY_PRJ}
                      --enable-debug-env
                      --disable-install-doc
                      --with-static-linked-ext
-                     --with-jemalloc
                      --srcdir=${RUBY_SOURCE_DIR}
                      --prefix=${DATA_SRC_DIR}
                      CFLAGS=${RUBY_C_FLAGS}
@@ -313,7 +313,7 @@ else (${SETUP_MODE})
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
-           COMMAND ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+           COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
            DEPENDS ${RUBY_PRJ}
   )
