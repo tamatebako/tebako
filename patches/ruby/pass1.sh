@@ -86,7 +86,7 @@ re="MAINLIBS = @MAINLIBS@"
 #EOM
 
 #
-"$gSed" -i "0,/$re/s||${mLibs//$'\n'/"\\n"}|g" "$1/template/Makefile.in"
+#"$gSed" -i "0,/$re/s||${mLibs//$'\n'/"\\n"}|g" "$1/template/Makefile.in"
 
 # ....................................................
 # Disable dynamic extensions
