@@ -14,7 +14,7 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
-      - .github/workflows/ubuntu.yml      
+      - .github/workflows/ubuntu.yml
       - .github/workflows/macos.yml
   workflow_dispatch:
 

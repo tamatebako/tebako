@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -61,9 +62,6 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   p_liblz4="$(brew --prefix lz4)/lib/liblz4.a"
   p_liblzma="$(brew --prefix xz)/lib/liblzma.a"
   p_libdc="$(brew --prefix double-conversion)/lib/libdouble-conversion.a"
-  p_libjemalloc="$(brew --prefix jemalloc)/lib/libjemalloc.a"
-  p_cpp="$(brew --prefix llvm)/lib/libc++.a"
-  p_cppabi="$(brew --prefix llvm)/lib/libc++abi.a"
 # shellcheck disable=SC2251
 ! IFS= read -r -d '' mLibs << EOM
 # -- Start of tebako patch --
@@ -76,7 +74,7 @@ EOM
 
 else
   exit 1
-fi  
+fi
 
 # ....................................................
 # Pin tebako static build libraries

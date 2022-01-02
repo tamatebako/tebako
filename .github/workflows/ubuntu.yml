@@ -40,7 +40,7 @@ on:
       - '**.adoc'
       - '**.md'
       - .github/workflows/lint.yml
-      - .github/workflows/macos.yml      
+      - .github/workflows/macos.yml
   workflow_dispatch:
 
 env:
@@ -52,10 +52,10 @@ env:
   INCBIN_TAG:    "348e36b"
   DWARFS_WR_TAG: "maxirmx-v0.1.6"
 # Tarball dependencies
-#  RUBY_VER:   "2.7.4"
+#  RUBY_VER:   "2.7.4" -- upgraded to 2.7.5 because of Ruby/clang issue [https://bugs.ruby-lang.org/issues/17865]
 #  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
   RUBY_VER:   "2.7.5"
-  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"  
+  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
@@ -137,7 +137,7 @@ jobs:
       - name: Install libjemalloc (not bionic or not clang)
         if: ${{ matrix.os != 'ubuntu-18.04' || matrix.env.CC != 'clang' }}
         run: sudo apt-get -y install libjemalloc-dev
-        
+
       - name: Install libjemalloc 5 (bionic and clang)
         if: ${{ matrix.os == 'ubuntu-18.04' && matrix.env.CC == 'clang' }}
         run: |
@@ -217,7 +217,7 @@ jobs:
       - name: Install libjemalloc (not bionic or not clang)
         if: ${{ matrix.os != 'ubuntu-18.04' || matrix.env.CC != 'clang' }}
         run: sudo apt-get -y install libjemalloc-dev
-        
+
       - name: Install libjemalloc 5 (bionic and clang)
         if: ${{ matrix.os == 'ubuntu-18.04' && matrix.env.CC == 'clang' }}
         run: |
@@ -269,7 +269,7 @@ jobs:
             test-15-package
             test-18-package
             test-19-package
-           
+
   tests-2:
     needs: setup
     name: tests-2 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
@@ -325,7 +325,7 @@ jobs:
       - name: Install libjemalloc (not bionic or not clang)
         if: ${{ matrix.os != 'ubuntu-18.04' || matrix.env.CC != 'clang' }}
         run: sudo apt-get -y install libjemalloc-dev
-        
+
       - name: Install libjemalloc 5 (bionic and clang)
         if: ${{ matrix.os == 'ubuntu-18.04' && matrix.env.CC == 'clang' }}
         run: |
@@ -382,7 +382,7 @@ jobs:
 
       - name: Run test packages
         run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
- 
+
   package-metanorma:
     needs: setup
     name: package-metanorma ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
@@ -438,7 +438,7 @@ jobs:
       - name: Install libjemalloc (not bionic or not clang)
         if: ${{ matrix.os != 'ubuntu-18.04' || matrix.env.CC != 'clang' }}
         run: sudo apt-get -y install libjemalloc-dev
-        
+
       - name: Install libjemalloc 5 (bionic and clang)
         if: ${{ matrix.os == 'ubuntu-18.04' && matrix.env.CC == 'clang' }}
         run: |

@@ -24,7 +24,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 # This test is inspired packed-mn
-# https://github.com/metanorma/packed-mn 
+# https://github.com/metanorma/packed-mn
 
 require 'rubygems'
 require 'bundler/setup'

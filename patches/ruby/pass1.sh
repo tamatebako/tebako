@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -41,7 +42,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   gSed="gsed"
 else
   exit 1
-fi  
+fi
 
 # ....................................................
 # Disable dynamic extensions
