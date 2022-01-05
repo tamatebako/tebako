@@ -158,6 +158,13 @@ jobs:
           echo "Failed to upload cache"
           false
 
+      - name: Checkout shell test framework
+        uses: actions/checkout@v2
+        with:
+          repository: kward/shunit2
+          path: ${{github.workspace}}/tests/shunit2
+          fetch-depth: 1
+
       - name: Run tebako tests (set no. 1)
 # show cmake output aka verbose (yes/no)
         env:
@@ -231,13 +238,6 @@ jobs:
         run: |
           echo "Failed to upload cache"
           false
-
-      - name: Checkout shell test framework
-        uses: actions/checkout@v2
-        with:
-          repository: kward/shunit2
-          path: ${{github.workspace}}/tests/shunit2
-          fetch-depth: 1
 
       - name: Run tebako tests (set no. 2)
         run: |
