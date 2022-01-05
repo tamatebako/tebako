@@ -64,8 +64,8 @@ env:
 
 jobs:
   setup:
-    name: setup macos-${{ matrix.target }} [CC clang]
-    runs-on:  macos-${{ matrix.target }}
+    name: setup ${{ matrix.os }} [CC clang]
+    runs-on: ${{ matrix.os }}
 #    env:
 #      CMAKE_OSX_DEPLOYMENT_TARGET: ${{ matrix.target }}
 #      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.target }}
@@ -77,7 +77,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [ "10.15", "11.0" ]
+        os: [ macos-10.15, macos-11.0 ]
     steps:
       - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
         if: ${{ matrix.os == 'macos-10.15' }}
@@ -111,7 +111,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
-          key: macos-${{ matrix.target }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: ${{ github.workspace }}/bin/tebako setup
