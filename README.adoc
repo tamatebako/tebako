@@ -1,6 +1,7 @@
 = Tebako: an image packager
 
 image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
+image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["MacOS", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
 
 
