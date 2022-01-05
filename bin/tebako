@@ -47,7 +47,7 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   uFlags="${CXXFLAGS:=}"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   echo "Setting up MacOS environment"
-# shellcheck disable=SC2251  
+# shellcheck disable=SC2251
   ! gOpt="$(brew --prefix gnu-getopt)/bin/getopt"
   if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     echo "Could not find gnu getopts, exiting"
@@ -57,7 +57,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
 else
   echo "... $OSTYPE is not supported yet, exiting"
   exit 7
-fi  
+fi
 
 
 # -allow a command to fail with !’s side effect on errexit
@@ -126,7 +126,7 @@ done
 # handle non-option arguments
 if [[ $# -ne 1 ]]; then
     echo "Missing command"
-    run_help    
+    run_help
     exit 4
 fi
 
@@ -141,7 +141,7 @@ fi
 
 if [[ "$prefix" == "-" ]]; then
   prefix="$( cd "$( dirname "$0" )"/.. && pwd )"
-else 
+else
   if [[ "$prefix" != /* ]]; then
     prefix="$( pwd )"/"$prefix"
   fi
@@ -160,30 +160,30 @@ case "$1" in
           -S "$prefix"                 \
           -B "$prefix/output"	 && rc=$? || rc=$?
     if [ $rc -ne 0 ]; then
-      echo "'tebako setup' configure step failed" 
-      exit 101 
+      echo "'tebako setup' configure step failed"
+      exit 101
     fi
- 
-    CXXFLAGS="${uFlags:=}" cmake --build "$prefix/output" --target setup && rc=$? || rc=$?	     
+
+    CXXFLAGS="${uFlags:=}" cmake --build "$prefix/output" --target setup && rc=$? || rc=$?
     if [ $rc -ne 0 ]; then
-      echo "'tebako setup' build step failed" 
-      exit 102  
+      echo "'tebako setup' build step failed"
+      exit 102
     fi
     ;;
 	press)
     if [ "$root" == "-" ]; then
       echo "Running tebako press requires project root"
-      run_help 
-      exit 5 
+      run_help
+      exit 5
     fi
     if [ "$entryPoint" == "-" ]; then
       echo "Running tebako press requires entry point"
-      run_help 
-      exit 6 
+      run_help
+      exit 6
     fi
     if [ "$packageName" == "-" ]; then
       filename=$(basename -- "$entryPoint")
-      packageName="${filename%.*}"       
+      packageName="${filename%.*}"
     fi
 
     echo "Running tebako press at $prefix"
@@ -200,21 +200,21 @@ case "$1" in
               -S "$prefix"                     \
               -B "$prefix/output" && rc=$? || rc=$?
     if [ $rc -ne 0 ]; then
-      echo "'tebako press' configure step failed" 
-      exit 103  
+      echo "'tebako press' configure step failed"
+      exit 103
     fi
 
     CXXFLAGS="${uFlags:=}" cmake --build "$prefix/output" --target tebako && rc=$? || rc=$?
     if [[ $rc -ne 0 ]]; then
-      echo "'tebako press' build step failed" 
-      exit 104  
+      echo "'tebako press' build step failed"
+      exit 104
     fi
     ;;
 	clean)
     echo "Cleaning tebako setup and press artifacts at $prefix"
     rm -rf "$prefix"/output
     rm -rf "$prefix"/deps
-    ;; 
+    ;;
 	*)
 		echo "Unknown command '$1'"
 		run_help
