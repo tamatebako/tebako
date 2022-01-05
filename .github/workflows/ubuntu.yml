@@ -375,6 +375,7 @@ jobs:
         uses: actions/checkout@v2
         with:
           fetch-depth: 1
+          
       - name: Download test packages
         uses: actions/download-artifact@v2
         with:

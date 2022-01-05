@@ -110,7 +110,7 @@ jobs:
 
   tests-1:
     needs: setup
-    name: tests-2 ${{ matrix.os }} [CC clang]
+    name: tests-1 ${{ matrix.os }} [CC clang]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -163,6 +163,18 @@ jobs:
         env:
           VERBOSE: yes
         run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
+
+      - name: Upload tebako test packages
+        if: ${{ matrix.os == 'macos-10.15' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-packages
+          path: |
+            test-01-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package
 
   tests-2:
     needs: setup
@@ -220,6 +232,13 @@ jobs:
           echo "Failed to upload cache"
           false
 
+      - name: Checkout shell test framework
+        uses: actions/checkout@v2
+        with:
+          repository: kward/shunit2
+          path: ${{github.workspace}}/tests/shunit2
+          fetch-depth: 1
+
       - name: Run tebako tests (set no. 2)
         run: |
           cd ${{github.workspace}}/tests-2
@@ -227,3 +246,80 @@ jobs:
           cd ${{github.workspace}}
           ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
+  cross-test-macos-10-to-macos-11:
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    needs: tests-1
+    runs-on: macos-11.0
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Download test packages
+        uses: actions/download-artifact@v2
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
+
+  package-metanorma:
+    needs: setup
+    name: package-metanorma ${{ matrix.os }} [CC clang]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-10.15, macos-11.0 ]
+    steps:
+      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
+        if: ${{ matrix.os == 'macos-10.15' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.1.1'
+
+      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
+        if: ${{ matrix.os == 'macos-11.0' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.4'    
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Install packages
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm 
+        run: |
+          brew install \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses
+
+      - name: Create deps folder
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ github.workspace }}/${{ env.DEPS }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: Cache check
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Failed to upload cache"
+          false
+
+      - name: Checkout packed-mn
+        uses: actions/checkout@v2
+        with:
+          repository: metanorma/packed-mn
+          path: ${{github.workspace}}/packed-mn
+          ref: maxirmx-tebako-packager
+
+      - name: Package metanorma
+        run: ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
