@@ -1,4 +1,4 @@
-#!/bin/bash
+# shellcheck shell=bash
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -36,29 +36,19 @@ restore_and_save() {
   cp -f "$1" "$1.old"
 }
 
-# ....................................................
-# Pin tebako static build libraries
-# Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
-# Ruby 2.6.3:  template is in 'ruby/Makefile.in'
-restore_and_save "$1/template/Makefile.in"
-
-re="MAINLIBS = @MAINLIBS@"
-# shellcheck disable=SC2251
-! IFS= read -r -d '' sbst << EOM
-# -- Start of tebako patch --
-MAINLIBS = -l:libssl.a -l:libcrypto.a -l:libz.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a \\\\
--l:libjemalloc.a -l:libcrypt.a -l:libanl.a -ldl -lrt
-# -- End of tebako patch --
-EOM
-
-#
-sed -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  gSed="sed"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  gSed="gsed"
+else
+  exit 1
+fi
 
 # ....................................................
 # Disable dynamic extensions
 # ruby/ext/Setup
 restore_and_save "$1/ext/Setup"
-sed -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
+"$gSed" -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
 
 # ....................................................
 # WE DO NOT ACCEPT OUTSIDE GEM PATHS
@@ -76,7 +66,7 @@ re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
 # -- End of tebako patch --
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
+"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 # shellcheck disable=SC2251
@@ -91,7 +81,7 @@ re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 # -- End of tebako patch --
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
+"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 # ....................................................
 # This is something that I cannnot explain
@@ -123,7 +113,7 @@ re="#include <float.h>"
 
 EOM
 
-sed -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
+"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
 
 # ....................................................
 # Roll-back pass2 patches from the previous run

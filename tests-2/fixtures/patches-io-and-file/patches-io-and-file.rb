@@ -25,19 +25,19 @@
 
 puts "===== File tests ====="
 
-# test 1  exist? (aka stat) 
+# test 1  exist? (aka stat)
 print "exist?(\"/__tebako_memfs__/local/level-1/level-2/file-1.txt\") ... "
 r = File.exist?("/__tebako_memfs__/local/level-1/level-2/file-1.txt")
 raise "exist? returned '#{r}' while 'true' was expected" unless r
 print "OK(success)\n"
 
-# test 2  executable_real? (aka access) 
+# test 2  executable_real? (aka access)
 # print "executable_real?(\"/__tebako_memfs__/local/level-1/level-2/file-2.txt\") ... "
 # r = File.executable_real?("/__tebako_memfs__/local/level-1/level-2/file-2.txt")
 # raise "executable_real? returned '#{r}' while 'false' was expected" if r
 # print "OK(failure)\n"
 
-# test 3  open - read - seak - rewind - close 
+# test 3  open - read - seak - rewind - close
 print "open - seek - read - rewind - close  ... "
 Dir.chdir("/__tebako_memfs__/local/level-1/level-2")
 File.open("file-2.txt", "r") do |f|
@@ -55,16 +55,16 @@ File.open("file-2.txt", "r") do |f|
     raise "pos returned '#{s}' while '5' was expected" unless s.eql? 0
     r = f.read(4)
     raise "read returned '#{r}' while 'This' was expected" unless r.eql? "This"
-end    
+end
 print "OK(match)\n"
 
-# test 4  open - pread - close 
+# test 4  open - pread - close
 print "open - pread - close  ... "
 Dir.chdir("/__tebako_memfs__/local/level-1/level-2")
 File.open("file-1.txt", "r") do |f|
     r = f.pread(13, 5)
     raise "read returned '#{r}' while 'is file-1.txt' was expected" unless r.eql? "is file-1.txt"
-end    
+end
 print "OK(match)\n"
 
 # test 5 lstat - readlink

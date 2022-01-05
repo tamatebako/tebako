@@ -1,0 +1,325 @@
+# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+name: MacOS
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - .github/workflows/lint.yml
+      - .github/workflows/ubuntu.yml
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - .github/workflows/lint.yml
+      - .github/workflows/ubuntu.yml
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+  CC: clang
+  CXX: clang++
+# The folder for dwarfs and other dependenies
+  DEPS: deps
+# GitHub dependencies'
+  INCBIN_TAG:    "348e36b"
+  DWARFS_WR_TAG: "v0.1.6"
+# Tarball dependencies
+#  RUBY_VER:   "2.7.4" -- upgraded to 2.7.5 because of Ruby/clang issue [https://bugs.ruby-lang.org/issues/17865]
+#  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
+  RUBY_VER:   "2.7.5"
+  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
+# Bundler version
+  BUNDLER_VER: "2.2.3"
+# Cache version
+  CACHE_VER: "14"
+
+jobs:
+  setup:
+    name: setup ${{ matrix.os }} [CC clang]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-10.15, macos-11.0 ]
+    steps:
+      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
+        if: ${{ matrix.os == 'macos-10.15' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.1.1'
+
+      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
+        if: ${{ matrix.os == 'macos-11.0' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.4'
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Install packages
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
+        run: |
+          brew install \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses
+
+      - name: Create deps folder
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ github.workspace }}/${{ env.DEPS }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: ${{ github.workspace }}/bin/tebako setup
+
+  tests-1:
+    needs: setup
+    name: tests-1 ${{ matrix.os }} [CC clang]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-10.15, macos-11.0 ]
+    steps:
+      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
+        if: ${{ matrix.os == 'macos-10.15' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.1.1'
+
+      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
+        if: ${{ matrix.os == 'macos-11.0' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.4'
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Install packages
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
+        run: |
+          brew install \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses
+
+      - name: Create deps folder
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ github.workspace }}/${{ env.DEPS }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: Cache check
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Failed to upload cache"
+          false
+
+      - name: Checkout shell test framework
+        uses: actions/checkout@v2
+        with:
+          repository: kward/shunit2
+          path: ${{github.workspace}}/tests/shunit2
+          fetch-depth: 1
+
+      - name: Run tebako tests (set no. 1)
+# show cmake output aka verbose (yes/no)
+        env:
+          VERBOSE: yes
+        run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
+
+      - name: Upload tebako test packages
+        if: ${{ matrix.os == 'macos-10.15' }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-packages
+          path: |
+            test-01-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package
+
+  tests-2:
+    needs: setup
+    name: tests-2 ${{ matrix.os }} [CC clang]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-10.15, macos-11.0 ]
+    steps:
+      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
+        if: ${{ matrix.os == 'macos-10.15' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.1.1'
+
+      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
+        if: ${{ matrix.os == 'macos-11.0' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.4'
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Install packages
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
+        run: |
+          brew install \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses
+
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VER }}
+          bundler: ${{ env.BUNDLER_VER }}
+
+      - name: Create deps folder
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ github.workspace }}/${{ env.DEPS }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: Cache check
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Failed to upload cache"
+          false
+
+      - name: Run tebako tests (set no. 2)
+        run: |
+          cd ${{github.workspace}}/tests-2
+          bundle install
+          cd ${{github.workspace}}
+          ruby ${{github.workspace}}/tests-2/tebako-test.rb
+
+  cross-test-macos-10-to-macos-11:
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    needs: tests-1
+    runs-on: macos-11.0
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Download test packages
+        uses: actions/download-artifact@v2
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
+
+  package-metanorma:
+    needs: setup
+    name: package-metanorma ${{ matrix.os }} [CC clang]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-10.15, macos-11.0 ]
+    steps:
+      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
+        if: ${{ matrix.os == 'macos-10.15' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.1.1'
+
+      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
+        if: ${{ matrix.os == 'macos-11.0' }}
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.4'
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Install packages
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
+        run: |
+          brew install \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses
+
+      - name: Create deps folder
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ github.workspace }}/${{ env.DEPS }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: Cache check
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Failed to upload cache"
+          false
+
+      - name: Checkout packed-mn
+        uses: actions/checkout@v2
+        with:
+          repository: metanorma/packed-mn
+          path: ${{github.workspace}}/packed-mn
+          ref: maxirmx-tebako-packager
+
+      - name: Package metanorma
+        run: ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package

@@ -156,7 +156,7 @@ class TestTebako < MiniTest::Test
       end
     end
 
-  # Test: 
+  # Test:
   #  -- that executable can write a file to the current working directory (io.c, file.c patching)
   #  -- short options without whitespaces
   def test_105_io_and_file
@@ -224,7 +224,11 @@ class TestTebako < MiniTest::Test
                 out, st = Open3.capture2("#{tempdirname}/#{package}")
                 assert_equal 0, st.exitstatus
 
-                out, st = Open3.capture2("ldd #{tempdirname}/#{package}")
+                out, st =   if RbConfig::CONFIG["host_os"] =~ /darwin/
+                              Open3.capture2("otool -L #{tempdirname}/#{package}")
+                            else
+                              Open3.capture2("ldd #{tempdirname}/#{package}")
+                            end
                 assert_equal 0, st.exitstatus
 
 #   Expecting no more then 7 references to shared libraries
@@ -236,7 +240,12 @@ class TestTebako < MiniTest::Test
 #   librt.so
 #   /lib64/ld-linux-x86-64.so
 
-                libs = ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
+                libs =  if RbConfig::CONFIG["host_os"] =~ /darwin/
+                          ["Security.framework", "Foundation.framework", "CoreFoundation.framework", "libSystem", "libc++", "launcher-package-package:"]
+                          # This is the test program itself: 'launcher-package-package:'
+                        else
+                          ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
+                        end
                 l = out.lines.map(&:strip)
                 l.delete_if {|ln| libs.any? { |lib| ln.include?(lib) } }
                 assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
