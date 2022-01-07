@@ -111,6 +111,16 @@ class TestTebako < MiniTest::Test
     end
 
   # Specified gems should be automatically included and usable in packaged app
+    def test_213_libmspack
+        name = "gems-libmspack"
+        with_fixture_press_and_env name do |package|
+            out, st = Open3.capture2(package)
+            assert_equal 0, st.exitstatus
+            assert_equal out, "Hello! libmspack welcomes you to the magic world of ruby gems.\n"
+        end
+    end
+
+# Specified gems should be automatically included and usable in packaged app
     def test_212_seven_zip_ruby
         name = "gems-seven_zip_ruby"
         with_fixture_press_and_env name do |package|
@@ -159,18 +169,17 @@ class TestTebako < MiniTest::Test
   # Test:
   #  -- that executable can write a file to the current working directory (io.c, file.c patching)
   #  -- short options without whitespaces
-  def test_105_io_and_file
+  def test_105_launcher_pwd
         name = "launcher-pwd"
         package = "#{name}-package"
-        with_fixture_press_and_env name do
-            with_fixture name do
-                assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
-                assert File.exist?(package)
-                pristine_env package do |tempdirname|
-                    assert system("#{tempdirname}/#{package}")
-                    assert File.exist?("output.txt")
-                    assert_equal "output", File.read("output.txt")
-                end
+        with_fixture name do
+            assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
+            assert File.exist?(package)
+            pristine_env package do |tempdirname|
+                assert system("#{tempdirname}/#{package}")
+                assert File.exist?("output.txt")
+                res = File.read("output.txt")
+                assert_equal "output", res
             end
         end
     end
