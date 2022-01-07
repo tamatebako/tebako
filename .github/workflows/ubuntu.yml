@@ -60,6 +60,8 @@ env:
   BUNDLER_VER: "2.2.3"
 # Cache version
   CACHE_VER: "09"
+  DEBIAN_FRONTEND: "noninteractive"
+  TZ: "Etc/UTC"
 
 jobs:
   setup:
@@ -106,7 +108,10 @@ jobs:
       - name: Switch to gcc-9
         if: ${{ matrix.env.CC == 'gcc' }}
         run: |
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9 --slave /usr/bin/gcov gcov /usr/bin/gcov-9
+          sudo update-alternatives \
+            --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
+            --slave /usr/bin/g++ g++ /usr/bin/g++-9 \
+            --slave /usr/bin/gcov gcov /usr/bin/gcov-9
           sudo update-alternatives --set gcc /usr/bin/gcc-9
 
       - name: Install packages

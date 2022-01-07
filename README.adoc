@@ -7,7 +7,7 @@ image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg[
 
 == Purpose
 
-Tebako is an executable packager. It packages a set of files into a dwarFS file
+Tebako is an executable packager. It packages a set of files into a DwarFS file
 system for read-only purposes.
 
 After packaging the file system into an image, Tebako produces a single
@@ -16,13 +16,13 @@ packaged software from a point in the file system.
 
 The packaged binary should support:
 
-* Packaging a default dwarFS image inside the binary
+* Packaging a default DwarFS image inside the binary
 * Support signing of the binary on macOS (via notarization)
 
 In the future:
 
-* Downloading new dwarFS images to be stored in the local home directory
-* Allowing loading multiple dwarFS images in a stacked way
+* Downloading new DwarFS images to be stored in the local home directory
+* Allowing loading multiple DwarFS images in a stacked way
 * Supporting a COW mechanism that the newly written files are stored
   in a separate image that can be loaded on top of the read-only file systems.
 
@@ -31,8 +31,9 @@ In the future:
 The Tebako packager is tested on the following platforms:
 
 * Linux: Ubuntu 18.04; Ubuntu 20.04
-* macOS: TBD
+* macOS: macOS 10.15 (Catalina); macOS 11.0 (Monterey)
 * Windows: TBD
+
 
 == Prerequisites
 
@@ -45,26 +46,34 @@ follows.
 
 [source,sh]
 ----
-add-apt-repository ppa:ubuntu-toolchain-r/test
-apt-get update
+apt-get install -y software-properties-common
+add-apt-repository -y ppa:ubuntu-toolchain-r/test
 apt-get install gcc-9 g++-9
+
+update-alternatives \
+  --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
+  --slave /usr/bin/g++ g++ /usr/bin/g++-9 \
+  --slave /usr/bin/gcov gcov /usr/bin/gcov-9
+update-alternatives --set gcc /usr/bin/gcc-9
 ----
 
-==== CMake 3.20 or better
+==== CMake version 3.20+
 
 Tebako relies on CMake 3.20+, which may not be available as a default package.
 
-If it is not available as default package it can be set up as follows
+If it is not available as default package it can be set up as follows:
+
+[source,sh]
 ----
 apt-get remove --purge --auto-remove cmake
 apt-get update
-apt-get install -y software-properties-common lsb-release
+apt-get install -y software-properties-common lsb-release curl
 apt-get clean all
 curl https://apt.kitware.com/kitware-archive.sh | bash
 apt-get install cmake
 ----
 
-==== libfmt version 6.x or better
+==== libfmt version 6.0+
 
 On Ubuntu 20 it can be installed with:
 
@@ -79,18 +88,18 @@ On Ubuntu 18 it requires a backport:
 ----
 apt-get -y remove libfmt-dev
 apt-get -y install software-properties-common
-add-apt-repository ppa:team-xbmc/ppa
+add-apt-repository -a ppa:team-xbmc/ppa
 apt-get -y update
 apt-get -y install libfmt-dev
 ----
 
 ==== Other development tools and libraries
 
-Ubuntu 18 and ubuntu 20 default versions are good enough.
+Ubuntu 18 and Ubuntu 20 default versions are good enough.
 
 [source,sh]
 ----
-apt-get install -y curl git g++ gcc ruby ruby-dev pkg-config bison flex
+apt-get install -y curl git ruby ruby-dev pkg-config bison flex make autoconf
 apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
   libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
   libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
@@ -100,28 +109,10 @@ apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-
   libsqlite3-dev
 ----
 
-=== Supporting Rubygems
-
-==== bundler for packaging
-
-[source,sh]
-----
-gem install bundler
-----
-
-==== ronn for manual compilation
-
-Providing that you have Ruby 2.5+, you can just run:
-
-[source,sh]
-----
-gem install ronn
-----
-
-Verify that the `ronn` executable is available at your `PATH`.
-
 
 == Installation
+
+=== General
 
 Just clone this repository, and run `tebako setup` as follows.
 
@@ -130,6 +121,54 @@ Just clone this repository, and run `tebako setup` as follows.
 git clone https://github.com/tamatebako/tebako
 tebako/bin/tebako setup
 ----
+
+
+=== Quick setup on Ubuntu 20.04 on Docker
+
+Launch a container on the target platform:
+
+[source,sh]
+----
+# For x86_64
+docker run -it --platform linux/x86_64 ubuntu bash
+
+# For Apple M1
+docker run -it --platform linux/aarch64 ubuntu bash
+----
+
+In the container:
+
+[source,sh]
+----
+export DEBIAN_FRONTEND=noninteractive
+export TZ=Etc/UTC
+
+apt-get update
+apt-get install -y software-properties-common
+add-apt-repository -y ppa:ubuntu-toolchain-r/test
+apt-get install -y gcc-9 g++-9
+
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9 --slave /usr/bin/gcov gcov /usr/bin/gcov-9
+update-alternatives --set gcc /usr/bin/gcc-9
+
+apt-get install -y curl git ruby ruby-dev pkg-config bison flex make autoconf
+curl https://apt.kitware.com/kitware-archive.sh | bash
+apt-get install -y cmake
+
+apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
+  libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+  libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+  libboost-regex-dev libboost-system-dev libboost-thread-dev \
+  libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
+  libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
+  libsqlite3-dev
+
+apt-get install -y libfmt-dev
+
+git clone https://github.com/tamatebako/tebako
+tebako/bin/tebako setup
+----
+
 
 == Usage
 
@@ -190,8 +229,8 @@ bin/tebako press \
 
 === Clean
 
-This command deletes tebako artifacts created by setup and press commands. 
-Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own. 
+This command deletes tebako artifacts created by setup and press commands.
+Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own.
 
 [source,sh]
 ----
@@ -208,7 +247,7 @@ folder)
 ====
 [source,sh]
 ----
-bin/tebako clean --root='~/projects/myproject' 
+bin/tebako clean --root='~/projects/myproject'
 ----
 ====
 
