@@ -126,7 +126,7 @@ class TestTebako < MiniTest::Test
         with_fixture_press_and_env name do |package|
             out, st = Open3.capture2(package)
             assert_equal 0, st.exitstatus
-            assert_match /Hello! SevenZipRuby welcomes you to the magic world of ruby gems/", out
+            assert_match /Hello! SevenZipRuby welcomes you to the magic world of ruby gems/, out
         end
     end
 
@@ -151,6 +151,7 @@ class TestTebako < MiniTest::Test
   # Test dir.c patching
     def test_122_dir
         name = "patches-dir"
+        FileUtils.mkdir_p File.join(FixturePath, name, 'level-1/level-2/level-3')
         with_fixture_press_and_env name do |package|
             assert system(package)
         end

@@ -182,7 +182,7 @@ EOM
 "$gSed" -i "s/if ((\*cur)->type == ALPHA) {/if ((*cur)->type == ALPHA \/* tebako patch *\/ \&\& !within_tebako_memfs(buf)) {/g" "$1/dir.c"
 "$gSed" -i "s/else if (e == EIO) {/else if (e == EIO \/* tebako patch *\/ \&\& !within_tebako_memfs(path)) {/g" "$1/dir.c"
 "$gSed" -i "s/if (is_case_sensitive(dirp, path) == 0)/if (is_case_sensitive(dirp, path) == 0 \/* tebako patch *\/ \&\& !within_tebako_memfs(path))/g" "$1/dir.c"
-"$gSed" -i "s/plain = 1;/\/* tebako patch *\/ if (p->type == PLAIN || !within_tebako_memfs(path)) plain = 1; else magical = 1;/g" "$1/dir.c"
+"$gSed" -i "0,/plain = 1;/! s/plain = 1;/\/* tebako patch *\/ if (!within_tebako_memfs(path)) plain = 1; else magical = 1;/g" "$1/dir.c"
 
 re="#if defined HAVE_GETATTRLIST && defined ATTR_DIR_ENTRYCOUNT"
 # shellcheck disable=SC2251
