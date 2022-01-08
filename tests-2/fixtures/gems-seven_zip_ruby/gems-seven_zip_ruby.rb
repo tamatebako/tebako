@@ -92,7 +92,7 @@ end
 # HACK fix path for 7zip load
 sevenz_lib = RUBY_PLATFORM.downcase.match(/mswin|mingw/) ? "7z*.dll" : "7z.so"
 #  sevenz_path = File.join(Gem.loaded_specs['seven_zip_ruby'].full_gem_path, 'lib', 'seven_zip_ruby', sevenz_lib)
-sevenz_path = "/__tebako_memfs__/lib/ruby/gems/2.7.0/gems/seven_zip_ruby-1.3.0/lib/seven_zip_ruby/7z.so"
+sevenz_path = '/__tebako_memfs__/lib/ruby/gems/2.7.0/gems/seven_zip_ruby-1.3.0/lib/seven_zip_ruby/' + sevenz_lib
 FileUtils.mkdir_p(COMPILER_MEMFS_LIB_CACHE / 'seven_zip_ruby')
 FileUtils.cp(sevenz_path, COMPILER_MEMFS_LIB_CACHE / 'seven_zip_ruby')
 $LOAD_PATH.unshift(COMPILER_MEMFS_LIB_CACHE)
