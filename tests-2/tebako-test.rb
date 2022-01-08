@@ -116,7 +116,7 @@ class TestTebako < MiniTest::Test
         with_fixture_press_and_env name do |package|
             out, st = Open3.capture2(package)
             assert_equal 0, st.exitstatus
-            assert_equal out, "Hello! libmspack welcomes you to the magic world of ruby gems.\n"
+            assert_match /Hello! libmspack welcomes you to the magic world of ruby gems/, out
         end
     end
 
@@ -126,7 +126,7 @@ class TestTebako < MiniTest::Test
         with_fixture_press_and_env name do |package|
             out, st = Open3.capture2(package)
             assert_equal 0, st.exitstatus
-            assert_equal out, "Hello! SevenZipRuby welcomes you to the magic world of ruby gems.\n"
+            assert_match /Hello! SevenZipRuby welcomes you to the magic world of ruby gems/", out
         end
     end
 

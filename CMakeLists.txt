@@ -29,7 +29,7 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 
-project(tebako_packager VERSION 0.3.0)
+project(tebako_packager VERSION 0.3.1)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -155,7 +155,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.1.6")
+def_ext_prj_g(DWARFS_WR "maxirmx_v0.1.7")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -213,7 +213,7 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     GIT_TAG ${DWARFS_WR_TAG}
     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
-    UPDATE_COMMAND ""
+#    UPDATE_COMMAND ""
     BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel 4
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
                -DWITH_TESTS:BOOL=OFF

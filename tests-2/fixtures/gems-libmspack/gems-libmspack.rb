@@ -77,10 +77,11 @@ module FFI
   self.singleton_class.send(:alias_method, :map_library_name_orig, :map_library_name)
 
   # http://tech.tulentsev.com/2012/02/ruby-how-to-override-class-method-with-a-module/
-  def self.map_library_name(lib)
+  def self.map_library_name(lib)   
     l = extract_memfs(lib)
+    puts "#{lib} ==> #{l}"     
     ll = map_library_name_orig(l)
-    puts "#{lib} ==> #{ll}"
+    puts "#{lib} ==> #{l} ==> #{ll}"
     ll
   end
 end
