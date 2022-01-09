@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021, 2022 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -127,30 +127,6 @@ restore_and_save "$1/main.c"
 "$gSed" -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" "$1/main.c"
 
 # ....................................................
-# Put lidwarfs IO bindings to Ruby files
-
-# ....................................................
-# ruby/dir.c
-restore_and_save "$1/dir.c"
-# Replace only the first occurence
-# As opposed to other c files subsitution inserts includes before the pattern, not after
-#  [TODO MacOS]  libdwarfs issues 45,46
-
-re="#ifdef __APPLE__"
-# shellcheck disable=SC2251
-! IFS= read -r -d '' sbst << EOM
-
-\/* -- Start of tebako patch -- *\/
-#include <tebako\/tebako-defines.h>
-#include <tebako\/tebako-io.h>
-\/* -- End of tebako patch -- *\/
-
-#ifdef __APPLE__
-EOM
-
-"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
-
-# ....................................................
 # Put lidwarfs IO bindings to other c files
 
 patch_c_file() {
@@ -181,6 +157,44 @@ patch_c_file "$1/io.c"  "VALUE rb_cIO;"
 
 # ruby/util.c
 patch_c_file "$1/util.c"  "#ifndef S_ISDIR"
+
+# ....................................................
+# ruby/dir.c
+restore_and_save "$1/dir.c"
+# Replace only the first occurence
+# As opposed to other c files subsitution inserts includes before the pattern, not after
+
+re="#ifdef __APPLE__"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+
+\/* -- Start of tebako patch -- *\/
+#include <tebako\/tebako-defines.h>
+#include <tebako\/tebako-io.h>
+\/* -- End of tebako patch -- *\/
+
+#ifdef __APPLE__
+EOM
+
+"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
+
+# Compensate ruby incorrect processing of (f)getattrlist returning ENOTSUP 
+"$gSed" -i "s/if ((\*cur)->type == ALPHA) {/if ((*cur)->type == ALPHA \/* tebako patch *\/ \&\& !within_tebako_memfs(buf)) {/g" "$1/dir.c"
+"$gSed" -i "s/else if (e == EIO) {/else if (e == EIO \/* tebako patch *\/ \&\& !within_tebako_memfs(path)) {/g" "$1/dir.c"
+"$gSed" -i "s/if (is_case_sensitive(dirp, path) == 0)/if (is_case_sensitive(dirp, path) == 0 \/* tebako patch *\/ \&\& !within_tebako_memfs(path))/g" "$1/dir.c"
+"$gSed" -i "0,/plain = 1;/! s/plain = 1;/\/* tebako patch *\/ if (!within_tebako_memfs(path)) plain = 1; else magical = 1;/g" "$1/dir.c"
+
+re="#if defined HAVE_GETATTRLIST && defined ATTR_DIR_ENTRYCOUNT"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+#if defined HAVE_GETATTRLIST \&\& defined ATTR_DIR_ENTRYCOUNT
+\/* tebako patch *\/ if (!within_tebako_memfs(path))
+EOM
+
+"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
+
+# Note. We are not patching need_normalization function
+# In this function (f)getattrlist failure with ENOTSUP is processed correctly
 
 # ....................................................
 # ruby/tool/mkconfig.rb

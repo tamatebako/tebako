@@ -1,4 +1,4 @@
-# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021, 2022 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -111,7 +111,27 @@ print "OK(match)\n"
 # test 7  glob
 print "[\"**/*.txt\", base:\"/__tebako_memfs__/local/\"] ... "
 fls = Dir["**/*.txt", base:"/__tebako_memfs__/local/"]
-Exp = ["level-1/level-2/file-1.txt", "level-1/level-2/file-2.txt", "level-1/level-2/file-3.txt"]
+Exp1 = ["level-1/level-2/file-1.txt", "level-1/level-2/file-2.txt", "level-1/level-2/file-3.txt"]
 
-raise "Dir[] returned #{fls} while #{Exp} was expected" if fls.difference(Exp).any? || Exp.difference(fls).any?
+raise "Dir[] returned #{fls} while #{Exp1} was expected" if fls.difference(Exp1).any? || Exp1.difference(fls).any?
+print "OK(match)\n"
+
+# test 8  glob
+print "[\"/__tebako_memfs__/local/**/file-1.txt\"] ... "
+fls = Dir["/__tebako_memfs__/local/**/file-1.txt"]
+Exp2 = ["/__tebako_memfs__/local/level-1/level-2/file-1.txt"]
+
+raise "Dir[] returned #{fls} while #{Exp2} was expected" if fls.difference(Exp2).any? || Exp2.difference(fls).any?
+print "OK(match)\n"
+
+# test 9 Dir.empty?
+print "Dir.empty?(\"/__tebako_memfs__/local/level-1/level-2\") ..."
+r = Dir.empty?("/__tebako_memfs__/local/level-1/level-2")
+raise "Dir.empty? returned #{r} while 'false' was expected" if r
+print "OK(match)\n"
+
+# test 10 Dir.empty?
+print "Dir.empty?(\"/__tebako_memfs__/local/level-1/level-2/level-3\") ..."
+r = Dir.empty?("/__tebako_memfs__/local/level-1/level-2/level-3")
+raise "Dir.empty? returned #{r} while 'true' was expected" unless r
 print "OK(match)\n"

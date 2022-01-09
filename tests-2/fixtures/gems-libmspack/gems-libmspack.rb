@@ -1,4 +1,4 @@
-# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -22,9 +22,6 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
-
-# This test is inspired packed-mn
-# https://github.com/metanorma/packed-mn
 
 require 'rubygems'
 require 'bundler/setup'
@@ -80,25 +77,16 @@ module FFI
   self.singleton_class.send(:alias_method, :map_library_name_orig, :map_library_name)
 
   # http://tech.tulentsev.com/2012/02/ruby-how-to-override-class-method-with-a-module/
-  def self.map_library_name(lib)
+  def self.map_library_name(lib)   
     l = extract_memfs(lib)
+    puts "#{lib} ==> #{l}"     
     ll = map_library_name_orig(l)
-    puts "#{lib} ==> #{ll}"
+    puts "#{lib} ==> #{l} ==> #{ll}"
     ll
   end
 end
 # END of HACK
 
-# HACK fix path for 7zip load
-sevenz_lib = RUBY_PLATFORM.downcase.match(/mswin|mingw/) ? "7z*.dll" : "7z.so"
-#  sevenz_path = File.join(Gem.loaded_specs['seven_zip_ruby'].full_gem_path, 'lib', 'seven_zip_ruby', sevenz_lib)
-sevenz_path = '/__tebako_memfs__/lib/ruby/gems/2.7.0/gems/seven_zip_ruby-1.3.0/lib/seven_zip_ruby/' + sevenz_lib
-FileUtils.mkdir_p(COMPILER_MEMFS_LIB_CACHE / 'seven_zip_ruby')
-FileUtils.cp(sevenz_path, COMPILER_MEMFS_LIB_CACHE / 'seven_zip_ruby')
-$LOAD_PATH.unshift(COMPILER_MEMFS_LIB_CACHE)
-# END of HACK
-
-# Just make sure the constant exists
-require 'seven_zip_ruby'
-SevenZipRuby
-puts "Hello! SevenZipRuby welcomes you to the magic world of ruby gems."
+require 'libmspack'
+LibMsPack
+puts "Hello! libmspack welcomes you to the magic world of ruby gems."
