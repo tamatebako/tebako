@@ -1,6 +1,6 @@
 /**
  *
- * Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+ * Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
  * All rights reserved.
  * This file is a part of tebako
  *
@@ -52,7 +52,7 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 		try {
 			fsret = load_fs(&gfsData[0],
 				gfsSize,
-				"error" /*debuglevel*/,
+				tebako::fs_log_level,
 				NULL	/* cachesize*/,
 				NULL	/* workers */,
 				NULL	/* mlock */,

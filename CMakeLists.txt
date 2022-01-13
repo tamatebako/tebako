@@ -1,4 +1,4 @@
-# Copyright (c) 2021,2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -29,7 +29,7 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 
-project(tebako_packager VERSION 0.3.1)
+project(tebako_packager VERSION 0.3.2)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -55,6 +55,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/def_tty_colours.cmake)
 
 option(SETUP_MODE "Tebako setup" OFF)
+option(LOG_LEVEL "Logging level" "error")
 set(START_WITH_PACKAGED_FILESYSTEM OFF CACHE BOOL "Start workflow from 'packaged filesystem' target!!!" FORCE)
 
 if (NOT ${SETUP_MODE})
@@ -155,7 +156,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.1.7")
+def_ext_prj_g(DWARFS_WR "maxirmx_v0.1.8")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})

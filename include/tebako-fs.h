@@ -34,6 +34,7 @@
 INCBIN_EXTERN(fs);
 
 namespace tebako {
+	extern const char* fs_log_level;
 	extern const char* fs_mount_point;
 	extern const char* fs_entry_point;
 	extern const char* fs_app_home;
