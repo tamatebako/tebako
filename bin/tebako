@@ -154,8 +154,8 @@ else
   fi
 fi
 
-if [[ "$logLevel" != "error" && "$logLevel" != "warn" && "$logLevel" != "debug" ]]; then
-  echo "Unknown log-level setting '$logLevel'. Known values are 'error', 'warn', 'debug'"
+if [[ "$logLevel" != "error" && "$logLevel" != "warn" && "$logLevel" != "debug" && "$logLevel" != "trace" ]]; then
+  echo "Unknown log-level setting '$logLevel'. Known values are 'error', 'warn', 'debug', 'trace'"
   exit 6
 fi
 

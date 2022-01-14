@@ -59,7 +59,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: "09"
+  CACHE_VER: "10"
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 

@@ -60,7 +60,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: "14"
+  CACHE_VER: "15"
 
 jobs:
   setup:
