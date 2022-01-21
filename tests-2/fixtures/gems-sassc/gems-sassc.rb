@@ -1,4 +1,4 @@
-# Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -22,6 +22,9 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+
+# This test is inspired packed-mn
+# https://github.com/metanorma/packed-mn
 
 require 'rubygems'
 require 'bundler/setup'
@@ -79,14 +82,42 @@ module FFI
   # http://tech.tulentsev.com/2012/02/ruby-how-to-override-class-method-with-a-module/
   def self.map_library_name(lib)
     l = extract_memfs(lib)
-    puts "#{lib} ==> #{l}"
     ll = map_library_name_orig(l)
-    puts "#{lib} ==> #{l} ==> #{ll}"
+    puts "#{lib} ==> #{ll}"
     ll
   end
 end
 # END of HACK
 
-require 'libmspack'
-LibMsPack
-puts "Hello! libmspack welcomes you to the magic world of ruby gems."
+require 'sassc'
+
+module SassC
+  class Engine
+    alias load_paths_orig load_paths
+    def load_paths()
+      paths = (@options[:load_paths] || []) + SassC.load_paths
+        np = []
+        paths.each { |p|
+          if p.start_with?(COMPILER_MEMFS)
+            m = p.sub(COMPILER_MEMFS, COMPILER_MEMFS_LIB_CACHE.to_s)
+            FileUtils.cp_r(File.join(p, "."), m) if File.exists?(p)
+            np << m
+          else
+            np << p
+          end
+      }
+      pp = np.join(File::PATH_SEPARATOR) unless np.empty?
+      puts "Using load_path @ '#{pp}'"
+      pp
+    end
+  end
+end
+
+name = File.join(File.dirname(__FILE__), "styles")
+SassC.load_paths << File.dirname(__FILE__);
+SassC.load_paths << name;
+SassC.load_paths << "/usr/local/fun";
+
+SassC::Engine.new("@import 'base_style/all.scss'", style: :compressed).render
+
+puts "Hello! SassC gem welcomes you to the magic world of ruby gems."

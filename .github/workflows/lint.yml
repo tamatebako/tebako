@@ -9,7 +9,7 @@ on:
       - .github/workflows/ubuntu.yml
       - .github/workflows/macos.yml
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'

@@ -1,4 +1,4 @@
-# Copyright (c) 2021, 2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -60,7 +60,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: "14"
+  CACHE_VER: "17"
 
 jobs:
   setup:
@@ -319,7 +319,6 @@ jobs:
         with:
           repository: metanorma/packed-mn
           path: ${{github.workspace}}/packed-mn
-          ref: maxirmx-tebako-packager
 
       - name: Package metanorma
         run: ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
