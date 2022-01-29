@@ -55,7 +55,7 @@ include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/def_tty_colours.cmake)
 
 option(SETUP_MODE "Tebako setup" OFF)
-option(LOG_LEVEL "Logging level" "error")
+option(LOG_LEVEL "Logging level" "trace")
 set(START_WITH_PACKAGED_FILESYSTEM OFF CACHE BOOL "Start workflow from 'packaged filesystem' target!!!" FORCE)
 
 if (NOT ${SETUP_MODE})
