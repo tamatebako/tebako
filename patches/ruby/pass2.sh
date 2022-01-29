@@ -178,7 +178,7 @@ EOM
 
 "$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
 
-# Compensate ruby incorrect processing of (f)getattrlist returning ENOTSUP 
+# Compensate ruby incorrect processing of (f)getattrlist returning ENOTSUP
 "$gSed" -i "s/if ((\*cur)->type == ALPHA) {/if ((*cur)->type == ALPHA \/* tebako patch *\/ \&\& !within_tebako_memfs(buf)) {/g" "$1/dir.c"
 "$gSed" -i "s/else if (e == EIO) {/else if (e == EIO \/* tebako patch *\/ \&\& !within_tebako_memfs(path)) {/g" "$1/dir.c"
 "$gSed" -i "s/if (is_case_sensitive(dirp, path) == 0)/if (is_case_sensitive(dirp, path) == 0 \/* tebako patch *\/ \&\& !within_tebako_memfs(path))/g" "$1/dir.c"
