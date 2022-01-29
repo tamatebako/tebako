@@ -55,7 +55,10 @@ include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
 include(${CMAKE_SOURCE_DIR}/cmake/def_tty_colours.cmake)
 
 option(SETUP_MODE "Tebako setup" OFF)
-set(LOG_LEVEL "trace")
+if(NOT LOG_LEVEL)
+  set(LOG_LEVEL "error")
+endif()
+
 set(START_WITH_PACKAGED_FILESYSTEM OFF CACHE BOOL "Start workflow from 'packaged filesystem' target!!!" FORCE)
 
 if (NOT ${SETUP_MODE})
@@ -156,7 +159,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "maxirmx_v0.1.8")
+def_ext_prj_g(DWARFS_WR "v0.1.8")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})
