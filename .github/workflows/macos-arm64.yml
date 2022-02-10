@@ -23,7 +23,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 #
-name: MacOS
+name: MacOS-arm64
 
 on:
   push:
@@ -108,9 +108,34 @@ jobs:
 # (boost depends on icu4c)
 # (glog depends on gflags)
       - name: Install packages [for target host architecture]
-        if: steps.cache.outputs.cache-hit != 'true'
+#        if: steps.cache.outputs.cache-hit != 'true'
         run: |
           ci-scripts/arm-brew-setup.sh ${{ env.LEVEL_UP }}
-          ci-scripts/arm-brew-install.zsh ${{ env.LEVEL_UP }} libb2 lz4 xz zstd zlib libarchive        \
+          ci-scripts/arm-brew-install.sh ${{ env.LEVEL_UP }} libb2 lz4 xz zstd zlib libarchive        \
                                 icu4c boost fmt openssl@1.1 libevent libsodium double-conversion      \
                                 gflags glog jemalloc ncurses gdbm ffi
+
+      - name: Checkout dwarfs [for build system architecture]
+#        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/checkout@v2
+        with:
+          repository: tamatebako/dwarfs
+          path: ${{ env.DWARFS_BUILD }}
+          ref: ${{ env.DWARFS_TAG }}
+          submodules: true
+          fetch-depth: 1
+
+      - name: Configure dwarfs [for build system architecture]
+#        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir ${{ env.DWARFS_BUILD }}/build
+          cd ${{ env.DWARFS_BUILD }}/build
+          cmake .. -DWITH_TESTS=OFF           \
+                   -DTEBAKO_BUILD_SCOPE=MKD   \
+                   -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/${{ env.DWARFS_BUILD }}/install
+
+      - name: Build and install mkdwarfs [for build system architecture]
+#        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ env.DWARFS_BUILD }}/build
+          make install

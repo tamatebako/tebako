@@ -26,8 +26,7 @@ jobs:
       - uses: ludeeus/action-shellcheck@master
         with:
           additional_files: 'tebako'
-          ignore_paths: |
-            deps
-            *.zsh
+          ignore_paths: deps
+          ignore_names: arm-brew-install.sh
         env:
           SHELLCHECK_OPTS: -x
