@@ -1,0 +1,117 @@
+# Copyright (c) 2022 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+name: MacOS
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - .github/workflows/lint.yml
+      - .github/workflows/ubuntu.yml
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - .github/workflows/lint.yml
+      - .github/workflows/ubuntu.yml
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+  CC: clang
+  CXX: clang++
+# The folder for dwarfs and other dependenies
+  DEPS: deps
+  DWARFS_BUILD: dwarfs-x86_64
+# GitHub dependencies'
+  INCBIN_TAG:    "348e36b"
+  DWARFS_WR_TAG: "v0.1.9"
+# Tarball dependencies
+#  RUBY_VER:   "2.7.4" -- upgraded to 2.7.5 because of Ruby/clang issue [https://bugs.ruby-lang.org/issues/17865]
+#  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
+  RUBY_VER:   "2.7.5"
+  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
+# Bundler version
+  BUNDLER_VER: "2.2.3"
+# Cache version
+  CACHE_VER: 01
+
+jobs:
+  setup:
+  build:
+    name: macos-11.0 [x86_64 --> arm64]
+    runs-on: macos-11.0
+    strategy:
+      fail-fast: false
+    steps:
+      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.4'
+
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          submodules: true
+
+      - name: Create deps folders, setup environment
+        run: |
+          mkdir ${{ github.workspace }}/${{ env.DEPS }}
+          mkdir ${{ github.workspace }}/${{ env.DWARFS_BUILD }}
+          echo 'LEVEL_UP<<EOF' >> $GITHUB_ENV
+          ci-scripts/level-up.sh "${{ github.workspace }}/.." >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+          echo 'BREW_HOME<<EOF' >> $GITHUB_ENV
+          brew --prefix >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Install packages [for build system architecture]
+        run: |
+          brew install \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses
+
+# Note: we cannot rely on dependencies here since resolved dependencies will point to x86_64 version
+# TODO: use brew deps -n to create full list of dependencies rather then hardcode
+# (libarchive depends on ibb2 lz4 xz zstd zlib)
+# (boost depends on icu4c)
+# (glog depends on gflags)
+      - name: Install packages [for target host architecture]
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          ci-scripts/arm-brew-setup.sh ${{ env.LEVEL_UP }}
+          ci-scripts/arm-brew-install.sh ${{ env.LEVEL_UP }} libb2 lz4 xz zstd zlib libarchive        \
+                                icu4c boost fmt openssl@1.1 libevent libsodium double-conversion      \
+                                gflags glog jemalloc ncurses gdbm ffi

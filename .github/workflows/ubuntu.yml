@@ -33,6 +33,7 @@ on:
       - '**.md'
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
+      - .github/workflows/macos-arm64.yml
   pull_request:
     branches: [ main ]
     paths-ignore:
@@ -41,6 +42,7 @@ on:
       - '**.md'
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
+      - .github/workflows/macos-arm64.yml
   workflow_dispatch:
 
 env:
