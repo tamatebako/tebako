@@ -26,6 +26,8 @@ jobs:
       - uses: ludeeus/action-shellcheck@master
         with:
           additional_files: 'tebako'
-          ignore_paths: deps
+          ignore_paths: |
+            deps
+            *.zsh
         env:
           SHELLCHECK_OPTS: -x

@@ -1,4 +1,4 @@
-#! /bin/zsh
+#! /bin/bash
 #
 # Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
