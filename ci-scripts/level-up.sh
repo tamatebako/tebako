@@ -1,4 +1,4 @@
-#! /bin/zsh
+#! /bin/bash
 #
 # Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
@@ -28,7 +28,6 @@
 # More safety, by turning some bugs into errors.
 
 set -o errexit -o pipefail -o noclobber -o nounset
-setopt sh_word_split
 
 DIR0="$( cd "$1" && pwd )"
 echo "$DIR0"

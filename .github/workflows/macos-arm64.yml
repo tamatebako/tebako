@@ -65,7 +65,6 @@ env:
 
 jobs:
   setup:
-  build:
     name: macos-11.0 [x86_64 --> arm64]
     runs-on: macos-11.0
     strategy:
