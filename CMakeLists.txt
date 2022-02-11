@@ -129,7 +129,7 @@ set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
-set(DATA_TEMPLATE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/template_filesystem)
+set(DATA_TEMPLATE_DIR  ${DEPS}/template_filesystem)
 
 if (NOT ${SETUP_MODE})
 # ...................................................................
