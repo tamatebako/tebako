@@ -108,8 +108,10 @@ if (NOT ${SETUP_MODE})
   endif()
 
   message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point to ${APP_NAME}")
+  set(SETUP_COMPLETED_MESSAGE "Tebako setup has been verified")
 else()
   message("Running tebako setup script")
+  set(SETUP_COMPLETED_MESSAGE "Tebako setup has been completed")
 endif()
 
 set(BOOST_USE_STATIC_LIBS   ON)
@@ -129,26 +131,25 @@ set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
-set(DATA_TEMPLATE_DIR  ${DEPS}/template_filesystem)
 
-if (NOT ${SETUP_MODE})
 # ...................................................................
 # Filesystem locations
 
+# DATA_TEMPLATE_DIR
+set(DATA_TEMPLATE_DIR  ${DEPS}/template_filesystem)
 # DATA_SRC_DIR folder is used to collect all files that need to be packaged
-  set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
+set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
 # DATA_PRE_DIR folder is used to build gems  that need to be packaged
-  set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
+set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
 # DATA_BIN_DIR folder is used to create packaged filesystem
-  set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
+set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
 # DATA_BIN_FILE is packaged filesystem itself
-  set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 
 # This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
-  set(FS_MOUNT_POINT "/__tebako_memfs__")
-  set(FS_APP_HOME "/.")
+set(FS_MOUNT_POINT "/__tebako_memfs__")
+set(FS_APP_HOME "/.")
 
-endif(NOT ${SETUP_MODE})
 
 # ...................................................................
 # External projects
@@ -268,63 +269,71 @@ message("Ruby build CFLAGS='${RUBY_C_FLAGS}'")
 message("Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
 
 ExternalProject_Add(${RUBY_PRJ}
-   PREFIX ${DEPS}
-   URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
-   URL_HASH SHA256=${RUBY_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${RUBY_SOURCE_DIR}
-   BINARY_DIR ${RUBY_BINARY_DIR}
-   PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-   UPDATE_COMMAND ""
-   CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
-                     --enable-bundled-libyaml
-                     --without-gmp
-                     --disable-dtrace
-                     --enable-debug-env
-                     --disable-install-doc
-                     --with-static-linked-ext
-                     --srcdir=${RUBY_SOURCE_DIR}
-                     --prefix=${DATA_TEMPLATE_DIR}
-                     CFLAGS=${RUBY_C_FLAGS}
-                     LDFLAGS=${RUBY_L_FLAGS}
+  PREFIX ${DEPS}
+  URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
+  URL_HASH SHA256=${RUBY_HASH}
+  DOWNLOAD_NO_PROGRESS true
+  SOURCE_DIR ${RUBY_SOURCE_DIR}
+  BINARY_DIR ${RUBY_BINARY_DIR}
+  PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+  UPDATE_COMMAND ""
+  CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
+                    --enable-bundled-libyaml
+                    --without-gmp
+                    --disable-dtrace
+                    --enable-debug-env
+                    --disable-install-doc
+                    --with-static-linked-ext
+                    --srcdir=${RUBY_SOURCE_DIR}
+                    --prefix=${DATA_SRC_DIR}
+                    CFLAGS=${RUBY_C_FLAGS}
+                    LDFLAGS=${RUBY_L_FLAGS}
+  INSTALL_COMMAND ""
 )
 
+add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
+
+add_custom_target(template_filesystem
+  COMMAND ${CMAKE_COMMAND} -E echo "template_filesystem: creating '${DATA_TEMPLATE_DIR}'"
+  COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_TEMPLATE_DIR}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_TEMPLATE_DIR}
+  COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${DATA_SRC_DIR} -DTARGET_DIR=${DATA_TEMPLATE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
+  DEPENDS ${RUBY_PRJ}
+)
+
+
 ExternalProject_Add(${RUBY_TARGET_PRJ}
-   PREFIX ${DEPS}
-   URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
-   URL_HASH SHA256=${RUBY_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${RUBY_TARGET_SOURCE_DIR}
-   BINARY_DIR ${RUBY_TARGET_BINARY_DIR}
-   PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR}
-   CONFIGURE_COMMAND ${RUBY_TARGET_SOURCE_DIR}/configure
-                     --enable-bundled-libyaml
-                     --without-gmp
-                     --disable-dtrace
-                     --enable-debug-env
-                     --disable-install-doc
-                     --with-static-linked-ext
-                     --srcdir=${RUBY_TARGET_SOURCE_DIR}
-                     --prefix=${DEPS}
-                     CFLAGS=${RUBY_C_FLAGS}
-                     LDFLAGS=${RUBY_L_FLAGS}
-   INSTALL_COMMAND ""
+  PREFIX ${DEPS}
+  URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
+  URL_HASH SHA256=${RUBY_HASH}
+  DOWNLOAD_NO_PROGRESS true
+  SOURCE_DIR ${RUBY_TARGET_SOURCE_DIR}
+  BINARY_DIR ${RUBY_TARGET_BINARY_DIR}
+  PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR}
+  CONFIGURE_COMMAND ${RUBY_TARGET_SOURCE_DIR}/configure
+                    --enable-bundled-libyaml
+                    --without-gmp
+                    --disable-dtrace
+                    --enable-debug-env
+                    --disable-install-doc
+                    --with-static-linked-ext
+                    --srcdir=${RUBY_TARGET_SOURCE_DIR}
+                    --prefix=${DEPS}
+                    CFLAGS=${RUBY_C_FLAGS}
+                    LDFLAGS=${RUBY_L_FLAGS}
+  INSTALL_COMMAND ""
 )
 
 add_dependencies(${RUBY_TARGET_PRJ} ${DWARFS_WR_PRJ})
-add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 
-if (${SETUP_MODE})
-  add_custom_target(setup
-    ${CMAKE_COMMAND} -E echo "Tebako setup has completed"
-    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} ${RUBY_TARGET_PRJ}
-  )
-else (${SETUP_MODE})
-  add_custom_target(setup
-    ${CMAKE_COMMAND} -E echo "Tebako setup has been verified"
-    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ} ${RUBY_TARGET_PRJ}
-  )
+add_custom_target(setup
+  ${CMAKE_COMMAND} -E echo "${SETUP_COMPLETED_MESSAGE}"
+  DEPENDS ${INCBIN_PRJ} template_filesystem ${RUBY_TARGET_PRJ}
+)
 
+if (NOT ${SETUP_MODE})
   set (TBD ${DATA_SRC_DIR}/bin)
   set (TLD ${DATA_SRC_DIR}/local)
 # TGD folder is used to install gems
@@ -505,4 +514,4 @@ else (${SETUP_MODE})
     DEPENDS patched_ruby
   )
 
-endif(${SETUP_MODE})
+endif(NOT ${SETUP_MODE})
