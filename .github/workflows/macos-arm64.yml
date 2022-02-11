@@ -83,14 +83,6 @@ jobs:
         run: |
           mkdir ${{ github.workspace }}/${{ env.DEPS }}
           mkdir ${{ github.workspace }}/${{ env.DWARFS_BUILD }}
-          echo "Keys" > key.txt
-          echo ${{ env.DWARFS_TAG }} >> key.txt
-          echo ${{ env.INCBIN_TAG }} >> key.txt
-          echo ${{ env.DWARFS_WR_TAG }} >> key.txt
-          echo ${{ env.RUBY_HASH }} >> key.txt
-          echo ${{ env.BUNDLER_VER }} >> key.txt
-          echo "bbbb"
-          echo ${{ hashFiles('**/key.txt') }}
           echo 'LEVEL_UP<<EOF' >> $GITHUB_ENV
           ci-scripts/level-up.sh "${{ github.workspace }}/.." >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
@@ -110,7 +102,7 @@ jobs:
           path: |
             ${{ github.workspace }}/${{ env.DWARFS_BUILD }}
             ${{ env.LEVEL_UP }}/arm-homebrew  
-          key: macos-11.0-arm64-${{ env.CC }}-${{ hashFiles('key.txt') }}-v${{ env.CACHE_VER }}
+          key: macos-11.0-arm64-${{ env.DWARFS_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
 # ${{ github.workspace }}/${{ env.DEPS }}
 
