@@ -126,9 +126,9 @@ jobs:
       - name: Install packages [for target host architecture]
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
-          ci-scripts/arm-brew-setup.sh ${{ env.LEVEL_UP }}
-          ci-scripts/arm-brew-install.sh ${{ env.LEVEL_UP }} libb2 lz4 xz zstd zlib libarchive        \
-                                icu4c boost fmt openssl@1.1 libevent libsodium double-conversion      \
+          ${{ env.BREW_HOME }}/bin/bash ci-scripts/arm-brew-setup.sh ${{ env.LEVEL_UP }}
+          ${{ env.BREW_HOME }}/bin/bash ci-scripts/arm-brew-install.sh ${{ env.LEVEL_UP }} libb2 lz4 xz zstd zlib libarchive   \
+                                icu4c boost fmt openssl@1.1 libevent libsodium double-conversion                               \
                                 gflags glog jemalloc ncurses gdbm libffi
 
       - name: Checkout dwarfs [for build system architecture]
@@ -151,7 +151,7 @@ jobs:
                    -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/${{ env.DWARFS_BUILD }}/install
 
       - name: Build and install mkdwarfs [for build system architecture]
-#        if: steps.cache.outputs.cache-hit != 'true'
+        if: steps.cache.outputs.cache-hit != 'true'
         run: |
           cd ${{ env.DWARFS_BUILD }}/build
           make install
