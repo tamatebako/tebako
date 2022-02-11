@@ -34,6 +34,7 @@ on:
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
       - .github/workflows/macos-arm64.yml
+      - ci-scripts/**
   pull_request:
     branches: [ main ]
     paths-ignore:
@@ -43,6 +44,7 @@ on:
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
       - .github/workflows/macos-arm64.yml
+      - ci-scripts/**
   workflow_dispatch:
 
 env:
