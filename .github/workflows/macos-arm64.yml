@@ -90,7 +90,7 @@ jobs:
           echo ${{ env.RUBY_HASH }} >> key.txt
           echo ${{ env.BUNDLER_VER }} >> key.txt
           echo "bbbb"
-          echo ${{ hashFiles('key.txt') }}
+          echo ${{ hashFiles($GITHUB_ENV) }}
           echo 'LEVEL_UP<<EOF' >> $GITHUB_ENV
           ci-scripts/level-up.sh "${{ github.workspace }}/.." >> $GITHUB_ENV
           echo 'EOF' >> $GITHUB_ENV
