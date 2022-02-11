@@ -167,7 +167,7 @@ test_tebako_setup() {
 
 # Check the first and the last messages expected from CMake script
   assertContains "$result" "Running tebako setup script"
-  assertContains "$result" "Tebako setup has completed"
+  assertContains "$result" "Tebako setup has been completed"
 }
 
 # ......................................................................
