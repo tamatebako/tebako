@@ -39,7 +39,7 @@ DIR1="$DIR0/arm-homebrew"
 for bottle in "${@:2}"
 do
     echo "Installing $bottle"
-    response=$("$DIR1/bin/brew" fetch --force --bottle-tag=arm64_big_sur $bottle | grep "Downloaded to")
-    parsed=($response)
-    "$DIR1/bin/brew" install $parsed[3]
+    response=$("$DIR1/bin/brew" fetch --force --bottle-tag=arm64_big_sur "$bottle" | grep "Downloaded to")
+    parsed=(${response})
+    "$DIR1/bin/brew" install "$parsed[3]"
 done
