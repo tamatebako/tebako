@@ -91,12 +91,12 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-prefix=- root=- entryPoint=- packageName=- logLevel="error" target="guess" targetHomebrew=-
+prefix=- root=- entryPoint=- packageName=- logLevel="error" target="guess" homeBrew="guess"
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
-        -b|--target-homebrew
-            targetHomebrew="$2"
+        -b|--target-homebrew)
+            homeBrew="$2"
             shift="$2"
             ;;
         -t|--target)
@@ -188,7 +188,7 @@ export CXX=${CXX:-g++}
 case "$1" in
 	setup)
     echo "Setting up tebako at $prefix"
-    CXXFLAGS="${uFlags:=}" cmake -DCMAKE_BUILD_TYPE=Release   \
+    cmake -DCMAKE_BUILD_TYPE=Release      \
           -DDEPS:STRING="$prefix/deps"    \
           -DSETUP_MODE:BOOLEAN=ON         \
           -DTEBAKO_BUILD_TARGET="$target" \
@@ -226,6 +226,9 @@ case "$1" in
     echo "   Project root:            $root"
     echo "   Application entry point: $entryPoint"
     echo "   Package file name:       $packageName"
+    echo "   Target:                  $target"
+    echo "   Target homebrew:         $homeBrew"
+
     cmake -DCMAKE_BUILD_TYPE=Release           \
               -DDEPS:STRING="$prefix/deps"     \
               -DROOT:STRING="$root"            \
@@ -233,7 +236,7 @@ case "$1" in
               -DPCKG:STRING="$packageName"     \
               -DLOG_LEVEL:STRING="$logLevel"   \
               -DTEBAKO_BUILD_TARGET="$target"  \
-              -DTARGET_HOMEBREW="$homeBrew"    \ 
+              -DTARGET_HOMEBREW="$homeBrew"    \
               -DSETUP_MODE:BOOLEAN=OFF         \
               -G "Unix Makefiles"              \
               -S "$prefix"                     \

@@ -117,13 +117,13 @@ EOM
 
 # ....................................................
 # Roll-back pass2 patches from the previous run
-restore_and_save "$1/main.c"
-restore_and_save "$1/dir.c"
-restore_and_save "$1/dln.c"
-restore_and_save "$1/file.c"
-restore_and_save "$1/io.c"
-restore_and_save "$1/util.c"
-restore_and_save "$1/tool/mkconfig.rb"
+#restore_and_save "$1/main.c"
+#restore_and_save "$1/dir.c"
+#restore_and_save "$1/dln.c"
+#restore_and_save "$1/file.c"
+#restore_and_save "$1/io.c"
+#restore_and_save "$1/util.c"
+#restore_and_save "$1/tool/mkconfig.rb"
 
 # restore_and_save $1/process.c
 # restore_and_save $1/prelude.c

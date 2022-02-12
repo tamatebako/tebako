@@ -126,5 +126,4 @@ jobs:
                                 gflags glog jemalloc ncurses gdbm libffi
 
       - name: tebako setup
-        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11
-        
+        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11 --target-homebrew=${{ env.LEVEL_UP}}\arm-homebrew      
