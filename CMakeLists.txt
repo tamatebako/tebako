@@ -136,8 +136,8 @@ if(_TEBAKO_BUILD_TARGET)
     add_compile_options("--target=${_TEBAKO_BUILD_TARGET}")
     add_link_options("--target=${_TEBAKO_BUILD_TARGET}")
     set(RUBY_HOST_OPTION "--host=arm-apple-darwin")
-    set(MKDWARFS ${DEPS}/X86_64/bin/mkdwarfs)
-#    set(_TARGET_HOMEBREW ${TARGET_HOMEBREW})
+    set(MKDWARFS ${DEPS}/target/bin/mkdwarfs)
+    set(_TARGET_HOMEBREW ${TARGET_HOMEBREW})
   else()
     message(FATAL "MacOS [x86_64 --> arm64] is the only cross-compilation mode that is currently supported")
   endif()
@@ -191,7 +191,7 @@ else()
 endif()
 
 if(_TEBAKO_BUILD_TARGET)
-  def_ext_prj_g(DWARFS "libdwarfs_wr_v0.1.7" X86_64)
+  def_ext_prj_g(DWARFS "libdwarfs_wr_v0.1.7" TARGET)
 endif()
 
 message("${ColourGreen}................................................")
@@ -201,7 +201,7 @@ message("${ColourGreen}ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TAR
 message("${ColourGreen}incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
 message("${ColourGreen}dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
 if(_TEBAKO_BUILD_TARGET)
-message("${ColourGreen}dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_X86_64_SOURCE_DIR}")
+message("${ColourGreen}dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_TARGET_SOURCE_DIR}")
 endif()
 message("${ColourGreen}................................................")
 message("${ColourGreen}Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
@@ -316,6 +316,7 @@ ExternalProject_Add(${RUBY_PRJ}
                     --prefix=${DATA_SRC_DIR}
                     CFLAGS=${RUBY_C_FLAGS}
                     LDFLAGS=${RUBY_L_FLAGS}
+                    ${RUBY_HOST_OPTION}                  
   INSTALL_COMMAND ""
 )
 
@@ -362,19 +363,19 @@ add_custom_target(setup
 )
 
 if(_TEBAKO_BUILD_TARGET)
-  ExternalProject_Add(${DWARFS_X86_64_PRJ}
-    PREFIX ${DEPS}/x86_64
+  ExternalProject_Add(${DWARFS_TARGET_PRJ}
+    PREFIX ${DEPS}/target
     GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git
     GIT_TAG ${DWARFS_TAG}
     UPDATE_COMMAND ""
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}/x86_64
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}/taregt
              -DWITH_TESTS=OFF
              -DTEBAKO_BUILD_SCOPE=MKD
              -DCMAKE_BUILD_TYPE=Release
-    SOURCE_DIR ${DWARFS_X86_64_SOURCE_DIR}
-    BINARY_DIR ${DWARFS_X86_64_BINARY_DIR}
+    SOURCE_DIR ${DWARFS_TARGET_SOURCE_DIR}
+    BINARY_DIR ${DWARFS_TARGET_BINARY_DIR}
   )
-  add_dependencies(setup ${DWARFS_X86_64_PRJ})
+  add_dependencies(setup ${DWARFS_TARGET_PRJ})
 endif()
 
 if (NOT ${SETUP_MODE})
