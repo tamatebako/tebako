@@ -137,6 +137,7 @@ if(_TEBAKO_BUILD_TARGET)
     add_link_options("--target=${_TEBAKO_BUILD_TARGET}")
     set(RUBY_HOST_OPTION "--host=arm-apple-darwin")
     set(MKDWARFS ${DEPS}/X86_64/bin/mkdwarfs)
+    set(_TARGET_HOMEBREW=${TARGET_HOMEBREW})
   else()
     message(FATAL "MacOS [x86_64 --> arm64] is the only cross-compilation mode that is currently supported")
   endif()
@@ -249,6 +250,7 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
                -DWITH_TESTS:BOOL=OFF
                -DTEBAKO_BUILD_TARGET=${_TEBAKO_BUILD_TARGET}
+               -DTARGET_HOMEBREW=${_TARGET_HOMEBREW}
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
