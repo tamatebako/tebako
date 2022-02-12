@@ -187,11 +187,15 @@ export CXX=${CXX:-g++}
 
 case "$1" in
 	setup)
-    echo "Setting up tebako at $prefix"
+    echo "Running tebako setup at $prefix"
+    echo "   Target:                  $target"
+    echo "   Target homebrew:         $homeBrew"
+
     cmake -DCMAKE_BUILD_TYPE=Release      \
           -DDEPS:STRING="$prefix/deps"    \
           -DSETUP_MODE:BOOLEAN=ON         \
           -DTEBAKO_BUILD_TARGET="$target" \
+          -DTARGET_HOMEBREW="$homeBrew"    \
           -G "Unix Makefiles"             \
           -S "$prefix"                    \
           -B "$prefix/output"	 && rc=$? || rc=$?
