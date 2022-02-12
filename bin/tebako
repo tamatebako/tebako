@@ -32,9 +32,11 @@ set -o errexit -o pipefail -o noclobber -o nounset
 
 run_help() {
 echo "Usage: "
-echo "  tebako setup [-p|--prefix=<path>]"
+echo "  tebako setup [-p|--prefix=<path>] [-t|--target=[guess|arm64-apple-macos11]"
 echo "         Tebako prefix defaults to current directory"
-echo "  tebako press [-p|--prefix=<path>] -r|--root=<path> -e|--entry-point=<path> [-o|--output=<file name>] [-l|--log-level=<error|warn|debug>" 
+echo "         Target architecture is either the same as build architecture or Apple MacOs arm64 (the only cross-build target supported)"
+echo "  tebako press [-p|--prefix=<path>] -r|--root=<path> -e|--entry-point=<path> [-o|--output=<file name>]"
+echo "                                   [-l|--log-level=<error|warn|debug> [-t|--target=[guess|arm64-apple-macos11]" 
 echo "         Tebako prefix defaults to current directory"
 echo "         Packaged file defaults to 'entry point' file name in the current directory"
 echo "  tebako clean [-p|--prefix=<path>]"
@@ -46,7 +48,7 @@ echo "         Normally you do not need to do it since tebako packager optimizes
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   echo "Setting up Linux environment"
   gOpt="getopt"
-  uFlags="${CXXFLAGS:=}"
+#  uFlags="${CXXFLAGS:=}"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   echo "Setting up MacOS environment"
 # shellcheck disable=SC2251
@@ -55,7 +57,7 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
     echo "Could not find gnu getopts, exiting"
     exit 8
   fi
-  uFlags="-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0 ${CXXFLAGS:=}"
+#  uFlags="-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0 ${CXXFLAGS:=}"
 else
   echo "... $OSTYPE is not supported yet, exiting"
   exit 7
@@ -71,8 +73,8 @@ if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
    exit 1
 fi
 
-OPTIONS=hr:e:o:p:l:
-LONGOPTS=help,root:,entry-point:,output:,prefix:,log-level:
+OPTIONS=hr:e:o:p:l:t:
+LONGOPTS=help,root:,entry-point:,output:,prefix:,log-level:,target:
 
 # -regarding ! and PIPESTATUS see above
 # -temporarily store output to be able to check for errors
@@ -90,10 +92,14 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-prefix=- root=- entryPoint=- packageName=- logLevel="error"
+prefix=- root=- entryPoint=- packageName=- logLevel="error" target="guess"
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
+        -t|--target)
+            target="$2"
+            shift 2
+            ;; 
         -l|--log-level)
             logLevel="$2"
             shift 2
@@ -143,7 +149,6 @@ if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
   exit 5
 else
   echo "Using cmake at $cmk"
-  cmake --version
 fi
 
 if [[ "$prefix" == "-" ]]; then
@@ -156,8 +161,23 @@ fi
 
 if [[ "$logLevel" != "error" && "$logLevel" != "warn" && "$logLevel" != "debug" && "$logLevel" != "trace" ]]; then
   echo "Unknown log-level setting '$logLevel'. Known values are 'error', 'warn', 'debug', 'trace'"
-  exit 6
+  exit 11
 fi
+
+case "$target" in
+  guess)
+      ;;
+  arm64-apple-macos11)
+      if [[ "$OSTYPE" != "darwin"* ]]; then
+        echo "Cross build for arm64-apple-macos11 is possible on MacOs only"
+        exit 9
+      fi
+      ;;
+  *)
+      echo "Unknown target setting '$target'. The only cross build target supported is 'arm64-apple-macos11'"
+      exit 10
+      ;;
+esac
 
 export CC=${CC:-gcc}
 export CXX=${CXX:-g++}
@@ -166,10 +186,11 @@ case "$1" in
 	setup)
     echo "Setting up tebako at $prefix"
     CXXFLAGS="${uFlags:=}" cmake -DCMAKE_BUILD_TYPE=Release   \
-          -DDEPS:STRING="$prefix/deps" \
-          -DSETUP_MODE:BOOLEAN=ON      \
-          -G "Unix Makefiles"          \
-          -S "$prefix"                 \
+          -DDEPS:STRING="$prefix/deps"    \
+          -DSETUP_MODE:BOOLEAN=ON         \
+          -DTEBAKO_BUILD_TARGET="$target" \
+          -G "Unix Makefiles"             \
+          -S "$prefix"                    \
           -B "$prefix/output"	 && rc=$? || rc=$?
     if [ $rc -ne 0 ]; then
       echo "'tebako setup' configure step failed"
@@ -202,12 +223,14 @@ case "$1" in
     echo "   Project root:            $root"
     echo "   Application entry point: $entryPoint"
     echo "   Package file name:       $packageName"
-		CXXFLAGS="${uFlags:=}" cmake -DCMAKE_BUILD_TYPE=Release           \
+#		CXXFLAGS="${uFlags:=}" 
+    cmake -DCMAKE_BUILD_TYPE=Release           \
               -DDEPS:STRING="$prefix/deps"     \
               -DROOT:STRING="$root"            \
               -DENTRANCE:STRING="$entryPoint"  \
               -DPCKG:STRING="$packageName"     \
               -DLOG_LEVEL:STRING="$logLevel"   \
+              -DTEBAKO_BUILD_TARGET="$target"  \
               -DSETUP_MODE:BOOLEAN=OFF         \
               -G "Unix Makefiles"              \
               -S "$prefix"                     \
@@ -217,7 +240,8 @@ case "$1" in
       exit 103
     fi
 
-    CXXFLAGS="${uFlags:=}" cmake --build "$prefix/output" --target tebako && rc=$? || rc=$?
+#    CXXFLAGS="${uFlags:=}" 
+    cmake --build "$prefix/output" --target tebako && rc=$? || rc=$?
     if [[ $rc -ne 0 ]]; then
       echo "'tebako press' build step failed"
       exit 104

@@ -60,7 +60,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: 01
+  CACHE_VER: 02
 
 jobs:
   setup:
@@ -125,27 +125,6 @@ jobs:
                                 icu4c boost fmt openssl@1.1 libevent libsodium double-conversion                               \
                                 gflags glog jemalloc ncurses gdbm libffi
 
-      - name: Checkout dwarfs [for build system architecture]
-        if: steps.cache.outputs.cache-hit != 'true'
-        uses: actions/checkout@v2
-        with:
-          repository: tamatebako/dwarfs
-          path: ${{ env.DWARFS_BUILD }}
-          ref: ${{ env.DWARFS_TAG }}
-          submodules: true
-          fetch-depth: 1
-
-      - name: Configure dwarfs [for build system architecture]
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          mkdir ${{ env.DWARFS_BUILD }}/build
-          cd ${{ env.DWARFS_BUILD }}/build
-          cmake .. -DWITH_TESTS=OFF           \
-                   -DTEBAKO_BUILD_SCOPE=MKD   \
-                   -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/${{ env.DWARFS_BUILD }}/install
-
-      - name: Build and install mkdwarfs [for build system architecture]
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          cd ${{ env.DWARFS_BUILD }}/build
-          make install
+      - name: tebako setup
+        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11
+        

@@ -264,6 +264,11 @@ bin/tebako clean --root='~/projects/myproject'
 | 4    | Missing command (`setup` or `press` is required)
 | 5    | `tebako press` without mandatory `--root` option
 | 6    | `tebako press` without mandatory `--entry-point` option
+| 7    | Unsupported operating system
+| 8    | Could not find gnu getopts     
+| 9    | Cross build for 'arm64-apple-macos11' is possible on MacOS only
+| 10   | Invalid target option. The only cross build target supported is 'arm64-apple-macos11'
+| 11   | Invalid log level. Known values are 'error', 'warn', 'debug', 'trace'
 | 101  | `tebako setup` failed at configuration step
 | 102  | `tebako setup` failed at build step
 | 103  | `tebako press` failed at configuration step

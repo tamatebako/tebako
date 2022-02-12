@@ -126,11 +126,15 @@ set(DEPS_LIB_DIR ${DEPS}/lib)
 set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
 
-if(TEBAKO_BUILD_TARGET)
-  if(${TEBAKO_BUILD_TARGET} STREQUAL "arm64-apple-macos11" AND CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-    message("STATUS Using tebako to package for ${TEBAKO_BUILD_TARGET}")
-    add_compile_options("--target=${TEBAKO_BUILD_TARGET}")
-    add_link_options("--target=${TEBAKO_BUILD_TARGET}")
+if(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")
+  set(_TEBAKO_BUILD_TARGET ${TEBAKO_BUILD_TARGET})
+endif()
+
+if(_TEBAKO_BUILD_TARGET)
+  if(${_TEBAKO_BUILD_TARGET} STREQUAL "arm64-apple-macos11" AND CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+    message("STATUS Using tebako to package for ${_TEBAKO_BUILD_TARGET}")
+    add_compile_options("--target=${_TEBAKO_BUILD_TARGET}")
+    add_link_options("--target=${_TEBAKO_BUILD_TARGET}")
     set(RUBY_HOST_OPTION "--host=arm-apple-darwin")
     set(MKDWARFS ${DEPS}/X86_64/bin/mkdwarfs)
   else()
@@ -185,22 +189,22 @@ else()
   set(BUNDLER_ANNOTATION "default")
 endif()
 
-if(TEBAKO_BUILD_TARGET)
+if(_TEBAKO_BUILD_TARGET)
   def_ext_prj_g(DWARFS "libdwarfs_wr_v0.1.7" X86_64)
 endif()
 
 message("${ColourGreen}................................................")
-message("Collecting packages:")
-message("ruby build environmemt      -  v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
-message("ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TARGET_SOURCE_DIR}")
-message("incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
-message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
-if(TEBAKO_BUILD_TARGET)
-message("dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_X86_64_SOURCE_DIR}")
+message("${ColourGreen}Collecting packages:")
+message("${ColourGreen}ruby build environmemt      -  v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
+message("${ColourGreen}ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TARGET_SOURCE_DIR}")
+message("${ColourGreen}incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
+message("${ColourGreen}dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
+if(_TEBAKO_BUILD_TARGET)
+message("${ColourGreen}dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_X86_64_SOURCE_DIR}")
 endif()
-message("................................................")
-message("Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
-message("................................................${ColourReset}")
+message("${ColourGreen}................................................")
+message("${ColourGreen}Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
+message("${ColourGreen}................................................")
 
 # ...................................................................
 # incbin
@@ -244,7 +248,7 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel 4
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
                -DWITH_TESTS:BOOL=OFF
-               -DTEBAKO_BUILD_TARGET=${TEBAKO_BUILD_TARGET}
+               -DTEBAKO_BUILD_TARGET=${_TEBAKO_BUILD_TARGET}
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
@@ -355,7 +359,7 @@ add_custom_target(setup
   DEPENDS ${INCBIN_PRJ} template_filesystem ${RUBY_TARGET_PRJ}
 )
 
-if(TEBAKO_BUILD_TARGET)
+if(_TEBAKO_BUILD_TARGET)
   ExternalProject_Add(${DWARFS_X86_64_PRJ}
     PREFIX ${DEPS}/x86_64
     GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git

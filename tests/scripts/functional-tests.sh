@@ -152,6 +152,20 @@ test_CLI_unknown_command() {
   assertContains "$result" "Usage:"
 }
 
+test_CLI_wrong_target() {
+  if [ "${VERBOSE}" == "yes" ]; then
+    "$DIR_BIN/tebako" setup --target=intel_x86_win32 | tee tebako_test.log
+    assertEquals 10 "${PIPESTATUS[0]}"
+    result="$( cat tebako_test.log )"
+  else
+    result="$( "$DIR_BIN/tebako" setup --target=intel_x86_win32 )"
+    assertEquals 10 "${PIPESTATUS[0]}"
+  fi
+
+  assertContains "$result" "Unknown target setting"
+}
+
+
 # ......................................................................
 #  --  tebako setup
 test_tebako_setup() {
