@@ -97,7 +97,7 @@ while true; do
     case "$1" in
         -b|--target-homebrew)
             homeBrew="$2"
-            shift="$2"
+            shift=2
             ;;
         -t|--target)
             target="$2"
