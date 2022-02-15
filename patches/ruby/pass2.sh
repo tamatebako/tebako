@@ -53,9 +53,9 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   gSed="gsed"
   tBrew="${3:-"guess"}"
   if [[ "$tBrew" == "guess" ]]; then
-    tBrew="$tBrew/bin/brew"
-  else
     tBrew="brew"
+  else
+    tBrew="$tBrew/bin/brew"
   fi
   p_libssl="$($tBrew --prefix openssl@1.1)/lib/libssl.a"
   p_libcrypto="$($tBrew --prefix openssl@1.1)/lib/libcrypto.a"
