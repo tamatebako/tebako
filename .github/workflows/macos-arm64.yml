@@ -123,5 +123,5 @@ jobs:
                                 icu4c boost fmt openssl@1.1 libevent libsodium double-conversion                               \
                                 gflags glog jemalloc ncurses gdbm libffi readline
 
-#      - name: tebako setup
-#        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11 --target-homebrew=${{ env.LEVEL_UP}}/arm-homebrew      
+      - name: tebako setup
+        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11 --target-homebrew=${{ env.LEVEL_UP}}/arm-homebrew      
