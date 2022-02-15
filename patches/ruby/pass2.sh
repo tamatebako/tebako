@@ -51,17 +51,18 @@ EOM
 
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   gSed="gsed"
-  p_libssl="$(brew --prefix openssl@1.1)/lib/libssl.a"
-  p_libcrypto="$(brew --prefix openssl@1.1)/lib/libcrypto.a"
-  p_libz="$(brew --prefix zlib)/lib/libz.a"
-  p_libgdbm="$(brew --prefix gdbm)/lib/libgdbm.a"
-  p_libreadline="$(brew --prefix readline)/lib/libreadline.a"
-  p_libffi="$(brew --prefix libffi)/lib/libffi.a"
-  p_libncurses="$(brew --prefix ncurses)/lib/libncurses.a"
-  p_libfmt="$(brew --prefix fmt)/lib/libfmt.a"
-  p_liblz4="$(brew --prefix lz4)/lib/liblz4.a"
-  p_liblzma="$(brew --prefix xz)/lib/liblzma.a"
-  p_libdc="$(brew --prefix double-conversion)/lib/libdouble-conversion.a"
+  tBrew=${3:"brew"}
+  p_libssl="$($3 --prefix openssl@1.1)/lib/libssl.a"
+  p_libcrypto="$($3 --prefix openssl@1.1)/lib/libcrypto.a"
+  p_libz="$($3 --prefix zlib)/lib/libz.a"
+  p_libgdbm="$($3 --prefix gdbm)/lib/libgdbm.a"
+  p_libreadline="$($3 --prefix readline)/lib/libreadline.a"
+  p_libffi="$($3 --prefix libffi)/lib/libffi.a"
+  p_libncurses="$($3 --prefix ncurses)/lib/libncurses.a"
+  p_libfmt="$($3 --prefix fmt)/lib/libfmt.a"
+  p_liblz4="$($3 --prefix lz4)/lib/liblz4.a"
+  p_liblzma="$($3 --prefix xz)/lib/liblzma.a"
+  p_libdc="$($3 --prefix double-conversion)/lib/libdouble-conversion.a"
 # shellcheck disable=SC2251
 ! IFS= read -r -d '' mLibs << EOM
 # -- Start of tebako patch --
