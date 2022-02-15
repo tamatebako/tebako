@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Copyright (c) 2021, 2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -51,18 +51,18 @@ EOM
 
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   gSed="gsed"
-  tBrew=${3:"brew"}
-  p_libssl="$($3 --prefix openssl@1.1)/lib/libssl.a"
-  p_libcrypto="$($3 --prefix openssl@1.1)/lib/libcrypto.a"
-  p_libz="$($3 --prefix zlib)/lib/libz.a"
-  p_libgdbm="$($3 --prefix gdbm)/lib/libgdbm.a"
-  p_libreadline="$($3 --prefix readline)/lib/libreadline.a"
-  p_libffi="$($3 --prefix libffi)/lib/libffi.a"
-  p_libncurses="$($3 --prefix ncurses)/lib/libncurses.a"
-  p_libfmt="$($3 --prefix fmt)/lib/libfmt.a"
-  p_liblz4="$($3 --prefix lz4)/lib/liblz4.a"
-  p_liblzma="$($3 --prefix xz)/lib/liblzma.a"
-  p_libdc="$($3 --prefix double-conversion)/lib/libdouble-conversion.a"
+  tBrew=${3:-"brew"}
+  p_libssl="$($tBrew --prefix openssl@1.1)/lib/libssl.a"
+  p_libcrypto="$($tBrew --prefix openssl@1.1)/lib/libcrypto.a"
+  p_libz="$($tBrew --prefix zlib)/lib/libz.a"
+  p_libgdbm="$($tBrew --prefix gdbm)/lib/libgdbm.a"
+  p_libreadline="$($tBrew --prefix readline)/lib/libreadline.a"
+  p_libffi="$($tBrew --prefix libffi)/lib/libffi.a"
+  p_libncurses="$($tBrew --prefix ncurses)/lib/libncurses.a"
+  p_libfmt="$($tBrew --prefix fmt)/lib/libfmt.a"
+  p_liblz4="$($tBrew --prefix lz4)/lib/liblz4.a"
+  p_liblzma="$($tBrew --prefix xz)/lib/liblzma.a"
+  p_libdc="$($tBrew --prefix double-conversion)/lib/libdouble-conversion.a"
 # shellcheck disable=SC2251
 ! IFS= read -r -d '' mLibs << EOM
 # -- Start of tebako patch --

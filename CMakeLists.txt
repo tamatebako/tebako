@@ -136,7 +136,7 @@ if(_TEBAKO_BUILD_TARGET)
     add_compile_options("--target=${_TEBAKO_BUILD_TARGET}")
     add_link_options("--target=${_TEBAKO_BUILD_TARGET}")
     set(RUBY_HOST_OPTION "--host=arm-apple-darwin")
-    set(MKDWARFS ${DEPS}/target/bin/mkdwarfs)
+    set(MKDWARFS ${DEPS}/host/bin/mkdwarfs)
     set(_TARGET_HOMEBREW ${TARGET_HOMEBREW})
     message(STATUS "${ColourGreen}Compile/link option: ${_TEBAKO_BUILD_TARGET}'")
     message(STATUS "${ColourGreen}RUBY_HOST_OPTION: '--host=arm-apple-darwin'")
@@ -147,6 +147,9 @@ if(_TEBAKO_BUILD_TARGET)
   endif()
 else()
   set(MKDWARFS ${DEPS_BIN_DIR}/mkdwarfs)
+  if(TARGET_HOMEBREW)
+    message(STATUS "Ignoring TARGET_HOMEBREW: '${TARGET_HOMEBREW}'")    
+  endif()
 endif()
 
 set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
@@ -158,7 +161,7 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 # ...................................................................
 # Filesystem locations
 
-# DATA_TEMPLATE_DIR
+# DATA_TEMPLATE_DIR clean memfs template
 set(DATA_TEMPLATE_DIR  ${DEPS}/template_filesystem)
 # DATA_SRC_DIR folder is used to collect all files that need to be packaged
 set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
@@ -168,6 +171,12 @@ set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
 set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
 # DATA_BIN_FILE is packaged filesystem itself
 set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+# TBD target binary directory
+set (TBD ${DATA_SRC_DIR}/bin)
+# TLD target "local" directory
+set (TLD ${DATA_SRC_DIR}/local)
+# TGD target Gem directory
+set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
 
 # This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
 set(FS_MOUNT_POINT "/__tebako_memfs__")
@@ -195,7 +204,7 @@ else()
 endif()
 
 if(_TEBAKO_BUILD_TARGET)
-  def_ext_prj_g(DWARFS "libdwarfs_wr_v0.1.7" TARGET)
+  def_ext_prj_g(DWARFS "libdwarfs_wr_v0.1.7" HOST)
 endif()
 
 message("${ColourGreen}................................................")
@@ -205,7 +214,7 @@ message("${ColourGreen}ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TAR
 message("${ColourGreen}incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
 message("${ColourGreen}dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
 if(_TEBAKO_BUILD_TARGET)
-message("${ColourGreen}dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_TARGET_SOURCE_DIR}")
+  message("${ColourGreen}dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_HOST_SOURCE_DIR}")
 endif()
 message("${ColourGreen}................................................")
 message("${ColourGreen}Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
@@ -335,59 +344,33 @@ add_custom_target(template_filesystem
   DEPENDS ${RUBY_PRJ}
 )
 
-ExternalProject_Add(${RUBY_TARGET_PRJ}
-  PREFIX ${DEPS}
-  URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
-  URL_HASH SHA256=${RUBY_HASH}
-  DOWNLOAD_NO_PROGRESS true
-  SOURCE_DIR ${RUBY_TARGET_SOURCE_DIR}
-  BINARY_DIR ${RUBY_TARGET_BINARY_DIR}
-  PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR}
-  COMMAND       ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR} ${_TARGET_HOMEBREW}
-  CONFIGURE_COMMAND ${RUBY_TARGET_SOURCE_DIR}/configure
-                    --enable-bundled-libyaml
-                    --without-gmp
-                    --disable-dtrace
-                    --enable-debug-env
-                    --disable-install-doc
-                    --with-static-linked-ext
-                    --srcdir=${RUBY_TARGET_SOURCE_DIR}
-                    --prefix=${DEPS}
-                    CFLAGS=${RUBY_C_FLAGS}
-                    LDFLAGS=${RUBY_L_FLAGS}
-                    ${RUBY_HOST_OPTION}
-  INSTALL_COMMAND ""
-)
-
-add_dependencies(${RUBY_TARGET_PRJ} ${DWARFS_WR_PRJ})
-
-add_custom_target(setup
-  ${CMAKE_COMMAND} -E echo "${SETUP_COMPLETED_MESSAGE}"
-  DEPENDS ${INCBIN_PRJ} template_filesystem ${RUBY_TARGET_PRJ}
-)
-
 if(_TEBAKO_BUILD_TARGET)
-  ExternalProject_Add(${DWARFS_TARGET_PRJ}
-    PREFIX ${DEPS}/target
+  ExternalProject_Add(${DWARFS_HOST_PRJ}
+    PREFIX ${DEPS}/host
     GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git
     GIT_TAG ${DWARFS_TAG}
     UPDATE_COMMAND ""
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}/taregt
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}/host
              -DWITH_TESTS=OFF
              -DTEBAKO_BUILD_SCOPE=MKD
              -DCMAKE_BUILD_TYPE=Release
-    SOURCE_DIR ${DWARFS_TARGET_SOURCE_DIR}
-    BINARY_DIR ${DWARFS_TARGET_BINARY_DIR}
+    SOURCE_DIR ${DWARFS_HOST_SOURCE_DIR}
+    BINARY_DIR ${DWARFS_HOST_BINARY_DIR}
   )
-  add_dependencies(setup ${DWARFS_TARGET_PRJ})
 endif()
 
-if (NOT ${SETUP_MODE})
-  set (TBD ${DATA_SRC_DIR}/bin)
-  set (TLD ${DATA_SRC_DIR}/local)
-# TGD folder is used to install gems
-  set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
+add_custom_target(clean_filesystem ALL
+  COMMAND ${CMAKE_COMMAND} -E echo "clean_filesystem: creating '${DATA_SRC_DIR}', '${DATA_PRE_DIR}', '${DATA_BIN_DIR}'"
+  COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
+  COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${DATA_TEMPLATE_DIR} -DTARGET_DIR=${DATA_SRC_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
+  DEPENDS template_filesystem
+)
 
+if (${SETUP_MODE})
+  add_custom_target(source_filesystem COMMAND ${CMAKE_COMMAND} -E true DEPENDS clean_filesystem)    
+else(${SETUP_MODE})
   file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
   file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
   file(GLOB GEMS     LIST_DIRECTORIES false ${FS_ROOT}/*.gem)
@@ -395,15 +378,6 @@ if (NOT ${SETUP_MODE})
   list(LENGTH GEMSPECS GSLENGTH)
   list(LENGTH GEMFILES GFLENGTH)
   list(LENGTH GEMS     GLENGTH)
-
-  add_custom_target(clean_filesystem ALL
-          COMMAND ${CMAKE_COMMAND} -E echo "clean_filesystem: creating '${DATA_SRC_DIR}', '${DATA_PRE_DIR}', '${DATA_BIN_DIR}'"
-          COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
-          COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${DATA_TEMPLATE_DIR} -DTARGET_DIR=${DATA_SRC_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-          COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
-          COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
-          DEPENDS setup
-  )
 
   if(GSLENGTH GREATER 0)
     if(GSLENGTH GREATER 1)
@@ -500,67 +474,98 @@ if (NOT ${SETUP_MODE})
       DEPENDS clean_filesystem
     )
   endif()
+endif(${SETUP_MODE})
 
 # ...................................................................
 # Packaged filesystem
 
-  configure_file(
-    ${DATA_RES_DIR}/tebako-version.h.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/tebako-version.h
-    @ONLY
-  )
+configure_file(
+  ${DATA_RES_DIR}/tebako-version.h.in
+  ${CMAKE_CURRENT_SOURCE_DIR}/include/tebako-version.h
+  @ONLY
+)
 
-  configure_file(
-    ${DATA_RES_DIR}/tebako-fs.cpp.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
-    @ONLY
-  )
+configure_file(
+  ${DATA_RES_DIR}/tebako-fs.cpp.in
+  ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+  @ONLY
+)
 
-  if (${START_WITH_PACKAGED_FILESYSTEM})
-    add_custom_target(packaged_filesystem
-      COMMAND chmod +x ${DEPS_BIN_DIR}/*
-      COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
-      BYPRODUCTS ${DATA_BIN_FILE}
-    )
-  else(${START_WITH_PACKAGED_FILESYSTEM})
-    add_custom_target(packaged_filesystem
+if (${START_WITH_PACKAGED_FILESYSTEM})
+  add_custom_target(packaged_filesystem
+    COMMAND chmod +x ${DEPS_BIN_DIR}/*
+    COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+    BYPRODUCTS ${DATA_BIN_FILE}
+  )
+else(${START_WITH_PACKAGED_FILESYSTEM})
+  add_custom_target(packaged_filesystem
 # [TODO] Open question - whether we shall delete ruby binaries from memfs or not
 #        For debugging purposes it is very handy to have it here
 #
-      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
-                                         ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
-                                         ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
-                                         ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
-      COMMAND chmod +x ${DEPS_BIN_DIR}/*
-      COMMAND ${MKDWARFS} -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
-      DEPENDS setup source_filesystem
-      BYPRODUCTS ${DATA_BIN_FILE}
-    )
-  endif (${START_WITH_PACKAGED_FILESYSTEM})
-
-  set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
-
-  add_library(tebako-fs STATIC
-    src/tebako-main.cpp
-    src/tebako-fs.cpp
-    include/tebako-fs.h
-    include/tebako-version.h
-    include/tebako-main.h)
-
-  add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
-
-  add_custom_target(patched_ruby
-     COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR}
-     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_TARGET_BINARY_DIR} make
-     DEPENDS setup tebako-fs
+    COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
+                                       ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
+                                       ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
+                                       ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
+    COMMAND chmod +x ${DEPS_BIN_DIR}/*
+    COMMAND ${MKDWARFS} -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+    COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+    DEPENDS source_filesystem
+    BYPRODUCTS ${DATA_BIN_FILE}
   )
+endif (${START_WITH_PACKAGED_FILESYSTEM})
 
+if(_TEBAKO_BUILD_TARGET)
+  add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
+endif()
+
+set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
+
+add_library(tebako-fs STATIC
+  src/tebako-main.cpp
+  src/tebako-fs.cpp
+  include/tebako-fs.h
+  include/tebako-version.h
+  include/tebako-main.h
+)
+
+ExternalProject_Add(${RUBY_TARGET_PRJ}
+  PREFIX ${DEPS}
+  URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
+  URL_HASH SHA256=${RUBY_HASH}
+  DOWNLOAD_NO_PROGRESS true
+  SOURCE_DIR ${RUBY_TARGET_SOURCE_DIR}
+  BINARY_DIR ${RUBY_TARGET_BINARY_DIR}
+  PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR}
+  COMMAND  ${PATCH_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR} ${_TARGET_HOMEBREW}/bin/brew    
+  CONFIGURE_COMMAND ${RUBY_TARGET_SOURCE_DIR}/configure
+                    --enable-bundled-libyaml
+                    --without-gmp
+                    --disable-dtrace
+                    --enable-debug-env
+                    --disable-install-doc
+                    --with-static-linked-ext
+                    --srcdir=${RUBY_TARGET_SOURCE_DIR}
+                    --prefix=${DEPS}/tmp
+                    CFLAGS=${RUBY_C_FLAGS}
+                    LDFLAGS=${RUBY_L_FLAGS}
+                    ${RUBY_HOST_OPTION}
+  INSTALL_COMMAND ""
+)
+
+add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
+add_dependencies(${RUBY_TARGET_PRJ} tebako-fs)
+
+add_custom_target(setup
+  ${CMAKE_COMMAND} -E echo "${SETUP_COMPLETED_MESSAGE}"
+  DEPENDS ${INCBIN_PRJ} ${RUBY_TARGET_PRJ} ${DWARFS_HOST_PRJ}
+)
+
+if(NOT ${SETUP_MODE})
   add_custom_target(tebako ALL
+    COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_TARGET_BINARY_DIR} make main 
     COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_TARGET_BINARY_DIR}/ruby ${APP_NAME}
     COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
-    DEPENDS patched_ruby
+    DEPENDS setup
   )
-
 endif(NOT ${SETUP_MODE})
