@@ -60,7 +60,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: 03
+  CACHE_VER: 04
 
 jobs:
   setup:
@@ -121,7 +121,7 @@ jobs:
           ${{ env.BREW_HOME }}/bin/bash ci-scripts/arm-brew-setup.sh ${{ env.LEVEL_UP }}
           ${{ env.BREW_HOME }}/bin/bash ci-scripts/arm-brew-install.sh ${{ env.LEVEL_UP }} libb2 lz4 xz zstd zlib libarchive   \
                                 icu4c boost fmt openssl@1.1 libevent libsodium double-conversion                               \
-                                gflags glog jemalloc ncurses gdbm libffi
+                                gflags glog jemalloc ncurses gdbm libffi readline
 
-      - name: tebako setup
-        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11 --target-homebrew=${{ env.LEVEL_UP}}/arm-homebrew      
+#      - name: tebako setup
+#        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11 --target-homebrew=${{ env.LEVEL_UP}}/arm-homebrew      
