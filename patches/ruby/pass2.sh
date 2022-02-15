@@ -51,7 +51,12 @@ EOM
 
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   gSed="gsed"
-  tBrew="${3:-""}brew"
+  tBrew="${3:-"guess"}"
+  if [[ "$tBrew" == "guess" ]]; then
+    tBrew="$tBrew/bin/brew"
+  else
+    tBrew="brew"
+  fi
   p_libssl="$($tBrew --prefix openssl@1.1)/lib/libssl.a"
   p_libcrypto="$($tBrew --prefix openssl@1.1)/lib/libcrypto.a"
   p_libz="$($tBrew --prefix zlib)/lib/libz.a"
