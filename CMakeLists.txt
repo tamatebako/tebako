@@ -132,12 +132,16 @@ endif()
 
 if(_TEBAKO_BUILD_TARGET)
   if(${_TEBAKO_BUILD_TARGET} STREQUAL "arm64-apple-macos11" AND CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-    message("STATUS Using tebako to package for ${_TEBAKO_BUILD_TARGET}")
+    message(STATUS "${ColourGreen}Packaging for ${_TEBAKO_BUILD_TARGET}")
     add_compile_options("--target=${_TEBAKO_BUILD_TARGET}")
     add_link_options("--target=${_TEBAKO_BUILD_TARGET}")
     set(RUBY_HOST_OPTION "--host=arm-apple-darwin")
     set(MKDWARFS ${DEPS}/target/bin/mkdwarfs)
     set(_TARGET_HOMEBREW ${TARGET_HOMEBREW})
+    message(STATUS "${ColourGreen}Compile/link option: ${_TEBAKO_BUILD_TARGET}'")
+    message(STATUS "${ColourGreen}RUBY_HOST_OPTION: '--host=arm-apple-darwin'")
+    message(STATUS "${ColourGreen}MKDWARFS: '${MKDWARFS}'")
+    message(STATUS "${ColourGreen}TARGET_HOMEBREW: '${_TARGET_HOMEBREW}'")
   else()
     message(FATAL "MacOS [x86_64 --> arm64] is the only cross-compilation mode that is currently supported")
   endif()
@@ -246,7 +250,6 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
     UPDATE_COMMAND ""
-    BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel 4
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
                -DWITH_TESTS:BOOL=OFF
                -DTEBAKO_BUILD_TARGET=${_TEBAKO_BUILD_TARGET}

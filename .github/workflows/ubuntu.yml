@@ -27,6 +27,7 @@ name: Ubuntu
 
 on:
   push:
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -48,6 +49,7 @@ on:
   workflow_dispatch:
 
 env:
+  MAKEFLAGS: -j4
 # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
 # The folder for dwarfs and other dependenies
