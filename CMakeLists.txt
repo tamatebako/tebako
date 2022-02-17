@@ -149,7 +149,7 @@ if(_TEBAKO_BUILD_TARGET)
     message("${ColourGreen}RUBY_HOST_OPTION: '--host=arm-apple-darwin'${ColourReset}")
     message("${ColourGreen}MKDWARFS: '${MKDWARFS}'${ColourReset}")
   else()
-    message(FATAL "MacOS [x86_64 --> arm64] is the only cross-compilation mode that is currently supported")
+    message(FATAL_ERROR "MacOS [x86_64 --> arm64] is the only cross-compilation mode that is currently supported")
   endif()
 else()
   set(MKDWARFS ${DEPS_BIN_DIR}/mkdwarfs)
@@ -524,20 +524,20 @@ if(_TEBAKO_BUILD_TARGET)
   add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
 
   execute_process(
-    COMMAND ${_TARGET_HOMEBREW}/bin/brew --prefix
+    COMMAND ${_TARGET_HOMEBREW}/bin/brew --prefix 
     RESULT_VARIABLE TARGET_REW_PREFIX_RES
     OUTPUT_VARIABLE TARGET_BREW_PREFIX
     OUTPUT_STRIP_TRAILING_WHITESPACE
   )
   if(NOT (TARGET_BREW_PREFIX_RES EQUAL 0 AND EXISTS ${TARGET_BREW_PREFIX}))
-    message(FATAL "Could not find target brew setup")
+    message(FATAL_ERROR "Could not find target brew setup at ${_TARGET_HOMEBREW}/bin/brew")
   endif()
 
-  message("${ColourGreen}Using target homebrew environment at ${_TARGET_BREW_PREFIX}${ColourReset}")
-  set(T_RUBY_C_FLAGS "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections --target=arm64_apple_macos")
+  message("${ColourGreen}Using target homebrew environment at ${TARGET_BREW_PREFIX}${ColourReset}")
+  set(T_RUBY_C_FLAGS "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections --target=${_TEBAKO_BUILD_TARGET}")
   string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} " -pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
   string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} " -I${TARGET_BREW_PREFIX}/include -I${TARGET_BREW_PREFIX}/opt/openssl@1.1/include -I${TARGET_BREW_PREFIX}/opt/zlib/include")
-  set(T_RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
+  set(T_RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR} --target=${_TEBAKO_BUILD_TARGET} ")
   string(CONCAT T_RUBY_L_FLAGS ${T_RUBY_L_FLAGS} " -L${TARGET_BREW_PREFIX}/lib -L${TARGET_BREW_PREFIX}/opt/openssl@1.1/lib -L${TARGET_BREW_PREFIX}/opt/zlib/lib")
 else(_TEBAKO_BUILD_TARGET)
   set(T_RUBY_C_FLAGS ${RUBY_C_FLAGS})
