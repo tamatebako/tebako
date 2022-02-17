@@ -132,7 +132,7 @@ endif()
 
 if(_TEBAKO_BUILD_TARGET)
   if(${_TEBAKO_BUILD_TARGET} STREQUAL "arm64-apple-macos11" AND CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-    message(STATUS "${ColourGreen}Packaging for ${_TEBAKO_BUILD_TARGET}")
+    message("${ColourGreen}Packaging for ${_TEBAKO_BUILD_TARGET}${ColourReset}")
     add_compile_options("--target=${_TEBAKO_BUILD_TARGET}")
     add_link_options("--target=${_TEBAKO_BUILD_TARGET}")
     set(RUBY_HOST_OPTION "--host=arm-apple-darwin")
@@ -140,14 +140,14 @@ if(_TEBAKO_BUILD_TARGET)
     if(TARGET_HOMEBREW)
       if (NOT (${TARGET_HOMEBREW} STREQUAL "guess"))
         set(_TARGET_HOMEBREW ${TARGET_HOMEBREW})
-        message(STATUS "${ColourGreen}TARGET_HOMEBREW: '${_TARGET_HOMEBREW}'")
+        message("${ColourGreen}TARGET_HOMEBREW: '${_TARGET_HOMEBREW}'${ColourReset}")
       else()
         message(STATUS "Ignoring TARGET_HOMEBREW: '${TARGET_HOMEBREW}'")    
       endif()
     endif()
-    message(STATUS "${ColourGreen}Compile/link option: ${_TEBAKO_BUILD_TARGET}'")
-    message(STATUS "${ColourGreen}RUBY_HOST_OPTION: '--host=arm-apple-darwin'")
-    message(STATUS "${ColourGreen}MKDWARFS: '${MKDWARFS}'")
+    message("${ColourGreen}Compile/link option: ${_TEBAKO_BUILD_TARGET}'${ColourReset}")
+    message("${ColourGreen}RUBY_HOST_OPTION: '--host=arm-apple-darwin'${ColourReset}")
+    message("${ColourGreen}MKDWARFS: '${MKDWARFS}'${ColourReset}")
   else()
     message(FATAL "MacOS [x86_64 --> arm64] is the only cross-compilation mode that is currently supported")
   endif()
@@ -213,18 +213,18 @@ if(_TEBAKO_BUILD_TARGET)
   def_ext_prj_g(DWARFS "libdwarfs_wr_v0.1.7" HOST)
 endif()
 
-message("${ColourGreen}................................................")
-message("${ColourGreen}Collecting packages:")
-message("${ColourGreen}ruby build environmemt      -  v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
-message("${ColourGreen}ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TARGET_SOURCE_DIR}")
-message("${ColourGreen}incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
-message("${ColourGreen}dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
+message("${ColourGreen}................................................${ColourReset}")
+message("${ColourGreen}Collecting packages:${ColourReset}")
+message("${ColourGreen}ruby build environmemt      -  v${RUBY_VER} at ${RUBY_SOURCE_DIR}${ColourReset}")
+message("${ColourGreen}ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TARGET_SOURCE_DIR}${ColourReset}")
+message("${ColourGreen}incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}${ColourReset}")
+message("${ColourGreen}dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}${ColourReset}")
 if(_TEBAKO_BUILD_TARGET)
-  message("${ColourGreen}dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_HOST_SOURCE_DIR}")
+  message("${ColourGreen}dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_HOST_SOURCE_DIR}${ColourReset}")
 endif()
-message("${ColourGreen}................................................")
-message("${ColourGreen}Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
-message("${ColourGreen}................................................")
+message("${ColourGreen}................................................${ColourReset}")
+message("${ColourGreen}Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting${ColourReset}")
+message("${ColourGreen}................................................${ColourReset}")
 
 # ...................................................................
 # incbin
@@ -267,8 +267,8 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     UPDATE_COMMAND ""
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
                -DWITH_TESTS:BOOL=OFF
-               -DTEBAKO_BUILD_TARGET=${_TEBAKO_BUILD_TARGET}
-               -DTARGET_HOMEBREW=${_TARGET_HOMEBREW}
+#               -DTEBAKO_BUILD_TARGET=${_TEBAKO_BUILD_TARGET}
+#               -DTARGET_HOMEBREW=${_TARGET_HOMEBREW}
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
@@ -298,7 +298,7 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
     message(FATAL "Could not find brew setup")
   endif()
 
-  message("Using homebrew environment at ${BREW_PREFIX}")
+  message("${ColourGreen}Using homebrew environment at ${BREW_PREFIX}${ColourReset}")
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
   set(PATCH_BASH "${BREW_PREFIX}/bin/bash")
@@ -311,8 +311,8 @@ endif()
 
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
 
-message("Ruby build CFLAGS='${RUBY_C_FLAGS}'")
-message("Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
+message("${ColourGreen}Ruby build CFLAGS='${RUBY_C_FLAGS}'${ColourReset}")
+message("${ColourGreen}Ruby build LDFLAGS='${RUBY_L_FLAGS}'${ColourReset}")
 
 ExternalProject_Add(${RUBY_PRJ}
   PREFIX ${DEPS}
@@ -334,7 +334,6 @@ ExternalProject_Add(${RUBY_PRJ}
                     --prefix=${DATA_SRC_DIR}
                     CFLAGS=${RUBY_C_FLAGS}
                     LDFLAGS=${RUBY_L_FLAGS}
-                    ${RUBY_HOST_OPTION}                  
   INSTALL_COMMAND ""
 )
 
@@ -347,7 +346,7 @@ add_custom_target(template_filesystem
   COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_TEMPLATE_DIR}
   COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
   COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${DATA_SRC_DIR} -DTARGET_DIR=${DATA_TEMPLATE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-  DEPENDS ${RUBY_PRJ}
+  DEPENDS ${RUBY_PRJ} ${INCBIN_PRJ}
 )
 
 if(_TEBAKO_BUILD_TARGET)
@@ -523,9 +522,29 @@ endif (${START_WITH_PACKAGED_FILESYSTEM})
 
 if(_TEBAKO_BUILD_TARGET)
   add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
-endif()
 
-set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
+  execute_process(
+    COMMAND ${_TARGET_HOMEBREW}/bin/brew --prefix
+    RESULT_VARIABLE TARGET_REW_PREFIX_RES
+    OUTPUT_VARIABLE TARGET_BREW_PREFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT (TARGET_BREW_PREFIX_RES EQUAL 0 AND EXISTS ${TARGET_BREW_PREFIX}))
+    message(FATAL "Could not find target brew setup")
+  endif()
+
+  message("${ColourGreen}Using target homebrew environment at ${_TARGET_BREW_PREFIX}${ColourReset}")
+  set(T_RUBY_C_FLAGS "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections --target=arm64_apple_macos")
+  string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} " -pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+  string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} " -I${TARGET_BREW_PREFIX}/include -I${TARGET_BREW_PREFIX}/opt/openssl@1.1/include -I${TARGET_BREW_PREFIX}/opt/zlib/include")
+  set(T_RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
+  string(CONCAT T_RUBY_L_FLAGS ${T_RUBY_L_FLAGS} " -L${TARGET_BREW_PREFIX}/lib -L${TARGET_BREW_PREFIX}/opt/openssl@1.1/lib -L${TARGET_BREW_PREFIX}/opt/zlib/lib")
+else(_TEBAKO_BUILD_TARGET)
+  set(T_RUBY_C_FLAGS ${RUBY_C_FLAGS})
+  set(T_RUBY_L_FLAGS ${RUBY_L_FLAGS})
+endif(_TEBAKO_BUILD_TARGET) 
+
+set(CMAKE_CXX_FLAGS ${T_RUBY_C_FLAGS})
 
 add_library(tebako-fs STATIC
   src/tebako-main.cpp
@@ -534,6 +553,9 @@ add_library(tebako-fs STATIC
   include/tebako-version.h
   include/tebako-main.h
 )
+
+message("${ColourGreen}Target ruby build CFLAGS='${T_RUBY_C_FLAGS}'${ColourReset}")
+message("${ColourGreen}Target ruby build LDFLAGS='${T_RUBY_L_FLAGS}'${ColourReset}")
 
 ExternalProject_Add(${RUBY_TARGET_PRJ}
   PREFIX ${DEPS}
@@ -553,8 +575,8 @@ ExternalProject_Add(${RUBY_TARGET_PRJ}
                     --with-static-linked-ext
                     --srcdir=${RUBY_TARGET_SOURCE_DIR}
                     --prefix=${DEPS}/tmp
-                    CFLAGS=${RUBY_C_FLAGS}
-                    LDFLAGS=${RUBY_L_FLAGS}
+                    CFLAGS=${T_RUBY_C_FLAGS} 
+                    LDFLAGS=${T_RUBY_L_FLAGS}
                     ${RUBY_HOST_OPTION}
   INSTALL_COMMAND ""
 )

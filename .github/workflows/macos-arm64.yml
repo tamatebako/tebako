@@ -44,7 +44,7 @@ on:
   workflow_dispatch:
 
 env:
-  MAKEFLAGS: -j4
+#  MAKEFLAGS: -j4
   BUILD_TYPE: Release
   CC: clang
   CXX: clang++
