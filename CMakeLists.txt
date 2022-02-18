@@ -146,7 +146,7 @@ if(_TEBAKO_BUILD_TARGET)
       endif()
     endif()
     message("${ColourGreen}Compile/link option: ${_TEBAKO_BUILD_TARGET}'${ColourReset}")
-    message("${ColourGreen}RUBY_HOST_OPTION: '--host=arm-apple-darwin'${ColourReset}")
+    message("${ColourGreen}RUBY_HOST_OPTION: '${RUBY_HOST_OPTION}'${ColourReset}")
     message("${ColourGreen}MKDWARFS: '${MKDWARFS}'${ColourReset}")
   else()
     message(FATAL_ERROR "MacOS [x86_64 --> arm64] is the only cross-compilation mode that is currently supported")
@@ -522,16 +522,20 @@ endif (${START_WITH_PACKAGED_FILESYSTEM})
 
 if(_TEBAKO_BUILD_TARGET)
   add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
-
-  execute_process(
-    COMMAND ${_TARGET_HOMEBREW}/bin/brew --prefix 
-    RESULT_VARIABLE TARGET_REW_PREFIX_RES
-    OUTPUT_VARIABLE TARGET_BREW_PREFIX
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  if(NOT (TARGET_BREW_PREFIX_RES EQUAL 0 AND EXISTS ${TARGET_BREW_PREFIX}))
-    message(FATAL_ERROR "Could not find target brew setup at ${_TARGET_HOMEBREW}/bin/brew")
-  endif()
+  if(_TARGET_HOMEBREW)
+    execute_process(
+      COMMAND ${_TARGET_HOMEBREW}/bin/brew --prefix 
+      RESULT_VARIABLE TARGET_BREW_PREFIX_RES
+      OUTPUT_VARIABLE TARGET_BREW_PREFIX
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(NOT (TARGET_BREW_PREFIX_RES EQUAL 0 AND EXISTS ${TARGET_BREW_PREFIX}))
+      message(FATAL_ERROR "Could not find target brew setup at ${_TARGET_HOMEBREW}/bin/brew")
+    endif()
+  else(_TARGET_HOMEBREW)
+# this option is for debugging purposes only  
+    set(TARGET_BREW_PREFIX ${BREW_PREFIX})
+  endif(_TARGET_HOMEBREW)
 
   message("${ColourGreen}Using target homebrew environment at ${TARGET_BREW_PREFIX}${ColourReset}")
   set(T_RUBY_C_FLAGS "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections --target=${_TEBAKO_BUILD_TARGET}")
