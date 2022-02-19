@@ -52,7 +52,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.1.9"
+  DWARFS_WR_TAG: "maxirmx_v0.1.10"
   DWARFS_TAG: "libdwarfs_wr_v0.1.7"
 # Tarball dependencies
   RUBY_VER:   "2.7.5"

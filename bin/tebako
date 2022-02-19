@@ -176,8 +176,14 @@ case "$target" in
         exit 9
       fi
       ;;
+  x86_64-apple-macos11)
+      if [[ "$OSTYPE" != "darwin"* ]]; then
+        echo "Cross build for arm64-apple-macos11 is possible on MacOs only"
+        exit 9
+      fi
+      ;;    
   *)
-      echo "Unknown target setting '$target'. The only cross build target supported is 'arm64-apple-macos11'"
+      echo "Unknown target setting '$target'. Available options are 'arm64-apple-macos11' and 'x86_64-apple-macos11'"
       exit 10
       ;;
 esac

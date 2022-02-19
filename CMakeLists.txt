@@ -127,47 +127,29 @@ set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
 
 if(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")
-  set(_TEBAKO_BUILD_TARGET ${TEBAKO_BUILD_TARGET})
+  if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+    set(_TEBAKO_BUILD_TARGET ${TEBAKO_BUILD_TARGET})
+  else()
+    message(FATAL_ERROR "Can cross-compile on MacOS only")
+  endif()
 endif()
 
-if(_TEBAKO_BUILD_TARGET)
-  if(${_TEBAKO_BUILD_TARGET} STREQUAL "arm64-apple-macos11" AND CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-    message("${ColourGreen}Packaging for ${_TEBAKO_BUILD_TARGET}${ColourReset}")
-    add_compile_options("--target=${_TEBAKO_BUILD_TARGET}")
-    add_link_options("--target=${_TEBAKO_BUILD_TARGET}")
-    set(RUBY_HOST_OPTION "--host=arm-apple-darwin")
-    set(MKDWARFS ${DEPS}/host/bin/mkdwarfs)
-    if(TARGET_HOMEBREW)
-      if (NOT (${TARGET_HOMEBREW} STREQUAL "guess"))
-        set(_TARGET_HOMEBREW ${TARGET_HOMEBREW})
-        message("${ColourGreen}TARGET_HOMEBREW: '${_TARGET_HOMEBREW}'${ColourReset}")
-      else()
-        message(STATUS "Ignoring TARGET_HOMEBREW: '${TARGET_HOMEBREW}'")    
-      endif()
-    endif()
-    message("${ColourGreen}Compile/link option: ${_TEBAKO_BUILD_TARGET}'${ColourReset}")
-    message("${ColourGreen}RUBY_HOST_OPTION: '${RUBY_HOST_OPTION}'${ColourReset}")
-    message("${ColourGreen}MKDWARFS: '${MKDWARFS}'${ColourReset}")
-  else()
-    message(FATAL_ERROR "MacOS [x86_64 --> arm64] is the only cross-compilation mode that is currently supported")
-  endif()
-else()
-  set(MKDWARFS ${DEPS_BIN_DIR}/mkdwarfs)
-  if(TARGET_HOMEBREW)
+if(TARGET_HOMEBREW)
+  if (NOT (${TARGET_HOMEBREW} STREQUAL "guess"))  
     message(STATUS "Ignoring TARGET_HOMEBREW: '${TARGET_HOMEBREW}'")    
   endif()
 endif()
 
-set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
-
-# Project resources that are used during CMake configuration stage
-set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
-
+set(MKDWARFS ${DEPS_BIN_DIR}/mkdwarfs)
+include(${CMAKE_SOURCE_DIR}/cmake/def_darwin_env.cmake)
+message(STATUS "${ColourGreen}Using mkdwarfs at: '${MKDWARFS}'${ColourReset}") 
 
 # ...................................................................
 # Filesystem locations
 
-# DATA_TEMPLATE_DIR clean memfs template
+set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
+# Project resources that are used during CMake configuration stage
+set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)# DATA_TEMPLATE_DIR clean memfs template
 set(DATA_TEMPLATE_DIR  ${DEPS}/template_filesystem)
 # DATA_SRC_DIR folder is used to collect all files that need to be packaged
 set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
@@ -285,23 +267,12 @@ endif()
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
 set(RUBY_C_FLAGS_2 "-pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
-set(PATCH_BASH "bash")
+set(GNU_BASH "bash")
 
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-  execute_process(
-    COMMAND brew --prefix
-    RESULT_VARIABLE BREW_PREFIX_RES
-    OUTPUT_VARIABLE BREW_PREFIX
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  if(NOT (BREW_PREFIX_RES EQUAL 0 AND EXISTS ${BREW_PREFIX}))
-    message(FATAL "Could not find brew setup")
-  endif()
-
-  message("${ColourGreen}Using homebrew environment at ${BREW_PREFIX}${ColourReset}")
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
-  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
-  set(PATCH_BASH "${BREW_PREFIX}/bin/bash")
+  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} ${RUBY_BUILD_BREW_INCLUDE})
+  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} ${RUBY_BUILD_BREW_LIB})
+  set(GNU_BASH "${BREW_PREFIX}/bin/bash")
 endif()
 
 # https://stackoverflow.com/questions/46123505/assembling-with-gcc-causes-weird-relocation-error-with-regards-to-data
@@ -321,7 +292,7 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BINARY_DIR ${RUBY_BINARY_DIR}
-  PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
   UPDATE_COMMAND ""
   CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
                     --enable-bundled-libyaml
@@ -522,27 +493,12 @@ endif (${START_WITH_PACKAGED_FILESYSTEM})
 
 if(_TEBAKO_BUILD_TARGET)
   add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
-  if(_TARGET_HOMEBREW)
-    execute_process(
-      COMMAND ${_TARGET_HOMEBREW}/bin/brew --prefix 
-      RESULT_VARIABLE TARGET_BREW_PREFIX_RES
-      OUTPUT_VARIABLE TARGET_BREW_PREFIX
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if(NOT (TARGET_BREW_PREFIX_RES EQUAL 0 AND EXISTS ${TARGET_BREW_PREFIX}))
-      message(FATAL_ERROR "Could not find target brew setup at ${_TARGET_HOMEBREW}/bin/brew")
-    endif()
-  else(_TARGET_HOMEBREW)
-# this option is for debugging purposes only  
-    set(TARGET_BREW_PREFIX ${BREW_PREFIX})
-  endif(_TARGET_HOMEBREW)
 
-  message("${ColourGreen}Using target homebrew environment at ${TARGET_BREW_PREFIX}${ColourReset}")
   set(T_RUBY_C_FLAGS "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections --target=${_TEBAKO_BUILD_TARGET}")
   string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} " -pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
-  string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} " -I${TARGET_BREW_PREFIX}/include -I${TARGET_BREW_PREFIX}/opt/openssl@1.1/include -I${TARGET_BREW_PREFIX}/opt/zlib/include")
+  string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} ${RUBY_TARGET_BREW_INCLUDE})
   set(T_RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR} --target=${_TEBAKO_BUILD_TARGET} ")
-  string(CONCAT T_RUBY_L_FLAGS ${T_RUBY_L_FLAGS} " -L${TARGET_BREW_PREFIX}/lib -L${TARGET_BREW_PREFIX}/opt/openssl@1.1/lib -L${TARGET_BREW_PREFIX}/opt/zlib/lib")
+  string(CONCAT T_RUBY_L_FLAGS ${T_RUBY_L_FLAGS} ${RUBY_TARGET_BREW_LIB})
 else(_TEBAKO_BUILD_TARGET)
   set(T_RUBY_C_FLAGS ${RUBY_C_FLAGS})
   set(T_RUBY_L_FLAGS ${RUBY_L_FLAGS})
@@ -568,8 +524,8 @@ ExternalProject_Add(${RUBY_TARGET_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_TARGET_SOURCE_DIR}
   BINARY_DIR ${RUBY_TARGET_BINARY_DIR}
-  PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR}
-  COMMAND  ${PATCH_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR} ${_TARGET_HOMEBREW}
+  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR}
+  COMMAND  ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR} ${_TARGET_HOMEBREW}
   CONFIGURE_COMMAND ${RUBY_TARGET_SOURCE_DIR}/configure
                     --enable-bundled-libyaml
                     --without-gmp
