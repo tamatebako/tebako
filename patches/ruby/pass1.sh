@@ -122,6 +122,7 @@ EOM
 restore_and_save "$1/template/Makefile.in"
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
+
 re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(EXTLIBS) \$(OUTFLAG)\$@"
 # Ruby 2.7.5
 # If cross compile sets XLDFLAGS to '-framework CoreFoundation Security'

@@ -94,15 +94,17 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Create deps folder
+        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}      
+        
       - name: Process cache
         id: cache
         uses: actions/cache@v2
         with:
           path: |
-            ${{ env.LEVEL_UP }}/arm-homebrew  
+            ${{ env.LEVEL_UP }}/arm-homebrew
+            ${{ github.workspace }}/${{ env.DEPS }}
           key: macos-11.0-arm64-${{ env.DWARFS_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
-
-# ${{ github.workspace }}/${{ env.DEPS }}
 
       - name: Install packages [for build system architecture]
         run: |
@@ -123,5 +125,40 @@ jobs:
                                 icu4c boost fmt openssl@1.1 libevent libsodium double-conversion                               \
                                 gflags glog jemalloc ncurses gdbm libffi readline
 
+# We need it in this workflow for BASERUBY (that is used in cross-compile scenario to bootstrap ruby instaed of miniruby)
+     - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VER }}
+          bundler: ${{ env.BUNDLER_VER }}
+
       - name: tebako setup
-        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11 --target-homebrew=${{ env.LEVEL_UP}}/arm-homebrew      
+        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11 --target-homebrew=${{ env.LEVEL_UP}}/arm-homebrew
+
+      - name: Checkout shell test framework
+        uses: actions/checkout@v2
+        with:
+          repository: kward/shunit2
+          path: ${{github.workspace}}/tests/shunit2
+          fetch-depth: 1        
+
+#      - name: Run tebako tests (set no. 1)
+# show cmake output aka verbose (yes/no)
+#        env:
+#          VERBOSE: yes
+#        run:  ${{github.workspace}}/tests/scripts/functional-tests-cross.sh ${{ env.LEVEL_UP}}/arm-homebrew
+#
+#      - name: Upload tebako test packages
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: test-packages
+#          retentions-days: 1
+#          path: |
+#            test-01-package
+#            test-03-package
+#            test-04-package
+#            test-09-package
+#            test-11-package
+#            test-15-package
+#            test-18-package
+#            test-19-package

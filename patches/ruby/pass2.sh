@@ -24,9 +24,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-# More safety, by turning some bugs into errors.
-# Without `errexit` you don’t need ! and can replace
-# PIPESTATUS with a simple $?
 set -o errexit -o pipefail -o noclobber -o nounset
 
 # ....................................................

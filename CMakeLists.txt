@@ -28,7 +28,6 @@ cmake_minimum_required (VERSION 3.20)
 cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
-
 project(tebako_packager VERSION 0.3.4)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
@@ -142,7 +141,8 @@ if(TEBAKO_BUILD_TARGET)
       endif()
       add_compile_options(--target=${TEBAKO_BUILD_TARGET})
       add_link_options(--target=${TEBAKO_BUILD_TARGET})
-      set(CROSSFLAGS --target=${TEBAKO_BUILD_TARGET})
+      set(XLDFLAGS " -framework CoreFoundation -framework Security ")
+      set(XCCFLAGS " --target=${TEBAKO_BUILD_TARGET}  -D_XOPEN_SOURCE=1 ")
       set(MKDWARFS ${DEPS}/host/bin/mkdwarfs)
       set(_TEBAKO_BUILD_TARGET ${TEBAKO_BUILD_TARGET})
     else(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
@@ -152,17 +152,41 @@ if(TEBAKO_BUILD_TARGET)
   endif(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")  
 endif(TEBAKO_BUILD_TARGET)
 
+set(GNU_BASH "bash")
 include(${CMAKE_SOURCE_DIR}/cmake/def_darwin_env.cmake)
+
+set(RUBY_CFLAGS " -O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections " )
+string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} " -pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include ")
+# https://stackoverflow.com/questions/46123505/assembling-with-gcc-causes-weird-relocation-error-with-regards-to-data
+if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+  string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} " -no-pie ")
+endif()
+set(RUBY_LDFLAGS " -L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR} ")
+if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+  if(_TEBAKO_BUILD_TARGET)
+  string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${XCCFLAGS})
+    string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${RUBY_TARGET_BREW_INCLUDE})
+    string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${XLDFLAGS})   
+    string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${RUBY_TARGET_BREW_LIB})
+  else(_TEBAKO_BUILD_TARGET)
+    string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${RUBY_BUILD_BREW_INCLUDE})
+    string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${RUBY_BUILD_BREW_LIB})
+  endif(_TEBAKO_BUILD_TARGET)
+endif(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 
 message("Configuraion summary:")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Build target: ${TEBAKO_BUILD_TARGET}")
-message(STATUS "cc cross-compile options: ${CROSSFLAGS}")
+message(STATUS "Extra c compiler flags: ${XCCFLAGS}")
+message(STATUS "Extra linker flags: ${XLDFLAGS}")
 message(STATUS "configure cross-compile options: ${HOST_OPTION}")
 message(STATUS "CMake OSX architecture flag: ${CMAKE_OSX_ARCHITECTURES}")
 message(STATUS "Build environment homebrew: ${BREW_PREFIX}")
 message(STATUS "Target environment homebrew: ${TARGET_BREW_PREFIX}")
 message(STATUS "mkdwarfs: ${MKDWARFS}")
+message(STATUS "GNU compatible bash: ${GNU_BASH}")
+message(STATUS "Ruby CFLAGS: ${RUBY_CFLAGS}")
+message(STATUS "Ruby LDFLAGS: ${RUBY_LDFLAGS}")
 
 # ...................................................................
 # Filesystem locations
@@ -277,32 +301,6 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
 # ...................................................................
 # Ruby
 
-if(RUBY_DEBUG_BUILD)
-  set(RUBY_C_FLAGS_1 "-g -O0 -pipe")
-else()
-  set(RUBY_C_FLAGS_1 "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
-endif()
-
-set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
-set(RUBY_C_FLAGS_2 "-pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
-set(GNU_BASH "bash")
-
-if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} ${RUBY_BUILD_BREW_INCLUDE})
-  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} ${RUBY_BUILD_BREW_LIB})
-  set(GNU_BASH "${BREW_PREFIX}/bin/bash")
-endif()
-
-# https://stackoverflow.com/questions/46123505/assembling-with-gcc-causes-weird-relocation-error-with-regards-to-data
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -no-pie")
-endif()
-
-string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
-
-message("${ColourGreen}Ruby build CFLAGS='${RUBY_C_FLAGS}'${ColourReset}")
-message("${ColourGreen}Ruby build LDFLAGS='${RUBY_L_FLAGS}'${ColourReset}")
-
 ExternalProject_Add(${RUBY_PRJ}
   PREFIX ${DEPS}
   URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
@@ -310,7 +308,7 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BINARY_DIR ${RUBY_BINARY_DIR}
-  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR} ${_TARGET_HOMEBREW}
   UPDATE_COMMAND ""
   CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
                     --enable-bundled-libyaml
@@ -321,8 +319,9 @@ ExternalProject_Add(${RUBY_PRJ}
                     --with-static-linked-ext
                     --srcdir=${RUBY_SOURCE_DIR}
                     --prefix=${DATA_SRC_DIR}
-                    CFLAGS=${RUBY_C_FLAGS}
-                    LDFLAGS=${RUBY_L_FLAGS}
+                    CFLAGS=${RUBY_CFLAGS}
+                    LDFLAGS=${RUBY_LDFLAGS}
+                    ${HOST_OPTION}                    
   INSTALL_COMMAND ""
 )
 
@@ -509,20 +508,7 @@ else(${START_WITH_PACKAGED_FILESYSTEM})
   )
 endif (${START_WITH_PACKAGED_FILESYSTEM})
 
-if(_TEBAKO_BUILD_TARGET)
-  add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
-
-  set(T_RUBY_C_FLAGS "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections --target=${_TEBAKO_BUILD_TARGET} -D_XOPEN_SOURCE=1 ")
-  string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} " -pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
-  string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} ${RUBY_TARGET_BREW_INCLUDE})
-  set(T_RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR} --target=${_TEBAKO_BUILD_TARGET} -framework CoreFoundation -framework Security ")
-  string(CONCAT T_RUBY_L_FLAGS ${T_RUBY_L_FLAGS} ${RUBY_TARGET_BREW_LIB})
-else(_TEBAKO_BUILD_TARGET)
-  set(T_RUBY_C_FLAGS ${RUBY_C_FLAGS})
-  set(T_RUBY_L_FLAGS ${RUBY_L_FLAGS})
-endif(_TEBAKO_BUILD_TARGET) 
-
-set(CMAKE_CXX_FLAGS ${T_RUBY_C_FLAGS})
+set(CMAKE_CXX_FLAGS ${RUBY_CFLAGS})
 
 add_library(tebako-fs STATIC
   src/tebako-main.cpp
@@ -531,9 +517,6 @@ add_library(tebako-fs STATIC
   include/tebako-version.h
   include/tebako-main.h
 )
-
-message("${ColourGreen}Target ruby build CFLAGS='${T_RUBY_C_FLAGS}'${ColourReset}")
-message("${ColourGreen}Target ruby build LDFLAGS='${T_RUBY_L_FLAGS}'${ColourReset}")
 
 ExternalProject_Add(${RUBY_TARGET_PRJ}
   PREFIX ${DEPS}
@@ -552,8 +535,8 @@ ExternalProject_Add(${RUBY_TARGET_PRJ}
                     --with-static-linked-ext
                     --srcdir=${RUBY_TARGET_SOURCE_DIR}
                     --prefix=${DEPS}/tmp
-                    CFLAGS=${T_RUBY_C_FLAGS} 
-                    LDFLAGS=${T_RUBY_L_FLAGS}
+                    CFLAGS=${RUBY_CFLAGS} 
+                    LDFLAGS=${RUBY_LDFLAGS}
                     ${HOST_OPTION}
   INSTALL_COMMAND ""
 )

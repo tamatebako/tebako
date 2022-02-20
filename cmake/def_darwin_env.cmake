@@ -25,6 +25,7 @@
 #
 
 if (CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+
     if(TARGET_HOMEBREW)
         if (NOT (${TARGET_HOMEBREW} STREQUAL "guess"))
             set(_TARGET_HOMEBREW ${TARGET_HOMEBREW})
@@ -41,10 +42,11 @@ if (CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
         message(FATAL_ERROR "Could not find brew setup for build environment")
     endif()
 
-    set(RUBY_BUILD_BREW_INCLUDE " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
-    set(RUBY_BUILD_BREW_LIB " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
+    set(RUBY_BUILD_BREW_INCLUDE " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include ")
+    set(RUBY_BUILD_BREW_LIB " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib ")
 
     set(TARGET_BREW_PREFIX ${BREW_PREFIX})
+    set(GNU_BASH "${BREW_PREFIX}/bin/bash")
 
     if(_TARGET_HOMEBREW)
         execute_process(
@@ -58,7 +60,7 @@ if (CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
         endif()
     endif(_TARGET_HOMEBREW)
 
-    set(RUBY_TARGET_BREW_INCLUDE " -I${TARGET_BREW_PREFIX}/include -I${TARGET_BREW_PREFIX}/opt/openssl@1.1/include -I${TARGET_BREW_PREFIX}/opt/zlib/include")
-    set(RUBY_TARGET_BREW_LIB " -L${TARGET_BREW_PREFIX}/lib -L${TARGET_BREW_PREFIX}/opt/openssl@1.1/lib -L${TARGET_BREW_PREFIX}/opt/zlib/lib")
+    set(RUBY_TARGET_BREW_INCLUDE " -I${TARGET_BREW_PREFIX}/include -I${TARGET_BREW_PREFIX}/opt/openssl@1.1/include -I${TARGET_BREW_PREFIX}/opt/zlib/include ")
+    set(RUBY_TARGET_BREW_LIB " -L${TARGET_BREW_PREFIX}/lib -L${TARGET_BREW_PREFIX}/opt/openssl@1.1/lib -L${TARGET_BREW_PREFIX}/opt/zlib/lib ")
 
 endif()
