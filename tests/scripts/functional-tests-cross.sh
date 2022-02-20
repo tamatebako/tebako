@@ -321,7 +321,7 @@ DIR_BIN="$( cd "$DIR_ROOT"/bin && pwd )"
 DIR_TESTS="$( cd "$DIR_ROOT"/tests && pwd )"
 
 TARGET="$1"
-DIR_HOMEBREW="$( cd "$2"/tests && pwd )"
+DIR_HOMEBREW="$( cd "$2" && pwd )"
 
 echo "Running tebako tests"
 # shellcheck source=/dev/null

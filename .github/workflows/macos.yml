@@ -181,7 +181,7 @@ jobs:
         uses: actions/upload-artifact@v2
         with:
           name: test-packages
-          retentions-days: 1
+          retention-days: 1
           path: |
             test-01-package
             test-11-package
