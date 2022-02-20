@@ -126,23 +126,43 @@ set(DEPS_LIB_DIR ${DEPS}/lib)
 set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
 
-if(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")
-  if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-    set(_TEBAKO_BUILD_TARGET ${TEBAKO_BUILD_TARGET})
-  else()
-    message(FATAL_ERROR "Can cross-compile on MacOS only")
-  endif()
-endif()
-
-if(TARGET_HOMEBREW)
-  if (NOT (${TARGET_HOMEBREW} STREQUAL "guess"))  
-    message(STATUS "Ignoring TARGET_HOMEBREW: '${TARGET_HOMEBREW}'")    
-  endif()
-endif()
-
 set(MKDWARFS ${DEPS_BIN_DIR}/mkdwarfs)
+
+if(TEBAKO_BUILD_TARGET)
+  if(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")
+    if(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
+      if(${TEBAKO_BUILD_TARGET} STREQUAL "arm64-apple-macos11")
+        set(HOST_OPTION --host=arm-apple-macos)
+        set(CMAKE_OSX_ARCHITECTURES arm64)
+      elseif(${TEBAKO_BUILD_TARGET} STREQUAL "x86_64-apple-macos11")
+        set(HOST_OPTION --host=x86_64-apple-macos)
+        set(CMAKE_OSX_ARCHITECTURES x86_64)
+      else()
+        message(FATAL_ERROR "Cannot cross-compile for target ${TEBAKO_BUILD_TARGET}")
+      endif()
+      add_compile_options(--target=${TEBAKO_BUILD_TARGET})
+      add_link_options(--target=${TEBAKO_BUILD_TARGET})
+      set(CROSSFLAGS --target=${TEBAKO_BUILD_TARGET})
+      set(MKDWARFS ${DEPS}/host/bin/mkdwarfs)
+      set(_TEBAKO_BUILD_TARGET ${TEBAKO_BUILD_TARGET})
+    else(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
+      message(${CMAKE_HOST_SYSTEM_NAME})
+      message(FATAL_ERROR "Cross-compilation is supported on MacOS only")
+    endif(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
+  endif(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")  
+endif(TEBAKO_BUILD_TARGET)
+
 include(${CMAKE_SOURCE_DIR}/cmake/def_darwin_env.cmake)
-message(STATUS "${ColourGreen}Using mkdwarfs at: '${MKDWARFS}'${ColourReset}") 
+
+message("Configuraion summary:")
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "Build target: ${TEBAKO_BUILD_TARGET}")
+message(STATUS "cc cross-compile options: ${CROSSFLAGS}")
+message(STATUS "configure cross-compile options: ${HOST_OPTION}")
+message(STATUS "CMake OSX architecture flag: ${CMAKE_OSX_ARCHITECTURES}")
+message(STATUS "Build environment homebrew: ${BREW_PREFIX}")
+message(STATUS "Target environment homebrew: ${TARGET_BREW_PREFIX}")
+message(STATUS "mkdwarfs: ${MKDWARFS}")
 
 # ...................................................................
 # Filesystem locations
@@ -181,7 +201,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.1.9")
+def_ext_prj_g(DWARFS_WR "maxirmx_v0.1.10")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -195,18 +215,16 @@ if(_TEBAKO_BUILD_TARGET)
   def_ext_prj_g(DWARFS "libdwarfs_wr_v0.1.7" HOST)
 endif()
 
-message("${ColourGreen}................................................${ColourReset}")
-message("${ColourGreen}Collecting packages:${ColourReset}")
-message("${ColourGreen}ruby build environmemt      -  v${RUBY_VER} at ${RUBY_SOURCE_DIR}${ColourReset}")
-message("${ColourGreen}ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TARGET_SOURCE_DIR}${ColourReset}")
-message("${ColourGreen}incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}${ColourReset}")
-message("${ColourGreen}dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}${ColourReset}")
+message("Collecting packages:")
+message(STATUS "ruby build environmemt      -  v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
+message(STATUS "ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TARGET_SOURCE_DIR}")
+message(STATUS "incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
+message(STATUS "dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
 if(_TEBAKO_BUILD_TARGET)
-  message("${ColourGreen}dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_HOST_SOURCE_DIR}${ColourReset}")
+  message(STATUS "dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_HOST_SOURCE_DIR}")
 endif()
-message("${ColourGreen}................................................${ColourReset}")
-message("${ColourGreen}Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting${ColourReset}")
-message("${ColourGreen}................................................${ColourReset}")
+message(STATUS "Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
+
 
 # ...................................................................
 # incbin
@@ -470,7 +488,7 @@ configure_file(
 if (${START_WITH_PACKAGED_FILESYSTEM})
   add_custom_target(packaged_filesystem
     COMMAND chmod +x ${DEPS_BIN_DIR}/*
-    COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+    COMMAND ${MKDWARFS} -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
     COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
     BYPRODUCTS ${DATA_BIN_FILE}
   )
@@ -494,10 +512,10 @@ endif (${START_WITH_PACKAGED_FILESYSTEM})
 if(_TEBAKO_BUILD_TARGET)
   add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
 
-  set(T_RUBY_C_FLAGS "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections --target=${_TEBAKO_BUILD_TARGET}")
+  set(T_RUBY_C_FLAGS "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections --target=${_TEBAKO_BUILD_TARGET} -D_XOPEN_SOURCE=1 ")
   string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} " -pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
   string(CONCAT T_RUBY_C_FLAGS ${T_RUBY_C_FLAGS} ${RUBY_TARGET_BREW_INCLUDE})
-  set(T_RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR} --target=${_TEBAKO_BUILD_TARGET} ")
+  set(T_RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR} --target=${_TEBAKO_BUILD_TARGET} -framework CoreFoundation -framework Security ")
   string(CONCAT T_RUBY_L_FLAGS ${T_RUBY_L_FLAGS} ${RUBY_TARGET_BREW_LIB})
 else(_TEBAKO_BUILD_TARGET)
   set(T_RUBY_C_FLAGS ${RUBY_C_FLAGS})
@@ -524,8 +542,7 @@ ExternalProject_Add(${RUBY_TARGET_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_TARGET_SOURCE_DIR}
   BINARY_DIR ${RUBY_TARGET_BINARY_DIR}
-  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR}
-  COMMAND  ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR} ${_TARGET_HOMEBREW}
+  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_TARGET_SOURCE_DIR} ${RUBY_TARGET_BINARY_DIR} ${_TARGET_HOMEBREW}
   CONFIGURE_COMMAND ${RUBY_TARGET_SOURCE_DIR}/configure
                     --enable-bundled-libyaml
                     --without-gmp
@@ -537,7 +554,7 @@ ExternalProject_Add(${RUBY_TARGET_PRJ}
                     --prefix=${DEPS}/tmp
                     CFLAGS=${T_RUBY_C_FLAGS} 
                     LDFLAGS=${T_RUBY_L_FLAGS}
-                    ${RUBY_HOST_OPTION}
+                    ${HOST_OPTION}
   INSTALL_COMMAND ""
 )
 

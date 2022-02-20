@@ -116,21 +116,23 @@ EOM
 "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
 
 # ....................................................
-# Roll-back pass2 patches from the previous run
-#restore_and_save "$1/main.c"
-#restore_and_save "$1/dir.c"
-#restore_and_save "$1/dln.c"
-#restore_and_save "$1/file.c"
-#restore_and_save "$1/io.c"
-#restore_and_save "$1/util.c"
-#restore_and_save "$1/tool/mkconfig.rb"
+# Pin tebako static build libraries
+# Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
+# Ruby 2.6.3:  template is in 'ruby/Makefile.in'
+restore_and_save "$1/template/Makefile.in"
 
-# restore_and_save $1/process.c
-# restore_and_save $1/prelude.c
-# $1/ext/openssl/ossl_x509store.c
+if [[ "$OSTYPE" == "darwin"* ]]; then
+re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(EXTLIBS) \$(OUTFLAG)\$@"
+# Ruby 2.7.5
+# If cross compile sets XLDFLAGS to '-framework CoreFoundation Security'
+# it is wrong syntax
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+# -- Start of tebako patch --
+		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(EXTLIBS) \$(OUTFLAG)\$@
+# -- End of tebako patch --
+EOM
 
-# [TODO Windows]
-# $1/win32/file.c
-# $1/win32/win32.c
+"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
-
+fi
