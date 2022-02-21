@@ -126,6 +126,7 @@ set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
 
 set(MKDWARFS ${DEPS_BIN_DIR}/mkdwarfs)
+set(CROSS_COMPILING OFF)
 
 if(TEBAKO_BUILD_TARGET)
   if(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")
@@ -144,7 +145,8 @@ if(TEBAKO_BUILD_TARGET)
       set(XLDFLAGS " -framework CoreFoundation -framework Security ")
       set(XCCFLAGS " --target=${TEBAKO_BUILD_TARGET}  -D_XOPEN_SOURCE=1 ")
       set(MKDWARFS ${DEPS}/host/bin/mkdwarfs)
-      set(_TEBAKO_BUILD_TARGET ${TEBAKO_BUILD_TARGET})
+      set(DWARFS_WR_OPTION "-DTEBAKO_BUILD_TARGET=${TEBAKO_BUILD_TARGET}")
+      set(CROSS_COMPILING ON)
     else(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
       message(${CMAKE_HOST_SYSTEM_NAME})
       message(FATAL_ERROR "Cross-compilation is supported on MacOS only")
@@ -163,15 +165,15 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
 endif()
 set(RUBY_LDFLAGS " -L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR} ")
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-  if(_TEBAKO_BUILD_TARGET)
+  if(CROSS_COMPILING)
   string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${XCCFLAGS})
     string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${RUBY_TARGET_BREW_INCLUDE})
     string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${XLDFLAGS})   
     string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${RUBY_TARGET_BREW_LIB})
-  else(_TEBAKO_BUILD_TARGET)
+  else(CROSS_COMPILING)
     string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${RUBY_BUILD_BREW_INCLUDE})
     string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${RUBY_BUILD_BREW_LIB})
-  endif(_TEBAKO_BUILD_TARGET)
+  endif(CROSS_COMPILING)
 endif(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 
 message("Configuraion summary:")
@@ -184,6 +186,7 @@ message(STATUS "CMake OSX architecture flag: ${CMAKE_OSX_ARCHITECTURES}")
 message(STATUS "Build environment homebrew: ${BREW_PREFIX}")
 message(STATUS "Target environment homebrew: ${TARGET_BREW_PREFIX}")
 message(STATUS "mkdwarfs: ${MKDWARFS}")
+message(STATUS "DWARFS_WR option: ${DWARFS_WR_OPTION}")
 message(STATUS "GNU compatible bash: ${GNU_BASH}")
 message(STATUS "Ruby CFLAGS: ${RUBY_CFLAGS}")
 message(STATUS "Ruby LDFLAGS: ${RUBY_LDFLAGS}")
@@ -235,7 +238,7 @@ else()
   set(BUNDLER_ANNOTATION "default")
 endif()
 
-if(_TEBAKO_BUILD_TARGET)
+if(CROSS_COMPILING)
   def_ext_prj_g(DWARFS "libdwarfs_wr_v0.1.7" HOST)
 endif()
 
@@ -244,7 +247,7 @@ message(STATUS "ruby build environmemt      -  v${RUBY_VER} at ${RUBY_SOURCE_DIR
 message(STATUS "ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TARGET_SOURCE_DIR}")
 message(STATUS "incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
 message(STATUS "dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
-if(_TEBAKO_BUILD_TARGET)
+if(CROSS_COMPILING)
   message(STATUS "dwarfs build host version   -  @${DWARFS_TAG} at ${DWARFS_HOST_SOURCE_DIR}")
 endif()
 message(STATUS "Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
@@ -291,8 +294,8 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     UPDATE_COMMAND ""
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
                -DWITH_TESTS:BOOL=OFF
-               -DTEBAKO_BUILD_TARGET=${_TEBAKO_BUILD_TARGET}
                -DTARGET_HOMEBREW=${_TARGET_HOMEBREW}
+               ${DWARFS_WR_OPTION}
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
@@ -337,7 +340,7 @@ add_custom_target(template_filesystem
   DEPENDS ${RUBY_PRJ} ${INCBIN_PRJ}
 )
 
-if(_TEBAKO_BUILD_TARGET)
+if(CROSS_COMPILING)
   ExternalProject_Add(${DWARFS_HOST_PRJ}
     PREFIX ${DEPS}/host
     GIT_REPOSITORY https://github.com/tamatebako/dwarfs.git
@@ -507,6 +510,10 @@ else(${START_WITH_PACKAGED_FILESYSTEM})
     BYPRODUCTS ${DATA_BIN_FILE}
   )
 endif (${START_WITH_PACKAGED_FILESYSTEM})
+
+if(CROSS_COMPILING)
+  add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
+endif(CROSS_COMPILING)  
 
 set(CMAKE_CXX_FLAGS ${RUBY_CFLAGS})
 
