@@ -154,11 +154,10 @@ jobs:
           retention-days: 1
           path: |
             test-01-package
-
-#            test-03-package
-#            test-04-package
-#            test-09-package
-#            test-11-package
-#            test-15-package
-#            test-18-package
-#            test-19-package
+            test-03-package
+            test-04-package
+            test-09-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package

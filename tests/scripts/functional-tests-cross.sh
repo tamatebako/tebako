@@ -188,7 +188,7 @@ test_tebako_press_02() {
 # 03. Simple Ruby script, absolute path to root, absolute path to entry point
 test_tebako_press_03() {
    echo "==> simple Ruby script, absolute path to root, absolute path to entry point"
-#   press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/tebako-test-run.rb" "test-03-package"
+   press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/tebako-test-run.rb" "test-03-package"
 }
 
 # ......................................................................
@@ -196,7 +196,7 @@ test_tebako_press_03() {
 test_tebako_press_04() {
    echo "==> simple Ruby script, relative path to root, relative path to entry point"
    pushd "${DIR_ROOT}" > /dev/null || fail "pushd ${DIR_ROOT} failed"
-#   press_runner "tests/test-01" "tebako-test-run.rb" "test-04-package"
+   press_runner "tests/test-01" "tebako-test-run.rb" "test-04-package"
    popd > /dev/null || fail "popd failed"
 }
 
@@ -233,7 +233,7 @@ test_tebako_press_05() {
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 test_tebako_press_09() {
    echo "==> Ruby gem (xxx.gem, no gemspec, no gemfile)"
-#   press_runner "${DIR_TESTS}/test-09" "tebako-test-run.rb" "test-09-package"
+   press_runner "${DIR_TESTS}/test-09" "tebako-test-run.rb" "test-09-package"
 }
 
 # ......................................................................
@@ -247,7 +247,7 @@ test_tebako_press_10() {
 #  11. Ruby gem (no gemfile, with gemspec)
 test_tebako_press_11() {
    echo "==> Ruby gem (no gemfile, with gemspec)"
-#   press_runner "${DIR_TESTS}/test-11" "tebako-test-run.rb" "test-11-package"
+   press_runner "${DIR_TESTS}/test-11" "tebako-test-run.rb" "test-11-package"
 }
 
 # ......................................................................
@@ -275,7 +275,7 @@ test_tebako_press_14() {
 #  15. Ruby gem (with gemspec, with gemfile)
 test_tebako_press_15() {
    echo "==> Ruby gem (with gemspec, with gemfile)"
-#   press_runner "${DIR_TESTS}/test-15" "tebako-test-run.rb" "test-15-package"
+   press_runner "${DIR_TESTS}/test-15" "tebako-test-run.rb" "test-15-package"
 }
 
 # ......................................................................
@@ -296,15 +296,15 @@ test_tebako_press_17() {
 # 18. Ruby project (no gemspec, with gemfile)
 test_tebako_press_18() {
    echo "==> Ruby project (no gemspec, with gemfile)"
-#   press_runner "${DIR_TESTS}/test-18" "tebako-test-run.rb" "test-18-package"
+   press_runner "${DIR_TESTS}/test-18" "tebako-test-run.rb" "test-18-package"
 }
 
 # ......................................................................
 # 19. Ruby project (no gemspec, with gemfile, with native extension)
-test_tebako_press_19() {
-   echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
+#test_tebako_press_19() {
+#   echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
 #   press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
-}
+#}
 
 #    - name: Test20 -AUC - Check that it is possible to verify content of packaged fs
 #      run: |
