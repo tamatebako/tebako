@@ -44,7 +44,8 @@ on:
   workflow_dispatch:
 
 env:
-#  MAKEFLAGS: -j4
+  MAKEFLAGS: -j4
+  TARGET: "arm64-apple-macos11"
   BUILD_TYPE: Release
   CC: clang
   CXX: clang++
@@ -64,7 +65,7 @@ env:
 
 jobs:
   setup:
-    name: macos-11.0 [x86_64 --> arm64]
+    name: macos-11.0 [ cross-compile for ${{ env. TARGET }} ]
     runs-on: macos-11.0
     strategy:
       fail-fast: false
@@ -130,7 +131,7 @@ jobs:
           bundler: ${{ env.BUNDLER_VER }}
 
       - name: tebako setup
-        run: ${{ github.workspace }}/bin/tebako setup --target=arm64-apple-macos11 --target-homebrew=${{ env.LEVEL_UP}}/arm-homebrew
+        run: ${{ github.workspace }}/bin/tebako setup --target=${{ env. TARGET }} --target-homebrew=${{ env.LEVEL_UP}}/arm-homebrew
 
       - name: Checkout shell test framework
         uses: actions/checkout@v2
@@ -143,7 +144,8 @@ jobs:
 # show cmake output aka verbose (yes/no)
         env:
           VERBOSE: yes
-        run:  ${{github.workspace}}/tests/scripts/functional-tests-cross.sh "arm64-apple-macos11" "${{ env.LEVEL_UP}}/arm-homebrew"
+          DIR_HOMEBREW: "${{ env.LEVEL_UP}}/arm-homebrew"
+        run:  ${{github.workspace}}/tests/scripts/functional-tests-cross.sh
 
       - name: Upload tebako test packages
         uses: actions/upload-artifact@v2

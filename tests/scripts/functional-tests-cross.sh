@@ -34,13 +34,13 @@ press_runner() {
 # $2 -- entry point
 # $3 -- tebako package name
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" --target "$TARGET" \
+     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" --target="$TARGET" \
                              --target-homebrew="$DIR_HOMEBREW" 2>&1 | tee tebako_test.log
-     assertEquals 0 "${PIPESTATUS[0]}"
-     result="$( cat tebako_test.log )"
+      assertEquals 0 "${PIPESTATUS[0]}"
+      result="$( cat tebako_test.log )"
    else
-     result="$( "$DIR_BIN/tebako" press -r "$1" -e "$2" -o "$3" -t "$TARGET" -b "$DIR_HOMEBREW" 2>&1 )"
-     assertEquals 0 $?
+      result="$( "$DIR_BIN/tebako" press -r "$1" -e "$2" -o "$3" -t "$TARGET" -b "$DIR_HOMEBREW" 2>&1 )"
+      assertEquals 0 $?
    fi
 
 # Check the first and the last messages expected from CMake script
@@ -57,12 +57,13 @@ press_runner_with_error() {
 # $4 -- expected error code
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
-     assertEquals "$4" "${PIPESTATUS[0]}"
-     result="$( cat tebako_test.log )"
+     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" --target="$TARGET" \
+                             --target-homebrew="$DIR_HOMEBREW" 2>&1 | tee tebako_test.log
+      assertEquals "$4" "${PIPESTATUS[0]}"
+      result="$( cat tebako_test.log )"
    else
-     result="$( "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 )"
-     assertEquals "$4" "${PIPESTATUS[0]}"
+      result="$( "$DIR_BIN/tebako" press -r "$1" -e "$2" -o "$3" -t "$TARGET" -b "$DIR_HOMEBREW" 2>&1 )"
+      assertEquals "$4" "${PIPESTATUS[0]}"
    fi
 
    assertContains "$result" "Running tebako press script"
@@ -155,12 +156,12 @@ test_CLI_wrong_target() {
 test_tebako_setup() {
   echo "tebako setup ... patience, please, it may take up to 1 hour."
   if [ "${VERBOSE}" == "yes" ]; then
-    "$DIR_BIN/tebako" setup --target "$TARGET" \
+    "$DIR_BIN/tebako" setup --target="$TARGET" \
                       --target-homebrew="$DIR_HOMEBREW" 2>&1 | tee tebako_test.log
     assertEquals 0 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( "$DIR_BIN/tebako" setup -t "$TARGET" -b "$DIR_HOMEBREW"2>&1 )"
+    result="$( "$DIR_BIN/tebako" setup -t "$TARGET" -b "$DIR_HOMEBREW" 2>&1 )"
     assertEquals 0 "${PIPESTATUS[0]}"
   fi
 
@@ -320,8 +321,7 @@ DIR_ROOT="$( cd "$DIR0"/../.. && pwd )"
 DIR_BIN="$( cd "$DIR_ROOT"/bin && pwd )"
 DIR_TESTS="$( cd "$DIR_ROOT"/tests && pwd )"
 
-TARGET="$1"
-DIR_HOMEBREW="$( cd "$2" && pwd )"
+DIR_HOMEBREW="$( cd "$DIR_HOMEBREW" && pwd )"
 
 echo "Running tebako tests"
 # shellcheck source=/dev/null
