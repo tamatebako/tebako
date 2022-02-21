@@ -65,7 +65,7 @@ env:
 
 jobs:
   setup:
-    name: macos-11.0 [ cross-compile for ${{ env. TARGET }} ]
+    name: macos-11.0 [ cross-compile for arm64-apple-macos11 ]
     runs-on: macos-11.0
     strategy:
       fail-fast: false
