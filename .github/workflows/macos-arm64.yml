@@ -61,7 +61,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.31"
 # Cache version
-  CACHE_VER: 05
+  CACHE_VER: 01
 
 jobs:
   setup:
@@ -102,7 +102,7 @@ jobs:
           path: |
             ${{ env.LEVEL_UP }}/arm-homebrew
             ${{ github.workspace }}/${{ env.DEPS }}
-          key: macos-11.0-arm64-${{ env.DWARFS_WR_TAG }}-${{ env.DWARFS_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: macos-11.0-X-${{ env.TARGET }}-${{ env.DWARFS_WR_TAG }}-${{ env.DWARFS_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Install packages [for build system architecture]
         run: |
