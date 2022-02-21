@@ -143,7 +143,7 @@ jobs:
 # show cmake output aka verbose (yes/no)
         env:
           VERBOSE: yes
-        run:  ${{github.workspace}}/tests/scripts/functional-tests-cross.sh ${{ env.LEVEL_UP}}/arm-homebrew
+        run:  ${{github.workspace}}/tests/scripts/functional-tests-cross.sh "arm64-apple-macos11" "${{ env.LEVEL_UP}}/arm-homebrew"
 
       - name: Upload tebako test packages
         uses: actions/upload-artifact@v2
