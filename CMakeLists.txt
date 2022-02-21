@@ -225,13 +225,13 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "maxirmx_v0.1.10")
+def_ext_prj_g(DWARFS_WR "v0.1.10")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})
 set(BUNDLER_ANNOTATION "environment")
 else()
-  set(BUNDLER_VER "2.2.3")
+  set(BUNDLER_VER "2.2.31")
   set(BUNDLER_ANNOTATION "default")
 endif()
 
