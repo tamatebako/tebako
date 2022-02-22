@@ -417,8 +417,7 @@ else(${SETUP_MODE})
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
             COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} 
-                                        gem install *.gem --verbose --no-document --install-dir ${TGD} --bindir ${TBD}
+            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} gem install *.gem --verbose --no-document --install-dir ${TGD} --bindir ${TBD}
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
@@ -460,8 +459,7 @@ else(${SETUP_MODE})
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(source_filesystem
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-        COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} 
-                                    gem install ${GEM} --verbose --no-document --install-dir ${TGD} --bindir ${TBD}
+        COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} gem install ${GEM} --verbose --no-document --install-dir ${TGD} --bindir ${TBD}
         COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
