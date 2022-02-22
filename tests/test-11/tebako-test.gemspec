@@ -8,5 +8,6 @@ Gem::Specification.new do |s|
   s.homepage    = "https://github.com/tamitebako"
   s.license     = "Unlicense"
   s.add_dependency 'text-table','~> 1.2.4'
+  s.platform    = Gem::Platform::RUBY
   s.executables << 'tebako-test-run.rb'
 end

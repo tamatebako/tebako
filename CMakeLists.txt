@@ -192,33 +192,6 @@ message(STATUS "Ruby CFLAGS: ${RUBY_CFLAGS}")
 message(STATUS "Ruby LDFLAGS: ${RUBY_LDFLAGS}")
 
 # ...................................................................
-# Filesystem locations
-
-set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
-# Project resources that are used during CMake configuration stage
-set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)# DATA_TEMPLATE_DIR clean memfs template
-set(DATA_TEMPLATE_DIR  ${DEPS}/template_filesystem)
-# DATA_SRC_DIR folder is used to collect all files that need to be packaged
-set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
-# DATA_PRE_DIR folder is used to build gems  that need to be packaged
-set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
-# DATA_BIN_DIR folder is used to create packaged filesystem
-set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
-# DATA_BIN_FILE is packaged filesystem itself
-set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
-# TBD target binary directory
-set (TBD ${DATA_SRC_DIR}/bin)
-# TLD target "local" directory
-set (TLD ${DATA_SRC_DIR}/local)
-# TGD target Gem directory
-set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
-
-# This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
-set(FS_MOUNT_POINT "/__tebako_memfs__")
-set(FS_APP_HOME "/.")
-
-
-# ...................................................................
 # External projects
 
 def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
@@ -252,6 +225,44 @@ if(CROSS_COMPILING)
 endif()
 message(STATUS "Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
 
+
+# ...................................................................
+# Filesystem locations
+
+set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
+# Project resources that are used during CMake configuration stage
+set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
+# DATA_TEMPLATE_DIR clean memfs template
+set(DATA_TEMPLATE_DIR  ${DEPS}/template_filesystem)
+# DATA_SRC_DIR folder is used to collect all files that need to be packaged
+set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
+# DATA_PRE_DIR folder is used to build gems  that need to be packaged
+set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
+# DATA_BIN_DIR folder is used to create packaged filesystem
+set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
+# DATA_BIN_FILE is packaged filesystem itself
+set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+# TBD target binary directory
+set (TBD ${DATA_SRC_DIR}/bin)
+# TLD target "local" directory
+set (TLD ${DATA_SRC_DIR}/local)
+# TGD target Gem directory
+set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
+
+# This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
+set(FS_MOUNT_POINT "/__tebako_memfs__")
+set(FS_APP_HOME "/.")
+
+message("Packaging specification:")
+message(STATUS "memfs template directory:  ${DATA_TEMPLATE_DIR}")
+message(STATUS "gem build directory:       ${DATA_PRE_DIR}")
+message(STATUS "memfs source directory:    ${DATA_SRC_DIR}")
+message(STATUS "memfs binary directory:    ${TBD}")
+message(STATUS "memfs 'local' directory:   ${TLD}")
+message(STATUS "memfs GEM_HOME:            ${TGD}")
+message(STATUS "packaged memfs file:       ${DATA_BIN_FILE}")
+message(STATUS "memfs mount point:         ${FS_MOUNT_POINT}")
+message(STATUS "application starts at:     ${FS_APP_HOME}")
 
 # ...................................................................
 # incbin
@@ -404,9 +415,9 @@ else(${SETUP_MODE})
         message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
         add_custom_target(source_filesystem
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem build ${GEMSPEC}
+            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install *.gem --verbose --no-document
+            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND}  -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${TBD}/gem install *.gem --verbose --no-document --install-dir ${TGD} --bindir ${TBD}
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
@@ -448,7 +459,7 @@ else(${SETUP_MODE})
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(source_filesystem
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-        COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install ${GEM} --verbose --no-document
+        COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} gem install ${GEM} --verbose --no-document --install-dir ${TGD} --bindir ${TBD}
         COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
