@@ -51,39 +51,6 @@ restore_and_save "$1/ext/Setup"
 "$gSed" -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
 
 # ....................................................
-# WE DO NOT ACCEPT OUTSIDE GEM PATHS
-# ruby/lib/rubygems/path_support.rb
-restore_and_save "$1/lib/rubygems/path_support.rb"
-
-re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
-# shellcheck disable=SC2251
-! IFS= read -r -d '' sbst << EOM
-    @home = env\["GEM_HOME"\] || Gem.default_dir
-# -- Start of tebako patch --
-    unless env\['TEBAKO_PASS_THROUGH'\]
-      @home = Gem.default_dir unless @home.index('\/__tebako_memfs__') == 0
-    end
-# -- End of tebako patch --
-EOM
-
-"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
-
-re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
-# shellcheck disable=SC2251
-! IFS= read -r -d '' sbst << EOM
-    @path = split_gem_path env\["GEM_PATH"\], @home
-# -- Start of tebako patch --
-    unless env\['TEBAKO_PASS_THROUGH'\]
-      @path.keep_if do |xpath|
-        xpath.index('\/__tebako_memfs__') == 0
-      end
-    end
-# -- End of tebako patch --
-EOM
-
-"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
-
-# ....................................................
 # This is something that I cannnot explain
 # (this patch does not seem related to static compilation)
 # ruby/ext/bigdecimal/bigdecimal.h
