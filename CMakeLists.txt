@@ -142,8 +142,8 @@ if(TEBAKO_BUILD_TARGET)
       endif()
       add_compile_options(--target=${TEBAKO_BUILD_TARGET})
       add_link_options(--target=${TEBAKO_BUILD_TARGET})
-      set(XLDFLAGS " -framework CoreFoundation -framework Security ")
-      set(XCCFLAGS " --target=${TEBAKO_BUILD_TARGET}  -D_XOPEN_SOURCE=1 ")
+      set(XLDFLAGS " -F/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/ -framework CoreFoundation -framework Security ")
+      set(XCCFLAGS " --target=${TEBAKO_BUILD_TARGET}  -D_XOPEN_SOURCE=1 -arch ${CMAKE_OSX_ARCHITECTURES} ")
       set(MKDWARFS ${DEPS}/host/bin/mkdwarfs)
       set(DWARFS_WR_OPTION "-DTEBAKO_BUILD_TARGET=${TEBAKO_BUILD_TARGET}")
       set(CROSS_COMPILING ON)
@@ -250,11 +250,11 @@ set (TLD ${DATA_SRC_DIR}/local)
 set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
 
 if(CROSS_COMPILING)
-  set(GEM_COMMAND ${TBD}/gem)
-  set(BUNDLE_COMMAND ${TBD}/bundle)
-else(CROSS_COMPILING)
   set(GEM_COMMAND ruby ${TBD}/gem)
   set(BUNDLE_COMMAND ruby ${TBD}/bundle)
+else(CROSS_COMPILING)
+  set(GEM_COMMAND ${TBD}/gem)
+  set(BUNDLE_COMMAND ${TBD}/bundle)
 endif(CROSS_COMPILING)
 
 # This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
@@ -453,7 +453,7 @@ else(${SETUP_MODE})
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config --local deployment true 
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} update --bundler
       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
-      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} CFLAGS=${XCCFLAGS} ${BUNDLE_COMMAND} install --jobs=4
+      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} install --jobs=4
       DEPENDS clean_filesystem
     )
   elseif(GLENGTH GREATER 0)
@@ -467,7 +467,7 @@ else(${SETUP_MODE})
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(source_filesystem
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-        COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} TEBAKO_PASS_THROUGH=1 ${GEM_COMMAND} install ${GEM} --verbose --no-document --install-dir ${TGD} --bindir ${TBD}
+        COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${GEM_COMMAND} install ${GEM} --verbose --no-document --install-dir ${TGD} --bindir ${TBD}
         COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                    ${CMAKE_COMMAND} -E false )
