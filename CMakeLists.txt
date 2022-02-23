@@ -452,7 +452,7 @@ else(${SETUP_MODE})
       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local bin ${TBD}
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config --local deployment true 
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} update --bundler
-      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
+#      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} install --jobs=4
       DEPENDS clean_filesystem
     )
