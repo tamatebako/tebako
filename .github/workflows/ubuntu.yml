@@ -64,7 +64,7 @@ env:
   RUBY_VER:   "2.7.5"
   RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
 # Bundler version
-  BUNDLER_VER: "2.2.31"
+  BUNDLER_VER: "2.2.3"
 # Cache version
   CACHE_VER: 07
   DEBIAN_FRONTEND: "noninteractive"
