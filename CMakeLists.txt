@@ -253,8 +253,8 @@ if(CROSS_COMPILING)
   set(GEM_COMMAND ruby ${TBD}/gem)
   set(BUNDLE_COMMAND ruby ${TBD}/bundle)
 else(CROSS_COMPILING)
-  set(GEM_COMMAND ${TBD}/gem)
-  set(BUNDLE_COMMAND ${TBD}/bundle)
+  set(GEM_COMMAND ${TBD}/ruby ${TBD}/gem)
+  set(BUNDLE_COMMAND ${TBD}/ruby ${TBD}/bundle)
 endif(CROSS_COMPILING)
 
 # This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
@@ -452,7 +452,7 @@ else(${SETUP_MODE})
       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local bin ${TBD}
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config --local deployment true 
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} update --bundler
-#      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
+      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} install --jobs=4
       DEPENDS clean_filesystem
     )
