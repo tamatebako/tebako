@@ -128,7 +128,6 @@ $p_libffi $p_libncurses -ljemalloc -lc++
 # -- End of tebako patch --
 EOM
 
-# shellcheck disable=SC2251
   "$gSed" -i "0,/$re/s||${mLibs//$'\n'/"\\n"}|g" "$1/template/Makefile.in"
 
   re="LIBS = @LIBS@ \$(EXTLIBS)"
@@ -146,7 +145,7 @@ EOM
   restore_and_save "$1/configure"
 
   re="   LDFLAGS=\"\$LDFLAGS \$opt\""
-
+# shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
 		LDFLAGS=\"\$LDFLAGS -Wl,\$opt\"
