@@ -61,7 +61,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: 03
+  CACHE_VER: 04
 
 jobs:
   setup:
@@ -161,3 +161,4 @@ jobs:
             test-15-package
             test-18-package
             test-19-package
+            test-20-package

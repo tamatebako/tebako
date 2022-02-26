@@ -108,7 +108,8 @@ press_runner_with_error() {
 #  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [Expected error at build step]
 #  18. Ruby project (no gemspec, with gemfile)
 #  19. Ruby project (no gemspec, with gemfile, with native extension)
-#  -20. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
+#  20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
+#  -30. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
 
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
@@ -328,7 +329,15 @@ test_tebako_press_19() {
    package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
 }
 
-#    - name: Test20 -AUC - Check that it is possible to verify content of packaged fs
+# ......................................................................
+# 20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
+test_tebako_press_20() {
+   echo "==> Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)"
+   press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
+   package_runner "./test-20-package" "Hello! SevenZipRuby welcomes you to the magic world of ruby gems."
+}
+
+#    - name: Test30 -AUC - Check that it is possible to verify content of packaged fs
 #      run: |
 #        ${{github.workspace}}/bin/tebako press                    \
 #              --root="${{github.workspace}}/tests/test-01"        \

@@ -40,6 +40,12 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   gSed="sed"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   gSed="gsed"
+  tBrew="${3:-"guess"}"
+  if [[ "$tBrew" == "guess" ]]; then
+    tBrew="brew"
+  else
+    tBrew="$tBrew/bin/brew"
+  fi  
 else
   exit 1
 fi
@@ -83,14 +89,14 @@ EOM
 "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
 
 # ....................................................
-# Pin tebako static build libraries
 # Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
 # Ruby 2.6.3:  template is in 'ruby/Makefile.in'
-restore_and_save "$1/template/Makefile.in"
 
 if [[ "$OSTYPE" == "darwin"* ]]; then
 
-re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(EXTLIBS) \$(OUTFLAG)\$@"
+  restore_and_save "$1/template/Makefile.in"
+
+  re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(EXTLIBS) \$(OUTFLAG)\$@"
 # Ruby 2.7.5
 # If cross compile sets XLDFLAGS to '-framework CoreFoundation Security'
 # it is wrong syntax
@@ -101,6 +107,53 @@ re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \
 # -- End of tebako patch --
 EOM
 
-"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+  "$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+
+# Pin tebako static build libraries
+  re="MAINLIBS = @MAINLIBS@"
+
+# ....................................................
+  p_libssl="$($tBrew --prefix openssl@1.1)/lib/libssl.a"
+  p_libcrypto="$($tBrew --prefix openssl@1.1)/lib/libcrypto.a"
+  p_libz="$($tBrew --prefix zlib)/lib/libz.a"
+  p_libgdbm="$($tBrew --prefix gdbm)/lib/libgdbm.a"
+  p_libreadline="$($tBrew --prefix readline)/lib/libreadline.a"
+  p_libffi="$($tBrew --prefix libffi)/lib/libffi.a"
+  p_libncurses="$($tBrew --prefix ncurses)/lib/libncurses.a"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' mLibs << EOM
+# -- Start of tebako patch --
+MAINLIBS = $p_libssl $p_libcrypto $p_libz $p_libgdbm $p_libreadline \\\\
+$p_libffi $p_libncurses -ljemalloc -lc++
+# -- End of tebako patch --
+EOM
+
+# shellcheck disable=SC2251
+  "$gSed" -i "0,/$re/s||${mLibs//$'\n'/"\\n"}|g" "$1/template/Makefile.in"
+
+  re="LIBS = @LIBS@ \$(EXTLIBS)"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+# -- Start of tebako patch --
+LIBS = @LIBS@
+# -- End of tebako patch --
+EOM
+#
+
+  "$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in" 
+
+# ....................................................
+  restore_and_save "$1/configure"
+
+  re="   LDFLAGS=\"\$LDFLAGS \$opt\""
+
+! IFS= read -r -d '' sbst << EOM
+# -- Start of tebako patch --
+		LDFLAGS=\"\$LDFLAGS -Wl,\$opt\"
+# -- End of tebako patch --
+EOM
+
+  "$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/configure"
+
 
 fi

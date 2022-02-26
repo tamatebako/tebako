@@ -93,7 +93,8 @@ press_runner_with_error() {
 #  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [Expected error at build step]
 #  18. Ruby project (no gemspec, with gemfile)                                                              [Positive scenario -- build only]
 #  19. Ruby project (no gemspec, with gemfile, with native extension)                                       [Positive scenario -- build only]
-#  -20. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
+#  20. Ruby project (no gemspec, with gemfile, with seve_zip_ryby gem)                                      [Positive scenario -- build only]
+#  -30. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
 
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
@@ -301,10 +302,17 @@ test_tebako_press_18() {
 
 # ......................................................................
 # 19. Ruby project (no gemspec, with gemfile, with native extension)
-#test_tebako_press_19() {
-#   echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
-#   press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
-#}
+test_tebako_press_19() {
+   echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
+   press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
+}
+
+# ......................................................................
+# 20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
+test_tebako_press_20() {
+   echo "==> Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)"
+   press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
+}
 
 #    - name: Test20 -AUC - Check that it is possible to verify content of packaged fs
 #      run: |
