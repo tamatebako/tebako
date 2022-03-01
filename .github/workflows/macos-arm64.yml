@@ -138,7 +138,7 @@ jobs:
         with:
           repository: kward/shunit2
           path: ${{github.workspace}}/tests/shunit2
-          fetch-depth: 1        
+          fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
 # show cmake output aka verbose (yes/no)

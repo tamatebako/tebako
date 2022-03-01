@@ -35,7 +35,7 @@ on:
       - .github/workflows/macos.yml
       - .github/workflows/macos-arm64.yml
       - ci-scripts/**
-      - tests/scripts/functional-tests-cross.sh     
+      - tests/scripts/functional-tests-cross.sh
   pull_request:
     branches: [ main ]
     paths-ignore:

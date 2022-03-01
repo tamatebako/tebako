@@ -151,7 +151,7 @@ if(TEBAKO_BUILD_TARGET)
       message(${CMAKE_HOST_SYSTEM_NAME})
       message(FATAL_ERROR "Cross-compilation is supported on MacOS only")
     endif(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
-  endif(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")  
+  endif(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")
 endif(TEBAKO_BUILD_TARGET)
 
 set(GNU_BASH "bash")
@@ -168,7 +168,7 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
   if(CROSS_COMPILING)
   string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${XCCFLAGS})
     string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${RUBY_TARGET_BREW_INCLUDE})
-    string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${XLDFLAGS})   
+    string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${XLDFLAGS})
     string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${RUBY_TARGET_BREW_LIB})
   else(CROSS_COMPILING)
     string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${RUBY_BUILD_BREW_INCLUDE})
@@ -354,7 +354,7 @@ ExternalProject_Add(${RUBY_PRJ}
                     --prefix=${DATA_SRC_DIR}
                     CFLAGS=${RUBY_CFLAGS}
                     LDFLAGS=${RUBY_LDFLAGS}
-                    ${HOST_OPTION}                    
+                    ${HOST_OPTION}
   INSTALL_COMMAND ""
 )
 
@@ -397,7 +397,7 @@ add_custom_target(clean_filesystem ALL
 )
 
 if (${SETUP_MODE})
-  add_custom_target(source_filesystem COMMAND ${CMAKE_COMMAND} -E true DEPENDS clean_filesystem)    
+  add_custom_target(source_filesystem COMMAND ${CMAKE_COMMAND} -E true DEPENDS clean_filesystem)
 else(${SETUP_MODE})
   file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
   file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
@@ -418,7 +418,7 @@ else(${SETUP_MODE})
         message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         add_custom_target(source_filesystem
-            COMMAND ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${GEM_COMMAND} install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD} --bindir ${TBD}        
+            COMMAND ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${GEM_COMMAND} install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD} --bindir ${TBD}
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
             COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} install
             COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} exec ${GEM_COMMAND} build ${GEMSPEC}
@@ -464,7 +464,7 @@ else(${SETUP_MODE})
         COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TSD}/rbconfig.rb ${BREW_PREFIX}/lib/ruby/site_ruby
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local build.ffi --disable-system-libffi
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local bin ${TBD}
-#      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config --local deployment true 
+#      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config --local deployment true
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} update --bundler
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} install --jobs=4
@@ -481,7 +481,7 @@ else(${SETUP_MODE})
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} install --jobs=4
         DEPENDS clean_filesystem
       )
-    endif(CROSS_COMPILING)  
+    endif(CROSS_COMPILING)
   elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile
     list(GET GEMS 0 GEM)
@@ -558,7 +558,7 @@ endif (${START_WITH_PACKAGED_FILESYSTEM})
 
 if(CROSS_COMPILING)
   add_dependencies(packaged_filesystem ${DWARFS_HOST_PRJ})
-endif(CROSS_COMPILING)  
+endif(CROSS_COMPILING)
 
 set(CMAKE_CXX_FLAGS ${RUBY_CFLAGS})
 
@@ -587,7 +587,7 @@ ExternalProject_Add(${RUBY_TARGET_PRJ}
                     --with-static-linked-ext
                     --srcdir=${RUBY_TARGET_SOURCE_DIR}
                     --prefix=${DEPS}/tmp
-                    CFLAGS=${RUBY_CFLAGS} 
+                    CFLAGS=${RUBY_CFLAGS}
                     LDFLAGS=${RUBY_LDFLAGS}
                     ${HOST_OPTION}
   INSTALL_COMMAND ""
@@ -603,7 +603,7 @@ add_custom_target(setup
 
 if(NOT ${SETUP_MODE})
   add_custom_target(tebako ALL
-    COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_TARGET_BINARY_DIR} make main 
+    COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_TARGET_BINARY_DIR} make main
     COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_TARGET_BINARY_DIR}/ruby ${APP_NAME}
     COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
     DEPENDS setup
