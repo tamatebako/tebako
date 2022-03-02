@@ -178,8 +178,9 @@ tebako/bin/tebako setup
 
 [source,sh]
 ----
-<install-folder>/bin/tebako setup [-p |--prefix=<tebako-root-folder>] [-t|--target=[guess|arm64-apple-macos11|x86_64-apple-macos11]
-                                                                      [-b|--target-homebrew=<homebrew for target architecture>]
+<install-folder>/bin/tebako setup [-p |--prefix=<tebako-root-folder>] 
+                                  [-t|--target=[guess|arm64-apple-macos11|x86_64-apple-macos11]
+                                  [-b|--target-homebrew=<homebrew for target architecture>]
 ----
 
 Collect and builds Tebako packager and install them for Tebako packager at
@@ -200,13 +201,13 @@ folder (`<tebako-root-folder>`).
 
 [source,sh]
 ----
-<install-folder>/bin/tebako press \
-  [-p |--prefix=<tebako-root-folder>] \
-  -r|--root=<project-root-folder> \
-  [-e|--entry-point=<entry-point>] \
-  [-o |--output=<packaged file name>] \
-  [-t|--target=[guess|arm64-apple-macos11|x86_64-apple-macos11] \
-  [-b|--target-homebrew=<homebrew for target architecture>]
+<install-folder>/bin/tebako press      \
+  [-p | --prefix=<tebako-root-folder>] \
+   -r | --root=<project-root-folder>   \
+   -e | --entry-point=<entry-point>    \
+  [-o | --output=<packaged file name>] \
+  [-t | --target=[guess|arm64-apple-macos11|x86_64-apple-macos11]  \
+  [-b | --target-homebrew=<homebrew for target architecture>]
 ----
 
 Where:
