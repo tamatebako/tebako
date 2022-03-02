@@ -23,7 +23,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-# This test is inspired packed-mn
+# This test is inspired by packed-mn
 # https://github.com/metanorma/packed-mn
 
 require 'rubygems'

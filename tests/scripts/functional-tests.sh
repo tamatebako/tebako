@@ -109,6 +109,7 @@ press_runner_with_error() {
 #  18. Ruby project (no gemspec, with gemfile)
 #  19. Ruby project (no gemspec, with gemfile, with native extension)
 #  20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
+#  21. Ruby project (no gemspec, with gemfile, with emf2svg gem)
 #  -30. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
 
 # ......................................................................
@@ -335,6 +336,14 @@ test_tebako_press_20() {
    echo "==> Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)"
    press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
    package_runner "./test-20-package" "Hello! SevenZipRuby welcomes you to the magic world of ruby gems."
+}
+
+# ......................................................................
+# 21. Ruby project (no gemspec, with gemfile, with emf2svg gem)
+test_tebako_press_21() {
+   echo "==> Ruby project (no gemspec, with gemfile, with emf2svg gem)"
+   press_runner "${DIR_TESTS}/test-21" "tebako-test-run.rb" "test-21-package"
+   package_runner "./test-21-package" "Hello! Emf2svg welcomes you to the magic world of ruby gems."
 }
 
 #    - name: Test30 -AUC - Check that it is possible to verify content of packaged fs
