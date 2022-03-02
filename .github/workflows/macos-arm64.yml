@@ -115,7 +115,7 @@ jobs:
 # (libarchive depends on ibb2 lz4 xz zstd zlib)
 # (boost depends on icu4c)
 # (glog depends on gflags)
-      - name: Install packages [for target host architecture]
+      - name: Install packages [for target system architecture]
         if: steps.cache.outputs.cache-hit != 'true'
         run: |
           ${{ env.BREW_HOME }}/bin/bash ci-scripts/arm-brew-setup.sh ${{ env.LEVEL_UP }}
