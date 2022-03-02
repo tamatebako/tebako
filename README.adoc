@@ -178,11 +178,17 @@ tebako/bin/tebako setup
 
 [source,sh]
 ----
-<install-folder>/bin/tebako setup [-p |--prefix=<tebako-root-folder>]
+<install-folder>/bin/tebako setup [-p |--prefix=<tebako-root-folder>] [-t|--target=[guess|arm64-apple-macos11|x86_64-apple-macos11]
+                                                                      [-b|--target-homebrew=<homebrew for target architecture>]
 ----
 
 Collect and builds Tebako packager and install them for Tebako packager at
 `<tebako root folder>` (defaults to the install folder).
+
+Cross-compile options:
+target: setting this value to anything except 'guess' activates cross-compilation. 
+        Valid values are: arm64-apple-macos11 or x86_64-apple-macos11.  
+target-homebrew: the directory where homebrew for target architecture is installed
 
 Tebako supports several configurations at a single system given that their root
 directories differ.
@@ -198,7 +204,9 @@ folder (`<tebako-root-folder>`).
   [-p |--prefix=<tebako-root-folder>] \
   -r|--root=<project-root-folder> \
   [-e|--entry-point=<entry-point>] \
-  [-o |--output=<packaged file name>]
+  [-o |--output=<packaged file name>] \
+  [-t|--target=[guess|arm64-apple-macos11|x86_64-apple-macos11] \
+  [-b|--target-homebrew=<homebrew for target architecture>]
 ----
 
 Where:
@@ -266,8 +274,8 @@ bin/tebako clean --root='~/projects/myproject'
 | 6    | `tebako press` without mandatory `--entry-point` option
 | 7    | Unsupported operating system
 | 8    | Could not find gnu getopts     
-| 9    | Cross build for 'arm64-apple-macos11' is possible on MacOS only
-| 10   | Invalid target option. The only cross build target supported is 'arm64-apple-macos11'
+| 9    | Cross compilation is supported on MacOS only
+| 10   | Invalid target option. Valid options are: 'arm64-apple-macos11' or 'x86_64-apple-macos11'
 | 11   | Invalid log level. Known values are 'error', 'warn', 'debug', 'trace'
 | 101  | `tebako setup` failed at configuration step
 | 102  | `tebako setup` failed at build step
