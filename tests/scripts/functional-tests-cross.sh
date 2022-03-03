@@ -99,7 +99,7 @@ press_runner_with_error() {
 
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
-=begin
+
 test_CLI_help() {
   if [ "${VERBOSE}" == "yes" ]; then
     "$DIR_BIN/tebako" --help | tee tebako_test.log
@@ -206,7 +206,7 @@ test_tebako_press_04() {
 #  05. Simple Ruby script, absolute path to root absolute path to entry point, entry point not within root
 test_tebako_press_05() {
    echo "==> simple Ruby script, absolute path to root absolute path to entry point, not within root"
-   press_runner_with_error "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package" 103 "'tebako press' configure step failed"
+###   press_runner_with_error "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package" 103 "'tebako press' configure step failed"
 }
 
 # ......................................................................
@@ -235,93 +235,93 @@ test_tebako_press_05() {
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 test_tebako_press_09() {
    echo "==> Ruby gem (xxx.gem, no gemspec, no gemfile)"
-   press_runner "${DIR_TESTS}/test-09" "tebako-test-run.rb" "test-09-package"
+###   press_runner "${DIR_TESTS}/test-09" "tebako-test-run.rb" "test-09-package"
 }
 
 # ......................................................................
 #  10. Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist
 test_tebako_press_10() {
    echo "==> Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist"
-   press_runner_with_error "${DIR_TESTS}/test-09" "test-does-not-exist.rb" "test-10-package" 104 "'tebako press' build step failed"
+###   press_runner_with_error "${DIR_TESTS}/test-09" "test-does-not-exist.rb" "test-10-package" 104 "'tebako press' build step failed"
 }
 
 # ......................................................................
 #  11. Ruby gem (no gemfile, with gemspec)
 test_tebako_press_11() {
    echo "==> Ruby gem (no gemfile, with gemspec)"
-   press_runner "${DIR_TESTS}/test-11" "tebako-test-run.rb" "test-11-package"
+###   press_runner "${DIR_TESTS}/test-11" "tebako-test-run.rb" "test-11-package"
 }
 
 # ......................................................................
 #  12. Ruby gem (no gemfile, with gemspec), multiple gemspecs
 test_tebako_press_12() {
    echo "==> Ruby gem (no gemfile, with gemspec), multiple gemspecs"
-   press_runner_with_error "${DIR_TESTS}/test-12" "tebako-test-run.rb" "test-12-package" 103 "'tebako press' configure step failed"
+###   press_runner_with_error "${DIR_TESTS}/test-12" "tebako-test-run.rb" "test-12-package" 103 "'tebako press' configure step failed"
 }
 
 # ......................................................................
 #  13. Ruby gem (no gemfile, with gemspec), gemspec error
 test_tebako_press_13() {
    echo "==>  Ruby gem (no gemfile, with gemspec), gemspec error"
-   press_runner_with_error "${DIR_TESTS}/test-13" "tebako-test-run.rb" "test-13-package" 104 "'tebako press' build step failed"
+###   press_runner_with_error "${DIR_TESTS}/test-13" "tebako-test-run.rb" "test-13-package" 104 "'tebako press' build step failed"
 }
 
 # ......................................................................
 #  14. Ruby gem (no gemfile, with gemspec), entry point does not exist
 test_tebako_press_14() {
    echo "==>  Ruby gem (no gemfile, with gemspec), entry point does not exist"
-   press_runner_with_error "${DIR_TESTS}/test-14" "test-does-not-exist.rb" "test-14-package" 103 "'tebako press' configure step failed"
+###   press_runner_with_error "${DIR_TESTS}/test-14" "test-does-not-exist.rb" "test-14-package" 103 "'tebako press' configure step failed"
 }
 
 # ......................................................................
 #  15. Ruby gem (with gemspec, with gemfile)
 test_tebako_press_15() {
    echo "==> Ruby gem (with gemspec, with gemfile)"
-#   press_runner "${DIR_TESTS}/test-15" "tebako-test-run.rb" "test-15-package"
+###   press_runner "${DIR_TESTS}/test-15" "tebako-test-run.rb" "test-15-package"
 }
 
 # ......................................................................
 # 16. Ruby gem (with gemspec, with gemfile), gemfile with error
 test_tebako_press_16() {
    echo "==> Ruby gem (with gemspec, with gemfile), gemfile with error"
-#   press_runner_with_error "${DIR_TESTS}/test-16" "tebako-test-run.rb" "test-16-package" 104 "'tebako press' build step failed"
+###   press_runner_with_error "${DIR_TESTS}/test-16" "tebako-test-run.rb" "test-16-package" 104 "'tebako press' build step failed"
 }
 
 # ......................................................................
 # 17. Ruby gem (with gemspec, with gemfile), entry point dows not exist
 test_tebako_press_17() {
    echo "==> Ruby gem (with gemspec, with gemfile), entry point dows not exist"
-#   press_runner_with_error "${DIR_TESTS}/test-15" "test-does-not-exist.rb" "test-17-package" 104 "'tebako press' build step failed"
+###   press_runner_with_error "${DIR_TESTS}/test-15" "test-does-not-exist.rb" "test-17-package" 104 "'tebako press' build step failed"
 }
 
 # ......................................................................
 # 18. Ruby project (no gemspec, with gemfile)
 test_tebako_press_18() {
    echo "==> Ruby project (no gemspec, with gemfile)"
-#   press_runner "${DIR_TESTS}/test-18" "tebako-test-run.rb" "test-18-package"
+###   press_runner "${DIR_TESTS}/test-18" "tebako-test-run.rb" "test-18-package"
 }
-=end
+
 # ......................................................................
 # 19. Ruby project (no gemspec, with gemfile, with native extension)
 test_tebako_press_19() {
    echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
    press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
 }
-=begin
+
 # ......................................................................
 # 20. Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)
 test_tebako_press_20() {
    echo "==> Ruby project (no gemspec, with gemfile, with seven_zip_ruby gem)"
-   press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
+###   press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
 }
 
 # ......................................................................
 # 21. Ruby project (no gemspec, with gemfile, with emf2svg gem)
 test_tebako_press_21() {
    echo "==> Ruby project (no gemspec, with gemfile, with emf2svg gem)"
-   press_runner "${DIR_TESTS}/test-21" "tebako-test-run.rb" "test-21-package"
+###   press_runner "${DIR_TESTS}/test-21" "tebako-test-run.rb" "test-21-package"
 }
-=end
+
 #    - name: Test20 -AUC - Check that it is possible to verify content of packaged fs
 #      run: |
 #        ${{github.workspace}}/bin/tebako press                    \
