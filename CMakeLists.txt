@@ -132,7 +132,7 @@ if(TEBAKO_BUILD_TARGET)
   if(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")
     if(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
       if(${TEBAKO_BUILD_TARGET} STREQUAL "arm64-apple-macos11")
-        set(HOST_OPTION --host=aarch64-apple-darwin --with-coroutine=ucontext --with-arch=arm64)
+        set(HOST_OPTION --host=arm-apple-darwin --with-coroutine=ucontext --with-arch=arm64)
         set(CMAKE_OSX_ARCHITECTURES arm64)
       elseif(${TEBAKO_BUILD_TARGET} STREQUAL "x86_64-apple-macos11")
         set(HOST_OPTION --host=x86_64-apple-darwin --with-coroutine=ucontext --with-arch=x86_64)
@@ -461,7 +461,8 @@ else(${SETUP_MODE})
         COMMAND ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${GEM_COMMAND} install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD} --bindir ${TBD}
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
         COMMAND ${CMAKE_COMMAND} -E make_directory ${BREW_PREFIX}/lib/ruby/site_ruby
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TSD}/rbconfig.rb ${BREW_PREFIX}/lib/ruby/site_ruby
+#        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TSD}/rbconfig.rb ${BREW_PREFIX}/lib/ruby/site_ruby
+        COMMAND ls -l ${BREW_PREFIX}/lib/ruby/site_ruby && cp ${TSD}/rbconfig.rb ${BREW_PREFIX}/lib/ruby/site_ruby && ls -l ${BREW_PREFIX}/lib/ruby/site_ruby
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local build.ffi --disable-system-libffi
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local bin ${TBD}
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config --local deployment true
