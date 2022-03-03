@@ -462,7 +462,7 @@ else(${SETUP_MODE})
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
         COMMAND ${CMAKE_COMMAND} -E make_directory ${BREW_PREFIX}/lib/ruby/site_ruby
 #        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TSD}/rbconfig.rb ${BREW_PREFIX}/lib/ruby/site_ruby
-        COMMAND ls -l ${BREW_PREFIX}/lib/ruby/site_ruby && cp ${TSD}/rbconfig.rb ${BREW_PREFIX}/lib/ruby/site_ruby && ls -l ${BREW_PREFIX}/lib/ruby/site_ruby
+        COMMAND ls -l ${BREW_PREFIX}/lib/ruby/site_ruby && cp ${TSD}/rbconfig.rb ${BREW_PREFIX}/lib/ruby/site_ruby && ls -l ${BREW_PREFIX}/lib/ruby/site_ruby && cat ${BREW_PREFIX}/lib/ruby/site_ruby/rbconfig.rb
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local build.ffi --disable-system-libffi
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local bin ${TBD}
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config --local deployment true
