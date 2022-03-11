@@ -62,11 +62,10 @@ else
   exit 7
 fi
 
-
 # -allow a command to fail with !’s side effect on errexit
 # -use return value from ${PIPESTATUS[0]}, because ! hosed $?
 # shellcheck disable=SC2251
-! "$gOpt" --test > /dev/null
+! "$gOpt" --test  > /dev/null
 if [[ ${PIPESTATUS[0]} -ne 4 ]]; then
     echo "'getopt --test' failed in this environment."
    exit 1
@@ -139,19 +138,20 @@ while true; do
 done
 
 # handle non-option arguments
-if [[ $# -ne 1 ]]; then
+if [[ $# != 1 ]]; then
     echo "Missing command"
     run_help
     exit 4
 fi
 
-cmk=$( which cmake )
-
-if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
-  echo "Failed to find cmake"
-  exit 5
-else
-  echo "Using cmake at $cmk"
+if [[ "$1" != "clean" ]]; then
+  ! cmk=$( which cmake )
+  if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
+    echo "Failed to find cmake"
+    exit 12
+  else
+    echo "Using cmake at $cmk"
+  fi
 fi
 
 if [[ "$prefix" == "-" ]]; then

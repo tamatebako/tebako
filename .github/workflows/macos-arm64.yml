@@ -27,6 +27,7 @@ name: MacOS-arm64
 
 on:
   push:
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'

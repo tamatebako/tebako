@@ -278,6 +278,7 @@ bin/tebako clean --root='~/projects/myproject'
 | 9    | Cross compilation is supported on MacOS only
 | 10   | Invalid target option. Valid options are: 'arm64-apple-macos11' or 'x86_64-apple-macos11'
 | 11   | Invalid log level. Known values are 'error', 'warn', 'debug', 'trace'
+| 12   | Could not find cmake
 | 101  | `tebako setup` failed at configuration step
 | 102  | `tebako setup` failed at build step
 | 103  | `tebako press` failed at configuration step
