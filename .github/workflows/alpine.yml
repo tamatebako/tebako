@@ -1,0 +1,369 @@
+# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+name: Alpine
+
+on:
+  push:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - .github/workflows/lint.yml
+      - .github/workflows/macos.yml
+      - .github/workflows/ubuntu.yml
+  pull_request:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - .github/workflows/lint.yml
+      - .github/workflows/macos.yml
+      - .github/workflows/ubuntu.yml
+  workflow_dispatch:
+
+env:
+# Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+# The folder for dwarfs and other dependenies
+  DEPS: deps
+# GitHub dependencies'
+  INCBIN_TAG:    "348e36b"
+  DWARFS_WR_TAG: "v0.1.11"
+# Tarball dependencies
+#  RUBY_VER:   "2.7.4" -- upgraded to 2.7.5 because of Ruby/clang issue [https://bugs.ruby-lang.org/issues/17865]
+#  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
+  RUBY_VER:   "2.7.5"
+  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
+# Bundler version
+  BUNDLER_VER: "2.2.3"
+# Cache version
+  CACHE_VER: 04
+  DEBIAN_FRONTEND: "noninteractive"
+  TZ: "Etc/UTC"
+
+jobs:
+  setup:
+    name: setup alpine-latest [CC ${{ matrix.env.CC }}]
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - CC: gcc
+            CXX: g++
+          - CC: clang
+            CXX: clang++
+    env: ${{ matrix.env }}
+    steps:
+      - name: Install packages
+        run: |
+          apk --no-cache --upgrade add build-base cmake git bash     \
+            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            binutils-dev libarchive-dev libevent-dev acl-dev sed     \
+            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
+            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            libevent-static openssl-libs-static lz4-static xz-dev    \
+            zlib-static libunwind-static acl-static tar libffi-dev   \
+            gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+            readline-dev readline-static
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Patch system includes
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: tools/ci-scripts/patch-system-includes.sh
+
+      - name: Build libjemalloc
+        run: |
+          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+          tar -xf jemalloc-5.2.1.tar.bz2
+          cd jemalloc-5.2.1
+          ./configure
+          make -j4
+          make install
+
+      - name: Create deps folder
+        run: mkdir ${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.DEPS }}
+          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: bin/tebako setup
+
+  tests-1:
+    needs: setup
+    name: tests-1 alpine-latest [CC ${{ matrix.env.CC }}]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - CC: gcc
+            CXX: g++
+          - CC: clang
+            CXX: clang++
+    env: ${{ matrix.env }}
+    steps:
+      - name: Install packages
+        run: |
+          apk --no-cache --upgrade add build-base cmake git bash     \
+            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            binutils-dev libarchive-dev libevent-dev acl-dev sed     \
+            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
+            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            libevent-static openssl-libs-static lz4-static xz-dev    \
+            zlib-static libunwind-static acl-static tar libffi-dev   \
+            gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+            readline-dev readline-static
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Patch system includes
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: tools/ci-scripts/patch-system-includes.sh
+
+      - name: Build libjemalloc
+        run: |
+          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+          tar -xf jemalloc-5.2.1.tar.bz2
+          cd jemalloc-5.2.1
+          ./configure
+          make -j4
+          make install
+
+      - name: Create deps folder
+        run: mkdir ${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.DEPS }}
+          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: Cache check
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Failed to upload cache"
+          false
+
+      - name: Checkout shell test framework
+        uses: actions/checkout@v2
+        with:
+          repository: kward/shunit2
+          path: tests/shunit2
+          fetch-depth: 1
+
+      - name: Run tebako tests (set no. 1)
+# show cmake output aka verbose (yes/no)
+        env:
+          VERBOSE: yes
+        run: tests/scripts/functional-tests.sh
+
+  tests-2:
+    needs: setup
+    name: tests-2 alpine-latest [CC ${{ matrix.env.CC }}]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - CC: gcc
+            CXX: g++
+          - CC: clang
+            CXX: clang++
+    env: ${{ matrix.env }}
+    steps:
+      - name: Install packages
+        run: |
+          apk --no-cache --upgrade add build-base cmake git bash     \
+            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            binutils-dev libarchive-dev libevent-dev acl-dev sed     \
+            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
+            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            libevent-static openssl-libs-static lz4-static xz-dev    \
+            zlib-static libunwind-static acl-static tar libffi-dev   \
+            gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+            readline-dev readline-static ruby
+
+      - name: Install bundler
+        run: gem install bundler
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: apk --no-cache --upgrade add clang
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Patch system includes
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: tools/ci-scripts/patch-system-includes.sh
+
+      - name: Build libjemalloc
+        run: |
+          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+          tar -xf jemalloc-5.2.1.tar.bz2
+          cd jemalloc-5.2.1
+          ./configure
+          make -j4
+          make install
+
+      - name: Create deps folder
+        run: mkdir ${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.DEPS }}
+          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: Cache check
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Failed to upload cache"
+          false
+
+      - name: Run tebako tests (set no. 2)
+        run: |
+          cd tests-2
+          bundle install
+          cd ..
+          ruby tests-2/tebako-test.rb
+
+  package-metanorma:
+    needs: setup
+    name: package-metanorma alpine-latest [CC ${{ matrix.env.CC }}]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - CC: gcc
+            CXX: g++
+          - CC: clang
+            CXX: clang++
+    env: ${{ matrix.env }}
+    steps:
+      - name: Install packages
+        run: |
+          apk --no-cache --upgrade add build-base cmake git bash     \
+            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            binutils-dev libarchive-dev libevent-dev acl-dev sed     \
+            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
+            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            libevent-static openssl-libs-static lz4-static xz-dev    \
+            zlib-static libunwind-static acl-static tar libffi-dev   \
+            gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+            readline-dev readline-static
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Patch system includes
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: tools/ci-scripts/patch-system-includes.sh
+
+      - name: Build libjemalloc
+        run: |
+          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+          tar -xf jemalloc-5.2.1.tar.bz2
+          cd jemalloc-5.2.1
+          ./configure
+          make -j4
+          make install
+
+      - name: Create deps folder
+        run: mkdir ${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.DEPS }}
+          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: Cache check
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Failed to upload cache"
+          false
+
+      - name: Checkout packed-mn
+        uses: actions/checkout@v3
+        with:
+          repository: metanorma/packed-mn
+          path: packed-mn
+
+      - name: Package metanorma
+        run: bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package

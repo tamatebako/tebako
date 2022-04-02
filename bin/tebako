@@ -44,7 +44,11 @@ echo "         Normally you do not need to do it since tebako packager optimizes
 }
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
-  echo "Setting up Linux environment"
+  echo "Setting up Linux gnu environment"
+  gOpt="getopt"
+  uFlags="${CXXFLAGS:=}"
+elif [[ "$OSTYPE" == "linux-musl"* ]]; then
+  echo "Setting up Linux musl environment"
   gOpt="getopt"
   uFlags="${CXXFLAGS:=}"
 elif [[ "$OSTYPE" == "darwin"* ]]; then

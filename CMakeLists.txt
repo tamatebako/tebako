@@ -29,7 +29,7 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 
-project(tebako_packager VERSION 0.3.3)
+project(tebako_packager VERSION 0.3.4)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -159,7 +159,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.1.8")
+def_ext_prj_g(DWARFS_WR "v0.1.11")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -169,9 +169,22 @@ else()
   set(BUNDLER_ANNOTATION "default")
 endif()
 
+find_library(_LIBNCURSES "libncurses.a")
+if(${_LIBNCURSES} STREQUAL "_LIBNCURSES-NOTFOUND")
+  message(STATUS "ncurses static library was not found, building locally")
+  set(WITH_NCURSES_BUILD ON)
+  def_ext_prj_t(NCURSES  "6.3" "97fc51ac2b085d4cde31ef4d2c3122c21abc217e9090a43a30fc5ec21684e059")
+else()
+  set(WITH_NCURSES_BUILD OFF)
+endif()
+
+
 message("................................................")
 message("Collecting packages:")
 message("ruby                        -  v${RUBY_VER} at  ${RUBY_SOURCE_DIR}")
+if(WITH_NCURSES_BUILD)
+  message("ncurses                     -  v${NCURSES_VER} at  ${NCURSES_SOURCE_DIR}")
+endif(WITH_NCURSES_BUILD)
 message("incbin                      -  @${INCBIN_TAG} at  ${INCBIN_SOURCE_DIR}")
 message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at  ${DWARFS_WR_SOURCE_DIR}")
 message("................................................")
@@ -217,14 +230,37 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     GIT_TAG ${DWARFS_WR_TAG}
     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
-#    UPDATE_COMMAND ""
+    UPDATE_COMMAND ""
     BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel 4
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
+               -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
                -DWITH_TESTS:BOOL=OFF
+               -DWITH_ASAN:BOOL=OFF
+               -DWITH_COVERAGE:BOOL=OFF
+               -DTEBAKO_BUILD_SCOPE=MKD
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
 )
+
+if(WITH_NCURSES_BUILD)
+  ExternalProject_Add(${NCURSES_PRJ}
+    PREFIX ${DEPS}
+    URL https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VER}.tar.gz
+    URL_HASH SHA256=${NCURSES_HASH}
+    DOWNLOAD_NO_PROGRESS true
+    SOURCE_DIR ${NCURSES_SOURCE_DIR}
+    UPDATE_COMMAND ""
+    CONFIGURE_COMMAND ${NCURSES_SOURCE_DIR}/configure
+                          --without-shared
+                          --without-cxx-shared
+                          --without-tests
+                          --prefix=${DEPS}
+                          --srcdir=${NCURSES_SOURCE_DIR}
+    BUILD_COMMAND     make
+    INSTALL_COMMAND   make install
+  )
+endif(WITH_NCURSES_BUILD)
 
 # ...................................................................
 # Ruby
@@ -237,7 +273,7 @@ endif()
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
 set(RUBY_C_FLAGS_2 "-pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
-set(PATCH_BASH "bash")
+set(GNU_BASH "bash")
 
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
   execute_process(
@@ -253,12 +289,31 @@ if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
   message("Using homebrew environment at ${BREW_PREFIX}")
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
-  set(PATCH_BASH "${BREW_PREFIX}/bin/bash")
+  set(GNU_BASH "${BREW_PREFIX}/bin/bash")
 endif()
 
 # https://stackoverflow.com/questions/46123505/assembling-with-gcc-causes-weird-relocation-error-with-regards-to-data
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -no-pie")
+endif()
+
+# https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
+# (patch #3)
+execute_process(
+  COMMAND "${GNU_BASH}"
+          "-c"
+          "echo \$OSTYPE"
+  RESULT_VARIABLE OSTYPE_RES
+  OUTPUT_VARIABLE OSTYPE_TXT
+)
+if(OSTYPE_RES EQUAL 0)
+  message(STATUS "OSTYPE: '${OSTYPE_TXT}'")
+else(OSTYPE_RES EQUAL 0)
+  message(FATAL_ERROR "Failed to detect OSTYPE: ${OSTYPE_TXT}")
+endif(OSTYPE_RES EQUAL 0)
+
+if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
+  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DENABLE_PATH_CHECK=0")
 endif()
 
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
@@ -273,7 +328,7 @@ ExternalProject_Add(${RUBY_PRJ}
    DOWNLOAD_NO_PROGRESS true
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
-   PATCH_COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+   PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
    CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
                      --enable-bundled-libyaml
                      --without-gmp
@@ -281,6 +336,7 @@ ExternalProject_Add(${RUBY_PRJ}
                      --enable-debug-env
                      --disable-install-doc
                      --with-static-linked-ext
+                     --with-out-ext=dbm,win32,win32ole
                      --srcdir=${RUBY_SOURCE_DIR}
                      --prefix=${DATA_SRC_DIR}
                      CFLAGS=${RUBY_C_FLAGS}
@@ -289,6 +345,9 @@ ExternalProject_Add(${RUBY_PRJ}
 )
 
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
+if(WITH_NCURSES_BUILD)
+  add_dependencies(${RUBY_PRJ} ${NCURSES_PRJ})
+endif(WITH_NCURSES_BUILD)
 
 if (${SETUP_MODE})
   add_custom_target(setup
@@ -320,7 +379,7 @@ else (${SETUP_MODE})
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
-           COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+           COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
            DEPENDS ${RUBY_PRJ}
   )
@@ -472,7 +531,7 @@ else (${SETUP_MODE})
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
   add_custom_target(patched_ruby
-     COMMAND ${PATCH_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
+     COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make
      DEPENDS setup tebako-fs
   )

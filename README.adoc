@@ -1,6 +1,7 @@
 = Tebako: an image packager
 
 image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
+image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["MacOS", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
 
@@ -30,7 +31,7 @@ In the future:
 
 The Tebako packager is tested on the following platforms:
 
-* Linux: Ubuntu 18.04; Ubuntu 20.04
+* Linux: Ubuntu 18.04; Ubuntu 20.04; Alpine 3.13
 * macOS: macOS 10.15 (Catalina); macOS 11.0 (Monterey)
 * Windows: TBD
 

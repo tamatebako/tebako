@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Copyright (c) 2021, 2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -45,6 +45,87 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
 -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
 -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:liblzma.a \\\\
+-l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl
+# -- End of tebako patch --
+EOM
+
+elif [[ "$OSTYPE" == "linux-musl"* ]]; then
+  gSed="sed"
+
+# Alpine-specific patches https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
+# -- Patch no. 1 --
+# https://github.com/docker-library/ruby/issues/196
+# https://bugs.ruby-lang.org/issues/14387#note-13 (patch source)
+# https://bugs.ruby-lang.org/issues/14387#note-16 ("Therefore ncopa's patch looks good for me in general." -- only breaks glibc which doesn't matter here)
+#	wget -O 'thread-stack-fix.patch' 'https://bugs.ruby-lang.org/attachments/download/7081/0001-thread_pthread.c-make-get_main_stack-portable-on-lin.patch'; \
+#	echo '3ab628a51d92fdf0d2b5835e93564857aea73e0c1de00313864a94a6255cb645 *thread-stack-fix.patch' | sha256sum --check --strict; \
+#	patch -p1 -i thread-stack-fix.patch; \
+#	rm thread-stack-fix.patch;
+  restore_and_save "$1/thread_pthread.c"
+  re="#if MAINSTACKADDR_AVAILABLE && !defined(get_main_stack)"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+\/* -- Start of tebako patch -- *\/
+#if defined(__linux__) \&\& !defined(__GLIBC__) \&\& defined(HAVE_GETRLIMIT)
+#ifndef PAGE_SIZE
+#include <unistd.h>
+#define PAGE_SIZE sysconf(_SC_PAGE_SIZE)
+#endif
+static int
+get_main_stack(void **addr, size_t *size)
+{
+    size_t start, end, limit, prevend = 0;
+    struct rlimit r;
+    FILE *f;
+    char buf[PATH_MAX+80], s[8];
+    int n;
+    STACK_GROW_DIR_DETECTION;
+    f = fopen(\"\/proc\/self\/maps\", \"re\");
+    if (!f)
+        return -1;
+    n = 0;
+    while (fgets(buf, sizeof buf, f)) {
+        n = sscanf(buf, \"%zx-%zx %*s %*s %*s %*s %7s\", \&start, \&end, s);
+        if (n >= 2) {
+            if (n == 3 \&\& strcmp(s, \"[stack]\") == 0)
+                break;
+            prevend = end;
+        }
+        n = 0;
+    }
+    fclose(f);
+    if (n == 0)
+        return -1;
+    limit = 100 << 20; \/* 100MB stack limit *\/
+    if (getrlimit(RLIMIT_STACK, \&r)==0 \&\& r.rlim_cur < limit)
+        limit = r.rlim_cur \& -PAGE_SIZE;
+    if (limit > end) limit = end;
+    if (prevend < end - limit) prevend = end - limit;
+    if (start > prevend) start = prevend;
+    *addr = IS_STACK_DIR_UPPER() ? (void *)start : (void *)end;
+    *size = end - start;
+    return 0;
+}
+#else
+\/* -- End of tebako patch -- *\/
+EOM
+
+  "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/thread_pthread.c"
+
+# -- Patch no. 2 -- not needed: isnan, isinf are detected correctly by configure script
+# the configure script does not detect isnan/isinf as macros
+#	export ac_cv_func_isnan=yes ac_cv_func_isinf=yes;
+
+#	-- Patch no. 3 --
+# hack in "ENABLE_PATH_CHECK" disabling to suppress:  "warning: Insecure world writable dir"
+# Applied in CMakeLists.txt
+
+# shellcheck disable=SC2251
+! IFS= read -r -d '' mLibs << EOM
+# -- Start of tebako patch --
+MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
+-l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
+-l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:liblzma.a \\\\
 -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl
 # -- End of tebako patch --
 EOM

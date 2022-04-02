@@ -33,6 +33,7 @@ on:
       - '**.md'
       - .github/workflows/lint.yml
       - .github/workflows/ubuntu.yml
+      - .github/workflows/alpine.yml
   pull_request:
     branches: [ main ]
     paths-ignore:
@@ -41,6 +42,7 @@ on:
       - '**.md'
       - .github/workflows/lint.yml
       - .github/workflows/ubuntu.yml
+      - .github/workflows/alpine.yml
   workflow_dispatch:
 
 env:
@@ -51,7 +53,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.1.8"
+  DWARFS_WR_TAG: "v0.1.11"
 # Tarball dependencies
 #  RUBY_VER:   "2.7.4" -- upgraded to 2.7.5 because of Ruby/clang issue [https://bugs.ruby-lang.org/issues/17865]
 #  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
@@ -60,7 +62,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: 01
+  CACHE_VER: 04
 
 jobs:
   setup:
@@ -84,7 +86,7 @@ jobs:
           xcode-version: '12.4'
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -131,7 +133,7 @@ jobs:
           xcode-version: '12.4'
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -159,7 +161,7 @@ jobs:
           false
 
       - name: Checkout shell test framework
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: kward/shunit2
           path: ${{github.workspace}}/tests/shunit2
@@ -207,7 +209,7 @@ jobs:
           xcode-version: '12.4'
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -253,7 +255,7 @@ jobs:
     runs-on: macos-11.0
     steps:
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -288,7 +290,7 @@ jobs:
           xcode-version: '12.4'
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -316,7 +318,7 @@ jobs:
           false
 
       - name: Checkout packed-mn
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: metanorma/packed-mn
           path: ${{github.workspace}}/packed-mn

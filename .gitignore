@@ -50,6 +50,7 @@ include/tebako-version.h
 
 # Test artifacts
 tests/shunit2
+tests-2/Gemfile.lock
 *-*-package
 metanorma-package
 tests/test-11/tebako-test-0.0.1.gem
