@@ -27,8 +27,8 @@
 # https://github.com/metanorma/packed-mn
 
 require 'rubygems'
-require 'bundler/setup'
 require 'tempfile'
+require 'pathname'
 
 COMPILER_MEMFS = '/__tebako_memfs__'
 

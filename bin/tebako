@@ -92,7 +92,7 @@ fi
 # read getopt’s output this way to handle the quoting right:
 eval set -- "$PARSED"
 
-prefix=- root=- entryPoint=- packageName=- logLevel="error" target="guess" homeBrew="guess"
+prefix=- root=- entryPoint=- packageName=- logLevel="error" target="guess" homeBrew="guess" homeBrewD=""
 # now enjoy the options in order and nicely split until we see --
 while true; do
     case "$1" in
@@ -191,6 +191,7 @@ esac
 
 if [[ "$homeBrew" != "guess" ]];  then
   homeBrew="$( cd "$homeBrew" && pwd )"
+  homeBrewD="-DTARGET_HOMEBREW=$homeBrew"
 fi
 
 export CC=${CC:-gcc}
@@ -206,7 +207,7 @@ case "$1" in
           -DDEPS:STRING="$prefix/deps"    \
           -DSETUP_MODE:BOOLEAN=ON         \
           -DTEBAKO_BUILD_TARGET="$target" \
-          -DTARGET_HOMEBREW="$homeBrew"    \
+          "$homeBrewD"                    \
           -G "Unix Makefiles"             \
           -S "$prefix"                    \
           -B "$prefix/output"	 && rc=$? || rc=$?
@@ -251,7 +252,7 @@ case "$1" in
               -DPCKG:STRING="$packageName"     \
               -DLOG_LEVEL:STRING="$logLevel"   \
               -DTEBAKO_BUILD_TARGET="$target"  \
-              -DTARGET_HOMEBREW="$homeBrew"    \
+              "$homeBrewD"                     \
               -DSETUP_MODE:BOOLEAN=OFF         \
               -G "Unix Makefiles"              \
               -S "$prefix"                     \
