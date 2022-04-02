@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -38,6 +38,9 @@ restore_and_save() {
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   gSed="sed"
+elif [[ "$OSTYPE" == "linux-musl"* ]]; then
+  gSed="sed"
+  restore_and_save "$1/thread_pthread.c"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   gSed="gsed"
 else

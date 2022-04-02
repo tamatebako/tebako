@@ -1,4 +1,4 @@
-# Copyright (c) 2021,2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -246,25 +246,18 @@ class TestTebako < MiniTest::Test
 
                 out, st =   if RbConfig::CONFIG["host_os"] =~ /darwin/
                               Open3.capture2("otool -L #{tempdirname}/#{package}")
-                            else
+                            else # linux assumed
                               Open3.capture2("ldd #{tempdirname}/#{package}")
                             end
                 assert_equal 0, st.exitstatus
 
-#   Expecting no more then 7 references to shared libraries
-#   linux-vdso.so
-#   libpthread.so
-#   libdl.so
-#   libc.so
-#   libm.so
-#   librt.so
-#   /lib64/ld-linux-x86-64.so
-
-                libs =  if RbConfig::CONFIG["host_os"] =~ /darwin/
-                          ["Security.framework", "Foundation.framework", "CoreFoundation.framework", "libSystem", "libc++", "launcher-package-package:"]
+                libs =  if RbConfig::CONFIG["target_os"] =~ /darwin/
+                            ["Security.framework", "Foundation.framework", "CoreFoundation.framework", "libSystem", "libc++", "launcher-package-package:"]
                           # This is the test program itself: 'launcher-package-package:'
-                        else
-                          ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
+                        elsif RbConfig::CONFIG["target_os"] =~ /linux-musl/
+                            ["libc.musl-x86_64.so", "ld-musl-x86_64.so"]
+                        else  # linux-gnu assumed
+                            ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
                         end
                 l = out.lines.map(&:strip)
                 l.delete_if {|ln| libs.any? { |lib| ln.include?(lib) } }
