@@ -132,10 +132,10 @@ if(TEBAKO_BUILD_TARGET)
   if(NOT ${TEBAKO_BUILD_TARGET} STREQUAL "guess")
     if(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
       if(${TEBAKO_BUILD_TARGET} STREQUAL "arm64-apple-macos11")
-        set(HOST_OPTION --host=aarch64-apple-darwin --with-coroutine=ucontext --with-arch=arm64)
+        set(HOST_OPTION --host=arm64-apple-darwin --with-coroutine=ucontext --with-arch=arm64 ) # --with-baseruby=${DEPS}/host/bin/ruby
         set(CMAKE_OSX_ARCHITECTURES arm64)
       elseif(${TEBAKO_BUILD_TARGET} STREQUAL "x86_64-apple-macos11")
-        set(HOST_OPTION --host=x86_64-apple-darwin --with-coroutine=ucontext --with-arch=x86_64)
+        set(HOST_OPTION --host=x86_64-apple-darwin --with-coroutine=ucontext --with-arch=x86_64 --with-baseruby=${DEPS}/host/bin/ruby)
         set(CMAKE_OSX_ARCHITECTURES x86_64)
       else()
         message(FATAL_ERROR "Cannot cross-compile for target ${TEBAKO_BUILD_TARGET}")
@@ -145,7 +145,7 @@ if(TEBAKO_BUILD_TARGET)
       set(XLDFLAGS " -F/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/ -framework CoreFoundation -framework Security ")
       set(XCCFLAGS " --target=${TEBAKO_BUILD_TARGET} -D_XOPEN_SOURCE=1 ")
       set(MKDWARFS ${DEPS}/host/bin/mkdwarfs)
-      set(DWARFS_WR_OPTION "-DTEBAKO_BUILD_TARGET=${TEBAKO_BUILD_TARGET}")
+      set(DWARFS_WR_OPTION -DTEBAKO_BUILD_TARGET=${TEBAKO_BUILD_TARGET} -DTEBAKO_BUILD_SCOPE=MKD)
       set(CROSS_COMPILING ON)
     else(${CMAKE_HOST_SYSTEM_NAME} MATCHES "Darwin")
       message(${CMAKE_HOST_SYSTEM_NAME})
@@ -164,15 +164,19 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} " -no-pie ")
 endif()
 set(RUBY_LDFLAGS " -L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR} ")
+
 if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+  string(CONCAT RUBY_BASE_CFLAGS ${RUBY_CFLAGS} ${RUBY_BUILD_BREW_INCLUDE})
+  string(CONCAT RUBY_BASE_LDFLAGS ${RUBY_LDFLAGS} ${RUBY_BUILD_BREW_LIB})
+
   if(CROSS_COMPILING)
-  string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${XCCFLAGS})
+    string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${XCCFLAGS})
     string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${RUBY_TARGET_BREW_INCLUDE})
     string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${XLDFLAGS})
     string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${RUBY_TARGET_BREW_LIB})
   else(CROSS_COMPILING)
-    string(CONCAT RUBY_CFLAGS ${RUBY_CFLAGS} ${RUBY_BUILD_BREW_INCLUDE})
-    string(CONCAT RUBY_LDFLAGS ${RUBY_LDFLAGS} ${RUBY_BUILD_BREW_LIB})
+    set(RUBY_CFLAGS ${RUBY_BASE_CFLAGS})
+    set(RUBY_LDFLAGS ${RUBY_BASE_LDFLAGS})
   endif(CROSS_COMPILING)
 endif(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
 
@@ -181,22 +185,27 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "Build target: ${TEBAKO_BUILD_TARGET}")
 message(STATUS "Extra c compiler flags: ${XCCFLAGS}")
 message(STATUS "Extra linker flags: ${XLDFLAGS}")
-message(STATUS "configure cross-compile options: ${HOST_OPTION}")
 message(STATUS "CMake OSX architecture flag: ${CMAKE_OSX_ARCHITECTURES}")
 message(STATUS "Build environment homebrew: ${BREW_PREFIX}")
-message(STATUS "Target environment homebrew: ${TARGET_BREW_PREFIX}")
 message(STATUS "mkdwarfs: ${MKDWARFS}")
 message(STATUS "DWARFS_WR option: ${DWARFS_WR_OPTION}")
 message(STATUS "GNU compatible bash: ${GNU_BASH}")
 message(STATUS "Ruby CFLAGS: ${RUBY_CFLAGS}")
 message(STATUS "Ruby LDFLAGS: ${RUBY_LDFLAGS}")
+message(STATUS "Cross-compiling: ${CROSS_COMPILING}")
+if(CROSS_COMPILING)
+  message(STATUS "configure cross-compile options: ${HOST_OPTION}")
+  message(STATUS "Target environment homebrew: ${TARGET_BREW_PREFIX}")
+  message(STATUS "Base Ruby CFLAGS: ${RUBY_BASE_CFLAGS}")
+  message(STATUS "Base Ruby LDFLAGS: ${RUBY_BASE_LDFLAGS}")
+endif(CROSS_COMPILING)
 
 # ...................................................................
 # External projects
 
 def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
 def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1" TARGET)
-# def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1" BASE)
+def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1" BASE)
 
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
@@ -205,8 +214,8 @@ def_ext_prj_g(INCBIN "348e36b")
 def_ext_prj_g(DWARFS_WR "v0.1.10")
 
 if (DEFINED ENV{BUNDLER_VER})
-set(BUNDLER_VER $ENV{BUNDLER_VER})
-set(BUNDLER_ANNOTATION "environment")
+  set(BUNDLER_VER $ENV{BUNDLER_VER})
+  set(BUNDLER_ANNOTATION "environment")
 else()
   set(BUNDLER_VER "2.2.3")
   set(BUNDLER_ANNOTATION "default")
@@ -219,9 +228,9 @@ endif()
 message("Collecting packages:")
 message(STATUS "ruby build environmemt      -  v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
 message(STATUS "ruby target environmemt     -  v${RUBY_VER} at ${RUBY_TARGET_SOURCE_DIR}")
-#if(CROSS_COMPILING)
-#  message(STATUS "ruby base environmemt       -  v${RUBY_VER} at ${RUBY_BASE_SOURCE_DIR}")
-#endif()
+if(CROSS_COMPILING)
+  message(STATUS "ruby base environmemt       -  v${RUBY_VER} at ${RUBY_BASE_SOURCE_DIR}")
+endif()
 message(STATUS "incbin                      -  @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
 message(STATUS "dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
 if(CROSS_COMPILING)
@@ -252,17 +261,20 @@ set (TBD ${DATA_SRC_DIR}/bin)
 set (TLD ${DATA_SRC_DIR}/local)
 # TGD target Gem directory
 set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
+
+set (TID ${DATA_SRC_DIR}/include)
+
 # TSD target site_ruby directory
 if(CROSS_COMPILING)
   set (TSD ${DATA_SRC_DIR}/lib/ruby/${RUBY_API_VER}/${CMAKE_OSX_ARCHITECTURES}-darwin)
 endif(CROSS_COMPILING)
 
 if(CROSS_COMPILING)
-  set(GEM_COMMAND ruby ${TBD}/gem)
-  set(BUNDLE_COMMAND ruby ${TBD}/bundle)
+  set(GEM_COMMAND ${DEPS}/host/bin/ruby -I${TSD} ${TBD}/gem)
+  set(BUNDLE_COMMAND ${DEPS}/host/bin/ruby -I${TSD} ${TBD}/bundle)
 else(CROSS_COMPILING)
-  set(GEM_COMMAND ${TBD}/ruby ${TBD}/gem)
-  set(BUNDLE_COMMAND ${TBD}/ruby ${TBD}/bundle)
+  set(GEM_COMMAND gem)
+  set(BUNDLE_COMMAND  bundle)
 endif(CROSS_COMPILING)
 
 # This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
@@ -333,6 +345,29 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
 
 # ...................................................................
 # Ruby
+if(CROSS_COMPILING)
+  ExternalProject_Add(${RUBY_BASE_PRJ}
+      PREFIX ${DEPS}
+      URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
+      URL_HASH SHA256=${RUBY_HASH}
+      DOWNLOAD_NO_PROGRESS true
+      SOURCE_DIR ${RUBY_BASE_SOURCE_DIR}
+      BINARY_DIR ${RUBY_BASE_BINARY_DIR}
+      PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_BASE_SOURCE_DIR} ${RUBY_BASE_BINARY_DIR}
+      UPDATE_COMMAND ""
+      CONFIGURE_COMMAND ${RUBY_BASE_SOURCE_DIR}/configure
+                  --enable-bundled-libyaml
+                  --without-gmp
+                  --disable-dtrace
+                  --enable-debug-env
+                  --disable-install-doc
+                  --with-static-linked-ext
+                  --srcdir=${RUBY_BASE_SOURCE_DIR}
+                  --prefix=${DEPS}/host
+                  CFLAGS=${RUBY_BASE_CFLAGS}
+                  LDFLAGS=${RUBY_BASE_LDFLAGS}
+  )
+endif(CROSS_COMPILING)
 
 ExternalProject_Add(${RUBY_PRJ}
   PREFIX ${DEPS}
@@ -353,6 +388,7 @@ ExternalProject_Add(${RUBY_PRJ}
                     --srcdir=${RUBY_SOURCE_DIR}
                     --prefix=${DATA_SRC_DIR}
                     CFLAGS=${RUBY_CFLAGS}
+                    CXXFLAGS=${RUBY_CFLAGS}
                     LDFLAGS=${RUBY_LDFLAGS}
                     ${HOST_OPTION}
   INSTALL_COMMAND ""
@@ -361,6 +397,11 @@ ExternalProject_Add(${RUBY_PRJ}
 # This is required since DWARFS_WR_PRJ creates a directory refeernced by ${RUBY_LDFLAGS}
 # configure fails if the directory does not exist
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
+
+if(CROSS_COMPILING)
+  add_dependencies(${RUBY_BASE_PRJ} ${DWARFS_WR_PRJ})
+  add_dependencies(${RUBY_PRJ} ${RUBY_BASE_PRJ})
+endif(CROSS_COMPILING)
 
 add_custom_target(template_filesystem
   COMMAND ${CMAKE_COMMAND} -E echo "template_filesystem: creating '${DATA_TEMPLATE_DIR}'"
@@ -457,27 +498,29 @@ else(${SETUP_MODE})
     message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
     if(CROSS_COMPILING)
       add_custom_target(source_filesystem
+      COMMAND mv ${TBD}/ruby ${TBD}/ruby.arm64
+      COMMAND cp ${DEPS}/host/bin/ruby ${TBD}/ruby
         COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
         COMMAND ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${GEM_COMMAND} install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD} --bindir ${TBD}
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${BREW_PREFIX}/lib/ruby/site_ruby
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${TSD}/rbconfig.rb ${BREW_PREFIX}/lib/ruby/site_ruby
-        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local build.ffi --disable-system-libffi
-        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local bin ${TBD}
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local build.ffi --disable-system-libffi
+#      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local bin ${TBD}
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config --local deployment true
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} update --bundler
-        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
+#        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} install --jobs=4
         DEPENDS clean_filesystem
       )
+# https://ruby-talk.ruby-lang.narkive.com/6yJeTNdl/rbconfig-rb-and-destdir-confusion-while-cross-compiling-ruby-gems
     else(CROSS_COMPILING)
       add_custom_target(source_filesystem
         COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
         COMMAND ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${GEM_COMMAND} install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD} --bindir ${TBD}
         COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local build.ffi --disable-system-libffi
+        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local build.ffi --with-cflags=\"bilad\"
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} config set --local bin ${TBD}
-        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock
+        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} lock 
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env GEM_HOME=${TGD} GEM_PATH=${TGD} ${BUNDLE_COMMAND} install --jobs=4
         DEPENDS clean_filesystem
       )
