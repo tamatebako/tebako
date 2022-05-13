@@ -52,7 +52,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.1.11"
+  DWARFS_WR_TAG: "v0.1.12"
 # Tarball dependencies
 #  RUBY_VER:   "2.7.4" -- upgraded to 2.7.5 because of Ruby/clang issue [https://bugs.ruby-lang.org/issues/17865]
 #  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
