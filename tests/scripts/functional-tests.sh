@@ -179,17 +179,17 @@ test_AUC_extract() {
    assertContains "$result" "Running tebako press script"
    assertContains "$result" "packaging has completed"
 
-   ./test-AUC-package --tebako-extract 
+   ./test-AUC-package --tebako-extract
    assertEquals 0 "${PIPESTATUS[0]}"
 
    diff -r source_filesystem output/source_filesystem
-   assertEquals 0 "${PIPESTATUS[0]}"   
+   assertEquals 0 "${PIPESTATUS[0]}"
 
    ./test-AUC-package --tebako-extract extract
    assertEquals 0 "${PIPESTATUS[0]}"
 
    diff -r extract output/source_filesystem
-   assertEquals 0 "${PIPESTATUS[0]}"   
+   assertEquals 0 "${PIPESTATUS[0]}"
 
 }
 

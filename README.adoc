@@ -281,6 +281,31 @@ bin/tebako clean --root='~/projects/myproject'
 
 == Image extraction
 
+Tebako providea an option to an extract filesystem from a package to local folder for verification or execution.
+<tebako package> --tebako-extract [<root folder for extracted filesystem>]
+<root folder for extracted filesystem> is optional and defaults to 'source_filesystem'
+
+[example]
+====
+[source,sh]
+----
+Example invokation:
+metanorma --tebako-extract temp-image
+----
+====
+
+[implementation]
+====
+[source,sh]
+----
+--tebako-extract option forces tebako the following script:
+"require 'fileutils'; FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'"
+----
+====
+
+
+
+
 
 == Ruby packaging specification
 
