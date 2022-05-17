@@ -34,11 +34,11 @@ press_runner() {
 # $2 -- entry point
 # $3 -- tebako package name
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     "$DIR_BIN"/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result="$( "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 )"
+     result=$( "$DIR_BIN"/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 )
      assertEquals 0 $?
    fi
 
@@ -73,11 +73,11 @@ press_runner_with_error() {
 # $4 -- expected error code
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     "$DIR_BIN"/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals "$4" "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result="$( "$DIR_BIN/tebako" press --root="$1" --entry-point="$2" --output="$3" 2>&1 )"
+     result=$( "$DIR_BIN"/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 )
      assertEquals "$4" "${PIPESTATUS[0]}"
    fi
 
@@ -87,8 +87,9 @@ press_runner_with_error() {
 
 # ......................................................................
 # Tests
-#  --. Very basic tebako CLI tests (error handling)
+#  00. Basic tebako CLI tests (error handling)
 #  --  tebako setup
+#  AU. Check that it is possible to extract image content (--tebako-extract option)
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
 #  02. Simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist  [Expected error at configure step]
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
@@ -108,48 +109,46 @@ press_runner_with_error() {
 #  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [Expected error at build step]
 #  18. Ruby project (no gemspec, with gemfile)
 #  19. Ruby project (no gemspec, with gemfile, with native extension)
-#  -20. AUC. Check that it is possible to verify content of package fs              [TODO: this test is failing]
 
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
 test_CLI_help() {
-  if [ "${VERBOSE}" == "yes" ]; then
-    "$DIR_BIN/tebako" --help | tee tebako_test.log
-    assertEquals 0 "${PIPESTATUS[0]}"
-    result="$( cat tebako_test.log )"
-  else
-    result="$( "$DIR_BIN/tebako" --help )"
-    assertEquals 0 "${PIPESTATUS[0]}"
-  fi
-  assertContains "$result" "Usage:"
+   result=$( "$DIR_BIN"/tebako --help )
+
+   assertEquals 0 "${PIPESTATUS[0]}"
+   assertContains "$result" "Usage:"
 }
 
 test_CLI_missing_command() {
-  if [ "${VERBOSE}" == "yes" ]; then
-    "$DIR_BIN/tebako" | tee tebako_test.log
-    assertEquals 4 "${PIPESTATUS[0]}"
-    result="$( cat tebako_test.log )"
-  else
-    result="$( "$DIR_BIN/tebako" )"
-    assertEquals 4 "${PIPESTATUS[0]}"
-  fi
+   result=$( "$DIR_BIN"/tebako )
 
-  assertContains "$result" "Missing command"
-  assertContains "$result" "Usage:"
+   assertEquals 4 "${PIPESTATUS[0]}"
+   assertContains "$result" "Missing command"
+   assertContains "$result" "Usage:"
 }
 
 test_CLI_unknown_command() {
-  if [ "${VERBOSE}" == "yes" ]; then
-    "$DIR_BIN/tebako" jump | tee tebako_test.log
-    assertEquals 5 "${PIPESTATUS[0]}"
-    result="$( cat tebako_test.log )"
-  else
-    result="$( "$DIR_BIN/tebako" jump )"
-    assertEquals 5 "${PIPESTATUS[0]}"
-  fi
+   result=$( "$DIR_BIN"/tebako jump )
 
-  assertContains "$result" "Unknown command"
-  assertContains "$result" "Usage:"
+   assertEquals 5 "${PIPESTATUS[0]}"
+   assertContains "$result" "Unknown command"
+   assertContains "$result" "Usage:"
+}
+
+test_CLI_no_root() {
+   result=$( "$DIR_BIN"/tebako press --entry-point=tebako-test-run.rb --output=test-00-package 2>&1  )
+
+   assertEquals 6 "${PIPESTATUS[0]}"
+   assertContains "$result" "Running tebako press requires project root"
+   assertContains "$result" "Usage:"
+}
+
+test_CLI_no_entry_point() {
+   result=$( "$DIR_BIN"/tebako press --root=tests/test-00 --output=test-00-package 2>&1  )
+
+   assertEquals 7 "${PIPESTATUS[0]}"
+   assertContains "$result" "Running tebako press requires entry point"
+   assertContains "$result" "Usage:"
 }
 
 # ......................................................................
@@ -157,17 +156,41 @@ test_CLI_unknown_command() {
 test_tebako_setup() {
   echo "tebako setup ... patience, please, it may take up to 1 hour."
   if [ "${VERBOSE}" == "yes" ]; then
-    "$DIR_BIN/tebako" setup 2>&1 | tee tebako_test.log
+    "$DIR_BIN"/tebako setup 2>&1 | tee tebako_test.log
     assertEquals 0 "${PIPESTATUS[0]}"
     result="$( cat tebako_test.log )"
   else
-    result="$( "$DIR_BIN/tebako" setup 2>&1 )"
+    result=$( "$DIR_BIN"/tebako setup 2>&1 )
     assertEquals 0 "${PIPESTATUS[0]}"
   fi
 
 # Check the first and the last messages expected from CMake script
   assertContains "$result" "Running tebako setup script"
   assertContains "$result" "Tebako setup has completed"
+}
+
+# ......................................................................
+#  AU. Check that it is possible to extract image content (--tebako-extract option)
+test_AUC_extract() {
+   echo "==> Check --tebako-extract option"
+   result=$( "$DIR_BIN"/tebako press --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 )
+
+   assertEquals 0 "${PIPESTATUS[0]}"
+   assertContains "$result" "Running tebako press script"
+   assertContains "$result" "packaging has completed"
+
+   ./test-AUC-package --tebako-extract 
+   assertEquals 0 "${PIPESTATUS[0]}"
+
+   diff -r source_filesystem output/source_filesystem
+   assertEquals 0 "${PIPESTATUS[0]}"   
+
+   ./test-AUC-package --tebako-extract extract
+   assertEquals 0 "${PIPESTATUS[0]}"
+
+   diff -r extract output/source_filesystem
+   assertEquals 0 "${PIPESTATUS[0]}"   
+
 }
 
 # ......................................................................
@@ -314,20 +337,13 @@ test_tebako_press_19() {
    package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
 }
 
-#    - name: Test20 -AUC - Check that it is possible to verify content of packaged fs
-#      run: |
-#        ${{github.workspace}}/bin/tebako press                    \
-#              --root="${{github.workspace}}/tests/test-01"        \
-#              --entry-point="test.rb"
-#        deps/bin/dwarfs output/tebako home/tebako
-
 # ......................................................................
 # main
 
-DIR0="$( cd "$( dirname "$0" )" && pwd )"
-DIR_ROOT="$( cd "$DIR0"/../.. && pwd )"
-DIR_BIN="$( cd "$DIR_ROOT"/bin && pwd )"
-DIR_TESTS="$( cd "$DIR_ROOT"/tests && pwd )"
+DIR0=$( dirname "$0" )
+DIR_ROOT=$( cd "$DIR0"/../.. && pwd )
+DIR_BIN=$( cd "$DIR_ROOT"/bin && pwd )
+DIR_TESTS=$( cd "$DIR_ROOT"/tests && pwd )
 
 echo "Running tebako tests"
 # shellcheck source=/dev/null

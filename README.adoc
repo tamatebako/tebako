@@ -279,6 +279,8 @@ bin/tebako clean --root='~/projects/myproject'
 
 |===
 
+== Image extraction
+
 
 == Ruby packaging specification
 
