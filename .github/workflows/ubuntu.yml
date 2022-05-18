@@ -483,3 +483,4 @@ jobs:
 
       - name: Package metanorma
         run: ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
+

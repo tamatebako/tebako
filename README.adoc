@@ -188,7 +188,7 @@ Collect and builds Tebako packager and install them for Tebako packager at
 Tebako supports several configurations at a single system given that their root
 directories differ.
 
-=== Press
+==== Press
 
 This command "presses" a Ruby project using the Tebako setup from the Tebako root
 folder (`<tebako-root-folder>`).
@@ -199,7 +199,8 @@ folder (`<tebako-root-folder>`).
   [-p |--prefix=<tebako-root-folder>] \
   -r|--root=<project-root-folder> \
   [-e|--entry-point=<entry-point>] \
-  [-o |--output=<packaged file name>]
+  [-o |--output=<packaged file name>] \
+  [-l|--log-level=<error|warn|debug|trace>
 ----
 
 Where:
@@ -216,6 +217,7 @@ be started when packaged file is called
 * `output`, the output file name (optional, defaults to `<current folder>/<entry
 point base name`)
 
+* `log-level`, the logging level for tebako built-in memory filesystem driver (optional, defaults to `debug`)
 
 [example]
 ====
@@ -228,7 +230,7 @@ bin/tebako press \
 ----
 ====
 
-=== Clean
+==== Clean
 
 This command deletes tebako artifacts created by setup and press commands.
 Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own.
@@ -261,16 +263,48 @@ bin/tebako clean --root='~/projects/myproject'
 | 0    | No error
 | 1    | `getopts` not supported by OS
 | 2    | Failed to parse command line
-| 3    | Internal error
-| 4    | Missing command (`setup` or `press` is required)
-| 5    | `tebako press` without mandatory `--root` option
-| 6    | `tebako press` without mandatory `--entry-point` option
+| 3    | Could not find GNU `getopts` (MacOS only) 
+| 4    | Missing command 
+| 5    | Unknown command (`setup`/`press`/`clean`/`help`)
+| 6    | `tebako press` without mandatory `--root` option
+| 7    | `tebako press` without mandatory `--entry-point` option
+| 8    | Unknown log-level setting (`error`/`warn`/`debug`/`trace`)
 | 101  | `tebako setup` failed at configuration step
 | 102  | `tebako setup` failed at build step
 | 103  | `tebako press` failed at configuration step
 | 104  | `tebako press` failed at build step
+| 253  | Could not find cmake
+| 254  | Unsupported operating systems
+| 255  | Internal error
 
 |===
+
+== Image extraction
+
+Tebako providea an option to an extract filesystem from a package to local folder for verification or execution.
+<tebako package> --tebako-extract [<root folder for extracted filesystem>]
+<root folder for extracted filesystem> is optional and defaults to 'source_filesystem'
+
+[example]
+====
+[source,sh]
+----
+Example invokation:
+metanorma --tebako-extract temp-image
+----
+====
+
+[implementation]
+====
+[source,sh]
+----
+--tebako-extract option forces tebako the following script:
+"require 'fileutils'; FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'"
+----
+====
+
+
+
 
 
 == Ruby packaging specification

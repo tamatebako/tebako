@@ -34,7 +34,7 @@ run_help() {
 echo "Usage: "
 echo "  tebako setup [-p|--prefix=<path>]"
 echo "         Tebako prefix defaults to current directory"
-echo "  tebako press [-p|--prefix=<path>] -r|--root=<path> -e|--entry-point=<path> [-o|--output=<file name>] [-l|--log-level=<error|warn|debug>" 
+echo "  tebako press [-p|--prefix=<path>] -r|--root=<path> -e|--entry-point=<path> [-o|--output=<file name>] [-l|--log-level=<error|warn|debug|trace>" 
 echo "         Tebako prefix defaults to current directory"
 echo "         Packaged file defaults to 'entry point' file name in the current directory"
 echo "  tebako clean [-p|--prefix=<path>]"
@@ -57,12 +57,12 @@ elif [[ "$OSTYPE" == "darwin"* ]]; then
   ! gOpt="$(brew --prefix gnu-getopt)/bin/getopt"
   if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
     echo "Could not find gnu getopts, exiting"
-    exit 8
+    exit 3
   fi
   uFlags="-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0 ${CXXFLAGS:=}"
 else
   echo "... $OSTYPE is not supported yet, exiting"
-  exit 7
+  exit 254
 fi
 
 
@@ -128,7 +128,7 @@ while true; do
             ;;
         *)
             echo "Programming error"
-            exit 3
+            exit 255
             ;;
     esac
 done
@@ -144,7 +144,7 @@ cmk=$( which cmake )
 
 if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
   echo "Failed to find cmake"
-  exit 5
+  exit 253
 else
   echo "Using cmake at $cmk"
   cmake --version
@@ -160,7 +160,7 @@ fi
 
 if [[ "$logLevel" != "error" && "$logLevel" != "warn" && "$logLevel" != "debug" && "$logLevel" != "trace" ]]; then
   echo "Unknown log-level setting '$logLevel'. Known values are 'error', 'warn', 'debug', 'trace'"
-  exit 6
+  exit 8
 fi
 
 export CC=${CC:-gcc}
@@ -190,12 +190,12 @@ case "$1" in
     if [ "$root" == "-" ]; then
       echo "Running tebako press requires project root"
       run_help
-      exit 5
+      exit 6
     fi
     if [ "$entryPoint" == "-" ]; then
       echo "Running tebako press requires entry point"
       run_help
-      exit 6
+      exit 7
     fi
     if [ "$packageName" == "-" ]; then
       filename=$(basename -- "$entryPoint")
