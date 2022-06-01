@@ -365,5 +365,7 @@ jobs:
           repository: metanorma/packed-mn
           path: packed-mn
 
-      - name: Package metanorma
-        run: bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+      - name: Package metanorma and do smoke check
+        run: |
+          bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+          ./metanorma-package help

@@ -483,4 +483,7 @@ jobs:
 
       - name: Package metanorma
         run: ${{github.workspace}}/bin/tebako press --root=${{github.workspace}}/packed-mn --entry-point=bin/metanorma --output=metanorma-package
-
+      - name: Package metanorma and do smoke check
+        run: |
+          bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+          ./metanorma-package help
