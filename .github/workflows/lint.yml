@@ -27,6 +27,7 @@ name: lint
 
 on:
   push:
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -34,7 +35,6 @@ on:
       - .github/workflows/ubuntu.yml
       - .github/workflows/macos.yml
   pull_request:
-    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'

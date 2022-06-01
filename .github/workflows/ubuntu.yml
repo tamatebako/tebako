@@ -27,6 +27,7 @@ name: Ubuntu
 
 on:
   push:
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -35,7 +36,6 @@ on:
       - .github/workflows/macos.yml
       - .github/workflows/alpine.yml
   pull_request:
-    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
