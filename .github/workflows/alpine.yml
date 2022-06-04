@@ -239,7 +239,7 @@ jobs:
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static ruby
+            readline-dev readline-static ruby-dev p7zip
 
       - name: Install bundler
         run: gem install bundler
@@ -317,7 +317,7 @@ jobs:
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static
+            readline-dev readline-static p7zip ruby-dev
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
