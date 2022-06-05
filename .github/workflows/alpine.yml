@@ -61,7 +61,7 @@ env:
 # Bundler version
   BUNDLER_VER: "2.2.3"
 # Cache version
-  CACHE_VER: 05
+  CACHE_VER: 06
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 
@@ -84,10 +84,10 @@ jobs:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            autoconf boost-static boost-dev flex-dev bison           \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
-            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            lz4-dev openssl-dev zlib-dev                             \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
@@ -150,10 +150,10 @@ jobs:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            autoconf boost-static boost-dev flex-dev bison           \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
-            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            lz4-dev openssl-dev zlib-dev                             \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
@@ -232,10 +232,10 @@ jobs:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            autoconf boost-static boost-dev flex-dev bison           \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
-            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            lz4-dev openssl-dev zlib-dev                             \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev         \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
@@ -310,10 +310,10 @@ jobs:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            autoconf boost-static boost-dev flex-dev bison           \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
-            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            lz4-dev openssl-dev zlib-dev                             \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
