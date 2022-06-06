@@ -64,13 +64,14 @@ env:
   CACHE_VER: 06
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
+  ALPINE_VER: "3.15:
 
 jobs:
   setup:
-    name: setup alpine-latest [CC ${{ matrix.env.CC }}]
+    name: setup alpine-3.15 [CC ${{ matrix.env.CC }}]
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: alpine:3.15
     strategy:
       fail-fast: false
       matrix:
@@ -125,18 +126,18 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-3.15-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: bin/tebako setup
 
   tests-1:
     needs: setup
-    name: tests-1 alpine-latest [CC ${{ matrix.env.CC }}]
+    name: tests-1 alpine-3.15 [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: alpine:3.15
     strategy:
       fail-fast: false
       matrix:
@@ -191,7 +192,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-3.15-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -214,11 +215,11 @@ jobs:
 
   tests-2:
     needs: setup
-    name: tests-2 alpine-latest [CC ${{ matrix.env.CC }}]
+    name: tests-2 alpine-3.15 [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: alpine:3.15
     strategy:
       fail-fast: false
       matrix:
@@ -275,7 +276,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-3.15-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -292,11 +293,11 @@ jobs:
 
   package-metanorma:
     needs: setup
-    name: package-metanorma alpine-latest [CC ${{ matrix.env.CC }}]
+    name: package-metanorma alpine-3.15 [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: alpine:3.15
     strategy:
       fail-fast: false
       matrix:
@@ -351,7 +352,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-3.15-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
