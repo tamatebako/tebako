@@ -64,23 +64,23 @@ env:
   CACHE_VER: 06
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
-cnt:  
-  ALPINE_VER: "3.15"
 
 jobs:
   setup:
-    name: setup alpine-${{ cnt.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    name: setup alpine-${{ env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
     runs-on: ubuntu-latest
     container:
-      image: alpine:${{ cnt.ALPINE_VER }}
+      image: alpine:${{ env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
         env:
           - CC: gcc
             CXX: g++
+            ALPINE_VER: "3.15"
           - CC: clang
             CXX: clang++
+            ALPINE_VER: "3.15"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -127,26 +127,28 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-${{ cnt.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: bin/tebako setup
 
   tests-1:
     needs: setup
-    name: tests-1 alpine-${{ cnt.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    name: tests-1 alpine-${{ env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:${{ cnt.ALPINE_VER }}
+      image: alpine:${{ env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
         env:
           - CC: gcc
             CXX: g++
+            ALPINE_VER: "3.15"
           - CC: clang
             CXX: clang++
+            ALPINE_VER: "3.15"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -193,7 +195,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-${{ cnt.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -216,19 +218,21 @@ jobs:
 
   tests-2:
     needs: setup
-    name: tests-2 alpine-${{ cnt.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    name: tests-2 alpine-${{ env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:${{ cnt.ALPINE_VER }}
+      image: alpine:${{ env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
         env:
           - CC: gcc
             CXX: g++
+            ALPINE_VER: "3.15"
           - CC: clang
             CXX: clang++
+            ALPINE_VER: "3.15"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -277,7 +281,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-${{ cnt.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -294,19 +298,21 @@ jobs:
 
   package-metanorma:
     needs: setup
-    name: package-metanorma alpine-${{ cnt.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    name: package-metanorma alpine-${{ env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:${{ cnt.ALPINE_VER }}
+      image: alpine:${{ env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
         env:
           - CC: gcc
             CXX: g++
+            ALPINE_VER: "3.15"
           - CC: clang
             CXX: clang++
+            ALPINE_VER: "3.15"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -353,7 +359,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-${{ cnt.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
