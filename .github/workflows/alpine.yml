@@ -74,6 +74,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+# Alpine 3.16 (which is now 'latest') installs gcc 11.x that does not work for seven_zip_ruby      
+# https://github.com/masamitsu-murase/seven_zip_ruby/issues/36      
         env:
           - CC: gcc
             CXX: g++
@@ -325,7 +327,7 @@ jobs:
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static p7zip ruby-dev
+            readline-dev readline-static p7zip ruby-dev gcompat
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
