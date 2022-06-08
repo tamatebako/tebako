@@ -308,6 +308,26 @@ jobs:
           cd ..
           ruby tests-2/tebako-test.rb
 
+  cross-test-on-alpine-latest:
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    needs: tests-1
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      - name: Download test packages
+        uses: actions/download-artifact@v2
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  tests/scripts/cross-tests.sh
+
   package-metanorma:
     needs: setup
     name: package-metanorma alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
@@ -385,27 +405,7 @@ jobs:
           repository: metanorma/packed-mn
           path: packed-mn
 
-      - name: Package metanorma and do smoke check
+      - name: Package metanorma and run smoke check
         run: |
           bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
           ./metanorma-package help
-
-  cross-test-on-alpine-latest:
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
-    needs: tests-1
-    runs-on: ubuntu-latest
-    container:
-      image: alpine:latest
-    steps:
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
-
-      - name: Download test packages
-        uses: actions/download-artifact@v2
-        with:
-          name: test-packages
-
-      - name: Run test packages
-        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
