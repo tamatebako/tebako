@@ -227,7 +227,6 @@ set (TLD ${DATA_SRC_DIR}/local)
 set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
 # This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
 set(FS_MOUNT_POINT "/__tebako_memfs__")
-set(FS_APP_HOME "/.")
 
 message(STATUS "DATA_SRC_DIR: ${DATA_SRC_DIR}")
 message(STATUS "DATA_PRE_DIR: ${DATA_PRE_DIR}")
@@ -237,7 +236,6 @@ message(STATUS "TBD: ${TBD}")
 message(STATUS "TLD: ${TLD}")
 message(STATUS "TGD: ${TGD}")
 message(STATUS "FS_MOUNT_POINT: ${FS_MOUNT_POINT}")
-message(STATUS "FS_APP_HOME: ${FS_APP_HOME}")
 
 # ...................................................................
 # incbin
@@ -452,8 +450,6 @@ else (${SETUP_MODE})
     endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
     set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
-    set(FS_APP_HOME "/local")
-    message("Application will start at ${FS_MOUNT_POINT}${FS_APP_HOME}")
     add_custom_target(source_filesystem
        COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
