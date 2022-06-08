@@ -174,8 +174,6 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 # External projects
 
 def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
-#def_ext_prj_t(RUBY "2.7.4" "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b")  -- https://bugs.ruby-lang.org/issues/17865
-#def_ext_prj_t(RUBY "2.6.3" "577fd3795f22b8d91c1d4e6733637b0394d4082db659fccf224c774a2b1c82fb")
 
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
@@ -380,7 +378,6 @@ else (${SETUP_MODE})
 
   if(${IS_MUSL})
     set(PLATFORM_COMMAND ${TBD}/bundle config set force_ruby_platform true)
-    message(STATUS "=====> ${PLATFORM_COMMAND}")
   else()
     set(PLATFORM_COMMAND ${CMAKE_COMMAND} -E true)
   endif()
