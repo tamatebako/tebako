@@ -112,6 +112,47 @@ else()
   message("Running tebako setup script")
 endif()
 
+if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+  execute_process(
+    COMMAND brew --prefix
+    RESULT_VARIABLE BREW_PREFIX_RES
+    OUTPUT_VARIABLE BREW_PREFIX
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT (BREW_PREFIX_RES EQUAL 0 AND EXISTS ${BREW_PREFIX}))
+    message(FATAL "Could not find brew setup")
+  endif()
+
+  message("Using homebrew environment at ${BREW_PREFIX}")
+  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
+  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
+  set(GNU_BASH "${BREW_PREFIX}/bin/bash")
+else()
+  set(GNU_BASH "bash")
+endif()
+message(STATUS "GNU_BASH: ${GNU_BASH}")
+
+# https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
+execute_process(
+  COMMAND "${GNU_BASH}"
+          "-c"
+          "echo \$OSTYPE"
+  RESULT_VARIABLE OSTYPE_RES
+  OUTPUT_VARIABLE OSTYPE_TXT
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+if(OSTYPE_RES EQUAL 0)
+  message(STATUS "OSTYPE: '${OSTYPE_TXT}'")
+else(OSTYPE_RES EQUAL 0)
+  message(FATAL_ERROR "Failed to detect OSTYPE: ${OSTYPE_TXT}")
+endif(OSTYPE_RES EQUAL 0)
+
+if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
+  set(IS_MUSL true)
+else()
+  set(IS_MUSL false)
+endif()
+
 set(BOOST_USE_STATIC_LIBS   ON)
 set(BOOST_LINK_STATIC       ON)
 set(USE_STATIC_DEPS_ON_UNIX ON)
@@ -129,25 +170,6 @@ set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
-if (NOT ${SETUP_MODE})
-# ...................................................................
-# Filesystem locations
-
-# DATA_SRC_DIR folder is used to collect all files that need to be packaged
-  set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
-# DATA_PRE_DIR folder is used to build gems  that need to be packaged
-  set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
-# DATA_BIN_DIR folder is used to create packaged filesystem
-  set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
-# DATA_BIN_FILE is packaged filesystem itself
-  set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
-
-# This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
-  set(FS_MOUNT_POINT "/__tebako_memfs__")
-  set(FS_APP_HOME "/.")
-
-endif(NOT ${SETUP_MODE})
-
 # ...................................................................
 # External projects
 
@@ -159,7 +181,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "maxirmx_v0.2.0")
+def_ext_prj_g(DWARFS_WR "v0.2.0")
 
 if (DEFINED ENV{BUNDLER_VER})
 set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -178,7 +200,6 @@ else()
   set(WITH_NCURSES_BUILD OFF)
 endif()
 
-
 message("................................................")
 message("Collecting packages:")
 message("ruby                        -  v${RUBY_VER} at  ${RUBY_SOURCE_DIR}")
@@ -190,6 +211,37 @@ message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at  ${DWARFS_WR_SOURCE
 message("................................................")
 message("Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
 message("................................................")
+
+# ...................................................................
+# Filesystem locations
+
+# DATA_SRC_DIR folder is used to collect all files that need to be packaged
+set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
+# DATA_PRE_DIR folder is used to build gems  that need to be packaged
+set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
+# DATA_BIN_DIR folder is used to create packaged filesystem
+set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
+# DATA_BIN_FILE is packaged filesystem itself
+set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
+# Target binary directory
+set (TBD ${DATA_SRC_DIR}/bin)
+# Target 'local' directory
+set (TLD ${DATA_SRC_DIR}/local)
+# TGD folder is used to install gems
+set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
+# This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
+set(FS_MOUNT_POINT "/__tebako_memfs__")
+set(FS_APP_HOME "/.")
+
+message(STATUS "DATA_SRC_DIR: ${DATA_SRC_DIR}")
+message(STATUS "DATA_PRE_DIR: ${DATA_PRE_DIR}")
+message(STATUS "DATA_BIN_DIR: ${DATA_BIN_DIR}")
+message(STATUS "DATA_BIN_FILE: ${DATA_BIN_FILE}")
+message(STATUS "TBD: ${TBD}")
+message(STATUS "TLD: ${TLD}")
+message(STATUS "TGD: ${TGD}")
+message(STATUS "FS_MOUNT_POINT: ${FS_MOUNT_POINT}")
+message(STATUS "FS_APP_HOME: ${FS_APP_HOME}")
 
 # ...................................................................
 # incbin
@@ -222,7 +274,6 @@ set(__LIBT_LIGHT "${DEPS_LIB_DIR}/libthrift_light.a")
 set(__LIBXXHASH "${DEPS_LIB_DIR}/libxxhash.a")
 set(__LIBZSTD "${DEPS_LIB_DIR}/libzstd.a")
 set(__LIBARCHIVE "${DEPS_LIB_DIR}/libarchive.a")
-
 
 ExternalProject_Add(${DWARFS_WR_PRJ}
     PREFIX ${DEPS}
@@ -273,46 +324,13 @@ endif()
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
 set(RUBY_C_FLAGS_2 "-pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
-set(GNU_BASH "bash")
-
-if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-  execute_process(
-    COMMAND brew --prefix
-    RESULT_VARIABLE BREW_PREFIX_RES
-    OUTPUT_VARIABLE BREW_PREFIX
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  if(NOT (BREW_PREFIX_RES EQUAL 0 AND EXISTS ${BREW_PREFIX}))
-    message(FATAL "Could not find brew setup")
-  endif()
-
-  message("Using homebrew environment at ${BREW_PREFIX}")
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
-  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
-  set(GNU_BASH "${BREW_PREFIX}/bin/bash")
-endif()
 
 # https://stackoverflow.com/questions/46123505/assembling-with-gcc-causes-weird-relocation-error-with-regards-to-data
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -no-pie")
 endif()
 
-# https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
-# (patch #3)
-execute_process(
-  COMMAND "${GNU_BASH}"
-          "-c"
-          "echo \$OSTYPE"
-  RESULT_VARIABLE OSTYPE_RES
-  OUTPUT_VARIABLE OSTYPE_TXT
-)
-if(OSTYPE_RES EQUAL 0)
-  message(STATUS "OSTYPE: '${OSTYPE_TXT}'")
-else(OSTYPE_RES EQUAL 0)
-  message(FATAL_ERROR "Failed to detect OSTYPE: ${OSTYPE_TXT}")
-endif(OSTYPE_RES EQUAL 0)
-
-if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
+if(${IS_MUSL})
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DENABLE_PATH_CHECK=0")
 endif()
 
@@ -360,10 +378,12 @@ else (${SETUP_MODE})
     DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ}
   )
 
-  set (TBD ${DATA_SRC_DIR}/bin)
-  set (TLD ${DATA_SRC_DIR}/local)
-# TGD folder is used to install gems
-  set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
+  if(${IS_MUSL})
+    set(PLATFORM_COMMAND ${TBD}/bundle config set force_ruby_platform true)
+    message(STATUS "=====> ${PLATFORM_COMMAND}")
+  else()
+    set(PLATFORM_COMMAND ${CMAKE_COMMAND} -E true)
+  endif()
 
   file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
   file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
@@ -397,7 +417,7 @@ else (${SETUP_MODE})
         add_custom_target(source_filesystem
            COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-#   COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config set force_ruby_platform true
+           COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${PLATFORM_COMMAND}
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle exec ${TBD}/gem build ${GEMSPEC}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
@@ -439,7 +459,7 @@ else (${SETUP_MODE})
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config build.ffi --disable-system-libffi
-#       COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config set force_ruby_platform true
+       COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${PLATFORM_COMMAND}
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
 # [TODO] Open question - how to deploy a project to source filesystem
 #        ruby packer does bundle install --deployment --binstubs
