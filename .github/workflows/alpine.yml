@@ -216,6 +216,18 @@ jobs:
           VERBOSE: yes
         run: tests/scripts/functional-tests.sh
 
+      - name: Upload tebako test packages
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-packages
+          retention-days: 1
+          path: |
+            test-01-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package
+
   tests-2:
     needs: setup
     name: tests-2 alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
@@ -377,3 +389,23 @@ jobs:
         run: |
           bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
           ./metanorma-package help
+
+  cross-test-on-alpine-tatese:
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    needs: tests-1
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:latest
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      - name: Download test packages
+        uses: actions/download-artifact@v2
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh

@@ -81,7 +81,7 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -186,7 +186,7 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -253,7 +253,7 @@ jobs:
           false
 
       - name: Checkout shell test framework
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: kward/shunit2
           path: ${{github.workspace}}/tests/shunit2
@@ -295,7 +295,7 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -380,7 +380,7 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -409,7 +409,7 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 1
 
@@ -476,7 +476,7 @@ jobs:
           false
 
       - name: Checkout packed-mn
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: metanorma/packed-mn
           path: ${{github.workspace}}/packed-mn
