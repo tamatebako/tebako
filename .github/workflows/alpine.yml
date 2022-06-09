@@ -347,9 +347,11 @@ jobs:
           - CC: gcc
             CXX: g++
             ALPINE_VER: "3.15"
+            VCPKG_FORCE_SYSTEM_BINARIES: 1
           - CC: clang
             CXX: clang++
             ALPINE_VER: "3.15"
+            VCPKG_FORCE_SYSTEM_BINARIES: 1
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -357,12 +359,13 @@ jobs:
           apk --no-cache --upgrade add build-base cmake git bash     \
             autoconf boost-static boost-dev flex-dev bison make      \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            lz4-dev openssl-dev zlib-dev xz                          \
+            lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
             libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static p7zip ruby-dev gcompat
+            readline-dev readline-static p7zip ruby-dev gcompat      \
+            musl-libintl gettext-dev python3 pkgconfig
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
