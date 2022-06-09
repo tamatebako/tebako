@@ -363,7 +363,7 @@ jobs:
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static p7zip ruby-dev gcompat      \
-            gettext-dev python3 pkgconfig
+            gettext-dev python3 pkgconfig gperf
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
