@@ -153,11 +153,6 @@ else()
   set(FORCE_RUBY_PLATFORM "false")
 endif()
 
-set(BOOST_USE_STATIC_LIBS   ON)
-set(BOOST_LINK_STATIC       ON)
-set(USE_STATIC_DEPS_ON_UNIX ON)
-set(GFLAGS_SHARED          OFF)
-
 # Various locations for external projects
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
