@@ -146,9 +146,11 @@ else(OSTYPE_RES EQUAL 0)
 endif(OSTYPE_RES EQUAL 0)
 
 if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
-  set(IS_MUSL true)
+  set(IS_MUSL ON)
+  set(FORCE_RUBY_PLATFORM "true")
 else()
-  set(IS_MUSL false)
+  set(IS_MUSL OFF)
+  set(FORCE_RUBY_PLATFORM "false")
 endif()
 
 set(BOOST_USE_STATIC_LIBS   ON)
@@ -180,16 +182,15 @@ def_ext_prj_g(INCBIN "348e36b")
 def_ext_prj_g(DWARFS_WR "v0.2.0")
 
 if (DEFINED ENV{BUNDLER_VER})
-set(BUNDLER_VER $ENV{BUNDLER_VER})
-set(BUNDLER_ANNOTATION "environment")
+ set(BUNDLER_VER $ENV{BUNDLER_VER})
+ set(BUNDLER_ANNOTATION "environment")
 else()
-  set(BUNDLER_VER "2.2.3")
+  set(BUNDLER_VER "2.3.15")
   set(BUNDLER_ANNOTATION "default")
 endif()
 
 find_library(_LIBNCURSES "libncurses.a")
 if(${_LIBNCURSES} STREQUAL "_LIBNCURSES-NOTFOUND")
-  message(STATUS "ncurses static library was not found, building locally")
   set(WITH_NCURSES_BUILD ON)
   def_ext_prj_t(NCURSES  "6.3" "97fc51ac2b085d4cde31ef4d2c3122c21abc217e9090a43a30fc5ec21684e059")
 else()
@@ -197,15 +198,15 @@ else()
 endif()
 
 message("................................................")
-message("Collecting packages:")
-message("ruby                        -  v${RUBY_VER} at  ${RUBY_SOURCE_DIR}")
+message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
+message(STATUS "bundler version: ${BUNDLER_VER} (${BUNDLER_ANNOTATION})")
 if(WITH_NCURSES_BUILD)
-  message("ncurses                     -  v${NCURSES_VER} at  ${NCURSES_SOURCE_DIR}")
+  message(STATUS "ncurses: building v${NCURSES_VER} at ${NCURSES_SOURCE_DIR}")
+else()
+  message(STATUS "ncurses: ${_LIBNCURSES}")
 endif(WITH_NCURSES_BUILD)
-message("incbin                      -  @${INCBIN_TAG} at  ${INCBIN_SOURCE_DIR}")
-message("dwarfs with tebako wrapper  -  @${DWARFS_WR_TAG} at  ${DWARFS_WR_SOURCE_DIR}")
-message("................................................")
-message("Using bundler ${BUNDLER_VER} per ${BUNDLER_ANNOTATION} setting")
+message(STATUS "incbin: @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
+message(STATUS "dwarfs with tebako wrapper: @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
 message("................................................")
 
 # ...................................................................
@@ -377,12 +378,6 @@ else (${SETUP_MODE})
     DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ}
   )
 
-  if(${IS_MUSL})
-    set(PLATFORM_COMMAND ${TBD}/bundle config set force_ruby_platform true)
-  else()
-    set(PLATFORM_COMMAND ${CMAKE_COMMAND} -E true)
-  endif()
-
   file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
   file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
   file(GLOB GEMS     LIST_DIRECTORIES false ${FS_ROOT}/*.gem)
@@ -415,7 +410,7 @@ else (${SETUP_MODE})
         add_custom_target(source_filesystem
            COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${PLATFORM_COMMAND}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle exec ${TBD}/gem build ${GEMSPEC}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
@@ -455,8 +450,9 @@ else (${SETUP_MODE})
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config build.ffi --disable-system-libffi
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${PLATFORM_COMMAND}
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
+       COMMAND_EXPAND_LISTS
 # [TODO] Open question - how to deploy a project to source filesystem
 #        ruby packer does bundle install --deployment --binstubs
 # [TODO] --jobs=4 probably can be more intellectual
