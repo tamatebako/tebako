@@ -111,6 +111,16 @@ class TestTebako < MiniTest::Test
     end
 
   # Specified gems should be automatically included and usable in packaged app
+    def test_215_expressir
+        name = "gems-expressir"
+        with_fixture_press_and_env name do |package|
+            out, st = Open3.capture2(package)
+            assert_equal 0, st.exitstatus
+            assert_match /Hello! Expressir gem welcomes you to the magic world of ruby gems./, out
+        end
+    end
+
+  # Specified gems should be automatically included and usable in packaged app
     def test_214_sassc
         name = "gems-sassc"
         with_fixture_press_and_env name do |package|

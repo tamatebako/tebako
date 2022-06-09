@@ -1,6 +1,6 @@
-# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
-# This file is a part of tamatebako
+# This file is a part of tebako
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -21,36 +21,12 @@
 # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.name: lint
+# POSSIBILITY OF SUCH DAMAGE.
 
-name: lint
+# This test is inspired packed-mn
+# https://github.com/metanorma/packed-mn
 
-on:
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - .github/workflows/ubuntu.yml
-      - .github/workflows/macos.yml
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - .github/workflows/ubuntu.yml
-      - .github/workflows/macos.yml
-  workflow_dispatch:
+require 'expressir/express/parser'
 
-jobs:
-  shellcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: ludeeus/action-shellcheck@master
-        with:
-          additional_files: 'tebako'
-          ignore_paths: deps
-        env:
-          SHELLCHECK_OPTS: -x
+
+puts "Hello! Expressir gem welcomes you to the magic world of ruby gems."

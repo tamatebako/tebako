@@ -27,6 +27,7 @@ name: Alpine
 
 on:
   push:
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -35,7 +36,6 @@ on:
       - .github/workflows/macos.yml
       - .github/workflows/ubuntu.yml
   pull_request:
-    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -52,42 +52,44 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.1.12"
+  DWARFS_WR_TAG: "v0.2.0"
 # Tarball dependencies
-#  RUBY_VER:   "2.7.4" -- upgraded to 2.7.5 because of Ruby/clang issue [https://bugs.ruby-lang.org/issues/17865]
-#  RUBY_HASH:  "3043099089608859fc8cce7f9fdccaa1f53a462457e3838ec3b25a7d609fbc5b"
   RUBY_VER:   "2.7.5"
   RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
 # Bundler version
-  BUNDLER_VER: "2.2.3"
+  BUNDLER_VER: "2.3.15"
 # Cache version
-  CACHE_VER: 04
+  CACHE_VER: 07
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 
 jobs:
   setup:
-    name: setup alpine-latest [CC ${{ matrix.env.CC }}]
+    name: setup alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: alpine:${{ matrix.env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
+# Alpine 3.16 (which is now 'latest') installs gcc 11.x that does not work for seven_zip_ruby      
+# https://github.com/masamitsu-murase/seven_zip_ruby/issues/36      
         env:
           - CC: gcc
             CXX: g++
+            ALPINE_VER: "3.15"
           - CC: clang
             CXX: clang++
+            ALPINE_VER: "3.15"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            autoconf boost-static boost-dev flex-dev bison           \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
-            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            lz4-dev openssl-dev zlib-dev                             \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
@@ -125,35 +127,37 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: bin/tebako setup
 
   tests-1:
     needs: setup
-    name: tests-1 alpine-latest [CC ${{ matrix.env.CC }}]
+    name: tests-1 alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: alpine:${{ matrix.env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
         env:
           - CC: gcc
             CXX: g++
+            ALPINE_VER: "3.15"
           - CC: clang
             CXX: clang++
+            ALPINE_VER: "3.15"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            autoconf boost-static boost-dev flex-dev bison           \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
-            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            lz4-dev openssl-dev zlib-dev                             \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
@@ -191,7 +195,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -200,7 +204,7 @@ jobs:
           false
 
       - name: Checkout shell test framework
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           repository: kward/shunit2
           path: tests/shunit2
@@ -212,34 +216,48 @@ jobs:
           VERBOSE: yes
         run: tests/scripts/functional-tests.sh
 
+      - name: Upload tebako test packages
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-packages
+          retention-days: 1
+          path: |
+            test-01-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package
+
   tests-2:
     needs: setup
-    name: tests-2 alpine-latest [CC ${{ matrix.env.CC }}]
+    name: tests-2 alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:latest
+      image: alpine:${{ matrix.env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
         env:
           - CC: gcc
             CXX: g++
+            ALPINE_VER: "3.15"
           - CC: clang
             CXX: clang++
+            ALPINE_VER: "3.15"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            autoconf boost-static boost-dev flex-dev bison           \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
-            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            lz4-dev openssl-dev zlib-dev                             \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev         \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static ruby
+            readline-dev readline-static ruby-dev p7zip
 
       - name: Install bundler
         run: gem install bundler
@@ -275,7 +293,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -290,34 +308,62 @@ jobs:
           cd ..
           ruby tests-2/tebako-test.rb
 
-  package-metanorma:
-    needs: setup
-    name: package-metanorma alpine-latest [CC ${{ matrix.env.CC }}]
+  cross-test-on-alpine-latest:
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    needs: tests-1
     runs-on: ubuntu-latest
     container:
       image: alpine:latest
+    steps:
+      - name: Install packages
+        run: apk --no-cache --upgrade add git bash
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      - name: Download test packages
+        uses: actions/download-artifact@v2
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  tests/scripts/cross-tests.sh
+
+  package-metanorma:
+    needs: setup
+    name: package-metanorma alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: ubuntu-latest
+    container:
+      image: alpine:${{ matrix.env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
         env:
           - CC: gcc
             CXX: g++
+            ALPINE_VER: "3.15"
+            VCPKG_FORCE_SYSTEM_BINARIES: 1
           - CC: clang
             CXX: clang++
+            ALPINE_VER: "3.15"
+            VCPKG_FORCE_SYSTEM_BINARIES: 1
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev fmt-dev flex-dev bison   \
+            autoconf boost-static boost-dev flex-dev bison make      \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
-            double-conversion-dev lz4-dev openssl-dev zlib-dev       \
-            libunwind-dev libdwarf-dev glog-dev elfutils-dev         \
+            lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static
+            readline-dev readline-static p7zip ruby-dev gcompat      \
+            gettext-dev python3 pkgconfig gperf
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
@@ -351,7 +397,7 @@ jobs:
         uses: actions/cache@v2
         with:
           path: ${{ env.DEPS }}
-          key: alpine-latest-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -365,5 +411,7 @@ jobs:
           repository: metanorma/packed-mn
           path: packed-mn
 
-      - name: Package metanorma
-        run: bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+      - name: Package metanorma and run smoke check
+        run: |
+          bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+          ./metanorma-package help
