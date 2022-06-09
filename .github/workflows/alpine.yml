@@ -355,7 +355,7 @@ jobs:
       - name: Install packages
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev flex-dev bison           \
+            autoconf boost-static boost-dev flex-dev bison make      \
             binutils-dev libarchive-dev libevent-dev acl-dev sed     \
             lz4-dev openssl-dev zlib-dev                             \
             libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
