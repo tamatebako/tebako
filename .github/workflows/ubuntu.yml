@@ -45,27 +45,43 @@ on:
       - .github/workflows/alpine.yml
   workflow_dispatch:
 
+concurrency:
+  group: '${{ github.workflow }}-${{ github.job }}-${{ github.head_ref || github.ref_name }}'
+  cancel-in-progress: true
+
 env:
-# Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  BUILD_TYPE: Release
-# The folder for dwarfs and other dependenies
-  DEPS: deps
-# GitHub dependencies'
-  INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.2.0"
-# Tarball dependencies
-  RUBY_VER:   "2.7.5"
-  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
-# Bundler version
-  BUNDLER_VER: "2.3.15"
-# Cache version
-  CACHE_VER: 06
+  CACHE_VER: 07
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      head_tag: ${{ steps.check.outputs.head_tag }}
+      foreign_pr: ${{ steps.check.outputs.foreign_pr }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.3.4
+
+      - name: Retrieve tags
+        run: git fetch --depth=1 origin +refs/tags/*:refs/tags/* || true
+      - name: Set output variables
+        id: check
+        run: |
+          fpr="no"
+          tag=""
+          if [[ "${{ github.ref }}" == refs/heads/* ]]; then
+            tag="$(git tag --points-at HEAD)"
+          elif [[ "${{ github.ref }}" == refs/pull/* ]] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.event.pull_request.base.repo.full_name }}" ]; then
+            fpr="yes"
+          fi
+          echo "::set-output name=foreign_pr::${fpr}"
+          echo "::set-output name=head_tag::${tag}"
+
   setup:
     name: setup ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -82,6 +98,9 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
 
 # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu2004-README.md
 # https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu1804-README.md
@@ -125,15 +144,6 @@ jobs:
           libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
           libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
           libsqlite3-dev
-
-      - name: Update libfmt (bionic)
-        if: ${{ matrix.os == 'ubuntu-18.04' }}
-        run: |
-          sudo apt-get -y remove libfmt-dev
-          sudo apt-get -y install software-properties-common
-          sudo add-apt-repository ppa:team-xbmc/ppa
-          sudo apt-get -y update
-          sudo apt-get -y install libfmt-dev
 
       - name: Install libfmt (focal)
         if: ${{ matrix.os == 'ubuntu-20.04' }}
@@ -187,6 +197,9 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
 
       - name: Switch to gcc-9
         if: ${{ matrix.env.CC == 'gcc' }}
@@ -296,6 +309,9 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
 
       - name: Switch to gcc-9
         if: ${{ matrix.env.CC == 'gcc' }}
@@ -410,6 +426,9 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
 
       - name: Switch to gcc-9
         if: ${{ matrix.env.CC == 'gcc' }}
