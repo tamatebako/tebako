@@ -45,26 +45,15 @@ on:
       - .github/workflows/ubuntu.yml
   workflow_dispatch:
 
-env:
-  BUILD_TYPE: Release
-# The folder for dwarfs and other dependenies
-  DEPS: deps
-# GitHub dependencies'
-  INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.2.1"
-# Tarball dependencies
-  RUBY_VER:   "2.7.5"
-  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
-# Bundler version
-  BUNDLER_VER: "2.3.15"
-# Cache version
-  CACHE_VER: 10
-  DEBIAN_FRONTEND: "noninteractive"
-  TZ: "Etc/UTC"
-
 concurrency:
   group: '${{ github.workflow }}-${{ github.job }}-${{ github.head_ref || github.ref_name }}'
   cancel-in-progress: true
+
+env:
+# Cache version
+  CACHE_VER: 12
+  DEBIAN_FRONTEND: "noninteractive"
+  TZ: "Etc/UTC"
 
 jobs:
   setup:
@@ -98,16 +87,19 @@ jobs:
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static
 
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
           submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}
@@ -166,16 +158,19 @@ jobs:
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static
 
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
           submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}
@@ -220,7 +215,7 @@ jobs:
         run: tests/scripts/functional-tests.sh
 
       - name: Upload tebako test packages
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: test-packages
           retention-days: 1
@@ -262,22 +257,25 @@ jobs:
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static ruby-dev p7zip
 
-      - name: Install bundler
-        run: gem install bundler
-
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: apk --no-cache --upgrade add clang
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
           submodules: true
 
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}
         run: tools/ci-scripts/patch-system-includes.sh
+
+      - name: Install bundler
+        run: gem install bundler
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: apk --no-cache --upgrade add clang
 
       - name: Build libjemalloc
         run: |
@@ -368,16 +366,19 @@ jobs:
             readline-dev readline-static p7zip ruby-dev gcompat      \
             gettext-dev python3 pkgconfig gperf
 
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
           submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}

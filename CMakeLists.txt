@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,13 +25,41 @@
 
 cmake_minimum_required (VERSION 3.20)
 # Version 3.20 for cmake_path
-cmake_policy(SET CMP0048 NEW)
+
 # For project( ... VERSION ... )
+cmake_policy(SET CMP0048 NEW)
+# DOWNLOAD_EXTRACT_TIMESTAMP option default = true
+if(${CMAKE_VERSION} VERSION_GREATER "3.23.10")
+  cmake_policy(SET CMP0135 NEW)
+endif()
 
 
-project(tebako_packager VERSION 0.3.9)
-execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
-string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
+project(tebako_packager VERSION 0.4.0)
+
+execute_process(
+  COMMAND pwd
+  RESULT_VARIABLE PWD_RES
+  OUTPUT_VARIABLE FS_CURRENT_RAW
+  OUTPUT_STRIP_TRAILING_WHITESPACE
+)
+
+if(NOT (PWD_RES EQUAL 0))
+  message(FATAL_ERROR "Could not determine current folder")
+endif()
+
+if (MINGW)
+  execute_process(
+    COMMAND "cygpath" "-w" ${FS_CURRENT_RAW}
+    RESULT_VARIABLE CYGPATH_RES
+    OUTPUT_VARIABLE FS_CURRENT
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(NOT (CYGPATH_RES EQUAL 0))
+    message(FATAL_ERROR "Could not map MSys path to Windows")
+  endif()
+else(MINGW)
+  set(FS_CURRENT ${FS_CURRENT_RAW})
+endif(MINGW)
 
 # External dependencies
 # ---------------------------------------------------------------------------------------------------
@@ -50,8 +78,16 @@ string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 #        libsqlite3-dev
 # ---------------------------------------------------------------------------------------------------
 
+set(RUBY_DEBUG_BUILD ON)
+
 include(ExternalProject)
-include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
+# This is the default that will be overwritten for MacOS and MSys
+set(GNU_BASH "bash")
+
+include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/macos-environment.cmake)
+include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/msys-environment.cmake)
+include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/def-external-project.cmake)
+
 include(${CMAKE_SOURCE_DIR}/cmake/def_tty_colours.cmake)
 
 option(SETUP_MODE "Tebako setup" OFF)
@@ -112,25 +148,6 @@ else()
   message("Running tebako setup script")
 endif()
 
-if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-  execute_process(
-    COMMAND brew --prefix
-    RESULT_VARIABLE BREW_PREFIX_RES
-    OUTPUT_VARIABLE BREW_PREFIX
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  if(NOT (BREW_PREFIX_RES EQUAL 0 AND EXISTS ${BREW_PREFIX}))
-    message(FATAL "Could not find brew setup")
-  endif()
-
-  message(STATUS "Using homebrew environment at ${BREW_PREFIX}")
-  set(GNU_BASH "${BREW_PREFIX}/bin/bash")
-else()
-  set(GNU_BASH "bash")
-endif()
-message(STATUS "GNU_BASH: ${GNU_BASH}")
-
-# https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
 execute_process(
   COMMAND "${GNU_BASH}"
           "-c"
@@ -145,12 +162,33 @@ else(OSTYPE_RES EQUAL 0)
   message(FATAL_ERROR "Failed to detect OSTYPE: ${OSTYPE_TXT}")
 endif(OSTYPE_RES EQUAL 0)
 
+set(IS_MUSL OFF)
+set(IS_MSYS OFF)
+set(IS_DARWIN OFF)
+set(RB_W32 OFF)
+set(FORCE_RUBY_PLATFORM "false")
+set(RUBY_WITHOUT_EXT "dbm,win32,win32ole")
+set(RUBY_NAME "ruby")
+set(RUBY_SUFFIX "")
+set(EXE_SUFFIX "")
+set(CMD_SUFFIX "")
+set(BAT_SUFFIX "")
+set(RUBY_MAKEFILE "")
+
 if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
   set(IS_MUSL ON)
   set(FORCE_RUBY_PLATFORM "true")
-else()
-  set(IS_MUSL OFF)
-  set(FORCE_RUBY_PLATFORM "false")
+elseif("${OSTYPE_TXT}" MATCHES "^msys*")
+  set(IS_MSYS ON)
+  set(RB_W32 ON)
+  set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline")
+  set(RUBY_SUFFIX "w")
+  set(EXE_SUFFIX ".exe")
+  set(CMD_SUFFIX ".cmd")
+  set(BAT_SUFFIX ".bat")
+  set(RUBY_MAKEFILE "--file=GNUmakefile")
+elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
+  set(IS_DARWIN ON)
 endif()
 
 # Various locations for external projects
@@ -170,17 +208,28 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
 def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
 
+#def_ext_prj_t(RUBY "2.7.6" "e7203b0cc09442ed2c08936d483f8ac140ec1c72e37bb5c401646b7866cb5d10")
+
+# Ruby 2.7.7 has build script modification that causes an error (on MSys):
+# configure: error: cannot find required auxiliary files: install-sh config.guess config.sub
+# change log mentions a need to use autoreconf -i instead of autoconf
+# (https://github.com/ruby/ruby/commit/4c7ae840818f995ef776ef99c3ee275d14bd3869)
+# but it does not fix the issue
+# (It helps to copy missing config.guess and config.sub from autotools manually)
+#    def_ext_prj_t(RUBY "2.7.7" "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90")
+
+
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.2.1")
+def_ext_prj_g(DWARFS_WR "v0.3.0pre")
 
 if (DEFINED ENV{BUNDLER_VER})
  set(BUNDLER_VER $ENV{BUNDLER_VER})
  set(BUNDLER_ANNOTATION "environment")
 else()
-  set(BUNDLER_VER "2.3.15")
+  set(BUNDLER_VER "2.3.22")
   set(BUNDLER_ANNOTATION "default")
 endif()
 
@@ -192,7 +241,7 @@ else()
   set(WITH_NCURSES_BUILD OFF)
 endif()
 
-message("................................................")
+message("Configuration summary:")
 message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
 message(STATUS "bundler version: ${BUNDLER_VER} (${BUNDLER_ANNOTATION})")
 if(WITH_NCURSES_BUILD)
@@ -202,7 +251,6 @@ else()
 endif(WITH_NCURSES_BUILD)
 message(STATUS "incbin: @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
 message(STATUS "dwarfs with tebako wrapper: @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
-message("................................................")
 
 # ...................................................................
 # Filesystem locations
@@ -222,7 +270,12 @@ set (TLD ${DATA_SRC_DIR}/local)
 # TGD folder is used to install gems
 set (TGD ${DATA_SRC_DIR}/lib/ruby/gems/${RUBY_API_VER})
 # This is actually a constant that shall match libdwarfs-wr TEBAKO_MOUNT_POINT at tebako-common.h
-set(FS_MOUNT_POINT "/__tebako_memfs__")
+if(${IS_MSYS})
+  set(FS_MOUNT_POINT "A:/__tebako_memfs__")
+else(${IS_MSYS})
+  set(FS_MOUNT_POINT "/__tebako_memfs__")
+endif(${IS_MSYS})
+
 
 message(STATUS "DATA_SRC_DIR: ${DATA_SRC_DIR}")
 message(STATUS "DATA_PRE_DIR: ${DATA_PRE_DIR}")
@@ -232,6 +285,14 @@ message(STATUS "TBD: ${TBD}")
 message(STATUS "TLD: ${TLD}")
 message(STATUS "TGD: ${TGD}")
 message(STATUS "FS_MOUNT_POINT: ${FS_MOUNT_POINT}")
+message(STATUS "Building for Win32 Ruby (RB_W32): ${RB_W32}")
+#convert_to_windows(${TLD} CONVERTED_TLD)
+
+# ...................................................................
+# Other options
+
+message(STATUS "Force Ruby platform for Gems: ${FORCE_RUBY_PLATFORM}")
+message(STATUS "Not building Ruby extensions: ${RUBY_WITHOUT_EXT}")
 
 # ...................................................................
 # incbin
@@ -279,6 +340,7 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
                -DWITH_ASAN:BOOL=OFF
                -DWITH_COVERAGE:BOOL=OFF
                -DTEBAKO_BUILD_SCOPE=MKD
+               -DRB_W32=${RB_W32}
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
@@ -308,9 +370,9 @@ endif(WITH_NCURSES_BUILD)
 
 if(RUBY_DEBUG_BUILD)
   set(RUBY_C_FLAGS_1 "-g -O0 -pipe")
-else()
+else(RUBY_DEBUG_BUILD)
   set(RUBY_C_FLAGS_1 "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
-endif()
+endif(RUBY_DEBUG_BUILD)
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
 set(RUBY_C_FLAGS_2 "-pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
@@ -320,19 +382,24 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -no-pie")
 endif()
 
-if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
-  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
-endif()
+if(IS_DARWIN)
+  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BUILD_BREW_PREFIX}/include -I${BUILD_BREW_PREFIX}/opt/openssl@1.1/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
+  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BUILD_BREW_PREFIX}/lib -L${BUILD_BREW_PREFIX}/opt/openssl@1.1/lib -L${BUILD_BREW_PREFIX}/opt/zlib/lib")
+endif(IS_DARWIN)
 
-if(${IS_MUSL})
+if(IS_MUSL)
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DENABLE_PATH_CHECK=0")
-endif()
+endif(IS_MUSL)
+
+if(RB_W32)
+  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DRB_W32=1")
+endif(RB_W32)
+
 
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
 
-message("Ruby build CFLAGS='${RUBY_C_FLAGS}'")
-message("Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
+message(STATUS "Ruby build CFLAGS='${RUBY_C_FLAGS}'")
+message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
 
 ExternalProject_Add(${RUBY_PRJ}
    PREFIX ${DEPS}
@@ -342,18 +409,22 @@ ExternalProject_Add(${RUBY_PRJ}
    SOURCE_DIR ${RUBY_SOURCE_DIR}
    BINARY_DIR ${RUBY_BINARY_DIR}
    PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-   CONFIGURE_COMMAND ${RUBY_SOURCE_DIR}/configure
-                     --enable-bundled-libyaml
-                     --without-gmp
-                     --disable-dtrace
-                     --enable-debug-env
-                     --disable-install-doc
-                     --with-static-linked-ext
-                     --with-out-ext=dbm,win32,win32ole
-                     --srcdir=${RUBY_SOURCE_DIR}
-                     --prefix=${DATA_SRC_DIR}
-                     CFLAGS=${RUBY_C_FLAGS}
-                     LDFLAGS=${RUBY_L_FLAGS}
+   CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure                             \
+                                                        --enable-bundled-libyaml              \
+                                                        --without-gmp                         \
+                                                        --disable-dtrace                      \
+                                                        --enable-debug-env                    \
+                                                        --disable-install-doc                 \
+                                                        --disable-shared                      \
+                                                        --with-static-linked-ext              \
+                                                        --with-out-ext=${RUBY_WITHOUT_EXT}    \
+                                                        --srcdir=${RUBY_SOURCE_DIR}           \
+                                                        --prefix=${DATA_SRC_DIR}              \
+                                                        CFLAGS=\"${RUBY_C_FLAGS}\"            \
+                                                        LDFLAGS=\"${RUBY_L_FLAGS}\"           \
+                                                        LC_ALL=en_US.UTF-8                    \
+                                                        LC_CTYPE=en_US.UTF-8                  \
+                                                        LANG=en_US.UTF-8"
    INSTALL_COMMAND ""
 )
 
@@ -391,7 +462,6 @@ else (${SETUP_MODE})
            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
            DEPENDS ${RUBY_PRJ}
   )
-
   if(GSLENGTH GREATER 0)
     if(GSLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gemspecs detected in ${FS_ROOT}")
@@ -403,13 +473,18 @@ else (${SETUP_MODE})
         message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         add_custom_target(source_filesystem
-           COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle exec ${TBD}/gem build ${GEMSPEC}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                       ${TBD}/gem${CMD_SUFFIX} install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                       ${TBD}/bundle config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E  env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                       ${TBD}/bundle install
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                       ${TBD}/bundle exec ${TBD}/gem${CMD_SUFFIX} build ${GEMSPEC}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                       ${TBD}/gem${CMD_SUFFIX} install *.gem --verbose --no-document --install-dir ${TGD}
            COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                    (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                     ${CMAKE_COMMAND} -E false )
@@ -422,9 +497,11 @@ else (${SETUP_MODE})
          message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
          add_custom_target(source_filesystem
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem build ${GEMSPEC}
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install *.gem --verbose --no-document --install-dir ${TGD}
+            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                        ${TBD}/gem${CMD_SUFFIX} build ${GEMSPEC}
+            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                        ${TBD}/gem${CMD_SUFFIX} install *.gem --verbose --no-document --install-dir ${TGD}
             COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                     (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                      ${CMAKE_COMMAND} -E false )
@@ -433,27 +510,34 @@ else (${SETUP_MODE})
       endif(GFLENGTH GREATER 0)
     endif(GSLENGTH GREATER 1)
   elseif(GFLENGTH GREATER 0)
-#  Found Gemfile but no gemspec
+#  Found Gemfile but no gemspecbuild
     message("Deploying Gemfile")
-    if(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
-      message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
-    endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
     set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
     add_custom_target(source_filesystem
-       COMMAND ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
+       COMMAND test -f ${FS_ROOT}/${FS_ENTRANCE} ||
+                  (${CMAKE_COMMAND} -E echo "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible" &&
+                   ${CMAKE_COMMAND} -E false )
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config build.ffi --disable-system-libffi
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --jobs=4
-       COMMAND_EXPAND_LISTS
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                           ${TBD}/gem${CMD_SUFFIX} install bundler -v '${BUNDLER_VER}'
+                                              --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                           ${TBD}/bundle${CMD_SUFFIX} config build.ffi --disable-system-libffi
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                           ${TBD}/bundle${CMD_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                           ${TBD}/bundle${CMD_SUFFIX} install --jobs=4
+#       COMMAND_EXPAND_LISTS
 # [TODO] Open question - how to deploy a project to source filesystem
 #        ruby packer does bundle install --deployment --binstubs
 # [TODO] --jobs=4 probably can be more intellectual
-#       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle lock
-#       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/bundle install --deployment --jobs=4
-       DEPENDS clean_filesystem
+#       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+#                                    ${TBD}/bundle lock
+#       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+#                                    ${TBD}/bundle install --deployment --jobs=4
+        DEPENDS clean_filesystem
     )
   elseif(GLENGTH GREATER 0)
 # xxx.gem, no gemspec, no gemfile
@@ -466,9 +550,10 @@ else (${SETUP_MODE})
       message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
       add_custom_target(source_filesystem
          COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-         COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1 ${TBD}/gem install ${GEM} --verbose --no-document --install-dir ${TGD}
+         COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                     ${TBD}/gem${CMD_SUFFIX} install ${GEM} --verbose --no-document --install-dir ${TGD}
          COMMAND test -f ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
-                  (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
+                  (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist or is not accessible" &&
                    ${CMAKE_COMMAND} -E false )
          DEPENDS clean_filesystem
       )
@@ -477,12 +562,12 @@ else (${SETUP_MODE})
 # No gem, no gemspec, no gemfile
 # Simple ruby script
     message("Collecting simple Ruby script from ${FS_ROOT}")
-    if(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
-      message(FATAL_ERROR "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible")
-    endif(NOT EXISTS ${FS_ROOT}/${FS_ENTRANCE})
     set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
     add_custom_target(source_filesystem
+       COMMAND test -f ${FS_ROOT}/${FS_ENTRANCE} ||
+                  (${CMAKE_COMMAND} -E echo "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible" &&
+                   ${CMAKE_COMMAND} -E false )
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
        DEPENDS clean_filesystem
@@ -516,10 +601,18 @@ else (${SETUP_MODE})
 # [TODO] Open question - whether we shall delete ruby binaries from memfs or not
 #        For debugging purposes it is very handy to have it here
 #
-      COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR}/share   ${DATA_SRC_DIR}/include  ${DATA_SRC_DIR}/lib/*.a ${DATA_SRC_DIR}/lib/pkgconfig
-                                         ${DATA_SRC_DIR}/bin/bundle  ${DATA_SRC_DIR}/bin/bundler  ${DATA_SRC_DIR}/bin/erb  ${DATA_SRC_DIR}/bin/gem
-                                         ${DATA_SRC_DIR}/bin/irb ${DATA_SRC_DIR}/bin/racc  ${DATA_SRC_DIR}/bin/racc2y ${DATA_SRC_DIR}/bin/rake
-                                         ${DATA_SRC_DIR}/bin/rdoc ${DATA_SRC_DIR}/bin/ri ${DATA_SRC_DIR}/bin/ruby ${DATA_SRC_DIR}/bin/y2racc
+      COMMAND ${CMAKE_COMMAND} -E rm -rf  ${DATA_SRC_DIR}/share  ${DATA_SRC_DIR}/include   ${DATA_SRC_DIR}/lib/pkgconfig
+                                          ${DATA_SRC_DIR}/bin/bundle${CMD_SUFFIX}  ${DATA_SRC_DIR}/bin/bundle
+                                          ${DATA_SRC_DIR}/bin/bundler${CMD_SUFFIX} ${DATA_SRC_DIR}/bin/bundler
+                                          ${DATA_SRC_DIR}/bin/bundle${BAT_SUFFIX}  ${DATA_SRC_DIR}/bin/bundler${BAT_SUFFIX}
+                                          ${DATA_SRC_DIR}/bin/erb${CMD_SUFFIX}     ${DATA_SRC_DIR}/bin/gem${CMD_SUFFIX}
+                                          ${DATA_SRC_DIR}/bin/irb${CMD_SUFFIX}     ${DATA_SRC_DIR}/bin/racc${CMD_SUFFIX}
+                                          ${DATA_SRC_DIR}/bin/racc2y${CMD_SUFFIX}  ${DATA_SRC_DIR}/bin/rake${BAT_SUFFIX}
+                                          ${DATA_SRC_DIR}/bin/rake                 ${DATA_SRC_DIR}/bin/rdoc${CMD_SUFFIX}
+                                          ${DATA_SRC_DIR}/bin/ri${CMD_SUFFIX}      ${DATA_SRC_DIR}/bin/y2racc${CMD_SUFFIX}
+                                          ${DATA_SRC_DIR}/bin/ruby${EXE_SUFFIX}    ${DATA_SRC_DIR}/bin/ruby${RUBY_SUFFIX}${EXE_SUFFIX}
+
+      COMMAND ${GNU_BASH} -c "rm ${DATA_SRC_DIR}/lib/*.a"
       COMMAND chmod +x ${DEPS_BIN_DIR}/*
       COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
       COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
@@ -541,12 +634,12 @@ else (${SETUP_MODE})
 
   add_custom_target(patched_ruby
      COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make
+     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make ${RUBY_MAKEFILE}
      DEPENDS setup tebako-fs
   )
 
   add_custom_target(tebako ALL
-    COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_BINARY_DIR}/ruby ${APP_NAME}
+    COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_BINARY_DIR}/ruby${RUBY_SUFFIX}${EXE_SUFFIX} ${APP_NAME}${EXE_SUFFIX}
     COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
     DEPENDS patched_ruby
   )

@@ -31,6 +31,10 @@
 extern "C" {
 #endif
 	int tebako_main(int* argc, char*** argv);
+	const char* tebako_mount_point(void);
+#ifdef RB_W32
+	int tebako_file_load_ok(const char *path);
+#endif
 #ifdef __cplusplus
 }
 #endif

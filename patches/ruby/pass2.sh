@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -37,6 +37,7 @@ restore_and_save() {
 }
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  mPoint="\/__tebako_memfs__"
   gSed="sed"
 
 # shellcheck disable=SC2251
@@ -50,6 +51,7 @@ MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:l
 EOM
 
 elif [[ "$OSTYPE" == "linux-musl"* ]]; then
+  mPoint="\/__tebako_memfs__"
   gSed="sed"
 
 # Alpine-specific patches https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
@@ -131,6 +133,7 @@ MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:l
 EOM
 
 elif [[ "$OSTYPE" == "darwin"* ]]; then
+  mPoint="\/__tebako_memfs__"
   gSed="gsed"
   p_libssl="$(brew --prefix openssl@1.1)/lib/libssl.a"
   p_libcrypto="$(brew --prefix openssl@1.1)/lib/libcrypto.a"
@@ -153,6 +156,22 @@ $p_libffi $p_libncurses -ljemalloc -lc++
 # -- End of tebako patch --
 EOM
 
+elif [[ "$OSTYPE" == "msys"* ]]; then
+  mPoint="A:\/__tebako_memfs__"
+  gSed="sed"
+
+# shellcheck disable=SC2251
+! IFS= read -r -d '' mLibs << EOM
+# -- Start of tebako patch --
+MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
+-l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
+-l:libzstd.a -l:libffi.a -l:libgdbm.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:liblzma.a -l:libiberty.a \\\\
+-l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
+# -- End of tebako patch --
+EOM
+# win32ole extension requirements: -lole32 -loleaut32 -luuid
+# Disabled extensions (gdbm, readline): -l:libgdbm.a -l:libreadline.a
+# Looks like not required:  -l:libwinpthread.a
 else
   exit 1
 fi
@@ -172,7 +191,7 @@ re="LIBS = @LIBS@ \$(EXTLIBS)"
 # shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
-LIBS = @LIBS@
+LIBS = \$(MAINLIBS) @LIBS@
 # -- End of tebako patch --
 EOM
 #
@@ -182,7 +201,8 @@ re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \
 # shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 # -- Start of tebako patch --
-		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(OUTFLAG)\$@
+#		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG_STATIC) \$(MAINLIBS) \$(LIBS) \$(OUTFLAG)\$@
+		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG_STATIC) \$(LIBS) \$(OUTFLAG)\$@
 # -- End of tebako patch --
 EOM
 #
@@ -205,7 +225,19 @@ restore_and_save "$1/main.c"
 # https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
 # [TODO this looks a kind of risky]
 "$gSed" -i "0,/int$/s//#include <tebako-main.h>\n\nint/" "$1/main.c"
-"$gSed" -i "0,/{$/s//{\n    if (tebako_main(\&argc, \&argv) != 0) { return -1; }\n/" "$1/main.c"
+
+re="    ruby_sysinit(&argc, &argv);"
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+    ruby_sysinit(\&argc, \&argv);
+\/* -- Start of tebako patch -- *\/
+    if (tebako_main(\&argc, \&argv) != 0) {
+      return -1;
+    }
+\/* -- End of tebako patch -- *\/
+
+EOM
+  "$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/main.c"
 
 # ....................................................
 # Put lidwarfs IO bindings to other c files
@@ -217,8 +249,12 @@ patch_c_file() {
 ! IFS= read -r -d '' c_sbst << EOM
 
 \/* -- Start of tebako patch -- *\/
+#ifndef NO_TEBAKO_INCLUDES
+#include <tebako\/tebako-config.h>
 #include <tebako\/tebako-defines.h>
+#include <tebako\/tebako-io-rb-w32.h>
 #include <tebako\/tebako-io.h>
+#endif
 \/* -- End of tebako patch -- *\/
 
 EOM
@@ -231,33 +267,21 @@ EOM
 patch_c_file "$1/dln.c"  "static const char funcname_prefix\[sizeof(FUNCNAME_PREFIX) - 1\] = FUNCNAME_PREFIX;"
 
 # ruby/file.c
-patch_c_file "$1/file.c"  "VALUE rb_cFile;"
+patch_c_file "$1/file.c"  "\/\* define system APIs \*\/"
 
 # ruby/io.c
-patch_c_file "$1/io.c"  "VALUE rb_cIO;"
+patch_c_file "$1/io.c"  "\/\* define system APIs \*\/"
 
 # ruby/util.c
 patch_c_file "$1/util.c"  "#ifndef S_ISDIR"
 
 # ....................................................
 # ruby/dir.c
-restore_and_save "$1/dir.c"
-# Replace only the first occurence
-# As opposed to other c files subsitution inserts includes before the pattern, not after
-
-re="#ifdef __APPLE__"
-# shellcheck disable=SC2251
-! IFS= read -r -d '' sbst << EOM
-
-\/* -- Start of tebako patch -- *\/
-#include <tebako\/tebako-defines.h>
-#include <tebako\/tebako-io.h>
-\/* -- End of tebako patch -- *\/
-
-#ifdef __APPLE__
-EOM
-
-"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
+if [[ "$OSTYPE" == "msys"* ]]; then
+  patch_c_file "$1/dir.c"  "\/\* define system APIs \*\/"
+else
+  patch_c_file "$1/dir.c"  "#ifdef HAVE_GETATTRLIST"
+fi
 
 # Compensate ruby incorrect processing of (f)getattrlist returning ENOTSUP
 "$gSed" -i "s/if ((\*cur)->type == ALPHA) {/if ((*cur)->type == ALPHA \/* tebako patch *\/ \&\& !within_tebako_memfs(buf)) {/g" "$1/dir.c"
@@ -265,7 +289,7 @@ EOM
 "$gSed" -i "s/if (is_case_sensitive(dirp, path) == 0)/if (is_case_sensitive(dirp, path) == 0 \/* tebako patch *\/ \&\& !within_tebako_memfs(path))/g" "$1/dir.c"
 "$gSed" -i "0,/plain = 1;/! s/plain = 1;/\/* tebako patch *\/ if (!within_tebako_memfs(path)) plain = 1; else magical = 1;/g" "$1/dir.c"
 
-re="#if defined HAVE_GETATTRLIST && defined ATTR_DIR_ENTRYCOUNT"
+  re="#if defined HAVE_GETATTRLIST && defined ATTR_DIR_ENTRYCOUNT"
 # shellcheck disable=SC2251
 ! IFS= read -r -d '' sbst << EOM
 #if defined HAVE_GETATTRLIST \&\& defined ATTR_DIR_ENTRYCOUNT
@@ -287,14 +311,14 @@ re="if fast\[name\]"
      v_head_comp = \"  CONFIG\[\\\\\"prefix\\\\\"\] #{eq} \"
      if v_head_comp == v\[0...(v_head_comp.length)\]
        if win32
-         v = \"#{v\[0...(v_head_comp.length)\]}CONFIG\[\\\\\"RUBY_EXEC_PREFIX\\\\\"\] = '\/__tebako_memfs__'\\n\"
+         v = \"#{v\[0...(v_head_comp.length)\]}CONFIG\[\\\\\"RUBY_EXEC_PREFIX\\\\\"\] = '$mPoint'\\n\"
        else
-         v = "#{v\[0...(v_head_comp.length)\]}'\/__tebako_memfs__'\\n\"
+         v = "#{v\[0...(v_head_comp.length)\]}'$mPoint'\\n\"
        end
      end
      v_head_comp = \"  CONFIG\[\\\\\"RUBY_EXEC_PREFIX\\\\\"\] #{eq} \"
      if v_head_comp == v\[0...(v_head_comp.length)\]
-       v = \"#{v\[0...(v_head_comp.length)\]}'\/__tebako_memfs__'\\n\"
+       v = \"#{v\[0...(v_head_comp.length)\]}'$mPoint'\\n\"
      end
 # -- End of tebako patch --
      if fast\[name\]
@@ -302,12 +326,87 @@ EOM
 
 "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/tool/mkconfig.rb"
 
+if [[ "$OSTYPE" == "msys"* ]]; then
+# ....................................................
+# ruby/ruby.c
+  restore_and_save "$1/ruby.c"
+  re="#define RUBY_RELATIVE(path, len) rb_str_buf_cat(BASEPATH(), (path), (len))"
+  sbst="#define RUBY_RELATIVE(path, len) rubylib_path_new((path), (len))  \/* tebako patched *\/"
+  "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ruby.c"
+
+  re="#define PREFIX_PATH() sopath"
+  sbst="#define PREFIX_PATH() rubylib_path_new((tebako_mount_point()), (strlen(tebako_mount_point())))  \/* tebako patched *\/"
+  "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ruby.c"
+
+    re="#include \"mjit.h\""
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+#include \"mjit.h\"
+\/* -- Start of tebako patch -- *\/
+#include <tebako-main.h>
+\/* -- End of tebako patch -- *\/
+EOM
+  "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ruby.c"
+
+
+# ....................................................
+# ruby/win32/win32.c
+  restore_and_save "$1/win32/win32.c"
+  re="#undef __STRICT_ANSI__"
+
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+#undef __STRICT_ANSI__
+\/* -- Start of tebako patch -- *\/
+#define NO_TEBAKO_INCLUDES
+\/* -- End of tebako patch -- *\/
+EOM
+
+  "$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/win32/win32.c"
+
+# ....................................................
+# ruby/win32/dir.h
+  patch_c_file "$1/win32/dir.h"  "#define opendir(s)   rb_w32_opendir((s))"
+
+# ....................................................
+# ruby/win32/file.c
+  restore_and_save "$1/win32/file.c"
+
+  re="    wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);"
+
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+    \/* -- Start of tebako patch -- *\/
+    if (tebako_file_load_ok(path)) return 1;
+    \/* -- End of tebako patch -- *\/
+    wpath = mbstr_to_wstr(CP_UTF8, path, -1, \&len);
+EOM
+  "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/win32/file.c"
+
+  re="#include \"win32\/file.h\""
+
+# shellcheck disable=SC2251
+! IFS= read -r -d '' sbst << EOM
+#include \"win32\/file.h\"
+\/* -- Start of tebako patch -- *\/
+#include <tebako-main.h>
+\/* -- End of tebako patch -- *\/
+EOM
+  "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/win32/file.c"
+
+fi
+
 # ....................................................
 # ruby/ext/bigdecimal/bigdecimal.h
 # Uses pass1 patch
 
-# ruby/ext/openssl/ossl_x509store.c
-#  [TODO ???]
+# ....................................................
+# ruby/configure
+# Uses pass1 patch
+
+# ....................................................
+# ruby/cygwin/GNUmakefile.in
+# Uses pass1 patch
 
 # ruby/prelude.c
 # restore_and_save $1/prelude.c
@@ -316,7 +415,3 @@ EOM
 # ruby/process.c
 #restore_and_save $1/process.c
 # [TODO ???]
-
-# [TODO Windows]
-# $1/win32/file.c
-# $1/win32/win32.c

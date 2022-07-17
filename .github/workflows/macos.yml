@@ -45,29 +45,15 @@ on:
       - .github/workflows/alpine.yml
   workflow_dispatch:
 
-env:
-  BUILD_TYPE: Release
-  CC: clang
-  CXX: clang++
-  CFLAGS: -mmacos-version-min=10.15 --target=x86_64-apple-macos10.15
-  CPPFLAGS: -mmacos-version-min=10.15 --target=x86_64-apple-macos10.15
-  LDFLAGS:  --target=x86_64-apple-macos10.15
-# The folder for dwarfs and other dependenies
-  DEPS: deps
-# GitHub dependencies'
-  INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.2.1"
-# Tarball dependencies
-  RUBY_VER:   "2.7.5"
-  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
-# Bundler version
-  BUNDLER_VER: "2.3.15"
-# Cache version
-  CACHE_VER: 10
-
 concurrency:
   group: '${{ github.workflow }}-${{ github.job }}-${{ github.head_ref || github.ref_name }}'
   cancel-in-progress: true
+
+env:
+  CC: clang
+  CXX: clang++
+# Cache version
+  CACHE_VER: 12
 
 jobs:
   setup:
@@ -78,22 +64,26 @@ jobs:
       matrix:
         os: [ macos-11.0 ]
     steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
       - name: Select XCode 12.4 & SDK 11.1
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '12.4'
 
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
-
       - name: Install packages
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
-          gnu-getopt gnu-sed bash ncurses
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses libffi
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
@@ -118,22 +108,26 @@ jobs:
       matrix:
         os: [ macos-11.0 ]
     steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
       - name: Select XCode 12.4 & SDK 11.1
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '12.4'
 
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
-
       - name: Install packages
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
-          gnu-getopt gnu-sed bash ncurses
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses libffi
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
@@ -187,23 +181,26 @@ jobs:
       matrix:
         os: [ macos-11.0 ]
     steps:
-      - name: Select XCode 12.4 & SDK 11.1
-        if: ${{ matrix.os == 'macos-11.0' }}
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '12.4'
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+          submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Select XCode 12.4 & SDK 11.1
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '12.4'
 
       - name: Install packages
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
-          gnu-getopt gnu-sed bash ncurses
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses libffi
 
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
@@ -263,22 +260,26 @@ jobs:
       matrix:
         os: [ macos-11.0 ]
     steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
       - name: Select XCode 12.4 & SDK 11.1
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '12.4'
 
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
-
       - name: Install packages
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
-          gnu-getopt gnu-sed bash ncurses
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash ncurses libffi
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}

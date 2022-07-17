@@ -45,14 +45,22 @@ echo "         Normally you do not need to do it since tebako packager optimizes
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
   echo "Setting up Linux gnu environment"
+  mfiles="Unix Makefiles"
   gOpt="getopt"
   uFlags="${CXXFLAGS:=}"
 elif [[ "$OSTYPE" == "linux-musl"* ]]; then
   echo "Setting up Linux musl environment"
+  mfiles="Unix Makefiles"
+  gOpt="getopt"
+  uFlags="${CXXFLAGS:=}"
+elif [[ "$OSTYPE" == "msys"* ]]; then
+  echo "Setting up MSys environment"
+  mfiles="Ninja"
   gOpt="getopt"
   uFlags="${CXXFLAGS:=}"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   echo "Setting up MacOS environment"
+  mfiles="Unix Makefiles"
 # shellcheck disable=SC2251
   ! gOpt="$(brew --prefix gnu-getopt)/bin/getopt"
   if [[ ${PIPESTATUS[0]} -ne 0 ]]; then
@@ -64,7 +72,6 @@ else
   echo "... $OSTYPE is not supported yet, exiting"
   exit 254
 fi
-
 
 # -allow a command to fail with !’s side effect on errexit
 # -use return value from ${PIPESTATUS[0]}, because ! hosed $?
@@ -172,7 +179,7 @@ case "$1" in
     CXXFLAGS="${uFlags:=}" cmake -DCMAKE_BUILD_TYPE=Release   \
           -DDEPS:STRING="$prefix/deps" \
           -DSETUP_MODE:BOOLEAN=ON      \
-          -G "Unix Makefiles"          \
+          -G "$mfiles"                 \
           -S "$prefix"                 \
           -B "$prefix/output"	 && rc=$? || rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -213,7 +220,7 @@ case "$1" in
               -DPCKG:STRING="$packageName"     \
               -DLOG_LEVEL:STRING="$logLevel"   \
               -DSETUP_MODE:BOOLEAN=OFF         \
-              -G "Unix Makefiles"              \
+              -G "$mfiles"                 \
               -S "$prefix"                     \
               -B "$prefix/output" && rc=$? || rc=$?
     if [ "$rc" -ne 0 ]; then

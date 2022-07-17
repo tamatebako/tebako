@@ -31,9 +31,18 @@
 #include <stdio.h>
 #include <string.h>
 #include <memory.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #include <string>
 
+#ifdef _WIN32
+ #include <winsock2.h>
+ #include <windows.h>
+#endif
+
+
+#include <tebako/tebako-config.h>
 #include <tebako/tebako-io.h>
 
 #include <tebako-version.h>
@@ -135,3 +144,45 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 	}
 	return ret;
 }
+
+extern "C" const char* tebako_mount_point(void) {
+	return tebako::fs_mount_point;
+}
+
+#ifdef RB_W32
+
+#if !defined(RUBY_WIN32_H)
+    struct stati128 {
+        _dev_t st_dev;
+        unsigned __int64 st_ino;
+        __int64 st_inohigh;
+        unsigned short st_mode;
+        short st_nlink;
+        short st_uid;
+        short st_gid;
+        _dev_t st_rdev;
+        __int64 st_size;
+        __time64_t st_atime;
+        long st_atimensec;
+        __time64_t st_mtime;
+        long st_mtimensec;
+        __time64_t st_ctime;
+        long st_ctimensec;
+    };
+#endif
+
+extern "C" int tebako_file_load_ok(const char *path) {
+	int ret = 0;
+
+	if (within_tebako_memfs(path)) {
+		int fd = tebako_open(2, path, O_RDONLY);
+		if (fd != -1) {
+			struct STAT_TYPE st;
+			ret = (tebako_fstat(fd, &st)==0) ? 1:0;
+    		tebako_close(fd);
+		}
+	}
+	return ret;
+}
+
+#endif
