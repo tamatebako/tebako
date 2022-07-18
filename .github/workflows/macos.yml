@@ -53,7 +53,7 @@ env:
   CC: clang
   CXX: clang++
 # Cache version
-  CACHE_VER: 08
+  CACHE_VER: 10
 
 jobs:
   prepare:
@@ -93,6 +93,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+          submodules: true
 
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV
@@ -143,6 +144,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+          submodules: true
 
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV
@@ -222,6 +224,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+          submodules: true
 
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV
@@ -283,6 +286,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+          submodules: true
 
       - name: Download test packages
         uses: actions/download-artifact@v2
@@ -306,6 +310,7 @@ jobs:
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
+          submodules: true
 
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV

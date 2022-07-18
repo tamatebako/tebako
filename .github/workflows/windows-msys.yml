@@ -54,7 +54,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 1
+  CACHE_VER: 3
 
 jobs:
   prepare:
@@ -129,6 +129,7 @@ jobs:
             gdbm:p
             ncurses:p
             libyaml:p
+            gflags:p
             gtest:p
 
       - name: Checkout
@@ -138,3 +139,16 @@ jobs:
 
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV
+
+      - name: Create deps folder
+        run: mkdir ${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v2
+        with:
+          path: ${{ env.DEPS }}
+          key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: bin/tebako setup

@@ -41,6 +41,8 @@ if [[ "$OSTYPE" == "linux-gnu"* ]]; then
 elif [[ "$OSTYPE" == "linux-musl"* ]]; then
   gSed="sed"
   restore_and_save "$1/thread_pthread.c"
+elif [[ "$OSTYPE" == "msys"* ]]; then
+  gSed="sed"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   gSed="gsed"
 else
@@ -135,5 +137,3 @@ restore_and_save "$1/tool/mkconfig.rb"
 # [TODO Windows]
 # $1/win32/file.c
 # $1/win32/win32.c
-
-
