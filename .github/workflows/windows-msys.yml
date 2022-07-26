@@ -129,7 +129,7 @@ jobs:
             gdbm:p
             ncurses:p
             libyaml:p
-            gflog:p
+            glog:p
             gtest:p
 
       - name: Checkout
