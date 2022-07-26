@@ -45,35 +45,52 @@ on:
       - .github/workflows/ubuntu.yml
   workflow_dispatch:
 
+concurrency:
+  group: '${{ github.workflow }}-${{ github.job }}-${{ github.head_ref || github.ref_name }}'
+  cancel-in-progress: true
+
 env:
-# Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
-  BUILD_TYPE: Release
-# The folder for dwarfs and other dependenies
-  DEPS: deps
-# GitHub dependencies'
-  INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.2.0"
-# Tarball dependencies
-  RUBY_VER:   "2.7.5"
-  RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
-# Bundler version
-  BUNDLER_VER: "2.3.15"
 # Cache version
-  CACHE_VER: 07
+  CACHE_VER: 10
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      head_tag: ${{ steps.check.outputs.head_tag }}
+      foreign_pr: ${{ steps.check.outputs.foreign_pr }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2.3.4
+
+      - name: Retrieve tags
+        run: git fetch --depth=1 origin +refs/tags/*:refs/tags/* || true
+      - name: Set output variables
+        id: check
+        run: |
+          fpr="no"
+          tag=""
+          if [[ "${{ github.ref }}" == refs/heads/* ]]; then
+            tag="$(git tag --points-at HEAD)"
+          elif [[ "${{ github.ref }}" == refs/pull/* ]] && [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.event.pull_request.base.repo.full_name }}" ]; then
+            fpr="yes"
+          fi
+          echo "::set-output name=foreign_pr::${fpr}"
+          echo "::set-output name=head_tag::${tag}"
+
   setup:
     name: setup alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    needs: prepare
     runs-on: ubuntu-latest
     container:
       image: alpine:${{ matrix.env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
-# Alpine 3.16 (which is now 'latest') installs gcc 11.x that does not work for seven_zip_ruby      
-# https://github.com/masamitsu-murase/seven_zip_ruby/issues/36      
+# Alpine 3.16 (which is now 'latest') installs gcc 11.x that does not work for seven_zip_ruby
+# https://github.com/masamitsu-murase/seven_zip_ruby/issues/36
         env:
           - CC: gcc
             CXX: g++
@@ -95,16 +112,19 @@ jobs:
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static
 
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
           submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}
@@ -163,16 +183,19 @@ jobs:
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static
 
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
           submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}
@@ -259,22 +282,25 @@ jobs:
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static ruby-dev p7zip
 
-      - name: Install bundler
-        run: gem install bundler
-
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: apk --no-cache --upgrade add clang
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
           submodules: true
 
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}
         run: tools/ci-scripts/patch-system-includes.sh
+
+      - name: Install bundler
+        run: gem install bundler
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: apk --no-cache --upgrade add clang
 
       - name: Build libjemalloc
         run: |
@@ -365,16 +391,19 @@ jobs:
             readline-dev readline-static p7zip ruby-dev gcompat      \
             gettext-dev python3 pkgconfig gperf
 
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
-
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
         with:
           fetch-depth: 1
           submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Install clang
+        if: ${{ matrix.env.CC == 'clang' }}
+        run: |
+          apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}

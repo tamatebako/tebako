@@ -217,6 +217,7 @@ patch_c_file() {
 ! IFS= read -r -d '' c_sbst << EOM
 
 \/* -- Start of tebako patch -- *\/
+#include <tebako\/tebako-config.h>
 #include <tebako\/tebako-defines.h>
 #include <tebako\/tebako-io.h>
 \/* -- End of tebako patch -- *\/
@@ -250,6 +251,7 @@ re="#ifdef __APPLE__"
 ! IFS= read -r -d '' sbst << EOM
 
 \/* -- Start of tebako patch -- *\/
+#include <tebako\/tebako-config.h>
 #include <tebako\/tebako-defines.h>
 #include <tebako\/tebako-io.h>
 \/* -- End of tebako patch -- *\/

@@ -29,7 +29,7 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 
-project(tebako_packager VERSION 0.3.7)
+project(tebako_packager VERSION 0.4.0)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -51,7 +51,13 @@ string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 # ---------------------------------------------------------------------------------------------------
 
 include(ExternalProject)
-include(${CMAKE_SOURCE_DIR}/cmake/def_ext_prj.cmake)
+# This is the default that will be overwritten for MacOS and MSys
+set(GNU_BASH "bash")
+
+include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/macos-environment.cmake)
+include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/msys-environment.cmake)
+include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/def-external-project.cmake)
+
 include(${CMAKE_SOURCE_DIR}/cmake/def_tty_colours.cmake)
 
 option(SETUP_MODE "Tebako setup" OFF)
@@ -112,25 +118,6 @@ else()
   message("Running tebako setup script")
 endif()
 
-if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-  execute_process(
-    COMMAND brew --prefix
-    RESULT_VARIABLE BREW_PREFIX_RES
-    OUTPUT_VARIABLE BREW_PREFIX
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  if(NOT (BREW_PREFIX_RES EQUAL 0 AND EXISTS ${BREW_PREFIX}))
-    message(FATAL "Could not find brew setup")
-  endif()
-
-  message(STATUS "Using homebrew environment at ${BREW_PREFIX}")
-  set(GNU_BASH "${BREW_PREFIX}/bin/bash")
-else()
-  set(GNU_BASH "bash")
-endif()
-message(STATUS "GNU_BASH: ${GNU_BASH}")
-
-# https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
 execute_process(
   COMMAND "${GNU_BASH}"
           "-c"
@@ -145,12 +132,18 @@ else(OSTYPE_RES EQUAL 0)
   message(FATAL_ERROR "Failed to detect OSTYPE: ${OSTYPE_TXT}")
 endif(OSTYPE_RES EQUAL 0)
 
+set(IS_MUSL OFF)
+set(IS_MSYS OFF)
+set(IS_DARWIN OFF)
+set(FORCE_RUBY_PLATFORM "false")
+
 if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
   set(IS_MUSL ON)
   set(FORCE_RUBY_PLATFORM "true")
-else()
-  set(IS_MUSL OFF)
-  set(FORCE_RUBY_PLATFORM "false")
+elseif("${OSTYPE_TXT}" MATCHES "^msys*")
+  set(IS_MSYS ON)
+elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
+  set(IS_DARWIN ON)
 endif()
 
 # Various locations for external projects
@@ -174,7 +167,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.2.0")
+def_ext_prj_g(DWARFS_WR "v0.3.0pre")
 
 if (DEFINED ENV{BUNDLER_VER})
  set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -192,7 +185,7 @@ else()
   set(WITH_NCURSES_BUILD OFF)
 endif()
 
-message("................................................")
+message("Package summary:")
 message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
 message(STATUS "bundler version: ${BUNDLER_VER} (${BUNDLER_ANNOTATION})")
 if(WITH_NCURSES_BUILD)
@@ -202,7 +195,6 @@ else()
 endif(WITH_NCURSES_BUILD)
 message(STATUS "incbin: @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
 message(STATUS "dwarfs with tebako wrapper: @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
-message("................................................")
 
 # ...................................................................
 # Filesystem locations
@@ -320,14 +312,14 @@ if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -no-pie")
 endif()
 
-if(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BREW_PREFIX}/include -I${BREW_PREFIX}/opt/openssl@1.1/include -I${BREW_PREFIX}/opt/zlib/include")
-  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/lib -L${BREW_PREFIX}/opt/openssl@1.1/lib -L${BREW_PREFIX}/opt/zlib/lib")
-endif()
+if(IS_DARWIN)
+  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BUILD_BREW_PREFIX}/include -I${BUILD_BREW_PREFIX}/opt/openssl@1.1/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
+  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BUILD_BREW_PREFIX}/lib -L${BUILD_BREW_PREFIX}/opt/openssl@1.1/lib -L${BUILD_BREW_PREFIX}/opt/zlib/lib")
+endif(IS_DARWIN)
 
-if(${IS_MUSL})
+if(IS_MUSL)
   string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DENABLE_PATH_CHECK=0")
-endif()
+endif(IS_MUSL)
 
 string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
 
