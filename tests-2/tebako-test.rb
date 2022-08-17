@@ -141,8 +141,8 @@ class TestTebako < MiniTest::Test
     end
 
 # Specified gems should be automatically included and usable in packaged app
-    def test_212_seven_zip_ruby
-        name = "gems-seven_zip_ruby"
+    def test_212_seven_zip
+        name = "gems-seven-zip"
         with_fixture_press_and_env name do |package|
             out, st = Open3.capture2(package)
             assert_equal 0, st.exitstatus
