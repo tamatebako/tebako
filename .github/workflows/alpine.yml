@@ -46,7 +46,6 @@ on:
   workflow_dispatch:
 
 env:
-# Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
   BUILD_TYPE: Release
 # The folder for dwarfs and other dependenies
   DEPS: deps
@@ -59,9 +58,13 @@ env:
 # Bundler version
   BUNDLER_VER: "2.3.15"
 # Cache version
-  CACHE_VER: 07
+  CACHE_VER: 10
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.job }}-${{ github.head_ref || github.ref_name }}'
+  cancel-in-progress: true
 
 jobs:
   setup:
@@ -72,8 +75,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-# Alpine 3.16 (which is now 'latest') installs gcc 11.x that does not work for seven_zip_ruby      
-# https://github.com/masamitsu-murase/seven_zip_ruby/issues/36      
+# Alpine 3.16 (which is now 'latest') installs gcc 11.x that does not work for seven_zip_ruby
+# https://github.com/masamitsu-murase/seven_zip_ruby/issues/36
         env:
           - CC: gcc
             CXX: g++
