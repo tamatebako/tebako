@@ -49,6 +49,9 @@ env:
   BUILD_TYPE: Release
   CC: clang
   CXX: clang++
+  CFLAGS: -mmacos-version-min=10.15 --target=x86_64-apple-macos10.15
+  CPPFLAGS: -mmacos-version-min=10.15 --target=x86_64-apple-macos10.15
+  LDFLAGS:  --target=x86_64-apple-macos10.15
 # The folder for dwarfs and other dependenies
   DEPS: deps
 # GitHub dependencies'
@@ -60,7 +63,11 @@ env:
 # Bundler version
   BUNDLER_VER: "2.3.15"
 # Cache version
-  CACHE_VER: 07
+  CACHE_VER: 10
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.job }}-${{ github.head_ref || github.ref_name }}'
+  cancel-in-progress: true
 
 jobs:
   setup:
@@ -69,16 +76,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-10.15, macos-11.0 ]
+        os: [ macos-11.0 ]
     steps:
-      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
-        if: ${{ matrix.os == 'macos-10.15' }}
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '12.1.1'
-
-      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
-        if: ${{ matrix.os == 'macos-11.0' }}
+      - name: Select XCode 12.4 & SDK 11.1
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '12.4'
@@ -116,16 +116,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-10.15, macos-11.0 ]
+        os: [ macos-11.0 ]
     steps:
-      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
-        if: ${{ matrix.os == 'macos-10.15' }}
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '12.1.1'
-
-      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
-        if: ${{ matrix.os == 'macos-11.0' }}
+      - name: Select XCode 12.4 & SDK 11.1
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '12.4'
@@ -171,18 +164,18 @@ jobs:
           VERBOSE: yes
         run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
-      - name: Upload tebako test packages
-        if: ${{ matrix.os == 'macos-10.15' }}
-        uses: actions/upload-artifact@v2
-        with:
-          name: test-packages
-          retention-days: 1
-          path: |
-            test-01-package
-            test-11-package
-            test-15-package
-            test-18-package
-            test-19-package
+#  MacOS 10.15 runner is deprecated at GHA but we will use this code in the future
+#      - name: Upload tebako test packages
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: test-packages
+#          retention-days: 1
+#          path: |
+#            test-01-package
+#            test-11-package
+#            test-15-package
+#            test-18-package
+#            test-19-package
 
   tests-2:
     needs: setup
@@ -192,15 +185,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-10.15, macos-11.0 ]
+        os: [ macos-11.0 ]
     steps:
-      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
-        if: ${{ matrix.os == 'macos-10.15' }}
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '12.1.1'
-
-      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
+      - name: Select XCode 12.4 & SDK 11.1
         if: ${{ matrix.os == 'macos-11.0' }}
         uses: maxim-lobanov/setup-xcode@v1
         with:
@@ -247,23 +234,24 @@ jobs:
           cd ${{github.workspace}}
           ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
-  cross-test-macos-10-to-macos-11:
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
-    needs: tests-1
-    runs-on: macos-11.0
-    steps:
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
-
-      - name: Download test packages
-        uses: actions/download-artifact@v2
-        with:
-          name: test-packages
-
-      - name: Run test packages
-        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
+#  MacOS 10.15 runner is deprecated at GHA but we will use this code in the future
+#  test-on-macos-10-15:
+#    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+#    needs: tests-1
+#    runs-on: macos-10.15
+#    steps:
+#      - name: Checkout tebako packaging environment
+#        uses: actions/checkout@v3
+#        with:
+#          fetch-depth: 1
+#
+#      - name: Download test packages
+#        uses: actions/download-artifact@v2
+#        with:
+#          name: test-packages
+#
+#      - name: Run test packages
+#        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
 
   package-metanorma:
     needs: setup
@@ -273,16 +261,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-10.15, macos-11.0 ]
+        os: [ macos-11.0 ]
     steps:
-      - name: Select XCode 12.1.1 & SDK 10.15 for macos-10.15
-        if: ${{ matrix.os == 'macos-10.15' }}
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '12.1.1'
-
-      - name: Select XCode 12.4 & SDK 11.1 for macos-11.0
-        if: ${{ matrix.os == 'macos-11.0' }}
+      - name: Select XCode 12.4 & SDK 11.1
         uses: maxim-lobanov/setup-xcode@v1
         with:
           xcode-version: '12.4'
