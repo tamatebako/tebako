@@ -29,7 +29,7 @@ cmake_policy(SET CMP0048 NEW)
 # For project( ... VERSION ... )
 
 
-project(tebako_packager VERSION 0.3.8)
+project(tebako_packager VERSION 0.3.9)
 execute_process(COMMAND pwd OUTPUT_VARIABLE FS_CURRENT)
 string(REGEX REPLACE "\n$" "" FS_CURRENT "${FS_CURRENT}")
 
@@ -174,7 +174,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.2.0")
+def_ext_prj_g(DWARFS_WR "v0.2.1")
 
 if (DEFINED ENV{BUNDLER_VER})
  set(BUNDLER_VER $ENV{BUNDLER_VER})

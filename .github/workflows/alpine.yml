@@ -51,7 +51,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.2.0"
+  DWARFS_WR_TAG: "v0.2.1"
 # Tarball dependencies
   RUBY_VER:   "2.7.5"
   RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
@@ -80,10 +80,10 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-            ALPINE_VER: "3.15"
+            ALPINE_VER: "3.16"
           - CC: clang
             CXX: clang++
-            ALPINE_VER: "3.15"
+            ALPINE_VER: "3.16"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -127,7 +127,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
           key: alpine-${{ matrix.env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
@@ -195,7 +195,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
           key: alpine-${{ matrix.env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
@@ -218,18 +218,6 @@ jobs:
         env:
           VERBOSE: yes
         run: tests/scripts/functional-tests.sh
-
-      - name: Upload tebako test packages
-        uses: actions/upload-artifact@v2
-        with:
-          name: test-packages
-          retention-days: 1
-          path: |
-            test-01-package
-            test-11-package
-            test-15-package
-            test-18-package
-            test-19-package
 
   tests-2:
     needs: setup
@@ -293,7 +281,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
           key: alpine-${{ matrix.env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
@@ -327,7 +315,7 @@ jobs:
           fetch-depth: 1
 
       - name: Download test packages
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
         with:
           name: test-packages
 
@@ -397,7 +385,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
           key: alpine-${{ matrix.env.ALPINE_VER }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
