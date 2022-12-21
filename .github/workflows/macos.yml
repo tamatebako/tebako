@@ -56,7 +56,7 @@ env:
   DEPS: deps
 # GitHub dependencies'
   INCBIN_TAG:    "348e36b"
-  DWARFS_WR_TAG: "v0.2.0"
+  DWARFS_WR_TAG: "v0.2.1"
 # Tarball dependencies
   RUBY_VER:   "2.7.5"
   RUBY_HASH:  "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1"
@@ -92,7 +92,7 @@ jobs:
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
           gnu-getopt gnu-sed bash ncurses
 
       - name: Create deps folder
@@ -100,7 +100,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
           key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
@@ -132,7 +132,7 @@ jobs:
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
           gnu-getopt gnu-sed bash ncurses
 
       - name: Create deps folder
@@ -140,7 +140,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
           key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
@@ -166,7 +166,7 @@ jobs:
 
 #  MacOS 10.15 runner is deprecated at GHA but we will use this code in the future
 #      - name: Upload tebako test packages
-#        uses: actions/upload-artifact@v2
+#        uses: actions/upload-artifact@v3
 #        with:
 #          name: test-packages
 #          retention-days: 1
@@ -202,7 +202,7 @@ jobs:
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
           gnu-getopt gnu-sed bash ncurses
 
       - name: Install Ruby
@@ -216,7 +216,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
           key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
@@ -246,7 +246,7 @@ jobs:
 #          fetch-depth: 1
 #
 #      - name: Download test packages
-#        uses: actions/download-artifact@v2
+#        uses: actions/download-artifact@v3
 #        with:
 #          name: test-packages
 #
@@ -277,7 +277,7 @@ jobs:
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
           gnu-getopt gnu-sed bash ncurses
 
       - name: Create deps folder
@@ -285,7 +285,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v2
+        uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
           key: ${{ matrix.os }}-${{ env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}

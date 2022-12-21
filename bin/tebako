@@ -34,7 +34,7 @@ run_help() {
 echo "Usage: "
 echo "  tebako setup [-p|--prefix=<path>]"
 echo "         Tebako prefix defaults to current directory"
-echo "  tebako press [-p|--prefix=<path>] -r|--root=<path> -e|--entry-point=<path> [-o|--output=<file name>] [-l|--log-level=<error|warn|debug|trace>" 
+echo "  tebako press [-p|--prefix=<path>] -r|--root=<path> -e|--entry-point=<path> [-o|--output=<file name>] [-l|--log-level=<error|warn|debug|trace>"
 echo "         Tebako prefix defaults to current directory"
 echo "         Packaged file defaults to 'entry point' file name in the current directory"
 echo "  tebako clean [-p|--prefix=<path>]"
@@ -175,13 +175,13 @@ case "$1" in
           -G "Unix Makefiles"          \
           -S "$prefix"                 \
           -B "$prefix/output"	 && rc=$? || rc=$?
-    if [ $rc -ne 0 ]; then
+    if [ "$rc" -ne 0 ]; then
       echo "'tebako setup' configure step failed"
       exit 101
     fi
 
     CXXFLAGS="${uFlags:=}" cmake --build "$prefix/output" --target setup && rc=$? || rc=$?
-    if [ $rc -ne 0 ]; then
+    if [ "$rc" -ne 0 ]; then
       echo "'tebako setup' build step failed"
       exit 102
     fi
@@ -216,13 +216,13 @@ case "$1" in
               -G "Unix Makefiles"              \
               -S "$prefix"                     \
               -B "$prefix/output" && rc=$? || rc=$?
-    if [ $rc -ne 0 ]; then
+    if [ "$rc" -ne 0 ]; then
       echo "'tebako press' configure step failed"
       exit 103
     fi
 
     CXXFLAGS="${uFlags:=}" cmake --build "$prefix/output" --target tebako && rc=$? || rc=$?
-    if [[ $rc -ne 0 ]]; then
+    if [ "$rc" -ne 0 ]; then
       echo "'tebako press' build step failed"
       exit 104
     fi
@@ -240,4 +240,3 @@ case "$1" in
 esac
 
 exit 0;
-
