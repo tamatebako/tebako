@@ -148,10 +148,10 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-            ALPINE_VER: "3.15"
+            ALPINE_VER: "3.16"
           - CC: clang
             CXX: clang++
-            ALPINE_VER: "3.15"
+            ALPINE_VER: "3.16"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -232,10 +232,10 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-            ALPINE_VER: "3.15"
+            ALPINE_VER: "3.16"
           - CC: clang
             CXX: clang++
-            ALPINE_VER: "3.15"
+            ALPINE_VER: "3.16"
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -335,11 +335,11 @@ jobs:
         env:
           - CC: gcc
             CXX: g++
-            ALPINE_VER: "3.15"
+            ALPINE_VER: "3.16"
             VCPKG_FORCE_SYSTEM_BINARIES: 1
           - CC: clang
             CXX: clang++
-            ALPINE_VER: "3.15"
+            ALPINE_VER: "3.16"
             VCPKG_FORCE_SYSTEM_BINARIES: 1
     env: ${{ matrix.env }}
     steps:
