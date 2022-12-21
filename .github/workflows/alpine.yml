@@ -90,7 +90,7 @@ jobs:
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
             autoconf boost-static boost-dev flex-dev bison           \
-            binutils-dev libarchive-dev libevent-dev acl-dev sed     \
+            binutils-dev libevent-dev acl-dev sed                    \
             lz4-dev openssl-dev zlib-dev                             \
             libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
@@ -158,7 +158,7 @@ jobs:
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
             autoconf boost-static boost-dev flex-dev bison           \
-            binutils-dev libarchive-dev libevent-dev acl-dev sed     \
+            binutils-dev libevent-dev acl-dev sed                    \
             lz4-dev openssl-dev zlib-dev                             \
             libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
@@ -219,6 +219,18 @@ jobs:
           VERBOSE: yes
         run: tests/scripts/functional-tests.sh
 
+      - name: Upload tebako test packages
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-packages
+          retention-days: 1
+          path: |
+            test-01-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package
+
   tests-2:
     needs: setup
     name: tests-2 alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
@@ -242,9 +254,9 @@ jobs:
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
             autoconf boost-static boost-dev flex-dev bison           \
-            binutils-dev libarchive-dev libevent-dev acl-dev sed     \
+            binutils-dev libevent-dev acl-dev sed                    \
             lz4-dev openssl-dev zlib-dev                             \
-            libunwind-dev libdwarf-dev gflags-dev elfutils-dev         \
+            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
@@ -347,7 +359,7 @@ jobs:
         run: |
           apk --no-cache --upgrade add build-base cmake git bash     \
             autoconf boost-static boost-dev flex-dev bison make      \
-            binutils-dev libarchive-dev libevent-dev acl-dev sed     \
+            binutils-dev libevent-dev acl-dev sed                    \
             lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
             libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
             libevent-static openssl-libs-static lz4-static xz-dev    \
