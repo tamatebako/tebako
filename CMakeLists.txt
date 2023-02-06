@@ -206,17 +206,10 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 # ...................................................................
 # External projects
 
-def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
-
+#def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
 #def_ext_prj_t(RUBY "2.7.6" "e7203b0cc09442ed2c08936d483f8ac140ec1c72e37bb5c401646b7866cb5d10")
 
-# Ruby 2.7.7 has build script modification that causes an error (on MSys):
-# configure: error: cannot find required auxiliary files: install-sh config.guess config.sub
-# change log mentions a need to use autoreconf -i instead of autoconf
-# (https://github.com/ruby/ruby/commit/4c7ae840818f995ef776ef99c3ee275d14bd3869)
-# but it does not fix the issue
-# (It helps to copy missing config.guess and config.sub from autotools manually)
-#    def_ext_prj_t(RUBY "2.7.7" "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90")
+def_ext_prj_t(RUBY "2.7.7" "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90")
 
 
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
@@ -402,14 +395,14 @@ message(STATUS "Ruby build CFLAGS='${RUBY_C_FLAGS}'")
 message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
 
 ExternalProject_Add(${RUBY_PRJ}
-   PREFIX ${DEPS}
-   URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
-   URL_HASH SHA256=${RUBY_HASH}
-   DOWNLOAD_NO_PROGRESS true
-   SOURCE_DIR ${RUBY_SOURCE_DIR}
-   BINARY_DIR ${RUBY_BINARY_DIR}
-   PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-   CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure                             \
+  PREFIX ${DEPS}
+  URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
+  URL_HASH SHA256=${RUBY_HASH}
+  DOWNLOAD_NO_PROGRESS true
+  SOURCE_DIR ${RUBY_SOURCE_DIR}
+  BUILD_IN_SOURCE true
+  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_SOURCE_DIR}
+  CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure                             \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
                                                         --disable-dtrace                      \
@@ -418,14 +411,11 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         --disable-shared                      \
                                                         --with-static-linked-ext              \
                                                         --with-out-ext=${RUBY_WITHOUT_EXT}    \
-                                                        --srcdir=${RUBY_SOURCE_DIR}           \
                                                         --prefix=${DATA_SRC_DIR}              \
                                                         CFLAGS=\"${RUBY_C_FLAGS}\"            \
-                                                        LDFLAGS=\"${RUBY_L_FLAGS}\"           \
-                                                        LC_ALL=en_US.UTF-8                    \
-                                                        LC_CTYPE=en_US.UTF-8                  \
-                                                        LANG=en_US.UTF-8"
-   INSTALL_COMMAND ""
+                                                        LDFLAGS=\"${RUBY_L_FLAGS}\""
+  BUILD_COMMAND  make ${RUBY_MAKEFILE}
+  INSTALL_COMMAND ""
 )
 
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
@@ -458,8 +448,8 @@ else (${SETUP_MODE})
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
-           COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make install
+           COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_SOURCE_DIR}
+           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make install
            DEPENDS ${RUBY_PRJ}
   )
   if(GSLENGTH GREATER 0)
@@ -633,13 +623,13 @@ else (${SETUP_MODE})
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
   add_custom_target(patched_ruby
-     COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_BINARY_DIR}
-     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_BINARY_DIR} make ${RUBY_MAKEFILE}
+     COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_SOURCE_DIR}
+     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE}
      DEPENDS setup tebako-fs
   )
 
   add_custom_target(tebako ALL
-    COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_BINARY_DIR}/ruby${RUBY_SUFFIX}${EXE_SUFFIX} ${APP_NAME}${EXE_SUFFIX}
+    COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_SOURCE_DIR}/ruby${RUBY_SUFFIX}${EXE_SUFFIX} ${APP_NAME}${EXE_SUFFIX}
     COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
     DEPENDS patched_ruby
   )
