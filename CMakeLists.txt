@@ -401,7 +401,7 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
-  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_SOURCE_DIR}
+  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${DEPS}
   CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure                             \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
@@ -448,7 +448,7 @@ else (${SETUP_MODE})
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
            COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
-           COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${RUBY_SOURCE_DIR}
+           COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${DEPS}
            COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make install
            DEPENDS ${RUBY_PRJ}
   )
@@ -623,7 +623,7 @@ else (${SETUP_MODE})
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
   add_custom_target(patched_ruby
-     COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${RUBY_SOURCE_DIR}
+     COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${DEPS}
      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE}
      DEPENDS setup tebako-fs
   )

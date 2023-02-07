@@ -53,7 +53,7 @@ env:
   CC: clang
   CXX: clang++
 # Cache version
-  CACHE_VER: 12
+  CACHE_VER: 15
 
 jobs:
   setup:
@@ -82,7 +82,7 @@ jobs:
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog gflags \
           gnu-getopt gnu-sed bash ncurses libffi
 
       - name: Create deps folder
@@ -199,7 +199,7 @@ jobs:
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog gflags \
           gnu-getopt gnu-sed bash ncurses libffi
 
       - name: Install Ruby
@@ -278,7 +278,7 @@ jobs:
 # Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
+          bison flex binutils libarchive double-conversion boost jemalloc fmt glog gflags \
           gnu-getopt gnu-sed bash ncurses libffi
 
       - name: Create deps folder
