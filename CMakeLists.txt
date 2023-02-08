@@ -78,7 +78,7 @@ endif(MINGW)
 #        libsqlite3-dev
 # ---------------------------------------------------------------------------------------------------
 
-set(RUBY_DEBUG_BUILD ON)
+set(RUBY_DEBUG_BUILD OFF)
 
 include(ExternalProject)
 # This is the default that will be overwritten for MacOS and MSys
@@ -362,6 +362,7 @@ endif(WITH_NCURSES_BUILD)
 # Ruby
 
 if(RUBY_DEBUG_BUILD)
+#  set(RUBY_C_FLAGS_1 "-g -O0 -pipe -mllvm -asan-stack=1 -mllvm -asan-globals=0 -fno-omit-frame-pointer -fno-common")
   set(RUBY_C_FLAGS_1 "-g -O0 -pipe")
 else(RUBY_DEBUG_BUILD)
   set(RUBY_C_FLAGS_1 "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
@@ -381,7 +382,7 @@ if(IS_DARWIN)
 endif(IS_DARWIN)
 
 if(IS_MUSL)
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DENABLE_PATH_CHECK=0")
+  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DENABLE_PATH_CHECK=0 -fno-omit-frame-pointer")
 endif(IS_MUSL)
 
 if(RB_W32)
