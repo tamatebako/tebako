@@ -116,7 +116,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
-          key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: ${{ github.workspace }}/bin/tebako setup
@@ -172,7 +172,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
-          key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -250,7 +250,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
-          key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -316,7 +316,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{github.workspace}}/${{env.DEPS}}
-          key: ${{ matrix.os }}-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'

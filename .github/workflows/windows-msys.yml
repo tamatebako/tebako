@@ -123,7 +123,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
-          key: MSys-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: bin/tebako setup
@@ -190,7 +190,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
-          key: MSys-${{ matrix.env.CC }}-${{ env.DWARFS_WR_TAG }}-${{ env.INCBIN_TAG }}-${{ env.RUBY_HASH }}-v${{ env.CACHE_VER }}
+          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
