@@ -73,7 +73,7 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 
 			if (fsret == 0) {
 				if ((*argc > 1) && strcmp((*argv)[1], "--tebako-extract")==0) {
-				// ruby -e "require 'fileutils'; FileUtils.copy_entry '<tebako::fs_mount_point>',<argv[2] || 'source_filesystem'"
+				// ruby -e "require 'fileutils'; FileUtils.copy_entry '<tebako::fs_mount_point>',argv[2] || 'source_filesystem'"
 					std::string dest = std::string(((*argc) < 3 ? "source_filesystem" : (*argv)[2]));
 					std::string cmd = std::string("require 'fileutils'; FileUtils.copy_entry '") + (tebako::fs_mount_point) + "', '" + dest + "'";
 					printf("Extracting tebako image to '%s' \n", dest.c_str());

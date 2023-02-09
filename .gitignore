@@ -57,3 +57,5 @@ tests/test-11/tebako-test-0.0.1.gem
 tests/test-15/tebako-bundle-test-0.0.1.gem
 packed-mn
 .package-ready
+extract/
+source_filesystem/

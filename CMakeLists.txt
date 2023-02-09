@@ -215,8 +215,20 @@ def_ext_prj_t(RUBY "2.7.7" "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162d
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
+# May be overwritten on MSys platform by setup-openssl.cmake
+set(WITH_OPENSSL_BUILD OFF)
+
+if(IS_MSYS)
+# ${RUBY_VER} VERSION_LESS "3.0.0"
+  include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/setup-openssl.cmake)
+endif(IS_MSYS)
+
+if(WITH_OPENSSL_BUILD)
+  def_ext_prj_g(OPENSSL "1.1.1s")
+endif(WITH_OPENSSL_BUILD)
+
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.3.0")
+def_ext_prj_g(DWARFS_WR "v0.3.1")
 
 if (DEFINED ENV{BUNDLER_VER})
  set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -237,6 +249,10 @@ endif()
 message("Configuration summary:")
 message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
 message(STATUS "bundler version: ${BUNDLER_VER} (${BUNDLER_ANNOTATION})")
+if(WITH_OPENSSL_BUILD)
+  message(STATUS "openssl: building @${OPENSSL_TAG} at ${OPENSSL_SOURCE_DIR}")
+endif(WITH_OPENSSL_BUILD)
+
 if(WITH_NCURSES_BUILD)
   message(STATUS "ncurses: building v${NCURSES_VER} at ${NCURSES_SOURCE_DIR}")
 else()
@@ -279,7 +295,6 @@ message(STATUS "TLD: ${TLD}")
 message(STATUS "TGD: ${TGD}")
 message(STATUS "FS_MOUNT_POINT: ${FS_MOUNT_POINT}")
 message(STATUS "Building for Win32 Ruby (RB_W32): ${RB_W32}")
-#convert_to_windows(${TLD} CONVERTED_TLD)
 
 # ...................................................................
 # Other options
@@ -299,6 +314,29 @@ ExternalProject_Add(${INCBIN_PRJ}
    INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INCLUDE_DIR}/incbin
    COMMAND ${CMAKE_COMMAND} -E copy_if_different ${INCBIN_SOURCE_DIR}/incbin.h ${DEPS_INCLUDE_DIR}/incbin
 )
+
+# ...................................................................
+# OpenSSL
+if(WITH_OPENSSL_BUILD)
+  message(STATUS "Building OpenSSL since Ruby 2.x requires 1.1.x")
+  def_ext_prj_g(OPENSSL "OpenSSL_1_1_1s")
+
+  set(__LIBSSL "${DEPS}/lib/libssl.a")
+  set(__LIBCRYPTO "${DEPS}/lib/libcrypto.a")
+
+  ExternalProject_Add(${OPENSSL_PRJ}
+    PREFIX ${DEPS}
+    GIT_REPOSITORY "https://github.com/openssl/openssl.git"
+    GIT_TAG ${OPENSSL_TAG}
+    UPDATE_COMMAND ""
+    SOURCE_DIR ${OPENSSL_SOURCE_DIR}
+    BINARY_DIR ${OPENSSL_BINARY_DIR}
+    CONFIGURE_COMMAND   ${GNU_BASH} -c "${OPENSSL_SOURCE_DIR}/config          \
+                                                        --openssldir=${DEPS}  \
+                                                        --prefix=${DEPS}"
+    BUILD_BYPRODUCTS ${__LIBSSL} ${__LIBCRYPTO}
+  )
+endif(WITH_OPENSSL_BUILD)
 
 # ...................................................................
 # DwarFS with tebako wrapper
@@ -338,6 +376,9 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
                      ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
                      ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
 )
+if(WITH_OPENSSL_BUILD)
+  add_dependencies(${DWARFS_WR_PRJ} ${OPENSSL_PRJ} )
+endif(WITH_OPENSSL_BUILD)
 
 if(WITH_NCURSES_BUILD)
   ExternalProject_Add(${NCURSES_PRJ}
@@ -403,7 +444,7 @@ ExternalProject_Add(${RUBY_PRJ}
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
   PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} ${DEPS}
-  CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure                             \
+  CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure                              \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
                                                         --disable-dtrace                      \
@@ -423,6 +464,10 @@ add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 if(WITH_NCURSES_BUILD)
   add_dependencies(${RUBY_PRJ} ${NCURSES_PRJ})
 endif(WITH_NCURSES_BUILD)
+
+if(WITH_OPENSSL_BUILD)
+  add_dependencies(${RUBY_PRJ} ${OPENSSL_PRJ} )
+endif(WITH_OPENSSL_BUILD)
 
 if (${SETUP_MODE})
   add_custom_target(setup
@@ -469,11 +514,11 @@ else (${SETUP_MODE})
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                        ${TBD}/gem${CMD_SUFFIX} install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                       ${TBD}/bundle config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
+                                       ${TBD}/bundle${CMD_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E  env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                       ${TBD}/bundle install
+                                       ${TBD}/bundle${CMD_SUFFIX} install
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                       ${TBD}/bundle exec ${TBD}/gem${CMD_SUFFIX} build ${GEMSPEC}
+                                       ${TBD}/bundle${CMD_SUFFIX} exec ${TBD}/gem${CMD_SUFFIX} build ${GEMSPEC}
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                        ${TBD}/gem${CMD_SUFFIX} install *.gem --verbose --no-document --install-dir ${TGD}
            COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
@@ -501,7 +546,7 @@ else (${SETUP_MODE})
       endif(GFLENGTH GREATER 0)
     endif(GSLENGTH GREATER 1)
   elseif(GFLENGTH GREATER 0)
-#  Found Gemfile but no gemspecbuild
+#  Found Gemfile but no gemspec
     message("Deploying Gemfile")
     set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
     message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")

@@ -53,6 +53,9 @@ env:
   CACHE_VER: 13
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
+# show cmake output aka verbose (yes/no)
+  VERBOSE: no
+
 
 jobs:
   setup:
@@ -188,9 +191,6 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-# show cmake output aka verbose (yes/no)
-        env:
-          VERBOSE: yes
         run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
   tests-2:

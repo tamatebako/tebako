@@ -54,6 +54,7 @@ env:
   CXX: clang++
 # Cache version
   CACHE_VER: 15
+  VERBOSE: no
 
 jobs:
   setup:
@@ -153,9 +154,6 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-# show cmake output aka verbose (yes/no)
-        env:
-          VERBOSE: yes
         run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
 #  MacOS 10.15 runner is deprecated at GHA but we will use this code in the future

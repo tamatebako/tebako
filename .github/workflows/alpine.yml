@@ -54,6 +54,7 @@ env:
   CACHE_VER: 14
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
+  VERBOSE: no
 
 jobs:
   setup:
@@ -98,8 +99,7 @@ jobs:
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
+        run: apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}
@@ -169,8 +169,7 @@ jobs:
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
+        run: apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}
@@ -209,9 +208,6 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-# show cmake output aka verbose (yes/no)
-        env:
-          VERBOSE: yes
         run: tests/scripts/functional-tests.sh
 
       - name: Upload tebako test packages
@@ -377,8 +373,7 @@ jobs:
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
-        run: |
-          apk --no-cache --upgrade add clang
+        run: apk --no-cache --upgrade add clang
 
       - name: Patch system includes
         if: ${{ matrix.env.CC == 'clang' }}

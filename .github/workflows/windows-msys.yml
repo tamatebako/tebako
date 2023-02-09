@@ -54,7 +54,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 6
+  CACHE_VER: 8
 
 jobs:
   setup:
@@ -101,7 +101,6 @@ jobs:
             gdbm:p
             libyaml:p
             glog:p
-            gtest:p
             ruby:p
 
 # No fmt shall be instaled !!! Otherwise folly library will be built in a manner that is not compatible with a static library that we build
@@ -173,6 +172,8 @@ jobs:
             libyaml:p
             glog:p
             gdbm:p
+            ruby:p
+            jemalloc:p
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -204,3 +205,8 @@ jobs:
           repository: kward/shunit2
           path: ${{github.workspace}}/tests/shunit2
           fetch-depth: 1
+
+      - name: Run tebako tests (set no. 1)
+        env:
+          VERBOSE: yes
+        run:  tests/scripts/functional-tests.sh
