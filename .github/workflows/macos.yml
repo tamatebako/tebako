@@ -53,8 +53,8 @@ env:
   CC: clang
   CXX: clang++
 # Cache version
-  CACHE_VER: 15
-  VERBOSE: no
+  CACHE_VER: 16
+  VERBOSE: yes
 
 jobs:
   setup:
@@ -80,11 +80,11 @@ jobs:
           xcode-version: '12.4'
 
       - name: Install packages
-# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog gflags \
-          gnu-getopt gnu-sed bash ncurses libffi
+          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
@@ -124,11 +124,11 @@ jobs:
           xcode-version: '12.4'
 
       - name: Install packages
-# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog \
-          gnu-getopt gnu-sed bash ncurses libffi
+          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
@@ -194,11 +194,11 @@ jobs:
           xcode-version: '12.4'
 
       - name: Install packages
-# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog gflags \
-          gnu-getopt gnu-sed bash ncurses libffi
+          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash
 
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
@@ -273,11 +273,11 @@ jobs:
           xcode-version: '12.4'
 
       - name: Install packages
-# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm
+# Already installed: pkg-config, openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses
         run: |
           brew install \
-          bison flex binutils libarchive double-conversion boost jemalloc fmt glog gflags \
-          gnu-getopt gnu-sed bash ncurses libffi
+          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
+          gnu-getopt gnu-sed bash
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}

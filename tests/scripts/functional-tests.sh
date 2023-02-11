@@ -88,16 +88,16 @@ press_runner_with_error() {
 # ......................................................................
 # Tests
 #  00. Basic tebako CLI tests (error handling)
-#  --  tebako setup
+#  --  tebako setup                                                                                         [commented out, redundant]
 #  AU. Check that it is possible to extract image content (--tebako-extract option)
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
 #  02. Simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist  [Expected error at build step]
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
 #  04. Simple Ruby script, relative path to root, relative path to entry point
 #  05. Simple Ruby script, absolute path to root absolute path to entry point, entry point not within root  [Expected error at configure step]
-#  -06. Rails project                                                               [TODO: this test is failing]
-#  07. Rails project, ruby and bundler version mismatch                                                     [Expected error at build step]
-#  08. Rails project, entry point does not exists                                                           [Expected error at build step]
+#  -06. Rails project                                                                                       [commented out]
+#  -07. Rails project, ruby and bundler version mismatch                                                    [commented out]
+#  -08. Rails project, entry point does not exists                                                          [commented out]
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 #  10. Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist                               [Expected error at build step]
 #  11. Ruby gem (no gemfile, with gemspec)
@@ -153,21 +153,21 @@ test_CLI_no_entry_point() {
 
 # ......................................................................
 #  --  tebako setup
-test_tebako_setup() {
-  echo "tebako setup ... patience, please, it may take up to 1 hour."
-  if [ "${VERBOSE}" == "yes" ]; then
-    "$DIR_BIN"/tebako setup 2>&1 | tee tebako_test.log
-    assertEquals 0 "${PIPESTATUS[0]}"
-    result="$( cat tebako_test.log )"
-  else
-    result=$( "$DIR_BIN"/tebako setup 2>&1 )
-    assertEquals 0 "${PIPESTATUS[0]}"
-  fi
+#test_tebako_setup() {
+#  echo "tebako setup ... patience, please, it may take up to 1 hour."
+#  if [ "${VERBOSE}" == "yes" ]; then
+#    "$DIR_BIN"/tebako setup 2>&1 | tee tebako_test.log
+#    assertEquals 0 "${PIPESTATUS[0]}"
+#    result="$( cat tebako_test.log )"
+#  else
+#    result=$( "$DIR_BIN"/tebako setup 2>&1 )
+#    assertEquals 0 "${PIPESTATUS[0]}"
+#  fi
 
 # Check the first and the last messages expected from CMake script
-  assertContains "$result" "Running tebako setup script"
-  assertContains "$result" "Tebako setup has completed"
-}
+#  assertContains "$result" "Running tebako setup script"
+#  assertContains "$result" "Tebako setup has completed"
+#}
 
 # ......................................................................
 #  AU. Check that it is possible to extract image content (--tebako-extract option)

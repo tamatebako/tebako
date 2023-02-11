@@ -54,7 +54,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 8
+  CACHE_VER: 10
+  VERBOSE: yes
 
 jobs:
   setup:
@@ -207,6 +208,4 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        env:
-          VERBOSE: yes
         run:  tests/scripts/functional-tests.sh

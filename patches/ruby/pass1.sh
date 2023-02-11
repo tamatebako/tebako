@@ -145,21 +145,25 @@ if [[ "$OSTYPE" == "msys"* ]]; then
   sbst="# tebako patched  $re"
   "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
 
+  if [[ "$2" == "full" ]]; then
 # ....................................................
 # ruby/configure
-  restore_and_save "$1/configure"
-  re="	    LIBRUBY='lib\$(RUBY_SO_NAME).a'"
-  sbst="	    LIBRUBY='lib\$(RUBY_SO_NAME)-static.a'  #tebako patched"
-  "$gSed" -i "0,/$re/s//$sbst/g" "$1/configure"
+  #  restore_and_save "$1/configure"
+    re="	    LIBRUBY='lib\$(RUBY_SO_NAME).a'"
+    sbst="	    LIBRUBY='lib\$(RUBY_SO_NAME)-static.a'  #tebako patched"
+    "$gSed" -i "0,/$re/s//$sbst/g" "$1/configure"
+  fi
+fi
 
+if [[ "$2" == "full" ]]; then
 # ....................................................
 # ruby/template/configure-ext.mk.tmpl
-#  restore_and_save "$1/template/configure-ext.mk.tmpl"
-#  re="<%=d%>\/exts.mk: FORCE"
-#  sbst="<%=d%>\/exts.mk:  #tebako patched"
-#  "$gSed" -i "0,/$re/s//$sbst/g" "$1/template/configure-ext.mk.tmpl"
-
+    restore_and_save "$1/template/configure-ext.mk.tmpl"
+    re="<%=d%>\/exts.mk: FORCE"
+    sbst="<%=d%>\/exts.mk:  #tebako patched"
+    "$gSed" -i "0,/$re/s//$sbst/g" "$1/template/configure-ext.mk.tmpl"
 fi
+
 
 # ....................................................
 # Roll-back pass2 patches from the previous run

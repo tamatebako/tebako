@@ -51,10 +51,10 @@ concurrency:
 
 env:
 # Cache version
-  CACHE_VER: 14
+  CACHE_VER: 15
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
-  VERBOSE: no
+  VERBOSE: yes
 
 jobs:
   setup:
