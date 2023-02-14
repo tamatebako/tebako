@@ -3,6 +3,7 @@
 image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["MacOS", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
+image:https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml/badge.svg["Windows-MSys(limited)", link="https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
 
 
@@ -263,8 +264,8 @@ bin/tebako clean --root='~/projects/myproject'
 | 0    | No error
 | 1    | `getopts` not supported by OS
 | 2    | Failed to parse command line
-| 3    | Could not find GNU `getopts` (MacOS only) 
-| 4    | Missing command 
+| 3    | Could not find GNU `getopts` (MacOS only)
+| 4    | Missing command
 | 5    | Unknown command (`setup`/`press`/`clean`/`help`)
 | 6    | `tebako press` without mandatory `--root` option
 | 7    | `tebako press` without mandatory `--entry-point` option
@@ -386,4 +387,3 @@ the said treasure box (storing gems inside a treasure box).
 
 Since "tamatebako" is rather long for the non-Japanese speaker, we use "tebako"
 (手箱, also "tehako") instead, the generic term for a personal box.
-

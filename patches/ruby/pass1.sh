@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Copyright (c) 2021-2022, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2023, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -37,12 +37,18 @@ restore_and_save() {
 }
 
 if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+  mPoint="\/__tebako_memfs__"
   gSed="sed"
 elif [[ "$OSTYPE" == "linux-musl"* ]]; then
+  mPoint="\/__tebako_memfs__"
   gSed="sed"
   restore_and_save "$1/thread_pthread.c"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
+  mPoint="\/__tebako_memfs__"
   gSed="gsed"
+elif [[ "$OSTYPE" == "msys"* ]]; then
+  mPoint="A:\/__tebako_memfs__"
+  gSed="sed"
 else
   exit 1
 fi
@@ -64,7 +70,7 @@ re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
     @home = env\["GEM_HOME"\] || Gem.default_dir
 # -- Start of tebako patch --
     unless env\['TEBAKO_PASS_THROUGH'\]
-      @home = Gem.default_dir unless @home.index('\/__tebako_memfs__') == 0
+      @home = Gem.default_dir unless @home.index('$mPoint') == 0
     end
 # -- End of tebako patch --
 EOM
@@ -78,7 +84,7 @@ re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 # -- Start of tebako patch --
     unless env\['TEBAKO_PASS_THROUGH'\]
       @path.keep_if do |xpath|
-        xpath.index('\/__tebako_memfs__') == 0
+        xpath.index('$mPoint') == 0
       end
     end
 # -- End of tebako patch --
@@ -118,6 +124,47 @@ EOM
 
 "$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
 
+if [[ "$OSTYPE" == "msys"* ]]; then
+# ....................................................
+# ruby/cygwin/GNUmakefile.in
+  restore_and_save "$1/cygwin/GNUmakefile.in"
+
+  re="  DLLWRAP += -mno-cygwin"
+  sbst="# tebako patched  $re"
+  "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
+
+  re="	\$(Q) \$(LDSHARED) \$(DLDFLAGS) \$(OBJS) dmyext.o \$(SOLIBS) -o \$(PROGRAM)"
+  sbst="# tebako patched  $re"
+  "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
+
+  re="	@rm -f \$(PROGRAM)"
+  sbst="# tebako patched  $re"
+  "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
+
+  re="\$(LIBRUBY): \$(RUBY_EXP) \$(LIBRUBY_SO)"
+  sbst="# tebako patched  $re"
+  "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
+
+  if [[ "$2" == "full" ]]; then
+# ....................................................
+# ruby/configure
+  #  restore_and_save "$1/configure"
+    re="	    LIBRUBY='lib\$(RUBY_SO_NAME).a'"
+    sbst="	    LIBRUBY='lib\$(RUBY_SO_NAME)-static.a'  #tebako patched"
+    "$gSed" -i "0,/$re/s//$sbst/g" "$1/configure"
+  fi
+fi
+
+if [[ "$2" == "full" ]]; then
+# ....................................................
+# ruby/template/configure-ext.mk.tmpl
+    restore_and_save "$1/template/configure-ext.mk.tmpl"
+    re="<%=d%>\/exts.mk: FORCE"
+    sbst="<%=d%>\/exts.mk:  #tebako patched"
+    "$gSed" -i "0,/$re/s//$sbst/g" "$1/template/configure-ext.mk.tmpl"
+fi
+
+
 # ....................................................
 # Roll-back pass2 patches from the previous run
 restore_and_save "$1/main.c"
@@ -128,12 +175,12 @@ restore_and_save "$1/io.c"
 restore_and_save "$1/util.c"
 restore_and_save "$1/tool/mkconfig.rb"
 
+if [[ "$OSTYPE" == "msys"* ]]; then
+  restore_and_save "$1/ruby.c"
+  restore_and_save "$1/win32/win32.c"
+  restore_and_save "$1/win32/file.c"
+  restore_and_save "$1/win32/dir.h"
+fi
+
 # restore_and_save $1/process.c
 # restore_and_save $1/prelude.c
-# $1/ext/openssl/ossl_x509store.c
-
-# [TODO Windows]
-# $1/win32/file.c
-# $1/win32/win32.c
-
-

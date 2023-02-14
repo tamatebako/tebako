@@ -1,0 +1,211 @@
+# Copyright (c) 2022-2023, [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+#
+# The purpose of this workflow is to check that build procedures work correctly
+# in specific environment. Due to this reason there is no caching. It is done by
+# intention. All caching is in upstream projects.
+#
+# Also this file contains comments that will be useful is dwarfs has to be build
+# in different environment, not GHA.
+name: Windows-MSys
+
+on:
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/windows-msys.yml'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/windows-msys.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.job }}-${{ github.head_ref || github.ref_name }}'
+  cancel-in-progress: true
+
+env:
+  CACHE_VER: 10
+  VERBOSE: yes
+
+jobs:
+  setup:
+    name: Setup windows-msys [${{ matrix.env.sys }}, CC ${{ matrix.env.CC }}, ASAN ${{ matrix.env.ASAN }}, ${{ matrix.env.LOG_LEVEL }} ]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - sys: mingw64
+            CC: gcc
+            CXX: g++
+            ASAN: 'OFF'
+            LOG_LEVEL: 'trace'
+#          - CC: clang
+#            CXX: clang++
+    env: ${{ matrix.env }}
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Setup MSys
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.env.sys }}
+          path-type: minimal
+          update: true
+          install: >-
+            git
+            tar
+            bison
+            flex
+            make
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            boost:p
+            diffutils:p
+            libevent:p
+            double-conversion:p
+            dlfcn:p
+            gdbm:p
+            libyaml:p
+            glog:p
+            ruby:p
+
+# No fmt shall be instaled !!! Otherwise folly library will be built in a manner that is not compatible with a static library that we build
+# It may be version mismatch though (???)
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Create deps folder
+        run: mkdir ${{ env.DEPS }}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.DEPS }}
+          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: bin/tebako setup
+
+  tests-1:
+    needs: setup
+    name: tests-1 window-MSys [CC ${{ matrix.env.CC }}]
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - sys: mingw64
+            CC: gcc
+            CXX: g++
+#          - CC: clang
+#            CXX: clang++
+    env: ${{ matrix.env }}
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Setup MSys
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.env.sys }}
+          path-type: minimal
+          update: true
+          install: >-
+            git
+            tar
+            bison
+            flex
+            make
+          pacboy: >-
+            toolchain:p
+            cmake:p
+            boost:p
+            diffutils:p
+            libevent:p
+            double-conversion:p
+            dlfcn:p
+            gdbm:p
+            libyaml:p
+            glog:p
+            gdbm:p
+            ruby:p
+            jemalloc:p
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Create deps folder
+        run: mkdir ${{env.DEPS}}
+
+      - name: Process cache
+        id: cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.DEPS }}
+          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+
+      - name: Cache check
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          echo "Failed to upload cache"
+          false
+
+      - name: Checkout shell test framework
+        uses: actions/checkout@v3
+        with:
+          repository: kward/shunit2
+          path: ${{github.workspace}}/tests/shunit2
+          fetch-depth: 1
+
+      - name: Run tebako tests (set no. 1)
+        run:  tests/scripts/functional-tests.sh

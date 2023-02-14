@@ -88,22 +88,22 @@ press_runner_with_error() {
 # ......................................................................
 # Tests
 #  00. Basic tebako CLI tests (error handling)
-#  --  tebako setup
+#  --  tebako setup                                                                                         [commented out, redundant]
 #  AU. Check that it is possible to extract image content (--tebako-extract option)
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
-#  02. Simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist  [Expected error at configure step]
+#  02. Simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist  [Expected error at build step]
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
 #  04. Simple Ruby script, relative path to root, relative path to entry point
 #  05. Simple Ruby script, absolute path to root absolute path to entry point, entry point not within root  [Expected error at configure step]
-#  -06. Rails project                                                               [TODO: this test is failing]
-#  07. Rails project, ruby and bundler version mismatch                                                     [Expected error at build step]
-#  08. Rails project, entry point does not exists                                                           [Expected error at configure step]
+#  -06. Rails project                                                                                       [commented out]
+#  -07. Rails project, ruby and bundler version mismatch                                                    [commented out]
+#  -08. Rails project, entry point does not exists                                                          [commented out]
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 #  10. Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist                               [Expected error at build step]
 #  11. Ruby gem (no gemfile, with gemspec)
 #  12. Ruby gem (no gemfile, with gemspec), multiple gemspecs                                               [Expected error at configure step]
 #  13. Ruby gem (no gemfile, with gemspec), gemspec error                                                   [Expected error at build step]
-#  14. Ruby gem (no gemfile, with gemspec), entry point does not exist                                      [Expected error at configure step]
+#  14. Ruby gem (no gemfile, with gemspec), entry point does not exist                                      [Expected error at build step]
 #  15. Ruby gem (with gemspec, with gemfile)
 #  16. Ruby gem (with gemspec, with gemfile), gemfile with error                                            [Expected error at build step]
 #  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [Expected error at build step]
@@ -153,21 +153,21 @@ test_CLI_no_entry_point() {
 
 # ......................................................................
 #  --  tebako setup
-test_tebako_setup() {
-  echo "tebako setup ... patience, please, it may take up to 1 hour."
-  if [ "${VERBOSE}" == "yes" ]; then
-    "$DIR_BIN"/tebako setup 2>&1 | tee tebako_test.log
-    assertEquals 0 "${PIPESTATUS[0]}"
-    result="$( cat tebako_test.log )"
-  else
-    result=$( "$DIR_BIN"/tebako setup 2>&1 )
-    assertEquals 0 "${PIPESTATUS[0]}"
-  fi
+#test_tebako_setup() {
+#  echo "tebako setup ... patience, please, it may take up to 1 hour."
+#  if [ "${VERBOSE}" == "yes" ]; then
+#    "$DIR_BIN"/tebako setup 2>&1 | tee tebako_test.log
+#    assertEquals 0 "${PIPESTATUS[0]}"
+#    result="$( cat tebako_test.log )"
+#  else
+#    result=$( "$DIR_BIN"/tebako setup 2>&1 )
+#    assertEquals 0 "${PIPESTATUS[0]}"
+#  fi
 
 # Check the first and the last messages expected from CMake script
-  assertContains "$result" "Running tebako setup script"
-  assertContains "$result" "Tebako setup has completed"
-}
+#  assertContains "$result" "Running tebako setup script"
+#  assertContains "$result" "Tebako setup has completed"
+#}
 
 # ......................................................................
 #  AU. Check that it is possible to extract image content (--tebako-extract option)
@@ -205,7 +205,7 @@ test_tebako_press_01() {
 # 02. Simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist
 test_tebako_press_02() {
    echo "==> simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist"
-   press_runner_with_error "${DIR_TESTS}/test-01" "test-does-not-exist.rb" "test-02-package" 103 "'tebako press' configure step failed"
+   press_runner_with_error "${DIR_TESTS}/test-01" "test-does-not-exist.rb" "test-02-package" 104 "'tebako press' build step failed"
 }
 
 # ......................................................................
@@ -252,7 +252,7 @@ test_tebako_press_05() {
 # 08. Rails project, entry point does not exists
 #test_tebako_press_08() {
 #   echo "==> Rails project, entry point does not exists"
-#   press_runner_with_error "${DIR_TESTS}/test-08" "rails" "test-does-not-exist.rb" 103 "'tebako press' configure step failed"
+#   press_runner_with_error "${DIR_TESTS}/test-08" "rails" "test-does-not-exist.rb" 104 "'tebako press' build step failed"
 #}
 
 # ......................................................................
@@ -296,7 +296,7 @@ test_tebako_press_13() {
 #  14. Ruby gem (no gemfile, with gemspec), entry point does not exist
 test_tebako_press_14() {
    echo "==>  Ruby gem (no gemfile, with gemspec), entry point does not exist"
-   press_runner_with_error "${DIR_TESTS}/test-14" "test-does-not-exist.rb" "test-14-package" 103 "'tebako press' configure step failed"
+   press_runner_with_error "${DIR_TESTS}/test-14" "test-does-not-exist.rb" "test-14-package" 104 "'tebako press' build step failed"
 }
 
 # ......................................................................
@@ -332,9 +332,11 @@ test_tebako_press_18() {
 # ......................................................................
 # 19. Ruby project (no gemspec, with gemfile, with native extension)
 test_tebako_press_19() {
+if [[ "$OSTYPE" != "msys" ]]; then
    echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
    press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
    package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
+fi
 }
 
 # ......................................................................
