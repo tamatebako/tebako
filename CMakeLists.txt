@@ -34,7 +34,7 @@ if(${CMAKE_VERSION} VERSION_GREATER "3.23.10")
 endif()
 
 
-project(tebako_packager VERSION 0.4.0)
+project(tebako_packager VERSION 0.4.1)
 
 execute_process(
   COMMAND pwd

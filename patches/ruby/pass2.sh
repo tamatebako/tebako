@@ -163,25 +163,24 @@ elif [[ "$OSTYPE" == "msys"* ]]; then
   gSed="sed"
 
 # shellcheck disable=SC2251
+# win32ole extension requirements: -lole32 -loleaut32 -luuid
 ! IFS= read -r -d '' mLibs << EOM
 # -- Start of tebako patch --
 MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \\\\
 -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \\\\
 -l:libzstd.a -l:libffi.a -l:libgdbm.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:liblzma.a -l:libiberty.a \\\\
--l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
+-l:libstdc++.a -l:libdl.a -l:libwinpthread.a -lole32 -loleaut32 -luuid
 # -- End of tebako patch --
 EOM
-# win32ole extension requirements: -lole32 -loleaut32 -luuid
 # Disabled extensions (gdbm, readline): -l:libgdbm.a -l:libreadline.a
-# Looks like not required:  -l:libwinpthread.a
 else
   exit 1
 fi
 
 # ....................................................
 # Pin tebako static build libraries
-# Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
-# Ruby 2.6.3:  template is in 'ruby/Makefile.in'
+# Ruby 2.7.x:  template is in 'ruby/template/Makefile.in'
+# Ruby 2.6.x:  template is in 'ruby/Makefile.in'
 restore_and_save "$1/template/Makefile.in"
 
 re="MAINLIBS = @MAINLIBS@"
