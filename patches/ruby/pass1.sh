@@ -145,6 +145,18 @@ if [[ "$OSTYPE" == "msys"* ]]; then
   sbst="# tebako patched  $re"
   "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
 
+  re="\$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(LIBS) -o $\@"
+  sbst="\$(RUBYDEF) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(LIBS) -o $\@     # tebako patched"
+  "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
+
+  re="\$(PROGRAM): \$(RUBY_INSTALL_NAME).res.@OBJEXT@"
+  sbst="\$(PROGRAM): \$(RUBY_INSTALL_NAME).res.@OBJEXT@ \$(RUBYDEF)    # tebako patched"
+  "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
+
+  re="\$(WPROGRAM): \$(RUBYW_INSTALL_NAME).res.@OBJEXT@"
+  sbst="\$(WPROGRAM): \$(RUBYW_INSTALL_NAME).res.@OBJEXT@ \$(RUBYDEF)   # tebako patched"
+  "$gSed" -i "0,/$re/s//$sbst/g" "$1/cygwin/GNUmakefile.in"
+
   if [[ "$2" == "full" ]]; then
 # ....................................................
 # ruby/configure
