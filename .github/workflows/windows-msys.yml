@@ -32,6 +32,8 @@
 name: Windows-MSys
 
 on:
+  schedule:
+    - cron: "0 9 * * 5"
   push:
     branches: [ main ]
     paths-ignore:
