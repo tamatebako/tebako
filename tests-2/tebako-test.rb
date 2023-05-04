@@ -267,7 +267,7 @@ class TestTebako < MiniTest::Test
                         elsif RbConfig::CONFIG["target_os"] =~ /linux-musl/
                             ["libc.musl-x86_64.so", "ld-musl-x86_64.so"]
                         else  # linux-gnu assumed
-                            ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-x86-64.so", "libm.so", "librt.so"]
+                            ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-", "libm.so", "librt.so", "libgcc_s.so"]
                         end
                 l = out.lines.map(&:strip)
                 l.delete_if {|ln| libs.any? { |lib| ln.include?(lib) } }

@@ -317,7 +317,7 @@ test_tebako_press_16() {
 # ......................................................................
 # 17. Ruby gem (with gemspec, with gemfile), entry point dows not exist
 test_tebako_press_17() {
-   echo "==> Ruby gem (with gemspec, with gemfile), entry point dows not exist"
+   echo "==> Ruby gem (with gemspec, with gemfile), entry point does not exist"
    press_runner_with_error "${DIR_TESTS}/test-15" "test-does-not-exist.rb" "test-17-package" 104 "'tebako press' build step failed"
 }
 
