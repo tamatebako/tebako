@@ -41,6 +41,7 @@ on:
       - '**.adoc'
       - '**.md'
       - '.github/workflows/*.yml'
+      - .cirrus.yml
       - '!.github/workflows/windows-msys.yml'
   pull_request:
     paths-ignore:
@@ -48,6 +49,7 @@ on:
       - '**.adoc'
       - '**.md'
       - '.github/workflows/*.yml'
+      - .cirrus.yml
       - '!.github/workflows/windows-msys.yml'
   workflow_dispatch:
 

@@ -23,9 +23,29 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+test_task_template: &TEST_TASK_TEMPLATE
+  testset-1_script: |
+    tests/scripts/functional-tests.sh
+
+  testset-2_script: |
+    gem install bundler
+    pushd tests-2
+    bundle install
+    popd
+    ruby tests-2/tebako-test.rb
+
+  checkout-packed-mn_script: |
+    git clone --depth 1 https://github.com/metanorma/packed-mn.git packed-mn
+
+  package-metanorma_script: |
+    bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+
+  smoke-test_script: |
+    ./metanorma-package help
+
 task:
   name: ubuntu-aarch64
-#    only_if: $CIRRUS_BRANCH == 'main' || $CIRRUS_PR != '' || $CIRRUS_TAG != ''
+  only_if: $CIRRUS_BRANCH == 'main' || $CIRRUS_PR != '' || $CIRRUS_TAG != ''
   arm_container:
     image: ubuntu:20.04
     cpu: 4
@@ -35,9 +55,6 @@ task:
     matrix:
       - { CC: clang, CXX: clang++, CMAKE_VERSION: 3.20.5 }
       - { CC: gcc,   CXX: g++    , CMAKE_VERSION: 3.20.5 }
-
-  hello_script: |
-    uname -a
 
   install_script: |
     DEBIAN_FRONTEND=noninteractive apt-get -y update
@@ -70,7 +87,7 @@ task:
     folder: $DEPS
     reupload_on_changes: false
     fingerprint_script:
-      - uname -a
+      - echo $CIRRUS_OS
       - echo $CC
       - cat common.env
 
@@ -80,24 +97,7 @@ task:
   upload_caches:
     - tebako
 
-  testset-1_script: |
-    tests/scripts/functional-tests.sh
-
-  testset-2_script: |
-    gem install bundler
-    pushd tests-2
-    bundle install
-    popd
-    ruby tests-2/tebako-test.rb
-
-  checkout-packed-mn_script: |
-    git clone --depth 1 https://github.com/metanorma/packed-mn.git packed-mn
-
-  package-metanorma_script: |
-    bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
-
-  smoke-test_script: |
-    ./metanorma-package help
+  << : *TEST_TASK_TEMPLATE
 
 task:
   name: macos-arm64
@@ -106,9 +106,6 @@ task:
     matrix:
       - image: ghcr.io/cirruslabs/macos-ventura-base:latest
       - image: ghcr.io/cirruslabs/macos-monterey-base:latest
-
-  hello_script: |
-    sw_vers
 
   install_script: |
     brew install gnu-getopt gnu-sed bash pkg-config bison flex binutils   \
@@ -136,20 +133,4 @@ task:
   upload_caches:
     - tebako
 
-  testset-1_script: |
-    tests/scripts/functional-tests.sh
-
-  testset-2_script: |
-    pushd tests-2
-    bundle install
-    popd
-    ruby tests-2/tebako-test.rb
-
-  checkout-packed-mn_script: |
-    git clone --depth 1 https://github.com/metanorma/packed-mn.git packed-mn
-
-  package-metanorma_script: |
-    bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
-
-  smoke-test_script: |
-    ./metanorma-package help
+  << : *TEST_TASK_TEMPLATE
