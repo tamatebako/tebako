@@ -29,17 +29,8 @@ macos-arm64_task:
       - image: ghcr.io/cirruslabs/macos-ventura-base:latest
       - image: ghcr.io/cirruslabs/macos-monterey-base:latest
 
-  env:
-    BUILD_TYPE: Release
-    DEPS: deps
-    INCBIN_TAG: 348e36b
-    DWARFS_WR_TAG: v0.3.1
-    RUBY_VER: 2.7.7
-    RUBY_HASH: e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90
-    BUNDLER_VER: 2.3.22
-
   hello_script: |
-    uname -a
+    sw_vers
 
   install_script: |
     brew install gnu-getopt gnu-sed bash pkg-config bison flex binutils   \
@@ -47,21 +38,19 @@ macos-arm64_task:
     libsodium lz4 xz gdbm zlib ncurses
 
   pre-setup_script: |
-    mkdir $DEPS
+    cat common.env >> $CIRRUS_ENV
     git clone --depth 1 https://github.com/tamatebako/tebako-tools.git tools
     git clone --depth 1 https://github.com/kward/shunit2.git tests/shunit2
 
   tebako_cache:
     folder: $DEPS
-    reupload_on_changes: false # since there is a fingerprint script
+    reupload_on_changes: false
     fingerprint_script:
-      - echo $CIRRUS_OS
-      - echo $INCBIN_TAG
-      - echo $DWARFS_WR_TAG
-      - echo $RUBY_HASH
-      - echo $BUNDLER_VER
+      - sw_vers
+      - cat common.env
 
   setup_script: |
+    mkdir $DEPS
     bin/tebako setup
 
   upload_caches:
