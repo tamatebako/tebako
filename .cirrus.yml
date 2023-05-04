@@ -1,0 +1,62 @@
+# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+macos_instance:
+  image: ghcr.io/cirruslabs/macos-ventura-base:latest
+
+task:
+#    CIRRUS_CLONE_SUBMODULES: true
+  env:
+    BUILD_TYPE: Release
+    DEPS: deps
+    INCBIN_TAG: 348e36b
+    DWARFS_WR_TAG: v0.3.1
+    RUBY_VER: 2.7.7
+    RUBY_HASH: e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90
+    BUNDLER_VER: 2.3.22
+
+  hello_script: |
+    uname -a
+
+  install_script: |
+    brew install gnu-getopt gnu-sed bash pkg-config bison flex binutils   \
+    libffi double-conversion boost jemalloc fmt glog openssl@1.1 libevent \
+    libsodium lz4 xz gdbm zlib ncurses
+
+  pre_setup_script: |
+    mkdir $DEPS
+    git clone --depth 1 https://github.com/tamatebako/tebako-tools.git tools
+
+  tebako_cache:
+    folder: $DEPS
+    reupload_on_changes: false # since there is a fingerprint script
+    fingerprint_script:
+      - echo $INCBIN_TAG
+      - echo $DWARFS_WR_TAG
+      - echo $RUBY_HASH
+      - echo $BUNDLER_VER
+
+  setup_script: |
+    bin/tebako setup
