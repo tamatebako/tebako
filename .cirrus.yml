@@ -27,7 +27,6 @@ macos_instance:
   image: ghcr.io/cirruslabs/macos-ventura-base:latest
 
 task:
-#    CIRRUS_CLONE_SUBMODULES: true
   env:
     BUILD_TYPE: Release
     DEPS: deps
@@ -45,14 +44,16 @@ task:
     libffi double-conversion boost jemalloc fmt glog openssl@1.1 libevent \
     libsodium lz4 xz gdbm zlib ncurses
 
-  pre_setup_script: |
+  pre-setup_script: |
     mkdir $DEPS
     git clone --depth 1 https://github.com/tamatebako/tebako-tools.git tools
+    git clone --depth 1 https://github.com/kward/shunit2.git tests/shunit2
 
   tebako_cache:
     folder: $DEPS
     reupload_on_changes: false # since there is a fingerprint script
     fingerprint_script:
+      - echo $CIRRUS_OS
       - echo $INCBIN_TAG
       - echo $DWARFS_WR_TAG
       - echo $RUBY_HASH
@@ -60,3 +61,9 @@ task:
 
   setup_script: |
     bin/tebako setup
+
+  upload_caches:
+    - $DEPS
+
+  testset-1_script: |
+    tests/scripts/functional-tests.sh
