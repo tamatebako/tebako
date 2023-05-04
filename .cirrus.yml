@@ -63,7 +63,13 @@ task:
     bin/tebako setup
 
   upload_caches:
-    - $DEPS
+    - tebako
 
   testset-1_script: |
     tests/scripts/functional-tests.sh
+
+  testset-2_script: |
+    pushd tests-2
+    bundle install
+    popd
+    ruby tests-2/tebako-test.rb
