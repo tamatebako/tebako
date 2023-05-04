@@ -73,3 +73,12 @@ task:
     bundle install
     popd
     ruby tests-2/tebako-test.rb
+
+  checkout-packed-mn_script: |
+    git clone --depth 1 https://github.com/metanorma/packed-mn.git packed-mn
+
+  package-metanorma_script: |
+    bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+
+  smoke-test_script: |
+    ./metanorma-package help
