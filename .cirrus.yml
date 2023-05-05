@@ -53,11 +53,13 @@ task:
     memory: 12G
 
   env:
-    matrix:
-      - { CC: clang, CXX: clang++, CMAKE_VERSION: 3.20.5 }
-# Commented to save Cirrus-ci limited capacity
+    CIRRUS_CLONE_SUBMODULES: true
+    CIRRUS_CLONE_DEPTH: 1
+    CMAKE_VERSION: 3.20.5
+    CC: clang
+    CXX: clang++
+# { CC: gcc, CXX: g++ } commented to save Cirrus-ci limited capacity
 # (clang is better both for performance and size)
-#      - { CC: gcc,   CXX: g++    , CMAKE_VERSION: 3.20.5 }
 
   install_script: |
     DEBIAN_FRONTEND=noninteractive apt-get -y update
@@ -72,7 +74,6 @@ task:
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
-    git clone --depth 1 https://github.com/tamatebako/tebako-tools.git tools
     git clone --depth 1 https://github.com/kward/shunit2.git tests/shunit2
 
   setup-cmake_script: |
@@ -105,11 +106,13 @@ task:
 task:
   name: macos-arm64
   only_if: $CIRRUS_BRANCH == 'main' || $CIRRUS_PR != '' || $CIRRUS_TAG != ''
+  env:
+    CIRRUS_CLONE_SUBMODULES: true
+    CIRRUS_CLONE_DEPTH: 1
   macos_instance:
-    matrix:
+    image: ghcr.io/cirruslabs/macos-monterey-base:latest
 # Commented to save Cirrus-ci limited capacity
-#      - image: ghcr.io/cirruslabs/macos-ventura-base:latest
-      - image: ghcr.io/cirruslabs/macos-monterey-base:latest
+# image: ghcr.io/cirruslabs/macos-ventura-base:latest
 
   install_script: |
     brew install gnu-getopt gnu-sed bash pkg-config bison flex binutils   \
@@ -118,7 +121,6 @@ task:
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
-    git clone --depth 1 https://github.com/tamatebako/tebako-tools.git tools
     git clone --depth 1 https://github.com/kward/shunit2.git tests/shunit2
 
   pre-cache_script: |
