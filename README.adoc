@@ -3,7 +3,6 @@
 image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu amd64", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["MacOS amd64", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
-image:https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml/badge.svg["Windows-MSys(limited)", link="https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
 image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
 image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?task=macos-arm64["MacOS arm64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
