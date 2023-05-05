@@ -47,14 +47,17 @@ task:
   name: ubuntu-aarch64
   only_if: $CIRRUS_BRANCH == 'main' || $CIRRUS_PR != '' || $CIRRUS_TAG != ''
   arm_container:
+# Need ~10 Gb to package metanorma and Cirrus-ci allows 4GB per CPU only
     image: ubuntu:20.04
-    cpu: 4
-    memory: 16G
+    cpu: 3
+    memory: 12G
 
   env:
     matrix:
       - { CC: clang, CXX: clang++, CMAKE_VERSION: 3.20.5 }
-      - { CC: gcc,   CXX: g++    , CMAKE_VERSION: 3.20.5 }
+# Commented to save Cirrus-ci limited capacity
+# (clang is better both for performance and size)
+#      - { CC: gcc,   CXX: g++    , CMAKE_VERSION: 3.20.5 }
 
   install_script: |
     DEBIAN_FRONTEND=noninteractive apt-get -y update
@@ -104,7 +107,8 @@ task:
   only_if: $CIRRUS_BRANCH == 'main' || $CIRRUS_PR != '' || $CIRRUS_TAG != ''
   macos_instance:
     matrix:
-      - image: ghcr.io/cirruslabs/macos-ventura-base:latest
+# Commented to save Cirrus-ci limited capacity
+#      - image: ghcr.io/cirruslabs/macos-ventura-base:latest
       - image: ghcr.io/cirruslabs/macos-monterey-base:latest
 
   install_script: |
