@@ -47,7 +47,7 @@ task:
   name: ubuntu-aarch64
   only_if: $CIRRUS_BRANCH == 'main' || $CIRRUS_PR != '' || $CIRRUS_TAG != ''
   arm_container:
-# Need ~10 Gb to package metanorma and Cirrus-ci allows 4GB per CPU only
+# Needs ~10 Gb to package metanorma and Cirrus-ci allows 4GB per CPU only
     image: ubuntu:20.04
     cpu: 3
     memory: 12G
