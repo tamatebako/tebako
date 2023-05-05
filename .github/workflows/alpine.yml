@@ -37,6 +37,8 @@ on:
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
       - .github/workflows/ubuntu.yml
+      - .github/workflows/windows-msys.yml
+      - .cirrus.yml
   pull_request:
     paths-ignore:
       - 'docs/**'
@@ -45,6 +47,8 @@ on:
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
       - .github/workflows/ubuntu.yml
+      - .github/workflows/windows-msys.yml
+      - .cirrus.yml
   workflow_dispatch:
 
 concurrency:
