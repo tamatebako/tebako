@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -98,12 +98,23 @@ class TestTebako < MiniTest::Test
         end
     end
 
+  # Run 'tebako press ...'
+    def press(tebako, name, package, prefix)
+        cmd = "#{tebako} press --output=#{package} --entry-point=#{name}.rb --root=#{name} --prefix='#{prefix}'"
+        out, st = Open3.capture2e(cmd)
+        if st.exitstatus != 0
+            puts "\"cmd\" failed with status #{st.exitstatus}"
+            puts out
+        end
+        assert_equal 0, st.exitstatus
+        assert File.exist?(package)
+    end
+
   # A kind of standart creates names - tmp dir with fixture - press sequence
     def with_fixture_press_and_env(name)
         package = "#{name}-package"
         with_fixture name do
-            assert system("#{Tebako} press --output=#{package} --entry-point=#{name}.rb --root=#{name} --prefix='#{Prefix}'")
-            assert File.exist?(package)
+            press(Tebako, name, package, Prefix)
             pristine_env package do |tempdirname|
                 yield "#{tempdirname}/#{package}"
             end
@@ -111,6 +122,17 @@ class TestTebako < MiniTest::Test
     end
 
   # Specified gems should be automatically included and usable in packaged app
+    def test_216_byebug
+        name = "gems-byebug"
+        with_fixture_press_and_env name do |package|
+            out, st = Open3.capture2(package)
+            assert_equal 0, st.exitstatus
+            assert_equal out, "Hello! Byebug welcomes you to the magic world of ruby gems.\n"
+        end
+    end
+
+
+# Specified gems should be automatically included and usable in packaged app
     def test_215_expressir
         name = "gems-expressir"
         with_fixture_press_and_env name do |package|
@@ -164,7 +186,8 @@ class TestTebako < MiniTest::Test
   def test_122_io_and_file
         name = "patches-io-and-file"
         with_fixture_press_and_env name do |package|
-            assert system(package)
+            out, st = Open3.capture2(package)
+            assert_equal 0, st.exitstatus
         end
     end
 
@@ -173,7 +196,8 @@ class TestTebako < MiniTest::Test
         name = "patches-dir"
         FileUtils.mkdir_p File.join(FixturePath, name, 'level-1/level-2/level-3')
         with_fixture_press_and_env name do |package|
-            assert system(package)
+            out, st = Open3.capture2(package)
+            assert_equal 0, st.exitstatus
         end
     end
 
@@ -194,10 +218,10 @@ class TestTebako < MiniTest::Test
         name = "launcher-pwd"
         package = "#{name}-package"
         with_fixture name do
-            assert system("#{Tebako} press -o#{package} -e#{name}.rb -r#{name} -p#{Prefix}")
-            assert File.exist?(package)
+            press(Tebako, name, package, Prefix)
             pristine_env package do |tempdirname|
-                assert system("#{tempdirname}/#{package}")
+                out, st = Open3.capture2("#{tempdirname}/#{package}")
+                assert_equal 0, st.exitstatus
                 assert File.exist?("output.txt")
                 res = File.read("output.txt")
                 assert_equal "output", res
@@ -209,7 +233,8 @@ class TestTebako < MiniTest::Test
     def test_104_launcher_coreincl
         name = "launcher-coreincl"
         with_fixture_press_and_env name do |package|
-            assert system(package)
+            out, st = Open3.capture2(package)
+            assert_equal 0, st.exitstatus
             assert File.exist?("output.txt")
             assert_equal "3 &lt; 5", File.read("output.txt")
         end
@@ -231,8 +256,7 @@ class TestTebako < MiniTest::Test
         name = "launcher-stdinredir"
         package = "#{name}-package"
         with_fixture name do
-            assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
-            assert File.exist?(package)
+            press(Tebako, name, package, Prefix)
             pristine_env package, "#{name}/input.txt" do |tempdirname|
                 out, st = Open3.capture2("#{tempdirname}/#{package} < #{tempdirname}/input.txt")
                 assert_equal 104, st.exitstatus
@@ -248,8 +272,7 @@ class TestTebako < MiniTest::Test
         name = "launcher-package"
         package = "#{name}-package"
         with_fixture name do
-            assert system("#{Tebako} press -o #{package} -e #{name}.rb -r #{name} -p '#{Prefix}'")
-            assert File.exist?(package)
+            press(Tebako, name, package, Prefix)
             pristine_env package do |tempdirname|
                 out, st = Open3.capture2("#{tempdirname}/#{package}")
                 assert_equal 0, st.exitstatus

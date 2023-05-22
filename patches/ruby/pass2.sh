@@ -182,12 +182,20 @@ fi
 # Pin tebako static build libraries
 # Ruby 2.7.4:  template is in 'ruby/template/Makefile.in'
 # Ruby 2.6.3:  template is in 'ruby/Makefile.in'
-restore_and_save "$1/template/Makefile.in"
+#restore_and_save "$1/template/Makefile.in"
+
+# ....................................................
+# Add EXTLIBS to miniruby link command
+# miniruby loads pathconfig extension and cannot find 'pathconfig.so'
+# This looks like ruby build script bug
+re="\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(NORMALMAINOBJ) \$(MINIOBJS) \$(COMMONOBJS) \$(MAINLIBS) \$(LIBS) \$(OUTFLAG)\$@"
+subst="\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(NORMALMAINOBJ) \$(MINIOBJS) \$(COMMONOBJS) \$(MAINLIBS) \$(LIBS) ext\/pathname\/pathname\.a \$(OUTFLAG)\$@"
+"$gSed" -i "s/$re/$subst/g" "$1/template/Makefile.in"
 
 re="MAINLIBS = @MAINLIBS@"
 # shellcheck disable=SC2251
 
-"$gSed" -i "0,/$re/s||${mLibs//$'\n'/"\\n"}|g" "$1/template/Makefile.in"
+#"$gSed" -i "0,/$re/s||${mLibs//$'\n'/"\\n"}|g" "$1/template/Makefile.in"
 
 re="LIBS = @LIBS@ \$(EXTLIBS)"
 # shellcheck disable=SC2251
@@ -197,7 +205,7 @@ LIBS = \$(MAINLIBS) @LIBS@
 # -- End of tebako patch --
 EOM
 #
-"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+#"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \$(LIBRUBYARG) \$(MAINLIBS) \$(LIBS) \$(EXTLIBS) \$(OUTFLAG)\$@"
 # shellcheck disable=SC2251
@@ -208,7 +216,7 @@ re="		\$(Q) \$(PURIFY) \$(CC) \$(LDFLAGS) \$(XLDFLAGS) \$(MAINOBJ) \$(EXTOBJS) \
 # -- End of tebako patch --
 EOM
 #
-"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
+#"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/template/Makefile.in"
 
 # ....................................................
 # Disable dynamic extensions
@@ -222,11 +230,11 @@ EOM
 
 # ....................................................
 # Patch main in order to redefine command line
-restore_and_save "$1/main.c"
+#restore_and_save "$1/main.c"
 # Replace only the first occurence
 # https://www.linuxtopia.org/online_books/linux_tool_guides/the_sed_faq/sedfaq4_004.html
 # [TODO this looks a kind of risky]
-"$gSed" -i "0,/int$/s//#include <tebako-main.h>\n\nint/" "$1/main.c"
+#"$gSed" -i "0,/int$/s//#include <tebako-main.h>\n\nint/" "$1/main.c"
 
 re="    ruby_sysinit(&argc, &argv);"
 # shellcheck disable=SC2251
@@ -239,7 +247,7 @@ re="    ruby_sysinit(&argc, &argv);"
 \/* -- End of tebako patch -- *\/
 
 EOM
-  "$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/main.c"
+#  "$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/main.c"
 
 # ....................................................
 # Put lidwarfs IO bindings to other c files
@@ -266,39 +274,39 @@ EOM
 }
 
 # ruby/dln.c
-patch_c_file "$1/dln.c"  "static const char funcname_prefix\[sizeof(FUNCNAME_PREFIX) - 1\] = FUNCNAME_PREFIX;"
+#patch_c_file "$1/dln.c"  "static const char funcname_prefix\[sizeof(FUNCNAME_PREFIX) - 1\] = FUNCNAME_PREFIX;"
 
 # ruby/file.c
-patch_c_file "$1/file.c"  "\/\* define system APIs \*\/"
+#patch_c_file "$1/file.c"  "\/\* define system APIs \*\/"
 
 # ruby/io.c
-patch_c_file "$1/io.c"  "\/\* define system APIs \*\/"
+#patch_c_file "$1/io.c"  "\/\* define system APIs \*\/"
 
 # ruby/util.c
-patch_c_file "$1/util.c"  "#ifndef S_ISDIR"
+#patch_c_file "$1/util.c"  "#ifndef S_ISDIR"
 
 # ....................................................
 # ruby/dir.c
-if [[ "$OSTYPE" == "msys"* ]]; then
-  patch_c_file "$1/dir.c"  "\/\* define system APIs \*\/"
-else
-  patch_c_file "$1/dir.c"  "#ifdef HAVE_GETATTRLIST"
-fi
+#if [[ "$OSTYPE" == "msys"* ]]; then
+#  patch_c_file "$1/dir.c"  "\/\* define system APIs \*\/"
+#else
+#  patch_c_file "$1/dir.c"  "#ifdef HAVE_GETATTRLIST"
+#fi
 
 # Compensate ruby incorrect processing of (f)getattrlist returning ENOTSUP
-"$gSed" -i "s/if ((\*cur)->type == ALPHA) {/if ((*cur)->type == ALPHA \/* tebako patch *\/ \&\& !within_tebako_memfs(buf)) {/g" "$1/dir.c"
-"$gSed" -i "s/else if (e == EIO) {/else if (e == EIO \/* tebako patch *\/ \&\& !within_tebako_memfs(path)) {/g" "$1/dir.c"
-"$gSed" -i "s/if (is_case_sensitive(dirp, path) == 0)/if (is_case_sensitive(dirp, path) == 0 \/* tebako patch *\/ \&\& !within_tebako_memfs(path))/g" "$1/dir.c"
-"$gSed" -i "0,/plain = 1;/! s/plain = 1;/\/* tebako patch *\/ if (!within_tebako_memfs(path)) plain = 1; else magical = 1;/g" "$1/dir.c"
+#"$gSed" -i "s/if ((\*cur)->type == ALPHA) {/if ((*cur)->type == ALPHA \/* tebako patch *\/ \&\& !within_tebako_memfs(buf)) {/g" "$1/dir.c"
+#"$gSed" -i "s/else if (e == EIO) {/else if (e == EIO \/* tebako patch *\/ \&\& !within_tebako_memfs(path)) {/g" "$1/dir.c"
+#"$gSed" -i "s/if (is_case_sensitive(dirp, path) == 0)/if (is_case_sensitive(dirp, path) == 0 \/* tebako patch *\/ \&\& !within_tebako_memfs(path))/g" "$1/dir.c"
+#"$gSed" -i "0,/plain = 1;/! s/plain = 1;/\/* tebako patch *\/ if (!within_tebako_memfs(path)) plain = 1; else magical = 1;/g" "$1/dir.c"
 
-  re="#if defined HAVE_GETATTRLIST && defined ATTR_DIR_ENTRYCOUNT"
+#  re="#if defined HAVE_GETATTRLIST && defined ATTR_DIR_ENTRYCOUNT"
 # shellcheck disable=SC2251
-! IFS= read -r -d '' sbst << EOM
+#! IFS= read -r -d '' sbst << EOM
 #if defined HAVE_GETATTRLIST \&\& defined ATTR_DIR_ENTRYCOUNT
-\/* tebako patch *\/ if (!within_tebako_memfs(path))
-EOM
+#\/* tebako patch *\/ if (!within_tebako_memfs(path))
+#EOM
 
-"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
+#"$gSed" -i "0,/$re/s//${sbst//$'\n'/"\\n"}/g" "$1/dir.c"
 
 # Note. We are not patching need_normalization function
 # In this function (f)getattrlist failure with ENOTSUP is processed correctly
