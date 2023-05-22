@@ -195,12 +195,14 @@ endif()
 
 # Various locations for external projects
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
+set(DEPS_STASH_DIR ${DEPS}/stash)
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)
 set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
 
 set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
+set(LIB ${CMAKE_CURRENT_SOURCE_DIR}/lib)
 
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
@@ -210,8 +212,8 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 
 #def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
 #def_ext_prj_t(RUBY "2.7.6" "e7203b0cc09442ed2c08936d483f8ac140ec1c72e37bb5c401646b7866cb5d10")
-
-def_ext_prj_t(RUBY "2.7.7" "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90")
+#def_ext_prj_t(RUBY "2.7.7" "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90")
+def_ext_prj_t(RUBY "3.0.6" "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e")
 
 
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
@@ -230,7 +232,7 @@ if(WITH_OPENSSL_BUILD)
 endif(WITH_OPENSSL_BUILD)
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.3.1")
+def_ext_prj_g(DWARFS_WR "v0.3.3")
 
 if (DEFINED ENV{BUNDLER_VER})
  set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -404,38 +406,45 @@ endif(WITH_NCURSES_BUILD)
 # ...................................................................
 # Ruby
 
-if(RUBY_DEBUG_BUILD)
+#if(RUBY_DEBUG_BUILD)
 #  set(RUBY_C_FLAGS_1 "-g -O0 -pipe -mllvm -asan-stack=1 -mllvm -asan-globals=0 -fno-omit-frame-pointer -fno-common")
-  set(RUBY_C_FLAGS_1 "-g -O0 -pipe")
-else(RUBY_DEBUG_BUILD)
-  set(RUBY_C_FLAGS_1 "-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
-endif(RUBY_DEBUG_BUILD)
+#  set(RUBY_C_FLAGS_1 "-g -O0 -pipe")
+#else(RUBY_DEBUG_BUILD)
+#  set(RUBY_C_FLAGS_1 "") #-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
+#endif(RUBY_DEBUG_BUILD)
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
-set(RUBY_C_FLAGS_2 "-pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+#set(RUBY_C_FLAGS_2 "") #-pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # https://stackoverflow.com/questions/46123505/assembling-with-gcc-causes-weird-relocation-error-with-regards-to-data
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -no-pie")
+#if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
+#  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -no-pie")
+#endif()
+
+set(RUBY_C_FLAGS "-pthread -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+
+# Shadow
+# https://github.com/deivid-rodriguez/byebug/issues/825
+# (it happens under some conditions though it is hard to explain when)
+if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -fdeclspec")
 endif()
 
+
 if(IS_DARWIN)
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -I${BUILD_BREW_PREFIX}/include -I${BUILD_BREW_PREFIX}/opt/openssl@1.1/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -I${BUILD_BREW_PREFIX}/include -I${BUILD_BREW_PREFIX}/opt/openssl@1.1/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BUILD_BREW_PREFIX}/lib -L${BUILD_BREW_PREFIX}/opt/openssl@1.1/lib -L${BUILD_BREW_PREFIX}/opt/zlib/lib")
 endif(IS_DARWIN)
 
 if(IS_MUSL)
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DENABLE_PATH_CHECK=0 -fno-omit-frame-pointer")
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DENABLE_PATH_CHECK=0 -fno-omit-frame-pointer")
 endif(IS_MUSL)
 
 if(RB_W32)
-  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -DRB_W32=1")
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DRB_W32=1")
 endif(RB_W32)
 
-
-string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS_1} " " ${RUBY_C_FLAGS_2})
-
-message(STATUS "Ruby build CFLAGS='${RUBY_C_FLAGS}'")
+message(STATUS "Ruby build cflags='${RUBY_C_FLAGS}'")
 message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
 
 ExternalProject_Add(${RUBY_PRJ}
@@ -445,21 +454,24 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
-  PATCH_COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} full
+  PATCH_COMMAND ruby ${LIB}/scripts.rb pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
   CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure                              \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
                                                         --disable-dtrace                      \
-                                                        --enable-debug-env                    \
-                                                        --disable-install-doc                 \
+                                                        --disable-debug-env                   \
                                                         --disable-shared                      \
+                                                        --disable-install-doc                 \
                                                         --with-static-linked-ext              \
                                                         --with-out-ext=${RUBY_WITHOUT_EXT}    \
                                                         --prefix=${DATA_SRC_DIR}              \
-                                                        CFLAGS=\"${RUBY_C_FLAGS}\"            \
+                                                        cflags=\"${RUBY_C_FLAGS}\"            \
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
-  BUILD_COMMAND  make ${RUBY_MAKEFILE}
-  INSTALL_COMMAND ""
+  BUILD_COMMAND    make ${RUBY_MAKEFILE}
+  INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
+  COMMAND          ruby ${LIB}/scripts.rb stash ${RUBY_SOURCE_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
+  COMMAND          ruby ${LIB}/scripts.rb pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DEPS_LIB_DIR}
+#  COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${DEPS}
 )
 
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
@@ -491,14 +503,10 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-           COMMAND ${CMAKE_COMMAND} -E echo "clean_filesystem: creating '${DATA_SRC_DIR}', '${DATA_PRE_DIR}', '${DATA_BIN_DIR}'"
-           COMMAND ${CMAKE_COMMAND} -E rm -rf ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_SRC_DIR}
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_PRE_DIR}
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${DATA_BIN_DIR}
-           COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass1.sh ${RUBY_SOURCE_DIR} fast
-           COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make install
-           DEPENDS ${RUBY_PRJ}
+#      COMMAND ruby ${LIB}/scripts.rb pass1-verbose ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_STASH_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
+      COMMAND ruby ${LIB}/scripts.rb deploy ${DEPS_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
+#      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make install -j4
+      DEPENDS ${RUBY_PRJ}
   )
   if(GSLENGTH GREATER 0)
     if(GSLENGTH GREATER 1)
@@ -578,7 +586,7 @@ else (${SETUP_MODE})
         DEPENDS clean_filesystem
     )
   elseif(GLENGTH GREATER 0)
-# xxx.gem, no gemspec, no gemfile
+  # xxx.gem, no gemspec, no gemfile
     list(GET GEMS 0 GEM)
     if(GLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gems detected in ${FS_ROOT}")
@@ -650,7 +658,7 @@ else (${SETUP_MODE})
                                           ${DATA_SRC_DIR}/bin/ri${CMD_SUFFIX}      ${DATA_SRC_DIR}/bin/y2racc${CMD_SUFFIX}
                                           ${DATA_SRC_DIR}/bin/ruby${EXE_SUFFIX}    ${DATA_SRC_DIR}/bin/ruby${RUBY_SUFFIX}${EXE_SUFFIX}
 
-      COMMAND ${GNU_BASH} -c "rm ${DATA_SRC_DIR}/**/*.a"
+      COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.a"
       COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.o"
       COMMAND chmod +x ${DEPS_BIN_DIR}/*
       COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
@@ -672,7 +680,6 @@ else (${SETUP_MODE})
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
   add_custom_target(patched_ruby
-     COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${DEPS}
      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE}
      DEPENDS setup tebako-fs
   )

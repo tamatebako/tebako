@@ -54,12 +54,6 @@ else
 fi
 
 # ....................................................
-# Disable dynamic extensions
-# ruby/ext/Setup
-restore_and_save "$1/ext/Setup"
-"$gSed" -i "s/\#option nodynamic/option nodynamic/g" "$1/ext/Setup"
-
-# ....................................................
 # WE DO NOT ACCEPT OUTSIDE GEM PATHS
 # ruby/lib/rubygems/path_support.rb
 restore_and_save "$1/lib/rubygems/path_support.rb"
@@ -75,7 +69,7 @@ re="  @home = env\[\"GEM_HOME\"\] || Gem.default_dir"
 # -- End of tebako patch --
 EOM
 
-"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
+#"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 # shellcheck disable=SC2251
@@ -90,7 +84,7 @@ re="@path = split_gem_path env\[\"GEM_PATH\"\], @home"
 # -- End of tebako patch --
 EOM
 
-"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
+#"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/lib/rubygems/path_support.rb"
 
 # ....................................................
 # This is something that I cannnot explain
@@ -118,11 +112,19 @@ re="#include <float.h>"
 #ifndef HAVE_RB_RATIONAL_DEN
 #define HAVE_RB_RATIONAL_DEN 1
 #endif
+
+#ifndef HAVE_RB_COMPLEX_REAL
+#define HAVE_RB_COMPLEX_REAL
+#endif
+
+#ifndef HAVE_RB_COMPLEX_IMAG
+#define HAVE_RB_COMPLEX_IMAG
+#endif
 \/* -- End of tebako patch -- *\/
 
 EOM
 
-"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
+#"$gSed" -i "s/$re/${sbst//$'\n'/"\\n"}/g" "$1/ext/bigdecimal/bigdecimal.h"
 
 if [[ "$OSTYPE" == "msys"* ]]; then
 # ....................................................
@@ -155,14 +157,14 @@ if [[ "$OSTYPE" == "msys"* ]]; then
   fi
 fi
 
-if [[ "$2" == "full" ]]; then
+#if [[ "$2" == "full" ]]; then
 # ....................................................
 # ruby/template/configure-ext.mk.tmpl
-    restore_and_save "$1/template/configure-ext.mk.tmpl"
-    re="<%=d%>\/exts.mk: FORCE"
-    sbst="<%=d%>\/exts.mk:  #tebako patched"
-    "$gSed" -i "0,/$re/s//$sbst/g" "$1/template/configure-ext.mk.tmpl"
-fi
+#    restore_and_save "$1/template/configure-ext.mk.tmpl"
+#    re="<%=d%>\/exts.mk: FORCE"
+#    sbst="<%=d%>\/exts.mk:  #tebako patched"
+#    "$gSed" -i "0,/$re/s//$sbst/g" "$1/template/configure-ext.mk.tmpl"
+#fi
 
 
 # ....................................................

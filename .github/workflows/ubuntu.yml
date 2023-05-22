@@ -29,7 +29,7 @@ on:
   schedule:
     - cron: "0 6 * * 1"
   push:
-    branches: [ main ]
+    branches: [ main, maxirmx-milestone-5 ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -56,7 +56,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 14
+  CACHE_VER: 17
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
@@ -199,6 +199,18 @@ jobs:
       - name: Run tebako tests (set no. 1)
         run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
+      - name: Upload tebako test packages
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-packages
+          retention-days: 1
+          path: |
+            test-01-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package
+
   tests-2:
     needs: setup
     name: tests-2 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
@@ -270,6 +282,24 @@ jobs:
           bundle install
           cd ${{github.workspace}}
           ruby ${{github.workspace}}/tests-2/tebako-test.rb
+
+  cross-test-on-ubuntu-latest:
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    needs: tests-1
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      - name: Download test packages
+        uses: actions/download-artifact@v3
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  tests/scripts/cross-tests.sh
 
   package-metanorma:
     needs: setup
