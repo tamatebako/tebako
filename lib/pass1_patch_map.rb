@@ -25,6 +25,85 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+TOOL_RBINSTALL_RB_PATCH = {
+  '    next if files.empty?' => '# tebako patched    next if files.empty?'
+}.freeze
+
+RUBYGEM_OPENSSL_RB_PATCH = {
+  'autoload :OpenSSL, "openssl"' => "require \"openssl\"\nautoload :OpenSSL, \"openssl\""
+}.freeze
+
+EXT_SETUP_PATCH = {
+  '#option nodynamic' => 'option nodynamic'
+}.freeze
+
+EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH = {
+  '#include <float.h>' => <<~SUBST
+    #include <float.h>
+
+    /* -- Start of tebako patch -- */
+    #ifndef HAVE_RB_SYM2STR
+    #define HAVE_RB_SYM2STR  1
+    #endif
+
+    #ifndef HAVE_RB_ARRAY_CONST_PTR
+    #define HAVE_RB_ARRAY_CONST_PTR 1
+    #endif
+
+    #ifndef HAVE_RB_RATIONAL_NUM
+    #define HAVE_RB_RATIONAL_NUM 1
+    #endif
+
+    #ifndef HAVE_RB_RATIONAL_DEN
+    #define HAVE_RB_RATIONAL_DEN 1
+    #endif
+
+    #ifndef HAVE_RB_COMPLEX_REAL
+    #define HAVE_RB_COMPLEX_REAL
+    #endif
+
+    #ifndef HAVE_RB_COMPLEX_IMAG
+    #define HAVE_RB_COMPLEX_IMAG
+    #endif
+    /* -- End of tebako patch -- */
+
+  SUBST
+}.freeze
+
+def rubygems_path_support_patch_one(mount_point)
+  <<~SUBST
+      @home = env["GEM_HOME"] || Gem.default_dir
+    # -- Start of tebako patch --
+        unless env["TEBAKO_PASS_THROUGH"]
+          @home = Gem.default_dir unless @home.index("#{mount_point}") == 0
+        end
+    # -- End of tebako patch --
+
+  SUBST
+end
+
+def rubygems_path_support_patch_two(mount_point)
+  <<~SUBST
+
+      @path = split_gem_path env["GEM_PATH"], @home
+    # -- Start of tebako patch --
+        unless env["TEBAKO_PASS_THROUGH"]
+          @path.keep_if do |xpath|
+            xpath.index("#{mount_point}") == 0
+          end
+        end
+    # -- End of tebako patch --
+
+  SUBST
+end
+
+def rubygems_path_support_patch(mount_point)
+  {
+    '  @home = env["GEM_HOME"] || Gem.default_dir' => rubygems_path_support_patch_one(mount_point),
+    '  @path = split_gem_path env["GEM_PATH"], @home' => rubygems_path_support_patch_two(mount_point)
+  }
+end
+
 def get_pass1_patch_map(mount_point)
   {
     # ....................................................
@@ -34,80 +113,24 @@ def get_pass1_patch_map(mount_point)
     #   -- extension is build statically
     #  there may be no files install in addition to spec
     # Example: io/wait extension (and others)
-    'tool/rbinstall.rb' => {
-      '    next if files.empty?' => '# tebako patched    next if files.empty?'
-    },
+    'tool/rbinstall.rb' => TOOL_RBINSTALL_RB_PATCH,
 
     # ....................................................
     # autoload :OpenSSL, "openssl"
     # fails to deal with a default gem from statically linked extension
-    'lib/rubygems/openssl.rb' => {
-      'autoload :OpenSSL, "openssl"' => "require \"openssl\"\nautoload :OpenSSL, \"openssl\""
-    },
+    'lib/rubygems/openssl.rb' => RUBYGEM_OPENSSL_RB_PATCH,
 
     # ....................................................
     # This is something that I cannnot explain
     # (this patch does not seem related to static compilation)
-    'ext/bigdecimal/bigdecimal.h' => {
-      '#include <float.h>' =>
-        <<~SUBST
-          #include <float.h>
+    'ext/bigdecimal/bigdecimal.h' => EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH,
 
-          /* -- Start of tebako patch -- */
-          #ifndef HAVE_RB_SYM2STR
-          #define HAVE_RB_SYM2STR  1
-          #endif
-
-          #ifndef HAVE_RB_ARRAY_CONST_PTR
-          #define HAVE_RB_ARRAY_CONST_PTR 1
-          #endif
-
-          #ifndef HAVE_RB_RATIONAL_NUM
-          #define HAVE_RB_RATIONAL_NUM 1
-          #endif
-
-          #ifndef HAVE_RB_RATIONAL_DEN
-          #define HAVE_RB_RATIONAL_DEN 1
-          #endif
-
-          #ifndef HAVE_RB_COMPLEX_REAL
-          #define HAVE_RB_COMPLEX_REAL
-          #endif
-
-          #ifndef HAVE_RB_COMPLEX_IMAG
-          #define HAVE_RB_COMPLEX_IMAG
-          #endif
-          /* -- End of tebako patch -- */
-
-        SUBST
-    },
-
-    'lib/rubygems/path_support.rb' => {
-      '  @home = env["GEM_HOME"] || Gem.default_dir' =>
-
-        "  @home = env[\"GEM_HOME\"] || Gem.default_dir\n" \
-        "# -- Start of tebako patch --\n" \
-        "    unless env[\"TEBAKO_PASS_THROUGH\"]\n" \
-        "      @home = Gem.default_dir unless @home.index(\"#{mount_point}\") == 0\n" \
-        "    end\n" \
-        "# -- End of tebako patch --\n\n",
-
-      '  @path = split_gem_path env["GEM_PATH"], @home' =>
-
-          "  @path = split_gem_path env[\"GEM_PATH\"], @home\n" \
-          "# -- Start of tebako patch --\n" \
-          "    unless env[\"TEBAKO_PASS_THROUGH\"]\n" \
-          "      @path.keep_if do |xpath|\n" \
-          "        xpath.index(\"#{mount_point}\") == 0\n" \
-          "      end\n" \
-          "    end\n" \
-          "# -- End of tebako patch --\n\n"
-    },
+    # ....................................................
+    # Allow only packaged gems (from within memfs)
+    'lib/rubygems/path_support.rb' => rubygems_path_support_patch(mount_point),
 
     # ....................................................
     # Disable dynamic extensions
-    'ext/Setup' => {
-      '#option nodynamic' => 'option nodynamic'
-    }
+    'ext/Setup' => EXT_SETUP_PATCH
   }
 end

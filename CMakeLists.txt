@@ -437,7 +437,7 @@ if(IS_DARWIN)
 endif(IS_DARWIN)
 
 if(IS_MUSL)
-  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DENABLE_PATH_CHECK=0 -fno-omit-frame-pointer")
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DENABLE_PATH_CHECK=0")
 endif(IS_MUSL)
 
 if(RB_W32)

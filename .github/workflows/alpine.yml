@@ -29,7 +29,7 @@ on:
   schedule:
     - cron: "0 8 * * 1"
   push:
-    branches: [ main ]
+    branches: [ main, maxirmx-milestone-5 ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -57,7 +57,7 @@ concurrency:
 
 env:
 # Cache version
-  CACHE_VER: 15
+  CACHE_VER: 18
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
   VERBOSE: yes
@@ -92,7 +92,7 @@ jobs:
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static
+            readline-dev readline-static ruby
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -162,7 +162,7 @@ jobs:
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static
+            readline-dev readline-static ruby
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -366,7 +366,7 @@ jobs:
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static p7zip ruby-dev gcompat      \
-            gettext-dev python3 pkgconfig gperf
+            gettext-dev python3 pkgconfig gperf ruby
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
