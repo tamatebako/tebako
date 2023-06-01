@@ -29,6 +29,7 @@ require 'fileutils'
 require 'open3'
 
 require_relative 'pass1_patch_map'
+require_relative 'pass2_patch_map'
 
 # Tebako errors
 class TebakoError < StandardError
@@ -55,6 +56,12 @@ def restore_and_save(fname)
   FileUtils.cp(fname, old_fname)
 end
 
+def restore_and_save_files(files, ruby_source_dir)
+  files.each do |fname|
+    restore_and_save "#{ruby_source_dir}/#{fname}"
+  end
+end
+
 def patch_file(fname, mapping)
   raise TebakoError, "Could not patch #{fname} because it does not exist." unless File.exist?(fname)
 
@@ -79,6 +86,10 @@ FILES_TO_RESTORE_MSYS = [
   'win32/file.c',  'win32/dir.h'
 ].freeze
 
+FILES_TO_RESTORE_MUSL = [
+  'thread_pthread.c'
+].freeze
+
 def pass1(ostype, ruby_source_dir, mount_point, src_dir)
   puts '-- Running pass1 script'
 
@@ -87,22 +98,9 @@ def pass1(ostype, ruby_source_dir, mount_point, src_dir)
 
   # Roll back pass2 patches
   # Just in case we are recovering after some error
-  FILES_TO_RESTORE.each do |fname|
-    restore_and_save "#{ruby_source_dir}/#{fname}"
-  end
-
-  return unless ostype == /msys/
-
-  FILES_TO_RESTORE_MSYS.each do |fname|
-    restore_and_save "#{ruby_source_dir}/#{fname}"
-  end
-end
-
-def get_prefix(package)
-  out, st = capture2("brew --prefix #{package}")
-  raise TebakoError, "brew --prefix #{package} failed with code #{st.exitstatus}" unless st.exitstatus.zero?
-
-  out
+  restore_and_save_files(FILES_TO_RESTORE, ruby_source_dir)
+  restore_and_save_files(FILES_TO_RESTORE_MUSL, ruby_source_dir) if ostype =~ /linux-musl/
+  restore_and_save_files(FILES_TO_RESTORE_MSYS, ruby_source_dir) if ostype =~ /msys/
 end
 
 def patch_c_file(pattern)
@@ -122,139 +120,22 @@ def patch_c_file(pattern)
   }
 end
 
-LINUX_GNU_LIBS = <<~SUBST
-  # -- Start of tebako patch --
-  MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
-  -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
-  -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:liblzma.a \
-  -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl
-  # -- End of tebako patch --
-SUBST
-
-LINUX_MUSL_LIBS = <<~SUBST
-  # -- Start of tebako patch --
-  MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
-  -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
-  -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:liblzma.a \
-  -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl
-  # -- End of tebako patch --
-SUBST
-
-MSYS_LIBS = <<~SUBST
-  # -- Start of tebako patch --
-  MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
-  -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
-  -l:libzstd.a -l:libffi.a -l:libgdbm.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:liblzma.a -l:libiberty.a \
-  -l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
-  # -- End of tebako patch --
-SUBST
-
-def darwin_libs(deps_lib_dir)
-  p_libssl = "#{get_prefix('openssl@1.1')}/lib/libssl.a"
-  p_libcrypto = "#{get_prefix('openssl@1.1')}/lib/libcrypto.a"
-  p_libz = "#{get_prefix('zlib')}/lib/libz.a"
-  p_libgdbm = "#{get_prefix('gdbm')}/lib/libgdbm.a"
-  p_libreadline = "#{get_prefix('readline')}/lib/libreadline.a"
-  p_libffi = "#{get_prefix('libffi')}/lib/libffi.a"
-  p_libncurses = "#{get_prefix('ncurses')}/lib/libncurses.a"
-  p_libfmt = "#{get_prefix('fmt')}/lib/libfmt.a"
-  p_liblz4 = "#{get_prefix('lz4')}/lib/liblz4.a"
-  p_liblzma = "#{get_prefix('xz')}/lib/liblzma.a"
-  p_libdc = "#{get_prefix('double-conversion')}/lib/libdouble-conversion.a"
-  p_glog = "#{deps_lib_dir}/libglog.a"
-  p_gflags = "#{deps_lib_dir}/libgflags.a"
-  <<~SUBST
-    # -- Start of tebako patch --
-    MAINLIBS = -ltebako-fs -ldwarfs-wr -ldwarfs -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
-    -lzstd #{p_glog} #{p_gflags} #{p_libfmt} #{p_liblz4} #{p_liblzma} #{p_libdc} #{p_libssl} #{p_libcrypto} #{p_libz} #{p_libgdbm} \
-    #{p_libreadline} #{p_libffi} #{p_libncurses} -ljemalloc -lc++
-    # -- End of tebako patch --
-  SUBST
-end
-
 def pass2(ostype, ruby_source_dir, _mount_point, deps_lib_dir)
   puts '-- Running pass2 script'
 
-  case ostype
-  when /linux-gnu/
-    m_libs = LINUX_GNU_LIBS
-  when /linux-musl/
-    m_libs = LINUX_MUSL_LIBS
-  when /darwin/
-    m_libs = darwin_libs(deps_lib_dir)
-  when /msys/
-    m_libs = MSYS_LIBS
-  else
-    raise TebakoError, "Unknown ostype #{ostype}"
-  end
-
   pass2_patch_map = {
     'template/Makefile.in' => {
-      'MAINLIBS = @MAINLIBS@' => m_libs,
+      'MAINLIBS = @MAINLIBS@' => mlibs(ostype, deps_lib_dir),
 
-      'LIBS = @LIBS@ $(EXTLIBS)' =>
-        "# -- Start of tebako patch --\n" \
-        "LIBS = \$(MAINLIBS) @LIBS@\n" \
-        "# -- End of tebako patch --\n",
+      'LIBS = @LIBS@ $(EXTLIBS)' => TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE,
 
-      "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@" =>
-        "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG_STATIC) $(LIBS) $(OUTFLAG)$@\n" \
-        '# -- End of tebako patch --',
+      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO => TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO
     },
-    'main.c' => {
-      "int\nmain(int argc, char **argv)" =>
-      "#include <tebako-main.h>\n\nint\nmain(int argc, char **argv)",
-
-      '    ruby_sysinit(&argc, &argv);' =>
-      "    ruby_sysinit(&argc, &argv);\n" \
-      "\/* -- Start of tebako patch -- *\/\n" \
-      "    if (tebako_main(&argc, &argv) != 0) {\n" \
-      "      return -1;\n" \
-      "    }\n" \
-      "\/* -- End of tebako patch -- *\/",
-    },
-    'tool/mkconfig.rb' => {
-      '    if fast[name]' =>
-      "# -- Start of tebako patch --\n" \
-      "    v_head_comp = \"  CONFIG[\\\"prefix\\\"] \#{eq} \"\n" \
-      "    if v_head_comp == v[0...(v_head_comp.length)]\n" \
-      "      if win32\n" \
-      "       v = \"\#{v[0...(v_head_comp.length)]}CONFIG[\\\"RUBY_EXEC_PREFIX\\\"] = '/__tebako_memfs__'\n\"\n" \
-      "      else\n" \
-      "        v = \"\#{v[0...(v_head_comp.length)]}'/__tebako_memfs__'\n\"\n" \
-      "      end\n" \
-      "    end\n" \
-      "    v_head_comp = \"  CONFIG[\\\"RUBY_EXEC_PREFIX\\\"] \#{eq} \"\n" \
-      "    if v_head_comp == v[0...(v_head_comp.length)]\n" \
-      "      v = \"\#{v[0...(v_head_comp.length)]}'/__tebako_memfs__'\n\"\n" \
-      "    end\n" \
-      "# -- End of tebako patch --\n" \
-      '    if fast[name]',
-    }
+    'main.c' => MAIN_C_PATCH,
+    'tool/mkconfig.rb' => TOOL_MKCONFIG_RB_PATCH
   }
-
-  # Compensate ruby incorrect processing of (f)getattrlist returning ENOTSUP
-  # Note. We are not patching need_normalization function
-  # In this function (f)getattrlist failure with ENOTSUP is processed correctly
-  dir_c_patch = {
-    '#if defined HAVE_GETATTRLIST && defined ATTR_DIR_ENTRYCOUNT' =>
-    "#if defined HAVE_GETATTRLIST && defined ATTR_DIR_ENTRYCOUNT\n    \/* tebako patch *\/ if (!within_tebako_memfs(path))",
-
-    "#if USE_NAME_ON_FS == USE_NAME_ON_FS_REAL_BASENAME\n	    plain = 1;" =>
-      "#if USE_NAME_ON_FS == USE_NAME_ON_FS_REAL_BASENAME\n	    \/* tebako patch *\/ if (!within_tebako_memfs(path)) plain = 1; else magical = 1;",
-
-    'if (is_case_sensitive(dirp, path) == 0)' =>
-      "if (is_case_sensitive(dirp, path) == 0 \/* tebako patch *\/ && !within_tebako_memfs(path))",
-
-    'if ((*cur)->type == ALPHA) {' =>
-      "if ((*cur)->type == ALPHA \/* tebako patch *\/ && !within_tebako_memfs(buf)) {",
-
-    'else if (e == EIO) {' =>
-      "else if (e == EIO \/* tebako patch *\/ && !within_tebako_memfs(path)) {"
-  }
-
-  dir_c_patch.merge!(patch_c_file(ostype == /msys/ ? "\/* define system APIs *\/" : '#ifdef HAVE_GETATTRLIST'))
+  dir_c_patch = patch_c_file(ostype =~ /msys/ ? "\/* define system APIs *\/" : '#ifdef HAVE_GETATTRLIST')
+  dir_c_patch.merge!(DIR_C_BASE_PATCH)
 
   pass2_patch_map.store('dln.c',
                         patch_c_file('static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;'))
@@ -262,6 +143,8 @@ def pass2(ostype, ruby_source_dir, _mount_point, deps_lib_dir)
   pass2_patch_map.store('io.c', patch_c_file('/* define system APIs */'))
   pass2_patch_map.store('util.c', patch_c_file('#ifndef S_ISDIR'))
   pass2_patch_map.store('dir.c', dir_c_patch)
+
+  pass2_patch_map.store('thread_pthread.c', LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
 
   do_patch(pass2_patch_map, ruby_source_dir)
 end
