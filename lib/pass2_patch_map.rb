@@ -25,6 +25,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require 'open3'
+
 LINUX_GNU_LIBS = <<~SUBST
   # -- Start of tebako patch --
   MAINLIBS = -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
@@ -163,7 +165,7 @@ SUBST
 
 DIR_C_BASE_PATCH_TWO = <<~SUBST
   #if USE_NAME_ON_FS == USE_NAME_ON_FS_REAL_BASENAME
-        /* tebako patch */ if (!within_tebako_memfs(path)) plain = 1; else magical = 1;",
+        /* tebako patch */ if (!within_tebako_memfs(path)) plain = 1; else magical = 1;
 SUBST
 
 DIR_C_BASE_PATCH = {
@@ -178,7 +180,7 @@ DIR_C_BASE_PATCH = {
 }.freeze
 
 def get_prefix(package)
-  out, st = capture2("brew --prefix #{package}")
+  out, st = Open3.capture2("brew --prefix #{package}")
   raise TebakoError, "brew --prefix #{package} failed with code #{st.exitstatus}" unless st.exitstatus.zero?
 
   out
@@ -187,7 +189,7 @@ end
 DARWIN_BREW_LIBS = [
   %w[openssl@1.1 ssl],   %w[openssl@1.1 crypto],
   %w[zlib z],            %w[gdbm gdbm],
-  %w[readline readline], %w[ffi ffi],
+  %w[readline readline], %w[libffi ffi],
   %w[ncurses ncurses],   %w[fmt fmt],
   %w[lz4 lz4],           %w[xz lzma],
   %w[double-conversion double-conversion]
@@ -196,9 +198,9 @@ DARWIN_BREW_LIBS = [
 DARWIN_DEP_LIBS = %w[glog gflags].freeze
 
 def darwin_libs(deps_lib_dir)
-  libs = ''
+  libs = String.new
   DARWIN_BREW_LIBS.each do |lib|
-    libs << get_prefix(lib[0]) << "/lib/lib#{lib[1]}.a "
+    libs << get_prefix(lib[0]).chop << "/lib/lib#{lib[1]}.a "
   end
   DARWIN_DEP_LIBS.each do |lib|
     libs << deps_lib_dir << "/lib#{lib}.a "
@@ -209,21 +211,6 @@ def darwin_libs(deps_lib_dir)
     -lzstd #{libs} -ljemalloc -lc++
     # -- End of tebako patch --
   SUBST
-end
-
-def mlibs(ostype, deps_lib_dir)
-  case ostype
-  when /linux-gnu/
-    LINUX_GNU_LIBS
-  when /linux-musl/
-    LINUX_MUSL_LIBS
-  when /darwin/
-    darwin_libs(deps_lib_dir)
-  when /msys/
-    MSYS_LIBS
-  else
-    raise TebakoError, "Unknown ostype #{ostype}"
-  end
 end
 
 TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE = <<~SUBST
@@ -240,3 +227,43 @@ TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO =
   "# -- Start of tebako patch --\n" \
   "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG_STATIC) $(LIBS) $(OUTFLAG)$@\n" \
   '# -- End of tebako patch --'
+
+C_FILE_SUBST = <<~SUBST
+  /* -- Start of tebako patch -- */
+  #ifndef NO_TEBAKO_INCLUDES
+  #include <tebako/tebako-config.h>
+  #include <tebako/tebako-defines.h>
+  #include <tebako/tebako-io-rb-w32.h>
+  #include <tebako/tebako-io.h>
+  #endif
+  /* -- End of tebako patch -- */
+SUBST
+
+# rubocop:disable Metrics/MethodLength
+def mlibs(ostype, deps_lib_dir)
+  case ostype
+  when /linux-gnu/
+    LINUX_GNU_LIBS
+  when /linux-musl/
+    LINUX_MUSL_LIBS
+  when /darwin/
+    darwin_libs(deps_lib_dir)
+  when /msys/
+    MSYS_LIBS
+  else
+    raise TebakoError, "Unknown ostype #{ostype}"
+  end
+end
+# rubocop:enable Metrics/MethodLength
+
+def get_pass2_patch_map(ostype, deps_lib_dir)
+  {
+    'template/Makefile.in' => {
+      'MAINLIBS = @MAINLIBS@' => mlibs(ostype, deps_lib_dir),
+      'LIBS = @LIBS@ $(EXTLIBS)' => TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE,
+      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO => TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO
+    },
+    'main.c' => MAIN_C_PATCH,
+    'tool/mkconfig.rb' => TOOL_MKCONFIG_RB_PATCH
+  }
+end

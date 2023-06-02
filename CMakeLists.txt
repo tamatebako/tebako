@@ -432,8 +432,9 @@ endif()
 
 
 if(IS_DARWIN)
-  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -I${BUILD_BREW_PREFIX}/include -I${BUILD_BREW_PREFIX}/opt/openssl@1.1/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -I${BUILD_BREW_PREFIX}/include -I/opt/openssl@1.1/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BUILD_BREW_PREFIX}/lib -L${BUILD_BREW_PREFIX}/opt/openssl@1.1/lib -L${BUILD_BREW_PREFIX}/opt/zlib/lib")
+  set(OPENSSL_RUBY_OPTION "--with-openssl-dir=${BUILD_BREW_PREFIX}/opt/openssl@1.1")
 endif(IS_DARWIN)
 
 if(IS_MUSL)
@@ -446,6 +447,8 @@ endif(RB_W32)
 
 message(STATUS "Ruby build cflags='${RUBY_C_FLAGS}'")
 message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
+message(STATUS "Openssl Ruby option='${OPENSSL_RUBY_OPTION}'")
+
 
 ExternalProject_Add(${RUBY_PRJ}
   PREFIX ${DEPS}
@@ -455,7 +458,7 @@ ExternalProject_Add(${RUBY_PRJ}
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
   PATCH_COMMAND ruby ${LIB}/scripts.rb pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
-  CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure                              \
+  CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION}      \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
                                                         --disable-dtrace                      \
@@ -469,8 +472,8 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
   BUILD_COMMAND    make ${RUBY_MAKEFILE}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
-  COMMAND          ruby ${LIB}/scripts.rb stash ${RUBY_SOURCE_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
-  COMMAND          ruby ${LIB}/scripts.rb pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DEPS_LIB_DIR}
+#  COMMAND          ruby ${LIB}/scripts.rb stash ${RUBY_SOURCE_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
+  COMMAND          ruby ${LIB}/scripts.rb pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
 #  COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${DEPS}
 )
 
@@ -503,7 +506,6 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-#      COMMAND ruby ${LIB}/scripts.rb pass1-verbose ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_STASH_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
       COMMAND ruby ${LIB}/scripts.rb deploy ${DEPS_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
 #      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make install -j4
       DEPENDS ${RUBY_PRJ}

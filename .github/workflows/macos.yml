@@ -29,7 +29,7 @@ on:
   schedule:
     - cron: "0 7 * * 1"
   push:
-    branches: [ main ]
+    branches:  [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -59,7 +59,7 @@ env:
   CC: clang
   CXX: clang++
 # Cache version
-  CACHE_VER: 16
+  CACHE_VER: 18
   VERBOSE: yes
 
 jobs:
@@ -162,18 +162,17 @@ jobs:
       - name: Run tebako tests (set no. 1)
         run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
 
-#  MacOS 10.15 runner is deprecated at GHA but we will use this code in the future
-#      - name: Upload tebako test packages
-#        uses: actions/upload-artifact@v3
-#        with:
-#          name: test-packages
-#          retention-days: 1
-#          path: |
-#            test-01-package
-#            test-11-package
-#            test-15-package
-#            test-18-package
-#            test-19-package
+      - name: Upload tebako test packages
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-packages
+          retention-days: 1
+          path: |
+            test-01-package
+            test-11-package
+            test-15-package
+            test-18-package
+            test-19-package
 
   tests-2:
     needs: setup
@@ -235,24 +234,23 @@ jobs:
           cd ${{github.workspace}}
           ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
-#  MacOS 10.15 runner is deprecated at GHA but we will use this code in the future
-#  test-on-macos-10-15:
-#    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
-#    needs: tests-1
-#    runs-on: macos-10.15
-#    steps:
-#      - name: Checkout tebako packaging environment
-#        uses: actions/checkout@v3
-#        with:
-#          fetch-depth: 1
-#
-#      - name: Download test packages
-#        uses: actions/download-artifact@v3
-#        with:
-#          name: test-packages
-#
-#      - name: Run test packages
-#        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
+  test-on-macos-latest:
+    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
+    needs: tests-1
+    runs-on: macos-latest
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+
+      - name: Download test packages
+        uses: actions/download-artifact@v3
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
 
   package-metanorma:
     needs: setup

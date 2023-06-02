@@ -29,7 +29,7 @@ on:
   schedule:
     - cron: "0 6 * * 1"
   push:
-    branches: [ main, maxirmx-milestone-5 ]
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -56,11 +56,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 19
+  CACHE_VER: 21
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
-  VERBOSE: yes
+  VERBOSE: no
 
 
 jobs:
