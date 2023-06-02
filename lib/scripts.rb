@@ -104,41 +104,23 @@ def pass1(ostype, ruby_source_dir, mount_point, src_dir)
 end
 
 def patch_c_file(pattern)
-  c_file_subst = <<~SUBST
-    /* -- Start of tebako patch -- */
-    #ifndef NO_TEBAKO_INCLUDES
-    #include <tebako/tebako-config.h>
-    #include <tebako/tebako-defines.h>
-    #include <tebako/tebako-io-rb-w32.h>
-    #include <tebako/tebako-io.h>
-    #endif
-    /* -- End of tebako patch -- */
-  SUBST
-
   {
-    pattern => "#{c_file_subst}\n#{pattern}"
+    pattern => "#{C_FILE_SUBST}\n#{pattern}"
   }
 end
 
-def pass2(ostype, ruby_source_dir, _mount_point, deps_lib_dir)
+def pass2(ostype, ruby_source_dir, deps_lib_dir)
   puts '-- Running pass2 script'
 
-  pass2_patch_map = {
-    'template/Makefile.in' => {
-      'MAINLIBS = @MAINLIBS@' => mlibs(ostype, deps_lib_dir),
+  pass2_patch_map = get_pass2_patch_map(ostype, deps_lib_dir)
 
-      'LIBS = @LIBS@ $(EXTLIBS)' => TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE,
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO => TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO
-    },
-    'main.c' => MAIN_C_PATCH,
-    'tool/mkconfig.rb' => TOOL_MKCONFIG_RB_PATCH
-  }
   dir_c_patch = patch_c_file(ostype =~ /msys/ ? "\/* define system APIs *\/" : '#ifdef HAVE_GETATTRLIST')
   dir_c_patch.merge!(DIR_C_BASE_PATCH)
 
-  pass2_patch_map.store('dln.c',
-                        patch_c_file('static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;'))
+  pass2_patch_map.store(
+    'dln.c',
+    patch_c_file('static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;')
+  )
   pass2_patch_map.store('file.c', patch_c_file('/* define system APIs */'))
   pass2_patch_map.store('io.c', patch_c_file('/* define system APIs */'))
   pass2_patch_map.store('util.c', patch_c_file('#ifndef S_ISDIR'))
@@ -192,11 +174,13 @@ begin
     #       ARGV[0] -- command
     #       ARGV[1] -- OSTYPE
     #       ARGV[2] -- RUBY_SOURCE_DIR
-    #       ARGV[3] -- FS_MOUNT_POINT
-    #       ARGV[4] -- DEPS_LIB_DIR
-    raise TebakoError, "pass1 script expects 5 arguments, #{ARGV.length} has been provided." unless ARGV.length == 5
+    #       ARGV[3] -- DEPS_LIB_DIR
+    #       ARGV[4] -- DATA_SRC_DIR
+    #       ARGV[5] -- FS_STASH_DIR
+    raise TebakoError, "pass1 script expects 6 arguments, #{ARGV.length} has been provided." unless ARGV.length == 6
 
-    pass2(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
+    stash(ARGV[2], ARGV[4], ARGV[5])
+    pass2(ARGV[1], ARGV[2], ARGV[3])
   when 'stash'
     #       ARGV[0] -- command
     #       ARGV[1] -- RUBY_SOURCE_DIR

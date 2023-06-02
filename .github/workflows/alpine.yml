@@ -29,7 +29,7 @@ on:
   schedule:
     - cron: "0 8 * * 1"
   push:
-    branches: [ main, maxirmx-milestone-5 ]
+    branches: [ main ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -57,10 +57,9 @@ concurrency:
 
 env:
 # Cache version
-  CACHE_VER: 18
-  DEBIAN_FRONTEND: "noninteractive"
+  CACHE_VER: 20
   TZ: "Etc/UTC"
-  VERBOSE: yes
+  VERBOSE: no
 
 jobs:
   setup:
