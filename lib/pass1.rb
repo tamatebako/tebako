@@ -27,6 +27,51 @@
 
 # Ruby patching definitions (pass1)
 module Pass1
+  TOOL_RBINSTALL_RB_PATCH = {
+    '    next if files.empty?' => '# tebako patched    next if files.empty?'
+  }.freeze
+
+  RUBYGEM_OPENSSL_RB_PATCH = {
+    'autoload :OpenSSL, "openssl"' => "require \"openssl\"\nautoload :OpenSSL, \"openssl\""
+  }.freeze
+
+  EXT_SETUP_PATCH = {
+    '#option nodynamic' => 'option nodynamic'
+  }.freeze
+
+  EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH = {
+    '#include <float.h>' => <<~SUBST
+      #include <float.h>
+
+      /* -- Start of tebako patch -- */
+      #ifndef HAVE_RB_SYM2STR
+      #define HAVE_RB_SYM2STR  1
+      #endif
+
+      #ifndef HAVE_RB_ARRAY_CONST_PTR
+      #define HAVE_RB_ARRAY_CONST_PTR 1
+      #endif
+
+      #ifndef HAVE_RB_RATIONAL_NUM
+      #define HAVE_RB_RATIONAL_NUM 1
+      #endif
+
+      #ifndef HAVE_RB_RATIONAL_DEN
+      #define HAVE_RB_RATIONAL_DEN 1
+      #endif
+
+      #ifndef HAVE_RB_COMPLEX_REAL
+      #define HAVE_RB_COMPLEX_REAL
+      #endif
+
+      #ifndef HAVE_RB_COMPLEX_IMAG
+      #define HAVE_RB_COMPLEX_IMAG
+      #endif
+      /* -- End of tebako patch -- */
+
+    SUBST
+  }.freeze
+
   class << self
     def get_patch_map(mount_point)
       {
@@ -60,51 +105,6 @@ module Pass1
     end
 
     private
-
-    TOOL_RBINSTALL_RB_PATCH = {
-      '    next if files.empty?' => '# tebako patched    next if files.empty?'
-    }.freeze
-
-    RUBYGEM_OPENSSL_RB_PATCH = {
-      'autoload :OpenSSL, "openssl"' => "require \"openssl\"\nautoload :OpenSSL, \"openssl\""
-    }.freeze
-
-    EXT_SETUP_PATCH = {
-      '#option nodynamic' => 'option nodynamic'
-    }.freeze
-
-    EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH = {
-      '#include <float.h>' => <<~SUBST
-        #include <float.h>
-
-        /* -- Start of tebako patch -- */
-        #ifndef HAVE_RB_SYM2STR
-        #define HAVE_RB_SYM2STR  1
-        #endif
-
-        #ifndef HAVE_RB_ARRAY_CONST_PTR
-        #define HAVE_RB_ARRAY_CONST_PTR 1
-        #endif
-
-        #ifndef HAVE_RB_RATIONAL_NUM
-        #define HAVE_RB_RATIONAL_NUM 1
-        #endif
-
-        #ifndef HAVE_RB_RATIONAL_DEN
-        #define HAVE_RB_RATIONAL_DEN 1
-        #endif
-
-        #ifndef HAVE_RB_COMPLEX_REAL
-        #define HAVE_RB_COMPLEX_REAL
-        #endif
-
-        #ifndef HAVE_RB_COMPLEX_IMAG
-        #define HAVE_RB_COMPLEX_IMAG
-        #endif
-        /* -- End of tebako patch -- */
-
-      SUBST
-    }.freeze
 
     def rubygems_path_support_patch_one(mount_point)
       <<~SUBST

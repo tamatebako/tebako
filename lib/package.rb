@@ -41,6 +41,20 @@ end
 
 # Tebako packaging support
 module Package
+  FILES_TO_RESTORE = [
+    'main.c',     'dir.c',     'dln.c',
+    'file.c',     'io.c',      'tool/mkconfig.rb'
+  ].freeze
+
+  FILES_TO_RESTORE_MSYS = [
+    'ruby.c',        'win32/win32.c',
+    'win32/file.c',  'win32/dir.h'
+  ].freeze
+
+  FILES_TO_RESTORE_MUSL = [
+    'thread_pthread.c'
+  ].freeze
+
   class << self
     # Pass1
     # Executed before Ruby build, patching ensures that Ruby itself is linked statically
@@ -97,20 +111,6 @@ module Package
     end
 
     private
-
-    FILES_TO_RESTORE = [
-      'main.c',     'dir.c',     'dln.c',
-      'file.c',     'io.c',      'tool/mkconfig.rb'
-    ].freeze
-
-    FILES_TO_RESTORE_MSYS = [
-      'ruby.c',        'win32/win32.c',
-      'win32/file.c',  'win32/dir.h'
-    ].freeze
-
-    FILES_TO_RESTORE_MUSL = [
-      'thread_pthread.c'
-    ].freeze
 
     def recreate(dirname)
       FileUtils.rm_rf(dirname, noop: nil, verbose: nil, secure: true)
