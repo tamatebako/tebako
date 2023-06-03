@@ -57,7 +57,7 @@ concurrency:
 
 env:
 # Cache version
-  CACHE_VER: 20
+  CACHE_VER: 21
   TZ: "Etc/UTC"
   VERBOSE: no
 
@@ -310,7 +310,7 @@ jobs:
           cd ..
           ruby tests-2/tebako-test.rb
 
-  cross-test-on-alpine-latest:
+  test-on-alpine-latest:
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     needs: tests-1
     runs-on: ubuntu-latest

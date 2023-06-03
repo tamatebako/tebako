@@ -406,21 +406,7 @@ endif(WITH_NCURSES_BUILD)
 # ...................................................................
 # Ruby
 
-#if(RUBY_DEBUG_BUILD)
-#  set(RUBY_C_FLAGS_1 "-g -O0 -pipe -mllvm -asan-stack=1 -mllvm -asan-globals=0 -fno-omit-frame-pointer -fno-common")
-#  set(RUBY_C_FLAGS_1 "-g -O0 -pipe")
-#else(RUBY_DEBUG_BUILD)
-#  set(RUBY_C_FLAGS_1 "") #-O3 -fno-fast-math -ggdb3 -Os -fdata-sections -ffunction-sections")
-#endif(RUBY_DEBUG_BUILD)
-
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
-#set(RUBY_C_FLAGS_2 "") #-pthread -fPIC -pipe -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
-
-# https://stackoverflow.com/questions/46123505/assembling-with-gcc-causes-weird-relocation-error-with-regards-to-data
-#if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-#  string(CONCAT RUBY_C_FLAGS_2 ${RUBY_C_FLAGS_2} " -no-pie")
-#endif()
-
 set(RUBY_C_FLAGS "-pthread -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # Shadow
@@ -457,7 +443,7 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
-  PATCH_COMMAND ruby ${LIB}/scripts.rb pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
+  PATCH_COMMAND ruby ${LIB}/package.rb pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
   CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION}      \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
@@ -472,9 +458,7 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
   BUILD_COMMAND    make ${RUBY_MAKEFILE}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
-#  COMMAND          ruby ${LIB}/scripts.rb stash ${RUBY_SOURCE_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
-  COMMAND          ruby ${LIB}/scripts.rb pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
-#  COMMAND ${GNU_BASH} ${PATCHES}/ruby/pass2.sh ${RUBY_SOURCE_DIR} ${DEPS}
+  COMMAND          ruby ${LIB}/package.rb pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
 )
 
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
@@ -506,8 +490,7 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-      COMMAND ruby ${LIB}/scripts.rb deploy ${DEPS_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
-#      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make install -j4
+      COMMAND ruby ${LIB}/package.rb deploy ${DEPS_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
       DEPENDS ${RUBY_PRJ}
   )
   if(GSLENGTH GREATER 0)
