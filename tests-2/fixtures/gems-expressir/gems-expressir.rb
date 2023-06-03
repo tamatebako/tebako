@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -26,7 +28,6 @@
 # This test is inspired packed-mn
 # https://github.com/metanorma/packed-mn
 
-require 'expressir/express/parser'
-
+require "expressir/express/parser"
 
 puts "Hello! Expressir gem welcomes you to the magic world of ruby gems."

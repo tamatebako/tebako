@@ -1,5 +1,7 @@
+# frozen_string_literal: true
+
 source "https://rubygems.org"
 
-gem 'ffi'
-gem 'bundler'
-gem "seven-zip", '~>1.4'
+gem "bundler"
+gem "ffi"
+gem "seven-zip", "~>1.4"

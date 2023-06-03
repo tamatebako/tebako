@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2022, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,29 +25,43 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-# This test is inspired packed-mn
-# https://github.com/metanorma/packed-mn
+require_relative "tebako/version"
 
-require "rubygems"
-require "bundler/setup"
-require "tempfile"
+# Tebako - an executable packager
+# Implementation of tebako error class and some support methods
+module Tebako
+  # Tebako error class
+  class TebakoError < StandardError
+    def initialize(msg = "Unspecified error", code = 255)
+      @error_code = code
+      super(msg)
+    end
+    attr_accessor :error_code
+  end
 
-COMPILER_MEMFS = "/__tebako_memfs__"
+  class << self
+    def m_files
+      @m_files ||= case RbConfig::CONFIG["host_os"]
+                   when /linux/, /darwin/
+                     "Unix Makefiles"
+                   when /msys/
+                     "Ninja"
+                   else
+                     raise TebakoError.new "#{RbConfig::CONFIG["host_os"]} is not supported yet, exiting", 254
+                   end
+    end
 
-# https://github.com/pmq20/ruby-packer/blob/master/lib/compiler/constants.rb#L10
-COMPILER_MEMFS_LIB_CACHE = Pathname.new(Dir.mktmpdir("tebako-tests-"))
-at_exit do
-  FileUtils.remove_dir(COMPILER_MEMFS_LIB_CACHE.to_path, true)
+    def packaging_error(code)
+      msg = PACKAGING_ERRORS[code]
+      msg = "Unknown packaging error" if msg.nil?
+      raise TebakoError.new msg, code
+    end
+
+    PACKAGING_ERRORS = {
+      101 => "'tebako setup' configure step failed",
+      102 => "'tebako setup' build step failed",
+      103 => "'tebako press' configure step failed",
+      104 => "'tebako press' build step failed"
+    }.freeze
+  end
 end
-
-# HACK: fix path for 7zip load
-sevenz_lib = RUBY_PLATFORM.downcase.match(/mswin|mingw/) ? "7z*.dll" : "7z.so"
-sevenz_path = File.join(Gem::Specification.find_by_name("seven-zip").full_gem_path, "lib", "seven_zip_ruby", sevenz_lib)
-FileUtils.mkdir_p(COMPILER_MEMFS_LIB_CACHE / "seven_zip_ruby")
-FileUtils.cp(sevenz_path, COMPILER_MEMFS_LIB_CACHE / "seven_zip_ruby")
-$LOAD_PATH.unshift(COMPILER_MEMFS_LIB_CACHE)
-# END of HACK
-
-# Just make sure the constant exists
-require "seven_zip_ruby"
-puts "Hello! SevenZipRuby welcomes you to the magic world of ruby gems."

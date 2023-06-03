@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -23,25 +25,25 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require 'rubygems'
-require 'bundler/setup'
-require 'tempfile'
+require "rubygems"
+require "bundler/setup"
+require "tempfile"
 
-COMPILER_MEMFS = '/__tebako_memfs__'
+COMPILER_MEMFS = "/__tebako_memfs__"
 
 # https://github.com/pmq20/ruby-packer/blob/master/lib/compiler/constants.rb#L10
 COMPILER_MEMFS_LIB_CACHE = Pathname.new(Dir.mktmpdir("tebako-tests-"))
-at_exit {
+at_exit do
   FileUtils.remove_dir(COMPILER_MEMFS_LIB_CACHE.to_path, true)
-}
+end
 
 class String
-  def is_quoted
-    self.start_with?('"') && self.end_with?('"')
+  def quoted?
+    start_with?('"') && end_with?('"')
   end
 
   def unquote
-    self.chomp('"').reverse.chomp('"').reverse
+    chomp('"').reverse.chomp('"').reverse
   end
 
   def quote
@@ -49,8 +51,8 @@ class String
   end
 end
 
-def extract_memfs(file, wild=false, extract_path=COMPILER_MEMFS_LIB_CACHE)
-  is_quoted = file.is_quoted
+def extract_memfs(file, wild: false, extract_path: COMPILER_MEMFS_LIB_CACHE)
+  is_quoted = file.quoted?
   file = file.unquote if is_quoted
 
   return file unless File.exist?(file) && file.start_with?(COMPILER_MEMFS)
@@ -58,10 +60,10 @@ def extract_memfs(file, wild=false, extract_path=COMPILER_MEMFS_LIB_CACHE)
   memfs_extracted_file = extract_path + File.basename(file)
   unless memfs_extracted_file.exist?
     files = if wild
-      Dir.glob("#{File.dirname(file)}/*#{File.extname(file)}")
-    else
-      [file]
-    end
+              Dir.glob("#{File.dirname(file)}/*#{File.extname(file)}")
+            else
+              [file]
+            end
     FileUtils.cp_r files, extract_path
   end
 
@@ -70,11 +72,11 @@ end
 
 # HACK: extract temp libraries to use with ffi
 # Wrapper for FFI.map_library_name method
-require 'ffi'
+require "ffi"
 
 module FFI
   # https://stackoverflow.com/questions/29907157/how-to-alias-a-class-method-in-rails-model/29907207
-  self.singleton_class.send(:alias_method, :map_library_name_orig, :map_library_name)
+  singleton_class.send(:alias_method, :map_library_name_orig, :map_library_name)
 
   # http://tech.tulentsev.com/2012/02/ruby-how-to-override-class-method-with-a-module/
   def self.map_library_name(lib)
@@ -87,6 +89,5 @@ module FFI
 end
 # END of HACK
 
-require 'libmspack'
-LibMsPack
+require "libmspack"
 puts "Hello! libmspack welcomes you to the magic world of ruby gems."

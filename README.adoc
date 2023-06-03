@@ -121,7 +121,7 @@ Just clone this repository, and run `tebako setup` as follows.
 [source,sh]
 ----
 git clone https://github.com/tamatebako/tebako
-tebako/bin/tebako setup
+tebako/exe/tebako setup
 ----
 
 
@@ -168,7 +168,7 @@ apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-
 apt-get install -y libfmt-dev
 
 git clone https://github.com/tamatebako/tebako
-tebako/bin/tebako setup
+tebako/exe/tebako setup
 ----
 
 
@@ -180,7 +180,7 @@ tebako/bin/tebako setup
 
 [source,sh]
 ----
-<install-folder>/bin/tebako setup [-p |--prefix=<tebako-root-folder>]
+<install-folder>/exe/tebako setup [-p |--prefix=<tebako-root-folder>]
 ----
 
 Collect and builds Tebako packager and install them for Tebako packager at
@@ -196,7 +196,7 @@ folder (`<tebako-root-folder>`).
 
 [source,sh]
 ----
-<install-folder>/bin/tebako press \
+<install-folder>/exe/tebako press \
   [-p |--prefix=<tebako-root-folder>] \
   -r|--root=<project-root-folder> \
   [-e|--entry-point=<entry-point>] \
@@ -224,7 +224,7 @@ point base name`)
 ====
 [source,sh]
 ----
-bin/tebako press \
+exe/tebako press \
   --root='~/projects/myproject' \
   --entry=start.rb \
   --output=/temp/myproject.tebako
@@ -238,7 +238,7 @@ Normally you do not need to do it since tebako packager optimizes artifacts life
 
 [source,sh]
 ----
-bin/tebako press \
+exe/tebako press \
   [-p |--prefix=<tebako-root-folder>]
 ----
 
@@ -251,7 +251,7 @@ folder)
 ====
 [source,sh]
 ----
-bin/tebako clean --root='~/projects/myproject'
+exe/tebako clean --root='~/projects/myproject'
 ----
 ====
 

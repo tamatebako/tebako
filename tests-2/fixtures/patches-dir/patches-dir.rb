@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Copyright (c) 2021, 2022 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -26,112 +28,127 @@
 puts "===== Dir test ====="
 
 # test 1  chdir absolute - getwd
-ExpectedCwd1 = "/__tebako_memfs__/local/"
+EXPECTED_CWD_1 = "/__tebako_memfs__/local/"
 print "chdir '#{File.dirname(__FILE__)}' ... "
 Dir.chdir(File.dirname(__FILE__))
 cwd = Dir.getwd
-raise "getwd returned #{cwd} while #{ExpectedCwd1} was expected" unless cwd.eql? ExpectedCwd1
+raise "getwd returned #{cwd} while #{EXPECTED_CWD_1} was expected" unless cwd.eql? EXPECTED_CWD_1
+
 print "OK(success)\n"
 
 # test 2  chdir relative - getwd
-ExpectedCwd2 = "/__tebako_memfs__/local/level-1/"
+EXPECTED_CWD_2 = "/__tebako_memfs__/local/level-1/"
 print "chdir 'level-1' ... "
 Dir.chdir("level-1")
 cwd = Dir.getwd
-raise "getwd returned #{cwd} while #{ExpectedCwd2} was expected" unless cwd.eql? ExpectedCwd2
+raise "getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
+
 print "OK(success)\n"
 
 # test 3  chdir relative (does not exit) - getwd
 print "chdir 'does-not-exists' ... "
 failed = true
 begin
-    Dir.chdir("does-not-exist")
-    failed = false
+  Dir.chdir("does-not-exist")
+  failed = false
 rescue Errno::ENOENT
 end
 raise "chdir succeeded while exception was expected" unless failed
+
 cwd = Dir.getwd
-raise "Getwd returned #{cwd} while #{ExpectedCwd2} was expected" unless cwd.eql? ExpectedCwd2
+raise "Getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
+
 print "OK(failure)\n"
 
 # test 4  chdir absolute (does not exit) - getwd
 print "chdir '/bin/does-not-exists' ... "
 failed = true
 begin
-    Dir.chdir("/bin/does-not-exist")
-    failed = false
+  Dir.chdir("/bin/does-not-exist")
+  failed = false
 rescue Errno::ENOENT
 end
 raise "chdir succeeded while exception was expected" unless failed
+
 cwd = Dir.getwd
-raise "getwd returned #{cwd} while #{ExpectedCwd2} was expected" unless cwd.eql? ExpectedCwd2
+raise "getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
+
 print "OK(failure)\n"
 
 # test 5  open - read - tell - seek - close - rewind
 print "open - read - tell - seek - close @ '/__tebako_memfs__/local/level-1/level-2' ... "
-aDir = Dir.new("/__tebako_memfs__/local/level-1/level-2")
+a_dir = Dir.new("/__tebako_memfs__/local/level-1/level-2")
 
-r = aDir.read
-p = aDir.tell
-raise "Dir.read returned #{r} while '.' was expected" unless r.eql? '.'
+r = a_dir.read
+p = a_dir.tell
+raise "Dir.read returned #{r} while '.' was expected" unless r.eql? "."
 raise "Dir.tell returned #{p} while 1 was expected" unless p.eql? 1
 
-r = aDir.read
-p = aDir.tell
-raise "Dir.read returned #{r} while '..' was expected" unless r.eql? '..'
+r = a_dir.read
+p = a_dir.tell
+raise "Dir.read returned #{r} while '..' was expected" unless r.eql? ".."
 raise "Dir.tell returned #{p} while 2 was expected" unless p.eql? 2
 
-re = Regexp.new("file-.\.txt").freeze
-for i in 3..5 do
-    r = aDir.read
-    p = aDir.tell
-    raise "Dir.read returned #{r} while 'file-?.txt' was expected" unless r =~ re
-    raise "Dir.tell returned #{p} while #{i} was expected" unless p.eql? i
+re = Regexp.new("file-..txt").freeze
+(3..5).each do |i|
+  r = a_dir.read
+  p = a_dir.tell
+  raise "Dir.read returned #{r} while 'file-?.txt' was expected" unless r =~ re
+  raise "Dir.tell returned #{p} while #{i} was expected" unless p.eql? i
 end
 
-aDir.seek(1)
-r = aDir.read
-p = aDir.tell
-raise "Dir.read returned #{r} while '..' was expected" unless r.eql? '..'
+a_dir.seek(1)
+r = a_dir.read
+p = a_dir.tell
+raise "Dir.read returned #{r} while '..' was expected" unless r.eql? ".."
 raise "Dir.tell returned #{p} while 2 was expected" unless p.eql? 2
 
-aDir.rewind
-p = aDir.tell
+a_dir.rewind
+p = a_dir.tell
 raise "Dir.tell returned #{p} while 1 was expected" unless p.eql? 0
-r = aDir.read
-p = aDir.tell
-raise "Dir.read returned #{r} while '.' was expected" unless r.eql? '.'
+
+r = a_dir.read
+p = a_dir.tell
+raise "Dir.read returned #{r} while '.' was expected" unless r.eql? "."
 raise "Dir.tell returned #{p} while 1 was expected" unless p.eql? 1
 
-p = aDir.close
+p = a_dir.close
 raise "Dir.close returned #{p} while nil was expected" unless p.nil?
 
 print "OK(match)\n"
 
 # test 7  glob
 print "[\"**/*.txt\", base:\"/__tebako_memfs__/local/\"] ... "
-fls = Dir["**/*.txt", base:"/__tebako_memfs__/local/"]
-Exp1 = ["level-1/level-2/file-1.txt", "level-1/level-2/file-2.txt", "level-1/level-2/file-3.txt"]
+fls = Dir["**/*.txt", base: "/__tebako_memfs__/local/"]
+EXPECTED_1 = ["level-1/level-2/file-1.txt", "level-1/level-2/file-2.txt", "level-1/level-2/file-3.txt"].freeze
 
-raise "Dir[] returned #{fls} while #{Exp1} was expected" if fls.difference(Exp1).any? || Exp1.difference(fls).any?
+if fls.difference(EXPECTED_1).any? || EXPECTED_1.difference(fls).any?
+  raise "Dir[] returned #{fls} while #{EXPECTED_1} was expected"
+end
+
 print "OK(match)\n"
 
 # test 8  glob
 print "[\"/__tebako_memfs__/local/**/file-1.txt\"] ... "
 fls = Dir["/__tebako_memfs__/local/**/file-1.txt"]
-Exp2 = ["/__tebako_memfs__/local/level-1/level-2/file-1.txt"]
+EXPECTED_2 = ["/__tebako_memfs__/local/level-1/level-2/file-1.txt"].freeze
 
-raise "Dir[] returned #{fls} while #{Exp2} was expected" if fls.difference(Exp2).any? || Exp2.difference(fls).any?
+if fls.difference(EXPECTED_2).any? || EXPECTED_2.difference(fls).any?
+  raise "Dir[] returned #{fls} while #{EXPECTED_2} was expected"
+end
+
 print "OK(match)\n"
 
 # test 9 Dir.empty?
 print "Dir.empty?(\"/__tebako_memfs__/local/level-1/level-2\") ..."
 r = Dir.empty?("/__tebako_memfs__/local/level-1/level-2")
 raise "Dir.empty? returned #{r} while 'false' was expected" if r
+
 print "OK(match)\n"
 
 # test 10 Dir.empty?
 print "Dir.empty?(\"/__tebako_memfs__/local/level-1/level-2/level-3\") ..."
 r = Dir.empty?("/__tebako_memfs__/local/level-1/level-2/level-3")
 raise "Dir.empty? returned #{r} while 'true' was expected" unless r
+
 print "OK(match)\n"

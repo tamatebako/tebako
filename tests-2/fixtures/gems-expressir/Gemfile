@@ -1,5 +1,7 @@
+# frozen_string_literal: true
+
 source "https://rubygems.org"
 
-gem 'ffi'
-gem 'bundler'
+gem "bundler"
 gem "expressir"
+gem "ffi"

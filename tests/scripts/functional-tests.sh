@@ -113,42 +113,38 @@ press_runner_with_error() {
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
 test_CLI_help() {
-   result=$( "$DIR_BIN"/tebako --help )
+   result=$( "$DIR_BIN"/tebako help )
 
    assertEquals 0 "${PIPESTATUS[0]}"
-   assertContains "$result" "Usage:"
+   assertContains "$result" "Tebako commands:"
 }
 
 test_CLI_missing_command() {
    result=$( "$DIR_BIN"/tebako )
 
-   assertEquals 4 "${PIPESTATUS[0]}"
-   assertContains "$result" "Missing command"
-   assertContains "$result" "Usage:"
+   assertEquals 0 "${PIPESTATUS[0]}"
+   assertContains "$result" "Tebako commands:"
 }
 
 test_CLI_unknown_command() {
-   result=$( "$DIR_BIN"/tebako jump )
+   result=$( "$DIR_BIN"/tebako jump 2>&1)
 
-   assertEquals 5 "${PIPESTATUS[0]}"
-   assertContains "$result" "Unknown command"
-   assertContains "$result" "Usage:"
+   assertEquals 1 "${PIPESTATUS[0]}"
+   assertContains "$result" "Could not find command"
 }
 
 test_CLI_no_root() {
    result=$( "$DIR_BIN"/tebako press --entry-point=tebako-test-run.rb --output=test-00-package 2>&1  )
 
-   assertEquals 6 "${PIPESTATUS[0]}"
-   assertContains "$result" "Running tebako press requires project root"
-   assertContains "$result" "Usage:"
+   assertEquals 1 "${PIPESTATUS[0]}"
+   assertContains "$result" "No value provided for required options '--root'"
 }
 
 test_CLI_no_entry_point() {
    result=$( "$DIR_BIN"/tebako press --root=tests/test-00 --output=test-00-package 2>&1  )
 
-   assertEquals 7 "${PIPESTATUS[0]}"
-   assertContains "$result" "Running tebako press requires entry point"
-   assertContains "$result" "Usage:"
+   assertEquals 1 "${PIPESTATUS[0]}"
+   assertContains "$result" "No value provided for required options '--entry-point'"
 }
 
 # ......................................................................
@@ -185,12 +181,15 @@ test_AUC_extract() {
    diff -r source_filesystem output/source_filesystem
    assertEquals 0 "${PIPESTATUS[0]}"
 
+   rm -rf source_filesystem
+
    ./test-AUC-package --tebako-extract extract
    assertEquals 0 "${PIPESTATUS[0]}"
 
    diff -r extract output/source_filesystem
    assertEquals 0 "${PIPESTATUS[0]}"
 
+   rm -rf extract
 }
 
 # ......................................................................
@@ -344,7 +343,7 @@ fi
 
 DIR0=$( dirname "$0" )
 DIR_ROOT=$( cd "$DIR0"/../.. && pwd )
-DIR_BIN=$( cd "$DIR_ROOT"/bin && pwd )
+DIR_BIN=$( cd "$DIR_ROOT"/exe && pwd )
 DIR_TESTS=$( cd "$DIR_ROOT"/tests && pwd )
 
 echo "Running tebako tests"

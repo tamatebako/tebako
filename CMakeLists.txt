@@ -202,7 +202,7 @@ set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
 
 set(PATCHES ${CMAKE_CURRENT_SOURCE_DIR}/patches)
-set(LIB ${CMAKE_CURRENT_SOURCE_DIR}/lib)
+set(BIN ${CMAKE_CURRENT_SOURCE_DIR}/exe)
 
 # Project resources that are used during CMake configuration stage
 set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
@@ -443,7 +443,7 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
-  PATCH_COMMAND ruby ${LIB}/package.rb pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
+  PATCH_COMMAND ruby ${BIN}/package pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
   CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION}      \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
@@ -458,7 +458,7 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
   BUILD_COMMAND    make ${RUBY_MAKEFILE}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
-  COMMAND          ruby ${LIB}/package.rb pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
+  COMMAND          ruby ${BIN}/package pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
 )
 
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
@@ -490,7 +490,7 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-      COMMAND ruby ${LIB}/package.rb deploy ${DEPS_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
+      COMMAND ruby ${BIN}/package deploy ${DEPS_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
       DEPENDS ${RUBY_PRJ}
   )
   if(GSLENGTH GREATER 0)

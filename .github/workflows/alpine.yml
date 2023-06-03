@@ -57,7 +57,7 @@ concurrency:
 
 env:
 # Cache version
-  CACHE_VER: 21
+  CACHE_VER: 24
   TZ: "Etc/UTC"
   VERBOSE: no
 
@@ -91,7 +91,7 @@ jobs:
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static ruby
+            readline-dev readline-static ruby-dev
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -119,6 +119,11 @@ jobs:
           make -j4
           make install
 
+      - name: Install bundler
+        run: |
+          gem install bundler
+          bundle install
+
       - name: Create deps folder
         run: mkdir ${{ env.DEPS }}
 
@@ -130,7 +135,7 @@ jobs:
           key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
-        run: bin/tebako setup
+        run: exe/tebako setup
 
   tests-1:
     needs: setup
@@ -161,7 +166,7 @@ jobs:
             libevent-static openssl-libs-static lz4-static xz-dev    \
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static ruby
+            readline-dev readline-static ruby-dev
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -188,6 +193,11 @@ jobs:
           ./configure
           make -j4
           make install
+
+      - name: Install bundler
+        run: |
+          gem install bundler
+          bundle install
 
       - name: Create deps folder
         run: mkdir ${{ env.DEPS }}
@@ -275,7 +285,9 @@ jobs:
         run: tools/ci-scripts/patch-system-includes.sh
 
       - name: Install bundler
-        run: gem install bundler
+        run: |
+          gem install bundler
+          bundle install
 
       - name: Install clang
         if: ${{ matrix.env.CC == 'clang' }}
@@ -368,7 +380,7 @@ jobs:
             zlib-static libunwind-static acl-static tar libffi-dev   \
             gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
             readline-dev readline-static p7zip ruby-dev gcompat      \
-            gettext-dev python3 pkgconfig gperf ruby
+            gettext-dev python3 pkgconfig gperf
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -396,6 +408,11 @@ jobs:
           make -j4
           make install
 
+      - name: Install bundler
+        run: |
+          gem install bundler
+          bundle install
+
       - name: Create deps folder
         run: mkdir ${{ env.DEPS }}
 
@@ -420,5 +437,5 @@ jobs:
 
       - name: Package metanorma and run smoke check
         run: |
-          bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+          exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
           ./metanorma-package help

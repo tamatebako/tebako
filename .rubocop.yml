@@ -1,0 +1,33 @@
+inherit_mode:
+  merge:
+    - Include
+
+AllCops:
+  TargetRubyVersion: 2.7
+  Include:
+    - exe/package
+    - exe/tebako
+  Exclude:
+    - 'vendor/**/*'
+    - 'tests/**/*'
+    - 'tests-2/**/*'
+    - 'deps/**/*'
+    - 'output/**/*'
+    - 'extract/**/*'
+    - 'source_filesystem/**/*'
+    - '*-package'
+  NewCops: enable
+
+Style/StringLiterals:
+  Enabled: true
+  EnforcedStyle: double_quotes
+
+Style/StringLiteralsInInterpolation:
+  Enabled: true
+  EnforcedStyle: double_quotes
+
+Gemspec/RequireMFA:
+  Enabled: false
+
+Layout/LineLength:
+  Max: 120

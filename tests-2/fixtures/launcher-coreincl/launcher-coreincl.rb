@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -23,7 +25,5 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require 'cgi'
-File.open("output.txt", "w") do |f|
-  f.write CGI::escapeHTML("3 < 5")
-end
+require "cgi"
+File.write("output.txt", CGI.escapeHTML("3 < 5"))
