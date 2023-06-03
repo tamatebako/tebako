@@ -215,6 +215,9 @@ jobs:
       - name: Run tebako tests (set no. 1)
         run: tests/scripts/functional-tests.sh
 
+      - name: Strip tebako test packages
+        run: strip *-package
+
       - name: Upload tebako test packages
         uses: actions/upload-artifact@v3
         with:
