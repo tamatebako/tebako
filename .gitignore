@@ -43,6 +43,7 @@ deps
 # Generated files
 src/tebako-fs.cpp
 include/tebako-version.h
+Gemfile.lock
 
 # VS files
 .vs

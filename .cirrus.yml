@@ -38,7 +38,7 @@ test_task_template: &TEST_TASK_TEMPLATE
     git clone --depth 1 https://github.com/metanorma/packed-mn.git packed-mn
 
   package-metanorma_script: |
-    bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+    exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
 
   smoke-test_script: |
     ./metanorma-package help
@@ -96,7 +96,7 @@ task:
       - cat common.env
 
   setup_script: |
-    bin/tebako setup
+    exe/tebako setup
 
   upload_caches:
     - tebako
@@ -115,7 +115,7 @@ task:
 # image: ghcr.io/cirruslabs/macos-ventura-base:latest
 
   install_script: |
-    brew install gnu-getopt gnu-sed bash pkg-config bison flex binutils   \
+    brew install bash pkg-config bison flex binutils   \
     libffi double-conversion boost jemalloc fmt glog openssl@1.1 libevent \
     libsodium lz4 xz gdbm zlib ncurses
 
@@ -134,7 +134,7 @@ task:
       - cat common.env
 
   setup_script: |
-    bin/tebako setup
+    exe/tebako setup
 
   upload_caches:
     - tebako

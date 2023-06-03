@@ -50,10 +50,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: ludeeus/action-shellcheck@master
         with:
-          additional_files: 'tebako'
-          ignore_paths: >-
-            deps
-            patches
+          ignore_paths: deps
         env:
           SHELLCHECK_OPTS: -x
 
@@ -62,12 +59,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Install rubocop
-        run: |
-          sudo apt install ruby
-          sudo gem install rubocop
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.0'
+          bundler-cache: true
 
       - name: Run rubocop
-        run: |
-          cd lib
-          rubocop
+        run: bundle exec rubocop

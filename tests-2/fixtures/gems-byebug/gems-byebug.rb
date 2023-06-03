@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Copyright (c) 2023, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -23,8 +25,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require 'byebug'
+require "byebug"
 
 # Just make sure the constant exists
-Byebug
 puts "Hello! Byebug welcomes you to the magic world of ruby gems."

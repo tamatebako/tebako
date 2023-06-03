@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Copyright (c) 2021-2022, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -26,25 +28,25 @@
 # This test is inspired packed-mn
 # https://github.com/metanorma/packed-mn
 
-require 'rubygems'
-require 'bundler/setup'
-require 'tempfile'
+require "rubygems"
+require "bundler/setup"
+require "tempfile"
 
-COMPILER_MEMFS = '/__tebako_memfs__'
+COMPILER_MEMFS = "/__tebako_memfs__"
 
 # https://github.com/pmq20/ruby-packer/blob/master/lib/compiler/constants.rb#L10
 COMPILER_MEMFS_LIB_CACHE = Pathname.new(Dir.mktmpdir("tebako-tests-"))
-at_exit {
+at_exit do
   FileUtils.remove_dir(COMPILER_MEMFS_LIB_CACHE.to_path, true)
-}
+end
 
 class String
-  def is_quoted
-    self.start_with?('"') && self.end_with?('"')
+  def quoted?
+    start_with?('"') && end_with?('"')
   end
 
   def unquote
-    self.chomp('"').reverse.chomp('"').reverse
+    chomp('"').reverse.chomp('"').reverse
   end
 
   def quote
@@ -52,8 +54,8 @@ class String
   end
 end
 
-def extract_memfs(file, wild=false, extract_path=COMPILER_MEMFS_LIB_CACHE)
-  is_quoted = file.is_quoted
+def extract_memfs(file, wild: false, extract_path: COMPILER_MEMFS_LIB_CACHE)
+  is_quoted = file.quoted?
   file = file.unquote if is_quoted
 
   return file unless File.exist?(file) && file.start_with?(COMPILER_MEMFS)
@@ -61,10 +63,10 @@ def extract_memfs(file, wild=false, extract_path=COMPILER_MEMFS_LIB_CACHE)
   memfs_extracted_file = extract_path + File.basename(file)
   unless memfs_extracted_file.exist?
     files = if wild
-      Dir.glob("#{File.dirname(file)}/*#{File.extname(file)}")
-    else
-      [file]
-    end
+              Dir.glob("#{File.dirname(file)}/*#{File.extname(file)}")
+            else
+              [file]
+            end
     FileUtils.cp_r files, extract_path
   end
 
@@ -73,11 +75,11 @@ end
 
 # HACK: extract temp libraries to use with ffi
 # Wrapper for FFI.map_library_name method
-require 'ffi'
+require "ffi"
 
 module FFI
   # https://stackoverflow.com/questions/29907157/how-to-alias-a-class-method-in-rails-model/29907207
-  self.singleton_class.send(:alias_method, :map_library_name_orig, :map_library_name)
+  singleton_class.send(:alias_method, :map_library_name_orig, :map_library_name)
 
   # http://tech.tulentsev.com/2012/02/ruby-how-to-override-class-method-with-a-module/
   def self.map_library_name(lib)
@@ -89,23 +91,23 @@ module FFI
 end
 # END of HACK
 
-require 'sassc'
+require "sassc"
 
 module SassC
   class Engine
     alias load_paths_orig load_paths
-    def load_paths()
+    def load_paths
       paths = (@options[:load_paths] || []) + SassC.load_paths
-        np = []
-        paths.each { |p|
-          if p.start_with?(COMPILER_MEMFS)
-            m = p.sub(COMPILER_MEMFS, COMPILER_MEMFS_LIB_CACHE.to_s)
-            FileUtils.cp_r(File.join(p, "."), m) if File.exists?(p)
-            np << m
-          else
-            np << p
-          end
-      }
+      np = []
+      paths.each do |p|
+        if p.start_with?(COMPILER_MEMFS)
+          m = p.sub(COMPILER_MEMFS, COMPILER_MEMFS_LIB_CACHE.to_s)
+          FileUtils.cp_r(File.join(p, "."), m) if File.exist?(p)
+          np << m
+        else
+          np << p
+        end
+      end
       pp = np.join(File::PATH_SEPARATOR) unless np.empty?
       puts "Using load_path @ '#{pp}'"
       pp
@@ -114,9 +116,9 @@ module SassC
 end
 
 name = File.join(File.dirname(__FILE__), "styles")
-SassC.load_paths << File.dirname(__FILE__);
-SassC.load_paths << name;
-SassC.load_paths << "/usr/local/fun";
+SassC.load_paths << File.dirname(__FILE__)
+SassC.load_paths << name
+SassC.load_paths << "/usr/local/fun"
 
 SassC::Engine.new("@import 'base_style/all.scss'", style: :compressed).render
 

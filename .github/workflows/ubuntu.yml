@@ -56,7 +56,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 22
+  CACHE_VER: 24
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
@@ -117,6 +117,13 @@ jobs:
           libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
           libsqlite3-dev
 
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VER }}
+          bundler: ${{ env.BUNDLER_VER }}
+          bundler-cache: false
+
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
 
@@ -128,7 +135,9 @@ jobs:
           key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
-        run: ${{ github.workspace }}/bin/tebako setup
+        run: |
+          bundle install
+          ${{ github.workspace }}/exe/tebako setup
 
   tests-1:
     needs: setup
@@ -173,6 +182,13 @@ jobs:
           libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
           libsqlite3-dev
 
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VER }}
+          bundler: ${{ env.BUNDLER_VER }}
+          bundler-cache: false
+
       - name: Create deps folder
         run: mkdir ${{github.workspace}}/${{env.DEPS}}
 
@@ -197,7 +213,9 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        run:  ${{github.workspace}}/tests/scripts/functional-tests.sh
+        run:  |
+          bundle install
+          ${{github.workspace}}/tests/scripts/functional-tests.sh
 
       - name: Upload tebako test packages
         uses: actions/upload-artifact@v3
@@ -259,6 +277,7 @@ jobs:
         with:
           ruby-version: ${{ env.RUBY_VER }}
           bundler: ${{ env.BUNDLER_VER }}
+          bundler-cache: false
 
       - name: Create deps folder
         run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
@@ -278,6 +297,7 @@ jobs:
 
       - name: Run tebako tests (set no. 2)
         run: |
+          bundle install
           cd ${{github.workspace}}/tests-2
           bundle install
           cd ${{github.workspace}}
@@ -344,6 +364,13 @@ jobs:
           libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
           libsqlite3-dev
 
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VER }}
+          bundler: ${{ env.BUNDLER_VER }}
+          bundler-cache: false
+
       - name: Create deps folder
         run: mkdir ${{github.workspace}}/${{env.DEPS}}
 
@@ -368,5 +395,6 @@ jobs:
 
       - name: Package metanorma and run smoke test
         run: |
-          bin/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+          bundle install
+          exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
           ./metanorma-package help

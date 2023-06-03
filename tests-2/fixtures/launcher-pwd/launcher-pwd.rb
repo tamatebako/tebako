@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -23,6 +25,4 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-File.open("output.txt", "w") do |f|
-    f.write "output"
-end
+File.write("output.txt", "output")

@@ -1,0 +1,154 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+require "rbconfig"
+require "fileutils"
+require "thor"
+
+require_relative "../lib/tebako"
+require_relative "../lib/tebako/version"
+
+# Tebako - an executable packager
+# Implementation of tebako command-line interface
+module Tebako
+  CURRENT_DIRECTORY = "<CURRENT-DIRECTORY>"
+  DEFAULT_PACKAGE = "<ENTRY-POINT>/<CURRENT-DIRECTORY>"
+  # Tebako packager class
+  class TebakoCli < Thor
+    package_name "Tebako"
+    class_option :prefix, type: :string, aliases: "-p", required: true, default: CURRENT_DIRECTORY,
+                          desc: "Tebako installation prefix"
+
+    desc "clean", "Clean tebako packaging environment"
+    def clean
+      puts "Cleaning tebako packaging environment"
+      FileUtils.rm_rf([deps, output], secure: true)
+    end
+
+    desc "press", "Press tebako image"
+    method_option :root, type: :string, aliases: "-r", required: true, desc: "Root folder of the Ruby application"
+    method_option :"entry-point", type: :string, aliases: ["-e", "--entry"], required: true,
+                                  desc: "Ruby application entry point"
+    method_option :output, type: :string, aliases: "-o", required: true, default: DEFAULT_PACKAGE,
+                           desc: "Tebako package file name"
+    method_option :"log-level", type: :string, aliases: "-l", required: true, enum: %w[error warn debug trace],
+                                default: "error", desc: "Tebako memfs logging level"
+    def press
+      puts press_announce
+      Tebako.packaging_error(103) unless system(b_env,
+                                                "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}")
+      Tebako.packaging_error(104) unless system(b_env, "cmake --build #{output} --target tebako --parallel 4")
+    rescue TebakoError => e
+      puts "Tebako script failed: #{e.message} [#{e.error_code}]"
+      exit e.error_code
+    end
+
+    desc "setup", "Set up tebako packaging environment"
+    def setup
+      puts "Setting up tebako packagin environment"
+      Tebako.packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
+      Tebako.packaging_error(102) unless system(b_env, "cmake --build #{output} --target setup --parallel 4")
+    rescue TebakoError => e
+      puts "Tebako script failed: #{e.message} [#{e.error_code}]"
+      exit e.error_code
+    end
+
+    def self.exit_on_failure?
+      true
+    end
+
+    private
+
+    def cfg_options
+      @cfg_options ||=
+        "-DCMAKE_BUILD_TYPE=Release -DDEPS:STRING='#{deps}' -G '#{Tebako.m_files}' -S '#{prefix}' -B '#{output}'"
+    end
+
+    # Normally dependencies are fetched and build in deps folder
+    # DEPS environment variable is for certain special CI scenarios
+    # and should not be used normally
+    def deps
+      f_deps = ENV.fetch("DEPS", nil)
+      @deps ||= if f_deps.nil?
+                  File.join(prefix, "deps")
+                elsif File.absolute_path?(f_deps)
+                  f_deps
+                else
+                  File.join(prefix, f_deps)
+                end
+    end
+
+    def b_env
+      u_flags = if RbConfig::CONFIG["host_os"] =~ /darwin/
+                  "-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0  #{ENV.fetch("CXXFLAGS", nil)}"
+                else
+                  ENV.fetch("CXXFLAGS", nil)
+                end
+      cc = ENV.fetch("CC", "gcc")
+      cxx = ENV.fetch("CXX", "g++")
+      @b_env ||= { "CXXFLAGS" => u_flags, "CC" => cc, "CXX" => cxx }
+    end
+
+    def output
+      @output ||= File.join(prefix, "output")
+    end
+
+    def package
+      @package ||= if options["output"] == DEFAULT_PACKAGE
+                     File.join(Dir.pwd, File.basename(options["entry-point"], ".*"))
+                   else
+                     options["output"]
+                   end
+    end
+
+    def prefix
+      @prefix ||= if options["prefix"] == CURRENT_DIRECTORY
+                    Dir.pwd
+                  else
+                    File.absolute_path(options["prefix"])
+                  end
+    end
+
+    def press_announce
+      @press_announce ||= <<-ANN
+      Running tebako press at #{prefix}
+         Project root:            '#{options["root"]}'
+         Application entry point: '#{options["entry"]}'
+         Package file name:       '#{package}'
+      ANN
+    end
+
+    def press_options
+      @press_options ||=
+        "-DROOT:STRING='#{options["root"]}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
+        "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}'"
+    end
+  end
+end
+
+Tebako::TebakoCli.start

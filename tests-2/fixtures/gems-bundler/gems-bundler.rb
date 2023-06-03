@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
@@ -23,11 +25,10 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require 'rubygems'
-require 'bundler'
+require "rubygems"
+require "bundler"
 #  requires 'bundler/setup'
-require 'rake'
+require "rake"
 
 # Just make sure the constant exists
-Rake
 puts "Hello! Bundler welcomes you to the magic world of ruby gems."

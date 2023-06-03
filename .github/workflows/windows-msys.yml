@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 10
+  CACHE_VER: 11
   VERBOSE: yes
 
 jobs:
@@ -130,7 +130,7 @@ jobs:
           key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
-        run: bin/tebako setup
+        run: exe/tebako setup
 
   tests-1:
     needs: setup
