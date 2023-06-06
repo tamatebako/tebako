@@ -74,9 +74,13 @@ module Tebako
       SUBST
     }.freeze
 
+    CONFIGURE_PATCH = {
+      "EXTDLDFLAGS=\"-bundle_loader '\\$(BUILTRUBY)'\"" => ""
+    }.freeze
+
     class << self
-      def get_patch_map(mount_point)
-        {
+      def get_patch_map(ostype, mount_point)
+        patch_map = {
           # ....................................................
           # It won't install gems with no files defined in spec
           # However if
@@ -104,6 +108,11 @@ module Tebako
           # Disable dynamic extensions
           "ext/Setup" => EXT_SETUP_PATCH
         }
+        # ....................................................
+        # Fixing (bypassing) configure script bug where a variable is used before initialization
+        patch_map.store("configure", CONFIGURE_PATCH) if ostype =~ /darwin/
+
+        patch_map
       end
 
       private

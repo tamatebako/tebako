@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 # Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
@@ -56,7 +57,7 @@ module Tebako
         puts "-- Running pass1 script"
 
         recreate(src_dir)
-        do_patch(Pass1.get_patch_map(mount_point), ruby_source_dir)
+        do_patch(Pass1.get_patch_map(ostype, mount_point), ruby_source_dir)
 
         # Roll back pass2 patches
         # Just in case we are recovering after some error
@@ -75,7 +76,7 @@ module Tebako
 
       # Stash
       # Saves pristine Ruby environment that is used to deploy applications for packaging
-      def stash(ruby_source_dir, src_dir, stash_dir)
+      def stash(src_dir, stash_dir)
         puts "-- Running stash script"
         #  .... this code snippet is executed 'outdside' of Ruby scripts
         # shall be reconsidered
@@ -89,8 +90,8 @@ module Tebako
         puts "   ... saving pristine ruby environment to #{stash_dir}"
         recreate(stash_dir)
         FileUtils.cp_r "#{src_dir}/.", stash_dir
-        puts "   ... resetting extinit"
-        FileUtils.rm_f("#{ruby_source_dir}/ext/extinit.c")
+        # puts "   ... resetting extinit"
+        # FileUtils.rm_f("#{ruby_source_dir}/ext/extinit.c")
       end
 
       # Deploy
@@ -163,6 +164,16 @@ begin
     end
 
     Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
+  when "stash"
+    #       ARGV[0] -- command
+    #       ARGV[1] -- DATA_SRC_DIR
+    #       ARGV[2] -- FS_STASH_DIR
+    unless ARGV.length == 3
+      raise Tebako::TebakoError,
+            "stash script expects 3 arguments, #{ARGV.length} has been provided."
+    end
+
+    Tebako::Packager.stash(ARGV[1], ARGV[2])
   when "pass2"
     #       ARGV[0] -- command
     #       ARGV[1] -- OSTYPE
@@ -175,19 +186,8 @@ begin
             "pass1 script expects 6 arguments, #{ARGV.length} has been provided."
     end
 
-    Tebako::Packager.stash(ARGV[2], ARGV[4], ARGV[5])
+    Tebako::Packager.stash(ARGV[4], ARGV[5])
     Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3])
-  when "stash"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- RUBY_SOURCE_DIR
-    #       ARGV[2] -- DATA_SRC_DIR
-    #       ARGV[3] -- FS_STASH_DIR
-    unless ARGV.length == 4
-      raise Tebako::TebakoError,
-            "stash script expects 4 arguments, #{ARGV.length} has been provided."
-    end
-
-    Tebako::Packager.stash(ARGV[1], ARGV[2], ARGV[3])
   when "deploy"
     #       ARGV[0] -- command
     #       ARGV[1] -- FS_STASH_DIR

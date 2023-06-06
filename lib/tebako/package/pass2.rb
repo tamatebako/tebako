@@ -184,6 +184,11 @@ module Tebako
         "else if (e == EIO /* tebako patch */ && !within_tebako_memfs(path)) {"
     }.freeze
 
+    COMMON_MK_PATCH = {
+      "ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP)" =>
+        "ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP) $(EXTS_MK)"
+    }.freeze
+
     C_FILES_TO_PATCH = [
       ["file.c", "/* define system APIs */"],
       ["io.c", "/* define system APIs */"],
@@ -255,6 +260,7 @@ module Tebako
       }
 
     }.freeze
+
     # rubocop:disable Style/WordArray
     DARWIN_BREW_LIBS = [
       ["openssl@1.1", "ssl"],   ["openssl@1.1", "crypto"],
@@ -278,7 +284,8 @@ module Tebako
           "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir),
           "main.c" => MAIN_C_PATCH,
           "tool/mkconfig.rb" => TOOL_MKCONFIG_RB_PATCH,
-          "dir.c" => dir_c_patch
+          "dir.c" => dir_c_patch,
+          "common.mk" => COMMON_MK_PATCH
         }
 
         C_FILES_TO_PATCH.each { |patch| patch_map.store(patch[0], patch_c_file(patch[1])) }

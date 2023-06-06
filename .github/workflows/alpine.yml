@@ -57,9 +57,9 @@ concurrency:
 
 env:
 # Cache version
-  CACHE_VER: 24
+  CACHE_VER: 30
   TZ: "Etc/UTC"
-  VERBOSE: no
+  VERBOSE: yes
 
 jobs:
   setup:
@@ -319,11 +319,7 @@ jobs:
           false
 
       - name: Run tebako tests (set no. 2)
-        run: |
-          cd tests-2
-          bundle install
-          cd ..
-          ruby tests-2/tebako-test.rb
+        run: ruby tests-2/tebako-test.rb
 
   test-on-alpine-latest:
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}

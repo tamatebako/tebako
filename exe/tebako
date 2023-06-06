@@ -60,9 +60,7 @@ module Tebako
                                 default: "error", desc: "Tebako memfs logging level"
     def press
       puts press_announce
-      Tebako.packaging_error(103) unless system(b_env,
-                                                "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}")
-      Tebako.packaging_error(104) unless system(b_env, "cmake --build #{output} --target tebako --parallel 4")
+      do_press
     rescue TebakoError => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
@@ -70,9 +68,8 @@ module Tebako
 
     desc "setup", "Set up tebako packaging environment"
     def setup
-      puts "Setting up tebako packagin environment"
-      Tebako.packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
-      Tebako.packaging_error(102) unless system(b_env, "cmake --build #{output} --target setup --parallel 4")
+      puts "Setting up tebako packaging environment"
+      do_setup
     rescue TebakoError => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
@@ -83,6 +80,18 @@ module Tebako
     end
 
     private
+
+    def do_press
+      Tebako.packaging_error(103) unless system(b_env,
+                                                "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}")
+      Tebako.packaging_error(104) unless system(b_env, "cmake --build #{output} --target tebako --parallel 4")
+    end
+
+    def do_setup
+      File.write(File.join(__dir__, "../version.txt"), "#{Tebako::VERSION}\n")
+      Tebako.packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
+      Tebako.packaging_error(102) unless system(b_env, "cmake --build #{output} --target setup --parallel 4")
+    end
 
     def cfg_options
       @cfg_options ||=
@@ -135,11 +144,11 @@ module Tebako
     end
 
     def press_announce
-      @press_announce ||= <<-ANN
-      Running tebako press at #{prefix}
-         Project root:            '#{options["root"]}'
-         Application entry point: '#{options["entry"]}'
-         Package file name:       '#{package}'
+      @press_announce ||= <<~ANN
+        Running tebako press at #{prefix}
+           Project root:            '#{options["root"]}'
+           Application entry point: '#{options["entry"]}'
+           Package file name:       '#{package}'
       ANN
     end
 
