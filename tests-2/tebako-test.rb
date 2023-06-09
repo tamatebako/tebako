@@ -100,9 +100,13 @@ class TestTebako < MiniTest::Test
     end
   end
 
+  def ruby_ver
+    ENV.fetch("RUBY_VER", "3.0.6")
+  end
+
   # Run 'tebako press ...'
   def press(tebako, name, package, prefix)
-    cmd = "#{tebako} press --output=#{package} --entry-point=#{name}.rb --root=#{name} --prefix='#{prefix}'"
+    cmd = "#{tebako} press --Ruby=#{ruby_ver} --output=#{package} --entry-point=#{name}.rb --root=#{name} --prefix='#{prefix}'"
     out, st = Open3.capture2e(cmd)
     if st.exitstatus != 0
       puts "\"cmd\" failed with status #{st.exitstatus}"

@@ -42,8 +42,8 @@ module Tebako
     }.freeze
 
     EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH = {
-      "#include <float.h>" => <<~SUBST
-        #include <float.h>
+      "#include \"ruby/ruby.h\"" => <<~SUBST
+        #include "ruby/ruby.h"
 
         /* -- Start of tebako patch -- */
         #ifndef HAVE_RB_SYM2STR
@@ -79,7 +79,7 @@ module Tebako
     }.freeze
 
     class << self
-      def get_patch_map(ostype, mount_point)
+      def get_patch_map(ostype, mount_point, ruby_ver)
         patch_map = {
           # ....................................................
           # It won't install gems with no files defined in spec
@@ -89,11 +89,6 @@ module Tebako
           #  there may be no files install in addition to spec
           # Example: io/wait extension (and others)
           "tool/rbinstall.rb" => TOOL_RBINSTALL_RB_PATCH,
-
-          # ....................................................
-          # autoload :OpenSSL, "openssl"
-          # fails to deal with a default gem from statically linked extension
-          "lib/rubygems/openssl.rb" => RUBYGEM_OPENSSL_RB_PATCH,
 
           # ....................................................
           # This is something that I cannnot explain
@@ -111,6 +106,11 @@ module Tebako
         # ....................................................
         # Fixing (bypassing) configure script bug where a variable is used before initialization
         patch_map.store("configure", CONFIGURE_PATCH) if ostype =~ /darwin/
+
+        # ....................................................
+        # autoload :OpenSSL, "openssl"
+        # fails to deal with a default gem from statically linked extension
+        patch_map.store("lib/rubygems/openssl.rb", RUBYGEM_OPENSSL_RB_PATCH) if ruby_ver[0] == "3"
 
         patch_map
       end

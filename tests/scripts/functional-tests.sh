@@ -34,11 +34,11 @@ press_runner() {
 # $2 -- entry point
 # $3 -- tebako package name
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN"/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     "$DIR_BIN"/tebako press -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result=$( "$DIR_BIN"/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 )
+     result=$( "$DIR_BIN"/tebako press -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 )
      assertEquals 0 $?
    fi
 
@@ -73,11 +73,11 @@ press_runner_with_error() {
 # $4 -- expected error code
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN"/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     "$DIR_BIN"/tebako press -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals "$4" "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result=$( "$DIR_BIN"/tebako press --root="$1" --entry-point="$2" --output="$3" 2>&1 )
+     result=$( "$DIR_BIN"/tebako press -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 )
      assertEquals "$4" "${PIPESTATUS[0]}"
    fi
 
@@ -134,29 +134,37 @@ test_CLI_unknown_command() {
 }
 
 test_CLI_no_root() {
-   result=$( "$DIR_BIN"/tebako press --entry-point=tebako-test-run.rb --output=test-00-package 2>&1  )
+   result=$( "$DIR_BIN"/tebako press -R "$RUBY_VER" --entry-point=tebako-test-run.rb --output=test-00-package 2>&1  )
 
    assertEquals 1 "${PIPESTATUS[0]}"
    assertContains "$result" "No value provided for required options '--root'"
 }
 
 test_CLI_no_entry_point() {
-   result=$( "$DIR_BIN"/tebako press --root=tests/test-00 --output=test-00-package 2>&1  )
+   result=$( "$DIR_BIN"/tebako press -R "$RUBY_VER" --root=tests/test-00 --output=test-00-package 2>&1  )
 
    assertEquals 1 "${PIPESTATUS[0]}"
    assertContains "$result" "No value provided for required options '--entry-point'"
 }
+
+test_CLI_invalid_Ruby_version() {
+   result=$( "$DIR_BIN"/tebako press --root=tests/test-00 --output=test-00-package --entry-point=tebako-test-run.rb --Ruby=1.9.3 2>&1  )
+
+   assertEquals 1 "${PIPESTATUS[0]}"
+   assertContains "$result" "Expected '--Ruby' to be one of"
+}
+
 
 # ......................................................................
 #  --  tebako setup
 #test_tebako_setup() {
 #  echo "tebako setup ... patience, please, it may take up to 1 hour."
 #  if [ "${VERBOSE}" == "yes" ]; then
-#    "$DIR_BIN"/tebako setup 2>&1 | tee tebako_test.log
+#    "$DIR_BIN"/tebako setup -R "$RUBY_VER" 2>&1 | tee tebako_test.log
 #    assertEquals 0 "${PIPESTATUS[0]}"
 #    result="$( cat tebako_test.log )"
 #  else
-#    result=$( "$DIR_BIN"/tebako setup 2>&1 )
+#    result=$( "$DIR_BIN"/tebako setup -R "$RUBY_VER" 2>&1 )
 #    assertEquals 0 "${PIPESTATUS[0]}"
 #  fi
 
@@ -169,7 +177,7 @@ test_CLI_no_entry_point() {
 #  AU. Check that it is possible to extract image content (--tebako-extract option)
 test_AUC_extract() {
    echo "==> Check --tebako-extract option"
-   result=$( "$DIR_BIN"/tebako press --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 )
+   result=$( "$DIR_BIN"/tebako press -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 )
 
    assertEquals 0 "${PIPESTATUS[0]}"
    assertContains "$result" "Running tebako press script"
@@ -345,6 +353,7 @@ DIR0=$( dirname "$0" )
 DIR_ROOT=$( cd "$DIR0"/../.. && pwd )
 DIR_BIN=$( cd "$DIR_ROOT"/exe && pwd )
 DIR_TESTS=$( cd "$DIR_ROOT"/tests && pwd )
+RUBY_VER=${RUBY_VER:-3.0.6}
 
 echo "Running tebako tests"
 # shellcheck source=/dev/null

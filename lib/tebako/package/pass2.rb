@@ -196,19 +196,23 @@ module Tebako
       ["dln.c", "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;"]
     ].freeze
 
-    TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE = <<~SUBST
-      # -- Start of tebako patch --
-      LIBS = $(MAINLIBS) @LIBS@
-      # -- End of tebako patch --
-    SUBST
+    TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO_PRE_3_1 =
+      "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
+      "$(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
+
+    TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO_PRE_3_1 =
+      "# -- Start of tebako patch --\n" \
+      "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
+      "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(LIBS) $(OUTFLAG)$@\n" \
+      "# -- End of tebako patch --"
 
     TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO =
-      "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
+      "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
       "$(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
 
     TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO =
       "# -- Start of tebako patch --\n" \
-      "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
+      "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
       "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(LIBS) $(OUTFLAG)$@\n" \
       "# -- End of tebako patch --"
 
@@ -276,21 +280,22 @@ module Tebako
 
     class << self
       # rubocop:disable Metrics/MethodLength
-      def get_patch_map(ostype, deps_lib_dir)
+      def get_patch_map(ostype, deps_lib_dir, ruby_ver)
         dir_c_patch = patch_c_file(ostype =~ /msys/ ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST")
         dir_c_patch.merge!(DIR_C_BASE_PATCH)
 
         patch_map = {
-          "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir),
+          "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
           "main.c" => MAIN_C_PATCH,
           "tool/mkconfig.rb" => TOOL_MKCONFIG_RB_PATCH,
-          "dir.c" => dir_c_patch,
-          "common.mk" => COMMON_MK_PATCH
+          "dir.c" => dir_c_patch
         }
 
         C_FILES_TO_PATCH.each { |patch| patch_map.store(patch[0], patch_c_file(patch[1])) }
         patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
         patch_map.merge!(MSYS_PATCHES) if ostype =~ /msys/
+
+        patch_map.store("common.mk", COMMON_MK_PATCH) if ruby_ver[0] == "3"
 
         patch_map
       end
@@ -344,12 +349,24 @@ module Tebako
         }
       end
 
-      def template_makefile_in_patch(ostype, deps_lib_dir)
-        {
+      def template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver)
+        base_patch = {
           "MAINLIBS = @MAINLIBS@" => mlibs(ostype, deps_lib_dir),
-          "LIBS = @LIBS@ $(EXTLIBS)" => TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE,
-          TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO => TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO
+          "LIBS = @LIBS@ $(EXTLIBS)" => <<~SUBST
+            # -- Start of tebako patch --
+            LIBS = $(MAINLIBS) @LIBS@
+            # -- End of tebako patch --
+          SUBST
         }
+        base_patch.merge!(template_makefile_in_patch_two(ruby_ver))
+      end
+
+      def template_makefile_in_patch_two(ruby_ver)
+        if ruby_ver[0] == "3" && ruby_ver[2] != "0"
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO => TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO }
+        else
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO_PRE_3_1 => TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO_PRE_3_1 }
+        end
       end
     end
   end
