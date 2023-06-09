@@ -195,7 +195,6 @@ endif()
 
 # Various locations for external projects
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
-set(DEPS_STASH_DIR ${DEPS}/stash)
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_LIB_DIR ${DEPS}/lib)
 set(DEPS_BIN_DIR ${DEPS}/bin)
@@ -210,10 +209,22 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 # ...................................................................
 # External projects
 
+if ("-${RUBY_VER}" STREQUAL "-" OR "-${RUBY_HASH}" STREQUAL "-")
+  set(RUBY_VER "3.0.6")
+  set(RUBY_HASH "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e")
+  message(STATUS "Using default Ruby version ${RUBY_VER}")
+endif()
+
+set(RUBY_NAME ruby)
+set(RUBY_PRJ _ruby_${RUBY_VER})
+set(RUBY_SOURCE_DIR ${DEPS}/src/${RUBY_PRJ})
+set(RUBY_BINARY_DIR ${DEPS}/src/${RUBY_PRJ})
+set(RUBY_STASH_DIR ${DEPS}/stash_${RUBY_VER})
+
 #def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
 #def_ext_prj_t(RUBY "2.7.6" "e7203b0cc09442ed2c08936d483f8ac140ec1c72e37bb5c401646b7866cb5d10")
 #def_ext_prj_t(RUBY "2.7.7" "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90")
-def_ext_prj_t(RUBY "3.0.6" "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e")
+#def_ext_prj_t(RUBY "3.0.6" "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e")
 
 
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
@@ -435,7 +446,7 @@ message(STATUS "Ruby build cflags='${RUBY_C_FLAGS}'")
 message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
 message(STATUS "Openssl Ruby option='${OPENSSL_RUBY_OPTION}'")
 
-
+message(STATUS "ruby ${BIN}/package pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}")
 ExternalProject_Add(${RUBY_PRJ}
   PREFIX ${DEPS}
   URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
@@ -443,7 +454,7 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
-  PATCH_COMMAND ruby ${BIN}/package pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR}
+  PATCH_COMMAND ruby ${BIN}/package pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
   CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION}      \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
@@ -458,7 +469,7 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
   BUILD_COMMAND    make ${RUBY_MAKEFILE}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
-  COMMAND          ruby ${BIN}/package pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${DEPS_STASH_DIR}
+  COMMAND          ruby ${BIN}/package pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}
 )
 
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
@@ -490,7 +501,7 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-      COMMAND ruby ${BIN}/package deploy ${DEPS_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
+      COMMAND ruby ${BIN}/package deploy ${RUBY_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
       DEPENDS ${RUBY_PRJ}
   )
   if(GSLENGTH GREATER 0)
@@ -664,11 +675,18 @@ else (${SETUP_MODE})
 
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 
-  add_custom_target(patched_ruby
-     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ruby ${RUBY_MAKEFILE}
-     COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE}
-     DEPENDS setup tebako-fs
-  )
+  if (${RUBY_VER} VERSION_LESS "3.0.0")
+    add_custom_target(patched_ruby
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE}
+    )
+  else()
+    add_custom_target(patched_ruby
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ruby ${RUBY_MAKEFILE}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE}
+    )
+  endif()
+
+  add_dependencies(patched_ruby setup tebako-fs)
 
   add_custom_target(tebako ALL
     COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_SOURCE_DIR}/ruby${RUBY_SUFFIX}${EXE_SUFFIX} ${APP_NAME}${EXE_SUFFIX}

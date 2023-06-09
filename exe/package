@@ -53,11 +53,11 @@ module Tebako
     class << self
       # Pass1
       # Executed before Ruby build, patching ensures that Ruby itself is linked statically
-      def pass1(ostype, ruby_source_dir, mount_point, src_dir)
+      def pass1(ostype, ruby_source_dir, mount_point, src_dir, ruby_ver)
         puts "-- Running pass1 script"
 
         recreate(src_dir)
-        do_patch(Pass1.get_patch_map(ostype, mount_point), ruby_source_dir)
+        do_patch(Pass1.get_patch_map(ostype, mount_point, ruby_ver), ruby_source_dir)
 
         # Roll back pass2 patches
         # Just in case we are recovering after some error
@@ -68,10 +68,10 @@ module Tebako
 
       # Pass2
       # Creates packaging environment, patching ensures that tebako package is linked statically
-      def pass2(ostype, ruby_source_dir, deps_lib_dir)
+      def pass2(ostype, ruby_source_dir, deps_lib_dir, ruby_ver)
         puts "-- Running pass2 script"
 
-        do_patch(Pass2.get_patch_map(ostype, deps_lib_dir), ruby_source_dir)
+        do_patch(Pass2.get_patch_map(ostype, deps_lib_dir, ruby_ver), ruby_source_dir)
       end
 
       # Stash
@@ -90,8 +90,6 @@ module Tebako
         puts "   ... saving pristine ruby environment to #{stash_dir}"
         recreate(stash_dir)
         FileUtils.cp_r "#{src_dir}/.", stash_dir
-        # puts "   ... resetting extinit"
-        # FileUtils.rm_f("#{ruby_source_dir}/ext/extinit.c")
       end
 
       # Deploy
@@ -158,16 +156,17 @@ begin
     #       ARGV[2] -- RUBY_SOURCE_DIR
     #       ARGV[3] -- FS_MOUNT_POINT
     #       ARGV[4] -- DATA_SRC_DIR
-    unless ARGV.length == 5
+    #       ARGV[5] -- RUBY_VER
+    unless ARGV.length == 6
       raise Tebako::TebakoError,
-            "pass1 script expects 5 arguments, #{ARGV.length} has been provided."
+            "pass1 script expects 6 arguments, #{ARGV.length} has been provided."
     end
 
-    Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
+    Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5])
   when "stash"
     #       ARGV[0] -- command
     #       ARGV[1] -- DATA_SRC_DIR
-    #       ARGV[2] -- FS_STASH_DIR
+    #       ARGV[2] -- RUBY_STASH_DIR
     unless ARGV.length == 3
       raise Tebako::TebakoError,
             "stash script expects 3 arguments, #{ARGV.length} has been provided."
@@ -180,14 +179,15 @@ begin
     #       ARGV[2] -- RUBY_SOURCE_DIR
     #       ARGV[3] -- DEPS_LIB_DIR
     #       ARGV[4] -- DATA_SRC_DIR
-    #       ARGV[5] -- FS_STASH_DIR
-    unless ARGV.length == 6
+    #       ARGV[5] -- RUBY_STASH_DIR
+    #       ARGV[6] -- RUBY_VER
+    unless ARGV.length == 7
       raise Tebako::TebakoError,
-            "pass1 script expects 6 arguments, #{ARGV.length} has been provided."
+            "pass1 script expects 7 arguments, #{ARGV.length} has been provided."
     end
 
     Tebako::Packager.stash(ARGV[4], ARGV[5])
-    Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3])
+    Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ARGV[6])
   when "deploy"
     #       ARGV[0] -- command
     #       ARGV[1] -- FS_STASH_DIR
