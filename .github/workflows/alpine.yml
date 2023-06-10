@@ -56,10 +56,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-# Cache version
-  CACHE_VER: 30
+  CACHE_VER: 31
   TZ: "Etc/UTC"
-  VERBOSE: yes
+  VERBOSE: no
 
 jobs:
   setup:

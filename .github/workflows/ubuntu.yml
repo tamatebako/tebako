@@ -56,11 +56,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 31
+  CACHE_VER: 32
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
-  VERBOSE: yes
+  VERBOSE: no
 
 
 jobs:
