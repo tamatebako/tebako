@@ -56,7 +56,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 32
+  CACHE_VER: 34
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
@@ -141,13 +141,14 @@ jobs:
 
   tests-1:
     needs: setup
-    name: tests-1 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+    name: tests-1 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-20.04 ]
+        package_ruby_ver: [ '3.0.6' ]
         env:
           - CC: gcc
             CXX: g++
@@ -215,9 +216,10 @@ jobs:
       - name: Run tebako tests (set no. 1)
         run:  |
           bundle install
-          ${{github.workspace}}/tests/scripts/functional-tests.sh
+          RUBY_VER=${{ matrix.package_ruby_ver }} ${{github.workspace}}/tests/scripts/functional-tests.sh
 
       - name: Upload tebako test packages
+        if: ${{ matrix.package_ruby_ver == env.RUBY_VER && matrix.env.CC == 'clang' }}
         uses: actions/upload-artifact@v3
         with:
           name: test-packages
@@ -231,13 +233,14 @@ jobs:
 
   tests-2:
     needs: setup
-    name: tests-2 ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-20.04 ]
+        package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4' ]
         env:
           - CC: gcc
             CXX: g++
@@ -298,7 +301,7 @@ jobs:
       - name: Run tebako tests (set no. 2)
         run: |
           bundle install
-          ruby ${{github.workspace}}/tests-2/tebako-test.rb
+          RUBY_VER=${{ matrix.package_ruby_ver }} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
 #  test-on-ubuntu-latest:
 #    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
@@ -320,13 +323,14 @@ jobs:
 
   package-metanorma:
     needs: setup
-    name: package-metanorma ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
+    name: package-metanorma ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[tests only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-20.04 ]
+        package_ruby_ver: [ '3.0.6' ]
         env:
           - CC: gcc
             CXX: g++
@@ -393,5 +397,5 @@ jobs:
       - name: Package metanorma and run smoke test
         run: |
           bundle install
-          exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+          RUBY_VER=${{ matrix.package_ruby_ver }} exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
           ./metanorma-package help

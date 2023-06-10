@@ -59,7 +59,7 @@ env:
   CC: clang
   CXX: clang++
 # Cache version
-  CACHE_VER: 27
+  CACHE_VER: 28
   VERBOSE: no
 
 jobs:
@@ -116,14 +116,14 @@ jobs:
 
   tests-1:
     needs: setup
-    name: tests-1 ${{ matrix.os }} package Ruby ${{ matrix.package_ruby_ver }} CC clang
+    name: tests-1 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ macos-11.0 ]
-        package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4' ]
+        package_ruby_ver: [ '3.0.6' ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -196,7 +196,7 @@ jobs:
 
   tests-2:
     needs: setup
-    name: tests-2 ${{ matrix.os }} package Ruby ${{ matrix.package_ruby_ver }} CC clang
+    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -274,14 +274,14 @@ jobs:
 
   package-metanorma:
     needs: setup
-    name: package-metanorma ${{ matrix.os }} package Ruby ${{ matrix.package_ruby_ver }} CC clang
+    name: package-metanorma ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ macos-11.0 ]
-        package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4' ]
+        package_ruby_ver: [ '3.0.6' ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3

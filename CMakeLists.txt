@@ -221,12 +221,6 @@ set(RUBY_SOURCE_DIR ${DEPS}/src/${RUBY_PRJ})
 set(RUBY_BINARY_DIR ${DEPS}/src/${RUBY_PRJ})
 set(RUBY_STASH_DIR ${DEPS}/stash_${RUBY_VER})
 
-#def_ext_prj_t(RUBY "2.7.5" "2755b900a21235b443bb16dadd9032f784d4a88f143d852bc5d154f22b8781f1")
-#def_ext_prj_t(RUBY "2.7.6" "e7203b0cc09442ed2c08936d483f8ac140ec1c72e37bb5c401646b7866cb5d10")
-#def_ext_prj_t(RUBY "2.7.7" "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90")
-#def_ext_prj_t(RUBY "3.0.6" "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e")
-
-
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
@@ -427,11 +421,13 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -fdeclspec")
 endif()
 
+set(C_FLAGS_DEST cppflags)
 
 if(IS_DARWIN)
   string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -I${BUILD_BREW_PREFIX}/include -I/opt/openssl@1.1/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BUILD_BREW_PREFIX}/lib -L${BUILD_BREW_PREFIX}/opt/openssl@1.1/lib -L${BUILD_BREW_PREFIX}/opt/zlib/lib")
   set(OPENSSL_RUBY_OPTION "--with-openssl-dir=${BUILD_BREW_PREFIX}/opt/openssl@1.1")
+  set(C_FLAGS_DEST cflags)
 endif(IS_DARWIN)
 
 if(IS_MUSL)
@@ -442,11 +438,10 @@ if(RB_W32)
   string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DRB_W32=1")
 endif(RB_W32)
 
-message(STATUS "Ruby build cflags='${RUBY_C_FLAGS}'")
+message(STATUS "Ruby build ${C_FLAGS_DEST}='${RUBY_C_FLAGS}'")
 message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
 message(STATUS "Openssl Ruby option='${OPENSSL_RUBY_OPTION}'")
 
-message(STATUS "ruby ${BIN}/package pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}")
 ExternalProject_Add(${RUBY_PRJ}
   PREFIX ${DEPS}
   URL https://cache.ruby-lang.org/pub/ruby/${RUBY_VER_BASE}/ruby-${RUBY_VER}.tar.gz
@@ -465,7 +460,7 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         --with-static-linked-ext              \
                                                         --with-out-ext=${RUBY_WITHOUT_EXT}    \
                                                         --prefix=${DATA_SRC_DIR}              \
-                                                        cflags=\"${RUBY_C_FLAGS}\"            \
+                                                        ${C_FLAGS_DEST}=\"${RUBY_C_FLAGS}\"   \
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
   BUILD_COMMAND    make ${RUBY_MAKEFILE}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
