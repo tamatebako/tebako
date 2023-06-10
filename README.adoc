@@ -33,10 +33,19 @@ In the future:
 
 The Tebako packager is tested on the following platforms:
 
-* Linux: Ubuntu 18.04; Ubuntu 20.04; Alpine 3.13
-* macOS: macOS 10.15 (Catalina); macOS 11.0 (Monterey)
+* Linux: Ubuntu 20.04; Alpine 3.16
+* macOS: macOS 11.0 (Monterey)
 * Windows: TBD
 
+== Supported Ruby versions
+
+The Tebako packager supports the following versions of Ruby for packaging:
+* 2.7.7
+* 3.0.6
+* 3.1.4
+
+Support of specific version including minor release requires some effort, sometimes extensive 
+but our goal is to be able to package all maintained Ruby releases. 
 
 == Prerequisites
 
@@ -98,7 +107,7 @@ apt-get -y install libfmt-dev
 
 ==== Other development tools and libraries
 
-Ubuntu 18 and Ubuntu 20 default versions are good enough.
+Ubuntu 20 default versions are good enough.
 
 [source,sh]
 ----
@@ -117,14 +126,13 @@ apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-
 
 === General
 
-Just clone this repository, and run `tebako setup` as follows.
+Just clone this repository, install Ruby bundle and run `tebako setup` as follows.
 
 [source,sh]
 ----
 git clone https://github.com/tamatebako/tebako
-tebako/exe/tebako setup
-----
-
+bundle install
+tebako/exe/tebako setup 
 
 === Quick setup on Ubuntu 20.04 on Docker
 
@@ -169,6 +177,7 @@ apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-
 apt-get install -y libfmt-dev
 
 git clone https://github.com/tamatebako/tebako
+bundle install
 tebako/exe/tebako setup
 ----
 
@@ -178,17 +187,24 @@ tebako/exe/tebako setup
 === Commands
 
 ==== Setup
+Collect and builds Tebako packager and install them for Tebako packager.
+
+Tebako supports several configurations at a single system given that their root
+directories differ and nultiple Ruby versions within single configuration
 
 [source,sh]
 ----
-<install-folder>/exe/tebako setup [-p |--prefix=<tebako-root-folder>]
+<install-folder>/exe/tebako setup     \
+  [-p |--prefix=<tebako-root-folder>] \
+  [-R | --Ruby=<2.7.7|3.0.6|3.1.4>]
 ----
+Where:
 
-Collect and builds Tebako packager and install them for Tebako packager at
-`<tebako root folder>` (defaults to the install folder).
+* `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
+folder)
 
-Tebako supports several configurations at a single system given that their root
-directories differ.
+* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.0.6)
+----
 
 ==== Press
 
@@ -197,18 +213,21 @@ folder (`<tebako-root-folder>`).
 
 [source,sh]
 ----
-<install-folder>/exe/tebako press \
+<install-folder>/exe/tebako press     \
   [-p |--prefix=<tebako-root-folder>] \
-  -r|--root=<project-root-folder> \
-  [-e|--entry-point=<entry-point>] \
+  [-R | --Ruby=<2.7.7|3.0.6|3.1.4>]   \
+  -r|--root=<project-root-folder>     \
+  -e|--entry-point=<entry-point>      \
   [-o |--output=<packaged file name>] \
-  [-l|--log-level=<error|warn|debug|trace>
+  [-l|--log-level=<error|warn|debug|trace>]
 ----
 
 Where:
 
 * `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
 folder)
+
+* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.0.6)
 
 * `<project-root>`, a folder at the host source file system where project files
 are located
@@ -219,7 +238,7 @@ be started when packaged file is called
 * `output`, the output file name (optional, defaults to `<current folder>/<entry
 point base name`)
 
-* `log-level`, the logging level for tebako built-in memory filesystem driver (optional, defaults to `debug`)
+* `log-level`, the logging level for tebako built-in memory filesystem driver (optional, defaults to `error`)
 
 [example]
 ====
@@ -263,19 +282,12 @@ exe/tebako clean --root='~/projects/myproject'
 | Code | Condition
 
 | 0    | No error
-| 1    | `getopts` not supported by OS
-| 2    | Failed to parse command line
-| 3    | Could not find GNU `getopts` (MacOS only)
-| 4    | Missing command
-| 5    | Unknown command (`setup`/`press`/`clean`/`help`)
-| 6    | `tebako press` without mandatory `--root` option
-| 7    | `tebako press` without mandatory `--entry-point` option
-| 8    | Unknown log-level setting (`error`/`warn`/`debug`/`trace`)
+| 1    | Invalid command line
 | 101  | `tebako setup` failed at configuration step
 | 102  | `tebako setup` failed at build step
 | 103  | `tebako press` failed at configuration step
 | 104  | `tebako press` failed at build step
-| 253  | Could not find cmake
+| 253  | Unsupported Ruby version
 | 254  | Unsupported operating systems
 | 255  | Internal error
 
