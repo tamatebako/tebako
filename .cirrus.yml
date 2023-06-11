@@ -51,6 +51,7 @@ task:
   env:
     CIRRUS_CLONE_SUBMODULES: true
     CIRRUS_CLONE_DEPTH: 1
+    VERBOSE: no
     CMAKE_VERSION: 3.20.5
     CC: clang
     CXX: clang++
@@ -90,8 +91,13 @@ task:
       - echo $CIRRUS_OS
       - echo $CC
       - cat common.env
+      - cat .cirrus.yml
 
+# cirrus-ci hash does not work for optimized Ruby patching/build
+# most likely it changes file times that causes make do a kind of
+# 'random' rebuild
   setup_script: |
+    rm -rf $DEPS/src/_ruby_*
     bundle install
     exe/tebako setup
 
@@ -129,8 +135,10 @@ task:
     fingerprint_script:
       - sw_vers
       - cat common.env
+      - cat .cirrus.yml
 
   setup_script: |
+    rm -rf $DEPS/src/_ruby_*
     bundle install
     exe/tebako setup
 
