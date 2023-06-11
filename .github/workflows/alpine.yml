@@ -56,13 +56,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 33
+  CACHE_VER: 35
   TZ: "Etc/UTC"
   VERBOSE: no
 
 jobs:
   setup:
-    name: setup alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    name: setup alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     runs-on: ubuntu-latest
     container:
       image: alpine:${{ matrix.env.ALPINE_VER }}
@@ -138,7 +138,7 @@ jobs:
 
   tests-1:
     needs: setup
-    name: tests-1 alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    name: tests-1 alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
@@ -153,6 +153,7 @@ jobs:
           - CC: clang
             CXX: clang++
             ALPINE_VER: "3.16"
+        package_ruby_ver: [ '3.0.6' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -222,12 +223,13 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        run: tests/scripts/functional-tests.sh
+        run: RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
       - name: Strip tebako test packages
         run: strip *-package
 
       - name: Upload tebako test packages
+        if: ${{ matrix.package_ruby_ver == env.RUBY_VER && matrix.env.CC == 'clang' }}
         uses: actions/upload-artifact@v3
         with:
           name: test-packages
@@ -241,7 +243,7 @@ jobs:
 
   tests-2:
     needs: setup
-    name: tests-2 alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    name: tests-2 alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
@@ -256,6 +258,7 @@ jobs:
           - CC: clang
             CXX: clang++
             ALPINE_VER: "3.16"
+        package_ruby_ver: [ '3.0.6', '3.1.4' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -318,7 +321,7 @@ jobs:
           false
 
       - name: Run tebako tests (set no. 2)
-        run: ruby tests-2/tebako-test.rb
+        run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb
 
   test-on-alpine-latest:
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
@@ -345,7 +348,7 @@ jobs:
 
   package-metanorma:
     needs: setup
-    name: package-metanorma alpine-${{ matrix.env.ALPINE_VER }} [CC ${{ matrix.env.CC }}]
+    name: package-metanorma alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ubuntu-latest
     container:
@@ -362,6 +365,7 @@ jobs:
             CXX: clang++
             ALPINE_VER: "3.16"
             VCPKG_FORCE_SYSTEM_BINARIES: 1
+        package_ruby_ver: [ '3.0.6' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -432,5 +436,5 @@ jobs:
 
       - name: Package metanorma and run smoke check
         run: |
-          exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+          exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }}
           ./metanorma-package help
