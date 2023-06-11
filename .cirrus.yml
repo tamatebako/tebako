@@ -28,10 +28,6 @@ test_task_template: &TEST_TASK_TEMPLATE
     tests/scripts/functional-tests.sh
 
   testset-2_script: |
-    gem install bundler
-    pushd tests-2
-    bundle install
-    popd
     ruby tests-2/tebako-test.rb
 
   checkout-packed-mn_script: |
@@ -70,7 +66,7 @@ task:
       libboost-context-dev libboost-filesystem-dev libboost-program-options-dev     \
       libboost-regex-dev libboost-system-dev libboost-thread-dev libdwarf-dev       \
       libelf-dev libfuse-dev libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev  \
-      libncurses-dev libreadline-dev clang ruby
+      libncurses-dev libreadline-dev clang ruby-dev ruby-bundler
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
@@ -96,6 +92,7 @@ task:
       - cat common.env
 
   setup_script: |
+    bundle install
     exe/tebako setup
 
   upload_caches:
@@ -115,7 +112,7 @@ task:
 # image: ghcr.io/cirruslabs/macos-ventura-base:latest
 
   install_script: |
-    brew install bash pkg-config bison flex binutils   \
+    brew install gnu-sed bash pkg-config bison flex binutils   \
     libffi double-conversion boost jemalloc fmt glog openssl@1.1 libevent \
     libsodium lz4 xz gdbm zlib ncurses
 
@@ -134,6 +131,7 @@ task:
       - cat common.env
 
   setup_script: |
+    bundle install
     exe/tebako setup
 
   upload_caches:
