@@ -59,7 +59,7 @@ env:
   CC: clang
   CXX: clang++
 # Cache version
-  CACHE_VER: 29
+  CACHE_VER: 30
   VERBOSE: no
 
 jobs:

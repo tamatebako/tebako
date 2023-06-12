@@ -28,9 +28,9 @@
 
 require "fileutils"
 
-require_relative "../lib/tebako"
-require_relative "../lib/tebako/package/pass1"
-require_relative "../lib/tebako/package/pass2"
+require_relative "../tebako"
+require_relative "packager/pass1"
+require_relative "packager/pass2"
 
 # Tebako - an executable packager
 module Tebako
