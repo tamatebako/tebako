@@ -28,16 +28,17 @@
 require_relative "lib/tebako/version"
 
 Gem::Specification.new do |spec|
-  spec.name = "tebako"
-  spec.version = Tebako::VERSION
-  spec.authors       = ["Maxim [maxirmx] Samsonov"]
+  spec.name          = "tebako"
+  spec.version       = Tebako::VERSION
+  spec.authors       = ["Ribose Inc."]
   spec.email         = ["open.source@ribose.com"]
   spec.license       = "BSD-2-Clause"
 
-  spec.summary = "Tebako - an executable packager"
+  spec.summary = "Packager for Ruby executables"
   spec.description = <<~SUM
-    Tebako is an executable packager. It packages a set of files into a single executable binary
-    that allows a user to run a selected file from the packaged software as if it is a mounted filesystem.
+    Tebako is an executable packager. It packages a set of files into a single
+    executable binary that allows a user to run a selected file from the
+    packaged software as if it is a mounted filesystem.
   SUM
   spec.homepage = "https://github.com/tamatebako/tebako"
   spec.required_ruby_version = ">= 2.7.0"

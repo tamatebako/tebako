@@ -44,8 +44,8 @@ The Tebako packager supports the following versions of Ruby for packaging:
 * 3.0.6
 * 3.1.4
 
-Support of specific version including minor release requires some effort, sometimes extensive 
-but our goal is to be able to package all maintained Ruby releases. 
+Support of specific version including minor release requires some effort, sometimes extensive
+but our goal is to be able to package all maintained Ruby releases.
 
 == Prerequisites
 
@@ -132,7 +132,8 @@ Just clone this repository, install Ruby bundle and run `tebako setup` as follow
 ----
 git clone https://github.com/tamatebako/tebako
 bundle install
-tebako/exe/tebako setup 
+tebako/exe/tebako setup
+----
 
 === Quick setup on Ubuntu 20.04 on Docker
 
@@ -198,13 +199,14 @@ directories differ and nultiple Ruby versions within single configuration
   [-p |--prefix=<tebako-root-folder>] \
   [-R | --Ruby=<2.7.7|3.0.6|3.1.4>]
 ----
+
 Where:
 
 * `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
 folder)
 
 * `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.0.6)
-----
+
 
 ==== Press
 
@@ -295,29 +297,36 @@ exe/tebako clean --root='~/projects/myproject'
 
 == Image extraction
 
-Tebako providea an option to an extract filesystem from a package to local folder for verification or execution.
-<tebako package> --tebako-extract [<root folder for extracted filesystem>]
-<root folder for extracted filesystem> is optional and defaults to 'source_filesystem'
+Tebako provides an option to an extract filesystem from a package to local
+folder for verification or execution.
+
+[source,sh]
+----
+<tebako-packaged-executable> --tebako-extract [<root folder for extracted filesystem>]
+----
+
+Where,
+
+* `<root folder for extracted filesystem>` is optional and defaults to
+  `source_filesystem`
 
 [example]
 ====
+Extracting Tebako content from the `metanorma` package:
+
 [source,sh]
 ----
-Example invokation:
 metanorma --tebako-extract temp-image
 ----
 ====
 
-[implementation]
-====
-[source,sh]
-----
---tebako-extract option forces tebako the following script:
-"require 'fileutils'; FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'"
-----
-====
+The `--tebako-extract` option actually runs the following Ruby script:
 
-
+[source,ruby]
+----
+require 'fileutils'
+FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'
+----
 
 
 
