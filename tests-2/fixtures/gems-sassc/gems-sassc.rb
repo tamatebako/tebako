@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2022, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2023, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -40,6 +40,8 @@ at_exit do
   FileUtils.remove_dir(COMPILER_MEMFS_LIB_CACHE.to_path, true)
 end
 
+# Extension for String class
+# Operations with quotes
 class String
   def quoted?
     start_with?('"') && end_with?('"')
@@ -62,21 +64,17 @@ def extract_memfs(file, wild: false, extract_path: COMPILER_MEMFS_LIB_CACHE)
 
   memfs_extracted_file = extract_path + File.basename(file)
   unless memfs_extracted_file.exist?
-    files = if wild
-              Dir.glob("#{File.dirname(file)}/*#{File.extname(file)}")
-            else
-              [file]
-            end
+    files = wild ? Dir.glob("#{File.dirname(file)}/*#{File.extname(file)}") : [file]
     FileUtils.cp_r files, extract_path
   end
 
   is_quoted ? memfs_extracted_file.to_path.quote : memfs_extracted_file.to_path
 end
 
-# HACK: extract temp libraries to use with ffi
-# Wrapper for FFI.map_library_name method
 require "ffi"
 
+# HACK: extract temp libraries to use with ffi
+# Wrapper for FFI.map_library_name method
 module FFI
   # https://stackoverflow.com/questions/29907157/how-to-alias-a-class-method-in-rails-model/29907207
   singleton_class.send(:alias_method, :map_library_name_orig, :map_library_name)
@@ -94,20 +92,26 @@ end
 require "sassc"
 
 module SassC
+  # SassC engine patch
+  # Scan through load paths; copy files from tebako memfs to
+  # tmp folders; add tmp folders to load paths
   class Engine
     alias load_paths_orig load_paths
+
+    def process_path(path)
+      if path.start_with?(COMPILER_MEMFS)
+        m = path.sub(COMPILER_MEMFS, COMPILER_MEMFS_LIB_CACHE.to_s)
+        FileUtils.cp_r(File.join(path, "."), m) if File.exist?(path)
+        m
+      else
+        path
+      end
+    end
+
     def load_paths
       paths = (@options[:load_paths] || []) + SassC.load_paths
       np = []
-      paths.each do |p|
-        if p.start_with?(COMPILER_MEMFS)
-          m = p.sub(COMPILER_MEMFS, COMPILER_MEMFS_LIB_CACHE.to_s)
-          FileUtils.cp_r(File.join(p, "."), m) if File.exist?(p)
-          np << m
-        else
-          np << p
-        end
-      end
+      paths.each { |p| np << process_path(p) }
       pp = np.join(File::PATH_SEPARATOR) unless np.empty?
       puts "Using load_path @ '#{pp}'"
       pp
