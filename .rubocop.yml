@@ -10,7 +10,6 @@ AllCops:
   Exclude:
     - 'vendor/**/*'
     - 'tests/**/*'
-    - 'tests-2/**/*'
     - 'deps/**/*'
     - 'output/**/*'
     - 'extract/**/*'
@@ -31,3 +30,6 @@ Gemspec/RequireMFA:
 
 Layout/LineLength:
   Max: 120
+
+Naming/FileName:
+  Enabled: false

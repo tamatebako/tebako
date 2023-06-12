@@ -35,9 +35,9 @@ require "rubygems"
 require "open3"
 require "minitest/autorun"
 
-include FileUtils
-
-class TestTebako < MiniTest::Test
+# Tebako test set
+# rubocop:disable Metrics/ClassLength
+class TebakoTest < MiniTest::Test
   # Path to test fixtures.
   FixturePath = File.expand_path(File.join(File.dirname(__FILE__), "fixtures"))
   Prefix = File.expand_path(File.join(File.dirname(__FILE__), ".."))
@@ -60,9 +60,7 @@ class TestTebako < MiniTest::Test
     begin
       yield
     ensure
-      hash.each do |k, _v|
-        ENV[k] = old[k]
-      end
+      hash.each { |k, _v| ENV[k] = old[k] }
     end
   end
 
@@ -72,17 +70,17 @@ class TestTebako < MiniTest::Test
   def with_fixture(name, target_path = nil, &block)
     path = File.join(FixturePath, name)
     with_tmpdir([], target_path) do |tmpdirname|
-      cp_r path, tmpdirname
-      cd tmpdirname, &block
+      FileUtils.cp_r path, tmpdirname
+      FileUtils.cd tmpdirname, &block
     end
   end
 
   # Creates temporary dir, copies files to it, cleans everything when the business is finished
   def with_tmpdir(files = [], path = nil)
     tempdirname = path || File.join("/tmp", "tebako-test-#{$PROCESS_ID}-#{rand 2**32}").tr("\\", "/")
-    mkdir_p tempdirname
+    FileUtils.mkdir_p tempdirname
     begin
-      cp files, tempdirname
+      FileUtils.cp files, tempdirname
       yield(tempdirname)
     ensure
       FileUtils.rm_rf tempdirname
@@ -106,7 +104,7 @@ class TestTebako < MiniTest::Test
 
   # Run 'tebako press ...'
   def press(tebako, name, package, prefix)
-    cmd = "#{tebako} press --Ruby=#{ruby_ver} --output=#{package} --entry-point=#{name}.rb --root=#{name} --prefix='#{prefix}'"
+    cmd = "#{tebako} press -R #{ruby_ver} -o #{package} -e #{name}.rb -r #{name} -p '#{prefix}'"
     out, st = Open3.capture2e(cmd)
     if st.exitstatus != 0
       puts "\"cmd\" failed with status #{st.exitstatus}"
@@ -221,16 +219,11 @@ class TestTebako < MiniTest::Test
   #  -- short options without whitespaces
   def test_105_launcher_pwd
     name = "launcher-pwd"
-    package = "#{name}-package"
-    with_fixture name do
-      press(Tebako, name, package, Prefix)
-      pristine_env package do |tempdirname|
-        _, st = Open3.capture2("#{tempdirname}/#{package}")
-        assert_equal 0, st.exitstatus
-        assert File.exist?("output.txt")
-        res = File.read("output.txt")
-        assert_equal "output", res
-      end
+    with_fixture_press_and_env name do |package|
+      _, st = Open3.capture2(package.to_s)
+      assert_equal 0, st.exitstatus
+      assert File.exist?("output.txt")
+      assert_equal "output", File.read("output.txt")
     end
   end
 
@@ -273,6 +266,36 @@ class TestTebako < MiniTest::Test
   # -- that we can build and run executables.
   # -- short options with whitespaces
   # -- that we are linking to known set of shared libraries (https://github.com/tamatebako/tebako/issues/42)
+
+  def expected_libs
+    if RbConfig::CONFIG["target_os"] =~ /darwin/
+      ["Security.framework", "Foundation.framework", "CoreFoundation.framework", "libSystem",
+       "libc++", "launcher-package-package:"]
+    # This is the test program itself: 'launcher-package-package:'
+    elsif RbConfig::CONFIG["target_os"] =~ /linux-musl/
+      ["libc.musl-x86_64.so", "ld-musl-x86_64.so"]
+    else # linux-gnu assumed
+      ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-", "libm.so",
+       "librt.so", "libgcc_s.so"]
+    end
+  end
+
+  def actual_libs(package)
+    out, st = if RbConfig::CONFIG["host_os"] =~ /darwin/
+                Open3.capture2("otool -L #{package}")
+              else # linux assumed
+                Open3.capture2("ldd #{package}")
+              end
+    assert_equal 0, st.exitstatus
+    out.lines.map(&:strip)
+  end
+
+  def check_libs(package)
+    l = actual_libs(package.to_s)
+    l.delete_if { |ln| expected_libs.any? { |lib| ln.include?(lib) } }
+    assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
+  end
+
   def test_101_launcher
     name = "launcher-package"
     package = "#{name}-package"
@@ -281,28 +304,9 @@ class TestTebako < MiniTest::Test
       pristine_env package do |tempdirname|
         _, st = Open3.capture2("#{tempdirname}/#{package}")
         assert_equal 0, st.exitstatus
-
-        out, st = if RbConfig::CONFIG["host_os"] =~ /darwin/
-                    Open3.capture2("otool -L #{tempdirname}/#{package}")
-                  else # linux assumed
-                    Open3.capture2("ldd #{tempdirname}/#{package}")
-                  end
-        assert_equal 0, st.exitstatus
-
-        libs = if RbConfig::CONFIG["target_os"] =~ /darwin/
-                 ["Security.framework", "Foundation.framework", "CoreFoundation.framework", "libSystem",
-                  "libc++", "launcher-package-package:"]
-               # This is the test program itself: 'launcher-package-package:'
-               elsif RbConfig::CONFIG["target_os"] =~ /linux-musl/
-                 ["libc.musl-x86_64.so", "ld-musl-x86_64.so"]
-               else  # linux-gnu assumed
-                 ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-", "libm.so",
-                  "librt.so", "libgcc_s.so"]
-               end
-        l = out.lines.map(&:strip)
-        l.delete_if { |ln| libs.any? { |lib| ln.include?(lib) } }
-        assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
+        check_libs(package.to_s)
       end
     end
   end
 end
+# rubocop:enable Metrics/ClassLength

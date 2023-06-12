@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2022, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2022-2023, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -37,6 +37,8 @@ at_exit do
   FileUtils.remove_dir(COMPILER_MEMFS_LIB_CACHE.to_path, true)
 end
 
+# Extension for String class
+# Operations with quotes
 class String
   def quoted?
     start_with?('"') && end_with?('"')
@@ -59,21 +61,17 @@ def extract_memfs(file, wild: false, extract_path: COMPILER_MEMFS_LIB_CACHE)
 
   memfs_extracted_file = extract_path + File.basename(file)
   unless memfs_extracted_file.exist?
-    files = if wild
-              Dir.glob("#{File.dirname(file)}/*#{File.extname(file)}")
-            else
-              [file]
-            end
+    files = wild ? Dir.glob("#{File.dirname(file)}/*#{File.extname(file)}") : [file]
     FileUtils.cp_r files, extract_path
   end
 
   is_quoted ? memfs_extracted_file.to_path.quote : memfs_extracted_file.to_path
 end
 
-# HACK: extract temp libraries to use with ffi
-# Wrapper for FFI.map_library_name method
 require "ffi"
 
+# HACK: extract temp libraries to use with ffi
+# Wrapper for FFI.map_library_name method
 module FFI
   # https://stackoverflow.com/questions/29907157/how-to-alias-a-class-method-in-rails-model/29907207
   singleton_class.send(:alias_method, :map_library_name_orig, :map_library_name)

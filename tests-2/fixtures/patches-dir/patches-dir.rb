@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021, 2022 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -47,11 +47,11 @@ print "OK(success)\n"
 
 # test 3  chdir relative (does not exit) - getwd
 print "chdir 'does-not-exists' ... "
-failed = true
 begin
   Dir.chdir("does-not-exist")
   failed = false
 rescue Errno::ENOENT
+  failed = true
 end
 raise "chdir succeeded while exception was expected" unless failed
 
@@ -62,11 +62,11 @@ print "OK(failure)\n"
 
 # test 4  chdir absolute (does not exit) - getwd
 print "chdir '/bin/does-not-exists' ... "
-failed = true
 begin
   Dir.chdir("/bin/does-not-exist")
   failed = false
 rescue Errno::ENOENT
+  failed = true
 end
 raise "chdir succeeded while exception was expected" unless failed
 
