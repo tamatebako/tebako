@@ -95,9 +95,6 @@ press_runner_with_error() {
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
 #  04. Simple Ruby script, relative path to root, relative path to entry point
 #  05. Simple Ruby script, absolute path to root absolute path to entry point, entry point not within root  [Expected error at configure step]
-#  -06. Rails project                                                                                       [commented out]
-#  -07. Rails project, ruby and bundler version mismatch                                                    [commented out]
-#  -08. Rails project, entry point does not exists                                                          [commented out]
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 #  10. Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist                               [Expected error at build step]
 #  11. Ruby gem (no gemfile, with gemspec)
@@ -239,28 +236,6 @@ test_tebako_press_05() {
    echo "==> simple Ruby script, absolute path to root absolute path to entry point, not within root"
    press_runner_with_error "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-00/test.rb" "test-05-package" 103 "'tebako press' configure step failed"
 }
-
-# ......................................................................
-#  06. Rails project
-#test_tebako_press_06() {
-#   echo "==> Rails project"
-#   press_runner "${DIR_TESTS}/test-06" "bin/rails" "test-06-package"
-#   ???? package_runner "./test-06-package"  ????
-#}
-
-# ......................................................................
-# 07. Rails project, ruby and bundler version mismatch
-#test_tebako_press_07() {
-#   echo "==> Rails project, ruby and bundler version mismatch"
-#   press_runner_with_error "${DIR_TESTS}/test-07" "rails" "test-07-package" 103 "'tebako press' configure step failed"
-#}
-
-# ......................................................................
-# 08. Rails project, entry point does not exists
-#test_tebako_press_08() {
-#   echo "==> Rails project, entry point does not exists"
-#   press_runner_with_error "${DIR_TESTS}/test-08" "rails" "test-does-not-exist.rb" 104 "'tebako press' build step failed"
-#}
 
 # ......................................................................
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)

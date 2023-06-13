@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require "text-table"
 
 table = Text::Table.new

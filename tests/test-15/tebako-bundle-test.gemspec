@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 require_relative "lib/tebako/bundle/test/version"
 
 Gem::Specification.new do |spec|
@@ -9,7 +11,7 @@ Gem::Specification.new do |spec|
   spec.summary       = "A simple gem for tebako testing"
   spec.homepage      = "https://github.com/tamitebako"
   spec.license       = "Unlicense"
-  spec.required_ruby_version = Gem::Requirement.new(">= 2.3.0")
+  spec.required_ruby_version = Gem::Requirement.new(">= 2.7.0")
   spec.metadata["homepage_uri"] = spec.homepage
 
   # Specify which files should be added to the gem when it is released.

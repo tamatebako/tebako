@@ -1,5 +1,8 @@
+# frozen_string_literal: true
+
 require "text-table"
 
+# Tebako test class
 class TebakoTest
   def msg
     table = Text::Table.new
