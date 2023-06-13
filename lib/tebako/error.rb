@@ -1,4 +1,3 @@
-#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 # Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
@@ -26,6 +25,15 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require_relative "../lib/cli"
-
-Tebako::TebakoCli.start
+# Tebako - an executable packager
+# Tebako error class
+module Tebako
+  # Tebako error class
+  class TebakoError < StandardError
+    def initialize(msg = "Unspecified error", code = 255)
+      @error_code = code
+      super(msg)
+    end
+    attr_accessor :error_code
+  end
+end

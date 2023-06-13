@@ -25,21 +25,17 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require_relative "tebako/version"
+require "etc"
+require "fileutils"
+require "rbconfig"
+
+require_relative "error"
+require_relative "version"
 
 # Tebako - an executable packager
-# Implementation of tebako error class and some support methods
+# Command-line interface methods
 module Tebako
-  # Tebako error class
-  class TebakoError < StandardError
-    def initialize(msg = "Unspecified error", code = 255)
-      @error_code = code
-      super(msg)
-    end
-    attr_accessor :error_code
-  end
-
-  # TebakoCli helper functions
+  # TebakoCli methods
   module CliHelpers
     def b_env
       u_flags = if RbConfig::CONFIG["host_os"] =~ /darwin/
