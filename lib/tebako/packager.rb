@@ -28,7 +28,7 @@
 
 require "fileutils"
 
-require_relative "../tebako"
+require_relative "error"
 require_relative "packager/pass1"
 require_relative "packager/pass2"
 
@@ -198,7 +198,6 @@ begin
       raise Tebako::TebakoError,
             "deploy script expects 5 arguments, #{ARGV.length} has been provided."
     end
-
     Tebako::Packager.deploy(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
   else
     raise Tebako::TebakoError, "Tebako script cannot process #{ARGV[0]} command"
