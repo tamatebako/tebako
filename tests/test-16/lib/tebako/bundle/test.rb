@@ -8,6 +8,7 @@ module Tebako
     module Test
       class Error < StandardError; end
 
+      # Tebako test class
       class TebakoTest
         def msg
           table = Text::Table.new
