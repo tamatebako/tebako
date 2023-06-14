@@ -81,11 +81,6 @@ module Tebako
       exit e.error_code
     end
 
-    desc "nosetup", "Skip setup, may be used as gem install subcommand like gem install tebako -- nosetup"
-    def nosetup
-      puts "Skipping set up of tebako packaging environment"
-    end
-
     def self.exit_on_failure?
       true
     end

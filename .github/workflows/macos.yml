@@ -117,7 +117,6 @@ jobs:
   tests-1:
     needs: setup
     name: tests-1 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -197,7 +196,6 @@ jobs:
   tests-2:
     needs: setup
     name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -255,7 +253,6 @@ jobs:
           RUBY_VER=${{ matrix.package_ruby_ver}} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
   test-on-macos-latest:
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
     needs: tests-1
     runs-on: macos-latest
     steps:
@@ -271,70 +268,3 @@ jobs:
 
       - name: Run test packages
         run:  ${{github.workspace}}/tests/scripts/cross-tests.sh
-
-  package-metanorma:
-    needs: setup
-    name: package-metanorma ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ macos-11.0 ]
-        package_ruby_ver: [ '3.0.6' ]
-    steps:
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
-          submodules: true
-
-      - name: Setup environment
-        run: cat common.env >> $GITHUB_ENV
-
-      - name: Select XCode 12.4 & SDK 11.1
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '12.4'
-
-      - name: Install packages
-# Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses
-        run: |
-          brew install \
-          bison flex binutils libffi double-conversion boost jemalloc fmt glog \
-          gnu-sed bash pkg-config
-
-      - name: Install Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ env.RUBY_VER }}
-          bundler: ${{ env.BUNDLER_VER }}
-          bundler-cache: false
-
-      - name: Create deps folder
-        run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
-
-      - name: Process cache
-        id: cache
-        uses: actions/cache@v3
-        with:
-          path: ${{ github.workspace }}/${{ env.DEPS }}
-          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
-
-      - name: Cache check
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          echo "Failed to upload cache"
-          false
-
-      - name: Checkout packed-mn
-        uses: actions/checkout@v3
-        with:
-          repository: metanorma/packed-mn
-          path: ${{github.workspace}}/packed-mn
-
-      - name: Package metanorma and run smoke check
-        run: |
-          bundle install
-          exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver}}
-          ./metanorma-package help
