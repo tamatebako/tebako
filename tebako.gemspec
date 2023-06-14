@@ -49,13 +49,17 @@ Gem::Specification.new do |spec|
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
-    `git ls-files -z`.split("\x0").reject do |f|
-      (f == __FILE__) || f.match(%r{\A(?:(?:test|spec|features|deps|output)/|\.(?:git|travis|circleci)|appveyor)})
+    `git ls-files --recurse-submodules -z`.split("\x0").reject do |f|
+      (f == __FILE__) ||
+        f.match(%r{\A(?:(?:test|spec|features|deps|output|common\.env)/|\.(?:git|cirrus|tebako|rubocop))})
     end
   end
   spec.bindir = "exe"
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
-  spec.require_paths = %w[cmake exe include lib resources src tools]
+  spec.require_paths = %w[cmake exe ext include lib resources src tools/ci-scripts tools/cmake-scripts tools/includes]
 
   spec.add_dependency "thor", "~> 1.2"
+  spec.add_dependency "yaml", "~> 0.2.1"
+
+  spec.extensions = ["ext/extconf.rb"]
 end

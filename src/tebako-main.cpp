@@ -45,9 +45,9 @@
 #include <tebako/tebako-config.h>
 #include <tebako/tebako-io.h>
 
-#include <tebako-version.h>
-#include <tebako-main.h>
-#include <tebako-fs.h>
+#include <tebako/tebako-version.h>
+#include <tebako/tebako-main.h>
+#include <tebako/tebako-fs.h>
 
 extern "C" int tebako_main(int* argc, char*** argv) {
 	int ret = -1, fsret = -1;

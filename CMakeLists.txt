@@ -33,7 +33,7 @@ if(${CMAKE_VERSION} VERSION_GREATER "3.23.10")
   cmake_policy(SET CMP0135 NEW)
 endif()
 
-include(tools/cmake-scripts/version.cmake)
+include(${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake-scripts/version.cmake)
 determine_version("${CMAKE_CURRENT_SOURCE_DIR}" TEBAKO)
 
 project(tebako_packager VERSION ${TEBAKO_VERSION})
@@ -196,6 +196,7 @@ endif()
 # Various locations for external projects
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
+set(DEPS_SRC_DIR ${DEPS}/src)
 set(DEPS_LIB_DIR ${DEPS}/lib)
 set(DEPS_BIN_DIR ${DEPS}/bin)
 set(DEPS_SBIN_DIR ${DEPS}/sbin)
@@ -616,13 +617,13 @@ else (${SETUP_MODE})
 
   configure_file(
     ${DATA_RES_DIR}/tebako-version.h.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/tebako-version.h
+    ${DEPS_INCLUDE_DIR}/tebako/tebako-version.h
     @ONLY
   )
 
   configure_file(
     ${DATA_RES_DIR}/tebako-fs.cpp.in
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+    ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
     @ONLY
   )
 
@@ -630,7 +631,7 @@ else (${SETUP_MODE})
     add_custom_target(packaged_filesystem
       COMMAND chmod +x ${DEPS_BIN_DIR}/*
       COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+      COMMAND ${CMAKE_COMMAND} -E touch ${DEPS_SRC_DIR}/tebako-fs.cpp
       BYPRODUCTS ${DATA_BIN_FILE}
     )
   else(${START_WITH_PACKAGED_FILESYSTEM})
@@ -653,7 +654,7 @@ else (${SETUP_MODE})
       COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.o"
       COMMAND chmod +x ${DEPS_BIN_DIR}/*
       COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
-      COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-fs.cpp
+      COMMAND ${CMAKE_COMMAND} -E touch ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
       DEPENDS setup source_filesystem
       BYPRODUCTS ${DATA_BIN_FILE}
     )
@@ -662,11 +663,12 @@ else (${SETUP_MODE})
   set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
 
   add_library(tebako-fs STATIC
-    src/tebako-main.cpp
-    src/tebako-fs.cpp
-    include/tebako-fs.h
-    include/tebako-version.h
-    include/tebako-main.h)
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/tebako-main.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/tebako/tebako-main.h
+    ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/include/tebako/tebako-fs.h
+    ${DEPS_INCLUDE_DIR}/tebako/tebako-version.h
+  )
 
   add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
 

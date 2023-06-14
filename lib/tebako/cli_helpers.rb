@@ -27,6 +27,7 @@
 
 require "etc"
 require "fileutils"
+require "pathname"
 require "rbconfig"
 
 require_relative "error"
@@ -43,30 +44,39 @@ module Tebako
                 else
                   ENV.fetch("CXXFLAGS", nil)
                 end
-      cc = ENV.fetch("CC", "gcc")
-      cxx = ENV.fetch("CXX", "g++")
-      @b_env ||= { "CXXFLAGS" => u_flags, "CC" => cc, "CXX" => cxx }
+#      cc = ENV.fetch("CC", "gcc")
+#      cxx = ENV.fetch("CXX", "g++")
+      @b_env ||= { "CXXFLAGS" => u_flags }
     end
 
     def cfg_options
       ruby_ver, ruby_hash = extend_ruby_version
       @cfg_options ||=
         "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING='#{ruby_ver}' -DRUBY_HASH:STRING='#{ruby_hash}' " \
-        "-DDEPS:STRING='#{deps}' -G '#{m_files}' -S '#{prefix}' -B '#{output}'"
+        "-DDEPS:STRING='#{deps}' -G '#{m_files}' -B '#{output}' -S '#{source}'"
     end
 
-    # Normally dependencies are fetched and build in deps folder
-    # DEPS environment variable is for certain special CI scenarios
-    # and should not be used normally
     def deps
-      f_deps = ENV.fetch("DEPS", nil)
-      @deps ||= if f_deps.nil?
-                  File.join(prefix, "deps")
-                elsif File.absolute_path?(f_deps)
-                  f_deps
-                else
-                  File.join(prefix, f_deps)
-                end
+      @deps ||= File.join(prefix, "deps")
+    end
+
+    RUBY_VERSIONS = {
+      "2.7.7" => "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90",
+      "3.0.6" => "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e",
+      "3.1.4" => "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6"
+      #      "3.2.2" => "96c57558871a6748de5bc9f274e93f4b5aad06cd8f37befa0e8d94e7b8a423bc"
+    }.freeze
+
+    DEFAULT_RUBY_VERSION = "3.0.6"
+
+    def extend_ruby_version
+      version = options["Ruby"].nil? ? DEFAULT_RUBY_VERSION : options["Ruby"]
+      unless RUBY_VERSIONS.key?(version)
+        raise TebakoError.new "Ruby version #{version} is not supported yet, exiting",
+                              253
+      end
+
+      @extend_ruby_version ||= [version, RUBY_VERSIONS[version]]
     end
 
     def l_level
@@ -115,21 +125,12 @@ module Tebako
 
     def prefix
       @prefix ||= if options["prefix"].nil?
+                    File.expand_path("~/.tebako")
+                  elsif options["prefix"] == "PWD"
                     Dir.pwd
                   else
-                    File.absolute_path(options["prefix"])
+                    File.expand_path(options["prefix"])
                   end
-    end
-
-    def press_announce
-      @press_announce ||= <<~ANN
-        Running tebako press at #{prefix}
-           Ruby version:            '#{extend_ruby_version[0]}'
-           Project root:            '#{options["root"]}'
-           Application entry point: '#{options["entry-point"]}'
-           Package file name:       '#{package}'
-           Loging level:            '#{options["log-level"]}'
-      ANN
     end
 
     def press_options
@@ -138,21 +139,9 @@ module Tebako
         "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}'"
     end
 
-    RUBY_VERSIONS = {
-      "2.7.7" => "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90",
-      "3.0.6" => "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e",
-      "3.1.4" => "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6"
-      #      "3.2.2" => "96c57558871a6748de5bc9f274e93f4b5aad06cd8f37befa0e8d94e7b8a423bc"
-    }.freeze
-
-    def extend_ruby_version
-      version = options["Ruby"]
-      unless RUBY_VERSIONS.key?(version)
-        raise TebakoError.new "Ruby version #{version} is not supported yet, exiting",
-                              253
-      end
-
-      @extend_ruby_version ||= [version, RUBY_VERSIONS[version]]
+    def source
+      c_path = Pathname.new(__FILE__).realpath
+      @source ||= File.expand_path("../../..", c_path)
     end
   end
 end
