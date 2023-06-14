@@ -37,13 +37,14 @@ build
 out
 output
 pkg
-gem-test
 
 # External dependencies
 deps
 
 # Generated files
 Gemfile.lock
+include/tebako-version.h
+src/tebako-fs.cpp
 
 # VS files
 .vs

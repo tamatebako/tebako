@@ -51,23 +51,7 @@ but our goal is to be able to package all maintained Ruby releases.
 
 === Ubuntu
 
-==== GNU C/C++ 9.x
-
-If GNU C/C++ 9.x is not available as a default package, it can be set up as
-follows.
-
-[source,sh]
-----
-apt-get install -y software-properties-common
-add-apt-repository -y ppa:ubuntu-toolchain-r/test
-apt-get install gcc-9 g++-9
-
-update-alternatives \
-  --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
-  --slave /usr/bin/g++ g++ /usr/bin/g++-9 \
-  --slave /usr/bin/gcov gcov /usr/bin/gcov-9
-update-alternatives --set gcc /usr/bin/gcc-9
-----
+==== GNU C/C++ 9+ or Clang C/C++ 11+
 
 ==== CMake version 3.20+
 
@@ -85,29 +69,7 @@ curl https://apt.kitware.com/kitware-archive.sh | bash
 apt-get install cmake
 ----
 
-==== libfmt version 6.0+
-
-On Ubuntu 20 it can be installed with:
-
-[source,sh]
-----
-apt-get install libfmt-dev
-----
-
-On Ubuntu 18 it requires a backport:
-
-[source,sh]
-----
-apt-get -y remove libfmt-dev
-apt-get -y install software-properties-common
-add-apt-repository -a ppa:team-xbmc/ppa
-apt-get -y update
-apt-get -y install libfmt-dev
-----
-
 ==== Other development tools and libraries
-
-Ubuntu 20 default versions are good enough.
 
 [source,sh]
 ----
@@ -118,7 +80,7 @@ apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-
   libboost-regex-dev libboost-system-dev libboost-thread-dev \
   libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
   libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
-  libsqlite3-dev
+  libfmt-dev
 ----
 
 
@@ -182,36 +144,28 @@ bundle install
 tebako/exe/tebako setup
 ----
 
-
 == Usage
 
 === Commands
 
-==== Setup
-Collect and builds Tebako packager and install them for Tebako packager.
-
-Tebako supports several configurations at a single system given that their root
-directories differ and nultiple Ruby versions within single configuration
+==== Installation
 
 [source,sh]
 ----
-<install-folder>/exe/tebako setup     \
-  [-p |--prefix=<tebako-root-folder>] \
-  [-R | --Ruby=<2.7.7|3.0.6|3.1.4>]
+gem install tebako
 ----
-
-Where:
-
-* `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
-folder)
-
-* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.0.6)
-
 
 ==== Press
 
 This command "presses" a Ruby project using the Tebako setup from the Tebako root
 folder (`<tebako-root-folder>`).
+Please note that upon the first invocation of press command tebako collects required packages,
+builds the and creates packaging environment. This is a lengthly task that can take significant
+time, up to 1 hour.
+Upon the next invocation tebako will use previously created packaging environment. The press process
+itself takes minutes.
+You can manage setup of packaging environment manually; please refer to description of setup and clean
+cmmands below.
 
 [source,sh]
 ----
@@ -252,6 +206,32 @@ exe/tebako press \
   --output=/temp/myproject.tebako
 ----
 ====
+
+==== Setup
+
+Collects required packages, builds the and creates packaging environment. This is a lengthly
+task that can take significant time, up to 1 hour.
+Tebako supports several configurations at a single system given that their root
+directories differ and nultiple Ruby versions within single configuration
+
+This command is optional, tebako creates packaging environment automatically upon the first
+invocation of press command.
+
+[source,sh]
+----
+<install-folder>/exe/tebako setup     \
+  [-p |--prefix=<tebako-root-folder>] \
+  [-R | --Ruby=<2.7.7|3.0.6|3.1.4>]
+----
+
+Where:
+
+* `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
+folder)
+
+* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.0.6)
+
+
 
 ==== Clean
 
@@ -327,8 +307,6 @@ The `--tebako-extract` option actually runs the following Ruby script:
 require 'fileutils'
 FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'
 ----
-
-
 
 == Ruby packaging specification
 
