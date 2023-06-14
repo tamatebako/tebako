@@ -56,7 +56,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 36
+  CACHE_VER: 37
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
@@ -399,3 +399,85 @@ jobs:
           bundle install
           RUBY_VER=${{ matrix.package_ruby_ver }} exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
           ./metanorma-package help
+
+  build-gem:
+    name: build-gem
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VER }}
+          bundler: ${{ env.BUNDLER_VER }}
+          bundler-cache: true
+
+      - name: Build gem
+        run: bundle exec rake build
+
+      - name: Upload gem
+        uses: actions/upload-artifact@v3
+        with:
+          name: gem
+          retention-days: 1
+          path: pkg/*
+
+  package-metanorma-g:
+    needs: build-gem
+    name: package-metanorma-g ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-20.04 ]
+        package_ruby_ver: [ '3.0.6' ]
+        env:
+          - CC: gcc
+            CXX: g++
+          - CC: clang
+            CXX: clang++
+    env: ${{ matrix.env }}
+    steps:
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Install packages
+        run: |
+          sudo apt-get -y update
+          sudo apt-get -y install \
+          binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev \
+          libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
+          libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
+          libboost-regex-dev libboost-system-dev libboost-thread-dev \
+          libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
+          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
+          libsqlite3-dev
+
+      - name: Install Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: ${{ env.RUBY_VER }}
+          bundler: ${{ env.BUNDLER_VER }}
+          bundler-cache: false
+
+      - name: Checkout packed-mn
+        uses: actions/checkout@v3
+        with:
+          repository: metanorma/packed-mn
+          path: ${{github.workspace}}/packed-mn
+
+      - name: Download gem
+        uses: actions/download-artifact@v3
+        with:
+          name: gem
+
+      - name: Install gem
+        run: sudo gem install gem install -b pkg/tebako-$(ruby -I lib -r tebako/version -e "puts Tebako::VERSION").gem --local -- nosetup

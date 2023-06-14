@@ -147,7 +147,7 @@ module Tebako
 
     MAIN_C_PATCH = {
       "int\nmain(int argc, char **argv)" =>
-      "#include <tebako-main.h>\n\nint\nmain(int argc, char **argv)",
+      "#include <tebako/tebako-main.h>\n\nint\nmain(int argc, char **argv)",
 
       "    ruby_sysinit(&argc, &argv);" => <<~SUBST
             ruby_sysinit(&argc, &argv);
@@ -237,7 +237,7 @@ module Tebako
         '#include "mjit.h"' =>
           "#include \"mjit.h\"\n" \
           "/* -- Start of tebako patch -- */\n" \
-          "#include <tebako-main.h>\n" \
+          "#include <tebako/tebako-main.h>\n" \
           "/* -- End of tebako patch -- */"
       },
       "/win32/win32.c" => {
@@ -259,7 +259,7 @@ module Tebako
         '#include "win32/file.h' =>
          "#include \"win32/file.h\"\n" \
          "/* -- Start of tebako patch -- */\n" \
-         "#include <tebako-main.h>\n" \
+         "#include <tebako/tebako-main.h>\n" \
          "/* -- End of tebako patch -- */"
       }
 

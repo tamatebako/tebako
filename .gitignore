@@ -28,7 +28,6 @@
 CMakeCache.txt
 CMakeSettings.json
 CMakeFiles
-Makefile
 cmake_install.cmake
 install_manifest.txt
 version.txt
@@ -37,13 +36,13 @@ version.txt
 build
 out
 output
+pkg
+gem-test
 
 # External dependencies
 deps
 
 # Generated files
-src/tebako-fs.cpp
-include/tebako-version.h
 Gemfile.lock
 
 # VS files
