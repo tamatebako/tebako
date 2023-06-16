@@ -238,7 +238,7 @@ if(WITH_OPENSSL_BUILD)
 endif(WITH_OPENSSL_BUILD)
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.3.3")
+def_ext_prj_g(DWARFS_WR "v0.3.4")
 
 if (DEFINED ENV{BUNDLER_VER})
  set(BUNDLER_VER $ENV{BUNDLER_VER})
