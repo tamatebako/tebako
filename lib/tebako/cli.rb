@@ -32,14 +32,13 @@ require "yaml"
 
 require_relative "cli_helpers"
 require_relative "error"
-require_relative "version"
 
 # Tebako - an executable packager
 # Implementation of tebako command-line interface
 module Tebako
   OPTIONS_FILE = ".tebako.yml"
   # Tebako packager front-end
-  class TebakoCli < Thor
+  class Cli < Thor
     package_name "Tebako"
     class_option :prefix, type: :string, aliases: "-p", required: false,
                           desc: "A path to tebako packaging environment, '~/.tebako' ('$HOME/.tebako') by default"
@@ -64,7 +63,7 @@ module Tebako
     def press
       puts press_announce
       do_press
-    rescue TebakoError => e
+    rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
     end
@@ -76,7 +75,7 @@ module Tebako
     def setup
       puts "Setting up tebako packaging environment"
       do_setup
-    rescue TebakoError => e
+    rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
     end

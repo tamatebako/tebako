@@ -25,4 +25,10 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require_relative "tebako/cli"
+# Tebako - an executable packager
+# Core module
+module Tebako
+end
+
+require_relative "tebako/version"
+require_relative "tebako/error"
