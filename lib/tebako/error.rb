@@ -29,7 +29,7 @@
 # Tebako error class
 module Tebako
   # Tebako error class
-  class TebakoError < StandardError
+  class Error < StandardError
     def initialize(msg = "Unspecified error", code = 255)
       @error_code = code
       super(msg)

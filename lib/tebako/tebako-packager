@@ -1,0 +1,94 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+require_relative "packager"
+
+begin
+  unless ARGV.length.positive?
+    raise Tebako::Error, "tebako-packager needs at least 1 argument (command), none has been provided."
+  end
+
+  case ARGV[0]
+  when "pass1"
+    #       ARGV[0] -- command
+    #       ARGV[1] -- OSTYPE
+    #       ARGV[2] -- RUBY_SOURCE_DIR
+    #       ARGV[3] -- FS_MOUNT_POINT
+    #       ARGV[4] -- DATA_SRC_DIR
+    #       ARGV[5] -- RUBY_VER
+    unless ARGV.length == 6
+      raise Tebako::Error,
+            "tebako-packager pass1 command expects 6 arguments, #{ARGV.length} has been provided."
+    end
+
+    Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5])
+  when "stash"
+    #       ARGV[0] -- command
+    #       ARGV[1] -- DATA_SRC_DIR
+    #       ARGV[2] -- RUBY_STASH_DIR
+    unless ARGV.length == 3
+      raise Tebako::Error,
+            "tebako-packager stash command expects 3 arguments, #{ARGV.length} has been provided."
+    end
+
+    Tebako::Packager.stash(ARGV[1], ARGV[2])
+  when "pass2"
+    #       ARGV[0] -- command
+    #       ARGV[1] -- OSTYPE
+    #       ARGV[2] -- RUBY_SOURCE_DIR
+    #       ARGV[3] -- DEPS_LIB_DIR
+    #       ARGV[4] -- DATA_SRC_DIR
+    #       ARGV[5] -- RUBY_STASH_DIR
+    #       ARGV[6] -- RUBY_VER
+    unless ARGV.length == 7
+      raise Tebako::Error,
+            "tebako-packager pass1 command expects 7 arguments, #{ARGV.length} has been provided."
+    end
+
+    Tebako::Packager.stash(ARGV[4], ARGV[5])
+    Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ARGV[6])
+  when "deploy"
+    #       ARGV[0] -- command
+    #       ARGV[1] -- FS_STASH_DIR
+    #       ARGV[2] -- DATA_SRC_DIR
+    #       ARGV[3] -- DATA_PRE_DIR
+    #       ARGV[4] -- DATA_BIN_DIR
+    unless ARGV.length == 5
+      raise Tebako::Error,
+            "tebako-packager deploy command expects 5 arguments, #{ARGV.length} has been provided."
+    end
+    Tebako::Packager.deploy(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
+  else
+    raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"
+  end
+rescue Tebako::Error => e
+  puts "tebako-packager failed: #{e.message} [#{e.error_code}]"
+  exit(e.error_code)
+end
+
+exit(0)

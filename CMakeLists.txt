@@ -450,7 +450,7 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
-  PATCH_COMMAND ruby ${LIB}/packager.rb pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
+  PATCH_COMMAND ruby ${LIB}/tebako-packager pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
   CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION}      \
                                                         --enable-bundled-libyaml              \
                                                         --without-gmp                         \
@@ -465,7 +465,7 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
   BUILD_COMMAND    make ${RUBY_MAKEFILE}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
-  COMMAND          ruby ${LIB}/packager.rb pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}
+  COMMAND          ruby ${LIB}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}
 )
 
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
@@ -497,7 +497,7 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-      COMMAND ruby ${LIB}/packager.rb deploy ${RUBY_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
+      COMMAND ruby ${LIB}/tebako-packager deploy ${RUBY_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
       DEPENDS ${RUBY_PRJ}
   )
   if(GSLENGTH GREATER 0)

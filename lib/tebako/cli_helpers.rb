@@ -36,7 +36,7 @@ require_relative "version"
 # Tebako - an executable packager
 # Command-line interface methods
 module Tebako
-  # TebakoCli methods
+  # Cli methods
   module CliHelpers
     def b_env
       u_flags = if RbConfig::CONFIG["host_os"] =~ /darwin/
@@ -72,8 +72,10 @@ module Tebako
     def extend_ruby_version
       version = options["Ruby"].nil? ? DEFAULT_RUBY_VERSION : options["Ruby"]
       unless RUBY_VERSIONS.key?(version)
-        raise TebakoError.new "Ruby version #{version} is not supported yet, exiting",
-                              253
+        raise Tebako::Error.new(
+          "Ruby version #{version} is not supported yet, exiting",
+          253
+        )
       end
 
       @extend_ruby_version ||= [version, RUBY_VERSIONS[version]]
@@ -87,6 +89,7 @@ module Tebako
                    end
     end
 
+    # rubocop:disable Metrics/MethodLength
     def m_files
       @m_files ||= case RbConfig::CONFIG["host_os"]
                    when /linux/, /darwin/
@@ -94,9 +97,13 @@ module Tebako
                    when /msys/
                      "Ninja"
                    else
-                     raise TebakoError.new "#{RbConfig::CONFIG["host_os"]} is not supported yet, exiting", 254
+                     raise Tebako::Error.new(
+                       "#{RbConfig::CONFIG["host_os"]} is not supported yet, exiting",
+                       254
+                     )
                    end
     end
+    # rubocop:enable Metrics/MethodLength
 
     def output
       @output ||= File.join(prefix, "output")
@@ -120,7 +127,7 @@ module Tebako
     def packaging_error(code)
       msg = PACKAGING_ERRORS[code]
       msg = "Unknown packaging error" if msg.nil?
-      raise TebakoError.new msg, code
+      raise Tebako::Error.new msg, code
     end
 
     def prefix

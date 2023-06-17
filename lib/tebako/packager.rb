@@ -1,4 +1,3 @@
-#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 # Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
@@ -36,18 +35,24 @@ require_relative "packager/pass2"
 module Tebako
   # Tebako packaging support (internal)
   module Packager
-    FILES_TO_RESTORE = [
-      "main.c",     "dir.c",     "dln.c",
-      "file.c",     "io.c",      "tool/mkconfig.rb"
+    FILES_TO_RESTORE = %w[
+      main.c
+      dir.c
+      dln.c
+      file.c
+      io.c
+      tool/mkconfig.rb
     ].freeze
 
-    FILES_TO_RESTORE_MSYS = [
-      "ruby.c",        "win32/win32.c",
-      "win32/file.c",  "win32/dir.h"
+    FILES_TO_RESTORE_MSYS = %w[
+      ruby.c
+      win32/win32.c
+      win32/file.c
+      win32/dir.h
     ].freeze
 
-    FILES_TO_RESTORE_MUSL = [
-      "thread_pthread.c"
+    FILES_TO_RESTORE_MUSL = %w[
+      thread_pthread.c
     ].freeze
 
     class << self
@@ -84,7 +89,7 @@ module Tebako
         #        puts "   ... creating pristine ruby environment at #{src_dir} [patience, it will take some time]"
         #        out, st = Open3.capture2e("cmake", "-E", "chdir", ruby_source_dir, "make", "install")
         #        print out if st.exitstatus != 0 || verbose
-        #        raise TebakoError.new("stash [make install] failed with code #{st.exitstatus}") if st.exitstatus != 0
+        #        raise Tebako::Error.new("stash [make install] failed with code #{st.exitstatus}") if st.exitstatus != 0
         #    end
 
         puts "   ... saving pristine ruby environment to #{stash_dir}"
@@ -111,7 +116,7 @@ module Tebako
       end
 
       def restore_and_save(fname)
-        raise TebakoError, "Could not save #{fname} because it does not exist." unless File.exist?(fname)
+        raise Tebako::Error, "Could not save #{fname} because it does not exist." unless File.exist?(fname)
 
         old_fname = "#{fname}.old"
         if File.exist?(old_fname)
@@ -128,7 +133,7 @@ module Tebako
       end
 
       def patch_file(fname, mapping)
-        raise TebakoError, "Could not patch #{fname} because it does not exist." unless File.exist?(fname)
+        raise Tebako::Error, "Could not patch #{fname} because it does not exist." unless File.exist?(fname)
 
         puts "   ... patching #{fname}"
         restore_and_save(fname)
@@ -143,68 +148,3 @@ module Tebako
     end
   end
 end
-
-begin
-  unless ARGV.length.positive?
-    raise Tebako::TebakoError, "Tebako script needs at least 1 arguments (command), none has been provided."
-  end
-
-  case ARGV[0]
-  when "pass1"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- OSTYPE
-    #       ARGV[2] -- RUBY_SOURCE_DIR
-    #       ARGV[3] -- FS_MOUNT_POINT
-    #       ARGV[4] -- DATA_SRC_DIR
-    #       ARGV[5] -- RUBY_VER
-    unless ARGV.length == 6
-      raise Tebako::TebakoError,
-            "pass1 script expects 6 arguments, #{ARGV.length} has been provided."
-    end
-
-    Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5])
-  when "stash"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- DATA_SRC_DIR
-    #       ARGV[2] -- RUBY_STASH_DIR
-    unless ARGV.length == 3
-      raise Tebako::TebakoError,
-            "stash script expects 3 arguments, #{ARGV.length} has been provided."
-    end
-
-    Tebako::Packager.stash(ARGV[1], ARGV[2])
-  when "pass2"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- OSTYPE
-    #       ARGV[2] -- RUBY_SOURCE_DIR
-    #       ARGV[3] -- DEPS_LIB_DIR
-    #       ARGV[4] -- DATA_SRC_DIR
-    #       ARGV[5] -- RUBY_STASH_DIR
-    #       ARGV[6] -- RUBY_VER
-    unless ARGV.length == 7
-      raise Tebako::TebakoError,
-            "pass1 script expects 7 arguments, #{ARGV.length} has been provided."
-    end
-
-    Tebako::Packager.stash(ARGV[4], ARGV[5])
-    Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ARGV[6])
-  when "deploy"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- FS_STASH_DIR
-    #       ARGV[2] -- DATA_SRC_DIR
-    #       ARGV[3] -- DATA_PRE_DIR
-    #       ARGV[4] -- DATA_BIN_DIR
-    unless ARGV.length == 5
-      raise Tebako::TebakoError,
-            "deploy script expects 5 arguments, #{ARGV.length} has been provided."
-    end
-    Tebako::Packager.deploy(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
-  else
-    raise Tebako::TebakoError, "Tebako script cannot process #{ARGV[0]} command"
-  end
-rescue Tebako::TebakoError => e
-  puts "Tebako script failed: #{e.message} [#{e.error_code}]"
-  exit(e.error_code)
-end
-
-exit(0)
