@@ -41,7 +41,7 @@ test_task_template: &TEST_TASK_TEMPLATE
 
 task:
   name: ubuntu-aarch64
-  only_if: $CIRRUS_BRANCH == 'main' || $CIRRUS_PR != '' || $CIRRUS_TAG != ''
+#  only_if: $CIRRUS_BRANCH == 'main' || $CIRRUS_PR != '' || $CIRRUS_TAG != ''
   arm_container:
 # Needs ~10 Gb to package metanorma and Cirrus-ci allows 4GB per CPU only
     image: ubuntu:20.04
