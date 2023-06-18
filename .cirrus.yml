@@ -68,19 +68,18 @@ task:
       libboost-regex-dev libboost-system-dev libboost-thread-dev libdwarf-dev       \
       libelf-dev libfuse-dev libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev  \
       libncurses-dev libreadline-dev clang ca-certificates ruby
-    sudo update-ca-certificates
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
     git clone --depth 1 https://github.com/kward/shunit2.git tests/shunit2
 
-  setup-cmake_script: |
-    mkdir -p cmake-install
-    pushd cmake-install
-    curl -L -o cmake.sh \
-    https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-aarch64.sh
-    sudo sh cmake.sh --skip-license --prefix="/usr/local"
-    popd
+#  setup-cmake_script: |
+#    mkdir -p cmake-install
+#    pushd cmake-install
+#    #curl -L -o cmake.sh \
+#    https://github.com/Kitware/CMake/releases/download/v3.26.4/cmake-3.26.4-linux-aarch64.sh
+#    sudo sh cmake.sh --skip-license --prefix="/usr/local"
+#    popd
 
 #     https://github.com/Kitware/CMake/releases/download/v"$CMAKE_VERSION"/cmake-"$CMAKE_VERSION"-linux-aarch64.sh
 
