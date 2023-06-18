@@ -70,7 +70,7 @@ task:
       libboost-regex-dev libboost-system-dev libboost-thread-dev libdwarf-dev       \
       libelf-dev libfuse-dev libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev  \
       libncurses-dev libreadline-dev clang ca-certificates ruby ruby-bundler
-    sudo update-ca-certificates    sudo update-ca-certificates
+    sudo update-ca-certificates
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
