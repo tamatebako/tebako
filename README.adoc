@@ -5,8 +5,8 @@ image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.sv
 image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["MacOS amd64", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
 
-image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
 image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=macos-arm64["MacOS arm64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
+image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
 
 == Purpose
 
