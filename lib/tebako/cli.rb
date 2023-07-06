@@ -91,7 +91,6 @@ module Tebako
         return original_options unless File.exist?(OPTIONS_FILE)
 
         defaults = ::YAML.load_file(OPTIONS_FILE) || {}
-        puts defaults.merge(original_options)
         Thor::CoreExt::HashWithIndifferentAccess.new(defaults.merge(original_options))
       end
 

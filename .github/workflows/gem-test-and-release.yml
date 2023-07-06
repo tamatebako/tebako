@@ -57,7 +57,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 2
+  CACHE_VER: 3
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
@@ -298,6 +298,9 @@ jobs:
     if: contains(github.ref, 'refs/tags/v')
     steps:
       - uses: actions/checkout@v3
+        with:
+          fetch-depth: 1
+          submodules: true
 
       - uses: cadwallion/publish-rubygems-action@master
         env:
