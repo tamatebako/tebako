@@ -313,12 +313,8 @@ module Tebako
 
         def darwin_libs(deps_lib_dir)
           libs = String.new
-          DARWIN_BREW_LIBS.each do |lib|
-            libs << get_prefix(lib[0]).chop << "/lib/lib#{lib[1]}.a "
-          end
-          DARWIN_DEP_LIBS.each do |lib|
-            libs << deps_lib_dir << "/lib#{lib}.a "
-          end
+          DARWIN_BREW_LIBS.each { |lib| libs << get_prefix(lib[0]).chop << "/lib/lib#{lib[1]}.a " }
+          DARWIN_DEP_LIBS.each { |lib| libs << deps_lib_dir << "/lib#{lib}.a " }
           <<~SUBST
             # -- Start of tebako patch --
             MAINLIBS = -ltebako-fs -ldwarfs-wr -ldwarfs -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \

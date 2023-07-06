@@ -4,6 +4,7 @@ inherit_mode:
 
 AllCops:
   TargetRubyVersion: 2.7
+  SuggestExtensions: false
   Include:
     - exe/package
     - exe/tebako
