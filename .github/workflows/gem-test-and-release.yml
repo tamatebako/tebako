@@ -57,7 +57,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 3
+  CACHE_VER: 5
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
@@ -182,7 +182,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [  macos-11.0  ]
-        package_ruby_ver: [ '3.0.6' ]
+        package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4' ]
         env:
           - CC: clang
             CXX: clang++

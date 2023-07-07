@@ -53,11 +53,7 @@ module Tebako
       ruby_ver, ruby_hash = extend_ruby_version
       @cfg_options ||=
         "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING='#{ruby_ver}' -DRUBY_HASH:STRING='#{ruby_hash}' " \
-        "-DDEPS:STRING='#{deps}' -G '#{m_files}' -B '#{output}' -S '#{source}'"
-    end
-
-    def deps
-      @deps ||= File.join(prefix, "deps")
+        "-DPREFIX:STRING='#{prefix}' -G '#{m_files}' -B '#{output}' -S '#{source}'"
     end
 
     RUBY_VERSIONS = {

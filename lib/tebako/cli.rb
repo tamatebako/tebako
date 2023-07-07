@@ -62,7 +62,9 @@ module Tebako
                          desc: "Tebako package Ruby version, #{Tebako::CliHelpers::DEFAULT_RUBY_VERSION} by default"
     def press
       puts press_announce
-      do_press
+      generate_version_txt
+      packaging_error(103) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}")
+      packaging_error(104) unless do_build("tebako")
     rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
@@ -74,7 +76,9 @@ module Tebako
                          desc: "Tebako package Ruby version, #{Tebako::CliHelpers::DEFAULT_RUBY_VERSION} by default"
     def setup
       puts "Setting up tebako packaging environment"
-      do_setup
+      generate_version_txt
+      packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
+      packaging_error(102) unless do_build("setup")
     rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
@@ -93,29 +97,18 @@ module Tebako
         defaults = ::YAML.load_file(OPTIONS_FILE) || {}
         Thor::CoreExt::HashWithIndifferentAccess.new(defaults.merge(original_options))
       end
-
-      def generate
-        FileUtils.mkdir_p(prefix)
-        File.write(File.join(prefix, "version.txt"), "#{Tebako::VERSION}\n")
-        puts("all: ")
-      end
     end
 
     private
 
     no_commands do
-      def do_press
-        packaging_error(103) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}")
-        packaging_error(104) unless system(b_env,
-                                           "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}")
+      def do_build(target)
+        system(b_env, "cmake --build #{output} --target #{target} --parallel #{Etc.nprocessors}")
       end
 
-      def do_setup
+      def generate_version_txt
         FileUtils.mkdir_p(prefix)
         File.write(File.join(prefix, "version.txt"), "#{Tebako::VERSION}\n")
-        packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
-        packaging_error(102) unless system(b_env,
-                                           "cmake --build #{output} --target setup --parallel #{Etc.nprocessors}")
       end
 
       def press_announce

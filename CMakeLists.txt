@@ -33,8 +33,13 @@ if(${CMAKE_VERSION} VERSION_GREATER "3.23.10")
   cmake_policy(SET CMP0135 NEW)
 endif()
 
+if ("-${PRFX}" STREQUAL "-")
+  set(PRFX ${CMAKE_CURRENT_SOURCE_DIR})
+  message(STATUS "Tebako prefix is set to ${PRFX}")
+endif()
+
 include(${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake-scripts/version.cmake)
-determine_version("${CMAKE_CURRENT_SOURCE_DIR}" TEBAKO)
+determine_version("${PRFX}" TEBAKO)
 
 project(tebako_packager VERSION ${TEBAKO_VERSION})
 
@@ -194,7 +199,7 @@ elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
 endif()
 
 # Various locations for external projects
-set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
+set(DEPS ${PRFX}/deps)
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
 set(DEPS_SRC_DIR ${DEPS}/src)
 set(DEPS_LIB_DIR ${DEPS}/lib)
