@@ -54,6 +54,9 @@ Gem::Specification.new do |spec|
         f.match(%r{\A(?:(?:test|spec|features|deps|output|common\.env)/|\.(?:git|cirrus|tebako|rubocop))})
     end
   end
+
+  spec.files << "version.txt"
+
   spec.bindir = "exe"
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = %w[cmake exe ext include lib resources src tools/ci-scripts tools/cmake-scripts tools/includes]

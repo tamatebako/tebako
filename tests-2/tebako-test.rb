@@ -268,11 +268,12 @@ class TebakoTest < MiniTest::Test
   # -- that we are linking to known set of shared libraries (https://github.com/tamatebako/tebako/issues/42)
 
   def expected_libs
-    if RbConfig::CONFIG["target_os"] =~ /darwin/
+    case RbConfig::CONFIG["target_os"]
+    when /darwin/
       ["Security.framework", "Foundation.framework", "CoreFoundation.framework", "libSystem",
        "libc++", "launcher-package-package:"]
     # This is the test program itself: 'launcher-package-package:'
-    elsif RbConfig::CONFIG["target_os"] =~ /linux-musl/
+    when /linux-musl/
       ["libc.musl-x86_64.so", "ld-musl-x86_64.so"]
     else # linux-gnu assumed
       ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-", "libm.so",
