@@ -137,6 +137,7 @@ jobs:
       - name: tebako setup
         run: |
           bundle install
+          bundle exec rake generate_version_txt
           ${{ github.workspace }}/exe/tebako setup
 
   tests-1:

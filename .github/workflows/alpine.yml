@@ -118,10 +118,11 @@ jobs:
           make -j4
           make install
 
-      - name: Install bundler
+      - name: Install bundle
         run: |
           gem install bundler
           bundle install
+          bundle exec rake generate_version_txt
 
       - name: Create deps folder
         run: mkdir ${{ env.DEPS }}

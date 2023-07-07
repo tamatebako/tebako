@@ -31,3 +31,13 @@ require "rubocop/rake_task"
 RuboCop::RakeTask.new
 
 task default: %i[rubocop]
+
+desc "Generate version.txt"
+task "generate_version_txt" do
+  require_relative "lib/tebako/version"
+  File.write(File.join(__dir__, "version.txt"), "#{Tebako::VERSION}\n")
+  puts "Generate version.txt #{Tebako::VERSION} ==> #{File.join(__dir__, "version.txt")}"
+end
+
+task build: :generate_version_txt
+task release: :generate_version_txt

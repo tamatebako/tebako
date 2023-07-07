@@ -93,12 +93,6 @@ module Tebako
         defaults = ::YAML.load_file(OPTIONS_FILE) || {}
         Thor::CoreExt::HashWithIndifferentAccess.new(defaults.merge(original_options))
       end
-
-      def generate
-        FileUtils.mkdir_p(prefix)
-        File.write(File.join(prefix, "version.txt"), "#{Tebako::VERSION}\n")
-        puts("all: ")
-      end
     end
 
     private
@@ -111,8 +105,6 @@ module Tebako
       end
 
       def do_setup
-        FileUtils.mkdir_p(prefix)
-        File.write(File.join(prefix, "version.txt"), "#{Tebako::VERSION}\n")
         packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
         packaging_error(102) unless system(b_env,
                                            "cmake --build #{output} --target setup --parallel #{Etc.nprocessors}")
