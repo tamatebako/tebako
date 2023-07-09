@@ -49,6 +49,23 @@ module Tebako
       FileUtils.rm_rf([deps, output], secure: true)
     end
 
+    desc "clean_ruby", "Clean Ruby source from tebako packaging environment"
+    method_option :Ruby, type: :string, aliases: "-R", required: false,
+                         enum: Tebako::CliHelpers::RUBY_VERSIONS.keys,
+                         desc: "Ruby version to clean, all available versions by default"
+    def clean_ruby
+      puts "Cleaning Ruby sources from tebako packaging environment"
+      if options["Ruby"].nil?
+        nmr = "#{deps}/src/_ruby_*"
+        nms = "#{deps}/stash_*"
+      else
+        nmr = "#{deps}/src/_ruby_#{options["Ruby"]}*"
+        nms = "#{deps}/stash_#{options["Ruby"]}"
+      end
+      FileUtils.rm_rf(Dir.glob(nmr), secure: true)
+      FileUtils.rm_rf(Dir.glob(nms), secure: true)
+    end
+
     desc "press", "Press tebako image"
     method_option :"entry-point", type: :string, aliases: ["-e", "--entry"], required: true,
                                   desc: "Ruby application entry point"

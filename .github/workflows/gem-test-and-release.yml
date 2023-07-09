@@ -57,7 +57,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 3
+  CACHE_VER: 6
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
