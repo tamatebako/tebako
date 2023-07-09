@@ -63,23 +63,6 @@ else(MINGW)
   set(FS_CURRENT ${FS_CURRENT_RAW})
 endif(MINGW)
 
-# External dependencies
-# ---------------------------------------------------------------------------------------------------
-# DwarFS dependencies:
-#        ronn binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
-#        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
-#        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-#        libboost-regex-dev libboost-system-dev libboost-thread-dev \
-#        libunwind-dev libdwarf-dev libelf-dev libfmt-dev libfuse3-dev libgoogle-glog-dev \
-#        bison flex fuse3 pkg-config libsodium-dev
-# ---------------------------------------------------------------------------------------------------
-# Ruby dependencies:
-#        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
-# ---------------------------------------------------------------------------------------------------
-# For Rails testing only:
-#        libsqlite3-dev
-# ---------------------------------------------------------------------------------------------------
-
 set(RUBY_DEBUG_BUILD OFF)
 
 include(ExternalProject)

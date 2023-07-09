@@ -125,7 +125,18 @@ class TebakoTest < MiniTest::Test
     end
   end
 
-  # Specified gems should be automatically included and usable in packaged app
+  # Specified gems should be usable in packaged app
+  # def test_217_psych5
+  #  name = "gems-psych-5"
+  #  with_fixture_press_and_env name do |package|
+  #    out, st = Open3.capture2(package)
+  #    assert_equal 0, st.exitstatus
+  #    assert_equal out, "Hello! Psych welcomes you to the magic world of ruby gems.\n"
+  #    check_libs(package.to_s)
+  #  end
+  # end
+
+  # Specified gems should be  usable in packaged app
   def test_216_byebug
     name = "gems-byebug"
     with_fixture_press_and_env name do |package|
@@ -267,12 +278,12 @@ class TebakoTest < MiniTest::Test
   # -- short options with whitespaces
   # -- that we are linking to known set of shared libraries (https://github.com/tamatebako/tebako/issues/42)
 
-  def expected_libs
+  def expected_libs(package)
     case RbConfig::CONFIG["target_os"]
     when /darwin/
       ["Security.framework", "Foundation.framework", "CoreFoundation.framework", "libSystem",
-       "libc++", "launcher-package-package:"]
-    # This is the test program itself: 'launcher-package-package:'
+       "libc++", "#{package}:"]
+    # This is the test program itself: for example, 'launcher-package-package:'
     when /linux-musl/
       ["libc.musl-x86_64.so", "ld-musl-x86_64.so"]
     else # linux-gnu assumed
@@ -293,20 +304,17 @@ class TebakoTest < MiniTest::Test
 
   def check_libs(package)
     l = actual_libs(package.to_s)
-    l.delete_if { |ln| expected_libs.any? { |lib| ln.include?(lib) } }
+    l.delete_if { |ln| expected_libs(package).any? { |lib| ln.include?(lib) } }
     assert_equal 0, l.size, "Unexpected references to shared libraries #{l}"
   end
 
   def test_101_launcher
     name = "launcher-package"
-    package = "#{name}-package"
-    with_fixture name do
-      press(Tebako, name, package, Prefix)
-      pristine_env package do |tempdirname|
-        _, st = Open3.capture2("#{tempdirname}/#{package}")
-        assert_equal 0, st.exitstatus
-        check_libs(package.to_s)
-      end
+    with_fixture_press_and_env name do |package|
+      out, st = Open3.capture2(package)
+      assert_equal 0, st.exitstatus
+      assert_equal out, "Hello, World!\n"
+      check_libs(package.to_s)
     end
   end
 end
