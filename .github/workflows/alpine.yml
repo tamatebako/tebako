@@ -62,7 +62,7 @@ env:
 
 jobs:
   setup:
-    name: setup alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    name: setup alpine-${{ matrix.env.ALPINE_VER }} CC ${{ matrix.env.CC }}
     runs-on: ubuntu-latest
     container:
       image: alpine:${{ matrix.env.ALPINE_VER }}
@@ -132,7 +132,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
-          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: exe/tebako setup
@@ -154,7 +154,7 @@ jobs:
           - CC: clang
             CXX: clang++
             ALPINE_VER: "3.16"
-        package_ruby_ver: [ '3.0.6' ]
+        package_ruby_ver: [ '3.1.4', '3.2.2' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -208,7 +208,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
-          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -259,7 +259,7 @@ jobs:
           - CC: clang
             CXX: clang++
             ALPINE_VER: "3.16"
-        package_ruby_ver: [ '3.0.6', '3.1.4' ]
+        package_ruby_ver: [ '3.1.4', '3.2.2' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -313,7 +313,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ env.DEPS }}
-          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
