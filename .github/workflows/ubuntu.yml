@@ -56,7 +56,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 39
+  CACHE_VER: 40
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
@@ -87,24 +87,6 @@ jobs:
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV
 
-# https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu2004-README.md
-# https://github.com/actions/virtual-environments/blob/main/images/linux/Ubuntu1804-README.md
-# Already installed: bison flex pkg-config
-
-# gcc/g++ 9 is also there otherwise we would need:
-# sudo add-apt-repository ppa:ubuntu-toolchain-r/test
-# sudo apt update
-# sudo apt install gcc-9 g++-9
-
-      - name: Switch to gcc-9
-        if: ${{ matrix.env.CC == 'gcc' }}
-        run: |
-          sudo update-alternatives \
-            --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 \
-            --slave /usr/bin/g++ g++ /usr/bin/g++-9 \
-            --slave /usr/bin/gcov gcov /usr/bin/gcov-9
-          sudo update-alternatives --set gcc /usr/bin/gcc-9
-
       - name: Install packages
         run: |
           sudo apt-get -y update
@@ -114,8 +96,7 @@ jobs:
           libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
           libboost-regex-dev libboost-system-dev libboost-thread-dev \
           libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
-          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
-          libsqlite3-dev
+          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
 
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
@@ -165,12 +146,6 @@ jobs:
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV
 
-      - name: Switch to gcc-9
-        if: ${{ matrix.env.CC == 'gcc' }}
-        run: |
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9 --slave /usr/bin/gcov gcov /usr/bin/gcov-9
-          sudo update-alternatives --set gcc /usr/bin/gcc-9
-
       - name: Install packages
         run: |
           sudo apt-get -y update
@@ -180,8 +155,7 @@ jobs:
           libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
           libboost-regex-dev libboost-system-dev libboost-thread-dev \
           libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
-          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
-          libsqlite3-dev
+          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
 
       - name: Install Ruby
         uses: ruby/setup-ruby@v1
@@ -256,12 +230,6 @@ jobs:
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV
 
-      - name: Switch to gcc-9
-        if: ${{ matrix.env.CC == 'gcc' }}
-        run: |
-          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9 --slave /usr/bin/gcov gcov /usr/bin/gcov-9
-          sudo update-alternatives --set gcc /usr/bin/gcc-9
-
       - name: Install packages
         run: |
           sudo apt-get -y update
@@ -271,8 +239,7 @@ jobs:
           libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
           libboost-regex-dev libboost-system-dev libboost-thread-dev \
           libunwind-dev libdwarf-dev libelf-dev libgoogle-glog-dev \
-          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
-          libsqlite3-dev
+          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
 
       - name: Install Ruby
         uses: ruby/setup-ruby@v1

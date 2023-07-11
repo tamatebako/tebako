@@ -122,9 +122,6 @@ apt-get install -y software-properties-common
 add-apt-repository -y ppa:ubuntu-toolchain-r/test
 apt-get install -y gcc-9 g++-9
 
-update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9 --slave /usr/bin/gcov gcov /usr/bin/gcov-9
-update-alternatives --set gcc /usr/bin/gcc-9
-
 apt-get install -y curl git ruby ruby-dev pkg-config bison flex make autoconf
 curl https://apt.kitware.com/kitware-archive.sh | bash
 apt-get install -y cmake
@@ -134,8 +131,7 @@ apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-
   libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
   libboost-regex-dev libboost-system-dev libboost-thread-dev \
   libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
-  libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
-  libsqlite3-dev
+  libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
 
 apt-get install -y libfmt-dev
 
