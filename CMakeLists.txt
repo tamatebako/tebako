@@ -193,8 +193,8 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 # External projects
 
 if ("-${RUBY_VER}" STREQUAL "-" OR "-${RUBY_HASH}" STREQUAL "-")
-  set(RUBY_VER "3.0.6")
-  set(RUBY_HASH "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e")
+  set(RUBY_VER "3.1.4")
+  set(RUBY_HASH "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6")
   message(STATUS "Using default Ruby version ${RUBY_VER}")
 endif()
 
@@ -238,6 +238,15 @@ else()
   set(WITH_NCURSES_BUILD OFF)
 endif()
 
+if(${RUBY_VER} VERSION_LESS "3.2.0")
+  set(WITH_LIBYAML_BUILD OFF)
+  set(LIBYAML_RUBY_OPTION "--enable-bundled-libyaml")
+else()
+  set(WITH_LIBYAML_BUILD ON)
+  def_ext_prj_t(LIBYAML "0.2.5" "c642ae9b75fee120b2d96c712538bd2cf283228d2337df2cf2988e3c02678ef4")
+  set(LIBYAML_RUBY_OPTION "--with-libyaml-dir=${DEPS}")
+endif()
+
 message("Configuration summary:")
 message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
 message(STATUS "bundler version: ${BUNDLER_VER} (${BUNDLER_ANNOTATION})")
@@ -250,6 +259,13 @@ if(WITH_NCURSES_BUILD)
 else()
   message(STATUS "ncurses: ${_LIBNCURSES}")
 endif(WITH_NCURSES_BUILD)
+
+if(WITH_LIBYAML_BUILD)
+  message(STATUS "libyaml: building v${LIBYAML_VER} at ${LIBYAML_SOURCE_DIR}")
+else()
+  message(STATUS "libyaml: using bundled library. *** It does not work for Psych gem v5+ !!! *** ")
+endif(WITH_LIBYAML_BUILD)
+
 message(STATUS "incbin: @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
 message(STATUS "dwarfs with tebako wrapper: @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
 
@@ -301,6 +317,7 @@ ExternalProject_Add(${INCBIN_PRJ}
    PREFIX ${DEPS}
    GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
    GIT_TAG ${INCBIN_TAG}
+   BUILD_IN_SOURCE true
    CONFIGURE_COMMAND ""
    BUILD_COMMAND ""
    INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INCLUDE_DIR}/incbin
@@ -391,6 +408,25 @@ if(WITH_NCURSES_BUILD)
   )
 endif(WITH_NCURSES_BUILD)
 
+if(WITH_LIBYAML_BUILD)
+  ExternalProject_Add(${LIBYAML_PRJ}
+    PREFIX ${DEPS}
+    URL https://pyyaml.org/download/libyaml/yaml-${LIBYAML_VER}.tar.gz
+    URL_HASH SHA256=${LIBYAML_HASH}
+    DOWNLOAD_NO_PROGRESS true
+    SOURCE_DIR ${LIBYAML_SOURCE_DIR}
+    UPDATE_COMMAND ""
+    CONFIGURE_COMMAND ${LIBYAML_SOURCE_DIR}/configure
+                          --enable-shared=no
+                          --enable-static=yes
+                          --with-pic
+                          --prefix=${DEPS}
+                          --srcdir=${LIBYAML_SOURCE_DIR}
+    BUILD_COMMAND     make
+    INSTALL_COMMAND   make install
+  )
+endif(WITH_LIBYAML_BUILD)
+
 # ...................................................................
 # Ruby
 
@@ -423,7 +459,8 @@ endif(RB_W32)
 
 message(STATUS "Ruby build ${C_FLAGS_DEST}='${RUBY_C_FLAGS}'")
 message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
-message(STATUS "Openssl Ruby option='${OPENSSL_RUBY_OPTION}'")
+message(STATUS "openssl Ruby option='${OPENSSL_RUBY_OPTION}'")
+message(STATUS "libyaml Ruby option='${LIBYAML_RUBY_OPTION}'")
 
 ExternalProject_Add(${RUBY_PRJ}
   PREFIX ${DEPS}
@@ -433,8 +470,7 @@ ExternalProject_Add(${RUBY_PRJ}
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
   PATCH_COMMAND ruby ${EXE}/tebako-packager pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
-  CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION}      \
-                                                        --enable-bundled-libyaml              \
+  CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION} ${LIBYAML_RUBY_OPTION} \
                                                         --without-gmp                         \
                                                         --disable-dtrace                      \
                                                         --disable-debug-env                   \
@@ -454,6 +490,10 @@ add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 if(WITH_NCURSES_BUILD)
   add_dependencies(${RUBY_PRJ} ${NCURSES_PRJ})
 endif(WITH_NCURSES_BUILD)
+
+if(WITH_LIBYAML_BUILD)
+  add_dependencies(${RUBY_PRJ} ${LIBYAML_PRJ})
+endif(WITH_LIBYAML_BUILD)
 
 if(WITH_OPENSSL_BUILD)
   add_dependencies(${RUBY_PRJ} ${OPENSSL_PRJ} )

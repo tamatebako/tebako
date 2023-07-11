@@ -25,6 +25,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require_relative "patch_helpers"
+
 # Tebako - an executable packager
 module Tebako
   module Packager
@@ -111,7 +113,7 @@ module Tebako
           # ....................................................
           # autoload :OpenSSL, "openssl"
           # fails to deal with a default gem from statically linked extension
-          patch_map.store("lib/rubygems/openssl.rb", RUBYGEM_OPENSSL_RB_PATCH) if ruby_ver[0] == "3"
+          patch_map.store("lib/rubygems/openssl.rb", RUBYGEM_OPENSSL_RB_PATCH) if PatchHelpers.ruby3x?(ruby_ver)
 
           patch_map
         end

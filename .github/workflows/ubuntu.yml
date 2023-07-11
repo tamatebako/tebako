@@ -90,7 +90,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get -y update
-          sudo apt-get -y install \
+          sudo apt-get -y install automake-1.15 \
           binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev \
           libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
           libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
@@ -113,7 +113,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
-          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: |
@@ -129,7 +129,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-20.04 ]
-        package_ruby_ver: [ '3.0.6' ]
+        package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4', '3.2.2' ]
         env:
           - CC: gcc
             CXX: g++
@@ -149,7 +149,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get -y update
-          sudo apt-get -y install \
+          sudo apt-get -y install automake-1.15 \
           binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev \
           libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
           libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
@@ -172,7 +172,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
-          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
@@ -213,7 +213,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ ubuntu-20.04 ]
-        package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4' ]
+        package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4', '3.2.2' ]
         env:
           - CC: gcc
             CXX: g++
@@ -233,7 +233,7 @@ jobs:
       - name: Install packages
         run: |
           sudo apt-get -y update
-          sudo apt-get -y install \
+          sudo apt-get -y install automake-1.15 \
           binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev \
           libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
           libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
@@ -256,7 +256,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ${{ github.workspace }}/${{ env.DEPS }}
-          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
 
       - name: Cache check
         if: steps.cache.outputs.cache-hit != 'true'
