@@ -40,21 +40,39 @@ runs:
     - name: Install packages
       shell: bash
       run: |
-        sudo apt-get -y update
-        sudo apt-get -y install automake-1.15 \
-        binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev \
-        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
-        libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-        libboost-regex-dev libboost-system-dev libboost-thread-dev \
-        libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
-        libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
+        apk --no-cache --upgrade add build-base cmake git bash     \
+          autoconf boost-static boost-dev flex-dev bison           \
+          binutils-dev libevent-dev acl-dev sed                    \
+          lz4-dev openssl-dev zlib-dev                             \
+          libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
+          libevent-static openssl-libs-static lz4-static xz-dev    \
+          zlib-static libunwind-static acl-static tar libffi-dev   \
+          gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+          readline-dev readline-static ruby-dev
 
-    - name: Install Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: ${{ env.RUBY_VER }}
-        bundler: ${{ env.BUNDLER_VER }}
-        bundler-cache: false
+    - name: Install clang
+      shell: bash
+      if: ${{ env.CC == 'clang' }}
+      run: apk --no-cache --upgrade add clang
+
+    - name: Patch system includes
+      shell: bash
+      if: ${{ env.CC == 'clang' }}
+      run: tools/ci-scripts/patch-system-includes.sh
+
+    - name: Build libjemalloc
+      shell: bash
+      run: |
+        wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+        tar -xf jemalloc-5.2.1.tar.bz2
+        cd jemalloc-5.2.1
+        ./configure
+        make -j4
+        make install
+
+    - name: Install bundler
+      shell: bash
+      run: gem install bundler -v ${{ env.BUNDLER_VER }}
 
     - name: Install bundle
       shell: bash
@@ -62,14 +80,14 @@ runs:
 
     - name: Create deps folder
       shell: bash
-      run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
+      run: mkdir ${{ env.DEPS }}
 
     - name: Process cache
       id: cache
       uses: actions/cache@v3
       with:
-        path: ${{ github.workspace }}/${{ env.DEPS }}
-        key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
+        path: ${{ env.DEPS }}
+        key: alpine-${{ env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
 
     - name: Cache check
       shell: bash

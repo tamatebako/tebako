@@ -34,21 +34,13 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
+      - .github/workflows/gem-test-and-release.yml
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
       - .github/workflows/ubuntu.yml
       - .github/workflows/windows-msys.yml
       - .cirrus.yml
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - .github/workflows/lint.yml
-      - .github/workflows/macos.yml
-      - .github/workflows/ubuntu.yml
-      - .github/workflows/windows-msys.yml
-      - .cirrus.yml
   workflow_dispatch:
 
 concurrency:
@@ -56,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 39
+  CACHE_VER: 40
   TZ: "Etc/UTC"
   VERBOSE: no
 
@@ -69,28 +61,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-# Alpine 3.16 (which is now 'latest') installs gcc 11.x that does not work for seven_zip_ruby
-# https://github.com/masamitsu-murase/seven_zip_ruby/issues/36
         env:
-          - CC: gcc
-            CXX: g++
-            ALPINE_VER: "3.16"
-          - CC: clang
-            CXX: clang++
-            ALPINE_VER: "3.16"
+          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.16" }
+          - { CC: clang, CXX: clang++, ALPINE_VER: "3.16" }
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: |
-          apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev flex-dev bison           \
-            binutils-dev libevent-dev acl-dev sed                    \
-            lz4-dev openssl-dev zlib-dev                             \
-            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
-            libevent-static openssl-libs-static lz4-static xz-dev    \
-            zlib-static libunwind-static acl-static tar libffi-dev   \
-            gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static ruby-dev
+        run: apk --no-cache --upgrade add git bash
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -98,42 +75,13 @@ jobs:
           fetch-depth: 1
           submodules: true
 
-      - name: Setup environment
-        run: cat common.env >> $GITHUB_ENV
-
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: apk --no-cache --upgrade add clang
-
-      - name: Patch system includes
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: tools/ci-scripts/patch-system-includes.sh
-
-      - name: Build libjemalloc
-        run: |
-          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
-          tar -xf jemalloc-5.2.1.tar.bz2
-          cd jemalloc-5.2.1
-          ./configure
-          make -j4
-          make install
-
-      - name: Install bundler
-        run:  gem install bundler
-
-      - name: Create deps folder
-        run: mkdir ${{ env.DEPS }}
-
-      - name: Process cache
-        id: cache
-        uses: actions/cache@v3
+      - name: Setup ci environment
+        uses: ./.github/actions/setup-alpine
         with:
-          path: ${{ env.DEPS }}
-          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
+          cache: build
 
       - name: tebako setup
         run: |
-          bundle install
           bundle exec rake generate_version_txt
           exe/tebako setup
 
@@ -148,26 +96,13 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - CC: gcc
-            CXX: g++
-            ALPINE_VER: "3.16"
-          - CC: clang
-            CXX: clang++
-            ALPINE_VER: "3.16"
+          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.16" }
+          - { CC: clang, CXX: clang++, ALPINE_VER: "3.16" }
         package_ruby_ver: [ '3.1.4', '3.2.2' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: |
-          apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev flex-dev bison           \
-            binutils-dev libevent-dev acl-dev sed                    \
-            lz4-dev openssl-dev zlib-dev                             \
-            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
-            libevent-static openssl-libs-static lz4-static xz-dev    \
-            zlib-static libunwind-static acl-static tar libffi-dev   \
-            gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static ruby-dev
+        run: apk --no-cache --upgrade add git bash
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -175,46 +110,10 @@ jobs:
           fetch-depth: 1
           submodules: true
 
-      - name: Setup environment
-        run: cat common.env >> $GITHUB_ENV
-
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: apk --no-cache --upgrade add clang
-
-      - name: Patch system includes
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: tools/ci-scripts/patch-system-includes.sh
-
-      - name: Build libjemalloc
-        run: |
-          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
-          tar -xf jemalloc-5.2.1.tar.bz2
-          cd jemalloc-5.2.1
-          ./configure
-          make -j4
-          make install
-
-      - name: Install bundler
-        run: |
-          gem install bundler
-          bundle install
-
-      - name: Create deps folder
-        run: mkdir ${{ env.DEPS }}
-
-      - name: Process cache
-        id: cache
-        uses: actions/cache@v3
+      - name: Setup ci environment
+        uses: ./.github/actions/setup-alpine
         with:
-          path: ${{ env.DEPS }}
-          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
-
-      - name: Cache check
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          echo "Failed to upload cache"
-          false
+          cache: use
 
       - name: Checkout shell test framework
         uses: actions/checkout@v3
@@ -253,26 +152,13 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - CC: gcc
-            CXX: g++
-            ALPINE_VER: "3.16"
-          - CC: clang
-            CXX: clang++
-            ALPINE_VER: "3.16"
+          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.16" }
+          - { CC: clang, CXX: clang++, ALPINE_VER: "3.16" }
         package_ruby_ver: [ '3.1.4', '3.2.2' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: |
-          apk --no-cache --upgrade add build-base cmake git bash     \
-            autoconf boost-static boost-dev flex-dev bison           \
-            binutils-dev libevent-dev acl-dev sed                    \
-            lz4-dev openssl-dev zlib-dev                             \
-            libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
-            libevent-static openssl-libs-static lz4-static xz-dev    \
-            zlib-static libunwind-static acl-static tar libffi-dev   \
-            gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-            readline-dev readline-static ruby-dev p7zip
+        run: apk --no-cache --upgrade add git bash
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v3
@@ -280,46 +166,11 @@ jobs:
           fetch-depth: 1
           submodules: true
 
-      - name: Setup environment
-        run: cat common.env >> $GITHUB_ENV
-
-      - name: Patch system includes
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: tools/ci-scripts/patch-system-includes.sh
-
-      - name: Install bundler
-        run: |
-          gem install bundler
-          bundle install
-
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: apk --no-cache --upgrade add clang
-
-      - name: Build libjemalloc
-        run: |
-          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
-          tar -xf jemalloc-5.2.1.tar.bz2
-          cd jemalloc-5.2.1
-          ./configure
-          make -j4
-          make install
-
-      - name: Create deps folder
-        run: mkdir ${{ env.DEPS }}
-
-      - name: Process cache
-        id: cache
-        uses: actions/cache@v3
+      - name: Setup ci environment
+        uses: ./.github/actions/setup-alpine
         with:
-          path: ${{ env.DEPS }}
-          key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
+          cache: use
 
-      - name: Cache check
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: |
-          echo "Failed to upload cache"
-          false
 
       - name: Run tebako tests (set no. 2)
         run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb

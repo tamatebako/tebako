@@ -34,21 +34,13 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
+      - .github/workflows/gem-test-and-release.yml
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
       - .github/workflows/alpine.yml
       - .github/workflows/windows-msys.yml
       - .cirrus.yml
   pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - .github/workflows/lint.yml
-      - .github/workflows/macos.yml
-      - .github/workflows/alpine.yml
-      - .github/workflows/windows-msys.yml
-      - .cirrus.yml
   workflow_dispatch:
 
 concurrency:
@@ -72,10 +64,8 @@ jobs:
       matrix:
         os: [ ubuntu-20.04 ]
         env:
-          - CC: gcc
-            CXX: g++
-          - CC: clang
-            CXX: clang++
+          - { CC: gcc,   CXX: g++ }
+          - { CC: clang, CXX: clang++ }
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -91,7 +81,6 @@ jobs:
 
       - name: tebako setup
         run: |
-          bundle install
           bundle exec rake generate_version_txt
           ${{ github.workspace }}/exe/tebako setup
 
@@ -105,10 +94,8 @@ jobs:
         os: [ ubuntu-20.04 ]
         package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4', '3.2.2' ]
         env:
-          - CC: gcc
-            CXX: g++
-          - CC: clang
-            CXX: clang++
+          - { CC: gcc,   CXX: g++ }
+          - { CC: clang, CXX: clang++ }
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -130,9 +117,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        run:  |
-          bundle install
-          RUBY_VER=${{ matrix.package_ruby_ver }} ${{github.workspace}}/tests/scripts/functional-tests.sh
+        run:  RUBY_VER=${{ matrix.package_ruby_ver }} ${{github.workspace}}/tests/scripts/functional-tests.sh
 
       - name: Upload tebako test packages
         if: ${{ matrix.package_ruby_ver == env.RUBY_VER && matrix.env.CC == 'clang' }}
@@ -157,10 +142,8 @@ jobs:
         os: [ ubuntu-20.04 ]
         package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4', '3.2.2' ]
         env:
-          - CC: gcc
-            CXX: g++
-          - CC: clang
-            CXX: clang++
+          - { CC: gcc,   CXX: g++ }
+          - { CC: clang, CXX: clang++ }
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -175,9 +158,7 @@ jobs:
           cache: use
 
       - name: Run tebako tests (set no. 2)
-        run: |
-          bundle install
-          RUBY_VER=${{ matrix.package_ruby_ver }} ruby ${{github.workspace}}/tests-2/tebako-test.rb
+        run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
 #  test-on-ubuntu-latest:
 #    needs: tests-1
