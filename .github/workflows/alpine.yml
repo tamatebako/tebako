@@ -118,11 +118,8 @@ jobs:
           make -j4
           make install
 
-      - name: Install bundle
-        run: |
-          gem install bundler
-          bundle install
-          bundle exec rake generate_version_txt
+      - name: Install bundler
+        run:  gem install bundler
 
       - name: Create deps folder
         run: mkdir ${{ env.DEPS }}
@@ -135,7 +132,10 @@ jobs:
           key: alpine-${{ matrix.env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
-        run: exe/tebako setup
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
+          exe/tebako setup
 
   tests-1:
     needs: setup
