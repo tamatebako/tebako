@@ -35,21 +35,13 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
+      - .github/workflows/alpine.yml
       - .github/workflows/lint.yml
       - .github/workflows/macos.yml
-      - .github/workflows/alpine.yml
+      - .github/workflows/ubuntu.yml
       - .github/workflows/windows-msys.yml
       - .cirrus.yml
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - .github/workflows/lint.yml
-      - .github/workflows/macos.yml
-      - .github/workflows/alpine.yml
-      - .github/workflows/windows-msys.yml
-      - .cirrus.yml
+#  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -57,7 +49,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 6
+  CACHE_VER: 01
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output aka verbose (yes/no)
@@ -69,33 +61,40 @@ jobs:
     name: build-gem
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
-          submodules: true
+    - name: Checkout tebako packaging environment
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 1
+        submodules: true
 
-      - name: Setup environment
-        run: cat common.env >> $GITHUB_ENV
+    - name: Setup environment
+      run: cat common.env >> $GITHUB_ENV
 
-      - name: Install Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ env.RUBY_VER }}
-          bundler: ${{ env.BUNDLER_VER }}
-          bundler-cache: true
+    - name: Install Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ env.RUBY_VER }}
+        bundler: ${{ env.BUNDLER_VER }}
+        bundler-cache: true
 
-      - name: Build gem
-        run: bundle exec rake build
+    - name: Build gem
+      run: bundle exec rake build
 
-      - name: Upload gem
-        uses: actions/upload-artifact@v3
-        with:
-          name: gem
-          retention-days: 1
-          path: pkg/*
+    - name: Upload gem
+      uses: actions/upload-artifact@v3
+      with:
+        name: gem
+        retention-days: 1
+        path: pkg/*
 
-  package-metanorma-alpine:
+    - name: Upload actions
+      uses: actions/upload-artifact@v3
+      with:
+        name: actions
+        retention-days: 1
+        path: .github/actions/*
+
+  package-metanorma-alpine-0:
     needs: build-gem
     name: Use gem to package metanorma ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     runs-on: ubuntu-latest
@@ -104,75 +103,91 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ['alpine:3.16']
+        os: [ 'alpine:3.16' ]
         package_ruby_ver: [ '3.1.4' ]
         env:
-          - CC: gcc
-            CXX: g++
+          - { CC: gcc, CXX: g++ }
     env: ${{ matrix.env }}
     steps:
-      - name: Install packages
-        run: |
-          apk --no-cache --upgrade add build-base cmake git bash     \
-          autoconf boost-static boost-dev flex-dev bison make      \
-          binutils-dev libevent-dev acl-dev sed                    \
-          lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
-          libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
-          libevent-static openssl-libs-static lz4-static xz-dev    \
-          zlib-static libunwind-static acl-static tar libffi-dev   \
-          gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-          readline-dev readline-static p7zip ruby-dev gcompat      \
-          gettext-dev python3 pkgconfig gperf
+    - name: Install packages
+      run: apk --no-cache --upgrade add bash
 
-      - name: Install clang
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: apk --no-cache --upgrade add clang
+    - name: Download actions
+      uses: actions/download-artifact@v3
+      with:
+        name: actions
+        path: .github/actions
 
-      - name: Checkout tools
-        if: ${{ matrix.env.CC == 'clang' }}
-        uses: actions/checkout@v3
-        with:
-          repository: tamatebako/tebako-tools
-          path: tools
+#            - name: Setup ci environment
+#              uses: ./.github/actions/setup-alpine
+#              with:
+#                cache: off
 
-      - name: Patch system includes
-        if: ${{ matrix.env.CC == 'clang' }}
-        run: tools/ci-scripts/patch-system-includes.sh
+    - name: Install packages
+      run: |
+        apk --no-cache --upgrade add build-base cmake git bash   \
+        autoconf boost-static boost-dev flex-dev bison make      \
+        binutils-dev libevent-dev acl-dev sed python3 pkgconfig  \
+        lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
+        libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
+        libevent-static openssl-libs-static lz4-static xz-dev    \
+        zlib-static libunwind-static acl-static tar libffi-dev   \
+        gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+        readline-dev readline-static p7zip ruby-dev gcompat      \
+        gettext-dev gperf
 
-      - name: Build libjemalloc
-        run: |
-          wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
-          tar -xf jemalloc-5.2.1.tar.bz2
-          cd jemalloc-5.2.1
-          ./configure
-          make -j4
-          make install
+    - name: Install clang
+      if: ${{ matrix.env.CC == 'clang' }}
+      run: apk --no-cache --upgrade add clang
 
-      - name: Checkout packed-mn
-        uses: actions/checkout@v3
-        with:
-          repository: metanorma/packed-mn
-          path: ${{github.workspace}}/packed-mn
+    - name: Checkout tools
+      if: ${{ matrix.env.CC == 'clang' }}
+      uses: actions/checkout@v3
+      with:
+        repository: tamatebako/tebako-tools
+        path: tools
 
-      - name: Download gem
-        uses: actions/download-artifact@v3
-        with:
-          name: gem
+    - name: Patch system includes
+      if: ${{ matrix.env.CC == 'clang' }}
+      run: tools/ci-scripts/patch-system-includes.sh
 
-      - name: Process cache
-        uses: actions/cache@v3
-        with:
-          path: .tebako/deps
-          key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ env.CACHE_VER }}
+    - name: Build libjemalloc
+      run: |
+        wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+        tar -xf jemalloc-5.2.1.tar.bz2
+        cd jemalloc-5.2.1
+        ./configure
+        make -j4
+        make install
 
-      - name: Install gem
-        run: gem install $( ls tebako*.gem )
+#            - name: Checkout packed-mn
+#              uses: actions/checkout@v3
+#              with:
+#                repository: metanorma/packed-mn
+#                path: ${{github.workspace}}/packed-mn
 
-      - name: Package metanorma
-        run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
+#            - name: Download gem
+#              uses: actions/download-artifact@v3
+#              with:
+#                name: gem
 
-      - name: Run smoke test
-        run: ./metanorma-package help
+#            - name: Process cache
+#              uses: actions/cache@v3
+#              with:
+#                path: .tebako/deps
+#                key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ env.CACHE_VER }}
+
+#            - name: Install gem
+#              run: gem install $( ls tebako*.gem )
+
+#            - name: Package metanorma
+#              run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
+
+#            - name: Run smoke test
+#              run: ./metanorma-package help
+
+    - name: Package metanorma
+      uses: ./.github/actions/test-package-metanorma
 
   package-metanorma-macos:
     needs: build-gem
@@ -184,53 +199,23 @@ jobs:
         os: [  macos-11.0  ]
         package_ruby_ver: [ '3.1.4' ]
         env:
-          - CC: clang
-            CXX: clang++
+          - { CC: clang, CXX: clang++ }
     env: ${{ matrix.env }}
     steps:
-    - name: Select XCode 12.4 & SDK 11.1
-      uses: maxim-lobanov/setup-xcode@v1
-      with:
-        xcode-version: '12.4'
-
-    - name: Install packages
-# Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses
-      run: |
-        brew install \
-        bison flex binutils libffi double-conversion boost jemalloc fmt glog \
-        gnu-sed bash pkg-config
-
-    - name: Install Ruby
-      uses: ruby/setup-ruby@v1
-      with:
-        ruby-version: ${{ matrix.package_ruby_ver }}
-        bundler-cache: false
-
-    - name: Checkout packed-mn
-      uses: actions/checkout@v3
-      with:
-        repository: metanorma/packed-mn
-        path: ${{github.workspace}}/packed-mn
-
-    - name: Download gem
+    - name: Download actions
       uses: actions/download-artifact@v3
       with:
-        name: gem
+        name: actions
+        path: .github/actions
 
-    - name: Process cache
-      uses: actions/cache@v3
+    - name: Setup ci environment
+      uses: ./.github/actions/setup-macos
       with:
-        path: .tebako/deps
-        key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ env.CACHE_VER }}
-
-    - name: Install gem
-      run: sudo gem install $( ls tebako*.gem )
+        cache: off
+        ruby_version: ${{ matrix.package_ruby_ver }}
 
     - name: Package metanorma
-      run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
-
-    - name: Run smoke test
-      run: ./metanorma-package help
+      uses: ./.github/actions/test-package-metanorma
 
   package-metanorma-ubuntu:
     needs: build-gem
@@ -242,52 +227,23 @@ jobs:
         os: [ ubuntu-20.04 ]
         package_ruby_ver: [ '3.1.4' ]
         env:
-          - CC: clang
-            CXX: clang++
+          - { CC: clang, CXX: clang++ }
     env: ${{ matrix.env }}
     steps:
-      - name: Install packages
-        run: |
-          sudo apt-get -y update
-          sudo apt-get -y install \
-          binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev \
-          libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
-          libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-          libboost-regex-dev libboost-system-dev libboost-thread-dev \
-          libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
-          libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
+    - name: Download actions
+      uses: actions/download-artifact@v3
+      with:
+        name: actions
+        path: .github/actions
 
-      - name: Install Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: ${{ matrix.package_ruby_ver }}
-          bundler-cache: false
+    - name: Setup ci environment
+      uses: ./.github/actions/setup-ubuntu
+      with:
+        cache: off
+        ruby_version: ${{ matrix.package_ruby_ver }}
 
-      - name: Checkout packed-mn
-        uses: actions/checkout@v3
-        with:
-          repository: metanorma/packed-mn
-          path: ${{github.workspace}}/packed-mn
-
-      - name: Download gem
-        uses: actions/download-artifact@v3
-        with:
-          name: gem
-
-      - name: Process cache
-        uses: actions/cache@v3
-        with:
-          path: .tebako/deps
-          key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ env.CACHE_VER }}
-
-      - name: Install gem
-        run: sudo gem install $( ls tebako*.gem )
-
-      - name: Package metanorma
-        run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
-
-      - name: Run smoke test
-        run: ./metanorma-package help
+    - name: Package metanorma
+      uses: ./.github/actions/test-package-metanorma
 
 # ----- Release -----
   release:
@@ -296,11 +252,11 @@ jobs:
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/v')
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 1
-          submodules: true
+    - uses: actions/checkout@v3
+      with:
+        fetch-depth: 1
+        submodules: true
 
-      - uses: cadwallion/publish-rubygems-action@master
-        env:
-          RUBYGEMS_API_KEY: ${{secrets.TEBAKO_CI_RUBYGEMS_API_KEY}}
+    - uses: cadwallion/publish-rubygems-action@master
+      env:
+        RUBYGEMS_API_KEY: ${{secrets.TEBAKO_CI_RUBYGEMS_API_KEY}}

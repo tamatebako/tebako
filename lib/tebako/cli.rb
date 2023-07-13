@@ -26,6 +26,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require "digest"
 require "fileutils"
 require "thor"
 require "yaml"
@@ -64,6 +65,11 @@ module Tebako
       end
       FileUtils.rm_rf(Dir.glob(nmr), secure: true)
       FileUtils.rm_rf(Dir.glob(nms), secure: true)
+    end
+
+    desc "hash", "Print build script hash (ci cache key)"
+    def hash
+      print Digest::SHA256.hexdigest File.read File.join(__dir__, "../..", "CMakeLists.txt")
     end
 
     desc "press", "Press tebako image"

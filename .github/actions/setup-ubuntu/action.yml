@@ -27,13 +27,29 @@ name: 'Setup Ubuntu'
 description: 'Setup Ubuntu ci environment for tebako'
 inputs:
   cache:
-    description: 'Tebako cache mode: build/use'
+    description: 'Tebako cache mode: off/build/use'
     required: true
+    type: string
+  cache_path:
+    description: 'Tebako cache root folder'
+    required: true
+    default: '.tebako/deps'
+    type: string
+  ruby_version:
+    description: 'Ruby version to install, "env" to use RUBY_VER environment variable'
+    required: true
+    default: 'env'
+    type: string
+  bundler_version:
+    description: 'Bundler version to install'
+    required: true
+    default: 'default'
     type: string
 runs:
   using: "composite"
   steps:
     - name: Setup environment
+      if: inputs.cache != 'off'
       shell: bash
       run: cat common.env >> $GITHUB_ENV
 
@@ -41,7 +57,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get -y update
-        sudo apt-get -y install automake-1.15 \
+        sudo apt-get -y install \
         binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev \
         libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
         libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
@@ -52,28 +68,26 @@ runs:
     - name: Install Ruby
       uses: ruby/setup-ruby@v1
       with:
-        ruby-version: ${{ env.RUBY_VER }}
-        bundler: ${{ env.BUNDLER_VER }}
+        ruby-version: ${{ inputs.ruby_version != 'env' && inputs.ruby_version || env.RUBY_VER }}
+        bundler: ${{ inputs.bundler_version }}
         bundler-cache: false
 
     - name: Install bundle
+      if: inputs.cache != 'off'
       shell: bash
-      run: bundle install
+      run: |
+        bundle install
+        bundle exec rake generate_version_txt
 
     - name: Create deps folder
+      if: inputs.cache != 'off'
       shell: bash
-      run: mkdir ${{ github.workspace }}/${{ env.DEPS }}
+      run: mkdir -p ${{ inputs.cache_path }}
 
     - name: Process cache
-      id: cache
+      if: inputs.cache != 'off'
       uses: actions/cache@v3
       with:
-        path: ${{ github.workspace }}/${{ env.DEPS }}
+        path: ${{ inputs.cache_path }}
         key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
-
-    - name: Cache check
-      shell: bash
-      if: inputs.cache == 'use' && steps.cache.outputs.cache-hit != 'true'
-      run: |
-        echo "Failed to upload cache"
-        false
+        fail-on-cache-miss: inputs.cache == 'use'

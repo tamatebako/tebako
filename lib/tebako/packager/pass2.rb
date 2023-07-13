@@ -58,15 +58,23 @@ module Tebako
 
         include Tebako::Packager::PatchLiterals
 
+        def process_brew_libs!(libs, brew_libs)
+          brew_libs.each { |lib| libs << "#{PatchHelpers.get_prefix(lib[0]).chop}/lib/lib#{lib[1]}.a " }
+        end
+
         def darwin_libs(deps_lib_dir, ruby_ver)
           libs = String.new
-          DARWIN_BREW_LIBS.each { |lib| libs << "#{PatchHelpers.get_prefix(lib[0]).chop}/lib/lib#{lib[1]}.a " }
+          process_brew_libs!(libs, DARWIN_BREW_LIBS)
+          process_brew_libs!(libs, DARWIN_BREW_LIBS_32) if PatchHelpers.ruby32?(ruby_ver)
           DARWIN_DEP_LIBS.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
-          libs << "#{deps_lib_dir}/libyaml.a " if PatchHelpers.ruby32?(ruby_ver)
           <<~SUBST
             -ltebako-fs -ldwarfs-wr -ldwarfs -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
             -lzstd #{libs} -ljemalloc -lc++
           SUBST
+        end
+
+        def yaml_reference(ruby_ver)
+          PatchHelpers.ruby32?(ruby_ver) ? "-l:libyaml.a" : ""
         end
 
         def linux_gnu_libs(ruby_ver)
@@ -74,7 +82,7 @@ module Tebako
             -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
             -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
             -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:liblzma.a \
-            #{PatchHelpers.ruby32?(ruby_ver) ? "-l:libyaml.a" : ""} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
+            #{yaml_reference(ruby_ver)} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
           SUBST
         end
 
@@ -83,7 +91,7 @@ module Tebako
             -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
             -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
             -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:liblzma.a \
-            #{PatchHelpers.ruby32?(ruby_ver) ? "-l:libyaml.a" : ""} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
+            #{yaml_reference(ruby_ver)} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
           SUBST
         end
 
@@ -92,7 +100,7 @@ module Tebako
             -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
             -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
             -l:libzstd.a -l:libffi.a -l:libgdbm.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:liblzma.a -l:libiberty.a \
-            #{PatchHelpers.ruby32?(ruby_ver) ? "-l:libyaml.a" : ""} -l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
+            #{yaml_reference(ruby_ver)} -l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
           SUBST
         end
 
