@@ -40,9 +40,11 @@ The Tebako packager is tested on the following platforms:
 == Supported Ruby versions
 
 The Tebako packager supports the following versions of Ruby for packaging:
+
 * 2.7.7
 * 3.0.6
 * 3.1.4
+* 3.2.2
 
 Support of specific version including minor release requires some effort, sometimes extensive
 but our goal is to be able to package all maintained Ruby releases.
@@ -88,13 +90,11 @@ apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-
 
 === General
 
-Just clone this repository, install Ruby bundle and run `tebako setup` as follows.
+Tebako is distributed as a Ruby gem
 
 [source,sh]
 ----
-git clone https://github.com/tamatebako/tebako
-bundle install
-tebako/exe/tebako setup
+gem install tebako
 ----
 
 === Quick setup on Ubuntu 20.04 on Docker
@@ -131,13 +131,10 @@ apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-
   libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
   libboost-regex-dev libboost-system-dev libboost-thread-dev \
   libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
-  libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev
+  libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libfmt-dev
 
-apt-get install -y libfmt-dev
+gem install tebako
 
-git clone https://github.com/tamatebako/tebako
-bundle install
-tebako/exe/tebako setup
 ----
 
 == Usage
@@ -163,14 +160,14 @@ itself takes minutes.
 You can manage setup of packaging environment manually; please refer to description of setup and clean
 cmmands below.
 
-[source,sh]
+[source]
 ----
-<install-folder>/exe/tebako press     \
-  [-p |--prefix=<tebako-root-folder>] \
-  [-R | --Ruby=<2.7.7|3.0.6|3.1.4>]   \
+tebako press     \
+  [-p|--prefix=<tebako-root-folder>] \
+  [-R|--Ruby=<2.7.7|3.0.6|3.1.4|3.2.2>]   \
   -r|--root=<project-root-folder>     \
   -e|--entry-point=<entry-point>      \
-  [-o |--output=<packaged file name>] \
+  [-o|--output=<packaged file name>] \
   [-l|--log-level=<error|warn|debug|trace>]
 ----
 
@@ -196,7 +193,7 @@ point base name`)
 ====
 [source,sh]
 ----
-exe/tebako press \
+tebako press \
   --root='~/projects/myproject' \
   --entry=start.rb \
   --output=/temp/myproject.tebako
@@ -213,11 +210,11 @@ directories differ and nultiple Ruby versions within single configuration
 This command is optional, tebako creates packaging environment automatically upon the first
 invocation of press command.
 
-[source,sh]
+[source]
 ----
-<install-folder>/exe/tebako setup     \
+tebako setup     \
   [-p |--prefix=<tebako-root-folder>] \
-  [-R | --Ruby=<2.7.7|3.0.6|3.1.4|3.2.2>]
+  [-R |--Ruby=<2.7.7|3.0.6|3.1.4|3.2.2>]
 ----
 
 Where:
@@ -225,19 +222,17 @@ Where:
 * `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
 folder)
 
-* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.0.6)
-
-
+* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.4)
 
 ==== Clean
 
 This command deletes tebako artifacts created by setup and press commands.
 Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own.
 
-[source,sh]
+[source]
 ----
-exe/tebako press \
-  [-p |--prefix=<tebako-root-folder>]
+tebako clean \
+  [-p|--prefix=<tebako-root-folder>]
 ----
 
 Where:
@@ -249,9 +244,43 @@ folder)
 ====
 [source,sh]
 ----
-exe/tebako clean --root='~/projects/myproject'
+tebako clean --prefix='~/.tebako'
 ----
 ====
+
+==== Clean ruby
+
+This command deletes tebako Ruby artifacts created by setup and press commands. Dwarfs libraries are not cleaned.
+Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own.
+
+[source]
+----
+tebako clean_ruby
+  [-p|--prefix=<tebako-root-folder>]
+  [-R|--Ruby=<2.7.7|3.0.6|3.1.4|3.2.2>]
+----
+
+Where:
+
+* `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
+folder)
+* `Ruby` parameter defines Ruby version that will cleaned (optional, cleans all versions by default)
+
+[example]
+====
+[source,sh]
+----
+tebako clean_ruby --prefix='~/.tebako'
+----
+====
+
+==== Build script hash
+Hash command will calculate tebako script hash that may be used as a cache key in CI/CD environment like GitHub Actions
+
+[source]
+----
+tebako hash
+----
 
 === Exit codes
 
