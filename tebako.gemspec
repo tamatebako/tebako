@@ -51,7 +51,7 @@ Gem::Specification.new do |spec|
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
     `git ls-files --recurse-submodules -z`.split("\x0").reject do |f|
       (f == __FILE__) ||
-        f.match(%r{\A(?:(?:test|spec|features|deps|output|common\.env)/|\.(?:git|cirrus|tebako|rubocop))})
+        f.match(%r{\A(?:(?:tests|tests-2|features|deps|output|common\.env)/|\.(?:git|cirrus|tebako|rubocop))})
     end
   end
 

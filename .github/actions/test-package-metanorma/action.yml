@@ -1,8 +1,6 @@
-#! /bin/bash
-#
-# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
-# This file is a part of tebako
+# This file is a part of tamatebako
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -25,10 +23,41 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-# More safety, by turning some bugs into errors.
-# Without `errexit` you don’t need ! and can replace
-# PIPESTATUS with a simple $?
-set -o errexit -o pipefail -o noclobber -o nounset
+name: 'Test: Set 1'
+description: 'Test: Run testset 1; upload packages for test on the latest OS version'
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout packed-mn
+      uses: actions/checkout@v3
+      with:
+        repository: metanorma/packed-mn
+        path: ${{github.workspace}}/packed-mn
 
-chmod +x test-*-package
-for TP in test-*-package; do "./$TP"; done
+    - name: Download gem
+      uses: actions/download-artifact@v3
+      with:
+        name: gem
+
+    - name: Install gem
+      shell: bash
+      run: sudo gem install $( ls tebako*.gem ) || gem install $( ls tebako*.gem )
+
+    - name: Create cache key
+      id: cache-key
+      shell: bash
+      run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
+
+    - name: Process cache
+      uses: actions/cache@v3
+      with:
+        path: .tebako/deps
+        key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ steps.cache-key.outputs.key }}-${{ env.CACHE_VER }}
+
+    - name: Package metanorma
+      shell: bash
+      run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
+
+    - name: Run smoke test
+      shell: bash
+      run: ./metanorma-package help

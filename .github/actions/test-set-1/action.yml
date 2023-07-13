@@ -1,8 +1,6 @@
-# frozen_string_literal: true
-
 # Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
-# This file is a part of tebako
+# This file is a part of tamatebako
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -25,19 +23,36 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "bundler/gem_tasks"
-require "rubocop/rake_task"
+name: 'Test: Package metanorma'
+description: 'Test: Package metanorma using locally deployed tebako gem'
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout shell test framework
+      uses: actions/checkout@v3
+      with:
+        repository: kward/shunit2
+        path: ${{github.workspace}}/tests/shunit2
+        fetch-depth: 1
 
-RuboCop::RakeTask.new
+    - name: Run tebako tests (set no. 1)
+      shell: bash
+      run:  RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
-task default: %i[rubocop]
+    - name: Strip tebako test packages
+      if: ${{ !contains(matrix.os, 'macos') }}
+      shell: bash
+      run: strip *-package
 
-desc "Generate version.txt"
-task "generate_version_txt" do
-  require_relative "lib/tebako/version"
-  File.write(File.join(__dir__, "version.txt"), "#{Tebako::VERSION}\n")
-  puts "Generating version.txt #{Tebako::VERSION} --> #{File.join(__dir__, "version.txt")}"
-end
-
-task build: :generate_version_txt
-task release: :generate_version_txt
+    - name: Upload tebako test packages
+      if: ${{ matrix.package_ruby_ver == env.RUBY_VER && env.CC == 'clang' }}
+      uses: actions/upload-artifact@v3
+      with:
+        name: test-packages
+        retention-days: 1
+        path: |
+          test-01-package
+          test-11-package
+          test-15-package
+          test-18-package
+          test-19-package

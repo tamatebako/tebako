@@ -239,13 +239,13 @@ module Tebako
 
       # rubocop:disable Style/WordArray
       DARWIN_BREW_LIBS = [
-        ["openssl@1.1", "ssl"],   ["openssl@1.1", "crypto"],
-        ["zlib", "z"],            ["gdbm", "gdbm"],
-        ["readline", "readline"], ["libffi", "ffi"],
-        ["ncurses", "ncurses"],   ["fmt", "fmt"],
-        ["lz4", "lz4"],           ["xz", "lzma"],
+        ["openssl@1.1", "ssl"],   ["openssl@1.1", "crypto"],  ["zlib", "z"],            ["gdbm", "gdbm"],
+        ["readline", "readline"], ["libffi", "ffi"],          ["ncurses", "ncurses"],   ["fmt", "fmt"],
+        ["lz4", "lz4"],           ["xz", "lzma"],             ["libyaml", "yaml"],
         ["double-conversion", "double-conversion"]
       ].freeze
+
+      DARWIN_BREW_LIBS_32 = [["libyaml", "yaml"]].freeze
 
       DARWIN_DEP_LIBS = ["glog", "gflags"].freeze
       # rubocop:enable Style/WordArray

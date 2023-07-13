@@ -174,6 +174,7 @@ elseif("${OSTYPE_TXT}" MATCHES "^msys*")
   set(RUBY_MAKEFILE "--file=GNUmakefile")
 elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
   set(IS_DARWIN ON)
+  set(BUILD_OPENSSL_ROOT_DIR "${BUILD_BREW_PREFIX}/opt/openssl@3")
 endif()
 
 # Various locations for external projects
@@ -215,10 +216,6 @@ if(IS_MSYS)
   include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/setup-openssl.cmake)
 endif(IS_MSYS)
 
-if(WITH_OPENSSL_BUILD)
-  def_ext_prj_g(OPENSSL "1.1.1s")
-endif(WITH_OPENSSL_BUILD)
-
 def_ext_prj_g(INCBIN "348e36b")
 def_ext_prj_g(DWARFS_WR "v0.3.4")
 
@@ -238,14 +235,10 @@ else()
   set(WITH_NCURSES_BUILD OFF)
 endif()
 
+set(LIBYAML_RUBY_OPTION "")
 if(${RUBY_VER} VERSION_LESS "3.2.0")
-  set(WITH_LIBYAML_BUILD OFF)
   set(LIBYAML_RUBY_OPTION "--enable-bundled-libyaml")
-else()
-  set(WITH_LIBYAML_BUILD ON)
-  def_ext_prj_t(LIBYAML "0.2.5" "c642ae9b75fee120b2d96c712538bd2cf283228d2337df2cf2988e3c02678ef4")
-  set(LIBYAML_RUBY_OPTION "--with-libyaml-dir=${DEPS}")
-endif()
+endif(${RUBY_VER} VERSION_LESS "3.2.0")
 
 message("Configuration summary:")
 message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
@@ -259,12 +252,6 @@ if(WITH_NCURSES_BUILD)
 else()
   message(STATUS "ncurses: ${_LIBNCURSES}")
 endif(WITH_NCURSES_BUILD)
-
-if(WITH_LIBYAML_BUILD)
-  message(STATUS "libyaml: building v${LIBYAML_VER} at ${LIBYAML_SOURCE_DIR}")
-else()
-  message(STATUS "libyaml: using bundled library. *** It does not work for Psych gem v5+ !!! *** ")
-endif(WITH_LIBYAML_BUILD)
 
 message(STATUS "incbin: @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
 message(STATUS "dwarfs with tebako wrapper: @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
@@ -408,25 +395,6 @@ if(WITH_NCURSES_BUILD)
   )
 endif(WITH_NCURSES_BUILD)
 
-if(WITH_LIBYAML_BUILD)
-  ExternalProject_Add(${LIBYAML_PRJ}
-    PREFIX ${DEPS}
-    URL https://pyyaml.org/download/libyaml/yaml-${LIBYAML_VER}.tar.gz
-    URL_HASH SHA256=${LIBYAML_HASH}
-    DOWNLOAD_NO_PROGRESS true
-    SOURCE_DIR ${LIBYAML_SOURCE_DIR}
-    UPDATE_COMMAND ""
-    CONFIGURE_COMMAND ${LIBYAML_SOURCE_DIR}/configure
-                          --enable-shared=no
-                          --enable-static=yes
-                          --with-pic
-                          --prefix=${DEPS}
-                          --srcdir=${LIBYAML_SOURCE_DIR}
-    BUILD_COMMAND     make
-    INSTALL_COMMAND   make install
-  )
-endif(WITH_LIBYAML_BUILD)
-
 # ...................................................................
 # Ruby
 
@@ -443,9 +411,9 @@ endif()
 set(C_FLAGS_DEST cppflags)
 
 if(IS_DARWIN)
-  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -I${BUILD_BREW_PREFIX}/include -I/opt/openssl@1.1/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
-  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BUILD_BREW_PREFIX}/lib -L${BUILD_BREW_PREFIX}/opt/openssl@1.1/lib -L${BUILD_BREW_PREFIX}/opt/zlib/lib")
-  set(OPENSSL_RUBY_OPTION "--with-openssl-dir=${BUILD_BREW_PREFIX}/opt/openssl@1.1")
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -I${BUILD_BREW_PREFIX}/include -I/opt/openssl@3/include -I${BUILD_BREW_PREFIX}/opt/zlib/include")
+  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BUILD_BREW_PREFIX}/lib -L${BUILD_BREW_PREFIX}/opt/openssl@3/lib -L${BUILD_BREW_PREFIX}/opt/zlib/lib")
+  set(OPENSSL_RUBY_OPTION "--with-openssl-dir=${BUILD_BREW_PREFIX}/opt/openssl@3")
   set(C_FLAGS_DEST cflags)
 endif(IS_DARWIN)
 
@@ -490,10 +458,6 @@ add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 if(WITH_NCURSES_BUILD)
   add_dependencies(${RUBY_PRJ} ${NCURSES_PRJ})
 endif(WITH_NCURSES_BUILD)
-
-if(WITH_LIBYAML_BUILD)
-  add_dependencies(${RUBY_PRJ} ${LIBYAML_PRJ})
-endif(WITH_LIBYAML_BUILD)
 
 if(WITH_OPENSSL_BUILD)
   add_dependencies(${RUBY_PRJ} ${OPENSSL_PRJ} )

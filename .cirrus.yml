@@ -112,6 +112,7 @@ task:
   env:
     CIRRUS_CLONE_SUBMODULES: true
     CIRRUS_CLONE_DEPTH: 1
+    VERBOSE: yes
   macos_instance:
     image: ghcr.io/cirruslabs/macos-monterey-base:latest
 # Commented to save Cirrus-ci limited capacity
@@ -124,6 +125,7 @@ task:
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
+    echo PATH="$(brew --prefix bison)/bin:$PATH" >> $CIRRUS_ENV
     git clone --depth 1 https://github.com/kward/shunit2.git tests/shunit2
 
   pre-cache_script: |

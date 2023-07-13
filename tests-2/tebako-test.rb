@@ -99,7 +99,7 @@ class TebakoTest < MiniTest::Test
   end
 
   def ruby_ver
-    ENV.fetch("RUBY_VER", "3.0.6")
+    ENV.fetch("RUBY_VER", "3.1.4")
   end
 
   # Run 'tebako press ...'

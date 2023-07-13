@@ -27,28 +27,35 @@ name: 'Setup Ubuntu'
 description: 'Setup Ubuntu ci environment for tebako'
 inputs:
   cache:
-    description: 'Tebako cache mode: build/use'
+    description: 'Tebako cache mode: off/build/use'
     required: true
+    type: string
+  cache_path:
+    description: 'Tebako cache root folder'
+    required: true
+    default: '.tebako/deps'
     type: string
 runs:
   using: "composite"
   steps:
     - name: Setup environment
+      if: inputs.cache != 'off'
       shell: bash
       run: cat common.env >> $GITHUB_ENV
 
     - name: Install packages
       shell: bash
       run: |
-        apk --no-cache --upgrade add build-base cmake git bash     \
-          autoconf boost-static boost-dev flex-dev bison           \
-          binutils-dev libevent-dev acl-dev sed                    \
-          lz4-dev openssl-dev zlib-dev                             \
-          libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
-          libevent-static openssl-libs-static lz4-static xz-dev    \
-          zlib-static libunwind-static acl-static tar libffi-dev   \
-          gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-          readline-dev readline-static ruby-dev
+        apk --no-cache --upgrade add build-base cmake git bash   \
+        autoconf boost-static boost-dev flex-dev bison make      \
+        binutils-dev libevent-dev acl-dev sed python3 pkgconfig  \
+        lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
+        libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
+        libevent-static openssl-libs-static lz4-static xz-dev    \
+        zlib-static libunwind-static acl-static tar libffi-dev   \
+        gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+        readline-dev readline-static p7zip ruby-dev gcompat      \
+        gettext-dev gperf
 
     - name: Install clang
       shell: bash
@@ -71,27 +78,26 @@ runs:
         make install
 
     - name: Install bundler
+      if: inputs.cache != 'off'
       shell: bash
-      run: gem install bundler -v ${{ env.BUNDLER_VER }}
+      run: gem install bundler
 
     - name: Install bundle
+      if: inputs.cache != 'off'
       shell: bash
-      run: bundle install
+      run: |
+        bundle install
+        bundle exec rake generate_version_txt
 
     - name: Create deps folder
+      if: inputs.cache != 'off'
       shell: bash
-      run: mkdir ${{ env.DEPS }}
+      run: mkdir -p ${{ inputs.cache_path }}
 
     - name: Process cache
-      id: cache
+      if: inputs.cache != 'off'
       uses: actions/cache@v3
       with:
-        path: ${{ env.DEPS }}
+        path: ${{ inputs.cache_path }}
         key: alpine-${{ env.ALPINE_VER }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
-
-    - name: Cache check
-      shell: bash
-      if: inputs.cache == 'use' && steps.cache.outputs.cache-hit != 'true'
-      run: |
-        echo "Failed to upload cache"
-        false
+        fail-on-cache-miss: inputs.cache == 'use'
