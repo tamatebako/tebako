@@ -37,17 +37,16 @@ runs:
       shell: bash
       run: cat common.env >> $GITHUB_ENV
 
-    - name: Select XCode 12.4 & SDK 11.1
+    - name: Select XCode 12.5.1 & SDK 11.1
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: '12.4'
+        xcode-version: '12.5.1'
 
     - name: Install packages
       shell: bash
-# Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config
+      # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config
       run: |
-        brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog \
-                     gnu-sed bash
+        brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
 
     - name: Update PATH
       shell: bash
