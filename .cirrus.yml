@@ -97,8 +97,9 @@ task:
 # most likely it changes file times that causes make do a kind of
 # 'random' rebuild
   setup_script: |
-    rm -rf $DEPS/src/_ruby_*
     bundle install
+    bundle exec rake generate_version_txt
+    exe/tebako clean_ruby
     exe/tebako setup
 
   upload_caches:
@@ -120,8 +121,8 @@ task:
 
   install_script: |
     brew install gnu-sed bash pkg-config bison flex binutils   \
-    libffi double-conversion boost jemalloc fmt glog openssl@1.1 libevent \
-    libsodium lz4 xz gdbm zlib ncurses
+    libffi double-conversion boost jemalloc fmt glog libevent  \
+    libsodium lz4 xz gdbm zlib ncurses libyaml openssl@1.1 
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
@@ -140,8 +141,9 @@ task:
       - cat .cirrus.yml
 
   setup_script: |
-    rm -rf $DEPS/src/_ruby_*
     bundle install
+    bundle exec rake generate_version_txt
+    exe/tebako clean_ruby
     exe/tebako setup
 
   upload_caches:
