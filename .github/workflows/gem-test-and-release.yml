@@ -41,7 +41,7 @@ on:
       - .github/workflows/ubuntu.yml
       - .github/workflows/windows-msys.yml
       - .cirrus.yml
-#  pull_request:
+  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -52,7 +52,7 @@ env:
   CACHE_VER: 01
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
-# show cmake output aka verbose (yes/no)
+# show cmake output
   VERBOSE: no
 
 
@@ -94,7 +94,7 @@ jobs:
         retention-days: 1
         path: .github/actions/*
 
-  package-metanorma-alpine-0:
+  package-metanorma-alpine:
     needs: build-gem
     name: Use gem to package metanorma ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     runs-on: ubuntu-latest
@@ -118,73 +118,10 @@ jobs:
         name: actions
         path: .github/actions
 
-#            - name: Setup ci environment
-#              uses: ./.github/actions/setup-alpine
-#              with:
-#                cache: off
-
-    - name: Install packages
-      run: |
-        apk --no-cache --upgrade add build-base cmake git bash   \
-        autoconf boost-static boost-dev flex-dev bison make      \
-        binutils-dev libevent-dev acl-dev sed python3 pkgconfig  \
-        lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
-        libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
-        libevent-static openssl-libs-static lz4-static xz-dev    \
-        zlib-static libunwind-static acl-static tar libffi-dev   \
-        gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-        readline-dev readline-static p7zip ruby-dev gcompat      \
-        gettext-dev gperf
-
-    - name: Install clang
-      if: ${{ matrix.env.CC == 'clang' }}
-      run: apk --no-cache --upgrade add clang
-
-    - name: Checkout tools
-      if: ${{ matrix.env.CC == 'clang' }}
-      uses: actions/checkout@v3
+    - name: Setup ci environment
+      uses: ./.github/actions/setup-alpine
       with:
-        repository: tamatebako/tebako-tools
-        path: tools
-
-    - name: Patch system includes
-      if: ${{ matrix.env.CC == 'clang' }}
-      run: tools/ci-scripts/patch-system-includes.sh
-
-    - name: Build libjemalloc
-      run: |
-        wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
-        tar -xf jemalloc-5.2.1.tar.bz2
-        cd jemalloc-5.2.1
-        ./configure
-        make -j4
-        make install
-
-#            - name: Checkout packed-mn
-#              uses: actions/checkout@v3
-#              with:
-#                repository: metanorma/packed-mn
-#                path: ${{github.workspace}}/packed-mn
-
-#            - name: Download gem
-#              uses: actions/download-artifact@v3
-#              with:
-#                name: gem
-
-#            - name: Process cache
-#              uses: actions/cache@v3
-#              with:
-#                path: .tebako/deps
-#                key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ env.CACHE_VER }}
-
-#            - name: Install gem
-#              run: gem install $( ls tebako*.gem )
-
-#            - name: Package metanorma
-#              run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
-
-#            - name: Run smoke test
-#              run: ./metanorma-package help
+        cache: off
 
     - name: Package metanorma
       uses: ./.github/actions/test-package-metanorma
