@@ -51,7 +51,7 @@ env:
   CC: clang
   CXX: clang++
   CACHE_VER: 01
-  VERBOSE: yes
+  VERBOSE: no
 
 jobs:
   setup:
