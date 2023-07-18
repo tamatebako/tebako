@@ -122,7 +122,7 @@ task:
   install_script: |
     brew install gnu-sed bash pkg-config bison flex binutils   \
     libffi double-conversion boost jemalloc fmt glog libevent  \
-    libsodium lz4 xz gdbm zlib ncurses libyaml openssl@1.1 
+    libsodium lz4 xz gdbm zlib ncurses libyaml openssl@1.1
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
