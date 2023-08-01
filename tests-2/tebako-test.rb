@@ -37,7 +37,7 @@ require "minitest/autorun"
 
 # Tebako test set
 # rubocop:disable Metrics/ClassLength
-class TebakoTest < MiniTest::Test
+class TebakoTest < Minitest::Test
   # Path to test fixtures.
   FixturePath = File.expand_path(File.join(File.dirname(__FILE__), "fixtures"))
   Prefix = File.expand_path(File.join(File.dirname(__FILE__), ".."))
