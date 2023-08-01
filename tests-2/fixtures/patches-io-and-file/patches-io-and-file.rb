@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2023, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -35,10 +35,10 @@ raise "exist? returned '#{r}' while 'true' was expected" unless r
 print "OK(success)\n"
 
 # test 2  executable_real? (aka access)
-# print "executable_real?(\"/__tebako_memfs__/local/level-1/level-2/file-2.txt\") ... "
-# r = File.executable_real?("/__tebako_memfs__/local/level-1/level-2/file-2.txt")
-# raise "executable_real? returned '#{r}' while 'false' was expected" if r
-# print "OK(failure)\n"
+ print "executable_real?(\"/__tebako_memfs__/local/level-1/level-2/file-2.txt\") ... "
+ r = File.executable_real?("/__tebako_memfs__/local/level-1/level-2/file-2.txt")
+ raise "executable_real? returned '#{r}' while 'false' was expected" if r
+ print "OK(failure)\n"
 
 # test 3  open - read - seak - rewind - close
 print "open - seek - read - rewind - close  ... "
