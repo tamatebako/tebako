@@ -73,8 +73,6 @@ include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/macos-environment.cmake)
 include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/msys-environment.cmake)
 include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/def-external-project.cmake)
 
-include(${CMAKE_SOURCE_DIR}/cmake/def_tty_colours.cmake)
-
 option(SETUP_MODE "Tebako setup" OFF)
 if(NOT LOG_LEVEL)
   set(LOG_LEVEL "error")
@@ -222,7 +220,7 @@ if(IS_MSYS)
 endif(IS_MSYS)
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.3.4")
+def_ext_prj_g(DWARFS_WR "v0.3.5")
 
 if (DEFINED ENV{BUNDLER_VER})
  set(BUNDLER_VER $ENV{BUNDLER_VER})
