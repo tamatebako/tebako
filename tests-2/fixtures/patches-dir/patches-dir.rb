@@ -34,7 +34,7 @@ Dir.chdir(File.dirname(__FILE__))
 cwd = Dir.getwd
 raise "getwd returned #{cwd} while #{EXPECTED_CWD_1} was expected" unless cwd.eql? EXPECTED_CWD_1
 
-print "OK(success)\n"
+puts "OK(success)"
 
 # test 2  chdir relative - getwd
 EXPECTED_CWD_2 = "/__tebako_memfs__/local/level-1/"
@@ -43,7 +43,7 @@ Dir.chdir("level-1")
 cwd = Dir.getwd
 raise "getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
 
-print "OK(success)\n"
+puts "OK(success)"
 
 # test 3  chdir relative (does not exit) - getwd
 print "chdir 'does-not-exists' ... "
@@ -58,7 +58,7 @@ raise "chdir succeeded while exception was expected" unless failed
 cwd = Dir.getwd
 raise "Getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
 
-print "OK(failure)\n"
+puts "OK(failure)"
 
 # test 4  chdir absolute (does not exit) - getwd
 print "chdir '/bin/does-not-exists' ... "
@@ -73,7 +73,7 @@ raise "chdir succeeded while exception was expected" unless failed
 cwd = Dir.getwd
 raise "getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
 
-print "OK(failure)\n"
+puts "OK(failure)"
 
 # test 5  open - read - tell - seek - close - rewind
 print "open - read - tell - seek - close @ '/__tebako_memfs__/local/level-1/level-2' ... "
@@ -115,7 +115,7 @@ raise "Dir.tell returned #{p} while 1 was expected" unless p.eql? 1
 p = a_dir.close
 raise "Dir.close returned #{p} while nil was expected" unless p.nil?
 
-print "OK(match)\n"
+puts "OK(match)"
 
 # test 7  glob
 print "[\"**/*.txt\", base:\"/__tebako_memfs__/local/\"] ... "
@@ -126,7 +126,7 @@ if fls.difference(EXPECTED_1).any? || EXPECTED_1.difference(fls).any?
   raise "Dir[] returned #{fls} while #{EXPECTED_1} was expected"
 end
 
-print "OK(match)\n"
+puts "OK(match)"
 
 # test 8  glob
 print "[\"/__tebako_memfs__/local/**/file-1.txt\"] ... "
@@ -137,18 +137,18 @@ if fls.difference(EXPECTED_2).any? || EXPECTED_2.difference(fls).any?
   raise "Dir[] returned #{fls} while #{EXPECTED_2} was expected"
 end
 
-print "OK(match)\n"
+puts "OK(match)"
 
 # test 9 Dir.empty?
 print "Dir.empty?(\"/__tebako_memfs__/local/level-1/level-2\") ..."
 r = Dir.empty?("/__tebako_memfs__/local/level-1/level-2")
 raise "Dir.empty? returned #{r} while 'false' was expected" if r
 
-print "OK(match)\n"
+puts "OK(match)"
 
 # test 10 Dir.empty?
 print "Dir.empty?(\"/__tebako_memfs__/local/level-1/level-2/level-3\") ..."
 r = Dir.empty?("/__tebako_memfs__/local/level-1/level-2/level-3")
 raise "Dir.empty? returned #{r} while 'true' was expected" unless r
 
-print "OK(match)\n"
+puts "OK(match)"
