@@ -32,13 +32,14 @@ print "exist?(\"/__tebako_memfs__/local/level-1/level-2/file-1.txt\") ... "
 r = File.exist?("/__tebako_memfs__/local/level-1/level-2/file-1.txt")
 raise "exist? returned '#{r}' while 'true' was expected" unless r
 
-print "OK(success)\n"
+puts "OK(success)"
 
 # test 2  executable_real? (aka access)
- print "executable_real?(\"/__tebako_memfs__/local/level-1/level-2/file-2.txt\") ... "
- r = File.executable_real?("/__tebako_memfs__/local/level-1/level-2/file-2.txt")
- raise "executable_real? returned '#{r}' while 'false' was expected" if r
- print "OK(failure)\n"
+print "executable_real?(\"/__tebako_memfs__/local/level-1/level-2/file-2.txt\") ... "
+r = File.executable_real?("/__tebako_memfs__/local/level-1/level-2/file-2.txt")
+raise "executable_real? returned '#{r}' while 'false' was expected" if r
+
+puts "OK(failure)"
 
 # test 3  open - read - seak - rewind - close
 print "open - seek - read - rewind - close  ... "
@@ -64,7 +65,7 @@ File.open("file-2.txt", "r") do |f|
   r = f.read(4)
   raise "read returned '#{r}' while 'This' was expected" unless r.eql? "This"
 end
-print "OK(match)\n"
+puts "OK(match)"
 
 # test 4  open - pread - close
 print "open - pread - close  ... "
@@ -73,7 +74,7 @@ File.open("file-1.txt", "r") do |f|
   r = f.pread(13, 5)
   raise "read returned '#{r}' while 'is file-1.txt' was expected" unless r.eql? "is file-1.txt"
 end
-print "OK(match)\n"
+puts "OK(match)"
 
 # test 5 lstat - readlink
 print "readlink  ... "
@@ -84,4 +85,4 @@ raise "lstat returned '#{s}' while '18' was expected" unless s.eql? 18
 r = File.readlink("link-3")
 raise "readlink returned '#{r}' while 'level-2/file-3.txt' was expected" unless r.eql? "level-2/file-3.txt"
 
-print "OK(match)\n"
+puts "OK(match)"
