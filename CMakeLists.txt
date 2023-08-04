@@ -486,7 +486,7 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-      COMMAND ruby ${EXE}/tebako-packager deploy ${RUBY_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
+      COMMAND ruby ${EXE}/tebako-packager deploy ${RUBY_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR} ${TBD} ${TGD}
       DEPENDS ${RUBY_PRJ}
   )
   if(GSLENGTH GREATER 0)

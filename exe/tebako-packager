@@ -78,11 +78,13 @@ begin
     #       ARGV[2] -- DATA_SRC_DIR
     #       ARGV[3] -- DATA_PRE_DIR
     #       ARGV[4] -- DATA_BIN_DIR
-    unless ARGV.length == 5
+    #       ARGV[5] -- TARGET_BIN_DIR (TBD)
+    #       ARGV[6] -- TARGET_GEM_DIR (TGD)
+    unless ARGV.length == 7
       raise Tebako::Error,
-            "tebako-packager deploy command expects 5 arguments, #{ARGV.length} has been provided."
+            "tebako-packager deploy command expects 7 arguments, #{ARGV.length} has been provided."
     end
-    Tebako::Packager.deploy(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
+    Tebako::Packager.deploy(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5])
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"
   end

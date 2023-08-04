@@ -142,7 +142,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_equal out, "Hello! Byebug welcomes you to the magic world of ruby gems.\n"
+      assert_match(/Hello! Byebug welcomes you to the magic world of ruby gems./, out)
     end
   end
 
@@ -182,7 +182,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_match(/Hello! SevenZipRuby welcomes you to the magic world of ruby gems/, out)
+      assert_match(/Hello! SevenZipRuby welcomes you to the magic world of ruby gems./, out)
     end
   end
 
@@ -192,7 +192,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_equal out, "Hello! Bundler welcomes you to the magic world of ruby gems.\n"
+      assert_match(/Hello! Bundler welcomes you to the magic world of ruby gems./, out)
     end
   end
 

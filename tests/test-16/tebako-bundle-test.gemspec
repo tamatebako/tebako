@@ -14,11 +14,11 @@ Gem::Specification.new do |spec|
   spec.required_ruby_version = Gem::Requirement.new(">= 2.7.0")
   spec.metadata["homepage_uri"] = spec.homepage
 
-  spec.files = Dir["bin/**/*.rb"] + Dir["lib/**/*.rb"]
+  spec.files = Dir["exe/**/*.rb"] + Dir["lib/**/*.rb"]
 
   spec.bindir = "bin"
   spec.executables << "tebako-test-run.rb"
-  spec.require_paths = %w[bin lib]
+  spec.require_paths = %w[exe lib]
 
   spec.add_dependency "text-table", "~> 1.2.4"
 end

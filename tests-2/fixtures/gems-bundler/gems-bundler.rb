@@ -27,8 +27,11 @@
 
 require "rubygems"
 require "bundler"
-#  requires 'bundler/setup'
 require "rake"
 
-# Just make sure the constant exists
 puts "Hello! Bundler welcomes you to the magic world of ruby gems."
+
+# Make sure the constants exist
+puts "Gem version: #{Gem::VERSION}"
+puts "Bundler version: #{Bundler::VERSION}"
+puts "Rake version: #{Rake::VERSION}"

@@ -25,9 +25,10 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-# This test is inspired packed-mn
-# https://github.com/metanorma/packed-mn
-
+require "expressir"
 require "expressir/express/parser"
 
 puts "Hello! Expressir gem welcomes you to the magic world of ruby gems."
+
+# Make sure the constant exists
+puts "Version: #{Expressir::VERSION}"
