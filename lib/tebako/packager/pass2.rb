@@ -34,18 +34,8 @@ module Tebako
     # Ruby patching definitions (pass2)
     module Pass2
       class << self
-        def get_dir_c_patch(ostype)
-          dir_c_patch = patch_c_file(ostype =~ /msys/ ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST")
-          dir_c_patch.merge!(DIR_C_BASE_PATCH)
-        end
-
         def get_patch_map(ostype, deps_lib_dir, ruby_ver)
-          patch_map = {
-            "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
-            "main.c" => MAIN_C_PATCH,
-            "tool/mkconfig.rb" => TOOL_MKCONFIG_RB_PATCH,
-            "dir.c" => get_dir_c_patch(ostype)
-          }
+          patch_map = get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
 
           C_FILES_TO_PATCH.each { |patch| patch_map.store(patch[0], patch_c_file(patch[1])) }
           patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
@@ -57,6 +47,21 @@ module Tebako
         private
 
         include Tebako::Packager::PatchLiterals
+
+        def get_dir_c_patch(ostype)
+          dir_c_patch = patch_c_file(ostype =~ /msys/ ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST")
+          dir_c_patch.merge!(DIR_C_BASE_PATCH)
+        end
+
+        def get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
+          {
+            "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
+            "main.c" => MAIN_C_PATCH,
+            "tool/mkconfig.rb" => TOOL_MKCONFIG_RB_PATCH,
+            "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH,
+            "dir.c" => get_dir_c_patch(ostype)
+          }
+        end
 
         def process_brew_libs!(libs, brew_libs)
           brew_libs.each { |lib| libs << "#{PatchHelpers.get_prefix(lib[0]).chop}/lib/lib#{lib[1]}.a " }
@@ -73,16 +78,12 @@ module Tebako
           SUBST
         end
 
-        def yaml_reference(ruby_ver)
-          PatchHelpers.ruby32?(ruby_ver) ? "-l:libyaml.a" : ""
-        end
-
         def linux_gnu_libs(ruby_ver)
           <<~SUBST
             -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
             -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
             -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:liblzma.a \
-            #{yaml_reference(ruby_ver)} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
+            #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
           SUBST
         end
 
@@ -91,7 +92,7 @@ module Tebako
             -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
             -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
             -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:liblzma.a \
-            #{yaml_reference(ruby_ver)} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
+            #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
           SUBST
         end
 
@@ -100,7 +101,7 @@ module Tebako
             -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
             -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
             -l:libzstd.a -l:libffi.a -l:libgdbm.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:liblzma.a -l:libiberty.a \
-            #{yaml_reference(ruby_ver)} -l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
+            #{PatchHelpers.yaml_reference(ruby_ver)} -l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
           SUBST
         end
 
@@ -138,14 +139,7 @@ module Tebako
         end
 
         def template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver)
-          base_patch = {
-            "LIBS = @LIBS@ $(EXTLIBS)" => <<~SUBST
-              # -- Start of tebako patch --
-              LIBS = $(MAINLIBS) @LIBS@
-              # -- End of tebako patch --
-            SUBST
-          }
-          base_patch.merge!(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
+          base_patch = TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE.merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
           base_patch.merge!(template_makefile_in_patch_two(ruby_ver))
         end
 

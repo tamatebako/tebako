@@ -26,6 +26,9 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "byebug"
+require "byebug/version"
 
-# Just make sure the constant exists
 puts "Hello! Byebug welcomes you to the magic world of ruby gems."
+
+# Make sure the constant exists
+puts "Version: #{Byebug::VERSION}"

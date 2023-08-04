@@ -168,6 +168,14 @@ module Tebako
         ["dln.c", "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;"]
       ].freeze
 
+      TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE = {
+        "LIBS = @LIBS@ $(EXTLIBS)" => <<~SUBST
+          # -- Start of tebako patch --
+          LIBS = $(MAINLIBS) @LIBS@
+          # -- End of tebako patch --
+        SUBST
+      }.freeze
+
       TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO_PRE_3_1 =
         "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
         "$(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
@@ -198,6 +206,20 @@ module Tebako
         #endif
         /* -- End of tebako patch -- */
       SUBST
+
+      GEM_PRELUDE_RB_PATCH = {
+        "if defined?(DidYouMean)" => <<~SUBST
+          if defined?(DidYouMean)
+
+          # -- Start of tebako patch --
+          begin
+            require 'tebako-runtime'
+          rescue LoadError
+            warn "'tebako-runtime' was not loaded."
+          end
+          # -- End of tebako patch --
+        SUBST
+      }.freeze
 
       MSYS_PATCHES = {
         "ruby.c" => {

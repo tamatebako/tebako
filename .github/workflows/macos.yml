@@ -50,7 +50,7 @@ concurrency:
 env:
   CC: clang
   CXX: clang++
-  CACHE_VER: 01
+  CACHE_VER: 02
   VERBOSE: no
 
 jobs:

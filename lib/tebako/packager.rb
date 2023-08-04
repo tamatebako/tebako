@@ -42,6 +42,7 @@ module Tebako
       file.c
       io.c
       tool/mkconfig.rb
+      gem_prelude.rb
     ].freeze
 
     FILES_TO_RESTORE_MSYS = %w[
@@ -54,6 +55,12 @@ module Tebako
     FILES_TO_RESTORE_MUSL = %w[
       thread_pthread.c
     ].freeze
+
+    DEPLOY_ENV = {
+      "GEM_HOME" => nil,
+      "GEM_PATH" => nil,
+      "TEBAKO_PASS_THROUGH" => "1"
+    }.freeze
 
     class << self
       # Pass1
@@ -98,17 +105,39 @@ module Tebako
       end
 
       # Deploy
-      # To be extended
-      # Now it just recreates Ruby prostine environment from stash
-      def deploy(stash_dir, src_dir, pre_dir, bin_dir)
+      def deploy(stash_dir, src_dir, pre_dir, bin_dir, tbd)
         puts "-- Running deploy script"
 
         puts "   ... creating packaging environment at #{src_dir}"
         recreate([src_dir, pre_dir, bin_dir])
         FileUtils.cp_r "#{stash_dir}/.", src_dir
+
+        install_gem tbd, File.join(__dir__, "../..", "resources/tebako-runtime-0.1.1.gem")
       end
 
       private
+
+      def install_gem(tbd, name)
+        puts "   ... installing #{name} gem"
+        with_env(DEPLOY_ENV) do
+          out, st = Open3.capture2e("#{tbd}/gem", "install", name.to_s, "--no-doc")
+          raise Tebako::Error, "Failed to install #{name} (#{st}):\n #{out}" unless st.exitstatus.zero?
+        end
+      end
+
+      def do_patch(patch_map, root)
+        patch_map.each { |fname, mapping| patch_file("#{root}/#{fname}", mapping) }
+      end
+
+      def patch_file(fname, mapping)
+        raise Tebako::Error, "Could not patch #{fname} because it does not exist." unless File.exist?(fname)
+
+        puts "   ... patching #{fname}"
+        restore_and_save(fname)
+        contents = File.read(fname)
+        mapping.each { |pattern, subst| contents.sub!(pattern, subst) }
+        File.open(fname, "w") { |file| file << contents }
+      end
 
       def recreate(dirname)
         FileUtils.rm_rf(dirname, noop: nil, verbose: nil, secure: true)
@@ -132,18 +161,20 @@ module Tebako
         end
       end
 
-      def patch_file(fname, mapping)
-        raise Tebako::Error, "Could not patch #{fname} because it does not exist." unless File.exist?(fname)
-
-        puts "   ... patching #{fname}"
-        restore_and_save(fname)
-        contents = File.read(fname)
-        mapping.each { |pattern, subst| contents.sub!(pattern, subst) }
-        File.open(fname, "w") { |file| file << contents }
-      end
-
-      def do_patch(patch_map, root)
-        patch_map.each { |fname, mapping| patch_file("#{root}/#{fname}", mapping) }
+      # Sets up temporary environment variables and yields to the
+      # block. When the block exits, the environment variables are set
+      # back to their original values.
+      def with_env(hash)
+        old = {}
+        hash.each do |k, v|
+          old[k] = ENV.fetch(k, nil)
+          ENV[k] = v
+        end
+        begin
+          yield
+        ensure
+          hash.each { |k, _v| ENV[k] = old[k] }
+        end
       end
     end
   end

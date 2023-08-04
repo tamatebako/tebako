@@ -52,6 +52,10 @@ module Tebako
         def ruby32?(ruby_ver)
           ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 2
         end
+
+        def yaml_reference(ruby_ver)
+          ruby32?(ruby_ver) ? "-l:libyaml.a" : ""
+        end
       end
     end
   end
