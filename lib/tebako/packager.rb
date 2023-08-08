@@ -90,7 +90,7 @@ module Tebako
       # Saves pristine Ruby environment that is used to deploy applications for packaging
       def stash(src_dir, stash_dir)
         puts "-- Running stash script"
-        #  .... this code snippet is executed 'outdside' of Ruby scripts
+        #  .... this code snippet is executed 'outside' of Ruby scripts
         # shall be reconsidered
         #    FileUtils.cd ruby_source_dir do
         #        puts "   ... creating pristine ruby environment at #{src_dir} [patience, it will take some time]"
@@ -112,7 +112,7 @@ module Tebako
         recreate([src_dir, pre_dir, bin_dir])
         FileUtils.cp_r "#{stash_dir}/.", src_dir
 
-        install_gem tbd, File.join(__dir__, "../..", "resources/tebako-runtime-0.1.1.gem")
+        install_gem tbd, "tebako-runtime"
       end
 
       private
