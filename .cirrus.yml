@@ -25,16 +25,20 @@
 
 test_task_template: &TEST_TASK_TEMPLATE
   testset-1_script: |
-    tests/scripts/functional-tests.sh
+    RUBY_VER=3.1.4 tests/scripts/functional-tests.sh
 
   testset-2_script: |
-    ruby tests-2/tebako-test.rb
+    RUBY_VER=3.1.4 ruby tests-2/tebako-test.rb
+
 
   checkout-packed-mn_script: |
-    git clone --depth 1 https://github.com/metanorma/packed-mn.git packed-mn
+    git clone https://github.com/metanorma/packed-mn.git packed-mn
+    pushd packed-mn
+    git checkout maxirmx-tebako-0.5.4
+    popd
 
   package-metanorma_script: |
-    exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package
+    exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package -R 3.1.4
 
   smoke-test_script: |
     ./metanorma-package help
@@ -100,7 +104,7 @@ task:
     bundle install
     bundle exec rake generate_version_txt
     exe/tebako clean_ruby
-    exe/tebako setup
+    exe/tebako setup -R 3.1.4
 
   upload_caches:
     - tebako
