@@ -33,7 +33,6 @@ runs:
       with:
         repository: metanorma/packed-mn
         path: ${{github.workspace}}/packed-mn
-        ref: 'maxirmx-tebako-0.5.4'
 
     - name: Download gem
       uses: actions/download-artifact@v3

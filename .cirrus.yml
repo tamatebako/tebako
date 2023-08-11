@@ -33,9 +33,6 @@ test_task_template: &TEST_TASK_TEMPLATE
 
   checkout-packed-mn_script: |
     git clone https://github.com/metanorma/packed-mn.git packed-mn
-    pushd packed-mn
-    git checkout maxirmx-tebako-0.5.4
-    popd
 
   package-metanorma_script: |
     exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package -R 3.1.4
