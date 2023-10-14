@@ -44,8 +44,6 @@ module Tebako
                 else
                   ENV.fetch("CXXFLAGS", nil)
                 end
-      #      cc = ENV.fetch("CC", "gcc")
-      #      cxx = ENV.fetch("CXX", "g++")
       @b_env ||= { "CXXFLAGS" => u_flags }
     end
 

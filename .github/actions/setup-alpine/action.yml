@@ -55,32 +55,22 @@ runs:
         zlib-static libunwind-static acl-static tar libffi-dev   \
         gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
         readline-dev readline-static p7zip ruby-dev gcompat      \
-        gettext-dev gperf
+        gettext-dev gperf brotli-dev brotli-static jemalloc-dev  \
+        fmt-dev xz-static
 
     - name: Install clang
       shell: bash
       if: ${{ env.CC == 'clang' }}
       run: apk --no-cache --upgrade add clang
 
-    - name: Patch system includes
-      shell: bash
-      if: ${{ env.CC == 'clang' }}
-      run: tools/ci-scripts/patch-system-includes.sh
-
-    - name: Build libjemalloc
-      shell: bash
-      run: |
-        wget -q https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
-        tar -xf jemalloc-5.2.1.tar.bz2
-        cd jemalloc-5.2.1
-        ./configure
-        make -j4
-        make install
-
     - name: Install bundler
       if: inputs.cache != 'off'
       shell: bash
       run: gem install bundler
+
+    - name: Declare directory safe
+      shell: bash
+      run: git config --global --add safe.directory "$(pwd)"
 
     - name: Install bundle
       if: inputs.cache != 'off'

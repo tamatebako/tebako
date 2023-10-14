@@ -36,7 +36,7 @@ desc "Generate version.txt"
 task "generate_version_txt" do
   require_relative "lib/tebako/version"
   File.write(File.join(__dir__, "version.txt"), "#{Tebako::VERSION}\n")
-  puts "Generating version.txt #{Tebako::VERSION} --> #{File.join(__dir__, "version.txt")}"
+  puts "Generating #{File.join(__dir__, "version.txt")}; version = #{Tebako::VERSION}"
 end
 
 task build: :generate_version_txt

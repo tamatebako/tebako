@@ -62,6 +62,7 @@ runs:
       shell: bash
       # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config, libyaml
       run: |
+        brew update
         brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
 
     - name: Update PATH
