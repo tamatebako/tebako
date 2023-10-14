@@ -29,7 +29,7 @@ on:
   schedule:
     - cron: "0 6 * * 1"
   push:
-    branches: [ main ]
+    branches: [ main, maxirmx-dwarfs-update ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -64,8 +64,8 @@ jobs:
       matrix:
         os: [ ubuntu-20.04 ]
         env:
-          - { CC: gcc,   CXX: g++ }
-          - { CC: clang, CXX: clang++ }
+          - { CC: gcc-10,   CXX: g++-10 }
+          - { CC: clang-12, CXX: clang++-12 }
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -95,8 +95,8 @@ jobs:
         os: [ ubuntu-20.04 ]
         package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4', '3.2.2' ]
         env:
-          - { CC: gcc,   CXX: g++ }
-          - { CC: clang, CXX: clang++ }
+          - { CC: gcc-10,   CXX: g++-10 }
+          - { CC: clang-12, CXX: clang++-12 }
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -124,8 +124,8 @@ jobs:
         os: [ ubuntu-20.04 ]
         package_ruby_ver: [ '2.7.7', '3.0.6', '3.1.4', '3.2.2' ]
         env:
-          - { CC: gcc,   CXX: g++ }
-          - { CC: clang, CXX: clang++ }
+          - { CC: gcc-10,   CXX: g++-10 }
+          - { CC: clang-12, CXX: clang++-12 }
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment

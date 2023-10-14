@@ -80,10 +80,12 @@ module Tebako
 
         def linux_gnu_libs(ruby_ver)
           <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
-            -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
-            -l:libzstd.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:libanl.a -l:liblzma.a \
-            #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libstdc++.a -l:librt.a -ldl -lpthread
+            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a    \
+            -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libarchive.a  -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a    \
+            -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a  -l:libzstd.a -l:libbrotlienc.a        \
+            -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a  \
+            -l:libcrypt.a -l:libanl.a -l:liblzma.a  #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libboost_chrono.a -l:libstdc++.a       \
+            -l:librt.a -ldl -lpthread
           SUBST
         end
 
@@ -139,8 +141,7 @@ module Tebako
         end
 
         def template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver)
-          base_patch = TEMPLATE_MAKEFILE_IN_BASE_PATCH_ONE.merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
-          base_patch.merge!(template_makefile_in_patch_two(ruby_ver))
+          template_makefile_in_patch_two(ruby_ver).merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
         end
 
         def template_makefile_in_patch_two(ruby_ver)
