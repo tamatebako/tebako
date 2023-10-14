@@ -29,7 +29,7 @@ on:
   schedule:
     - cron: "0 8 * * 1"
   push:
-    branches: [ main ]
+    branches: [ main, maxirmx-dwarfs-update ]
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
@@ -63,8 +63,8 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.16" }
-          - { CC: clang, CXX: clang++, ALPINE_VER: "3.16" }
+          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
+          - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -97,8 +97,8 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.16" }
-          - { CC: clang, CXX: clang++, ALPINE_VER: "3.16" }
+          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
+          - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
         package_ruby_ver: [ '3.1.4', '3.2.2' ]
     env: ${{ matrix.env }}
     steps:
@@ -130,8 +130,8 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.16" }
-          - { CC: clang, CXX: clang++, ALPINE_VER: "3.16" }
+          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
+          - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
         package_ruby_ver: [ '3.1.4', '3.2.2' ]
     env: ${{ matrix.env }}
     steps:
