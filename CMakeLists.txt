@@ -220,7 +220,7 @@ if(IS_MSYS)
 endif(IS_MSYS)
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.3.5")
+def_ext_prj_g(DWARFS_WR "v0.4.0.pre")
 
 if (DEFINED ENV{BUNDLER_VER})
  set(BUNDLER_VER $ENV{BUNDLER_VER})
@@ -402,7 +402,7 @@ endif(WITH_NCURSES_BUILD)
 # Ruby
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
-set(RUBY_C_FLAGS "-pthread -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(RUBY_C_FLAGS "-fPIE -pthread -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # Shadow
 # https://github.com/deivid-rodriguez/byebug/issues/825
