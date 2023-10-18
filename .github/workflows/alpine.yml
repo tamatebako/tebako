@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 02
+  CACHE_VER: 04
   VCPKG_FORCE_SYSTEM_BINARIES: 1
   TZ: "Etc/UTC"
   VERBOSE: no

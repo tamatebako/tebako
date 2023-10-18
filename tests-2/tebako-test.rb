@@ -287,8 +287,7 @@ class TebakoTest < Minitest::Test
     when /linux-musl/
       ["libc.musl-x86_64.so", "ld-musl-x86_64.so"]
     else # linux-gnu assumed
-      ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-", "libm.so",
-       "librt.so", "libgcc_s.so"]
+      ["linux-vdso.so", "libpthread.so", "libdl.so", "libc.so", "ld-linux-", "libm.so", "librt.so"]
     end
   end
 
