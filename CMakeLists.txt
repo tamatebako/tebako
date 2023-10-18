@@ -180,6 +180,29 @@ elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
   set(BUILD_OPENSSL_ROOT_DIR "${BUILD_BREW_PREFIX}/opt/openssl@${OPENSSL_VER}")
 endif()
 
+if(IS_DARWIN)
+  execute_process(
+    COMMAND "sysctl" "-n" "hw.ncpu"
+    RESULT_VARIABLE NCORES_RES
+    OUTPUT_VARIABLE NCORES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+else(IS_DARWIN)
+  execute_process(
+    COMMAND "nproc" "--all"
+    RESULT_VARIABLE NCORES_RES
+    OUTPUT_VARIABLE NCORES
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+endif(IS_DARWIN)
+
+if(NCORES_RES EQUAL 0)
+  message(STATUS "NCORES: ${NCORES}")
+else(NCORES_RES EQUAL 0)
+  set(NCORES 4)
+  message(WARNING "Failed to detect NCORES, resetting to ${NCORES} (default)")
+endif(NCORES_RES EQUAL 0)
+
 # Various locations for external projects
 set(DEPS ${CMAKE_CURRENT_SOURCE_DIR}/deps CACHE STRING "Dependencies' folder'")
 set(DEPS_INCLUDE_DIR ${DEPS}/include)
@@ -363,7 +386,7 @@ ExternalProject_Add(${DWARFS_WR_PRJ}
     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
     UPDATE_COMMAND ""
-    BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel 4
+    BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel ${NCORES}
     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
                -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
                -DWITH_TESTS:BOOL=OFF
@@ -402,7 +425,7 @@ endif(WITH_NCURSES_BUILD)
 # Ruby
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
-set(RUBY_C_FLAGS "-fPIE -pthread -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(RUBY_C_FLAGS "-pthread -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # Shadow
 # https://github.com/deivid-rodriguez/byebug/issues/825
@@ -418,15 +441,17 @@ if(IS_DARWIN)
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BUILD_BREW_PREFIX}/opt/openssl@${OPENSSL_VER}/lib -L${BUILD_BREW_PREFIX}/opt/zlib/lib  -L${BUILD_BREW_PREFIX}/lib")
   set(OPENSSL_RUBY_OPTION "--with-openssl-dir=${BUILD_BREW_PREFIX}/opt/openssl@${OPENSSL_VER}")
   set(C_FLAGS_DEST cflags)
+else(IS_DARWIN)
+  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -static-libgcc")
+
+  if(IS_MUSL)
+    string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DENABLE_PATH_CHECK=0")
+  endif(IS_MUSL)
+
+  if(RB_W32)
+    string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DRB_W32=1")
+  endif(RB_W32)
 endif(IS_DARWIN)
-
-if(IS_MUSL)
-  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DENABLE_PATH_CHECK=0")
-endif(IS_MUSL)
-
-if(RB_W32)
-  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DRB_W32=1")
-endif(RB_W32)
 
 message(STATUS "Ruby build ${C_FLAGS_DEST}='${RUBY_C_FLAGS}'")
 message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
@@ -452,7 +477,7 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         --prefix=${DATA_SRC_DIR}              \
                                                         ${C_FLAGS_DEST}=\"${RUBY_C_FLAGS}\"   \
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
-  BUILD_COMMAND    make ${RUBY_MAKEFILE}
+  BUILD_COMMAND    make ${RUBY_MAKEFILE} -j${NCORES}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
   COMMAND          ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}
 )
@@ -555,15 +580,14 @@ else (${SETUP_MODE})
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                            ${TBD}/bundle${CMD_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                           ${TBD}/bundle${CMD_SUFFIX} install --jobs=4
+                                           ${TBD}/bundle${CMD_SUFFIX} install --jobs=${NCORES}
 #       COMMAND_EXPAND_LISTS
 # [TODO] Open question - how to deploy a project to source filesystem
 #        ruby packer does bundle install --deployment --binstubs
-# [TODO] --jobs=4 probably can be more intellectual
 #       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
 #                                    ${TBD}/bundle lock
 #       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-#                                    ${TBD}/bundle install --deployment --jobs=4
+#                                    ${TBD}/bundle install --deployment --jobs=${NCORES}
         DEPENDS clean_filesystem
     )
   elseif(GLENGTH GREATER 0)
@@ -663,12 +687,12 @@ else (${SETUP_MODE})
 
   if (${RUBY_VER} VERSION_LESS "3.0.0")
     add_custom_target(patched_ruby
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE} -j${NCORES}
     )
   else()
     add_custom_target(patched_ruby
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ruby ${RUBY_MAKEFILE}
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ruby ${RUBY_MAKEFILE} -j${NCORES}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE} -j${NCORES}
     )
   endif()
 

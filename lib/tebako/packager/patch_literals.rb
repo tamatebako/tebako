@@ -251,9 +251,15 @@ module Tebako
 
       }.freeze
 
+      LINUX_PATCHES = {
+        "ext/extmk.rb" => {
+          "mf.macro \"EXTLIBS\", $extlibs" => "#  mf.macro \"EXTLIBS\", $extlibs   tebako patched"
+        }
+      }.freeze
+
       # rubocop:disable Style/WordArray
       DARWIN_BREW_LIBS = [
-        ["openssl@3", "ssl"],     ["openssl@3", "crypto"],  ["zlib", "z"],            ["gdbm", "gdbm"],
+        ["openssl@3", "ssl"],     ["openssl@3", "crypto"],    ["zlib", "z"],            ["gdbm", "gdbm"],
         ["readline", "readline"], ["libffi", "ffi"],          ["ncurses", "ncurses"],   ["fmt", "fmt"],
         ["lz4", "lz4"],           ["xz", "lzma"],             ["libyaml", "yaml"],
         ["double-conversion", "double-conversion"]

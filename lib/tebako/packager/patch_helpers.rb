@@ -34,9 +34,19 @@ module Tebako
     # Ruby patching helpers (pass2)
     module PatchHelpers
       class << self
-        def get_prefix(package)
+        def get_prefix_macos(package)
           out, st = Open3.capture2("brew --prefix #{package}")
           raise Tebako::Error, "brew --prefix #{package} failed with code #{st.exitstatus}" unless st.exitstatus.zero?
+
+          out
+        end
+
+        def get_prefix_linux(package)
+          out, st = Open3.capture2("pkg-config --variable=libdir #{package}")
+          unless st.exitstatus.zero?
+            raise Tebako::Error,
+                  "pkg-config --variable=libdir #{package} failed with code #{st.exitstatus}"
+          end
 
           out
         end

@@ -42,6 +42,7 @@ module Tebako
           patch_map.store("common.mk", COMMON_MK_PATCH) if PatchHelpers.ruby3x?(ruby_ver)
 
           ostype =~ /msys/ ? patch_map.merge!(MSYS_PATCHES) : patch_map
+          ostype =~ /linux/ ? patch_map.merge!(LINUX_PATCHES) : patch_map
         end
 
         private
@@ -64,7 +65,7 @@ module Tebako
         end
 
         def process_brew_libs!(libs, brew_libs)
-          brew_libs.each { |lib| libs << "#{PatchHelpers.get_prefix(lib[0]).chop}/lib/lib#{lib[1]}.a " }
+          brew_libs.each { |lib| libs << "#{PatchHelpers.get_prefix_macos(lib[0]).chop}/lib/lib#{lib[1]}.a " }
         end
 
         def darwin_libs(deps_lib_dir, ruby_ver)
@@ -78,24 +79,35 @@ module Tebako
           SUBST
         end
 
+        # .....................................................
+        #  Notes re linux libraries
+        #   1) This order is important: -lgcc_eh -l:libunwind.a -l:liblzma.a  lzma is used to process debug sections.
+        #      gcc_eh shall be linked before unwind to avoid duplicate symbols.
+        #   2) -lgcc_eh assumes -static-libgcc (applied in CMakeLists.ext, RUBY_C_FLAGS)
+        #   3) -static-libstdc++ did not work, not sure why  [TODO ?]
+        #   4) When clang is used linker links libraries specified in exensions in such way that they are linked shared
+        #      (libz, libffi, libreadline, libncurses, libtinfo, ... )
+        #      Using stuff like -l:libz.a  does not help; there is a reference to libz.so anyway.
+        #      This is fixed by ext/extmk.rb patch [TODO ?]
+        # .....................................................
+
         def linux_gnu_libs(ruby_ver)
           <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a    \
-            -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libarchive.a  -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a    \
-            -l:libgflags.a -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a  -l:libzstd.a -l:libbrotlienc.a        \
-            -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a  \
-            -l:libcrypt.a -l:libanl.a -l:liblzma.a  #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libboost_chrono.a -l:libstdc++.a       \
-            -l:librt.a -ldl -lpthread
+            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a -l:libfsst.a       \
+            -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libarchive.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a     \
+            -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a  \
+            -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a -l:libanl.a #{PatchHelpers.yaml_reference(ruby_ver)}                  \
+            -l:libboost_system.a -l:libboost_chrono.a  -l:libutil.a -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -l:librt.a -ldl -lpthread
           SUBST
         end
 
         def linux_musl_libs(ruby_ver)
           <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a  \
-            -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a    \
-            -l:libevent.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a    \
-            -l:libbrotlicommon.a -l:libgdbm.a -l:libreadline.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:libcrypt.a -l:liblzma.a     \
-            #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libboost_chrono.a -l:libstdc++.a -l:librt.a -ldl -lpthread
+            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a -l:libfsst.a         \
+            -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a        \
+            -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a -l:libreadline.a  \
+            -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a  #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libboost_chrono.a -l:librt.a         \
+            -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -ldl -lpthread
           SUBST
         end
 
