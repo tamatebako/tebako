@@ -168,24 +168,24 @@ module Tebako
         ["dln.c", "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;"]
       ].freeze
 
-      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO_PRE_3_1 =
+      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 =
         "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
         "$(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
 
-      TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO_PRE_3_1 =
+      TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 =
         "# -- Start of tebako patch --\n" \
         "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(LIBS) $(OUTFLAG)$@\n" \
+        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 
-      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO =
+      TEMPLATE_MAKEFILE_IN_BASE_PATTERN =
         "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) $(EXTOBJS) " \
         "$(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
 
-      TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO =
+      TEMPLATE_MAKEFILE_IN_BASE_PATCH =
         "# -- Start of tebako patch --\n" \
         "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(LIBS) $(OUTFLAG)$@\n" \
+        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 
       C_FILE_SUBST = <<~SUBST
@@ -258,16 +258,21 @@ module Tebako
       }.freeze
 
       # rubocop:disable Style/WordArray
+
+      # NOTE: folly provides build-in implementation of jemalloc
+
       DARWIN_BREW_LIBS = [
-        ["openssl@3", "ssl"],     ["openssl@3", "crypto"],    ["zlib", "z"],            ["gdbm", "gdbm"],
-        ["readline", "readline"], ["libffi", "ffi"],          ["ncurses", "ncurses"],   ["fmt", "fmt"],
-        ["lz4", "lz4"],           ["xz", "lzma"],             ["libyaml", "yaml"],
+        ["zlib", "z"],            ["gdbm", "gdbm"],           ["readline", "readline"], ["libffi", "ffi"],
+        ["ncurses", "ncurses"],   ["fmt", "fmt"],             ["lz4", "lz4"],           ["xz", "lzma"],
+        ["libyaml", "yaml"],      ["boost", "boost_chrono"],
         ["double-conversion", "double-conversion"]
       ].freeze
 
-      DARWIN_BREW_LIBS_32 = [["libyaml", "yaml"]].freeze
+      DARWIN_BREW_LIBS_PRE_31 = [["openssl@1.1", "ssl"], ["openssl@1.1", "crypto"]].freeze
 
-      DARWIN_DEP_LIBS = ["glog", "gflags"].freeze
+      DARWIN_BREW_LIBS_31 = [["libyaml", "yaml"], ["openssl@3", "ssl"], ["openssl@3", "crypto"]].freeze
+
+      DARWIN_DEP_LIBS = ["glog", "gflags", "brotlienc", "brotlidec", "brotlicommon"].freeze
       # rubocop:enable Style/WordArray
     end
     # rubocop:enable Metrics/ModuleLength

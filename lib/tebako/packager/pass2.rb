@@ -42,7 +42,7 @@ module Tebako
           patch_map.store("common.mk", COMMON_MK_PATCH) if PatchHelpers.ruby3x?(ruby_ver)
 
           ostype =~ /msys/ ? patch_map.merge!(MSYS_PATCHES) : patch_map
-          ostype =~ /linux/ ? patch_map.merge!(LINUX_PATCHES) : patch_map
+          #          patch_map.merge!(LINUX_PATCHES)
         end
 
         private
@@ -70,12 +70,14 @@ module Tebako
 
         def darwin_libs(deps_lib_dir, ruby_ver)
           libs = String.new
+
+          process_brew_libs!(libs, PatchHelpers.ruby31?(ruby_ver) ? DARWIN_BREW_LIBS_31 : DARWIN_BREW_LIBS_PRE_31)
           process_brew_libs!(libs, DARWIN_BREW_LIBS)
-          process_brew_libs!(libs, DARWIN_BREW_LIBS_32) if PatchHelpers.ruby32?(ruby_ver)
+
           DARWIN_DEP_LIBS.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
           <<~SUBST
-            -ltebako-fs -ldwarfs-wr -ldwarfs -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
-            -lzstd #{libs} -ljemalloc -lc++
+            -ltebako-fs -ldwarfs-wr -ldwarfs -force_load #{deps_lib_dir}/libdwarfs_compression.a -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
+            -lzstd #{libs} -ljemalloc -lc++ -lc++abi
           SUBST
         end
 
@@ -97,7 +99,7 @@ module Tebako
             -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libarchive.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a     \
             -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a  \
             -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a -l:libanl.a #{PatchHelpers.yaml_reference(ruby_ver)}                  \
-            -l:libboost_system.a -l:libboost_chrono.a  -l:libutil.a -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -l:librt.a -ldl -lpthread
+            -l:libboost_system.a -l:libboost_chrono.a  -l:libutil.a -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -l:librt.a -ldl -lpthread -lm
           SUBST
         end
 
@@ -159,9 +161,9 @@ module Tebako
 
         def template_makefile_in_patch_two(ruby_ver)
           if PatchHelpers.ruby31?(ruby_ver)
-            { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO => TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO }
+            { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
           else
-            { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_TWO_PRE_3_1 => TEMPLATE_MAKEFILE_IN_BASE_PATCH_TWO_PRE_3_1 }
+            { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 }
           end
         end
       end
