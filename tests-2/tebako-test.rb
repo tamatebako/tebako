@@ -282,7 +282,7 @@ class TebakoTest < Minitest::Test
     case RbConfig::CONFIG["target_os"]
     when /darwin/
       ["Security.framework", "Foundation.framework", "CoreFoundation.framework", "libSystem",
-       "libc++", "#{package}:"]
+       "libc++", "libc++abi", "#{package}:"]
     # This is the test program itself: for example, 'launcher-package-package:'
     when /linux-musl/
       ["libc.musl-x86_64.so", "ld-musl-x86_64.so"]

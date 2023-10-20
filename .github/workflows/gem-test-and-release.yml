@@ -103,7 +103,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ 'alpine:3.16' ]
+        os: [ 'alpine:3.17' ]
         package_ruby_ver: [ '3.1.4' ]
         env:
           - { CC: gcc, CXX: g++ }
