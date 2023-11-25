@@ -38,6 +38,15 @@ require_relative "version"
 module Tebako
   # Cli methods
   module CliHelpers
+    RUBY_VERSIONS = {
+      "2.7.7" => "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90",
+      "3.0.6" => "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e",
+      "3.1.4" => "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6",
+      "3.2.2" => "96c57558871a6748de5bc9f274e93f4b5aad06cd8f37befa0e8d94e7b8a423bc"
+    }.freeze
+
+    DEFAULT_RUBY_VERSION = "3.1.4"
+
     def b_env
       u_flags = if RbConfig::CONFIG["host_os"] =~ /darwin/
                   "-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0  #{ENV.fetch("CXXFLAGS", nil)}"
@@ -57,15 +66,6 @@ module Tebako
     def deps
       @deps ||= File.join(prefix, "deps")
     end
-
-    RUBY_VERSIONS = {
-      "2.7.7" => "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90",
-      "3.0.6" => "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e",
-      "3.1.4" => "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6",
-      "3.2.2" => "96c57558871a6748de5bc9f274e93f4b5aad06cd8f37befa0e8d94e7b8a423bc"
-    }.freeze
-
-    DEFAULT_RUBY_VERSION = "3.1.4"
 
     def extend_ruby_version
       version = options["Ruby"].nil? ? DEFAULT_RUBY_VERSION : options["Ruby"]

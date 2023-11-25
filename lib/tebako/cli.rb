@@ -33,6 +33,7 @@ require "yaml"
 
 require_relative "cli_helpers"
 require_relative "error"
+require_relative "windows_setup" if Gem.win_platform?
 
 # Tebako - an executable packager
 # Implementation of tebako command-line interface
@@ -128,9 +129,13 @@ module Tebako
       end
 
       def do_setup
-        packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
-        packaging_error(102) unless system(b_env,
-                                           "cmake --build #{output} --target setup --parallel #{Etc.nprocessors}")
+        if Gem.win_platform?
+          packaging_error(101) unless Tebako::WindowsSetup.setup(*extend_ruby_version, deps)
+        else
+          packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
+          packaging_error(102) unless system(b_env,
+                                             "cmake --build #{output} --target setup --parallel #{Etc.nprocessors}")
+        end
       end
 
       def press_announce
