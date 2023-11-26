@@ -115,6 +115,10 @@ module Tebako
         install_gem tbd, "tebako-runtime"
       end
 
+      def do_patch(patch_map, root)
+        patch_map.each { |fname, mapping| patch_file("#{root}/#{fname}", mapping) }
+      end
+
       private
 
       def install_gem(tbd, name)
@@ -123,10 +127,6 @@ module Tebako
           out, st = Open3.capture2e("#{tbd}/gem", "install", name.to_s, "--no-doc")
           raise Tebako::Error, "Failed to install #{name} (#{st}):\n #{out}" unless st.exitstatus.zero?
         end
-      end
-
-      def do_patch(patch_map, root)
-        patch_map.each { |fname, mapping| patch_file("#{root}/#{fname}", mapping) }
       end
 
       def patch_file(fname, mapping)

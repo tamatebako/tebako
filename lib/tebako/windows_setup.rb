@@ -30,19 +30,35 @@ require "net/http"
 require "rubygems/package"
 require "zlib"
 
+require_relative "packager"
+
 # Tebako - an executable packager
 # Command-line interface methods
 module Tebako
   # Cli methods
   module WindowsSetup
-    WIN32_MAKEFILE_SUB_PATH = {
-      "LIBRUBYARG    = $(LIBRUBY)" => "LIBRUBYARG    = $(LIBRUBY_A)"
+    WIN32_MAKEFILE_SUB_PATCH = {
+      "win32/Makefile.sub" => {
+        "LIBRUBYARG    = $(LIBRUBY)" => "LIBRUBYARG    = $(LIBRUBY_A) # tebako patched",
+        "$(OUTFLAG)$@ $(LIBRUBYARG) -link $(LDFLAGS) $(XLDFLAGS)" => "$(OUTFLAG)$@ $(LIBRUBYARG) $(LIBS) -link $(LDFLAGS) $(XLDFLAGS)",
+        "$(RUBYW_INSTALL_NAME).res $(OUTFLAG)$@ $(LIBRUBYARG) \\" => "$(RUBYW_INSTALL_NAME).res $(OUTFLAG)$@ $(LIBRUBYARG) $(LIBS) \\",
+        "-link $(LDFLAGS) $(XLDFLAGS) -subsystem:Windows" => "-link $(LDFLAGS) $(XLDFLAGS) -subsystem:Windows"
+      }
     }.freeze
     class << self
       def setup(ruby_ver, ruby_hash, deps)
         begin
-          puts WIN32_MAKEFILE_SUB_PATH
+          # vcpkg
+          @ruby_src_dir = ruby_source_dir(deps, ruby_ver)
           download_ruby(ruby_ver, ruby_hash, deps)
+          Tebako::Packager.do_patch(WIN32_MAKEFILE_SUB_PATCH, @ruby_src_dir)
+          system("call \"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\" && " \
+                 "cd #{@ruby_src_dir} && " \
+                 "win32\\configure --prefix=D:\\Projects\\8.Projects\\ruby --with-static-linked-ext --disable-install-doc " \
+                 "--with-opt-dir=C:/vcpkg/installed/x64-windows && nmake && nmake install")
+          # build
+          # install
+          # build extension
         rescue StandardError => e
           puts "Could not download Ruby sources: #{e.message}"
           return false
@@ -57,10 +73,9 @@ module Tebako
         url = "https://cache.ruby-lang.org/pub/ruby/#{ruby_ver[0, 3]}/ruby-#{ruby_ver}.tar.gz"
 
         target_file = File.join(deps, "src", "ruby-#{ruby_ver}.tar.gz")
-        target_folder = File.join(deps, "src", "_ruby_#{ruby_ver}")
-        FileUtils.mkdir_p(target_folder)
+        FileUtils.mkdir_p(@ruby_src_dir)
 
-        download_and_decompress(url, target_file, target_folder, ruby_hash)
+        download_and_decompress(url, target_file, ruby_hash)
       end
 
       def check_existing(target_file, expected_checksum)
@@ -78,25 +93,38 @@ module Tebako
         false
       end
 
-      def decompress(source_file, target_folder)
-        FileUtils.rm_rf(target_folder) if File.directory?(target_folder)
+      def decompress(source_file)
+        FileUtils.rm_rf(@ruby_src_dir)
 
-        Zlib::GzipReader.open(source_file) do |tar_gz|
-          Gem::Package::TarReader.new(tar_gz) do |tar|
-            decompress_tar(tar, target_folder)
-          end
-        end
-        true
+        success = system("tar -xzf #{source_file} -C #{@ruby_src_dir} --strip-components=1")
+
+        success || false
+
+#        Zlib::GzipReader.open(source_file) do |tar_gz|
+#          Gem::Package::TarReader.new(tar_gz) do |tar|
+#            decompress_tar(tar, target_folder)
+#          end
+#        end
+#        true
       end
 
       def decompress_tar(tar, target_folder)
+        entries = {}
+
         tar.each do |entry|
-          target_path = File.join(target_folder, entry.full_name)
+          parts = entry.full_name.split("/").drop(1)
+          new_name = parts.join("/")
+          target_path = File.join(target_folder, new_name)
+          puts "Extracting #{target_path}"
           if entry.directory?
             FileUtils.mkdir_p(target_path)
+            entries[target_path] = entry.header.mtime
           elsif entry.file?
             File.binwrite(target_path, entry.read)
+            FileUtils.touch(target_path, mtime: entry.header.mtime)
           end
+
+          entries.each { |path, mtime| FileUtils.touch(path, mtime: mtime) }
         end
       end
 
@@ -115,12 +143,22 @@ module Tebako
         true
       end
 
-      def download_and_decompress(url, target_file, target_folder, expected_checksum)
+      def download_and_decompress(url, target_file, expected_checksum)
         if !check_existing(target_file, expected_checksum) && !download(url, target_file, expected_checksum)
           return false
         end
 
-        decompress(target_file, target_folder)
+        decompress(target_file)
+      end
+
+      def fix_path(path, target_folder)
+        parts = path.full_name.split("/").drop(1)
+        new_name = parts.join("/")
+        File.join(target_folder, new_name)
+      end
+
+      def ruby_source_dir(deps, ver)
+        File.join(deps, "src", "_ruby_#{ver}")
       end
     end
   end
