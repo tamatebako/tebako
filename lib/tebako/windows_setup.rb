@@ -37,25 +37,41 @@ require_relative "packager"
 module Tebako
   # Cli methods
   module WindowsSetup
-    WIN32_MAKEFILE_SUB_PATCH = {
+    XPATH = "c:/vcpkg/installed/x64-windows-static-release"
+    LIBRUBYARG_SUBST = <<~SUBST
+        # Start of tebako patch
+        XEXTLIBS = ffi.lib libcrypto.lib libssl.lib ole32.lib oleaut32.lib crypt32.lib readline.lib yaml.lib zlib.lib
+        LIBRUBYARG    = $(LIBRUBY_A)
+        # End of tebako patch
+      SUBST
+
+    WIN32_PATCH = {
       "win32/Makefile.sub" => {
-        "LIBRUBYARG    = $(LIBRUBY)" => "LIBRUBYARG    = $(LIBRUBY_A) # tebako patched",
-        "$(OUTFLAG)$@ $(LIBRUBYARG) -link $(LDFLAGS) $(XLDFLAGS)" => "$(OUTFLAG)$@ $(LIBRUBYARG) $(LIBS) -link $(LDFLAGS) $(XLDFLAGS)",
-        "$(RUBYW_INSTALL_NAME).res $(OUTFLAG)$@ $(LIBRUBYARG) \\" => "$(RUBYW_INSTALL_NAME).res $(OUTFLAG)$@ $(LIBRUBYARG) $(LIBS) \\",
-        "-link $(LDFLAGS) $(XLDFLAGS) -subsystem:Windows" => "-link $(LDFLAGS) $(XLDFLAGS) -subsystem:Windows"
-      }
-    }.freeze
+        "LIBRUBYARG    = $(LIBRUBY)" => LIBRUBYARG_SUBST,
+        "$(OUTFLAG)$@ $(LIBRUBYARG) -link $(LDFLAGS) $(XLDFLAGS)" =>
+                      "$(OUTFLAG)$@ $(DLDOBJS) $(LIBRUBYARG) $(XEXTLIBS) $(LIBS) -link $(LDFLAGS) $(XLDFLAGS) -libpath:#{XPATH}/lib",
+        "$(RUBYW_INSTALL_NAME).res $(OUTFLAG)$@ $(LIBRUBYARG) \\" =>
+                      "$(RUBYW_INSTALL_NAME).res $(OUTFLAG)$@ $(DLDOBJS) $(LIBRUBYARG) $(XEXTLIBS) $(LIBS) \\",
+        "-link $(LDFLAGS) $(XLDFLAGS) -subsystem:Windows" => "-link $(LDFLAGS) $(XLDFLAGS) -libpath:#{XPATH}/lib -subsystem:Windows"
+      },
+      # because it is not possible to pass --enable-bundled-libyaml option ...
+      "ext/psych/extconf.rb" => {
+        "if enable_config(\"bundled-libyaml\", false) || !(find_header('yaml.h') && find_library('yaml', 'yaml_get_version'))" => "if true"
+        }
+        }.freeze
+
+    ENV_CMD = "\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\""
+    CONFIGURE_CMD = "win32\\configure --prefix=D:\\Projects\\8.Projects\\ruby --with-static-linked-ext "\
+                    "--disable-install-doc --with-opt-dir=#{XPATH}"
     class << self
       def setup(ruby_ver, ruby_hash, deps)
         begin
           # vcpkg
           @ruby_src_dir = ruby_source_dir(deps, ruby_ver)
           download_ruby(ruby_ver, ruby_hash, deps)
-          Tebako::Packager.do_patch(WIN32_MAKEFILE_SUB_PATCH, @ruby_src_dir)
-          system("call \"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Auxiliary\\Build\\vcvars64.bat\" && " \
-                 "cd #{@ruby_src_dir} && " \
-                 "win32\\configure --prefix=D:\\Projects\\8.Projects\\ruby --with-static-linked-ext --disable-install-doc " \
-                 "--with-opt-dir=C:/vcpkg/installed/x64-windows && nmake && nmake install")
+          Tebako::Packager.do_patch(WIN32_PATCH, @ruby_src_dir)
+          system("call #{ENV_CMD} && cd #{@ruby_src_dir} && #{CONFIGURE_CMD} && nmake && nmake install")
+#          system("call #{ENV_CMD} &&  cd #{@ruby_src_dir} && nmake install")
           # build
           # install
           # build extension
@@ -95,17 +111,18 @@ module Tebako
 
       def decompress(source_file)
         FileUtils.rm_rf(@ruby_src_dir)
+        FileUtils.mkdir_p(@ruby_src_dir)
 
         success = system("tar -xzf #{source_file} -C #{@ruby_src_dir} --strip-components=1")
 
         success || false
 
-#        Zlib::GzipReader.open(source_file) do |tar_gz|
-#          Gem::Package::TarReader.new(tar_gz) do |tar|
-#            decompress_tar(tar, target_folder)
-#          end
-#        end
-#        true
+        #        Zlib::GzipReader.open(source_file) do |tar_gz|
+        #          Gem::Package::TarReader.new(tar_gz) do |tar|
+        #            decompress_tar(tar, target_folder)
+        #          end
+        #        end
+        #        true
       end
 
       def decompress_tar(tar, target_folder)
@@ -163,35 +180,5 @@ module Tebako
     end
   end
 end
-# win32/Makefile.sub
-# LIBRUBYARG    = $(LIBRUBY_A)
 
-#  cmd /k "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
-#  set INCLUDE=C:\vcpkg\installed\x64-windows\include;%INCLUDE%
-#  set LIB=C:\vcpkg\installed\x64-windows\lib;%LIB%
-
-# win32\configure --prefix=D:\Projects\8.Projects\ruby --with-static-linked-ext --disable-install-doc
-#                 --with-opt-dir=C:/vcpkg/installed/x64-windows
-
-# !if "$(PROGRAM)" != ""
-# $(PROGRAM):	$(MAINOBJ) $(LIBRUBY_SO) $(RUBY_INSTALL_NAME).res
-#		$(ECHO) linking $(@:\=/)
-#		$(Q) $(PURIFY) $(CC) $(MAINOBJ) $(EXTOBJS) $(RUBY_INSTALL_NAME).res \
-#			$(OUTFLAG)$@ $(LIBRUBYARG) bcrypt.lib ws2_32.lib Advapi32.lib Shell32.lib Iphlpapi.lib Dbghelp.lib
-#     User32.lib Kernel32.lib -link $(LDFLAGS) $(XLDFLAGS) -implib:super.lib -def:x64-vcruntime140-ruby310.def
-#		$(Q) $(LDSHARED_0)
-#		$(Q) $(LDSHARED_1)
-#		$(Q) $(LDSHARED_2)
-# !endif
-
-# !if "$(WPROGRAM)" != ""
-# $(WPROGRAM):	$(MAINOBJ) $(WINMAINOBJ) $(LIBRUBY_SO) $(RUBYW_INSTALL_NAME).res
-#		$(ECHO) linking $(@:\=/)
-#		$(Q) $(PURIFY) $(CC) $(MAINOBJ) $(WINMAINOBJ) \
-#			$(RUBYW_INSTALL_NAME).res $(OUTFLAG)$@ $(LIBRUBYARG) \
-#			bcrypt.lib ws2_32.lib Advapi32.lib Shell32.lib Iphlpapi.lib Dbghelp.lib User32.lib Kernel32.lib \
-#			-link $(LDFLAGS) $(XLDFLAGS) -subsystem:Windows
-#		$(Q) $(LDSHARED_0)
-#		$(Q) $(LDSHARED_1)
-#		$(Q) $(LDSHARED_2)
-# !endif
+# c:\vcpkg\vcpkg install --triplet x64-windows-static-release libffi openssl readline libyaml zlib
