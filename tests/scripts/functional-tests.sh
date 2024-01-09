@@ -330,6 +330,6 @@ DIR_BIN=$( cd "$DIR_ROOT"/exe && pwd )
 DIR_TESTS=$( cd "$DIR_ROOT"/tests && pwd )
 RUBY_VER=${RUBY_VER:-3.1.4}
 
-echo "Running tebako tests"
+echo "Running tebako tests for Ruby $RUBY_VER"
 # shellcheck source=/dev/null
 . "$DIR_TESTS/shunit2/shunit2"

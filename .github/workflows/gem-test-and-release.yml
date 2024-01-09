@@ -74,7 +74,6 @@ jobs:
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{ env.RUBY_VER }}
-        bundler: ${{ env.BUNDLER_VER }}
         bundler-cache: true
 
     - name: Build gem

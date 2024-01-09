@@ -60,7 +60,7 @@ class TebakoTest < Minitest::Test
     begin
       yield
     ensure
-      hash.each { |k, _v| ENV[k] = old[k] }
+      hash.each_key { |k| ENV[k] = old[k] }
     end
   end
 
