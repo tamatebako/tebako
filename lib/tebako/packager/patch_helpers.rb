@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -34,6 +34,16 @@ module Tebako
     # Ruby patching helpers (pass2)
     module PatchHelpers
       class << self
+        def patch_file(fname, mapping)
+          raise Tebako::Error, "Could not patch #{fname} because it does not exist." unless File.exist?(fname)
+
+          puts "   ... patching #{fname}"
+          restore_and_save(fname)
+          contents = File.read(fname)
+          mapping.each { |pattern, subst| contents.sub!(pattern, subst) }
+          File.open(fname, "w") { |file| file << contents }
+        end
+
         def get_prefix_macos(package)
           out, st = Open3.capture2("brew --prefix #{package}")
           raise Tebako::Error, "brew --prefix #{package} failed with code #{st.exitstatus}" unless st.exitstatus.zero?
@@ -51,6 +61,28 @@ module Tebako
           out
         end
 
+        def recreate(dirname)
+          FileUtils.rm_rf(dirname, noop: nil, verbose: nil, secure: true)
+          FileUtils.mkdir(dirname)
+        end
+
+        def restore_and_save(fname)
+          raise Tebako::Error, "Could not save #{fname} because it does not exist." unless File.exist?(fname)
+
+          old_fname = "#{fname}.old"
+          if File.exist?(old_fname)
+            FileUtils.rm_f(fname)
+            File.rename(old_fname, fname)
+          end
+          FileUtils.cp(fname, old_fname)
+        end
+
+        def restore_and_save_files(files, ruby_source_dir)
+          files.each do |fname|
+            restore_and_save "#{ruby_source_dir}/#{fname}"
+          end
+        end
+
         def ruby3x?(ruby_ver)
           ruby_ver[0] == "3"
         end
@@ -61,6 +93,22 @@ module Tebako
 
         def ruby32?(ruby_ver)
           ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 2
+        end
+
+        # Sets up temporary environment variables and yields to the
+        # block. When the block exits, the environment variables are set
+        # back to their original values.
+        def with_env(hash)
+          old = {}
+          hash.each do |k, v|
+            old[k] = ENV.fetch(k, nil)
+            ENV[k] = v
+          end
+          begin
+            yield
+          ensure
+            hash.each_key { |k| ENV[k] = old[k] }
+          end
         end
 
         def yaml_reference(ruby_ver)

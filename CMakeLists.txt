@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -245,14 +245,6 @@ endif(IS_MSYS)
 def_ext_prj_g(INCBIN "348e36b")
 def_ext_prj_g(DWARFS_WR "v0.4.0")
 
-if (DEFINED ENV{BUNDLER_VER})
- set(BUNDLER_VER $ENV{BUNDLER_VER})
- set(BUNDLER_ANNOTATION "environment")
-else()
-  set(BUNDLER_VER "2.3.22")
-  set(BUNDLER_ANNOTATION "default")
-endif()
-
 find_library(_LIBNCURSES "libncurses.a")
 if(${_LIBNCURSES} STREQUAL "_LIBNCURSES-NOTFOUND")
   set(WITH_NCURSES_BUILD ON)
@@ -268,7 +260,6 @@ endif(${RUBY_VER} VERSION_LESS "3.2.0")
 
 message("Configuration summary:")
 message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
-message(STATUS "bundler version: ${BUNDLER_VER} (${BUNDLER_ANNOTATION})")
 if(WITH_OPENSSL_BUILD)
   message(STATUS "openssl: building @${OPENSSL_TAG} at ${OPENSSL_SOURCE_DIR}")
 endif(WITH_OPENSSL_BUILD)
@@ -511,7 +502,7 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-      COMMAND ruby ${EXE}/tebako-packager deploy ${RUBY_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR} ${TBD} ${TGD}
+      COMMAND ruby ${EXE}/tebako-packager deploy ${RUBY_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR} ${GFLENGTH}
       DEPENDS ${RUBY_PRJ}
   )
   if(GSLENGTH GREATER 0)
@@ -527,8 +518,6 @@ else (${SETUP_MODE})
         add_custom_target(source_filesystem
            COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
            COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                       ${TBD}/gem${CMD_SUFFIX} install bundler -v '${BUNDLER_VER}' --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                        ${TBD}/bundle${CMD_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
            COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E  env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
@@ -572,9 +561,6 @@ else (${SETUP_MODE})
                    ${CMAKE_COMMAND} -E false )
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                           ${TBD}/gem${CMD_SUFFIX} install bundler -v '${BUNDLER_VER}'
-                                              --source 'https://rubygems.org/' --no-document --install-dir ${TGD}
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                            ${TBD}/bundle${CMD_SUFFIX} config build.ffi --disable-system-libffi
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1

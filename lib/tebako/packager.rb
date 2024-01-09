@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -30,6 +30,7 @@ require "fileutils"
 require_relative "error"
 require_relative "packager/pass1"
 require_relative "packager/pass2"
+require_relative "packager/patch_helpers"
 
 # Tebako - an executable packager
 module Tebako
@@ -62,20 +63,45 @@ module Tebako
       "TEBAKO_PASS_THROUGH" => "1"
     }.freeze
 
+    # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
+    # These are the minimal versions required to provide linux-gnu / linux-musl differentiantion by bundler
+    # Ruby 3.1+ default bubdler/rubygems versions work correctly out of the box
+    BUNDLER_VERSION = "2.4.22"
+    RUBYGEMS_VERSION = "3.4.22"
+
     class << self
+      # Deploy
+      def deploy(src_dir, tbd, gflength)
+        puts "-- Running deploy script"
+
+        ruby_ver = ruby_version(tbd)
+        update_rubygems(tbd, "#{src_dir}/lib", ruby_ver, RUBYGEMS_VERSION)
+        install_gem tbd, "tebako-runtime"
+        install_gem tbd, "bundler", (PatchHelpers.ruby31?(ruby_ver) ? nil : BUNDLER_VERSION) if gflength.to_i != 0
+      end
+
+      # Deploy
+      def init(stash_dir, src_dir, pre_dir, bin_dir)
+        puts "-- Running init script"
+
+        puts "   ... creating packaging environment at #{src_dir}"
+        PatchHelpers.recreate([src_dir, pre_dir, bin_dir])
+        FileUtils.cp_r "#{stash_dir}/.", src_dir
+      end
+
       # Pass1
       # Executed before Ruby build, patching ensures that Ruby itself is linked statically
       def pass1(ostype, ruby_source_dir, mount_point, src_dir, ruby_ver)
         puts "-- Running pass1 script"
 
-        recreate(src_dir)
+        PatchHelpers.recreate(src_dir)
         do_patch(Pass1.get_patch_map(ostype, mount_point, ruby_ver), ruby_source_dir)
 
         # Roll back pass2 patches
         # Just in case we are recovering after some error
-        restore_and_save_files(FILES_TO_RESTORE, ruby_source_dir)
-        restore_and_save_files(FILES_TO_RESTORE_MUSL, ruby_source_dir) if ostype =~ /linux-musl/
-        restore_and_save_files(FILES_TO_RESTORE_MSYS, ruby_source_dir) if ostype =~ /msys/
+        PatchHelpers.restore_and_save_files(FILES_TO_RESTORE, ruby_source_dir)
+        PatchHelpers.restore_and_save_files(FILES_TO_RESTORE_MUSL, ruby_source_dir) if ostype =~ /linux-musl/
+        PatchHelpers.restore_and_save_files(FILES_TO_RESTORE_MSYS, ruby_source_dir) if ostype =~ /msys/
       end
 
       # Pass2
@@ -100,81 +126,54 @@ module Tebako
         #    end
 
         puts "   ... saving pristine ruby environment to #{stash_dir}"
-        recreate(stash_dir)
+        PatchHelpers.recreate(stash_dir)
         FileUtils.cp_r "#{src_dir}/.", stash_dir
-      end
-
-      # Deploy
-      def deploy(stash_dir, src_dir, pre_dir, bin_dir, tbd)
-        puts "-- Running deploy script"
-
-        puts "   ... creating packaging environment at #{src_dir}"
-        recreate([src_dir, pre_dir, bin_dir])
-        FileUtils.cp_r "#{stash_dir}/.", src_dir
-
-        install_gem tbd, "tebako-runtime"
       end
 
       private
 
-      def install_gem(tbd, name)
-        puts "   ... installing #{name} gem"
-        with_env(DEPLOY_ENV) do
-          out, st = Open3.capture2e("#{tbd}/gem", "install", name.to_s, "--no-doc")
+      def install_gem(tbd, name, ver = nil)
+        puts "   ... installing #{name} gem#{" version #{ver}" if ver}"
+        PatchHelpers.with_env(DEPLOY_ENV) do
+          params = ["#{tbd}/gem", "install", name.to_s]
+          params.push("-v", ver.to_s) if ver
+
+          out, st = Open3.capture2e(*params)
           raise Tebako::Error, "Failed to install #{name} (#{st}):\n #{out}" unless st.exitstatus.zero?
         end
       end
 
       def do_patch(patch_map, root)
-        patch_map.each { |fname, mapping| patch_file("#{root}/#{fname}", mapping) }
+        patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
       end
 
-      def patch_file(fname, mapping)
-        raise Tebako::Error, "Could not patch #{fname} because it does not exist." unless File.exist?(fname)
+      def ruby_version(tbd)
+        ruby_version = nil
+        PatchHelpers.with_env(DEPLOY_ENV) do
+          out, st = Open3.capture2e("#{tbd}/ruby", "--version")
+          raise Tebako::Error, "Failed to run ruby --version" unless st.exitstatus.zero?
 
-        puts "   ... patching #{fname}"
-        restore_and_save(fname)
-        contents = File.read(fname)
-        mapping.each { |pattern, subst| contents.sub!(pattern, subst) }
-        File.open(fname, "w") { |file| file << contents }
-      end
+          match = out.match(/ruby (\d+\.\d+\.\d+)/)
+          raise Tebako::Error, "Failed to parse Ruby version from #{out}" unless match
 
-      def recreate(dirname)
-        FileUtils.rm_rf(dirname, noop: nil, verbose: nil, secure: true)
-        FileUtils.mkdir(dirname)
-      end
-
-      def restore_and_save(fname)
-        raise Tebako::Error, "Could not save #{fname} because it does not exist." unless File.exist?(fname)
-
-        old_fname = "#{fname}.old"
-        if File.exist?(old_fname)
-          FileUtils.rm_f(fname)
-          File.rename(old_fname, fname)
+          ruby_version = match[1]
         end
-        FileUtils.cp(fname, old_fname)
+        ruby_version
       end
 
-      def restore_and_save_files(files, ruby_source_dir)
-        files.each do |fname|
-          restore_and_save "#{ruby_source_dir}/#{fname}"
-        end
-      end
+      def update_rubygems(tbd, tld, ruby_ver, gem_ver)
+        return if PatchHelpers.ruby31?(ruby_ver)
 
-      # Sets up temporary environment variables and yields to the
-      # block. When the block exits, the environment variables are set
-      # back to their original values.
-      def with_env(hash)
-        old = {}
-        hash.each do |k, v|
-          old[k] = ENV.fetch(k, nil)
-          ENV[k] = v
+        puts "   ... updating rubygems to #{gem_ver}"
+        PatchHelpers.with_env(DEPLOY_ENV) do
+          out, st = Open3.capture2e("#{tbd}/gem", "update", "--no-doc", "--system", gem_ver.to_s)
+          raise Tebako::Error, "Failed to update rubugems to #{gem_ver} (#{st}):\n #{out}" unless st.exitstatus.zero?
         end
-        begin
-          yield
-        ensure
-          hash.each { |k, _v| ENV[k] = old[k] }
-        end
+        ruby_api_ver = ruby_ver.split(".")[0..1].join(".")
+        # Autoload cannot handle statically linked openssl extension
+        # Changing it to require seems to be the simplest solution
+        PatchHelpers.patch_file("#{tld}/ruby/site_ruby/#{ruby_api_ver}.0/rubygems/openssl.rb",
+                                { "autoload :OpenSSL, \"openssl\"" => "require \"openssl\"" })
       end
     end
   end
