@@ -33,7 +33,7 @@ In the future:
 
 The Tebako packager is tested on the following platforms:
 
-* Linux: Ubuntu 20.04; Alpine 3.16
+* Linux: Ubuntu 20.04; Alpine 3.17
 * macOS: macOS 11.0 (Monterey)
 * Windows: TBD
 
@@ -41,10 +41,10 @@ The Tebako packager is tested on the following platforms:
 
 The Tebako packager supports the following versions of Ruby for packaging:
 
-* 2.7.7
+* 2.7.8
 * 3.0.6
 * 3.1.4
-* 3.2.2
+* 3.2.3
 
 Support of specific version including minor release requires some effort, sometimes extensive
 but our goal is to be able to package all maintained Ruby releases.
@@ -53,7 +53,7 @@ but our goal is to be able to package all maintained Ruby releases.
 
 === Ubuntu
 
-==== GNU C/C++ 9+ or Clang C/C++ 11+
+==== GNU C/C++ 10+ or Clang C/C++ 12+
 
 ==== CMake version 3.20+
 
@@ -120,7 +120,7 @@ export TZ=Etc/UTC
 apt-get update
 apt-get install -y software-properties-common
 add-apt-repository -y ppa:ubuntu-toolchain-r/test
-apt-get install -y gcc-9 g++-9
+apt-get install -y gcc-10 g++-10
 
 apt-get install -y curl git ruby ruby-dev pkg-config bison flex make autoconf
 curl https://apt.kitware.com/kitware-archive.sh | bash
@@ -164,7 +164,7 @@ cmmands below.
 ----
 tebako press     \
   [-p|--prefix=<tebako-root-folder>] \
-  [-R|--Ruby=<2.7.7|3.0.6|3.1.4|3.2.2>]   \
+  [-R|--Ruby=<2.7.8|3.0.6|3.1.4|3.2.3>]   \
   -r|--root=<project-root-folder>     \
   -e|--entry-point=<entry-point>      \
   [-o|--output=<packaged file name>] \
@@ -176,7 +176,7 @@ Where:
 * `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
 folder)
 
-* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.0.6)
+* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.4)
 
 * `<project-root>`, a folder at the host source file system where project files
 are located
@@ -214,7 +214,7 @@ invocation of press command.
 ----
 tebako setup     \
   [-p |--prefix=<tebako-root-folder>] \
-  [-R |--Ruby=<2.7.7|3.0.6|3.1.4|3.2.2>]
+  [-R |--Ruby=<2.7.8|3.0.6|3.1.4|3.2.3>]
 ----
 
 Where:
@@ -257,7 +257,7 @@ Normally you do not need to do it since tebako packager optimizes artifacts life
 ----
 tebako clean_ruby
   [-p|--prefix=<tebako-root-folder>]
-  [-R|--Ruby=<2.7.7|3.0.6|3.1.4|3.2.2>]
+  [-R|--Ruby=<2.7.8|3.0.6|3.1.4|3.2.3>]
 ----
 
 Where:

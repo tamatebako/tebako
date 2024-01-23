@@ -59,10 +59,11 @@ module Tebako
     end
 
     RUBY_VERSIONS = {
-      "2.7.7" => "e10127db691d7ff36402cfe88f418c8d025a3f1eea92044b162dd72f0b8c7b90",
+      "2.7.8" => "c2dab63cbc8f2a05526108ad419efa63a67ed4074dbbcf9fc2b1ca664cb45ba0",
       "3.0.6" => "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e",
       "3.1.4" => "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6",
-      "3.2.2" => "96c57558871a6748de5bc9f274e93f4b5aad06cd8f37befa0e8d94e7b8a423bc"
+      "3.2.3" => "af7f1757d9ddb630345988139211f1fd570ff5ba830def1cc7c468ae9b65c9ba",
+      "3.3.0" => "96518814d9832bece92a85415a819d4893b307db5921ae1f0f751a9a89a56b7d"
     }.freeze
 
     DEFAULT_RUBY_VERSION = "3.1.4"

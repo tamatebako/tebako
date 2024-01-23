@@ -86,7 +86,6 @@ begin
     Tebako::Packager.init(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
     # Assume that "<TARGET_BIN_DIR (TBD)>" is <DATA_SRC_DIR>/bin"
     # That shall match CMakeLists.txt settings
-    # Tebako::Packager.update("#{ARGV[1]}/bin", "2.7.7")
     Tebako::Packager.deploy(ARGV[2], "#{ARGV[2]}/bin", ARGV[5])
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"

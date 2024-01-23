@@ -140,7 +140,7 @@ module Tebako
         # rubocop:enable Metrics/MethodLength
 
         def mlibs_subst(ostype, deps_lib_dir, ruby_ver)
-          yjit_libs = PatchHelpers.ruby32?(ruby_ver) ? "$(YJIT_LIBS) " : ""
+          yjit_libs = PatchHelpers.ruby32only?(ruby_ver) ? "$(YJIT_LIBS) " : ""
           {
             "MAINLIBS = #{yjit_libs}@MAINLIBS@" =>
               "# -- Start of tebako patch -- \n" \

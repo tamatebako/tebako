@@ -95,6 +95,14 @@ module Tebako
           ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 2
         end
 
+        def ruby32only?(ruby_ver)
+          ruby3x?(ruby_ver) && ruby_ver[2].to_i == 2
+        end
+
+        def ruby33?(ruby_ver)
+          ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 3
+        end
+
         # Sets up temporary environment variables and yields to the
         # block. When the block exits, the environment variables are set
         # back to their original values.
