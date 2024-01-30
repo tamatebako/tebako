@@ -243,7 +243,7 @@ if(IS_MSYS)
 endif(IS_MSYS)
 
 def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.4.0")
+def_ext_prj_g(DWARFS_WR "v0.4.2")
 
 find_library(_LIBNCURSES "libncurses.a")
 if(${_LIBNCURSES} STREQUAL "_LIBNCURSES-NOTFOUND")
