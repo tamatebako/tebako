@@ -132,7 +132,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [  macos-11.0  ]
+        os: [  macos-12  ]
         package_ruby_ver: [ '3.1.4' ]
         env:
           - { CC: clang, CXX: clang++ }

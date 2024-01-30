@@ -53,10 +53,10 @@ runs:
       shell: bash
       run: cat common.env >> $GITHUB_ENV
 
-    - name: Select XCode 12.4 & SDK 11.1
+    - name: Select XCode 13.1
       uses: maxim-lobanov/setup-xcode@v1
       with:
-        xcode-version: '12.4'
+        xcode-version: '13.1'
 
     - name: Install packages
       shell: bash
