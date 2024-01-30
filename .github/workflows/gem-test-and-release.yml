@@ -62,7 +62,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout tebako packaging environment
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         fetch-depth: 1
         submodules: true
@@ -80,14 +80,14 @@ jobs:
       run: bundle exec rake build
 
     - name: Upload gem
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: gem
         retention-days: 1
         path: pkg/*
 
     - name: Upload actions
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: actions
         retention-days: 1
@@ -112,7 +112,7 @@ jobs:
       run: apk --no-cache --upgrade add bash
 
     - name: Download actions
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: actions
         path: .github/actions
@@ -139,7 +139,7 @@ jobs:
     env: ${{ matrix.env }}
     steps:
     - name: Download actions
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: actions
         path: .github/actions
@@ -167,7 +167,7 @@ jobs:
     env: ${{ matrix.env }}
     steps:
     - name: Download actions
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: actions
         path: .github/actions
@@ -188,7 +188,7 @@ jobs:
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         fetch-depth: 1
         submodules: true

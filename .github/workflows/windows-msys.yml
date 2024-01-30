@@ -112,7 +112,7 @@ jobs:
 # It may be version mismatch though (???)
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -124,7 +124,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.DEPS }}
           key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
@@ -181,7 +181,7 @@ jobs:
             jemalloc:p
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
 
@@ -193,7 +193,7 @@ jobs:
 
       - name: Process cache
         id: cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{ env.DEPS }}
           key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
@@ -205,7 +205,7 @@ jobs:
           false
 
       - name: Checkout shell test framework
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           repository: kward/shunit2
           path: ${{github.workspace}}/tests/shunit2
