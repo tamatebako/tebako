@@ -71,7 +71,7 @@ jobs:
         run: apk --no-cache --upgrade add git bash
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: true
@@ -106,7 +106,7 @@ jobs:
         run: apk --no-cache --upgrade add git bash
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: true
@@ -139,7 +139,7 @@ jobs:
         run: apk --no-cache --upgrade add git bash
 
       - name: Checkout tebako packaging environment
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: true
@@ -160,7 +160,7 @@ jobs:
       image: alpine:latest
     steps:
       - name: Download test packages
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: test-packages
 

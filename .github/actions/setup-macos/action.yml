@@ -90,7 +90,7 @@ runs:
 
     - name: Process cache
       if: inputs.cache != 'off'
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ${{ inputs.cache_path }}
         key: ${{ matrix.os }}-${{ env.CC }}-${{ hashFiles('*.env') }}-v${{ env.CACHE_VER }}
