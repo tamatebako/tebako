@@ -60,7 +60,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-11.0 ]
+        os: [ macos-12 ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-11.0 ]
+        os: [ macos-12 ]
         package_ruby_ver: [ '3.1.4', '3.2.3' ]
     steps:
       - name: Checkout tebako packaging environment
@@ -111,7 +111,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-11.0 ]
+        os: [ macos-12 ]
         package_ruby_ver: [ '3.1.4', '3.2.3' ]
     steps:
       - name: Checkout tebako packaging environment
@@ -131,9 +131,13 @@ jobs:
           bundle install
           RUBY_VER=${{ matrix.package_ruby_ver}} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
-  test-on-macos-latest:
+  cross-tests:
     needs: tests-1
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-11, macos-13 ]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Download test packages
         uses: actions/download-artifact@v4
