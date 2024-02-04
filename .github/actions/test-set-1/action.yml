@@ -37,7 +37,9 @@ runs:
 
     - name: Run tebako tests (set no. 1)
       shell: bash
-      run:  RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+      run: |
+        bundle install
+        RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
     - name: Strip tebako test packages
       if: ${{ !contains(matrix.os, 'macos') }}

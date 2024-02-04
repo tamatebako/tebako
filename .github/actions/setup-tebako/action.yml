@@ -1,0 +1,171 @@
+# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+name: 'Setup tebako'
+description: 'Setup environment for tebako'
+inputs:
+  cache:
+    description: 'Tebako cache mode: off/build/use'
+    required: true
+    type: string
+  cache_path:
+    description: 'Tebako cache root folder'
+    required: true
+    default: '.tebako/deps'
+    type: string
+  cache_ver:
+    description: 'Tebako cache version'
+    required: true
+    default: '0'
+    type: string
+  ruby_version:
+    description: 'Ruby version to install, "env" to use RUBY_VER environment variable'
+    required: true
+    default: 'env'
+    type: string
+  bundler_version:
+    description: 'Bundler version to install'
+    required: true
+    default: 'default'
+    type: string
+  cc:
+    description: C compiler
+    required: false
+    default: 
+    type: string
+  cxx:
+    description: C++ compiler
+    required: false
+    default:
+    type: string
+  verbose:
+    description: Enable verbose output
+    required: false
+    default: off
+    type: string
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup environment
+      if: inputs.cache != 'off'
+      shell: bash
+      run: |
+        cat common.env >> $GITHUB_ENV
+        echo "VERBOSE=${{ inputs.verbose }}" >> $GITHUB_ENV
+
+    - name: Prepare compiler
+      shell: bash
+      run: |
+        OS=$(uname -s)
+        if [ "$OS" = "Linux" ] && [ -e "/etc/lsb-release" ]; then
+            echo "CC=${{ inputs.cc || 'clang-12' }}" >> $GITHUB_ENV
+            echo "CXX=${{ inputs.cxx || 'clang++-12' }}" >> $GITHUB_ENV
+            echo "BUNDLE_BUILD__SASSC=--enable-static-stdlib" >> $GITHUB_ENV
+        elif [ "$OS" = "Linux" ] && [ -e "/etc/alpine-release" ]; then
+            echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
+            echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
+            echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> $GITHUB_ENV
+            echo "ALPINE_VER=$(cat /etc/alpine-release)" >> $GITHUB_ENV
+        elif [ "$OS" = "Darwin" ]; then
+            echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
+            echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
+            echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
+        else
+            echo "Unsupported operating system."
+        fi
+
+    - name: Install apt packages
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        if [ -e "/etc/alpine-release" ]; then
+          apk --no-cache --upgrade add build-base cmake git bash   \
+          autoconf boost-static boost-dev flex-dev bison make      \
+          binutils-dev libevent-dev acl-dev sed python3 pkgconfig  \
+          lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
+          libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
+          libevent-static openssl-libs-static lz4-static xz-dev    \
+          zlib-static libunwind-static acl-static tar libffi-dev   \
+          gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+          readline-dev readline-static p7zip ruby-dev gcompat      \
+          gettext-dev gperf brotli-dev brotli-static jemalloc-dev  \
+          fmt-dev xz-static clang
+          if [ "$CC" = "clang" ]; then
+            apk --no-cache --upgrade add clang
+          fi
+          if [ "${{ inputs.cache }}" != "off" ]; then
+            gem install bundler
+          fi
+        else
+          sudo apt-get -y update
+          sudo apt-get -y install                                                   \
+          binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev              \
+          libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev  \
+          libboost-filesystem-dev libboost-program-options-dev libboost-system-dev  \
+          libboost-iostreams-dev  libboost-date-time-dev libboost-context-dev       \
+          libboost-regex-dev libboost-thread-dev libbrotli-dev libunwind-dev        \
+          libdwarf-dev libelf-dev libgoogle-glog-dev libffi-dev libgdbm-dev         \
+          libyaml-dev libncurses-dev libreadline-dev libutfcpp-dev
+        fi
+
+    - name: Select XCode
+      if: runner.os == 'macOS'
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: ${{ env.XCODE_VERSION }}
+
+    - name: Install brew packages
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        brew update
+        # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config, libyaml
+        brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
+        echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
+
+    - name: Install Ruby
+      if: inputs.ruby_version != 'skip' && env.ALPINE_VER == ''
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: ${{ inputs.ruby_version != 'env' && inputs.ruby_version || env.RUBY_VER }}
+        bundler: ${{ inputs.bundler_version }}
+        bundler-cache: false
+
+    - name: Install tebako
+      shell: bash
+      run: gem install tebako
+
+    - name: Create deps folder
+      if: inputs.cache != 'off'
+      shell: bash
+      run: mkdir -p ${{ inputs.cache_path }}
+
+    - name: Process cache
+      if: inputs.cache != 'off'
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.cache_path }}
+        key: ${{ runner.os }}-${{ env.CC }}-v${{ inputs.cache_ver }}
+        fail-on-cache-miss: inputs.cache == 'use'
