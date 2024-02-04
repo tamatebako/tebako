@@ -48,8 +48,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CC: clang
-  CXX: clang++
   CACHE_VER: 02
   VERBOSE: no
 
@@ -69,13 +67,15 @@ jobs:
           submodules: true
 
       - name: Setup ci environment
-        uses: ./.github/actions/setup-macos
+        uses: ./.github/actions/setup-tebako
         with:
           cache: build
           cache_path: deps
+          cache_ver: ${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: |
+          bundle install
           bundle exec rake generate_version_txt
           ${{ github.workspace }}/exe/tebako setup
 
@@ -96,10 +96,11 @@ jobs:
           submodules: true
 
       - name: Setup ci environment
-        uses: ./.github/actions/setup-macos
+        uses: ./.github/actions/setup-tebako
         with:
           cache: use
           cache_path: deps
+          cache_ver: ${{ env.CACHE_VER }}
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -121,10 +122,11 @@ jobs:
           submodules: true
 
       - name: Setup ci environment
-        uses: ./.github/actions/setup-macos
+        uses: ./.github/actions/setup-tebako
         with:
           cache: use
           cache_path: deps
+          cache_ver: ${{ env.CACHE_VER }}
 
       - name: Run tebako tests (set no. 2)
         run: |

@@ -49,7 +49,6 @@ concurrency:
 
 env:
   CACHE_VER: 04
-  VCPKG_FORCE_SYSTEM_BINARIES: 1
   TZ: "Etc/UTC"
   VERBOSE: no
 
@@ -77,13 +76,17 @@ jobs:
           submodules: true
 
       - name: Setup ci environment
-        uses: ./.github/actions/setup-alpine
+        uses: ./.github/actions/setup-tebako
         with:
           cache: build
           cache_path: deps
+          cache_ver: ${{ env.CACHE_VER }}
+          cc: ${{ env.CC }}
+          cxx: ${{ env.CXX }}
 
       - name: tebako setup
         run: |
+          bundle install
           bundle exec rake generate_version_txt
           exe/tebako setup
 
@@ -112,10 +115,13 @@ jobs:
           submodules: true
 
       - name: Setup ci environment
-        uses: ./.github/actions/setup-alpine
+        uses: ./.github/actions/setup-tebako
         with:
           cache: use
           cache_path: deps
+          cache_ver: ${{ env.CACHE_VER }}
+          cc: ${{ env.CC }}
+          cxx: ${{ env.CXX }}
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -145,13 +151,18 @@ jobs:
           submodules: true
 
       - name: Setup ci environment
-        uses: ./.github/actions/setup-alpine
+        uses: ./.github/actions/setup-tebako
         with:
           cache: use
           cache_path: deps
+          cache_ver: ${{ env.CACHE_VER }}
+          cc: ${{ env.CC }}
+          cxx: ${{ env.CXX }}
 
       - name: Run tebako tests (set no. 2)
-        run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb
+        run: |
+          bundle install
+          RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb
 
   test-on-alpine-latest:
     needs: tests-1
