@@ -83,16 +83,20 @@ runs:
             echo "CC=${{ inputs.cc || 'clang-12' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++-12' }}" >> $GITHUB_ENV
             echo "BUNDLE_BUILD__SASSC=--enable-static-stdlib" >> $GITHUB_ENV
+            echo "ADVANCED_OS=Ubuntu" >> $GITHUB_ENV
         elif [ "$OS" = "Linux" ] && [ -e "/etc/alpine-release" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
             echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> $GITHUB_ENV
             echo "ALPINE_VER=$(cat /etc/alpine-release)" >> $GITHUB_ENV
+            echo "ADVANCED_OS=Alpine" >> $GITHUB_ENV
         elif [ "$OS" = "Darwin" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
             echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
+            echo "ADVANCED_OS=Darwin" >> $GITHUB_ENV
         else
+            echo "ADVANCED_OS=Unknown" >> $GITHUB_ENV
             echo "Unsupported operating system."
         fi
 
@@ -167,5 +171,5 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.cache_path }}
-        key: ${{ runner.os }}-${{ env.CC }}-v${{ inputs.cache_ver }}
+        key: ${{ env.ADVANCED_OS }}-${{ env.CC }}-v${{ inputs.cache_ver }}
         fail-on-cache-miss: inputs.cache == 'use'
