@@ -86,6 +86,7 @@ jobs:
 
       - name: tebako setup
         run: |
+          git config --global --add safe.directory $PWD
           bundle install
           bundle exec rake generate_version_txt
           exe/tebako setup
