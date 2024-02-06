@@ -64,8 +64,8 @@ module Tebako
     }.freeze
 
     # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
-    # These are the minimal versions required to provide linux-gnu / linux-musl differentiantion by bundler
-    # Ruby 3.1+ default bubdler/rubygems versions work correctly out of the box
+    # These are the minimal versions required to provide linux-gnu / linux-musl differentiation by bundler
+    # Ruby 3.1+ default bundler/rubygems versions work correctly out of the box
     BUNDLER_VERSION = "2.4.22"
     RUBYGEMS_VERSION = "3.4.22"
 
@@ -75,9 +75,9 @@ module Tebako
         puts "-- Running deploy script"
 
         ruby_ver = ruby_version(tbd)
-        update_rubygems(tbd, "#{src_dir}/lib", ruby_ver, RUBYGEMS_VERSION)
+        update_rubygems(tbd, "#{src_dir}/lib", ruby_ver, RUBYGEMS_VERSION) unless PatchHelpers.ruby31?(ruby_ver)
         install_gem tbd, "tebako-runtime"
-        install_gem tbd, "bundler", (PatchHelpers.ruby31?(ruby_ver) ? nil : BUNDLER_VERSION) if gflength.to_i != 0
+        install_gem tbd, "bundler", BUNDLER_VERSION if gflength.to_i != 0
       end
 
       # Deploy
@@ -162,8 +162,6 @@ module Tebako
       end
 
       def update_rubygems(tbd, tld, ruby_ver, gem_ver)
-        return if PatchHelpers.ruby31?(ruby_ver)
-
         puts "   ... updating rubygems to #{gem_ver}"
         PatchHelpers.with_env(DEPLOY_ENV) do
           out, st = Open3.capture2e("#{tbd}/gem", "update", "--no-doc", "--system", gem_ver.to_s)
