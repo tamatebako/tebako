@@ -52,7 +52,7 @@ inputs:
   cc:
     description: C compiler
     required: false
-    default: 
+    default:
     type: string
   cxx:
     description: C++ compiler
@@ -87,44 +87,46 @@ runs:
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
             echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
-            echo "ADVANCED_OS=Darwin" >> $GITHUB_ENV
+            echo "ADVANCED_OS=MacOS" >> $GITHUB_ENV
         else
-            echo "ADVANCED_OS=Unknown" >> $GITHUB_ENV
             echo "Unsupported operating system."
+            exit 1
         fi
 
     - name: Install apt packages
-      if: runner.os == 'Linux'
+      if: env.ADVANCED_OS == 'Ubuntu'
       shell: bash
       run: |
-        if [ -e "/etc/alpine-release" ]; then
-          apk --no-cache --upgrade add build-base cmake git bash   \
-          autoconf boost-static boost-dev flex-dev bison make      \
-          binutils-dev libevent-dev acl-dev sed python3 pkgconfig  \
-          lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
-          libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
-          libevent-static openssl-libs-static lz4-static xz-dev    \
-          zlib-static libunwind-static acl-static tar libffi-dev   \
-          gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
-          readline-dev readline-static p7zip ruby-dev gcompat      \
-          gettext-dev gperf brotli-dev brotli-static jemalloc-dev  \
-          fmt-dev xz-static clang
-          if [ "$CC" = "clang" ]; then
-            apk --no-cache --upgrade add clang
-          fi
-          if [ "${{ inputs.cache }}" != "off" ]; then
-            gem install bundler
-          fi
-        else
-          sudo apt-get -y update
-          sudo apt-get -y install                                                   \
-          binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev              \
-          libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev  \
-          libboost-filesystem-dev libboost-program-options-dev libboost-system-dev  \
-          libboost-iostreams-dev  libboost-date-time-dev libboost-context-dev       \
-          libboost-regex-dev libboost-thread-dev libbrotli-dev libunwind-dev        \
-          libdwarf-dev libelf-dev libgoogle-glog-dev libffi-dev libgdbm-dev         \
-          libyaml-dev libncurses-dev libreadline-dev libutfcpp-dev
+        sudo apt-get -y update
+        sudo apt-get -y install                                                   \
+        binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev              \
+        libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev  \
+        libboost-filesystem-dev libboost-program-options-dev libboost-system-dev  \
+        libboost-iostreams-dev  libboost-date-time-dev libboost-context-dev       \
+        libboost-regex-dev libboost-thread-dev libbrotli-dev libunwind-dev        \
+        libdwarf-dev libelf-dev libgoogle-glog-dev libffi-dev libgdbm-dev         \
+        libyaml-dev libncurses-dev libreadline-dev libutfcpp-dev
+
+    - name: Install apt packages
+      if: env.ADVANCED_OS == 'Alpine'
+      shell: bash
+      run: |
+        apk --no-cache --upgrade add build-base cmake git bash   \
+        autoconf boost-static boost-dev flex-dev bison make      \
+        binutils-dev libevent-dev acl-dev sed python3 pkgconfig  \
+        lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl     \
+        libunwind-dev libdwarf-dev gflags-dev elfutils-dev       \
+        libevent-static openssl-libs-static lz4-static xz-dev    \
+        zlib-static libunwind-static acl-static tar libffi-dev   \
+        gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
+        readline-dev readline-static p7zip ruby-dev gcompat      \
+        gettext-dev gperf brotli-dev brotli-static jemalloc-dev  \
+        fmt-dev xz-static clang
+        if [ "$CC" = "clang" ]; then
+          apk --no-cache --upgrade add clang
+        fi
+        if [ "${{ inputs.cache }}" != "off" ]; then
+          gem install bundler
         fi
 
     - name: Select XCode
@@ -154,7 +156,7 @@ runs:
         echo "VERBOSE=${{ inputs.verbose }}" >> $GITHUB_ENV
 
     - name: Install Ruby
-      if: inputs.ruby_version != 'skip' && env.ALPINE_VER == ''
+      if: inputs.ruby_version != 'skip' && env.ADVANCED_OS != 'Alpine'
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{ inputs.ruby_version != 'env' && inputs.ruby_version || env.RUBY_VER }}
