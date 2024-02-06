@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -23,16 +23,16 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-name: 'Test: package metanorma'
-description: 'Test: package metanorma'
+name: 'Test: package fontist'
+description: 'Test: package fontist'
 runs:
   using: "composite"
   steps:
-    - name: Checkout packed-mn
+    - name: Checkout fontist
       uses: actions/checkout@v4
       with:
-        repository: metanorma/packed-mn
-        path: ${{github.workspace}}/packed-mn
+        repository: fontist/fontist
+        path: ${{github.workspace}}/fontist
 
     - name: Download gem
       uses: actions/download-artifact@v4
@@ -57,10 +57,16 @@ runs:
         path: .tebako/deps
         key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ steps.cache-key.outputs.key }}-${{ env.CACHE_VER }}
 
-    - name: Package metanorma
+    - name: Package fontist
       shell: bash
-      run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
+      run: tebako press --root=fontist --entry-point=fontist --output=fontist-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
 
     - name: Run smoke test
       shell: bash
-      run: ./metanorma-package help
+      # fontist returns 1 on success (nice thor feature)
+      run: |
+        EXITCODE=0
+        ./fontist-package help || EXITCODE=$?
+        if [ $EXITCODE -ne 1 ]; then
+          exit 1
+        fi

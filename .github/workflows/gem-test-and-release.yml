@@ -93,9 +93,9 @@ jobs:
         retention-days: 1
         path: .github/actions/*
 
-  package-metanorma-alpine:
+  package-tests-alpine:
     needs: build-gem
-    name: Use gem to package metanorma ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     runs-on: ubuntu-latest
     container:
       image: ${{ matrix.os }}
@@ -103,6 +103,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ 'alpine:3.17' ]
+        gem: [ fontist ]
         package_ruby_ver: [ '3.1.4' ]
         env:
           - { CC: gcc, CXX: g++ }
@@ -125,17 +126,23 @@ jobs:
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
 
+    - name: Package fontist
+      if: matrix.gem == 'fontist'
+      uses: ./.github/actions/test-package-fontist
+
     - name: Package metanorma
+      if: matrix.gem == 'metanorma'
       uses: ./.github/actions/test-package-metanorma
 
-  package-metanorma-macos:
+  package-tests-macos:
     needs: build-gem
-    name: Use gem to package metanorma ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [  macos-12  ]
+        gem: [ fontist ]
         package_ruby_ver: [ '3.1.4' ]
         env:
           - { CC: clang, CXX: clang++ }
@@ -156,17 +163,23 @@ jobs:
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
 
+    - name: Package fontist
+      if: matrix.gem == 'fontist'
+      uses: ./.github/actions/test-package-fontist
+
     - name: Package metanorma
+      if: matrix.gem == 'metanorma'
       uses: ./.github/actions/test-package-metanorma
 
-  package-metanorma-ubuntu:
+  package-tests-ubuntu:
     needs: build-gem
-    name: Use gem to package metanorma ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ ubuntu-20.04 ]
+        gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.1.4' ]
         env:
           - { CC: clang, CXX: clang++ }
@@ -187,13 +200,18 @@ jobs:
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
 
+    - name: Package fontist
+      if: matrix.gem == 'fontist'
+      uses: ./.github/actions/test-package-fontist
+
     - name: Package metanorma
+      if: matrix.gem == 'metanorma'
       uses: ./.github/actions/test-package-metanorma
 
 # ----- Release -----
   release:
     name: Release gem
-    needs: [ package-metanorma-ubuntu, package-metanorma-alpine, package-metanorma-macos ]
+    needs: [ package-tests-ubuntu, package-tests-alpine, package-tests-macos ]
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
     steps:

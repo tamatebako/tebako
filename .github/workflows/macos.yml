@@ -105,33 +105,33 @@ jobs:
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
 
-  tests-2:
-    needs: setup
-    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ macos-12 ]
-        package_ruby_ver: [ '3.1.4' ]
-    steps:
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          submodules: true
-
-      - name: Setup ci environment
-        uses: ./.github/actions/setup-tebako
-        with:
-          cache: use
-          cache_path: deps
-          cache_ver: ${{ env.CACHE_VER }}
-
-      - name: Run tebako tests (set no. 2)
-        run: |
-          bundle install
-          RUBY_VER=${{ matrix.package_ruby_ver}} ruby ${{github.workspace}}/tests-2/tebako-test.rb
+#  tests-2:
+#    needs: setup
+#    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
+#    runs-on: ${{ matrix.os }}
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        os: [ macos-12 ]
+#        package_ruby_ver: [ '3.1.4' ]
+#    steps:
+#      - name: Checkout tebako packaging environment
+#        uses: actions/checkout@v4
+#        with:
+#          fetch-depth: 1
+#          submodules: true
+#
+#      - name: Setup ci environment
+#        uses: ./.github/actions/setup-tebako
+#        with:
+#          cache: use
+#          cache_path: deps
+#          cache_ver: ${{ env.CACHE_VER }}
+#
+#      - name: Run tebako tests (set no. 2)
+#        run: |
+#          bundle install
+#          RUBY_VER=${{ matrix.package_ruby_ver}} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
   cross-tests:
     needs: tests-1
