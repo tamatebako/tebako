@@ -139,6 +139,7 @@ class TebakoTest < Minitest::Test
   # Specified gems should be  usable in packaged app
   def test_216_byebug
     name = "gems-byebug"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -149,6 +150,7 @@ class TebakoTest < Minitest::Test
   # Specified gems should be automatically included and usable in packaged app
   def test_215_expressir
     name = "gems-expressir"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -159,6 +161,7 @@ class TebakoTest < Minitest::Test
   # Specified gems should be automatically included and usable in packaged app
   def test_214_sassc
     name = "gems-sassc"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -169,6 +172,7 @@ class TebakoTest < Minitest::Test
   # Specified gems should be automatically included and usable in packaged app
   def test_213_libmspack
     name = "gems-libmspack"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -179,6 +183,7 @@ class TebakoTest < Minitest::Test
   # Specified gems should be automatically included and usable in packaged app
   def test_212_seven_zip
     name = "gems-seven-zip"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -189,6 +194,7 @@ class TebakoTest < Minitest::Test
   # Specified gems should be automatically included and usable in packaged app
   def test_211_bundler
     name = "gems-bundler"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -199,6 +205,7 @@ class TebakoTest < Minitest::Test
   # Test io.c and file.c patching
   def test_122_io_and_file
     name = "patches-io-and-file"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       _, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -208,6 +215,7 @@ class TebakoTest < Minitest::Test
   # Test dir.c patching
   def test_122_dir
     name = "patches-dir"
+    print "\n#{name} "
     FileUtils.mkdir_p File.join(FixturePath, name, "level-1/level-2/level-3")
     with_fixture_press_and_env name do |package|
       _, st = Open3.capture2(package)
@@ -219,6 +227,7 @@ class TebakoTest < Minitest::Test
   # Test that scripts can exit with a specific exit status code
   def test_121_main
     name = "patches-main"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       _, st = Open3.capture2("#{package} foo \"bar baz \\\"quote\\\"\"")
       assert_equal 5, st.exitstatus
@@ -230,6 +239,7 @@ class TebakoTest < Minitest::Test
   #  -- short options without whitespaces
   def test_105_launcher_pwd
     name = "launcher-pwd"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       _, st = Open3.capture2(package.to_s)
       assert_equal 0, st.exitstatus
@@ -241,6 +251,7 @@ class TebakoTest < Minitest::Test
   # Test that executable can use ruby standard libraries (i.e. cgi)
   def test_104_launcher_coreincl
     name = "launcher-coreincl"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       _, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -252,6 +263,7 @@ class TebakoTest < Minitest::Test
   # Test that the standard output from a script can be redirected to a file.
   def test_103_launcher_stdoutredir
     name = "launcher-stdoutredir"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       system("#{package} > output.txt")
       assert File.exist?("output.txt")
@@ -263,6 +275,7 @@ class TebakoTest < Minitest::Test
   # Test that the standard input to a script can be redirected from a file.
   def test_102_launcher_stdinredir
     name = "launcher-stdinredir"
+    print "\n#{name} "
     package = "#{name}-package"
     with_fixture name do
       press(Tebako, name, package, Prefix)
@@ -309,6 +322,7 @@ class TebakoTest < Minitest::Test
 
   def test_101_launcher
     name = "launcher-package"
+    print "\n#{name} "
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
