@@ -68,14 +68,7 @@ inputs:
 runs:
   using: "composite"
   steps:
-    - name: Setup environment
-      if: inputs.cache != 'off'
-      shell: bash
-      run: |
-        cat common.env >> $GITHUB_ENV
-        echo "VERBOSE=${{ inputs.verbose }}" >> $GITHUB_ENV
-
-    - name: Prepare compiler
+    - name: Prepare compiler environment
       shell: bash
       run: |
         OS=$(uname -s)
@@ -145,9 +138,20 @@ runs:
       shell: bash
       run: |
         brew update
-        # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config, libyaml
+        # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config, libyaml, curl
         brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
         echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
+
+    - name: Setup environment
+      if: inputs.cache != 'off'
+      shell: bash
+      run: |
+        if [ ! -e ./common.env ]; then
+          curl https://raw.githubusercontent.com/tamatebako/tebako/main/common.env >> $GITHUB_ENV
+        else
+          cat common.env >> $GITHUB_ENV
+        fi
+        echo "VERBOSE=${{ inputs.verbose }}" >> $GITHUB_ENV
 
     - name: Install Ruby
       if: inputs.ruby_version != 'skip' && env.ALPINE_VER == ''
