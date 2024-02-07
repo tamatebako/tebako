@@ -69,7 +69,7 @@ runs:
   using: "composite"
   steps:
     - name: Prepare compiler environment
-      shell: bash
+      shell: sh
       run: |
         OS=$(uname -s)
         if [ "$OS" = "Linux" ] && [ -e "/etc/lsb-release" ]; then
@@ -95,7 +95,7 @@ runs:
 
     - name: Install apt packages
       if: env.ADVANCED_OS == 'Ubuntu'
-      shell: bash
+      shell: sh
       run: |
         sudo apt-get -y update
         sudo apt-get -y install                                                   \
@@ -109,7 +109,7 @@ runs:
 
     - name: Install apt packages
       if: env.ADVANCED_OS == 'Alpine'
-      shell: bash
+      shell: sh
       run: |
         apk --no-cache --upgrade add build-base cmake git bash   \
         autoconf boost-static boost-dev flex-dev bison make      \
@@ -146,7 +146,7 @@ runs:
 
     - name: Setup environment
       if: inputs.cache != 'off'
-      shell: bash
+      shell: sh
       run: |
         if [ ! -e ./common.env ]; then
           curl https://raw.githubusercontent.com/tamatebako/tebako/main/common.env >> $GITHUB_ENV
@@ -164,12 +164,12 @@ runs:
         bundler-cache: false
 
     - name: Install tebako
-      shell: bash
+      shell: sh
       run: gem install tebako
 
     - name: Create deps folder
       if: inputs.cache != 'off'
-      shell: bash
+      shell: sh
       run: mkdir -p ${{ inputs.cache_path }}
 
     - name: Process cache
