@@ -86,7 +86,7 @@ runs:
         elif [ "$OS" = "Darwin" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
-            echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
+            echo "XCODE_VERSION=14.3.1" >> $GITHUB_ENV
             echo "ADVANCED_OS=MacOS" >> $GITHUB_ENV
         else
             echo "Unsupported operating system."
