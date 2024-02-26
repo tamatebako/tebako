@@ -120,11 +120,12 @@ task:
   macos_instance:
     image: ghcr.io/cirruslabs/macos-monterey-base:latest
 # Commented to save Cirrus-ci limited capacity
-# image: ghcr.io/cirruslabs/macos-ventura-base:latest
+# image: ghcr.io/cirruslabs/macs-ventura-base:latest
 
 # brew update -- brew update is required if core dwarfs library goes too far ahead comparing to the 
 # packages installed at GitHub runner
   install_script: |
+    brew update
     brew install gnu-sed bash pkg-config bison flex binutils   \
     libffi double-conversion boost jemalloc fmt glog libevent  \
     libsodium lz4 xz gdbm zlib ncurses libyaml openssl@3
