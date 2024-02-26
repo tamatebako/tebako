@@ -1,4 +1,4 @@
-# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -122,8 +122,9 @@ task:
 # Commented to save Cirrus-ci limited capacity
 # image: ghcr.io/cirruslabs/macos-ventura-base:latest
 
+# brew update -- brew update is required if core dwarfs library goes too far ahead comparing to the 
+# packages installed at GitHub runner
   install_script: |
-    brew update
     brew install gnu-sed bash pkg-config bison flex binutils   \
     libffi double-conversion boost jemalloc fmt glog libevent  \
     libsodium lz4 xz gdbm zlib ncurses libyaml openssl@3

@@ -1,4 +1,4 @@
-# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -138,11 +138,12 @@ runs:
     - name: Install brew packages
       if: runner.os == 'macOS'
       shell: bash
+      # brew update -- brew update is required if core dwarfs library goes too far ahead comparing to the 
+      # packages installed at GitHub runner
+      # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config, libyaml, curl     
       run: |
-        brew update
-        # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config, libyaml, curl
-        brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
-        echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
+         brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
+         echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
 
     - name: Setup environment
       if: inputs.cache != 'off'
