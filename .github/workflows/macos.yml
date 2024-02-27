@@ -101,6 +101,12 @@ jobs:
           cache: use
           cache_path: deps
           cache_ver: ${{ env.CACHE_VER }}
+          install: off
+
+      - name: tebako setup
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -127,10 +133,12 @@ jobs:
           cache: use
           cache_path: deps
           cache_ver: ${{ env.CACHE_VER }}
+          install: off
 
       - name: Run tebako tests (set no. 2)
         run: |
           bundle install
+          bundle exec rake generate_version_txt
           RUBY_VER=${{ matrix.package_ruby_ver}} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
   cross-tests:
