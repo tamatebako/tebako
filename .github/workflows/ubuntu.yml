@@ -74,7 +74,7 @@ jobs:
           fetch-depth: 1
           submodules: true
 
-      - name: Setup ci environment
+      - name: Setup tebako environment
         uses: ./.github/actions/setup-tebako
         with:
           cache: build
@@ -82,6 +82,7 @@ jobs:
           cache_ver: ${{ env.CACHE_VER }}
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
+          install: off
 
       - name: tebako setup
         run: |
@@ -117,6 +118,12 @@ jobs:
           cache_ver: ${{ env.CACHE_VER }}
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
+          install: off
+
+      - name: tebako setup
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -149,10 +156,12 @@ jobs:
           cache_ver: ${{ env.CACHE_VER }}
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
+          install: off
 
       - name: Run tebako tests (set no. 2)
         run: |
           bundle install
+          bundle exec rake generate_version_txt
           RUBY_VER=${{ matrix.package_ruby_ver }} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
 #  test-on-ubuntu-latest:

@@ -57,6 +57,11 @@ runs:
         path: .tebako/deps
         key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ steps.cache-key.outputs.key }}-${{ env.CACHE_VER }}
 
+    - name: Clean Ruby source
+      shell: bash
+    # Need cache after tebako setup or clean Ruby
+      run: tebako clean_ruby --prefix='.tebako'
+
     - name: Package metanorma
       shell: bash
       run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
