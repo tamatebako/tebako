@@ -209,6 +209,8 @@ directories differ and nultiple Ruby versions within single configuration
 
 This command is optional, tebako creates packaging environment automatically upon the first
 invocation of press command.
+However, if you plan to use tebako in CI/CD environment with caching it is highly recommended to build cache
+based on ```tebako setup``` output. Building cache based on ```tebako press``` may create inconsistent environment upon restore.
 
 [source]
 ----
