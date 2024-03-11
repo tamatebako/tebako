@@ -157,19 +157,21 @@ set(EXE_SUFFIX "")
 set(CMD_SUFFIX "")
 set(BAT_SUFFIX "")
 set(RUBY_MAKEFILE "")
+set(DWARFS_PRELOAD OFF)
 
 if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
   set(IS_MUSL ON)
   set(FORCE_RUBY_PLATFORM "true")
 elseif("${OSTYPE_TXT}" MATCHES "^msys*")
   set(IS_MSYS ON)
+#  set(DWARFS_PRELOAD ON)
   set(RB_W32 ON)
   set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline")
   set(RUBY_SUFFIX "w")
   set(EXE_SUFFIX ".exe")
   set(CMD_SUFFIX ".cmd")
   set(BAT_SUFFIX ".bat")
-  set(RUBY_MAKEFILE "--file=GNUmakefile")
+  #set(RUBY_MAKEFILE "--file=GNUmakefile")
 elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
   set(IS_DARWIN ON)
   if(${RUBY_VER} VERSION_LESS "3.1.0")
@@ -234,24 +236,18 @@ set(RUBY_STASH_DIR ${DEPS}/stash_${RUBY_VER})
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
-# May be overwritten on MSys platform by setup-openssl.cmake
-set(WITH_OPENSSL_BUILD OFF)
+if(DWARFS_PRELOAD)
+  def_ext_prj_t(LIBDWARFS_WR "0.5.0.rc15" "085eb1aeed100c5662ff9afff386c2f0cbe2065ddefe5adcd45a755b547532b0")
 
-if(IS_MSYS)
-# ${RUBY_VER} VERSION_LESS "3.0.0"
-  include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/setup-openssl.cmake)
-endif(IS_MSYS)
+  string(REGEX REPLACE "^([0-9]+)\\.([0-9]+)\\.([0-9]+).*" "\\1;\\2;\\3" LIBDWARFS_WR_VER_COMPONENTS ${LIBDWARFS_WR_VER})
 
-def_ext_prj_g(INCBIN "348e36b")
-def_ext_prj_g(DWARFS_WR "v0.4.3")
-
-find_library(_LIBNCURSES "libncurses.a")
-if(${_LIBNCURSES} STREQUAL "_LIBNCURSES-NOTFOUND")
-  set(WITH_NCURSES_BUILD ON)
-  def_ext_prj_t(NCURSES  "6.3" "97fc51ac2b085d4cde31ef4d2c3122c21abc217e9090a43a30fc5ec21684e059")
-else()
-  set(WITH_NCURSES_BUILD OFF)
-endif()
+  list(GET LIBDWARFS_WR_VER_COMPONENTS 0 LIBDWARFS_WR_VER_MAJOR)
+  list(GET LIBDWARFS_WR_VER_COMPONENTS 1 LIBDWARFS_WR_VER_MINOR)
+  list(GET LIBDWARFS_WR_VER_COMPONENTS 2 LIBDWARFS_WR_VER_PATCH)
+  set (LIBDWARFS_WR_VER_M ${LIBDWARFS_WR_VER_MAJOR}.${LIBDWARFS_WR_VER_MINOR}.${LIBDWARFS_WR_VER_PATCH})
+else(DWARFS_PRELOAD)
+  def_ext_prj_g(DWARFS_WR "v0.5.0.rc15")
+endif(DWARFS_PRELOAD)
 
 set(LIBYAML_RUBY_OPTION "")
 if(${RUBY_VER} VERSION_LESS "3.2.0")
@@ -260,18 +256,12 @@ endif(${RUBY_VER} VERSION_LESS "3.2.0")
 
 message("Configuration summary:")
 message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
-if(WITH_OPENSSL_BUILD)
-  message(STATUS "openssl: building @${OPENSSL_TAG} at ${OPENSSL_SOURCE_DIR}")
-endif(WITH_OPENSSL_BUILD)
 
-if(WITH_NCURSES_BUILD)
-  message(STATUS "ncurses: building v${NCURSES_VER} at ${NCURSES_SOURCE_DIR}")
-else()
-  message(STATUS "ncurses: ${_LIBNCURSES}")
-endif(WITH_NCURSES_BUILD)
-
-message(STATUS "incbin: @${INCBIN_TAG} at ${INCBIN_SOURCE_DIR}")
-message(STATUS "dwarfs with tebako wrapper: @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
+if(DWARFS_PRELOAD)
+  message(STATUS "dwarfs with tebako wrapper: deploying v${LIBDWARFS_WR_VER} to ${LIBDWARFS_WR_SOURCE_DIR}")
+else(DWARFS_PRELOAD)
+  message(STATUS "dwarfs with tebako wrapper: @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
+endif(DWARFS_PRELOAD)
 
 # ...................................................................
 # Filesystem locations
@@ -315,43 +305,6 @@ message(STATUS "Force Ruby platform for Gems: ${FORCE_RUBY_PLATFORM}")
 message(STATUS "Not building Ruby extensions: ${RUBY_WITHOUT_EXT}")
 
 # ...................................................................
-# incbin
-
-ExternalProject_Add(${INCBIN_PRJ}
-   PREFIX ${DEPS}
-   GIT_REPOSITORY https://github.com/graphitemaster/incbin.git
-   GIT_TAG ${INCBIN_TAG}
-   BUILD_IN_SOURCE true
-   CONFIGURE_COMMAND ""
-   BUILD_COMMAND ""
-   INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_INCLUDE_DIR}/incbin
-   COMMAND ${CMAKE_COMMAND} -E copy_if_different ${INCBIN_SOURCE_DIR}/incbin.h ${DEPS_INCLUDE_DIR}/incbin
-)
-
-# ...................................................................
-# OpenSSL
-if(WITH_OPENSSL_BUILD)
-  message(STATUS "Building OpenSSL since Ruby 2.x requires 1.1.x")
-  def_ext_prj_g(OPENSSL "OpenSSL_1_1_1s")
-
-  set(__LIBSSL "${DEPS}/lib/libssl.a")
-  set(__LIBCRYPTO "${DEPS}/lib/libcrypto.a")
-
-  ExternalProject_Add(${OPENSSL_PRJ}
-    PREFIX ${DEPS}
-    GIT_REPOSITORY "https://github.com/openssl/openssl.git"
-    GIT_TAG ${OPENSSL_TAG}
-    UPDATE_COMMAND ""
-    SOURCE_DIR ${OPENSSL_SOURCE_DIR}
-    BINARY_DIR ${OPENSSL_BINARY_DIR}
-    CONFIGURE_COMMAND   ${GNU_BASH} -c "${OPENSSL_SOURCE_DIR}/config          \
-                                                        --openssldir=${DEPS}  \
-                                                        --prefix=${DEPS}"
-    BUILD_BYPRODUCTS ${__LIBSSL} ${__LIBCRYPTO}
-  )
-endif(WITH_OPENSSL_BUILD)
-
-# ...................................................................
 # DwarFS with tebako wrapper
 
 # ...................................................................
@@ -370,47 +323,41 @@ set(__LIBXXHASH "${DEPS_LIB_DIR}/libxxhash.a")
 set(__LIBZSTD "${DEPS_LIB_DIR}/libzstd.a")
 set(__LIBARCHIVE "${DEPS_LIB_DIR}/libarchive.a")
 
-ExternalProject_Add(${DWARFS_WR_PRJ}
+if(DWARFS_PRELOAD)
+  ExternalProject_Add(${LIBDWARFS_WR_PRJ}
     PREFIX ${DEPS}
-    GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
-    GIT_TAG ${DWARFS_WR_TAG}
-    SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
-    BINARY_DIR ${DWARFS_WR_BINARY_DIR}
-    UPDATE_COMMAND ""
-    BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel ${NCORES}
-    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
-               -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-               -DWITH_TESTS:BOOL=OFF
-               -DWITH_ASAN:BOOL=OFF
-               -DWITH_COVERAGE:BOOL=OFF
-               -DTEBAKO_BUILD_SCOPE=MKD
-               -DRB_W32=${RB_W32}
-    BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
-                     ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
-                     ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
-)
-if(WITH_OPENSSL_BUILD)
-  add_dependencies(${DWARFS_WR_PRJ} ${OPENSSL_PRJ} )
-endif(WITH_OPENSSL_BUILD)
-
-if(WITH_NCURSES_BUILD)
-  ExternalProject_Add(${NCURSES_PRJ}
-    PREFIX ${DEPS}
-    URL https://ftp.gnu.org/pub/gnu/ncurses/ncurses-${NCURSES_VER}.tar.gz
-    URL_HASH SHA256=${NCURSES_HASH}
+    URL https://github.com/tamatebako/libdwarfs/releases/download/v${LIBDWARFS_WR_VER}/libdwarfs-wr-${LIBDWARFS_WR_VER_M}-mingw-ucrt64.7z
+    URL_HASH SHA256=${LIBDWARFS_WR_HASH}
     DOWNLOAD_NO_PROGRESS true
-    SOURCE_DIR ${NCURSES_SOURCE_DIR}
+    SOURCE_DIR ${LIBDWARFS_WR_SOURCE_DIR}
     UPDATE_COMMAND ""
-    CONFIGURE_COMMAND ${NCURSES_SOURCE_DIR}/configure
-                          --without-shared
-                          --without-cxx-shared
-                          --without-tests
-                          --prefix=${DEPS}
-                          --srcdir=${NCURSES_SOURCE_DIR}
-    BUILD_COMMAND     make
-    INSTALL_COMMAND   make install
+    CONFIGURE_COMMAND ""
+    BUILD_COMMAND ""
+    INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS}
+            COMMAND ${CMAKE_COMMAND} -E copy_directory ${LIBDWARFS_WR_SOURCE_DIR} ${DEPS}
+    TEST_COMMAND ""
   )
-endif(WITH_NCURSES_BUILD)
+else(DWARFS_PRELOAD)
+  ExternalProject_Add(${DWARFS_WR_PRJ}
+      PREFIX ${DEPS}
+     GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
+     GIT_TAG ${DWARFS_WR_TAG}
+     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
+     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
+     UPDATE_COMMAND ""
+     BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel ${NCORES}
+     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
+                 -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+                 -DWITH_TESTS:BOOL=OFF
+                 -DWITH_ASAN:BOOL=OFF
+                 -DWITH_COVERAGE:BOOL=OFF
+                 -DTEBAKO_BUILD_SCOPE=MKD
+                 -DRB_W32=${RB_W32}
+      BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
+                       ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
+                       ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
+  )
+endif(DWARFS_PRELOAD)
 
 # ...................................................................
 # Ruby
@@ -470,27 +417,20 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
   BUILD_COMMAND    make ${RUBY_MAKEFILE} -j${NCORES}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
-  COMMAND          ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}
+  COMMAND          ${GNU_BASH} -c "ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}"
 )
 
-add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
-if(WITH_NCURSES_BUILD)
-  add_dependencies(${RUBY_PRJ} ${NCURSES_PRJ})
-endif(WITH_NCURSES_BUILD)
-
-if(WITH_OPENSSL_BUILD)
-  add_dependencies(${RUBY_PRJ} ${OPENSSL_PRJ} )
-endif(WITH_OPENSSL_BUILD)
+add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ} ${LIBDWARFS_WR_PRJ})
 
 if (${SETUP_MODE})
   add_custom_target(setup
     ${CMAKE_COMMAND} -E echo "Tebako setup has completed"
-    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ}
+    DEPENDS ${DWARFS_WR_PRJ} ${RUBY_PRJ}
   )
 else (${SETUP_MODE})
   add_custom_target(setup
     ${CMAKE_COMMAND} -E echo "Tebako setup has been verified"
-    DEPENDS ${DWARFS_WR_PRJ} ${INCBIN_PRJ} ${RUBY_PRJ}
+    DEPENDS ${DWARFS_WR_PRJ} ${RUBY_PRJ}
   )
 
   file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
@@ -669,7 +609,7 @@ else (${SETUP_MODE})
     ${DEPS_INCLUDE_DIR}/tebako/tebako-version.h
   )
 
-  add_dependencies(tebako-fs ${INCBIN_PRJ} packaged_filesystem)
+  add_dependencies(tebako-fs packaged_filesystem)
 
   if (${RUBY_VER} VERSION_LESS "3.0.0")
     add_custom_target(patched_ruby

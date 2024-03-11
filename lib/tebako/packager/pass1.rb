@@ -32,12 +32,21 @@ module Tebako
   module Packager
     # Ruby patching definitions (pass1)
     module Pass1
+      # [TODO] looks like it does not exist in 3.1.4
+      # May be obsolete
       TOOL_RBINSTALL_RB_PATCH = {
         "    next if files.empty?" => "# tebako patched    next if files.empty?"
       }.freeze
 
+      RUBYGEM_OPENSSL_RB_SUBST = <<~SUBST
+        # Start of tebako patch
+        require "openssl"
+        # End of tebako patch
+        autoload :OpenSSL, "openssl"
+      SUBST
+
       RUBYGEM_OPENSSL_RB_PATCH = {
-        'autoload :OpenSSL, "openssl"' => "require \"openssl\"\nautoload :OpenSSL, \"openssl\""
+        'autoload :OpenSSL, "openssl"' => RUBYGEM_OPENSSL_RB_SUBST
       }.freeze
 
       EXT_SETUP_PATCH = {
@@ -77,13 +86,58 @@ module Tebako
         SUBST
       }.freeze
 
-      CONFIGURE_PATCH = {
+      DARWIN_CONFIGURE_PATCH = {
         "EXTDLDFLAGS=\"-bundle_loader '\\$(BUILTRUBY)'\"" => ""
       }.freeze
 
+      GNUMAKEFILE_IN_WINMAIN_SUBST = <<~SUBST
+        RUBYDEF = $(DLL_BASE_NAME).def
+
+        # Start of tebako patch
+        WINMAINOBJ    = win32/winmain.$(OBJEXT)
+        $(WINMAINOBJ): win32/winmain.c
+        # End of tebako patch
+      SUBST
+
+      GNUMAKEFILE_IN_PATCH = {
+
+        "  DLLWRAP += -mno-cygwin" =>
+          "# tebako patched  DLLWRAP += -mno-cygwin",
+
+        "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.@OBJEXT@" =>
+          "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.@OBJEXT@ $(WINMAINOBJ)  # tebako patched",
+
+        "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
+          "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@  # tebako patched",
+
+        "--output-exp=$(RUBY_EXP) \\" =>
+         "--output-exp=$(RUBY_EXP) --output-lib=$(LIBRUBY) \\",
+
+        "	@rm -f $(PROGRAM)" =>
+          "# tebako patched  @rm -f $(PROGRAM)",
+
+        "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
+          "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
+
+        "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST
+
+      }.freeze
+
+      OPENSSL_EXTCONF_RB_SUBST = <<~SUBST
+        # Start of tebako patch
+        $defs.push("-DRUBY_EXPORT=1")
+        # End of tebako patch
+
+        Logging::message "=== Checking done. ===\\n"
+      SUBST
+
+      OPENSSL_EXTCONF_RB_PATCH = {
+        "Logging::message \"=== Checking done. ===\\n\"" => OPENSSL_EXTCONF_RB_SUBST
+      }.freeze
+
       class << self
-        def get_patch_map(ostype, mount_point, ruby_ver)
-          patch_map = {
+        def get_base_patch_map(mount_point)
+          {
             # ....................................................
             # It won't install gems with no files defined in spec
             # However if
@@ -106,14 +160,28 @@ module Tebako
             # Disable dynamic extensions
             "ext/Setup" => EXT_SETUP_PATCH
           }
+        end
+
+        def get_patch_map(ostype, mount_point, ruby_ver)
+          patch_map = get_base_patch_map(mount_point)
+
           # ....................................................
           # Fixing (bypassing) configure script bug where a variable is used before initialization
-          patch_map.store("configure", CONFIGURE_PATCH) if ostype =~ /darwin/
+          patch_map.store("configure", DARWIN_CONFIGURE_PATCH) if ostype =~ /darwin/
 
           # ....................................................
           # autoload :OpenSSL, "openssl"
           # fails to deal with a default gem from statically linked extension
           patch_map.store("lib/rubygems/openssl.rb", RUBYGEM_OPENSSL_RB_PATCH) if PatchHelpers.ruby3x?(ruby_ver)
+
+          if ostype =~ /msys/
+            # ....................................................
+            # Generate import library; use WinMain to build rubyw.exe
+            patch_map.store("cygwin/GNUmakefile.in", GNUMAKEFILE_IN_PATCH)
+            # ....................................................
+            # RUBY_EXPORT=1 (shall ve set for static builds but is missing in openssl extension)
+            patch_map.store("ext/openssl/extconf.rb", OPENSSL_EXTCONF_RB_PATCH)
+          end
 
           patch_map
         end

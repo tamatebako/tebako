@@ -30,13 +30,14 @@ require "fileutils"
 require "pathname"
 require "rbconfig"
 
+require_relative "cli_rubies"
 require_relative "error"
 require_relative "version"
 
 # Tebako - an executable packager
 # Command-line interface methods
 module Tebako
-  # Cli methods
+  # Cli helpers
   module CliHelpers
     def b_env
       u_flags = if RbConfig::CONFIG["host_os"] =~ /darwin/
@@ -58,28 +59,6 @@ module Tebako
       @deps ||= File.join(prefix, "deps")
     end
 
-    RUBY_VERSIONS = {
-      "2.7.8" => "c2dab63cbc8f2a05526108ad419efa63a67ed4074dbbcf9fc2b1ca664cb45ba0",
-      "3.0.6" => "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e",
-      "3.1.4" => "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6",
-      "3.2.3" => "af7f1757d9ddb630345988139211f1fd570ff5ba830def1cc7c468ae9b65c9ba",
-      "3.3.0" => "96518814d9832bece92a85415a819d4893b307db5921ae1f0f751a9a89a56b7d"
-    }.freeze
-
-    DEFAULT_RUBY_VERSION = "3.1.4"
-
-    def extend_ruby_version
-      version = options["Ruby"].nil? ? DEFAULT_RUBY_VERSION : options["Ruby"]
-      unless RUBY_VERSIONS.key?(version)
-        raise Tebako::Error.new(
-          "Ruby version #{version} is not supported yet, exiting",
-          253
-        )
-      end
-
-      @extend_ruby_version ||= [version, RUBY_VERSIONS[version]]
-    end
-
     def l_level
       @l_level ||= if options["log-level"].nil?
                      "error"
@@ -93,7 +72,7 @@ module Tebako
       @m_files ||= case RbConfig::CONFIG["host_os"]
                    when /linux/, /darwin/
                      "Unix Makefiles"
-                   when /msys/
+                   when /msys|mingw|cygwin/
                      "Ninja"
                    else
                      raise Tebako::Error.new(
@@ -116,19 +95,6 @@ module Tebako
                    end
     end
 
-    PACKAGING_ERRORS = {
-      101 => "'tebako setup' configure step failed",
-      102 => "'tebako setup' build step failed",
-      103 => "'tebako press' configure step failed",
-      104 => "'tebako press' build step failed"
-    }.freeze
-
-    def packaging_error(code)
-      msg = PACKAGING_ERRORS[code]
-      msg = "Unknown packaging error" if msg.nil?
-      raise Tebako::Error.new msg, code
-    end
-
     def prefix
       @prefix ||= if options["prefix"].nil?
                     puts "No prefix specified, using ~/.tebako"
@@ -138,6 +104,17 @@ module Tebako
                   else
                     File.expand_path(options["prefix"])
                   end
+    end
+
+    def press_announce
+      @press_announce ||= <<~ANN
+        Running tebako press at #{prefix}
+           Ruby version:            '#{extend_ruby_version[0]}'
+           Project root:            '#{options["root"]}'
+           Application entry point: '#{options["entry-point"]}'
+           Package file name:       '#{package}'
+           Loging level:            '#{l_level}'
+      ANN
     end
 
     def press_options

@@ -26,8 +26,22 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 # Tebako - an executable packager
-# Tebako error class
 module Tebako
+  PACKAGING_ERRORS = {
+    101 => "'tebako setup' configure step failed",
+    102 => "'tebako setup' build step failed",
+    103 => "'tebako press' configure step failed",
+    104 => "'tebako press' build step failed"
+  }.freeze
+
+  class << self
+    def packaging_error(code)
+      msg = PACKAGING_ERRORS[code]
+      msg = "Unknown packaging error" if msg.nil?
+      raise Tebako::Error.new msg, code
+    end
+  end
+
   # Tebako error class
   class Error < StandardError
     def initialize(msg = "Unspecified error", code = 255)
