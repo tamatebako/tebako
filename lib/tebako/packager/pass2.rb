@@ -93,31 +93,35 @@ module Tebako
         #      This is fixed by ext/extmk.rb patch [TODO ?]
         # .....................................................
 
+        def linux_common_libs
+          <<~SUBST
+            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a -l:libfsst.a           \\
+            -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a                         \\
+          SUBST
+        end
+
         def linux_gnu_libs(ruby_ver)
           <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a -l:libfsst.a       \
-            -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libarchive.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a     \
-            -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a  \
-            -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a -l:libanl.a #{PatchHelpers.yaml_reference(ruby_ver)}                  \
+            #{linux_common_libs} \
+            -l:libarchive.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a   \\
+            -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a -l:libanl.a #{PatchHelpers.yaml_reference(ruby_ver)}         \\
             -l:libboost_system.a -l:libboost_chrono.a  -l:libutil.a -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -l:librt.a -ldl -lpthread -lm
           SUBST
         end
 
         def linux_musl_libs(ruby_ver)
           <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a -l:libfsst.a         \
-            -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a        \
-            -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a -l:libreadline.a  \
-            -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a  #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libboost_chrono.a -l:librt.a         \
-            -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -ldl -lpthread
+            #{linux_common_libs} \
+            -l:libiberty.a  -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:libreadline.a  \\
+            -l:libgdbm.a  -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a  #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libboost_chrono.a         \\
+            -l:librt.a -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -ldl -lpthread
           SUBST
         end
 
         def msys_libs(ruby_ver)
           <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
-            -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
-            -l:libzstd.a -l:libffi.a -l:libgdbm.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:liblzma.a -l:libiberty.a \
+            #{linux_common_libs} \
+            -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libffi.a -l:libgdbm.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:liblzma.a -l:libiberty.a   \\
             #{PatchHelpers.yaml_reference(ruby_ver)} -l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
           SUBST
         end

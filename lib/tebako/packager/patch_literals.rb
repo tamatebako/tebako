@@ -193,7 +193,6 @@ module Tebako
         #ifndef NO_TEBAKO_INCLUDES
         #include <tebako/tebako-config.h>
         #include <tebako/tebako-defines.h>
-        #include <tebako/tebako-io-rb-w32.h>
         #include <tebako/tebako-io.h>
         #endif
         /* -- End of tebako patch -- */

@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 04
+  CACHE_VER: 06
   TZ: "Etc/UTC"
   VERBOSE: no
 
@@ -67,7 +67,9 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: apk --no-cache --upgrade add git bash
+        run: |
+          apk --no-cache --upgrade add git bash
+          git config --global --add safe.directory $PWD
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -87,7 +89,6 @@ jobs:
 
       - name: tebako setup
         run: |
-          git config --global --add safe.directory $PWD
           bundle install
           bundle exec rake generate_version_txt
           exe/tebako setup
@@ -108,7 +109,9 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: apk --no-cache --upgrade add git bash
+        run: |
+          apk --no-cache --upgrade add git bash
+          git config --global --add safe.directory $PWD
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -150,7 +153,9 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: apk --no-cache --upgrade add git bash
+        run: |
+          apk --no-cache --upgrade add git bash
+          git config --global --add safe.directory $PWD
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
