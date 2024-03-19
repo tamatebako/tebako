@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,6 +25,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require_relative "patch_literals"
 require_relative "patch_helpers"
 
 # Tebako - an executable packager
@@ -90,39 +91,6 @@ module Tebako
         "EXTDLDFLAGS=\"-bundle_loader '\\$(BUILTRUBY)'\"" => ""
       }.freeze
 
-      GNUMAKEFILE_IN_WINMAIN_SUBST = <<~SUBST
-        RUBYDEF = $(DLL_BASE_NAME).def
-
-        # Start of tebako patch
-        WINMAINOBJ    = win32/winmain.$(OBJEXT)
-        $(WINMAINOBJ): win32/winmain.c
-        # End of tebako patch
-      SUBST
-
-      GNUMAKEFILE_IN_PATCH = {
-
-        "  DLLWRAP += -mno-cygwin" =>
-          "# tebako patched  DLLWRAP += -mno-cygwin",
-
-        "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.@OBJEXT@" =>
-          "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.@OBJEXT@ $(WINMAINOBJ)  # tebako patched",
-
-        "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
-          "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@  # tebako patched",
-
-        "--output-exp=$(RUBY_EXP) \\" =>
-         "--output-exp=$(RUBY_EXP) --output-lib=$(LIBRUBY) \\",
-
-        "	@rm -f $(PROGRAM)" =>
-          "# tebako patched  @rm -f $(PROGRAM)",
-
-        "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
-          "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
-
-        "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST
-
-      }.freeze
-
       OPENSSL_EXTCONF_RB_SUBST = <<~SUBST
         # Start of tebako patch
         $defs.push("-DRUBY_EXPORT=1")
@@ -145,6 +113,8 @@ module Tebako
             #   -- extension is build statically
             #  there may be no files install in addition to spec
             # Example: io/wait extension (and others)
+            # [TODO]  Check if it is still required
+            # No match and patching on Ruby 3.1.4 but works wo issues
             "tool/rbinstall.rb" => TOOL_RBINSTALL_RB_PATCH,
 
             # ....................................................
@@ -176,8 +146,8 @@ module Tebako
 
           if ostype =~ /msys/
             # ....................................................
-            # Generate import library; use WinMain to build rubyw.exe
-            patch_map.store("cygwin/GNUmakefile.in", GNUMAKEFILE_IN_PATCH)
+            # Generate export definitions; use WinMain to build rubyw.exe
+            patch_map.store("cygwin/GNUmakefile.in", GNUMAKEFILE_IN_PATCH_P1)
             # ....................................................
             # RUBY_EXPORT=1 (shall ve set for static builds but is missing in openssl extension)
             patch_map.store("ext/openssl/extconf.rb", OPENSSL_EXTCONF_RB_PATCH)
@@ -187,6 +157,8 @@ module Tebako
         end
 
         private
+
+        include Tebako::Packager::PatchLiterals
 
         def rubygems_path_support_patch_one(mount_point)
           <<~SUBST

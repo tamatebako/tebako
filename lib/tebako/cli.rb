@@ -28,6 +28,7 @@
 
 require "digest"
 require "fileutils"
+require "open3"
 require "thor"
 require "yaml"
 
@@ -120,27 +121,19 @@ module Tebako
 
     no_commands do
       def do_press
-        cfg_cmd, build_cmd = make_commands("cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}",
-                                           "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}")
+        cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}"
+        build_cmd = "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}"
         merged_env = ENV.to_h.merge(b_env)
         Tebako.packaging_error(103) unless system(merged_env, cfg_cmd)
         Tebako.packaging_error(104) unless system(merged_env, build_cmd)
       end
 
       def do_setup
-        cfg_cmd, build_cmd = make_commands("cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}",
-                                           "cmake --build #{output} --target setup --parallel #{Etc.nprocessors}")
+        cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}"
+        build_cmd = "cmake --build \"#{output}\" --target setup --parallel #{Etc.nprocessors}"
         merged_env = ENV.to_h.merge(b_env)
         Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
         Tebako.packaging_error(102) unless system(merged_env, build_cmd)
-      end
-
-      def make_commands(cfg_cmd, build_cmd)
-        if RbConfig::CONFIG["host_os"] =~ /msys|mingw|cygwin/
-          cfg_cmd = "bash -c \"#{cfg_cmd}\""
-          build_cmd = "bash -c \"#{build_cmd}\""
-        end
-        [cfg_cmd, build_cmd]
       end
     end
 

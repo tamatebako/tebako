@@ -31,7 +31,8 @@ module Tebako
     101 => "'tebako setup' configure step failed",
     102 => "'tebako setup' build step failed",
     103 => "'tebako press' configure step failed",
-    104 => "'tebako press' build step failed"
+    104 => "'tebako press' build step failed",
+    105 => "Failed to map MSys path to Windows"
   }.freeze
 
   class << self

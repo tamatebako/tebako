@@ -149,7 +149,7 @@ extern "C" const char* tebako_mount_point(void) {
 	return tebako::fs_mount_point;
 }
 
-#ifdef RB_W32
+#if 0
 
 #if !defined(RUBY_WIN32_H)
     struct stati128 {

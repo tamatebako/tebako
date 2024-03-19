@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 12
+  CACHE_VER: 18
   VERBOSE: yes
 
 jobs:
@@ -80,7 +80,7 @@ jobs:
 
     defaults:
       run:
-        shell: bash
+        shell: msys2 {0}
 
     steps:
       - name: Checkout tebako packaging environment
@@ -88,31 +88,65 @@ jobs:
         with:
           submodules: true
 
-      - name: Install Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: 3.1.4
-          bundler-cache: false
+#      - name: Install Ruby
+#        uses: ruby/setup-ruby@v1
+#        with:
+#          ruby-version: 3.1.4
+#          bundler-cache: false
 
 # Shall be installed by setup-ruby@v1:
 #  ruby:p toolchain:p openssl:p make:p libyaml:p
-      - name: Install additional tools and libraries
-        shell: bash
-        run: |
-          pacman -S --noconfirm pactoys
-          pacboy sync --noconfirm --overwrite \
-            cmake:p     \
-            boost:p     \
-            diffutils:p \
-            libevent:p  \
-            double-conversion:p \
-            fmt:p       \
-            glog:p      \
-            dlfcn:p     \
-            ninja:p     \
-            gtest:p     \
-            autotools:p \
+#      - name: Install additional tools and libraries
+#        run: |
+#          pacman -S --noconfirm pactoys
+#          pacboy sync --noconfirm --overwrite \
+#            cmake:p     \
+#            boost:p     \
+#            diffutils:p \
+#            libevent:p  \
+#            double-conversion:p \
+#            fmt:p       \
+#            glog:p      \
+#            dlfcn:p     \
+#            ninja:p     \
+#            gtest:p     \
+#            autotools:p \
+#            ncurses:p   \
+#            ruby:p      \
+#            toolchain:p \
+#            openssl:p   \
+#            make:p      \
+#            libyaml:p
+
+      - name: Setup MSys
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{matrix.env.sys}}
+          path-type: minimal
+          update: true
+          install: >-
+            git
+            tar
+            bison
+            flex
+          pacboy: >-
+            cmake:p
+            boost:p
+            diffutils:p
+            libevent:p
+            double-conversion:p
+            fmt:p
+            glog:p
+            dlfcn:p
+            ninja:p
+            gtest:p
+            autotools:p
             ncurses:p
+            ruby:p
+            toolchain:p
+            openssl:p
+            make:p
+            libyaml:p
 
       - name: Enable long filenames
         run: git config --global core.longpaths true

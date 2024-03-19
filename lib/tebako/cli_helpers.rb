@@ -50,13 +50,25 @@ module Tebako
 
     def cfg_options
       ruby_ver, ruby_hash = extend_ruby_version
+      # Cannot use 'xxx' as parameters because it does not work in Windows shells
+      # So we have to use \"xxx\"
       @cfg_options ||=
-        "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING='#{ruby_ver}' -DRUBY_HASH:STRING='#{ruby_hash}' " \
-        "-DDEPS:STRING='#{deps}' -G '#{m_files}' -B '#{output}' -S '#{source}'"
+        "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
+        "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output}\" -S \"#{source}\""
     end
 
     def deps
       @deps ||= File.join(prefix, "deps")
+    end
+
+    def fs_current
+      fs_current = Dir.pwd
+      if RUBY_PLATFORM =~ /msys|mingw|cygwin/
+        fs_current, cygpath_res = Open3.capture2e("cygpath", "-w", fs_current)
+        Tebako.packaging_error(101) unless cygpath_res.success?
+        fs_current.strip!
+      end
+      @fs_current ||= fs_current
     end
 
     def l_level
@@ -69,14 +81,16 @@ module Tebako
 
     # rubocop:disable Metrics/MethodLength
     def m_files
-      @m_files ||= case RbConfig::CONFIG["host_os"]
+      @m_files ||= case RUBY_PLATFORM
                    when /linux/, /darwin/
                      "Unix Makefiles"
                    when /msys|mingw|cygwin/
-                     "Ninja"
+                     # Ninja is not able to handle "mkdwarfs ..." call emitted from cmake
+                     # So we have to use MinGW Makefiles on Windows despite poor performance
+                     "MinGW Makefiles"
                    else
                      raise Tebako::Error.new(
-                       "#{RbConfig::CONFIG["host_os"]} is not supported yet, exiting",
+                       "#{RUBY_PLATFORM} is not supported yet, exiting",
                        254
                      )
                    end
@@ -88,10 +102,15 @@ module Tebako
     end
 
     def package
-      @package ||= if options["output"].nil?
-                     File.join(Dir.pwd, File.basename(options["entry-point"], ".*"))
+      package = if options["output"].nil?
+                  File.join(Dir.pwd, File.basename(options["entry-point"], ".*"))
+                else
+                  options["output"]
+                end
+      @package ||= if relative?(package)
+                     File.join(fs_current, package)
                    else
-                     options["output"]
+                     package
                    end
     end
 
@@ -110,7 +129,7 @@ module Tebako
       @press_announce ||= <<~ANN
         Running tebako press at #{prefix}
            Ruby version:            '#{extend_ruby_version[0]}'
-           Project root:            '#{options["root"]}'
+           Project root:            '#{root}'
            Application entry point: '#{options["entry-point"]}'
            Package file name:       '#{package}'
            Loging level:            '#{l_level}'
@@ -119,8 +138,20 @@ module Tebako
 
     def press_options
       @press_options ||=
-        "-DROOT:STRING='#{options["root"]}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
-        "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}'"
+        "-DROOT:STRING='#{root}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
+        "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' "
+    end
+
+    def relative?(path)
+      Pathname.new(path).relative?
+    end
+
+    def root
+      @root ||= if relative?(options["root"])
+                  File.join(fs_current, options["root"])
+                else
+                  File.join(options["root"], "")
+                end
     end
 
     def source
