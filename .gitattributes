@@ -9,4 +9,4 @@ tebako text eol=lf
 *.env text eol=lf
 Gemspec text eol=lf
 Rakefile text eol=lf
-rails text eof=lf
+rails text eol=lf
