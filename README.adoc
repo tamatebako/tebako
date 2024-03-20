@@ -55,6 +55,22 @@ but our goal is to be able to package all maintained Ruby releases.
 
 ==== GNU C/C++ 10+ or Clang C/C++ 12+
 
+[source,sh]
+----
+apt install -y gcc-10 g++-10
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10
+update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10
+----
+
+or
+
+[source,sh]
+----
+apt install -y clang-12
+update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 150
+update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 150
+----
+
 ==== CMake version 3.20+
 
 Tebako relies on CMake 3.20+, which may not be available as a default package.
