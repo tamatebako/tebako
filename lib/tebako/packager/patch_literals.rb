@@ -169,16 +169,32 @@ module Tebako
           "else if (e == EIO /* tebako patch */ && !within_tebako_memfs(path)) {"
       }.freeze
 
+      DLN_C_MSYS_PATCH = {
+        "    winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);" => <<~SUBST
+          /* -- Start of tebako patch -- */
+            char *f = NULL;
+            winfile = NULL;
+            if (file && within_tebako_memfs(file)) {
+              f = tebako_dlmap2file(file);
+              if (f) {
+                winfile = rb_w32_mbstr_to_wstr(CP_UTF8, f, -1, NULL);
+                free(f);
+              }
+              else {
+                goto failed;
+              }
+            }
+            else {
+              winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);
+            }
+          /* -- End of tebako patch -- */
+        SUBST
+      }.freeze
+
       COMMON_MK_PATCH = {
         "ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP)" =>
           "ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP) $(EXTS_MK)"
       }.freeze
-
-      C_FILES_TO_PATCH = [
-        ["file.c", "/* define system APIs */"],
-        ["util.c", "#ifndef S_ISDIR"],
-        ["dln.c", "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;"]
-      ].freeze
 
       TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 =
         "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
@@ -197,6 +213,12 @@ module Tebako
       TEMPLATE_MAKEFILE_IN_BASE_PATCH =
         "# -- Start of tebako patch --\n" \
         "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
+        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
+        "# -- End of tebako patch --"
+
+      TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS =
+        "# -- Start of tebako patch --\n" \
+        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(RUBY_EXP) $(MAINOBJ) " \
         "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 

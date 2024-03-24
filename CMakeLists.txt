@@ -243,6 +243,8 @@ set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
 set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 # Target binary directory
 set (TBD ${DATA_SRC_DIR}/bin)
+# Target library directory
+set (TLIBD ${DATA_SRC_DIR}/lib)
 # Target 'local' directory
 set (TLD ${DATA_SRC_DIR}/local)
 # TGD folder is used to install gems
@@ -259,9 +261,10 @@ message(STATUS "DATA_SRC_DIR: ${DATA_SRC_DIR}")
 message(STATUS "DATA_PRE_DIR: ${DATA_PRE_DIR}")
 message(STATUS "DATA_BIN_DIR: ${DATA_BIN_DIR}")
 message(STATUS "DATA_BIN_FILE: ${DATA_BIN_FILE}")
-message(STATUS "TBD: ${TBD}")
-message(STATUS "TLD: ${TLD}")
-message(STATUS "TGD: ${TGD}")
+message(STATUS "Target binary directory: ${TBD}")
+message(STATUS "Target library directory: ${TLIBD}")
+message(STATUS "Target local directory: ${TLD}")
+message(STATUS "Target Gem directory:: ${TGD}")
 message(STATUS "FS_MOUNT_POINT: ${FS_MOUNT_POINT}")
 message(STATUS "Building for Win32 Ruby (RB_W32): ${RB_W32}")
 
@@ -356,6 +359,7 @@ else(IS_DARWIN)
 
   if(RB_W32)
     string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DRB_W32=1")
+    string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${TLIBD}")
   endif(RB_W32)
 endif(IS_DARWIN)
 
