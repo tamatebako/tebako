@@ -151,7 +151,6 @@ test_CLI_invalid_Ruby_version() {
    assertContains "$result" "Expected '--Ruby' to be one of"
 }
 
-
 # ......................................................................
 #  --  tebako setup
 #test_tebako_setup() {
@@ -314,11 +313,15 @@ test_tebako_press_18() {
 # ......................................................................
 # 19. Ruby project (no gemspec, with gemfile, with native extension)
 test_tebako_press_19() {
-if [[ "$OSTYPE" != "msys" ]]; then
    echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
    press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
-   package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
-fi
+   if [[ "$OSTYPE" != "msys" ]]; then
+      package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
+   else
+      rm -f ./ruby.exe
+      cp test-19-package.exe ruby.exe
+      package_runner "./ruby.exe" "Hello, World via libc puts using FFI on tebako package"
+   fi
 }
 
 # ......................................................................

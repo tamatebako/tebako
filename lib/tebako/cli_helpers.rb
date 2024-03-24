@@ -81,12 +81,13 @@ module Tebako
 
     # rubocop:disable Metrics/MethodLength
     def m_files
+      # [TODO]
+      # Ninja generates incorrect script fot tebako press target -- gets lost in a chain custom targets
+      # Using makefiles has negative performance impact so it needs to be fixed
       @m_files ||= case RUBY_PLATFORM
                    when /linux/, /darwin/
                      "Unix Makefiles"
                    when /msys|mingw|cygwin/
-                     # Ninja is not able to handle "mkdwarfs ..." call emitted from cmake
-                     # So we have to use MinGW Makefiles on Windows despite poor performance
                      "MinGW Makefiles"
                    else
                      raise Tebako::Error.new(

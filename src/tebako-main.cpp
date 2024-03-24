@@ -35,6 +35,7 @@
 #include <fcntl.h>
 
 #include <string>
+#include <cstdint>
 
 #ifdef _WIN32
  #include <winsock2.h>

@@ -61,3 +61,4 @@ packed-mn
 .package-ready
 extract/
 source_filesystem/
+tebako_test.log
