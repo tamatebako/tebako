@@ -38,8 +38,6 @@ module Tebako
         def get_patch_map(ostype, deps_lib_dir, ruby_ver)
           patch_map = get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
 
-          C_FILES_TO_PATCH.each { |patch| patch_map.store(patch[0], patch_c_file(patch[1])) }
-
           patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
 
           if ostype =~ /msys/
@@ -50,8 +48,6 @@ module Tebako
           end
 
           patch_map
-          # ostype =~ /msys/ ? patch_map.merge!(MSYS_PATCHES) : patch_map
-          #          patch_map.merge!(LINUX_PATCHES)
         end
 
         private
@@ -61,6 +57,17 @@ module Tebako
         def get_dir_c_patch(ostype)
           dir_c_patch = patch_c_file(ostype =~ /msys/ ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST")
           dir_c_patch.merge!(DIR_C_BASE_PATCH)
+        end
+
+        def get_dln_c_patch(ostype)
+          # Not using substitutions of dlxxx functions on Windows
+          dln_c_patch = {
+            "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;" =>
+              "#{ostype =~ /msys/ ? C_FILE_SUBST_LESS : C_FILE_SUBST}\n" \
+              "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;\n"
+          }
+          dln_c_patch.merge!(DLN_C_MSYS_PATCH) if ostype =~ /msys/
+          dln_c_patch
         end
 
         def get_io_c_patch(ostype)
@@ -80,11 +87,11 @@ module Tebako
         def get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
           {
             "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
-            "main.c" => MAIN_C_PATCH,
             "tool/mkconfig.rb" => ostype =~ /msys/ ? TOOL_MKCONFIG_RB_PATCH_MSYS : TOOL_MKCONFIG_RB_PATCH,
             "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH,
-            "dir.c" => get_dir_c_patch(ostype),
-            "io.c" => get_io_c_patch(ostype)
+            "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype),
+            "io.c" => get_io_c_patch(ostype),              "file.c" => patch_c_file("/* define system APIs */"),
+            "main.c" => MAIN_C_PATCH,                      "util.c" => patch_c_file("#ifndef S_ISDIR")
           }
         end
 
@@ -105,11 +112,13 @@ module Tebako
         end
 
         def template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver)
-          template_makefile_in_patch_two(ruby_ver).merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
+          template_makefile_in_patch_two(ostype, ruby_ver).merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
         end
 
-        def template_makefile_in_patch_two(ruby_ver)
-          if PatchHelpers.ruby31?(ruby_ver)
+        def template_makefile_in_patch_two(ostype, ruby_ver)
+          if ostype =~ /msys/
+            { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS }
+          elsif PatchHelpers.ruby31?(ruby_ver)
             { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
           else
             { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 }

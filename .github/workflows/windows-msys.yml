@@ -58,8 +58,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 18
-  VERBOSE: yes
+  CACHE_VER: 21
+  VERBOSE: no
 
 jobs:
   setup:
