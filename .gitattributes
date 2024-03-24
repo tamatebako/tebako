@@ -1,4 +1,5 @@
 tebako text eol=lf
+tebako-packager text eol=lf
 *.giattributes text eol=lf
 *.c text eol=lf
 *.cpp text eol=lf
@@ -10,3 +11,5 @@ tebako text eol=lf
 Gemspec text eol=lf
 Rakefile text eol=lf
 rails text eol=lf
+CMakeLists.txt text eol=lf
+*.yml text eol=lf

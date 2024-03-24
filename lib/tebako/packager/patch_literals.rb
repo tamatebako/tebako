@@ -260,45 +260,6 @@ module Tebako
         # End of tebako patch
       SUBST
 
-      GNUMAKEFILE_IN_PATCH_P1 = {
-        "  DLLWRAP += -mno-cygwin" =>
-          "# tebako patched  DLLWRAP += -mno-cygwin",
-
-        "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.@OBJEXT@" =>
-          "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.@OBJEXT@ $(WINMAINOBJ)  # tebako patched",
-
-        "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
-          "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@  # tebako patched",
-
-        "--output-exp=$(RUBY_EXP) \\" =>
-         "--output-exp=$(RUBY_EXP) --output-lib=$(LIBRUBY) \\",
-
-        "	@rm -f $(PROGRAM)" =>
-          "# tebako patched  @rm -f $(PROGRAM)",
-
-        "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
-          "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
-
-        "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST
-      }.freeze
-
-      # For pass 2 we 'kill ruby.exp' regenaration
-      GNUMAKEFILE_IN_PATCH_P2 = {
-        "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.@OBJEXT@" =>
-          "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.@OBJEXT@ $(WINMAINOBJ)  # tebako patched",
-
-        "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
-          "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) -o $@  # tebako patched",
-
-        "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST,
-
-        "$(RUBY_EXP): $(LIBRUBY_A)" => "dummy.exp: $(LIBRUBY_A) # tebako patched",
-
-        "$(PROGRAM): $(RUBY_INSTALL_NAME).res.@OBJEXT@" =>
-          "$(PROGRAM): $(RUBY_INSTALL_NAME).res.@OBJEXT@ $(LIBRUBY_A) # tebako patched\n" \
-          "$(LIBRUBY_A): $(LIBRUBY_A_OBJS) $(INITOBJS) # tebako patched\n"
-      }.freeze
-
       IO_C_SUBST = <<~SUBST
         /* -- Start of tebako patch -- */
             if (is_tebako_file_descriptor(fd)) return;

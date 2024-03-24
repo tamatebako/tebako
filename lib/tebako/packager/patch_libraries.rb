@@ -118,8 +118,7 @@ module Tebako
           SUBST
         end
 
-        # rubocop:disable Metrics/MethodLength
-        def mlibs(ostype, deps_lib_dir, ruby_ver)
+        def mlibs(ostype, deps_lib_dir, ruby_ver) # rubocop:disable Metrics/MethodLength
           case ostype
           when /linux-gnu/
             linux_gnu_libs(ruby_ver)
@@ -133,7 +132,6 @@ module Tebako
             raise Tebako::Error, "Unknown ostype #{ostype}"
           end
         end
-        # rubocop:enable Metrics/MethodLength
       end
     end
   end
