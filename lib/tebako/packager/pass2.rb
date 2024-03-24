@@ -41,7 +41,7 @@ module Tebako
           patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
 
           if ostype =~ /msys/
-            patch_map.merge!(get_msys_patches)
+            patch_map.merge!(get_msys_patches(ruby_ver))
           elsif PatchHelpers.ruby3x?(ruby_ver)
             # [TODO] Do we really need it for platforms other then Windows ??
             patch_map.store("common.mk", COMMON_MK_PATCH)
@@ -76,9 +76,30 @@ module Tebako
           io_c_patch
         end
 
-        def get_msys_patches # rubocop:disable Naming/AccessorMethodName
+        def get_gnumakefile_in_patch_p2(ruby_ver) # rubocop:disable Metrics/MethodLength
+          # For pass 2 we 'kill ruby.exp' regenaration
+          # [TODO] shall be generated with correct executable name
+          objext = PatchHelpers.ruby32?(ruby_ver) ? "$(OBJEXT)" : "@OBJEXT@"
           {
-            "cygwin/GNUmakefile.in" => GNUMAKEFILE_IN_PATCH_P2,
+            "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>
+              "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
+
+            "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
+              "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) -o $@  # tebako patched",
+
+            "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST,
+
+            "$(RUBY_EXP): $(LIBRUBY_A)" => "dummy.exp: $(LIBRUBY_A) # tebako patched",
+
+            "$(PROGRAM): $(RUBY_INSTALL_NAME).res.#{objext}" =>
+              "$(PROGRAM): $(RUBY_INSTALL_NAME).res.#{objext} $(LIBRUBY_A) # tebako patched\n" \
+              "$(LIBRUBY_A): $(LIBRUBY_A_OBJS) $(INITOBJS) # tebako patched\n"
+          }
+        end
+
+        def get_msys_patches(ruby_ver)
+          {
+            "cygwin/GNUmakefile.in" => get_gnumakefile_in_patch_p2(ruby_ver),
             "ruby.c" => RUBY_C_MSYS_PATCHES,
             "win32/file.c" => WIN32_FILE_C_MSYS_PATCHES
           }

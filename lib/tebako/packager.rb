@@ -71,6 +71,20 @@ module Tebako
     RUBYGEMS_VERSION = "3.4.22"
 
     class << self
+      # Create implib
+      def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
+        puts "   ... creating Windows import library"
+        File.open(def_fname(src_dir, app_name), "w") do |file|
+          file.puts "LIBRARY #{out_fname(app_name)}"
+          file.puts File.read(File.join(src_dir, "tebako.def"))
+        end
+        system("dlltool" \
+               "-d #{def_fname(src_dir, app_name)} -D #{out_fname(app_name)}" \
+               "--output-lib #{lib_fname(package_src_dir, ruby_ver)}")
+      rescue StandardError => e
+        raise Tebako::Error, "Failed to create import library:\n #{e.message}"
+      end
+
       # Deploy
       def deploy(src_dir, tbd, gflength)
         puts "-- Running deploy script"
@@ -132,6 +146,18 @@ module Tebako
       end
 
       private
+
+      def def_fname(src_dir, app_name)
+        File.join(src_dir, "#{app_name}.def")
+      end
+
+      def out_fname(app_name)
+        File.join("#{app_name}.exe")
+      end
+
+      def lib_fname(src_dir, ruby_ver)
+        File.join(src_dir, "lib", "libx64-ucrt-ruby#{ruby_ver[0]}#{ruby_ver[2]}0.a")
+      end
 
       def install_gem(tbd, name, ver = nil)
         puts "   ... installing #{name} gem#{" version #{ver}" if ver}"

@@ -147,7 +147,7 @@ module Tebako
           if ostype =~ /msys/
             # ....................................................
             # Generate export definitions; use WinMain to build rubyw.exe
-            patch_map.store("cygwin/GNUmakefile.in", GNUMAKEFILE_IN_PATCH_P1)
+            patch_map.store("cygwin/GNUmakefile.in", get_gnumakefile_in_patch_p1(ruby_ver))
             # ....................................................
             # RUBY_EXPORT=1 (shall ve set for static builds but is missing in openssl extension)
             patch_map.store("ext/openssl/extconf.rb", OPENSSL_EXTCONF_RB_PATCH)
@@ -159,6 +159,31 @@ module Tebako
         private
 
         include Tebako::Packager::PatchLiterals
+
+        def get_gnumakefile_in_patch_p1(ruby_ver) # rubocop:disable Metrics/MethodLength
+          objext = PatchHelpers.ruby32?(ruby_ver) ? "$(OBJEXT)" : "@OBJEXT@"
+          {
+            "  DLLWRAP += -mno-cygwin" =>
+              "# tebako patched  DLLWRAP += -mno-cygwin",
+
+            "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>
+              "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
+
+            "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
+              "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@  # tebako patched",
+
+            "--output-exp=$(RUBY_EXP) \\" =>
+              "--output-exp=$(RUBY_EXP) --output-lib=$(LIBRUBY) --output-def=tebako.def \\",
+
+            "	@rm -f $(PROGRAM)" =>
+              "# tebako patched  @rm -f $(PROGRAM)",
+
+            "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
+              "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
+
+            "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST
+          }
+        end
 
         def rubygems_path_support_patch_one(mount_point)
           <<~SUBST

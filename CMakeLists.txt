@@ -88,7 +88,7 @@ if (NOT ${SETUP_MODE})
 
   cmake_path(IS_RELATIVE PCKG IS_PK_RELATIVE)
   if(${IS_PK_RELATIVE})
-    message(FATAL_ERROR "Path to output package be absolute. Relative path '${PCKG}' is not allowed.")
+    message(FATAL_ERROR "Path to output package shall be absolute. Relative path '${PCKG}' is not allowed.")
   else()
     cmake_path(SET APP_NAME NORMALIZE ${PCKG})
   endif()
@@ -131,7 +131,8 @@ if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
   set(FORCE_RUBY_PLATFORM "true")
 elseif("${OSTYPE_TXT}" MATCHES "^msys*")
   set(IS_MSYS ON)
-#  set(DWARFS_PRELOAD ON)
+  set(FORCE_RUBY_PLATFORM "true")
+  # set(DWARFS_PRELOAD ON)
   set(RB_W32 ON)
   set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline")
   #set(RUBY_SUFFIX "w")
@@ -204,7 +205,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 if(DWARFS_PRELOAD)
-  def_ext_prj_t(LIBDWARFS_WR "0.5.0.rc18" "085eb1aeed100c5662ff9afff386c2f0cbe2065ddefe5adcd45a755b547532b0")
+  def_ext_prj_t(LIBDWARFS_WR "0.5.0" "7bf8e5b4432f35b65f6034f614067c2018995c1bebaf935e8cdddc1a3e045c01")
 
   string(REGEX REPLACE "^([0-9]+)\\.([0-9]+)\\.([0-9]+).*" "\\1;\\2;\\3" LIBDWARFS_WR_VER_COMPONENTS ${LIBDWARFS_WR_VER})
 
@@ -213,7 +214,7 @@ if(DWARFS_PRELOAD)
   list(GET LIBDWARFS_WR_VER_COMPONENTS 2 LIBDWARFS_WR_VER_PATCH)
   set (LIBDWARFS_WR_VER_M ${LIBDWARFS_WR_VER_MAJOR}.${LIBDWARFS_WR_VER_MINOR}.${LIBDWARFS_WR_VER_PATCH})
 else(DWARFS_PRELOAD)
-  def_ext_prj_g(DWARFS_WR "v0.5.0.rc18")
+  def_ext_prj_g(DWARFS_WR "v0.5.0")
 endif(DWARFS_PRELOAD)
 
 set(LIBYAML_RUBY_OPTION "")
@@ -414,9 +415,12 @@ else (${SETUP_MODE})
   list(LENGTH GEMS     GLENGTH)
 
   add_custom_target(clean_filesystem
-      COMMAND ruby ${EXE}/tebako-packager deploy ${RUBY_STASH_DIR} ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR} ${GFLENGTH}
+      COMMAND ruby ${EXE}/tebako-packager deploy ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${RUBY_STASH_DIR}
+                                                 ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
+                                                 ${GFLENGTH} ${APP_NAME} ${RUBY_VER}
       DEPENDS ${RUBY_PRJ}
   )
+
   if(GSLENGTH GREATER 0)
     if(GSLENGTH GREATER 1)
       message(FATAL_ERROR "Multiple gemspecs detected in ${FS_ROOT}")
@@ -556,7 +560,10 @@ else (${SETUP_MODE})
     COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.a"
     COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.o"
     COMMAND ${GNU_BASH} -c "chmod +x ${DEPS_BIN_DIR}/mkdwarfs${EXE_SUFFIX}"
-    COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR}
+    # No progress below is crtitical since in reporting mode mkdwarfs tries to work directly with terminal
+    # and it creates critical issues for stderr redirects (&2 > 1) used by Ninja and our test srcipts
+    # It may be fixable bit is very difficult to reproduce in testi environment
+    COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR} --no-progress
     COMMAND ${CMAKE_COMMAND} -E touch ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
     DEPENDS setup source_filesystem
     VERBATIM
