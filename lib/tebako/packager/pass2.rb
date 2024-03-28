@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require_relative "patch_literals"
+require_relative "patch_libraries"
 require_relative "patch_helpers"
 
 # Tebako - an executable packager
@@ -37,12 +38,16 @@ module Tebako
         def get_patch_map(ostype, deps_lib_dir, ruby_ver)
           patch_map = get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
 
-          C_FILES_TO_PATCH.each { |patch| patch_map.store(patch[0], patch_c_file(patch[1])) }
           patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
-          patch_map.store("common.mk", COMMON_MK_PATCH) if PatchHelpers.ruby3x?(ruby_ver)
 
-          ostype =~ /msys/ ? patch_map.merge!(MSYS_PATCHES) : patch_map
-          #          patch_map.merge!(LINUX_PATCHES)
+          if ostype =~ /msys/
+            patch_map.merge!(get_msys_patches(ruby_ver))
+          elsif PatchHelpers.ruby3x?(ruby_ver)
+            # [TODO] Do we really need it for platforms other then Windows ??
+            patch_map.store("common.mk", COMMON_MK_PATCH)
+          end
+
+          patch_map
         end
 
         private
@@ -54,97 +59,69 @@ module Tebako
           dir_c_patch.merge!(DIR_C_BASE_PATCH)
         end
 
-        def get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
+        def get_dln_c_patch(ostype)
+          # Not using substitutions of dlxxx functions on Windows
+          dln_c_patch = {
+            "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;" =>
+              "#{ostype =~ /msys/ ? C_FILE_SUBST_LESS : C_FILE_SUBST}\n" \
+              "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;\n"
+          }
+          dln_c_patch.merge!(DLN_C_MSYS_PATCH) if ostype =~ /msys/
+          dln_c_patch
+        end
+
+        def get_io_c_patch(ostype)
+          io_c_patch = patch_c_file("/* define system APIs */")
+          io_c_patch.merge!(IO_C_MSYS_PATCH) if ostype =~ /msys/
+          io_c_patch
+        end
+
+        def get_gnumakefile_in_patch_p2(ruby_ver)
+          # For pass 2 we 'kill ruby.exp' regenaration
+          # [TODO] shall be generated with correct executable name
+          objext = PatchHelpers.ruby32?(ruby_ver) ? "$(OBJEXT)" : "@OBJEXT@"
           {
-            "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
-            "main.c" => MAIN_C_PATCH,
-            "tool/mkconfig.rb" => TOOL_MKCONFIG_RB_PATCH,
-            "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH,
-            "dir.c" => get_dir_c_patch(ostype)
+            "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>
+              "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
+
+            "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
+              "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) -o $@  # tebako patched",
+
+            "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST,
+
+            "$(RUBY_EXP): $(LIBRUBY_A)" => "dummy.exp: $(LIBRUBY_A) # tebako patched",
+
+            "$(PROGRAM): $(RUBY_INSTALL_NAME).res.#{objext}" =>
+              "$(PROGRAM): $(RUBY_INSTALL_NAME).res.#{objext} $(LIBRUBY_A) # tebako patched\n" \
+              "$(LIBRUBY_A): $(LIBRUBY_A_OBJS) $(INITOBJS) # tebako patched\n"
           }
         end
 
-        def process_brew_libs!(libs, brew_libs)
-          brew_libs.each { |lib| libs << "#{PatchHelpers.get_prefix_macos(lib[0]).chop}/lib/lib#{lib[1]}.a " }
+        def get_msys_patches(ruby_ver)
+          {
+            "cygwin/GNUmakefile.in" => get_gnumakefile_in_patch_p2(ruby_ver),
+            "ruby.c" => RUBY_C_MSYS_PATCHES,
+            "win32/file.c" => WIN32_FILE_C_MSYS_PATCHES
+          }
         end
 
-        def darwin_libs(deps_lib_dir, ruby_ver)
-          libs = String.new
-
-          process_brew_libs!(libs, PatchHelpers.ruby31?(ruby_ver) ? DARWIN_BREW_LIBS_31 : DARWIN_BREW_LIBS_PRE_31)
-          process_brew_libs!(libs, DARWIN_BREW_LIBS)
-
-          DARWIN_DEP_LIBS.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
-          <<~SUBST
-            -ltebako-fs -ldwarfs-wr -ldwarfs -force_load #{deps_lib_dir}/libdwarfs_compression.a -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
-            -lzstd #{libs} -ljemalloc -lc++ -lc++abi
-          SUBST
+        def get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
+          {
+            "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
+            "tool/mkconfig.rb" => ostype =~ /msys/ ? TOOL_MKCONFIG_RB_PATCH_MSYS : TOOL_MKCONFIG_RB_PATCH,
+            "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH,
+            "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype),
+            "io.c" => get_io_c_patch(ostype),              "file.c" => patch_c_file("/* define system APIs */"),
+            "main.c" => MAIN_C_PATCH,                      "util.c" => patch_c_file("#ifndef S_ISDIR")
+          }
         end
-
-        # .....................................................
-        #  Notes re linux libraries
-        #   1) This order is important: -lgcc_eh -l:libunwind.a -l:liblzma.a  lzma is used to process debug sections.
-        #      gcc_eh shall be linked before unwind to avoid duplicate symbols.
-        #   2) -lgcc_eh assumes -static-libgcc (applied in CMakeLists.ext, RUBY_C_FLAGS)
-        #   3) -static-libstdc++ did not work, not sure why  [TODO ?]
-        #   4) When clang is used linker links libraries specified in exensions in such way that they are linked shared
-        #      (libz, libffi, libreadline, libncurses, libtinfo, ... )
-        #      Using stuff like -l:libz.a  does not help; there is a reference to libz.so anyway.
-        #      This is fixed by ext/extmk.rb patch [TODO ?]
-        # .....................................................
-
-        def linux_gnu_libs(ruby_ver)
-          <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a -l:libfsst.a       \
-            -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libarchive.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a     \
-            -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a  \
-            -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a -l:libanl.a #{PatchHelpers.yaml_reference(ruby_ver)}                  \
-            -l:libboost_system.a -l:libboost_chrono.a  -l:libutil.a -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -l:librt.a -ldl -lpthread -lm
-          SUBST
-        end
-
-        def linux_musl_libs(ruby_ver)
-          <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a -l:libfsst.a         \
-            -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libiberty.a        \
-            -l:libacl.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:libgdbm.a -l:libreadline.a  \
-            -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a  #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libboost_chrono.a -l:librt.a         \
-            -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -ldl -lpthread
-          SUBST
-        end
-
-        def msys_libs(ruby_ver)
-          <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libfolly.a -l:libfsst.a -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a \
-            -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a -l:libssl.a -l:libcrypto.a -l:liblz4.a -l:libz.a \
-            -l:libzstd.a -l:libffi.a -l:libgdbm.a -l:libncurses.a -l:libjemalloc.a -l:libunwind.a -l:liblzma.a -l:libiberty.a \
-            #{PatchHelpers.yaml_reference(ruby_ver)} -l:libstdc++.a -l:libdl.a -lole32 -loleaut32 -luuid
-          SUBST
-        end
-
-        # rubocop:disable Metrics/MethodLength
-        def mlibs(ostype, deps_lib_dir, ruby_ver)
-          case ostype
-          when /linux-gnu/
-            linux_gnu_libs(ruby_ver)
-          when /linux-musl/
-            linux_musl_libs(ruby_ver)
-          when /darwin/
-            darwin_libs(deps_lib_dir, ruby_ver)
-          when /msys/
-            msys_libs(ruby_ver)
-          else
-            raise Tebako::Error, "Unknown ostype #{ostype}"
-          end
-        end
-        # rubocop:enable Metrics/MethodLength
 
         def mlibs_subst(ostype, deps_lib_dir, ruby_ver)
           yjit_libs = PatchHelpers.ruby32only?(ruby_ver) ? "$(YJIT_LIBS) " : ""
           {
             "MAINLIBS = #{yjit_libs}@MAINLIBS@" =>
               "# -- Start of tebako patch -- \n" \
-              "MAINLIBS = #{yjit_libs}#{mlibs(ostype, deps_lib_dir, ruby_ver)}" \
+              "MAINLIBS = #{yjit_libs}#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver)}" \
               "# -- End of tebako patch -- \n"
           }
         end
@@ -156,11 +133,13 @@ module Tebako
         end
 
         def template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver)
-          template_makefile_in_patch_two(ruby_ver).merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
+          template_makefile_in_patch_two(ostype, ruby_ver).merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
         end
 
-        def template_makefile_in_patch_two(ruby_ver)
-          if PatchHelpers.ruby31?(ruby_ver)
+        def template_makefile_in_patch_two(ostype, ruby_ver)
+          if ostype =~ /msys/
+            { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS }
+          elsif PatchHelpers.ruby31?(ruby_ver)
             { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
           else
             { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 }

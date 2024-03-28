@@ -28,10 +28,12 @@
 
 require "digest"
 require "fileutils"
+require "open3"
 require "thor"
 require "yaml"
 
 require_relative "cli_helpers"
+require_relative "cli_rubies"
 require_relative "error"
 
 # Tebako - an executable packager
@@ -47,24 +49,21 @@ module Tebako
     desc "clean", "Clean tebako packaging environment"
     def clean
       puts "Cleaning tebako packaging environment"
-      FileUtils.rm_rf([deps, output], secure: true)
+      # Using File.join(deps, "") to ensure that the slashes are appropriate
+      FileUtils.rm_rf([File.join(deps, ""), File.join(output, "")], secure: true)
     end
 
     desc "clean_ruby", "Clean Ruby source from tebako packaging environment"
     method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::CliHelpers::RUBY_VERSIONS.keys,
+                         enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
                          desc: "Ruby version to clean, all available versions by default"
     def clean_ruby
       puts "Cleaning Ruby sources from tebako packaging environment"
-      if options["Ruby"].nil?
-        nmr = "#{deps}/src/_ruby_*"
-        nms = "#{deps}/stash_*"
-      else
-        nmr = "#{deps}/src/_ruby_#{options["Ruby"]}*"
-        nms = "#{deps}/stash_#{options["Ruby"]}"
-      end
-      FileUtils.rm_rf(Dir.glob(nmr), secure: true)
-      FileUtils.rm_rf(Dir.glob(nms), secure: true)
+      suffix = options["Ruby"].nil? ? "" : "_#{options["Ruby"]}"
+      nmr = "src/_ruby_#{suffix}*"
+      nms = "stash_#{suffix}"
+      FileUtils.rm_rf(Dir.glob(File.join(deps, nmr)), secure: true)
+      FileUtils.rm_rf(Dir.glob(File.join(deps, nms)), secure: true)
     end
 
     desc "hash", "Print build script hash (ci cache key)"
@@ -81,8 +80,8 @@ module Tebako
                            desc: "Tebako package file name, entry point base file name in the current folder by default"
     method_option :root, type: :string, aliases: "-r", required: true, desc: "Root folder of the Ruby application"
     method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::CliHelpers::RUBY_VERSIONS.keys,
-                         desc: "Tebako package Ruby version, #{Tebako::CliHelpers::DEFAULT_RUBY_VERSION} by default"
+                         enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
+                         desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default"
     def press
       puts press_announce
       do_press
@@ -93,8 +92,8 @@ module Tebako
 
     desc "setup", "Set up tebako packaging environment"
     method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::CliHelpers::RUBY_VERSIONS.keys,
-                         desc: "Tebako package Ruby version, #{Tebako::CliHelpers::DEFAULT_RUBY_VERSION} by default"
+                         enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
+                         desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default."
     def setup
       puts "Setting up tebako packaging environment"
       do_setup
@@ -122,29 +121,23 @@ module Tebako
 
     no_commands do
       def do_press
-        packaging_error(103) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}")
-        packaging_error(104) unless system(b_env,
-                                           "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}")
+        cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}"
+        build_cmd = "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}"
+        merged_env = ENV.to_h.merge(b_env)
+        Tebako.packaging_error(103) unless system(merged_env, cfg_cmd)
+        Tebako.packaging_error(104) unless system(merged_env, build_cmd)
       end
 
       def do_setup
-        packaging_error(101) unless system(b_env, "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}")
-        packaging_error(102) unless system(b_env,
-                                           "cmake --build #{output} --target setup --parallel #{Etc.nprocessors}")
-      end
-
-      def press_announce
-        @press_announce ||= <<~ANN
-          Running tebako press at #{prefix}
-             Ruby version:            '#{extend_ruby_version[0]}'
-             Project root:            '#{options["root"]}'
-             Application entry point: '#{options["entry-point"]}'
-             Package file name:       '#{package}'
-             Loging level:            '#{l_level}'
-        ANN
+        cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}"
+        build_cmd = "cmake --build \"#{output}\" --target setup --parallel #{Etc.nprocessors}"
+        merged_env = ENV.to_h.merge(b_env)
+        Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
+        Tebako.packaging_error(102) unless system(merged_env, build_cmd)
       end
     end
 
     include Tebako::CliHelpers
+    include Tebako::CliRubies
   end
 end

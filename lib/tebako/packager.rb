@@ -48,10 +48,11 @@ module Tebako
 
     FILES_TO_RESTORE_MSYS = %w[
       ruby.c
-      win32/win32.c
       win32/file.c
-      win32/dir.h
     ].freeze
+    # Do not need to restore cygwin/GNUmakefile.in
+    # because it is patched (differently) both on pass 1 and pass2
+    # cygwin/GNUmakefile.in
 
     FILES_TO_RESTORE_MUSL = %w[
       thread_pthread.c
