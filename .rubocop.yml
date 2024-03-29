@@ -33,8 +33,14 @@ Gemspec/RequireMFA:
 Layout/LineLength:
   Max: 120
 
+Layout/EndOfLine:
+  Enabled: false
+
 Metrics/ModuleLength:
   Max: 250
 
 Naming/FileName:
+  Enabled: false
+
+Style/BlockComments:
   Enabled: false

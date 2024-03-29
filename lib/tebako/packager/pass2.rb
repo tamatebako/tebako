@@ -77,8 +77,7 @@ module Tebako
         end
 
         def get_gnumakefile_in_patch_p2(ruby_ver) # rubocop:disable Metrics/MethodLength
-          # For pass 2 we 'kill ruby.exp' regenaration
-          # [TODO] shall be generated with correct executable name
+          # For pass 2 we 'kill ruby.exp' regeneration
           objext = PatchHelpers.ruby32?(ruby_ver) ? "$(OBJEXT)" : "@OBJEXT@"
           {
             "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>
