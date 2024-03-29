@@ -36,7 +36,7 @@ In the future:
 The Tebako packager is tested on the following platforms:
 
 * Linux: Ubuntu 20.04; Alpine 3.17
-* macOS: macOS 12 (Monterey), 13 (Ventura)
+* MacOS: macOS 12 (Monterey), 13 (Ventura)
 * Windows: 2019, 2022 (using MinGW ucrt64 toolchain)
 
 Please note that Windows support is in pre-release and is a subject of further testing and optimization
@@ -45,10 +45,10 @@ Please note that Windows support is in pre-release and is a subject of further t
 
 The Tebako packager supports the following versions of Ruby for packaging:
 
-* 2.7.8 (not for Windows packaging)
-* 3.0.6 (not for Windows packaging)
-* 3.1.4
-* 3.2.3
+* 2.7.8 (Linux, MacOS)
+* 3.0.6 (Linux, MacOS)
+* 3.1.4 (Linux, MacOS, Windows)
+* 3.2.3 (Linux, MacOS)
 
 Support of specific version including minor release requires some effort, sometimes extensive
 but our goal is to be able to package all maintained Ruby releases.

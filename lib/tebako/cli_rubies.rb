@@ -57,12 +57,10 @@ module Tebako
     end
 
     def version_check_msys(version)
-      unless Gem::Version.new("3.1.0") > Gem::Version.new(version) && RbConfig::CONFIG["host_os"] =~ /msys|mingw|cygwin/
-        return
-      end
+      return unless version != DEFAULT_RUBY_VERSION && RbConfig::CONFIG["host_os"] =~ /msys|mingw|cygwin/
 
       raise Tebako::Error.new(
-        "Windows packaging is compatible with Ruby 3.1.x or above, selected Ruby version #{version} is not supported",
+        "Windows packaging is compatible with Ruby #{DEFAULT_RUBY_VERSION} only, version #{version} is not supported",
         252
       )
     end
