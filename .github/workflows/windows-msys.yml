@@ -58,12 +58,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 27
-  VERBOSE: yes
+  CACHE_VER: 30
+  VERBOSE: no
 
 jobs:
   setup:
-    name: Setup windows-msys [${{ matrix.env.sys }}, CC ${{ matrix.env.CC }} ]
+    name: setup windows-msys [${{ matrix.env.sys }}, CC ${{ matrix.env.CC }} ]
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -137,12 +137,6 @@ jobs:
           bundle exec rake generate_version_txt
           exe/tebako setup
 
-      - name: Check faulty test
-        run: |
-          ruby exe/tebako press -r tests/test-19 -e tebako-test-run.rb -o test-19-package
-          ldd ./test-19-package.exe
-          ldd output/source_filesystem/lib/ruby/gems/3.1.0/gems/ffi-1.16.3-x64-mingw-ucrt/lib/ffi_c.so
-          ./test-19-package.exe
   tests-1:
     needs: setup
     name: tests-1 windows-msys [${{ matrix.env.sys }}, Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}]
