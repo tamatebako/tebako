@@ -80,7 +80,7 @@ module Tebako
         end
         params = ["dlltool", "-d", def_fname(src_dir, app_name), "-D", out_fname(app_name),
                   "--output-lib", lib_fname(package_src_dir, ruby_ver)]
-                  out, st = Open3.capture2e(*params)
+        out, st = Open3.capture2e(*params)
         raise Tebako::Error, "Failed to create import library:\n #{out}" unless st.exitstatus.zero?
       end
 
