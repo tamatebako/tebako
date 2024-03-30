@@ -100,7 +100,8 @@ module Tebako
           {
             "cygwin/GNUmakefile.in" => get_gnumakefile_in_patch_p2(ruby_ver),
             "ruby.c" => RUBY_C_MSYS_PATCHES,
-            "win32/file.c" => WIN32_FILE_C_MSYS_PATCHES
+            "win32/file.c" => WIN32_FILE_C_MSYS_PATCHES,
+            "win32/win32.c" => WIN32_WIN32_C_MSYS_PATCHES
           }
         end
 

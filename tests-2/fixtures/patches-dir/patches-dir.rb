@@ -25,23 +25,25 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+rt = RUBY_PLATFORM =~ /msys|mingw|cygwin|mswin/ ? "A:/__tebako_memfs__" : "/__tebako_memfs__"
+
 puts "===== Dir test ====="
 
 # test 1  chdir absolute - getwd
-EXPECTED_CWD_1 = "/__tebako_memfs__/local/"
+expected_cwd = "#{rt}/local/"
 print "chdir '#{File.dirname(__FILE__)}' ... "
 Dir.chdir(File.dirname(__FILE__))
 cwd = Dir.getwd
-raise "getwd returned #{cwd} while #{EXPECTED_CWD_1} was expected" unless cwd.eql? EXPECTED_CWD_1
+raise "getwd returned #{cwd} while #{expected_cwd} was expected" unless cwd.eql? expected_cwd
 
 puts "OK(success)"
 
 # test 2  chdir relative - getwd
-EXPECTED_CWD_2 = "/__tebako_memfs__/local/level-1/"
+expected_cwd = "#{rt}/local/level-1/"
 print "chdir 'level-1' ... "
 Dir.chdir("level-1")
 cwd = Dir.getwd
-raise "getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
+raise "getwd returned #{cwd} while #{expected_cwd} was expected" unless cwd.eql? expected_cwd
 
 puts "OK(success)"
 
@@ -56,7 +58,7 @@ end
 raise "chdir succeeded while exception was expected" unless failed
 
 cwd = Dir.getwd
-raise "Getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
+raise "Getwd returned #{cwd} while #{expected_cwd} was expected" unless cwd.eql? expected_cwd
 
 puts "OK(failure)"
 
@@ -65,19 +67,19 @@ print "chdir '/bin/does-not-exists' ... "
 begin
   Dir.chdir("/bin/does-not-exist")
   failed = false
-rescue Errno::ENOENT
+rescue Errno::ENOENT, Errno::ENXIO
   failed = true
 end
 raise "chdir succeeded while exception was expected" unless failed
 
 cwd = Dir.getwd
-raise "getwd returned #{cwd} while #{EXPECTED_CWD_2} was expected" unless cwd.eql? EXPECTED_CWD_2
+raise "getwd returned #{cwd} while #{expected_cwd} was expected" unless cwd.eql? expected_cwd
 
 puts "OK(failure)"
 
 # test 5  open - read - tell - seek - close - rewind
-print "open - read - tell - seek - close @ '/__tebako_memfs__/local/level-1/level-2' ... "
-a_dir = Dir.new("/__tebako_memfs__/local/level-1/level-2")
+print "open - read - tell - seek - close @ '#{rt}/local/level-1/level-2' ... "
+a_dir = Dir.new("#{rt}/local/level-1/level-2")
 
 r = a_dir.read
 p = a_dir.tell
@@ -118,8 +120,8 @@ raise "Dir.close returned #{p} while nil was expected" unless p.nil?
 puts "OK(match)"
 
 # test 7  glob
-print "[\"**/*.txt\", base:\"/__tebako_memfs__/local/\"] ... "
-fls = Dir["**/*.txt", base: "/__tebako_memfs__/local/"]
+print "[\"**/*.txt\", base:\"#{rt}/local/\"] ... "
+fls = Dir["**/*.txt", base: "#{rt}/local/"]
 EXPECTED_1 = ["level-1/level-2/file-1.txt", "level-1/level-2/file-2.txt", "level-1/level-2/file-3.txt"].freeze
 
 if fls.difference(EXPECTED_1).any? || EXPECTED_1.difference(fls).any?
@@ -129,9 +131,9 @@ end
 puts "OK(match)"
 
 # test 8  glob
-print "[\"/__tebako_memfs__/local/**/file-1.txt\"] ... "
-fls = Dir["/__tebako_memfs__/local/**/file-1.txt"]
-EXPECTED_2 = ["/__tebako_memfs__/local/level-1/level-2/file-1.txt"].freeze
+print "[\"#{rt}/local/**/file-1.txt\"] ... "
+fls = Dir["#{rt}/local/**/file-1.txt"]
+EXPECTED_2 = ["#{rt}/local/level-1/level-2/file-1.txt"].freeze
 
 if fls.difference(EXPECTED_2).any? || EXPECTED_2.difference(fls).any?
   raise "Dir[] returned #{fls} while #{EXPECTED_2} was expected"
@@ -140,15 +142,15 @@ end
 puts "OK(match)"
 
 # test 9 Dir.empty?
-print "Dir.empty?(\"/__tebako_memfs__/local/level-1/level-2\") ..."
-r = Dir.empty?("/__tebako_memfs__/local/level-1/level-2")
+print "Dir.empty?(\"#{rt}/local/level-1/level-2\") ..."
+r = Dir.empty?("#{rt}/local/level-1/level-2")
 raise "Dir.empty? returned #{r} while 'false' was expected" if r
 
 puts "OK(match)"
 
 # test 10 Dir.empty?
-print "Dir.empty?(\"/__tebako_memfs__/local/level-1/level-2/level-3\") ..."
-r = Dir.empty?("/__tebako_memfs__/local/level-1/level-2/level-3")
+print "Dir.empty?(\"#{rt}/local/level-1/level-2/level-3\") ..."
+r = Dir.empty?("#{rt}/local/level-1/level-2/level-3")
 raise "Dir.empty? returned #{r} while 'true' was expected" unless r
 
 puts "OK(match)"

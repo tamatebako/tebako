@@ -29,7 +29,7 @@
 module Tebako
   module Packager
     # Ruby patching literals (pass2)
-    module PatchLiterals
+    module PatchLiterals # rubocop:disable Metrics/ModuleLength
       TOOL_MKCONFIG_RB_PATCH = {
         "    if fast[name]" => <<~SUBST
           # -- Start of tebako patch --
@@ -308,6 +308,46 @@ module Tebako
       WIN32_FILE_C_MSYS_PATCHES = {
         "#ifndef INVALID_FILE_ATTRIBUTES" => "#{C_FILE_SUBST_LESS}\n#ifndef INVALID_FILE_ATTRIBUTES",
         "wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);" => WIN32_FILE_C_MSYS_SUBST
+      }.freeze
+
+      WIN32_WIN32_C_MSYS_SUBST = <<~SUBST
+        /* -- Start of tebako patch -- */
+          if (is_tebako_cwd()) {
+            char* tebako_cwd = tebako_getcwd(NULL,0);
+            if (tebako_cwd == NULL) {
+              errno = ENOMEM;
+              return NULL;
+            }
+            len = strlen(tebako_cwd) + 1;
+
+            if (buffer) {
+              if (size < len) {
+                free(tebako_cwd);
+                errno = ERANGE;
+                return NULL;
+              }
+            }
+            else {
+              buffer = (*alloc)(len, arg);
+              if (!buffer) {
+                free(tebako_cwd);
+                errno = ENOMEM;
+                return NULL;
+              }
+            }
+            translate_char(tebako_cwd, (char)0x5c, '/', CP_UTF8);
+            strcpy(buffer, tebako_cwd);
+            free(tebako_cwd);
+            return buffer;
+          }
+          /* -- End of tebako patch -- */
+
+          len = GetCurrentDirectoryW(0, NULL);
+      SUBST
+
+      WIN32_WIN32_C_MSYS_PATCHES = {
+        "#if defined _MSC_VER && _MSC_VER <= 1200" => "#{C_FILE_SUBST_LESS}\n#if defined _MSC_VER && _MSC_VER <= 1200",
+        "len = GetCurrentDirectoryW(0, NULL);" => WIN32_WIN32_C_MSYS_SUBST
       }.freeze
 
       LINUX_PATCHES = {

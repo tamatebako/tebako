@@ -73,21 +73,27 @@ end
 puts "OK(match)"
 
 # test 4  open - pread - close
-print "open - pread - close  ... "
-Dir.chdir("#{rt}/local/level-1/level-2")
-File.open("file-1.txt", "r") do |f|
-  r = f.pread(13, 5)
-  raise "read returned '#{r}' while 'is file-1.txt' was expected" unless r.eql? "is file-1.txt"
+# Windows => pread() function is unimplemented on this machine
+unless RUBY_PLATFORM =~ /msys|mingw|cygwin|mswin/
+  print "open - pread - close  ... "
+  Dir.chdir("#{rt}/local/level-1/level-2")
+  File.open("file-1.txt", "r") do |f|
+    r = f.pread(13, 5)
+    raise "read returned '#{r}' while 'is file-1.txt' was expected" unless r.eql? "is file-1.txt"
+  end
+  puts "OK(match)"
 end
-puts "OK(match)"
 
 # test 5 lstat - readlink
+# Not supprting file links on Windows
 print "readlink  ... "
-Dir.chdir("#{rt}/local/level-1")
-s = File.lstat("#{rt}/local/level-1/link-3").size
-raise "lstat returned '#{s}' while '18' was expected" unless s.eql? 18
+unless RUBY_PLATFORM =~ /msys|mingw|cygwin|mswin/
+  Dir.chdir("#{rt}/local/level-1")
+  s = File.lstat("#{rt}/local/level-1/link-3").size
+  raise "lstat returned '#{s}' while '18' was expected" unless s.eql? 18
 
-r = File.readlink("link-3")
-raise "readlink returned '#{r}' while 'level-2/file-3.txt' was expected" unless r.eql? "level-2/file-3.txt"
+  r = File.readlink("link-3")
+  raise "readlink returned '#{r}' while 'level-2/file-3.txt' was expected" unless r.eql? "level-2/file-3.txt"
 
-puts "OK(match)"
+  puts "OK(match)"
+end

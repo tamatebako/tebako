@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 30
+  CACHE_VER: 40
   VERBOSE: no
 
 jobs:
@@ -218,4 +218,80 @@ jobs:
         run: |
           bundle install
           bundle exec rake generate_version_txt
-          RUBY_VER=${{ matrix.package_ruby_ver }} OSTYPE=msys tests/scripts/functional-tests.sh
+          RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+
+  tests-2:
+    needs: setup
+    name: tests-2 windows-msys [${{ matrix.env.sys }}, Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - sys: ucrt64
+            CC: gcc
+            CXX: g++
+        package_ruby_ver: [ '3.1.4' ]
+    env: ${{ matrix.env }}
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup MSys
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{matrix.env.sys}}
+          path-type: minimal
+          update: true
+          install: >-
+            git
+            tar
+            bison
+            flex
+          pacboy: >-
+            cmake:p
+            boost:p
+            diffutils:p
+            libevent:p
+            double-conversion:p
+            fmt:p
+            glog:p
+            dlfcn:p
+            ninja:p
+            gtest:p
+            autotools:p
+            ncurses:p
+            ruby:p
+            toolchain:p
+            openssl:p
+            make:p
+            libyaml:p
+
+      - name: Enable long filenames
+        run: git config --global core.longpaths true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Create deps folder
+        run: mkdir ${{env.DEPS}}
+
+      - name: Process cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DEPS }}
+          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+
+      - name: Run tebako tests (set no. 2)
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
+          RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb
