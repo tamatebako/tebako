@@ -129,6 +129,20 @@ brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib ncurse
   double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz libyaml openssl@3
 ----
 
+=== Windows (2019, 2022)
+
+The simplest approach is to use Ruby development environment provided by RubyInstaller, for example Ruby+Devkit 3.1.4-1.
+
+Once it is installed use the following commands:
+
+[source,sh]
+----
+  ridk enable ucrt64
+  pacman -S git tar bison flex toolchain make cmake
+            boost diffutils libevent double-conversion
+            fmt glog dlfcn gtest autotools ncurses libyaml
+----
+
 == Installation
 
 === General
@@ -139,20 +153,6 @@ Tebako is distributed as a Ruby gem
 ----
 gem install tebako
 ----
-
-=== Windows (2019, 2022)
-
-The simplest approach is to use Ruby development environment provided by RubyInstaller, for example Ruby+Devkit 3.1.4-1
-Once it is is installed use the follwoing commands
-
-[source,sh]
-----
-  ridk enable ucrt64
-  pacman -S git tar bison flex toolchain make cmake
-            boost diffutils libevent double-conversion
-            fmt glog dlfcn gtest autotools ncurses libyaml
-----
-
 
 === Quick setup on Ubuntu 20.04 on Docker
 
