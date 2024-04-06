@@ -560,9 +560,9 @@ else (${SETUP_MODE})
     COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.a"
     COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.o"
     COMMAND ${GNU_BASH} -c "chmod +x ${DEPS_BIN_DIR}/mkdwarfs${EXE_SUFFIX}"
-    # No progress below is crtitical since in reporting mode mkdwarfs tries to work directly with terminal
-    # and it creates critical issues for stderr redirects (&2 > 1) used by Ninja and our test srcipts
-    # It may be fixable bit is very difficult to reproduce in testi environment
+    # No progress below is critical since in reporting mode mkdwarfs tries to work directly with terminal
+    # and it creates issues for stderr redirects (&2 > 1) used by Ninja and our test srcipts
+    # It may be fixable bit is very difficult to reproduce in test environment
     COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR} --no-progress
     COMMAND ${CMAKE_COMMAND} -E touch ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
     DEPENDS setup source_filesystem

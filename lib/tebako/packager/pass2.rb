@@ -98,11 +98,11 @@ module Tebako
 
         def get_msys_mkconfig_rb_patches(ruby_ver)
           {
-            "    if fast[name]" => TOOLS_MKCONFIG_RB_SUBST_1,
+            "    if fast[name]" => TOOLS_MKCONFIG_RB_SUBST,
             "when /RUBYGEMS/; next" =>
               "when /RUBYGEMS/; next\n\n" \
               "# Start of tebako patch\n" \
-              " when /MAINLIBS/; val = #{PatchLibraries.msys_base_libs(ruby_ver)}\n" \
+              "when /MAINLIBS/; val = #{PatchLibraries.msys_base_libs(ruby_ver)}\n" \
               "# End of tebako patch"
           }
         end

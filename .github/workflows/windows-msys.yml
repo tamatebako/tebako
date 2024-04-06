@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 40
+  CACHE_VER: 44
   VERBOSE: no
 
 jobs:
@@ -73,7 +73,7 @@ jobs:
             CC: gcc
             CXX: g++
             ASAN: 'OFF'
-            LOG_LEVEL: 'trace'
+            LOG_LEVEL: 'error'
     env: ${{ matrix.env }}
 
     defaults:

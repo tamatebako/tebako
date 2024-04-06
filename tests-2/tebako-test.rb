@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -137,6 +137,17 @@ class TebakoTest < Minitest::Test
       pristine_env pkg_file do |tempdirname|
         yield "#{tempdirname}/#{pkg_file}"
       end
+    end
+  end
+
+  # io/wait library extension shall work as expected
+  def test_311_io_wait
+    name = "lib-io-wait"
+    print "\n#{name} "
+    with_fixture_press_and_env name do |package|
+      out, st = Open3.capture2(package)
+      assert_equal 0, st.exitstatus
+      assert_match(%r{Received: Hello from io/wait writer!}, out)
     end
   end
 
