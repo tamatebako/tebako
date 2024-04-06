@@ -109,16 +109,18 @@ module Tebako
           SUBST
         end
 
+        # Used for mkconfig.rb
         def msys_base_libs(ruby_ver)
           <<~SUBST
             "-l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libdwarfs_compression.a -l:libfolly.a -l:libfsst.a "          \\
             "-l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a " \\
             "-l:liblz4.a -l:libz.a -l:libzstd.a -l:liblzma.a -l:libncurses.a -l:libunwind.a -l:liblzma.a -l:libiberty.a #{PatchHelpers.yaml_reference(ruby_ver)} " \\
             "-l:libffi.a -l:libboost_system-mt.a -l:libboost_chrono-mt.a -l:libstdc++.a -l:libdl.a -static-libgcc -static-libstdc++ -l:libssl.a -l:libcrypto.a " \\
-            "-l:libz.a -l:libwinpthread.a"
+            "-l:libz.a -l:libwinpthread.a -lcrypt32 -lshlwapi -lwsock32 -liphlpapi -limagehlp -lbcrypt -lole32 -loleaut32 -luuid"
           SUBST
         end
 
+        # Used in Makefile
         def msys_libs(ruby_ver)
           <<~SUBST
             -Wl,-Bstatic #{linux_common_libs} \

@@ -48,7 +48,7 @@ module Tebako
         SUBST
       }.freeze
 
-      TOOLS_MKCONFIG_RB_SUBST_1 = <<~SUBST
+      TOOLS_MKCONFIG_RB_SUBST = <<~SUBST
         # -- Start of tebako patch --
             v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
             if v_head_comp == v[0...(v_head_comp.length)]
