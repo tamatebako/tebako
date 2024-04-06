@@ -96,6 +96,17 @@ module Tebako
           }
         end
 
+        def get_msys_mkconfig_rb_patches(ruby_ver)
+          {
+            "    if fast[name]" => TOOLS_MKCONFIG_RB_SUBST_1,
+            "when /RUBYGEMS/; next" =>
+              "when /RUBYGEMS/; next\n\n" \
+              "# Start of tebako patch\n" \
+              " when /MAINLIBS/; val = #{PatchLibraries.msys_base_libs(ruby_ver)}\n" \
+              "# End of tebako patch"
+          }
+        end
+
         def get_msys_patches(ruby_ver)
           {
             "cygwin/GNUmakefile.in" => get_gnumakefile_in_patch_p2(ruby_ver),
@@ -108,7 +119,7 @@ module Tebako
         def get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
           {
             "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
-            "tool/mkconfig.rb" => ostype =~ /msys/ ? TOOL_MKCONFIG_RB_PATCH_MSYS : TOOL_MKCONFIG_RB_PATCH,
+            "tool/mkconfig.rb" => ostype =~ /msys/ ? get_msys_mkconfig_rb_patches(ruby_ver) : TOOL_MKCONFIG_RB_PATCH,
             "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH,
             "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype),
             "io.c" => get_io_c_patch(ostype),              "file.c" => patch_c_file("/* define system APIs */"),
