@@ -29,7 +29,7 @@
 module Tebako
   module Packager
     # Ruby patching literals (pass2)
-    module PatchLiterals # rubocop:disable Metrics/ModuleLength
+    module PatchLiterals
       TOOL_MKCONFIG_RB_PATCH = {
         "    if fast[name]" => <<~SUBST
           # -- Start of tebako patch --
@@ -48,23 +48,21 @@ module Tebako
         SUBST
       }.freeze
 
-      TOOL_MKCONFIG_RB_PATCH_MSYS = {
-        "    if fast[name]" => <<~SUBST
-          # -- Start of tebako patch --
-              v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
-              if v_head_comp == v[0...(v_head_comp.length)]
-                v = "\#{v[0...(v_head_comp.length)]}CONFIG[\\"RUBY_EXEC_PREFIX\\"] = 'A:/__tebako_memfs__'
-          "
-              end
-              v_head_comp = "  CONFIG[\\"RUBY_EXEC_PREFIX\\"] \#{eq} "
-              if v_head_comp == v[0...(v_head_comp.length)]
-                v = "\#{v[0...(v_head_comp.length)]}'A:/__tebako_memfs__'
-          "
-              end
-          # -- End of tebako patch --
-              if fast[name]
-        SUBST
-      }.freeze
+      TOOLS_MKCONFIG_RB_SUBST_1 = <<~SUBST
+        # -- Start of tebako patch --
+            v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
+            if v_head_comp == v[0...(v_head_comp.length)]
+              v = "\#{v[0...(v_head_comp.length)]}CONFIG[\\"RUBY_EXEC_PREFIX\\"] = 'A:/__tebako_memfs__'
+        "
+            end
+            v_head_comp = "  CONFIG[\\"RUBY_EXEC_PREFIX\\"] \#{eq} "
+            if v_head_comp == v[0...(v_head_comp.length)]
+              v = "\#{v[0...(v_head_comp.length)]}'A:/__tebako_memfs__'
+        "
+            end
+        # -- End of tebako patch --
+            if fast[name]
+      SUBST
 
       # Alpine-specific patches https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
       # -- Patch no. 1 --
