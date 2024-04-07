@@ -118,11 +118,11 @@ task:
     CIRRUS_CLONE_DEPTH: 1
     VERBOSE: yes
   macos_instance:
-    image: ghcr.io/cirruslabs/macos-monterey-base:latest
+    image: ghcr.io/cirruslabs/macos-ventura-base:latest
 # Commented to save Cirrus-ci limited capacity
 # image: ghcr.io/cirruslabs/macs-ventura-base:latest
 
-# brew update -- brew update is required if core dwarfs library goes too far ahead comparing to the 
+# brew update -- brew update is required if core dwarfs library goes too far ahead comparing to the
 # packages installed at GitHub runner
   install_script: |
     brew update
