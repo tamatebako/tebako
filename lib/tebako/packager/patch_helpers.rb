@@ -61,6 +61,16 @@ module Tebako
           out
         end
 
+        def msys?(ostype)
+          ostype =~ /msys|cygwin|mingw/
+        end
+
+        def patch_c_file(pattern)
+          {
+            pattern => "#{PatchLiterals::C_FILE_SUBST}\n#{pattern}"
+          }
+        end
+
         def recreate(dirname)
           FileUtils.rm_rf(dirname, noop: nil, verbose: nil, secure: true)
           FileUtils.mkdir(dirname)

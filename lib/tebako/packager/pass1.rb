@@ -27,6 +27,7 @@
 
 require_relative "patch_literals"
 require_relative "patch_helpers"
+require_relative "patch_buildsystem"
 
 # Tebako - an executable packager
 module Tebako
@@ -159,6 +160,7 @@ module Tebako
         private
 
         include Tebako::Packager::PatchLiterals
+        include Tebako::Packager::PatchBuildsystem
 
         def get_gnumakefile_in_patch_p1(ruby_ver) # rubocop:disable Metrics/MethodLength
           objext = PatchHelpers.ruby32?(ruby_ver) ? "$(OBJEXT)" : "@OBJEXT@"

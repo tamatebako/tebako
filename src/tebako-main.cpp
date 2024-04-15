@@ -1,6 +1,6 @@
 /**
  *
- * Copyright (c) 2021-2022 [Ribose Inc](https://www.ribose.com).
+ * Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
  * All rights reserved.
  * This file is a part of tebako
  *
@@ -50,6 +50,8 @@
 #include <tebako/tebako-main.h>
 #include <tebako/tebako-fs.h>
 
+static int running_miniruby = 0;
+
 extern "C" int tebako_main(int* argc, char*** argv) {
 	int ret = -1, fsret = -1;
 	char** new_argv = NULL;
@@ -59,6 +61,7 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 // Ruby build script is designed in such a way that this patch is also applied towards miniruby
 // Just pass through in such case
 		ret = 0;
+		running_miniruby = -1;
 	}
 	else {
 		try {
@@ -148,4 +151,8 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 
 extern "C" const char* tebako_mount_point(void) {
 	return tebako::fs_mount_point;
+}
+
+extern "C" int tebako_is_running_miniruby(void) {
+	return running_miniruby;
 }
