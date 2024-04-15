@@ -57,12 +57,12 @@ module Tebako
     end
 
     def version_check_msys(version)
-      return unless version != DEFAULT_RUBY_VERSION && RUBY_PLATFORM =~ /msys|mingw|cygwin/
-
-      raise Tebako::Error.new(
-        "Windows packaging is compatible with Ruby #{DEFAULT_RUBY_VERSION} only, version #{version} is not supported",
-        252
-      )
+      if Gem::Version.new(version) < Gem::Version.new(DEFAULT_RUBY_VERSION) && RUBY_PLATFORM =~ /msys|mingw|cygwin/
+        raise Tebako::Error.new(
+          "Windows packaging works for Ruby #{DEFAULT_RUBY_VERSION} or above, version #{version} is not supported",
+          252
+        )
+      end
     end
 
     def extend_ruby_version

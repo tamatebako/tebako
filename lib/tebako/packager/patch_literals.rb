@@ -189,37 +189,6 @@ module Tebako
         SUBST
       }.freeze
 
-      COMMON_MK_PATCH = {
-        "ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP)" =>
-          "ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP) $(EXTS_MK)"
-      }.freeze
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 =
-        "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 =
-        "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
-        "# -- End of tebako patch --"
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATTERN =
-        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) $(EXTOBJS) " \
-        "$(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATCH =
-        "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
-        "# -- End of tebako patch --"
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS =
-        "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(RUBY_EXP) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
-        "# -- End of tebako patch --"
-
       C_FILE_SUBST = <<~SUBST
         /* -- Start of tebako patch -- */
         #include <tebako/tebako-config.h>
@@ -249,15 +218,6 @@ module Tebako
         SUBST
       }.freeze
 
-      GNUMAKEFILE_IN_WINMAIN_SUBST = <<~SUBST
-        RUBYDEF = $(DLL_BASE_NAME).def
-
-        # Start of tebako patch
-        WINMAINOBJ    = win32/winmain.$(OBJEXT)
-        $(WINMAINOBJ): win32/winmain.c
-        # End of tebako patch
-      SUBST
-
       IO_C_SUBST = <<~SUBST
         /* -- Start of tebako patch -- */
             if (is_tebako_file_descriptor(fd)) return;
@@ -265,11 +225,21 @@ module Tebako
             flags = fcntl(fd, F_GETFD); /* should not fail except EBADF. */
       SUBST
 
-      IO_C_MSYS_PATCH = {
-        "#define open	rb_w32_uopen" => "#define open(p, f, m) tebako_open(3, (p), (f), (m))",
+      IO_C_MSYS_BASE_PATCH = {
+        "#define open	rb_w32_uopen" => "#define open(p, f, m) tebako_open(3, (p), (f), (m))"
+      }.freeze
+
+      IO_C_MSYS_PATCH_PRE_32 = {
         "(rb_w32_io_cancelable_p((fptr)->fd) ? Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), Qnil))" =>
             "((is_tebako_file_descriptor((fptr)->fd) || rb_w32_io_cancelable_p((fptr)->fd)) ? \\\n" \
             "Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), Qnil))"
+      }.freeze
+
+      IO_C_MSYS_PATCH = {
+        "(rb_w32_io_cancelable_p((fptr)->fd) ? Qnil : rb_io_wait(fptr->self, " \
+        "RB_INT2NUM(RUBY_IO_READABLE), RUBY_IO_TIMEOUT_DEFAULT))" =>
+            "((is_tebako_file_descriptor((fptr)->fd) || rb_w32_io_cancelable_p((fptr)->fd)) ? \\\n" \
+            "Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), RUBY_IO_TIMEOUT_DEFAULT))"
       }.freeze
 
       FILE_C_MSYS_SUBST = <<~SUBST
