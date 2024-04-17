@@ -48,7 +48,7 @@ The Tebako packager supports the following versions of Ruby for packaging:
 * 2.7.8 (Linux, MacOS)
 * 3.0.6 (Linux, MacOS)
 * 3.1.4 (Linux, MacOS, Windows)
-* 3.2.3 (Linux, MacOS)
+* 3.2.3 (Linux, MacOS, Windows)
 
 Support of specific version including minor release requires some effort, sometimes extensive
 but our goal is to be able to package all maintained Ruby releases.
