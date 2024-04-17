@@ -167,11 +167,33 @@ module Tebako
           "else if (e == EIO /* tebako patch */ && !within_tebako_memfs(path)) {"
       }.freeze
 
-      DLN_C_MSYS_PATCH = {
+      DLN_C_MSYS_PATCH_PRE32 = {
         "    winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);" => <<~SUBST
           /* -- Start of tebako patch -- */
             char *f = NULL;
             winfile = NULL;
+            if (file && within_tebako_memfs(file)) {
+              f = tebako_dlmap2file(file);
+              if (f) {
+                winfile = rb_w32_mbstr_to_wstr(CP_UTF8, f, -1, NULL);
+                free(f);
+              }
+              else {
+                goto failed;
+              }
+            }
+            else {
+              winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);
+            }
+          /* -- End of tebako patch -- */
+        SUBST
+      }.freeze
+
+      DLN_C_MSYS_PATCH = {
+        "    WCHAR *winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);" => <<~SUBST
+          /* -- Start of tebako patch -- */
+            char *f = NULL;
+            WCHAR *winfile = NULL;
             if (file && within_tebako_memfs(file)) {
               f = tebako_dlmap2file(file);
               if (f) {

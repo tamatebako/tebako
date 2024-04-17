@@ -63,14 +63,19 @@ module Tebako
           dir_c_patch
         end
 
-        def get_dln_c_patch(ostype)
+        def get_dln_c_patch(ostype, ruby_ver)
           # Not using substitutions of dlxxx functions on Windows
           dln_c_patch = {
             "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;" =>
               "#{PatchHelpers.msys?(ostype) ? C_FILE_SUBST_LESS : C_FILE_SUBST}\n" \
               "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;\n"
           }
-          dln_c_patch.merge!(DLN_C_MSYS_PATCH) if PatchHelpers.msys?(ostype)
+
+          if PatchHelpers.msys?(ostype)
+            patch = PatchHelpers.ruby32?(ruby_ver) ? DLN_C_MSYS_PATCH : DLN_C_MSYS_PATCH_PRE32
+            dln_c_patch.merge!(patch)
+          end
+
           dln_c_patch
         end
 
@@ -111,7 +116,7 @@ module Tebako
             "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
             "tool/mkconfig.rb" => mcrb_subst,
             "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH,
-            "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype),
+            "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype, ruby_ver),
             "io.c" => get_io_c_patch(ostype, ruby_ver),    "main.c" => MAIN_C_PATCH,
             "file.c" => PatchHelpers.patch_c_file("/* define system APIs */"),
             "util.c" => PatchHelpers.patch_c_file("#ifndef S_ISDIR")
