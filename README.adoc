@@ -36,7 +36,7 @@ In the future:
 The Tebako packager is tested on the following platforms:
 
 * Linux: Ubuntu 20.04; Alpine 3.17
-* MacOS: macOS 12 (Monterey), 13 (Ventura)
+* MacOS: macOS 12 (Monterey), 13 (Ventura), 14 (Sonoma)
 * Windows: 2019, 2022 (using MinGW ucrt64 toolchain)
 
 Please note that Windows support is in pre-release and is a subject of further testing and optimization

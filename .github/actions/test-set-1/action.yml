@@ -47,7 +47,7 @@ runs:
       run: strip *-package
 
     - name: Upload tebako test packages
-      if: ${{ matrix.package_ruby_ver == env.RUBY_VER && env.CC == 'clang' }}
+      if: ${{ matrix.package_ruby_ver == env.RUBY_VER && env.CC == 'clang' && matrix.os != 'macos-14' }}
       uses: actions/upload-artifact@v4
       with:
         name: test-packages
