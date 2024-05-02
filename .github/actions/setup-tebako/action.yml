@@ -91,8 +91,13 @@ runs:
         elif [ "$OS" = "Darwin" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
-            echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
-            echo "ADVANCED_OS=MacOS" >> $GITHUB_ENV
+            if [ ${{ matrix.os }} = "macos-12" ]; then
+              echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
+              echo "ADVANCED_OS=MacOS-x86_64" >> $GITHUB_ENV
+            else
+              echo "XCODE_VERSION=14.3.1" >> $GITHUB_ENV
+              echo "ADVANCED_OS=MacOS-arm64" >> $GITHUB_ENV
+            fi
         else
             echo "Unsupported operating system."
             exit 1
@@ -145,9 +150,9 @@ runs:
       shell: bash
       # brew update -- brew update is required if core dwarfs library goes too far ahead comparing to the
       # packages installed at GitHub runner
-      # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config, libyaml, curl
+      # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, gdbm, pkg-config, libyaml, curl
       run: |
-         brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
+         brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash zlib ncurses
          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
 
     - name: Setup environment

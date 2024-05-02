@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 46
+  CACHE_VER: 47
   VERBOSE: no
 
 jobs:
@@ -58,7 +58,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-12 ]
+        os: [ macos-12, macos-14 ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-12 ]
+        os: [ macos-12, macos-14 ]
         package_ruby_ver: [ '3.1.4' ]
     steps:
       - name: Checkout tebako packaging environment
@@ -118,7 +118,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-12 ]
+        os: [ macos-12, macos-14 ]
         package_ruby_ver: [ '3.1.4' ]
     steps:
       - name: Checkout tebako packaging environment
