@@ -48,10 +48,11 @@ module Tebako
 
     FILES_TO_RESTORE_MSYS = %w[
       ruby.c
-      win32/win32.c
       win32/file.c
-      win32/dir.h
     ].freeze
+    # Do not need to restore cygwin/GNUmakefile.in
+    # because it is patched (differently) both on pass 1 and pass2
+    # cygwin/GNUmakefile.in
 
     FILES_TO_RESTORE_MUSL = %w[
       thread_pthread.c
@@ -70,6 +71,19 @@ module Tebako
     RUBYGEMS_VERSION = "3.4.22"
 
     class << self
+      # Create implib
+      def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
+        puts "   ... creating Windows import library"
+        File.open(def_fname(src_dir, app_name), "w") do |file|
+          file.puts "LIBRARY #{out_fname(app_name)}"
+          file.puts File.read(File.join(src_dir, "tebako.def"))
+        end
+        params = ["dlltool", "-d", def_fname(src_dir, app_name), "-D", out_fname(app_name),
+                  "--output-lib", lib_fname(package_src_dir, ruby_ver)]
+        out, st = Open3.capture2e(*params)
+        raise Tebako::Error, "Failed to create import library:\n #{out}" unless st.exitstatus.zero?
+      end
+
       # Deploy
       def deploy(src_dir, tbd, gflength)
         puts "-- Running deploy script"
@@ -131,6 +145,18 @@ module Tebako
       end
 
       private
+
+      def def_fname(src_dir, app_name)
+        File.join(src_dir, "#{app_name}.def")
+      end
+
+      def out_fname(app_name)
+        File.join("#{app_name}.exe")
+      end
+
+      def lib_fname(src_dir, ruby_ver)
+        File.join(src_dir, "lib", "libx64-ucrt-ruby#{ruby_ver[0]}#{ruby_ver[2]}0.a")
+      end
 
       def install_gem(tbd, name, ver = nil)
         puts "   ... installing #{name} gem#{" version #{ver}" if ver}"

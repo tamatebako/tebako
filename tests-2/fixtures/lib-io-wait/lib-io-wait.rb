@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,6 +25,24 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-module Tebako
-  VERSION = "0.6.3"
+require "io/wait"
+
+puts "Hello from io/wait!"
+
+reader, writer = IO.pipe
+
+Thread.new do
+  sleep 1
+  writer.syswrite "Hello from io/wait writer!\n"
 end
+
+if reader.wait_readable(5)
+  message = reader.gets
+  puts "Received: #{message}"
+else
+  puts "The reader is not readable within 5 seconds!"
+end
+
+# Close the pipe
+reader.close
+writer.close

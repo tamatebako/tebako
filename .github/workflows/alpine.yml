@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 04
+  CACHE_VER: 47
   TZ: "Etc/UTC"
   VERBOSE: no
 
@@ -67,7 +67,9 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: apk --no-cache --upgrade add git bash
+        run: |
+          apk --no-cache --upgrade add git bash
+          git config --global --add safe.directory $PWD
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -83,10 +85,10 @@ jobs:
           cache_ver: ${{ env.CACHE_VER }}
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
+          install: off
 
       - name: tebako setup
         run: |
-          git config --global --add safe.directory $PWD
           bundle install
           bundle exec rake generate_version_txt
           exe/tebako setup
@@ -107,7 +109,9 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: apk --no-cache --upgrade add git bash
+        run: |
+          apk --no-cache --upgrade add git bash
+          git config --global --add safe.directory $PWD
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -123,6 +127,12 @@ jobs:
           cache_ver: ${{ env.CACHE_VER }}
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
+          install: off
+
+      - name: tebako setup
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -143,7 +153,9 @@ jobs:
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
-        run: apk --no-cache --upgrade add git bash
+        run: |
+          apk --no-cache --upgrade add git bash
+          git config --global --add safe.directory $PWD
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -163,6 +175,7 @@ jobs:
       - name: Run tebako tests (set no. 2)
         run: |
           bundle install
+          bundle exec rake generate_version_txt
           RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb
 
   test-on-alpine-latest:

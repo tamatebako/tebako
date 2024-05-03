@@ -1,4 +1,4 @@
-# Copyright (c) 2022-2023, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2022-2024, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -32,25 +32,25 @@
 name: Windows-MSys
 
 on:
-#  schedule:
-#    - cron: "0 9 * * 5"
-#  push:
-#    branches: [ main ]
-#    paths-ignore:
-#      - 'docs/**'
-#      - '**.adoc'
-#      - '**.md'
-#      - '.github/workflows/*.yml'
-#      - .cirrus.yml
-#      - '!.github/workflows/windows-msys.yml'
-#  pull_request:
-#    paths-ignore:
-#      - 'docs/**'
-#      - '**.adoc'
-#      - '**.md'
-#      - '.github/workflows/*.yml'
-#      - .cirrus.yml
-#      - '!.github/workflows/windows-msys.yml'
+  schedule:
+    - cron: "0 9 * * 5"
+  push:
+    branches: [ main ]
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - '.github/workflows/*.yml'
+      - .cirrus.yml
+      - '!.github/workflows/windows-msys.yml'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - '.github/workflows/*.yml'
+      - .cirrus.yml
+      - '!.github/workflows/windows-msys.yml'
   workflow_dispatch:
 
 concurrency:
@@ -58,24 +58,22 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 11
-  VERBOSE: yes
+  CACHE_VER: 47
+  VERBOSE: no
 
 jobs:
   setup:
-    name: Setup windows-msys [${{ matrix.env.sys }}, CC ${{ matrix.env.CC }}, ASAN ${{ matrix.env.ASAN }}, ${{ matrix.env.LOG_LEVEL }} ]
+    name: setup windows-msys [${{ matrix.env.sys }}, CC ${{ matrix.env.CC }} ]
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         env:
-          - sys: mingw64
+          - sys: ucrt64
             CC: gcc
             CXX: g++
             ASAN: 'OFF'
-            LOG_LEVEL: 'trace'
-#          - CC: clang
-#            CXX: clang++
+            LOG_LEVEL: 'error'
     env: ${{ matrix.env }}
 
     defaults:
@@ -83,10 +81,15 @@ jobs:
         shell: msys2 {0}
 
     steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+        with:
+          submodules: true
+
       - name: Setup MSys
         uses: msys2/setup-msys2@v2
         with:
-          msystem: ${{ matrix.env.sys }}
+          msystem: ${{matrix.env.sys}}
           path-type: minimal
           update: true
           install: >-
@@ -94,96 +97,27 @@ jobs:
             tar
             bison
             flex
-            make
           pacboy: >-
-            toolchain:p
             cmake:p
             boost:p
             diffutils:p
             libevent:p
             double-conversion:p
-            dlfcn:p
-            gdbm:p
-            libyaml:p
+            fmt:p
             glog:p
+            dlfcn:p
+            ninja:p
+            gtest:p
+            autotools:p
+            ncurses:p
             ruby:p
-
-# No fmt shall be instaled !!! Otherwise folly library will be built in a manner that is not compatible with a static library that we build
-# It may be version mismatch though (???)
-
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Setup environment
-        run: cat common.env >> $GITHUB_ENV
-
-      - name: Create deps folder
-        run: mkdir ${{ env.DEPS }}
-
-      - name: Process cache
-        id: cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.DEPS }}
-          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
-
-      - name: tebako setup
-        run: exe/tebako setup
-
-  tests-1:
-    needs: setup
-    name: tests-1 window-MSys [CC ${{ matrix.env.CC }}]
-    if: ${{ !contains(github.event.head_commit.message, '[cache only]') && !contains(github.event.head_commit.message, '[metanorma only]') }}
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        env:
-          - sys: mingw64
-            CC: gcc
-            CXX: g++
-#          - CC: clang
-#            CXX: clang++
-    env: ${{ matrix.env }}
-
-    defaults:
-      run:
-        shell: msys2 {0}
-
-    steps:
-      - name: Setup MSys
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{ matrix.env.sys }}
-          path-type: minimal
-          update: true
-          install: >-
-            git
-            tar
-            bison
-            flex
-            make
-          pacboy: >-
             toolchain:p
-            cmake:p
-            boost:p
-            diffutils:p
-            libevent:p
-            double-conversion:p
-            dlfcn:p
-            gdbm:p
+            openssl:p
+            make:p
             libyaml:p
-            glog:p
-            gdbm:p
-            ruby:p
-            jemalloc:p
 
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v4
-        with:
-          submodules: true
+      - name: Enable long filenames
+        run: git config --global core.longpaths true
 
       - name: Setup environment
         run: cat common.env >> $GITHUB_ENV
@@ -192,17 +126,86 @@ jobs:
         run: mkdir ${{env.DEPS}}
 
       - name: Process cache
-        id: cache
         uses: actions/cache@v4
         with:
           path: ${{ env.DEPS }}
           key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
-      - name: Cache check
-        if: steps.cache.outputs.cache-hit != 'true'
+      - name: Tebako setup
         run: |
-          echo "Failed to upload cache"
-          false
+          bundle install
+          bundle exec rake generate_version_txt
+          exe/tebako setup
+
+  tests-1:
+    needs: setup
+    name: tests-1 windows-msys [${{ matrix.env.sys }}, Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - sys: ucrt64
+            CC: gcc
+            CXX: g++
+        package_ruby_ver: [ '3.1.4', '3.2.3' ]
+    env: ${{ matrix.env }}
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup MSys
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{matrix.env.sys}}
+          path-type: minimal
+          update: true
+          install: >-
+            git
+            tar
+            bison
+            flex
+          pacboy: >-
+            cmake:p
+            boost:p
+            diffutils:p
+            libevent:p
+            double-conversion:p
+            fmt:p
+            glog:p
+            dlfcn:p
+            ninja:p
+            gtest:p
+            autotools:p
+            ncurses:p
+            ruby:p
+            toolchain:p
+            openssl:p
+            make:p
+            libyaml:p
+
+      - name: Enable long filenames
+        run: git config --global core.longpaths true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Create deps folder
+        run: mkdir ${{env.DEPS}}
+
+      - name: Process cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DEPS }}
+          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
 
       - name: Checkout shell test framework
         uses: actions/checkout@v4
@@ -212,4 +215,83 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        run:  tests/scripts/functional-tests.sh
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
+          RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+
+  tests-2:
+    needs: setup
+    name: tests-2 windows-msys [${{ matrix.env.sys }}, Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - sys: ucrt64
+            CC: gcc
+            CXX: g++
+        package_ruby_ver: [ '3.1.4', '3.2.3' ]
+    env: ${{ matrix.env }}
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup MSys
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{matrix.env.sys}}
+          path-type: minimal
+          update: true
+          install: >-
+            git
+            tar
+            bison
+            flex
+          pacboy: >-
+            cmake:p
+            boost:p
+            diffutils:p
+            libevent:p
+            double-conversion:p
+            fmt:p
+            glog:p
+            dlfcn:p
+            ninja:p
+            gtest:p
+            autotools:p
+            ncurses:p
+            ruby:p
+            toolchain:p
+            openssl:p
+            make:p
+            libyaml:p
+
+      - name: Enable long filenames
+        run: git config --global core.longpaths true
+
+      - name: Setup environment
+        run: cat common.env >> $GITHUB_ENV
+
+      - name: Create deps folder
+        run: mkdir ${{env.DEPS}}
+
+      - name: Process cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.DEPS }}
+          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+
+      - name: Run tebako tests (set no. 2)
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
+          RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb

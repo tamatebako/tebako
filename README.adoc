@@ -3,10 +3,12 @@
 image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu amd64", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["MacOS amd64", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
-image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
+image:https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml/badge.svg["Windows msys", link="https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml"]
 
 image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=macos-arm64["MacOS arm64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
 image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
+
+image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
 
 == Purpose
 
@@ -34,26 +36,44 @@ In the future:
 The Tebako packager is tested on the following platforms:
 
 * Linux: Ubuntu 20.04; Alpine 3.17
-* macOS: macOS 11 (Big Sur), 12 (Monterey), 13 (Ventura)
-* Windows: TBD
+* MacOS: macOS 12 (Monterey), 13 (Ventura), 14 (Sonoma)
+* Windows: 2019, 2022 (using MinGW ucrt64 toolchain)
+
+Please note that Windows support is in pre-release and is a subject of further testing and optimization
 
 == Supported Ruby versions
 
 The Tebako packager supports the following versions of Ruby for packaging:
 
-* 2.7.8
-* 3.0.6
-* 3.1.4
-* 3.2.3
+* 2.7.8 (Linux, MacOS)
+* 3.0.6 (Linux, MacOS)
+* 3.1.4 (Linux, MacOS, Windows)
+* 3.2.3 (Linux, MacOS, Windows)
 
 Support of specific version including minor release requires some effort, sometimes extensive
 but our goal is to be able to package all maintained Ruby releases.
 
 == Prerequisites
 
-=== Ubuntu
+=== Ubuntu 20.04
 
 ==== GNU C/C++ 10+ or Clang C/C++ 12+
+
+[source,sh]
+----
+apt install -y gcc-10 g++-10
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10
+update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10
+----
+
+or
+
+[source,sh]
+----
+apt install -y clang-12
+update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 150
+update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 150
+----
 
 ==== CMake version 3.20+
 
@@ -75,16 +95,53 @@ apt-get install cmake
 
 [source,sh]
 ----
-apt-get install -y curl git ruby ruby-dev pkg-config bison flex make autoconf
-apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
-  libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
-  libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-  libboost-regex-dev libboost-system-dev libboost-thread-dev \
-  libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
-  libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev \
-  libfmt-dev
+apt-get -y install sudo git curl build-essential pkg-config bison flex autoconf  \
+   binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev libiberty-dev    \
+   libdouble-conversion-dev liblz4-dev liblzma-dev libssl-dev libunwind-dev      \
+   libboost-filesystem-dev libboost-program-options-dev libboost-system-dev      \
+   libboost-iostreams-dev  libboost-date-time-dev libboost-context-dev           \
+   libboost-regex-dev libboost-thread-dev libbrotli-dev libdwarf-dev libelf-dev  \
+   libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev libncurses-dev          \
+   libreadline-dev libncurses-dev libreadline-dev ruby-dev ruby-bundler          \
+   libutfcpp-dev
 ----
 
+=== Alpine 3.17
+
+[source,sh]
+----
+apk --no-cache --upgrade add build-base cmake git bash autoconf boost-static   \
+   boost-dev flex-dev bison make binutils-dev libevent-dev acl-dev sed python3 \
+   pkgconfig lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl libdwarf-dev \
+   libunwind-dev gflags-dev elfutils-dev libevent-static openssl-libs-static   \
+   lz4-static xz-dev zlib-static libunwind-static acl-static tar libffi-dev    \
+   gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static readline-dev       \
+   readline-static p7zip ruby-dev gcompat gettext-dev gperf brotli-dev         \
+   brotli-static jemalloc-dev fmt-dev xz-static
+----
+
+=== macOS 12 (Monterey)
+
+[source,sh]
+----
+brew update
+brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib ncurses \
+  double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz libyaml openssl@3
+----
+
+=== Windows (2019, 2022)
+
+The simplest approach is to use Ruby development environment provided by RubyInstaller, for example Ruby+Devkit 3.1.4-1.
+
+Once it is installed use the following commands:
+
+[source,sh]
+----
+  ridk enable ucrt64
+  pacman -S git tar bison flex toolchain make cmake
+            boost diffutils libevent double-conversion
+            fmt glog dlfcn gtest autotools ncurses libyaml
+----
 
 == Installation
 
@@ -126,12 +183,15 @@ apt-get install -y curl git ruby ruby-dev pkg-config bison flex make autoconf
 curl https://apt.kitware.com/kitware-archive.sh | bash
 apt-get install -y cmake
 
-apt-get install -y binutils-dev libarchive-dev libevent-dev libjemalloc-dev acl-dev \
-  libdouble-conversion-dev libiberty-dev liblz4-dev liblzma-dev libssl-dev \
-  libboost-context-dev libboost-filesystem-dev libboost-program-options-dev \
-  libboost-regex-dev libboost-system-dev libboost-thread-dev \
-  libunwind-dev libdwarf-dev libelf-dev libfuse-dev libgoogle-glog-dev \
-  libffi-dev libgdbm-dev libyaml-dev libncurses-dev libreadline-dev libfmt-dev
+apt-get -y install sudo git curl build-essential pkg-config bison flex autoconf \
+   binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev libiberty-dev    \
+   libdouble-conversion-dev liblz4-dev liblzma-dev libssl-dev libunwind-dev      \
+   libboost-filesystem-dev libboost-program-options-dev libboost-system-dev      \
+   libboost-iostreams-dev  libboost-date-time-dev libboost-context-dev           \
+   libboost-regex-dev libboost-thread-dev libbrotli-dev libdwarf-dev libelf-dev  \
+   libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev libncurses-dev          \
+   libreadline-dev libutfcpp-dev libncurses-dev libreadline-dev gcc-10 g++-10    \
+   ruby-dev ruby-bundler
 
 gem install tebako
 
@@ -209,6 +269,8 @@ directories differ and nultiple Ruby versions within single configuration
 
 This command is optional, tebako creates packaging environment automatically upon the first
 invocation of press command.
+However, if you plan to use tebako in CI/CD environment with caching it is highly recommended to build cache
+based on ```tebako setup``` output. Building cache based on ```tebako press``` may create inconsistent environment upon restore.
 
 [source]
 ----

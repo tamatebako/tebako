@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -29,20 +29,14 @@
 module Tebako
   module Packager
     # Ruby patching literals (pass2)
-    # rubocop:disable Metrics/ModuleLength
     module PatchLiterals
       TOOL_MKCONFIG_RB_PATCH = {
         "    if fast[name]" => <<~SUBST
           # -- Start of tebako patch --
               v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
               if v_head_comp == v[0...(v_head_comp.length)]
-                if win32
-                v = "\#{v[0...(v_head_comp.length)]}CONFIG[\\"RUBY_EXEC_PREFIX\\"] = '/__tebako_memfs__'
-          "
-                else
                   v = "\#{v[0...(v_head_comp.length)]}'/__tebako_memfs__'
           "
-                end
               end
               v_head_comp = "  CONFIG[\\"RUBY_EXEC_PREFIX\\"] \#{eq} "
               if v_head_comp == v[0...(v_head_comp.length)]
@@ -53,6 +47,22 @@ module Tebako
               if fast[name]
         SUBST
       }.freeze
+
+      TOOLS_MKCONFIG_RB_SUBST = <<~SUBST
+        # -- Start of tebako patch --
+            v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
+            if v_head_comp == v[0...(v_head_comp.length)]
+              v = "\#{v[0...(v_head_comp.length)]}CONFIG[\\"RUBY_EXEC_PREFIX\\"] = 'A:/__tebako_memfs__'
+        "
+            end
+            v_head_comp = "  CONFIG[\\"RUBY_EXEC_PREFIX\\"] \#{eq} "
+            if v_head_comp == v[0...(v_head_comp.length)]
+              v = "\#{v[0...(v_head_comp.length)]}'A:/__tebako_memfs__'
+        "
+            end
+        # -- End of tebako patch --
+            if fast[name]
+      SUBST
 
       # Alpine-specific patches https://github.com/docker-library/ruby/blob/master/3.1/alpine3.15/Dockerfile
       # -- Patch no. 1 --
@@ -125,6 +135,7 @@ module Tebako
               ruby_sysinit(&argc, &argv);
           /* -- Start of tebako patch -- */
               if (tebako_main(&argc, &argv) != 0) {
+                printf("Tebako intialization failed.");
                 return -1;
               }
           /* -- End of tebako patch -- */
@@ -156,46 +167,62 @@ module Tebako
           "else if (e == EIO /* tebako patch */ && !within_tebako_memfs(path)) {"
       }.freeze
 
-      COMMON_MK_PATCH = {
-        "ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP)" =>
-          "ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP) $(EXTS_MK)"
+      DLN_C_MSYS_PATCH_PRE32 = {
+        "    winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);" => <<~SUBST
+          /* -- Start of tebako patch -- */
+            char *f = NULL;
+            winfile = NULL;
+            if (file && within_tebako_memfs(file)) {
+              f = tebako_dlmap2file(file);
+              if (f) {
+                winfile = rb_w32_mbstr_to_wstr(CP_UTF8, f, -1, NULL);
+                free(f);
+              }
+              else {
+                goto failed;
+              }
+            }
+            else {
+              winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);
+            }
+          /* -- End of tebako patch -- */
+        SUBST
       }.freeze
 
-      C_FILES_TO_PATCH = [
-        ["file.c", "/* define system APIs */"],
-        ["io.c", "/* define system APIs */"],
-        ["util.c", "#ifndef S_ISDIR"],
-        ["dln.c", "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;"]
-      ].freeze
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 =
-        "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 =
-        "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
-        "# -- End of tebako patch --"
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATTERN =
-        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) $(EXTOBJS) " \
-        "$(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
-
-      TEMPLATE_MAKEFILE_IN_BASE_PATCH =
-        "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
-        "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
-        "# -- End of tebako patch --"
+      DLN_C_MSYS_PATCH = {
+        "    WCHAR *winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);" => <<~SUBST
+          /* -- Start of tebako patch -- */
+            char *f = NULL;
+            WCHAR *winfile = NULL;
+            if (file && within_tebako_memfs(file)) {
+              f = tebako_dlmap2file(file);
+              if (f) {
+                winfile = rb_w32_mbstr_to_wstr(CP_UTF8, f, -1, NULL);
+                free(f);
+              }
+              else {
+                goto failed;
+              }
+            }
+            else {
+              winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);
+            }
+          /* -- End of tebako patch -- */
+        SUBST
+      }.freeze
 
       C_FILE_SUBST = <<~SUBST
         /* -- Start of tebako patch -- */
-        #ifndef NO_TEBAKO_INCLUDES
         #include <tebako/tebako-config.h>
         #include <tebako/tebako-defines.h>
-        #include <tebako/tebako-io-rb-w32.h>
         #include <tebako/tebako-io.h>
-        #endif
+        /* -- End of tebako patch -- */
+      SUBST
+
+      C_FILE_SUBST_LESS = <<~SUBST
+        /* -- Start of tebako patch -- */
+        #include <tebako/tebako-config.h>
+        #include <tebako/tebako-io.h>
         /* -- End of tebako patch -- */
       SUBST
 
@@ -213,42 +240,104 @@ module Tebako
         SUBST
       }.freeze
 
-      MSYS_PATCHES = {
-        "ruby.c" => {
-          "#define RUBY_RELATIVE(path, len) rb_str_buf_cat(BASEPATH(), (path), (len))" =>
-          "#define RUBY_RELATIVE(path, len) rubylib_path_new((path), (len))  /* tebako patched */",
-          "#define PREFIX_PATH() sopath" =>
-            "#define PREFIX_PATH() rubylib_path_new(tebako_mount_point(), " \
-            "strlen(tebako_mount_point())) /* tebako patched */",
-          '#include "mjit.h"' =>
-            "#include \"mjit.h\"\n" \
-            "/* -- Start of tebako patch -- */\n" \
-            "#include <tebako/tebako-main.h>\n" \
-            "/* -- End of tebako patch -- */"
-        },
-        "/win32/win32.c" => {
-          "#undef __STRICT_ANSI__" =>
-          "#undef __STRICT_ANSI__\n" \
-          "/* -- Start of tebako patch -- */\n" \
-          "#define NO_TEBAKO_INCLUDES\n" \
-          "/* -- End of tebako patch -- */"
-        },
-        "win32/dir.h" => {
-          "#define opendir(s)   rb_w32_opendir((s))" => "#{C_FILE_SUBST}\n#define opendir(s)   rb_w32_opendir((s))"
-        },
-        "file.c" => {
-          "    wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);" =>
-          "/* -- Start of tebako patch -- */\n" \
-          "if (tebako_file_load_ok(path)) return 1;\n" \
-          "/* -- End of tebako patch -- */\n" \
-          "wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);",
-          '#include "win32/file.h' =>
-          "#include \"win32/file.h\"\n" \
-          "/* -- Start of tebako patch -- */\n" \
-          "#include <tebako/tebako-main.h>\n" \
-          "/* -- End of tebako patch -- */"
-        }
+      IO_C_SUBST = <<~SUBST
+        /* -- Start of tebako patch -- */
+            if (is_tebako_file_descriptor(fd)) return;
+            /* -- End of tebako patch -- */
+            flags = fcntl(fd, F_GETFD); /* should not fail except EBADF. */
+      SUBST
 
+      IO_C_MSYS_BASE_PATCH = {
+        "#define open	rb_w32_uopen" => "#define open(p, f, m) tebako_open(3, (p), (f), (m))"
+      }.freeze
+
+      IO_C_MSYS_PATCH_PRE_32 = {
+        "(rb_w32_io_cancelable_p((fptr)->fd) ? Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), Qnil))" =>
+            "((is_tebako_file_descriptor((fptr)->fd) || rb_w32_io_cancelable_p((fptr)->fd)) ? \\\n" \
+            "Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), Qnil))"
+      }.freeze
+
+      IO_C_MSYS_PATCH = {
+        "(rb_w32_io_cancelable_p((fptr)->fd) ? Qnil : rb_io_wait(fptr->self, " \
+        "RB_INT2NUM(RUBY_IO_READABLE), RUBY_IO_TIMEOUT_DEFAULT))" =>
+            "((is_tebako_file_descriptor((fptr)->fd) || rb_w32_io_cancelable_p((fptr)->fd)) ? \\\n" \
+            "Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), RUBY_IO_TIMEOUT_DEFAULT))"
+      }.freeze
+
+      FILE_C_MSYS_SUBST = <<~SUBST
+        /* -- Start of tebako patch -- */
+               if (is_tebako_file_descriptor((fptr)->fd)) return ENOTSUP;
+               /* -- End of tebako patch -- */
+               while ((int)rb_thread_io_blocking_region(rb_thread_flock, op, fptr->fd) < 0) {
+      SUBST
+
+      FILE_C_MSYS_PATCH = {
+        "while ((int)rb_thread_io_blocking_region(rb_thread_flock, op, fptr->fd) < 0) {" => FILE_C_MSYS_SUBST
+      }.freeze
+
+      RUBY_C_MSYS_PATH_SUBST = <<~SUBST
+        /* -- Start of tebako patch -- */
+                VALUE path = within_tebako_memfs(paths) ?
+                                rb_str_new_cstr(paths) :
+                                RUBY_RELATIVE(paths, len);
+               /* -- End of tebako patch -- */
+      SUBST
+
+      RUBY_C_MSYS_PATCHES = {
+        "#ifndef MAXPATHLEN" => "#{C_FILE_SUBST_LESS}\n#ifndef MAXPATHLEN",
+        "VALUE path = RUBY_RELATIVE(paths, len);" => RUBY_C_MSYS_PATH_SUBST
+      }.freeze
+
+      WIN32_FILE_C_MSYS_SUBST = <<~SUBST
+        /* -- Start of tebako patch -- */
+          if (tebako_file_load_ok(path)) return ret;
+            /* -- End of tebako patch -- */
+        wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);
+      SUBST
+
+      WIN32_FILE_C_MSYS_PATCHES = {
+        "#ifndef INVALID_FILE_ATTRIBUTES" => "#{C_FILE_SUBST_LESS}\n#ifndef INVALID_FILE_ATTRIBUTES",
+        "wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);" => WIN32_FILE_C_MSYS_SUBST
+      }.freeze
+
+      WIN32_WIN32_C_MSYS_SUBST = <<~SUBST
+        /* -- Start of tebako patch -- */
+          if (is_tebako_cwd()) {
+            char* tebako_cwd = tebako_getcwd(NULL,0);
+            if (tebako_cwd == NULL) {
+              errno = ENOMEM;
+              return NULL;
+            }
+            len = strlen(tebako_cwd) + 1;
+
+            if (buffer) {
+              if (size < len) {
+                free(tebako_cwd);
+                errno = ERANGE;
+                return NULL;
+              }
+            }
+            else {
+              buffer = (*alloc)(len, arg);
+              if (!buffer) {
+                free(tebako_cwd);
+                errno = ENOMEM;
+                return NULL;
+              }
+            }
+            translate_char(tebako_cwd, (char)0x5c, '/', CP_UTF8);
+            strcpy(buffer, tebako_cwd);
+            free(tebako_cwd);
+            return buffer;
+          }
+          /* -- End of tebako patch -- */
+
+          len = GetCurrentDirectoryW(0, NULL);
+      SUBST
+
+      WIN32_WIN32_C_MSYS_PATCHES = {
+        "#if defined _MSC_VER && _MSC_VER <= 1200" => "#{C_FILE_SUBST_LESS}\n#if defined _MSC_VER && _MSC_VER <= 1200",
+        "len = GetCurrentDirectoryW(0, NULL);" => WIN32_WIN32_C_MSYS_SUBST
       }.freeze
 
       LINUX_PATCHES = {
@@ -256,25 +345,6 @@ module Tebako
           "mf.macro \"EXTLIBS\", $extlibs" => "#  mf.macro \"EXTLIBS\", $extlibs   tebako patched"
         }
       }.freeze
-
-      # rubocop:disable Style/WordArray
-
-      # NOTE: folly provides build-in implementation of jemalloc
-
-      DARWIN_BREW_LIBS = [
-        ["zlib", "z"],            ["gdbm", "gdbm"],           ["readline", "readline"], ["libffi", "ffi"],
-        ["ncurses", "ncurses"],   ["fmt", "fmt"],             ["lz4", "lz4"],           ["xz", "lzma"],
-        ["libyaml", "yaml"],      ["boost", "boost_chrono"],
-        ["double-conversion", "double-conversion"]
-      ].freeze
-
-      DARWIN_BREW_LIBS_PRE_31 = [["openssl@1.1", "ssl"], ["openssl@1.1", "crypto"]].freeze
-
-      DARWIN_BREW_LIBS_31 = [["libyaml", "yaml"], ["openssl@3", "ssl"], ["openssl@3", "crypto"]].freeze
-
-      DARWIN_DEP_LIBS = ["glog", "gflags", "brotlienc", "brotlidec", "brotlicommon"].freeze
-      # rubocop:enable Style/WordArray
     end
-    # rubocop:enable Metrics/ModuleLength
   end
 end

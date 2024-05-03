@@ -151,7 +151,6 @@ test_CLI_invalid_Ruby_version() {
    assertContains "$result" "Expected '--Ruby' to be one of"
 }
 
-
 # ......................................................................
 #  --  tebako setup
 #test_tebako_setup() {
@@ -200,7 +199,7 @@ test_AUC_extract() {
 # ......................................................................
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
 test_tebako_press_01() {
-   echo "==> simple Ruby script,  absolute path to root, relative path to entry point"
+   echo "==> simple Ruby script, absolute path to root, relative path to entry point"
    press_runner "${DIR_TESTS}/test-01" "tebako-test-run.rb" "test-01-package"
    package_runner "./test-01-package" "Hello!  This is test-01 talking from inside DwarFS"
 }
@@ -314,11 +313,9 @@ test_tebako_press_18() {
 # ......................................................................
 # 19. Ruby project (no gemspec, with gemfile, with native extension)
 test_tebako_press_19() {
-if [[ "$OSTYPE" != "msys" ]]; then
    echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
    press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
    package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
-fi
 }
 
 # ......................................................................

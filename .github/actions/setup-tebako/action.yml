@@ -1,4 +1,4 @@
-# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -39,6 +39,11 @@ inputs:
     required: true
     default: '0'
     type: string
+  install:
+    description: 'Run gem install tebako (on/off); off is used for testing only'
+    required: true
+    type: string
+    default: 'on'
   ruby_version:
     description: 'Ruby version to install, "env" to use RUBY_VER environment variable'
     required: true
@@ -86,8 +91,13 @@ runs:
         elif [ "$OS" = "Darwin" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
-            echo "XCODE_VERSION=14.3.1" >> $GITHUB_ENV
-            echo "ADVANCED_OS=MacOS" >> $GITHUB_ENV
+            if [ ${{ matrix.os }} = "macos-12" ]; then
+              echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
+              echo "ADVANCED_OS=MacOS-x86_64" >> $GITHUB_ENV
+            else
+              echo "XCODE_VERSION=14.3.1" >> $GITHUB_ENV
+              echo "ADVANCED_OS=MacOS-arm64" >> $GITHUB_ENV
+            fi
         else
             echo "Unsupported operating system."
             exit 1
@@ -138,11 +148,12 @@ runs:
     - name: Install brew packages
       if: runner.os == 'macOS'
       shell: bash
+      # brew update -- brew update is required if core dwarfs library goes too far ahead comparing to the
+      # packages installed at GitHub runner
+      # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, gdbm, pkg-config, libyaml, curl
       run: |
-        brew update
-        # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, zlib, gdbm, ncurses, pkg-config, libyaml, curl
-        brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
-        echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
+         brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash zlib ncurses
+         echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
 
     - name: Setup environment
       if: inputs.cache != 'off'
@@ -165,6 +176,7 @@ runs:
 
     - name: Install tebako
       shell: sh
+      if: inputs.install != 'off'
       run: gem install tebako
 
     - name: Create deps folder
@@ -172,10 +184,15 @@ runs:
       shell: sh
       run: mkdir -p ${{ inputs.cache_path }}
 
+    - name: Create cache key
+      id: cache-key
+      shell: sh
+      run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
+
     - name: Process cache
       if: inputs.cache != 'off'
       uses: actions/cache@v4
       with:
         path: ${{ inputs.cache_path }}
-        key: ${{ env.ADVANCED_OS }}-${{ env.CC }}-v${{ inputs.cache_ver }}
+        key: ${{ env.ADVANCED_OS }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}-v${{ inputs.cache_ver }}
         fail-on-cache-miss: inputs.cache == 'use'

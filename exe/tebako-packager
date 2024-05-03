@@ -74,19 +74,25 @@ begin
     Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ARGV[6])
   when "deploy"
     #       ARGV[0] -- command
-    #       ARGV[1] -- FS_STASH_DIR
-    #       ARGV[2] -- DATA_SRC_DIR
-    #       ARGV[3] -- DATA_PRE_DIR
-    #       ARGV[4] -- DATA_BIN_DIR
-    #       ARGV[5] -- GFLENGTH
-    unless ARGV.length == 6
+    #       ARGV[1] -- OSTYPE
+    #       ARGV[2] -- RUBY_SOURCE_DIR
+    #       ARGV[3] -- FS_STASH_DIR
+    #       ARGV[4] -- DATA_SRC_DIR
+    #       ARGV[5] -- DATA_PRE_DIR
+    #       ARGV[6] -- DATA_BIN_DIR
+    #       ARGV[7] -- GFLENGTH
+    #       ARGV[8] -- APP_NAME
+    #       ARGV[9] -- RUBY_VER
+    unless ARGV.length == 10
       raise Tebako::Error,
-            "tebako-packager deploy command expects 6 arguments, #{ARGV.length} has been provided."
+            "tebako-packager deploy command expects 10 arguments, #{ARGV.length} has been provided."
     end
-    Tebako::Packager.init(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
+    Tebako::Packager.init(ARGV[3], ARGV[4], ARGV[5], ARGV[6])
+    Tebako::Packager.create_implib(ARGV[2], ARGV[4], File.basename(ARGV[8]), ARGV[9]) if ARGV[1] =~ /msys/
     # Assume that "<TARGET_BIN_DIR (TBD)>" is <DATA_SRC_DIR>/bin"
     # That shall match CMakeLists.txt settings
-    Tebako::Packager.deploy(ARGV[2], "#{ARGV[2]}/bin", ARGV[5])
+    Tebako::Packager.deploy(ARGV[4], "#{ARGV[4]}/bin", ARGV[7])
+
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"
   end

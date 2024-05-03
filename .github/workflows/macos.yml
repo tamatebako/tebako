@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 02
+  CACHE_VER: 47
   VERBOSE: no
 
 jobs:
@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-12 ]
+        os: [ macos-12, macos-14 ]
         package_ruby_ver: [ '3.1.4' ]
     steps:
       - name: Checkout tebako packaging environment
@@ -101,37 +101,45 @@ jobs:
           cache: use
           cache_path: deps
           cache_ver: ${{ env.CACHE_VER }}
+          install: off
+
+      - name: tebako setup
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
 
-#  tests-2:
-#    needs: setup
-#    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
-#    runs-on: ${{ matrix.os }}
-#    strategy:
-#      fail-fast: false
-#      matrix:
-#        os: [ macos-12 ]
-#        package_ruby_ver: [ '3.1.4' ]
-#    steps:
-#      - name: Checkout tebako packaging environment
-#        uses: actions/checkout@v4
-#        with:
-#          fetch-depth: 1
-#          submodules: true
-#
-#      - name: Setup ci environment
-#        uses: ./.github/actions/setup-tebako
-#        with:
-#          cache: use
-#          cache_path: deps
-#          cache_ver: ${{ env.CACHE_VER }}
-#
-#      - name: Run tebako tests (set no. 2)
-#        run: |
-#          bundle install
-#          RUBY_VER=${{ matrix.package_ruby_ver}} ruby ${{github.workspace}}/tests-2/tebako-test.rb
+  tests-2:
+    needs: setup
+    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ macos-12, macos-14 ]
+        package_ruby_ver: [ '3.1.4' ]
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup ci environment
+        uses: ./.github/actions/setup-tebako
+        with:
+          cache: use
+          cache_path: deps
+          cache_ver: ${{ env.CACHE_VER }}
+          install: off
+
+      - name: Run tebako tests (set no. 2)
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
+          RUBY_VER=${{ matrix.package_ruby_ver}} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
   cross-tests:
     needs: tests-1

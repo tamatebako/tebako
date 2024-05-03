@@ -41,7 +41,7 @@ runs:
 
     - name: Install gem
       shell: bash
-      # there is off-the-shelf version of tebako out there installed by setup-tebako
+      # in case there is off-the-shelf version of tebako out there installed by setup-tebako
       run: |
         gem uninstall -a -x tebako
         gem install $( ls tebako*.gem )
@@ -56,6 +56,11 @@ runs:
       with:
         path: .tebako/deps
         key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ steps.cache-key.outputs.key }}-${{ env.CACHE_VER }}
+
+    - name: Clean Ruby source
+      shell: bash
+    # Need cache after tebako setup or clean Ruby
+      run: tebako clean_ruby --prefix='.tebako'
 
     - name: Package fontist
       shell: bash
