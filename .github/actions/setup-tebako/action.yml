@@ -75,6 +75,9 @@ runs:
   steps:
     - name: Prepare compiler environment
       shell: sh
+# [TODO]
+# This is really bad selector:
+#     if [ "${{ runner.arch }}" = "X64" ]; then
       run: |
         OS=$(uname -s)
         if [ "$OS" = "Linux" ] && [ -e "/etc/lsb-release" ]; then
@@ -91,7 +94,7 @@ runs:
         elif [ "$OS" = "Darwin" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
-            if [ ${{ matrix.os }} = "macos-12" ]; then
+            if [ "${{ runner.arch }}" = "X64" ]; then
               echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
               echo "ADVANCED_OS=MacOS-x86_64" >> $GITHUB_ENV
             else
