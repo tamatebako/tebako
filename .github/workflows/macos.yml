@@ -87,7 +87,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ macos-12, macos-14 ]
-        package_ruby_ver: [ '3.1.4' ]
+        package_ruby_ver: [ '3.1.5' ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -119,7 +119,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ macos-12, macos-14 ]
-        package_ruby_ver: [ '3.1.4' ]
+        package_ruby_ver: [ '3.1.5' ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
