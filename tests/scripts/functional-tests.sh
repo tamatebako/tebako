@@ -1,6 +1,6 @@
 #! /bin/bash
 #
-# Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -106,6 +106,7 @@ press_runner_with_error() {
 #  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [Expected error at build step]
 #  18. Ruby project (no gemspec, with gemfile)
 #  19. Ruby project (no gemspec, with gemfile, with native extension)
+#  20. Net/http Ruby script [sits here and not on tests-2 in order to allow cross test MacOS x86_64 --> MacOS arm64]
 
 # ......................................................................
 # 00. Very basic tebako CLI tests (error handling)
@@ -316,6 +317,14 @@ test_tebako_press_19() {
    echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
    press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
    package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
+}
+
+# ......................................................................
+# 20. 20. Net/http Ruby script
+test_tebako_press_20() {
+   echo "==> Net/http Ruby script"
+   press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
+   package_runner "./test-20-package" "Response: 302 Found"
 }
 
 # ......................................................................
