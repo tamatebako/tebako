@@ -39,13 +39,14 @@ module Tebako
   module CliRubies
     RUBY_VERSIONS = {
       "2.7.8" => "c2dab63cbc8f2a05526108ad419efa63a67ed4074dbbcf9fc2b1ca664cb45ba0",
-      "3.0.6" => "6e6cbd490030d7910c0ff20edefab4294dfcd1046f0f8f47f78b597987ac683e",
+      "3.0.7" => "2a3411977f2850431136b0fab8ad53af09fb74df2ee2f4fb7f11b378fe034388",
       "3.1.4" => "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6",
+      "3.1.5" => "3685c51eeee1352c31ea039706d71976f53d00ab6d77312de6aa1abaf5cda2c5",
       "3.2.3" => "af7f1757d9ddb630345988139211f1fd570ff5ba830def1cc7c468ae9b65c9ba",
-      "3.3.0" => "96518814d9832bece92a85415a819d4893b307db5921ae1f0f751a9a89a56b7d"
+      "3.2.4" => "c72b3c5c30482dca18b0f868c9075f3f47d8168eaf626d4e682ce5b59c858692"
     }.freeze
 
-    DEFAULT_RUBY_VERSION = "3.1.4"
+    DEFAULT_RUBY_VERSION = "3.1.5"
 
     def version_check(version)
       return if RUBY_VERSIONS.key?(version)

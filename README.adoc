@@ -45,9 +45,9 @@ Please note that Windows support is in pre-release and is a subject of further t
 The Tebako packager supports the following versions of Ruby for packaging:
 
 * 2.7.8 (Linux, MacOS)
-* 3.0.6 (Linux, MacOS)
-* 3.1.4 (Linux, MacOS, Windows)
-* 3.2.3 (Linux, MacOS, Windows)
+* 3.0.7 (Linux, MacOS)
+* 3.1.4, 3.1.5 (Linux, MacOS, Windows)
+* 3.2.3, 3.2.4 (Linux, MacOS, Windows)
 
 Support of specific version including minor release requires some effort, sometimes extensive
 but our goal is to be able to package all maintained Ruby releases.
@@ -275,7 +275,7 @@ based on ```tebako setup``` output. Building cache based on ```tebako press``` m
 ----
 tebako setup     \
   [-p |--prefix=<tebako-root-folder>] \
-  [-R |--Ruby=<2.7.8|3.0.6|3.1.4|3.2.3>]
+  [-R |--Ruby=<2.7.8|3.0.7|3.1.4|3.1.5|3.2.3|3.2.4>]
 ----
 
 Where:
@@ -283,7 +283,7 @@ Where:
 * `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
 folder)
 
-* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.4)
+* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.5)
 
 ==== Clean
 
