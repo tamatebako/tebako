@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 47
+  CACHE_VER: 48
   VERBOSE: no
 
 jobs:
@@ -145,8 +145,9 @@ jobs:
     needs: tests-1
     strategy:
       fail-fast: false
+      # Running on MacOS-14 is a test for x86_64 package on arm64 system
       matrix:
-        os: [ macos-11, macos-13 ]
+        os: [ macos-11, macos-13, macos-14 ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Download test packages

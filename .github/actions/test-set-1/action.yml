@@ -1,4 +1,4 @@
-# Copyright (c) 2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -58,3 +58,4 @@ runs:
           test-15-package
           test-18-package
           test-19-package
+          test-20-package
