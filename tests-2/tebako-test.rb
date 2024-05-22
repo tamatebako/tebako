@@ -176,10 +176,6 @@ class TebakoTest < Minitest::Test
   # expressir gem should be automatically included and usable in packaged app
   def test_215_expressir
     print "\n#{name = "gems-expressir"} "
-    if RUBY_PLATFORM =~ /msys|mingw|cygwin|mswin/
-      print "Skipping expressir test on Windows"
-      return
-    end
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -190,10 +186,6 @@ class TebakoTest < Minitest::Test
   # sassc gem should be automatically included and usable in packaged app
   def test_214_sassc
     print "\n#{name = "gems-sassc"} "
-    if RUBY_PLATFORM =~ /msys|mingw|cygwin|mswin/
-      print "Skipping sassc test on Windows"
-      return
-    end
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
@@ -218,10 +210,6 @@ class TebakoTest < Minitest::Test
   # seven_zip gem should be automatically included and usable in packaged app
   def test_212_seven_zip
     print "\n#{name = "gems-seven-zip"} "
-    if RUBY_PLATFORM =~ /msys|mingw|cygwin|mswin/
-      print "Skipping libmspack test on Windows"
-      return
-    end
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
