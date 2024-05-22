@@ -360,7 +360,7 @@ else(IS_DARWIN)
 
   if(RB_W32)
     string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DRB_W32=1")
-    string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${TLIBD}")
+    string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -l:libstdc++.a -L${TLIBD}")
   endif(RB_W32)
 endif(IS_DARWIN)
 
