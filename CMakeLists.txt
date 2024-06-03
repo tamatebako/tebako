@@ -388,6 +388,7 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         --prefix=${DATA_SRC_DIR}              \
                                                         ${C_FLAGS_DEST}=\"${RUBY_C_FLAGS}\"   \
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
+  COMMAND          ruby ${EXE}/tebako-packager pass1a ${RUBY_SOURCE_DIR}
   BUILD_COMMAND    make ${RUBY_MAKEFILE} -j${NCORES}
   INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
   COMMAND          ${GNU_BASH} -c "ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}"

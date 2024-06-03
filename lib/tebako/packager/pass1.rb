@@ -150,7 +150,7 @@ module Tebako
             # Generate export definitions; use WinMain to build rubyw.exe
             patch_map.store("cygwin/GNUmakefile.in", get_gnumakefile_in_patch_p1(ruby_ver))
             # ....................................................
-            # RUBY_EXPORT=1 (shall ve set for static builds but is missing in openssl extension)
+            # RUBY_EXPORT=1 (shall be set for static builds but is missing in openssl extension)
             patch_map.store("ext/openssl/extconf.rb", OPENSSL_EXTCONF_RB_PATCH)
           end
 

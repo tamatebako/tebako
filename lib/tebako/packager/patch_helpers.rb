@@ -40,6 +40,7 @@ module Tebako
           puts "   ... patching #{fname}"
           restore_and_save(fname)
           contents = File.read(fname)
+
           mapping.each { |pattern, subst| contents.sub!(pattern, subst) }
           File.open(fname, "w") { |file| file << contents }
         end
