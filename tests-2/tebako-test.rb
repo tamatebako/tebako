@@ -44,7 +44,7 @@ class TebakoTest < Minitest::Test
   Tebako = File.join(Prefix, "exe", "tebako")
 
   def initialize(*args)
-    super(*args)
+    super
     @testnum = 0
   end
 
@@ -196,10 +196,6 @@ class TebakoTest < Minitest::Test
   # libmspack gem should be automatically included and usable in packaged app
   def test_213_libmspack
     print "\n#{name = "gems-libmspack"} "
-    if RUBY_PLATFORM =~ /msys|mingw|cygwin|mswin/
-      print "Skipping libmspack test on Windows"
-      return
-    end
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus

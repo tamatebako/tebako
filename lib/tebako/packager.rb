@@ -29,6 +29,7 @@ require "fileutils"
 
 require_relative "error"
 require_relative "packager/pass1"
+require_relative "packager/pass1a"
 require_relative "packager/pass2"
 require_relative "packager/patch_helpers"
 
@@ -111,11 +112,19 @@ module Tebako
         PatchHelpers.recreate(src_dir)
         do_patch(Pass1.get_patch_map(ostype, mount_point, ruby_ver), ruby_source_dir)
 
-        # Roll back pass2 patches
+        # Roll back pass1a, pass2 patches
         # Just in case we are recovering after some error
         PatchHelpers.restore_and_save_files(FILES_TO_RESTORE, ruby_source_dir)
         PatchHelpers.restore_and_save_files(FILES_TO_RESTORE_MUSL, ruby_source_dir) if ostype =~ /linux-musl/
         PatchHelpers.restore_and_save_files(FILES_TO_RESTORE_MSYS, ruby_source_dir) if ostype =~ /msys/
+      end
+
+      # Pass1A
+      # Patch gem_prelude.rb
+      def pass1a(ruby_source_dir)
+        puts "-- Running pass1a script"
+
+        do_patch(Pass1A.get_patch_map, ruby_source_dir)
       end
 
       # Pass2

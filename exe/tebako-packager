@@ -57,6 +57,14 @@ begin
     end
 
     Tebako::Packager.stash(ARGV[1], ARGV[2])
+  when "pass1a"
+    #       ARGV[0] -- command
+    #       ARGV[1] -- RUBY_SOURCE_DIR
+    unless ARGV.length == 2
+      raise Tebako::Error,
+            "tebako-packager pass1a command expects 2 arguments, #{ARGV.length} has been provided."
+    end
+    Tebako::Packager.pass1a(ARGV[1])
   when "pass2"
     #       ARGV[0] -- command
     #       ARGV[1] -- OSTYPE

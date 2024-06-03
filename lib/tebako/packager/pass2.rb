@@ -115,7 +115,6 @@ module Tebako
           {
             "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
             "tool/mkconfig.rb" => mcrb_subst,
-            "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH,
             "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype, ruby_ver),
             "io.c" => get_io_c_patch(ostype, ruby_ver),    "main.c" => MAIN_C_PATCH,
             "file.c" => PatchHelpers.patch_c_file("/* define system APIs */"),
