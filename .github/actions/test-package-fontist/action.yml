@@ -68,10 +68,4 @@ runs:
 
     - name: Run smoke test
       shell: bash
-      # fontist returns 1 on success (nice thor feature)
-      run: |
-        EXITCODE=0
-        ./fontist-package help || EXITCODE=$?
-        if [ $EXITCODE -ne 1 ]; then
-          exit 1
-        fi
+      run: ./fontist-package help
