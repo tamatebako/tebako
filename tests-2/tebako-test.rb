@@ -151,6 +151,36 @@ class TebakoTest < Minitest::Test
     end
   end
 
+  # excavate gem should be automatically included and usable in packaged app
+  # def test_220_excavate
+  #  print "\n#{name = "gems-excavate"} "
+  #  with_fixture_press_and_env name do |package|
+  #    out, st = Open3.capture2(package)
+  #    assert_equal 0, st.exitstatus
+  #    assert_match(/Hello! excavate gem welcomes you to the magic world of ruby gems./, out)
+  #  end
+  # end
+
+  # nokogiri gem should be automatically included and usable in packaged app
+  def test_219_nokogiri
+    print "\n#{name = "gems-nokogiri"} "
+    with_fixture_press_and_env name do |package|
+      out, st = Open3.capture2(package)
+      assert_equal 0, st.exitstatus
+      assert_match(/Hello! nokogiri gem welcomes you to the magic world of ruby gems./, out)
+    end
+  end
+
+  # ffi-libarchive-binary gem should be automatically included and usable in packaged app
+  def test_218_ffi_libarchive_binary
+    print "\n#{name = "gems-libarchive-binary"} "
+    with_fixture_press_and_env name do |package|
+      out, st = Open3.capture2(package)
+      assert_equal 0, st.exitstatus
+      assert_match(/Hello! ffi-libarchive-binary gem welcomes you to the magic world of ruby gems./, out)
+    end
+  end
+
   # Specified gems should be usable in packaged app
   # def test_217_psych5
   #  name = "gems-psych-5"
@@ -163,15 +193,15 @@ class TebakoTest < Minitest::Test
   # end
 
   # byebug gem should be usable in packaged app
-  def test_216_byebug
-    name = "gems-byebug"
-    print "\n#{name} "
-    with_fixture_press_and_env name do |package|
-      out, st = Open3.capture2(package)
-      assert_equal 0, st.exitstatus
-      assert_match(/Hello! Byebug welcomes you to the magic world of ruby gems./, out)
-    end
-  end
+  # def test_216_byebug
+  #  name = "gems-byebug"
+  #  print "\n#{name} "
+  #  with_fixture_press_and_env name do |package|
+  #    out, st = Open3.capture2(package)
+  #    assert_equal 0, st.exitstatus
+  #    assert_match(/Hello! Byebug welcomes you to the magic world of ruby gems./, out)
+  #  end
+  # end
 
   # expressir gem should be automatically included and usable in packaged app
   def test_215_expressir

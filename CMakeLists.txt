@@ -433,27 +433,31 @@ else (${SETUP_MODE})
         message("Collecting gem from gemspec ${GEMSPEC} and Gemfile")
         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
         add_custom_target(source_filesystem
-           COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-           COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                       ${TBD}/bundle${BAT_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E  env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                       ${TBD}/bundle${BAT_SUFFIX} install
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                       ${TBD}/bundle${BAT_SUFFIX} exec ${TBD}/gem${CMD_SUFFIX} build ${GEMSPEC}
-           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                       ${TBD}/gem${CMD_SUFFIX} install *.gem --verbose --no-document --install-dir ${TGD}
-           COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
+          COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
+          COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
+          COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                      ${TBD}/bundle${BAT_SUFFIX} config set --local build.ffi --disable-system-libffi
+          COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                      ${TBD}/bundle${BAT_SUFFIX} config set --local build.nokogiri --use-system-libraries
+          COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                      ${TBD}/bundle${BAT_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
+          COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E  env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                      ${TBD}/bundle${BAT_SUFFIX} install
+          COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                      ${TBD}/bundle${BAT_SUFFIX} exec ${TBD}/gem${CMD_SUFFIX} build ${GEMSPEC}
+          COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                      ${TBD}/gem${CMD_SUFFIX} install *.gem --verbose --no-document --install-dir ${TGD}
+          COMMAND test -f  ${DATA_SRC_DIR}${FS_ENTRY_POINT} ||
                    (${CMAKE_COMMAND} -E echo "Entry point ${DATA_SRC_DIR}${FS_ENTRY_POINT} does not exist" &&
                     ${CMAKE_COMMAND} -E false )
-           DEPENDS clean_filesystem
+          DEPENDS clean_filesystem
         )
       else(GFLENGTH GREATER 0)
 #  Found xxx.gemspec but no Gemfile
-         message("Collecting gem from gemspec ${GEMSPEC}")
-         set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
-         message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
-         add_custom_target(source_filesystem
+        message("Collecting gem from gemspec ${GEMSPEC}")
+        set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
+        message("Target entry point will be at ${FS_MOUNT_POINT}${FS_ENTRY_POINT}")
+        add_custom_target(source_filesystem
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${DATA_PRE_DIR} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
             COMMAND ${CMAKE_COMMAND} -E make_directory ${TGD}
             COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
@@ -479,7 +483,9 @@ else (${SETUP_MODE})
        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                           ${TBD}/bundle${BAT_SUFFIX} config build.ffi --disable-system-libffi
+                                           ${TBD}/bundle${BAT_SUFFIX} config set --local build.ffi --disable-system-libffi
+       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                           ${TBD}/bundle${BAT_SUFFIX} config set --local build.nokogiri --use-system-libraries
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                            ${TBD}/bundle${BAT_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
