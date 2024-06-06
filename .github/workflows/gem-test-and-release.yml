@@ -49,7 +49,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 49
+  CACHE_VER: 51
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output
@@ -93,6 +93,54 @@ jobs:
         retention-days: 1
         path: .github/actions/*
 
+  package-tests-windows:
+    needs: build-gem
+    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ 'windows-latest' ]
+        gem: [ fontist ]
+        package_ruby_ver: [ '3.1.5' ]
+        env:
+          - { CC: gcc, CXX: g++ }
+    env: ${{ matrix.env }}
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+    - name: Setup MSys
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: ucrt64
+        path-type: minimal
+        update: true
+
+    - name: Download actions
+      uses: actions/download-artifact@v4
+      with:
+        name: actions
+        path: .github/actions
+
+    - name: Setup ci environment
+      uses: ./.github/actions/setup-tebako
+      with:
+        cache: off
+        cache_ver: ${{ env.CACHE_VER }}
+        cc: ${{ env.CC }}
+        cxx: ${{ env.CXX }}
+
+    - name: Package fontist
+      if: matrix.gem == 'fontist'
+      uses: ./.github/actions/test-package-fontist-windows
+
+    - name: Package metanorma
+      if: matrix.gem == 'metanorma'
+      uses: ./.github/actions/test-package-metanorma-windows
+
   package-tests-alpine:
     needs: build-gem
     name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
@@ -103,7 +151,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ 'alpine:3.17' ]
-        gem: [ fontist ]
+        gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.1.5' ]
         env:
           - { CC: gcc, CXX: g++ }
@@ -141,8 +189,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [  macos-12, macos-14  ]
-        gem: [ fontist ]
+        os: [ macos-12, macos-14 ]
+        gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.1.5' ]
         env:
           - { CC: clang, CXX: clang++ }
@@ -212,7 +260,7 @@ jobs:
 # ----- Release -----
   release:
     name: Release gem
-    needs: [ package-tests-ubuntu, package-tests-alpine, package-tests-macos ]
+    needs: [ package-tests-windows, package-tests-ubuntu, package-tests-alpine, package-tests-macos ]
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
     steps:

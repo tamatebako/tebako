@@ -23,8 +23,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-name: 'Test: package fontist'
-description: 'Test: package fontist'
+name: 'Test: package fontist on Windows'
+description: 'Test: package fontist on Windows'
 runs:
   using: "composite"
   steps:
@@ -40,32 +40,32 @@ runs:
         name: gem
 
     - name: Install gem
-      shell: bash
+      shell: msys2 {0}
       # in case there is off-the-shelf version of tebako out there installed by setup-tebako
       run: |
         gem uninstall -a -x tebako
         gem install $( ls tebako*.gem )
 
     - name: Create cache key
-      id: cache-key
-      shell: sh
+      id: cache-key-mingw
+      shell: msys2 {0}
       run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
 
     - name: Process cache
       uses: actions/cache@v4
       with:
         path: .tebako/deps
-        key: ${{ env.ADVANCED_OS }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}--v${{ inputs.cache_ver }}
+        key: ${{ env.ADVANCED_OS }}-${{ env.CC }}--${{ steps.cache-key-mingw.outputs.key }}-v${{ inputs.cache_ver }}
 
     - name: Clean Ruby source
-      shell: bash
+      shell: msys2 {0}
     # Need cache after tebako setup or clean Ruby
       run: tebako clean_ruby --prefix='.tebako'
 
     - name: Package fontist
-      shell: bash
+      shell: msys2 {0}
       run: tebako press --root=fontist --entry-point=fontist --output=fontist-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
 
     #- name: Run smoke test
-    #  shell: bash
+    #  shell: msys2 {0}
     #  run: ./fontist-package help

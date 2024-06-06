@@ -101,8 +101,12 @@ runs:
               echo "XCODE_VERSION=14.3.1" >> $GITHUB_ENV
               echo "ADVANCED_OS=MacOS-arm64" >> $GITHUB_ENV
             fi
+        elif [[ "$OS" = "MINGW64"* ]]; then
+            echo "CC=${{ inputs.cc || 'gcc' }}" >> $GITHUB_ENV
+            echo "CXX=${{ inputs.cxx || 'g++' }}" >> $GITHUB_ENV
+            echo "ADVANCED_OS=MinGW" >> $GITHUB_ENV
         else
-            echo "Unsupported operating system."
+            echo "Unsupported operating system $OS"
             exit 1
         fi
 
@@ -158,6 +162,16 @@ runs:
          brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash zlib ncurses
          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
 
+    - name: Install pacman packages
+      if: env.ADVANCED_OS == 'MinGW'
+      shell: msys2 {0}
+      run: |
+        pacman -Syu --needed --noconfirm git tar bison flex pactoys
+        pacboy sync --needed --noconfirm cmake:p boost:p diffutils:p  \
+          libevent:p double-conversion:p fmt:p glog:p dlfcn:p ninja:p \
+          gtest:p autotools:p ncurses:p ruby:p toolchain:p openssl:p  \
+          make:p libyaml:p
+
     - name: Setup environment
       if: inputs.cache != 'off'
       shell: sh
@@ -170,7 +184,7 @@ runs:
         echo "VERBOSE=${{ inputs.verbose }}" >> $GITHUB_ENV
 
     - name: Install Ruby
-      if: inputs.ruby_version != 'skip' && env.ADVANCED_OS != 'Alpine'
+      if: inputs.ruby_version != 'skip' && env.ADVANCED_OS != 'Alpine' && env.ADVANCED_OS != 'MinGw'
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{ inputs.ruby_version != 'env' && inputs.ruby_version || env.RUBY_VER }}
@@ -178,9 +192,16 @@ runs:
         bundler-cache: false
 
     - name: Install tebako
+      if: env.ADVANCED_OS != 'MinGw' && inputs.install != 'off'
       shell: sh
-      if: inputs.install != 'off'
       run: gem install tebako
+
+    - name: Install tebako
+      if: env.ADVANCED_OS == 'MinGw' && inputs.install != 'off'
+      shell: sh
+      run: |
+        git config --global core.longpaths true
+        gem install tebako
 
     - name: Create deps folder
       if: inputs.cache != 'off'
@@ -188,14 +209,21 @@ runs:
       run: mkdir -p ${{ inputs.cache_path }}
 
     - name: Create cache key
+      if: env.ADVANCED_OS != 'MinGw'
       id: cache-key
       shell: sh
       run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
+
+    - name: Create cache key
+      if: env.ADVANCED_OS == 'MinGw'
+      id: cache-key-mingw
+      shell: msys2 {0}
+      run: echo "key=$(exe/tebako hash)" >> $GITHUB_OUTPUT
 
     - name: Process cache
       if: inputs.cache != 'off'
       uses: actions/cache@v4
       with:
         path: ${{ inputs.cache_path }}
-        key: ${{ env.ADVANCED_OS }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}-v${{ inputs.cache_ver }}
+        key: ${{ env.ADVANCED_OS }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}-${{ steps.cache-key-mingw.outputs.key }}-v${{ inputs.cache_ver }}
         fail-on-cache-miss: inputs.cache == 'use'

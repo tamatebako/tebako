@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,6 +25,12 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-module Tebako
-  VERSION = "0.6.7"
-end
+require "seven_zip_ruby"
+puts $LOAD_PATH
+gets.chomp
+require "excavate"
+
+puts "Hello! excavate gem welcomes you to the magic world of ruby gems."
+
+# Make sure the constant exists
+puts "Version: #{Excavate::VERSION}"
