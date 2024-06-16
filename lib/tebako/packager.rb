@@ -74,11 +74,8 @@ module Tebako
     class << self
       # Create implib
       def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
+        create_def(src_dir, app_name)
         puts "   ... creating Windows import library"
-        File.open(def_fname(src_dir, app_name), "w") do |file|
-          file.puts "LIBRARY #{out_fname(app_name)}"
-          file.puts File.read(File.join(src_dir, "tebako.def"))
-        end
         params = ["dlltool", "-d", def_fname(src_dir, app_name), "-D", out_fname(app_name),
                   "--output-lib", lib_fname(package_src_dir, ruby_ver)]
         out, st = Open3.capture2e(*params)
@@ -154,6 +151,16 @@ module Tebako
       end
 
       private
+
+      def create_def(src_dir, app_name)
+        puts "   ... creating Windows def file"
+        File.open(def_fname(src_dir, app_name), "w") do |file|
+          file.puts "LIBRARY #{out_fname(app_name)}"
+          File.readlines(File.join(src_dir, "tebako.def")).each do |line|
+            file.puts line unless line.include?("DllMain")
+          end
+        end
+      end
 
       def def_fname(src_dir, app_name)
         File.join(src_dir, "#{app_name}.def")

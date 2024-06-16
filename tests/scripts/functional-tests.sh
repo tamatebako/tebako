@@ -183,7 +183,7 @@ test_AUC_extract() {
    ./test-AUC-package --tebako-extract
    assertEquals 0 "${PIPESTATUS[0]}"
 
-   diff -r source_filesystem output/source_filesystem
+   diff -r source_filesystem o/s
    assertEquals 0 "${PIPESTATUS[0]}"
 
    rm -rf source_filesystem
@@ -191,7 +191,7 @@ test_AUC_extract() {
    ./test-AUC-package --tebako-extract extract
    assertEquals 0 "${PIPESTATUS[0]}"
 
-   diff -r extract output/source_filesystem
+   diff -r extract o/s
    assertEquals 0 "${PIPESTATUS[0]}"
 
    rm -rf extract
