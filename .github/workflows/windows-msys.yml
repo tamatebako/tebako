@@ -115,6 +115,7 @@ jobs:
             openssl:p
             make:p
             libyaml:p
+            libxslt:p
 
       - name: Enable long filenames
         run: git config --global core.longpaths true

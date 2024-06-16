@@ -170,7 +170,7 @@ runs:
         pacboy sync --needed --noconfirm cmake:p boost:p diffutils:p  \
           libevent:p double-conversion:p fmt:p glog:p dlfcn:p ninja:p \
           gtest:p autotools:p ncurses:p ruby:p toolchain:p openssl:p  \
-          make:p libyaml:p
+          make:p libyaml:p libxslt:p
 
     - name: Setup environment
       if: inputs.cache != 'off'
