@@ -235,11 +235,11 @@ endif(DWARFS_PRELOAD)
 # Filesystem locations
 
 # DATA_SRC_DIR folder is used to collect all files that need to be packaged
-set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/source_filesystem)
+set(DATA_SRC_DIR  ${CMAKE_CURRENT_BINARY_DIR}/s)
 # DATA_PRE_DIR folder is used to build gems  that need to be packaged
-set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/prepare_filesystem)
+set(DATA_PRE_DIR  ${CMAKE_CURRENT_BINARY_DIR}/r)
 # DATA_BIN_DIR folder is used to create packaged filesystem
-set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/packaged_filesystem)
+set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/p)
 # DATA_BIN_FILE is packaged filesystem itself
 set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
 # Target binary directory

@@ -128,10 +128,9 @@ brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib ncurse
   double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz libyaml openssl@3
 ----
 
-=== Windows (2019, 2022)
+=== Windows (workstation 10, 11; Server 2019, 2022)
 
 The simplest approach is to use Ruby development environment provided by RubyInstaller, for example Ruby+Devkit 3.1.4-1.
-
 Once it is installed use the following commands:
 
 [source,sh]
@@ -141,6 +140,11 @@ Once it is installed use the following commands:
             boost diffutils libevent double-conversion
             fmt glog dlfcn gtest autotools ncurses libyaml
 ----
+
+Please note that on Windows tebako may face issues related by CMake path length limitations.
+(https://gitlab.kitware.com/cmake/cmake/-/issues/25936)
+This error may affect not tebako itself but the gems that need to be package and use CMake to build native extensions.
+There is no workaround for this issue as it lloks like is a limitation of the manifest used to build CMake executable.
 
 == Installation
 

@@ -99,7 +99,7 @@ module Tebako
     # rubocop:enable Metrics/MethodLength
 
     def output
-      @output ||= File.join(prefix, "output")
+      @output ||= File.join(prefix, "o")
     end
 
     def package
