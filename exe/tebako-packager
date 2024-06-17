@@ -27,6 +27,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require_relative "../lib/tebako/packager"
+require_relative "../lib/tebako/stripper"
 
 begin
   unless ARGV.length.positive?
@@ -57,6 +58,16 @@ begin
     end
 
     Tebako::Packager.stash(ARGV[1], ARGV[2])
+  when "strip"
+    #       ARGV[0] -- command
+    #       ARGV[1] -- OSTYPE
+    #       ARGV[2] -- DATA_SRC_DIR
+    unless ARGV.length == 3
+      raise Tebako::Error,
+            "tebako-packager strip command expects 3 arguments, #{ARGV.length} has been provided."
+    end
+
+    Tebako::Stripper.strip(ARGV[1], ARGV[2])
   when "pass1a"
     #       ARGV[0] -- command
     #       ARGV[1] -- RUBY_SOURCE_DIR

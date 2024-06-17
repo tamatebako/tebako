@@ -37,6 +37,7 @@ build
 out
 output
 pkg
+o
 
 # External dependencies
 deps

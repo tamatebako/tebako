@@ -13,6 +13,7 @@ AllCops:
     - 'tests/**/*'
     - 'deps/**/*'
     - 'output/**/*'
+    - 'o/**/*'
     - 'extract/**/*'
     - 'source_filesystem/**/*'
     - '*-package'

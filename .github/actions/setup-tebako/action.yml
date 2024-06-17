@@ -138,7 +138,7 @@ runs:
         gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static \
         readline-dev readline-static p7zip ruby-dev gcompat      \
         gettext-dev gperf brotli-dev brotli-static jemalloc-dev  \
-        fmt-dev xz-static clang
+        fmt-dev xz-static clang libxslt-dev libxslt-static
         if [ "$CC" = "clang" ]; then
           apk --no-cache --upgrade add clang
         fi
@@ -218,7 +218,7 @@ runs:
       if: env.ADVANCED_OS == 'MinGw'
       id: cache-key-mingw
       shell: msys2 {0}
-      run: echo "key=$(exe/tebako hash)" >> $GITHUB_OUTPUT
+      run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
 
     - name: Process cache
       if: inputs.cache != 'off'

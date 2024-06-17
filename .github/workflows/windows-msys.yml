@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 49
+  CACHE_VER: 50
   VERBOSE: no
 
 jobs:
@@ -192,6 +192,7 @@ jobs:
             openssl:p
             make:p
             libyaml:p
+            libxslt:p
 
       - name: Enable long filenames
         run: git config --global core.longpaths true
@@ -275,6 +276,7 @@ jobs:
             openssl:p
             make:p
             libyaml:p
+            libxslt:p
 
       - name: Enable long filenames
         run: git config --global core.longpaths true
