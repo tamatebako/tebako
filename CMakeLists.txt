@@ -550,22 +550,7 @@ else (${SETUP_MODE})
   )
 
   add_custom_target(packaged_filesystem
-# [TODO] Open question - whether we shall delete ruby binaries from memfs or not
-#        For debugging purposes it is very handy to have it here
-#
-    COMMAND ${CMAKE_COMMAND} -E rm -rf  ${DATA_SRC_DIR}/share  ${DATA_SRC_DIR}/include   ${DATA_SRC_DIR}/lib/pkgconfig
-                                        ${DATA_SRC_DIR}/bin/bundle${CMD_SUFFIX}  ${DATA_SRC_DIR}/bin/bundle
-                                        ${DATA_SRC_DIR}/bin/bundler${CMD_SUFFIX} ${DATA_SRC_DIR}/bin/bundler
-                                        ${DATA_SRC_DIR}/bin/bundle${BAT_SUFFIX}  ${DATA_SRC_DIR}/bin/bundler${BAT_SUFFIX}
-                                        ${DATA_SRC_DIR}/bin/erb${CMD_SUFFIX}     ${DATA_SRC_DIR}/bin/gem${CMD_SUFFIX}
-                                        ${DATA_SRC_DIR}/bin/irb${CMD_SUFFIX}     ${DATA_SRC_DIR}/bin/racc${CMD_SUFFIX}
-                                        ${DATA_SRC_DIR}/bin/racc2y${CMD_SUFFIX}  ${DATA_SRC_DIR}/bin/rake${BAT_SUFFIX}
-                                        ${DATA_SRC_DIR}/bin/rake                 ${DATA_SRC_DIR}/bin/rdoc${CMD_SUFFIX}
-                                        ${DATA_SRC_DIR}/bin/ri${CMD_SUFFIX}      ${DATA_SRC_DIR}/bin/y2racc${CMD_SUFFIX}
-                                        ${DATA_SRC_DIR}/bin/ruby${EXE_SUFFIX}    ${DATA_SRC_DIR}/bin/ruby${RUBY_SUFFIX}${EXE_SUFFIX}
-
-    COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.a"
-    COMMAND ${GNU_BASH} -c "rm -f ${DATA_SRC_DIR}/**/*.o"
+    COMMAND ruby ${EXE}/tebako-packager strip ${OSTYPE_TXT} ${DATA_SRC_DIR}
     COMMAND ${GNU_BASH} -c "chmod +x ${DEPS_BIN_DIR}/mkdwarfs${EXE_SUFFIX}"
     # No progress below is critical since in reporting mode mkdwarfs tries to work directly with terminal
     # and it creates issues for stderr redirects (&2 > 1) used by Ninja and our test srcipts
