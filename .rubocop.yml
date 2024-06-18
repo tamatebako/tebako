@@ -11,6 +11,7 @@ AllCops:
   Exclude:
     - 'vendor/**/*'
     - 'tests/**/*'
+    - 'tests-actions/**/*'
     - 'deps/**/*'
     - 'output/**/*'
     - 'o/**/*'

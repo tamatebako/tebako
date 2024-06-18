@@ -55,7 +55,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: .tebako/deps
-        key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ steps.cache-key.outputs.key }}-${{ env.CACHE_VER }}
+        key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ steps.cache-key.outputs.key }}-v${{ env.CACHE_VER }}
 
     - name: Clean Ruby source
       shell: bash

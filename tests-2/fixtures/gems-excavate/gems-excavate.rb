@@ -25,12 +25,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "seven_zip_ruby"
-puts $LOAD_PATH
-gets.chomp
 require "excavate"
 
 puts "Hello! excavate gem welcomes you to the magic world of ruby gems."
-
 # Make sure the constant exists
 puts "Version: #{Excavate::VERSION}"
