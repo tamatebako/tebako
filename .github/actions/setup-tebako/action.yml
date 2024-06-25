@@ -84,34 +84,34 @@ runs:
             echo "CC=${{ inputs.cc || 'clang-12' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++-12' }}" >> $GITHUB_ENV
             echo "BUNDLE_BUILD__SASSC=--enable-static-stdlib" >> $GITHUB_ENV
-            echo "ADVANCED_OS=Ubuntu" >> $GITHUB_ENV
+            echo "TOOLCHAIN=Ubuntu" >> $GITHUB_ENV
         elif [ "$OS" = "Linux" ] && [ -e "/etc/alpine-release" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
             echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> $GITHUB_ENV
             echo "ALPINE_VER=$(cat /etc/alpine-release)" >> $GITHUB_ENV
-            echo "ADVANCED_OS=Alpine" >> $GITHUB_ENV
+            echo "TOOLCHAIN=Alpine" >> $GITHUB_ENV
         elif [ "$OS" = "Darwin" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
             if [ "${{ runner.arch }}" = "X64" ]; then
               echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
-              echo "ADVANCED_OS=MacOS-x86_64" >> $GITHUB_ENV
+              echo "TOOLCHAIN=MacOS-x86_64" >> $GITHUB_ENV
             else
               echo "XCODE_VERSION=14.3.1" >> $GITHUB_ENV
-              echo "ADVANCED_OS=MacOS-arm64" >> $GITHUB_ENV
+              echo "TOOLCHAIN=MacOS-arm64" >> $GITHUB_ENV
             fi
         elif [[ "$OS" = "MINGW64"* ]]; then
             echo "CC=${{ inputs.cc || 'gcc' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'g++' }}" >> $GITHUB_ENV
-            echo "ADVANCED_OS=MinGW" >> $GITHUB_ENV
+            echo "TOOLCHAIN=MinGW" >> $GITHUB_ENV
         else
             echo "Unsupported operating system $OS"
             exit 1
         fi
 
     - name: Install apt packages
-      if: env.ADVANCED_OS == 'Ubuntu'
+      if: env.TOOLCHAIN == 'Ubuntu'
       shell: sh
       run: |
         sudo apt-get -y update
@@ -125,7 +125,7 @@ runs:
         libyaml-dev libncurses-dev libreadline-dev libutfcpp-dev
 
     - name: Install apt packages
-      if: env.ADVANCED_OS == 'Alpine'
+      if: env.TOOLCHAIN == 'Alpine'
       shell: sh
       run: |
         apk --no-cache --upgrade add build-base cmake git bash   \
@@ -157,7 +157,7 @@ runs:
       # packages installed at GitHub runner
       # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, gdbm, pkg-config, libyaml, curl
       # zlib, ncurses are installed by brew on x86 runners but not on arm64
-      if: env.ADVANCED_OS == 'MacOS-arm64'
+      if: env.TOOLCHAIN == 'MacOS-arm64'
       shell: bash
       run: |
          brew install zlib ncurses
@@ -170,7 +170,7 @@ runs:
          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
 
     - name: Install pacman packages
-      if: env.ADVANCED_OS == 'MinGW'
+      if: env.TOOLCHAIN == 'MinGW'
       shell: msys2 {0}
       run: |
         pacman -Syu --needed --noconfirm git tar bison flex pactoys
@@ -191,7 +191,7 @@ runs:
         echo "VERBOSE=${{ inputs.verbose }}" >> $GITHUB_ENV
 
     - name: Install Ruby
-      if: inputs.ruby_version != 'skip' && env.ADVANCED_OS != 'Alpine' && env.ADVANCED_OS != 'MinGw'
+      if: inputs.ruby_version != 'skip' && env.TOOLCHAIN != 'Alpine' && env.TOOLCHAIN != 'MinGw'
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{ inputs.ruby_version != 'env' && inputs.ruby_version || env.RUBY_VER }}
@@ -199,12 +199,12 @@ runs:
         bundler-cache: false
 
     - name: Install tebako
-      if: env.ADVANCED_OS != 'MinGw' && inputs.install != 'off'
+      if: env.TOOLCHAIN != 'MinGw' && inputs.install != 'off'
       shell: sh
       run: gem install tebako
 
     - name: Install tebako
-      if: env.ADVANCED_OS == 'MinGw' && inputs.install != 'off'
+      if: env.TOOLCHAIN == 'MinGw' && inputs.install != 'off'
       shell: sh
       run: |
         git config --global core.longpaths true
@@ -216,13 +216,13 @@ runs:
       run: mkdir -p ${{ inputs.cache_path }}
 
     - name: Create cache key
-      if: env.ADVANCED_OS != 'MinGw'
+      if: env.TOOLCHAIN != 'MinGw'
       id: cache-key
       shell: sh
       run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
 
     - name: Create cache key
-      if: env.ADVANCED_OS == 'MinGw'
+      if: env.TOOLCHAIN == 'MinGw'
       id: cache-key-mingw
       shell: msys2 {0}
       run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
@@ -232,5 +232,5 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.cache_path }}
-        key: ${{ env.ADVANCED_OS }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}-${{ steps.cache-key-mingw.outputs.key }}-v${{ inputs.cache_ver }}
+        key: ${{ env.TOOLCHAIN }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}-${{ steps.cache-key-mingw.outputs.key }}-v${{ inputs.cache_ver }}
         fail-on-cache-miss: inputs.cache == 'use'
