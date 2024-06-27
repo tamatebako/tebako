@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 50
+  CACHE_VER: 52
   VERBOSE: no
 
 jobs:
@@ -149,7 +149,7 @@ jobs:
           - sys: ucrt64
             CC: gcc
             CXX: g++
-        package_ruby_ver: [ '3.1.5', '3.2.4' ]
+        package_ruby_ver: [ '3.1.6', '3.2.4' ]
     env: ${{ matrix.env }}
 
     defaults:
@@ -233,7 +233,7 @@ jobs:
           - sys: ucrt64
             CC: gcc
             CXX: g++
-        package_ruby_ver: [ '3.1.5', '3.2.4' ]
+        package_ruby_ver: [ '3.1.6', '3.2.4' ]
     env: ${{ matrix.env }}
 
     defaults:

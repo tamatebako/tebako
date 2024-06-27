@@ -42,11 +42,13 @@ module Tebako
       "3.0.7" => "2a3411977f2850431136b0fab8ad53af09fb74df2ee2f4fb7f11b378fe034388",
       "3.1.4" => "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6",
       "3.1.5" => "3685c51eeee1352c31ea039706d71976f53d00ab6d77312de6aa1abaf5cda2c5",
+      "3.1.6" => "0d0dafb859e76763432571a3109d1537d976266be3083445651dc68deed25c22",
       "3.2.3" => "af7f1757d9ddb630345988139211f1fd570ff5ba830def1cc7c468ae9b65c9ba",
       "3.2.4" => "c72b3c5c30482dca18b0f868c9075f3f47d8168eaf626d4e682ce5b59c858692"
+      # "3.3.3" => "83c05b2177ee9c335b631b29b8c077b4770166d02fa527f3a9f6a40d13f3cce2"
     }.freeze
 
-    DEFAULT_RUBY_VERSION = "3.1.5"
+    DEFAULT_RUBY_VERSION = "3.1.6"
 
     def version_check(version)
       return if RUBY_VERSIONS.key?(version)

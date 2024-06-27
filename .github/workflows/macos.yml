@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 50
+  CACHE_VER: 52
   VERBOSE: no
 
 jobs:
@@ -87,7 +87,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ macos-12, macos-14 ]
-        package_ruby_ver: [ '3.1.5' ]
+        package_ruby_ver: [ '3.1.6' ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -119,7 +119,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ macos-12, macos-14 ]
-        package_ruby_ver: [ '3.1.5' ]
+        package_ruby_ver: [ '3.1.6' ]
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
