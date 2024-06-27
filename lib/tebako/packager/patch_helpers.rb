@@ -66,9 +66,15 @@ module Tebako
           ostype =~ /msys|cygwin|mingw/
         end
 
-        def patch_c_file(pattern)
+        def patch_c_file_pre(pattern)
           {
             pattern => "#{PatchLiterals::C_FILE_SUBST}\n#{pattern}"
+          }
+        end
+
+        def patch_c_file_post(pattern)
+          {
+            pattern => "#{pattern}\n\n#{PatchLiterals::C_FILE_SUBST}"
           }
         end
 
@@ -102,12 +108,16 @@ module Tebako
           ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 1
         end
 
+        def ruby316?(ruby_ver)
+          ruby3x?(ruby_ver) && ruby_ver[2] == "1" && ruby_ver[4].to_i >= 6
+        end
+
         def ruby32?(ruby_ver)
           ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 2
         end
 
         def ruby32only?(ruby_ver)
-          ruby3x?(ruby_ver) && ruby_ver[2].to_i == 2
+          ruby3x?(ruby_ver) && ruby_ver[2] == "2"
         end
 
         def ruby33?(ruby_ver)

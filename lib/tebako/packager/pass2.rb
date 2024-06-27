@@ -58,7 +58,7 @@ module Tebako
 
         def get_dir_c_patch(ostype)
           pattern = PatchHelpers.msys?(ostype) ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST"
-          dir_c_patch = PatchHelpers.patch_c_file(pattern)
+          dir_c_patch = PatchHelpers.patch_c_file_pre(pattern)
           dir_c_patch.merge!(DIR_C_BASE_PATCH)
           dir_c_patch
         end
@@ -85,9 +85,17 @@ module Tebako
         end
 
         def get_io_c_patch(ostype, ruby_ver)
-          io_c_patch = PatchHelpers.patch_c_file("/* define system APIs */")
+          io_c_patch = PatchHelpers.patch_c_file_pre("/* define system APIs */")
           io_c_patch.merge!(get_io_c_msys_patch(ruby_ver)) if PatchHelpers.msys?(ostype)
           io_c_patch
+        end
+
+        def get_util_c_patch(ruby_ver)
+          if PatchHelpers.ruby316?(ruby_ver)
+            PatchHelpers.patch_c_file_post("#endif /* !HAVE_GNU_QSORT_R */")
+          else
+            PatchHelpers.patch_c_file_pre("#ifndef S_ISDIR")
+          end
         end
 
         def get_msys_mkconfig_rb_patches(ruby_ver)
@@ -117,8 +125,8 @@ module Tebako
             "tool/mkconfig.rb" => mcrb_subst,
             "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype, ruby_ver),
             "io.c" => get_io_c_patch(ostype, ruby_ver),    "main.c" => MAIN_C_PATCH,
-            "file.c" => PatchHelpers.patch_c_file("/* define system APIs */"),
-            "util.c" => PatchHelpers.patch_c_file("#ifndef S_ISDIR")
+            "file.c" => PatchHelpers.patch_c_file_pre("/* define system APIs */"),
+            "util.c" => get_util_c_patch(ruby_ver)
           }
         end
 
