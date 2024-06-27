@@ -147,7 +147,7 @@ jobs:
       fail-fast: false
       # Running on MacOS-14 is a test for x86_64 package on arm64 system
       matrix:
-        os: [ macos-11, macos-13, macos-14 ]
+        os: [ macos-13, macos-14 ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Download test packages
