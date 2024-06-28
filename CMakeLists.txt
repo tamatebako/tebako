@@ -117,6 +117,7 @@ set(IS_MSYS OFF)
 set(IS_DARWIN OFF)
 set(RB_W32 OFF)
 set(FORCE_RUBY_PLATFORM "false")
+set(NOKOGIRI_OPTION "--no-use-system-libraries")
 set(RUBY_WITHOUT_EXT "dbm,win32,win32ole")
 set(RUBY_NAME "ruby")
 set(RUBY_SUFFIX "")
@@ -132,6 +133,7 @@ if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
 elseif("${OSTYPE_TXT}" MATCHES "^msys*")
   set(IS_MSYS ON)
   set(FORCE_RUBY_PLATFORM "true")
+  set(NOKOGIRI_OPTION "--use-system-libraries")
   # set(DWARFS_PRELOAD ON)
   set(RB_W32 ON)
   set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline")
@@ -368,6 +370,7 @@ message(STATUS "Ruby build ${C_FLAGS_DEST}='${RUBY_C_FLAGS}'")
 message(STATUS "Ruby build LDFLAGS='${RUBY_L_FLAGS}'")
 message(STATUS "openssl Ruby option='${OPENSSL_RUBY_OPTION}'")
 message(STATUS "libyaml Ruby option='${LIBYAML_RUBY_OPTION}'")
+message(STATUS "nokogiri build option='${NOKOGIRI_OPTION}'")
 
 ExternalProject_Add(${RUBY_PRJ}
   PREFIX ${DEPS}
@@ -438,7 +441,7 @@ else (${SETUP_MODE})
           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                       ${TBD}/bundle${BAT_SUFFIX} config set --local build.ffi --disable-system-libffi
           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                      ${TBD}/bundle${BAT_SUFFIX} config set --local build.nokogiri --use-system-libraries
+                                      ${TBD}/bundle${BAT_SUFFIX} config set --local build.nokogiri ${NOKOGIRI_OPTION}
           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                       ${TBD}/bundle${BAT_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
           COMMAND ${CMAKE_COMMAND} -E chdir ${DATA_PRE_DIR} ${CMAKE_COMMAND} -E  env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
@@ -480,13 +483,13 @@ else (${SETUP_MODE})
        COMMAND test -f ${FS_ROOT}/${FS_ENTRANCE} ||
                   (${CMAKE_COMMAND} -E echo "Entry point ${FS_ROOT}/${FS_ENTRANCE} does not exist or is not accessible" &&
                    ${CMAKE_COMMAND} -E false )
-       COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
-       COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                           ${TBD}/bundle${BAT_SUFFIX} config set --local build.ffi --disable-system-libffi
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${TLD}
+        COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${FS_ROOT} -DTARGET_DIR=${TLD} -P ${CMAKE_SOURCE_DIR}/cmake/copy_dir.cmake
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                           ${TBD}/bundle${BAT_SUFFIX} config set --local build.nokogiri --use-system-libraries
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                          ${TBD}/bundle${BAT_SUFFIX} config set --local build.ffi --disable-system-libffi
+        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                          ${TBD}/bundle${BAT_SUFFIX} config set --local build.nokogiri ${NOKOGIRI_OPTION}
+        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                            ${TBD}/bundle${BAT_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                            ${TBD}/bundle${BAT_SUFFIX} install --jobs=${NCORES}
