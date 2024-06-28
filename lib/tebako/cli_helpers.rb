@@ -115,10 +115,20 @@ module Tebako
                    end
     end
 
+    def handle_nil_prefix
+      env_prefix = ENV.fetch("TEBAKO_PREFIX", nil)
+      if env_prefix.nil?
+        puts "No prefix specified, using ~/.tebako"
+        File.expand_path("~/.tebako")
+      else
+        puts "Using TEBAKO_PREFIX environment variable as prefix"
+        File.expand_path(env_prefix)
+      end
+    end
+
     def prefix
       @prefix ||= if options["prefix"].nil?
-                    puts "No prefix specified, using ~/.tebako"
-                    File.expand_path("~/.tebako")
+                    handle_nil_prefix
                   elsif options["prefix"] == "PWD"
                     Dir.pwd
                   else
