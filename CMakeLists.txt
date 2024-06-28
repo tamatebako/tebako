@@ -490,9 +490,9 @@ else (${SETUP_MODE})
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
                                           ${TBD}/bundle${BAT_SUFFIX} config set --local build.nokogiri ${NOKOGIRI_OPTION}
         COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                           ${TBD}/bundle${BAT_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
-       COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
-                                           ${TBD}/bundle${BAT_SUFFIX} install --jobs=${NCORES}
+                                          ${TBD}/bundle${BAT_SUFFIX} config set --local force_ruby_platform ${FORCE_RUBY_PLATFORM}
+        COMMAND ${CMAKE_COMMAND} -E chdir ${TLD} ${CMAKE_COMMAND} -E env --unset=GEM_HOME --unset=GEM_PATH TEBAKO_PASS_THROUGH=1
+                                          ${TBD}/bundle${BAT_SUFFIX} install --jobs=${NCORES}
 #       COMMAND_EXPAND_LISTS
 # [TODO] Open question - how to deploy a project to source filesystem
 #        ruby packer does bundle install --deployment --binstubs
