@@ -69,7 +69,7 @@ module Tebako
 
     desc "hash", "Print build script hash (ci cache key)"
     def hash
-      print Digest::SHA256.hexdigest File.read File.join(__dir__, "../..", "CMakeLists.txt")
+      print Digest::SHA256.hexdigest File.read File.join(source, "CMakeLists.txt")
     end
 
     desc "press", "Press tebako image"
@@ -116,6 +116,8 @@ module Tebako
     no_commands do
       def initialize(*args)
         super
+        return if args[2][:current_command].name.include?("hash")
+
         puts "Tebako executable packager version #{Tebako::VERSION}"
       end
 

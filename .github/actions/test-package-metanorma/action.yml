@@ -55,12 +55,7 @@ runs:
       uses: actions/cache@v4
       with:
         path: .tebako/deps
-        key: ${{ matrix.os }}-${{ env.CC }}-${{ matrix.package_ruby_ver }}-${{ steps.cache-key.outputs.key }}-v${{ env.CACHE_VER }}
-
-    - name: Clean Ruby source
-      shell: bash
-    # Need cache after tebako setup or clean Ruby
-      run: tebako clean_ruby --prefix='.tebako'
+        key: ${{ env.TOOLCHAIN }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}--v${{ env.CACHE_VER }}
 
     - name: Package metanorma
       shell: bash

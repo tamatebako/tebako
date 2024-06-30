@@ -84,34 +84,34 @@ runs:
             echo "CC=${{ inputs.cc || 'clang-12' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++-12' }}" >> $GITHUB_ENV
             echo "BUNDLE_BUILD__SASSC=--enable-static-stdlib" >> $GITHUB_ENV
-            echo "TOOLCHAIN=Ubuntu" >> $GITHUB_ENV
+            echo "TOOLCHAIN=ubuntu" >> $GITHUB_ENV
         elif [ "$OS" = "Linux" ] && [ -e "/etc/alpine-release" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
             echo "VCPKG_FORCE_SYSTEM_BINARIES=1" >> $GITHUB_ENV
             echo "ALPINE_VER=$(cat /etc/alpine-release)" >> $GITHUB_ENV
-            echo "TOOLCHAIN=Alpine" >> $GITHUB_ENV
+            echo "TOOLCHAIN=alpine" >> $GITHUB_ENV
         elif [ "$OS" = "Darwin" ]; then
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
             if [ "${{ runner.arch }}" = "X64" ]; then
               echo "XCODE_VERSION=13.1" >> $GITHUB_ENV
-              echo "TOOLCHAIN=MacOS-x86_64" >> $GITHUB_ENV
+              echo "TOOLCHAIN=macos-x86_64" >> $GITHUB_ENV
             else
               echo "XCODE_VERSION=14.3.1" >> $GITHUB_ENV
-              echo "TOOLCHAIN=MacOS-arm64" >> $GITHUB_ENV
+              echo "TOOLCHAIN=macos-arm64" >> $GITHUB_ENV
             fi
         elif [[ "$OS" = "MINGW64"* ]]; then
             echo "CC=${{ inputs.cc || 'gcc' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'g++' }}" >> $GITHUB_ENV
-            echo "TOOLCHAIN=MinGW" >> $GITHUB_ENV
+            echo "TOOLCHAIN=msys" >> $GITHUB_ENV
         else
             echo "Unsupported operating system $OS"
             exit 1
         fi
 
     - name: Install apt packages
-      if: env.TOOLCHAIN == 'Ubuntu'
+      if: env.TOOLCHAIN == 'ubuntu'
       shell: sh
       run: |
         sudo apt-get -y update
@@ -125,7 +125,7 @@ runs:
         libyaml-dev libncurses-dev libreadline-dev libutfcpp-dev
 
     - name: Install apt packages
-      if: env.TOOLCHAIN == 'Alpine'
+      if: env.TOOLCHAIN == 'alpine'
       shell: sh
       run: |
         apk --no-cache --upgrade add build-base cmake git bash   \
@@ -142,9 +142,7 @@ runs:
         if [ "$CC" = "clang" ]; then
           apk --no-cache --upgrade add clang
         fi
-        if [ "${{ inputs.cache }}" != "off" ]; then
-          gem install bundler
-        fi
+        gem install bundler
 
     - name: Select XCode
       if: runner.os == 'macOS'
@@ -157,7 +155,7 @@ runs:
       # packages installed at GitHub runner
       # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, gdbm, pkg-config, libyaml, curl
       # zlib, ncurses are installed by brew on x86 runners but not on arm64
-      if: env.TOOLCHAIN == 'MacOS-arm64'
+      if: env.TOOLCHAIN == 'macos-arm64'
       shell: bash
       run: |
          brew install zlib ncurses
@@ -170,7 +168,7 @@ runs:
          echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
 
     - name: Install pacman packages
-      if: env.TOOLCHAIN == 'MinGW'
+      if: env.TOOLCHAIN == 'msys'
       shell: msys2 {0}
       run: |
         pacman -Syu --needed --noconfirm git tar bison flex pactoys
@@ -180,7 +178,6 @@ runs:
           make:p libyaml:p libxslt:p
 
     - name: Setup environment
-      if: inputs.cache != 'off'
       shell: sh
       run: |
         if [ ! -e ./common.env ]; then
@@ -191,7 +188,7 @@ runs:
         echo "VERBOSE=${{ inputs.verbose }}" >> $GITHUB_ENV
 
     - name: Install Ruby
-      if: inputs.ruby_version != 'skip' && env.TOOLCHAIN != 'Alpine' && env.TOOLCHAIN != 'MinGw'
+      if: inputs.ruby_version != 'skip' && env.TOOLCHAIN != 'alpine' && env.TOOLCHAIN != 'msys'
       uses: ruby/setup-ruby@v1
       with:
         ruby-version: ${{ inputs.ruby_version != 'env' && inputs.ruby_version || env.RUBY_VER }}
@@ -199,12 +196,12 @@ runs:
         bundler-cache: false
 
     - name: Install tebako
-      if: env.TOOLCHAIN != 'MinGw' && inputs.install != 'off'
+      if: env.TOOLCHAIN != 'msys' && inputs.install != 'off'
       shell: sh
       run: gem install tebako
 
     - name: Install tebako
-      if: env.TOOLCHAIN == 'MinGw' && inputs.install != 'off'
+      if: env.TOOLCHAIN == 'msys' && inputs.install != 'off'
       shell: sh
       run: |
         git config --global core.longpaths true
@@ -216,13 +213,13 @@ runs:
       run: mkdir -p ${{ inputs.cache_path }}
 
     - name: Create cache key
-      if: env.TOOLCHAIN != 'MinGw'
+      if: env.TOOLCHAIN != 'msys' && inputs.cache != 'off'
       id: cache-key
       shell: sh
       run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
 
     - name: Create cache key
-      if: env.TOOLCHAIN == 'MinGw'
+      if: env.TOOLCHAIN == 'msys' && inputs.cache != 'off'
       id: cache-key-mingw
       shell: msys2 {0}
       run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT

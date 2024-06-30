@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 52
+  CACHE_VER: 53
   VERBOSE: no
 
 jobs:
@@ -69,15 +69,20 @@ jobs:
       - name: Setup ci environment
         uses: ./.github/actions/setup-tebako
         with:
-          cache: build
-          cache_path: deps
-          cache_ver: ${{ env.CACHE_VER }}
+          cache: off
+          install: off
+
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: ${{ matrix.os }}
+          cc: clang
+          version: v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: |
-          bundle install
-          bundle exec rake generate_version_txt
-          ${{ github.workspace }}/exe/tebako setup
+          ${{ github.workspace }}/exe/tebako setup -D
 
   tests-1:
     needs: setup
@@ -98,15 +103,16 @@ jobs:
       - name: Setup ci environment
         uses: ./.github/actions/setup-tebako
         with:
-          cache: use
-          cache_path: deps
-          cache_ver: ${{ env.CACHE_VER }}
+          cache: off
           install: off
 
-      - name: tebako setup
-        run: |
-          bundle install
-          bundle exec rake generate_version_txt
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: ${{ matrix.os }}
+          cc: clang
+          version: v${{ env.CACHE_VER }}
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -130,15 +136,19 @@ jobs:
       - name: Setup ci environment
         uses: ./.github/actions/setup-tebako
         with:
-          cache: use
-          cache_path: deps
-          cache_ver: ${{ env.CACHE_VER }}
+          cache: off
           install: off
+
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: ${{ matrix.os }}
+          cc: clang
+          version: v${{ env.CACHE_VER }}
 
       - name: Run tebako tests (set no. 2)
         run: |
-          bundle install
-          bundle exec rake generate_version_txt
           RUBY_VER=${{ matrix.package_ruby_ver}} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
   cross-tests:

@@ -57,15 +57,10 @@ runs:
         path: .tebako/deps
         key: ${{ env.TOOLCHAIN }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}--v${{ env.CACHE_VER }}
 
-    - name: Clean Ruby source
-      shell: bash
-    # Need cache after tebako setup or clean Ruby
-      run: tebako clean_ruby --prefix='.tebako'
-
     - name: Package fontist
       shell: bash
       run: tebako press --root=fontist --entry-point=fontist --output=fontist-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
 
-    #- name: Run smoke test
-    #  shell: bash
-    #  run: ./fontist-package help
+    - name: Run smoke test
+      shell: bash
+      run: ./fontist-package help

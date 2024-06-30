@@ -22,45 +22,32 @@
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
+name: 'Setup tebako development MSys'
+description: 'Setup environment and process cache for tebako development on MSys'
+inputs:
+  cc:
+    description: 'C compiler keyword'
+    required: true
+  version:
+    description: 'Cache version'
+    required: true
+    type: string
+  path:
+    description: 'The path to cache'
+    required: true
+    type: string
 
-name: 'Test: package fontist on Windows'
-description: 'Test: package fontist on Windows'
 runs:
   using: "composite"
   steps:
-    - name: Checkout packed-mn
-      uses: actions/checkout@v4
-      with:
-        repository: metanorma/packed-mn
-        path: ${{github.workspace}}/packed-mn
+      - name: Install bundle
+        shell: msys2 {0}
+        run: |
+          bundle install
+          bundle exec rake generate_version_txt
 
-    - name: Download gem
-      uses: actions/download-artifact@v4
-      with:
-        name: gem
-
-    - name: Install gem
-      shell: msys2 {0}
-      # in case there is off-the-shelf version of tebako out there installed by setup-tebako
-      run: |
-        gem uninstall -a -x tebako
-        gem install $( ls tebako*.gem )
-
-    - name: Create cache key
-      id: cache-key-mingw
-      shell: msys2 {0}
-      run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
-
-    - name: Process cache
-      uses: actions/cache@v4
-      with:
-        path: .tebako/deps
-        key: ${{ env.TOOLCHAIN }}-${{ env.CC }}--${{ steps.cache-key-mingw.outputs.key }}-v${{ env.CACHE_VER }}
-
-    - name: Package metanorma
-      shell: msys2 {0}
-      run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
-
-    #- name: Run smoke test
-    #  shell: msys2 {0}
-    #  run: ./metanorma-package help
+      - name: Process cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ inputs.path }}
+          key: msys-${{ inputs.cc }}-${{ hashFiles('**/common.env', 'CmakeLists.txt', 'version.txt') }}-${{ inputs.version }}
