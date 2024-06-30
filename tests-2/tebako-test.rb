@@ -117,7 +117,7 @@ class TebakoTest < Minitest::Test
 
   # Run 'tebako press ...'
   def press(tebako, name, package, prefix)
-    cmd = "ruby #{tebako} press -R #{ruby_ver} -o #{package} -e #{name}.rb -r #{name} -p '#{prefix}'"
+    cmd = "ruby #{tebako} press -D -R #{ruby_ver} -o #{package} -e #{name}.rb -r #{name} -p '#{prefix}'"
     out, st = Open3.capture2e(cmd)
     if st.exitstatus != 0
       puts "\"cmd\" failed with status #{st.exitstatus}"

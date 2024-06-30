@@ -57,11 +57,6 @@ runs:
         path: .tebako/deps
         key: ${{ env.TOOLCHAIN }}-${{ env.CC }}--${{ steps.cache-key-mingw.outputs.key }}-v${{ env.CACHE_VER }}
 
-    - name: Clean Ruby source
-      shell: msys2 {0}
-    # Need cache after tebako setup or clean Ruby
-      run: tebako clean_ruby --prefix='.tebako'
-
     - name: Package fontist
       shell: msys2 {0}
       run: tebako press --root=fontist --entry-point=fontist --output=fontist-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
