@@ -35,6 +35,7 @@ require "yaml"
 require_relative "cli_helpers"
 require_relative "cli_rubies"
 require_relative "error"
+require_relative "version"
 
 # Tebako - an executable packager
 # Implementation of tebako command-line interface
@@ -45,12 +46,12 @@ module Tebako
     package_name "Tebako"
     class_option :prefix, type: :string, aliases: "-p", required: false,
                           desc: "A path to tebako packaging environment, '~/.tebako' ('$HOME/.tebako') by default"
+    class_option :devmode, type: :boolean, aliases: "-D", required: false,
+                           desc: "Developer mode, please do not use if unsure"
 
     desc "clean", "Clean tebako packaging environment"
     def clean
-      puts "Cleaning tebako packaging environment"
-      # Using File.join(deps, "") to ensure that the slashes are appropriate
-      FileUtils.rm_rf([File.join(deps, ""), File.join(output, "")], secure: true)
+      do_clean
     end
 
     desc "clean_ruby", "Clean Ruby source from tebako packaging environment"
@@ -83,8 +84,11 @@ module Tebako
                          enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default"
     def press
+      (do_clean unless version_match?) unless options[:devmode]
+
       puts press_announce
       do_press
+      ensure_version_file
     rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
@@ -95,8 +99,11 @@ module Tebako
                          enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default."
     def setup
+      (do_clean unless version_match?) unless options[:devmode]
+
       puts "Setting up tebako packaging environment"
       do_setup
+      ensure_version_file
     rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
@@ -107,6 +114,11 @@ module Tebako
     end
 
     no_commands do
+      def initialize(*args)
+        super
+        puts "Tebako executable packager version #{Tebako::VERSION}"
+      end
+
       def options
         original_options = super
 
@@ -120,6 +132,12 @@ module Tebako
     private
 
     no_commands do
+      def do_clean
+        puts "Cleaning tebako packaging environment"
+        # Using File.join(deps, "") to ensure that the slashes are appropriate
+        FileUtils.rm_rf([File.join(deps, ""), File.join(output, "")], secure: true)
+      end
+
       def do_press
         cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}"
         build_cmd = "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}"

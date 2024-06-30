@@ -37,6 +37,7 @@ require_relative "version"
 # Tebako - an executable packager
 # Command-line interface methods
 module Tebako
+  E_VERSION_FILE = ".environment.version"
   # Cli helpers
   module CliHelpers
     def b_env
@@ -59,6 +60,17 @@ module Tebako
 
     def deps
       @deps ||= File.join(prefix, "deps")
+    end
+
+    def ensure_version_file
+      version_file_path = File.join(prefix, E_VERSION_FILE)
+
+      begin
+        File.write(version_file_path, Tebako::VERSION)
+        # puts "Set version information for tebako packaging environment to #{Tebako::VERSION}"
+      rescue StandardError => e
+        puts "An error occurred while creating or updating #{E_VERSION_FILE}: #{e.message}"
+      end
     end
 
     def fs_current
@@ -168,6 +180,20 @@ module Tebako
     def source
       c_path = Pathname.new(__FILE__).realpath
       @source ||= File.expand_path("../../..", c_path)
+    end
+
+    def version_match?
+      begin
+        version_file_path = File.join(prefix, E_VERSION_FILE)
+        file_version = File.open(version_file_path, &:readline).strip
+        rs = file_version == Tebako::VERSION
+      rescue StandardError
+        # In case of any error (e.g., file not readable), return false
+        file_version = "<Unknown>"
+        rs = false
+      end
+      puts "Packaging environment was created by a gem version #{file_version} and cannot be used" unless rs
+      rs
     end
   end
 end
