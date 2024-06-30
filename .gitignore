@@ -66,3 +66,4 @@ tebako_test.log
 .tebako/
 .t/
 tests-actions/
+.environment.version
