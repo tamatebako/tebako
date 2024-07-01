@@ -110,7 +110,7 @@ begin
     Tebako::Packager.create_implib(ARGV[2], ARGV[4], File.basename(ARGV[8]), ARGV[9]) if ARGV[1] =~ /msys/
     # Assume that "<TARGET_BIN_DIR (TBD)>" is <DATA_SRC_DIR>/bin"
     # That shall match CMakeLists.txt settings
-    Tebako::Packager.deploy(ARGV[4], "#{ARGV[4]}/bin", ARGV[7])
+    Tebako::Packager.deploy(ARGV[4], ARGV[9], ARGV[7])
 
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"

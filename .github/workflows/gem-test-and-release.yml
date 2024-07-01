@@ -128,7 +128,7 @@ jobs:
     - name: Setup ci environment
       uses: ./.github/actions/setup-tebako
       with:
-        cache: off
+        cache: on
         cache_ver: ${{ env.CACHE_VER }}
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
@@ -169,7 +169,7 @@ jobs:
     - name: Setup ci environment
       uses: ./.github/actions/setup-tebako
       with:
-        cache: off
+        cache: on
         cache_ver: ${{ env.CACHE_VER }}
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
@@ -205,7 +205,7 @@ jobs:
     - name: Setup ci environment
       uses: ./.github/actions/setup-tebako
       with:
-        cache: off
+        cache: on
         ruby_version: ${{ matrix.package_ruby_ver }}
         cache_ver: ${{ env.CACHE_VER }}
         cc: ${{ env.CC }}
@@ -242,7 +242,7 @@ jobs:
     - name: Setup ci environment
       uses: ./.github/actions/setup-tebako
       with:
-        cache: off
+        cache: on
         ruby_version: ${{ matrix.package_ruby_ver }}
         cache_ver: ${{ env.CACHE_VER }}
         cc: ${{ env.CC }}

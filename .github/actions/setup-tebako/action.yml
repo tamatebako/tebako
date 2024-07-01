@@ -32,7 +32,8 @@ inputs:
   cache_path:
     description: 'Tebako cache root folder'
     required: true
-    default: '.tebako/deps'
+    default: |
+      .tebako/deps
     type: string
   cache_ver:
     description: 'Tebako cache version'
