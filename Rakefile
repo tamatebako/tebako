@@ -35,8 +35,9 @@ task default: %i[rubocop]
 desc "Generate version.txt"
 task "generate_version_txt" do
   require_relative "lib/tebako/version"
-  File.write(File.join(__dir__, "version.txt"), "#{Tebako::VERSION}\n")
-  puts "Generating #{File.join(__dir__, "version.txt")}; version = #{Tebako::VERSION}"
+  version_without_rc = Tebako::VERSION.gsub(/\.rc\d+/, "")
+  File.write(File.join(__dir__, "version.txt"), "#{version_without_rc}\n")
+  puts "Generating #{File.join(__dir__, "version.txt")}; version = #{version_without_rc}"
 end
 
 task build: :generate_version_txt

@@ -51,7 +51,7 @@ module Tebako
 
     desc "clean", "Clean tebako packaging environment"
     def clean
-      do_clean
+      clean_cache
     end
 
     desc "clean_ruby", "Clean Ruby source from tebako packaging environment"
@@ -84,7 +84,7 @@ module Tebako
                          enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default"
     def press
-      (do_clean unless version_match?) unless options[:devmode]
+      (clean_output unless version_match?) unless options[:devmode]
 
       puts press_announce
       do_press
@@ -99,7 +99,7 @@ module Tebako
                          enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default."
     def setup
-      (do_clean unless version_match?) unless options[:devmode]
+      (clean_output unless version_match?) unless options[:devmode]
 
       puts "Setting up tebako packaging environment"
       do_setup
@@ -134,12 +134,6 @@ module Tebako
     private
 
     no_commands do
-      def do_clean
-        puts "Cleaning tebako packaging environment"
-        # Using File.join(deps, "") to ensure that the slashes are appropriate
-        FileUtils.rm_rf([File.join(deps, ""), File.join(output, "")], secure: true)
-      end
-
       def do_press
         cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}"
         build_cmd = "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}"

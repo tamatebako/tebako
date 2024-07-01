@@ -46,17 +46,6 @@ runs:
         gem uninstall -a -x tebako
         gem install $( ls tebako*.gem )
 
-    - name: Create cache key
-      id: cache-key-mingw
-      shell: msys2 {0}
-      run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
-
-    - name: Process cache
-      uses: actions/cache@v4
-      with:
-        path: .tebako/deps
-        key: ${{ env.TOOLCHAIN }}-${{ env.CC }}--${{ steps.cache-key-mingw.outputs.key }}-v${{ env.CACHE_VER }}
-
     - name: Package fontist
       shell: msys2 {0}
       run: tebako press --root=fontist --entry-point=fontist --output=fontist-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'

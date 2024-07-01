@@ -46,17 +46,6 @@ runs:
         gem uninstall -a -x tebako
         gem install $( ls tebako*.gem )
 
-    - name: Create cache key
-      id: cache-key
-      shell: bash
-      run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
-
-    - name: Process cache
-      uses: actions/cache@v4
-      with:
-        path: .tebako/deps
-        key: ${{ env.TOOLCHAIN }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}--v${{ env.CACHE_VER }}
-
     - name: Package metanorma
       shell: bash
       run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
