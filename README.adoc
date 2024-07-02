@@ -150,55 +150,9 @@ There is no workaround for this issue as it lloks like is a limitation of the ma
 
 === General
 
-Tebako is distributed as a Ruby gem
-
-[source,sh]
-----
-gem install tebako
-----
-
-=== Quick setup on Ubuntu 20.04 on Docker
-
-Launch a container on the target platform:
-
-[source,sh]
-----
-# For x86_64
-docker run -it --platform linux/x86_64 ubuntu bash
-
-# For Apple M1
-docker run -it --platform linux/aarch64 ubuntu bash
-----
-
-In the container:
-
-[source,sh]
-----
-export DEBIAN_FRONTEND=noninteractive
-export TZ=Etc/UTC
-
-apt-get update
-apt-get install -y software-properties-common
-add-apt-repository -y ppa:ubuntu-toolchain-r/test
-apt-get install -y gcc-10 g++-10
-
-apt-get install -y curl git ruby ruby-dev pkg-config bison flex make autoconf
-curl https://apt.kitware.com/kitware-archive.sh | bash
-apt-get install -y cmake
-
-apt-get -y install sudo git curl build-essential pkg-config bison flex autoconf \
-   binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev libiberty-dev    \
-   libdouble-conversion-dev liblz4-dev liblzma-dev libssl-dev libunwind-dev      \
-   libboost-filesystem-dev libboost-program-options-dev libboost-system-dev      \
-   libboost-iostreams-dev  libboost-date-time-dev libboost-context-dev           \
-   libboost-regex-dev libboost-thread-dev libbrotli-dev libdwarf-dev libelf-dev  \
-   libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev libncurses-dev          \
-   libreadline-dev libutfcpp-dev libncurses-dev libreadline-dev gcc-10 g++-10    \
-   ruby-dev ruby-bundler
-
-gem install tebako
-
-----
+Tebako is distributed as a Ruby gem.
+Additionally, Docker containers for Ubuntu and Alpine Linux with a preinstalled Tebako packaging environment
+are available at https://github.com/orgs/tamatebako/packages.
 
 == Usage
 
