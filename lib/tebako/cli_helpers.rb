@@ -37,6 +37,7 @@ require_relative "version"
 # Tebako - an executable packager
 # Command-line interface methods
 module Tebako
+  E_VERSION_FILE = ".environment.version"
   # Cli helpers
   module CliHelpers
     def b_env
@@ -57,8 +58,37 @@ module Tebako
         "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output}\" -S \"#{source}\""
     end
 
+    def clean_cache
+      puts "Cleaning tebako packaging environment"
+      # Using File.join(deps, "") to ensure that the slashes are appropriate
+      FileUtils.rm_rf([File.join(deps, ""), File.join(output, "")], secure: true)
+    end
+
+    def clean_output
+      puts "Cleaning CMake cache and Ruby build files"
+      # Using File.join(output, "") to ensure that the slashes are appropriate
+
+      nmr = "src/_ruby_*"
+      nms = "stash_*"
+      FileUtils.rm_rf(Dir.glob(File.join(deps, nmr)), secure: true)
+      FileUtils.rm_rf(Dir.glob(File.join(deps, nms)), secure: true)
+
+      FileUtils.rm_rf(File.join(output, ""), secure: true)
+    end
+
     def deps
       @deps ||= File.join(prefix, "deps")
+    end
+
+    def ensure_version_file
+      version_file_path = File.join(prefix, E_VERSION_FILE)
+
+      begin
+        File.write(version_file_path, version_key)
+        # puts "Set version information for tebako packaging environment to #{Tebako::VERSION}"
+      rescue StandardError => e
+        puts "An error occurred while creating or updating #{E_VERSION_FILE}: #{e.message}"
+      end
     end
 
     def fs_current
@@ -168,6 +198,26 @@ module Tebako
     def source
       c_path = Pathname.new(__FILE__).realpath
       @source ||= File.expand_path("../../..", c_path)
+    end
+
+    def version_key
+      @version_key ||= "#{Tebako::VERSION} at #{source}"
+    end
+
+    def version_match? # rubocop:disable Metrics/MethodLength
+      begin
+        version_file_path = File.join(prefix, E_VERSION_FILE)
+        file_version = File.open(version_file_path, &:readline).strip
+        rs = file_version == version_key
+        unless rs
+          puts "CMake cache was created by a gem version #{file_version} " \
+               "and cannot be used for gem version #{version_key}"
+        end
+      rescue StandardError
+        # In case of any error (e.g., file not readable), return false
+        rs = false
+      end
+      rs
     end
   end
 end

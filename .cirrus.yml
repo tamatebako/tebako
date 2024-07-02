@@ -35,7 +35,7 @@ test_task_template: &TEST_TASK_TEMPLATE
     git clone https://github.com/metanorma/packed-mn.git packed-mn
 
   package-metanorma_script: |
-    exe/tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package -R 3.1.6
+    exe/tebako press -D --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package -R 3.1.6
 
   smoke-test_script: |
     ./metanorma-package help
@@ -103,7 +103,7 @@ task:
     bundle install
     bundle exec rake generate_version_txt
     exe/tebako clean_ruby
-    exe/tebako setup -R 3.1.6
+    exe/tebako setup -D -R 3.1.6
 
   upload_caches:
     - tebako

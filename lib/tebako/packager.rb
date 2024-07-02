@@ -59,12 +59,6 @@ module Tebako
       thread_pthread.c
     ].freeze
 
-    DEPLOY_ENV = {
-      "GEM_HOME" => nil,
-      "GEM_PATH" => nil,
-      "TEBAKO_PASS_THROUGH" => "1"
-    }.freeze
-
     # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
     # These are the minimal versions required to provide linux-gnu / linux-musl differentiation by bundler
     # Ruby 3.1+ default rubygems versions work correctly out of the box
@@ -83,13 +77,19 @@ module Tebako
       end
 
       # Deploy
-      def deploy(src_dir, tbd, gflength)
+      def deploy(target_dir, ruby_ver, gflength)
         puts "-- Running deploy script"
 
-        ruby_ver = ruby_version(tbd)
-        update_rubygems(tbd, "#{src_dir}/lib", ruby_ver, RUBYGEMS_VERSION) unless PatchHelpers.ruby31?(ruby_ver)
-        install_gem tbd, "tebako-runtime"
-        install_gem(tbd, "bundler", BUNDLER_VERSION) if gflength.to_i != 0
+        ruby_api_ver = ruby_api_version(ruby_ver)
+        gem_home = "#{target_dir}/lib/ruby/gems/#{ruby_api_ver}"
+
+        deploy_env = { "GEM_HOME" => gem_home, "GEM_PATH" => gem_home, "TEBAKO_PASS_THROUGH" => "1" }
+
+        PatchHelpers.with_env(deploy_env) do
+          update_rubygems(target_dir, ruby_api_ver, RUBYGEMS_VERSION) unless PatchHelpers.ruby31?(ruby_ver)
+          install_gem(target_dir, "tebako-runtime")
+          install_gem(target_dir, "bundler", BUNDLER_VERSION) if gflength.to_i != 0
+        end
       end
 
       # Init
@@ -174,19 +174,22 @@ module Tebako
         File.join(src_dir, "lib", "libx64-ucrt-ruby#{ruby_ver[0]}#{ruby_ver[2]}0.a")
       end
 
-      def install_gem(tbd, name, ver = nil)
+      def install_gem(target_dir, name, ver = nil)
         puts "   ... installing #{name} gem#{" version #{ver}" if ver}"
-        PatchHelpers.with_env(DEPLOY_ENV) do
-          params = ["#{tbd}/gem", "install", name.to_s]
-          params.push("-v", ver.to_s) if ver
 
-          out, st = Open3.capture2e(*params)
-          raise Tebako::Error, "Failed to install #{name} (#{st}):\n #{out}" unless st.exitstatus.zero?
-        end
+        params = ["#{target_dir}/bin/gem", "install", name.to_s]
+        params.push("-v", ver.to_s) if ver
+
+        out, st = Open3.capture2e(*params)
+        raise Tebako::Error, "Failed to install #{name} (#{st}):\n #{out}" unless st.exitstatus.zero?
       end
 
       def do_patch(patch_map, root)
         patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
+      end
+
+      def ruby_api_version(ruby_ver)
+        "#{ruby_ver.split(".")[0..1].join(".")}.0"
       end
 
       def ruby_version(tbd)
@@ -203,16 +206,14 @@ module Tebako
         ruby_version
       end
 
-      def update_rubygems(tbd, tld, ruby_ver, gem_ver)
+      def update_rubygems(target_dir, ruby_api_ver, gem_ver)
         puts "   ... updating rubygems to #{gem_ver}"
-        PatchHelpers.with_env(DEPLOY_ENV) do
-          out, st = Open3.capture2e("#{tbd}/gem", "update", "--no-doc", "--system", gem_ver.to_s)
-          raise Tebako::Error, "Failed to update rubugems to #{gem_ver} (#{st}):\n #{out}" unless st.exitstatus.zero?
-        end
-        ruby_api_ver = ruby_ver.split(".")[0..1].join(".")
+        out, st = Open3.capture2e("#{target_dir}/bin/gem", "update", "--no-doc", "--system", gem_ver.to_s)
+        raise Tebako::Error, "Failed to update rubugems to #{gem_ver} (#{st}):\n #{out}" unless st.exitstatus.zero?
+
         # Autoload cannot handle statically linked openssl extension
         # Changing it to require seems to be the simplest solution
-        PatchHelpers.patch_file("#{tld}/ruby/site_ruby/#{ruby_api_ver}.0/rubygems/openssl.rb",
+        PatchHelpers.patch_file("#{target_dir}/lib/ruby/site_ruby/#{ruby_api_ver}/rubygems/openssl.rb",
                                 { "autoload :OpenSSL, \"openssl\"" => "require \"openssl\"" })
       end
     end

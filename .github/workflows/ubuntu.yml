@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 52
+  CACHE_VER: 53
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output (yes/no)
@@ -77,18 +77,21 @@ jobs:
       - name: Setup tebako environment
         uses: ./.github/actions/setup-tebako
         with:
-          cache: build
-          cache_path: deps
-          cache_ver: ${{ env.CACHE_VER }}
+          cache: off
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
           install: off
 
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: ${{ matrix.os }}
+          cc: ${{ env.CC }}
+          version: v${{ env.CACHE_VER }}
+
       - name: tebako setup
-        run: |
-          bundle install
-          bundle exec rake generate_version_txt
-          ${{ github.workspace }}/exe/tebako setup
+        run: ${{ github.workspace }}/exe/tebako setup -D
 
   tests-1:
     needs: setup
@@ -113,17 +116,18 @@ jobs:
       - name: Setup ci environment
         uses: ./.github/actions/setup-tebako
         with:
-          cache: use
-          cache_path: deps
-          cache_ver: ${{ env.CACHE_VER }}
+          cache: off
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
           install: off
 
-      - name: tebako setup
-        run: |
-          bundle install
-          bundle exec rake generate_version_txt
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: ${{ matrix.os }}
+          cc: ${{ env.CC }}
+          version: v${{ env.CACHE_VER }}
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -151,18 +155,21 @@ jobs:
       - name: Setup ci environment
         uses: ./.github/actions/setup-tebako
         with:
-          cache: use
-          cache_path: deps
-          cache_ver: ${{ env.CACHE_VER }}
+          cache: off
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
           install: off
 
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: ${{ matrix.os }}
+          cc: ${{ env.CC }}
+          version: v${{ env.CACHE_VER }}
+
       - name: Run tebako tests (set no. 2)
-        run: |
-          bundle install
-          bundle exec rake generate_version_txt
-          RUBY_VER=${{ matrix.package_ruby_ver }} ruby ${{github.workspace}}/tests-2/tebako-test.rb
+        run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
 #  test-on-ubuntu-latest:
 #    needs: tests-1

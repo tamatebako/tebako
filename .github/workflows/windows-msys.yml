@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 52
+  CACHE_VER: 53
   VERBOSE: no
 
 jobs:
@@ -126,17 +126,15 @@ jobs:
       - name: Create deps folder
         run: mkdir ${{env.DEPS}}
 
-      - name: Process cache
-        uses: actions/cache@v4
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development-msys
         with:
-          path: ${{ env.DEPS }}
-          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          path: deps
+          cc: ${{ env.CC }}
+          version: v${{ env.CACHE_VER }}
 
       - name: Tebako setup
-        run: |
-          bundle install
-          bundle exec rake generate_version_txt
-          exe/tebako setup
+        run: exe/tebako setup -D
 
   tests-1:
     needs: setup
@@ -203,11 +201,12 @@ jobs:
       - name: Create deps folder
         run: mkdir ${{env.DEPS}}
 
-      - name: Process cache
-        uses: actions/cache@v4
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development-msys
         with:
-          path: ${{ env.DEPS }}
-          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          path: deps
+          cc: ${{ env.CC }}
+          version: v${{ env.CACHE_VER }}
 
       - name: Checkout shell test framework
         uses: actions/checkout@v4
@@ -217,10 +216,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        run: |
-          bundle install
-          bundle exec rake generate_version_txt
-          RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+        run: RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
   tests-2:
     needs: setup
@@ -287,14 +283,12 @@ jobs:
       - name: Create deps folder
         run: mkdir ${{env.DEPS}}
 
-      - name: Process cache
-        uses: actions/cache@v4
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development-msys
         with:
-          path: ${{ env.DEPS }}
-          key: MSys-${{ env.CC }}-${{ hashFiles('**/common.env') }}-v${{ env.CACHE_VER }}
+          path: deps
+          cc: ${{ env.CC }}
+          version: v${{ env.CACHE_VER }}
 
       - name: Run tebako tests (set no. 2)
-        run: |
-          bundle install
-          bundle exec rake generate_version_txt
-          RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb
+        run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb
