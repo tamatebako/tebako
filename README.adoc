@@ -202,7 +202,8 @@ tebako press     \
   -r|--root=<project-root-folder>     \
   -e|--entry-point=<entry-point>      \
   [-o|--output=<packaged file name>] \
-  [-l|--log-level=<error|warn|debug|trace>]
+  [-l|--log-level=<error|warn|debug|trace>] \
+  [-D|--devmode]
 ----
 
 Where:
@@ -221,6 +222,9 @@ be started when packaged file is called
 point base name`)
 
 * `log-level`, the logging level for tebako built-in memory filesystem driver (optional, defaults to `error`)
+
+* `devmode` flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
+Please note that this mode is not intended for production use and should only be used during development.
 
 [example]
 ====
@@ -249,7 +253,8 @@ based on ```tebako setup``` output. Building cache based on ```tebako press``` m
 ----
 tebako setup     \
   [-p |--prefix=<tebako-root-folder>] \
-  [-R |--Ruby=<2.7.8|3.0.7|3.1.4|3.1.5|3.1.6|3.2.3|3.2.4>]
+  [-R |--Ruby=<2.7.8|3.0.7|3.1.4|3.1.5|3.1.6|3.2.3|3.2.4>] \
+  [-D | --devmode]
 ----
 
 Where:
@@ -257,6 +262,9 @@ Where:
 * `<tebako-root-folder>`, the Tebako root folder (see details in the Tebako Root Folder Selection section)
 
 * `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.6)
+
+* `devmode` flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
+Please note that this mode is not intended for production use and should only be used during development.
 
 ==== Clean
 
