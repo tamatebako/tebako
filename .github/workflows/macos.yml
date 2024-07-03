@@ -78,7 +78,7 @@ jobs:
           path: deps
           os: ${{ matrix.os }}
           cc: clang
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: |
@@ -112,7 +112,7 @@ jobs:
           path: deps
           os: ${{ matrix.os }}
           cc: clang
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -145,7 +145,7 @@ jobs:
           path: deps
           os: ${{ matrix.os }}
           cc: clang
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Run tebako tests (set no. 2)
         run: |

@@ -131,7 +131,7 @@ jobs:
         with:
           path: deps
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Tebako setup
         run: exe/tebako setup -D
@@ -206,7 +206,7 @@ jobs:
         with:
           path: deps
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Checkout shell test framework
         uses: actions/checkout@v4
@@ -288,7 +288,7 @@ jobs:
         with:
           path: deps
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Run tebako tests (set no. 2)
         run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb

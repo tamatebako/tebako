@@ -88,7 +88,7 @@ jobs:
           path: deps
           os: ${{ matrix.os }}
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: ${{ github.workspace }}/exe/tebako setup -D
@@ -127,7 +127,7 @@ jobs:
           path: deps
           os: ${{ matrix.os }}
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -166,7 +166,7 @@ jobs:
           path: deps
           os: ${{ matrix.os }}
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Run tebako tests (set no. 2)
         run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby ${{github.workspace}}/tests-2/tebako-test.rb

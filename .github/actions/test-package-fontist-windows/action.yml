@@ -34,18 +34,6 @@ runs:
         repository: fontist/fontist
         path: ${{github.workspace}}/fontist
 
-    - name: Download gem
-      uses: actions/download-artifact@v4
-      with:
-        name: gem
-
-    - name: Install gem
-      shell: msys2 {0}
-      # in case there is off-the-shelf version of tebako out there installed by setup-tebako
-      run: |
-        gem uninstall -a -x tebako
-        gem install $( ls tebako*.gem )
-
     - name: Package fontist
       shell: msys2 {0}
       run: tebako press --root=fontist --entry-point=fontist --output=fontist-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
