@@ -91,7 +91,7 @@ jobs:
           path: deps
           os: alpine-${{ matrix.env.ALPINE_VER }}
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: exe/tebako setup -D
@@ -136,7 +136,7 @@ jobs:
           path: deps
           os: alpine-${{ matrix.env.ALPINE_VER }}
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
@@ -181,7 +181,7 @@ jobs:
           path: deps
           os: alpine-${{ matrix.env.ALPINE_VER }}
           cc: ${{ env.CC }}
-          version: v${{ env.CACHE_VER }}
+          version: ${{ env.CACHE_VER }}
 
       - name: Run tebako tests (set no. 2)
         run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb

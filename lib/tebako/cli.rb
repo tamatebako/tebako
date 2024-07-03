@@ -69,7 +69,7 @@ module Tebako
 
     desc "hash", "Print build script hash (ci cache key)"
     def hash
-      print Digest::SHA256.hexdigest File.read File.join(source, "CMakeLists.txt")
+      print Digest::SHA256.hexdigest [File.read(File.join(source, "CMakeLists.txt")), Tebako::VERSION].join
     end
 
     desc "press", "Press tebako image"
