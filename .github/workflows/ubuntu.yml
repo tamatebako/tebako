@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 53
+  CACHE_VER: 55
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output (yes/no)
@@ -81,6 +81,7 @@ jobs:
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
           install: off
+          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
@@ -120,6 +121,7 @@ jobs:
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
           install: off
+          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
@@ -131,6 +133,8 @@ jobs:
 
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
+        with:
+          upload: 'false'
 
   tests-2:
     needs: setup
@@ -144,6 +148,7 @@ jobs:
         env:
           - { CC: gcc-10,   CXX: g++-10 }
           - { CC: clang-12, CXX: clang++-12 }
+
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -159,6 +164,7 @@ jobs:
           cc: ${{ env.CC }}
           cxx: ${{ env.CXX }}
           install: off
+          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development

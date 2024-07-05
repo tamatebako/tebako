@@ -1,0 +1,281 @@
+# frozen_string_literal: true
+
+# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+require "fileutils"
+require "find"
+
+require_relative "error"
+
+# Tebako - an executable packager
+module Tebako
+  # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
+  # These are the minimal versions required to provide linux-gnu / linux-musl differentiation by bundler
+  # Ruby 3.1+ default rubygems versions work correctly out of the box
+  BUNDLER_VERSION = "2.4.22"
+  RUBYGEMS_VERSION = "3.4.22"
+
+  # Tebako packaging support (deployer)
+  class DeployHelper # rubocop:disable Metrics/ClassLength
+    def initialize(fs_root, fs_entrance, fs_mount_point, target_dir, pre_dir)
+      @fs_root = fs_root
+      @fs_entrance = fs_entrance
+      @fs_mount_point = fs_mount_point
+      @target_dir = target_dir
+      @pre_dir = pre_dir
+      @verbose = ENV["VERBOSE"] == "yes" || ENV["VERBOSE"] == "true"
+    end
+
+    attr_reader :bundler_command, :gem_command, :gem_home
+
+    def config(os_type, ruby_ver)
+      @ruby_ver = ruby_ver
+      @os_type = os_type
+
+      @tbd = File.join(@target_dir, "bin")
+      @tgd = @gem_home = File.join(@target_dir, "lib", "ruby", "gems", ruby_api_version)
+      @tld = File.join(@target_dir, "local")
+
+      lookup_files
+      configure_scenario
+      configure_commands
+    end
+
+    def deploy
+      install_gem("tebako-runtime")
+      install_gem("bundler", Tebako::BUNDLER_VERSION) if needs_bundler?
+
+      deploy_solution
+    end
+
+    def deploy_env
+      { "GEM_HOME" => gem_home,
+        "GEM_PATH" => gem_home,
+        "TEBAKO_PASS_THROUGH" => "1" }
+    end
+
+    def install_gem(name, ver = nil)
+      puts "   ... installing #{name} gem#{" version #{ver}" if ver}"
+
+      params = [@gem_command, "install", name.to_s]
+      params.push("-v", ver.to_s) if ver
+      ["--no-document", "--install-dir", @tgd].each do |param|
+        params.push(param)
+      end
+      run_with_capture_v(params)
+    end
+
+    def ruby_api_version
+      @ruby_api_version ||= "#{@ruby_ver.split(".")[0..1].join(".")}.0"
+    end
+
+    def needs_bundler?
+      @gf_length.positive?
+    end
+
+    def update_rubygems
+      puts "   ... updating rubygems to #{Tebako::RUBYGEMS_VERSION}"
+      run_with_capture_v([@gem_command, "update", "--no-doc", "--system", Tebako::RUBYGEMS_VERSION])
+    end
+
+    private
+
+    def bundle_config
+      run_with_capture_v([@bundler_command, "config", "set", "--local", "build.ffi", "--disable-system-libffi"])
+      run_with_capture_v([@bundler_command, "config", "set", "--local", "build.nokogiri", @nokogiri_option])
+      run_with_capture_v([@bundler_command, "config", "set", "--local", "force_ruby_platform", @force_ruby_platform])
+    end
+
+    def check_entry_point(entry_point_root)
+      fs_entry_point = File.join(entry_point_root, @fs_entrance)
+      puts "   ... target entry point will be at #{File.join(@fs_mount_point, fs_entry_point)}"
+
+      return if File.exist?(File.join(@target_dir, fs_entry_point))
+
+      raise Tebako::Error.new("Entry point #{fs_entry_point} does not exist or is not accessible", 106)
+    end
+
+    def collect_and_deploy_gem(gemspec)
+      puts "   ... Collecting gem from gemspec #{gemspec}"
+
+      copy_files(@pre_dir)
+
+      Dir.chdir(@pre_dir) do
+        run_with_capture_v([@gem_command, "build", gemspec])
+        install_all_gems_or_fail
+      end
+
+      check_entry_point("bin")
+    end
+
+    def collect_and_deploy_gem_and_gemfile(gemspec)
+      puts "   ... collecting gem from gemspec #{gemspec} and Gemfile"
+
+      copy_files(@pre_dir)
+
+      Dir.chdir(@pre_dir) do
+        bundle_config
+        puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
+        run_with_capture_v([@bundler_command, "install", "--jobs=#{ncores}"])
+        run_with_capture_v([@bundler_command, "exec", @gem_command, "build", gemspec])
+        install_all_gems_or_fail
+      end
+
+      check_entry_point("bin")
+    end
+
+    def configure_commands
+      @cmd_suffix = @os_type =~ /msys/ ? ".cmd" : ""
+      @bat_suffix = @os_type =~ /msys/ ? ".bat" : ""
+
+      @gem_command = File.join(@tbd, "gem#{@cmd_suffix}")
+      @bundler_command = File.join(@tbd, "bundle#{@bat_suffix}")
+
+      @force_ruby_platform = @os_type =~ /msys|linux-musl/ ? "true" : "false"
+      @nokogiri_option = @os_type =~ /msys/ ? "--use-system-libraries" : "--no-use-system-libraries"
+    end
+
+    def configure_scenario
+      case @gs_length
+      when 0
+        configure_scenario_no_gemspec
+      when 1
+        @scenario = @gf_length.positive? ? :gemspec_and_gemfile : :gemspec
+      else
+        raise Tebako::Error, "Multiple Ruby gemspecs found in #{@fs_root}"
+      end
+    end
+
+    def configure_scenario_no_gemspec
+      @scenario = if @gf_length.positive?
+                    :gemfile
+                  elsif @g_length.positive?
+                    :gem
+                  else
+                    :simple_script
+                  end
+    end
+
+    def copy_files(dest)
+      FileUtils.mkdir_p(dest)
+      if Dir.exist?(@fs_root) && File.readable?(@fs_root)
+        begin
+          FileUtils.cp_r(File.join(@fs_root, "."), dest)
+        rescue StandardError
+          raise Tebako::Error.new("#{@fs_root} is not accessible or does not exist.", 107)
+        end
+        return
+      end
+      raise Tebako::Error.new("#{@fs_root} is not accessible or is not a directory.", 107)
+    end
+
+    def deploy_gem(gem)
+      puts "   ... installing Ruby gem from #{gem}"
+      copy_files(@pre_dir)
+      Dir.chdir(@pre_dir) { install_gem(gem) }
+      check_entry_point("bin")
+    end
+
+    def deploy_gemfile
+      puts "   ... deploying Gemfile"
+      copy_files(@tld)
+
+      Dir.chdir(@tld) do
+        bundle_config
+        puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
+        run_with_capture_v([@bundler_command, "install", "--jobs=#{ncores}"])
+      end
+
+      check_entry_point("local")
+    end
+
+    def deploy_simple_script
+      puts "   ... collecting simple Ruby script from #{@fs_root}"
+      copy_files(@tld)
+      check_entry_point("local")
+    end
+
+    def deploy_solution # rubocop:disable Metrics/MethodLength
+      case @scenario
+      when :simple_script
+        deploy_simple_script
+      when :gem
+        deploy_gem(Dir.glob(File.join(@fs_root, "*.gem")).first)
+      when :gemfile
+        deploy_gemfile
+      when :gemspec
+        collect_and_deploy_gem(Dir.glob(File.join(@fs_root, "*.gemspec")).first)
+      when :gemspec_and_gemfile
+        collect_and_deploy_gem_and_gemfile(Dir.glob(File.join(@fs_root, "*.gemspec")).first)
+      end
+    end
+
+    def install_all_gems_or_fail
+      gem_files = Dir.glob("*.gem").map { |file| File.expand_path(file) }
+      raise Tebako::Error, "No gem files found after build" if gem_files.empty?
+
+      gem_files.each { |gem_file| install_gem(gem_file) }
+    end
+
+    def lookup_files
+      @gs_length = Dir.glob(File.join(@fs_root, "*.gemspec")).length
+      @gf_length = Dir.glob(File.join(@fs_root, "Gemfile")).length
+      @g_length = Dir.glob(File.join(@fs_root, "*.gem")).length
+    end
+
+    def ncores
+      if RUBY_PLATFORM.include?("darwin")
+        out, st = Open3.capture2e("sysctl", "-n", "hw.ncpu")
+      else
+        out, st = Open3.capture2e("nproc", "--all")
+      end
+
+      @ncores ||= if st.exitstatus.zero?
+                    out.strip.to_i
+                  else
+                    4
+                  end
+    end
+
+    def run_with_capture(args)
+      puts "   ... @ #{args.join(" ")}"
+      out, st = Open3.capture2e(*args)
+      raise Tebako::Error, "Failed to run #{args.join(" ")} (#{st}):\n #{out}" unless st.exitstatus.zero?
+
+      out
+    end
+
+    def run_with_capture_v(args)
+      if @verbose
+        args_v = args.dup
+        args_v.push("--verbose")
+        puts run_with_capture(args_v)
+      else
+        run_with_capture(args)
+      end
+    end
+  end
+end

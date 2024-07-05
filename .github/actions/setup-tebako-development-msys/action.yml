@@ -51,4 +51,4 @@ runs:
         uses: actions/cache@v4
         with:
           path: ${{ inputs.path }}
-          key: msys-${{ inputs.cc }}-${{ hashFiles('**/common.env', 'CmakeLists.txt', 'version.txt') }}-v${{ inputs.version }}
+          key: msys-${{ inputs.cc }}-${{ hashFiles('**/common.env', 'CMakeLists.txt', 'version.txt') }}-v${{ inputs.version }}
