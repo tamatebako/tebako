@@ -49,7 +49,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 53
+  CACHE_VER: 55
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output
@@ -132,6 +132,7 @@ jobs:
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
         install: off
+        verbose: ${{ env.VERBOSE }}
 
     - name: Setup integration testing environment
       uses: ./.github/actions/setup-tebako-integration-test-msys
@@ -163,6 +164,7 @@ jobs:
         package_ruby_ver: [ '3.1.6' ]
         env:
           - { CC: gcc, CXX: g++ }
+
     env: ${{ matrix.env }}
     steps:
     - name: Install packages
@@ -181,6 +183,7 @@ jobs:
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
         install: off
+        verbose: ${{ env.VERBOSE }}
 
     - name: Setup integration testing environment
       uses: ./.github/actions/setup-tebako-integration-test
@@ -226,6 +229,7 @@ jobs:
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
         install: off
+        verbose: ${{ env.VERBOSE }}
 
     - name: Setup integration testing environment
       uses: ./.github/actions/setup-tebako-integration-test
@@ -271,6 +275,7 @@ jobs:
         cc: ${{ env.CC }}
         cxx: ${{ env.CXX }}
         install: off
+        verbose: ${{ env.VERBOSE }}
 
     - name: Setup integration testing environment
       uses: ./.github/actions/setup-tebako-integration-test

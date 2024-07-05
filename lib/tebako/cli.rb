@@ -84,7 +84,7 @@ module Tebako
                          enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default"
     def press
-      (clean_output unless version_match?) unless options[:devmode]
+      version_cache_check unless options[:devmode]
 
       puts press_announce
       do_press
@@ -99,7 +99,7 @@ module Tebako
                          enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default."
     def setup
-      (clean_output unless version_match?) unless options[:devmode]
+      version_cache_check unless options[:devmode]
 
       puts "Setting up tebako packaging environment"
       do_setup

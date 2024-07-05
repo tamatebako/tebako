@@ -26,8 +26,11 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "fileutils"
+require "find"
+require "pathname"
 
 require_relative "error"
+require_relative "deploy_helper"
 require_relative "packager/pass1"
 require_relative "packager/pass1a"
 require_relative "packager/pass2"
@@ -59,12 +62,6 @@ module Tebako
       thread_pthread.c
     ].freeze
 
-    # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
-    # These are the minimal versions required to provide linux-gnu / linux-musl differentiation by bundler
-    # Ruby 3.1+ default rubygems versions work correctly out of the box
-    BUNDLER_VERSION = "2.4.22"
-    RUBYGEMS_VERSION = "3.4.22"
-
     class << self
       # Create implib
       def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
@@ -77,18 +74,18 @@ module Tebako
       end
 
       # Deploy
-      def deploy(target_dir, ruby_ver, gflength)
+      def deploy(os_type, target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, fs_mount_point) # rubocop:disable Metrics/ParameterLists
         puts "-- Running deploy script"
 
-        ruby_api_ver = ruby_api_version(ruby_ver)
-        gem_home = "#{target_dir}/lib/ruby/gems/#{ruby_api_ver}"
+        deploy_helper = Tebako::DeployHelper.new(fs_root, fs_entrance, fs_mount_point, target_dir, pre_dir)
+        deploy_helper.config(os_type, ruby_ver)
 
-        deploy_env = { "GEM_HOME" => gem_home, "GEM_PATH" => gem_home, "TEBAKO_PASS_THROUGH" => "1" }
-
-        PatchHelpers.with_env(deploy_env) do
-          update_rubygems(target_dir, ruby_api_ver, RUBYGEMS_VERSION) unless PatchHelpers.ruby31?(ruby_ver)
-          install_gem(target_dir, "tebako-runtime")
-          install_gem(target_dir, "bundler", BUNDLER_VERSION) if gflength.to_i != 0
+        PatchHelpers.with_env(deploy_helper.deploy_env) do
+          unless PatchHelpers.ruby31?(ruby_ver)
+            deploy_helper.update_rubygems
+            patch_after_rubygems_update(target_dir, deploy_helper.ruby_api_version)
+          end
+          deploy_helper.deploy
         end
       end
 
@@ -174,22 +171,8 @@ module Tebako
         File.join(src_dir, "lib", "libx64-ucrt-ruby#{ruby_ver[0]}#{ruby_ver[2]}0.a")
       end
 
-      def install_gem(target_dir, name, ver = nil)
-        puts "   ... installing #{name} gem#{" version #{ver}" if ver}"
-
-        params = ["#{target_dir}/bin/gem", "install", name.to_s]
-        params.push("-v", ver.to_s) if ver
-
-        out, st = Open3.capture2e(*params)
-        raise Tebako::Error, "Failed to install #{name} (#{st}):\n #{out}" unless st.exitstatus.zero?
-      end
-
       def do_patch(patch_map, root)
         patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
-      end
-
-      def ruby_api_version(ruby_ver)
-        "#{ruby_ver.split(".")[0..1].join(".")}.0"
       end
 
       def ruby_version(tbd)
@@ -206,11 +189,7 @@ module Tebako
         ruby_version
       end
 
-      def update_rubygems(target_dir, ruby_api_ver, gem_ver)
-        puts "   ... updating rubygems to #{gem_ver}"
-        out, st = Open3.capture2e("#{target_dir}/bin/gem", "update", "--no-doc", "--system", gem_ver.to_s)
-        raise Tebako::Error, "Failed to update rubugems to #{gem_ver} (#{st}):\n #{out}" unless st.exitstatus.zero?
-
+      def patch_after_rubygems_update(target_dir, ruby_api_ver)
         # Autoload cannot handle statically linked openssl extension
         # Changing it to require seems to be the simplest solution
         PatchHelpers.patch_file("#{target_dir}/lib/ruby/site_ruby/#{ruby_api_ver}/rubygems/openssl.rb",

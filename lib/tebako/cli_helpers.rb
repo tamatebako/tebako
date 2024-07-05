@@ -204,20 +204,42 @@ module Tebako
       @version_key ||= "#{Tebako::VERSION} at #{source}"
     end
 
-    def version_match? # rubocop:disable Metrics/MethodLength
-      begin
-        version_file_path = File.join(prefix, E_VERSION_FILE)
-        file_version = File.open(version_file_path, &:readline).strip
-        rs = file_version == version_key
-        unless rs
-          puts "CMake cache was created by a gem version #{file_version} " \
-               "and cannot be used for gem version #{version_key}"
-        end
-      rescue StandardError
-        # In case of any error (e.g., file not readable), return false
-        rs = false
+    def version_cache
+      version_file_path = File.join(prefix, E_VERSION_FILE)
+      file_version = File.open(version_file_path, &:readline).strip
+
+      file_version.match(/(?<version>.+) at (?<source>.+)/)
+    end
+
+    def version_cache_check
+      match_data = version_cache
+
+      return version_unknown unless match_data
+
+      if match_data[:version] != Tebako::VERSION
+        version_mismatch(match_data[:version])
+      elsif match_data[:source] != source
+        version_source_mismatch(match_data[:source])
       end
-      rs
+    rescue StandardError
+      version_unknown
+    end
+
+    def version_mismatch(cached_version)
+      puts "Tebako cache was created by a gem version #{cached_version} " \
+           "and cannot be used for gem version #{Tebako::VERSION}"
+      clean_cache
+    end
+
+    def version_source_mismatch(cached_source)
+      puts "CMake cache was created for a different source directory '#{cached_source}' " \
+           "and cannot be used for '#{source}'"
+      clean_output
+    end
+
+    def version_unknown
+      puts "CMake cache version was not recognized, cleaning up"
+      clean_cache
     end
   end
 end

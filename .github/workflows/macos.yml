@@ -48,17 +48,18 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 53
+  CACHE_VER: 55
   VERBOSE: no
 
 jobs:
   setup:
-    name: setup ${{ matrix.os }} [CC clang]
+    name: setup ${{ matrix.os }} with Ruby ${{ matrix.ruby_ver }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ macos-12, macos-14 ]
+        ruby_ver: ['3.1.6', '3.3.3']
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -71,13 +72,14 @@ jobs:
         with:
           cache: off
           install: off
+          ruby_version: ${{ matrix.ruby_ver }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
           os: ${{ matrix.os }}
-          cc: clang
+          cc: ruby-${{ matrix.ruby_ver }}
           version: ${{ env.CACHE_VER }}
 
       - name: tebako setup
@@ -86,13 +88,14 @@ jobs:
 
   tests-1:
     needs: setup
-    name: tests-1 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
+    name: tests-1 ${{ matrix.os }} package Ruby ${{ matrix.package_ruby_ver }} on Ruby ${{ matrix.ruby_ver }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ macos-12, macos-14 ]
-        package_ruby_ver: [ '3.1.6' ]
+        package_ruby_ver: [ '3.1.6', '3.2.4' ]
+        ruby_ver: ['3.1.6', '3.3.3']
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -105,27 +108,42 @@ jobs:
         with:
           cache: off
           install: off
+          ruby_version: ${{ matrix.ruby_ver }}
+          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
           os: ${{ matrix.os }}
-          cc: clang
+          cc: ruby-${{ matrix.ruby_ver }}
           version: ${{ env.CACHE_VER }}
 
+      - name: Shall upload artifacts?
+        id: shall-upload
+        run: |
+          if [ "${{ matrix.package_ruby_ver }}" == "3.1.6" ] && [ "${{ matrix.ruby_ver }}" == "3.1.6" ] && [ "${{ matrix.os }}" == "macos-12" ]; then
+            echo "upload=true" >> $GITHUB_OUTPUT
+          else
+            echo "upload=false" >> $GITHUB_OUTPUT
+          fi
+            
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
+        with:
+          upload: "${{ steps.shall-upload.outputs.upload }}"
+          verbose: ${{ env.VERBOSE }}
 
   tests-2:
     needs: setup
-    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC clang
+    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} on Ruby ${{ matrix.ruby_ver }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ macos-12, macos-14 ]
-        package_ruby_ver: [ '3.1.6' ]
+        package_ruby_ver: [ '3.1.6', '3.2.4' ]
+        ruby_ver: ['3.1.6', '3.3.3']
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -138,13 +156,14 @@ jobs:
         with:
           cache: off
           install: off
+          ruby_version: ${{ matrix.ruby_ver }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
-          os: ${{ matrix.os }}
-          cc: clang
+          os: ${{ matrix.os }}-ruby-${{ matrix.ruby_ver }}
+          cc: ruby-${{ matrix.ruby_ver }}
           version: ${{ env.CACHE_VER }}
 
       - name: Run tebako tests (set no. 2)

@@ -88,9 +88,9 @@ module Tebako
         SUBST
       }.freeze
 
-      DARWIN_CONFIGURE_PATCH = {
-        "EXTDLDFLAGS=\"-bundle_loader '\\$(BUILTRUBY)'\"" => ""
-      }.freeze
+      # DARWIN_CONFIGURE_PATCH = {
+      #  "EXTDLDFLAGS=\"-bundle_loader '\\$(BUILTRUBY)'\"" => ""
+      # }.freeze
 
       OPENSSL_EXTCONF_RB_SUBST = <<~SUBST
         # Start of tebako patch
@@ -138,7 +138,10 @@ module Tebako
 
           # ....................................................
           # Fixing (bypassing) configure script bug where a variable is used before initialization
-          patch_map.store("configure", DARWIN_CONFIGURE_PATCH) if ostype =~ /darwin/
+          # On MacOS it generates bod EXTDLDFLAGS WITH -bundle_loader <missing parameter>
+          # However, it loooks likes EXTDLDFLAGS are just redundant for final Ruby linkage, so we are
+          # just removing it on pass 2 (at least for now)
+          # patch_map.store("configure", DARWIN_CONFIGURE_PATCH) if ostype =~ /darwin/
 
           # ....................................................
           # autoload :OpenSSL, "openssl"

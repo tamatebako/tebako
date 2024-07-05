@@ -55,4 +55,4 @@ runs:
         uses: actions/cache@v4
         with:
           path: ${{ inputs.path }}
-          key: ${{ inputs.os }}-${{ inputs.cc }}-${{ hashFiles('**/common.env', 'CmakeLists.txt', 'version.txt') }}-v${{ inputs.version }}
+          key: ${{ inputs.os }}-${{ inputs.cc }}-${{ hashFiles('**/common.env', 'CMakeLists.txt', 'version.txt') }}-v${{ inputs.version }}

@@ -53,7 +53,7 @@ module Tebako
 
       TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 =
         "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
+        "\t\t$(Q) $(PURIFY) $(CC) $(LDFLAGS) $(MAINOBJ) " \
         "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 
@@ -63,13 +63,13 @@ module Tebako
 
       TEMPLATE_MAKEFILE_IN_BASE_PATCH =
         "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) " \
+        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(MAINOBJ) " \
         "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 
       TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS =
         "# -- Start of tebako patch --\n" \
-        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(RUBY_EXP) $(MAINOBJ) " \
+        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(RUBY_EXP) $(MAINOBJ) " \
         "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 

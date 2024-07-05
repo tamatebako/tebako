@@ -99,18 +99,20 @@ begin
     #       ARGV[4] -- DATA_SRC_DIR
     #       ARGV[5] -- DATA_PRE_DIR
     #       ARGV[6] -- DATA_BIN_DIR
-    #       ARGV[7] -- GFLENGTH
-    #       ARGV[8] -- APP_NAME
-    #       ARGV[9] -- RUBY_VER
-    unless ARGV.length == 10
+    #       ARGV[7] -- FS_ROOT
+    #       ARGV[8] -- FS_ENTRANCE
+    #       ARGV[9] -- FS_MOUNT_POINT
+    #       ARGV[10] -- APP_NAME
+    #       ARGV[11] -- RUBY_VER
+    unless ARGV.length == 12
       raise Tebako::Error,
-            "tebako-packager deploy command expects 10 arguments, #{ARGV.length} has been provided."
+            "tebako-packager deploy command expects 12 arguments, #{ARGV.length} has been provided."
     end
     Tebako::Packager.init(ARGV[3], ARGV[4], ARGV[5], ARGV[6])
-    Tebako::Packager.create_implib(ARGV[2], ARGV[4], File.basename(ARGV[8]), ARGV[9]) if ARGV[1] =~ /msys/
+    Tebako::Packager.create_implib(ARGV[2], ARGV[4], File.basename(ARGV[10]), ARGV[11]) if ARGV[1] =~ /msys/
     # Assume that "<TARGET_BIN_DIR (TBD)>" is <DATA_SRC_DIR>/bin"
     # That shall match CMakeLists.txt settings
-    Tebako::Packager.deploy(ARGV[4], ARGV[9], ARGV[7])
+    Tebako::Packager.deploy(ARGV[1], ARGV[4], ARGV[5], ARGV[11], ARGV[7], ARGV[8], ARGV[9])
 
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"
