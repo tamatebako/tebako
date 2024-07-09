@@ -65,6 +65,7 @@ module Tebako
     end
 
     def deploy
+      system("#{gem_command} env")
       install_gem("tebako-runtime")
       install_gem("bundler", Tebako::BUNDLER_VERSION) if needs_bundler?
 
@@ -72,9 +73,12 @@ module Tebako
     end
 
     def deploy_env
-      { "GEM_HOME" => gem_home,
+      {
+        "GEM_HOME" => gem_home,
         "GEM_PATH" => gem_home,
-        "TEBAKO_PASS_THROUGH" => "1" }
+        "GEM_SPEC_CACHE" => File.join(@target_dir, "spec_cache"),
+        "TEBAKO_PASS_THROUGH" => "1"
+      }
     end
 
     def install_gem(name, ver = nil)

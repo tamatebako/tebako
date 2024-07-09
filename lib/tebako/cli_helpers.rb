@@ -81,7 +81,7 @@ module Tebako
     end
 
     def ensure_version_file
-      version_file_path = File.join(prefix, E_VERSION_FILE)
+      version_file_path = File.join(deps, E_VERSION_FILE)
 
       begin
         File.write(version_file_path, version_key)
@@ -205,9 +205,8 @@ module Tebako
     end
 
     def version_cache
-      version_file_path = File.join(prefix, E_VERSION_FILE)
+      version_file_path = File.join(deps, E_VERSION_FILE)
       file_version = File.open(version_file_path, &:readline).strip
-
       file_version.match(/(?<version>.+) at (?<source>.+)/)
     end
 
