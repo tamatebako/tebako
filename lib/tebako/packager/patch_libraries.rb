@@ -32,7 +32,7 @@ module Tebako
   module Packager
     # Ruby patching definitions (pass2)
     module PatchLibraries
-      class << self
+      class << self # rubocop:disable Metrics/ClassLength
         # rubocop:disable Style/WordArray
 
         # NOTE: folly provides build-in implementation of jemalloc
@@ -49,6 +49,58 @@ module Tebako
 
         DARWIN_DEP_LIBS = ["glog", "gflags", "brotlienc", "brotlidec", "brotlicommon"].freeze
         # rubocop:enable Style/WordArray
+
+        COMMON_LINUX_LIBRARIES = [
+          "-l:libtebako-fs.a",    "-l:libdwarfs-wr.a",          "-l:libdwarfs.a",             "LIBCOMPRESSION",
+          "-l:libfolly.a",        "-l:libfsst.a",               "-l:libmetadata_thrift.a",    "-l:libthrift_light.a",
+          "-l:libxxhash.a",       "-l:libfmt.a",                "-l:libdouble-conversion.a",  "-l:libglog.a",
+          "-l:libgflags.a",       "-l:libevent.a"
+        ].freeze
+
+        COMMON_ARCHIEVE_LIBRARIES = [
+          "-l:libarchive.a",     "-l:liblz4.a",        "-l:libz.a",             "-l:libzstd.a",
+          "-l:libbrotlienc.a",   "-l:libbrotlidec.a",  "-l:libbrotlicommon.a",  "-l:liblzma.a"
+        ].freeze
+
+        LINUX_GNU_LIBRARIES = [
+          "-l:libiberty.a",      "-l:libacl.a",          "-l:libssl.a",           "-l:libcrypto.a",
+          "-l:libgdbm.a",        "-l:libreadline.a",     "-l:libtinfo.a",         "-l:libffi.a",
+          "-l:libncurses.a",     "-l:libjemalloc.a",     "-l:libcrypt.a",         "-l:libanl.a",
+          "LIBYAML",             "-l:libboost_system.a", "-l:libboost_chrono.a",  "-l:libutil.a",
+          "-l:libstdc++.a",      "-lgcc_eh",             "-l:libunwind.a",        "-l:liblzma.a",
+          "-l:librt.a",          "-ldl",                 "-lpthread",             "-lm"
+        ].freeze
+
+        LINUX_MUSL_LIBRARIES = [
+          "-l:libiberty.a",       "-l:libacl.a",          "-l:libssl.a",          "-l:libcrypto.a",
+          "-l:libreadline.a",     "-l:libgdbm.a",         "-l:libffi.a",          "-l:libncurses.a",
+          "-l:libjemalloc.a",     "-l:libcrypt.a",        "LIBYAML",              "-l:libboost_system.a",
+          "-l:libboost_chrono.a", "-l:librt.a",           "-l:libstdc++.a",       "-lgcc_eh",
+          " -l:libunwind.a",      "-l:liblzma.a",         "-ldl",                 "-lpthread"
+        ].freeze
+
+        def linux_gnu_libraries(ruby_ver, with_compression)
+          libraries = COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES + LINUX_GNU_LIBRARIES
+          linux_libraries(libraries, ruby_ver, with_compression)
+        end
+
+        def linux_musl_libraries(ruby_ver, with_compression)
+          libraries = COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES + LINUX_MUSL_LIBRARIES
+          linux_libraries(libraries, ruby_ver, with_compression)
+        end
+
+        def linux_libraries(libraries, ruby_ver, with_compression)
+          libraries.map! do |lib|
+            if lib == "LIBYAML"
+              PatchHelpers.yaml_reference(ruby_ver)
+            elsif lib == "LIBCOMPRESSION"
+              with_compression ? "-Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state" : ""
+            else
+              lib
+            end
+          end
+          libraries.join(" ")
+        end
 
         def process_brew_libs!(libs, brew_libs)
           brew_libs.each { |lib| libs << "#{PatchHelpers.get_prefix_macos(lib[0]).chop}/lib/lib#{lib[1]}.a " }
@@ -86,28 +138,6 @@ module Tebako
           SUBST
         end
 
-        def common_enc_libs
-          "-l:liblz4.a -l:libz.a -l:libzstd.a -l:libbrotlienc.a -l:libbrotlidec.a -l:libbrotlicommon.a -l:liblzma.a"
-        end
-
-        def linux_gnu_libs(ruby_ver)
-          <<~SUBST
-            #{linux_common_libs} \
-            -l:libarchive.a -l:libiberty.a -l:libacl.a -l:libssl.a -l:libcrypto.a #{common_enc_libs} \\
-            -l:libgdbm.a -l:libreadline.a -l:libtinfo.a -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a -l:libanl.a #{PatchHelpers.yaml_reference(ruby_ver)} \\
-            -l:libboost_system.a -l:libboost_chrono.a -l:libutil.a -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -l:librt.a -ldl -lpthread -lm
-          SUBST
-        end
-
-        def linux_musl_libs(ruby_ver)
-          <<~SUBST
-            #{linux_common_libs} \
-            -l:libiberty.a  -l:libacl.a -l:libssl.a -l:libcrypto.a #{common_enc_libs} -l:libreadline.a  \\
-            -l:libgdbm.a  -l:libffi.a -l:libncurses.a -l:libjemalloc.a -l:libcrypt.a  #{PatchHelpers.yaml_reference(ruby_ver)} -l:libboost_system.a -l:libboost_chrono.a \\
-            -l:librt.a -l:libstdc++.a -lgcc_eh -l:libunwind.a -l:liblzma.a -ldl -lpthread
-          SUBST
-        end
-
         # Used for mkconfig.rb
         def msys_base_libs(ruby_ver)
           <<~SUBST
@@ -129,12 +159,12 @@ module Tebako
           SUBST
         end
 
-        def mlibs(ostype, deps_lib_dir, ruby_ver) # rubocop:disable Metrics/MethodLength
+        def mlibs(ostype, deps_lib_dir, ruby_ver, unquoted) # rubocop:disable Metrics/MethodLength
           case ostype
           when /linux-gnu/
-            linux_gnu_libs(ruby_ver)
+            linux_gnu_libraries(ruby_ver, unquoted)
           when /linux-musl/
-            linux_musl_libs(ruby_ver)
+            linux_musl_libraries(ruby_ver, unquoted)
           when /darwin/
             darwin_libs(deps_lib_dir, ruby_ver)
           when /msys/
