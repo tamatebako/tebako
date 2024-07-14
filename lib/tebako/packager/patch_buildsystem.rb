@@ -79,21 +79,13 @@ module Tebako
 
       def template_makefile_in_subst(ostype, ruby_ver)
         if PatchHelpers.msys?(ostype)
-          TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS }
         elsif !PatchHelpers.ruby31?(ruby_ver)
-          TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1
-        else
-          TEMPLATE_MAKEFILE_IN_BASE_PATCH
-        end
-      end
-
-      def template_makefile_in_patch_two(ostype, ruby_ver)
-        if !PatchHelpers.ruby31?(ruby_ver)
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => template_makefile_in_subst(ostype, ruby_ver) }
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 }
         elsif !PatchHelpers.ruby33?(ruby_ver)
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 => template_makefile_in_subst(ostype, ruby_ver) }
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
         else
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => template_makefile_in_subst(ostype, ruby_ver) }
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
         end
       end
 
@@ -108,22 +100,9 @@ module Tebako
         # End of tebako patch
       SUBST
 
-      def get_config_status_pattern(ostype)
-        case ostype
-        when /linux-/
-          "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \""
-        when /darwin/
-          "S[\"MAINLIBS\"]=\"-ldl -lobjc -lpthread \""
-        when /msys/
-          "S[\"MAINLIBS\"]=\"-lshell32 -lws2_32 -liphlpapi -limagehlp -lshlwapi -lbcrypt \""
-        else
-          raise Tebako::Error, "Unknown ostype #{ostype}"
-        end
-      end
-
       def get_config_status_patch(ostype, deps_lib_dir, ruby_ver)
         {
-          get_config_status_pattern(ostype) =>
+          "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \"" =>
             "S[\"MAINLIBS\"]=\"#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, false)}\""
         }
       end

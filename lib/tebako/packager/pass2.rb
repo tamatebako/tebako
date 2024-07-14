@@ -52,7 +52,7 @@ module Tebako
         include Tebako::Packager::PatchBuildsystem
         include Tebako::Packager::PatchLiterals
         def extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
-          if PatchHelpers.ruby33?(ruby_ver) || PatchHelpers.msys?(ostype)
+          if PatchHelpers.ruby33?(ruby_ver)
             patch_map.store("config.status",
                             get_config_status_patch(ostype, deps_lib_dir, ruby_ver))
           end
@@ -133,7 +133,7 @@ module Tebako
           {
             "MAINLIBS = #{yjit_libs}@MAINLIBS@" =>
               "# -- Start of tebako patch -- \n" \
-              "MAINLIBS = #{yjit_libs}#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, true)}\n" \
+              "MAINLIBS = #{yjit_libs}#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, true)}" \
               "# -- End of tebako patch -- \n"
           }
         end
