@@ -57,9 +57,13 @@ module Tebako
         "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 
-      TEMPLATE_MAKEFILE_IN_BASE_PATTERN =
+      TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 =
         "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) $(EXTOBJS) " \
         "$(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@"
+
+      TEMPLATE_MAKEFILE_IN_BASE_PATTERN =
+        "\t\t$(Q) $(PURIFY) $(CC) $(EXE_LDFLAGS) $(XLDFLAGS) $(MAINOBJ) $(EXTOBJS) " \
+        "$(LIBRUBYARG) $(MAINLIBS) $(EXTLIBS) $(OUTFLAG)$@"
 
       TEMPLATE_MAKEFILE_IN_BASE_PATCH =
         "# -- Start of tebako patch --\n" \
@@ -76,10 +80,12 @@ module Tebako
       def template_makefile_in_patch_two(ostype, ruby_ver)
         if PatchHelpers.msys?(ostype)
           { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS }
-        elsif PatchHelpers.ruby31?(ruby_ver)
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
-        else
+        elsif !PatchHelpers.ruby31?(ruby_ver)
           { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 }
+        elsif !PatchHelpers.ruby33?(ruby_ver)
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
+        else
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
         end
       end
 
@@ -93,6 +99,13 @@ module Tebako
         $(WINMAINOBJ): win32/winmain.c
         # End of tebako patch
       SUBST
+
+      def get_config_status_patch(ostype, deps_lib_dir, ruby_ver)
+        {
+          "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \"" =>
+            "S[\"MAINLIBS\"]=\"#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, false)}\""
+        }
+      end
 
       # Other MSYS (GNUMakefile) specific patches
       #  - The same issue with libraries as for Makefile above
