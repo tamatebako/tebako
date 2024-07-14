@@ -38,23 +38,28 @@ module Tebako
       class << self
         def get_patch_map(ostype, deps_lib_dir, ruby_ver)
           patch_map = get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
-
           patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
 
           if PatchHelpers.msys?(ostype)
             patch_map.merge!(get_msys_patches(ruby_ver))
           elsif PatchHelpers.ruby3x?(ruby_ver)
-            # [TODO] Do we really need it for platforms other then Windows ??
             patch_map.store("common.mk", COMMON_MK_PATCH)
           end
 
-          patch_map
+          extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
         end
 
         private
 
         include Tebako::Packager::PatchBuildsystem
         include Tebako::Packager::PatchLiterals
+        def extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
+          if PatchHelpers.ruby33?(ruby_ver)
+            patch_map.store("config.status",
+                            get_config_status_patch(ostype, deps_lib_dir, ruby_ver))
+          end
+          patch_map
+        end
 
         def get_dir_c_patch(ostype)
           pattern = PatchHelpers.msys?(ostype) ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST"
@@ -91,7 +96,7 @@ module Tebako
         end
 
         def get_util_c_patch(ruby_ver)
-          if PatchHelpers.ruby316?(ruby_ver)
+          if PatchHelpers.ruby31?(ruby_ver)
             PatchHelpers.patch_c_file_post("#endif /* !HAVE_GNU_QSORT_R */")
           else
             PatchHelpers.patch_c_file_pre("#ifndef S_ISDIR")
@@ -135,7 +140,7 @@ module Tebako
           {
             "MAINLIBS = #{yjit_libs}@MAINLIBS@" =>
               "# -- Start of tebako patch -- \n" \
-              "MAINLIBS = #{yjit_libs}#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver)}" \
+              "MAINLIBS = #{yjit_libs}#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, true)}" \
               "# -- End of tebako patch -- \n"
           }
         end
