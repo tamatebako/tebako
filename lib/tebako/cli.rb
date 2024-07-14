@@ -60,7 +60,7 @@ module Tebako
                          desc: "Ruby version to clean, all available versions by default"
     def clean_ruby
       puts "Cleaning Ruby sources from tebako packaging environment"
-      suffix = options["Ruby"].nil? ? "" : "_#{options["Ruby"]}"
+      suffix = options["Ruby"].nil? ? "" : options["Ruby"]
       nmr = "src/_ruby_#{suffix}*"
       nms = "stash_#{suffix}"
       FileUtils.rm_rf(Dir.glob(File.join(deps, nmr)), secure: true)
