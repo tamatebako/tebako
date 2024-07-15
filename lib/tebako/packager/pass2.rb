@@ -39,13 +39,11 @@ module Tebako
         def get_patch_map(ostype, deps_lib_dir, ruby_ver)
           patch_map = get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
           patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
-
           if PatchHelpers.msys?(ostype)
             patch_map.merge!(get_msys_patches(ruby_ver))
           elsif PatchHelpers.ruby3x?(ruby_ver)
             patch_map.store("common.mk", COMMON_MK_PATCH)
           end
-
           extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
         end
 
@@ -55,6 +53,7 @@ module Tebako
         include Tebako::Packager::PatchLiterals
         def extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
           if PatchHelpers.ruby33?(ruby_ver)
+            puts get_config_status_patch(ostype, deps_lib_dir, ruby_ver)
             patch_map.store("config.status",
                             get_config_status_patch(ostype, deps_lib_dir, ruby_ver))
           end

@@ -47,7 +47,8 @@ module Tebako
 
         DARWIN_BREW_LIBS_31 = [["openssl@3", "ssl"], ["openssl@3", "crypto"]].freeze
 
-        DARWIN_DEP_LIBS = ["glog", "gflags", "brotlienc", "brotlidec", "brotlicommon"].freeze
+        DARWIN_DEP_LIBS_1 = ["folly", "fsst",   "metadata_thrift", "thrift_light", "xxhash", "zstd"].freeze
+        DARWIN_DEP_LIBS_2 = ["glog",  "gflags", "brotlienc",       "brotlidec",    "brotlicommon"].freeze
         # rubocop:enable Style/WordArray
 
         COMMON_LINUX_LIBRARIES = [
@@ -106,17 +107,17 @@ module Tebako
           brew_libs.each { |lib| libs << "#{PatchHelpers.get_prefix_macos(lib[0]).chop}/lib/lib#{lib[1]}.a " }
         end
 
-        def darwin_libs(deps_lib_dir, ruby_ver)
+        def darwin_libraries(deps_lib_dir, ruby_ver, with_compression)
           libs = String.new
 
+          DARWIN_DEP_LIBS_1.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
           process_brew_libs!(libs, PatchHelpers.ruby31?(ruby_ver) ? DARWIN_BREW_LIBS_31 : DARWIN_BREW_LIBS_PRE_31)
           process_brew_libs!(libs, DARWIN_BREW_LIBS)
 
-          DARWIN_DEP_LIBS.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
-          <<~SUBST
-            -ltebako-fs -ldwarfs-wr -ldwarfs -force_load #{deps_lib_dir}/libdwarfs_compression.a -lfolly -lfsst -lmetadata_thrift -lthrift_light -lxxhash \
-            -lzstd #{libs} -ljemalloc -lc++ -lc++abi
-          SUBST
+          DARWIN_DEP_LIBS_2.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
+
+          compression_lib = with_compression ? "-force_load #{deps_lib_dir}/libdwarfs_compression.a" : ""
+          "-ltebako-fs -ldwarfs-wr -ldwarfs #{compression_lib} #{libs} -ljemalloc -lc++ -lc++abi"
         end
 
         # .....................................................
@@ -159,14 +160,14 @@ module Tebako
           SUBST
         end
 
-        def mlibs(ostype, deps_lib_dir, ruby_ver, unquoted) # rubocop:disable Metrics/MethodLength
+        def mlibs(ostype, deps_lib_dir, ruby_ver, with_compression) # rubocop:disable Metrics/MethodLength
           case ostype
           when /linux-gnu/
-            linux_gnu_libraries(ruby_ver, unquoted)
+            linux_gnu_libraries(ruby_ver, with_compression)
           when /linux-musl/
-            linux_musl_libraries(ruby_ver, unquoted)
+            linux_musl_libraries(ruby_ver, with_compression)
           when /darwin/
-            darwin_libs(deps_lib_dir, ruby_ver)
+            darwin_libraries(deps_lib_dir, ruby_ver, with_compression)
           when /msys/
             msys_libs(ruby_ver)
           else
