@@ -116,10 +116,6 @@ module Tebako
           ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 1
         end
 
-        def ruby316?(ruby_ver)
-          ruby3x?(ruby_ver) && ruby_ver[2] == "1" && ruby_ver[4].to_i >= 6
-        end
-
         def ruby32?(ruby_ver)
           ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 2
         end
