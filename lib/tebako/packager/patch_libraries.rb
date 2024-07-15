@@ -157,12 +157,12 @@ module Tebako
           SUBST
         end
 
-        def mlibs(ostype, deps_lib_dir, ruby_ver, unquoted) # rubocop:disable Metrics/MethodLength
+        def mlibs(ostype, deps_lib_dir, ruby_ver, with_compression) # rubocop:disable Metrics/MethodLength
           case ostype
           when /linux-gnu/
-            linux_gnu_libraries(ruby_ver, unquoted)
+            linux_gnu_libraries(ruby_ver, with_compression)
           when /linux-musl/
-            linux_musl_libraries(ruby_ver, unquoted)
+            linux_musl_libraries(ruby_ver, with_compression)
           when /darwin/
             darwin_libraries(deps_lib_dir, ruby_ver, with_compression)
           when /msys/

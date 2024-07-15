@@ -53,6 +53,7 @@ module Tebako
         include Tebako::Packager::PatchLiterals
         def extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
           if PatchHelpers.ruby33?(ruby_ver)
+            puts get_config_status_patch(ostype, deps_lib_dir, ruby_ver)
             patch_map.store("config.status",
                             get_config_status_patch(ostype, deps_lib_dir, ruby_ver))
           end

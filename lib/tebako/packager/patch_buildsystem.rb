@@ -100,9 +100,21 @@ module Tebako
         # End of tebako patch
       SUBST
 
+      def get_config_status_pattern(ostype)
+        case ostype
+        when /linux-/
+          "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \""
+        when /darwin/
+          "S[\"MAINLIBS\"]=\"-ldl -lobjc -lpthread \""
+        # when /msys/
+        else
+          raise Tebako::Error, "Unknown ostype #{ostype}"
+        end
+      end
+
       def get_config_status_patch(ostype, deps_lib_dir, ruby_ver)
         {
-          "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \"" =>
+          get_config_status_pattern(ostype) =>
             "S[\"MAINLIBS\"]=\"#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, false)}\""
         }
       end
