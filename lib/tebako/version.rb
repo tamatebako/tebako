@@ -26,5 +26,9 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 module Tebako
+<<<<<<< HEAD
   VERSION = "0.7.3.rc3"
+=======
+  VERSION = "0.7.3.rc4"
+>>>>>>> 9e00312 (fix: xcode 15.4/clang 15 support and tests)
 end

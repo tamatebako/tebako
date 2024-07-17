@@ -258,7 +258,7 @@ jobs:
         gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.1.6' ]
         env:
-          - { CC: clang, CXX: clang++ }
+          - { CC: clang-12, CXX: clang++-12 }
     env: ${{ matrix.env }}
     steps:
     - name: Download actions
