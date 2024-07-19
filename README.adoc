@@ -128,6 +128,16 @@ brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib ncurse
   double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz libyaml openssl@3
 ----
 
+==== Bison 3+
+
+Tebako relies on bison 3 but the default macOS version installed is 2.3 and the Homebrew formula is keg-only.
+To ensure the correct version of bison is picked, run this command before the build process:
+
+[source,sh]
+----
+export PATH="$(brew --prefix bison)/bin:$PATH" 
+----
+
 === Windows (workstation 10, 11; Server 2019, 2022)
 
 The simplest approach is to use Ruby development environment provided by RubyInstaller, for example Ruby+Devkit 3.1.4-1.
