@@ -77,15 +77,23 @@ module Tebako
         "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 
-      def template_makefile_in_patch_two(ostype, ruby_ver)
+      def template_makefile_in_subst(ostype, ruby_ver)
         if PatchHelpers.msys?(ostype)
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS }
+          TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS
         elsif !PatchHelpers.ruby31?(ruby_ver)
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1 }
-        elsif !PatchHelpers.ruby33?(ruby_ver)
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
+          TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1
         else
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => TEMPLATE_MAKEFILE_IN_BASE_PATCH }
+          TEMPLATE_MAKEFILE_IN_BASE_PATCH
+        end
+      end
+
+      def template_makefile_in_patch_two(ostype, ruby_ver)
+        if !PatchHelpers.ruby31?(ruby_ver)
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => template_makefile_in_subst(ostype, ruby_ver) }
+        elsif !PatchHelpers.ruby33?(ruby_ver)
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 => template_makefile_in_subst(ostype, ruby_ver) }
+        else
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => template_makefile_in_subst(ostype, ruby_ver) }
         end
       end
 
@@ -122,7 +130,7 @@ module Tebako
       # Other MSYS (GNUMakefile) specific patches
       #  - The same issue with libraries as for Makefile above
       #  - 'Kill' ruby.exp regeneration on pass2
-      #     since we want to use outpu from pass1 for implib generation
+      #     since we want to use output from pass1 for implib generation
       #     [VERY UGLY HACK]
       #  - Introduce LIBRUBY dependency on static extensions
       #    This is an addition to COMMON_MK_PATCH specified above
