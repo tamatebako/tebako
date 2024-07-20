@@ -30,25 +30,23 @@ module Tebako
   module Packager
     # Ruby patching literals (pass2)
     module PatchLiterals
-      TOOL_MKCONFIG_RB_PATCH = {
-        "    if fast[name]" => <<~SUBST
-          # -- Start of tebako patch --
-              v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
-              if v_head_comp == v[0...(v_head_comp.length)]
-                  v = "\#{v[0...(v_head_comp.length)]}'/__tebako_memfs__'
-          "
-              end
-              v_head_comp = "  CONFIG[\\"RUBY_EXEC_PREFIX\\"] \#{eq} "
-              if v_head_comp == v[0...(v_head_comp.length)]
+      TOOL_MKCONFIG_RB_SUBST = <<~SUBST
+        # -- Start of tebako patch --
+            v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
+            if v_head_comp == v[0...(v_head_comp.length)]
                 v = "\#{v[0...(v_head_comp.length)]}'/__tebako_memfs__'
-          "
-              end
-          # -- End of tebako patch --
-              if fast[name]
-        SUBST
-      }.freeze
+        "
+            end
+            v_head_comp = "  CONFIG[\\"RUBY_EXEC_PREFIX\\"] \#{eq} "
+            if v_head_comp == v[0...(v_head_comp.length)]
+              v = "\#{v[0...(v_head_comp.length)]}'/__tebako_memfs__'
+        "
+            end
+        # -- End of tebako patch --
+            if fast[name]
+      SUBST
 
-      TOOLS_MKCONFIG_RB_SUBST = <<~SUBST
+      TOOL_MKCONFIG_RB_SUBST_MSYS = <<~SUBST
         # -- Start of tebako patch --
             v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
             if v_head_comp == v[0...(v_head_comp.length)]

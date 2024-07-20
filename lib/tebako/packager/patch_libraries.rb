@@ -32,7 +32,7 @@ module Tebako
   module Packager
     # Ruby patching definitions (pass2)
     module PatchLibraries
-      class << self # rubocop:disable Metrics/ClassLength
+      class << self
         # rubocop:disable Style/WordArray
 
         # NOTE: folly provides build-in implementation of jemalloc
@@ -52,7 +52,7 @@ module Tebako
         # rubocop:enable Style/WordArray
 
         COMMON_LINUX_LIBRARIES = [
-          "-l:libtebako-fs.a",    "-l:libdwarfs-wr.a",          "-l:libdwarfs.a",             "LIBCOMPRESSION",
+          "-l:libdwarfs-wr.a",    "-l:libtebako-fs.a",          "-l:libdwarfs.a",             "LIBCOMPRESSION",
           "-l:libfolly.a",        "-l:libfsst.a",               "-l:libmetadata_thrift.a",    "-l:libthrift_light.a",
           "-l:libxxhash.a",       "-l:libfmt.a",                "-l:libdouble-conversion.a",  "-l:libglog.a",
           "-l:libgflags.a",       "-l:libevent.a"
@@ -80,6 +80,17 @@ module Tebako
           " -l:libunwind.a",      "-l:liblzma.a",         "-ldl",                 "-lpthread"
         ].freeze
 
+        MSYS_LIBRARIES = [
+          "-l:liblz4.a",             "-l:libz.a",             "-l:libzstd.a",            "-l:liblzma.a",
+          "-l:libncurses.a",         "-l:libunwind.a",        "-l:liblzma.a",            "-l:libiberty.a",
+          "LIBYAML",                 "-l:libffi.a",           "-l:libboost_system-mt.a", "-l:libboost_chrono-mt.a",
+          "-l:libstdc++.a",          "-l:libdl.a",            "-static-libgcc",          "-static-libstdc++",
+          "-l:libssl.a",             "-l:libcrypto.a",        "-l:libz.a",               "-l:libwinpthread.a",
+          "-lcrypt32",               "-lshlwapi",             "-lwsock32",               "-liphlpapi",
+          "-limagehlp",              "-lbcrypt",              "-lole32",                 "-loleaut32",
+          "-luuid",                  "-lws2_32"
+        ].freeze
+
         def linux_gnu_libraries(ruby_ver, with_compression)
           libraries = COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES + LINUX_GNU_LIBRARIES
           linux_libraries(libraries, ruby_ver, with_compression)
@@ -101,6 +112,12 @@ module Tebako
             end
           end
           libraries.join(" ")
+        end
+
+        def msys_libraries(ruby_ver, with_compression)
+          libraries = with_compression ? ["-Wl,-Bstatic"] : []
+          libraries = libraries + COMMON_LINUX_LIBRARIES + MSYS_LIBRARIES
+          linux_libraries(libraries, ruby_ver, with_compression)
         end
 
         def process_brew_libs!(libs, brew_libs)
@@ -132,34 +149,6 @@ module Tebako
         #      This is fixed by ext/extmk.rb patch [TODO ?]
         # .....................................................
 
-        def linux_common_libs
-          <<~SUBST
-            -l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state -l:libfolly.a -l:libfsst.a           \\
-            -l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a                         \\
-          SUBST
-        end
-
-        # Used for mkconfig.rb
-        def msys_base_libs(ruby_ver)
-          <<~SUBST
-            "-l:libtebako-fs.a -l:libdwarfs-wr.a -l:libdwarfs.a -l:libdwarfs_compression.a -l:libfolly.a -l:libfsst.a "          \\
-            "-l:libmetadata_thrift.a -l:libthrift_light.a -l:libxxhash.a -l:libfmt.a -l:libdouble-conversion.a -l:libglog.a -l:libgflags.a -l:libevent.a " \\
-            "-l:liblz4.a -l:libz.a -l:libzstd.a -l:liblzma.a -l:libncurses.a -l:libunwind.a -l:liblzma.a -l:libiberty.a #{PatchHelpers.yaml_reference(ruby_ver)} " \\
-            "-l:libffi.a -l:libboost_system-mt.a -l:libboost_chrono-mt.a -l:libstdc++.a -l:libdl.a -static-libgcc -static-libstdc++ -l:libssl.a -l:libcrypto.a " \\
-            "-l:libz.a -l:libwinpthread.a -lcrypt32 -lshlwapi -lwsock32 -liphlpapi -limagehlp -lbcrypt -lole32 -loleaut32 -luuid"
-          SUBST
-        end
-
-        # Used in Makefile
-        def msys_libs(ruby_ver)
-          <<~SUBST
-            -Wl,-Bstatic #{linux_common_libs} \
-            -l:liblz4.a -l:libz.a -l:libzstd.a -l:liblzma.a -l:libncurses.a -l:libunwind.a -l:liblzma.a -l:libiberty.a #{PatchHelpers.yaml_reference(ruby_ver)}            \\
-            -l:libffi.a -l:libboost_system-mt.a -l:libboost_chrono-mt.a -l:libstdc++.a -l:libdl.a -static-libgcc -static-libstdc++ -l:libssl.a -l:libcrypto.a -l:libz.a    \\
-            -l:libwinpthread.a -lcrypt32 -lshlwapi -lwsock32 -liphlpapi -limagehlp -lshlwapi -lbcrypt -lws2_32 -lole32 -loleaut32 -luuid
-          SUBST
-        end
-
         def mlibs(ostype, deps_lib_dir, ruby_ver, with_compression) # rubocop:disable Metrics/MethodLength
           case ostype
           when /linux-gnu/
@@ -169,7 +158,7 @@ module Tebako
           when /darwin/
             darwin_libraries(deps_lib_dir, ruby_ver, with_compression)
           when /msys/
-            msys_libs(ruby_ver)
+            msys_libraries(ruby_ver, with_compression)
           else
             raise Tebako::Error, "Unknown ostype #{ostype}"
           end
