@@ -40,13 +40,12 @@ module Tebako
         DARWIN_BREW_LIBS = [
           ["zlib", "z"],            ["gdbm", "gdbm"],           ["readline", "readline"], ["libffi", "ffi"],
           ["ncurses", "ncurses"],   ["fmt", "fmt"],             ["lz4", "lz4"],           ["xz", "lzma"],
-          ["libyaml", "yaml"],      ["boost", "boost_chrono"],
-          ["double-conversion", "double-conversion"]
+          ["libyaml", "yaml"],      ["boost", "boost_chrono"],  ["double-conversion", "double-conversion"]
         ].freeze
 
         DARWIN_BREW_LIBS_PRE_31 = [["openssl@1.1", "ssl"], ["openssl@1.1", "crypto"]].freeze
 
-        DARWIN_BREW_LIBS_31 = [["libyaml", "yaml"], ["openssl@3", "ssl"], ["openssl@3", "crypto"]].freeze
+        DARWIN_BREW_LIBS_31 = [["openssl@3", "ssl"], ["openssl@3", "crypto"]].freeze
 
         DARWIN_DEP_LIBS = ["glog", "gflags", "brotlienc", "brotlidec", "brotlicommon"].freeze
         # rubocop:enable Style/WordArray

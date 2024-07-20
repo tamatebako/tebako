@@ -116,7 +116,7 @@ set(IS_MUSL OFF)
 set(IS_MSYS OFF)
 set(IS_DARWIN OFF)
 set(RB_W32 OFF)
-set(RUBY_WITHOUT_EXT "dbm,win32,win32ole,'-test-'")
+set(RUBY_WITHOUT_EXT "dbm,win32,win32ole,-test-\*")
 set(RUBY_NAME "ruby")
 set(RUBY_SUFFIX "")
 set(EXE_SUFFIX "")
@@ -131,7 +131,7 @@ elseif("${OSTYPE_TXT}" MATCHES "^msys*")
   set(IS_MSYS ON)
   # set(DWARFS_PRELOAD ON)
   set(RB_W32 ON)
-  set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline,'-test-'")
+  set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline,-test-\*")
   #set(RUBY_SUFFIX "w")
   set(EXE_SUFFIX ".exe")
   set(CMD_SUFFIX ".cmd")
@@ -462,7 +462,6 @@ else (${SETUP_MODE})
   )
 
   add_custom_target(packaged_filesystem
-    COMMAND ruby ${EXE}/tebako-packager strip ${OSTYPE_TXT} ${DATA_SRC_DIR}
     COMMAND ${GNU_BASH} -c "chmod +x ${DEPS_BIN_DIR}/mkdwarfs${EXE_SUFFIX}"
     # No progress below is critical since in reporting mode mkdwarfs tries to work directly with terminal
     # and it creates issues for stderr redirects (&2 > 1) used by Ninja and our test srcipts
@@ -487,22 +486,18 @@ else (${SETUP_MODE})
   add_dependencies(tebako-fs packaged_filesystem)
 
   if (${RUBY_VER} VERSION_LESS "3.0.0")
-    add_custom_target(patched_ruby
+    add_custom_target(tebako
       COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE} -j${NCORES}
-    )
+      COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME}
+      )
   else()
-    add_custom_target(patched_ruby
+    add_custom_target(tebako
       COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ruby ${RUBY_MAKEFILE} -j${NCORES}
       COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE} -j${NCORES}
-    )
+      COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME}
+      )
   endif()
 
-  add_dependencies(patched_ruby setup tebako-fs)
-
-  add_custom_target(tebako ALL
-    COMMAND ${CMAKE_COMMAND} -E copy ${RUBY_SOURCE_DIR}/ruby${RUBY_SUFFIX}${EXE_SUFFIX} ${APP_NAME}${EXE_SUFFIX}
-    COMMAND ${CMAKE_COMMAND} -E echo "Tebako packaging has completed"
-    DEPENDS patched_ruby
-  )
+  add_dependencies(tebako setup tebako-fs)
 
 endif(${SETUP_MODE})

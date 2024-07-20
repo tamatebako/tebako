@@ -48,26 +48,7 @@ begin
     end
 
     Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5])
-  when "stash"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- DATA_SRC_DIR
-    #       ARGV[2] -- RUBY_STASH_DIR
-    unless ARGV.length == 3
-      raise Tebako::Error,
-            "tebako-packager stash command expects 3 arguments, #{ARGV.length} has been provided."
-    end
 
-    Tebako::Packager.stash(ARGV[1], ARGV[2])
-  when "strip"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- OSTYPE
-    #       ARGV[2] -- DATA_SRC_DIR
-    unless ARGV.length == 3
-      raise Tebako::Error,
-            "tebako-packager strip command expects 3 arguments, #{ARGV.length} has been provided."
-    end
-
-    Tebako::Stripper.strip(ARGV[1], ARGV[2])
   when "pass1a"
     #       ARGV[0] -- command
     #       ARGV[1] -- RUBY_SOURCE_DIR
@@ -114,6 +95,16 @@ begin
     # That shall match CMakeLists.txt settings
     Tebako::Packager.deploy(ARGV[1], ARGV[4], ARGV[5], ARGV[11], ARGV[7], ARGV[8], ARGV[9])
 
+  when "finalize"
+    #       ARGV[0] -- command
+    #       ARGV[1] -- OSTYPE
+    #       ARGV[2] -- RUBY_SOURCE_DIR
+    #       ARGV[3] -- APP_NAME
+    unless ARGV.length == 4
+      raise Tebako::Error,
+            "tebako-packager finalize command expects 4 arguments, #{ARGV.length} has been provided."
+    end
+    Tebako::Packager.finalize(ARGV[1], ARGV[2], ARGV[3])
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"
   end
@@ -121,5 +112,4 @@ rescue Tebako::Error => e
   puts "tebako-packager failed: #{e.message} [#{e.error_code}]"
   exit(e.error_code)
 end
-
 exit(0)

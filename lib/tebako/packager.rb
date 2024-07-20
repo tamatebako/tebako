@@ -31,6 +31,7 @@ require "pathname"
 
 require_relative "error"
 require_relative "deploy_helper"
+require_relative "stripper"
 require_relative "packager/pass1"
 require_relative "packager/pass1a"
 require_relative "packager/pass2"
@@ -79,14 +80,22 @@ module Tebako
 
         deploy_helper = Tebako::DeployHelper.new(fs_root, fs_entrance, fs_mount_point, target_dir, pre_dir)
         deploy_helper.config(os_type, ruby_ver)
+        deploy_helper.deploy
+        Tebako::Stripper.strip(os_type, target_dir)
+      end
 
-        PatchHelpers.with_env(deploy_helper.deploy_env) do
-          unless PatchHelpers.ruby31?(ruby_ver)
-            deploy_helper.update_rubygems
-            patch_after_rubygems_update(target_dir, deploy_helper.ruby_api_version)
-          end
-          deploy_helper.deploy
+      def finalize(os_type, src_dir, app_name)
+        exe_suffix = Packager::PatchHelpers.exe_suffix(os_type)
+        src_name = File.join(src_dir, "ruby#{exe_suffix}")
+        package_name = "#{app_name}#{exe_suffix}"
+        # [TODO] On MSys strip sometimes creates a broken executable
+        # https://github.com/tamatebako/tebako/issues/172
+        if Packager::PatchHelpers.msys?(os_type)
+          FileUtils.cp(src_name, package_name)
+        else
+          Tebako::Stripper.strip_file(src_name, package_name)
         end
+        puts "Created tebako package at \"#{package_name}\""
       end
 
       # Init
@@ -187,13 +196,6 @@ module Tebako
           ruby_version = match[1]
         end
         ruby_version
-      end
-
-      def patch_after_rubygems_update(target_dir, ruby_api_ver)
-        # Autoload cannot handle statically linked openssl extension
-        # Changing it to require seems to be the simplest solution
-        PatchHelpers.patch_file("#{target_dir}/lib/ruby/site_ruby/#{ruby_api_ver}/rubygems/openssl.rb",
-                                { "autoload :OpenSSL, \"openssl\"" => "require \"openssl\"" })
       end
     end
   end

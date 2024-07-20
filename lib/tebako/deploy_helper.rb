@@ -29,6 +29,7 @@ require "fileutils"
 require "find"
 
 require_relative "error"
+require_relative "packager/patch_helpers"
 
 # Tebako - an executable packager
 module Tebako
@@ -65,11 +66,16 @@ module Tebako
     end
 
     def deploy
-      system("#{gem_command} env")
-      install_gem("tebako-runtime")
-      install_gem("bundler", Tebako::BUNDLER_VERSION) if needs_bundler?
-
-      deploy_solution
+      Packager::PatchHelpers.with_env(deploy_env) do
+        unless Packager::PatchHelpers.ruby31?(@ruby_ver)
+          update_rubygems
+          patch_after_rubygems_update(@target_dir, @ruby_api_version)
+        end
+        system("#{gem_command} env")
+        install_gem("tebako-runtime")
+        install_gem("bundler", BUNDLER_VERSION) if needs_bundler?
+        deploy_solution
+      end
     end
 
     def deploy_env
@@ -262,6 +268,13 @@ module Tebako
                   else
                     4
                   end
+    end
+
+    def patch_after_rubygems_update(target_dir, ruby_api_ver)
+      # Autoload cannot handle statically linked openssl extension
+      # Changing it to require seems to be the simplest solution
+      Packager::PatchHelpers.patch_file("#{target_dir}/lib/ruby/site_ruby/#{ruby_api_ver}/rubygems/openssl.rb",
+                                        { "autoload :OpenSSL, \"openssl\"" => "require \"openssl\"" })
     end
 
     def run_with_capture(args)

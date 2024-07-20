@@ -62,8 +62,16 @@ module Tebako
           out
         end
 
+        def exe_suffix(ostype)
+          msys?(ostype) ? ".exe" : ""
+        end
+
         def msys?(ostype)
           ostype =~ /msys|cygwin|mingw/
+        end
+
+        def macos?(ostype)
+          ostype =~ /darwin/
         end
 
         def patch_c_file_pre(pattern)
