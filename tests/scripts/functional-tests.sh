@@ -44,7 +44,7 @@ press_runner() {
 
 # Check the first and the last messages expected from CMake script
    assertContains "$result" "Running tebako press script"
-   assertContains "$result" "packaging has completed"
+   assertContains "$result" "Created tebako package at"
 }
 
 package_runner() {
@@ -178,7 +178,7 @@ test_AUC_extract() {
 
    assertEquals 0 "${PIPESTATUS[0]}"
    assertContains "$result" "Running tebako press script"
-   assertContains "$result" "packaging has completed"
+   assertContains "$result" "Created tebako package at"
 
    ./test-AUC-package --tebako-extract
    assertEquals 0 "${PIPESTATUS[0]}"

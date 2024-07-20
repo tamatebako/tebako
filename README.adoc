@@ -38,7 +38,15 @@ The Tebako packager is tested on the following platforms:
 * MacOS: macOS 12 (Monterey), 13 (Ventura), 14 (Sonoma)
 * Windows: 2019, 2022 (using MinGW ucrt64 toolchain)
 
-Please note that Windows support is in pre-release and is a subject of further testing and optimization
+There are two known Windows issues:
+
+* tebako may face errors related to CMake path length limitations (https://gitlab.kitware.com/cmake/cmake/-/issues/25936).
+This error may affect not tebako itself but the gems that need to be package and use CMake to build native extensions.
+There is no workaround for this issue as it looks like is a limitation of the manifest used to build CMake executable.
+* MSys strip utility creates broken executable when tebako image is processed. Linking with '-s' flag produces unusable
+executables as well.
+Until this issue (https://github.com/tamatebako/tebako/issues/172) is resolved we plan to produce an Windows executable
+with debug information unstripped. You can opt to run 'strip -S' manually, it most cases it works.
 
 == Supported Ruby versions
 
@@ -135,7 +143,7 @@ To ensure the correct version of bison is picked, run this command before the bu
 
 [source,sh]
 ----
-export PATH="$(brew --prefix bison)/bin:$PATH" 
+export PATH="$(brew --prefix bison)/bin:$PATH"
 ----
 
 === Windows (workstation 10, 11; Server 2019, 2022)
@@ -150,11 +158,6 @@ Once it is installed use the following commands:
             boost diffutils libevent double-conversion
             fmt glog dlfcn gtest autotools ncurses libyaml
 ----
-
-Please note that on Windows tebako may face issues related by CMake path length limitations.
-(https://gitlab.kitware.com/cmake/cmake/-/issues/25936)
-This error may affect not tebako itself but the gems that need to be package and use CMake to build native extensions.
-There is no workaround for this issue as it lloks like is a limitation of the manifest used to build CMake executable.
 
 == Installation
 

@@ -61,8 +61,8 @@ module Tebako
     def clean_ruby
       puts "Cleaning Ruby sources from tebako packaging environment"
       suffix = options["Ruby"].nil? ? "" : "_#{options["Ruby"]}"
-      nmr = "src/_ruby_#{suffix}*"
-      nms = "stash_#{suffix}"
+      nmr = "src/_ruby#{suffix}*"
+      nms = "stash#{suffix}*"
       FileUtils.rm_rf(Dir.glob(File.join(deps, nmr)), secure: true)
       FileUtils.rm_rf(Dir.glob(File.join(deps, nms)), secure: true)
     end

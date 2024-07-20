@@ -28,12 +28,13 @@
 require "fileutils"
 require "find"
 
+require_relative "packager/patch_helpers"
+
 # Tebako - an executable packager
 module Tebako
   # Tebako packaging support (stripper)
   module Stripper
-    DELETE_EXTENSIONS = %w[o lo obj a lib].freeze
-    STRIP_EXTENSIONS = %w[dll so].freeze
+    DELETE_EXTENSIONS = %w[o lo obj a la lib].freeze
     BIN_FILES = %w[
       bundle bundler rbs erb gem irb racc racc2y rake rdoc ri y2racc rdbg typeprof
     ].freeze
@@ -47,15 +48,29 @@ module Tebako
       #        from memfs or not. For debugging purposes it is very handy to have it here
       def strip(ostype, src_dir)
         puts "   ... stripping the output"
-        strip_bs(ostype, src_dir)
+        strip_bs(src_dir)
         strip_fi(ostype, src_dir)
         strip_li(ostype, src_dir)
+      end
+
+      def strip_file(file_in, file_out = nil)
+        params = ["strip", "-S", file_in]
+        params << "-o" << file_out unless file_out.nil?
+        out, st = Open3.capture2e(*params)
+
+        # Some gems (well, libmspack) has bundled extensions for several architectures)
+        # Getting something like:
+        # strip: Unable to recognise the format of the input file
+        # `/tmp/cirrus-ci-build/o/s/lib/ruby/gems/3.1.0/gems/libmspack-0.11.0/ext/x86_64-linux/libmspack.so'
+        # on aarch64
+
+        puts "Warning: could not strip #{file_in}:\n #{out}" unless st.exitstatus.zero?
       end
 
       private
 
       def get_files(ostype)
-        exe_suffix = ostype =~ /msys/ ? ".exe" : ""
+        exe_suffix = Packager::PatchHelpers.exe_suffix(ostype)
         files = BIN_FILES.flat_map do |f|
           [f, "#{f}#{CMD_SUFFIX}", "#{f}#{BAT_SUFFIX}"]
         end
@@ -64,7 +79,7 @@ module Tebako
         files
       end
 
-      def strip_bs(_ostype, src_dir)
+      def strip_bs(src_dir)
         FileUtils.rm_rf([
                           File.join(src_dir, "share"),
                           File.join(src_dir, "include"),
@@ -78,16 +93,24 @@ module Tebako
       end
 
       def strip_li(ostype, src_dir)
+        sext = strip_extensions(ostype)
         Find.find(src_dir) do |file|
           next if File.directory?(file)
 
           extension = File.extname(file).delete_prefix(".").downcase
           if DELETE_EXTENSIONS.include?(extension)
             FileUtils.rm(file)
-          elsif STRIP_EXTENSIONS.include?(extension)
-            system("strip \"#{file}\"") unless ostype =~ /darwin/
+          elsif sext.include?(extension) # && !Packager::PatchHelpers.msys?(ostype)
+            strip_file(file)
           end
         end
+      end
+
+      def strip_extensions(ostype)
+        sext = ["so"]
+        sext << "dll" if Packager::PatchHelpers.msys?(ostype)
+        sext << "dylib" << "bundle" if Packager::PatchHelpers.macos?(ostype)
+        sext
       end
     end
   end
