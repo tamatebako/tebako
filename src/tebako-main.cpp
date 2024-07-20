@@ -156,3 +156,10 @@ extern "C" const char* tebako_mount_point(void) {
 extern "C" int tebako_is_running_miniruby(void) {
 	return running_miniruby;
 }
+
+#ifdef RB_W32_PRE_33
+extern "C" ssize_t rb_w32_pread(int /* fd */, void* /* buf */, size_t /* size */, size_t /* offset */)
+{
+  return -1;
+}
+#endif

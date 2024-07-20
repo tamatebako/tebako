@@ -178,13 +178,16 @@ module Tebako
               "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@  # tebako patched",
 
             "--output-exp=$(RUBY_EXP) \\" =>
-              "--output-exp=$(RUBY_EXP) --output-lib=$(LIBRUBY) --output-def=tebako.def \\",
+             "--output-exp=$(RUBY_EXP) --output-lib=$(LIBRUBY) --output-def=tebako.def \\",
 
-            "	@rm -f $(PROGRAM)" =>
-              "# tebako patched  @rm -f $(PROGRAM)",
+            "--export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)" =>
+              "--export-all $(LIBRUBY_A) $(LIBS) -o program-stub.exe   # tebako patched",
+
+            "@rm -f $(PROGRAM)" =>
+              "@rm -f program-stub.exe   # tebako patched",
 
             "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
-              "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
+             "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
 
             "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST
           }

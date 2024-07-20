@@ -52,8 +52,7 @@ module Tebako
         include Tebako::Packager::PatchBuildsystem
         include Tebako::Packager::PatchLiterals
         def extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
-          if PatchHelpers.ruby33?(ruby_ver)
-            puts get_config_status_patch(ostype, deps_lib_dir, ruby_ver)
+          if PatchHelpers.ruby33?(ruby_ver) || PatchHelpers.msys?(ostype)
             patch_map.store("config.status",
                             get_config_status_patch(ostype, deps_lib_dir, ruby_ver))
           end
@@ -102,14 +101,10 @@ module Tebako
           end
         end
 
-        def get_msys_mkconfig_rb_patches(ruby_ver)
+        def get_tool_mkconfig_rb_patch(ostype)
+          subst = PatchHelpers.msys?(ostype) ? TOOL_MKCONFIG_RB_SUBST_MSYS : TOOL_MKCONFIG_RB_SUBST
           {
-            "    if fast[name]" => TOOLS_MKCONFIG_RB_SUBST,
-            "when /RUBYGEMS/; next" =>
-              "when /RUBYGEMS/; next\n\n" \
-              "# Start of tebako patch\n" \
-              "when /MAINLIBS/; val = #{PatchLibraries.msys_base_libs(ruby_ver)}\n" \
-              "# End of tebako patch"
+            "    if fast[name]" => subst
           }
         end
 
@@ -123,10 +118,9 @@ module Tebako
         end
 
         def get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
-          mcrb_subst = PatchHelpers.msys?(ostype) ? get_msys_mkconfig_rb_patches(ruby_ver) : TOOL_MKCONFIG_RB_PATCH
           {
             "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
-            "tool/mkconfig.rb" => mcrb_subst,
+            "tool/mkconfig.rb" => get_tool_mkconfig_rb_patch(ostype),
             "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype, ruby_ver),
             "io.c" => get_io_c_patch(ostype, ruby_ver),    "main.c" => MAIN_C_PATCH,
             "file.c" => PatchHelpers.patch_c_file_pre("/* define system APIs */"),
@@ -139,7 +133,7 @@ module Tebako
           {
             "MAINLIBS = #{yjit_libs}@MAINLIBS@" =>
               "# -- Start of tebako patch -- \n" \
-              "MAINLIBS = #{yjit_libs}#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, true)}" \
+              "MAINLIBS = #{yjit_libs}#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, true)}\n" \
               "# -- End of tebako patch -- \n"
           }
         end

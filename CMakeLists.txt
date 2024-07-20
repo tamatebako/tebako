@@ -118,11 +118,7 @@ set(IS_DARWIN OFF)
 set(RB_W32 OFF)
 set(RUBY_WITHOUT_EXT "dbm,win32,win32ole,-test-/*")
 set(RUBY_NAME "ruby")
-set(RUBY_SUFFIX "")
 set(EXE_SUFFIX "")
-set(CMD_SUFFIX "")
-set(BAT_SUFFIX "")
-set(RUBY_MAKEFILE "")
 set(DWARFS_PRELOAD OFF)
 
 if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
@@ -132,11 +128,7 @@ elseif("${OSTYPE_TXT}" MATCHES "^msys*")
   # set(DWARFS_PRELOAD ON)
   set(RB_W32 ON)
   set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline,-test-/*")
-  #set(RUBY_SUFFIX "w")
   set(EXE_SUFFIX ".exe")
-  set(CMD_SUFFIX ".cmd")
-  set(BAT_SUFFIX ".bat")
-  #set(RUBY_MAKEFILE "--file=GNUmakefile")
 elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
   set(IS_DARWIN ON)
   if(${RUBY_VER} VERSION_LESS "3.1.0")
@@ -202,7 +194,7 @@ string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
 if(DWARFS_PRELOAD)
-  def_ext_prj_t(LIBDWARFS_WR "0.5.1" "7bf8e5b4432f35b65f6034f614067c2018995c1bebaf935e8cdddc1a3e045c01")
+  def_ext_prj_t(LIBDWARFS_WR "0.5.5" "7bf8e5b4432f35b65f6034f614067c2018995c1bebaf935e8cdddc1a3e045c01")
 
   string(REGEX REPLACE "^([0-9]+)\\.([0-9]+)\\.([0-9]+).*" "\\1;\\2;\\3" LIBDWARFS_WR_VER_COMPONENTS ${LIBDWARFS_WR_VER})
 
@@ -211,7 +203,7 @@ if(DWARFS_PRELOAD)
   list(GET LIBDWARFS_WR_VER_COMPONENTS 2 LIBDWARFS_WR_VER_PATCH)
   set (LIBDWARFS_WR_VER_M ${LIBDWARFS_WR_VER_MAJOR}.${LIBDWARFS_WR_VER_MINOR}.${LIBDWARFS_WR_VER_PATCH})
 else(DWARFS_PRELOAD)
-  def_ext_prj_g(DWARFS_WR "v0.5.4")
+  def_ext_prj_g(DWARFS_WR "v0.5.5")
 endif(DWARFS_PRELOAD)
 
 set(LIBYAML_RUBY_OPTION "")
@@ -385,8 +377,8 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         ${C_FLAGS_DEST}=\"${RUBY_C_FLAGS}\"   \
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
   COMMAND          ruby ${EXE}/tebako-packager pass1a ${RUBY_SOURCE_DIR}
-  BUILD_COMMAND    make ${RUBY_MAKEFILE} -j${NCORES}
-  INSTALL_COMMAND  make ${RUBY_MAKEFILE} install
+  BUILD_COMMAND    make -j${NCORES}
+  INSTALL_COMMAND  make install -j${NCORES}
   COMMAND          ${GNU_BASH} -c "ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}"
 )
 
@@ -483,17 +475,21 @@ else (${SETUP_MODE})
     ${DEPS_INCLUDE_DIR}/tebako/tebako-version.h
   )
 
+  if(${RUBY_VER} VERSION_LESS "3.3.0" AND "${OSTYPE_TXT}" MATCHES "^msys*")
+    target_compile_definitions(tebako-fs PUBLIC RB_W32_PRE_33)
+  endif(${RUBY_VER} VERSION_LESS "3.3.0" AND "${OSTYPE_TXT}" MATCHES "^msys*")
+
   add_dependencies(tebako-fs packaged_filesystem)
 
   if (${RUBY_VER} VERSION_LESS "3.0.0")
     add_custom_target(tebako
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE} -j${NCORES}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make -j${NCORES}
       COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME}
       )
   else()
     add_custom_target(tebako
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ruby ${RUBY_MAKEFILE} -j${NCORES}
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ${RUBY_MAKEFILE} -j${NCORES}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ruby -j${NCORES}
+      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make -j${NCORES}
       COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME}
       )
   endif()
