@@ -54,8 +54,9 @@ The Tebako packager supports the following versions of Ruby for packaging:
 
 * 2.7.8 (Linux, MacOS)
 * 3.0.7 (Linux, MacOS)
-* 3.1.4, 3.1.5, 3.1.6 (Linux, MacOS, Windows)
-* 3.2.3, 3.2.4 (Linux, MacOS, Windows)
+* 3.1.6 (Linux, MacOS, Windows)
+* 3.2.4 (Linux, MacOS, Windows)
+* 3.3.3, 3.3.4 (Linux, MacOS, Windows)
 
 Support of specific version including minor release requires some effort, sometimes extensive
 but our goal is to be able to package all maintained Ruby releases.
@@ -211,7 +212,7 @@ cmmands below.
 ----
 tebako press     \
   [-p|--prefix=<tebako-root-folder>] \
-  [-R|--Ruby=<2.7.8|3.0.7|3.1.4|3.1.5|3.1.6|3.2.3|3.2.4>]   \
+  [-R |--Ruby=<2.7.8|3.0.7||3.1.6|3.2.4|3.3.3|3.3.4>]   \
   -r|--root=<project-root-folder>     \
   -e|--entry-point=<entry-point>      \
   [-o|--output=<packaged file name>] \
@@ -266,7 +267,7 @@ based on ```tebako setup``` output. Building cache based on ```tebako press``` m
 ----
 tebako setup     \
   [-p |--prefix=<tebako-root-folder>] \
-  [-R |--Ruby=<2.7.8|3.0.7|3.1.4|3.1.5|3.1.6|3.2.3|3.2.4>] \
+  [-R |--Ruby=<2.7.8|3.0.7||3.1.6|3.2.4|3.3.3|3.3.4>] \
   [-D | --devmode]
 ----
 
@@ -311,7 +312,7 @@ Normally you do not need to do it since tebako packager optimizes artifacts life
 ----
 tebako clean_ruby
   [-p|--prefix=<tebako-root-folder>]
-  [-R|--Ruby=<2.7.8|3.0.7|3.1.4|3.1.5|3.1.6|3.2.3|3.2.4>]
+  [-R |--Ruby=<2.7.8|3.0.7||3.1.6|3.2.4|3.3.3|3.3.4>]
 ----
 
 Where:
