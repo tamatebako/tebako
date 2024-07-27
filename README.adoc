@@ -1,71 +1,416 @@
-= Tebako: an image packager
+= Tebako: An advanced image packager for interpretive languages
 
+Platform tests on GitHub:
 image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu amd64", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
-image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["MacOS amd64", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
+image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["macOS amd64", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
 image:https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml/badge.svg["Windows msys", link="https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml"]
 
+Platform tests on Cirrus:
 image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
 
+Quality:
 image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
 
 == Purpose
 
-Tebako is an executable packager. It packages a set of files into a DwarFS file
-system for read-only purposes.
+Tebako is an advanced executable packager designed for applications written in
+interpretive languages.
 
-After packaging the file system into an image, Tebako produces a single
-executable binary that allows the user to execute a selected file from the
-packaged software from a point in the file system.
+It simplifies distribution and deployment by packaging your entire project with
+a bundled runtime into a single, performant, executable binary.
 
-The packaged binary should support:
+== Architecture
 
-* Packaging a default DwarFS image inside the binary
-* Support signing of the binary on macOS (via notarization)
+A Tebako-packaged binary is effectively a self-executing container-in-a-file.
 
-In the future:
+The packaged binary contains the following components:
+
+* An on-file filesystem (OFFS) containing all the project files and
+dependencies in DwarFS format.
+
+* A runtime environment that includes the necessary libraries and interpreters,
+with patched filesystem calls that redirect access of project files to the
+on-file filesystem.
+
+* An executable loader that loads the on-file filesystem in memory and executes
+the project.
+
+
+== Supported runtimes, platforms and architectures
+
+Tebako artifacts can be built and executed on the following platforms and
+architectures.
+
+.Supported platforms and architectures
+[cols="3", options="header"]
+|===
+| Platform and version | Architectures | Build system
+
+3+| **Linux**
+| Ubuntu 20.04 | amd64, aarch64 | gcc/g+\+: 10; clang/clang++: 12
+| Alpine 3.17 | amd64 | gcc/g+\+: default; clang/clang++: default
+
+3+| **macOS**
+| macOS 12 (Monterey) | amd64          | xcode: [13.1, 14.3.1]
+| macOS 13 (Ventura)  | amd64, aarch64 | xcode: [13.1, 14.3.1]
+| macOS 14 (Sonoma)   | amd64, aarch64 | xcode: [13.1, 14.3.1, 15.4]
+
+3+| **Windows**
+| Windows 10 | amd64 | MinGW ucrt64
+| Windows 11 | amd64 | MinGW ucrt64
+| Windows Server 2019 | amd64 | MinGW ucrt64
+| Windows Server 2022 | amd64 | MinGW ucrt64
+
+|===
+
+[NOTE]
+====
+Windows build caveats:
+
+* Tebako may face errors related to CMake path length limitations (https://gitlab.kitware.com/cmake/cmake/-/issues/25936).
+This error may affect not tebako itself but the gems that need to be package and use CMake to build native extensions.
+There is no workaround for this issue as it looks like is a limitation of the manifest used to build CMake executable.
+
+* MSys strip utility creates broken executable when tebako image is processed. Linking with '-s' flag produces unusable
+executables as well.
+Until this issue (https://github.com/tamatebako/tebako/issues/172) is resolved we plan to produce an Windows executable
+with debug information unstripped. You can opt to run 'strip -S' manually, it most cases it works.
+====
+
+
+.Supported Ruby versions
+[cols="2", options="header"]
+|===
+| Ruby version | Supported platforms
+
+| 2.7.8 | Linux, macOS
+| 3.0.7 | Linux, macOS
+| 3.1.{4,5,6} | Linux, macOS, Windows
+| 3.2.{3,4} | Linux, macOS, Windows
+| 3.3.{3,4} | Linux, macOS, Windows
+
+|===
+
+NOTE: Our goal is to support all maintained Ruby releases, including minor versions.
+
+== Future plans
 
 * Downloading new DwarFS images to be stored in the local home directory
 * Allowing loading multiple DwarFS images in a stacked way
 * Supporting a COW mechanism that the newly written files are stored
   in a separate image that can be loaded on top of the read-only file systems.
 
-== Supported platforms
 
-The Tebako packager is tested on the following platforms:
+== FAQ
 
-* Linux: Ubuntu 20.04; Alpine 3.17
-* MacOS: macOS 12 (Monterey), 13 (Ventura), 14 (Sonoma)
-* Windows: 2019, 2022 (using MinGW ucrt64 toolchain)
+=== Why use Tebako?
 
-There are two known Windows issues:
+Tebako is particularly useful for developers who need to:
 
-* tebako may face errors related to CMake path length limitations (https://gitlab.kitware.com/cmake/cmake/-/issues/25936).
-This error may affect not tebako itself but the gems that need to be package and use CMake to build native extensions.
-There is no workaround for this issue as it looks like is a limitation of the manifest used to build CMake executable.
-* MSys strip utility creates broken executable when tebako image is processed. Linking with '-s' flag produces unusable
-executables as well.
-Until this issue (https://github.com/tamatebako/tebako/issues/172) is resolved we plan to produce an Windows executable
-with debug information unstripped. You can opt to run 'strip -S' manually, it most cases it works.
+* Distribute applications without requiring users to have specific runtimes installed.
+* Simplify the deployment process by packaging all dependencies into one binary.
+* Ensure consistency across different environments by using a single executable.
+* Flexibility to support different runtime versions on the user's machine.
 
-== Supported Ruby versions
 
-The Tebako packager supports the following versions of Ruby for packaging:
+=== How do I know I need Tebako?
 
-* 2.7.8 (Linux, MacOS)
-* 3.0.7 (Linux, MacOS)
-* 3.1.6 (Linux, MacOS, Windows)
-* 3.2.4 (Linux, MacOS, Windows)
-* 3.3.3, 3.3.4 (Linux, MacOS, Windows)
+You might need Tebako if you:
 
-Support of specific version including minor release requires some effort, sometimes extensive
-but our goal is to be able to package all maintained Ruby releases.
+* Want to package your application into a single, self-contained binary.
+* Want to avoid the complexities of managing runtime environments on target machines.
+* Distribute software to environments where installing runtimes and their dependencies is challenging.
+* Require a streamlined way to deliver applications to end-users.
+* Need to ensure that your application runs consistently across different environments and architectures.
 
-== Prerequisites
 
-=== Ubuntu 20.04
+=== What is DwarFS?
 
-==== GNU C/C++ 10+ or Clang C/C++ 12+
+https://github.com/mhx/dwarfs[DwarFS] is a fast, high compression read-only
+user-land file system designed for efficient storage and access of large
+collections of files.
+
+It is used by Tebako to package applications into a compact and efficient format.
+
+Tebako uses https://github.com/tamatebako/libdwarfs[libdwarfs], the library
+form of https://github.com/mhx/dwarfs[DwarFS], developed for the Tebako project.
+
+=== When is Tebako better than comparable solutions?
+
+Tebako offers several advantages over comparable solutions for supported
+interpretive languages.
+
+They are listed in order of the degree of virtualization below.
+
+Tebako stands out by providing a lightweight runtime bundling approach that
+simplifies distribution and deployment while offering flexibility and
+efficiency.
+
+It eliminates the need for users to have specific runtimes installed and ensures
+consistency across different environments.
+
+With Tebako, you can package your entire project with a bundled runtime into a
+single, performant, executable binary.
+
+[cols="a,3a,3a"]
+|===
+| Solution | Pros | Cons
+
+| Virtual machines (VMs)
+|
+- Provides full isolation and compatibility across environments
+|
+- Requires a separate VM installation for each application
+- Heavy resource consumption for virtualization
+
+| Docker
+|
+- Provides portable containers
+- Isolates entire applications and their dependencies
+- Supports easy deployment and scalability
+|
+- Requires Docker installation and management
+- Requires administrative rights on machine
+- Containerization overhead
+
+| *Tebako*
+|
+- Packages all files and dependencies into a single binary
+- Supports multiple operating systems and architectures
+- Provides efficient packaging and execution with DwarFS
+- Offers security features like signing on macOS
+- Simplifies distribution and deployment
+- Native running speed
+|
+- Initial packaging time longer than Ruby gems
+- Minor runtime overhead
+
+| Ruby Gems
+|
+- Easy installation of Ruby libraries
+- Provides user-side version control and dependency management
+|
+- Requires Ruby installation and gem management
+- Runtime execution dependent on the user's installed Ruby version and gems
+
+|===
+
+
+== Usage
+
+=== Command-line interface
+
+Tebako works by packaging your project into a single executable binary that
+includes all the necessary dependencies.
+
+The way to work with Tebako is through its command-line interface (CLI).
+It provides the following commands:
+
+`setup`::
+Prepares the Tebako packaging environment.
+
+`press`::
+Packages a project into a single executable binary.
+
+`clean`::
+Removes Tebako artifacts.
+
+`clean_ruby`::
+Removes Tebako Ruby artifacts.
+
+`hash`::
+Calculates the Tebako script hash for use as a cache key in CI/CD environments.
+
+`extract`::
+Extracts the filesystem from a Tebako package.
+
+`version`::
+Displays the Tebako version.
+
+`help`::
+Displays the help message.
+
+
+
+
+== Usage
+
+=== General
+
+Tebako can be used in two ways:
+
+* Through the Tebako container
+* Local installation
+
+Please refer to the <<installation>> section on how to install Tebako.
+
+
+[[installation]]
+== Installation
+
+=== General
+
+Installation of Tebako is only needed in order to package an application.
+
+There is no need to install anything for users who run the packaged application.
+
+
+=== Using Docker
+
+==== General
+
+If you have Docker installed and available, the easiest way to run Tebako is
+through the official Docker containers.
+
+Docker containers with preinstalled Tebako packaging environments for Ubuntu and
+Alpine Linux are available at
+https://github.com/tamatebako/tebako-ci-containers[tebako-ci-containers].
+
+
+==== Pull the container
+
+Pull the Tebako container image.
+
+[source,sh]
+----
+docker pull ghcr.io/tamatebako/tebako-<container_tag>:latest
+----
+
+`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
+
+
+==== Running Tebako commands in the container
+
+Simply prefix the Tebako command with `docker run` and the container image.
+
+[source,sh]
+----
+docker run -v <application_folder>:/mnt/w \
+  -t ghcr.io/tamatebako/tebako-<container_tag>:latest \
+  tebako {command} {parameters}
+----
+
+
+
+
+==== Packaging from outside the container
+
+To package your application from outside the container, just run a single Docker
+command.
+
+This command mounts the application folder into the container and runs the
+`tebako press` command, specifying the application root, entry point, output
+location, and Ruby version.
+
+[source,sh]
+----
+docker run -v <application_folder>:/mnt/w \
+  -t ghcr.io/tamatebako/tebako-<container_tag>:latest \
+  tebako press <tebako-press-parameters>
+----
+
+`<application_folder>`:: is the path to your application folder.
+
+`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
+
+
+[example]
+====
+Assume that you have a Ruby application in the `fontist` folder of the current
+directory.
+
+You can package it to `./fontist-package` using the following command:
+
+[source,sh]
+----
+docker run -v $PWD:/mnt/w \
+  -t ghcr.io/tamatebako/tebako-ubuntu-20.04:latest \
+  tebako press --root=/mnt/w/fontist --entry-point=fontist --output=/mnt/w/fontist-package --Ruby=3.2.4
+----
+====
+
+==== Packaging from inside the container
+
+It is also possible to package an application from inside the Tebako container.
+
+Start and enter the container interactively.
+
+[source,sh]
+----
+docker run -it --rm -v <application_folder>:/mnt/w \
+  ghcr.io/tamatebako/tebako-<container_tag>:latest bash
+----
+
+`<application_folder>`:: is the path to your application folder.
+
+`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
+
+
+Once inside, run the `tebako press` command:
+
+[source,sh]
+----
+tebako press <tebako press parameters>
+----
+
+[example]
+====
+Assume that you have a Ruby application in the `fontist` folder of the current
+directory.
+
+You can package it to `./fontist-package` using the following command:
+
+[source,sh]
+----
+$ docker run -it --rm -v $PWD:/mnt/w ghcr.io/tamatebako/tebako-<container_tag>:latest bash
+
+# Inside the container:
+$ tebako press --root=/mnt/w/fontist --entry-point=fontist --output=/mnt/w/fontist-package --Ruby=3.2.4
+----
+====
+
+
+=== Local installation
+
+==== General
+
+There are cases where Docker may not be suitable for your needs, such as:
+
+. Admin privileges: Running Docker requires administrative privileges, which
+means Docker may not be available to users on their machines.
+
+. Performance penalty: Docker introduces a performance penalty due to the
+overhead of running containers. This can be a concern when packaging complex
+applications that require heavy memory usage.
+
+In such cases, you can choose to install Tebako locally.
+
+Tebako is distributed as a Ruby gem. A Ruby environment is necessary.
+
+
+[source,sh]
+----
+$ gem install tebako
+----
+
+
+==== Prerequisites
+
+These prerequisites are needed only for users who want to install Tebako on
+their machine and build all Tebako components locally.
+
+If you use Docker, there is no need to set up these prerequisites.
+
+===== Ubuntu 20.04
+
+====== General
+
+There are several prerequisites that need to be installed on Ubuntu 20.04 for
+Tebako to work correctly.
+
+
+====== GNU C/C++ 10+ or Clang C/C++ 12+
 
 [source,sh]
 ----
@@ -83,12 +428,14 @@ update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 150
 update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 150
 ----
 
-==== CMake version 3.20+
+====== CMake version 3.20+
 
-Tebako relies on CMake 3.20+, which may not be available as a default package.
+Tebako requires CMake at a version of at least 3.20+.
 
-If it is not available as default package it can be set up as follows:
+If such CMake version is not available as a default package, set it up as
+follows.
 
+.Installing CMake 3.20+
 [source,sh]
 ----
 apt-get remove --purge --auto-remove cmake
@@ -99,7 +446,7 @@ curl https://apt.kitware.com/kitware-archive.sh | bash
 apt-get install cmake
 ----
 
-==== Other development tools and libraries
+====== Other development tools and libraries
 
 [source,sh]
 ----
@@ -114,7 +461,16 @@ apt-get -y install sudo git curl build-essential pkg-config bison flex autoconf 
    libutfcpp-dev
 ----
 
-=== Alpine 3.17
+===== Alpine 3.17
+
+====== General
+
+There are several prerequisites that need to be installed on Alpine 3.17 for
+Tebako to work correctly.
+
+====== APK packages
+
+Run the following command to install all prerequisites.
 
 [source,sh]
 ----
@@ -128,117 +484,178 @@ apk --no-cache --upgrade add build-base cmake git bash autoconf boost-static   \
    brotli-static jemalloc-dev fmt-dev xz-static
 ----
 
-=== macOS 12 (Monterey) through macOS 14 (Sonoma)
+===== macOS
+
+====== General
+
+There are several prerequisites that need to be installed on macOS for Tebako to work correctly.
+
+The following instructions work for:
+
+* macOS 12 (Monterey) through macOS 14 (Sonoma)
+
+
+====== Homebrew packages
+
+We use Homebrew to install the necessary packages on macOS.
 
 [source,sh]
 ----
 brew update
-brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib ncurses \
-  double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz libyaml openssl@3
+brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib \
+  ncurses double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz \
+  libyaml openssl@3
 ----
 
-==== Bison 3+
+====== Bison 3+
 
-Tebako relies on bison 3 but the default macOS version installed is 2.3 and the Homebrew formula is keg-only.
-To ensure the correct version of bison is picked, run this command before the build process:
+Tebako requires Bison 3+.
+
+On macOS 14, the default Bison version is 2.3, and the Homebrew formula is keg-only,
+which means that the full path to the Bison binary must be used to utilize the
+correct version.
+
+Run the following command prior to using Tebako, or add it into your shell
+profile.
 
 [source,sh]
 ----
 export PATH="$(brew --prefix bison)/bin:$PATH"
 ----
 
-=== Windows (workstation 10, 11; Server 2019, 2022)
+===== Windows
 
-The simplest approach is to use Ruby development environment provided by RubyInstaller, for example Ruby+Devkit 3.1.4-1.
-Once it is installed use the following commands:
+====== General
+
+There are several prerequisites that need to be installed on macOS for Tebako to work correctly.
+
+The following instructions work for:
+
+* Windows 10, 11
+* Windows Server 2019, 2022
+
+====== Ruby
+
+To run Tebako you need to have Ruby installed.
+It is simplest to use the Ruby development environment provided by
+https://rubyinstaller.org[RubyInstaller].
+
+For example, Ruby+Devkit 3.1.4-1.
+
+====== MinGW ucrt64
+
+Enable MinGW ucrt64 and install the necessary packages.
+
+The `ridk` command originates from the RubyInstaller installation.
 
 [source,sh]
 ----
-  ridk enable ucrt64
-  pacman -S git tar bison flex toolchain make cmake
-            boost diffutils libevent double-conversion
-            fmt glog dlfcn gtest autotools ncurses libyaml
+$ ridk enable ucrt64
+$ pacman -S git tar bison flex toolchain make cmake
+          boost diffutils libevent double-conversion
+          fmt glog dlfcn gtest autotools ncurses libyaml
 ----
 
-== Installation
 
-=== General
-
-Tebako is distributed as a Ruby gem.
-Additionally, Docker containers for Ubuntu and Alpine Linux with a preinstalled Tebako packaging environment
-are available at https://github.com/orgs/tamatebako/packages.
 
 == Usage
 
+=== Tebako root folder (aka prefix) selection
+
+The Tebako prefix determines the base directory for the Tebako setup.
+
+It is an essential part of configuring how Tebako operates within your system.
+
+The selection of the Tebako prefix follows a specific order of precedence to
+ensure flexibility and ease of use:
+
+. *User-specified prefix*:
+The most direct way to set the root folder is by specifying it through a
+command-line argument.
+
+. *Current Working Directory (PWD)*:
+If the prefix option is explicitly set to `PWD`, Tebako uses the current working
+directory as Tebako root folder.
+
+. *Environment variable (`TEBAKO_PREFIX`)*:
+In the absence of a user-specified option, Tebako looks for an environment
+variable named `TEBAKO_PREFIX`. If found, its value is used as the root folder.
+
+. *Default value*:
+If no prefix is specified and the `TEBAKO_DIR` environment variable is not set,
+Tebako defaults to using a directory named `.tebako` in the user's home
+directory.
+
+
+Path Expansion: Regardless of the method used to set the Tebako prefix, Tebako
+expands the provided path to an absolute path. This expansion includes resolving
+relative paths based on the current working directory and expanding user
+directory shortcuts like `~`.
+
+
 === Commands
 
-==== Installation
-
-[source,sh]
-----
-gem install tebako
-----
-
-=== Tebako Root Folder (aka Prefix) Selection
-
-The prefix in Tebako determines the base directory for the Tebako setup. It is an essential part of configuring how Tebako operates within your system.
-The selection of the prefix follows a specific order of precedence to ensure flexibility and ease of use:
-
-. *User-Specified Prefix*: The most direct way to set the root folder is by specifying it through an option. This can be done via command-line argument.
-
-. *Current Working Directory (PWD)*: If the prefix option is explicitly set to "PWD", Tebako uses the current working directory as Tebako root folder.
-
-. *Environment Variable (TEBAKO_PREFIX)*: In the absence of a user-specified option, Tebako looks for an environment variable named `TEBAKO_PREFIX`. If found, its value is used as the root folder.
-
-. *Default Value*: If no prefix is specified and the `TEBAKO_DIR` environment variable is not set, Tebako defaults to using a directory named `.tebako` in the user's home directory.
-
-
-Path Expansion: Regardless of the method used to set the prefix, Tebako expands the provided path to an absolute path. This expansion includes resolving relative paths based on the current working
-directory and expanding user directory shortcuts like `~`.
+Tebako provides several commands to manage the packaging and deployment process.
 
 ==== Press
 
-This command "presses" a Ruby project using the Tebako setup from the Tebako root
-folder (`<tebako-root-folder>`).
-Please note that upon the first invocation of press command tebako collects required packages,
-builds the and creates packaging environment. This is a lengthly task that can take significant
-time, up to 1 hour.
-Upon the next invocation tebako will use previously created packaging environment. The press process
-itself takes minutes.
-You can manage setup of packaging environment manually; please refer to description of setup and clean
-cmmands below.
+This command "presses" a Ruby project using the Tebako components built in the Tebako
+root folder (`<tebako-root-folder>`).
 
-[source]
+
+[NOTE]
+====
+The first invocation of the `press` command can take up to an hour as it sets up
+the packaging environment and collects the required dependencies. Subsequent
+invocations are much faster.
+====
+
+Upon the next invocation tebako will use previously created packaging
+environment. The press process itself takes minutes.
+
+You can manage setup of packaging environment manually; please refer to
+description of setup and clean commands below.
+
+[source,sh]
 ----
-tebako press     \
+tebako press \
+  -e|--entry-point=<entry-point> \
+  -r|--root=<project-root-folder> \
   [-p|--prefix=<tebako-root-folder>] \
-  [-R |--Ruby=<2.7.8|3.0.7||3.1.6|3.2.4|3.3.3|3.3.4>]   \
-  -r|--root=<project-root-folder>     \
-  -e|--entry-point=<entry-point>      \
-  [-o|--output=<packaged file name>] \
+  [-R|--Ruby=<ruby-version>] \
+  [-o|--output=<packaged-file-name>] \
   [-l|--log-level=<error|warn|debug|trace>] \
   [-D|--devmode]
 ----
 
 Where:
 
-* `<tebako-root-folder>`, the Tebako root folder (see details in the Tebako Root Folder Selection section)
+`<tebako-root-folder>`::
+the Tebako root folder (see details in the Tebako Root Folder Selection section)
 
-* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.6)
+`Ruby`::
+This parameter defines Ruby version that will be packaged (optional, defaults to
+`3.1.6`)
 
-* `<project-root>`, a folder at the host source file system where project files
-are located
+`<project-root>`::
+a folder at the host source file system where project files are located
 
-* `<entry-point>`, an executable file (binary executable or script) that shall
-be started when packaged file is called
+`<entry-point>`::
+an executable file (binary executable or script) that shall be started when
+packaged file is called
 
-* `output`, the output file name (optional, defaults to `<current folder>/<entry
-point base name`)
+`output`::
+the output file name (optional, defaults to `<current folder>/<entry point base name>`)
 
-* `log-level`, the logging level for tebako built-in memory filesystem driver (optional, defaults to `error`)
+`log-level`::
+logging level for the Tebako built-in memory filesystem driver
+(optional, defaults to `error`)
 
-* `devmode` flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
-Please note that this mode is not intended for production use and should only be used during development.
+`devmode`:: flag that activates development mode, in which Tebako's cache and
+packaging consistency checks are relaxed.
++
+NOTE: Development mode is *not intended for production use* and should only be
+used during development.
 
 [example]
 ====
@@ -253,47 +670,54 @@ tebako press \
 
 ==== Setup
 
-Collects required packages, builds the and creates packaging environment. This is a lengthly
-task that can take significant time, up to 1 hour.
+This command sets up the Tebako packaging environment.
+
+Collects required packages, builds the and creates packaging environment. This
+is a lengthy task that can take significant time, up to 1 hour.
+
 Tebako supports several configurations at a single system given that their root
-directories differ and nultiple Ruby versions within single configuration
+directories differ and multiple Ruby versions within single configuration
 
-This command is optional, tebako creates packaging environment automatically upon the first
-invocation of press command.
-However, if you plan to use tebako in CI/CD environment with caching it is highly recommended to build cache
-based on ```tebako setup``` output. Building cache based on ```tebako press``` may create inconsistent environment upon restore.
+This command is optional, tebako creates packaging environment automatically
+upon the first invocation of press command.
 
-[source]
+However, if you plan to use tebako in CI/CD environment with caching it is
+highly recommended to build cache based on `tebako setup` output. Building cache
+based on `tebako press` may create inconsistent environment upon restore.
+
+[source,sh]
 ----
-tebako setup     \
-  [-p |--prefix=<tebako-root-folder>] \
-  [-R |--Ruby=<2.7.8|3.0.7||3.1.6|3.2.4|3.3.3|3.3.4>] \
-  [-D | --devmode]
+$ tebako setup \
+  [-p|--prefix=<tebako-root-folder>] \
+  [-R|--Ruby=<ruby-version>] \
+  [-D|--devmode]
 ----
 
 Where:
 
-* `<tebako-root-folder>`, the Tebako root folder (see details in the Tebako Root Folder Selection section)
+`<tebako-root-folder>`:: the Tebako root folder (see details in the Tebako Root Folder Selection section)
 
-* `Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.6)
+`Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.6)
 
-* `devmode` flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
+`devmode` flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
 Please note that this mode is not intended for production use and should only be used during development.
 
 ==== Clean
 
-This command deletes tebako artifacts created by setup and press commands.
+This command cleans up all Tebako artifacts in the specified prefix directory.
+
+NOTE: These artifacts are created by the `setup` and `press` commands.
 Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own.
 
-[source]
+[source,sh]
 ----
-tebako clean \
+$ tebako clean \
   [-p|--prefix=<tebako-root-folder>]
 ----
 
 Where:
 
-* `<tebako-root-folder>`, the Tebako root folder (see details in the Tebako Root Folder Selection section)
+`<tebako-root-folder>`:: the Tebako root folder (see details in the Tebako Root Folder Selection section)
 
 [example]
 ====
@@ -303,23 +727,32 @@ tebako clean --prefix='~/.tebako'
 ----
 ====
 
-==== Clean ruby
 
-This command deletes tebako Ruby artifacts created by setup and press commands. Dwarfs libraries are not cleaned.
-Normally you do not need to do it since tebako packager optimizes artifacts lifecycle on its own.
+==== Clean Ruby
 
-[source]
+This command cleans up only the Ruby artifacts from the specified prefix
+directory.
+
+NOTE: These artifacts are created by the `setup` and `press` commands.
+Normally you do not need to do it, since Tebako packager optimizes artifacts
+lifecycle on its own.
+
+NOTE: Compiled DwarFS libraries are not cleaned.
+
+[source,sh]
 ----
-tebako clean_ruby
-  [-p|--prefix=<tebako-root-folder>]
-  [-R |--Ruby=<2.7.8|3.0.7||3.1.6|3.2.4|3.3.3|3.3.4>]
+$ tebako clean_ruby
+  [-p|--prefix=<tebako-root-folder>] \
+  [-R|--Ruby=<ruby-version>]
 ----
 
 Where:
 
-* `<tebako-root-folder>`, the Tebako setup folder (optional, defaults to current
-folder)
-* `Ruby` parameter defines Ruby version that will cleaned (optional, cleans all versions by default)
+`<tebako-root-folder>`::
+the Tebako setup folder (optional, defaults to current folder)
+
+`Ruby`::
+defines Ruby version that will cleaned (optional, cleans all versions by default)
 
 [example]
 ====
@@ -330,45 +763,30 @@ tebako clean_ruby --prefix='~/.tebako'
 ====
 
 ==== Build script hash
-Hash command will calculate tebako script hash that may be used as a cache key in CI/CD environment like GitHub Actions
 
-[source]
-----
-tebako hash
-----
-
-=== Exit codes
-
-[cols,"a,a"]
-|===
-| Code | Condition
-
-| 0    | No error
-| 1    | Invalid command line
-| 101  | `tebako setup` failed at configuration step
-| 102  | `tebako setup` failed at build step
-| 103  | `tebako press` failed at configuration step
-| 104  | `tebako press` failed at build step
-| 253  | Unsupported Ruby version
-| 254  | Unsupported operating systems
-| 255  | Internal error
-
-|===
-
-== Image extraction
-
-Tebako provides an option to an extract filesystem from a package to local
-folder for verification or execution.
+This command outputs a hash value for the Tebako build script, which can be used
+as a cache key in CI/CD pipelines.
 
 [source,sh]
 ----
-<tebako-packaged-executable> --tebako-extract [<root folder for extracted filesystem>]
+$ tebako hash
+----
+
+
+=== Image extraction
+
+Tebako provides an option to an extract its DwarFS filesystem from a package to
+a local folder for verification or execution.
+
+[source,sh]
+----
+$ <tebako-packaged-executable> --tebako-extract [<root folder for extracted filesystem>]
 ----
 
 Where,
 
-* `<root folder for extracted filesystem>` is optional and defaults to
-  `source_filesystem`
+`<root folder for extracted filesystem>`::
+The root folder for the extracted filesystem (optional, defaults to `source_filesystem`)
 
 [example]
 ====
@@ -388,47 +806,67 @@ require 'fileutils'
 FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'
 ----
 
-== Ruby packaging specification
+=== Exit codes
+
+The Tebako CLI exits with different exit codes to indicate the status of the
+operation. The following table lists the possible exit codes and their meanings.
+
+.Tebako CLI exit codes
+[cols="a,a"]
+|===
+| Code | Condition
+
+| 0    | No error
+| 1    | Invalid command line
+| 101  | `tebako setup` failed at configuration step
+| 102  | `tebako setup` failed at build step
+| 103  | `tebako press` failed at configuration step
+| 104  | `tebako press` failed at build step
+| 253  | Unsupported Ruby version
+| 254  | Unsupported operating systems
+| 255  | Internal error
+
+|===
+
+
+== Packaging scenarios with Ruby
+
+Tebako for Ruby supports the following packaging scenarios.
 
 This is high-level description of the Tebako Ruby packaging mechanism.
-This specification was inspired by the `ruby-packer` approach.
 
-NOTE: For various reasons, Tebako Ruby is a fully separate implementation,
-no line of code was copied from `ruby-packer`.
+NOTE: These scenarios were inspired by the `ruby-packer` approach.
 
-Depending on the configuration files that are present in the root project folder,
-the Tebako Ruby packager support five different scenarios:
+NOTE: Tebako Ruby is created independently from `ruby-packer`, no line of code
+was copied from `ruby-packer`.
 
-[cols="a,a,a,a"]
+Depending on the configuration files that are present in the root project folder, the Tebako Ruby packager supports different packaging scenarios.
+
+These scenarios differ in what files are packaged and where the entry point is located.
+
+Here is a summary of the scenarios:
+
+[cols="a,2a,4a,3a,a,a,a"]
 |===
-| Scenario | `*.gemspec` | `Gemfile`  | `*.gem`
-
-| 1        |     No    |   No     |   No
-| 2        |     No    |   No     |   One
-| 3        |    One    |   No     |   Any
-| 4        |    One    |   One    |   Any
-| 5        |     No    |   One    |   Any
-| Error    |     No    |   No     |Two or more
-| Error    |Two or more|   Any    |   Any
-
-|===
-
-These scenarios differ in what files are packaged and where the entry point is
-located, as follows:
-
-[cols="a,a,a,a"]
-|===
-| Scenario | Description | Packaging | Entry point
+| Scenario | Description | Packaging | Entry point | `*.gemspec` | `Gemfile`  | `*.gem`
 
 | 1
 | Simple ruby script
 | Copy `<project-root>` with all sub-folders to packaged filesystem
 | `<mount_point>/local/<entry_point base name>`
+| No
+| No
+| No
+
 
 | 2
 | Packaged gem
 | Install the gem with `gem install` to packaged filesystem
 | `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
+| No
+| No
+| One
+
 
 | 3
 | Gem source, no `bundler`
@@ -437,6 +875,10 @@ located, as follows:
 . Install it with `gem install` to packaged filesystem
 
 | `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
+| One
+| No
+| Any
+
 
 | 4
 | Gem source, `bundler`
@@ -446,13 +888,41 @@ located, as follows:
 . Install it with `gem install` to packaged file system
 
 | `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
+| One
+| One
+| Any
+
 
 | 5
 | Rails project
 | Deploy project to packaged filesystem using `bundle install`
 | `<mount_point>/local/<entry_point base name>`
+| No
+| One
+| Any
+
+
+| Error
+| Error: Two or more `*.gem` files present
+| -
+| -
+| No
+| No
+| Two or more
+
+
+| Error
+| Error: Two or more `*.gemspec` files present
+| -
+| -
+| Two or more
+| Any
+| Any
 
 |===
+
+
+These scenarios determine how the project is packaged and where the entry point is located within the packaged filesystem.
 
 
 == Trivia: origin of name
@@ -467,3 +937,14 @@ the said treasure box (storing gems inside a treasure box).
 
 Since "tamatebako" is rather long for the non-Japanese speaker, we use "tebako"
 (手箱, also "tehako") instead, the generic term for a personal box.
+
+== Contributing
+
+We welcome contributions! Please see our contributing guidelines for more
+information.
+
+== License
+
+Copyright Ribose. All rights reserved.
+
+Tebako is released under the BSD 2-Clause License. See the LICENSE file for details.
