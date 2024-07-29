@@ -88,9 +88,23 @@ module Tebako
         SUBST
       }.freeze
 
-      # DARWIN_CONFIGURE_PATCH = {
-      #  "EXTDLDFLAGS=\"-bundle_loader '\\$(BUILTRUBY)'\"" => ""
-      # }.freeze
+      # The logic for statically linked extensions is broken entirely in the latest Ruby versions.
+      # The code below looks reasonble - we do not set -bundle_loader when building with -with-static-ext option
+      # However Gems bundled with Ruby just ignore with-static-ext option and build extensions as shared libraries
+      # So  the -bundler_loader option is required for them to link.
+      # It is strange that it is disabled in any case because this option does not create any issues for static
+      # libraries.
+      # ---------------------------------------------------
+      # elif test "x$EXTSTATIC" = x
+      # then :
+      #
+      #                            # When building exts as bundles, a mach-o bundle needs to know its loader
+      #                            # program to bind symbols from the ruby executable
+      #                            EXTDLDFLAGS="-bundle_loader '\$(BUILTRUBY)'"
+
+      DARWIN_CONFIGURE_PATCH = {
+        "elif test \"x$EXTSTATIC\" = x" => "elif true"
+      }.freeze
 
       OPENSSL_EXTCONF_RB_SUBST = <<~SUBST
         # Start of tebako patch
@@ -137,11 +151,7 @@ module Tebako
           patch_map = get_base_patch_map(mount_point)
 
           # ....................................................
-          # Fixing (bypassing) configure script bug where a variable is used before initialization
-          # On MacOS it generates bod EXTDLDFLAGS WITH -bundle_loader <missing parameter>
-          # However, it loooks likes EXTDLDFLAGS are just redundant for final Ruby linkage, so we are
-          # just removing it on pass 2 (at least for now)
-          # patch_map.store("configure", DARWIN_CONFIGURE_PATCH) if ostype =~ /darwin/
+          patch_map.store("configure", DARWIN_CONFIGURE_PATCH) if ostype =~ /darwin/
 
           # ....................................................
           # autoload :OpenSSL, "openssl"
