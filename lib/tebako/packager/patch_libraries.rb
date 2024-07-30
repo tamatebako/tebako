@@ -34,13 +34,10 @@ module Tebako
     module PatchLibraries
       class << self
         # rubocop:disable Style/WordArray
-
-        # NOTE: folly provides build-in implementation of jemalloc
-
         DARWIN_BREW_LIBS = [
-          ["zlib", "z"],            ["gdbm", "gdbm"],           ["readline", "readline"], ["libffi", "ffi"],
-          ["ncurses", "ncurses"],   ["fmt", "fmt"],             ["lz4", "lz4"],           ["xz", "lzma"],
-          ["libyaml", "yaml"],      ["boost", "boost_chrono"],  ["double-conversion", "double-conversion"]
+          ["zlib", "z"],              ["gdbm", "gdbm"],           ["readline", "readline"], ["libffi", "ffi"],
+          ["ncurses", "ncurses"],     ["fmt", "fmt"],             ["lz4", "lz4"],           ["xz", "lzma"],
+          ["libyaml", "yaml"],        ["boost", "boost_chrono"],  ["double-conversion", "double-conversion"]
         ].freeze
 
         DARWIN_BREW_LIBS_PRE_31 = [["openssl@1.1", "ssl"], ["openssl@1.1", "crypto"]].freeze

@@ -518,6 +518,40 @@ correct version.
 Run the following command prior to using Tebako, or add it into your shell
 profile.
 
+====== jemalloc Library Build
+
+The `libdwarfs` build script creates an additional jemalloc installation on macOS. This is done to satisfy the magic applied by folly during linking but uses a static library.
+If the library is created in an emulated environment (QEMU, Rosetta, etc.), there are known issues (link:https://github.com/jemalloc/jemalloc/issues/1997[jemalloc issue #1997]) where jemalloc incorrectly defines the number of significant virtual address bits (lg-vaddr parameter).
+
+These issues can be fixed by explicitly setting the `--with-lg-vaddr` parameter for the jemalloc build. We decided not to automate this since we do not feel that we can provide reasonable test coverage. Instead, our build script accepts the `LG_VADDR` environment variable and passes it to the jemalloc build as `--with-lg-vaddr=${LG_VADDR}`.
+
+The `LG_VADDR` parameter specifies the number of significant virtual address bits, which can vary based on the CPU architecture and emulation status.
+
+Simple script to set `LG_VADDR`. Please note that it is provided for illustration only.
+
+[source,sh]
+----
+#!/bin/bash
+
+# Check the CPU architecture
+ARCH=$(uname -m)
+
+# Check if running under Rosetta 2 emulation
+if [[ "$ARCH" == "x86_64" && $(sysctl -n sysctl.proc_translated) == "1" ]]; then
+  echo "Running on Apple Silicon under Rosetta 2 emulation"
+  export LG_VADDR=39
+elif [[ "$ARCH" == "arm64" ]]; then
+  echo "Running on Apple Silicon"
+  export LG_VADDR=39
+else
+  echo "Running on Intel Silicon"
+  export LG_VADDR=48
+fi
+
+echo "Setting lg-vaddr to $LG_VADDR"
+----
+
+
 [source,sh]
 ----
 export PATH="$(brew --prefix bison)/bin:$PATH"
