@@ -145,6 +145,8 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 				// Nested error, no recovery :(
 			}
 		}
+
+		// tebako_chdir("/__tebako_memfs__/local");
 	}
 	return ret;
 }

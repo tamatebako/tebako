@@ -40,7 +40,7 @@ require_relative "version"
 # Tebako - an executable packager
 # Implementation of tebako command-line interface
 module Tebako
-  OPTIONS_FILE = ".tebako.yml"
+  DEFAULT_TEBAFILE = ".tebako.yml"
   # Tebako packager front-end
   class Cli < Thor
     package_name "Tebako"
@@ -48,7 +48,8 @@ module Tebako
                           desc: "A path to tebako packaging environment, '~/.tebako' ('$HOME/.tebako') by default"
     class_option :devmode, type: :boolean, aliases: "-D", required: false,
                            desc: "Developer mode, please do not use if unsure"
-
+    class_option :tebafile, type: :string, aliases: "-t", required: false,
+                            desc: "tebako configuration file 'tebafile', '$PWD/.tebako.yml' by default"
     desc "clean", "Clean tebako packaging environment"
     def clean
       clean_cache
@@ -123,10 +124,10 @@ module Tebako
 
       def options
         original_options = super
+        tebafile = original_options["tebafile"].nil? ? DEFAULT_TEBAFILE : original_options["tebafile"]
+        return original_options unless File.exist?(tebafile)
 
-        return original_options unless File.exist?(OPTIONS_FILE)
-
-        defaults = ::YAML.load_file(OPTIONS_FILE) || {}
+        defaults = ::YAML.load_file(tebafile)["options"] || {}
         Thor::CoreExt::HashWithIndifferentAccess.new(defaults.merge(original_options))
       end
     end
