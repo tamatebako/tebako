@@ -1,1 +1,3 @@
-prefix: PWD
+options:
+  prefix: PWD
+  Ruby: 3.2.4
