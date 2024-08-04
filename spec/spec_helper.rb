@@ -1,6 +1,8 @@
-# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
+# frozen_string_literal: true
+
+# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
-# This file is a part of tamatebako
+# This file is a part of tebako
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -21,36 +23,28 @@
 # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.name: lint
+# POSSIBILITY OF SUCH DAMAGE.
 
-name: lint
+$LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-  workflow_dispatch:
+require "tebako"
 
-jobs:
-  shellcheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ludeeus/action-shellcheck@master
-        with:
-          ignore_paths: deps
-        env:
-          SHELLCHECK_OPTS: -x
+require "simplecov"
+SimpleCov.start do
+  add_filter "/spec/"
+end
 
-  rubocop:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+require "simplecov-cobertura"
+SimpleCov.formatter = SimpleCov::Formatter::CoberturaFormatter
 
-      - uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.1'
-          bundler-cache: true
+RSpec.configure do |config|
+  # Enable flags like --only-failures and --next-failure
+  config.example_status_persistence_file_path = ".rspec_status"
 
-      - name: Run rubocop
-        run: bundle exec rubocop
+  # Disable RSpec exposing methods globally on `Module` and `main`
+  config.disable_monkey_patching!
+
+  config.expect_with :rspec do |c|
+    c.syntax = :expect
+  end
+end

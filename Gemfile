@@ -29,7 +29,3 @@ source "https://rubygems.org"
 
 # Specify your gem's dependencies in tebako.gemspec
 gemspec
-gem "hoe"
-gem "minitest"
-gem "rubocop", "~> 1.52"
-gem "rubocop-rubycw"

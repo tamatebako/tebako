@@ -55,25 +55,25 @@ module Tebako
       # So we have to use \"xxx\"
       @cfg_options ||=
         "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
-        "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output}\" -S \"#{source}\""
+        "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\""
     end
 
     def clean_cache
       puts "Cleaning tebako packaging environment"
       # Using File.join(deps, "") to ensure that the slashes are appropriate
-      FileUtils.rm_rf([File.join(deps, ""), File.join(output, "")], secure: true)
+      FileUtils.rm_rf([File.join(deps, ""), File.join(output_folder, "")], secure: true)
     end
 
     def clean_output
       puts "Cleaning CMake cache and Ruby build files"
-      # Using File.join(output, "") to ensure that the slashes are appropriate
 
       nmr = "src/_ruby_*"
       nms = "stash_*"
       FileUtils.rm_rf(Dir.glob(File.join(deps, nmr)), secure: true)
       FileUtils.rm_rf(Dir.glob(File.join(deps, nms)), secure: true)
 
-      FileUtils.rm_rf(File.join(output, ""), secure: true)
+      # Using File.join(output_folder, "") to ensure that the slashes are appropriate
+      FileUtils.rm_rf(File.join(output_folder, ""), secure: true)
     end
 
     def deps
@@ -82,7 +82,7 @@ module Tebako
 
     def do_press
       cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}"
-      build_cmd = "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}"
+      build_cmd = "cmake --build #{output_folder} --target tebako --parallel #{Etc.nprocessors}"
       merged_env = ENV.to_h.merge(b_env)
       Tebako.packaging_error(103) unless system(merged_env, cfg_cmd)
       Tebako.packaging_error(104) unless system(merged_env, build_cmd)
@@ -90,7 +90,7 @@ module Tebako
 
     def do_setup
       cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}"
-      build_cmd = "cmake --build \"#{output}\" --target setup --parallel #{Etc.nprocessors}"
+      build_cmd = "cmake --build \"#{output_folder}\" --target setup --parallel #{Etc.nprocessors}"
       merged_env = ENV.to_h.merge(b_env)
       Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
       Tebako.packaging_error(102) unless system(merged_env, build_cmd)
@@ -156,8 +156,8 @@ module Tebako
       {}
     end
 
-    def output
-      @output ||= File.join(prefix, "o")
+    def output_folder
+      @output_folder ||= File.join(prefix, "o")
     end
 
     def package

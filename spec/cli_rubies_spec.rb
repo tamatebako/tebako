@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,22 +25,30 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "bundler/gem_tasks"
-require "rubocop/rake_task"
-require "rspec/core/rake_task"
+require "tebako/cli_rubies"
 
-RuboCop::RakeTask.new
-RSpec::Core::RakeTask.new(:spec)
+RSpec.describe Tebako::CliRubies do
+  include Tebako::CliRubies
 
-task default: %i[rubocop spec]
+  describe "#version_check" do
+    context "when the Ruby version is supported" do
+      it "does not raise an error" do
+        expect { version_check("3.1.6") }.not_to raise_error
+      end
+    end
 
-desc "Generate version.txt"
-task "generate_version_txt" do
-  require_relative "lib/tebako/version"
-  version_without_rc = Tebako::VERSION.gsub(/\.rc\d+/, "")
-  File.write(File.join(__dir__, "version.txt"), "#{version_without_rc}\n")
-  puts "Generating #{File.join(__dir__, "version.txt")}; version = #{version_without_rc}"
+    context "when the Ruby version is not supported" do
+      it "raises a Tebako::Error" do
+        expect do
+          version_check("2.6.0")
+        end.to raise_error(Tebako::Error, "Ruby version 2.6.0 is not supported yet, exiting")
+      end
+    end
+  end
+
+  describe "DEFAULT_RUBY_VERSION" do
+    it "is set to 3.1.6" do
+      expect(Tebako::CliRubies::DEFAULT_RUBY_VERSION).to eq("3.1.6")
+    end
+  end
 end
-
-task build: :generate_version_txt
-task release: :generate_version_txt

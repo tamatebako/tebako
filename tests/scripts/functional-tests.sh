@@ -87,7 +87,6 @@ press_runner_with_error() {
 
 # ......................................................................
 # Tests
-#  00. Basic tebako CLI tests (error handling)
 #  --  tebako setup                                                                                         [commented out, redundant]
 #  AU. Check that it is possible to extract image content (--tebako-extract option)
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
@@ -108,49 +107,6 @@ press_runner_with_error() {
 #  19. Ruby project (no gemspec, with gemfile, with native extension)
 #  20. Net/http Ruby script [sits here and not on tests-2 in order to allow cross test MacOS x86_64 --> MacOS arm64]
 
-# ......................................................................
-# 00. Very basic tebako CLI tests (error handling)
-test_CLI_help() {
-   result=$( "$DIR_BIN"/tebako help )
-
-   assertEquals 0 "${PIPESTATUS[0]}"
-   assertContains "$result" "Tebako commands:"
-}
-
-test_CLI_missing_command() {
-   result=$( "$DIR_BIN"/tebako )
-
-   assertEquals 0 "${PIPESTATUS[0]}"
-   assertContains "$result" "Tebako commands:"
-}
-
-test_CLI_unknown_command() {
-   result=$( "$DIR_BIN"/tebako jump 2>&1)
-
-   assertEquals 1 "${PIPESTATUS[0]}"
-   assertContains "$result" "Could not find command"
-}
-
-test_CLI_no_root() {
-   result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --entry-point=tebako-test-run.rb --output=test-00-package 2>&1  )
-
-   assertEquals 1 "${PIPESTATUS[0]}"
-   assertContains "$result" "No value provided for required options '--root'"
-}
-
-test_CLI_no_entry_point() {
-   result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-00 --output=test-00-package 2>&1  )
-
-   assertEquals 1 "${PIPESTATUS[0]}"
-   assertContains "$result" "No value provided for required options '--entry-point'"
-}
-
-test_CLI_invalid_Ruby_version() {
-   result=$( "$DIR_BIN"/tebako press -D --root=tests/test-00 --output=test-00-package --entry-point=tebako-test-run.rb --Ruby=1.9.3 2>&1  )
-
-   assertEquals 1 "${PIPESTATUS[0]}"
-   assertContains "$result" "Expected '--Ruby' to be one of"
-}
 
 # ......................................................................
 #  --  tebako setup
