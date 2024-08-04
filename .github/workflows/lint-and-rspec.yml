@@ -1,8 +1,6 @@
-# frozen_string_literal: true
-
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
-# This file is a part of tebako
+# This file is a part of tamatebako
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -23,24 +21,56 @@
 # INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
 # CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
+# POSSIBILITY OF SUCH DAMAGE.name: lint
 
-require "bundler/gem_tasks"
-require "rubocop/rake_task"
-require "rspec/core/rake_task"
+name: lint-and-rspec
 
-RuboCop::RakeTask.new
-RSpec::Core::RakeTask.new(:spec)
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
 
-task default: %i[rubocop spec]
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          ignore_paths: deps
+        env:
+          SHELLCHECK_OPTS: -x
 
-desc "Generate version.txt"
-task "generate_version_txt" do
-  require_relative "lib/tebako/version"
-  version_without_rc = Tebako::VERSION.gsub(/\.rc\d+/, "")
-  File.write(File.join(__dir__, "version.txt"), "#{version_without_rc}\n")
-  puts "Generating #{File.join(__dir__, "version.txt")}; version = #{version_without_rc}"
-end
+  rubocop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-task build: :generate_version_txt
-task release: :generate_version_txt
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1'
+          bundler-cache: true
+
+      - name: Run rubocop
+        run: bundle exec rubocop
+
+  rspec:
+    runs-on: ubuntu-latest
+    env:
+      CODECOV_TOKEN: 795f17c3-2dc3-4253-9627-e2d0a2e59223
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.1'
+          bundler-cache: true
+
+      - name: Run rspec
+        run: bundle exec rspec
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ env.CODECOV_TOKEN }}

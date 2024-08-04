@@ -2,4 +2,4 @@
 
 source "https://rubygems.org"
 
-gem "ffi-libarchive-binary"
+gem "ffi-libarchive-binary" # rubocop:disable Gemspec/DevelopmentDependencies

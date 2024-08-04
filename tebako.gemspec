@@ -51,7 +51,7 @@ Gem::Specification.new do |spec|
   spec.files = Dir.chdir(File.expand_path(__dir__)) do
     `git ls-files --recurse-submodules -z`.split("\x0").reject do |f|
       (f == __FILE__) ||
-        f.match(%r{\A(?:(?:tests|tests-2|features|deps|output|common\.env)/|\.(?:git|cirrus|tebako|rubocop))})
+        f.match(%r{\A(?:(?:tests|tests-2|spec|deps|output|common\.env)/|\.(?:git|rspec|cirrus|tebako|rubocop))})
     end
   end
 
@@ -63,4 +63,12 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "thor", "~> 1.2"
   spec.add_dependency "yaml", "~> 0.2.1"
+
+  spec.add_development_dependency "hoe"
+  spec.add_development_dependency "minitest"
+  spec.add_development_dependency "rspec", "~> 3.2"
+  spec.add_development_dependency "rubocop", "~> 1.52"
+  spec.add_development_dependency "rubocop-rubycw"
+  spec.add_development_dependency "simplecov"
+  spec.add_development_dependency "simplecov-cobertura"
 end

@@ -2,4 +2,4 @@
 
 source "https://rubygems.org"
 
-gem "libmspack"
+gem "libmspack" # rubocop:disable Gemspec/DevelopmentDependencies

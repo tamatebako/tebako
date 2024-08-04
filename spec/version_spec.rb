@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,22 +25,18 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "bundler/gem_tasks"
-require "rubocop/rake_task"
-require "rspec/core/rake_task"
+RSpec.describe Tebako do
+  describe "VERSION" do
+    it "is defined" do
+      expect(defined?(Tebako::VERSION)).to be_truthy
+    end
 
-RuboCop::RakeTask.new
-RSpec::Core::RakeTask.new(:spec)
+    it "is a string" do
+      expect(Tebako::VERSION).to be_a(String)
+    end
 
-task default: %i[rubocop spec]
-
-desc "Generate version.txt"
-task "generate_version_txt" do
-  require_relative "lib/tebako/version"
-  version_without_rc = Tebako::VERSION.gsub(/\.rc\d+/, "")
-  File.write(File.join(__dir__, "version.txt"), "#{version_without_rc}\n")
-  puts "Generating #{File.join(__dir__, "version.txt")}; version = #{version_without_rc}"
+    it "has the correct format" do
+      expect(Tebako::VERSION).to match(/^\d+\.\d+\.\d+$/)
+    end
+  end
 end
-
-task build: :generate_version_txt
-task release: :generate_version_txt

@@ -2,6 +2,6 @@
 
 source "https://rubygems.org"
 
-gem "bundler"
-gem "expressir"
-gem "ffi"
+gem "bundler" # rubocop:disable Gemspec/DevelopmentDependencies
+gem "expressir" # rubocop:disable Gemspec/DevelopmentDependencies
+gem "ffi" # rubocop:disable Gemspec/DevelopmentDependencies

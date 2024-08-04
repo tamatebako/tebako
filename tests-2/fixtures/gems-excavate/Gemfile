@@ -2,4 +2,4 @@
 
 source "https://rubygems.org"
 
-gem "excavate"
+gem "excavate" # rubocop:disable Gemspec/DevelopmentDependencies

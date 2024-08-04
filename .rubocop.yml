@@ -46,3 +46,6 @@ Naming/FileName:
 
 Style/BlockComments:
   Enabled: false
+
+Gemspec/DevelopmentDependencies:
+  EnforcedStyle: gemspec

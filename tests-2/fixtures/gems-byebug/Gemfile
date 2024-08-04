@@ -1,5 +1,5 @@
 # frozen_string_literal: true
 
 source "https://rubygems.org"
-gem "byebug"
-gem "rake"
+gem "byebug" # rubocop:disable Gemspec/DevelopmentDependencies
+gem "rake" # rubocop:disable Gemspec/DevelopmentDependencies

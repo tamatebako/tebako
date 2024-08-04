@@ -67,3 +67,6 @@ tebako_test.log
 .t/
 tests-actions/
 .environment.version
+
+# rspec failure tracking
+.rspec_status

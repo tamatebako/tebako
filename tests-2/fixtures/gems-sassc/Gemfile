@@ -2,5 +2,5 @@
 
 source "https://rubygems.org"
 
-gem "bundler"
-gem "sassc"
+gem "bundler" # rubocop:disable Gemspec/DevelopmentDependencies
+gem "sassc" # rubocop:disable Gemspec/DevelopmentDependencies
