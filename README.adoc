@@ -86,8 +86,8 @@ with debug information unstripped. You can opt to run 'strip -S' manually, it mo
 
 | 2.7.8 | Linux, macOS
 | 3.0.7 | Linux, macOS
-| 3.1.{4,5,6} | Linux, macOS, Windows
-| 3.2.{3,4} | Linux, macOS, Windows
+| 3.1.6 | Linux, macOS, Windows
+| 3.2.4 | Linux, macOS, Windows
 | 3.3.{3,4} | Linux, macOS, Windows
 
 |===
@@ -232,8 +232,6 @@ Displays the Tebako version.
 Displays the help message.
 
 
-
-
 == Usage
 
 === General
@@ -290,9 +288,6 @@ docker run -v <application_folder>:/mnt/w \
   -t ghcr.io/tamatebako/tebako-<container_tag>:latest \
   tebako {command} {parameters}
 ----
-
-
-
 
 ==== Packaging from outside the container
 
@@ -659,7 +654,8 @@ tebako press \
   [-R|--Ruby=<ruby-version>] \
   [-o|--output=<packaged-file-name>] \
   [-l|--log-level=<error|warn|debug|trace>] \
-  [-D|--devmode]
+  [-D|--devmode] \
+  [-t|--tebafile=<path-to-tebafile>]
 ----
 
 Where:
@@ -668,7 +664,7 @@ Where:
 the Tebako root folder (see details in the Tebako Root Folder Selection section)
 
 `Ruby`::
-This parameter defines Ruby version that will be packaged (optional, defaults to
+this parameter defines Ruby version that will be packaged (optional, defaults to
 `3.1.6`)
 
 `<project-root>`::
@@ -685,11 +681,16 @@ the output file name (optional, defaults to `<current folder>/<entry point base 
 logging level for the Tebako built-in memory filesystem driver
 (optional, defaults to `error`)
 
+`tebafile`::
+the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
+Please refer to the separate section below for tebafile description.
+
 `devmode`:: flag that activates development mode, in which Tebako's cache and
 packaging consistency checks are relaxed.
 +
-NOTE: Development mode is *not intended for production use* and should only be
-used during development.
+NOTES:
+  * Development mode is *not intended for production use* and should only be used during development.
+  * `entry-point` and `project-root-folder` are required parameters and may be provided either via command-line or in `tebafile`.
 
 [example]
 ====
@@ -724,16 +725,21 @@ based on `tebako press` may create inconsistent environment upon restore.
 $ tebako setup \
   [-p|--prefix=<tebako-root-folder>] \
   [-R|--Ruby=<ruby-version>] \
-  [-D|--devmode]
+  [-D|--devmode] \
+  [-t|--tebafile=<path-to-tebafile>]
 ----
 
 Where:
 
 `<tebako-root-folder>`:: the Tebako root folder (see details in the Tebako Root Folder Selection section)
 
-`Ruby` parameter defines Ruby version that will be packaged (optional, defaults to 3.1.6)
+`Ruby`:: parameter defines Ruby version that will be packaged (optional, defaults to 3.1.6)
 
-`devmode` flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
+`tebafile`::
+the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
+Please refer to the separate section below for tebafile description.
+
+`devmode`:: flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
 Please note that this mode is not intended for production use and should only be used during development.
 
 ==== Clean
@@ -746,12 +752,17 @@ Normally you do not need to do it since tebako packager optimizes artifacts life
 [source,sh]
 ----
 $ tebako clean \
-  [-p|--prefix=<tebako-root-folder>]
+  [-p|--prefix=<tebako-root-folder>] \
+  [-t|--tebafile=<path-to-tebafile>]
 ----
 
 Where:
 
 `<tebako-root-folder>`:: the Tebako root folder (see details in the Tebako Root Folder Selection section)
+
+`tebafile`::
+the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
+Please refer to the separate section below for tebafile description.
 
 [example]
 ====
@@ -777,7 +788,9 @@ NOTE: Compiled DwarFS libraries are not cleaned.
 ----
 $ tebako clean_ruby
   [-p|--prefix=<tebako-root-folder>] \
-  [-R|--Ruby=<ruby-version>]
+  [-R|--Ruby=<ruby-version>] \
+  [-t|--tebafile=<path-to-tebafile>]
+
 ----
 
 Where:
@@ -787,6 +800,10 @@ the Tebako setup folder (optional, defaults to current folder)
 
 `Ruby`::
 defines Ruby version that will cleaned (optional, cleans all versions by default)
+
+`tebafile`::
+the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
+Please refer to the separate section below for tebafile description.
 
 [example]
 ====
@@ -806,6 +823,26 @@ as a cache key in CI/CD pipelines.
 $ tebako hash
 ----
 
+=== Tebako configuration file
+
+It is possible to provide all or some options for the `tebako setup/press/clean/clean_ruby` commands via Tebako configuration file ('tebafile').
+Tebafile is a YAML file with a single section 'options'. The options are the same as long names for the command line. For, example for the prefix option
+
+[source]
+----
+-p|--prefix=<tebako-root-folder>
+----
+the key in the YAML file would be 'prefix'.
+
+Below is an example tebafile that sets values for prefix and Ruby options
+[source,yaml]
+----
+options:
+  prefix: /tmp/tebako
+  Ruby: 3.2.4
+----
+
+Please note that the options provided on the command line have preference over tebafile settings.
 
 === Image extraction
 

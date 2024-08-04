@@ -40,7 +40,7 @@ require_relative "version"
 # Tebako - an executable packager
 # Implementation of tebako command-line interface
 module Tebako
-  OPTIONS_FILE = ".tebako.yml"
+  DEFAULT_TEBAFILE = ".tebako.yml"
   # Tebako packager front-end
   class Cli < Thor
     package_name "Tebako"
@@ -48,7 +48,8 @@ module Tebako
                           desc: "A path to tebako packaging environment, '~/.tebako' ('$HOME/.tebako') by default"
     class_option :devmode, type: :boolean, aliases: "-D", required: false,
                            desc: "Developer mode, please do not use if unsure"
-
+    class_option :tebafile, type: :string, aliases: "-t", required: false,
+                            desc: "tebako configuration file 'tebafile', '$PWD/.tebako.yml' by default"
     desc "clean", "Clean tebako packaging environment"
     def clean
       clean_cache
@@ -123,35 +124,19 @@ module Tebako
 
       def options
         original_options = super
-
-        return original_options unless File.exist?(OPTIONS_FILE)
-
-        defaults = ::YAML.load_file(OPTIONS_FILE) || {}
-        Thor::CoreExt::HashWithIndifferentAccess.new(defaults.merge(original_options))
+        tebafile = original_options["tebafile"].nil? ? DEFAULT_TEBAFILE : original_options["tebafile"]
+        if File.exist?(tebafile)
+          Thor::CoreExt::HashWithIndifferentAccess.new(options_from_tebafile(tebafile).merge(original_options))
+        else
+          puts "Warning: Tebako configuration file '#{tebafile}' not found." unless original_options["tebafile"].nil?
+          original_options
+        end
       end
     end
-
-    private
 
     no_commands do
-      def do_press
-        cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}"
-        build_cmd = "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}"
-        merged_env = ENV.to_h.merge(b_env)
-        Tebako.packaging_error(103) unless system(merged_env, cfg_cmd)
-        Tebako.packaging_error(104) unless system(merged_env, build_cmd)
-      end
-
-      def do_setup
-        cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}"
-        build_cmd = "cmake --build \"#{output}\" --target setup --parallel #{Etc.nprocessors}"
-        merged_env = ENV.to_h.merge(b_env)
-        Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
-        Tebako.packaging_error(102) unless system(merged_env, build_cmd)
-      end
+      include Tebako::CliHelpers
+      include Tebako::CliRubies
     end
-
-    include Tebako::CliHelpers
-    include Tebako::CliRubies
   end
 end

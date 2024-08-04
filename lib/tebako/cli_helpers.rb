@@ -80,6 +80,22 @@ module Tebako
       @deps ||= File.join(prefix, "deps")
     end
 
+    def do_press
+      cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{cfg_options} #{press_options}"
+      build_cmd = "cmake --build #{output} --target tebako --parallel #{Etc.nprocessors}"
+      merged_env = ENV.to_h.merge(b_env)
+      Tebako.packaging_error(103) unless system(merged_env, cfg_cmd)
+      Tebako.packaging_error(104) unless system(merged_env, build_cmd)
+    end
+
+    def do_setup
+      cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=ON #{cfg_options}"
+      build_cmd = "cmake --build \"#{output}\" --target setup --parallel #{Etc.nprocessors}"
+      merged_env = ENV.to_h.merge(b_env)
+      Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
+      Tebako.packaging_error(102) unless system(merged_env, build_cmd)
+    end
+
     def ensure_version_file
       version_file_path = File.join(deps, E_VERSION_FILE)
 
@@ -127,6 +143,18 @@ module Tebako
                    end
     end
     # rubocop:enable Metrics/MethodLength
+
+    def options_from_tebafile(tebafile)
+      ::YAML.load_file(tebafile)["options"] || {}
+    rescue Psych::SyntaxError => e
+      puts "Warning: The tebafile '#{tebafile}' contains invalid YAML syntax."
+      puts e.message
+      {}
+    rescue StandardError => e
+      puts "An unexpected error occurred while loading the tebafile '#{tebafile}'."
+      puts e.message
+      {}
+    end
 
     def output
       @output ||= File.join(prefix, "o")
