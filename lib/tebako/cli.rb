@@ -73,7 +73,14 @@ module Tebako
       print Digest::SHA256.hexdigest [File.read(File.join(source, "CMakeLists.txt")), Tebako::VERSION].join
     end
 
+    CWD_DESCRIPTION = <<~DESC
+      Current working directory for packaged application. This directory shall be specified relative to root.
+      #{" " * 62}# If this parameter is not set, the application will start in the current directory of the host file system.
+    DESC
+
     desc "press", "Press tebako image"
+    method_option :cwd, type: :string, aliases: "-c", required: false,
+                        desc: CWD_DESCRIPTION
     method_option :"entry-point", type: :string, aliases: ["-e", "--entry"], required: true,
                                   desc: "Ruby application entry point"
     method_option :"log-level", type: :string, aliases: "-l", required: false, enum: %w[error warn debug trace],

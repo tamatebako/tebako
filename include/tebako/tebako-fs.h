@@ -1,6 +1,6 @@
 /**
  *
- * Copyright (c) 2021, [Ribose Inc](https://www.ribose.com).
+ * Copyright (c) 2021-2024, [Ribose Inc](https://www.ribose.com).
  * All rights reserved.
  * This file is a part of tebako
  *
@@ -37,4 +37,6 @@ namespace tebako {
 	extern const char* fs_log_level;
 	extern const char* fs_mount_point;
 	extern const char* fs_entry_point;
+	extern       bool  needs_cwd;
+	extern const char* package_cwd;
 }

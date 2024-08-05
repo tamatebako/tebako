@@ -132,6 +132,13 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 
 		}
 
+		if (tebako::needs_cwd) {
+			if (tebako_chdir(tebako::package_cwd) != 0) {
+				printf("Failed to chdir to '%s' : %s\n", tebako::package_cwd, strerror(errno));
+				ret = -1;
+			}
+		}
+
 		if (ret != 0) {
 			try {
 				printf("Tebako initialization failed\n");
@@ -145,8 +152,6 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 				// Nested error, no recovery :(
 			}
 		}
-
-		// tebako_chdir("/__tebako_memfs__/local");
 	}
 	return ret;
 }

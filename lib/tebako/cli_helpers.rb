@@ -195,20 +195,28 @@ module Tebako
     end
 
     def press_announce
+      cwd_announce = options["cwd"].nil? ? "<Host current directory>" : options["cwd"]
       @press_announce ||= <<~ANN
         Running tebako press at #{prefix}
-           Ruby version:            '#{extend_ruby_version[0]}'
-           Project root:            '#{root}'
-           Application entry point: '#{options["entry-point"]}'
-           Package file name:       '#{package}'
-           Loging level:            '#{l_level}'
+           Ruby version:              '#{extend_ruby_version[0]}'
+           Project root:              '#{root}'
+           Application entry point:   '#{options["entry-point"]}'
+           Package file name:         '#{package}'
+           Loging level:              '#{l_level}'
+           Package working directory: '#{cwd_announce}'
       ANN
     end
 
     def press_options
+      cwd_option = if options["cwd"].nil?
+                     "-DPACKAGE_NEEDS_CWD:BOOL=OFF"
+                   else
+                     "-DPACKAGE_NEEDS_CWD:BOOL=ON -DPACKAGE_CWD:STRING='#{options["cwd"]}'"
+                   end
       @press_options ||=
         "-DROOT:STRING='#{root}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
-        "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' "
+        "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' " \
+        "#{cwd_option}"
     end
 
     def relative?(path)
