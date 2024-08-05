@@ -1,6 +1,6 @@
 /**
  *
- * Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+ * Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
  * All rights reserved.
  * This file is a part of tebako
  *
@@ -33,5 +33,7 @@ namespace tebako {
 	const char * fs_log_level   = "@LOG_LEVEL@";
 	const char * fs_mount_point = "@FS_MOUNT_POINT@";
 	const char * fs_entry_point = "@FS_ENTRY_POINT@";
+		  bool   needs_cwd	    = @NEEDS_CWD@;
+	const char * package_cwd 	= "@PACKAGE_CWD@";
 	INCBIN(fs, "@DATA_BIN_FILE@");
 }

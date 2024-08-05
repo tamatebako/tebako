@@ -246,6 +246,13 @@ else(${IS_MSYS})
   set(FS_MOUNT_POINT "/__tebako_memfs__")
 endif(${IS_MSYS})
 
+if(PACKAGE_NEEDS_CWD)
+  set(NEEDS_CWD true)
+  set(PACKAGE_CWD ${FS_MOUNT_POINT}/${PACKAGE_CWD})
+else(PACKAGE_NEEDS_CWD)
+  set(NEEDS_CWD false)
+  set(PACKAGE_CWD "")
+endif(PACKAGE_NEEDS_CWD)
 
 message(STATUS "DATA_SRC_DIR: ${DATA_SRC_DIR}")
 message(STATUS "DATA_PRE_DIR: ${DATA_PRE_DIR}")

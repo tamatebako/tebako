@@ -1,4 +1,3 @@
-#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 # Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
@@ -115,10 +114,15 @@ class TebakoTest < Minitest::Test
     ENV.fetch("RUBY_VER", "3.1.6")
   end
 
-  # Run 'tebako press ...'
-  def press(tebako, name, package, prefix)
+  def press_cmd(tebako, name, package, prefix, cwd = nil)
     cmd = "ruby #{tebako} press -D -R #{ruby_ver} -o #{package} -e #{name}.rb -r #{name} -p '#{prefix}'"
-    out, st = Open3.capture2e(cmd)
+    cmd += " -c #{cwd}" unless cwd.nil?
+    cmd
+  end
+
+  # Run 'tebako press ...'
+  def press(tebako, name, package, prefix, cwd = nil)
+    out, st = Open3.capture2e(press_cmd(tebako, name, package, prefix, cwd))
     if st.exitstatus != 0
       puts "\"cmd\" failed with status #{st.exitstatus}"
       puts out
@@ -130,10 +134,10 @@ class TebakoTest < Minitest::Test
   end
 
   # A kind of standart creates names - tmp dir with fixture - press sequence
-  def with_fixture_press_and_env(name)
+  def with_fixture_press_and_env(name, cwd = nil)
     package = "#{name}-package"
     with_fixture name do
-      pkg_file = press(Tebako, name, package, Prefix)
+      pkg_file = press(Tebako, name, package, Prefix, cwd)
       pristine_env pkg_file do |tempdirname|
         yield "#{tempdirname}/#{pkg_file}"
       end
@@ -157,7 +161,7 @@ class TebakoTest < Minitest::Test
   #  with_fixture_press_and_env name do |package|
   #    out, st = Open3.capture2(package)
   #    assert_equal 0, st.exitstatus
-  #    assert_match(/Hello! excavate gem welcomes you to the magic world of ruby gems./, out)
+  #    assert_match(/Hello! excavate gem welcomes you to the magic world of ruby gems\./, out)
   #  end
   # end
 
@@ -167,7 +171,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_match(/Hello! nokogiri gem welcomes you to the magic world of ruby gems./, out)
+      assert_match(/Hello! nokogiri gem welcomes you to the magic world of ruby gems\./, out)
     end
   end
 
@@ -177,7 +181,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_match(/Hello! ffi-libarchive-binary gem welcomes you to the magic world of ruby gems./, out)
+      assert_match(/Hello! ffi-libarchive-binary gem welcomes you to the magic world of ruby gems\./, out)
     end
   end
 
@@ -187,7 +191,7 @@ class TebakoTest < Minitest::Test
   #  with_fixture_press_and_env name do |package|
   #    out, st = Open3.capture2(package)
   #    assert_equal 0, st.exitstatus
-  #    assert_equal out, "Hello! Psych welcomes you to the magic world of ruby gems.\n"
+  #    assert_equal out, "Hello! Psych welcomes you to the magic world of ruby gems\.\n"
   #    check_libs(package.to_s)
   #  end
   # end
@@ -199,7 +203,7 @@ class TebakoTest < Minitest::Test
   #  with_fixture_press_and_env name do |package|
   #    out, st = Open3.capture2(package)
   #    assert_equal 0, st.exitstatus
-  #    assert_match(/Hello! Byebug welcomes you to the magic world of ruby gems./, out)
+  #    assert_match(/Hello! Byebug welcomes you to the magic world of ruby gems\./, out)
   #  end
   # end
 
@@ -209,7 +213,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_match(/Hello! Expressir gem welcomes you to the magic world of ruby gems./, out)
+      assert_match(/Hello! Expressir gem welcomes you to the magic world of ruby gems\./, out)
     end
   end
 
@@ -219,7 +223,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_match(/Hello! SassC gem welcomes you to the magic world of ruby gems./, out)
+      assert_match(/Hello! SassC gem welcomes you to the magic world of ruby gems\./, out)
     end
   end
 
@@ -229,7 +233,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_match(/Hello! libmspack welcomes you to the magic world of ruby gems./, out)
+      assert_match(/Hello! libmspack welcomes you to the magic world of ruby gems\./, out)
     end
   end
 
@@ -239,7 +243,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_match(/Hello! SevenZipRuby welcomes you to the magic world of ruby gems./, out)
+      assert_match(/Hello! SevenZipRuby welcomes you to the magic world of ruby gems\./, out)
     end
   end
 
@@ -250,7 +254,7 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       out, st = Open3.capture2(package)
       assert_equal 0, st.exitstatus
-      assert_match(/Hello! Bundler welcomes you to the magic world of ruby gems./, out)
+      assert_match(/Hello! Bundler welcomes you to the magic world of ruby gems\./, out)
     end
   end
 
@@ -283,6 +287,31 @@ class TebakoTest < Minitest::Test
     with_fixture_press_and_env name do |package|
       _, st = Open3.capture2("#{package} foo \"bar baz \\\"quote\\\"\"")
       assert_equal 5, st.exitstatus
+    end
+  end
+
+  # Test:
+  #  -- that tebako package does chdir to specified folder on startup (--cwd option)
+  def test_107_launcher_cwd
+    name = "launcher-cwd"
+    print "\n#{name} "
+    with_fixture_press_and_env name, "local" do |package|
+      out, st = Open3.capture2(package.to_s)
+      assert_equal 0, st.exitstatus
+      assert_match(/file-1\.txt/, out)
+    end
+  end
+
+  # Test:
+  #  -- that tebako package attempt to chdir to non-existing folder (--cwd option) and fails
+  #  -- short options without whitespaces
+  def test_106_launcher_cwd_error
+    name = "launcher-cwd-error"
+    print "\n#{name} "
+    with_fixture_press_and_env name, "non-existing" do |package|
+      out, st = Open3.capture2(package.to_s)
+      assert_equal 255, st.exitstatus
+      assert_match(/Failed to chdir to /, out)
     end
   end
 
