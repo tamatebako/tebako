@@ -57,6 +57,10 @@ jobs:
 
   rspec:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-20.04, macos-14, windows-2019 ]
     env:
       CODECOV_TOKEN: 795f17c3-2dc3-4253-9627-e2d0a2e59223
     steps:
