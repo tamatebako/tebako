@@ -10,7 +10,7 @@ Platform tests on Cirrus:
 image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
 
 Quality:
-image:https://github.com/tamatebako/tebako/actions/workflows/lint.yml/badge.svg["lint", link="https://github.com/tamatebako/tebako/actions/workflows/lint.yml"]
+image:https://github.com/tamatebako/tebako/actions/workflows/lint-and-rspec.yml/badge.svg["lint and rspec", link="https://github.com/tamatebako/tebako/actions/workflows/lint-and-rspec.yml"]
 image:https://codecov.io/gh/tamatebako/tebako/graph/badge.svg?token=XD3emQ5qsY["Tebako cli rspec coverage", link="https://codecov.io/gh/tamatebako/tebako"]
 
 == Purpose
