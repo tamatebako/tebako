@@ -27,6 +27,7 @@
  *
  */
 
+#include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -133,10 +134,17 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 
 		}
 
-		if (tebako::needs_cwd && !tebako_is_running_miniruby()) {
-			if (tebako_chdir(tebako::package_cwd) != 0) {
-				printf("Failed to chdir to '%s' : %s\n", tebako::package_cwd, strerror(errno));
-				ret = -1;
+		if (!tebako_is_running_miniruby()) {
+        	if (getcwd(tebako::original_cwd, sizeof(tebako::original_cwd)) == NULL) {
+            	printf("Failed to get current directory: %s\n", strerror(errno));
+            	return -1;
+        	}
+
+			if (tebako::needs_cwd) {
+				if (tebako_chdir(tebako::package_cwd) != 0) {
+					printf("Failed to chdir to '%s' : %s\n", tebako::package_cwd, strerror(errno));
+					ret = -1;
+				}
 			}
 		}
 
@@ -159,6 +167,10 @@ extern "C" int tebako_main(int* argc, char*** argv) {
 
 extern "C" const char* tebako_mount_point(void) {
 	return tebako::fs_mount_point;
+}
+
+extern "C" const char* tebako_original_pwd(void) {
+	return tebako::original_cwd;
 }
 
 extern "C" int tebako_is_running_miniruby(void) {

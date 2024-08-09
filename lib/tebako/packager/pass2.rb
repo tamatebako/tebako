@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require_relative "patch_literals"
+require_relative "patch_main"
 require_relative "patch_libraries"
 require_relative "patch_helpers"
 require_relative "patch_buildsystem"
@@ -122,7 +123,7 @@ module Tebako
             "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
             "tool/mkconfig.rb" => get_tool_mkconfig_rb_patch(ostype),
             "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype, ruby_ver),
-            "io.c" => get_io_c_patch(ostype, ruby_ver),    "main.c" => MAIN_C_PATCH,
+            "io.c" => get_io_c_patch(ostype, ruby_ver),    "main.c" => PatchMain.get_main_c_patch(ruby_ver),
             "file.c" => PatchHelpers.patch_c_file_pre("/* define system APIs */"),
             "util.c" => get_util_c_patch(ruby_ver)
           }
