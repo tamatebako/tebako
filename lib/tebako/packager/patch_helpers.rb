@@ -108,44 +108,8 @@ module Tebako
           end
         end
 
-        def ruby3x?(ruby_ver)
-          ruby_ver[0] == "3"
-        end
-
-        def ruby31?(ruby_ver)
-          ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 1
-        end
-
-        def ruby32?(ruby_ver)
-          ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 2
-        end
-
-        def ruby32only?(ruby_ver)
-          ruby3x?(ruby_ver) && ruby_ver[2] == "2"
-        end
-
-        def ruby33?(ruby_ver)
-          ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 3
-        end
-
-        # Sets up temporary environment variables and yields to the
-        # block. When the block exits, the environment variables are set
-        # back to their original values.
-        def with_env(hash)
-          old = {}
-          hash.each do |k, v|
-            old[k] = ENV.fetch(k, nil)
-            ENV[k] = v
-          end
-          begin
-            yield
-          ensure
-            hash.each_key { |k| ENV[k] = old[k] }
-          end
-        end
-
         def yaml_reference(ruby_ver)
-          ruby32?(ruby_ver) ? "-l:libyaml.a" : ""
+          ruby_ver.ruby32? ? "-l:libyaml.a" : ""
         end
       end
     end

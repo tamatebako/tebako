@@ -655,6 +655,7 @@ tebako press \
   [-R|--Ruby=<ruby-version>] \
   [-o|--output=<packaged-file-name>] \
   [-l|--log-level=<error|warn|debug|trace>] \
+  [-c|--cwd=<package current working directory>]
   [-D|--devmode] \
   [-t|--tebafile=<path-to-tebafile>]
 ----
@@ -668,10 +669,10 @@ the Tebako root folder (see details in the Tebako Root Folder Selection section)
 this parameter defines Ruby version that will be packaged (optional, defaults to
 `3.1.6`)
 
-`<project-root>`::
+`project-root`::
 a folder at the host source file system where project files are located
 
-`<entry-point>`::
+`entry-point`::
 an executable file (binary executable or script) that shall be started when
 packaged file is called
 
@@ -681,6 +682,12 @@ the output file name (optional, defaults to `<current folder>/<entry point base 
 `log-level`::
 logging level for the Tebako built-in memory filesystem driver
 (optional, defaults to `error`)
+
+`cwd`::
+a folder within Tebako memfs where the packaged application will start. This folder should be specified relative to the memfs root.
+If not provided, the application will start within the current folder of the host (i.e., at $PWD).
+This option is required because it is not possible to change the directory to a memfs folder until the package is started, as opposed to any host folder
+that can be set as the current directory before Tebako package invocation.
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).

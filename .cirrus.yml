@@ -74,6 +74,10 @@ task:
 
   pre-setup_script: |
     cat common.env >> $CIRRUS_ENV
+    SECURE_TMP_DIR="$PWD/secure_tmp"
+    mkdir -p "$SECURE_TMP_DIR"
+    chmod 700 "$SECURE_TMP_DIR"
+    echo TMPDIR="$SECURE_TMP_DIR" >> $CIRRUS_ENV
     git clone --depth 1 https://github.com/kward/shunit2.git tests/shunit2
 
   setup-cmake_script: |
