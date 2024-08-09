@@ -125,7 +125,7 @@ module Tebako
           libs = String.new
 
           DARWIN_DEP_LIBS_1.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
-          process_brew_libs!(libs, PatchHelpers.ruby31?(ruby_ver) ? DARWIN_BREW_LIBS_31 : DARWIN_BREW_LIBS_PRE_31)
+          process_brew_libs!(libs, ruby_ver.ruby31? ? DARWIN_BREW_LIBS_31 : DARWIN_BREW_LIBS_PRE_31)
           process_brew_libs!(libs, DARWIN_BREW_LIBS)
 
           DARWIN_DEP_LIBS_2.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }

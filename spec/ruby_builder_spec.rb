@@ -25,28 +25,45 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "fileutils"
-require "find"
+require "tebako/ruby_builder"
+require "tebako/build_helpers"
+require "tebako/packager/patch_helpers"
 
-require_relative "build_helpers"
+# rubocop:disable Metrics/BlockLength
 
-# Tebako - an executable packager
-module Tebako
-  # Tebako packaging support (ruby builder)
-  class RubyBuilder
-    def initialize(ruby_ver, src_dir)
-      @ruby_ver = ruby_ver
-      @src_dir = src_dir
-      @ncores = BuildHelpers.ncores
+RSpec.describe Tebako::RubyBuilder do
+  describe "#final_build" do
+    let(:ruby_ver) { "3.0.0" }
+    let(:src_dir) { "/path/to/src" }
+    let(:ncores) { 4 }
+    let(:builder) { described_class.new(Tebako::RubyVersion.new(ruby_ver), src_dir) }
+
+    before do
+      allow(Tebako::BuildHelpers).to receive(:ncores).and_return(ncores)
+      allow(Tebako::BuildHelpers).to receive(:run_with_capture)
+      allow(Dir).to receive(:chdir).with(src_dir).and_yield
     end
 
-    # Final build of tebako package
-    def final_build
-      puts "   ... building tebako package"
-      Dir.chdir(@src_dir) do
-        BuildHelpers.run_with_capture(["make", "ruby", "-j#{@ncores}"]) if @ruby_ver.ruby3x?
-        BuildHelpers.run_with_capture(["make", "-j#{@ncores}"])
+    it "prints the building message" do
+      expect { builder.final_build }.to output(/building tebako package/).to_stdout
+    end
+
+    it "changes to the source directory" do
+      expect(Dir).to receive(:chdir).with(src_dir).and_yield
+      builder.final_build
+    end
+
+    context "when ruby version is 3.x" do
+      it "runs make ruby with the correct number of cores" do
+        expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "ruby", "-j#{ncores}"])
+        builder.final_build
       end
+    end
+
+    it "runs make with the correct number of cores" do
+      expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "-j#{ncores}"])
+      builder.final_build
     end
   end
 end
+# rubocop:enable Metrics/BlockLength

@@ -49,7 +49,8 @@ RSpec.describe Tebako::DeployHelper do # rubocop:disable Metrics/BlockLength
 
   describe "#config" do
     let(:os_type) { "linux" }
-    let(:ruby_ver) { "3.2.4" }
+    let(:r_v) { "3.2.4" }
+    let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
     let(:cwd) { "/current/working/dir" }
 
     before do
@@ -60,12 +61,13 @@ RSpec.describe Tebako::DeployHelper do # rubocop:disable Metrics/BlockLength
     end
 
     it "sets configuration variables correctly" do
-      expect(deploy_helper.instance_variable_get(:@ruby_ver)).to eq(ruby_ver)
+      r_vv = deploy_helper.instance_variable_get(:@ruby_ver)
+      expect(r_vv.instance_variable_get(:@ruby_ver)).to eq(r_v)
       expect(deploy_helper.instance_variable_get(:@os_type)).to eq(os_type)
       expect(deploy_helper.instance_variable_get(:@cwd)).to eq(cwd)
       expect(deploy_helper.instance_variable_get(:@tbd)).to eq(File.join(target_dir, "bin"))
       expect(deploy_helper.instance_variable_get(:@tgd)).to eq(File.join(target_dir, "lib", "ruby", "gems",
-                                                                         deploy_helper.send(:ruby_api_version)))
+                                                                         r_vv.api_version))
       expect(deploy_helper.instance_variable_get(:@tld)).to eq(File.join(target_dir, "local"))
     end
 

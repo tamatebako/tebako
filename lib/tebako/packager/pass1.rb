@@ -156,7 +156,7 @@ module Tebako
           # ....................................................
           # autoload :OpenSSL, "openssl"
           # fails to deal with a default gem from statically linked extension
-          patch_map.store("lib/rubygems/openssl.rb", RUBYGEM_OPENSSL_RB_PATCH) if PatchHelpers.ruby3x?(ruby_ver)
+          patch_map.store("lib/rubygems/openssl.rb", RUBYGEM_OPENSSL_RB_PATCH) if ruby_ver.ruby3x?
 
           if ostype =~ /msys/
             # ....................................................
@@ -176,7 +176,7 @@ module Tebako
         include Tebako::Packager::PatchBuildsystem
 
         def get_gnumakefile_in_patch_p1(ruby_ver) # rubocop:disable Metrics/MethodLength
-          objext = PatchHelpers.ruby32?(ruby_ver) ? "$(OBJEXT)" : "@OBJEXT@"
+          objext = ruby_ver.ruby32? ? "$(OBJEXT)" : "@OBJEXT@"
           {
             "  DLLWRAP += -mno-cygwin" =>
               "# tebako patched  DLLWRAP += -mno-cygwin",

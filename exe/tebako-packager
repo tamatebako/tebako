@@ -28,6 +28,7 @@
 
 require_relative "../lib/tebako/packager"
 require_relative "../lib/tebako/stripper"
+require_relative "../lib/tebako/build_helpers"
 
 begin
   unless ARGV.length.positive?
@@ -46,8 +47,8 @@ begin
       raise Tebako::Error,
             "tebako-packager pass1 command expects 6 arguments, #{ARGV.length} has been provided."
     end
-
-    Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ARGV[5])
+    ruby_ver = Tebako::RubyVersion.new(ARGV[5])
+    Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ruby_ver)
 
   when "pass1a"
     #       ARGV[0] -- command
@@ -69,9 +70,9 @@ begin
       raise Tebako::Error,
             "tebako-packager pass2 command expects 7 arguments, #{ARGV.length} has been provided."
     end
-
+    ruby_ver = Tebako::RubyVersion.new(ARGV[6])
     Tebako::Packager.stash(ARGV[4], ARGV[5])
-    Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ARGV[6])
+    Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ruby_ver)
   when "deploy"
     #       ARGV[0] -- command
     #       ARGV[1] -- OSTYPE
@@ -90,11 +91,12 @@ begin
       raise Tebako::Error,
             "tebako-packager deploy command expects 12 or 13 arguments, #{ARGV.length} has been provided."
     end
+    ruby_ver = Tebako::RubyVersion.new(ARGV[11])
     Tebako::Packager.init(ARGV[3], ARGV[4], ARGV[5], ARGV[6])
-    Tebako::Packager.create_implib(ARGV[2], ARGV[4], File.basename(ARGV[10]), ARGV[11]) if ARGV[1] =~ /msys/
+    Tebako::Packager.create_implib(ARGV[2], ARGV[4], File.basename(ARGV[10]), ruby_ver) if ARGV[1] =~ /msys/
     # Assume that "<TARGET_BIN_DIR (TBD)>" is <DATA_SRC_DIR>/bin"
     # That shall match CMakeLists.txt settings
-    Tebako::Packager.deploy(ARGV[1], ARGV[4], ARGV[5], ARGV[11], ARGV[7], ARGV[8], ARGV[9],
+    Tebako::Packager.deploy(ARGV[1], ARGV[4], ARGV[5], ruby_ver, ARGV[7], ARGV[8], ARGV[9],
                             ARGV.length == 13 ? ARGV[12] : nil)
 
   when "finalize"
@@ -107,7 +109,8 @@ begin
       raise Tebako::Error,
             "tebako-packager finalize command expects 5 arguments, #{ARGV.length} has been provided."
     end
-    Tebako::Packager.finalize(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
+    ruby_ver = Tebako::RubyVersion.new(ARGV[4])
+    Tebako::Packager.finalize(ARGV[1], ARGV[2], ARGV[3], ruby_ver)
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"
   end
