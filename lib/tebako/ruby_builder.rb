@@ -28,24 +28,24 @@
 require "fileutils"
 require "find"
 
-require_relative "packager/patch_helpers"
+require_relative "build_helpers"
 
 # Tebako - an executable packager
 module Tebako
   # Tebako packaging support (ruby builder)
-  module RubyBuilder
-    class << self
-      # Final build of tebako package
-      def final_build(ruby_ver, src_dir)
-        puts "   ... building tebako package"
-        ncores = Packager::PatchHelpers.ncores
-        Dir.chdir(src_dir) do
-          if Packager::PatchHelpers.ruby3x?(ruby_ver)
-            Packager::PatchHelpers.run_with_capture(["make", "ruby",
-                                                     "-j#{ncores}"])
-          end
-          Packager::PatchHelpers.run_with_capture(["make", "-j#{ncores}"])
-        end
+  class RubyBuilder
+    def initialize(ruby_ver, src_dir)
+      @ruby_ver = ruby_ver
+      @src_dir = src_dir
+      @ncores = BuildHelpers.ncores
+    end
+
+    # Final build of tebako package
+    def final_build(_ruby_ver, _src_dir)
+      puts "   ... building tebako package"
+      Dir.chdir(@src_dir) do
+        BuildHelpers.run_with_capture(["make", "ruby", "-j#{@ncores}"]) if Packager::PatchHelpers.ruby3x?(@ruby_ver)
+        BuildHelpers.run_with_capture(["make", "-j#{@ncores}"])
       end
     end
   end

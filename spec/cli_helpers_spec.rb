@@ -26,10 +26,14 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "yaml"
-require_relative "../lib/tebako/cli_helpers"
+require "tebako/cli_helpers"
+require "tebako/cli_rubies"
 
-RSpec.describe Tebako::CliHelpers do # rubocop:disable Metrics/BlockLength
+# rubocop:disable Metrics/BlockLength
+
+RSpec.describe Tebako::CliHelpers do
   include Tebako::CliHelpers
+  include Tebako::CliRubies
 
   let(:options) { {} }
 
@@ -37,7 +41,7 @@ RSpec.describe Tebako::CliHelpers do # rubocop:disable Metrics/BlockLength
     allow(self).to receive(:options).and_return(options)
   end
 
-  describe "#b_env" do # rubocop:disable Metrics/BlockLength
+  describe "#b_env" do
     before do
       @original_host_os = RbConfig::CONFIG["host_os"]
       @original_cxxflags = ENV.fetch("CXXFLAGS", nil)
@@ -94,7 +98,7 @@ RSpec.describe Tebako::CliHelpers do # rubocop:disable Metrics/BlockLength
     end
   end
 
-  describe "#m_files" do # rubocop:disable Metrics/BlockLength
+  describe "#m_files" do
     context "when on a Linux platform" do
       before do
         stub_const("RUBY_PLATFORM", "linux")
@@ -179,7 +183,7 @@ RSpec.describe Tebako::CliHelpers do # rubocop:disable Metrics/BlockLength
     end
   end
 
-  describe "#version_cache_check" do # rubocop:disable Metrics/BlockLength
+  describe "#version_cache_check" do
     before do
       allow(self).to receive(:version_cache).and_return(match_data)
       allow(self).to receive(:version_unknown)
@@ -252,4 +256,96 @@ RSpec.describe Tebako::CliHelpers do # rubocop:disable Metrics/BlockLength
       version_unknown
     end
   end
+  describe "#press_announce" do
+    context 'when options["cwd"] is set' do
+      let(:options) do
+        { "cwd" => "/some/path", "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" }
+      end
+
+      it "returns the correct announcement" do
+        expected_announce = <<~ANN
+          Running tebako press at #{prefix}
+             Ruby version:              '#{extend_ruby_version[0]}'
+             Project root:              '#{root}'
+             Application entry point:   '#{options["entry-point"]}'
+             Package file name:         '#{package}'
+             Loging level:              '#{l_level}'
+             Package working directory: '#{options["cwd"]}'
+        ANN
+        expect(press_announce).to eq(expected_announce)
+      end
+    end
+    context 'when options["cwd"] is not set' do
+      let(:options) { { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" } }
+
+      it "returns the correct announcement with default cwd" do
+        expected_announce = <<~ANN
+          Running tebako press at #{prefix}
+             Ruby version:              '#{extend_ruby_version[0]}'
+             Project root:              '#{root}'
+             Application entry point:   '#{options["entry-point"]}'
+             Package file name:         '#{package}'
+             Loging level:              '#{l_level}'
+             Package working directory: '<Host current directory>'
+        ANN
+        expect(press_announce).to eq(expected_announce)
+      end
+    end
+    describe "#press_options" do
+      context 'when options["cwd"] is set' do
+        let(:options) do
+          { "cwd" => "/some/path", "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" }
+        end
+
+        it "returns the correct options string" do
+          expected_options = "-DROOT:STRING='#{root}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
+                             "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' " \
+                             "-DPACKAGE_NEEDS_CWD:BOOL=ON -DPACKAGE_CWD:STRING='#{options["cwd"]}'"
+          expect(press_options).to eq(expected_options)
+        end
+      end
+
+      context 'when options["cwd"] is not set' do
+        let(:options) { { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" } }
+
+        it "returns the correct options string with default cwd option" do
+          expected_options = "-DROOT:STRING='#{root}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
+                             "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' " \
+                             "-DPACKAGE_NEEDS_CWD:BOOL=OFF"
+          expect(press_options).to eq(expected_options)
+        end
+      end
+    end
+    describe "#relative?" do
+      it "returns true for a relative path" do
+        expect(relative?("relative/path")).to be true
+      end
+
+      it "returns false for an absolute path" do
+        expect(relative?("/absolute/path")).to be false
+      end
+    end
+
+    describe "#root" do
+      context 'when options["root"] is a relative path' do
+        let(:options) { { "root" => "relative/path" } }
+
+        it "returns the correct root path" do
+          expected_root = File.join(fs_current, options["root"])
+          expect(root).to eq(expected_root)
+        end
+      end
+
+      context 'when options["root"] is an absolute path' do
+        let(:options) { { "root" => "/absolute/path" } }
+
+        it "returns the correct root path" do
+          expected_root = File.join(options["root"], "")
+          expect(root).to eq(expected_root)
+        end
+      end
+    end
+  end
 end
+
+# rubocop:enable Metrics/BlockLength
