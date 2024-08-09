@@ -80,7 +80,7 @@ module Tebako
       def template_makefile_in_subst(ostype, ruby_ver)
         if PatchHelpers.msys?(ostype)
           TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS
-        elsif !PatchHelpers.ruby31?(ruby_ver)
+        elsif !ruby_ver.ruby31?
           TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1
         else
           TEMPLATE_MAKEFILE_IN_BASE_PATCH
@@ -88,9 +88,9 @@ module Tebako
       end
 
       def template_makefile_in_patch_two(ostype, ruby_ver)
-        if !PatchHelpers.ruby31?(ruby_ver)
+        if !ruby_ver.ruby31?
           { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => template_makefile_in_subst(ostype, ruby_ver) }
-        elsif !PatchHelpers.ruby33?(ruby_ver)
+        elsif !ruby_ver.ruby33?
           { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 => template_makefile_in_subst(ostype, ruby_ver) }
         else
           { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => template_makefile_in_subst(ostype, ruby_ver) }
@@ -136,7 +136,7 @@ module Tebako
       #  - Introduce LIBRUBY dependency on static extensions
       #    This is an addition to COMMON_MK_PATCH specified above
       def get_gnumakefile_in_patch_p2(ruby_ver) # rubocop:disable Metrics/MethodLength
-        objext = PatchHelpers.ruby32?(ruby_ver) ? "$(OBJEXT)" : "@OBJEXT@"
+        objext = ruby_ver.ruby32? ? "$(OBJEXT)" : "@OBJEXT@"
 
         {
           "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>

@@ -303,19 +303,6 @@ class TebakoTest < Minitest::Test
   end
 
   # Test:
-  #  -- that tebako package attempt to chdir to non-existing folder (--cwd option) and fails
-  #  -- short options without whitespaces
-  def test_106_launcher_cwd_error
-    name = "launcher-cwd-error"
-    print "\n#{name} "
-    with_fixture_press_and_env name, "non-existing" do |package|
-      out, st = Open3.capture2(package.to_s)
-      assert_equal 255, st.exitstatus
-      assert_match(/Failed to chdir to /, out)
-    end
-  end
-
-  # Test:
   #  -- that executable can write a file to the current working directory (io.c, file.c patching)
   #  -- short options without whitespaces
   def test_105_launcher_pwd

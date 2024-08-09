@@ -41,7 +41,7 @@ module Tebako
           patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
           if PatchHelpers.msys?(ostype)
             patch_map.merge!(get_msys_patches(ruby_ver))
-          elsif PatchHelpers.ruby3x?(ruby_ver)
+          elsif ruby_ver.ruby3x?
             patch_map.store("common.mk", COMMON_MK_PATCH)
           end
           extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
@@ -52,7 +52,7 @@ module Tebako
         include Tebako::Packager::PatchBuildsystem
         include Tebako::Packager::PatchLiterals
         def extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
-          if PatchHelpers.ruby33?(ruby_ver) || PatchHelpers.msys?(ostype)
+          if ruby_ver.ruby33? || PatchHelpers.msys?(ostype)
             patch_map.store("config.status",
                             get_config_status_patch(ostype, deps_lib_dir, ruby_ver))
           end
@@ -75,7 +75,7 @@ module Tebako
           }
 
           if PatchHelpers.msys?(ostype)
-            patch = PatchHelpers.ruby32?(ruby_ver) ? DLN_C_MSYS_PATCH : DLN_C_MSYS_PATCH_PRE32
+            patch = ruby_ver.ruby32? ? DLN_C_MSYS_PATCH : DLN_C_MSYS_PATCH_PRE32
             dln_c_patch.merge!(patch)
           end
 
@@ -83,7 +83,7 @@ module Tebako
         end
 
         def get_io_c_msys_patch(ruby_ver)
-          io_c_msys_patch = PatchHelpers.ruby32?(ruby_ver) ? IO_C_MSYS_PATCH : IO_C_MSYS_PATCH_PRE_32
+          io_c_msys_patch = ruby_ver.ruby32? ? IO_C_MSYS_PATCH : IO_C_MSYS_PATCH_PRE_32
           io_c_msys_patch.merge(IO_C_MSYS_BASE_PATCH)
         end
 
@@ -94,7 +94,7 @@ module Tebako
         end
 
         def get_util_c_patch(ruby_ver)
-          if PatchHelpers.ruby31?(ruby_ver)
+          if ruby_ver.ruby31?
             PatchHelpers.patch_c_file_post("#endif /* !HAVE_GNU_QSORT_R */")
           else
             PatchHelpers.patch_c_file_pre("#ifndef S_ISDIR")
@@ -129,7 +129,7 @@ module Tebako
         end
 
         def mlibs_subst(ostype, deps_lib_dir, ruby_ver)
-          yjit_libs = PatchHelpers.ruby32only?(ruby_ver) ? "$(YJIT_LIBS) " : ""
+          yjit_libs = ruby_ver.ruby32only? ? "$(YJIT_LIBS) " : ""
           {
             "MAINLIBS = #{yjit_libs}@MAINLIBS@" =>
               "# -- Start of tebako patch -- \n" \

@@ -86,7 +86,7 @@ module Tebako
       end
 
       def finalize(os_type, src_dir, app_name, ruby_ver)
-        RubyBuilder.final_build(ruby_ver, src_dir)
+        RubyBuilder.new(ruby_ver, src_dir).final_build
         exe_suffix = Packager::PatchHelpers.exe_suffix(os_type)
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
         package_name = "#{app_name}#{exe_suffix}"
@@ -179,7 +179,7 @@ module Tebako
       end
 
       def lib_fname(src_dir, ruby_ver)
-        File.join(src_dir, "lib", "libx64-ucrt-ruby#{ruby_ver[0]}#{ruby_ver[2]}0.a")
+        File.join(src_dir, "lib", "libx64-ucrt-ruby#{ruby_ver.lib_version}.a")
       end
 
       def do_patch(patch_map, root)
