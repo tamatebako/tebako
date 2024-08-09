@@ -30,10 +30,11 @@
 #include <incbin/incbin.h>
 
 namespace tebako {
-	const char * fs_log_level   = "@LOG_LEVEL@";
-	const char * fs_mount_point = "@FS_MOUNT_POINT@";
-	const char * fs_entry_point = "@FS_ENTRY_POINT@";
-		  bool   needs_cwd	    = @NEEDS_CWD@;
-	const char * package_cwd 	= "@PACKAGE_CWD_FULL@";
+	const  char * fs_log_level   = "@LOG_LEVEL@";
+	const  char * fs_mount_point = "@FS_MOUNT_POINT@";
+	const  char * fs_entry_point = "@FS_ENTRY_POINT@";
+		   bool   needs_cwd	    = @NEEDS_CWD@;
+	const  char * package_cwd 	= "@PACKAGE_CWD_FULL@";
+	       char   original_cwd[PATH_MAX];
 	INCBIN(fs, "@DATA_BIN_FILE@");
 }

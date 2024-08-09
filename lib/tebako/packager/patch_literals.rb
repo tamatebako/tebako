@@ -125,21 +125,6 @@ module Tebako
         SUBST
       }.freeze
 
-      MAIN_C_PATCH = {
-        "int\nmain(int argc, char **argv)" =>
-        "#include <tebako/tebako-main.h>\n\nint\nmain(int argc, char **argv)",
-
-        "    ruby_sysinit(&argc, &argv);" => <<~SUBST
-              ruby_sysinit(&argc, &argv);
-          /* -- Start of tebako patch -- */
-              if (tebako_main(&argc, &argv) != 0) {
-                printf("Tebako intialization failed.");
-                return -1;
-              }
-          /* -- End of tebako patch -- */
-        SUBST
-      }.freeze
-
       # Compensate ruby incorrect processing of (f)getattrlist returning ENOTSUP
       # Note. We are not patching need_normalization function
       # In this function (f)getattrlist failure with ENOTSUP is processed correctly

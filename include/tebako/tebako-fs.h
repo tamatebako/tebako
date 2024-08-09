@@ -39,4 +39,5 @@ namespace tebako {
 	extern const char* fs_entry_point;
 	extern       bool  needs_cwd;
 	extern const char* package_cwd;
+	extern       char  original_cwd[PATH_MAX];
 }

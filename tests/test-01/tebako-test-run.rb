@@ -9,3 +9,6 @@ if defined?(TebakoRuntime::VERSION)
 else
   puts "Tebako runtime not loaded"
 end
+
+puts "Current pwd: #{Dir.pwd}"
+puts "Original pwd: #{$tebako_original_pwd}"

@@ -687,7 +687,7 @@ logging level for the Tebako built-in memory filesystem driver
 a folder within Tebako memfs where the packaged application will start. This folder should be specified relative to the memfs root.
 If not provided, the application will start within the current folder of the host (i.e., at $PWD).
 This option is required because it is not possible to change the directory to a memfs folder until the package is started, as opposed to any host folder
-that can be set as the current directory before Tebako package invocation.
+that can be set as the current directory before Tebako package invocation.  Tebako saves original working directory in a global Ruby variable `$tebako_original_pwd`.
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).

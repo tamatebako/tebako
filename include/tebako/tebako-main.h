@@ -33,6 +33,7 @@ extern "C" {
 	int tebako_main(int* argc, char*** argv);
 	const char* tebako_mount_point(void);
 	int tebako_is_running_miniruby(void);
+	const char* tebako_original_pwd(void);
 #ifdef RB_W32
 	int tebako_file_load_ok(const char *path);
 #endif
