@@ -37,6 +37,47 @@ RSpec.describe Tebako::CliHelpers do # rubocop:disable Metrics/BlockLength
     allow(self).to receive(:options).and_return(options)
   end
 
+  describe "#b_env" do # rubocop:disable Metrics/BlockLength
+    before do
+      @original_host_os = RbConfig::CONFIG["host_os"]
+      @original_cxxflags = ENV.fetch("CXXFLAGS", nil)
+    end
+
+    after do
+      RbConfig::CONFIG["host_os"] = @original_host_os
+      ENV["CXXFLAGS"] = @original_cxxflags
+    end
+
+    context "when host OS is Darwin" do
+      it "sets CXXFLAGS with TARGET_OS_SIMULATOR and TARGET_OS_IPHONE" do
+        RbConfig::CONFIG["host_os"] = "darwin"
+        ENV["CXXFLAGS"] = "-O2"
+
+        expected_flags = "-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0  -O2"
+        expect(b_env["CXXFLAGS"]).to eq(expected_flags)
+      end
+    end
+
+    context "when host OS is not Darwin" do
+      it "sets CXXFLAGS with the value from ENV" do
+        RbConfig::CONFIG["host_os"] = "linux"
+        ENV["CXXFLAGS"] = "-O2"
+
+        expected_flags = "-O2"
+        expect(b_env["CXXFLAGS"]).to eq(expected_flags)
+      end
+    end
+
+    context "when CXXFLAGS is not set in ENV" do
+      it "sets CXXFLAGS to nil" do
+        RbConfig::CONFIG["host_os"] = "linux"
+        ENV.delete("CXXFLAGS")
+
+        expect(b_env["CXXFLAGS"]).to be_nil
+      end
+    end
+  end
+
   describe "#l_level" do
     context "when log-level option is not set" do
       it 'returns "error"' do
