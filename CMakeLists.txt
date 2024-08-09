@@ -248,10 +248,11 @@ endif(${IS_MSYS})
 
 if(PACKAGE_NEEDS_CWD)
   set(NEEDS_CWD true)
-  set(PACKAGE_CWD ${FS_MOUNT_POINT}/${PACKAGE_CWD})
+  set(PACKAGE_CWD_FULL ${FS_MOUNT_POINT}/${PACKAGE_CWD})
 else(PACKAGE_NEEDS_CWD)
   set(NEEDS_CWD false)
   set(PACKAGE_CWD "")
+  set(PACKAGE_CWD_FULL "")
 endif(PACKAGE_NEEDS_CWD)
 
 message(STATUS "DATA_SRC_DIR: ${DATA_SRC_DIR}")
@@ -442,6 +443,7 @@ else (${SETUP_MODE})
       COMMAND ruby ${EXE}/tebako-packager deploy ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${RUBY_STASH_DIR}
                                                  ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
                                                  ${FS_ROOT} ${FS_ENTRANCE} ${FS_MOUNT_POINT} ${APP_NAME} ${RUBY_VER}
+                                                 ${PACKAGE_CWD}
       DEPENDS ${RUBY_PRJ}
   )
 
@@ -488,19 +490,7 @@ else (${SETUP_MODE})
 
   add_dependencies(tebako-fs packaged_filesystem)
 
-  if (${RUBY_VER} VERSION_LESS "3.0.0")
-    add_custom_target(tebako
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make -j${NCORES}
-      COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME}
-      )
-  else()
-    add_custom_target(tebako
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make ruby -j${NCORES}
-      COMMAND ${CMAKE_COMMAND} -E chdir ${RUBY_SOURCE_DIR} make -j${NCORES}
-      COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME}
-      )
-  endif()
-
+  add_custom_target(tebako COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME} ${RUBY_VER})
   add_dependencies(tebako setup tebako-fs)
 
 endif(${SETUP_MODE})

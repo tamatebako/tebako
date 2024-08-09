@@ -85,26 +85,29 @@ begin
     #       ARGV[9] -- FS_MOUNT_POINT
     #       ARGV[10] -- APP_NAME
     #       ARGV[11] -- RUBY_VER
-    unless ARGV.length == 12
+    #       ARGV[12] -- CWD
+    unless ARGV.length == 13 || ARGV.length == 12
       raise Tebako::Error,
-            "tebako-packager deploy command expects 12 arguments, #{ARGV.length} has been provided."
+            "tebako-packager deploy command expects 12 or 13 arguments, #{ARGV.length} has been provided."
     end
     Tebako::Packager.init(ARGV[3], ARGV[4], ARGV[5], ARGV[6])
     Tebako::Packager.create_implib(ARGV[2], ARGV[4], File.basename(ARGV[10]), ARGV[11]) if ARGV[1] =~ /msys/
     # Assume that "<TARGET_BIN_DIR (TBD)>" is <DATA_SRC_DIR>/bin"
     # That shall match CMakeLists.txt settings
-    Tebako::Packager.deploy(ARGV[1], ARGV[4], ARGV[5], ARGV[11], ARGV[7], ARGV[8], ARGV[9])
+    Tebako::Packager.deploy(ARGV[1], ARGV[4], ARGV[5], ARGV[11], ARGV[7], ARGV[8], ARGV[9],
+                            ARGV.length == 13 ? ARGV[12] : nil)
 
   when "finalize"
     #       ARGV[0] -- command
     #       ARGV[1] -- OSTYPE
     #       ARGV[2] -- RUBY_SOURCE_DIR
     #       ARGV[3] -- APP_NAME
-    unless ARGV.length == 4
+    #       ARGV[4] -- RUBY_VER
+    unless ARGV.length == 5
       raise Tebako::Error,
-            "tebako-packager finalize command expects 4 arguments, #{ARGV.length} has been provided."
+            "tebako-packager finalize command expects 5 arguments, #{ARGV.length} has been provided."
     end
-    Tebako::Packager.finalize(ARGV[1], ARGV[2], ARGV[3])
+    Tebako::Packager.finalize(ARGV[1], ARGV[2], ARGV[3], ARGV[4])
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"
   end

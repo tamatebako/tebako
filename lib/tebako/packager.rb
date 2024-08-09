@@ -31,6 +31,7 @@ require "pathname"
 
 require_relative "error"
 require_relative "deploy_helper"
+require_relative "ruby_builder"
 require_relative "stripper"
 require_relative "packager/pass1"
 require_relative "packager/pass1a"
@@ -75,16 +76,17 @@ module Tebako
       end
 
       # Deploy
-      def deploy(os_type, target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, fs_mount_point) # rubocop:disable Metrics/ParameterLists
+      def deploy(os_type, target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, fs_mount_point, cwd) # rubocop:disable Metrics/ParameterLists
         puts "-- Running deploy script"
 
         deploy_helper = Tebako::DeployHelper.new(fs_root, fs_entrance, fs_mount_point, target_dir, pre_dir)
-        deploy_helper.config(os_type, ruby_ver)
+        deploy_helper.config(os_type, ruby_ver, cwd)
         deploy_helper.deploy
         Tebako::Stripper.strip(os_type, target_dir)
       end
 
-      def finalize(os_type, src_dir, app_name)
+      def finalize(os_type, src_dir, app_name, ruby_ver)
+        RubyBuilder.final_build(ruby_ver, src_dir)
         exe_suffix = Packager::PatchHelpers.exe_suffix(os_type)
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
         package_name = "#{app_name}#{exe_suffix}"

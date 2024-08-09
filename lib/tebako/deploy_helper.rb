@@ -48,13 +48,15 @@ module Tebako
       @target_dir = target_dir
       @pre_dir = pre_dir
       @verbose = ENV["VERBOSE"] == "yes" || ENV["VERBOSE"] == "true"
+      @ncores = Packager::PatchHelpers.ncores
     end
 
     attr_reader :bundler_command, :gem_command, :gem_home
 
-    def config(os_type, ruby_ver)
+    def config(os_type, ruby_ver, cwd)
       @ruby_ver = ruby_ver
       @os_type = os_type
+      @cwd = cwd
 
       @tbd = File.join(@target_dir, "bin")
       @tgd = @gem_home = File.join(@target_dir, "lib", "ruby", "gems", ruby_api_version)
@@ -67,14 +69,12 @@ module Tebako
 
     def deploy
       Packager::PatchHelpers.with_env(deploy_env) do
-        unless Packager::PatchHelpers.ruby31?(@ruby_ver)
-          update_rubygems
-          patch_after_rubygems_update(@target_dir, @ruby_api_version)
-        end
+        update_rubygems
         system("#{gem_command} env")
         install_gem("tebako-runtime")
         install_gem("bundler", BUNDLER_VERSION) if needs_bundler?
         deploy_solution
+        check_cwd
       end
     end
 
@@ -95,7 +95,7 @@ module Tebako
       ["--no-document", "--install-dir", @tgd].each do |param|
         params.push(param)
       end
-      run_with_capture_v(params)
+      Packager::PatchHelpers.run_with_capture_v(params)
     end
 
     def ruby_api_version
@@ -107,16 +107,23 @@ module Tebako
     end
 
     def update_rubygems
+      return if Packager::PatchHelpers.ruby31?(@ruby_ver)
+
       puts "   ... updating rubygems to #{Tebako::RUBYGEMS_VERSION}"
-      run_with_capture_v([@gem_command, "update", "--no-doc", "--system", Tebako::RUBYGEMS_VERSION])
+      Packager::PatchHelpers.run_with_capture_v([@gem_command, "update", "--no-doc", "--system",
+                                                 Tebako::RUBYGEMS_VERSION])
+      patch_after_rubygems_update(@target_dir, @ruby_api_version)
     end
 
     private
 
     def bundle_config
-      run_with_capture_v([@bundler_command, "config", "set", "--local", "build.ffi", "--disable-system-libffi"])
-      run_with_capture_v([@bundler_command, "config", "set", "--local", "build.nokogiri", @nokogiri_option])
-      run_with_capture_v([@bundler_command, "config", "set", "--local", "force_ruby_platform", @force_ruby_platform])
+      Packager::PatchHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "build.ffi",
+                                                 "--disable-system-libffi"])
+      Packager::PatchHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "build.nokogiri",
+                                                 @nokogiri_option])
+      Packager::PatchHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "force_ruby_platform",
+                                                 @force_ruby_platform])
     end
 
     def check_entry_point(entry_point_root)
@@ -128,13 +135,22 @@ module Tebako
       raise Tebako::Error.new("Entry point #{fs_entry_point} does not exist or is not accessible", 106)
     end
 
+    def check_cwd
+      return if @cwd.nil?
+
+      cwd_full = File.join(@target_dir, @cwd)
+      return if File.directory?(cwd_full)
+
+      raise Tebako::Error.new("Package working directory #{@cwd} does not exist", 108)
+    end
+
     def collect_and_deploy_gem(gemspec)
       puts "   ... Collecting gem from gemspec #{gemspec}"
 
       copy_files(@pre_dir)
 
       Dir.chdir(@pre_dir) do
-        run_with_capture_v([@gem_command, "build", gemspec])
+        Packager::PatchHelpers.run_with_capture_v([@gem_command, "build", gemspec])
         install_all_gems_or_fail
       end
 
@@ -149,8 +165,8 @@ module Tebako
       Dir.chdir(@pre_dir) do
         bundle_config
         puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        run_with_capture_v([@bundler_command, "install", "--jobs=#{ncores}"])
-        run_with_capture_v([@bundler_command, "exec", @gem_command, "build", gemspec])
+        Packager::PatchHelpers.run_with_capture_v([@bundler_command, "install", "--jobs=#{@ncores}"])
+        Packager::PatchHelpers.run_with_capture_v([@bundler_command, "exec", @gem_command, "build", gemspec])
         install_all_gems_or_fail
       end
 
@@ -216,7 +232,7 @@ module Tebako
       Dir.chdir(@tld) do
         bundle_config
         puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        run_with_capture_v([@bundler_command, "install", "--jobs=#{ncores}"])
+        Packager::PatchHelpers.run_with_capture_v([@bundler_command, "install", "--jobs=#{@ncores}"])
       end
 
       check_entry_point("local")
@@ -256,43 +272,11 @@ module Tebako
       @g_length = Dir.glob(File.join(@fs_root, "*.gem")).length
     end
 
-    def ncores
-      if RUBY_PLATFORM.include?("darwin")
-        out, st = Open3.capture2e("sysctl", "-n", "hw.ncpu")
-      else
-        out, st = Open3.capture2e("nproc", "--all")
-      end
-
-      @ncores ||= if st.exitstatus.zero?
-                    out.strip.to_i
-                  else
-                    4
-                  end
-    end
-
     def patch_after_rubygems_update(target_dir, ruby_api_ver)
       # Autoload cannot handle statically linked openssl extension
       # Changing it to require seems to be the simplest solution
       Packager::PatchHelpers.patch_file("#{target_dir}/lib/ruby/site_ruby/#{ruby_api_ver}/rubygems/openssl.rb",
                                         { "autoload :OpenSSL, \"openssl\"" => "require \"openssl\"" })
-    end
-
-    def run_with_capture(args)
-      puts "   ... @ #{args.join(" ")}"
-      out, st = Open3.capture2e(*args)
-      raise Tebako::Error, "Failed to run #{args.join(" ")} (#{st}):\n #{out}" unless st.exitstatus.zero?
-
-      out
-    end
-
-    def run_with_capture_v(args)
-      if @verbose
-        args_v = args.dup
-        args_v.push("--verbose")
-        puts run_with_capture(args_v)
-      else
-        run_with_capture(args)
-      end
     end
   end
 end

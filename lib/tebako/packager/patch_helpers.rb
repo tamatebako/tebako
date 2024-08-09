@@ -74,6 +74,20 @@ module Tebako
           ostype =~ /darwin/
         end
 
+        def ncores
+          if RUBY_PLATFORM.include?("darwin")
+            out, st = Open3.capture2e("sysctl", "-n", "hw.ncpu")
+          else
+            out, st = Open3.capture2e("nproc", "--all")
+          end
+
+          if st.exitstatus.zero?
+            out.strip.to_i
+          else
+            4
+          end
+        end
+
         def patch_c_file_pre(pattern)
           {
             pattern => "#{PatchLiterals::C_FILE_SUBST}\n#{pattern}"
@@ -126,6 +140,24 @@ module Tebako
 
         def ruby33?(ruby_ver)
           ruby3x?(ruby_ver) && ruby_ver[2].to_i >= 3
+        end
+
+        def run_with_capture(args)
+          puts "   ... @ #{args.join(" ")}"
+          out, st = Open3.capture2e(*args)
+          raise Tebako::Error, "Failed to run #{args.join(" ")} (#{st}):\n #{out}" unless st.exitstatus.zero?
+
+          out
+        end
+
+        def run_with_capture_v(args)
+          if @verbose
+            args_v = args.dup
+            args_v.push("--verbose")
+            puts run_with_capture(args_v)
+          else
+            run_with_capture(args)
+          end
         end
 
         # Sets up temporary environment variables and yields to the
