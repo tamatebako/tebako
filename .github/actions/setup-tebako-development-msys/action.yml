@@ -45,10 +45,9 @@ runs:
         shell: msys2 {0}
         run: |
           bundle install
-          bundle exec rake generate_version_txt
 
       - name: Process cache
         uses: actions/cache@v4
         with:
           path: ${{ inputs.path }}
-          key: msys-${{ inputs.cc }}-${{ hashFiles('**/common.env', 'CMakeLists.txt', 'version.txt') }}-v${{ inputs.version }}
+          key: msys-${{ inputs.cc }}-${{ hashFiles('**/common.env', 'CMakeLists.txt', 'lib/tebako/version.rb') }}-v${{ inputs.version }}
