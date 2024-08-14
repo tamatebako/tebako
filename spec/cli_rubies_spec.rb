@@ -27,13 +27,13 @@
 
 require "tebako/cli_rubies"
 
-RSpec.describe Tebako::CliRubies do
+RSpec.describe Tebako::CliRubies do # rubocop:disable Metrics/BlockLength
   include Tebako::CliRubies
 
   describe "#version_check" do
     context "when the Ruby version is supported" do
       it "does not raise an error" do
-        expect { version_check("3.1.6") }.not_to raise_error
+        expect { version_check("3.2.5") }.not_to raise_error
       end
     end
 
@@ -41,14 +41,42 @@ RSpec.describe Tebako::CliRubies do
       it "raises a Tebako::Error" do
         expect do
           version_check("2.6.0")
-        end.to raise_error(Tebako::Error, "Ruby version 2.6.0 is not supported yet, exiting")
+        end.to raise_error(Tebako::Error, "Ruby version 2.6.0 is not supported, exiting")
       end
     end
   end
 
   describe "DEFAULT_RUBY_VERSION" do
-    it "is set to 3.1.6" do
-      expect(Tebako::CliRubies::DEFAULT_RUBY_VERSION).to eq("3.1.6")
+    it "is set to 3.2.5" do
+      expect(Tebako::CliRubies::DEFAULT_RUBY_VERSION).to eq("3.2.5")
+    end
+  end
+
+  describe "#version_check_msys" do
+    let(:min_ruby_version_windows) { Gem::Version.new(Tebako::CliRubies::MIN_RUBY_VERSION_WINDOWS) }
+
+    context "when version is below minimum on Windows" do
+      it "raises a Tebako::Error" do
+        version = "3.0.7"
+        stub_const("RUBY_PLATFORM", "msys")
+        expect { version_check_msys(version) }.to raise_error(Tebako::Error, /Windows packaging works for Ruby/)
+      end
+    end
+
+    context "when version is minimum on Windows" do
+      it "does not raise an error" do
+        version = "3.1.6"
+        stub_const("RUBY_PLATFORM", "msys")
+        expect { version_check_msys(version) }.not_to raise_error
+      end
+    end
+
+    context "when version is above minimum on Windows" do
+      it "does not raise an error" do
+        version = "3.2.5"
+        stub_const("RUBY_PLATFORM", "msys")
+        expect { version_check_msys(version) }.not_to raise_error
+      end
     end
   end
 end

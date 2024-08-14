@@ -109,7 +109,7 @@ jobs:
         env:
           - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
           - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.1.6', '3.2.4', '3.3.4' ]
+        package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.4' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -143,7 +143,7 @@ jobs:
       - name: Shall upload artifacts?
         id: shall-upload
         run: |
-          if [ "${{ matrix.package_ruby_ver }}" == "3.1.6" ] && [ "${{ matrix.env.CC }}" == "gcc" ]; then
+          if [ "${{ matrix.package_ruby_ver }}" == "3.2.5" ] && [ "${{ matrix.env.CC }}" == "gcc" ]; then
             echo "upload=true" >> $GITHUB_OUTPUT
           else
             echo "upload=false" >> $GITHUB_OUTPUT
@@ -166,7 +166,7 @@ jobs:
         env:
           - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
           - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.1.6', '3.2.4', '3.3.4' ]
+        package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.4' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages

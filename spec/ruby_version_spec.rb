@@ -88,8 +88,8 @@ RSpec.describe Tebako::RubyVersion do
       end
     end
 
-    context "with version 3.2.0" do
-      let(:version) { Tebako::RubyVersion.new("3.2.0") }
+    context "with version 3.2.5" do
+      let(:version) { Tebako::RubyVersion.new("3.2.5") }
 
       it "returns true for ruby3x?" do
         expect(version.ruby3x?).to be true

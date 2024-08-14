@@ -42,25 +42,27 @@ module Tebako
       "3.0.7" => "2a3411977f2850431136b0fab8ad53af09fb74df2ee2f4fb7f11b378fe034388",
       "3.1.6" => "0d0dafb859e76763432571a3109d1537d976266be3083445651dc68deed25c22",
       "3.2.4" => "c72b3c5c30482dca18b0f868c9075f3f47d8168eaf626d4e682ce5b59c858692",
+      "3.2.5" => "ef0610b498f60fb5cfd77b51adb3c10f4ca8ed9a17cb87c61e5bea314ac34a16",
       "3.3.3" => "83c05b2177ee9c335b631b29b8c077b4770166d02fa527f3a9f6a40d13f3cce2",
       "3.3.4" => "fe6a30f97d54e029768f2ddf4923699c416cdbc3a6e96db3e2d5716c7db96a34"
     }.freeze
 
-    DEFAULT_RUBY_VERSION = "3.1.6"
+    MIN_RUBY_VERSION_WINDOWS = "3.1.6"
+    DEFAULT_RUBY_VERSION = "3.2.5"
 
     def version_check(version)
       return if RUBY_VERSIONS.key?(version)
 
       raise Tebako::Error.new(
-        "Ruby version #{version} is not supported yet, exiting",
+        "Ruby version #{version} is not supported, exiting",
         253
       )
     end
 
     def version_check_msys(version)
-      if Gem::Version.new(version) < Gem::Version.new(DEFAULT_RUBY_VERSION) && RUBY_PLATFORM =~ /msys|mingw|cygwin/
+      if Gem::Version.new(version) < Gem::Version.new(MIN_RUBY_VERSION_WINDOWS) && RUBY_PLATFORM =~ /msys|mingw|cygwin/
         raise Tebako::Error.new(
-          "Windows packaging works for Ruby #{DEFAULT_RUBY_VERSION} or above, version #{version} is not supported",
+          "Windows packaging works for Ruby #{MIN_RUBY_VERSION_WINDOWS} or above, version #{version} is not supported",
           252
         )
       end
