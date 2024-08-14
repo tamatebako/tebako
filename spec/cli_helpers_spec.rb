@@ -82,6 +82,62 @@ RSpec.describe Tebako::CliHelpers do
     end
   end
 
+  describe "#cfg_options" do
+    let(:dummy_class) { Class.new { include Tebako::CliHelpers } }
+    let(:cli_helpers) { dummy_class.new }
+    let(:deps) { "/path/to/deps" }
+    let(:output_folder) { "/path/to/output" }
+    let(:source) { "/path/to/source" }
+    let(:m_files) { "Unix Makefiles" }
+    let(:ruby_ver) { "3.2.5" }
+    let(:ruby_hash) { "abcdef" }
+
+    before do
+      allow(self).to receive(:deps).and_return(deps)
+      allow(self).to receive(:output_folder).and_return(output_folder)
+      allow(self).to receive(:source).and_return(source)
+      allow(self).to receive(:m_files).and_return(m_files)
+      allow(self).to receive(:extend_ruby_version).and_return([ruby_ver, ruby_hash])
+    end
+
+    it "returns the correct configuration options string" do
+      exp_opt = "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
+                "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
+                "-DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
+      expect(cfg_options).to eq(exp_opt)
+    end
+  end
+
+  describe "#clean_cache" do
+    let(:deps) { "/path/to/deps" }
+    let(:output_folder) { "/path/to/output" }
+    before do
+      allow(self).to receive(:deps).and_return(deps)
+      allow(self).to receive(:output_folder).and_return(output_folder)
+    end
+    it "cleans the cache by removing the appropriate directories" do
+      expect(FileUtils).to receive(:rm_rf).with([File.join(deps, ""), File.join(output_folder, "")], secure: true)
+      clean_cache
+    end
+  end
+
+  describe "#clean_output" do
+    let(:deps) { "/path/to/deps" }
+    let(:output_folder) { "/path/to/output" }
+    before do
+      allow(self).to receive(:deps).and_return(deps)
+      allow(self).to receive(:output_folder).and_return(output_folder)
+    end
+    it "cleans the output by removing the appropriate files and directories" do
+      nmr = "src/_ruby_*"
+      nms = "stash_*"
+      expect(FileUtils).to receive(:rm_rf).with(Dir.glob(File.join(deps, nmr)), secure: true)
+      expect(FileUtils).to receive(:rm_rf).with(Dir.glob(File.join(deps, nms)), secure: true)
+      expect(FileUtils).to receive(:rm_rf).with(File.join(output_folder, ""), secure: true)
+      clean_output
+    end
+  end
+
   describe "#l_level" do
     context "when log-level option is not set" do
       it 'returns "error"' do

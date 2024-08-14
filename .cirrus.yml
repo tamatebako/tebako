@@ -99,13 +99,13 @@ task:
       - echo $CC
       - cat common.env
       - cat .cirrus.yml
+      - cat lib/tebako/version.rb
 
 # cirrus-ci hash does not work for optimized Ruby patching/build
 # most likely it changes file times that causes make do a kind of
 # 'random' rebuild
   setup_script: |
     bundle install
-    bundle exec rake generate_version_txt
     exe/tebako clean_ruby
     exe/tebako setup -D -R 3.2.5
 

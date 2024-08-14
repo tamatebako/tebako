@@ -33,8 +33,9 @@ if(${CMAKE_VERSION} VERSION_GREATER "3.23.10")
   cmake_policy(SET CMP0135 NEW)
 endif()
 
-include(${CMAKE_CURRENT_SOURCE_DIR}/tools/cmake-scripts/version.cmake)
-determine_version("${CMAKE_CURRENT_SOURCE_DIR}" TEBAKO)
+if ("-${TEBAKO_VERSION}" STREQUAL "-")
+  message(FATAL_ERROR "Tebako version is not specified.")
+endif()
 
 project(tebako_packager VERSION ${TEBAKO_VERSION})
 
