@@ -347,21 +347,30 @@ jobs:
 #      env:
 #        RUBYGEMS_API_KEY: ${{secrets.TEBAKO_CI_RUBYGEMS_API_KEY}}
 
-    - uses: actions/download-artifact@v4
-      with:
-        name: gem
-        path: pkg
+#    - uses: actions/download-artifact@v4
+#      with:
+#        name: gem
+#        path: pkg
 
-    - name: Publish to rubygems.org
-      env:
-        RUBYGEMS_API_KEY: ${{secrets.TEBAKO_CI_RUBYGEMS_API_KEY}}
-      run: |
-        mkdir -p ~/.gem
-        touch ~/.gem/credentials
-        cat > ~/.gem/credentials << EOF
-        ---
-        :rubygems_api_key: ${RUBYGEMS_API_KEY}
-        EOF
-        chmod 0600 ~/.gem/credentials
-        gem signin
-        for gem in pkg/*.gem; do gem push -V $gem; done
+#    - name: Publish to rubygems.org
+#      env:
+#        RUBYGEMS_API_KEY: ${{secrets.TEBAKO_CI_RUBYGEMS_API_KEY}}
+#      run: |
+#        mkdir -p ~/.gem
+#        touch ~/.gem/credentials
+#        cat > ~/.gem/credentials << EOF
+#        ---
+#        :rubygems_api_key: ${RUBYGEMS_API_KEY}
+#        EOF
+#        chmod 0600 ~/.gem/credentials
+#        gem signin
+#        for gem in pkg/*.gem; do gem push -V $gem; done
+
+    - name: Dispatch dependent repositories
+      uses: peter-evans/repository-dispatch@v3
+      if: contains(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
+      with:
+        token: ${{ secrets.TEBAKO_CI_PAT_TOKEN }}
+        repository: tamatebako/tebako-ci-containers
+        event-type: 'tebako release'
+        client-payload: '{ "tag": "${{ github.ref_name }}" }'
