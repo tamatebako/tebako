@@ -71,3 +71,6 @@ tests-actions/
 # rspec
 .rspec_status
 coverage/
+
+# tebafile
+.tebako.yml

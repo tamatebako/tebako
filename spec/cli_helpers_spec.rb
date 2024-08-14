@@ -135,7 +135,7 @@ RSpec.describe Tebako::CliHelpers do
       end
 
       it "raises a Tebako::Error" do
-        expect { m_files }.to raise_error(Tebako::Error, "unsupported is not supported yet, exiting")
+        expect { m_files }.to raise_error(Tebako::Error, "unsupported is not supported, exiting")
       end
     end
   end

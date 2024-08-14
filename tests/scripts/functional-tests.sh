@@ -290,7 +290,7 @@ DIR0=$( dirname "$0" )
 DIR_ROOT=$( cd "$DIR0"/../.. && pwd )
 DIR_BIN=$( cd "$DIR_ROOT"/exe && pwd )
 DIR_TESTS=$( cd "$DIR_ROOT"/tests && pwd )
-RUBY_VER=${RUBY_VER:-3.1.6}
+RUBY_VER=${RUBY_VER:-3.2.5}
 
 echo "Running tebako tests for Ruby $RUBY_VER"
 # shellcheck source=/dev/null

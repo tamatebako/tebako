@@ -137,7 +137,7 @@ module Tebako
                      "MinGW Makefiles"
                    else
                      raise Tebako::Error.new(
-                       "#{RUBY_PLATFORM} is not supported yet, exiting",
+                       "#{RUBY_PLATFORM} is not supported, exiting",
                        254
                      )
                    end
