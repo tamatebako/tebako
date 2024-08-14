@@ -365,3 +365,12 @@ jobs:
         chmod 0600 ~/.gem/credentials
         gem signin
         for gem in pkg/*.gem; do gem push -V $gem; done
+
+    - name: Dispatch dependent repositories
+      uses: peter-evans/repository-dispatch@v3
+      if: contains(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
+      with:
+        token: ${{ secrets.TEBAKO_CI_PAT_TOKEN }}
+        repository: tamatebako/tebako-ci-containers
+        event-type: 'tebako release'
+        client-payload: '{ "tag": "${{ github.ref_name }}" }'
