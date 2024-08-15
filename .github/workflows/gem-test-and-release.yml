@@ -347,10 +347,10 @@ jobs:
 #      env:
 #        RUBYGEMS_API_KEY: ${{secrets.TEBAKO_CI_RUBYGEMS_API_KEY}}
 
-    - uses: actions/download-artifact@v4
-      with:
-        name: gem
-        path: pkg
+#    - uses: actions/download-artifact@v4
+#      with:
+#        name: gem
+#        path: pkg
 
 #    - name: Publish to rubygems.org
 #      env:
