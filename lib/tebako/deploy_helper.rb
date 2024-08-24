@@ -100,7 +100,7 @@ module Tebako
     end
 
     def needs_bundler?
-      @gf_length.positive?
+      @gf_length.positive? && !@ruby_ver.ruby31?
     end
 
     def update_rubygems
@@ -171,14 +171,28 @@ module Tebako
     end
 
     def configure_commands
-      @cmd_suffix = @os_type =~ /msys/ ? ".cmd" : ""
-      @bat_suffix = @os_type =~ /msys/ ? ".bat" : ""
+      if @os_type =~ /msys/
+        configure_commands_msys
+      else
+        configure_commands_not_msys
+      end
 
       @gem_command = File.join(@tbd, "gem#{@cmd_suffix}")
       @bundler_command = File.join(@tbd, "bundle#{@bat_suffix}")
+    end
 
-      @force_ruby_platform = @os_type =~ /msys|linux-musl/ ? "true" : "false"
-      @nokogiri_option = @os_type =~ /msys/ ? "--use-system-libraries" : "--no-use-system-libraries"
+    def configure_commands_msys
+      @cmd_suffix = ".cmd"
+      @bat_suffix = ".bat"
+      @force_ruby_platform = "true"
+      @nokogiri_option = "--use-system-libraries"
+    end
+
+    def configure_commands_not_msys
+      @cmd_suffix = ""
+      @bat_suffix = ""
+      @force_ruby_platform = "false"
+      @nokogiri_option = "--no-use-system-libraries"
     end
 
     def configure_scenario

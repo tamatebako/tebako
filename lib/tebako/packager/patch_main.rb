@@ -71,7 +71,6 @@ module Tebako
 
       class << self
         def get_main_c_patch(ruby_ver)
-          puts get_main_c_main_pattern(ruby_ver)
           {
             get_main_c_main_pattern(ruby_ver) => get_main_c_main_subst(ruby_ver),
             "ruby_init();" => MAIN_C_SUBST_RB_MAIN_INNER,
