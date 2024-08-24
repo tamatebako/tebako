@@ -57,15 +57,14 @@ env:
 
 jobs:
   setup:
-    name: setup ${{ matrix.os }} [CC ${{ matrix.env.CC }}]
-    runs-on: ${{ matrix.os }}
+    name: setup ${{ matrix.env.os }} [CC ${{ matrix.env.CC }}]
+    runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-20.04 ]
         env:
-          - { CC: gcc-10,   CXX: g++-10 }
-          - { CC: clang-12, CXX: clang++-12 }
+          - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
+          - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -87,7 +86,7 @@ jobs:
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
-          os: ${{ matrix.os }}
+          os: ${{ matrix.env.os }}
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 
@@ -96,16 +95,15 @@ jobs:
 
   tests-1:
     needs: setup
-    name: tests-1 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    runs-on: ${{ matrix.os }}
+    name: tests-1 ${{ matrix.env.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-20.04 ]
         package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.3.3', '3.3.4' ]
         env:
-          - { CC: gcc-10,   CXX: g++-10 }
-          - { CC: clang-12, CXX: clang++-12 }
+          - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
+          - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -127,7 +125,7 @@ jobs:
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
-          os: ${{ matrix.os }}
+          os: ${{ matrix.env.os }}
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 
@@ -138,16 +136,15 @@ jobs:
 
   tests-2:
     needs: setup
-    name: tests-2 ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    runs-on: ${{ matrix.os }}
+    name: tests-2 ${{ matrix.env.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-20.04 ]
         package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.3.3', '3.3.4' ]
         env:
-          - { CC: gcc-10,   CXX: g++-10 }
-          - { CC: clang-12, CXX: clang++-12 }
+          - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
+          - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
 
     env: ${{ matrix.env }}
     steps:
@@ -170,7 +167,7 @@ jobs:
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
-          os: ${{ matrix.os }}
+          os: ${{ matrix.env.os }}
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 

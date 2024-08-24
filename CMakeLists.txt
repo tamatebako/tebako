@@ -332,7 +332,7 @@ endif(DWARFS_PRELOAD)
 # Ruby
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
-set(RUBY_C_FLAGS "-pthread -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(RUBY_C_FLAGS "-fPIC -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # Shadow
 # https://github.com/deivid-rodriguez/byebug/issues/825
@@ -341,16 +341,13 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -fdeclspec")
 endif()
 
-set(C_FLAGS_DEST cppflags)
+set(C_FLAGS_DEST cflags)
 
 if(IS_DARWIN)
   string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -I${BREW_PREFIX}/opt/openssl@${OPENSSL_VER}/include -I${BREW_PREFIX}/opt/zlib/include -I${BREW_PREFIX}/include")
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${BREW_PREFIX}/opt/openssl@${OPENSSL_VER}/lib -L${BREW_PREFIX}/opt/zlib/lib  -L${BREW_PREFIX}/lib")
   set(OPENSSL_RUBY_OPTION "--with-openssl-dir=${BREW_PREFIX}/opt/openssl@${OPENSSL_VER}")
-  set(C_FLAGS_DEST cflags)
 else(IS_DARWIN)
-  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -static-libgcc")
-
   if(IS_MUSL)
     string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DENABLE_PATH_CHECK=0")
   endif(IS_MUSL)
@@ -358,7 +355,13 @@ else(IS_DARWIN)
   if(RB_W32)
     string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DRB_W32=1")
     string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -l:libstdc++.a -L${TLIBD}")
+    set(C_FLAGS_DEST cppflags)
   endif(RB_W32)
+
+  # Ruby 2.7 configure script error
+  if(${RUBY_VER} VERSION_LESS "3.0.0")
+    set(C_FLAGS_DEST cppflags)
+  endif()
 endif(IS_DARWIN)
 
 message(STATUS "Ruby build ${C_FLAGS_DEST}='${RUBY_C_FLAGS}'")
@@ -484,6 +487,9 @@ else (${SETUP_MODE})
     ${CMAKE_CURRENT_SOURCE_DIR}/include/tebako/tebako-fs.h
     ${DEPS_INCLUDE_DIR}/tebako/tebako-version.h
   )
+
+  #et_target_properties(tebako-fs PROPERTIES POSITION_INDEPENDENT_CODE ON)
+  #target_compile_options(tebako-fs PRIVATE -fPIE)
 
   if(${RUBY_VER} VERSION_LESS "3.3.0" AND "${OSTYPE_TXT}" MATCHES "^msys*")
     target_compile_definitions(tebako-fs PUBLIC RB_W32_PRE_33)
