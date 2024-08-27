@@ -121,6 +121,7 @@ set(RUBY_WITHOUT_EXT "dbm,win32,win32ole,-test-/*")
 set(RUBY_NAME "ruby")
 set(EXE_SUFFIX "")
 set(DWARFS_PRELOAD OFF)
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION OFF)
 
 if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
   set(IS_MUSL ON)
@@ -332,7 +333,7 @@ endif(DWARFS_PRELOAD)
 # Ruby
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
-set(RUBY_C_FLAGS "-fPIE -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(RUBY_C_FLAGS "-fPIC -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
 
 # Shadow
 # https://github.com/deivid-rodriguez/byebug/issues/825
