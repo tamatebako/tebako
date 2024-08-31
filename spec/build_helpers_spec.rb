@@ -120,5 +120,55 @@ RSpec.describe Tebako::BuildHelpers do
       end
     end
   end
+
+  describe "#with_env" do
+    let(:build_helper) { described_class }
+
+    before do
+      ENV["TEST_ENV_VAR1"] = "original_value1"
+      ENV["TEST_ENV_VAR2"] = "original_value2"
+    end
+
+    after do
+      ENV.delete("TEST_ENV_VAR1")
+      ENV.delete("TEST_ENV_VAR2")
+      ENV.delete("NEW_ENV")
+    end
+    it "temporarily sets environment variables" do
+      build_helper.with_env("TEST_ENV_VAR" => "temporary_value") do
+        expect(ENV.fetch("TEST_ENV_VAR", nil)).to eq("temporary_value")
+      end
+    end
+
+    it "restores original environment variables after block execution" do
+      original_value = ENV.fetch("TEST_ENV_VAR", nil)
+      build_helper.with_env("TEST_ENV_VAR" => "temporary_value") do
+        # Inside the block, the environment variable should be set to the temporary value
+        expect(ENV.fetch("TEST_ENV_VAR", nil)).to eq("temporary_value")
+      end
+      # Outside the block, the environment variable should be restored to its original value
+      expect(ENV.fetch("TEST_ENV_VAR", nil)).to eq(original_value)
+    end
+
+    it "handles environment variables that were not originally set" do
+      build_helper.with_env("NEW_ENV_VAR" => "new_value") do
+        expect(ENV.fetch("NEW_ENV_VAR", nil)).to eq("new_value")
+      end
+      # Ensure the environment variable is unset after the block
+      expect(ENV.fetch("NEW_ENV_VAR", nil)).to be_nil
+    end
+
+    it "restores multiple environment variables correctly" do
+      original_value1 = ENV.fetch("TEST_ENV_VAR1", nil)
+      original_value2 = ENV.fetch("TEST_ENV_VAR2", nil)
+      build_helper.with_env("TEST_ENV_VAR1" => "value1", "TEST_ENV_VAR2" => "value2") do
+        expect(ENV.fetch("TEST_ENV_VAR1", nil)).to eq("value1")
+        expect(ENV.fetch("TEST_ENV_VAR2", nil)).to eq("value2")
+      end
+      expect(ENV.fetch("TEST_ENV_VAR1", nil)).to eq(original_value1)
+      expect(ENV.fetch("TEST_ENV_VAR2", nil)).to eq(original_value2)
+    end
+  end
 end
+
 # rubocop:enable Metrics/BlockLength
