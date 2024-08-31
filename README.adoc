@@ -657,6 +657,7 @@ tebako press \
   [-l|--log-level=<error|warn|debug|trace>] \
   [-c|--cwd=<package current working directory>]
   [-D|--devmode] \
+  [-P|--patchelf] \
   [-t|--tebafile=<path-to-tebafile>]
 ----
 
@@ -689,12 +690,17 @@ If not provided, the application will start within the current folder of the hos
 This option is required because it is not possible to change the directory to a memfs folder until the package is started, as opposed to any host folder
 that can be set as the current directory before Tebako package invocation.  Tebako saves original working directory in a global Ruby variable `$tebako_original_pwd`.
 
+`devmode`:: flag that activates development mode, in which Tebako's cache and
+packaging consistency checks are relaxed.
+
+`patchelf`::
+flag that removal a reference to GLIBC_PRIVATE version of libpthread from tebako package. This allows Linux Gnu packages to run against versions of
+libpthread that differ from the version used for packaging. For example, package created at Ubuntu 20 system can be used on Ubuntu 22. This option works on Gnu Linux with
+Gnu toolchain only (not for LLVM/clang). The feature is exeprimental, we may consider other approach in the future.
+
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
 Please refer to the separate section below for tebafile description.
-
-`devmode`:: flag that activates development mode, in which Tebako's cache and
-packaging consistency checks are relaxed.
 +
 NOTES:
   * Development mode is *not intended for production use* and should only be used during development.

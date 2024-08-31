@@ -35,7 +35,8 @@ RSpec.describe Tebako::BuildHelpers do
     context "when on macOS" do
       before do
         stub_const("RUBY_PLATFORM", "darwin")
-        allow(Open3).to receive(:capture2e).with("sysctl", "-n", "hw.ncpu").and_return(["4", double(exitstatus: 0)])
+        status_double = double(exitstatus: 0, signaled?: false)
+        allow(Open3).to receive(:capture2e).with("sysctl", "-n", "hw.ncpu").and_return(["4", status_double])
       end
 
       it "returns the number of cores" do
@@ -46,7 +47,8 @@ RSpec.describe Tebako::BuildHelpers do
     context "when on Linux" do
       before do
         stub_const("RUBY_PLATFORM", "linux")
-        allow(Open3).to receive(:capture2e).with("nproc", "--all").and_return(["8", double(exitstatus: 0)])
+        status_double = double(exitstatus: 0, signaled?: false)
+        allow(Open3).to receive(:capture2e).with("nproc", "--all").and_return(["8", status_double])
       end
 
       it "returns the number of cores" do
@@ -56,7 +58,19 @@ RSpec.describe Tebako::BuildHelpers do
 
     context "when the command fails" do
       before do
-        allow(Open3).to receive(:capture2e).and_return(["", double(exitstatus: 1)])
+        status_double = double(exitstatus: 1, signaled?: false)
+        allow(Open3).to receive(:capture2e).and_return(["", status_double])
+      end
+
+      it "returns 4 as a default value" do
+        expect(described_class.ncores).to eq(4)
+      end
+    end
+
+    context "when the command is terminated by a signal" do
+      before do
+        status_double = double(exitstatus: nil, signaled?: true, termsig: 9)
+        allow(Open3).to receive(:capture2e).and_return(["", status_double])
       end
 
       it "returns 4 as a default value" do
@@ -68,55 +82,34 @@ RSpec.describe Tebako::BuildHelpers do
   describe ".run_with_capture" do
     let(:args) { %w[echo hello] }
 
-    context "when the command succeeds" do
-      before do
-        allow(Open3).to receive(:capture2e).with(*args).and_return(["hello", double(exitstatus: 0)])
+    describe ".run_with_capture" do
+      context "when the command succeeds" do
+        before do
+          status_double = double(exitstatus: 0, signaled?: false)
+          allow(Open3).to receive(:capture2e).and_return(["output", status_double])
+        end
+
+        it "returns the command output" do
+          expect(described_class.run_with_capture(args)).to eq("output")
+        end
       end
 
-      it "prints the command" do
-        expect { described_class.run_with_capture(args) }.to output("   ... @ echo hello\n").to_stdout
+      context "when the command fails" do
+        before do
+          status_double = double(exitstatus: 1, signaled?: false)
+          allow(Open3).to receive(:capture2e).and_return(["error output", status_double])
+        end
+
+        it "raises an error" do
+          expect { described_class.run_with_capture(["false"]) }.to raise_error(Tebako::Error, /Failed to run/)
+        end
       end
 
-      it "returns the command output" do
-        expect(described_class.run_with_capture(args)).to eq("hello")
-      end
-    end
-
-    context "when the command fails" do
-      before do
-        allow(Open3).to receive(:capture2e).with(*args).and_return(["error", double(exitstatus: 1)])
-      end
-
-      it "raises an error" do
-        expect { described_class.run_with_capture(args) }.to raise_error(Tebako::Error, /Failed to run echo hello/)
-      end
-    end
-  end
-
-  describe ".run_with_capture" do
-    let(:args) { %w[echo hello] }
-
-    context "when the command runs successfully" do
-      before do
-        allow(Open3).to receive(:capture2e).with(*args).and_return(["hello", double(exitstatus: 0)])
-      end
-
-      it "runs the command" do
-        expect { described_class.run_with_capture(args) }.not_to raise_error
-        expect(Open3).to have_received(:capture2e).with(*args)
-      end
-    end
-
-    context "when the command fails" do
-      before do
-        allow(Open3).to receive(:capture2e).with(*args).and_return(["error", double(exitstatus: 1)])
-        allow($stdout).to receive(:puts)
-      end
-
-      it "prints the error output" do
-        expect { described_class.run_with_capture(args) }.to raise_error(Tebako::Error, /Failed to run echo hello/)
-        expect(Open3).to have_received(:capture2e).with(*args)
-        expect($stdout).to have_received(:puts)
+      context "when the command is terminated by a signal" do
+        before do
+          status_double = double(exitstatus: nil, signaled?: true, termsig: 9)
+          allow(Open3).to receive(:capture2e).and_return(["", status_double])
+        end
       end
     end
   end

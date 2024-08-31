@@ -56,7 +56,7 @@ module Tebako
       @cfg_options ||=
         "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
         "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
-        "-DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
+        "-DREMOVE_GLIBC_PRIVATE=#{remove_glibc_private} -DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
     end
 
     def clean_cache
@@ -172,6 +172,10 @@ module Tebako
                    else
                      package
                    end
+    end
+
+    def remove_glibc_private
+      @remove_glibc_private ||= options["patchelf"] ? "ON" : "OFF"
     end
 
     def handle_nil_prefix

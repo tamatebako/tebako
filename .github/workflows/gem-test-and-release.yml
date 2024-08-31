@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com)
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -49,7 +49,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 04
+  CACHE_VER: 06
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output
@@ -258,7 +258,7 @@ jobs:
         gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.2.5' ]
         env:
-          - { CC: clang-12, CXX: clang++-12 }
+          - { CC: gcc-10, CXX: g++-10 }
     env: ${{ matrix.env }}
     steps:
     - name: Download actions
@@ -289,15 +289,52 @@ jobs:
       if: matrix.gem == 'fontist'
       uses: ./.github/actions/test-package-fontist
 
+    - name: Upload fontist test package
+      if: matrix.gem == 'fontist'
+      uses: actions/upload-artifact@v4
+      with:
+        name: fontist-package
+        retention-days: 1
+        path: |
+          fontist-package
+
     - name: Package metanorma
       if: matrix.gem == 'metanorma'
       uses: ./.github/actions/test-package-metanorma
+
+    - name: Upload metanorma test package
+      if: matrix.gem == 'metanorma'
+      uses: actions/upload-artifact@v4
+      with:
+        name: metanorma-package
+        retention-days: 1
+        path: |
+          metanorma-package
+
+  package-tests-ubuntu-newer:
+    name: cross-test on ${{ matrix.os }}
+    needs: [ package-tests-ubuntu ]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ 'ubuntu-22.04', 'ubuntu-24.04' ]
+    steps:
+    - name: Download test packages
+      uses: actions/download-artifact@v4
+      with:
+        pattern: '*-package'
+
+    - name: Run test packages
+      run:  |
+          set -o errexit -o pipefail -o noclobber -o nounset
+          for TP in *-package; do chmod +x "$TP/$TP"; "$TP/$TP" help; done
 
 # ----- Release -----
 
   release:
     name: Release gem
-    needs: [ package-tests-windows, package-tests-ubuntu, package-tests-alpine, package-tests-macos ]
+    needs: [ package-tests-windows, package-tests-ubuntu-newer, package-tests-alpine, package-tests-macos ]
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
     steps:

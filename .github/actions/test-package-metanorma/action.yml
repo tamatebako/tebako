@@ -36,7 +36,7 @@ runs:
 
     - name: Package metanorma
       shell: bash
-      run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
+      run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako' --patchelf
 
     - name: Run smoke test
       shell: bash

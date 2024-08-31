@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 04
+  CACHE_VER: 06
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output (yes/no)
@@ -129,10 +129,19 @@ jobs:
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 
+      - name: Shall upload artifacts?
+        id: shall-upload
+        run: |
+          if [ "${{ matrix.package_ruby_ver }}" == "3.2.5" ] && [ "${{ matrix.env.CC }}" == "gcc-10" ]; then
+            echo "upload=true" >> $GITHUB_OUTPUT
+          else
+            echo "upload=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Run test set 1
         uses: ./.github/actions/test-set-1
         with:
-          upload: 'false'
+          upload: "${{ steps.shall-upload.outputs.upload }}"
 
   tests-2:
     needs: setup
@@ -174,17 +183,22 @@ jobs:
       - name: Run tebako tests (set no. 2)
         run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby ${{github.workspace}}/tests-2/tebako-test.rb
 
-#  test-on-ubuntu-latest:
-#    needs: tests-1
-#    runs-on: ubuntu-latest
-#    steps:
-#      - name: Download test packages
-#        uses: actions/download-artifact@v4
-#        with:
-#          name: test-packages
-#
-#      - name: Run test packages
-#        run:  |
-#          set -o errexit -o pipefail -o noclobber -o nounset
-#          chmod +x test-*-package
-#          for TP in test-*-package; do "./$TP"; done
+  test-on-ubuntu-newer:
+    name: cross-test on ${{ matrix.os }}
+    needs: tests-1
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ 'ubuntu-22.04', 'ubuntu-24.04' ]
+    steps:
+      - name: Download test packages
+        uses: actions/download-artifact@v4
+        with:
+          name: test-packages
+
+      - name: Run test packages
+        run:  |
+          set -o errexit -o pipefail -o noclobber -o nounset
+          chmod +x test-*-package
+          for TP in test-*-package; do "./$TP"; done

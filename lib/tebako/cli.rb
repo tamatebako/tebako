@@ -46,7 +46,7 @@ module Tebako
     package_name "Tebako"
     class_option :prefix, type: :string, aliases: "-p", required: false,
                           desc: "A path to tebako packaging environment, '~/.tebako' ('$HOME/.tebako') by default"
-    class_option :devmode, type: :boolean, aliases: "-D", required: false,
+    class_option :devmode, type: :boolean, aliases: "-D",
                            desc: "Developer mode, please do not use if unsure"
     class_option :tebafile, type: :string, aliases: "-t", required: false,
                             desc: "tebako configuration file 'tebafile', '$PWD/.tebako.yml' by default"
@@ -75,7 +75,13 @@ module Tebako
 
     CWD_DESCRIPTION = <<~DESC
       Current working directory for packaged application. This directory shall be specified relative to root.
-      #{" " * 62}# If this parameter is not set, the application will start in the current directory of the host file system.
+      #{" " * 65}# If this parameter is not set, the application will start in the current directory of the host file system.
+    DESC
+
+    RGP_DESCRIPTION = <<~DESC
+      Activates removal a reference to GLIBC_PRIVATE version of libpthread from tebako package. This allows Linux Gnu packages to run against versions of
+      #{" " * 65}# libpthread that differ from the version used for packaging. For example, package created at Ubuntu 20 system can be used on Ubuntu 22. This option works on Gnu Linux with
+      #{" " * 65}# Gnu toolchain only (not for LLVM/clang). The feature is exeprimental, we may consider other approach in the future.
     DESC
 
     desc "press", "Press tebako image"
@@ -91,6 +97,8 @@ module Tebako
     method_option :Ruby, type: :string, aliases: "-R", required: false,
                          enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default"
+    method_option :patchelf, aliases: "-P", type: :boolean,
+                             desc: RGP_DESCRIPTION
     def press
       version_cache_check unless options[:devmode]
 

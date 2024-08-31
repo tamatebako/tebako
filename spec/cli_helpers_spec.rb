@@ -103,7 +103,7 @@ RSpec.describe Tebako::CliHelpers do
     it "returns the correct configuration options string" do
       exp_opt = "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
                 "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
-                "-DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
+                "-DREMOVE_GLIBC_PRIVATE=OFF -DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
       expect(cfg_options).to eq(exp_opt)
     end
   end
@@ -347,59 +347,90 @@ RSpec.describe Tebako::CliHelpers do
         expect(press_announce).to eq(expected_announce)
       end
     end
-    describe "#press_options" do
-      context 'when options["cwd"] is set' do
-        let(:options) do
-          { "cwd" => "/some/path", "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" }
-        end
-
-        it "returns the correct options string" do
-          expected_options = "-DROOT:STRING='#{root}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
-                             "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' " \
-                             "-DPACKAGE_NEEDS_CWD:BOOL=ON -DPACKAGE_CWD:STRING='#{options["cwd"]}'"
-          expect(press_options).to eq(expected_options)
-        end
+  end
+  describe "#press_options" do
+    context 'when options["cwd"] is set' do
+      let(:options) do
+        { "cwd" => "/some/path", "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" }
       end
 
-      context 'when options["cwd"] is not set' do
-        let(:options) { { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" } }
-
-        it "returns the correct options string with default cwd option" do
-          expected_options = "-DROOT:STRING='#{root}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
-                             "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' " \
-                             "-DPACKAGE_NEEDS_CWD:BOOL=OFF"
-          expect(press_options).to eq(expected_options)
-        end
-      end
-    end
-    describe "#relative?" do
-      it "returns true for a relative path" do
-        expect(relative?("relative/path")).to be true
-      end
-
-      it "returns false for an absolute path" do
-        expect(relative?("/absolute/path")).to be false
+      it "returns the correct options string" do
+        expected_options = "-DROOT:STRING='#{root}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
+                           "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' " \
+                           "-DPACKAGE_NEEDS_CWD:BOOL=ON -DPACKAGE_CWD:STRING='#{options["cwd"]}'"
+        expect(press_options).to eq(expected_options)
       end
     end
 
-    describe "#root" do
-      context 'when options["root"] is a relative path' do
-        let(:options) { { "root" => "relative/path" } }
+    context 'when options["cwd"] is not set' do
+      let(:options) { { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" } }
 
-        it "returns the correct root path" do
-          expected_root = File.join(fs_current, options["root"])
-          expect(root).to eq(expected_root)
-        end
+      it "returns the correct options string with default cwd option" do
+        expected_options = "-DROOT:STRING='#{root}' -DENTRANCE:STRING='#{options["entry-point"]}' " \
+                           "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{options["log-level"]}' " \
+                           "-DPACKAGE_NEEDS_CWD:BOOL=OFF"
+        expect(press_options).to eq(expected_options)
       end
+    end
+  end
+  describe "#relative?" do
+    it "returns true for a relative path" do
+      expect(relative?("relative/path")).to be true
+    end
 
-      context 'when options["root"] is an absolute path' do
-        let(:options) { { "root" => "/absolute/path" } }
+    it "returns false for an absolute path" do
+      expect(relative?("/absolute/path")).to be false
+    end
+  end
 
-        it "returns the correct root path" do
-          expected_root = File.join(options["root"], "")
-          expect(root).to eq(expected_root)
-        end
+  describe "#root" do
+    context 'when options["root"] is a relative path' do
+      let(:options) { { "root" => "relative/path" } }
+
+      it "returns the correct root path" do
+        expected_root = File.join(fs_current, options["root"])
+        expect(root).to eq(expected_root)
       end
+    end
+
+    context 'when options["root"] is an absolute path' do
+      let(:options) { { "root" => "/absolute/path" } }
+
+      it "returns the correct root path" do
+        expected_root = File.join(options["root"], "")
+        expect(root).to eq(expected_root)
+      end
+    end
+  end
+
+  describe "#version_unknown" do
+    it "calls clean_cache and outputs the correct message" do
+      expect(self).to receive(:clean_cache)
+      expect { version_unknown }.to output("CMake cache version was not recognized, cleaning up\n").to_stdout
+    end
+  end
+
+  describe "#version_mismatch" do
+    it "calls clean_cache and outputs the correct message" do
+      cached_v = "1.0.0"
+      expect(self).to receive(:clean_cache)
+      expect do
+        version_mismatch(cached_v)
+      end.to output(
+        "Tebako cache was created by a gem version #{cached_v} and cannot be used for gem version #{Tebako::VERSION}\n"
+      ).to_stdout
+    end
+  end
+
+  describe "#version_source_mismatch" do
+    it "handles version source mismatch scenario" do
+      cached_s = "/old/source"
+      expect(self).to receive(:clean_output)
+      expect do
+        version_source_mismatch(cached_s)
+      end.to output(
+        "CMake cache was created for a different source directory '#{cached_s}' and cannot be used for '#{source}'\n"
+      ).to_stdout
     end
   end
 end
