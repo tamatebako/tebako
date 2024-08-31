@@ -71,8 +71,7 @@ module Tebako
         puts "   ... creating Windows import library"
         params = ["dlltool", "-d", def_fname(src_dir, app_name), "-D", out_fname(app_name),
                   "--output-lib", lib_fname(package_src_dir, ruby_ver)]
-        out, st = Open3.capture2e(*params)
-        raise Tebako::Error, "Failed to create import library:\n #{out}" unless st.exitstatus.zero?
+        BuildHelpers.run_with_capture(params)
       end
 
       # Deploy
@@ -85,18 +84,16 @@ module Tebako
         Tebako::Stripper.strip(os_type, target_dir)
       end
 
-      def finalize(os_type, src_dir, app_name, ruby_ver)
+      def finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
         RubyBuilder.new(ruby_ver, src_dir).final_build
         exe_suffix = Packager::PatchHelpers.exe_suffix(os_type)
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
-        package_name = "#{app_name}#{exe_suffix}"
-        # [TODO] On MSys strip sometimes creates a broken executable
-        # https://github.com/tamatebako/tebako/issues/172
-        if Packager::PatchHelpers.msys?(os_type)
-          FileUtils.cp(src_name, package_name)
-        else
-          Tebako::Stripper.strip_file(src_name, package_name)
+        unless patchelf.nil?
+          params = [patchelf, "--remove-needed-version", "libpthread.so.0", "GLIBC_PRIVATE", src_name]
+          BuildHelpers.run_with_capture(params)
         end
+        package_name = "#{app_name}#{exe_suffix}"
+        strip_or_copy(os_type, src_name, package_name)
         puts "Created tebako package at \"#{package_name}\""
       end
 
@@ -198,6 +195,16 @@ module Tebako
           ruby_version = match[1]
         end
         ruby_version
+      end
+
+      def strip_or_copy(os_type, src_name, package_name)
+        # [TODO] On MSys strip sometimes creates a broken executable
+        # https://github.com/tamatebako/tebako/issues/172
+        if Packager::PatchHelpers.msys?(os_type)
+          FileUtils.cp(src_name, package_name)
+        else
+          Tebako::Stripper.strip_file(src_name, package_name)
+        end
       end
     end
   end

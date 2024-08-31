@@ -39,7 +39,7 @@ module Tebako
           out, st = Open3.capture2e("nproc", "--all")
         end
 
-        if st.exitstatus.zero?
+        if !st.signaled? && st.exitstatus.zero?
           out.strip.to_i
         else
           4
@@ -49,7 +49,7 @@ module Tebako
       def run_with_capture(args)
         puts "   ... @ #{args.join(" ")}"
         out, st = Open3.capture2e(*args)
-        raise Tebako::Error, "Failed to run #{args.join(" ")} (#{st}):\n #{out}" unless st.exitstatus.zero?
+        raise Tebako::Error, "Failed to run #{args.join(" ")} (#{st}):\n #{out}" if st.signaled? || !st.exitstatus.zero?
 
         out
       end

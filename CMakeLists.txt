@@ -113,6 +113,7 @@ else(OSTYPE_RES EQUAL 0)
   message(FATAL_ERROR "Failed to detect OSTYPE: ${OSTYPE_TXT}")
 endif(OSTYPE_RES EQUAL 0)
 
+set(IS_GNU OFF)
 set(IS_MUSL OFF)
 set(IS_MSYS OFF)
 set(IS_DARWIN OFF)
@@ -121,8 +122,18 @@ set(RUBY_WITHOUT_EXT "dbm,win32,win32ole,-test-/*")
 set(RUBY_NAME "ruby")
 set(EXE_SUFFIX "")
 set(DWARFS_PRELOAD OFF)
+set(WITH_PATCHELF OFF)
 
-if("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
+if("${OSTYPE_TXT}" MATCHES "^linux-gnu.*")
+  set(IS_GNU ON)
+  if(REMOVE_GLIBC_PRIVATE)
+    if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
+      set(WITH_PATCHELF ON)
+    else()
+      message(WARNING "Elf file patching is supported for GNU toolchain only. 'patchelf' setting ignored")
+    endif()
+  endif(REMOVE_GLIBC_PRIVATE)
+elseif("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
   set(IS_MUSL ON)
 elseif("${OSTYPE_TXT}" MATCHES "^msys*")
   set(IS_MSYS ON)
@@ -180,9 +191,7 @@ set(DATA_RES_DIR  ${CMAKE_CURRENT_SOURCE_DIR}/resources)
 # External projects
 
 if ("-${RUBY_VER}" STREQUAL "-" OR "-${RUBY_HASH}" STREQUAL "-")
-  set(RUBY_VER "3.1.4")
-  set(RUBY_HASH "a3d55879a0dfab1d7141fdf10d22a07dbf8e5cdc4415da1bde06127d5cc3c7b6")
-  message(STATUS "Using default Ruby version ${RUBY_VER}")
+  message(FATAL_ERROR "Ruby version is not specified")
 endif()
 
 set(RUBY_NAME ruby)
@@ -206,6 +215,8 @@ string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 #else(DWARFS_PRELOAD)
 def_ext_prj_g(DWARFS_WR "v0.5.9")
 #endif(DWARFS_PRELOAD)
+
+def_ext_prj_g(PATCHELF "master")
 
 set(LIBYAML_RUBY_OPTION "")
 if(${RUBY_VER} VERSION_LESS "3.2.0")
@@ -266,6 +277,7 @@ message(STATUS "Target local directory: ${TLD}")
 message(STATUS "Target Gem directory:: ${TGD}")
 message(STATUS "FS_MOUNT_POINT: ${FS_MOUNT_POINT}")
 message(STATUS "Building for Win32 Ruby (RB_W32): ${RB_W32}")
+message(STATUS "Removing GLIBC_PRIVATE reference: ${WITH_PATCHELF}")
 
 # ...................................................................
 # Other options
@@ -307,7 +319,7 @@ if(DWARFS_PRELOAD)
   )
 else(DWARFS_PRELOAD)
   ExternalProject_Add(${DWARFS_WR_PRJ}
-      PREFIX ${DEPS}
+     PREFIX ${DEPS}
      GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
      GIT_TAG ${DWARFS_WR_TAG}
      SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
@@ -327,6 +339,22 @@ else(DWARFS_PRELOAD)
                        ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
   )
 endif(DWARFS_PRELOAD)
+
+if(IS_GNU)
+  ExternalProject_Add(${PATCHELF_PRJ}
+    PREFIX ${DEPS}
+    GIT_REPOSITORY https://github.com/chitao1234/patchelf.git
+    GIT_TAG ${PATCHELF_WR_TAG}
+    SOURCE_DIR ${PATCHELF_SOURCE_DIR}
+    BINARY_DIR ${PATCHELF_BINARY_DIR}
+    UPDATE_COMMAND ""
+    CONFIGURE_COMMAND ${CMAKE_COMMAND} -E chdir ${PATCHELF_SOURCE_DIR} ./bootstrap.sh
+              COMMAND ${PATCHELF_SOURCE_DIR}/configure
+                  --srcdir=${PATCHELF_SOURCE_DIR}
+                  --prefix=${DEPS}
+    TEST_COMMAND ""
+  )
+endif(IS_GNU)
 
 # ...................................................................
 # Ruby
@@ -395,6 +423,11 @@ ExternalProject_Add(${RUBY_PRJ}
 )
 
 add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ} ${LIBDWARFS_WR_PRJ})
+
+if(IS_GNU)
+  add_dependencies(${RUBY_PRJ} ${PATCHELF_PRJ})
+endif(IS_GNU)
+
 
 if (${SETUP_MODE})
   add_custom_target(setup
@@ -488,16 +521,13 @@ else (${SETUP_MODE})
     ${DEPS_INCLUDE_DIR}/tebako/tebako-version.h
   )
 
-  #et_target_properties(tebako-fs PROPERTIES POSITION_INDEPENDENT_CODE ON)
-  #target_compile_options(tebako-fs PRIVATE -fPIE)
-
   if(${RUBY_VER} VERSION_LESS "3.3.0" AND "${OSTYPE_TXT}" MATCHES "^msys*")
     target_compile_definitions(tebako-fs PUBLIC RB_W32_PRE_33)
   endif(${RUBY_VER} VERSION_LESS "3.3.0" AND "${OSTYPE_TXT}" MATCHES "^msys*")
 
   add_dependencies(tebako-fs packaged_filesystem)
 
-  add_custom_target(tebako COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME} ${RUBY_VER})
+  add_custom_target(tebako COMMAND ruby ${EXE}/tebako-packager finalize ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${APP_NAME} ${RUBY_VER} ${DEPS_BIN_DIR}/patchelf ${WITH_PATCHELF})
   add_dependencies(tebako setup tebako-fs)
 
 endif(${SETUP_MODE})
