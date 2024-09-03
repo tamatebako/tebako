@@ -98,13 +98,40 @@ with debug information unstripped. You can opt to run 'strip -S' manually, it mo
 
 NOTE: Our goal is to support all maintained Ruby releases, including minor versions.
 
+== Package portability
+
+MacOS packages are forward portable across different MacOS versions. For example, a package created on MacOS 12 (Monterey) can be executed on MacOS 14 (Sonoma) but not vice versa.
+x86_64 MacOS packages can run on arm systems.
+
+Musl Linux (Alpine) packages are forward portable. For example, a package created on Alpine 3.17 can be executed on Alpine 3.19. We encourage you to use Tebako CI container
+for packaging since eliminates the effort needed for toolchain setup configuration.
+
+Gnu Linux packages created with --patchelf experimental option are portable to Linux GNU distributions with GLIBC
+version 2.31 and above. For example, a package created on Ubuntu 20.04 with --patchelf option can be executed on Rocky Linux 9.
+We encourage you to use
+Tebako CI container for packaging since eliminates the effort needed for toolchain setup configuration.
+
+.Minimal Supported Versions for Major Distributions
+[cols="2", options="header"]
+|===
+| Distribution | Minimal supported version | GLIBC version
+
+| Ubuntu | 20.04 (Focal Fossa) | GLIBC 2.31
+| Debian | 11 (Bullseye) | GLIBC 2.31
+| Rocky Linux | 9 | GLIBC 2.34
+| Fedora | 33 | GLIBC 2.32
+| CentOS | 9 | GLIBC 2.34
+| Red Hat Enterprise Linux (RHEL) | 9 | GLIBC 2.34
+| Oracle Linux | 9 | GLIBC 2.34
+
+|===
+
 == Future plans
 
 * Downloading new DwarFS images to be stored in the local home directory
 * Allowing loading multiple DwarFS images in a stacked way
 * Supporting a COW mechanism that the newly written files are stored
   in a separate image that can be loaded on top of the read-only file systems.
-
 
 == FAQ
 
