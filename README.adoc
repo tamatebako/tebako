@@ -98,21 +98,64 @@ with debug information unstripped. You can opt to run 'strip -S' manually, it mo
 
 NOTE: Our goal is to support all maintained Ruby releases, including minor versions.
 
+
 == Package portability
 
-MacOS packages are forward portable across different MacOS versions. For example, a package created on MacOS 12 (Monterey) can be executed on MacOS 14 (Sonoma) but not vice versa.
-x86_64 MacOS packages can run on arm systems.
+=== General
 
-Musl Linux (Alpine) packages are forward portable. For example, a package created on Alpine 3.17 can be executed on Alpine 3.19. We encourage you to use Tebako CI container
-for packaging since eliminates the effort needed for toolchain setup configuration.
+Tebako packages are designed to be "forward portable" across different operating
+systems and architectures to allow for easy distribution and deployment.
 
-Gnu Linux packages created with --patchelf experimental option are portable to Linux GNU distributions with GLIBC
-version 2.31 and above. For example, a package created on Ubuntu 20.04 with --patchelf option can be executed on Rocky Linux 9.
-We encourage you to use
-Tebako CI container for packaging since eliminates the effort needed for toolchain setup configuration.
+Forward portability means that a package created on a specific platform can be
+executed on a newer version of the same platform.
 
-.Minimal Supported Versions for Major Distributions
-[cols="2", options="header"]
+=== macOS
+
+macOS packages are forward portable across different macOS versions.
+
+[example]
+A Tebako executable package built on macOS 12 (Monterey) can be executed on
+macOS 14 (Sonoma), but not vice versa.
+
+`x86_64` macOS packages can be run on Apple M (ARM) systems.
+
+
+=== Linux distributions using `musl`
+
+Packages built for the
+https://musl.libc.org[`musl` implementation of the C standard library]
+(such as https://alpinelinux.org[Alpine Linux]) are forward portable.
+
+[example]
+A Tebako executable package built on Alpine 3.17 can be executed on Alpine 3.19.
+
+Usage of the
+https://github.com/tamatebako/tebako-ci-containers[Tebako Docker containers] for
+packaging is encouraged since it eliminates the effort needed for toolchain
+setup and configuration.
+
+
+=== Linux distributions using `glibc`
+
+Packages built for the
+https://sourceware.org/glibc[`glibc` implementation of the C standard library]
+are forward portable if the `--patchelf` experimental option is enabled.
+
+The `--patchelf` option allows these packages to be portable to Linux GNU
+distributions with GLIBC version 2.31 and above.
+
+[example]
+A Tebako executable package built on Ubuntu 20.04 with `--patchelf` option can
+be executed on Rocky Linux 9.
+
+Usage of the
+https://github.com/tamatebako/tebako-ci-containers[Tebako Docker containers] for
+packaging is encouraged since it eliminates the effort needed for toolchain
+setup and configuration.
+
+
+.Minimum versions of GLIBC Linux distributions that support Tebako packages with forward portability
+[cols="3", options="header"]
 |===
 | Distribution | Minimal supported version | GLIBC version
 
@@ -125,6 +168,7 @@ Tebako CI container for packaging since eliminates the effort needed for toolcha
 | Oracle Linux | 9 | GLIBC 2.34
 
 |===
+
 
 == Future plans
 
