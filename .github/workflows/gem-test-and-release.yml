@@ -49,7 +49,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 06
+  CACHE_VER: 07
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output
@@ -258,7 +258,7 @@ jobs:
         gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.2.5' ]
         env:
-          - { CC: gcc-10, CXX: g++-10 }
+          - { CC: clang-12, CXX: clang++-12 }
     env: ${{ matrix.env }}
     steps:
     - name: Download actions
