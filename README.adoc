@@ -698,8 +698,8 @@ packaging consistency checks are relaxed.
 
 `patchelf`::
 flag that removal a reference to GLIBC_PRIVATE version of libpthread from tebako package. This allows Linux Gnu packages to run against versions of
-libpthread that differ from the version used for packaging. For example, package created at Ubuntu 20 system can be used on Ubuntu 22. This option works on Gnu Linux with
-Gnu toolchain only (not for LLVM/clang). The feature is exeprimental, we may consider other approach in the future.
+libpthread that differ from the version used for packaging. For example, package created at Ubuntu 20 system can be used on Ubuntu 22. This option makes
+sense and works on Gnu Linux only. The feature is exeprimental, we may consider other approach in the future.
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
