@@ -48,7 +48,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 06
+  CACHE_VER: 08
   VERBOSE: no
 
 jobs:

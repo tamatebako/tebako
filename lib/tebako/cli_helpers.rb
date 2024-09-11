@@ -56,7 +56,7 @@ module Tebako
       @cfg_options ||=
         "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
         "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
-        "-DREMOVE_GLIBC_PRIVATE=#{remove_glibc_private} -DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
+        "#{remove_glibc_private} -DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
     end
 
     def clean_cache
@@ -87,6 +87,7 @@ module Tebako
       merged_env = ENV.to_h.merge(b_env)
       Tebako.packaging_error(103) unless system(merged_env, cfg_cmd)
       Tebako.packaging_error(104) unless system(merged_env, build_cmd)
+      true
     end
 
     def do_setup
@@ -95,6 +96,7 @@ module Tebako
       merged_env = ENV.to_h.merge(b_env)
       Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
       Tebako.packaging_error(102) unless system(merged_env, build_cmd)
+      true
     end
 
     def ensure_version_file
@@ -175,7 +177,11 @@ module Tebako
     end
 
     def remove_glibc_private
-      @remove_glibc_private ||= options["patchelf"] ? "ON" : "OFF"
+      @remove_glibc_private ||= if RUBY_PLATFORM.end_with?("linux") || RUBY_PLATFORM.end_with?("linux-gnu")
+                                  "-DREMOVE_GLIBC_PRIVATE=#{options["patchelf"] ? "ON" : "OFF"}"
+                                else
+                                  ""
+                                end
     end
 
     def handle_nil_prefix
