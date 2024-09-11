@@ -100,11 +100,17 @@ RSpec.describe Tebako::CliHelpers do
       allow(self).to receive(:extend_ruby_version).and_return([ruby_ver, ruby_hash])
     end
 
-    it "returns the correct configuration options string" do
-      exp_opt = "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
-                "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
-                "-DREMOVE_GLIBC_PRIVATE=OFF -DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
-      expect(cfg_options).to eq(exp_opt)
+    context "when on a Gnu Linux platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "x86_64-linux")
+      end
+
+      it "returns the correct configuration options string" do
+        exp_opt = "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
+                  "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
+                  "-DREMOVE_GLIBC_PRIVATE=OFF -DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
+        expect(cfg_options).to eq(exp_opt)
+      end
     end
   end
 
@@ -135,6 +141,107 @@ RSpec.describe Tebako::CliHelpers do
       expect(FileUtils).to receive(:rm_rf).with(Dir.glob(File.join(deps, nms)), secure: true)
       expect(FileUtils).to receive(:rm_rf).with(File.join(output_folder, ""), secure: true)
       clean_output
+    end
+  end
+
+  describe "#deps" do
+    let(:deps) { "/path/to/deps" }
+    it "returns the correct dependencies path" do
+      expect(deps).to eq("/path/to/deps")
+    end
+  end
+
+  describe "#do_press" do
+    let(:deps) { "/path/to/deps" }
+    let(:output_folder) { "/path/to/output" }
+    let(:source) { "/path/to/source" }
+    let(:root) { "/path/to/root" }
+    let(:output) { "/path/to/output" }
+    let(:entry_pont) { "entrypoint" }
+    let(:m_files) { "Unix Makefiles" }
+    let(:ruby_ver) { "3.2.5" }
+    let(:ruby_hash) { "abcdef" }
+
+    before do
+      allow(self).to receive(:deps).and_return(deps)
+      allow(self).to receive(:output_folder).and_return(output_folder)
+      allow(self).to receive(:source).and_return(source)
+      allow(self).to receive(:root).and_return(root)
+      allow(self).to receive(:output).and_return(output)
+      allow(self).to receive(:options).and_return({ "entry-point" => entry_pont })
+      allow(self).to receive(:m_files).and_return(m_files)
+      allow(self).to receive(:extend_ruby_version).and_return([ruby_ver, ruby_hash])
+    end
+    before do
+      stub_const("RUBY_PLATFORM", "x86_64-linux")
+    end
+
+    it "executes the press command successfully" do
+      allow(self).to receive(:system).and_return(true)
+      expect(do_press).to be_truthy
+    end
+
+    it "raises an error if the press command fails" do
+      allow(self).to receive(:system).and_return(false)
+      expect { do_press }.to raise_error(Tebako::Error)
+    end
+  end
+
+  describe "#do_setup" do
+    context "when running on Gnu Linux" do
+      before do
+        stub_const("RUBY_PLATFORM", "x86_64-linux")
+      end
+
+      it "executes the setup command successfully" do
+        allow(self).to receive(:system).and_return(true)
+        expect(do_setup).to be_truthy
+      end
+
+      it "raises an error if the setup command fails" do
+        allow(self).to receive(:system).and_return(false)
+        expect { do_setup }.to raise_error(Tebako::Error)
+      end
+    end
+  end
+
+  describe "#remove_glibc_private" do
+    context "when running on Linux" do
+      before do
+        stub_const("RUBY_PLATFORM", "x86_64-linux-gnu")
+      end
+
+      context "when patchelf option is set" do
+        before do
+          allow(self).to receive(:options).and_return({ "patchelf" => true })
+        end
+
+        it "returns -DREMOVE_GLIBC_PRIVATE=ON" do
+          expect(remove_glibc_private).to eq("-DREMOVE_GLIBC_PRIVATE=ON")
+        end
+      end
+
+      context "when patchelf option is not set" do
+        before do
+          allow(self).to receive(:options).and_return({ "patchelf" => false })
+        end
+
+        it "returns -DREMOVE_GLIBC_PRIVATE=OFF" do
+          expect(remove_glibc_private).to eq("-DREMOVE_GLIBC_PRIVATE=OFF")
+        end
+      end
+    end
+
+    context "when not running on Gnu Linux" do
+      it "returns an empty string for MacOS" do
+        stub_const("RUBY_PLATFORM", "darwin")
+        expect(remove_glibc_private).to eq("")
+      end
+
+      it "returns an empty string for Musl Linux" do
+        stub_const("RUBY_PLATFORM", "linux musl")
+        expect(remove_glibc_private).to eq("")
+      end
     end
   end
 
