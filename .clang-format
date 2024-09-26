@@ -1,0 +1,4 @@
+BasedOnStyle: Chromium
+BreakBeforeBraces: Stroustrup
+SortIncludes: Never
+ColumnLimit: 120

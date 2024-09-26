@@ -292,6 +292,18 @@ class TebakoTest < Minitest::Test
 
   # Test:
   #  -- that tebako package does chdir to specified folder on startup (--cwd option)
+  def test_108_mount_host_dir
+    name = "mount-host-dir"
+    print "\n#{name} "
+    with_fixture_press_and_env name, "local" do |package|
+      out, st = Open3.capture2(package.to_s, "--tebako-mount", "local/tmp:#{Dir.pwd}")
+      assert_equal 0, st.exitstatus
+      assert_match(/Hello, Tebako!/, out)
+    end
+  end
+
+  # Test:
+  #  -- that tebako package does chdir to specified folder on startup (--cwd option)
   def test_107_launcher_cwd
     name = "launcher-cwd"
     print "\n#{name} "
