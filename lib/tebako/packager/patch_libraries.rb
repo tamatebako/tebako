@@ -48,8 +48,10 @@ module Tebako
         DARWIN_DEP_LIBS_2 = ["glog",  "gflags", "brotlienc",       "brotlidec",    "brotlicommon", "fmt"].freeze
         # rubocop:enable Style/WordArray
 
+        LIBTEBAKOFS = "-Wl,--push-state,--whole-archive -l:libtebako-fs.a -Wl,--pop-state"
+
         COMMON_LINUX_LIBRARIES = [
-          "-l:libdwarfs-wr.a",    "-l:libtebako-fs.a",          "-l:libdwarfs.a",             "LIBCOMPRESSION",
+          LIBTEBAKOFS,            "-l:libdwarfs-wr.a",          "-l:libdwarfs.a",             "LIBCOMPRESSION",
           "-l:libfolly.a",        "-l:libfsst.a",               "-l:libmetadata_thrift.a",    "-l:libthrift_light.a",
           "-l:libxxhash.a",       "-l:libfmt.a",                "-l:libdouble-conversion.a",  "-l:libglog.a",
           "-l:libgflags.a",       "-l:libevent.a"
@@ -80,7 +82,7 @@ module Tebako
         MSYS_LIBRARIES = [
           "-l:liblz4.a",             "-l:libz.a",             "-l:libzstd.a",            "-l:liblzma.a",
           "-l:libncurses.a",         "-l:libunwind.a",        "-l:liblzma.a",            "-l:libiberty.a",
-          "LIBYAML",                 "-l:libffi.a",           "-l:libboost_system-mt.a", "-l:libboost_chrono-mt.a",
+          "LIBYAML",                 "-l:libffi.a", "-l:libboost_chrono-mt.a", # "-l:libboost_system-mt.a",
           "-l:libstdc++.a",          "-l:libdl.a",            "-static-libgcc",          "-static-libstdc++",
           "-l:libssl.a",             "-l:libcrypto.a",        "-l:libz.a",               "-l:libwinpthread.a",
           "-lcrypt32",               "-lshlwapi",             "-lwsock32",               "-liphlpapi",

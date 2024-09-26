@@ -42,6 +42,23 @@ jobs:
         env:
           SHELLCHECK_OPTS: -x
 
+  clang-format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DoozyX/clang-format-lint-action@master
+        with:
+          source: 'src'
+          extensions: 'h,cpp,c'
+          clangFormatVersion: 14
+#          inplace: True
+#      - name: Commit changes
+#        uses: EndBug/add-and-commit@v9
+#        with:
+#          message: clang-format fixes
+#          committer_name: GitHub Actions
+#""          committer_email: actions@github.com
+
   rubocop:
     runs-on: ubuntu-latest
     steps:
