@@ -662,7 +662,7 @@ $ pacman -S git tar bison flex toolchain make cmake
 
 
 
-== Usage
+== Packaging
 
 === Tebako root folder (aka prefix) selection
 
@@ -932,39 +932,6 @@ options:
 
 Please note that the options provided on the command line have preference over tebafile settings.
 
-=== Image extraction
-
-Tebako provides an option to an extract its DwarFS filesystem from a package to
-a local folder for verification or execution.
-
-[source,sh]
-----
-$ <tebako-packaged-executable> --tebako-extract [<root folder for extracted filesystem>]
-----
-
-Where,
-
-`<root folder for extracted filesystem>`::
-The root folder for the extracted filesystem (optional, defaults to `source_filesystem`)
-
-[example]
-====
-Extracting Tebako content from the `metanorma` package:
-
-[source,sh]
-----
-metanorma --tebako-extract temp-image
-----
-====
-
-The `--tebako-extract` option actually runs the following Ruby script:
-
-[source,ruby]
-----
-require 'fileutils'
-FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'
-----
-
 === Exit codes
 
 The Tebako CLI exits with different exit codes to indicate the status of the
@@ -1080,9 +1047,110 @@ Here is a summary of the scenarios:
 
 |===
 
-
 These scenarios determine how the project is packaged and where the entry point is located within the packaged filesystem.
 
+== Run-time options
+
+Generally Tebako package passes command line options to the packaged application
+
+[example]
+====
+For example, if the package was created with the following command
+
+[source,sh]
+----
+tebako press \
+  --root='~/projects/myproject' \
+  --entry=start.rb \
+  --output=/temp/myproject.tebako
+----
+running
+
+[source,sh]
+----
+/temp/myproject.tebako --option --parameter value
+----
+
+will be translated by Tebako bootstrap code to
+
+[source,sh]
+----
+myproject --option --parameter value
+----
+====
+
+However there are several command-line parameters that are intercepted processed by Tebako bootstrap code as follows
+
+=== Image extraction (--tebako-extract option)
+
+Tebako provides an option to an extract its DwarFS filesystem from a package to
+a local folder for verification or execution.
+
+[source,sh]
+----
+$ <tebako-packaged-executable> --tebako-extract [<root folder for extracted filesystem>]
+----
+
+Where,
+
+`<root folder for extracted filesystem>`::
+The root folder for the extracted filesystem (optional, defaults to `source_filesystem`)
+
+[example]
+====
+Extracting Tebako content from the `metanorma` package:
+
+[source,sh]
+----
+metanorma --tebako-extract temp-image
+----
+====
+
+The `--tebako-extract` option actually runs the following Ruby script:
+
+[source,ruby]
+----
+require 'fileutils'
+FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'
+----
+
+=== Mounting Host Folder to Tebako Memfs (`--tebako-mount` option)
+
+Some programs unconditionally use folders located under the application root, and when processed by Tebako
+or similar tools, these folders are included in the packaging.
+
+For example, there is no configuration option to change where Rails expects the `tmp` folder to be.
+The location is hardcoded in multiple places within the Rails codebase, residing under the application root,
+and as a result, it gets included in the read-only Tebako memfs. Although patches have been proposed
+(e.g., https://github.com/rails/rails/issues/39583), there is currently no way to change the paths for
+temporary files, caches, and sockets.
+
+To address this limitation in Rails and similar issues in other applications, Tebako provides an option
+to mount a host folder to the memfs tree.
+
+When using Tebako, consider the packaging scenario mentioned above, as it defines the layout of the application
+tree. The `--tebako-extract` option may be useful for understanding the placement of files and folders.
+
+[example]
+====
+The following command starts a `rails.tebako` package with `$PWD/tmp` mounted as `local/tmp` in the memfs.
+Any remaining command-line parameters are passed to the application.
+[source,sh]
+----
+rails.tebako --tebako-mount local/tmp:$PWD/tmp server
+----
+====
+
+The `--tebako-mount` option has the following syntax:
+[source,sh]
+----
+--tebako-mount <memfs path>:<host path>
+----
+
+The `--tebako-mount` option can be repeated multiple times to mount more than one object. The `memfs path`
+is relative to the memfs root, and it is recommended to use absolute paths for host objects. Both directories
+and files can be mounted in this way. Tebako allows overlaying existing memfs objects, so there are no significant
+limitations.
 
 == Trivia: origin of name
 
