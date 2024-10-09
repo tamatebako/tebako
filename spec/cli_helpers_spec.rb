@@ -106,9 +106,11 @@ RSpec.describe Tebako::CliHelpers do
       end
 
       it "returns the correct configuration options string" do
+        v_parts = Tebako::VERSION.split(".")
+
         exp_opt = "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
                   "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
-                  "-DREMOVE_GLIBC_PRIVATE=OFF -DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
+                  "-DREMOVE_GLIBC_PRIVATE=OFF -DTEBAKO_VERSION:STRING=\"#{v_parts[0]}.#{v_parts[1]}.#{v_parts[2]}\""
         expect(cfg_options).to eq(exp_opt)
       end
     end

@@ -51,12 +51,14 @@ module Tebako
 
     def cfg_options
       ruby_ver, ruby_hash = extend_ruby_version
+      ## {v_parts[3]} may be something like rc1 that won't work with CMake
+      v_parts = Tebako::VERSION.split(".")
       # Cannot use 'xxx' as parameters because it does not work in Windows shells
       # So we have to use \"xxx\"
       @cfg_options ||=
         "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{ruby_ver}\" -DRUBY_HASH:STRING=\"#{ruby_hash}\" " \
         "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
-        "#{remove_glibc_private} -DTEBAKO_VERSION:STRING=\"#{Tebako::VERSION}\""
+        "#{remove_glibc_private} -DTEBAKO_VERSION:STRING=\"#{v_parts[0]}.#{v_parts[1]}.#{v_parts[2]}\""
     end
 
     def clean_cache
