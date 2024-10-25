@@ -31,6 +31,7 @@ require "find"
 require_relative "error"
 require_relative "build_helpers"
 require_relative "packager/patch_helpers"
+require_relative "scenario_manager"
 
 # Tebako - an executable packager
 module Tebako
@@ -41,11 +42,11 @@ module Tebako
   RUBYGEMS_VERSION = "3.4.22"
 
   # Tebako packaging support (deployer)
-  class DeployHelper # rubocop:disable Metrics/ClassLength
-    def initialize(fs_root, fs_entrance, fs_mount_point, target_dir, pre_dir)
+  class DeployHelper < ScenarioManager # rubocop:disable Metrics/ClassLength
+    def initialize(fs_root, fs_entrance, target_dir, pre_dir)
+      super(fs_root, fs_entrance)
       @fs_root = fs_root
       @fs_entrance = fs_entrance
-      @fs_mount_point = fs_mount_point
       @target_dir = target_dir
       @pre_dir = pre_dir
       @verbose = ENV["VERBOSE"] == "yes" || ENV["VERBOSE"] == "true"
@@ -54,16 +55,14 @@ module Tebako
 
     attr_reader :bundler_command, :gem_command, :gem_home
 
-    def config(os_type, ruby_ver, cwd)
+    def configure(ruby_ver, cwd)
       @ruby_ver = ruby_ver
-      @os_type = os_type
       @cwd = cwd
 
       @tbd = File.join(@target_dir, "bin")
       @tgd = @gem_home = File.join(@target_dir, "lib", "ruby", "gems", @ruby_ver.api_version)
       @tld = File.join(@target_dir, "local")
 
-      lookup_files
       configure_scenario
       configure_commands
     end
@@ -171,7 +170,7 @@ module Tebako
     end
 
     def configure_commands
-      if @os_type =~ /msys/
+      if msys?
         configure_commands_msys
       else
         configure_commands_not_msys
@@ -193,27 +192,6 @@ module Tebako
       @bat_suffix = ""
       @force_ruby_platform = "false"
       @nokogiri_option = "--no-use-system-libraries"
-    end
-
-    def configure_scenario
-      case @gs_length
-      when 0
-        configure_scenario_no_gemspec
-      when 1
-        @scenario = @gf_length.positive? ? :gemspec_and_gemfile : :gemspec
-      else
-        raise Tebako::Error, "Multiple Ruby gemspecs found in #{@fs_root}"
-      end
-    end
-
-    def configure_scenario_no_gemspec
-      @scenario = if @gf_length.positive?
-                    :gemfile
-                  elsif @g_length.positive?
-                    :gem
-                  else
-                    :simple_script
-                  end
     end
 
     def copy_files(dest)
@@ -275,12 +253,6 @@ module Tebako
       raise Tebako::Error, "No gem files found after build" if gem_files.empty?
 
       gem_files.each { |gem_file| install_gem(gem_file) }
-    end
-
-    def lookup_files
-      @gs_length = Dir.glob(File.join(@fs_root, "*.gemspec")).length
-      @gf_length = Dir.glob(File.join(@fs_root, "Gemfile")).length
-      @g_length = Dir.glob(File.join(@fs_root, "*.gem")).length
     end
 
     def patch_after_rubygems_update(target_dir, ruby_api_ver)

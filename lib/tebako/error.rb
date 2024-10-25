@@ -35,7 +35,14 @@ module Tebako
     105 => "Failed to map MSys path to Windows",
     106 => "Entry point does not exist or is not accessible",
     107 => "Project root does not exist or is not accessible",
-    108 => "Package working directory does not exist"
+    108 => "Package working directory does not exist",
+    109 => "Invalid Ruby version format",
+    110 => "Ruby version is not supported",
+    111 => "Ruby version is not supported on Windows",
+    112 => "OS is not supported",
+    113 => "Path to root shall be absolute. Relative path is not allowed",
+    114 => "Entry point is not within the project root",
+    201 => "Warning. Could not create cache version file"
   }.freeze
 
   class << self

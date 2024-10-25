@@ -32,9 +32,10 @@ require "open3"
 require "thor"
 require "yaml"
 
+require_relative "cache_manager"
 require_relative "cli_helpers"
-require_relative "cli_rubies"
 require_relative "error"
+require_relative "ruby_version"
 require_relative "version"
 
 # Tebako - an executable packager
@@ -52,20 +53,23 @@ module Tebako
                             desc: "tebako configuration file 'tebafile', '$PWD/.tebako.yml' by default"
     desc "clean", "Clean tebako packaging environment"
     def clean
-      clean_cache
+      (_, cm) = bootstrap
+      cm.clean_cache
     end
 
     desc "clean_ruby", "Clean Ruby source from tebako packaging environment"
     method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
+                         enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
                          desc: "Ruby version to clean, all available versions by default"
     def clean_ruby
       puts "Cleaning Ruby sources from tebako packaging environment"
+      (om,) = bootstrap
+
       suffix = options["Ruby"].nil? ? "" : "_#{options["Ruby"]}"
       nmr = "src/_ruby#{suffix}*"
       nms = "stash#{suffix}*"
-      FileUtils.rm_rf(Dir.glob(File.join(deps, nmr)), secure: true)
-      FileUtils.rm_rf(Dir.glob(File.join(deps, nms)), secure: true)
+      FileUtils.rm_rf(Dir.glob(File.join(om.deps, nmr)), secure: true)
+      FileUtils.rm_rf(Dir.glob(File.join(om.deps, nms)), secure: true)
     end
 
     desc "hash", "Print build script hash (ci cache key)"
@@ -95,16 +99,15 @@ module Tebako
                            desc: "Tebako package file name, entry point base file name in the current folder by default"
     method_option :root, type: :string, aliases: "-r", required: true, desc: "Root folder of the Ruby application"
     method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
-                         desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default"
+                         enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
+                         desc: "Tebako package Ruby version, #{Tebako::RubyVersion::DEFAULT_RUBY_VERSION} by default"
     method_option :patchelf, aliases: "-P", type: :boolean,
                              desc: RGP_DESCRIPTION
     def press
-      version_cache_check unless options[:devmode]
+      (om, cm) = bootstrap
 
-      puts press_announce
-      do_press
-      ensure_version_file
+      do_press(om)
+      cm.ensure_version_file
     rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
@@ -112,14 +115,13 @@ module Tebako
 
     desc "setup", "Set up tebako packaging environment"
     method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::CliRubies::RUBY_VERSIONS.keys,
-                         desc: "Tebako package Ruby version, #{Tebako::CliRubies::DEFAULT_RUBY_VERSION} by default."
+                         enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
+                         desc: "Tebako package Ruby version, #{Tebako::RubyVersion::DEFAULT_RUBY_VERSION} by default."
     def setup
-      version_cache_check unless options[:devmode]
+      (om, cm) = bootstrap
 
-      puts "Setting up tebako packaging environment"
-      do_setup
-      ensure_version_file
+      do_setup(om)
+      cm.ensure_version_file
     rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
@@ -130,6 +132,14 @@ module Tebako
     end
 
     no_commands do
+      def bootstrap
+        options_manager = Tebako::OptionsManager.new(options)
+        cache_manager = Tebako::CacheManager.new(options_manager.deps, options_manager.source,
+                                                 options_manager.output_folder)
+        cache_manager.version_cache_check unless options[:devmode]
+        [options_manager, cache_manager]
+      end
+
       def initialize(*args)
         super
         return if args[2][:current_command].name.include?("hash")
@@ -151,7 +161,6 @@ module Tebako
 
     no_commands do
       include Tebako::CliHelpers
-      include Tebako::CliRubies
     end
   end
 end
