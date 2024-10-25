@@ -53,39 +53,11 @@ if(NOT LOG_LEVEL)
 endif()
 
 if (NOT ${SETUP_MODE})
-  message("Running tebako press script")
-
-  if ("-${ROOT}" STREQUAL "-")
-    message(FATAL_ERROR "Project ROOT is not specified.")
-  endif()
-
-  if ("-${ENTRANCE}" STREQUAL "-")
-    message(FATAL_ERROR "Project ENTRANCE is not specified.")
-  endif()
+  message(STATUS "Running tebako press script")
 
   if ("-${PCKG}" STREQUAL "-")
     message(FATAL_ERROR "Project OUTPUT PACKAGE is not specified.")
   endif()
-
-  cmake_path(SET FS_ENTRANCE NORMALIZE ${ENTRANCE})
-
-  cmake_path(IS_RELATIVE ROOT IS_RT_RELATIVE)
-  if(${IS_RT_RELATIVE})
-    message(FATAL_ERROR "Path to root shall be absolute. Relative path '${FS_ROOT}' is not allowed.")
-  else()
-    cmake_path(SET FS_ROOT NORMALIZE ${ROOT})
-  endif()
-
-  cmake_path(IS_ABSOLUTE FS_ENTRANCE IS_EN_ABSOLUTE)
-  if(${IS_EN_ABSOLUTE})
-    cmake_path(IS_PREFIX FS_ROOT ${FS_ENTRANCE} IS_FS_EN_PREFIX)
-    if(NOT ${IS_FS_EN_PREFIX})
-      message(FATAL_ERROR "Entry point ${FS_ENTRANCE} is not in the project root ${FS_ROOT}")
-    endif(NOT ${IS_FS_EN_PREFIX})
-    set(FS_ENTR_TMP ${FS_ENTRANCE})
-    cmake_path(RELATIVE_PATH FS_ENTRANCE BASE_DIRECTORY ${FS_ROOT})
-    message("Absolute path to entry point '${FS_ENTR_TMP}' will be reduced '${FS_ENTRANCE}' relative to '${FS_ROOT}'")
-  endif(${IS_EN_ABSOLUTE})
 
   cmake_path(IS_RELATIVE PCKG IS_PK_RELATIVE)
   if(${IS_PK_RELATIVE})
@@ -94,7 +66,7 @@ if (NOT ${SETUP_MODE})
     cmake_path(SET APP_NAME NORMALIZE ${PCKG})
   endif()
 
-  message("Packaging ${FS_ROOT} folder with ${FS_ENTRANCE} entry point to ${APP_NAME}")
+  message("Running tebako press script")
 else()
   message("Running tebako setup script")
 endif()
@@ -209,11 +181,7 @@ string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 #  list(GET LIBDWARFS_WR_VER_COMPONENTS 2 LIBDWARFS_WR_VER_PATCH)
 #  set (LIBDWARFS_WR_VER_M ${LIBDWARFS_WR_VER_MAJOR}.${LIBDWARFS_WR_VER_MINOR}.${LIBDWARFS_WR_VER_PATCH})
 #else(DWARFS_PRELOAD)
-<<<<<<< HEAD
-def_ext_prj_g(DWARFS_WR "v0.8.2")
-=======
-def_ext_prj_g(DWARFS_WR "v0.8.1")
->>>>>>> 6d9d239 (libdwarfs version bump to 0.8.1)
+def_ext_prj_g(DWARFS_WR "v0.8.3")
 #endif(DWARFS_PRELOAD)
 
 def_ext_prj_g(PATCHELF "65e14792061c298f1d2bc44becd48a10cbf0bc81")
@@ -257,15 +225,6 @@ if(${IS_MSYS})
 else(${IS_MSYS})
   set(FS_MOUNT_POINT "/__tebako_memfs__")
 endif(${IS_MSYS})
-
-if(PACKAGE_NEEDS_CWD)
-  set(NEEDS_CWD true)
-  set(PACKAGE_CWD_FULL ${FS_MOUNT_POINT}/${PACKAGE_CWD})
-else(PACKAGE_NEEDS_CWD)
-  set(NEEDS_CWD false)
-  set(PACKAGE_CWD "")
-  set(PACKAGE_CWD_FULL "")
-endif(PACKAGE_NEEDS_CWD)
 
 message(STATUS "DATA_SRC_DIR: ${DATA_SRC_DIR}")
 message(STATUS "DATA_PRE_DIR: ${DATA_PRE_DIR}")
@@ -421,6 +380,7 @@ ExternalProject_Add(${RUBY_PRJ}
   COMMAND          ruby ${EXE}/tebako-packager pass1a ${RUBY_SOURCE_DIR}
   BUILD_COMMAND    make -j${NCORES}
   INSTALL_COMMAND  make install -j${NCORES}
+  COMMAND          ${GNU_BASH} -c "chmod +x ${DEPS_BIN_DIR}/mkdwarfs${EXE_SUFFIX}"
   COMMAND          ${GNU_BASH} -c "ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}"
 )
 
@@ -446,76 +406,24 @@ else (${SETUP_MODE})
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
   set(CMAKE_CXX_EXTENSIONS   OFF)
 
-  file(GLOB GEMSPECS LIST_DIRECTORIES false ${FS_ROOT}/*.gemspec)
-  file(GLOB GEMFILES LIST_DIRECTORIES false ${FS_ROOT}/Gemfile)
-  file(GLOB GEMS     LIST_DIRECTORIES false ${FS_ROOT}/*.gem)
-
-  list(LENGTH GEMSPECS GSLENGTH)
-  list(LENGTH GEMFILES GFLENGTH)
-  list(LENGTH GEMS     GLENGTH)
-
-  if(GSLENGTH GREATER 0)
-    if(GSLENGTH GREATER 1)
-      message(FATAL_ERROR "Multiple gemspecs detected in ${FS_ROOT}")
-    else(GSLENGTH GREATER 1)
-      if(GFLENGTH GREATER 0)
-#  Found xxx.gemspec and Gemfile
-        set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
-      else(GFLENGTH GREATER 0)
-#  Found xxx.gemspec but no Gemfile
-        set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
-      endif(GFLENGTH GREATER 0)
-    endif(GSLENGTH GREATER 1)
-  elseif(GFLENGTH GREATER 0)
-#  Found Gemfile but no gemspec
-    set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
-  elseif(GLENGTH GREATER 0)
-  # xxx.gem, no gemspec, no gemfile
-    if(GLENGTH GREATER 1)
-      message(FATAL_ERROR "Multiple gems detected in ${FS_ROOT}")
-    else(GLENGTH GREATER 1)
-      set(FS_ENTRY_POINT "/bin/${FS_ENTRANCE}")
-    endif(GLENGTH GREATER 1)
-  else()
-# No gem, no gemspec, no gemfile
-# Simple ruby script
-    set(FS_ENTRY_POINT "/local/${FS_ENTRANCE}")
-  endif()
-
-  add_custom_target(source_filesystem
-      COMMAND ruby ${EXE}/tebako-packager deploy ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${RUBY_STASH_DIR}
-                                                 ${DATA_SRC_DIR} ${DATA_PRE_DIR} ${DATA_BIN_DIR}
-                                                 ${FS_ROOT} ${FS_ENTRANCE} ${FS_MOUNT_POINT} ${APP_NAME} ${RUBY_VER}
-                                                 ${PACKAGE_CWD}
-      DEPENDS ${RUBY_PRJ}
-  )
+  add_custom_target(packaged_filesystem
+    COMMAND ruby ${DEPS_BIN_DIR}/deploy.rb
+    DEPENDS ${RUBY_PRJ}
+    BYPRODUCTS ${DATA_BIN_FILE}
+ )
 
 # ...................................................................
 # Packaged filesystem
 
-  configure_file(
-    ${DATA_RES_DIR}/tebako-version.h.in
-    ${DEPS_INCLUDE_DIR}/tebako/tebako-version.h
-    @ONLY
-  )
-
-  configure_file(
-    ${DATA_RES_DIR}/tebako-fs.cpp.in
-    ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
-    @ONLY
-  )
-
-  add_custom_target(packaged_filesystem
-    COMMAND ${GNU_BASH} -c "chmod +x ${DEPS_BIN_DIR}/mkdwarfs${EXE_SUFFIX}"
+  #add_custom_target(packaged_filesystem
     # No progress below is critical since in reporting mode mkdwarfs tries to work directly with terminal
     # and it creates issues for stderr redirects (&2 > 1) used by Ninja and our test srcipts
     # It may be fixable bit is very difficult to reproduce in test environment
-    COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR} --no-progress
-    COMMAND ${CMAKE_COMMAND} -E touch ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
-    DEPENDS setup source_filesystem
-    VERBATIM
-    BYPRODUCTS ${DATA_BIN_FILE}
-  )
+   # COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR} --no-progress
+   # #COMMAND ${CMAKE_COMMAND} -E touch ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
+   # DEPENDS setup source_filesystem
+   # VERBATIM
+  #)
 
   set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
 
