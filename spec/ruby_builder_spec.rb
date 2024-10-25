@@ -33,7 +33,7 @@ require "tebako/packager/patch_helpers"
 
 RSpec.describe Tebako::RubyBuilder do
   describe "#final_build" do
-    let(:ruby_ver) { "3.0.0" }
+    let(:ruby_ver) { "3.1.6" }
     let(:src_dir) { "/path/to/src" }
     let(:ncores) { 4 }
     let(:builder) { described_class.new(Tebako::RubyVersion.new(ruby_ver), src_dir) }

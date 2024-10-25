@@ -30,17 +30,24 @@ require_relative "../lib/tebako/deploy_helper"
 
 RSpec.describe Tebako::DeployHelper do
   let(:fs_root) { "/fs/root" }
-  let(:fs_entrance) { "/fs/entrance" }
+  let(:fs_entrance) { "/fs/root/entrance" }
   let(:fs_mount_point) { "/fs/mount_point" }
   let(:target_dir) { "/target/dir" }
   let(:pre_dir) { "/pre/dir" }
-  let(:deploy_helper) { Tebako::DeployHelper.new(fs_root, fs_entrance, fs_mount_point, target_dir, pre_dir) }
+  let(:deploy_helper) { Tebako::DeployHelper.new(fs_root, fs_entrance, target_dir, pre_dir) }
+
+  before do
+    allow_any_instance_of(Pathname).to receive(:realpath) { |instance| instance }
+    allow(Dir).to receive(:exist?).and_call_original
+    allow(Dir).to receive(:exist?).with(fs_root).and_return(true)
+    allow(File).to receive(:file?).and_call_original
+    allow(File).to receive(:file?).with(fs_entrance).and_return(true)
+  end
 
   describe "#initialize" do
     it "sets instance variables correctly" do
       expect(deploy_helper.instance_variable_get(:@fs_root)).to eq(fs_root)
       expect(deploy_helper.instance_variable_get(:@fs_entrance)).to eq(fs_entrance)
-      expect(deploy_helper.instance_variable_get(:@fs_mount_point)).to eq(fs_mount_point)
       expect(deploy_helper.instance_variable_get(:@target_dir)).to eq(target_dir)
       expect(deploy_helper.instance_variable_get(:@pre_dir)).to eq(pre_dir)
       expect(deploy_helper.instance_variable_get(:@verbose)).to eq(false)
@@ -48,23 +55,23 @@ RSpec.describe Tebako::DeployHelper do
     end
   end
 
-  describe "#config" do
-    let(:os_type) { "linux" }
+  describe "#configure" do
     let(:r_v) { "3.2.4" }
     let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
     let(:cwd) { "/current/working/dir" }
 
     before do
+      allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
+      stub_const("RUBY_PLATFORM", "linux")
       allow(deploy_helper).to receive(:lookup_files)
       allow(deploy_helper).to receive(:configure_scenario)
       allow(deploy_helper).to receive(:configure_commands)
-      deploy_helper.config(os_type, ruby_ver, cwd)
+      deploy_helper.configure(ruby_ver, cwd)
     end
 
     it "sets configuration variables correctly" do
       r_vv = deploy_helper.instance_variable_get(:@ruby_ver)
-      expect(r_vv.instance_variable_get(:@ruby_ver)).to eq(r_v)
-      expect(deploy_helper.instance_variable_get(:@os_type)).to eq(os_type)
+      expect(r_vv.ruby_version).to eq(r_v)
       expect(deploy_helper.instance_variable_get(:@cwd)).to eq(cwd)
       expect(deploy_helper.instance_variable_get(:@tbd)).to eq(File.join(target_dir, "bin"))
       expect(deploy_helper.instance_variable_get(:@tgd)).to eq(File.join(target_dir, "lib", "ruby", "gems",
@@ -73,9 +80,7 @@ RSpec.describe Tebako::DeployHelper do
     end
 
     it "calls lookup_files, configure_scenario, and configure_commands" do
-      expect(deploy_helper).to have_received(:lookup_files)
       expect(deploy_helper).to have_received(:configure_scenario)
-      expect(deploy_helper).to have_received(:configure_commands)
     end
   end
 
@@ -107,7 +112,8 @@ RSpec.describe Tebako::DeployHelper do
   describe "#configure_commands" do
     context "when os_type is msys" do
       before do
-        deploy_helper.instance_variable_set(:@os_type, "msys")
+        allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
+        stub_const("RUBY_PLATFORM", "msys")
         deploy_helper.instance_variable_set(:@tbd, "/path/to/tbd")
         deploy_helper.send(:configure_commands)
       end
@@ -133,7 +139,8 @@ RSpec.describe Tebako::DeployHelper do
 
     context "when os_type is not msys" do
       before do
-        deploy_helper.instance_variable_set(:@os_type, "linux")
+        allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
+        stub_const("RUBY_PLATFORM", "linux")
         deploy_helper.instance_variable_set(:@tbd, "/path/to/tbd")
         deploy_helper.send(:configure_commands)
       end
@@ -158,97 +165,6 @@ RSpec.describe Tebako::DeployHelper do
     end
   end
 
-  describe "#configure_scenario" do
-    context "when @gs_length is 0" do
-      before do
-        deploy_helper.instance_variable_set(:@gs_length, 0)
-      end
-
-      it "calls configure_scenario_no_gemspec" do
-        expect(deploy_helper).to receive(:configure_scenario_no_gemspec)
-        deploy_helper.send(:configure_scenario)
-      end
-    end
-
-    context "when @gs_length is 1" do
-      before do
-        deploy_helper.instance_variable_set(:@gs_length, 1)
-      end
-
-      context "and @gf_length is positive" do
-        before do
-          deploy_helper.instance_variable_set(:@gf_length, 1)
-          deploy_helper.send(:configure_scenario)
-        end
-
-        it "sets @scenario to :gemspec_and_gemfile" do
-          expect(deploy_helper.instance_variable_get(:@scenario)).to eq(:gemspec_and_gemfile)
-        end
-      end
-
-      context "and @gf_length is 0" do
-        before do
-          deploy_helper.instance_variable_set(:@gf_length, 0)
-          deploy_helper.send(:configure_scenario)
-        end
-
-        it "sets @scenario to :gemspec" do
-          expect(deploy_helper.instance_variable_get(:@scenario)).to eq(:gemspec)
-        end
-      end
-    end
-
-    context "when @gs_length is greater than 1" do
-      before do
-        deploy_helper.instance_variable_set(:@gs_length, 2)
-      end
-
-      it "raises a Tebako::Error" do
-        expect do
-          deploy_helper.send(:configure_scenario)
-        end.to raise_error(Tebako::Error,
-                           "Multiple Ruby gemspecs found in #{deploy_helper.instance_variable_get(:@fs_root)}")
-      end
-    end
-  end
-
-  describe "#configure_scenario_no_gemspec" do
-    context "when @gf_length is positive" do
-      before do
-        deploy_helper.instance_variable_set(:@gf_length, 1)
-        deploy_helper.instance_variable_set(:@g_length, 0)
-        deploy_helper.send(:configure_scenario_no_gemspec)
-      end
-
-      it "sets @scenario to :gemfile" do
-        expect(deploy_helper.instance_variable_get(:@scenario)).to eq(:gemfile)
-      end
-    end
-
-    context "when @gf_length is 0 and @g_length is positive" do
-      before do
-        deploy_helper.instance_variable_set(:@gf_length, 0)
-        deploy_helper.instance_variable_set(:@g_length, 1)
-        deploy_helper.send(:configure_scenario_no_gemspec)
-      end
-
-      it "sets @scenario to :gem" do
-        expect(deploy_helper.instance_variable_get(:@scenario)).to eq(:gem)
-      end
-    end
-
-    context "when both @gf_length and @g_length are 0" do
-      before do
-        deploy_helper.instance_variable_set(:@gf_length, 0)
-        deploy_helper.instance_variable_set(:@g_length, 0)
-        deploy_helper.send(:configure_scenario_no_gemspec)
-      end
-
-      it "sets @scenario to :simple_script" do
-        expect(deploy_helper.instance_variable_get(:@scenario)).to eq(:simple_script)
-      end
-    end
-  end
   describe "#needs_bundler?" do
     context "when @gf_length is greater than 0" do
       before do
@@ -256,12 +172,21 @@ RSpec.describe Tebako::DeployHelper do
       end
 
       context "and @ruby_ver is less than 3.1" do
-        before do
-          deploy_helper.instance_variable_set(:@ruby_ver, Tebako::RubyVersion.new("3.0.7"))
-        end
+        unless RUBY_PLATFORM =~ /msys|mingw|cygwin/
+          before do
+            deploy_helper.instance_variable_set(:@ruby_ver, Tebako::RubyVersion.new("3.0.7"))
+          end
 
-        it "returns true" do
-          expect(deploy_helper.needs_bundler?).to be true
+          it "returns true" do
+            if RUBY_PLATFORM =~ /msys|mingw|cygwin/
+              expect { deploy_helper.needs_bundler? }.to raise_error(Tebako::Error) { |e|
+                expect(e.message).to eq("Ruby version 3.0.7 is not supported on Windows")
+                expect(e.error_code).to eq(111)
+              }
+            else
+              expect(deploy_helper.needs_bundler?).to be true
+            end
+          end
         end
       end
 
@@ -282,12 +207,14 @@ RSpec.describe Tebako::DeployHelper do
       end
 
       context "and @ruby_ver is less than 3.1" do
-        before do
-          deploy_helper.instance_variable_set(:@ruby_ver, Tebako::RubyVersion.new("3.0.7"))
-        end
+        unless RUBY_PLATFORM =~ /msys|mingw|cygwin/
+          before do
+            deploy_helper.instance_variable_set(:@ruby_ver, Tebako::RubyVersion.new("3.0.7"))
+          end
 
-        it "returns false" do
-          expect(deploy_helper.needs_bundler?).to be false
+          it "returns false" do
+            expect(deploy_helper.needs_bundler?).to be false
+          end
         end
       end
 

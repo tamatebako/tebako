@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,18 +25,12 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "fileutils"
-require "pathname"
-require "rbconfig"
-
 require_relative "error"
-require_relative "version"
 
 # Tebako - an executable packager
-# Command-line interface methods
 module Tebako
-  # Ruby version helpers
-  module CliRubies
+  # Ruby version checks
+  class RubyVersion
     RUBY_VERSIONS = {
       "2.7.8" => "c2dab63cbc8f2a05526108ad419efa63a67ed4074dbbcf9fc2b1ca664cb45ba0",
       "3.0.7" => "2a3411977f2850431136b0fab8ad53af09fb74df2ee2f4fb7f11b378fe034388",
@@ -51,29 +45,69 @@ module Tebako
     MIN_RUBY_VERSION_WINDOWS = "3.1.6"
     DEFAULT_RUBY_VERSION = "3.2.5"
 
-    def version_check(version)
-      return if RUBY_VERSIONS.key?(version)
+    # rub_ver version = options["Ruby"].nil? ? DEFAULT_RUBY_VERSION : options["Ruby"]
+    def initialize(ruby_version)
+      @ruby_version = ruby_version.nil? ? DEFAULT_RUBY_VERSION : ruby_version
+
+      version_check_format
+      version_check
+      version_check_msys
+    end
+
+    attr_reader :ruby_version
+
+    def ruby3x?
+      @ruby3x ||= @ruby_version[0] == "3"
+    end
+
+    def ruby31?
+      @ruby31 ||= ruby3x? && @ruby_version[2].to_i >= 1
+    end
+
+    def ruby32?
+      @ruby32 ||= ruby3x? && @ruby_version[2].to_i >= 2
+    end
+
+    def ruby32only?
+      @ruby32only ||= ruby3x? && @ruby_version[2] == "2"
+    end
+
+    def ruby33?
+      @ruby33 ||= ruby3x? && @ruby_version[2].to_i >= 3
+    end
+
+    def api_version
+      @api_version ||= "#{@ruby_version.split(".")[0..1].join(".")}.0"
+    end
+
+    def lib_version
+      @lib_version ||= "#{@ruby_version.split(".")[0..1].join}0"
+    end
+
+    def version_check
+      return if RUBY_VERSIONS.key?(@ruby_version)
 
       raise Tebako::Error.new(
-        "Ruby version #{version} is not supported, exiting",
-        253
+        "Ruby version #{@ruby_version} is not supported",
+        110
       )
     end
 
-    def version_check_msys(version)
-      if Gem::Version.new(version) < Gem::Version.new(MIN_RUBY_VERSION_WINDOWS) && RUBY_PLATFORM =~ /msys|mingw|cygwin/
-        raise Tebako::Error.new(
-          "Windows packaging works for Ruby #{MIN_RUBY_VERSION_WINDOWS} or above, version #{version} is not supported",
-          252
-        )
+    def version_check_format
+      return if @ruby_version =~ /^\d+\.\d+\.\d+$/
+
+      raise Tebako::Error.new("Invalid Ruby version format '#{@ruby_version}'. Expected format: x.y.z", 109)
+    end
+
+    def version_check_msys
+      if Gem::Version.new(@ruby_version) < Gem::Version.new(MIN_RUBY_VERSION_WINDOWS) &&
+         RUBY_PLATFORM =~ /msys|mingw|cygwin/
+        raise Tebako::Error.new("Ruby version #{@ruby_version} is not supported on Windows", 111)
       end
     end
 
     def extend_ruby_version
-      version = options["Ruby"].nil? ? DEFAULT_RUBY_VERSION : options["Ruby"]
-      version_check(version)
-      version_check_msys(version)
-      @extend_ruby_version ||= [version, RUBY_VERSIONS[version]]
+      @extend_ruby_version ||= [@ruby_version, RUBY_VERSIONS[@ruby_version]]
     end
   end
 end

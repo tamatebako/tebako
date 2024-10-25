@@ -27,6 +27,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require_relative "../lib/tebako/packager"
+require_relative "../lib/tebako/ruby_version"
 require_relative "../lib/tebako/stripper"
 require_relative "../lib/tebako/build_helpers"
 
@@ -73,31 +74,6 @@ begin
     ruby_ver = Tebako::RubyVersion.new(ARGV[6])
     Tebako::Packager.stash(ARGV[4], ARGV[5])
     Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ruby_ver)
-  when "deploy"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- OSTYPE
-    #       ARGV[2] -- RUBY_SOURCE_DIR
-    #       ARGV[3] -- FS_STASH_DIR
-    #       ARGV[4] -- DATA_SRC_DIR
-    #       ARGV[5] -- DATA_PRE_DIR
-    #       ARGV[6] -- DATA_BIN_DIR
-    #       ARGV[7] -- FS_ROOT
-    #       ARGV[8] -- FS_ENTRANCE
-    #       ARGV[9] -- FS_MOUNT_POINT
-    #       ARGV[10] -- APP_NAME
-    #       ARGV[11] -- RUBY_VER
-    #       ARGV[12] -- CWD
-    unless ARGV.length == 13 || ARGV.length == 12
-      raise Tebako::Error,
-            "tebako-packager deploy command expects 12 or 13 arguments, #{ARGV.length} has been provided."
-    end
-    ruby_ver = Tebako::RubyVersion.new(ARGV[11])
-    Tebako::Packager.init(ARGV[3], ARGV[4], ARGV[5], ARGV[6])
-    Tebako::Packager.create_implib(ARGV[2], ARGV[4], File.basename(ARGV[10]), ruby_ver) if ARGV[1] =~ /msys/
-    # Assume that "<TARGET_BIN_DIR (TBD)>" is <DATA_SRC_DIR>/bin"
-    # That shall match CMakeLists.txt settings
-    Tebako::Packager.deploy(ARGV[1], ARGV[4], ARGV[5], ruby_ver, ARGV[7], ARGV[8], ARGV[9],
-                            ARGV.length == 13 ? ARGV[12] : nil)
 
   when "finalize"
     #       ARGV[0] -- command

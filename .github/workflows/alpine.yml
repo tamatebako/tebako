@@ -60,7 +60,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 10
+  CACHE_VER: 11
   TZ: "Etc/UTC"
   VERBOSE: no
 
