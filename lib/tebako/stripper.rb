@@ -46,11 +46,11 @@ module Tebako
       # Removes build artefacts, strip shared objects
       # [TODO] We probably need debug option/flag to say whether we shall delete ruby binaries
       #        from memfs or not. For debugging purposes it is very handy to have it here
-      def strip(ostype, src_dir)
+      def strip(scm, src_dir)
         puts "   ... stripping the output"
         strip_bs(src_dir)
-        strip_fi(ostype, src_dir)
-        strip_li(ostype, src_dir)
+        strip_fi(scm, src_dir)
+        strip_li(scm, src_dir)
       end
 
       def strip_file(file_in, file_out = nil)
@@ -69,8 +69,8 @@ module Tebako
 
       private
 
-      def get_files(ostype)
-        exe_suffix = Packager::PatchHelpers.exe_suffix(ostype)
+      def get_files(scm)
+        exe_suffix = scm.exe_suffix
         files = BIN_FILES.flat_map do |f|
           [f, "#{f}#{CMD_SUFFIX}", "#{f}#{BAT_SUFFIX}"]
         end
@@ -87,29 +87,29 @@ module Tebako
                         ])
       end
 
-      def strip_fi(ostype, src_dir)
-        files = get_files(ostype).map { |f| "#{src_dir}/bin/#{f}" }
+      def strip_fi(scm, src_dir)
+        files = get_files(scm).map { |f| "#{src_dir}/bin/#{f}" }
         FileUtils.rm(files, force: true)
       end
 
-      def strip_li(ostype, src_dir)
-        sext = strip_extensions(ostype)
+      def strip_li(scm, src_dir)
+        sext = strip_extensions(scm)
         Find.find(src_dir) do |file|
           next if File.directory?(file)
 
           extension = File.extname(file).delete_prefix(".").downcase
           if DELETE_EXTENSIONS.include?(extension)
             FileUtils.rm(file)
-          elsif sext.include?(extension) # && !Packager::PatchHelpers.msys?(ostype)
+          elsif sext.include?(extension)
             strip_file(file)
           end
         end
       end
 
-      def strip_extensions(ostype)
+      def strip_extensions(scm)
         sext = ["so"]
-        sext << "dll" if Packager::PatchHelpers.msys?(ostype)
-        sext << "dylib" << "bundle" if Packager::PatchHelpers.macos?(ostype)
+        sext << "dll" if scm.msys?
+        sext << "dylib" << "bundle" if scm.macos?
         sext
       end
     end

@@ -71,16 +71,7 @@ extern "C" int tebako_main(int* argc, char*** argv)
   }
   else {
     try {
-      fsret = mount_root_memfs(
-        &gfsData[0],
-        gfsSize,
-        tebako::fs_log_level,
-        nullptr /* cachesize */,
-        nullptr /* workers */,
-        nullptr /* mlock */,
-        nullptr /* decompress_ratio*/,
-        nullptr /* image_offset */
-      );
+      fsret = mount_root_memfs(&gfsData[0], gfsSize, tebako::fs_log_level, nullptr, nullptr, nullptr, nullptr, nullptr);
 
       if (fsret == 0) {
         if ((*argc > 1) && strcmp((*argv)[1], "--tebako-extract") == 0) {
@@ -108,7 +99,7 @@ extern "C" int tebako_main(int* argc, char*** argv)
       ret = -1;
     }
 
-    if (tebako::needs_cwd) {
+    if (tebako::package_cwd != nullptr) {
       if (tebako_chdir(tebako::package_cwd) != 0) {
         printf("Failed to chdir to '%s' : %s\n", tebako::package_cwd, strerror(errno));
         ret = -1;
