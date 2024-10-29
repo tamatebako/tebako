@@ -315,29 +315,31 @@ if(DWARFS_PRELOAD)
   )
 else(DWARFS_PRELOAD)
   ExternalProject_Add(${DWARFS_WR_PRJ}
-     PREFIX ${DEPS}
-     GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
-     GIT_TAG ${DWARFS_WR_TAG}
-     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
-     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
-     UPDATE_COMMAND ""
-     BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel ${NCORES}
-     CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
-                 -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
-                 -DWITH_TESTS:BOOL=OFF
-                 -DWITH_ASAN:BOOL=OFF
-                 -DWITH_COVERAGE:BOOL=OFF
-                 -DTEBAKO_BUILD_SCOPE=MKD
-                 -DRB_W32=${RB_W32}
-                 -GNinja
-      BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
-                       ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
-                       ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
+    GIT_SHALLOW true
+    PREFIX ${DEPS}
+    GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
+    GIT_TAG ${DWARFS_WR_TAG}
+    SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
+    BINARY_DIR ${DWARFS_WR_BINARY_DIR}
+    UPDATE_COMMAND ""
+    BUILD_COMMAND ${CMAKE_COMMAND} --build ${DWARFS_WR_BINARY_DIR} --parallel ${NCORES}
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${DEPS}
+               -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
+               -DWITH_TESTS:BOOL=OFF
+               -DWITH_ASAN:BOOL=OFF
+               -DWITH_COVERAGE:BOOL=OFF
+               -DTEBAKO_BUILD_SCOPE=MKD
+               -DRB_W32=${RB_W32}
+               -GNinja
+    BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
+                     ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
+                     ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
   )
 endif(DWARFS_PRELOAD)
 
 if(IS_GNU)
   ExternalProject_Add(${PATCHELF_PRJ}
+    GIT_SHALLOW true
     PREFIX ${DEPS}
     GIT_REPOSITORY https://github.com/chitao1234/patchelf.git
     GIT_TAG ${PATCHELF_WR_TAG}
