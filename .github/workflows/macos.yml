@@ -41,6 +41,16 @@ on:
       - .github/workflows/windows-msys.yml
       - .cirrus.yml
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - .github/workflows/alpine.yml
+      - .github/workflows/gem-test-and-release.yml
+      - .github/workflows/lint.yml
+      - .github/workflows/ubuntu.yml
+      - .github/workflows/windows-msys.yml
+      - .cirrus.yml   
   workflow_dispatch:
 
 concurrency:

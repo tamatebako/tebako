@@ -74,3 +74,6 @@ coverage/
 
 # tebafile
 .tebako.yml
+
+# Homebrew
+Brewfile.lock.json

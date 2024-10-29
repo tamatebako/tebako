@@ -156,22 +156,12 @@ runs:
       with:
         xcode-version: ${{ env.XCODE_VERSION }}
 
-    - name: Install brew packages (1)
-      # brew update -- brew update is required if core dwarfs library goes too far ahead comparing to the
-      # packages installed at GitHub runner
-      # Already installed: openssl@1.1, libevent, libsodium, lz4, xz, gdbm, pkg-config, libyaml, curl
-      # zlib, ncurses are installed by brew on x86 runners but not on arm64
-      if: env.TOOLCHAIN == 'macos-arm64'
-      shell: bash
-      run: |
-         brew install zlib ncurses
-
-    - name: Install brew packages (2)
+    - name: Install brew packages
       if: runner.os == 'macOS'
       shell: bash
-      run: |
-         brew install bison flex binutils libffi double-conversion boost jemalloc fmt glog gnu-sed bash
-         echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
+      run: | 
+        brew bundle
+        echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
 
     - name: Install pacman packages
       if: env.TOOLCHAIN == 'msys'
