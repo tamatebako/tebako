@@ -575,6 +575,15 @@ brew update
 brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib \
   ncurses double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz \
   libyaml openssl@3
+brew bundle
+----
+
+Additionaly tebako repository includes `Brewfile` that can be used with 
+`brew bundle` command.
+
+[source,sh]
+----
+brew bundle
 ----
 
 ====== Bison 3+

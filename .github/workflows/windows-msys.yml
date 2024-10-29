@@ -43,6 +43,7 @@ on:
       - '.github/workflows/*.yml'
       - .cirrus.yml
       - '!.github/workflows/windows-msys.yml'
+      - Brewfile
   pull_request:
     paths-ignore:
       - 'docs/**'
@@ -51,6 +52,7 @@ on:
       - '.github/workflows/*.yml'
       - .cirrus.yml
       - '!.github/workflows/windows-msys.yml'
+      - Brewfile
   workflow_dispatch:
 
 concurrency:

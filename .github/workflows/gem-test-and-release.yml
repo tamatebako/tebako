@@ -93,6 +93,13 @@ jobs:
         retention-days: 1
         path: .github/actions/*
 
+    - name: Upload Brewfile
+      uses: actions/upload-artifact@v4
+      with:
+        name: brewfile
+        retention-days: 1
+        path: Brewfile
+           
   package-tests-windows:
     needs: build-gem
     name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
@@ -221,6 +228,11 @@ jobs:
         name: actions
         path: .github/actions
 
+    - name: Download Brewfile
+      uses: actions/download-artifact@v4
+      with:
+        name: brewfile
+         
     - name: Setup ci environment
       uses: ./.github/actions/setup-tebako
       with:
