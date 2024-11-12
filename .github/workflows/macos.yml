@@ -213,3 +213,12 @@ jobs:
           set -o errexit -o pipefail -o noclobber -o nounset
           chmod +x test-*-package
           for TP in test-*-package; do "./$TP"; done
+
+  integration-test:
+    needs: tests-1
+    runs-on: macos-latest
+    steps:
+      - name: Setup Tebako
+        uses: tamatebako/tebako/.github/actions/setup-tebako@bugfix/mising-brewfile
+        with:
+          cache: off
