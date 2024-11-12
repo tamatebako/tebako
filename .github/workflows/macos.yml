@@ -219,6 +219,6 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Setup Tebako
-        uses: tamatebako/tebako/.github/actions/setup-tebako@bugfix/mising-brewfile
+        uses: tamatebako/tebako/.github/actions/setup-tebako@main
         with:
           cache: off
