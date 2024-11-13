@@ -70,7 +70,7 @@ jobs:
       matrix:
         env:
           - { os: macos-12, xcode: 13.1 }
-          - { os: macos-14, xcode: 14.3.1, LG_VADDR: 39 }
+          - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39 }
           - { os: macos-14, xcode: 15.4 }
         ruby_ver: ['3.2.5']
     steps:
@@ -109,7 +109,7 @@ jobs:
       matrix:
         env:
           - { os: macos-12, xcode: 13.1 }
-          - { os: macos-14, xcode: 14.3.1, LG_VADDR: 39}
+          - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39}
         package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
         ruby_ver: ['3.2.5']
         include:
@@ -162,7 +162,7 @@ jobs:
       matrix:
         env:
           - { os: macos-12, xcode: 13.1 }
-          - { os: macos-14, xcode: 14.3.1, LG_VADDR: 39}
+          - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39}
         package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
         ruby_ver: ['3.2.5']
         include:
@@ -213,3 +213,12 @@ jobs:
           set -o errexit -o pipefail -o noclobber -o nounset
           chmod +x test-*-package
           for TP in test-*-package; do "./$TP"; done
+
+  integration-test:
+    needs: tests-1
+    runs-on: macos-latest
+    steps:
+      - name: Setup Tebako
+        uses: tamatebako/tebako/.github/actions/setup-tebako@main
+        with:
+          cache: off
