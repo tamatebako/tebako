@@ -162,7 +162,7 @@ runs:
       run: |
         pushd $(mktemp -d)
           curl https://raw.githubusercontent.com/tamatebako/tebako/refs/heads/main/Brewfile > Brewfile
-          brew bundle
+          brew bundle -f
         popd
         echo "$(brew --prefix bison)/bin" >> $GITHUB_PATH
 
