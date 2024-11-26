@@ -69,9 +69,10 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - { os: macos-12, xcode: 13.1 }
+          - { os: macos-13, xcode: 14.3.1 }
           - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39 }
           - { os: macos-14, xcode: 15.4 }
+          - { os: macos-15, xcode: 16.1 }
         ruby_ver: ['3.2.5']
     steps:
       - name: Checkout tebako packaging environment
@@ -108,8 +109,11 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - { os: macos-12, xcode: 13.1 }
+          - { os: macos-13, xcode: 14.3.1 }
           - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39}
+          - { os: macos-14, xcode: 15.4 }
+          - { os: macos-15, xcode: 16.1 }
+
         package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
         ruby_ver: ['3.2.5']
         include:
@@ -141,7 +145,7 @@ jobs:
       - name: Shall upload artifacts?
         id: shall-upload
         run: |
-          if [ "${{ matrix.package_ruby_ver }}" == "3.2.5" ] && [ "${{ matrix.ruby_ver }}" == "3.2.5" ] && [ "${{ matrix.env.os }}" == "macos-12" ]; then
+          if [ "${{ matrix.package_ruby_ver }}" == "3.2.5" ] && [ "${{ matrix.ruby_ver }}" == "3.2.5" ] && [ "${{ matrix.env.os }}" == "macos-13" ]; then
             echo "upload=true" >> $GITHUB_OUTPUT
           else
             echo "upload=false" >> $GITHUB_OUTPUT
@@ -161,8 +165,10 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - { os: macos-12, xcode: 13.1 }
+          - { os: macos-13, xcode: 14.3.1 }
           - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39}
+          - { os: macos-14, xcode: 15.4 }
+          - { os: macos-15, xcode: 16.1 }
         package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
         ruby_ver: ['3.2.5']
         include:
@@ -198,9 +204,9 @@ jobs:
     needs: tests-1
     strategy:
       fail-fast: false
-      # Running on MacOS-14 is a test for x86_64 package on arm64 system
+      # Running on MacOS-14, 15 is a test for x86_64 package on arm64 system
       matrix:
-        os: [ macos-13, macos-14 ]
+        os: [ macos-14, macos-15 ]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Download test packages
