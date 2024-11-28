@@ -99,7 +99,7 @@ jobs:
         name: brewfile
         retention-days: 1
         path: Brewfile
-           
+
   package-tests-windows:
     needs: build-gem
     name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
@@ -215,7 +215,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-12, macos-14 ]
+        os: [ macos-13 macos-14 ]
         gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.2.5' ]
         env:
@@ -232,7 +232,7 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: brewfile
-         
+
     - name: Setup ci environment
       uses: ./.github/actions/setup-tebako
       with:
