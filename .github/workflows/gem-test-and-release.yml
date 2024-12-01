@@ -215,7 +215,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ macos-13 macos-14 ]
+        os: [ macos-13, macos-14 ]
         gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.2.5' ]
         env:

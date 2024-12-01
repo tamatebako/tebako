@@ -114,7 +114,7 @@ executed on a newer version of the same platform.
 macOS packages are forward portable across different macOS versions.
 
 [example]
-A Tebako executable package built on macOS 12 (Monterey) can be executed on
+A Tebako executable package built on macOS 13 (Ventura) can be executed on
 macOS 14 (Sonoma), but not vice versa.
 
 `x86_64` macOS packages can be run on Apple M (ARM) systems.
@@ -562,7 +562,7 @@ There are several prerequisites that need to be installed on macOS for Tebako to
 
 The following instructions work for:
 
-* macOS 12 (Monterey) through macOS 14 (Sonoma)
+* macOS 13 (Ventura) through macOS 15 (Sequoia)
 
 
 ====== Homebrew packages

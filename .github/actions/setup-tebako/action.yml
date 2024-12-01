@@ -101,7 +101,7 @@ runs:
             echo "CC=${{ inputs.cc || 'clang' }}" >> $GITHUB_ENV
             echo "CXX=${{ inputs.cxx || 'clang++' }}" >> $GITHUB_ENV
             if [ "${{ runner.arch }}" = "X64" ]; then
-              echo "XCODE_VERSION=${{ inputs.xcode || '13.1' }}" >> $GITHUB_ENV
+              echo "XCODE_VERSION=${{ inputs.xcode || '14.3.1' }}" >> $GITHUB_ENV
               echo "TOOLCHAIN=macos-x86_64" >> $GITHUB_ENV
             else
               echo "XCODE_VERSION=${{ inputs.xcode || '15.0.1' }}" >> $GITHUB_ENV
