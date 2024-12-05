@@ -640,8 +640,6 @@ export PATH="$(brew --prefix bison)/bin:$PATH"
 
 ====== General
 
-There are several prerequisites that need to be installed on macOS for Tebako to work correctly.
-
 The following instructions work for:
 
 * Windows 10, 11
