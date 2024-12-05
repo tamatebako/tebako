@@ -73,7 +73,7 @@ jobs:
         run: bundle exec rubocop
 
   rspec:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
