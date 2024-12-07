@@ -34,6 +34,7 @@
 #include <memory.h>
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <stdint.h>
 
 #include <string>
 #include <cstdint>
@@ -70,9 +71,7 @@ extern "C" int tebako_main(int* argc, char*** argv)
   }
   else {
     try {
-      fsret = load_fs(&gfsData[0], gfsSize, tebako::fs_log_level, nullptr /* cachesize*/, nullptr /* workers */,
-                      nullptr /* mlock */, nullptr /* decompress_ratio*/, nullptr /* image_offset */
-      );
+      fsret = mount_root_memfs(&gfsData[0], gfsSize, tebako::fs_log_level, nullptr, nullptr, nullptr, nullptr, nullptr);
 
       if (fsret == 0) {
         if ((*argc > 1) && strcmp((*argv)[1], "--tebako-extract") == 0) {
@@ -88,7 +87,7 @@ extern "C" int tebako_main(int* argc, char*** argv)
           ret = 0;
         }
       }
-      atexit(drop_fs);
+      atexit(unmount_root_memfs);
     }
 
     catch (std::exception e) {
@@ -100,7 +99,7 @@ extern "C" int tebako_main(int* argc, char*** argv)
       ret = -1;
     }
 
-    if (tebako::needs_cwd) {
+    if (tebako::package_cwd != nullptr) {
       if (tebako_chdir(tebako::package_cwd) != 0) {
         printf("Failed to chdir to '%s' : %s\n", tebako::package_cwd, strerror(errno));
         ret = -1;
@@ -120,7 +119,7 @@ extern "C" int tebako_main(int* argc, char*** argv)
         argv_memory = nullptr;
       }
       if (fsret == 0) {
-        drop_fs();
+        unmount_root_memfs();
       }
     }
     catch (...) {

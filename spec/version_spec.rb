@@ -36,7 +36,7 @@ RSpec.describe Tebako do
     end
 
     it "has the correct format" do
-      expect(Tebako::VERSION).to match(/^\d+\.\d+\.\d+$/)
+      expect(Tebako::VERSION).to match(/^\d+\.\d+\.\d+(\.rc\d+)?$/)
     end
   end
 end
