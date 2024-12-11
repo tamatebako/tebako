@@ -89,8 +89,7 @@ module Tebako
     DESC
 
     desc "press", "Press tebako image"
-    method_option :cwd, type: :string, aliases: "-c", required: false,
-                        desc: CWD_DESCRIPTION
+    method_option :cwd, type: :string, aliases: "-c", required: false, desc: CWD_DESCRIPTION
     method_option :"entry-point", type: :string, aliases: ["-e", "--entry"], required: true,
                                   desc: "Ruby application entry point"
     method_option :"log-level", type: :string, aliases: "-l", required: false, enum: %w[error warn debug trace],
@@ -101,8 +100,9 @@ module Tebako
     method_option :Ruby, type: :string, aliases: "-R", required: false,
                          enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::RubyVersion::DEFAULT_RUBY_VERSION} by default"
-    method_option :patchelf, aliases: "-P", type: :boolean,
-                             desc: RGP_DESCRIPTION
+    method_option :patchelf, aliases: "-P", type: :boolean, desc: RGP_DESCRIPTION
+    method_option :mode, type: :string, aliases: "-m", required: false, enum: %w[bundle both runtime application],
+                         desc: "Tebako press mode, 'bundle' by default"
     def press
       (om, cm) = bootstrap
 

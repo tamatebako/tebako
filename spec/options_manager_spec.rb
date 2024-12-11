@@ -107,6 +107,30 @@ RSpec.describe Tebako::OptionsManager do
     end
   end
 
+  describe "#data_bundle_file" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct data bundle file path" do
+      allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
+      expect(options_manager.data_bundle_file).to eq("/path/to/data_bin/fs.bin")
+    end
+  end
+
+  describe "#data_stub_file" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct data stub file path" do
+      allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
+      expect(options_manager.data_stub_file).to eq("/path/to/data_bin/fs.bin")
+    end
+  end
+
+  describe "#data_app_file" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct data app file path" do
+      allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
+      expect(options_manager.data_app_file).to eq("/path/to/data_bin/fs2.bin")
+    end
+  end
+
   describe "#fs_current" do
     let(:options_manager) { Tebako::OptionsManager.new({}) }
     context "when the platform is Windows (msys, mingw, cygwin)" do
@@ -195,6 +219,25 @@ RSpec.describe Tebako::OptionsManager do
 
       it "returns the value of the log-level option" do
         expect(options_manager.l_level).to eq("info")
+      end
+    end
+  end
+
+  describe "#mode" do
+    context "when mode option is not set" do
+      let(:options) { {} }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it 'returns "bundle"' do
+        expect(options_manager.mode).to eq("bundle")
+      end
+    end
+
+    context "when mode option is set" do
+      let(:options) { { "mode" => "both" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns the value of the mode option" do
+        expect(options_manager.mode).to eq("both")
       end
     end
   end

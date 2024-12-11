@@ -26,20 +26,22 @@ a bundled runtime into a single, performant, executable binary.
 
 == Architecture
 
-A Tebako-packaged binary is effectively a self-executing container-in-a-file.
+A Tebako package is effectively a self-executing container-in-a-file.
 
-The packaged binary contains the following components:
+The package contains the following components:
 
 * An on-file filesystem (OFFS) containing all the project files and
-dependencies in DwarFS format.
+dependencies in DwarFS format ("application")
 
-* A runtime environment that includes the necessary libraries and interpreters,
+* A runtime environment that includes thje the necessary libraries and interpreters,
 with patched filesystem calls that redirect access of project files to the
-on-file filesystem.
+on-file filesystem ("runtime")
 
-* An executable loader that loads the on-file filesystem in memory and executes
-the project.
+Tebako is capable to create a single file that contains both runtime and application or
+place runtime and application to separate files. In the latter case the runtime can be used with different 
+applications or versions of the samae applciation.
 
+Please refer to ```mode``` option below that controls tebako output.
 
 == Supported runtimes, platforms and architectures
 
@@ -744,6 +746,7 @@ tebako press \
   [-c|--cwd=<package current working directory>]
   [-D|--devmode] \
   [-P|--patchelf] \
+  [-m|--mode=<bundle|both|application|runtime>] 
   [-t|--tebafile=<path-to-tebafile>]
 ----
 
@@ -764,7 +767,10 @@ an executable file (binary executable or script) that shall be started when
 packaged file is called
 
 `output`::
-the output file name (optional, defaults to `<current folder>/<entry point base name>`)
+the output file name (optional, defaults to `<current folder>/<entry point base name>`
+On Windows output file will have `exe` extension.
+if application is placed to a separate file (`both` or `application` mode) it will have the 
+same name with `tebako` extension. 
 
 `log-level`::
 logging level for the Tebako built-in memory filesystem driver
@@ -783,6 +789,13 @@ packaging consistency checks are relaxed.
 flag that removal a reference to GLIBC_PRIVATE version of libpthread from tebako package. This allows Linux Gnu packages to run against versions of
 libpthread that differ from the version used for packaging. For example, package created at Ubuntu 20 system can be used on Ubuntu 22. This option makes
 sense and works on Gnu Linux only. The feature is exeprimental, we may consider other approach in the future.
+
+`mode`::
+output mode for tebako package (optional, defaults to `bundle`)
+bundle - place runtime and application to a single file
+both - create both run-rime and application
+application - create appplication only
+runtime - create runtime only
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).

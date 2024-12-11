@@ -79,10 +79,22 @@ module Tebako
       @data_bin_dir ||= File.join(output_folder, "p")
     end
 
-    # DATA_BIN_FILE is packaged filesystem itself
-    # set(DATA_BIN_FILE ${DATA_BIN_DIR}/fs.bin)
-    def data_bin_file
-      @data_bin_file ||= File.join(data_bin_dir, "fs.bin")
+    #  Mode       File(s)                       Content
+    #  bundle     fs.bin                      Application
+    #  both       fs.bin, fs2.bin     Stub, application respectively
+    #  runtime    fs.bin                         Stub
+    #  app        fs2.bin                     Application
+
+    def data_bundle_file
+      @data_bundle_file ||= File.join(data_bin_dir, "fs.bin")
+    end
+
+    def data_stub_file
+      @data_stub_file ||= File.join(data_bin_dir, "fs.bin")
+    end
+
+    def data_app_file
+      @data_app_file ||= File.join(data_bin_dir, "fs2.bin")
     end
 
     # DATA_PRE_DIR folder is used to build gems  that need to be packaged
@@ -131,11 +143,11 @@ module Tebako
     end
 
     def l_level
-      @l_level ||= if @options["log-level"].nil?
-                     "error"
-                   else
-                     @options["log-level"]
-                   end
+      @l_level ||= @options["log-level"].nil? ? "error" : @options["log-level"]
+    end
+
+    def mode
+      @mode ||= @options["mode"].nil? ? "bundle" : @options["mode"]
     end
 
     def m_files

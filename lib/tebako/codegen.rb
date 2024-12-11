@@ -47,7 +47,7 @@ module Tebako
 
     SUBST
 
-    class << self
+    class << self # rubocop:disable Metrics/ClassLength
       def deploy_crt_implib(opt, scm)
         crt = ""
         if scm.msys?
@@ -63,6 +63,50 @@ module Tebako
         opt.cwd.nil? ? "nil" : "\"#{opt.cwd}\""
       end
 
+      def deploy_mk(opt, scm)
+        case opt.mode
+        when "application"
+          deploy_mk_app(opt)
+        when "both"
+          deploy_mk_both(opt)
+        when "runtime"
+          deploy_mk_stub(opt)
+        else
+          deploy_mk_bundle(opt, scm)
+        end
+      end
+
+      def deploy_mk_app(opt)
+        <<~SUBST
+          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_app_file}",
+                                    "#{opt.data_src_dir}")
+        SUBST
+      end
+
+      def deploy_mk_both(opt)
+        <<~SUBST
+          #{deploy_mk_stub(opt)}
+          #{deploy_mk_app(opt)}
+        SUBST
+      end
+
+      def deploy_mk_bundle(opt, scm)
+        <<~SUBST
+          Tebako::Packager.deploy("#{opt.data_src_dir}", "#{opt.data_pre_dir}",
+                                  rv , "#{opt.root}", "#{scm.fs_entrance}", #{deploy_cwd(opt)})
+          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_bundle_file}",
+                                    "#{opt.data_src_dir}")
+        SUBST
+      end
+
+      def deploy_mk_stub(opt)
+        <<~SUBST
+          Tebako::Packager.deploy("#{opt.data_src_dir}", "#{opt.data_pre_dir}",
+                                  rv, "#{File.join(opt.deps, "src", "tebako", "local")}", "stub.rb", nil)
+          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_stub_file}", "#{opt.data_src_dir}")
+        SUBST
+      end
+
       def deploy_rb(opt, scm)
         <<~SUBST
           #{deploy_rq}
@@ -71,11 +115,7 @@ module Tebako
           Tebako::Packager::init("#{opt.stash_dir}", "#{opt.data_src_dir}",
                                "#{opt.data_pre_dir}", "#{opt.data_bin_dir}")
           #{deploy_crt_implib(opt, scm)}
-          Tebako::Packager.deploy("#{opt.data_src_dir}", "#{opt.data_pre_dir}",
-                                  rv , "#{opt.root}",
-                                  "#{scm.fs_entrance}", #{deploy_cwd(opt)})
-          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_bin_file}",
-                                    "#{opt.data_src_dir}")
+          #{deploy_mk(opt, scm)}
         SUBST
       end
 
@@ -86,7 +126,29 @@ module Tebako
         SUBST
       end
 
+      def stub_rb(opt)
+        <<~SUBST
+          puts "Copyright (c) 2024 Ribose Inc (https://www.ribose.com)"
+          puts "Tebako runtime stub v#{Tebako::VERSION}"
+          puts "To run your application please call #{File.basename(opt.package)} --tebako-run <your tebako package>"
+        SUBST
+      end
+
+      def generate_stub_rb(options_manager)
+        puts "   ... stub.rb"
+
+        fname = File.join(options_manager.deps, "src", "tebako", "local", "stub.rb")
+        FileUtils.mkdir_p(File.dirname(fname))
+
+        File.open(fname, "w") do |file|
+          file.write(COMMON_RUBY_HEADER)
+          file.write(stub_rb(options_manager))
+        end
+      end
+
       def generate_deploy_rb(options_manager, scenario_manager)
+        puts "   ... deploy.rb"
+
         fname = File.join(options_manager.deps, "bin", "deploy.rb")
         FileUtils.mkdir_p(File.dirname(fname))
 
@@ -97,6 +159,8 @@ module Tebako
       end
 
       def generate_tebako_fs_cpp(options_manager, scenario_manager)
+        puts "   ... tebako-fs.cpp"
+
         fname = File.join(options_manager.deps, "src", "tebako", "tebako-fs.cpp")
         FileUtils.mkdir_p(File.dirname(fname))
 
@@ -107,6 +171,8 @@ module Tebako
       end
 
       def generate_tebako_version_h(options_manager, v_parts)
+        puts "   ... tebako-version.h"
+
         fname = File.join(options_manager.deps, "include", "tebako", "tebako-version.h")
         FileUtils.mkdir_p(File.dirname(fname))
 
@@ -125,7 +191,38 @@ module Tebako
       end
 
       def tebako_fs_cpp(options_manager, scenario_manager)
+        case options_manager.mode
+        when /application|both/
+          tebako_fs_cpp_app(options_manager, scenario_manager)
+        when "runtime"
+          tebako_fs_cpp_stub(options_manager, scenario_manager)
+        else
+          tebako_fs_cpp_bundle(options_manager, scenario_manager)
+        end
+      end
+
+      def tebako_fs_cpp_app(options_manager, scenario_manager)
         <<~SUBST
+          #include <limits.h>
+          #include <stddef.h>
+
+          namespace tebako {
+            const  char * fs_log_level   = "#{options_manager.l_level}";
+            const  char * fs_mount_point = "#{scenario_manager.fs_mount_point}";
+            const  char * fs_entry_point = "/local/stub.rb";
+            const  char * package_cwd 	 = nullptr;
+            char   original_cwd[PATH_MAX];
+          }
+
+          const  void * gfsData = nullptr;
+                 size_t gfsSize = 0;
+
+        SUBST
+      end
+
+      def tebako_fs_cpp_bundle(options_manager, scenario_manager)
+        <<~SUBST
+          #include <limits.h>
           #include <incbin/incbin.h>
 
           namespace tebako {
@@ -135,7 +232,24 @@ module Tebako
             const  char * package_cwd 	 = #{package_cwd(options_manager, scenario_manager)};
             char   original_cwd[PATH_MAX];
 
-            INCBIN(fs, "#{options_manager.output_folder}/p/fs.bin");
+            INCBIN(fs, "#{options_manager.data_bundle_file}");
+          }
+        SUBST
+      end
+
+      def tebako_fs_cpp_stub(options_manager, scenario_manager)
+        <<~SUBST
+          #include <limits.h>
+          #include <incbin/incbin.h>
+
+          namespace tebako {
+            const  char * fs_log_level   = "#{options_manager.l_level}";
+            const  char * fs_mount_point = "#{scenario_manager.fs_mount_point}";
+            const  char * fs_entry_point = "/local/stub.rb";
+            const  char * package_cwd 	 = nullptr;
+            char   original_cwd[PATH_MAX];
+
+            INCBIN(fs, "#{options_manager.data_stub_file}");
           }
         SUBST
       end
