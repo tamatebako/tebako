@@ -69,19 +69,19 @@ module Tebako
       def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
         create_def(src_dir, app_name)
         puts "   ... creating Windows import library"
-        params = ["dlltool", "-d", def_fname(src_dir, app_name), "-D", out_fname(app_name),
-                  "--output-lib", lib_fname(package_src_dir, ruby_ver)]
+        params = ["dlltool", "-d", def_fname(src_dir, app_name), "-D", out_fname(app_name), "--output-lib",
+                  lib_fname(package_src_dir, ruby_ver)]
         BuildHelpers.run_with_capture(params)
       end
 
       # Deploy
-      def deploy(os_type, target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, fs_mount_point, cwd) # rubocop:disable Metrics/ParameterLists
+      def deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd) # rubocop:disable Metrics/ParameterLists
         puts "-- Running deploy script"
 
-        deploy_helper = Tebako::DeployHelper.new(fs_root, fs_entrance, fs_mount_point, target_dir, pre_dir)
-        deploy_helper.config(os_type, ruby_ver, cwd)
+        deploy_helper = Tebako::DeployHelper.new(fs_root, fs_entrance, target_dir, pre_dir)
+        deploy_helper.configure(ruby_ver, cwd)
         deploy_helper.deploy
-        Tebako::Stripper.strip(os_type, target_dir)
+        Tebako::Stripper.strip(deploy_helper, target_dir)
       end
 
       def finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
@@ -104,6 +104,12 @@ module Tebako
         puts "   ... creating packaging environment at #{src_dir}"
         PatchHelpers.recreate([src_dir, pre_dir, bin_dir])
         FileUtils.cp_r "#{stash_dir}/.", src_dir
+      end
+
+      def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir)
+        puts "-- Running mkdwarfs script"
+        params = [File.join(deps_bin_dir, "mkdwarfs"), "-o", data_bin_file, "-i", data_src_dir, "--no-progress"]
+        BuildHelpers.run_with_capture_v(params)
       end
 
       # Pass1
