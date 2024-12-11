@@ -69,15 +69,14 @@ module Tebako
       scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
       scenario_manager.configure_scenario
 
-      puts "   ... tebako-version.h"
       v_parts = Tebako::VERSION.split(".")
       Tebako::Codegen.generate_tebako_version_h(options_manager, v_parts)
-
-      puts "   ... tebako-fs.cpp"
       Tebako::Codegen.generate_tebako_fs_cpp(options_manager, scenario_manager)
-
-      puts "   ... deploy.rb"
       Tebako::Codegen.generate_deploy_rb(options_manager, scenario_manager)
+
+      return unless options_manager.mode == "both" || options_manager.mode == "runtime"
+
+      Tebako::Codegen.generate_stub_rb(options_manager)
     end
 
     def options_from_tebafile(tebafile)

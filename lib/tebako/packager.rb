@@ -64,7 +64,7 @@ module Tebako
       thread_pthread.c
     ].freeze
 
-    class << self
+    class << self # rubocop:disable Metrics/ClassLength
       # Create implib
       def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
         create_def(src_dir, app_name)
@@ -85,13 +85,12 @@ module Tebako
       end
 
       def finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
+        puts "-- Running finalize script"
+
         RubyBuilder.new(ruby_ver, src_dir).final_build
         exe_suffix = Packager::PatchHelpers.exe_suffix(os_type)
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
-        unless patchelf.nil?
-          params = [patchelf, "--remove-needed-version", "libpthread.so.0", "GLIBC_PRIVATE", src_name]
-          BuildHelpers.run_with_capture(params)
-        end
+        patchelf(src_name, patchelf)
         package_name = "#{app_name}#{exe_suffix}"
         strip_or_copy(os_type, src_name, package_name)
         puts "Created tebako package at \"#{package_name}\""
@@ -187,6 +186,13 @@ module Tebako
 
       def do_patch(patch_map, root)
         patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
+      end
+
+      def patchelf(src_name, patchelf)
+        return if patchelf.nil?
+
+        params = [patchelf, "--remove-needed-version", "libpthread.so.0", "GLIBC_PRIVATE", src_name]
+        BuildHelpers.run_with_capture(params)
       end
 
       def ruby_version(tbd)
