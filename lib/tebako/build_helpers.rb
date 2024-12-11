@@ -81,43 +81,4 @@ module Tebako
       end
     end
   end
-
-  # Ruby version checks
-  class RubyVersion
-    def initialize(ruby_ver)
-      unless ruby_ver =~ /^\d+\.\d+\.\d+$/
-        raise Tebako::Error, "Invalid Ruby version format '#{ruby_ver}'. Expected format: x.y.z"
-      end
-
-      @ruby_ver = ruby_ver
-    end
-
-    def ruby3x?
-      @ruby3x ||= @ruby_ver[0] == "3"
-    end
-
-    def ruby31?
-      @ruby31 ||= ruby3x? && @ruby_ver[2].to_i >= 1
-    end
-
-    def ruby32?
-      @ruby32 ||= ruby3x? && @ruby_ver[2].to_i >= 2
-    end
-
-    def ruby32only?
-      @ruby32only ||= ruby3x? && @ruby_ver[2] == "2"
-    end
-
-    def ruby33?
-      @ruby33 ||= ruby3x? && @ruby_ver[2].to_i >= 3
-    end
-
-    def api_version
-      @api_version ||= "#{@ruby_ver.split(".")[0..1].join(".")}.0"
-    end
-
-    def lib_version
-      @lib_version ||= "#{@ruby_ver.split(".")[0..1].join}0"
-    end
-  end
 end
