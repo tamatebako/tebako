@@ -47,7 +47,7 @@ module Tebako
 
     SUBST
 
-    class << self
+    class << self # rubocop:disable Metrics/ClassLength
       def deploy_crt_implib(opt, scm)
         crt = ""
         if scm.msys?
@@ -63,7 +63,49 @@ module Tebako
         opt.cwd.nil? ? "nil" : "\"#{opt.cwd}\""
       end
 
+      def deploy_mk(opt, sname)
+        case opt.mode
+        when "app"
+          deploy_mk_app(opt)
+        when "both"
+          deploy_mk_both(opt, sname)
+        when "stub"
+          deploy_mk_stub(opt, sname)
+        else
+          deploy_mk_bundle(opt)
+        end
+      end
+
+      def deploy_mk_app(opt)
+        <<~SUBST
+          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_app_file}",
+                                    "#{opt.data_src_dir}")
+        SUBST
+      end
+
+      def deploy_mk_both(opt, sname)
+        <<~SUBST
+          #{deploy_mk_stub(opt, sname)}
+          #{deploy_mk_app(opt)}
+        SUBST
+      end
+
+      def deploy_mk_bundle(opt)
+        <<~SUBST
+          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_bundle_file}",
+                                    "#{opt.data_src_dir}")
+        SUBST
+      end
+
+      def deploy_mk_stub(opt, sname)
+        <<~SUBST
+          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_stub_file}",
+                                    "#{sname}")
+        SUBST
+      end
+
       def deploy_rb(opt, scm)
+        sname = File.join(opt.deps, "src", "tebako", "local")
         <<~SUBST
           #{deploy_rq}
 
@@ -74,8 +116,7 @@ module Tebako
           Tebako::Packager.deploy("#{opt.data_src_dir}", "#{opt.data_pre_dir}",
                                   rv , "#{opt.root}",
                                   "#{scm.fs_entrance}", #{deploy_cwd(opt)})
-          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_bin_file}",
-                                    "#{opt.data_src_dir}")
+          #{deploy_mk(opt, sname)}
         SUBST
       end
 
@@ -84,6 +125,24 @@ module Tebako
           require "#{File.join(__dir__, "packager.rb")}"
           require "#{File.join(__dir__, "ruby_version.rb")}"
         SUBST
+      end
+
+      def stub_rb(opt)
+        <<~SUBST
+          puts "Copyright (c) 2024 [Ribose Inc](https://www.ribose.com)"
+          puts "Tebako runtime stub v#{Tebako::VERSION}"
+          puts "To run your application please call #{File.basename(opt.package)} --tebako-run <your tebako package>"
+        SUBST
+      end
+
+      def generate_stub_rb(options_manager)
+        fname = File.join(options_manager.deps, "src", "tebako", "local", "stub.rb")
+        FileUtils.mkdir_p(File.dirname(fname))
+
+        File.open(fname, "w") do |file|
+          file.write(COMMON_RUBY_HEADER)
+          file.write(stub_rb(options_manager))
+        end
       end
 
       def generate_deploy_rb(options_manager, scenario_manager)

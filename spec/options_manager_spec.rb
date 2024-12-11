@@ -199,6 +199,25 @@ RSpec.describe Tebako::OptionsManager do
     end
   end
 
+  describe "#mode" do
+    context "when mode option is not set" do
+      let(:options) { {} }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it 'returns "bundle"' do
+        expect(options_manager.mode).to eq("bundle")
+      end
+    end
+
+    context "when mode option is set" do
+      let(:options) { { "mode" => "both" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns the value of the mode option" do
+        expect(options_manager.mode).to eq("both")
+      end
+    end
+  end
+
   describe "#m_files" do
     let(:options) { {} }
     let(:options_manager) { Tebako::OptionsManager.new(options) }
