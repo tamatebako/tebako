@@ -28,6 +28,8 @@
 require "pathname"
 require "fileutils"
 
+require_relative "package_descriptor"
+
 # Tebako - an executable packager
 module Tebako
   # Code geberation
@@ -59,16 +61,12 @@ module Tebako
         crt
       end
 
-      def deploy_cwd(opt)
-        opt.cwd.nil? ? "nil" : "\"#{opt.cwd}\""
-      end
-
       def deploy_mk(opt, scm)
         case opt.mode
         when "application"
-          deploy_mk_app(opt)
+          deploy_mk_app(opt, scm)
         when "both"
-          deploy_mk_both(opt)
+          deploy_mk_both(opt, scm)
         when "runtime"
           deploy_mk_stub(opt)
         else
@@ -76,24 +74,24 @@ module Tebako
         end
       end
 
-      def deploy_mk_app(opt)
+      def deploy_mk_app(opt, scm)
+        fname = generate_package_descriptor(opt, scm)
         <<~SUBST
-          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_app_file}",
-                                    "#{opt.data_src_dir}")
+          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_app_file}", "#{opt.data_src_dir}", "#{fname}")
         SUBST
       end
 
-      def deploy_mk_both(opt)
+      def deploy_mk_both(opt, scm)
         <<~SUBST
           #{deploy_mk_stub(opt)}
-          #{deploy_mk_app(opt)}
+          #{deploy_mk_app(opt, scm)}
         SUBST
       end
 
       def deploy_mk_bundle(opt, scm)
         <<~SUBST
           Tebako::Packager.deploy("#{opt.data_src_dir}", "#{opt.data_pre_dir}",
-                                  rv , "#{opt.root}", "#{scm.fs_entrance}", #{deploy_cwd(opt)})
+                                  rv , "#{opt.root}", "#{scm.fs_entrance}", "#{opt.cwd}")
           Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_bundle_file}",
                                     "#{opt.data_src_dir}")
         SUBST
@@ -121,6 +119,7 @@ module Tebako
 
       def deploy_rq
         <<~SUBST
+          require "#{File.join(__dir__, "package_descriptor.rb")}"
           require "#{File.join(__dir__, "packager.rb")}"
           require "#{File.join(__dir__, "ruby_version.rb")}"
         SUBST
@@ -156,6 +155,18 @@ module Tebako
           file.write(COMMON_RUBY_HEADER)
           file.write(deploy_rb(options_manager, scenario_manager))
         end
+      end
+
+      def generate_package_descriptor(options_manager, scenario_manager)
+        puts "   ... package_descriptor"
+        fname = File.join(options_manager.deps, "src", "tebako", "package_descriptor")
+        FileUtils.mkdir_p(File.dirname(fname))
+        rv = Tebako::RubyVersion.new(options_manager.ruby_ver)
+        descriptor = Tebako::PackageDescriptor.new(rv.ruby_version, Tebako::VERSION,
+                                                   scenario_manager.fs_mount_point, scenario_manager.fs_entry_point,
+                                                   options_manager.cwd)
+        File.binwrite(fname, descriptor.serialize)
+        fname
       end
 
       def generate_tebako_fs_cpp(options_manager, scenario_manager)

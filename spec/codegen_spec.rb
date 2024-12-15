@@ -36,7 +36,7 @@ RSpec.describe Tebako::Codegen do
     double(
       "OptionsManager",
       cwd: nil,
-      ruby_ver: "3.0.0",
+      ruby_ver: "3.2.5",
       ruby_src_dir: "/path/to/ruby",
       data_src_dir: "/path/to/data",
       deps_bin_dir: "/path/to/deps/bin",
@@ -84,19 +84,6 @@ RSpec.describe Tebako::Codegen do
     end
   end
 
-  describe "#deploy_cwd" do
-    it 'returns "nil" when cwd is nil' do
-      result = described_class.deploy_cwd(options_manager)
-      expect(result).to eq("nil")
-    end
-
-    it "returns the string representation of cwd when it is not nil" do
-      allow(options_manager).to receive(:cwd).and_return("/custom/path")
-      result = described_class.deploy_cwd(options_manager)
-      expect(result).to eq("\"/custom/path\"")
-    end
-  end
-
   describe "#generate_stub_rb" do
     it "creates a stub.rb file with correct content" do
       allow(FileUtils).to receive(:mkdir_p)
@@ -119,6 +106,7 @@ RSpec.describe Tebako::Codegen do
       mock_file = instance_double("File")
       allow(File).to receive(:open).and_yield(mock_file)
       allow(mock_file).to receive(:write)
+      allow(File).to receive(:binwrite)
 
       described_class.generate_deploy_rb(options_manager, scenario_manager)
 
@@ -170,9 +158,12 @@ RSpec.describe Tebako::Codegen do
     let(:data_stub_file) { "path/to/stub/file" }
     let(:root) { "root/path" }
     let(:fs_entrance) { "/entry" }
+    let(:fs_mount_point) { "/mnt" }
+    let(:fs_entry_point) { "/entry_point" }
     let(:cwd) { nil }
     let(:deps) { "path/to/deps" }
     let(:root) { "path/to/root" }
+    let(:ruby_ver) { "3.2.5" }
 
     before do
       allow(options_manager).to receive(:deps).and_return(deps)
@@ -184,17 +175,20 @@ RSpec.describe Tebako::Codegen do
       allow(options_manager).to receive(:data_bundle_file).and_return(data_bundle_file)
       allow(options_manager).to receive(:data_stub_file).and_return(data_stub_file)
       allow(options_manager).to receive(:cwd).and_return(cwd)
+      allow(options_manager).to receive(:ruby_ver).and_return(cwd)
 
       allow(scenario_manager).to receive(:fs_entrance).and_return(fs_entrance)
       allow(scenario_manager).to receive(:root).and_return(root)
+      allow(scenario_manager).to receive(:fs_entry_point).and_return(fs_entry_point)
+      allow(scenario_manager).to receive(:fs_mount_point).and_return(fs_mount_point)
     end
 
     describe "#deploy_mk_app" do
       it "generates the correct script for application deployment" do
-        result = described_class.deploy_mk_app(options_manager)
+        result = described_class.deploy_mk_app(options_manager, scenario_manager)
+        fname = File.join(deps, "src", "tebako", "package_descriptor")
         expected = <<~SUBST
-          Tebako::Packager.mkdwarfs("#{deps_bin_dir}", "#{data_app_file}",
-                                    "#{data_src_dir}")
+          Tebako::Packager.mkdwarfs("#{deps_bin_dir}", "#{data_app_file}", "#{data_src_dir}", "#{fname}")
         SUBST
 
         expect(result).to eq(expected)
@@ -203,10 +197,10 @@ RSpec.describe Tebako::Codegen do
 
     describe "#deploy_mk_both" do
       it "generates the correct script for both application and stub deployment" do
-        result = described_class.deploy_mk_both(options_manager)
+        result = described_class.deploy_mk_both(options_manager, scenario_manager)
         expected = <<~SUBST
           #{described_class.deploy_mk_stub(options_manager)}
-          #{described_class.deploy_mk_app(options_manager)}
+          #{described_class.deploy_mk_app(options_manager, scenario_manager)}
         SUBST
 
         expect(result).to eq(expected)
@@ -218,7 +212,7 @@ RSpec.describe Tebako::Codegen do
         result = described_class.deploy_mk_bundle(options_manager, scenario_manager)
         expected = <<~SUBST
           Tebako::Packager.deploy("#{data_src_dir}", "#{data_pre_dir}",
-                                  rv , "#{root}", "#{fs_entrance}", #{described_class.deploy_cwd(options_manager)})
+                                  rv , "#{root}", "#{fs_entrance}", "#{options_manager.cwd}")
           Tebako::Packager.mkdwarfs("#{deps_bin_dir}", "#{data_bundle_file}",
                                     "#{data_src_dir}")
         SUBST
