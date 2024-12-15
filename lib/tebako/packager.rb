@@ -105,9 +105,10 @@ module Tebako
         FileUtils.cp_r "#{stash_dir}/.", src_dir
       end
 
-      def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir)
+      def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir, descriptor = nil)
         puts "-- Running mkdwarfs script"
         params = [File.join(deps_bin_dir, "mkdwarfs"), "-o", data_bin_file, "-i", data_src_dir, "--no-progress"]
+        params << "--header" << descriptor if descriptor
         BuildHelpers.run_with_capture_v(params)
       end
 
