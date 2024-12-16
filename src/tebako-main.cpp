@@ -53,9 +53,19 @@
 #include <tebako/tebako-version.h>
 #include <tebako/tebako-main.h>
 #include <tebako/tebako-fs.h>
-#include <tebako/tebako-cmdline-helpers.h>
+#include <tebako/tebako-cmdline.h>
 
 static int running_miniruby = 0;
+static tebako::cmdline_args* args = nullptr;
+
+static void tebako_clean(void)
+{
+  unmount_root_memfs();
+  if (args) {
+    delete args;
+    args = nullptr;
+  }
+}
 
 extern "C" int tebako_main(int* argc, char*** argv)
 {
@@ -70,26 +80,41 @@ extern "C" int tebako_main(int* argc, char*** argv)
     running_miniruby = -1;
   }
   else {
-    try {
-      fsret = mount_root_memfs(&gfsData[0], gfsSize, tebako::fs_log_level, nullptr, nullptr, nullptr, nullptr, nullptr);
+    std::string mount_point = tebako::fs_mount_point;
+    std::string entry_point = tebako::fs_entry_point;
+    std::optional<std::string> cwd;
+    if (tebako::package_cwd != nullptr) {
+      cwd = tebako::package_cwd;
+    }
+    const void* data = &gfsData[0];
+    size_t size = gfsSize;
 
-      if (fsret == 0) {
-        if ((*argc > 1) && strcmp((*argv)[1], "--tebako-extract") == 0) {
-          ret = tebako::build_arguments_for_extract(argc, argv, tebako::fs_mount_point);
-        }
-        else {
-          auto [mountpoints, parsed_argv] = tebako::parse_arguments(*argc, *argv);
-          // for (auto& mp : mountpoints) {
-          // printf("Mountpoint: %s\n", mp.c_str());
-          // }
-          tebako::process_mountpoints(mountpoints);
-          std::tie(*argc, *argv) = tebako::build_arguments(parsed_argv, tebako::fs_mount_point, tebako::fs_entry_point);
-          ret = 0;
+    try {
+      args = new tebako::cmdline_args(*argc, (const char**)*argv);
+      args->parse_arguments();
+      if (args->with_application()) {
+        args->process_package();
+        auto descriptor = args->get_descriptor();
+        auto package = args->get_package();
+        if (descriptor.has_value()) {
+          mount_point = descriptor->get_mount_point().c_str();
+          entry_point = descriptor->get_entry_point().c_str();
+          cwd = descriptor->get_cwd();
+          data = package.data();
+          size = package.size();
         }
       }
-      atexit(unmount_root_memfs);
-    }
 
+      fsret = mount_root_memfs(data, size, tebako::fs_log_level, nullptr, nullptr, nullptr, nullptr, "auto");
+      if (fsret == 0) {
+        args->process_mountpoints();
+        args->build_arguments(mount_point.c_str(), entry_point.c_str());
+        *argc = args->get_argc();
+        *argv = args->get_argv();
+        ret = 0;
+        atexit(tebako_clean);
+      }
+    }
     catch (std::exception e) {
       printf("Failed to process command line: %s\n", e.what());
     }
@@ -99,9 +124,9 @@ extern "C" int tebako_main(int* argc, char*** argv)
       ret = -1;
     }
 
-    if (tebako::package_cwd != nullptr) {
-      if (tebako_chdir(tebako::package_cwd) != 0) {
-        printf("Failed to chdir to '%s' : %s\n", tebako::package_cwd, strerror(errno));
+    if (cwd.has_value()) {
+      if (tebako_chdir(cwd->c_str()) != 0) {
+        printf("Failed to chdir to '%s' : %s\n", cwd->c_str(), strerror(errno));
         ret = -1;
       }
     }
@@ -110,17 +135,7 @@ extern "C" int tebako_main(int* argc, char*** argv)
   if (ret != 0) {
     try {
       printf("Tebako initialization failed\n");
-      if (new_argv) {
-        delete new_argv;
-        new_argv = nullptr;
-      }
-      if (argv_memory) {
-        delete argv_memory;
-        argv_memory = nullptr;
-      }
-      if (fsret == 0) {
-        unmount_root_memfs();
-      }
+      tebako_clean();
     }
     catch (...) {
       // Nested error, no recovery :(
