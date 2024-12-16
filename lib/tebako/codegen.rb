@@ -203,9 +203,9 @@ module Tebako
 
       def tebako_fs_cpp(options_manager, scenario_manager)
         case options_manager.mode
-        when /application|both/
+        when "application"
           tebako_fs_cpp_app(options_manager, scenario_manager)
-        when "runtime"
+        when /runtime|both/
           tebako_fs_cpp_stub(options_manager, scenario_manager)
         else
           tebako_fs_cpp_bundle(options_manager, scenario_manager)
