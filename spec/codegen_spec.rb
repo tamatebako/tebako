@@ -118,15 +118,9 @@ RSpec.describe Tebako::Codegen do
   end
 
   describe "#deploy_mk" do
-    it 'calls deploy_mk_app when mode is "application"' do
-      allow(described_class).to receive(:deploy_mk_app).and_return("mk_app_result")
-      result = described_class.deploy_mk(options_manager, scm)
-      expect(result).to eq("mk_app_result")
-    end
-
-    it 'calls deploy_mk_both when mode is "both"' do
+    it 'calls deploy_mk_stub when mode is "both"' do
       allow(options_manager).to receive(:mode).and_return("both")
-      allow(described_class).to receive(:deploy_mk_both).and_return("mk_both_result")
+      allow(described_class).to receive(:deploy_mk_stub).and_return("mk_both_result")
       result = described_class.deploy_mk(options_manager, scm)
       expect(result).to eq("mk_both_result")
     end
@@ -175,36 +169,12 @@ RSpec.describe Tebako::Codegen do
       allow(options_manager).to receive(:data_bundle_file).and_return(data_bundle_file)
       allow(options_manager).to receive(:data_stub_file).and_return(data_stub_file)
       allow(options_manager).to receive(:cwd).and_return(cwd)
-      allow(options_manager).to receive(:ruby_ver).and_return(cwd)
+      allow(options_manager).to receive(:ruby_ver).and_return(ruby_ver)
 
       allow(scenario_manager).to receive(:fs_entrance).and_return(fs_entrance)
       allow(scenario_manager).to receive(:root).and_return(root)
       allow(scenario_manager).to receive(:fs_entry_point).and_return(fs_entry_point)
       allow(scenario_manager).to receive(:fs_mount_point).and_return(fs_mount_point)
-    end
-
-    describe "#deploy_mk_app" do
-      it "generates the correct script for application deployment" do
-        result = described_class.deploy_mk_app(options_manager, scenario_manager)
-        fname = File.join(deps, "src", "tebako", "package_descriptor")
-        expected = <<~SUBST
-          Tebako::Packager.mkdwarfs("#{deps_bin_dir}", "#{data_app_file}", "#{data_src_dir}", "#{fname}")
-        SUBST
-
-        expect(result).to eq(expected)
-      end
-    end
-
-    describe "#deploy_mk_both" do
-      it "generates the correct script for both application and stub deployment" do
-        result = described_class.deploy_mk_both(options_manager, scenario_manager)
-        expected = <<~SUBST
-          #{described_class.deploy_mk_stub(options_manager)}
-          #{described_class.deploy_mk_app(options_manager, scenario_manager)}
-        SUBST
-
-        expect(result).to eq(expected)
-      end
     end
 
     describe "#deploy_mk_bundle" do
@@ -271,13 +241,6 @@ RSpec.describe Tebako::Codegen do
   end
 
   describe "#tebako_fs_cpp" do
-    it 'calls tebako_fs_cpp_app when mode is "application"' do
-      allow(options_manager).to receive(:mode).and_return("application")
-      allow(described_class).to receive(:tebako_fs_cpp_app).and_return("app_result")
-      result = described_class.tebako_fs_cpp(options_manager, scenario_manager)
-      expect(result).to eq("app_result")
-    end
-
     it 'calls tebako_fs_cpp_stub when mode is "runtime"' do
       allow(options_manager).to receive(:mode).and_return("runtime")
       allow(described_class).to receive(:tebako_fs_cpp_stub).and_return("stub_result")
@@ -286,125 +249,28 @@ RSpec.describe Tebako::Codegen do
     end
   end
 
-  describe ".tebako_fs_cpp_app" do
+  describe "#tebako_fs_cpp_bundle" do
     let(:options_manager) { double("OptionsManager") }
     let(:scenario_manager) { double("ScenarioManager") }
-    let(:log_level) { "info" }
-    let(:fs_mount_point) { "/mnt/app" }
+
+    let(:log_level) { "debug" }
+    let(:fs_mount_point) { "/mnt/bundle" }
+    let(:fs_entry_point) { "/app/start.rb" }
+    let(:cwd) { "working_directory" }
+    let(:data_bundle_file) { "path/to/data.bundle" }
 
     before do
       allow(options_manager).to receive(:l_level).and_return(log_level)
+      allow(options_manager).to receive(:data_bundle_file).and_return(data_bundle_file)
+      allow(options_manager).to receive(:cwd).and_return(cwd)
+
       allow(scenario_manager).to receive(:fs_mount_point).and_return(fs_mount_point)
+      allow(scenario_manager).to receive(:fs_entry_point).and_return(fs_entry_point)
     end
 
-    it "returns the correct C++ code for application mode" do
-      result = described_class.tebako_fs_cpp_app(options_manager, scenario_manager)
-
-      expected_result = <<~SUBST
-        #include <limits.h>
-        #include <stddef.h>
-
-        namespace tebako {
-          const  char * fs_log_level   = "#{log_level}";
-          const  char * fs_mount_point = "#{fs_mount_point}";
-          const  char * fs_entry_point = "/local/stub.rb";
-          const  char * package_cwd 	 = nullptr;
-          char   original_cwd[PATH_MAX];
-        }
-
-        const  void * gfsData = nullptr;
-               size_t gfsSize = 0;
-
-      SUBST
-
-      expect(result).to eq(expected_result)
-    end
-
-    describe ".tebako_fs_cpp_bundle" do
-      let(:options_manager) { double("OptionsManager") }
-      let(:scenario_manager) { double("ScenarioManager") }
-
-      let(:log_level) { "debug" }
-      let(:fs_mount_point) { "/mnt/bundle" }
-      let(:fs_entry_point) { "/app/start.rb" }
-      let(:cwd) { "working_directory" }
-      let(:data_bundle_file) { "path/to/data.bundle" }
-
-      before do
-        allow(options_manager).to receive(:l_level).and_return(log_level)
-        allow(options_manager).to receive(:data_bundle_file).and_return(data_bundle_file)
-        allow(options_manager).to receive(:cwd).and_return(cwd)
-
-        allow(scenario_manager).to receive(:fs_mount_point).and_return(fs_mount_point)
-        allow(scenario_manager).to receive(:fs_entry_point).and_return(fs_entry_point)
-      end
-
-      context "when cwd is specified" do
-        it "returns the correct C++ code for bundle mode with cwd" do
-          result = described_class.tebako_fs_cpp_bundle(options_manager, scenario_manager)
-
-          expected_result = <<~SUBST
-            #include <limits.h>
-            #include <incbin/incbin.h>
-
-            namespace tebako {
-              const  char * fs_log_level   = "#{log_level}";
-              const  char * fs_mount_point = "#{fs_mount_point}";
-              const  char * fs_entry_point = "#{fs_entry_point}";
-              const  char * package_cwd 	 = "#{fs_mount_point}/#{cwd}";
-              char   original_cwd[PATH_MAX];
-
-              INCBIN(fs, "#{data_bundle_file}");
-            }
-          SUBST
-
-          expect(result).to eq(expected_result)
-        end
-      end
-
-      context "when cwd is nil" do
-        before do
-          allow(options_manager).to receive(:cwd).and_return(nil)
-        end
-
-        it "returns the correct C++ code for bundle mode without cwd" do
-          result = described_class.tebako_fs_cpp_bundle(options_manager, scenario_manager)
-
-          expected_result = <<~SUBST
-            #include <limits.h>
-            #include <incbin/incbin.h>
-
-            namespace tebako {
-              const  char * fs_log_level   = "#{log_level}";
-              const  char * fs_mount_point = "#{fs_mount_point}";
-              const  char * fs_entry_point = "#{fs_entry_point}";
-              const  char * package_cwd 	 = nullptr;
-              char   original_cwd[PATH_MAX];
-
-              INCBIN(fs, "#{data_bundle_file}");
-            }
-          SUBST
-
-          expect(result).to eq(expected_result)
-        end
-      end
-    end
-
-    describe ".tebako_fs_cpp_stub" do
-      let(:options_manager) { double("OptionsManager") }
-      let(:scenario_manager) { double("ScenarioManager") }
-      let(:log_level) { "warn" }
-      let(:fs_mount_point) { "/mnt/stub" }
-      let(:data_stub_file) { "path/to/data.stub" }
-
-      before do
-        allow(options_manager).to receive(:l_level).and_return(log_level)
-        allow(options_manager).to receive(:data_stub_file).and_return(data_stub_file)
-        allow(scenario_manager).to receive(:fs_mount_point).and_return(fs_mount_point)
-      end
-
-      it "returns the correct C++ code for stub mode" do
-        result = described_class.tebako_fs_cpp_stub(options_manager, scenario_manager)
+    context "when cwd is specified" do
+      it "returns the correct C++ code for bundle mode with cwd" do
+        result = described_class.tebako_fs_cpp_bundle(options_manager, scenario_manager)
 
         expected_result = <<~SUBST
           #include <limits.h>
@@ -413,16 +279,92 @@ RSpec.describe Tebako::Codegen do
           namespace tebako {
             const  char * fs_log_level   = "#{log_level}";
             const  char * fs_mount_point = "#{fs_mount_point}";
-            const  char * fs_entry_point = "/local/stub.rb";
-            const  char * package_cwd 	 = nullptr;
+            const  char * fs_entry_point = "#{fs_entry_point}";
+            const  char * package_cwd 	 = "#{fs_mount_point}/#{cwd}";
             char   original_cwd[PATH_MAX];
 
-            INCBIN(fs, "#{data_stub_file}");
+            INCBIN(fs, "#{data_bundle_file}");
           }
         SUBST
 
         expect(result).to eq(expected_result)
       end
+    end
+
+    context "when cwd is nil" do
+      before do
+        allow(options_manager).to receive(:cwd).and_return(nil)
+      end
+
+      it "returns the correct C++ code for bundle mode without cwd" do
+        result = described_class.tebako_fs_cpp_bundle(options_manager, scenario_manager)
+
+        expected_result = <<~SUBST
+          #include <limits.h>
+          #include <incbin/incbin.h>
+
+          namespace tebako {
+            const  char * fs_log_level   = "#{log_level}";
+            const  char * fs_mount_point = "#{fs_mount_point}";
+            const  char * fs_entry_point = "#{fs_entry_point}";
+            const  char * package_cwd 	 = nullptr;
+            char   original_cwd[PATH_MAX];
+
+            INCBIN(fs, "#{data_bundle_file}");
+          }
+        SUBST
+
+        expect(result).to eq(expected_result)
+      end
+    end
+  end
+
+  describe "#tebako_fs_cpp_stub" do
+    let(:options_manager) { double("OptionsManager") }
+    let(:scenario_manager) { double("ScenarioManager") }
+    let(:log_level) { "warn" }
+    let(:fs_mount_point) { "/mnt/stub" }
+    let(:data_stub_file) { "path/to/data.stub" }
+
+    before do
+      allow(options_manager).to receive(:l_level).and_return(log_level)
+      allow(options_manager).to receive(:data_stub_file).and_return(data_stub_file)
+      allow(scenario_manager).to receive(:fs_mount_point).and_return(fs_mount_point)
+    end
+
+    it "returns the correct C++ code for stub mode" do
+      result = described_class.tebako_fs_cpp_stub(options_manager, scenario_manager)
+
+      expected_result = <<~SUBST
+        #include <limits.h>
+        #include <incbin/incbin.h>
+
+        namespace tebako {
+          const  char * fs_log_level   = "#{log_level}";
+          const  char * fs_mount_point = "#{fs_mount_point}";
+          const  char * fs_entry_point = "/local/stub.rb";
+          const  char * package_cwd 	 = nullptr;
+          char   original_cwd[PATH_MAX];
+
+          INCBIN(fs, "#{data_stub_file}");
+        }
+      SUBST
+
+      expect(result).to eq(expected_result)
+    end
+  end
+
+  describe "#generate_package_descriptor" do
+    it "creates a package descriptor file with correct content" do
+      allow(FileUtils).to receive(:mkdir_p)
+      allow(File).to receive(:binwrite)
+
+      result = described_class.generate_package_descriptor(options_manager, scenario_manager)
+
+      expected_path = File.join(options_manager.deps, "src", "tebako", "package_descriptor")
+      expect(FileUtils).to have_received(:mkdir_p).with(File.dirname(expected_path))
+      expect(File).to have_received(:binwrite)
+      expect(result).to eq(expected_path)
     end
   end
 end

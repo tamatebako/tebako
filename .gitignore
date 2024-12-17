@@ -67,6 +67,7 @@ tebako_test.log
 .t/
 tests-actions/
 .environment.version
+*.tebako
 
 # rspec
 .rspec_status
