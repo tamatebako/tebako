@@ -27,9 +27,11 @@ test_task_template: &TEST_TASK_TEMPLATE
   testset-1_script: |
     RUBY_VER=3.2.5 tests/scripts/functional-tests.sh
 
+  testset-1-app_script: |
+    RUBY_VER=3.3.5 tests/scripts/functional-tests-app.sh
+
   testset-2_script: |
     RUBY_VER=3.2.5 ruby tests-2/tebako-test.rb
-
 
   checkout-packed-mn_script: |
     git clone https://github.com/metanorma/packed-mn.git packed-mn

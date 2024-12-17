@@ -33,8 +33,9 @@ require_relative "../lib/tebako/packager_lite"
 RSpec.describe Tebako::PackagerLite do
   let(:options_manager) do
     double("OptionsManager", stash_dir: "/tmp/stash", data_src_dir: "/tmp/src", data_pre_dir: "/tmp/pre",
-                             data_bin_dir: "/tmp/bin", deps_bin_dir: "/tmp/deps_bin",
-                             package: "test_package", rv: "3.0.0", root: "/", cwd: "/app")
+                             data_bin_dir: "/tmp/bin", deps_bin_dir: "/tmp/deps_bin", mode: "both",
+                             package: "test_package", rv: "3.2.5", ruby_ver: "3.2.5", root: "/", cwd: "/app",
+                             ruby_src_dir: "/tmp/ruby_src")
   end
   let(:scenario_manager) { double("ScenarioManager", fs_entrance: "/entry") }
 
@@ -44,6 +45,7 @@ RSpec.describe Tebako::PackagerLite do
     allow(Tebako::Packager).to receive(:init)
     allow(Tebako::Packager).to receive(:deploy)
     allow(Tebako::Packager).to receive(:mkdwarfs)
+    allow(FileUtils).to receive(:rm_f)
   end
 
   describe "#initialize" do
@@ -67,11 +69,41 @@ RSpec.describe Tebako::PackagerLite do
     it "calls Packager methods to create the package" do
       packager_lite = described_class.new(options_manager, scenario_manager)
       allow(packager_lite).to receive(:codegen).and_return("codegen_result")
+      allow(scenario_manager).to receive(:msys?).and_return(true)
+      allow(Tebako::Packager).to receive(:create_def)
+      allow(Tebako::Packager).to receive(:create_implib)
       packager_lite.create_package
-      expect(Tebako::Packager).to have_received(:init).with("/tmp/stash", "/tmp/src", "/tmp/pre", "/tmp/bin")
-      expect(Tebako::Packager).to have_received(:deploy).with("/tmp/src", "/tmp/pre", "3.0.0", "/", "/entry", "/app")
+      expect(FileUtils).to have_received(:rm_f).with("test_package.tebako")
       expect(Tebako::Packager).to have_received(:mkdwarfs).with("/tmp/deps_bin", "test_package.tebako", "/tmp/src",
                                                                 "codegen_result")
+    end
+  end
+
+  describe "#deploy" do
+    context "when msys? is true" do
+      it "calls create_implib and Packager methods to deploy the package" do
+        allow(scenario_manager).to receive(:msys?).and_return(true)
+        packager_lite = described_class.new(options_manager, scenario_manager)
+        allow(packager_lite).to receive(:create_implib)
+        allow(scenario_manager).to receive(:msys?).and_return(true)
+        packager_lite.deploy
+        expect(packager_lite).to have_received(:create_implib)
+        expect(Tebako::Packager).to have_received(:init).with("/tmp/stash", "/tmp/src", "/tmp/pre", "/tmp/bin")
+        expect(Tebako::Packager).to have_received(:deploy).with("/tmp/src", "/tmp/pre", "3.2.5", "/", "/entry", "/app")
+      end
+    end
+
+    context "when msys? is false" do
+      it "does not call create_implib but calls Packager methods to deploy the package" do
+        allow(scenario_manager).to receive(:msys?).and_return(false)
+        packager_lite = described_class.new(options_manager, scenario_manager)
+        allow(packager_lite).to receive(:create_implib)
+        allow(scenario_manager).to receive(:msys?).and_return(false)
+        packager_lite.deploy
+        expect(packager_lite).not_to have_received(:create_implib)
+        expect(Tebako::Packager).to have_received(:init).with("/tmp/stash", "/tmp/src", "/tmp/pre", "/tmp/bin")
+        expect(Tebako::Packager).to have_received(:deploy).with("/tmp/src", "/tmp/pre", "3.2.5", "/", "/entry", "/app")
+      end
     end
   end
 
@@ -82,4 +114,5 @@ RSpec.describe Tebako::PackagerLite do
     end
   end
 end
+
 # rubocop:enable Metrics/BlockLength
