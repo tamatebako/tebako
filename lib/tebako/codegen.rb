@@ -63,29 +63,11 @@ module Tebako
 
       def deploy_mk(opt, scm)
         case opt.mode
-        when "application"
-          deploy_mk_app(opt, scm)
-        when "both"
-          deploy_mk_both(opt, scm)
-        when "runtime"
-          deploy_mk_stub(opt)
-        else
+        when "bundle"
           deploy_mk_bundle(opt, scm)
+        when /runtime|both/
+          deploy_mk_stub(opt)
         end
-      end
-
-      def deploy_mk_app(opt, scm)
-        fname = generate_package_descriptor(opt, scm)
-        <<~SUBST
-          Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_app_file}", "#{opt.data_src_dir}", "#{fname}")
-        SUBST
-      end
-
-      def deploy_mk_both(opt, scm)
-        <<~SUBST
-          #{deploy_mk_stub(opt)}
-          #{deploy_mk_app(opt, scm)}
-        SUBST
       end
 
       def deploy_mk_bundle(opt, scm)
@@ -161,8 +143,7 @@ module Tebako
         puts "   ... package_descriptor"
         fname = File.join(options_manager.deps, "src", "tebako", "package_descriptor")
         FileUtils.mkdir_p(File.dirname(fname))
-        rv = Tebako::RubyVersion.new(options_manager.ruby_ver)
-        descriptor = Tebako::PackageDescriptor.new(rv.ruby_version, Tebako::VERSION,
+        descriptor = Tebako::PackageDescriptor.new(options_manager.ruby_ver, Tebako::VERSION,
                                                    scenario_manager.fs_mount_point, scenario_manager.fs_entry_point,
                                                    options_manager.cwd)
         File.binwrite(fname, descriptor.serialize)
@@ -203,32 +184,11 @@ module Tebako
 
       def tebako_fs_cpp(options_manager, scenario_manager)
         case options_manager.mode
-        when "application"
-          tebako_fs_cpp_app(options_manager, scenario_manager)
+        when "bundle"
+          tebako_fs_cpp_bundle(options_manager, scenario_manager)
         when /runtime|both/
           tebako_fs_cpp_stub(options_manager, scenario_manager)
-        else
-          tebako_fs_cpp_bundle(options_manager, scenario_manager)
         end
-      end
-
-      def tebako_fs_cpp_app(options_manager, scenario_manager)
-        <<~SUBST
-          #include <limits.h>
-          #include <stddef.h>
-
-          namespace tebako {
-            const  char * fs_log_level   = "#{options_manager.l_level}";
-            const  char * fs_mount_point = "#{scenario_manager.fs_mount_point}";
-            const  char * fs_entry_point = "/local/stub.rb";
-            const  char * package_cwd 	 = nullptr;
-            char   original_cwd[PATH_MAX];
-          }
-
-          const  void * gfsData = nullptr;
-                 size_t gfsSize = 0;
-
-        SUBST
       end
 
       def tebako_fs_cpp_bundle(options_manager, scenario_manager)

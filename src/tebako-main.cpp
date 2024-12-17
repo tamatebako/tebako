@@ -57,6 +57,7 @@
 
 static int running_miniruby = 0;
 static tebako::cmdline_args* args = nullptr;
+static std::vector<char> package;
 
 static void tebako_clean(void)
 {
@@ -95,7 +96,7 @@ extern "C" int tebako_main(int* argc, char*** argv)
       if (args->with_application()) {
         args->process_package();
         auto descriptor = args->get_descriptor();
-        auto package = args->get_package();
+        package = std::move(args->get_package());
         if (descriptor.has_value()) {
           mount_point = descriptor->get_mount_point().c_str();
           entry_point = descriptor->get_entry_point().c_str();

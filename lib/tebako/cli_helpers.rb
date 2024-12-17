@@ -34,6 +34,7 @@ require_relative "codegen"
 require_relative "error"
 require_relative "options_manager"
 require_relative "scenario_manager"
+require_relative "packager_lite"
 
 # Tebako - an executable packager
 # Command-line interface methods
@@ -42,9 +43,25 @@ module Tebako
   module CliHelpers
     def do_press(options_manager)
       puts options_manager.press_announce
+      scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
 
-      generate_files(options_manager)
+      if options_manager.mode == "both" || options_manager.mode == "application"
+        do_press_application(options_manager, scenario_manager)
+      end
 
+      if options_manager.mode == "both" || options_manager.mode == "runtime" || options_manager.mode == "bundle"
+        do_press_runtime(options_manager, scenario_manager)
+      end
+      true
+    end
+
+    def do_press_application(options_manager, scenario_manager)
+      packager = Tebako::PackagerLite.new(options_manager, scenario_manager)
+      packager.create_package
+    end
+
+    def do_press_runtime(options_manager, scenario_manager)
+      generate_files(options_manager, scenario_manager)
       cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{options_manager.cfg_options} #{options_manager.press_options}"
       build_cmd = "cmake --build #{options_manager.output_folder} --target tebako --parallel #{Etc.nprocessors}"
       merged_env = ENV.to_h.merge(options_manager.b_env)
@@ -64,9 +81,8 @@ module Tebako
       true
     end
 
-    def generate_files(options_manager)
+    def generate_files(options_manager, scenario_manager)
       puts "-- Generating files"
-      scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
       scenario_manager.configure_scenario
 
       v_parts = Tebako::VERSION.split(".")
