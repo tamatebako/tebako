@@ -35,7 +35,7 @@ module Tebako
   class ScenarioManager
     def initialize(fs_root, fs_entrance)
       initialize_root(fs_root)
-      initialize_entry_point(fs_entrance)
+      initialize_entry_point(fs_entrance || "stub.rb")
     end
 
     attr_reader :fs_entry_point, :fs_mount_point, :fs_entrance

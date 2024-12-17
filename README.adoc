@@ -760,11 +760,12 @@ this parameter defines Ruby version that will be packaged (optional, defaults to
 `3.1.6`)
 
 `project-root`::
-a folder at the host source file system where project files are located
+a folder at the host source file system where project files are located.
+This parameter is not required if the operation mode is 'runtime'.
 
 `entry-point`::
 an executable file (binary executable or script) that shall be started when
-packaged file is called
+packaged file is called. This parameter is not required if the operation mode is 'runtime'.
 
 `output`::
 the output file name (optional, defaults to `<current folder>/<entry point base name>`

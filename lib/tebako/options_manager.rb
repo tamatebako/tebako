@@ -73,6 +73,10 @@ module Tebako
       @cwd ||= f_cwd
     end
 
+    def cwd_announce
+      @cwd_announce ||= cwd.nil? ? "<Host current directory>" : cwd
+    end
+
     # DATA_BIN_DIR folder is used to create packaged filesystem
     # set(DATA_BIN_DIR  ${CMAKE_CURRENT_BINARY_DIR}/p)
     def data_bin_dir
@@ -191,10 +195,57 @@ module Tebako
                   end
     end
 
-    def press_announce
-      cwd_announce = cwd.nil? ? "<Host current directory>" : cwd
-      @press_announce ||= <<~ANN
+    def press_announce(is_msys)
+      case mode
+      when "application"
+        press_announce_application(is_msys)
+      when "both"
+        press_announce_both
+      when "bundle"
+        press_announce_bundle
+      when "runtime"
+        press_announce_runtime
+      end
+    end
+
+    def press_announce_ref(is_msys)
+      if is_msys
+        " referencing runtime at '#{ref}'"
+      else
+        ""
+      end
+    end
+
+    def press_announce_application(is_msys)
+      <<~ANN
         Running tebako press at #{prefix}
+           Mode:                      'application'
+           Ruby version:              '#{@ruby_ver}'
+           Project root:              '#{root}'
+           Application entry point:   '#{fs_entrance}'
+           Package file name:         '#{package}.tebako'#{press_announce_ref(is_msys)}
+           Package working directory: '#{cwd_announce}'
+      ANN
+    end
+
+    def press_announce_both
+      <<~ANN
+        Running tebako press at #{prefix}
+           Mode:                      'both'
+           Ruby version:              '#{@ruby_ver}'
+           Project root:              '#{root}'
+           Application entry point:   '#{fs_entrance}'
+           Runtime file name:         '#{package}'
+           Package file name:         '#{package}.tebako'
+           Loging level:              '#{l_level}'
+           Package working directory: '#{cwd_announce}'
+      ANN
+    end
+
+    def press_announce_bundle
+      <<~ANN
+        Running tebako press at #{prefix}
+           Mode:                      'bundle'
            Ruby version:              '#{@ruby_ver}'
            Project root:              '#{root}'
            Application entry point:   '#{fs_entrance}'
@@ -204,12 +255,26 @@ module Tebako
       ANN
     end
 
+    def press_announce_runtime
+      <<~ANN
+        Running tebako press at #{prefix}
+           Mode:                      'runtime'
+           Ruby version:              '#{@ruby_ver}'
+           Runtime file name:         '#{package}'
+           Loging level:              '#{l_level}'
+      ANN
+    end
+
     def press_options
       @press_options ||= "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{l_level}' " \
     end
 
     def relative?(path)
       Pathname.new(path).relative?
+    end
+
+    def ref
+      @ref ||= @options["ref"].nil? ? "tebako-runtime" : @options["ref"].gsub("\\", "/")
     end
 
     def remove_glibc_private

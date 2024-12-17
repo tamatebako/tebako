@@ -43,7 +43,7 @@ require_relative "version"
 module Tebako
   DEFAULT_TEBAFILE = ".tebako.yml"
   # Tebako packager front-end
-  class Cli < Thor
+  class Cli < Thor # rubocop:disable Metrics/ClassLength
     package_name "Tebako"
     class_option :prefix, type: :string, aliases: "-p", required: false,
                           desc: "A path to tebako packaging environment, '~/.tebako' ('$HOME/.tebako') by default"
@@ -82,28 +82,35 @@ module Tebako
       #{" " * 65}# If this parameter is not set, the application will start in the current directory of the host file system.
     DESC
 
+    REF_DESCRIPTION = <<~DESC
+      "Referenced tebako run-time package; 'tebako-runtime' by default".
+      This option specifies the tebako runtime to be used by the application on Windows and if mode is 'application' only .
+    DESC
+
     RGP_DESCRIPTION = <<~DESC
-      Activates removal a reference to GLIBC_PRIVATE version of libpthread from tebako package. This allows Linux Gnu packages to run against versions of
-      #{" " * 65}# libpthread that differ from the version used for packaging. For example, package created at Ubuntu 20 system can be used on Ubuntu 22. This option works on Gnu Linux with
-      #{" " * 65}# Gnu toolchain only (not for LLVM/clang). The feature is exeprimental, we may consider other approach in the future.
+      Current working directory for packaged application. This directory shall be specified relative to root.
+      #{" " * 65}# If this parameter is not set, the application will start in the current directory of the host file system.
     DESC
 
     desc "press", "Press tebako image"
     method_option :cwd, type: :string, aliases: "-c", required: false, desc: CWD_DESCRIPTION
-    method_option :"entry-point", type: :string, aliases: ["-e", "--entry"], required: true,
-                                  desc: "Ruby application entry point"
     method_option :"log-level", type: :string, aliases: "-l", required: false, enum: %w[error warn debug trace],
                                 desc: "Tebako memfs logging level, 'error' by default"
     method_option :output, type: :string, aliases: "-o", required: false,
                            desc: "Tebako package file name, entry point base file name in the current folder by default"
-    method_option :root, type: :string, aliases: "-r", required: true, desc: "Root folder of the Ruby application"
+    method_option :"entry-point", type: :string, aliases: ["-e", "--entry"], required: false,
+                                  desc: "Ruby application entry point"
+    method_option :root, type: :string, aliases: "-r", required: false, desc: "Root folder of the Ruby application"
     method_option :Ruby, type: :string, aliases: "-R", required: false,
                          enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::RubyVersion::DEFAULT_RUBY_VERSION} by default"
     method_option :patchelf, aliases: "-P", type: :boolean, desc: RGP_DESCRIPTION
     method_option :mode, type: :string, aliases: "-m", required: false, enum: %w[bundle both runtime application],
                          desc: "Tebako press mode, 'bundle' by default"
+    method_option :ref, type: :string, aliases: "-u", required: false, desc: REF_DESCRIPTION
+
     def press
+      validate_press_options
       (om, cm) = bootstrap
 
       do_press(om)
@@ -159,6 +166,16 @@ module Tebako
       end
     end
 
+    no_commands do
+      def validate_press_options
+        return unless options["mode"] != "runtime"
+
+        opts = ""
+        opts += " '--root'" if options["root"].nil?
+        opts += " '--entry-point'" if options["entry-point"].nil?
+        raise Thor::Error, "No value provided for required options #{opts}" unless opts.empty?
+      end
+    end
     no_commands do
       include Tebako::CliHelpers
     end

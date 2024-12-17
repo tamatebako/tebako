@@ -42,16 +42,17 @@ module Tebako
   # Cli helpers
   module CliHelpers
     def do_press(options_manager)
-      puts options_manager.press_announce
       scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
+      puts options_manager.press_announce(scenario_manager.msys?)
+
+      if options_manager.mode == "both" || options_manager.mode == "runtime" || options_manager.mode == "bundle"
+        do_press_runtime(options_manager, scenario_manager)
+      end
 
       if options_manager.mode == "both" || options_manager.mode == "application"
         do_press_application(options_manager, scenario_manager)
       end
 
-      if options_manager.mode == "both" || options_manager.mode == "runtime" || options_manager.mode == "bundle"
-        do_press_runtime(options_manager, scenario_manager)
-      end
       true
     end
 

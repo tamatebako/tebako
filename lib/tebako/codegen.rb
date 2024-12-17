@@ -55,7 +55,7 @@ module Tebako
         if scm.msys?
           crt = <<~SUBST
             Tebako::Packager.create_implib("#{opt.ruby_src_dir}", "#{opt.data_src_dir}",
-                                           "#{File.basename(opt.package)}", rv)
+                                           "#{opt.package}", rv)
           SUBST
         end
         crt

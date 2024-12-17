@@ -34,34 +34,35 @@ press_runner() {
 # $2 -- entry point
 # $3 -- tebako package name
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode application 2>&1 | tee tebako_test.log
      assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 )
+     result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode application 2>&1 )
      assertEquals 0 $?
    fi
 
 # Check the first and the last messages expected from CMake script
-   assertContains "$result" "Running tebako press script"
+   assertContains "$result" "Running tebako press"
    assertContains "$result" "Created tebako package at"
 }
 
 package_runner() {
 # Runs a package built by tebako
 # Parameters:
-# $1 -- file name
-# $2 -- expected output
+# $1 -- runtime name
+# $2 -- application name
+# $3 -- expected output
    if [ "${VERBOSE}" == "yes" ]; then
-     $1 | tee tebako_test.log
+     "$1" --tebako-run "$2" | tee tebako_test.log
      assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result="$( $1 )"
+     result=$( "$1" --tebako-run "$2" )
      assertEquals 0 $?
    fi
 
-   assertContains "$result" "$2"
+   assertContains "$result" "$3"
 }
 
 press_runner_with_error() {
@@ -73,11 +74,11 @@ press_runner_with_error() {
 # $4 -- expected error code
 # $5 -- expected error message
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode application 2>&1 | tee tebako_test.log
      assertEquals "$4" "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 )
+     result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode application 2>&1 )
      assertEquals "$4" "${PIPESTATUS[0]}"
    fi
 
@@ -86,8 +87,7 @@ press_runner_with_error() {
 
 # ......................................................................
 # Tests
-#  --  tebako setup                                                                                         [commented out, redundant]
-#  AU. Check that it is possible to extract image content (--tebako-extract option)
+#  AU. Build runtime (--mode runtime)
 #  01. Simple Ruby script, absolute path to root, relative path to entry point
 #  02. Simple Ruby script, absolute path to root, relative path to entry point, entry point does not exist  [Expected error at build step]
 #  03. Simple Ruby script, absolute path to root, absolute path to entry point
@@ -108,48 +108,14 @@ press_runner_with_error() {
 
 
 # ......................................................................
-#  --  tebako setup
-#test_tebako_setup() {
-#  echo "tebako setup ... patience, please, it may take up to 1 hour."
-#  if [ "${VERBOSE}" == "yes" ]; then
-#    "$DIR_BIN"/tebako setup -D -R "$RUBY_VER" 2>&1 | tee tebako_test.log
-#    assertEquals 0 "${PIPESTATUS[0]}"
-#    result="$( cat tebako_test.log )"
-#  else
-#    result=$( "$DIR_BIN"/tebako setup -D -R "$RUBY_VER" 2>&1 )
-#    assertEquals 0 "${PIPESTATUS[0]}"
-#  fi
-
-# Check the first and the last messages expected from CMake script
-#  assertContains "$result" "Running tebako setup script"
-#  assertContains "$result" "Tebako setup has completed"
-#}
-
-# ......................................................................
-#  AU. Check that it is possible to extract image content (--tebako-extract option)
-test_AUC_extract() {
-   echo "==> Check --tebako-extract option"
-   result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 )
+#  AU. Build runtime (--mode runtime)
+test_AU_runtime() {
+   echo "==> Build tebako runtime"
+   result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=tebako-runtime --mode runtime 2>&1 )
 
    assertEquals 0 "${PIPESTATUS[0]}"
    assertContains "$result" "Running tebako press script"
    assertContains "$result" "Created tebako package at"
-
-   ./test-AUC-package --tebako-extract
-   assertEquals 0 "${PIPESTATUS[0]}"
-
-   diff -r source_filesystem o/s
-   assertEquals 0 "${PIPESTATUS[0]}"
-
-   rm -rf source_filesystem
-
-   ./test-AUC-package --tebako-extract extract
-   assertEquals 0 "${PIPESTATUS[0]}"
-
-   diff -r extract o/s
-   assertEquals 0 "${PIPESTATUS[0]}"
-
-   rm -rf extract
 }
 
 # ......................................................................
@@ -157,7 +123,7 @@ test_AUC_extract() {
 test_tebako_press_01() {
    echo "==> simple Ruby script, absolute path to root, relative path to entry point"
    press_runner "${DIR_TESTS}/test-01" "tebako-test-run.rb" "test-01-package"
-   package_runner "./test-01-package" "Hello!  This is test-01 talking from inside DwarFS"
+   package_runner "./tebako-runtime" "test-01-package.tebako" "Hello!  This is test-01 talking from inside DwarFS"
 }
 
 # ......................................................................
@@ -167,7 +133,7 @@ test_tebako_press_02() {
    press_runner_with_error "${DIR_TESTS}/test-01" \
                            "test-does-not-exist.rb" \
                            "test-02-package" \
-                           104 "'tebako press' build step failed"
+                           106 "Tebako script failed"
 }
 
 # ......................................................................
@@ -175,7 +141,7 @@ test_tebako_press_02() {
 test_tebako_press_03() {
    echo "==> simple Ruby script, absolute path to root, absolute path to entry point"
    press_runner "${DIR_TESTS}/test-01" "${DIR_TESTS}/test-01/tebako-test-run.rb" "test-03-package"
-   package_runner "./test-03-package" "Hello!  This is test-01 talking from inside DwarFS"
+   package_runner "./tebako-runtime" "test-03-package.tebako" "Hello!  This is test-01 talking from inside DwarFS"
 }
 
 # ......................................................................
@@ -184,7 +150,7 @@ test_tebako_press_04() {
    echo "==> simple Ruby script, relative path to root, relative path to entry point"
    pushd "${DIR_ROOT}" > /dev/null || fail "pushd ${DIR_ROOT} failed"
    press_runner "tests/test-01" "tebako-test-run.rb" "test-04-package"
-   package_runner "./test-04-package" "Hello!  This is test-01 talking from inside DwarFS"
+   package_runner "${DIR_ROOT}/tebako-runtime" "test-04-package.tebako" "Hello!  This is test-01 talking from inside DwarFS"
    popd > /dev/null || fail "popd failed"
 }
 
@@ -202,7 +168,7 @@ test_tebako_press_05() {
 test_tebako_press_09() {
    echo "==> Ruby gem (xxx.gem, no gemspec, no gemfile)"
    press_runner "${DIR_TESTS}/test-09" "tebako-test-run.rb" "test-09-package"
-   package_runner "./test-09-package" "| a1 | b1 |"
+   package_runner "./tebako-runtime" "test-09-package.tebako" "| a1 | b1 |"
 }
 
 # ......................................................................
@@ -212,7 +178,7 @@ test_tebako_press_10() {
    press_runner_with_error "${DIR_TESTS}/test-09" \
                            "test-does-not-exist.rb" \
                            "test-10-package" \
-                           104 "'tebako press' build step failed"
+                           106 "Tebako script failed"
 }
 
 # ......................................................................
@@ -220,7 +186,7 @@ test_tebako_press_10() {
 test_tebako_press_11() {
    echo "==> Ruby gem (no gemfile, with gemspec)"
    press_runner "${DIR_TESTS}/test-11" "tebako-test-run.rb" "test-11-package"
-   package_runner "./test-11-package" "| a1 | b1 |"
+   package_runner "./tebako-runtime" "test-11-package.tebako" "| a1 | b1 |"
 }
 
 # ......................................................................
@@ -230,7 +196,7 @@ test_tebako_press_13() {
    press_runner_with_error "${DIR_TESTS}/test-13" \
                             "tebako-test-run.rb" \
                             "test-13-package" \
-                            104 "'tebako press' build step failed"
+                            255 "Tebako script failed"
 }
 
 # ......................................................................
@@ -248,7 +214,7 @@ test_tebako_press_14() {
 test_tebako_press_15() {
    echo "==> Ruby gem (with gemspec, with gemfile)"
    press_runner "${DIR_TESTS}/test-15" "tebako-test-run.rb" "test-15-package"
-   package_runner "./test-15-package" "| a1 | b1 |"
+   package_runner "./tebako-runtime" "test-15-package.tebako" "| a1 | b1 |"
 }
 
 # ......................................................................
@@ -258,7 +224,7 @@ test_tebako_press_16() {
    press_runner_with_error "${DIR_TESTS}/test-16" \
                            "tebako-test-run.rb" \
                            "test-16-package" \
-                           104 "'tebako press' build step failed"
+                           255 "Tebako script failed"
 }
 
 # ......................................................................
@@ -268,7 +234,7 @@ test_tebako_press_17() {
    press_runner_with_error "${DIR_TESTS}/test-15" \
                            "test-does-not-exist.rb" \
                            "test-17-package" \
-                           104 "'tebako press' build step failed"
+                           106 "Tebako script failed"
 }
 
 # ......................................................................
@@ -276,7 +242,7 @@ test_tebako_press_17() {
 test_tebako_press_18() {
    echo "==> Ruby project (no gemspec, with gemfile)"
    press_runner "${DIR_TESTS}/test-18" "tebako-test-run.rb" "test-18-package"
-   package_runner "./test-18-package" "| a1 | b1 |"
+   package_runner "./tebako-runtime" "test-18-package.tebako" "| a1 | b1 |"
 }
 
 # ......................................................................
@@ -284,7 +250,7 @@ test_tebako_press_18() {
 test_tebako_press_19() {
    echo "==> Ruby project (no gemspec, with gemfile, with native extension)"
    press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
-   package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
+   package_runner "./tebako-runtime" "test-19-package.tebako" "Hello, World via libc puts using FFI on tebako package"
 }
 
 # ......................................................................
@@ -292,7 +258,7 @@ test_tebako_press_19() {
 test_tebako_press_20() {
    echo "==> Net/http Ruby script"
    press_runner "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
-   package_runner "./test-20-package" "Response: 302 Found"
+   package_runner "./tebako-runtime" "test-20-package.tebako" "Response: 302 Found"
 }
 
 # ......................................................................
