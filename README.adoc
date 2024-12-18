@@ -38,7 +38,7 @@ with patched filesystem calls that redirect access of project files to the
 on-file filesystem ("runtime")
 
 Tebako is capable to create a single file that contains both runtime and application or
-place runtime and application to separate files. In the latter case the runtime can be used with different 
+place runtime and application to separate files. In the latter case the runtime can be used with different
 applications or versions of the samae applciation.
 
 Please refer to ```mode``` option below that controls tebako output.
@@ -746,7 +746,8 @@ tebako press \
   [-c|--cwd=<package current working directory>]
   [-D|--devmode] \
   [-P|--patchelf] \
-  [-m|--mode=<bundle|both|application|runtime>] 
+  [-m|--mode=<bundle|both|application|runtime>] \
+  [-u|--ref=<runtime-reference>] \
   [-t|--tebafile=<path-to-tebafile>]
 ----
 
@@ -770,8 +771,8 @@ packaged file is called. This parameter is not required if the operation mode is
 `output`::
 the output file name (optional, defaults to `<current folder>/<entry point base name>`
 On Windows output file will have `exe` extension.
-if application is placed to a separate file (`both` or `application` mode) it will have the 
-same name with `tebako` extension. 
+if application is placed to a separate file (`both` or `application` mode) it will have the
+same name with `tebako` extension.
 
 `log-level`::
 logging level for the Tebako built-in memory filesystem driver
@@ -797,6 +798,11 @@ bundle - place runtime and application to a single file
 both - create both run-rime and application
 application - create appplication only
 runtime - create runtime only
+
+`ref`::
+When tabako application package is created on Windows it is linked against tebako runtime file  name.
+ref parameter allows to specify the name of the runtime file. Default is 'tebako-runtime'.
+Note that it is the name only, runtime file can be recreated or changed but not renamed.
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
