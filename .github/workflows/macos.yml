@@ -58,7 +58,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 11
+  CACHE_VER: 15
   VERBOSE: no
 
 jobs:
@@ -116,8 +116,6 @@ jobs:
 
         package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
         ruby_ver: ['3.2.5']
-        include:
-          - { env: { os: macos-14, xcode: 15.4 },  ruby_ver: '3.3.4', package_ruby_ver: '3.3.4' }
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -157,6 +155,57 @@ jobs:
           upload: "${{ steps.shall-upload.outputs.upload }}"
           verbose: ${{ env.VERBOSE }}
 
+  tests-1-app:
+    needs: setup
+    name: tests-1-app package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
+    runs-on: ${{ matrix.env.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        env:
+          - { os: macos-13, xcode: 14.3.1 }
+          - { os: macos-14, xcode: 15.4 }
+          - { os: macos-15, xcode: 16.1 }
+
+        package_ruby_ver: [ '3.3.5' ]
+        ruby_ver: ['3.2.5']
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup ci environment
+        uses: ./.github/actions/setup-tebako
+        with:
+          cache: off
+          install: off
+          ruby_version: ${{ matrix.ruby_ver }}
+          xcode: ${{ matrix.env.xcode }}
+          verbose: ${{ env.VERBOSE }}
+
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: ${{ matrix.env.os }}
+          cc: ruby-${{ matrix.ruby_ver }}-XCode-${{ matrix.env.xcode }}
+          version: ${{ env.CACHE_VER }}
+
+      - name: Checkout shell test framework
+        uses: actions/checkout@v4
+        with:
+          repository: kward/shunit2
+          path: ${{github.workspace}}/tests/shunit2
+          fetch-depth: 1
+
+      - name: Run tebako tests (set no. 1) for separately packaged application
+        shell: bash
+        run: |
+          bundle install
+          RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests-app.sh          
+
   tests-2:
     needs: setup
     name: tests-2 package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
@@ -171,8 +220,6 @@ jobs:
           - { os: macos-15, xcode: 16.1 }
         package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
         ruby_ver: ['3.2.5']
-        include:
-          - { env: { os: macos-14, xcode: 15.4 },  ruby_ver: '3.3.4', package_ruby_ver: '3.3.4' }
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4

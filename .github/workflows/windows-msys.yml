@@ -140,7 +140,7 @@ jobs:
 
   tests-1:
     needs: setup
-    name: tests-1 windows-msys [${{ matrix.env.sys }}, Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}]
+    name: tests-1${{ matrix.script }} windows-msys [${{ matrix.env.sys }}, Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}]
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -150,6 +150,7 @@ jobs:
             CC: gcc
             CXX: g++
         package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
+        script: ['', '-app']
     env: ${{ matrix.env }}
 
     defaults:
@@ -218,7 +219,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        run: RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+        run: RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests${{ matrix.script }}.sh
 
   tests-2:
     needs: setup

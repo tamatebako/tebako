@@ -49,25 +49,68 @@ RSpec.describe Tebako::CliHelpers do
   end
 
   describe "#do_press" do
-    let(:options_manager) { Tebako::OptionsManager.new(options) }
-
     before do
       stub_const("RUBY_PLATFORM", "x86_64-linux")
     end
 
-    it "executes the press command successfully" do
-      allow(FileUtils).to receive(:rm_rf)
-      allow(self).to receive(:system).and_return(true)
-      allow(Tebako::Codegen).to receive(:generate_tebako_version_h).and_return(true)
-      allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
+    context "when mode is set to 'application'" do
+      before do
+        options["mode"] = "application"
+      end
 
-      expect(do_press(options_manager)).to be_truthy
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "executes the press command successfully" do
+        allow_any_instance_of(Tebako::PackagerLite).to receive(:create_package).and_return(true)
+        expect(do_press(options_manager)).to be_truthy
+      end
     end
 
-    it "raises an error if the press command fails" do
-      allow(FileUtils).to receive(:rm_rf)
-      allow(self).to receive(:system).and_return(false)
-      expect { do_press(options_manager) }.to raise_error(Tebako::Error)
+    context "when mode is set to 'bundle'" do
+      before do
+        options["mode"] = "bundle"
+      end
+
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "executes the press command successfully" do
+        allow(FileUtils).to receive(:rm_rf)
+        allow(self).to receive(:system).and_return(true)
+        allow(Tebako::Codegen).to receive(:generate_tebako_version_h).and_return(true)
+        allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
+
+        expect(do_press(options_manager)).to be_truthy
+      end
+
+      it "raises an error if the press command fails" do
+        allow(FileUtils).to receive(:rm_rf)
+        allow(self).to receive(:system).and_return(false)
+        expect { do_press(options_manager) }.to raise_error(Tebako::Error)
+      end
+    end
+
+    context "when mode is set to 'runtime'" do
+      before do
+        options["mode"] = "bundle"
+      end
+
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "executes the press command successfully" do
+        allow(FileUtils).to receive(:rm_rf)
+        allow(self).to receive(:system).and_return(true)
+        allow(Tebako::Codegen).to receive(:generate_tebako_version_h).and_return(true)
+        allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
+        allow(Tebako::Codegen).to receive(:generate_package_header).and_return(true)
+
+        expect(do_press(options_manager)).to be_truthy
+      end
+
+      it "raises an error if the press command fails" do
+        allow(FileUtils).to receive(:rm_rf)
+        allow(self).to receive(:system).and_return(false)
+        expect { do_press(options_manager) }.to raise_error(Tebako::Error)
+      end
     end
   end
 

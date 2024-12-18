@@ -70,7 +70,7 @@ module Tebako
     def deploy
       BuildHelpers.with_env(deploy_env) do
         update_rubygems
-        system("#{gem_command} env")
+        system("#{gem_command} env") if @verbose
         install_gem("tebako-runtime")
         install_gem("bundler", BUNDLER_VERSION) if needs_bundler?
         deploy_solution

@@ -67,9 +67,10 @@ module Tebako
     class << self
       # Create implib
       def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
-        create_def(src_dir, app_name)
+        a_name = File.basename(app_name, ".*")
+        create_def(src_dir, a_name)
         puts "   ... creating Windows import library"
-        params = ["dlltool", "-d", def_fname(src_dir, app_name), "-D", out_fname(app_name), "--output-lib",
+        params = ["dlltool", "-d", def_fname(src_dir, a_name), "-D", out_fname(a_name), "--output-lib",
                   lib_fname(package_src_dir, ruby_ver)]
         BuildHelpers.run_with_capture(params)
       end
@@ -85,13 +86,12 @@ module Tebako
       end
 
       def finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
+        puts "-- Running finalize script"
+
         RubyBuilder.new(ruby_ver, src_dir).final_build
         exe_suffix = Packager::PatchHelpers.exe_suffix(os_type)
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
-        unless patchelf.nil?
-          params = [patchelf, "--remove-needed-version", "libpthread.so.0", "GLIBC_PRIVATE", src_name]
-          BuildHelpers.run_with_capture(params)
-        end
+        patchelf(src_name, patchelf)
         package_name = "#{app_name}#{exe_suffix}"
         strip_or_copy(os_type, src_name, package_name)
         puts "Created tebako package at \"#{package_name}\""
@@ -106,9 +106,10 @@ module Tebako
         FileUtils.cp_r "#{stash_dir}/.", src_dir
       end
 
-      def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir)
+      def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir, descriptor = nil)
         puts "-- Running mkdwarfs script"
         params = [File.join(deps_bin_dir, "mkdwarfs"), "-o", data_bin_file, "-i", data_src_dir, "--no-progress"]
+        params << "--header" << descriptor if descriptor
         BuildHelpers.run_with_capture_v(params)
       end
 
@@ -189,18 +190,11 @@ module Tebako
         patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
       end
 
-      def ruby_version(tbd)
-        ruby_version = nil
-        PatchHelpers.with_env(DEPLOY_ENV) do
-          out, st = Open3.capture2e("#{tbd}/ruby", "--version")
-          raise Tebako::Error, "Failed to run ruby --version" unless st.exitstatus.zero?
+      def patchelf(src_name, patchelf)
+        return if patchelf.nil?
 
-          match = out.match(/ruby (\d+\.\d+\.\d+)/)
-          raise Tebako::Error, "Failed to parse Ruby version from #{out}" unless match
-
-          ruby_version = match[1]
-        end
-        ruby_version
+        params = [patchelf, "--remove-needed-version", "libpthread.so.0", "GLIBC_PRIVATE", src_name]
+        BuildHelpers.run_with_capture(params)
       end
 
       def strip_or_copy(os_type, src_name, package_name)

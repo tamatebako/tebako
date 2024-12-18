@@ -107,6 +107,30 @@ RSpec.describe Tebako::OptionsManager do
     end
   end
 
+  describe "#data_bundle_file" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct data bundle file path" do
+      allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
+      expect(options_manager.data_bundle_file).to eq("/path/to/data_bin/fs.bin")
+    end
+  end
+
+  describe "#data_stub_file" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct data stub file path" do
+      allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
+      expect(options_manager.data_stub_file).to eq("/path/to/data_bin/fs.bin")
+    end
+  end
+
+  describe "#data_app_file" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct data app file path" do
+      allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
+      expect(options_manager.data_app_file).to eq("/path/to/data_bin/fs2.bin")
+    end
+  end
+
   describe "#fs_current" do
     let(:options_manager) { Tebako::OptionsManager.new({}) }
     context "when the platform is Windows (msys, mingw, cygwin)" do
@@ -195,6 +219,25 @@ RSpec.describe Tebako::OptionsManager do
 
       it "returns the value of the log-level option" do
         expect(options_manager.l_level).to eq("info")
+      end
+    end
+  end
+
+  describe "#mode" do
+    context "when mode option is not set" do
+      let(:options) { {} }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it 'returns "bundle"' do
+        expect(options_manager.mode).to eq("bundle")
+      end
+    end
+
+    context "when mode option is set" do
+      let(:options) { { "mode" => "both" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns the value of the mode option" do
+        expect(options_manager.mode).to eq("both")
       end
     end
   end
@@ -336,7 +379,58 @@ RSpec.describe Tebako::OptionsManager do
   end
 
   describe "#press_announce" do
-    context 'when options["cwd"] is set' do
+    context 'when mode is "application" and options["cwd"] is set' do
+      let(:options) do
+        { "cwd" => "/some/path", "entry-point" => "main.rb", "log-level" => "info",
+          "root" => "test_root", "mode" => "application" }
+      end
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      let(:root) { File.join(Dir.pwd, options["root"]) }
+      let(:pckg) { File.join(Dir.pwd, "main") }
+      let(:prefix) { File.expand_path("~/.tebako") }
+
+      it "returns the correct announcement" do
+        options_manager.cfg_options
+        expected_announce = <<~ANN
+          Running tebako press at #{prefix}
+             Mode:                      'application'
+             Ruby version:              '#{Tebako::RubyVersion::DEFAULT_RUBY_VERSION}'
+             Project root:              '#{root}'
+             Application entry point:   '#{options["entry-point"]}'
+             Package file name:         '#{pckg}.tebako'
+             Package working directory: '#{options["cwd"]}'
+        ANN
+        expect(options_manager.press_announce(false)).to eq(expected_announce)
+      end
+    end
+
+    context 'when  mode is "both" and options["cwd"] is not set' do
+      let(:options) do
+        { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root", "mode" => "both" }
+      end
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      let(:root) { File.join(Dir.pwd, options["root"]) }
+      let(:pckg) { File.join(Dir.pwd, "main") }
+      let(:prefix) { File.expand_path("~/.tebako") }
+
+      it "returns the correct announcement with default cwd" do
+        options_manager.cfg_options
+        expected_announce = <<~ANN
+          Running tebako press at #{prefix}
+             Mode:                      'both'
+             Ruby version:              '#{Tebako::RubyVersion::DEFAULT_RUBY_VERSION}'
+             Project root:              '#{root}'
+             Application entry point:   '#{options["entry-point"]}'
+             Runtime file name:         '#{pckg}'
+             Package file name:         '#{pckg}.tebako'
+             Loging level:              '#{options["log-level"]}'
+             Package working directory: '<Host current directory>'
+        ANN
+        expect(options_manager.press_announce(false)).to eq(expected_announce)
+      end
+    end
+
+    context 'when mode is "bundle" and options["cwd"] is set' do
       let(:options) do
         { "cwd" => "/some/path", "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" }
       end
@@ -349,6 +443,7 @@ RSpec.describe Tebako::OptionsManager do
         options_manager.cfg_options
         expected_announce = <<~ANN
           Running tebako press at #{prefix}
+             Mode:                      'bundle'
              Ruby version:              '#{Tebako::RubyVersion::DEFAULT_RUBY_VERSION}'
              Project root:              '#{root}'
              Application entry point:   '#{options["entry-point"]}'
@@ -356,12 +451,14 @@ RSpec.describe Tebako::OptionsManager do
              Loging level:              '#{options["log-level"]}'
              Package working directory: '#{options["cwd"]}'
         ANN
-        expect(options_manager.press_announce).to eq(expected_announce)
+        expect(options_manager.press_announce(false)).to eq(expected_announce)
       end
     end
 
-    context 'when options["cwd"] is not set' do
-      let(:options) { { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" } }
+    context 'when  mode is "bundle" and options["cwd"] is not set' do
+      let(:options) do
+        { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" }
+      end
       let(:options_manager) { Tebako::OptionsManager.new(options) }
       let(:root) { File.join(Dir.pwd, options["root"]) }
       let(:pckg) { File.join(Dir.pwd, "main") }
@@ -371,6 +468,7 @@ RSpec.describe Tebako::OptionsManager do
         options_manager.cfg_options
         expected_announce = <<~ANN
           Running tebako press at #{prefix}
+             Mode:                      'bundle'
              Ruby version:              '#{Tebako::RubyVersion::DEFAULT_RUBY_VERSION}'
              Project root:              '#{root}'
              Application entry point:   '#{options["entry-point"]}'
@@ -378,7 +476,29 @@ RSpec.describe Tebako::OptionsManager do
              Loging level:              '#{options["log-level"]}'
              Package working directory: '<Host current directory>'
         ANN
-        expect(options_manager.press_announce).to eq(expected_announce)
+        expect(options_manager.press_announce(false)).to eq(expected_announce)
+      end
+    end
+
+    context 'when  mode is "runtime"' do
+      let(:options) do
+        { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root", "mode" => "runtime" }
+      end
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      let(:root) { File.join(Dir.pwd, options["root"]) }
+      let(:pckg) { File.join(Dir.pwd, "main") }
+      let(:prefix) { File.expand_path("~/.tebako") }
+
+      it "returns the correct announcement with default cwd" do
+        options_manager.cfg_options
+        expected_announce = <<~ANN
+          Running tebako press at #{prefix}
+             Mode:                      'runtime'
+             Ruby version:              '#{Tebako::RubyVersion::DEFAULT_RUBY_VERSION}'
+             Runtime file name:         '#{pckg}'
+             Loging level:              '#{options["log-level"]}'
+        ANN
+        expect(options_manager.press_announce(false)).to eq(expected_announce)
       end
     end
   end

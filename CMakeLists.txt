@@ -181,7 +181,7 @@ string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 #  list(GET LIBDWARFS_WR_VER_COMPONENTS 2 LIBDWARFS_WR_VER_PATCH)
 #  set (LIBDWARFS_WR_VER_M ${LIBDWARFS_WR_VER_MAJOR}.${LIBDWARFS_WR_VER_MINOR}.${LIBDWARFS_WR_VER_PATCH})
 #else(DWARFS_PRELOAD)
-def_ext_prj_g(DWARFS_WR "v0.8.3")
+def_ext_prj_g(DWARFS_WR "v0.9.2")
 #endif(DWARFS_PRELOAD)
 
 def_ext_prj_g(PATCHELF "65e14792061c298f1d2bc44becd48a10cbf0bc81")
@@ -406,24 +406,14 @@ else (${SETUP_MODE})
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
   set(CMAKE_CXX_EXTENSIONS   OFF)
 
+# ...................................................................
+# Packaged filesystem
+
   add_custom_target(packaged_filesystem
     COMMAND ruby ${DEPS_BIN_DIR}/deploy.rb
     DEPENDS ${RUBY_PRJ}
     BYPRODUCTS ${DATA_BIN_FILE}
- )
-
-# ...................................................................
-# Packaged filesystem
-
-  #add_custom_target(packaged_filesystem
-    # No progress below is critical since in reporting mode mkdwarfs tries to work directly with terminal
-    # and it creates issues for stderr redirects (&2 > 1) used by Ninja and our test srcipts
-    # It may be fixable bit is very difficult to reproduce in test environment
-   # COMMAND ${DEPS_BIN_DIR}/mkdwarfs -o ${DATA_BIN_FILE} -i ${DATA_SRC_DIR} --no-progress
-   # #COMMAND ${CMAKE_COMMAND} -E touch ${DEPS_SRC_DIR}/tebako/tebako-fs.cpp
-   # DEPENDS setup source_filesystem
-   # VERBATIM
-  #)
+  )
 
   set(CMAKE_CXX_FLAGS "${RUBY_C_FLAGS}")
 
