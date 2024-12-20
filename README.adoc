@@ -33,15 +33,16 @@ The package contains the following components:
 * An on-file filesystem (OFFS) containing all the project files and
 dependencies in DwarFS format ("application")
 
-* A runtime environment that includes thje the necessary libraries and interpreters,
+* A runtime environment that includes the the necessary libraries and interpreters,
 with patched filesystem calls that redirect access of project files to the
 on-file filesystem ("runtime")
 
-Tebako is capable to create a single file that contains both runtime and application or
-place runtime and application to separate files. In the latter case the runtime can be used with different
-applications or versions of the samae applciation.
+Tebako is capable to create a single file that contains both runtime and
+application or place runtime and application to separate files. In the latter
+case the runtime can be used with different applications or versions of the same
+application.
 
-Please refer to ```mode``` option below that controls tebako output.
+Please refer to `mode` option below that controls Tebako output.
 
 == Supported runtimes, platforms and architectures
 
@@ -74,19 +75,24 @@ architectures.
 ====
 Windows build caveats:
 
-* Tebako may face errors related to CMake path length limitations (https://gitlab.kitware.com/cmake/cmake/-/issues/25936).
-This error may affect not tebako itself but the gems that need to be package and use CMake to build native extensions.
-There is no workaround for this issue as it looks like is a limitation of the manifest used to build CMake executable.
+* Tebako may face errors related to CMake path length limitations
+(https://gitlab.kitware.com/cmake/cmake/-/issues/25936).
+This error may affect not Tebako itself but the gems that need to be package and
+use CMake to build native extensions.
+There is no workaround for this issue as it looks like is a limitation of the
+manifest used to build CMake executable.
 
-* MSys strip utility creates broken executable when tebako image is processed. Linking with '-s' flag produces unusable
-executables as well.
-Until this issue (https://github.com/tamatebako/tebako/issues/172) is resolved we plan to produce an Windows executable
-with debug information unstripped. You can opt to run 'strip -S' manually, it most cases it works.
+* MSys strip utility creates broken executable when Tebako image is processed.
+Linking with `-s` flag produces unusable executables as well.
+Until this issue (https://github.com/tamatebako/tebako/issues/172) is resolved
+we plan to produce a Windows executable with debug information unstripped. You
+can opt to run `strip -S` manually, it most cases it works.
 
 MacOS build caveats:
 
-* We saw clang compiler segmentaion fault when during packaging of very large projects with XCode 14.3.1
-This issue is not reproducible with XCode 15.0.1 or higher.
+* We saw `clang` compiler segmentation fault when during packaging of very large
+projects with XCode 14.3.1. This issue is not reproducible with XCode 15.0.1 or
+higher.
 ====
 
 
@@ -597,24 +603,46 @@ brew bundle
 
 Tebako requires Bison 3+.
 
-On macOS 14, the default Bison version is 2.3, and the Homebrew formula is keg-only,
-which means that the full path to the Bison binary must be used to utilize the
-correct version.
+On macOS 14, the default Bison version is 2.3, and the Homebrew formula is
+keg-only, which means that the full path to the Bison binary must be used to
+utilize the correct version.
 
 Run the following command prior to using Tebako, or add it into your shell
 profile.
 
-====== jemalloc Library Build
+[source,sh]
+----
+export PATH="$(brew --prefix bison)/bin:$PATH"
+----
 
-The `libdwarfs` build script creates an additional jemalloc installation on macOS. This is done to satisfy the magic applied by folly during linking but uses a static library.
-If the library is created in an emulated environment (QEMU, Rosetta, etc.), there are known issues (link:https://github.com/jemalloc/jemalloc/issues/1997[jemalloc issue #1997]) where jemalloc incorrectly defines the number of significant virtual address bits (lg-vaddr parameter).
+====== jemalloc library build
 
-These issues can be fixed by explicitly setting the `--with-lg-vaddr` parameter for the jemalloc build. We decided not to automate this since we do not feel that we can provide reasonable test coverage. Instead, our build script accepts the `LG_VADDR` environment variable and passes it to the jemalloc build as `--with-lg-vaddr=${LG_VADDR}`.
+On macOS, the `libdwarfs` build script creates an additional `jemalloc`
+installation. This is done to satisfy the magic applied by folly during linking
+but uses a static library.
 
-The `LG_VADDR` parameter specifies the number of significant virtual address bits, which can vary based on the CPU architecture and emulation status.
+If the `jemalloc` library is built within an emulated environment (QEMU,
+Rosetta, etc.), there are known issues
+(link:https://github.com/jemalloc/jemalloc/issues/1997[jemalloc issue #1997])
+where `jemalloc` incorrectly detects the number of significant virtual address
+bits and therefore defines them wrongly (`lg-vaddr` parameter).
 
-Simple script to set `LG_VADDR`. Please note that it is provided for illustration only.
+Technically, these issues can be fixed by explicitly setting the
+`--with-lg-vaddr` parameter for the `jemalloc` build. However, we decided not to
+automate this since we do not feel that we can provide reasonable test coverage.
 
+Instead, our build script accepts the `LG_VADDR` environment variable and passes
+it to the jemalloc build as `--with-lg-vaddr=${LG_VADDR}`.
+
+The `LG_VADDR` parameter specifies the number of significant virtual address
+bits, which can vary based on the CPU architecture and emulation status.
+
+This is a simple example script to set `LG_VADDR`.
+
+NOTE: This is provided for illustration only.
+
+[example]
+====
 [source,sh]
 ----
 #!/bin/bash
@@ -636,12 +664,8 @@ fi
 
 echo "Setting lg-vaddr to $LG_VADDR"
 ----
+====
 
-
-[source,sh]
-----
-export PATH="$(brew --prefix bison)/bin:$PATH"
-----
 
 ===== Windows
 
@@ -678,6 +702,7 @@ $ pacman -S git tar bison flex toolchain make cmake
 
 == Packaging
 
+[[root-folder-selection]]
 === Tebako root folder (aka prefix) selection
 
 The Tebako prefix determines the base directory for the Tebako setup.
@@ -728,7 +753,7 @@ the packaging environment and collects the required dependencies. Subsequent
 invocations are much faster.
 ====
 
-Upon the next invocation tebako will use previously created packaging
+Upon the next invocation, Tebako will use previously created packaging
 environment. The press process itself takes minutes.
 
 You can manage setup of packaging environment manually; please refer to
@@ -754,7 +779,7 @@ tebako press \
 Where:
 
 `<tebako-root-folder>`::
-the Tebako root folder (see details in the Tebako Root Folder Selection section)
+the Tebako root folder (see details: <<root-folder-selection>>)
 
 `Ruby`::
 this parameter defines Ruby version that will be packaged (optional, defaults to
@@ -762,55 +787,84 @@ this parameter defines Ruby version that will be packaged (optional, defaults to
 
 `project-root`::
 a folder at the host source file system where project files are located.
-This parameter is not required if the operation mode is 'runtime'.
+This parameter is not required if the operation mode is `runtime`.
 
 `entry-point`::
 an executable file (binary executable or script) that shall be started when
-packaged file is called. This parameter is not required if the operation mode is 'runtime'.
+packaged file is called. This parameter is not required if the operation mode is `runtime`.
 
 `output`::
-the output file name (optional, defaults to `<current folder>/<entry point base name>`
+(optional)
+the output file name.
++
+Defaults to `<current folder>/<entry point base name>`.
++
 On Windows output file will have `exe` extension.
-if application is placed to a separate file (`both` or `application` mode) it will have the
-same name with `tebako` extension.
+If the application is to be a separate file (`both` or `application` mode), it
+will have the same name with the `.tebako` extension.
 
 `log-level`::
 logging level for the Tebako built-in memory filesystem driver
 (optional, defaults to `error`)
 
 `cwd`::
+(optional)
 a folder within Tebako memfs where the packaged application will start. This folder should be specified relative to the memfs root.
-If not provided, the application will start within the current folder of the host (i.e., at $PWD).
-This option is required because it is not possible to change the directory to a memfs folder until the package is started, as opposed to any host folder
-that can be set as the current directory before Tebako package invocation.  Tebako saves original working directory in a global Ruby variable `$tebako_original_pwd`.
++
+If not provided, the application will start within the current folder of the
+host (i.e., at `$PWD`).
++
+This argument is required because it is not possible to change the directory to
+a memfs folder until the package is started, as opposed to any host folder that
+can be set as the current directory before Tebako package invocation.  Tebako
+saves the original working directory in a global Ruby variable
+`$tebako_original_pwd`.
 
 `devmode`:: flag that activates development mode, in which Tebako's cache and
 packaging consistency checks are relaxed.
 
 `patchelf`::
-flag that removal a reference to GLIBC_PRIVATE version of libpthread from tebako package. This allows Linux Gnu packages to run against versions of
-libpthread that differ from the version used for packaging. For example, package created at Ubuntu 20 system can be used on Ubuntu 22. This option makes
-sense and works on Gnu Linux only. The feature is exeprimental, we may consider other approach in the future.
+Allows forward-compatibility of Tebako packages with Linux GNU distributions.
++
+Specifically, this is a flag that removes a reference to the `GLIBC_PRIVATE`
+version of `libpthread` from a Tebako package.  This allows Linux GNU packages
+to run against versions of `libpthread` that differ from the version used for
+packaging.
++
+NOTE: This option only works on GNU Linux only.
++
+[example]
+For example, a package created at Ubuntu 20 system can be used on Ubuntu 22.
++
+NOTE: The feature is exeprimental, we may consider another approach in the future.
 
 `mode`::
-output mode for tebako package (optional, defaults to `bundle`)
-bundle - place runtime and application to a single file
-both - create both run-rime and application
-application - create appplication only
-runtime - create runtime only
+output mode for tebako package (optional, defaults to `bundle`).
+
+`bundle`::: place runtime and application to a single file
+`both`::: create both run-rime and application
+`application`::: create appplication only
+`runtime`::: create runtime only
 
 `ref`::
-When tabako application package is created on Windows it is linked against tebako runtime file  name.
-ref parameter allows to specify the name of the runtime file. Default is 'tebako-runtime'.
-Note that it is the name only, runtime file can be recreated or changed but not renamed.
+(optional)
+Defaults to `tebako-runtime`.
+When a Tebako application package is created on Windows, it is linked against a
+Tebako runtime file name. The `ref` parameter allows to specify the name of the
+runtime file.
++
+NOTE: The `ref` option specificies the name of the runtime -- the runtime file
+can be recreated or changed but not renamed.
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
-Please refer to the separate section below for tebafile description.
+Please refer to the separate section below for description of the tebafile.
 +
-NOTES:
-  * Development mode is *not intended for production use* and should only be used during development.
-  * `entry-point` and `project-root-folder` are required parameters and may be provided either via command-line or in `tebafile`.
+NOTE: Development mode is *not intended for production use* and should only be
+used during development.
++
+NOTE: `entry-point` and `project-root-folder` are required parameters and may be
+provided either via command-line or in the tebafile.
 
 [example]
 ====
@@ -851,9 +905,9 @@ $ tebako setup \
 
 Where:
 
-`<tebako-root-folder>`:: the Tebako root folder (see details in the Tebako Root Folder Selection section)
+`<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
 
-`Ruby`:: parameter defines Ruby version that will be packaged (optional, defaults to 3.1.6)
+`Ruby`:: parameter defines Ruby version that will be packaged (optional, defaults to `3.1.6`)
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
@@ -878,7 +932,7 @@ $ tebako clean \
 
 Where:
 
-`<tebako-root-folder>`:: the Tebako root folder (see details in the Tebako Root Folder Selection section)
+`<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
@@ -945,8 +999,14 @@ $ tebako hash
 
 === Tebako configuration file
 
-It is possible to provide all or some options for the `tebako setup/press/clean/clean_ruby` commands via Tebako configuration file ('tebafile').
-Tebafile is a YAML file with a single section 'options'. The options are the same as long names for the command line. For, example for the prefix option
+It is possible to provide all or some options for the `tebako
+{setup | press | clean | clean_ruby}` commands via a Tebako configuration file
+('tebafile').
+
+Tebafile is a YAML file with a single key `options`. The options are the same as
+long names for the command line.
+
+For example, for the prefix option:
 
 [source]
 ----
@@ -954,15 +1014,21 @@ Tebafile is a YAML file with a single section 'options'. The options are the sam
 ----
 the key in the YAML file would be 'prefix'.
 
-Below is an example tebafile that sets values for prefix and Ruby options
+.Example tebafile that sets values for prefix and Ruby options
+[example]
+====
+This is an example tebafile that sets values for prefix and Ruby options:
+
 [source,yaml]
 ----
 options:
   prefix: /tmp/tebako
   Ruby: 3.2.4
 ----
+====
 
-Please note that the options provided on the command line have preference over tebafile settings.
+Please note that the options provided on the command line have preference over
+tebafile settings.
 
 === Exit codes
 
@@ -1083,7 +1149,9 @@ These scenarios determine how the project is packaged and where the entry point 
 
 == Run-time options
 
-Generally Tebako package passes command line options to the packaged application
+=== General
+
+Generally Tebako package passes command line options to the packaged application.
 
 [example]
 ====
@@ -1111,7 +1179,9 @@ myproject --option --parameter value
 ----
 ====
 
-However there are several command-line parameters that are intercepted processed by Tebako bootstrap code as follows
+However there are several command-line parameters that are intercepted processed
+by Tebako bootstrap code as described below.
+
 
 === Image extraction (--tebako-extract option)
 
@@ -1146,27 +1216,42 @@ require 'fileutils'
 FileUtils.copy_entry '<in-memory filesystem root>', ARGV[2] || 'source_filesystem'
 ----
 
-=== Mounting Host Folder to Tebako Memfs (`--tebako-mount` option)
+=== Mounting host folder to Tebako memfs (`--tebako-mount` option)
 
-Some programs unconditionally use folders located under the application root, and when processed by Tebako
-or similar tools, these folders are included in the packaging.
-
-For example, there is no configuration option to change where Rails expects the `tmp` folder to be.
-The location is hardcoded in multiple places within the Rails codebase, residing under the application root,
-and as a result, it gets included in the read-only Tebako memfs. Although patches have been proposed
-(e.g., https://github.com/rails/rails/issues/39583), there is currently no way to change the paths for
-temporary files, caches, and sockets.
-
-To address this limitation in Rails and similar issues in other applications, Tebako provides an option
-to mount a host folder to the memfs tree.
-
-When using Tebako, consider the packaging scenario mentioned above, as it defines the layout of the application
-tree. The `--tebako-extract` option may be useful for understanding the placement of files and folders.
+Some programs unconditionally use folders located under the application root,
+and when processed by Tebako or similar tools, these folders are included in the
+packaging.
 
 [example]
 ====
-The following command starts a `rails.tebako` package with `$PWD/tmp` mounted as `local/tmp` in the memfs.
+Rails, for example, does not provide a configuration option to change where
+it expects the `tmp` folder to be.
+
+The location is hardcoded in multiple places within the Rails codebase, residing
+under the application root, and as a result, it gets included in the read-only
+Tebako memfs.
+
+Although patches have been proposed (e.g.,
+https://github.com/rails/rails/issues/39583), there is currently no way to
+change the paths for temporary files, caches, and sockets.
+====
+
+To address this inevitable limitation for Ruby applications,
+Tebako provides an option to mount a host folder to the memfs tree.
+
+When using Tebako, consider the packaging scenario mentioned above, as it
+defines the layout of the application tree.
+
+The `--tebako-extract` option may be useful for understanding the placement of
+files and folders.
+
+[example]
+====
+The following command starts a `rails.tebako` package with `$PWD/tmp` mounted as
+`local/tmp` in the memfs.
+
 Any remaining command-line parameters are passed to the application.
+
 [source,sh]
 ----
 rails.tebako --tebako-mount local/tmp:$PWD/tmp server
@@ -1174,15 +1259,17 @@ rails.tebako --tebako-mount local/tmp:$PWD/tmp server
 ====
 
 The `--tebako-mount` option has the following syntax:
+
 [source,sh]
 ----
 --tebako-mount <memfs path>:<host path>
 ----
 
-The `--tebako-mount` option can be repeated multiple times to mount more than one object. The `memfs path`
-is relative to the memfs root, and it is recommended to use absolute paths for host objects. Both directories
-and files can be mounted in this way. Tebako allows overlaying existing memfs objects, so there are no significant
-limitations.
+The `--tebako-mount` option can be repeated multiple times to mount more than
+one object. The `memfs path` is relative to the memfs root, and it is
+recommended to use absolute paths for host objects. Both directories and files
+can be mounted in this way. Tebako allows overlaying existing memfs objects, so
+there are no significant limitations.
 
 == Trivia: origin of name
 
