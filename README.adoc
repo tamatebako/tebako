@@ -310,9 +310,6 @@ Removes Tebako Ruby artifacts.
 `hash`::
 Calculates the Tebako script hash for use as a cache key in CI/CD environments.
 
-`extract`::
-Extracts the filesystem from a Tebako package.
-
 `version`::
 Displays the Tebako version.
 
@@ -1027,8 +1024,24 @@ options:
 ----
 ====
 
-Please note that the options provided on the command line have preference over
-tebafile settings.
+=== Options prefernce order
+
+Tebako supports several methods to set options. The table below show preference order and limitations for specific options.
+samller order means higher proirity.
+
+[cols="4", options="header"]
+|===
+| Order | Mode | Option source | Applicability
+
+| 1 | All | Command-line | All options
+| 2 | All |Tebako configuration file | All option except ``--tebafile`` (you can not specify new tebafile in a tebafile)
+.2+| 3 .2+| All .2+| Environment variable | TEBAKO_PREFIX to set ``--prefix`` option
+| LG_VADDR to set ``--with-lg-vaddr`` jemalloc parameter
+.2+| 4 | ``runtime`` | Tebako defaults | All options except ``--entry-point`` and ``--root`` that are mandatory
+| ``bundle``, ``both``, ``application`` | Tebako defaults | All options
+
+|===
+
 
 === Exit codes
 
@@ -1182,8 +1195,50 @@ myproject --option --parameter value
 However there are several command-line parameters that are intercepted processed
 by Tebako bootstrap code as described below.
 
+=== Running tebako image by tebako runtime (`--tebako-run` option)
 
-=== Image extraction (--tebako-extract option)
+Tebako provides an option to an extract its DwarFS filesystem from a package to
+a local folder for verification or execution.
+
+[source,sh]
+----
+$ <tebako-runtime> --tebako-run [<tebako application>]
+----
+
+Where,
+
+`<tebako runtime>`::
+The tebako runtime in ```runtime``` or ```both``` mode
+
+`<tebako application>`::
+The tebako application package created in ```application``` or ```both``` mode
+
+[example]
+====
+Creating separate runtime and application and running it:
+
+[source,sh]
+----
+tebako press -m runtime -o tebako-runtime
+tebako press -m application -o tebako-application -e hello.rb -r test
+tabako-runtime --tebako-run tebako-application Maxim
+----
+where hello.rb is the Ruby application
+[source,Ruby]
+----
+# frozen_string_literal: true
+
+puts "Hello, #{ARGV[0]}!"
+----
+And expected output from ```tabako-runtime --tebako-run tebako-application Maxim``` is
+[source,sh]
+----
+Hello, Maxim!
+----
+
+====
+
+=== Image extraction (`--tebako-extract` option)
 
 Tebako provides an option to an extract its DwarFS filesystem from a package to
 a local folder for verification or execution.
