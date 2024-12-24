@@ -167,6 +167,11 @@ module Tebako
     end
 
     no_commands do
+      def source
+        c_path = Pathname.new(__FILE__).realpath
+        @source ||= File.expand_path("../../..", c_path)
+      end
+
       def validate_press_options
         return unless options["mode"] != "runtime"
 
@@ -176,6 +181,7 @@ module Tebako
         raise Thor::Error, "No value provided for required options #{opts}" unless opts.empty?
       end
     end
+
     no_commands do
       include Tebako::CliHelpers
     end
