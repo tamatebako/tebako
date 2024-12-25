@@ -84,7 +84,7 @@ module Tebako
 
     REF_DESCRIPTION = <<~DESC
       "Referenced tebako run-time package; 'tebako-runtime' by default".
-      This option specifies the tebako runtime to be used by the application on Windows and if mode is 'application' only .
+      #{" " * 65}# This option specifies the tebako runtime to be used by the application on Windows and if mode is 'application' only .
     DESC
 
     RGP_DESCRIPTION = <<~DESC

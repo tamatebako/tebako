@@ -37,15 +37,16 @@ module Tebako
       "3.1.6" => "0d0dafb859e76763432571a3109d1537d976266be3083445651dc68deed25c22",
       "3.2.4" => "c72b3c5c30482dca18b0f868c9075f3f47d8168eaf626d4e682ce5b59c858692",
       "3.2.5" => "ef0610b498f60fb5cfd77b51adb3c10f4ca8ed9a17cb87c61e5bea314ac34a16",
+      "3.2.6" => "d9cb65ecdf3f18669639f2638b63379ed6fbb17d93ae4e726d4eb2bf68a48370",
       "3.3.3" => "83c05b2177ee9c335b631b29b8c077b4770166d02fa527f3a9f6a40d13f3cce2",
       "3.3.4" => "fe6a30f97d54e029768f2ddf4923699c416cdbc3a6e96db3e2d5716c7db96a34",
-      "3.3.5" => "3781a3504222c2f26cb4b9eb9c1a12dbf4944d366ce24a9ff8cf99ecbce75196"
+      "3.3.5" => "3781a3504222c2f26cb4b9eb9c1a12dbf4944d366ce24a9ff8cf99ecbce75196",
+      "3.3.6" => "8dc48fffaf270f86f1019053f28e51e4da4cce32a36760a0603a9aee67d7fd8d"
     }.freeze
 
     MIN_RUBY_VERSION_WINDOWS = "3.1.6"
-    DEFAULT_RUBY_VERSION = "3.2.5"
+    DEFAULT_RUBY_VERSION = "3.2.6"
 
-    # rub_ver version = options["Ruby"].nil? ? DEFAULT_RUBY_VERSION : options["Ruby"]
     def initialize(ruby_version)
       @ruby_version = ruby_version.nil? ? DEFAULT_RUBY_VERSION : ruby_version
 

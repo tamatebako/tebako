@@ -207,62 +207,8 @@ RSpec.describe Tebako::RubyVersion do
   end
 
   describe "DEFAULT_RUBY_VERSION" do
-    it "is set to 3.2.5" do
-      expect(Tebako::RubyVersion::DEFAULT_RUBY_VERSION).to eq("3.2.5")
-    end
-  end
-
-  describe "#version_check_msys" do
-    let(:min_ruby_version_windows) { Gem::Version.new(Tebako::CliRubies::MIN_RUBY_VERSION_WINDOWS) }
-
-    context "when version is below minimum on Windows" do
-      let(:version) { Tebako::RubyVersion.new("3.0.7") }
-      it "raises a Tebako::Error" do
-        stub_const("RUBY_PLATFORM", "msys")
-        expect do
-          version.version_check_msys
-        end.to raise_error(Tebako::Error, "Ruby version 3.0.7 is not supported on Windows")
-      end
-    end
-
-    context "when version is minimum on Windows" do
-      let(:version) { Tebako::RubyVersion.new("3.1.6") }
-      it "does not raise an error" do
-        stub_const("RUBY_PLATFORM", "msys")
-        expect { version.version_check_msys }.not_to raise_error
-      end
-    end
-
-    context "when version is above minimum on Windows" do
-      let(:version) { Tebako::RubyVersion.new("3.2.5") }
-      it "does not raise an error" do
-        stub_const("RUBY_PLATFORM", "msys")
-        expect { version.version_check_msys }.not_to raise_error
-      end
-    end
-  end
-
-  describe "#version_check" do
-    context "when the Ruby version is supported" do
-      let(:version) { Tebako::RubyVersion.new("3.2.5") }
-      it "does not raise an error" do
-        expect { version.version_check }.not_to raise_error
-      end
-    end
-
-    context "when the Ruby version is not supported" do
-      let(:version) { Tebako::RubyVersion.new("2.6.0") }
-      it "raises a Tebako::Error" do
-        expect do
-          version.version_check("2.6.0")
-        end.to raise_error(Tebako::Error, "Ruby version 2.6.0 is not supported")
-      end
-    end
-  end
-
-  describe "DEFAULT_RUBY_VERSION" do
-    it "is set to 3.2.5" do
-      expect(Tebako::RubyVersion::DEFAULT_RUBY_VERSION).to eq("3.2.5")
+    it "is set to 3.2.6" do
+      expect(Tebako::RubyVersion::DEFAULT_RUBY_VERSION).to eq("3.2.6")
     end
   end
 
