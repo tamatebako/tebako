@@ -34,8 +34,8 @@ require "tebako/ruby_version"
 
 RSpec.describe Tebako::OptionsManager do
   let(:options) { {} }
-  let(:ruby_ver) { "3.2.5" }
-  let(:ruby_hash) { Tebako::RubyVersion::RUBY_VERSIONS["3.2.5"] }
+  let(:ruby_ver) { "3.2.6" }
+  let(:ruby_hash) { Tebako::RubyVersion::RUBY_VERSIONS["3.2.6"] }
 
   describe "#b_env" do
     let(:options_manager) { Tebako::OptionsManager.new({}) }

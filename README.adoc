@@ -104,8 +104,8 @@ higher.
 | 2.7.8 | Linux, macOS
 | 3.0.7 | Linux, macOS
 | 3.1.6 | Linux, macOS, Windows
-| 3.2.{4,5} | Linux, macOS, Windows
-| 3.3.{3,4,5} | Linux, macOS, Windows
+| 3.2.{4,5,6} | Linux, macOS, Windows
+| 3.3.{3,4,5,6} | Linux, macOS, Windows
 
 |===
 
@@ -780,7 +780,7 @@ the Tebako root folder (see details: <<root-folder-selection>>)
 
 `Ruby`::
 this parameter defines Ruby version that will be packaged (optional, defaults to
-`3.1.6`)
+`3.2.6`)
 
 `project-root`::
 a folder at the host source file system where project files are located.
@@ -904,7 +904,7 @@ Where:
 
 `<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
 
-`Ruby`:: parameter defines Ruby version that will be packaged (optional, defaults to `3.1.6`)
+`Ruby`:: parameter defines Ruby version that will be packaged (optional, defaults to `3.2.6`)
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).

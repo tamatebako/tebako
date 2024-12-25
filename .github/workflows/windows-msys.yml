@@ -149,7 +149,7 @@ jobs:
           - sys: ucrt64
             CC: gcc
             CXX: g++
-        package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
+        package_ruby_ver: [ '3.1.6', '3.2.6', '3.3.6' ]
         script: ['', '-app']
     env: ${{ matrix.env }}
 
@@ -232,7 +232,7 @@ jobs:
           - sys: ucrt64
             CC: gcc
             CXX: g++
-        package_ruby_ver: [ '3.1.6', '3.2.5', '3.3.5' ]
+        package_ruby_ver: [ '3.1.6', '3.2.6', '3.3.6' ]
     env: ${{ matrix.env }}
 
     defaults:
