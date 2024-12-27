@@ -41,7 +41,8 @@ module Tebako
       "3.3.3" => "83c05b2177ee9c335b631b29b8c077b4770166d02fa527f3a9f6a40d13f3cce2",
       "3.3.4" => "fe6a30f97d54e029768f2ddf4923699c416cdbc3a6e96db3e2d5716c7db96a34",
       "3.3.5" => "3781a3504222c2f26cb4b9eb9c1a12dbf4944d366ce24a9ff8cf99ecbce75196",
-      "3.3.6" => "8dc48fffaf270f86f1019053f28e51e4da4cce32a36760a0603a9aee67d7fd8d"
+      "3.3.6" => "8dc48fffaf270f86f1019053f28e51e4da4cce32a36760a0603a9aee67d7fd8d",
+      "3.4.1" => "3d385e5d22d368b064c817a13ed8e3cc3f71a7705d7ed1bae78013c33aa7c87f"
     }.freeze
 
     MIN_RUBY_VERSION_WINDOWS = "3.1.6"
@@ -75,6 +76,10 @@ module Tebako
 
     def ruby33?
       @ruby33 ||= ruby3x? && @ruby_version[2].to_i >= 3
+    end
+
+    def ruby34?
+      @ruby34 ||= ruby3x? && @ruby_version[2].to_i >= 4
     end
 
     def api_version

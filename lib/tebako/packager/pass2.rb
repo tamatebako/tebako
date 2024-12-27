@@ -46,6 +46,8 @@ module Tebako
             patch_map.store("common.mk", COMMON_MK_PATCH)
           end
           extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
+          patch_map.store("prism_compile.c", PRISM_PATCHES) if ruby_ver.ruby34?
+          patch_map
         end
 
         private
@@ -68,11 +70,10 @@ module Tebako
         end
 
         def get_dln_c_patch(ostype, ruby_ver)
+          pattern = "#ifndef dln_loaderror"
           # Not using substitutions of dlxxx functions on Windows
           dln_c_patch = {
-            "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;" =>
-              "#{PatchHelpers.msys?(ostype) ? C_FILE_SUBST_LESS : C_FILE_SUBST}\n" \
-              "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;\n"
+            pattern => "#{PatchHelpers.msys?(ostype) ? C_FILE_SUBST_LESS : C_FILE_SUBST}\n#{pattern}\n"
           }
 
           if PatchHelpers.msys?(ostype)

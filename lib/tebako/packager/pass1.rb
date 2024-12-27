@@ -55,6 +55,10 @@ module Tebako
         "#option nodynamic" => "option nodynamic"
       }.freeze
 
+      # ....................................................
+      # This is something that I cannnot explain
+      # (this patch does not seem related to static compilation)
+
       EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH = {
         "#include \"ruby/ruby.h\"" => <<~SUBST
           #include "ruby/ruby.h"
@@ -133,11 +137,6 @@ module Tebako
             "tool/rbinstall.rb" => TOOL_RBINSTALL_RB_PATCH,
 
             # ....................................................
-            # This is something that I cannnot explain
-            # (this patch does not seem related to static compilation)
-            "ext/bigdecimal/bigdecimal.h" => EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH,
-
-            # ....................................................
             # Allow only packaged gems (from within memfs)
             "lib/rubygems/path_support.rb" => rubygems_path_support_patch(mount_point),
 
@@ -149,6 +148,9 @@ module Tebako
 
         def get_patch_map(ostype, mount_point, ruby_ver)
           patch_map = get_base_patch_map(mount_point)
+
+          # ....................................................
+          patch_map.store("ext/bigdecimal/bigdecimal.h", EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH) unless ruby_ver.ruby34?
 
           # ....................................................
           patch_map.store("configure", DARWIN_CONFIGURE_PATCH) if ostype =~ /darwin/
@@ -172,7 +174,7 @@ module Tebako
 
         private
 
-        include Tebako::Packager::PatchLiterals
+        #        include Tebako::Packager::PatchLiterals
         include Tebako::Packager::PatchBuildsystem
 
         def get_gnumakefile_in_patch_p1(ruby_ver) # rubocop:disable Metrics/MethodLength
