@@ -29,7 +29,7 @@
 module Tebako
   module Packager
     # Ruby patching literals (pass2)
-    module PatchLiterals
+    module PatchLiterals # rubocop:disable Metrics/ModuleLength
       TOOL_MKCONFIG_RB_SUBST = <<~SUBST
         # -- Start of tebako patch --
             v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
@@ -149,6 +149,10 @@ module Tebako
         "else if (e == EIO) {" =>
           "else if (e == EIO /* tebako patch */ && !within_tebako_memfs(path)) {"
       }.freeze
+
+      DLN_C_PRE34_PATCH_PATTERN = "static const char funcname_prefix[sizeof(FUNCNAME_PREFIX) - 1] = FUNCNAME_PREFIX;"
+
+      DLN_C_PATCH_PATTERN = "#define init_funcname(buf, file) build_funcname(FUNCNAME_PREFIX, buf, file)"
 
       DLN_C_MSYS_PATCH_PRE32 = {
         "    winfile = rb_w32_mbstr_to_wstr(CP_UTF8, file, -1, NULL);" => <<~SUBST
@@ -327,6 +331,40 @@ module Tebako
         "ext/extmk.rb" => {
           "mf.macro \"EXTLIBS\", $extlibs" => "#  mf.macro \"EXTLIBS\", $extlibs   tebako patched"
         }
+      }.freeze
+
+      PRISM_PATTERN_1 = "pm_string_init_result_t init_result = pm_read_file(&result->input, RSTRING_PTR(filepath));"
+
+      PRISM_SUBST_1 = <<~SUBST
+        /* -- Start of tebako patch -- */
+            pm_string_init_result_t init_result;
+            if (within_tebako_memfs(RSTRING_PTR(filepath)))
+            {
+              init_result = tebako_string_file_init(&result->input, RSTRING_PTR(filepath));
+            }
+            else
+            {
+              init_result = pm_read_file(&result->input, RSTRING_PTR(filepath));
+            }
+            /* -- End of tebako patch -- */
+      SUBST
+
+      PRISM_PATTERN_2 = "#include \"prism.h\""
+      PRISM_SUBST_2 = <<~SUBST
+        #{PRISM_PATTERN_2}
+
+        /* -- Start of tebako patch -- */
+        #include <tebako/tebako-config.h>
+        #include <tebako/tebako-defines.h>
+        #include <tebako/tebako-io.h>
+        #include <tebako/tebako-prism.h>
+        /* -- End of tebako patch -- */
+
+      SUBST
+
+      PRISM_PATCHES = {
+        PRISM_PATTERN_1 => PRISM_SUBST_1,
+        PRISM_PATTERN_2 => PRISM_SUBST_2
       }.freeze
     end
   end

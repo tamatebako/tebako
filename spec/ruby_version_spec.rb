@@ -79,6 +79,10 @@ RSpec.describe Tebako::RubyVersion do
         expect(version.ruby33?).to be false
       end
 
+      it "returns false for ruby34?" do
+        expect(version.ruby34?).to be false
+      end
+
       it "returns '3.1.0' for api_version" do
         expect(version.api_version).to eq("3.1.0")
       end
@@ -109,6 +113,10 @@ RSpec.describe Tebako::RubyVersion do
 
       it "returns false for ruby33?" do
         expect(version.ruby33?).to be false
+      end
+
+      it "returns false for ruby34?" do
+        expect(version.ruby34?).to be false
       end
 
       it "returns '3.2.0' for api_version" do
@@ -143,12 +151,52 @@ RSpec.describe Tebako::RubyVersion do
         expect(version.ruby33?).to be true
       end
 
+      it "returns false for ruby34?" do
+        expect(version.ruby34?).to be false
+      end
+
       it "returns '3.3.0' for api_version" do
         expect(version.api_version).to eq("3.3.0")
       end
 
       it "returns '330' for lib_version" do
         expect(version.lib_version).to eq("330")
+      end
+    end
+
+    context "with version 3.4.1" do
+      let(:version) { Tebako::RubyVersion.new("3.4.1") }
+
+      it "returns true for ruby3x?" do
+        expect(version.ruby3x?).to be true
+      end
+
+      it "returns true for ruby31?" do
+        expect(version.ruby31?).to be true
+      end
+
+      it "returns true for ruby32?" do
+        expect(version.ruby32?).to be true
+      end
+
+      it "returns false for ruby32only?" do
+        expect(version.ruby32only?).to be false
+      end
+
+      it "returns true for ruby33?" do
+        expect(version.ruby33?).to be true
+      end
+
+      it "returns true for ruby34?" do
+        expect(version.ruby34?).to be true
+      end
+
+      it "returns '3.4.0' for api_version" do
+        expect(version.api_version).to eq("3.4.0")
+      end
+
+      it "returns '340' for lib_version" do
+        expect(version.lib_version).to eq("340")
       end
     end
 
@@ -175,6 +223,10 @@ RSpec.describe Tebako::RubyVersion do
 
         it "returns false for ruby33?" do
           expect(version.ruby33?).to be false
+        end
+
+        it "returns false for ruby34?" do
+          expect(version.ruby34?).to be false
         end
 
         it "returns '2.7.0' for api_version" do
