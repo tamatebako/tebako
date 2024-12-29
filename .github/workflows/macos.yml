@@ -204,7 +204,7 @@ jobs:
         shell: bash
         run: |
           bundle install
-          RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests-app.sh
+          MODE=app RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
   tests-2:
     needs: setup
