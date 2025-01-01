@@ -242,12 +242,14 @@ RSpec.describe Tebako::Packager do
     let(:patch_map) { { "file1" => "patch1", "file2" => "patch2" } }
 
     before do
-      allow(Tebako::Packager::Pass1A).to receive(:get_patch_map).and_return(patch_map)
+      allow_any_instance_of(Tebako::Packager::Pass1APatch).to receive(:patch_map).and_return(patch_map)
       allow(Tebako::Packager).to receive(:do_patch)
     end
 
     it "calls do_patch with the correct parameters" do
-      expect(Tebako::Packager).to receive(:do_patch).with(patch_map, ruby_source_dir)
+      expect(Tebako::Packager)
+        .to receive(:do_patch)
+        .with(patch_map, ruby_source_dir)
       described_class.pass1a(ruby_source_dir)
     end
   end

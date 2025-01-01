@@ -25,22 +25,16 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require_relative "patch_literals"
+RSpec.describe Tebako::Packager::Patch do
+  describe "#patch_map" do
+    it "returns an empty hash" do
+      patch = Tebako::Packager::Patch.new
+      expect(patch.patch_map).to eq({})
+    end
 
-# Tebako - an executable packager
-module Tebako
-  module Packager
-    # Ruby patching definitions (pass1a)
-    module Pass1A
-      class << self
-        def get_patch_map # rubocop:disable Naming/AccessorMethodName
-          {
-            "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH
-          }
-        end
-
-        include Tebako::Packager::PatchLiterals
-      end
+    it "returns a frozen hash" do
+      patch = Tebako::Packager::Patch.new
+      expect(patch.patch_map).to be_frozen
     end
   end
 end

@@ -122,6 +122,15 @@ module Tebako
         "Logging::message \"=== Checking done. ===\\n\"" => OPENSSL_EXTCONF_RB_SUBST
       }.freeze
 
+      INCLUDE_RUBY_ONIGMO_H_PATCH = {
+        "#  define ONIG_EXTERN   RUBY_EXTERN" => "#  define ONIG_EXTERN  extern"
+      }.freeze
+
+      WIN32_WINMAIN_C_PATCH = {
+        "WinMain(HINSTANCE current, HINSTANCE prev, LPSTR cmdline, int showcmd)" =>
+          "wWinMain(HINSTANCE current, HINSTANCE prev, LPWSTR cmdline, int showcmd)"
+      }.freeze
+
       class << self
         def get_base_patch_map(mount_point)
           {
@@ -160,14 +169,7 @@ module Tebako
           # fails to deal with a default gem from statically linked extension
           patch_map.store("lib/rubygems/openssl.rb", RUBYGEM_OPENSSL_RB_PATCH) if ruby_ver.ruby3x?
 
-          if ostype =~ /msys/
-            # ....................................................
-            # Generate export definitions; use WinMain to build rubyw.exe
-            patch_map.store("cygwin/GNUmakefile.in", get_gnumakefile_in_patch_p1(ruby_ver))
-            # ....................................................
-            # RUBY_EXPORT=1 (shall be set for static builds but is missing in openssl extension)
-            patch_map.store("ext/openssl/extconf.rb", OPENSSL_EXTCONF_RB_PATCH)
-          end
+          patch_map.merge!(get_msys_patches(ruby_ver)) if ostype =~ /msys/
 
           patch_map
         end
@@ -203,6 +205,23 @@ module Tebako
 
             "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST
           }
+        end
+
+        def get_msys_patches(ruby_ver)
+          patch_map = {
+            # ....................................................
+            # Generate export definitions; use WinMain to build rubyw.exe
+            "cygwin/GNUmakefile.in" => get_gnumakefile_in_patch_p1(ruby_ver),
+            # ....................................................
+            # RUBY_EXPORT=1 (shall be set for static builds but is missing in openssl extension)
+            "ext/openssl/extconf.rb" => OPENSSL_EXTCONF_RB_PATCH
+          }
+          # ....................................................
+          # RUBY_EXTERN shall be extern for static build but is set to __declspec(dllimport) for encodin libarary
+          patch_map.store("include/ruby/onigmo.h", INCLUDE_RUBY_ONIGMO_H_PATCH) if ruby_ver.ruby34?
+          # ....................................................
+          patch_map.store("win32/winmain.c", WIN32_WINMAIN_C_PATCH) if ruby_ver.ruby34?
+          patch_map
         end
 
         def rubygems_path_support_patch_one(mount_point)

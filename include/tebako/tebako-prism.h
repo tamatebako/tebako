@@ -1,3 +1,5 @@
+#include <fcntl.h>
+
 static pm_string_init_result_t
 tebako_string_file_init(pm_string_t *string, const char *filepath) {
 
