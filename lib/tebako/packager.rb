@@ -34,7 +34,7 @@ require_relative "deploy_helper"
 require_relative "ruby_builder"
 require_relative "stripper"
 require_relative "packager/pass1"
-require_relative "packager/pass1a"
+require_relative "packager/pass1a_patch"
 require_relative "packager/pass2"
 require_relative "packager/patch_helpers"
 
@@ -132,8 +132,8 @@ module Tebako
       # Patch gem_prelude.rb
       def pass1a(ruby_source_dir)
         puts "-- Running pass1a script"
-
-        do_patch(Pass1A.get_patch_map, ruby_source_dir)
+        patch = Pass1APatch.new.patch_map
+        do_patch(patch, ruby_source_dir)
       end
 
       # Pass2

@@ -29,7 +29,7 @@
 module Tebako
   module Packager
     # Ruby patching literals (pass2)
-    module PatchLiterals # rubocop:disable Metrics/ModuleLength
+    module PatchLiterals
       TOOL_MKCONFIG_RB_SUBST = <<~SUBST
         # -- Start of tebako patch --
             v_head_comp = "  CONFIG[\\"prefix\\"] \#{eq} "
@@ -212,20 +212,6 @@ module Tebako
         #include <tebako/tebako-io.h>
         /* -- End of tebako patch -- */
       SUBST
-
-      GEM_PRELUDE_RB_PATCH = {
-        "if defined?(DidYouMean)" => <<~SUBST
-          if defined?(DidYouMean)
-
-          # -- Start of tebako patch --
-          begin
-            require 'tebako-runtime'
-          rescue LoadError
-            warn "'tebako-runtime' was not loaded."
-          end
-          # -- End of tebako patch --
-        SUBST
-      }.freeze
 
       IO_C_SUBST = <<~SUBST
         /* -- Start of tebako patch -- */
