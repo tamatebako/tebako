@@ -190,12 +190,14 @@ RSpec.describe Tebako::Packager do
     let(:ruby_source_dir) { "/path/to/ruby_source" }
     let(:mount_point) { "/__tebako_memfs__" }
     let(:src_dir) { "/path/to/src" }
-    let(:ruby_ver) { "2.7.2" }
+    let(:ruby_ver) { Tebako::RubyVersion.new("3.2.6") }
     let(:patch_map) { { "file1" => "patch1", "file2" => "patch2" } }
 
     before do
       allow(Tebako::Packager::PatchHelpers).to receive(:recreate)
-      allow(Tebako::Packager::Pass1).to receive(:get_patch_map).and_return(patch_map)
+      allow_any_instance_of(Tebako::Packager::Pass1Patch)
+        .to receive(:patch_map)
+        .and_return(patch_map)
       allow(Tebako::Packager).to receive(:do_patch)
       allow(Tebako::Packager::PatchHelpers).to receive(:restore_and_save_files)
     end
