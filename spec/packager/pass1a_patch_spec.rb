@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,6 +25,29 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-module Tebako
-  VERSION = "0.12.0"
+RSpec.describe Tebako::Packager::Pass1APatch do
+  describe "#patch_map" do
+    it "returns a hash with the correct patch for gem_prelude.rb" do
+      patch = Tebako::Packager::Pass1APatch.new
+      expected_patch = {
+        "if defined?(DidYouMean)" => <<~SUBST
+          if defined?(DidYouMean)
+
+          # -- Start of tebako patch --
+          begin
+            require 'tebako-runtime'
+          rescue LoadError
+            warn "'tebako-runtime' was not loaded."
+          end
+          # -- End of tebako patch --
+        SUBST
+      }
+      expect(patch.patch_map).to eq({ "gem_prelude.rb" => expected_patch })
+    end
+
+    it "returns a frozen hash" do
+      patch = Tebako::Packager::Pass1APatch.new
+      expect(patch.patch_map).to be_frozen
+    end
+  end
 end

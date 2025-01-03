@@ -106,6 +106,7 @@ higher.
 | 3.1.6 | Linux, macOS, Windows
 | 3.2.{4,5,6} | Linux, macOS, Windows
 | 3.3.{3,4,5,6} | Linux, macOS, Windows
+| 3.4.1 | Linux, macOS, Windows
 
 |===
 

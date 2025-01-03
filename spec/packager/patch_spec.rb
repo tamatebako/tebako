@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,6 +25,16 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-module Tebako
-  VERSION = "0.12.0"
+RSpec.describe Tebako::Packager::Patch do
+  describe "#patch_map" do
+    it "returns an empty hash" do
+      patch = Tebako::Packager::Patch.new
+      expect(patch.patch_map).to eq({})
+    end
+
+    it "returns a frozen hash" do
+      patch = Tebako::Packager::Patch.new
+      expect(patch.patch_map).to be_frozen
+    end
+  end
 end

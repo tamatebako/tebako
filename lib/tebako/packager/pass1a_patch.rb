@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,6 +25,31 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require_relative "patch"
+# Tebako - an executable packager
 module Tebako
-  VERSION = "0.12.0"
+  module Packager
+    # Ruby patching definitions (pass1a)
+    class Pass1APatch < Patch
+      GEM_PRELUDE_RB_PATCH = {
+        "if defined?(DidYouMean)" => <<~SUBST
+          if defined?(DidYouMean)
+
+          # -- Start of tebako patch --
+          begin
+            require 'tebako-runtime'
+          rescue LoadError
+            warn "'tebako-runtime' was not loaded."
+          end
+          # -- End of tebako patch --
+        SUBST
+      }.freeze
+
+      def patch_map
+        {
+          "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH
+        }.freeze
+      end
+    end
+  end
 end

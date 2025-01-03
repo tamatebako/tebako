@@ -33,8 +33,8 @@ require_relative "error"
 require_relative "deploy_helper"
 require_relative "ruby_builder"
 require_relative "stripper"
-require_relative "packager/pass1"
-require_relative "packager/pass1a"
+require_relative "packager/pass1_patch"
+require_relative "packager/pass1a_patch"
 require_relative "packager/pass2"
 require_relative "packager/patch_helpers"
 
@@ -119,7 +119,8 @@ module Tebako
         puts "-- Running pass1 script"
 
         PatchHelpers.recreate(src_dir)
-        do_patch(Pass1.get_patch_map(ostype, mount_point, ruby_ver), ruby_source_dir)
+        patch = crt_pass1_patch(ostype, mount_point, ruby_ver)
+        do_patch(patch.patch_map, ruby_source_dir)
 
         # Roll back pass1a, pass2 patches
         # Just in case we are recovering after some error
@@ -132,8 +133,8 @@ module Tebako
       # Patch gem_prelude.rb
       def pass1a(ruby_source_dir)
         puts "-- Running pass1a script"
-
-        do_patch(Pass1A.get_patch_map, ruby_source_dir)
+        patch = Pass1APatch.new.patch_map
+        do_patch(patch, ruby_source_dir)
       end
 
       # Pass2

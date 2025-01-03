@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -25,21 +25,13 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require_relative "patch_literals"
-
 # Tebako - an executable packager
 module Tebako
   module Packager
-    # Ruby patching definitions (pass1a)
-    module Pass1A
-      class << self
-        def get_patch_map # rubocop:disable Naming/AccessorMethodName
-          {
-            "gem_prelude.rb" => GEM_PRELUDE_RB_PATCH
-          }
-        end
-
-        include Tebako::Packager::PatchLiterals
+    # Ruby patching definitions (common base)
+    class Patch
+      def patch_map
+        {}.freeze
       end
     end
   end
