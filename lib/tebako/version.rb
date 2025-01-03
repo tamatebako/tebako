@@ -26,5 +26,5 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 module Tebako
-  VERSION = "0.11.0"
+  VERSION = "0.12.0"
 end
