@@ -200,7 +200,7 @@ module Tebako
         begin
           FileUtils.cp_r(File.join(@fs_root, "."), dest)
         rescue StandardError
-          raise Tebako::Error.new("#{@fs_root} is not accessible or does not exist.", 107)
+          raise Tebako::Error.new("#{@fs_root} does not exist or is not accessible.", 107)
         end
         return
       end

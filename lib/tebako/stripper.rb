@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -36,7 +36,8 @@ module Tebako
   module Stripper
     DELETE_EXTENSIONS = %w[o lo obj a la lib].freeze
     BIN_FILES = %w[
-      bundle bundler rbs erb gem irb racc racc2y rake rdoc ri y2racc rdbg typeprof
+      bundle bundler rbs erb gem irb racc racc2y
+      rake rdoc ri y2racc rdbg syntax_suggest typeprof
     ].freeze
     CMD_SUFFIX = ".cmd"
     BAT_SUFFIX = ".bat"
@@ -44,8 +45,6 @@ module Tebako
     class << self
       # Strip
       # Removes build artefacts, strip shared objects
-      # [TODO] We probably need debug option/flag to say whether we shall delete ruby binaries
-      #        from memfs or not. For debugging purposes it is very handy to have it here
       def strip(scm, src_dir)
         puts "   ... stripping the output"
         strip_bs(src_dir)
