@@ -116,7 +116,6 @@ RSpec.describe Tebako::CliHelpers do
 
   describe "#do_setup" do
     let(:options_manager) { Tebako::OptionsManager.new(options) }
-    let(:scenario_manager) { double("ScenarioManager", exe_suffix: "") }
 
     context "when running on Gnu Linux" do
       before do
@@ -126,13 +125,13 @@ RSpec.describe Tebako::CliHelpers do
       it "executes the setup command successfully" do
         allow(FileUtils).to receive(:rm_rf)
         allow(self).to receive(:system).and_return(true)
-        expect(do_setup(options_manager, scenario_manager)).to be_truthy
+        expect(do_setup(options_manager)).to be_truthy
       end
 
       it "raises an error if the setup command fails" do
         allow(FileUtils).to receive(:rm_rf)
         allow(self).to receive(:system).and_return(false)
-        expect { do_setup(options_manager, scenario_manager) }.to raise_error(Tebako::Error)
+        expect { do_setup(options_manager) }.to raise_error(Tebako::Error)
       end
     end
   end
