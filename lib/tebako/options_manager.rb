@@ -185,6 +185,15 @@ module Tebako
                    end
     end
 
+    def package_within_root?
+      package_path = Pathname.new(package.chomp("/"))
+      root_path = Pathname.new(root.chomp("/"))
+      package_path.ascend do |path|
+        return true if path == root_path
+      end
+      false
+    end
+
     def prefix
       @prefix ||= if @options["prefix"].nil?
                     handle_nil_prefix

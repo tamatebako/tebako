@@ -37,8 +37,8 @@ RSpec.describe Tebako::CliHelpers do
     { "output" => "/path/to/output", "deps" => "/path/to/deps", "entry-point" => "entrypoint",
       "root" => "/tmp/path/to/root/" }
   end
-  let(:ruby_ver) { "3.2.5" }
-  let(:ruby_hash) { Tebako::RubyVersion::RUBY_VERSIONS["3.2.5"] }
+  let(:ruby_ver) { "3.2.6" }
+  let(:ruby_hash) { Tebako::RubyVersion::RUBY_VERSIONS["3.2.6"] }
 
   before do
     allow_any_instance_of(Pathname).to receive(:realpath) { |instance| instance }
@@ -62,7 +62,7 @@ RSpec.describe Tebako::CliHelpers do
 
       it "executes the press command successfully" do
         allow_any_instance_of(Tebako::PackagerLite).to receive(:create_package).and_return(true)
-        expect(do_press(options_manager)).to be_truthy
+        expect { do_press(options_manager) }.not_to raise_error
       end
     end
 
@@ -79,7 +79,7 @@ RSpec.describe Tebako::CliHelpers do
         allow(Tebako::Codegen).to receive(:generate_tebako_version_h).and_return(true)
         allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
 
-        expect(do_press(options_manager)).to be_truthy
+        expect { do_press(options_manager) }.not_to raise_error
       end
 
       it "raises an error if the press command fails" do
@@ -103,13 +103,33 @@ RSpec.describe Tebako::CliHelpers do
         allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
         allow(Tebako::Codegen).to receive(:generate_package_header).and_return(true)
 
-        expect(do_press(options_manager)).to be_truthy
+        expect { do_press(options_manager) }.not_to raise_error
       end
 
       it "raises an error if the press command fails" do
         allow(FileUtils).to receive(:rm_rf)
         allow(self).to receive(:system).and_return(false)
         expect { do_press(options_manager) }.to raise_error(Tebako::Error)
+      end
+    end
+
+    context "when package_within_root? is true" do
+      before do
+        options["mode"] = "bundle"
+        options["output"] = "/tmp/path/to/root/output"
+      end
+
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "shows a warning and executes the press command successfully" do
+        allow(FileUtils).to receive(:rm_rf)
+        allow(self).to receive(:system).and_return(true)
+        allow(Tebako::Codegen).to receive(:generate_tebako_version_h).and_return(true)
+        allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
+        allow(Tebako::Codegen).to receive(:generate_package_header).and_return(true)
+
+        allow(self).to receive(:sleep).with(any_args).and_return(nil)
+        expect { do_press(options_manager) }.to output(/WARNING/).to_stdout
       end
     end
   end
@@ -125,7 +145,7 @@ RSpec.describe Tebako::CliHelpers do
       it "executes the setup command successfully" do
         allow(FileUtils).to receive(:rm_rf)
         allow(self).to receive(:system).and_return(true)
-        expect(do_setup(options_manager)).to be_truthy
+        expect { do_setup(options_manager) }.not_to raise_error
       end
 
       it "raises an error if the setup command fails" do

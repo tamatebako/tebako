@@ -108,6 +108,7 @@ module Tebako
 
       def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir, descriptor = nil)
         puts "-- Running mkdwarfs script"
+        FileUtils.chmod("a+x", Dir.glob(File.join(deps_bin_dir, "mkdwarfs*")))
         params = [File.join(deps_bin_dir, "mkdwarfs"), "-o", data_bin_file, "-i", data_src_dir, "--no-progress"]
         params << "--header" << descriptor if descriptor
         BuildHelpers.run_with_capture_v(params)

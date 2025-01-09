@@ -623,6 +623,35 @@ RSpec.describe Tebako::OptionsManager do
       end
     end
   end
+
+  describe "#package_within_root?" do
+    context "when the package path is within the root directory" do
+      let(:options) { { "root" => "/absolute/path", "output" => "/absolute/path/package" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it "returns true" do
+        result = options_manager.package_within_root?
+        expect(result).to be(true)
+      end
+    end
+
+    context "when the package path is outside the root directory" do
+      let(:options) { { "root" => "/absolute/path", "output" => "/absolute/otherpath/package" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it "returns false" do
+        result = options_manager.package_within_root?
+        expect(result).to be(false)
+      end
+    end
+
+    context "when the package path is outside the root directory (funcky)" do
+      let(:options) { { "root" => "/absolute/path/package-dir", "output" => "/absolute/path/package" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it "returns false" do
+        result = options_manager.package_within_root?
+        expect(result).to be(false)
+      end
+    end
+  end
 end
 
 # rubocop:enable Metrics/BlockLength

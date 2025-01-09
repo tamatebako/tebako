@@ -49,7 +49,7 @@ module Tebako
       @fs_entrance = fs_entrance
       @target_dir = target_dir
       @pre_dir = pre_dir
-      @verbose = ENV["VERBOSE"] == "yes" || ENV["VERBOSE"] == "true"
+      @verbose = %w[yes true].include?(ENV.fetch("VERBOSE", nil))
       @ncores = BuildHelpers.ncores
     end
 
