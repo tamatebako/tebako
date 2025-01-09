@@ -41,47 +41,52 @@ require_relative "packager_lite"
 module Tebako
   # Cli helpers
   module CliHelpers
+    WARN = <<~WARN
+
+      ******************************************************************************************************************
+      *                                                                                                                *
+      *  WARNING: You are packaging in-place, i.e.: tebako package will be placed inside application root.             *
+      *  It is not an error but we do not recommend it because it is a way to keep packaging old versions recrsively.  *
+      *                                                                                                                *
+      ******************************************************************************************************************
+
+    WARN
+
     def do_press(options_manager)
       scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
       puts options_manager.press_announce(scenario_manager.msys?)
 
-      if options_manager.mode == "both" || options_manager.mode == "runtime" || options_manager.mode == "bundle"
-        do_press_runtime(options_manager, scenario_manager)
+      if options_manager.package_within_root?
+        puts WARN
+        sleep 5
       end
 
-      if options_manager.mode == "both" || options_manager.mode == "application"
-        do_press_application(options_manager, scenario_manager)
-      end
-
-      true
+      do_press_runtime(options_manager, scenario_manager)
+      do_press_application(options_manager, scenario_manager)
     end
 
     def do_press_application(options_manager, scenario_manager)
+      return unless %w[both application].include?(options_manager.mode)
+
       packager = Tebako::PackagerLite.new(options_manager, scenario_manager)
       packager.create_package
     end
 
     def do_press_runtime(options_manager, scenario_manager)
+      return unless %w[both runtime bundle].include?(options_manager.mode)
+
       generate_files(options_manager, scenario_manager)
-      cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=OFF #{options_manager.cfg_options} #{options_manager.press_options}"
-      build_cmd = "cmake --build #{options_manager.output_folder} --target tebako --parallel #{Etc.nprocessors}"
       merged_env = ENV.to_h.merge(options_manager.b_env)
-      Tebako.packaging_error(103) unless system(merged_env, cfg_cmd)
-      Tebako.packaging_error(104) unless system(merged_env, build_cmd)
-      true
+      Tebako.packaging_error(103) unless system(merged_env, press_cfg_cmd(options_manager))
+      Tebako.packaging_error(104) unless system(merged_env, press_build_cmd(options_manager))
     end
 
     def do_setup(options_manager)
       puts "Setting up tebako packaging environment"
 
-      cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=ON #{options_manager.cfg_options}"
-      build_cmd = "cmake --build \"#{options_manager.output_folder}\" --target setup --parallel #{Etc.nprocessors}"
       merged_env = ENV.to_h.merge(options_manager.b_env)
-      Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
-      Tebako.packaging_error(102) unless system(merged_env, build_cmd)
-
-      fix_mkdwarfs_permissions(options_manager)
-      true
+      Tebako.packaging_error(101) unless system(merged_env, setup_cfg_cmd(options_manager))
+      Tebako.packaging_error(102) unless system(merged_env, setup_build_cmd(options_manager))
     end
 
     def generate_files(options_manager, scenario_manager)
@@ -93,14 +98,9 @@ module Tebako
       Tebako::Codegen.generate_tebako_fs_cpp(options_manager, scenario_manager)
       Tebako::Codegen.generate_deploy_rb(options_manager, scenario_manager)
 
-      return unless options_manager.mode == "both" || options_manager.mode == "runtime"
+      return unless %w[both runtime].include?(options_manager.mode)
 
       Tebako::Codegen.generate_stub_rb(options_manager)
-    end
-
-    def fix_mkdwarfs_permissions(options_manager)
-      scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
-      FileUtils.chmod("+x", File.join(options_manager.deps_bin_dir, "mkdwarfs#{scenario_manager.exe_suffix}"))
     end
 
     def options_from_tebafile(tebafile)
@@ -113,6 +113,22 @@ module Tebako
       puts "An unexpected error occurred while loading the tebafile '#{tebafile}'."
       puts e.message
       {}
+    end
+
+    def press_build_cmd(options_manager)
+      "cmake --build #{options_manager.output_folder} --target tebako --parallel #{Etc.nprocessors}"
+    end
+
+    def press_cfg_cmd(options_manager)
+      "cmake -DSETUP_MODE:BOOLEAN=OFF #{options_manager.cfg_options} #{options_manager.press_options}"
+    end
+
+    def setup_build_cmd(options_manager)
+      "cmake --build \"#{options_manager.output_folder}\" --target setup --parallel #{Etc.nprocessors}"
+    end
+
+    def setup_cfg_cmd(options_manager)
+      "cmake -DSETUP_MODE:BOOLEAN=ON #{options_manager.cfg_options}"
     end
   end
 end

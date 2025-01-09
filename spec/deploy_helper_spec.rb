@@ -56,6 +56,68 @@ RSpec.describe Tebako::DeployHelper do
     end
   end
 
+  describe "#bundle_config" do
+    let(:r_v) { "3.2.4" }
+    let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
+    let(:cwd) { "/current/working/dir" }
+
+    context "on linux" do
+      before do
+        allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
+        stub_const("RUBY_PLATFORM", "linux")
+        allow(deploy_helper).to receive(:lookup_files)
+        allow(deploy_helper).to receive(:configure_scenario)
+        deploy_helper.configure(ruby_ver, cwd)
+      end
+
+      it "calls BuildHelpers.run_with_capture_v with the correct commands" do
+        bundle = "/target/dir/bin/bundle"
+        expect(Tebako::BuildHelpers)
+          .to receive(:run_with_capture_v)
+          .with([bundle, "config", "set", "--local", "build.ffi", "--disable-system-libffi"])
+          .once
+        expect(Tebako::BuildHelpers)
+          .to receive(:run_with_capture_v)
+          .with([bundle, "config", "set", "--local", "build.nokogiri", "--no-use-system-libraries"])
+          .once
+        expect(Tebako::BuildHelpers)
+          .to receive(:run_with_capture_v)
+          .with([bundle, "config", "set", "--local", "force_ruby_platform", "false"])
+          .once
+
+        deploy_helper.send(:bundle_config)
+      end
+    end
+
+    context "on msys" do
+      before do
+        allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
+        stub_const("RUBY_PLATFORM", "msys")
+        allow(deploy_helper).to receive(:lookup_files)
+        allow(deploy_helper).to receive(:configure_scenario)
+        deploy_helper.configure(ruby_ver, cwd)
+      end
+
+      it "calls BuildHelpers.run_with_capture_v with the correct commands" do
+        bundle = "/target/dir/bin/bundle.bat"
+        expect(Tebako::BuildHelpers)
+          .to receive(:run_with_capture_v)
+          .with([bundle, "config", "set", "--local", "build.ffi", "--disable-system-libffi"])
+          .once
+        expect(Tebako::BuildHelpers)
+          .to receive(:run_with_capture_v)
+          .with([bundle, "config", "set", "--local", "build.nokogiri", "--use-system-libraries"])
+          .once
+        expect(Tebako::BuildHelpers)
+          .to receive(:run_with_capture_v)
+          .with([bundle, "config", "set", "--local", "force_ruby_platform", "true"])
+          .once
+
+        deploy_helper.send(:bundle_config)
+      end
+    end
+  end
+
   describe "#configure" do
     let(:r_v) { "3.2.4" }
     let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
@@ -106,6 +168,45 @@ RSpec.describe Tebako::DeployHelper do
         deploy_helper.instance_variable_set(:@cwd, "/existing/folder")
         allow(File).to receive(:directory?).with(a_string_ending_with("existing/folder")).and_return(true)
         expect { deploy_helper.send(:check_cwd) }.not_to raise_error
+      end
+    end
+  end
+
+  describe "#check_entry_point" do
+    let(:entry_point_root) { "/project/entry_points" }
+    let(:r_v) { "3.2.4" }
+    let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
+    let(:cwd) { "/current/working/dir" }
+
+    before do
+      allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
+      stub_const("RUBY_PLATFORM", "linux")
+      allow(deploy_helper).to receive(:lookup_files)
+      allow(deploy_helper).to receive(:configure_scenario_inner)
+      deploy_helper.configure(ruby_ver, cwd)
+    end
+
+    context "when the entry point file exists" do
+      before do
+        allow(File).to receive(:exist?).and_return(true)
+      end
+
+      it "does not raise an error" do
+        expect do
+          deploy_helper.send(:check_entry_point, entry_point_root)
+        end.not_to raise_error
+      end
+    end
+
+    context "when the entry point file does not exist" do
+      before do
+        allow(File).to receive(:exist?).and_return(false)
+      end
+
+      it "raises a Tebako::Error" do
+        expect do
+          deploy_helper.send(:check_entry_point, entry_point_root)
+        end.to raise_error(Tebako::Error, /Entry point/)
       end
     end
   end
@@ -162,6 +263,67 @@ RSpec.describe Tebako::DeployHelper do
 
       it "sets the correct nokogiri option" do
         expect(deploy_helper.instance_variable_get(:@nokogiri_option)).to eq("--no-use-system-libraries")
+      end
+    end
+  end
+
+  describe "#copy_files" do
+    let(:destination) { "/fake/dest" }
+    let(:entry_point_root) { "/project/entry_points" }
+    let(:r_v) { "3.2.6" }
+    let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
+    let(:cwd) { "/current/working/dir" }
+
+    before do
+      allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
+      stub_const("RUBY_PLATFORM", "linux")
+      allow(deploy_helper).to receive(:lookup_files)
+      allow(deploy_helper).to receive(:configure_scenario_inner)
+      deploy_helper.configure(ruby_ver, cwd)
+    end
+
+    context "when @fs_root exists and is readable" do
+      before do
+        allow(Dir).to receive(:exist?).with(deploy_helper.instance_variable_get(:@fs_root)).and_return(true)
+        allow(File).to receive(:readable?).with(deploy_helper.instance_variable_get(:@fs_root)).and_return(true)
+        allow(FileUtils).to receive(:mkdir_p).with(destination)
+      end
+
+      it "copies files without raising an error" do
+        expect(FileUtils)
+          .to receive(:cp_r)
+          .with(File.join(deploy_helper.instance_variable_get(:@fs_root), "."), destination)
+        expect do
+          deploy_helper.send(:copy_files, destination)
+        end.not_to raise_error
+      end
+
+      it "raises a Tebako::Error if FileUtils.cp_r fails" do
+        allow(FileUtils).to receive(:cp_r).and_raise(StandardError)
+        expect do
+          deploy_helper.send(:copy_files, destination)
+        end.to raise_error(Tebako::Error, /does not exist or is not accessible/)
+      end
+    end
+
+    context "when @fs_root does not exist or is unreadable" do
+      before do
+        allow(FileUtils).to receive(:mkdir_p).with(destination)
+      end
+
+      it "raises a Tebako::Error if the directory does not exist" do
+        allow(Dir).to receive(:exist?).with(deploy_helper.instance_variable_get(:@fs_root)).and_return(false)
+        expect do
+          deploy_helper.send(:copy_files, destination)
+        end.to raise_error(Tebako::Error, /not accessible or is not a directory/)
+      end
+
+      it "raises a Tebako::Error if the directory is not readable" do
+        allow(Dir).to receive(:exist?).with(deploy_helper.instance_variable_get(:@fs_root)).and_return(true)
+        allow(File).to receive(:readable?).with(deploy_helper.instance_variable_get(:@fs_root)).and_return(false)
+        expect do
+          deploy_helper.send(:copy_files, destination)
+        end.to raise_error(Tebako::Error, /not accessible or is not a directory/)
       end
     end
   end
