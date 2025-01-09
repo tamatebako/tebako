@@ -127,7 +127,7 @@ module Tebako
     def setup
       (om, cm) = bootstrap
 
-      do_setup(om)
+      do_setup(om, cm)
       cm.ensure_version_file
     rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
