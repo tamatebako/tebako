@@ -71,7 +71,7 @@ module Tebako
       true
     end
 
-    def do_setup(options_manager)
+    def do_setup(options_manager, scenario_manager)
       puts "Setting up tebako packaging environment"
 
       cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=ON #{options_manager.cfg_options}"
@@ -79,6 +79,8 @@ module Tebako
       merged_env = ENV.to_h.merge(options_manager.b_env)
       Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
       Tebako.packaging_error(102) unless system(merged_env, build_cmd)
+
+      FileUtils.chmod("+x", File.join(options_manager.deps_bin_dir, "mkdwarfs#{scenario_manager.exe_suffix}"))
       true
     end
 

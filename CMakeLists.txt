@@ -91,8 +91,6 @@ set(IS_MSYS OFF)
 set(IS_DARWIN OFF)
 set(RB_W32 OFF)
 set(RUBY_WITHOUT_EXT "dbm,win32,win32ole,-test-/*")
-set(RUBY_NAME "ruby")
-set(EXE_SUFFIX "")
 set(DWARFS_PRELOAD OFF)
 set(WITH_PATCHELF OFF)
 
@@ -108,7 +106,6 @@ elseif("${OSTYPE_TXT}" MATCHES "^msys*")
   # set(DWARFS_PRELOAD ON)
   set(RB_W32 ON)
   set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline,-test-/*")
-  set(EXE_SUFFIX ".exe")
 elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
   set(IS_DARWIN ON)
   if(${RUBY_VER} VERSION_LESS "3.1.0")
@@ -162,7 +159,6 @@ if ("-${RUBY_VER}" STREQUAL "-" OR "-${RUBY_HASH}" STREQUAL "-")
   message(FATAL_ERROR "Ruby version is not specified")
 endif()
 
-set(RUBY_NAME ruby)
 set(RUBY_PRJ _ruby_${RUBY_VER})
 set(RUBY_SOURCE_DIR ${DEPS}/src/${RUBY_PRJ})
 set(RUBY_BINARY_DIR ${DEPS}/src/${RUBY_PRJ})
@@ -380,7 +376,6 @@ ExternalProject_Add(${RUBY_PRJ}
   COMMAND          ruby ${EXE}/tebako-packager pass1a ${RUBY_SOURCE_DIR}
   BUILD_COMMAND    make -j${NCORES}
   INSTALL_COMMAND  make install -j${NCORES}
-  COMMAND          ${GNU_BASH} -c "chmod +x ${DEPS_BIN_DIR}/mkdwarfs${EXE_SUFFIX}"
   COMMAND          ${GNU_BASH} -c "ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}"
 )
 
