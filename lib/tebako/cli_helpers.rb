@@ -71,7 +71,7 @@ module Tebako
       true
     end
 
-    def do_setup(options_manager, scenario_manager)
+    def do_setup(options_manager)
       puts "Setting up tebako packaging environment"
 
       cfg_cmd = "cmake -DSETUP_MODE:BOOLEAN=ON #{options_manager.cfg_options}"
@@ -80,7 +80,7 @@ module Tebako
       Tebako.packaging_error(101) unless system(merged_env, cfg_cmd)
       Tebako.packaging_error(102) unless system(merged_env, build_cmd)
 
-      FileUtils.chmod("+x", File.join(options_manager.deps_bin_dir, "mkdwarfs#{scenario_manager.exe_suffix}"))
+      fix_mkdwarfs_permissions(options_manager)
       true
     end
 
@@ -96,6 +96,11 @@ module Tebako
       return unless options_manager.mode == "both" || options_manager.mode == "runtime"
 
       Tebako::Codegen.generate_stub_rb(options_manager)
+    end
+
+    def fix_mkdwarfs_permissions(options_manager)
+      scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
+      FileUtils.chmod("+x", File.join(options_manager.deps_bin_dir, "mkdwarfs#{scenario_manager.exe_suffix}"))
     end
 
     def options_from_tebafile(tebafile)

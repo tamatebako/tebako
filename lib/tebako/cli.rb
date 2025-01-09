@@ -53,7 +53,7 @@ module Tebako
                             desc: "tebako configuration file 'tebafile', '$PWD/.tebako.yml' by default"
     desc "clean", "Clean tebako packaging environment"
     def clean
-      (_, cm) = bootstrap
+      (_, cm) = bootstrap(clean: true)
       cm.clean_cache
     end
 
@@ -63,7 +63,7 @@ module Tebako
                          desc: "Ruby version to clean, all available versions by default"
     def clean_ruby
       puts "Cleaning Ruby sources from tebako packaging environment"
-      (om,) = bootstrap
+      (om,) = bootstrap(clean: true)
 
       suffix = options["Ruby"].nil? ? "" : "_#{options["Ruby"]}"
       nmr = "src/_ruby#{suffix}*"
@@ -127,7 +127,7 @@ module Tebako
     def setup
       (om, cm) = bootstrap
 
-      do_setup(om, cm)
+      do_setup(om)
       cm.ensure_version_file
     rescue Tebako::Error => e
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
@@ -139,11 +139,11 @@ module Tebako
     end
 
     no_commands do
-      def bootstrap
+      def bootstrap(clean: false)
         options_manager = Tebako::OptionsManager.new(options)
         cache_manager = Tebako::CacheManager.new(options_manager.deps, options_manager.source,
                                                  options_manager.output_folder)
-        cache_manager.version_cache_check unless options[:devmode]
+        cache_manager.version_cache_check unless options[:devmode] || clean
         [options_manager, cache_manager]
       end
 
