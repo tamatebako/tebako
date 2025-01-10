@@ -354,6 +354,7 @@ RSpec.describe Tebako::DeployHelper do
 
     before do
       deploy_helper.instance_variable_set(:@tgd, "/path/to/tgd")
+      deploy_helper.instance_variable_set(:@tbd, "/path/to/tbd")
       deploy_helper.instance_variable_set(:@gem_command, gem_command)
       deploy_helper.instance_variable_set(:@bundler_command, bundler_command)
       allow(Open3).to receive(:capture2e).and_return(["", double("status", signaled?: false, exitstatus: 0)])
@@ -363,7 +364,7 @@ RSpec.describe Tebako::DeployHelper do
       it "installs the gem with the specified version" do
         expect(Open3).to receive(:capture2e)
           .with(gem_command, "install", gem_name, "-v", gem_version, "--no-document",
-                "--install-dir", "/path/to/tgd")
+                "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd")
         deploy_helper.install_gem(gem_name, gem_version)
       end
     end
@@ -371,7 +372,8 @@ RSpec.describe Tebako::DeployHelper do
     context "when gem version is not provided" do
       it "installs the gem without specifying the version" do
         expect(Open3).to receive(:capture2e)
-          .with(gem_command, "install", gem_name, "--no-document", "--install-dir", "/path/to/tgd")
+          .with(gem_command, "install", gem_name, "--no-document",
+                "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd")
         deploy_helper.install_gem(gem_name)
       end
     end
