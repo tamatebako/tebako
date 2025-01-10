@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-
 puts "Hello! This is test-20 talking from inside DwarFS"
 
 require "net/http"

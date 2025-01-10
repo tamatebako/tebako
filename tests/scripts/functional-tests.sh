@@ -250,6 +250,12 @@ test_tebako_press_04() {
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 test_tebako_press_09() {
    echo "==> Ruby gem (xxx.gem, no gemspec, no gemfile)"
+
+# Use test-11 gemspec to build a test gem
+   pushd "${DIR_TESTS}/test-11" > /dev/null || fail "pushd ${DIR_TESTS}/test-11 failed"
+   gem build tebako-test.gemspec -o "${DIR_TESTS}/test-09/tebako-test-0.0.2.gem"
+   popd > /dev/null || fail "popd failed"
+
    press_runner_"${MODE}" "${DIR_TESTS}/test-09" "tebako-test-run.rb" "test-09-package"
    package_runner_"${MODE}" "./test-09-package" "| a1 | b1 |"
 }
@@ -263,6 +269,8 @@ test_tebako_press_10() {
    else
       rc=106
    fi
+
+# Use gem built for test-09
    press_runner_with_error_"${MODE}" "${DIR_TESTS}/test-09" \
                                      "test-does-not-exist.rb" \
                                      "test-10-package" \

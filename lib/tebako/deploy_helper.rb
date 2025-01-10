@@ -25,6 +25,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+# require "bundler"
 require "fileutils"
 require "find"
 
@@ -92,7 +93,7 @@ module Tebako
 
       params = [@gem_command, "install", name.to_s]
       params.push("-v", ver.to_s) if ver
-      ["--no-document", "--install-dir", @tgd].each do |param|
+      ["--no-document", "--install-dir", @tgd, "--bindir", @tbd].each do |param|
         params.push(param)
       end
       BuildHelpers.run_with_capture_v(params)
@@ -141,11 +142,15 @@ module Tebako
     end
 
     def collect_and_deploy_gem(gemspec)
-      puts "   ... Collecting gem from gemspec #{gemspec}"
+      puts "   ... collecting gem from gemspec #{gemspec}"
 
       copy_files(@pre_dir)
 
       Dir.chdir(@pre_dir) do
+        # spec = Bundler.load_gemspec(gemspec)
+        # puts spec.executables.first unless spec.executables.empty?
+        # puts spec.bindir
+
         BuildHelpers.run_with_capture_v([@gem_command, "build", gemspec])
         install_all_gems_or_fail
       end
