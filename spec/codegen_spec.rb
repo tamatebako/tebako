@@ -117,25 +117,25 @@ RSpec.describe Tebako::Codegen do
     end
   end
 
-  describe "#deploy_mk" do
+  describe "#deploy_mk_inner" do
     it 'calls deploy_mk_stub when mode is "both"' do
       allow(options_manager).to receive(:mode).and_return("both")
       allow(described_class).to receive(:deploy_mk_stub).and_return("mk_both_result")
-      result = described_class.deploy_mk(options_manager, scm)
+      result = described_class.deploy_mk_inner(options_manager, scm)
       expect(result).to eq("mk_both_result")
     end
 
     it 'calls deploy_mk_stub when mode is "runtime"' do
       allow(options_manager).to receive(:mode).and_return("runtime")
       allow(described_class).to receive(:deploy_mk_stub).and_return("mk_stub_result")
-      result = described_class.deploy_mk(options_manager, scm)
+      result = described_class.deploy_mk_inner(options_manager, scm)
       expect(result).to eq("mk_stub_result")
     end
 
     it "calls deploy_mk_bundle when mode by default" do
       allow(options_manager).to receive(:mode).and_return("bundle")
       allow(described_class).to receive(:deploy_mk_bundle).and_return("mk_bundle_result")
-      result = described_class.deploy_mk(options_manager, scm)
+      result = described_class.deploy_mk_inner(options_manager, scm)
       expect(result).to eq("mk_bundle_result")
     end
   end
