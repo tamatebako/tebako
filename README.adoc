@@ -1131,15 +1131,6 @@ Here is a summary of the scenarios:
 | Any
 
 
-| 5
-| Rails project
-| Deploy project to packaged filesystem using `bundle install`
-| `<mount_point>/local/<entry_point base name>`
-| No
-| One
-| Any
-
-
 | Error
 | Error: Two or more `*.gem` files present
 | -

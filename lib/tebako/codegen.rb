@@ -62,12 +62,14 @@ module Tebako
       end
 
       def deploy_mk(opt, scm)
-        case opt.mode
-        when "bundle"
-          deploy_mk_bundle(opt, scm)
-        when /runtime|both/
-          deploy_mk_stub(opt)
-        end
+        <<~SUBST
+          begin
+            #{deploy_mk_inner(opt, scm)}
+          rescue Tebako::Error => e
+            puts "tebako-packager failed: \#{e.message} [\#{e.error_code}]"
+            exit(e.error_code)
+          end
+        SUBST
       end
 
       def deploy_mk_bundle(opt, scm)
@@ -77,6 +79,15 @@ module Tebako
           Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_bundle_file}",
                                     "#{opt.data_src_dir}")
         SUBST
+      end
+
+      def deploy_mk_inner(opt, scm)
+        case opt.mode
+        when "bundle"
+          deploy_mk_bundle(opt, scm)
+        when /runtime|both/
+          deploy_mk_stub(opt)
+        end
       end
 
       def deploy_mk_stub(opt)
@@ -101,6 +112,7 @@ module Tebako
 
       def deploy_rq
         <<~SUBST
+          require "#{File.join(__dir__, "error.rb")}"
           require "#{File.join(__dir__, "package_descriptor.rb")}"
           require "#{File.join(__dir__, "packager.rb")}"
           require "#{File.join(__dir__, "ruby_version.rb")}"

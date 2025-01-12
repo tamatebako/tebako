@@ -119,7 +119,7 @@ RSpec.describe Tebako::DeployHelper do
   end
 
   describe "#configure" do
-    let(:r_v) { "3.2.4" }
+    let(:r_v) { "3.2.6" }
     let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
     let(:cwd) { "/current/working/dir" }
 
@@ -174,7 +174,7 @@ RSpec.describe Tebako::DeployHelper do
 
   describe "#check_entry_point" do
     let(:entry_point_root) { "/project/entry_points" }
-    let(:r_v) { "3.2.4" }
+    let(:r_v) { "3.2.6" }
     let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
     let(:cwd) { "/current/working/dir" }
 
@@ -208,6 +208,61 @@ RSpec.describe Tebako::DeployHelper do
           deploy_helper.send(:check_entry_point, entry_point_root)
         end.to raise_error(Tebako::Error, /Entry point/)
       end
+    end
+  end
+
+  describe "#collect_and_deploy_gem" do
+    let(:gemspec) { "example.gemspec" }
+
+    before do
+      allow(deploy_helper).to receive(:puts)
+      allow(deploy_helper).to receive(:copy_files)
+      allow(deploy_helper).to receive(:check_entry_point)
+      allow(deploy_helper).to receive(:install_all_gems_or_fail)
+      allow(Dir).to receive(:chdir).and_yield
+      allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+    end
+
+    it "copies files, builds gem, installs gems, and checks entry point" do
+      deploy_helper.send(:collect_and_deploy_gem, gemspec)
+
+      expect(deploy_helper).to have_received(:copy_files).with(deploy_helper.instance_variable_get(:@pre_dir))
+      expect(Tebako::BuildHelpers)
+        .to have_received(:run_with_capture_v)
+        .with([deploy_helper.gem_command, "build", gemspec])
+      expect(deploy_helper).to have_received(:install_all_gems_or_fail)
+      expect(deploy_helper).to have_received(:check_entry_point).with("bin")
+    end
+  end
+
+  describe "#collect_and_deploy_gem_and_gemfile" do
+    let(:gemspec) { "example.gemspec" }
+
+    before do
+      # Stub out console output and other helper methods
+      allow(deploy_helper).to receive(:puts)
+      allow(deploy_helper).to receive(:copy_files)
+      allow(deploy_helper).to receive(:check_entry_point)
+      allow(deploy_helper).to receive(:install_all_gems_or_fail)
+      allow(deploy_helper).to receive(:bundle_config)
+      # Stubs for external calls
+      allow(Dir).to receive(:chdir).and_yield
+      allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+    end
+
+    it "copies files, runs bundler install, builds gem, installs gems, and checks entry point" do
+      deploy_helper.send(:collect_and_deploy_gem_and_gemfile, gemspec)
+
+      expect(deploy_helper).to have_received(:copy_files).with(deploy_helper.instance_variable_get(:@pre_dir))
+      expect(deploy_helper).to have_received(:bundle_config)
+      expect(Tebako::BuildHelpers)
+        .to have_received(:run_with_capture_v)
+        .with([deploy_helper.bundler_command, "install", "--jobs=#{deploy_helper.instance_variable_get(:@ncores)}"])
+      expect(Tebako::BuildHelpers)
+        .to have_received(:run_with_capture_v)
+        .with([deploy_helper.bundler_command, "exec", deploy_helper.gem_command, "build", gemspec])
+      expect(deploy_helper).to have_received(:install_all_gems_or_fail)
+      expect(deploy_helper).to have_received(:check_entry_point).with("bin")
     end
   end
 
