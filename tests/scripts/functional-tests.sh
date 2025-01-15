@@ -253,6 +253,7 @@ test_tebako_press_09() {
 
 # Use test-11 gemspec to build a test gem
    pushd "${DIR_TESTS}/test-11" > /dev/null || fail "pushd ${DIR_TESTS}/test-11 failed"
+   mkdir -p "${DIR_TESTS}/test-09"
    gem build tebako-test.gemspec -o "${DIR_TESTS}/test-09/tebako-test-0.0.2.gem"
    popd > /dev/null || fail "popd failed"
 
