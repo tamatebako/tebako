@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -43,25 +43,29 @@ module Tebako
   # Tebako packaging support (internal)
   module Packager
     FILES_TO_RESTORE = %w[
-      main.c
+      common.mk
+      configure
+      config.status
       dir.c
       dln.c
       file.c
-      io.c
-      tool/mkconfig.rb
       gem_prelude.rb
-    ].freeze
-
-    FILES_TO_RESTORE_MSYS = %w[
+      io.c
+      main.c
+      Makefile
       ruby.c
-      win32/file.c
-    ].freeze
-    # Do not need to restore cygwin/GNUmakefile.in
-    # because it is patched (differently) both on pass 1 and pass2
-    # cygwin/GNUmakefile.in
-
-    FILES_TO_RESTORE_MUSL = %w[
       thread_pthread.c
+      util.c
+      ext/bigdecimal/bigdecimal.h
+      ext/Setup
+      cygwin/GNUmakefile.in
+      include/ruby/onigmo.h
+      lib/rubygems/openssl.rb
+      lib/rubygems/path_support.rb
+      template/Makefile.in
+      tool/mkconfig.rb
+      win32/winmain.c
+      win32/file.c
     ].freeze
 
     class << self
@@ -118,16 +122,14 @@ module Tebako
       # Executed before Ruby build, patching ensures that Ruby itself is linked statically
       def pass1(ostype, ruby_source_dir, mount_point, src_dir, ruby_ver)
         puts "-- Running pass1 script"
-
         PatchHelpers.recreate(src_dir)
+
+        # Roll all known patches
+        # Just in case we are recovering after some error
+        PatchHelpers.restore_and_save_files(FILES_TO_RESTORE, ruby_source_dir, strict: false)
+
         patch = crt_pass1_patch(ostype, mount_point, ruby_ver)
         do_patch(patch.patch_map, ruby_source_dir)
-
-        # Roll back pass1a, pass2 patches
-        # Just in case we are recovering after some error
-        PatchHelpers.restore_and_save_files(FILES_TO_RESTORE, ruby_source_dir)
-        PatchHelpers.restore_and_save_files(FILES_TO_RESTORE_MUSL, ruby_source_dir) if ostype =~ /linux-musl/
-        PatchHelpers.restore_and_save_files(FILES_TO_RESTORE_MSYS, ruby_source_dir) if ostype =~ /msys/
       end
 
       # Pass1A

@@ -91,8 +91,12 @@ module Tebako
           FileUtils.mkdir(dirname)
         end
 
-        def restore_and_save(fname)
-          raise Tebako::Error, "Could not save #{fname} because it does not exist." unless File.exist?(fname)
+        def restore_and_save(fname, strict: true)
+          unless File.exist?(fname)
+            return unless strict
+
+            raise Tebako::Error, "Could not save #{fname} because it does not exist."
+          end
 
           old_fname = "#{fname}.old"
           if File.exist?(old_fname)
@@ -102,9 +106,9 @@ module Tebako
           FileUtils.cp(fname, old_fname)
         end
 
-        def restore_and_save_files(files, ruby_source_dir)
+        def restore_and_save_files(files, ruby_source_dir, strict: true)
           files.each do |fname|
-            restore_and_save "#{ruby_source_dir}/#{fname}"
+            restore_and_save("#{ruby_source_dir}/#{fname}", strict: strict)
           end
         end
 

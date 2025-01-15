@@ -214,28 +214,8 @@ RSpec.describe Tebako::Packager do
 
     it "restores and saves files for FILES_TO_RESTORE" do
       expect(Tebako::Packager::PatchHelpers).to receive(:restore_and_save_files)
-        .with(Tebako::Packager::FILES_TO_RESTORE, ruby_source_dir)
+        .with(Tebako::Packager::FILES_TO_RESTORE, ruby_source_dir, strict: false)
       described_class.pass1(ostype, ruby_source_dir, mount_point, src_dir, ruby_ver)
-    end
-
-    context "when ostype is linux-musl" do
-      let(:ostype) { "linux-musl" }
-
-      it "restores and saves files for FILES_TO_RESTORE_MUSL" do
-        expect(Tebako::Packager::PatchHelpers).to receive(:restore_and_save_files)
-          .with(Tebako::Packager::FILES_TO_RESTORE_MUSL, ruby_source_dir)
-        described_class.pass1(ostype, ruby_source_dir, mount_point, src_dir, ruby_ver)
-      end
-    end
-
-    context "when ostype is msys" do
-      let(:ostype) { "msys" }
-
-      it "restores and saves files for FILES_TO_RESTORE_MSYS" do
-        expect(Tebako::Packager::PatchHelpers).to receive(:restore_and_save_files)
-          .with(Tebako::Packager::FILES_TO_RESTORE_MSYS, ruby_source_dir)
-        described_class.pass1(ostype, ruby_source_dir, mount_point, src_dir, ruby_ver)
-      end
     end
   end
 

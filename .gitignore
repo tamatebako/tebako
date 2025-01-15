@@ -56,8 +56,7 @@ tests/shunit2
 tests-2/Gemfile.lock
 *-package
 metanorma-package
-tests/test-11/tebako-test-0.0.1.gem
-tests/test-15/tebako-bundle-test-0.0.1.gem
+tests/**/*.gem
 packed-mn
 .package-ready
 extract/
