@@ -121,6 +121,10 @@ module Tebako
       @deps_bin_dir ||= File.join(deps, "bin")
     end
 
+    def deps_lib_dir
+      @deps_lib_dir ||= File.join(deps, "lib")
+    end
+
     def fs_current
       fs_current = Dir.pwd
       if RUBY_PLATFORM =~ /msys|mingw|cygwin/
