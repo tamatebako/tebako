@@ -652,6 +652,36 @@ RSpec.describe Tebako::OptionsManager do
       end
     end
   end
+
+  describe "#deps_lib_dir" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct lib directory path" do
+      allow(options_manager).to receive(:prefix).and_return("/fake/prefix")
+      expect(options_manager.deps_lib_dir).to eq("/fake/prefix/deps/lib")
+    end
+  end
+
+  describe "#press_announce_ref" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the announce reference string" do
+      allow(options_manager).to receive(:ref).and_return("ref")
+      expect(options_manager.press_announce_ref(true)).to eq(" referencing runtime at 'ref'")
+      expect(options_manager.press_announce_ref(false)).to eq("")
+    end
+  end
+
+  describe "#ref" do
+    it "returns 'tebako-runtime' if no ref is specified" do
+      options_manager = described_class.new({})
+      expect(options_manager.ref).to eq("tebako-runtime")
+    end
+
+    it "returns the given ref, converting backslashes to forward slashes" do
+      options = { "ref" => "some\\path\\ref" }
+      options_manager = described_class.new(options)
+      expect(options_manager.ref).to eq("some/path/ref")
+    end
+  end
 end
 
 # rubocop:enable Metrics/BlockLength

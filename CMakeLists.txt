@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -361,8 +361,10 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
-  PATCH_COMMAND ruby ${EXE}/tebako-packager pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
-  CONFIGURE_COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION} ${LIBYAML_RUBY_OPTION} \
+  CONFIGURE_COMMAND ruby ${EXE}/tebako-packager pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
+  # Make it for MacOS otherwise LDFLAGS are invalid
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_LIB_DIR}
+  COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION} ${LIBYAML_RUBY_OPTION} \
                                                         --without-gmp                         \
                                                         --disable-dtrace                      \
                                                         --disable-debug-env                   \
@@ -379,23 +381,27 @@ ExternalProject_Add(${RUBY_PRJ}
   COMMAND          ${GNU_BASH} -c "ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}"
 )
 
-add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ} ${LIBDWARFS_WR_PRJ})
-
-if(IS_GNU)
-  add_dependencies(${RUBY_PRJ} ${PATCHELF_PRJ})
-endif(IS_GNU)
-
+# add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 
 if (${SETUP_MODE})
   add_custom_target(setup
     ${CMAKE_COMMAND} -E echo "Tebako setup has completed"
     DEPENDS ${DWARFS_WR_PRJ} ${RUBY_PRJ}
   )
-else (${SETUP_MODE})
+  if(IS_GNU)
+    add_dependencies(setup ${PATCHELF_PRJ})
+  endif(IS_GNU)
+
+  else (${SETUP_MODE})
   add_custom_target(setup
     ${CMAKE_COMMAND} -E echo "Tebako setup has been verified"
     DEPENDS ${DWARFS_WR_PRJ} ${RUBY_PRJ}
   )
+  if(IS_GNU)
+    add_dependencies(setup ${PATCHELF_PRJ})
+  endif(IS_GNU)
+
+
 
   set(CMAKE_CXX_STANDARD      20)
   set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -406,7 +412,7 @@ else (${SETUP_MODE})
 
   add_custom_target(packaged_filesystem
     COMMAND ruby ${DEPS_BIN_DIR}/deploy.rb
-    DEPENDS ${RUBY_PRJ}
+    DEPENDS setup
     BYPRODUCTS ${DATA_BIN_FILE}
   )
 
