@@ -41,7 +41,16 @@ module Tebako
     end
 
     # Final build of tebako package
-    def final_build
+    def toolchain_build
+      puts "   ... building toolchain Ruby"
+      Dir.chdir(@src_dir) do
+        BuildHelpers.run_with_capture(["make", "-j#{@ncores}"])
+        BuildHelpers.run_with_capture(["make", "install", "-j#{@ncores}"])
+      end
+    end
+
+    # Final build of tebako package
+    def target_build
       puts "   ... building tebako package"
       Dir.chdir(@src_dir) do
         BuildHelpers.run_with_capture(["make", "ruby", "-j#{@ncores}"]) if @ruby_ver.ruby3x?

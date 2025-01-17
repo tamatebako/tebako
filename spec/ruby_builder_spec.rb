@@ -32,7 +32,7 @@ require "tebako/packager/patch_helpers"
 # rubocop:disable Metrics/BlockLength
 
 RSpec.describe Tebako::RubyBuilder do
-  describe "#final_build" do
+  describe "#target_build" do
     let(:ruby_ver) { "3.1.6" }
     let(:src_dir) { "/path/to/src" }
     let(:ncores) { 4 }
@@ -45,24 +45,52 @@ RSpec.describe Tebako::RubyBuilder do
     end
 
     it "prints the building message" do
-      expect { builder.final_build }.to output(/building tebako package/).to_stdout
+      expect { builder.target_build }.to output(/building tebako package/).to_stdout
     end
 
     it "changes to the source directory" do
       expect(Dir).to receive(:chdir).with(src_dir).and_yield
-      builder.final_build
+      builder.target_build
     end
 
     context "when ruby version is 3.x" do
       it "runs make ruby with the correct number of cores" do
         expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "ruby", "-j#{ncores}"])
-        builder.final_build
+        builder.target_build
       end
     end
 
     it "runs make with the correct number of cores" do
       expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "-j#{ncores}"])
-      builder.final_build
+      builder.target_build
+    end
+  end
+
+  describe "#toochain_build" do
+    let(:ruby_ver) { "3.1.6" }
+    let(:src_dir) { "/path/to/src" }
+    let(:ncores) { 4 }
+    let(:builder) { described_class.new(Tebako::RubyVersion.new(ruby_ver), src_dir) }
+
+    before do
+      allow(Tebako::BuildHelpers).to receive(:ncores).and_return(ncores)
+      allow(Tebako::BuildHelpers).to receive(:run_with_capture)
+      allow(Dir).to receive(:chdir).with(src_dir).and_yield
+    end
+
+    it "prints the building message" do
+      expect { builder.toolchain_build }.to output(/building toolchain Ruby/).to_stdout
+    end
+
+    it "changes to the source directory" do
+      expect(Dir).to receive(:chdir).with(src_dir).and_yield
+      builder.toolchain_build
+    end
+
+    it "runs make with the correct number of cores" do
+      expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "-j#{ncores}"])
+      expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "install", "-j#{ncores}"])
+      builder.toolchain_build
     end
   end
 end

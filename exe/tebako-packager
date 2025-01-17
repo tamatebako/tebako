@@ -51,14 +51,6 @@ begin
     ruby_ver = Tebako::RubyVersion.new(ARGV[5])
     Tebako::Packager.pass1(ARGV[1], ARGV[2], ARGV[3], ARGV[4], ruby_ver)
 
-  when "pass1a"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- RUBY_SOURCE_DIR
-    unless ARGV.length == 2
-      raise Tebako::Error,
-            "tebako-packager pass1a command expects 2 arguments, #{ARGV.length} has been provided."
-    end
-    Tebako::Packager.pass1a(ARGV[1])
   when "pass2"
     #       ARGV[0] -- command
     #       ARGV[1] -- OSTYPE
@@ -72,7 +64,8 @@ begin
             "tebako-packager pass2 command expects 7 arguments, #{ARGV.length} has been provided."
     end
     ruby_ver = Tebako::RubyVersion.new(ARGV[6])
-    Tebako::Packager.stash(ARGV[4], ARGV[5])
+    Tebako::Packager.pass1a(ARGV[2])
+    Tebako::Packager.stash(ARGV[4], ARGV[5], ARGV[2], ruby_ver)
     Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ruby_ver)
 
   when "finalize"

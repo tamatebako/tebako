@@ -105,7 +105,7 @@ RSpec.describe Tebako::Packager do
 
     before do
       allow(Tebako::RubyBuilder).to receive(:new).and_return(ruby_builder)
-      allow(ruby_builder).to receive(:final_build)
+      allow(ruby_builder).to receive(:target_build)
       allow(Tebako::Packager::PatchHelpers).to receive(:exe_suffix).and_return("")
       allow(Tebako::Packager).to receive(:patchelf)
       allow(Tebako::Packager).to receive(:strip_or_copy)
@@ -116,8 +116,8 @@ RSpec.describe Tebako::Packager do
       Tebako::Packager.finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
     end
 
-    it "calls final_build on the RubyBuilder" do
-      expect(ruby_builder).to receive(:final_build)
+    it "calls target_build on the RubyBuilder" do
+      expect(ruby_builder).to receive(:target_build)
       Tebako::Packager.finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
     end
 
@@ -257,6 +257,8 @@ RSpec.describe Tebako::Packager do
   describe "#stash" do
     let(:stash_dir) { "/path/to/stash" }
     let(:src_dir) { "/path/to/src" }
+    let(:ruby_source_dir) { "/path/to/ruby_source" }
+    let(:ruby_ver) { Tebako::RubyVersion.new("3.2.6") }
 
     before do
       allow(Tebako::Packager::PatchHelpers).to receive(:recreate)
@@ -265,12 +267,14 @@ RSpec.describe Tebako::Packager do
 
     it "recreates the source directory" do
       expect(Tebako::Packager::PatchHelpers).to receive(:recreate).with(src_dir)
-      described_class.stash(stash_dir, src_dir)
+      expect_any_instance_of(Tebako::RubyBuilder).to receive(:toolchain_build)
+      described_class.stash(stash_dir, src_dir, ruby_source_dir, ruby_ver)
     end
 
     it "copies the stash directory to the source directory" do
       expect(FileUtils).to receive(:cp_r).with("#{stash_dir}/.", src_dir)
-      described_class.stash(stash_dir, src_dir)
+      expect_any_instance_of(Tebako::RubyBuilder).to receive(:toolchain_build)
+      described_class.stash(stash_dir, src_dir, ruby_source_dir, ruby_ver)
     end
   end
 
