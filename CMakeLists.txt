@@ -361,7 +361,8 @@ ExternalProject_Add(${RUBY_PRJ}
   DOWNLOAD_NO_PROGRESS true
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
-  CONFIGURE_COMMAND ruby ${EXE}/tebako-packager pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
+  CONFIGURE_COMMAND ""
+  BUILD_COMMAND ruby ${EXE}/tebako-packager pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
   # Make it for MacOS otherwise LDFLAGS are invalid
   COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_LIB_DIR}
   COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION} ${LIBYAML_RUBY_OPTION} \
@@ -375,10 +376,8 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         --prefix=${DATA_SRC_DIR}              \
                                                         ${C_FLAGS_DEST}=\"${RUBY_C_FLAGS}\"   \
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
-  COMMAND          ruby ${EXE}/tebako-packager pass1a ${RUBY_SOURCE_DIR}
-  BUILD_COMMAND    make -j${NCORES}
-  INSTALL_COMMAND  make install -j${NCORES}
-  COMMAND          ${GNU_BASH} -c "ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}"
+  COMMAND   ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}
+  INSTALL_COMMAND  ""
 )
 
 # add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})

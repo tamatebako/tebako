@@ -92,7 +92,7 @@ module Tebako
       def finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
         puts "-- Running finalize script"
 
-        RubyBuilder.new(ruby_ver, src_dir).final_build
+        RubyBuilder.new(ruby_ver, src_dir).target_build
         exe_suffix = Packager::PatchHelpers.exe_suffix(os_type)
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
         patchelf(src_name, patchelf)
@@ -149,19 +149,12 @@ module Tebako
       end
 
       # Stash
-      # Saves pristine Ruby environment that is used to deploy applications for packaging
-      def stash(src_dir, stash_dir)
+      # Created and saves pristine Ruby environment that is used to deploy applications for packaging
+      def stash(src_dir, stash_dir, ruby_source_dir, ruby_ver)
         puts "-- Running stash script"
-        #  .... this code snippet is executed 'outside' of Ruby scripts
-        # shall be reconsidered
-        #    FileUtils.cd ruby_source_dir do
-        #        puts "   ... creating pristine ruby environment at #{src_dir} [patience, it will take some time]"
-        #        out, st = Open3.capture2e("cmake", "-E", "chdir", ruby_source_dir, "make", "install")
-        #        print out if st.exitstatus != 0 || verbose
-        #        raise Tebako::Error.new("stash [make install] failed with code #{st.exitstatus}") if st.exitstatus != 0
-        #    end
+        RubyBuilder.new(ruby_ver, ruby_source_dir).toolchain_build
 
-        puts "   ... saving pristine ruby environment to #{stash_dir}"
+        puts "   ... saving pristine Ruby environment to #{stash_dir}"
         PatchHelpers.recreate(stash_dir)
         FileUtils.cp_r "#{src_dir}/.", stash_dir
       end
