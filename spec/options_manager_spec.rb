@@ -107,6 +107,22 @@ RSpec.describe Tebako::OptionsManager do
     end
   end
 
+  describe "#data_app_file" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct data app file path" do
+      allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
+      expect(options_manager.data_app_file).to eq("/path/to/data_bin/fs2.bin")
+    end
+  end
+
+  describe "#deps_lib_dir" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct lib directory path" do
+      allow(options_manager).to receive(:prefix).and_return("/fake/prefix")
+      expect(options_manager.deps_lib_dir).to eq("/fake/prefix/deps/lib")
+    end
+  end
+
   describe "#data_bundle_file" do
     let(:options_manager) { Tebako::OptionsManager.new({}) }
     it "returns the correct data bundle file path" do
@@ -120,14 +136,6 @@ RSpec.describe Tebako::OptionsManager do
     it "returns the correct data stub file path" do
       allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
       expect(options_manager.data_stub_file).to eq("/path/to/data_bin/fs.bin")
-    end
-  end
-
-  describe "#data_app_file" do
-    let(:options_manager) { Tebako::OptionsManager.new({}) }
-    it "returns the correct data app file path" do
-      allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
-      expect(options_manager.data_app_file).to eq("/path/to/data_bin/fs2.bin")
     end
   end
 
@@ -286,9 +294,9 @@ RSpec.describe Tebako::OptionsManager do
     end
   end
 
-  let(:options_manager) { OptionsManager.new(options) }
-
   describe "#package" do
+    let(:options_manager) { OptionsManager.new(options) }
+
     context 'when @options["output"] is set' do
       let(:options) { { "output" => "custom_package" } }
       let(:options_manager) { Tebako::OptionsManager.new(options) }
@@ -333,6 +341,35 @@ RSpec.describe Tebako::OptionsManager do
 
       it "returns the absolute package path" do
         expect(options_manager.package).to eq("/absolute/path/to/package")
+      end
+    end
+  end
+
+  describe "#package_within_root?" do
+    context "when the package path is within the root directory" do
+      let(:options) { { "root" => "/absolute/path", "output" => "/absolute/path/package" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it "returns true" do
+        result = options_manager.package_within_root?
+        expect(result).to be(true)
+      end
+    end
+
+    context "when the package path is outside the root directory" do
+      let(:options) { { "root" => "/absolute/path", "output" => "/absolute/otherpath/package" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it "returns false" do
+        result = options_manager.package_within_root?
+        expect(result).to be(false)
+      end
+    end
+
+    context "when the package path is outside the root directory (funcky)" do
+      let(:options) { { "root" => "/absolute/path/package-dir", "output" => "/absolute/path/package" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      it "returns false" do
+        result = options_manager.package_within_root?
+        expect(result).to be(false)
       end
     end
   end
@@ -503,6 +540,28 @@ RSpec.describe Tebako::OptionsManager do
     end
   end
 
+  describe "#press_announce_ref" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the announce reference string" do
+      allow(options_manager).to receive(:ref).and_return("ref")
+      expect(options_manager.press_announce_ref(true)).to eq(" referencing runtime at 'ref'")
+      expect(options_manager.press_announce_ref(false)).to eq("")
+    end
+  end
+
+  describe "#ref" do
+    it "returns 'tebako-runtime' if no ref is specified" do
+      options_manager = described_class.new({})
+      expect(options_manager.ref).to eq("tebako-runtime")
+    end
+
+    it "returns the given ref, converting backslashes to forward slashes" do
+      options = { "ref" => "some\\path\\ref" }
+      options_manager = described_class.new(options)
+      expect(options_manager.ref).to eq("some/path/ref")
+    end
+  end
+
   describe "#press_options" do
     context 'when options["cwd"] is set' do
       let(:options) do
@@ -527,6 +586,46 @@ RSpec.describe Tebako::OptionsManager do
       it "returns the correct options string with default cwd option" do
         expected_options = "-DPCKG:STRING='#{pckg}' -DLOG_LEVEL:STRING='#{options["log-level"]}' "
         expect(options_manager.press_options).to eq(expected_options)
+      end
+    end
+  end
+
+  describe "#process_gemfile" do
+    let(:options) { { "Ruby" => "3.2.6" } }
+    let(:options_manager) { described_class.new(options) }
+    let(:gemfile_path) { "/path/to/Gemfile" }
+    let(:mock_ruby_ver) { "3.2.6" }
+    let(:mock_ruby_hash) { "some_hash_value" }
+    let(:mock_rv) { instance_double(Tebako::RubyVersionWithGemfile) }
+
+    before do
+      allow(File).to receive(:dirname).with(gemfile_path).and_return("/path/to")
+      allow(File).to receive(:basename).with(gemfile_path).and_return("Gemfile")
+      allow(Dir).to receive(:chdir).and_yield
+      allow(Tebako::RubyVersionWithGemfile).to receive(:new).and_return(mock_rv)
+      allow(mock_rv).to receive(:extend_ruby_version).and_return([mock_ruby_ver, mock_ruby_hash])
+    end
+
+    it "processes gemfile and updates ruby version info" do
+      expect(Dir).to receive(:chdir).with("/path/to")
+      expect(Tebako::RubyVersionWithGemfile).to receive(:new).with(options["Ruby"], "Gemfile")
+
+      options_manager.process_gemfile(gemfile_path)
+
+      expect(options_manager.instance_variable_get(:@ruby_ver)).to eq(mock_ruby_ver)
+      expect(options_manager.instance_variable_get(:@ruby_hash)).to eq(mock_ruby_hash)
+      expect(options_manager.instance_variable_get(:@ruby_src_dir)).to be_nil
+    end
+
+    context "when RubyVersionWithGemfile raises error" do
+      before do
+        allow(Tebako::RubyVersionWithGemfile).to receive(:new)
+          .and_raise(Tebako::Error.new("Gemfile error", 1))
+      end
+
+      it "propagates the error" do
+        expect { options_manager.process_gemfile(gemfile_path) }
+          .to raise_error(Tebako::Error)
       end
     end
   end
@@ -621,65 +720,6 @@ RSpec.describe Tebako::OptionsManager do
         expected = "#{options_manager.deps}/src/_ruby_#{Tebako::RubyVersion::DEFAULT_RUBY_VERSION}"
         expect(options_manager.ruby_src_dir).to eq(expected)
       end
-    end
-  end
-
-  describe "#package_within_root?" do
-    context "when the package path is within the root directory" do
-      let(:options) { { "root" => "/absolute/path", "output" => "/absolute/path/package" } }
-      let(:options_manager) { Tebako::OptionsManager.new(options) }
-      it "returns true" do
-        result = options_manager.package_within_root?
-        expect(result).to be(true)
-      end
-    end
-
-    context "when the package path is outside the root directory" do
-      let(:options) { { "root" => "/absolute/path", "output" => "/absolute/otherpath/package" } }
-      let(:options_manager) { Tebako::OptionsManager.new(options) }
-      it "returns false" do
-        result = options_manager.package_within_root?
-        expect(result).to be(false)
-      end
-    end
-
-    context "when the package path is outside the root directory (funcky)" do
-      let(:options) { { "root" => "/absolute/path/package-dir", "output" => "/absolute/path/package" } }
-      let(:options_manager) { Tebako::OptionsManager.new(options) }
-      it "returns false" do
-        result = options_manager.package_within_root?
-        expect(result).to be(false)
-      end
-    end
-  end
-
-  describe "#deps_lib_dir" do
-    let(:options_manager) { Tebako::OptionsManager.new({}) }
-    it "returns the correct lib directory path" do
-      allow(options_manager).to receive(:prefix).and_return("/fake/prefix")
-      expect(options_manager.deps_lib_dir).to eq("/fake/prefix/deps/lib")
-    end
-  end
-
-  describe "#press_announce_ref" do
-    let(:options_manager) { Tebako::OptionsManager.new({}) }
-    it "returns the announce reference string" do
-      allow(options_manager).to receive(:ref).and_return("ref")
-      expect(options_manager.press_announce_ref(true)).to eq(" referencing runtime at 'ref'")
-      expect(options_manager.press_announce_ref(false)).to eq("")
-    end
-  end
-
-  describe "#ref" do
-    it "returns 'tebako-runtime' if no ref is specified" do
-      options_manager = described_class.new({})
-      expect(options_manager.ref).to eq("tebako-runtime")
-    end
-
-    it "returns the given ref, converting backslashes to forward slashes" do
-      options = { "ref" => "some\\path\\ref" }
-      options_manager = described_class.new(options)
-      expect(options_manager.ref).to eq("some/path/ref")
     end
   end
 end
