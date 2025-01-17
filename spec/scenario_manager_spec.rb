@@ -98,9 +98,9 @@ RSpec.describe Tebako::ScenarioManager do
         scenario_manager.instance_variable_set(:@gs_length, 1)
       end
 
-      context "and @gf_length is positive" do
+      context "and @with_gemfile is true" do
         before do
-          scenario_manager.instance_variable_set(:@gf_length, 1)
+          scenario_manager.instance_variable_set(:@with_gemfile, true)
           scenario_manager.send(:configure_scenario_inner)
         end
 
@@ -109,9 +109,9 @@ RSpec.describe Tebako::ScenarioManager do
         end
       end
 
-      context "and @gf_length is 0" do
+      context "and @with_gemfile is false" do
         before do
-          scenario_manager.instance_variable_set(:@gf_length, 0)
+          scenario_manager.instance_variable_set(:@with_gemfile, false)
           scenario_manager.send(:configure_scenario_inner)
         end
 
@@ -136,9 +136,9 @@ RSpec.describe Tebako::ScenarioManager do
   end
 
   describe "#configure_scenario_no_gemspec" do
-    context "when @gf_length is positive" do
+    context "when @with_gemfile is true" do
       before do
-        scenario_manager.instance_variable_set(:@gf_length, 1)
+        scenario_manager.instance_variable_set(:@with_gemfile, true)
         scenario_manager.instance_variable_set(:@g_length, 0)
         scenario_manager.send(:configure_scenario_no_gemspec)
       end
@@ -148,9 +148,9 @@ RSpec.describe Tebako::ScenarioManager do
       end
     end
 
-    context "when @gf_length is 0 and @g_length is positive" do
+    context "when @with_gemfile is false and @g_length is positive" do
       before do
-        scenario_manager.instance_variable_set(:@gf_length, 0)
+        scenario_manager.instance_variable_set(:@with_gemfile, false)
         scenario_manager.instance_variable_set(:@g_length, 1)
         scenario_manager.send(:configure_scenario_no_gemspec)
       end
@@ -160,9 +160,9 @@ RSpec.describe Tebako::ScenarioManager do
       end
     end
 
-    context "when both @gf_length and @g_length are 0" do
+    context "when @with_gemfile is false and @g_length is 0" do
       before do
-        scenario_manager.instance_variable_set(:@gf_length, 0)
+        scenario_manager.instance_variable_set(:@with_gemfile, false)
         scenario_manager.instance_variable_set(:@g_length, 0)
         scenario_manager.send(:configure_scenario_no_gemspec)
       end
@@ -196,7 +196,7 @@ RSpec.describe Tebako::ScenarioManager do
   end
 
   describe "#lookup_files" do
-    it "sets @gs_length, @gf_length, and @g_length correctly for only gemspec files" do
+    it "sets @gs_length, @with_gemfile, and @g_length correctly for only gemspec files" do
       Dir.mktmpdir do |tmp_dir|
         FileUtils.touch(File.join(tmp_dir, "example1.gemspec"))
         FileUtils.touch(File.join(tmp_dir, "example2.gemspec"))
@@ -205,12 +205,12 @@ RSpec.describe Tebako::ScenarioManager do
         scenario_manager.send(:lookup_files)
 
         expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(2)
-        expect(scenario_manager.instance_variable_get(:@gf_length)).to eq(0)
+        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(false)
         expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
       end
     end
 
-    it "sets @gs_length, @gf_length, and @g_length correctly for only Gemfile" do
+    it "sets @gs_length, @with_gemfile, and @g_length correctly for only Gemfile" do
       Dir.mktmpdir do |tmp_dir|
         FileUtils.touch(File.join(tmp_dir, "Gemfile"))
         scenario_manager = Tebako::ScenarioManager.new(tmp_dir, fs_entrance)
@@ -218,12 +218,12 @@ RSpec.describe Tebako::ScenarioManager do
         scenario_manager.send(:lookup_files)
 
         expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@gf_length)).to eq(1)
+        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(true)
         expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
       end
     end
 
-    it "sets @gs_length, @gf_length, and @g_length correctly for only gem files" do
+    it "sets @gs_length, @with_gemfile, and @g_length correctly for only gem files" do
       Dir.mktmpdir do |tmp_dir|
         FileUtils.touch(File.join(tmp_dir, "example1.gem"))
         scenario_manager = Tebako::ScenarioManager.new(tmp_dir, fs_entrance)
@@ -231,12 +231,12 @@ RSpec.describe Tebako::ScenarioManager do
         scenario_manager.send(:lookup_files)
 
         expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@gf_length)).to eq(0)
+        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(false)
         expect(scenario_manager.instance_variable_get(:@g_length)).to eq(1)
       end
     end
 
-    it "sets @gs_length, @gf_length, and @g_length correctly for mixed files" do
+    it "sets @gs_length, @with_gemfile, and @g_length correctly for mixed files" do
       Dir.mktmpdir do |tmp_dir|
         FileUtils.touch(File.join(tmp_dir, "example1.gemspec"))
         FileUtils.touch(File.join(tmp_dir, "Gemfile"))
@@ -246,19 +246,19 @@ RSpec.describe Tebako::ScenarioManager do
         scenario_manager.send(:lookup_files)
 
         expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(1)
-        expect(scenario_manager.instance_variable_get(:@gf_length)).to eq(1)
+        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(true)
         expect(scenario_manager.instance_variable_get(:@g_length)).to eq(1)
       end
     end
 
-    it "sets @gs_length, @gf_length, and @g_length to zero when no relevant files are present" do
+    it "sets @gs_length, @with_gemfile, and @g_length correctly when no relevant files are present" do
       Dir.mktmpdir do |tmp_dir|
         scenario_manager = Tebako::ScenarioManager.new(tmp_dir, fs_entrance)
 
         scenario_manager.send(:lookup_files)
 
         expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@gf_length)).to eq(0)
+        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(false)
         expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
       end
     end

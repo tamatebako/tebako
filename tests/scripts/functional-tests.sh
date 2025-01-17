@@ -108,6 +108,7 @@ press_runner_with_error_bundle() {
 # $2 -- entry point
 # $3 -- tebako package name
 # $4 -- expected error code
+# $5 -- expected error message (optional)
    if [ "${VERBOSE}" == "yes" ]; then
      "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
      assertEquals "$4" "${PIPESTATUS[0]}"
@@ -117,7 +118,12 @@ press_runner_with_error_bundle() {
      assertEquals "$4" "${PIPESTATUS[0]}"
    fi
 
-   assertContains "$result" "$PRESS_FAILED_MSG"
+   if [ -n "$5" ]; then
+     failed_msg="$5"
+   else
+     failed_msg="$PRESS_FAILED_MSG"
+   fi
+   assertContains "$result" "$failed_msg"
 }
 
 press_runner_with_error_app() {
@@ -313,15 +319,11 @@ test_tebako_press_15() {
 # 16. Ruby gem (with gemspec, with gemfile), gemfile with error
 test_tebako_press_16() {
    echo "==> Ruby gem (with gemspec, with gemfile), gemfile with error"
-   if [ "${MODE}" == "bundle" ]; then
-      rc=104
-   else
-      rc=255
-   fi
    press_runner_with_error_"${MODE}" "${DIR_TESTS}/test-16" \
                                      "tebako-test-run.rb" \
                                      "test-16-package" \
-                                     "$rc"
+                                     115 \
+                                     "Failed to load Gemfile"
 }
 
 # ......................................................................

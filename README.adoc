@@ -90,7 +90,7 @@ can opt to run `strip -S` manually, it most cases it works.
 
 MacOS build caveats:
 
-* We saw `clang` compiler segmentation fault when during packaging of very large
+* We saw `clang` compiler segmentation fault when packaging of very large
 projects with XCode 14.3.1. This issue is not reproducible with XCode 15.0.1 or
 higher.
 ====
@@ -905,7 +905,8 @@ Where:
 
 `<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
 
-`Ruby`:: parameter defines Ruby version that will be packaged (optional, defaults to `3.2.6`)
+`Ruby`:: parameter defines package Ruby version (optional). This version is used in conjuction with requirements
+from the Gemfile as explained below in 'Package Ruby version selection rules' section.
 
 `tebafile`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
@@ -1056,13 +1057,37 @@ operation. The following table lists the possible exit codes and their meanings.
 
 | 0    | No error
 | 1    | Invalid command line
-| 101  | `tebako setup` failed at configuration step
-| 102  | `tebako setup` failed at build step
-| 103  | `tebako press` failed at configuration step
-| 104  | `tebako press` failed at build step
-| 253  | Unsupported Ruby version
-| 254  | Unsupported operating systems
-| 255  | Internal error
+| 101  | 'tebako setup' configure step failed
+| 102  | 'tebako setup' build step failed
+| 103  | 'tebako press' configure step failed
+| 104  | 'tebako press' build step failed
+| 105  | Failed to map MSys path to Windows
+| 106  | Entry point does not exist or is not accessible
+| 107  | Project root does not exist or is not accessible
+| 108  | Package working directory does not exist
+| 109  | Invalid Ruby version format
+| 110  | Ruby version is not supported
+| 111  | Ruby version is not supported on Windows
+| 112  | OS is not supported
+| 113  | Path to root shall be absolute. Relative path is not allowed
+| 114  | Entry point is not within the project root
+| 115  | Failed to load Gemfile
+| 116  | Ruby version does not satify Gemfile requirements
+|===
+
+== Package Ruby version selection rules
+
+During packaging tebako creates its own Ruby execution environment that is independent from the host Ruby environment.
+The version of Ruby that is used in the package is defined by the combination of the `--Ruby` option and ruby requirement
+specified in Gemfile.
+
+.Package Ruby version selection Rules
+[cols="3", options="header"]
+|===
+| Gemfile requirement\--Ruby option | Specified | Not specified
+
+| Specified | The version specified by --Ruby option if it is supported and satisfies Gemfile requirement; error otherwise | The minimal supported Ruby option that satisfies Gemfile requirement; error otherwise
+| Not specified | The version specified by --Ruby option if it is supported; error otherwise | Default Tebako Ruby version (3.2.6).
 
 |===
 
