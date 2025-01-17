@@ -8,8 +8,11 @@ puts "Rubygems version: #{Gem.rubygems_version}"
 if defined?(TebakoRuntime::VERSION)
   puts "Using tebako-runtime v#{TebakoRuntime::VERSION}"
 else
-  puts "Tebako runtime not loaded"
+  puts "Tebako runtime is not loaded"
 end
 
 puts "Current pwd: #{Dir.pwd}"
 puts "Original pwd: #{$tebako_original_pwd}"
+
+puts "$PROGRAM_NAME: #{$PROGRAM_NAME}"
+puts "$0: #{$0}"
