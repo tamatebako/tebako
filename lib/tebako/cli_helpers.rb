@@ -48,6 +48,9 @@ module Tebako
       *  WARNING: You are packaging in-place, i.e.: tebako package will be placed inside application root.             *
       *  It is not an error but we do not recommend it because it is a way to keep packaging old versions recrsively.  *
       *                                                                                                                *
+      *  For example, ensure that `--root=` differs from `--output=` as described in README.adoc:                      *
+      *  tebako press --root='~/projects/myproject' --entry=start.rb --output=/temp/myproject.tebako                   *
+      *                                                                                                                *
       ******************************************************************************************************************
 
     WARN
