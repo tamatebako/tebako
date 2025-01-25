@@ -59,6 +59,7 @@ Gem::Specification.new do |spec|
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = %w[cmake exe ext include lib resources src tools/ci-scripts tools/cmake-scripts tools/includes]
 
+  spec.add_dependency "bundler"
   spec.add_dependency "thor", "~> 1.2"
   spec.add_dependency "yaml", "~> 0.2.1"
 
