@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-204 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -42,12 +42,15 @@ module Tebako
     112 => "OS is not supported",
     113 => "Path to root shall be absolute. Relative path is not allowed",
     114 => "Entry point is not within the project root",
+    115 => "Failed to load Gemfile",
+    116 => "Ruby version does not satify Gemfile requirements",
     201 => "Warning. Could not create cache version file"
   }.freeze
 
   class << self
-    def packaging_error(code)
+    def packaging_error(code, extm = nil)
       msg = PACKAGING_ERRORS[code]
+      msg += ": #{extm}" unless extm.nil?
       msg = "Unknown packaging error" if msg.nil?
       raise Tebako::Error.new msg, code
     end

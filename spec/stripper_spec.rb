@@ -118,10 +118,10 @@ RSpec.describe Tebako::Stripper do
     let(:scm) { double("scm", exe_suffix: ".exe") }
     let(:src_dir) { "/path/to/src" }
     let(:files) do
-      Tebako::Stripper::BIN_FILES.flat_map { |f|
+      Tebako::Stripper::BIN_FILES.flat_map do |f|
         ["#{src_dir}/bin/#{f}", "#{src_dir}/bin/#{f}.cmd",
          "#{src_dir}/bin/#{f}.bat"]
-      } + ["#{src_dir}/bin/ruby.exe", "#{src_dir}/bin/rubyw.exe"]
+      end + ["#{src_dir}/bin/ruby.exe", "#{src_dir}/bin/rubyw.exe"]
     end
 
     it "removes the correct files" do

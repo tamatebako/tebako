@@ -57,6 +57,9 @@ module Tebako
 
     def do_press(options_manager)
       scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
+      scenario_manager.configure_scenario
+      options_manager.process_gemfile(scenario_manager.gemfile_path) if scenario_manager.with_gemfile
+
       puts options_manager.press_announce(scenario_manager.msys?)
 
       if options_manager.package_within_root?
@@ -94,7 +97,6 @@ module Tebako
 
     def generate_files(options_manager, scenario_manager)
       puts "-- Generating files"
-      scenario_manager.configure_scenario
 
       v_parts = Tebako::VERSION.split(".")
       Tebako::Codegen.generate_tebako_version_h(options_manager, v_parts)

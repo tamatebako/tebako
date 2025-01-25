@@ -383,6 +383,78 @@ RSpec.describe Tebako::DeployHelper do
     end
   end
 
+  describe "#deploy" do
+    let(:r_v) { "3.2.6" }
+    let(:ruby_ver) { Tebako::RubyVersion.new(r_v) }
+
+    before do
+      deploy_helper.configure(ruby_ver, "/working/dir")
+
+      # Stub system calls
+      allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+      allow(self).to receive(:system).and_return(true)
+    end
+
+    context "when deployment succeeds" do
+      before do
+        allow(deploy_helper).to receive(:update_rubygems)
+        allow(deploy_helper).to receive(:install_gem)
+        allow(deploy_helper).to receive(:deploy_solution)
+        allow(deploy_helper).to receive(:check_cwd)
+        allow(deploy_helper).to receive(:needs_bundler?).and_return(true)
+      end
+
+      it "executes deployment steps in order" do
+        expect(deploy_helper).to receive(:update_rubygems).ordered
+        expect(deploy_helper).to receive(:install_gem).with("tebako-runtime").ordered
+        expect(deploy_helper).to receive(:install_gem).with("bundler", Tebako::BUNDLER_VERSION).ordered
+        expect(deploy_helper).to receive(:deploy_solution).ordered
+        expect(deploy_helper).to receive(:check_cwd).ordered
+
+        deploy_helper.deploy
+      end
+
+      it "sets correct environment variables during deployment" do
+        expected_env = {
+          "GEM_HOME" => deploy_helper.gem_home,
+          "GEM_PATH" => deploy_helper.gem_home,
+          "GEM_SPEC_CACHE" => File.join("/target/dir", "spec_cache"),
+          "TEBAKO_PASS_THROUGH" => "1"
+        }
+
+        expect(Tebako::BuildHelpers).to receive(:with_env).with(expected_env)
+        deploy_helper.deploy
+      end
+    end
+
+    context "when bundler is not needed" do
+      before do
+        allow(deploy_helper).to receive(:update_rubygems)
+        allow(deploy_helper).to receive(:install_gem)
+        allow(deploy_helper).to receive(:deploy_solution)
+        allow(deploy_helper).to receive(:check_cwd)
+        allow(deploy_helper).to receive(:needs_bundler?).and_return(false)
+      end
+
+      it "skips bundler installation" do
+        expect(deploy_helper).not_to receive(:install_gem).with("bundler", anything)
+        deploy_helper.deploy
+      end
+    end
+
+    context "when deployment fails" do
+      before do
+        allow(deploy_helper).to receive(:update_rubygems)
+        allow(deploy_helper).to receive(:install_gem).with("tebako-runtime")
+                                                     .and_raise(Tebako::Error.new("Installation failed", 1))
+      end
+
+      it "propagates the error" do
+        expect { deploy_helper.deploy }.to raise_error(Tebako::Error)
+      end
+    end
+  end
+
   describe "#deploy_env" do
     let(:gem_home) { File.join(target_dir, "gems") }
 
@@ -398,6 +470,133 @@ RSpec.describe Tebako::DeployHelper do
         "TEBAKO_PASS_THROUGH" => "1"
       }
       expect(deploy_helper.deploy_env).to eq(expected_env)
+    end
+  end
+
+  describe "#deploy_gem" do
+    let(:gem_name) { "test_gem" }
+
+    it "follows the correct deployment sequence" do
+      allow(Dir).to receive(:chdir).and_yield
+      expect(deploy_helper).to receive(:copy_files).with("/pre/dir").ordered
+      expect(deploy_helper).to receive(:install_gem).with(gem_name).ordered
+      expect(deploy_helper).to receive(:check_entry_point).with("bin").ordered
+
+      deploy_helper.send(:deploy_gem, gem_name)
+    end
+
+    context "when copy_files fails" do
+      before do
+        allow(deploy_helper).to receive(:copy_files)
+          .and_raise(Tebako::Error.new("Copy failed", 107))
+      end
+
+      it "raises an error" do
+        expect { deploy_helper.send(:deploy_gem, gem_name) }
+          .to raise_error(Tebako::Error)
+      end
+    end
+  end
+  describe "#deploy_solution" do
+    before do
+      allow(Dir).to receive(:glob).and_return([])
+    end
+
+    context "simple_script scenario" do
+      before { deploy_helper.instance_variable_set(:@scenario, :simple_script) }
+
+      it "calls deploy_simple_script" do
+        expect(deploy_helper).to receive(:deploy_simple_script)
+        deploy_helper.send(:deploy_solution)
+      end
+    end
+
+    context "gem scenario" do
+      before do
+        deploy_helper.instance_variable_set(:@scenario, :gem)
+        allow(Dir).to receive(:glob).and_return(["test.gem"])
+      end
+
+      it "calls deploy_gem with first gem found" do
+        expect(deploy_helper).to receive(:deploy_gem).with("test.gem")
+        deploy_helper.send(:deploy_solution)
+      end
+    end
+
+    context "gemfile scenario" do
+      before { deploy_helper.instance_variable_set(:@scenario, :gemfile) }
+
+      it "calls deploy_gemfile" do
+        expect(deploy_helper).to receive(:deploy_gemfile)
+        deploy_helper.send(:deploy_solution)
+      end
+    end
+
+    context "gemspec scenario" do
+      before do
+        deploy_helper.instance_variable_set(:@scenario, :gemspec)
+        allow(Dir).to receive(:glob).and_return(["test.gemspec"])
+      end
+
+      it "calls collect_and_deploy_gem with first gemspec found" do
+        expect(deploy_helper).to receive(:collect_and_deploy_gem).with("test.gemspec")
+        deploy_helper.send(:deploy_solution)
+      end
+    end
+
+    context "gemspec_and_gemfile scenario" do
+      before do
+        deploy_helper.instance_variable_set(:@scenario, :gemspec_and_gemfile)
+        allow(Dir).to receive(:glob).and_return(["test.gemspec"])
+      end
+
+      it "calls collect_and_deploy_gem_and_gemfile with first gemspec found" do
+        expect(deploy_helper).to receive(:collect_and_deploy_gem_and_gemfile).with("test.gemspec")
+        deploy_helper.send(:deploy_solution)
+      end
+    end
+  end
+
+  describe "#install_all_gems_or_fail" do
+    before do
+      allow(Dir).to receive(:glob).with("*.gem")
+      allow(File).to receive(:expand_path) { |path| "/expanded/#{path}" }
+    end
+
+    context "when gems are present" do
+      before do
+        allow(Dir).to receive(:glob).with("*.gem").and_return(["gem1.gem", "gem2.gem"])
+      end
+
+      it "installs all gems" do
+        expect(deploy_helper).to receive(:install_gem).with("/expanded/gem1.gem")
+        expect(deploy_helper).to receive(:install_gem).with("/expanded/gem2.gem")
+        deploy_helper.send(:install_all_gems_or_fail)
+      end
+    end
+
+    context "when no gems are found" do
+      before do
+        allow(Dir).to receive(:glob).with("*.gem").and_return([])
+      end
+
+      it "raises an error" do
+        expect { deploy_helper.send(:install_all_gems_or_fail) }
+          .to raise_error(Tebako::Error, "No gem files found after build")
+      end
+    end
+
+    context "when gem installation fails" do
+      before do
+        allow(Dir).to receive(:glob).with("*.gem").and_return(["gem1.gem"])
+        allow(deploy_helper).to receive(:install_gem)
+          .and_raise(Tebako::Error.new("Installation failed", 1))
+      end
+
+      it "propagates the error" do
+        expect { deploy_helper.send(:install_all_gems_or_fail) }
+          .to raise_error(Tebako::Error)
+      end
     end
   end
 
@@ -435,9 +634,9 @@ RSpec.describe Tebako::DeployHelper do
   end
 
   describe "#needs_bundler?" do
-    context "when @gf_length is greater than 0" do
+    context "when @with_gemfile is true" do
       before do
-        deploy_helper.instance_variable_set(:@gf_length, 1)
+        deploy_helper.instance_variable_set(:@with_gemfile, true)
       end
 
       context "and @ruby_ver is less than 3.1" do
@@ -470,9 +669,9 @@ RSpec.describe Tebako::DeployHelper do
       end
     end
 
-    context "when @gf_length is 0" do
+    context "when @with_gemfile is false" do
       before do
-        deploy_helper.instance_variable_set(:@gf_length, 0)
+        deploy_helper.instance_variable_set(:@with_gemfile, false)
       end
 
       context "and @ruby_ver is less than 3.1" do

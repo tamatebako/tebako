@@ -100,7 +100,7 @@ module Tebako
     end
 
     def needs_bundler?
-      @gf_length.positive? && !@ruby_ver.ruby31?
+      @with_gemfile && !@ruby_ver.ruby31?
     end
 
     def update_rubygems

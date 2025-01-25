@@ -25,11 +25,12 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require "bundler"
 require_relative "error"
 
 # Tebako - an executable packager
 module Tebako
-  # Ruby version checks
+  # Ruby version
   class RubyVersion
     RUBY_VERSIONS = {
       "2.7.8" => "c2dab63cbc8f2a05526108ad419efa63a67ed4074dbbcf9fc2b1ca664cb45ba0",
@@ -51,12 +52,22 @@ module Tebako
     def initialize(ruby_version)
       @ruby_version = ruby_version.nil? ? DEFAULT_RUBY_VERSION : ruby_version
 
-      version_check_format
-      version_check
-      version_check_msys
+      run_checks
     end
 
     attr_reader :ruby_version
+
+    def api_version
+      @api_version ||= "#{@ruby_version.split(".")[0..1].join(".")}.0"
+    end
+
+    def extend_ruby_version
+      @extend_ruby_version ||= [@ruby_version, RUBY_VERSIONS[@ruby_version]]
+    end
+
+    def lib_version
+      @lib_version ||= "#{@ruby_version.split(".")[0..1].join}0"
+    end
 
     def ruby3x?
       @ruby3x ||= @ruby_version[0] == "3"
@@ -82,12 +93,10 @@ module Tebako
       @ruby34 ||= ruby3x? && @ruby_version[2].to_i >= 4
     end
 
-    def api_version
-      @api_version ||= "#{@ruby_version.split(".")[0..1].join(".")}.0"
-    end
-
-    def lib_version
-      @lib_version ||= "#{@ruby_version.split(".")[0..1].join}0"
+    def run_checks
+      version_check_format
+      version_check
+      version_check_msys
     end
 
     def version_check
@@ -111,9 +120,56 @@ module Tebako
         raise Tebako::Error.new("Ruby version #{@ruby_version} is not supported on Windows", 111)
       end
     end
+  end
 
-    def extend_ruby_version
-      @extend_ruby_version ||= [@ruby_version, RUBY_VERSIONS[@ruby_version]]
+  # Ruby version with Gemfile definition
+  class RubyVersionWithGemfile < RubyVersion
+    def initialize(ruby_version, gemfile_path)
+      # Assuming that it does not attempt to load any gems or resolve dependencies
+      # this can be done with any bundler version
+      gemfile = Bundler::Definition.build(gemfile_path, nil, nil)
+      ruby_v = gemfile.ruby_version&.versions
+      if ruby_v.nil?
+        super(ruby_version)
+      else
+        process_gemfile_ruby_version(ruby_version, ruby_v)
+        run_checks
+      end
+    rescue StandardError => e
+      Tebako.packaging_error(115, e.message)
+    end
+
+    def process_gemfile_ruby_version(ruby_version, ruby_v)
+      puts "-- Found Gemfile with Ruby requirements #{ruby_v}"
+      requirement = Gem::Requirement.new(ruby_v)
+
+      if ruby_version.nil?
+        process_gemfile_ruby_version_ud(requirement)
+      else
+        process_gemfile_ruby_version_d(ruby_version, requirement)
+      end
+    end
+
+    def process_gemfile_ruby_version_d(ruby_version, requirement)
+      current_version = Gem::Version.new(ruby_version)
+      unless requirement.satisfied_by?(current_version)
+        raise Tebako::Error.new("Ruby version #{ruby_version} does not satisfy requirement #{ruby_v}", 116)
+      end
+
+      @ruby_version = ruby_version
+    end
+
+    def process_gemfile_ruby_version_ud(requirement)
+      available_versions = RUBY_VERSIONS.keys.map { |v| Gem::Version.new(v) }
+      matching_version = available_versions.find { |v| requirement.satisfied_by?(v) }
+      puts "-- Found matching Ruby version #{matching_version}" if matching_version
+
+      unless matching_version
+        raise Tebako::Error.new("No available Ruby version satisfies requirement #{requirement}",
+                                116)
+      end
+
+      @ruby_version = matching_version.to_s
     end
   end
 end

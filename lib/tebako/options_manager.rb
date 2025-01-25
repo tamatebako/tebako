@@ -282,6 +282,19 @@ module Tebako
       @press_options ||= "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{l_level}' " \
     end
 
+    def process_gemfile(gemfile_path)
+      folder = File.dirname(gemfile_path)
+      filename = File.basename(gemfile_path)
+      # Change directory to the folder containing the Gemfile
+      # Because Bundler::Definition.build *sometimes* requires to be in
+      # the Gemfile directory
+      Dir.chdir(folder) do
+        @rv = Tebako::RubyVersionWithGemfile.new(@options["Ruby"], filename)
+      end
+      @ruby_ver, @ruby_hash = @rv.extend_ruby_version
+      @ruby_src_dir = nil
+    end
+
     def relative?(path)
       Pathname.new(path).relative?
     end
