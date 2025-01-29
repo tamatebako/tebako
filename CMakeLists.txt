@@ -380,7 +380,7 @@ ExternalProject_Add(${RUBY_PRJ}
   INSTALL_COMMAND  ""
 )
 
-# add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
+add_dependencies(${RUBY_PRJ} ${DWARFS_WR_PRJ})
 
 if (${SETUP_MODE})
   add_custom_target(setup

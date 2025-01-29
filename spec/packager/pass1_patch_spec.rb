@@ -201,11 +201,28 @@ RSpec.describe Tebako::Packager::Pass1MSysPatch do # rubocop:disable Metrics/Blo
       end
     end
 
-    context "when ruby_ver is ruby34" do
+    context "when ruby version is 3.3.7" do
+      let(:ruby_ver) { Tebako::RubyVersion.new("3.3.7") }
+      let(:patch) { described_class.new(mountpoint, ruby_ver) }
+
+      it "includes additional patches for MSys and ruby 3.3.7" do
+        expected_patch_map = base_patch_map.merge(
+          "ext/bigdecimal/bigdecimal.h" => described_class::EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH,
+          "cygwin/GNUmakefile.in" => patch.send(:gnumakefile_in_patch_p1),
+          "ext/openssl/extconf.rb" => described_class::OPENSSL_EXTCONF_RB_PATCH,
+          "lib/rubygems/openssl.rb" => described_class::RUBYGEM_OPENSSL_RB_PATCH,
+          "include/ruby/onigmo.h" => described_class::INCLUDE_RUBY_ONIGMO_H_PATCH,
+          "win32/winmain.c" => described_class::WIN32_WINMAIN_C_PATCH
+        )
+        expect(patch.patch_map).to eq(expected_patch_map)
+      end
+    end
+
+    context "when ruby version is 3.4.1" do
       let(:ruby_ver) { Tebako::RubyVersion.new("3.4.1") }
       let(:patch) { described_class.new(mountpoint, ruby_ver) }
 
-      it "includes additional patches for MSys and ruby34" do
+      it "includes additional patches for MSys and ruby 3.4.1" do
         expected_patch_map = base_patch_map.merge(
           "cygwin/GNUmakefile.in" => patch.send(:gnumakefile_in_patch_p1),
           "ext/openssl/extconf.rb" => described_class::OPENSSL_EXTCONF_RB_PATCH,

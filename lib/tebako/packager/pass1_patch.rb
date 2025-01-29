@@ -233,7 +233,7 @@ module Tebako
 
       WIN32_WINMAIN_C_PATCH = {
         "WinMain(HINSTANCE current, HINSTANCE prev, LPSTR cmdline, int showcmd)" =>
-          "wWinMain(HINSTANCE current, HINSTANCE prev, LPWSTR cmdline, int showcmd)"
+          "wWinMain(HINSTANCE current, HINSTANCE prev, LPWSTR cmdline, int showcmd) /* tebako patched */"
       }.freeze
 
       def patch_map
@@ -288,7 +288,7 @@ module Tebako
       def msys_patches
         pm = msys_base_patches
 
-        if @ruby_ver.ruby34?
+        if @ruby_ver.ruby337?
           # ....................................................
           # RUBY_EXTERN shall be extern for static build but is set to __declspec(dllimport) for encodin libarary
           pm.store("include/ruby/onigmo.h", INCLUDE_RUBY_ONIGMO_H_PATCH)

@@ -60,7 +60,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 16
+  CACHE_VER: 17
   TZ: "Etc/UTC"
   VERBOSE: no
 
@@ -121,7 +121,7 @@ jobs:
         env:
           - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
           - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.6', '3.3.6', '3.4.1' ]
+        package_ruby_ver: [ '3.2.6', '3.3.7', '3.4.1' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -178,7 +178,7 @@ jobs:
         env:
           - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
           - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.6', '3.3.6', '3.4.1' ]
+        package_ruby_ver: [ '3.2.6', '3.3.7', '3.4.1' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -234,7 +234,7 @@ jobs:
         env:
           - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
           - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.6', '3.3.6', '3.4.1']
+        package_ruby_ver: [ '3.2.6', '3.3.7', '3.4.1']
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
