@@ -84,6 +84,10 @@ RSpec.describe Tebako::DeployHelper do
           .to receive(:run_with_capture_v)
           .with([bundle, "config", "set", "--local", "force_ruby_platform", "false"])
           .once
+        #        expect(Tebako::BuildHelpers)
+        #          .to receive(:run_with_capture_v)
+        #          .with([bundle, "config", "set", "--local", "deployment", "false"])
+        #          .once
 
         deploy_helper.send(:bundle_config)
       end
@@ -112,6 +116,10 @@ RSpec.describe Tebako::DeployHelper do
           .to receive(:run_with_capture_v)
           .with([bundle, "config", "set", "--local", "force_ruby_platform", "true"])
           .once
+        #        expect(Tebako::BuildHelpers)
+        #          .to receive(:run_with_capture_v)
+        #          .with([bundle, "config", "set", "--local", "deployment", "false"])
+        #          .once
 
         deploy_helper.send(:bundle_config)
       end

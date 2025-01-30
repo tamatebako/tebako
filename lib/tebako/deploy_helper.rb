@@ -126,6 +126,8 @@ module Tebako
                                        @nokogiri_option])
       BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "force_ruby_platform",
                                        @force_ruby_platform])
+      #      BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "deployment",
+      #                                       @with_gemfile_lock.to_s])
     end
 
     def check_entry_point(entry_point_root)
