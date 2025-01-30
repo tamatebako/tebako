@@ -36,6 +36,7 @@ module Tebako
   class ScenarioManager
     def initialize(fs_root, fs_entrance)
       @with_gemfile = false
+      @with_gemfile_lock = false
       initialize_root(fs_root)
       initialize_entry_point(fs_entrance || "stub.rb")
     end
@@ -114,8 +115,10 @@ module Tebako
 
     def lookup_files
       @gemfile_path = File.join(@fs_root, "Gemfile")
+      @gemfile_lock_path = File.join(@fs_root, "Gemfile.lock")
       @gs_length = Dir.glob(File.join(@fs_root, "*.gemspec")).length
       @with_gemfile = File.exist?(@gemfile_path)
+      @with_gemfile_lock = File.exist?(@gemfile_lock_path)
       @g_length = Dir.glob(File.join(@fs_root, "*.gem")).length
     end
   end
