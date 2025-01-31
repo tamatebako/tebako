@@ -89,6 +89,10 @@ module Tebako
         Tebako::Stripper.strip(deploy_helper, target_dir)
       end
 
+      def do_patch(patch_map, root)
+        patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
+      end
+
       def finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
         puts "-- Running finalize script"
 
@@ -181,10 +185,6 @@ module Tebako
 
       def lib_fname(src_dir, ruby_ver)
         File.join(src_dir, "lib", "libx64-ucrt-ruby#{ruby_ver.lib_version}.a")
-      end
-
-      def do_patch(patch_map, root)
-        patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
       end
 
       def patchelf(src_name, patchelf)

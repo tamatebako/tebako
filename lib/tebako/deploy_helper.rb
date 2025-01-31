@@ -34,6 +34,9 @@ require_relative "build_helpers"
 require_relative "packager/patch_helpers"
 require_relative "scenario_manager"
 
+require_relative "packager/patch"
+require_relative "packager/rubygems_patch"
+
 # Tebako - an executable packager
 module Tebako
   # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
@@ -109,7 +112,9 @@ module Tebako
       puts "   ... updating rubygems to #{Tebako::RUBYGEMS_VERSION}"
       BuildHelpers.run_with_capture_v([@gem_command, "update", "--no-doc", "--system",
                                        Tebako::RUBYGEMS_VERSION])
-      patch_after_rubygems_update(@target_dir, @ruby_ver.api_version)
+
+      patch = Packager::RubygemsUpdatePatch.new(@fs_mount_point).patch_map
+      Packager.do_patch(patch, "#{@target_dir}/lib/ruby/site_ruby/#{@ruby_ver.api_version}")
     end
 
     private
@@ -258,13 +263,6 @@ module Tebako
       raise Tebako::Error, "No gem files found after build" if gem_files.empty?
 
       gem_files.each { |gem_file| install_gem(gem_file) }
-    end
-
-    def patch_after_rubygems_update(target_dir, ruby_api_ver)
-      # Autoload cannot handle statically linked openssl extension
-      # Changing it to require seems to be the simplest solution
-      Packager::PatchHelpers.patch_file("#{target_dir}/lib/ruby/site_ruby/#{ruby_api_ver}/rubygems/openssl.rb",
-                                        { "autoload :OpenSSL, \"openssl\"" => "require \"openssl\"" })
     end
   end
 end
