@@ -43,6 +43,16 @@ module Tebako
 
     attr_reader :fs_entry_point, :fs_mount_point, :fs_entrance, :gemfile_path, :with_gemfile
 
+    def bundler_version_from_lockfile(lockfile_path)
+      return nil unless File.exist?(lockfile_path)
+
+      lockfile_content = File.read(lockfile_path)
+      parser = Bundler::LockfileParser.new(lockfile_content)
+
+      bundler_spec = parser.specs.find { |spec| spec.name == "bundler" }
+      bundler_spec&.version&.to_s
+    end
+
     def configure_scenario
       @fs_mount_point = if msys?
                           "A:/__tebako_memfs__"
@@ -118,8 +128,11 @@ module Tebako
       @gemfile_lock_path = File.join(@fs_root, "Gemfile.lock")
       @gs_length = Dir.glob(File.join(@fs_root, "*.gemspec")).length
       @with_gemfile = File.exist?(@gemfile_path)
-      @with_gemfile_lock = File.exist?(@gemfile_lock_path)
       @g_length = Dir.glob(File.join(@fs_root, "*.gem")).length
+      return unless File.exist?(@gemfile_lock_path)
+
+      @with_gemfile_lock = true
+      @bundler_version = bundler_version_from_lockfile(@gemfile_lock_path)
     end
   end
 end
