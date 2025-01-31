@@ -76,7 +76,7 @@ module Tebako
         update_rubygems
         system("#{gem_command} env") if @verbose
         install_gem("tebako-runtime")
-        install_gem("bundler", BUNDLER_VERSION) if needs_bundler?
+        install_gem("bundler", @with_gemfile_lock ? @bundler_version : BUNDLER_VERSION) if needs_bundler?
         deploy_solution
         check_cwd
       end
@@ -103,7 +103,7 @@ module Tebako
     end
 
     def needs_bundler?
-      @with_gemfile && !@ruby_ver.ruby31?
+      @with_gemfile && (!@ruby_ver.ruby31? || @with_gemfile_lock)
     end
 
     def update_rubygems
@@ -126,7 +126,7 @@ module Tebako
                                        @nokogiri_option])
       BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "force_ruby_platform",
                                        @force_ruby_platform])
-      #      BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "deployment",
+      #      BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "no-deployment",
       #                                       @with_gemfile_lock.to_s])
     end
 
