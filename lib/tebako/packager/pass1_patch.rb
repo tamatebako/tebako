@@ -29,6 +29,7 @@ require_relative "patch_helpers"
 require_relative "patch_buildsystem"
 
 require_relative "patch"
+require_relative "rubygems_patch"
 # Tebako - an executable packager
 module Tebako
   # Packager module
@@ -46,22 +47,11 @@ module Tebako
       end
     end
     # Ruby patching definitions (pass1 - common)
-    class Pass1Patch < Patch
+    class Pass1Patch < RubygemsPatch
       # [TODO] looks like it does not exist in 3.1.4
       # May be obsolete
       TOOL_RBINSTALL_RB_PATCH = {
         "    next if files.empty?" => "# tebako patched    next if files.empty?"
-      }.freeze
-
-      RUBYGEM_OPENSSL_RB_SUBST = <<~SUBST
-        # Start of tebako patch
-        require "openssl"
-        # End of tebako patch
-        autoload :OpenSSL, "openssl"
-      SUBST
-
-      RUBYGEM_OPENSSL_RB_PATCH = {
-        'autoload :OpenSSL, "openssl"' => RUBYGEM_OPENSSL_RB_SUBST
       }.freeze
 
       EXT_SETUP_PATCH = {
@@ -131,9 +121,8 @@ module Tebako
         "Logging::message \"=== Checking done. ===\\n\"" => OPENSSL_EXTCONF_RB_SUBST
       }.freeze
 
-      def initialize(mountpoint, ruby_ver)
-        super()
-        @mountpoint = mountpoint
+      def initialize(mount_point, ruby_ver)
+        super(mount_point)
         @ruby_ver = ruby_ver
       end
 
@@ -152,7 +141,7 @@ module Tebako
 
           # ....................................................
           # Allow only packaged gems (from within memfs)
-          "lib/rubygems/path_support.rb" => rubygems_path_support_patch,
+          "lib/rubygems/path_support.rb" => rubygems_path_support_patch(@mount_point),
 
           # ....................................................
           # Disable dynamic extensions
@@ -170,45 +159,9 @@ module Tebako
         # ....................................................
         # autoload :OpenSSL, "openssl"
         # fails to deal with a default gem from statically linked extension
-        pm.store("lib/rubygems/openssl.rb", RUBYGEM_OPENSSL_RB_PATCH) if @ruby_ver.ruby3x?
+        pm.store("lib/rubygems/openssl.rb", RUBYGEMS_OPENSSL_RB_PATCH) if @ruby_ver.ruby3x?
 
         pm.freeze
-      end
-
-      private
-
-      def rubygems_path_support_patch_one
-        <<~SUBST
-            @home = env["GEM_HOME"] || Gem.default_dir
-          # -- Start of tebako patch --
-              unless env["TEBAKO_PASS_THROUGH"]
-                @home = Gem.default_dir unless @home.index("#{@mount_point}") == 0
-              end
-          # -- End of tebako patch --
-
-        SUBST
-      end
-
-      def rubygems_path_support_patch_two
-        <<~SUBST
-
-            @path = split_gem_path env["GEM_PATH"], @home
-          # -- Start of tebako patch --
-              unless env["TEBAKO_PASS_THROUGH"]
-                @path.keep_if do |xpath|
-                  xpath.index("#{@mount_point}") == 0
-                end
-              end
-          # -- End of tebako patch --
-
-        SUBST
-      end
-
-      def rubygems_path_support_patch
-        {
-          '  @home = env["GEM_HOME"] || Gem.default_dir' => rubygems_path_support_patch_one,
-          '  @path = split_gem_path env["GEM_PATH"], @home' => rubygems_path_support_patch_two
-        }
       end
     end
 

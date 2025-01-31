@@ -731,12 +731,6 @@ RSpec.describe Tebako::DeployHelper do
           .and_return(["", double("status", signaled?: false, exitstatus: 0)])
         deploy_helper.update_rubygems
       end
-
-      it "calls patch_after_rubygems_update with the correct parameters" do
-        allow(File).to receive(:exist?).and_return(true)
-        expect(deploy_helper).to receive(:patch_after_rubygems_update).with(target_dir, "2.7.0")
-        deploy_helper.update_rubygems
-      end
     end
   end
 end
