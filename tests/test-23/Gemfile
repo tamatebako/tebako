@@ -2,6 +2,7 @@
 
 source "https://rubygems.org"
 
+# ruby "3.3.7"
+gem "byebug"
 gem "bundler", "~> 2.4.0"
-gem "ffi" # rubocop:disable Gemspec/DevelopmentDependencies
-gem "seven-zip", "~>1.4"
+gemspec

@@ -47,6 +47,7 @@ module Tebako
       end
 
       def run_with_capture(args)
+        args = args.compact
         puts "   ... @ #{args.join(" ")}"
         out, st = Open3.capture2e(*args)
         raise Tebako::Error, "Failed to run #{args.join(" ")} (#{st}):\n #{out}" if st.signaled? || !st.exitstatus.zero?

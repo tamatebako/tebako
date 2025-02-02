@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -41,14 +41,17 @@ module Tebako
   # Manages packaging scenario based on input files (gemfile, gemspec, etc)
   class ScenarioManager
     def initialize(fs_root, fs_entrance)
-      @with_gemfile = false
-      @with_gemfile_lock = false
+      @with_gemfile = @with_lockfile = @needs_bundler = false
       @bundler_version = BUNDLER_VERSION
       initialize_root(fs_root)
       initialize_entry_point(fs_entrance || "stub.rb")
     end
 
-    attr_reader :fs_entry_point, :fs_mount_point, :fs_entrance, :gemfile_path, :with_gemfile
+    attr_reader :fs_entry_point, :fs_mount_point, :fs_entrance, :gemfile_path, :needs_bundler, :with_gemfile
+
+    def bundler_reference
+      @needs_bundler ? "_#{@bundler_version}_" : nil
+    end
 
     def configure_scenario
       @fs_mount_point = if msys?
@@ -75,28 +78,6 @@ module Tebako
 
     private
 
-    def initialize_entry_point(fs_entrance)
-      @fs_entrance = Pathname.new(fs_entrance).cleanpath.to_s
-
-      if Pathname.new(@fs_entrance).absolute?
-        Tebako.packaging_error 114 unless @fs_entrance.start_with?(@fs_root)
-
-        fetmp = @fs_entrance
-        @fs_entrance = Pathname.new(@fs_entrance).relative_path_from(Pathname.new(@fs_root)).to_s
-        puts "-- Absolute path to entry point '#{fetmp}' will be reduced to '#{@fs_entrance}' relative to '#{@fs_root}'"
-      end
-      # Can check after deploy, because entry point can be generated during bundle install or gem install
-      # Tebako.packaging_error 106 unless File.file?(File.join(@fs_root, @fs_entrance))
-      @fs_entry_point = "/bin/#{@fs_entrance}"
-    end
-
-    def initialize_root(fs_root)
-      Tebako.packaging_error 107 unless Dir.exist?(fs_root)
-      p_root = Pathname.new(fs_root).cleanpath
-      Tebako.packaging_error 113 unless p_root.absolute?
-      @fs_root = p_root.realpath.to_s
-    end
-
     def configure_scenario_inner
       case @gs_length
       when 0
@@ -120,26 +101,89 @@ module Tebako
                   end
     end
 
-    def lookup_files
-      @gemfile_path = File.join(@fs_root, "Gemfile")
-      @gemfile_lock_path = File.join(@fs_root, "Gemfile.lock")
-      @gs_length = Dir.glob(File.join(@fs_root, "*.gemspec")).length
-      @with_gemfile = File.exist?(@gemfile_path)
-      @g_length = Dir.glob(File.join(@fs_root, "*.gem")).length
-      return unless File.exist?(@gemfile_lock_path)
+    def initialize_entry_point(fs_entrance)
+      @fs_entrance = Pathname.new(fs_entrance).cleanpath.to_s
 
-      @with_gemfile_lock = true
-      puts "   ... using lockfile at #{@gemfile_lock_path}"
-      update_bundler_version_from_lockfile(@gemfile_lock_path)
+      if Pathname.new(@fs_entrance).absolute?
+        Tebako.packaging_error 114 unless @fs_entrance.start_with?(@fs_root)
+
+        fetmp = @fs_entrance
+        @fs_entrance = Pathname.new(@fs_entrance).relative_path_from(Pathname.new(@fs_root)).to_s
+        puts "-- Absolute path to entry point '#{fetmp}' will be reduced to '#{@fs_entrance}' relative to '#{@fs_root}'"
+      end
+      # Can check after deploy, because entry point can be generated during bundle install or gem install
+      # Tebako.packaging_error 106 unless File.file?(File.join(@fs_root, @fs_entrance))
+      @fs_entry_point = "/bin/#{@fs_entrance}"
+    end
+
+    def initialize_root(fs_root)
+      Tebako.packaging_error 107 unless Dir.exist?(fs_root)
+      p_root = Pathname.new(fs_root).cleanpath
+      Tebako.packaging_error 113 unless p_root.absolute?
+      @fs_root = p_root.realpath.to_s
+    end
+
+    def lookup_files
+      @gs_length = Dir.glob(File.join(@fs_root, "*.gemspec")).length
+      @g_length = Dir.glob(File.join(@fs_root, "*.gem")).length
+      @with_gemfile = File.exist?(@gemfile_path = File.join(@fs_root, "Gemfile"))
+      @with_lockfile = File.exist?(@lockfile_path = File.join(@fs_root, "Gemfile.lock"))
+    end
+  end
+
+  # Configure scenraio and do bundler resolution
+  class ScenarioManagerWithBundler < ScenarioManager
+    protected
+
+    def lookup_files
+      super
+      if @with_lockfile
+        update_bundler_version_from_lockfile(@lockfile_path)
+      elsif @with_gemfile
+        update_bundler_version_from_gemfile(@gemfile_path)
+      end
+    end
+
+    private
+
+    def store_compatible_bundler_version(requirement)
+      fetcher = Gem::SpecFetcher.fetcher
+      tuples = fetcher.detect(:released) do |name_tuple|
+        name_tuple.name == "bundler" && requirement.satisfied_by?(name_tuple.version)
+      end
+
+      Tebako.packaging_error 119 if tuples.empty?
+
+      # Get latest compatible version
+      @bundler_version = tuples.map { |tuple, _| tuple.version }.max.to_s
+    end
+
+    def update_bundler_version_from_gemfile(gemfile_path)
+      # Build definition without lockfile
+      definition = Bundler::Definition.build(gemfile_path, nil, nil)
+
+      # Get bundler dependency from Gemfile
+      bundler_dep = definition.dependencies.find { |d| d.name == "bundler" }
+
+      return unless bundler_dep
+
+      @needs_bundler = true
+      min_requirement = Gem::Requirement.create(">= #{Tebako::BUNDLER_VERSION}")
+      requirement = Gem::Requirement.create(bundler_dep.requirement, min_requirement)
+
+      store_compatible_bundler_version(requirement)
     end
 
     def update_bundler_version_from_lockfile(lockfile_path)
+      puts "   ... using lockfile at #{@lockfile_path}"
       Tebako.packaging_error 117 unless File.exist?(lockfile_path)
 
       lockfile_content = File.read(lockfile_path)
       Tebako.packaging_error 117 unless lockfile_content =~ /BUNDLED WITH\n\s+(#{Gem::Version::VERSION_PATTERN})\n/
 
       @bundler_version = ::Regexp.last_match(1)
+      @needs_bundler = true
+
       bundler_requirement = Gem::Requirement.new(">= #{BUNDLER_VERSION}")
       return if bundler_requirement.satisfied_by?(Gem::Version.new(@bundler_version))
 

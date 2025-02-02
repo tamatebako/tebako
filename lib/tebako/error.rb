@@ -46,6 +46,7 @@ module Tebako
     116 => "Ruby version does not satify Gemfile requirements",
     117 => "Failed to load Gemfile.lock",
     118 => "Bundler version in Gemfile.lock does satisfy minimal Tebako version requirememnts",
+    119 => "Failed to find compatible bundler version",
     201 => "Warning. Could not create cache version file"
   }.freeze
 
