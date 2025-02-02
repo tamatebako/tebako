@@ -39,12 +39,6 @@ require_relative "packager/rubygems_patch"
 
 # Tebako - an executable packager
 module Tebako
-  # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
-  # These are the minimal versions required to provide linux-gnu / linux-musl differentiation by bundler
-  # Ruby 3.1+ default rubygems versions work correctly out of the box
-  BUNDLER_VERSION = "2.4.22"
-  RUBYGEMS_VERSION = "3.4.22"
-
   # Tebako packaging support (deployer)
   class DeployHelper < ScenarioManager # rubocop:disable Metrics/ClassLength
     def initialize(fs_root, fs_entrance, target_dir, pre_dir)
@@ -76,7 +70,7 @@ module Tebako
         update_rubygems
         system("#{gem_command} env") if @verbose
         install_gem("tebako-runtime")
-        install_gem("bundler", @with_gemfile_lock ? @bundler_version : BUNDLER_VERSION) if needs_bundler?
+        install_gem("bundler", @bundler_version) if needs_bundler?
         deploy_solution
         check_cwd
       end
@@ -103,6 +97,8 @@ module Tebako
     end
 
     def needs_bundler?
+      puts !@ruby_ver.ruby31?
+      puts @with_gemfile_lock
       @with_gemfile && (!@ruby_ver.ruby31? || @with_gemfile_lock)
     end
 
@@ -126,8 +122,6 @@ module Tebako
                                        @nokogiri_option])
       BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "force_ruby_platform",
                                        @force_ruby_platform])
-      #      BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "no-deployment",
-      #                                       @with_gemfile_lock.to_s])
     end
 
     def check_entry_point(entry_point_root)

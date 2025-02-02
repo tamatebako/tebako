@@ -364,7 +364,7 @@ ExternalProject_Add(${RUBY_PRJ}
   CONFIGURE_COMMAND ""
   BUILD_COMMAND ruby ${EXE}/tebako-packager pass1 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${FS_MOUNT_POINT} ${DATA_SRC_DIR} ${RUBY_VER}
   # Make it for MacOS otherwise LDFLAGS are invalid
-  COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_LIB_DIR}
+  # COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_LIB_DIR}
   COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION} ${LIBYAML_RUBY_OPTION} \
                                                         --without-gmp                         \
                                                         --disable-dtrace                      \
@@ -410,7 +410,7 @@ if (${SETUP_MODE})
 # Packaged filesystem
 
   add_custom_target(packaged_filesystem
-    COMMAND ruby ${DEPS_BIN_DIR}/deploy.rb
+    COMMAND ruby ${DEPS_BIN_DIR}/deploy.rb ${RUBY_VER}
     DEPENDS setup
     BYPRODUCTS ${DATA_BIN_FILE}
   )

@@ -32,11 +32,18 @@ require_relative "error"
 
 # Tebako - an executable packager
 module Tebako
+  # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
+  # These are the minimal versions required to provide linux-gnu / linux-musl differentiation by bundler
+  # Ruby 3.1+ default rubygems versions work correctly out of the box
+  BUNDLER_VERSION = "2.4.22"
+  RUBYGEMS_VERSION = "3.4.22"
+
   # Manages packaging scenario based on input files (gemfile, gemspec, etc)
   class ScenarioManager
     def initialize(fs_root, fs_entrance)
       @with_gemfile = false
       @with_gemfile_lock = false
+      @bundler_version = BUNDLER_VERSION
       initialize_root(fs_root)
       initialize_entry_point(fs_entrance || "stub.rb")
     end

@@ -62,14 +62,12 @@ module Tebako
       end
 
       def deploy_mk(opt, scm)
-        <<~SUBST
-          begin
-            #{deploy_mk_inner(opt, scm)}
-          rescue Tebako::Error => e
-            puts "tebako-packager failed: \#{e.message} [\#{e.error_code}]"
-            exit(e.error_code)
-          end
-        SUBST
+        case opt.mode
+        when "bundle"
+          deploy_mk_bundle(opt, scm)
+        when /runtime|both/
+          deploy_mk_stub(opt)
+        end
       end
 
       def deploy_mk_bundle(opt, scm)
@@ -79,15 +77,6 @@ module Tebako
           Tebako::Packager.mkdwarfs("#{opt.deps_bin_dir}", "#{opt.data_bundle_file}",
                                     "#{opt.data_src_dir}")
         SUBST
-      end
-
-      def deploy_mk_inner(opt, scm)
-        case opt.mode
-        when "bundle"
-          deploy_mk_bundle(opt, scm)
-        when /runtime|both/
-          deploy_mk_stub(opt)
-        end
       end
 
       def deploy_mk_stub(opt)
@@ -102,8 +91,20 @@ module Tebako
         <<~SUBST
           #{deploy_rq}
 
-          rv = Tebako::RubyVersion.new("#{opt.ruby_ver}")
-          Tebako::Packager::init("#{opt.stash_dir}", "#{opt.data_src_dir}",
+          begin
+            #{deploy_rb_inner(opt, scm)}
+          rescue Tebako::Error => e
+            puts "deploy script failed: \#{e.message} [\#{e.error_code}]"
+            exit(e.error_code)
+          end
+        SUBST
+      end
+
+      def deploy_rb_inner(opt, scm)
+        <<~SUBST
+          rv = Tebako::RubyVersion.new(ARGV[0])
+          stash = File.join("#{opt.deps}", "stash_\#{ARGV[0]}")
+          Tebako::Packager::init(stash.to_s, "#{opt.data_src_dir}",
                                "#{opt.data_pre_dir}", "#{opt.data_bin_dir}")
           #{deploy_crt_implib(opt, scm)}
           #{deploy_mk(opt, scm)}
@@ -121,7 +122,7 @@ module Tebako
 
       def stub_rb(opt)
         <<~SUBST
-          puts "Copyright (c) 2024 Ribose Inc (https://www.ribose.com)"
+          puts "Copyright (c) 2024-2025 Ribose Inc (https://www.ribose.com)"
           puts "Tebako runtime stub v#{Tebako::VERSION}"
           puts "To run your application please call #{File.basename(opt.package)} --tebako-run <your tebako package>"
         SUBST
