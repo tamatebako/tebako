@@ -40,7 +40,7 @@ require_relative "packager/rubygems_patch"
 # Tebako - an executable packager
 module Tebako
   # Tebako packaging support (deployer)
-  class DeployHelper < ScenarioManager # rubocop:disable Metrics/ClassLength
+  class DeployHelper < ScenarioManagerWithBundler # rubocop:disable Metrics/ClassLength
     def initialize(fs_root, fs_entrance, target_dir, pre_dir)
       super(fs_root, fs_entrance)
       @fs_root = fs_root
@@ -51,10 +51,11 @@ module Tebako
       @ncores = BuildHelpers.ncores
     end
 
-    attr_reader :bundler_command, :gem_command, :gem_home
+    attr_reader :gem_home
 
     def configure(ruby_ver, cwd)
       @ruby_ver = ruby_ver
+      @needs_bundler = true unless @ruby_ver.ruby31?
       @cwd = cwd
 
       @tbd = File.join(@target_dir, "bin")
@@ -70,7 +71,7 @@ module Tebako
         update_rubygems
         system("#{gem_command} env") if @verbose
         install_gem("tebako-runtime")
-        install_gem("bundler", @bundler_version) if needs_bundler?
+        install_gem("bundler", @bundler_version) if @needs_bundler
         deploy_solution
         check_cwd
       end
@@ -96,10 +97,6 @@ module Tebako
       BuildHelpers.run_with_capture_v(params)
     end
 
-    def needs_bundler?
-      @with_gemfile && (!@ruby_ver.ruby31? || @with_gemfile_lock)
-    end
-
     def update_rubygems
       return if @ruby_ver.ruby31?
 
@@ -114,12 +111,12 @@ module Tebako
     private
 
     def bundle_config
-      BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "build.ffi",
+      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "config", "set", "--local", "build.ffi",
                                        "--disable-system-libffi"])
-      BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "build.nokogiri",
-                                       @nokogiri_option])
-      BuildHelpers.run_with_capture_v([@bundler_command, "config", "set", "--local", "force_ruby_platform",
-                                       @force_ruby_platform])
+      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "config",
+                                       "set", "--local", "build.nokogiri", @nokogiri_option])
+      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "config",
+                                       "set", "--local", "force_ruby_platform", @force_ruby_platform])
     end
 
     def check_entry_point(entry_point_root)
@@ -165,8 +162,8 @@ module Tebako
       Dir.chdir(@pre_dir) do
         bundle_config
         puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        BuildHelpers.run_with_capture_v([@bundler_command, "install", "--jobs=#{@ncores}"])
-        BuildHelpers.run_with_capture_v([@bundler_command, "exec", @gem_command, "build", gemspec])
+        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{@ncores}"])
+        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "exec", @gem_command, "build", gemspec])
         install_all_gems_or_fail
       end
 
@@ -225,7 +222,7 @@ module Tebako
       Dir.chdir(@tld) do
         bundle_config
         puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        BuildHelpers.run_with_capture_v([@bundler_command, "install", "--jobs=#{@ncores}"])
+        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{@ncores}"])
       end
 
       check_entry_point("local")

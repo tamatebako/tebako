@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -74,20 +74,16 @@ RSpec.describe Tebako::DeployHelper do
         bundle = "/target/dir/bin/bundle"
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
-          .with([bundle, "config", "set", "--local", "build.ffi", "--disable-system-libffi"])
+          .with([bundle, nil, "config", "set", "--local", "build.ffi", "--disable-system-libffi"])
           .once
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
-          .with([bundle, "config", "set", "--local", "build.nokogiri", "--no-use-system-libraries"])
+          .with([bundle, nil, "config", "set", "--local", "build.nokogiri", "--no-use-system-libraries"])
           .once
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
-          .with([bundle, "config", "set", "--local", "force_ruby_platform", "false"])
+          .with([bundle, nil, "config", "set", "--local", "force_ruby_platform", "false"])
           .once
-        #        expect(Tebako::BuildHelpers)
-        #          .to receive(:run_with_capture_v)
-        #          .with([bundle, "config", "set", "--local", "deployment", "false"])
-        #          .once
 
         deploy_helper.send(:bundle_config)
       end
@@ -106,21 +102,16 @@ RSpec.describe Tebako::DeployHelper do
         bundle = "/target/dir/bin/bundle.bat"
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
-          .with([bundle, "config", "set", "--local", "build.ffi", "--disable-system-libffi"])
+          .with([bundle, nil, "config", "set", "--local", "build.ffi", "--disable-system-libffi"])
           .once
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
-          .with([bundle, "config", "set", "--local", "build.nokogiri", "--use-system-libraries"])
+          .with([bundle, nil, "config", "set", "--local", "build.nokogiri", "--use-system-libraries"])
           .once
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
-          .with([bundle, "config", "set", "--local", "force_ruby_platform", "true"])
+          .with([bundle, nil, "config", "set", "--local", "force_ruby_platform", "true"])
           .once
-        #        expect(Tebako::BuildHelpers)
-        #          .to receive(:run_with_capture_v)
-        #          .with([bundle, "config", "set", "--local", "deployment", "false"])
-        #          .once
-
         deploy_helper.send(:bundle_config)
       end
     end
@@ -229,6 +220,8 @@ RSpec.describe Tebako::DeployHelper do
       allow(deploy_helper).to receive(:install_all_gems_or_fail)
       allow(Dir).to receive(:chdir).and_yield
       allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+      deploy_helper.instance_variable_set(:@bundler_command, "path/to/bundle")
+      deploy_helper.instance_variable_set(:@gem_command, "path/to/gem")
     end
 
     it "copies files, builds gem, installs gems, and checks entry point" do
@@ -237,7 +230,7 @@ RSpec.describe Tebako::DeployHelper do
       expect(deploy_helper).to have_received(:copy_files).with(deploy_helper.instance_variable_get(:@pre_dir))
       expect(Tebako::BuildHelpers)
         .to have_received(:run_with_capture_v)
-        .with([deploy_helper.gem_command, "build", gemspec])
+        .with([deploy_helper.instance_variable_get(:@gem_command), "build", gemspec])
       expect(deploy_helper).to have_received(:install_all_gems_or_fail)
       expect(deploy_helper).to have_received(:check_entry_point).with("bin")
     end
@@ -256,6 +249,8 @@ RSpec.describe Tebako::DeployHelper do
       # Stubs for external calls
       allow(Dir).to receive(:chdir).and_yield
       allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+      deploy_helper.instance_variable_set(:@bundler_command, "path/to/bundle")
+      deploy_helper.instance_variable_set(:@gem_command, "path/to/gem")
     end
 
     it "copies files, runs bundler install, builds gem, installs gems, and checks entry point" do
@@ -265,10 +260,13 @@ RSpec.describe Tebako::DeployHelper do
       expect(deploy_helper).to have_received(:bundle_config)
       expect(Tebako::BuildHelpers)
         .to have_received(:run_with_capture_v)
-        .with([deploy_helper.bundler_command, "install", "--jobs=#{deploy_helper.instance_variable_get(:@ncores)}"])
+        .with([deploy_helper.instance_variable_get(:@bundler_command), nil, "install",
+               "--jobs=#{deploy_helper.instance_variable_get(:@ncores)}"])
       expect(Tebako::BuildHelpers)
         .to have_received(:run_with_capture_v)
-        .with([deploy_helper.bundler_command, "exec", deploy_helper.gem_command, "build", gemspec])
+        .with([deploy_helper.instance_variable_get(:@bundler_command), nil, "exec",
+               deploy_helper.instance_variable_get(:@gem_command), "build",
+               gemspec])
       expect(deploy_helper).to have_received(:install_all_gems_or_fail)
       expect(deploy_helper).to have_received(:check_entry_point).with("bin")
     end
@@ -409,7 +407,7 @@ RSpec.describe Tebako::DeployHelper do
         allow(deploy_helper).to receive(:install_gem)
         allow(deploy_helper).to receive(:deploy_solution)
         allow(deploy_helper).to receive(:check_cwd)
-        allow(deploy_helper).to receive(:needs_bundler?).and_return(true)
+        deploy_helper.instance_variable_set(:@needs_bundler, true)
       end
 
       it "executes deployment steps in order" do
@@ -441,7 +439,7 @@ RSpec.describe Tebako::DeployHelper do
         allow(deploy_helper).to receive(:install_gem)
         allow(deploy_helper).to receive(:deploy_solution)
         allow(deploy_helper).to receive(:check_cwd)
-        allow(deploy_helper).to receive(:needs_bundler?).and_return(false)
+        deploy_helper.instance_variable_set(:@needs_bundler, false)
       end
 
       it "skips bundler installation" do
@@ -514,13 +512,16 @@ RSpec.describe Tebako::DeployHelper do
       allow(deploy_helper).to receive(:check_entry_point)
       allow(Dir).to receive(:chdir).and_yield
       allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+      deploy_helper.instance_variable_set(:@bundler_command, "path/to/bundle")
+      deploy_helper.instance_variable_set(:@gem_command, "path/to/gem")
     end
 
     it "follows the correct deployment sequence" do
       expect(deploy_helper).to receive(:copy_files).with(deploy_helper.instance_variable_get(:@tld)).ordered
       expect(deploy_helper).to receive(:bundle_config).ordered
       expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
-        .with([deploy_helper.bundler_command, "install", "--jobs=#{deploy_helper.instance_variable_get(:@ncores)}"])
+        .with([deploy_helper.instance_variable_get(:@bundler_command), nil, "install",
+               "--jobs=#{deploy_helper.instance_variable_get(:@ncores)}"])
         .ordered
       expect(deploy_helper).to receive(:check_entry_point).with("local").ordered
 
@@ -711,7 +712,8 @@ RSpec.describe Tebako::DeployHelper do
     context "when gem version is provided" do
       it "installs the gem with the specified version" do
         expect(Open3).to receive(:capture2e)
-          .with(gem_command, "install", gem_name, "-v", gem_version, "--no-document",
+          .with(deploy_helper.instance_variable_get(:@gem_command), "install",
+                gem_name, "-v", gem_version, "--no-document",
                 "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd")
         deploy_helper.install_gem(gem_name, gem_version)
       end
@@ -720,74 +722,9 @@ RSpec.describe Tebako::DeployHelper do
     context "when gem version is not provided" do
       it "installs the gem without specifying the version" do
         expect(Open3).to receive(:capture2e)
-          .with(gem_command, "install", gem_name, "--no-document",
+          .with(deploy_helper.instance_variable_get(:@gem_command), "install", gem_name, "--no-document",
                 "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd")
         deploy_helper.install_gem(gem_name)
-      end
-    end
-  end
-
-  describe "#needs_bundler?" do
-    context "when @with_gemfile is true" do
-      before do
-        deploy_helper.instance_variable_set(:@with_gemfile, true)
-      end
-
-      context "and @ruby_ver is less than 3.1" do
-        unless RUBY_PLATFORM =~ /msys|mingw|cygwin/
-          before do
-            deploy_helper.instance_variable_set(:@ruby_ver, Tebako::RubyVersion.new("3.0.7"))
-          end
-
-          it "returns true" do
-            if RUBY_PLATFORM =~ /msys|mingw|cygwin/
-              expect { deploy_helper.needs_bundler? }.to raise_error(Tebako::Error) { |e|
-                expect(e.message).to eq("Ruby version 3.0.7 is not supported on Windows")
-                expect(e.error_code).to eq(111)
-              }
-            else
-              expect(deploy_helper.needs_bundler?).to be true
-            end
-          end
-        end
-      end
-
-      context "and @ruby_ver is 3.1 or greater" do
-        before do
-          deploy_helper.instance_variable_set(:@ruby_ver, Tebako::RubyVersion.new("3.1.6"))
-        end
-
-        it "returns false" do
-          expect(deploy_helper.needs_bundler?).to be false
-        end
-      end
-    end
-
-    context "when @with_gemfile is false" do
-      before do
-        deploy_helper.instance_variable_set(:@with_gemfile, false)
-      end
-
-      context "and @ruby_ver is less than 3.1" do
-        unless RUBY_PLATFORM =~ /msys|mingw|cygwin/
-          before do
-            deploy_helper.instance_variable_set(:@ruby_ver, Tebako::RubyVersion.new("3.0.7"))
-          end
-
-          it "returns false" do
-            expect(deploy_helper.needs_bundler?).to be false
-          end
-        end
-      end
-
-      context "and @ruby_ver is 3.1 or greater" do
-        before do
-          deploy_helper.instance_variable_set(:@ruby_ver, Tebako::RubyVersion.new("3.1.6"))
-        end
-
-        it "returns false" do
-          expect(deploy_helper.needs_bundler?).to be false
-        end
       end
     end
   end
