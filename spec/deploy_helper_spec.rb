@@ -505,6 +505,92 @@ RSpec.describe Tebako::DeployHelper do
       end
     end
   end
+
+  describe "#deploy_gemfile" do
+    before do
+      allow(deploy_helper).to receive(:puts)
+      allow(deploy_helper).to receive(:copy_files)
+      allow(deploy_helper).to receive(:bundle_config)
+      allow(deploy_helper).to receive(:check_entry_point)
+      allow(Dir).to receive(:chdir).and_yield
+      allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+    end
+
+    it "follows the correct deployment sequence" do
+      expect(deploy_helper).to receive(:copy_files).with(deploy_helper.instance_variable_get(:@tld)).ordered
+      expect(deploy_helper).to receive(:bundle_config).ordered
+      expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+        .with([deploy_helper.bundler_command, "install", "--jobs=#{deploy_helper.instance_variable_get(:@ncores)}"])
+        .ordered
+      expect(deploy_helper).to receive(:check_entry_point).with("local").ordered
+
+      deploy_helper.send(:deploy_gemfile)
+    end
+
+    context "when copy_files fails" do
+      before do
+        allow(deploy_helper).to receive(:copy_files)
+          .and_raise(Tebako::Error.new("Copy failed", 107))
+      end
+
+      it "raises an error" do
+        expect { deploy_helper.send(:deploy_gemfile) }
+          .to raise_error(Tebako::Error)
+      end
+    end
+
+    context "when bundle install fails" do
+      before do
+        allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+          .and_raise(Tebako::Error.new("Bundle install failed", 1))
+      end
+
+      it "raises an error" do
+        expect { deploy_helper.send(:deploy_gemfile) }
+          .to raise_error(Tebako::Error)
+      end
+    end
+  end
+
+  describe "#deploy_simple_script" do
+    before do
+      allow(deploy_helper).to receive(:puts)
+      allow(deploy_helper).to receive(:copy_files)
+      allow(deploy_helper).to receive(:check_entry_point)
+    end
+
+    it "follows the correct deployment sequence" do
+      expect(deploy_helper).to receive(:copy_files).with(deploy_helper.instance_variable_get(:@tld)).ordered
+      expect(deploy_helper).to receive(:check_entry_point).with("local").ordered
+
+      deploy_helper.send(:deploy_simple_script)
+    end
+
+    context "when copy_files fails" do
+      before do
+        allow(deploy_helper).to receive(:copy_files)
+          .and_raise(Tebako::Error.new("Copy failed", 107))
+      end
+
+      it "raises an error" do
+        expect { deploy_helper.send(:deploy_simple_script) }
+          .to raise_error(Tebako::Error)
+      end
+    end
+
+    context "when check_entry_point fails" do
+      before do
+        allow(deploy_helper).to receive(:check_entry_point)
+          .and_raise(Tebako::Error.new("Entry point check failed", 106))
+      end
+
+      it "raises an error" do
+        expect { deploy_helper.send(:deploy_simple_script) }
+          .to raise_error(Tebako::Error)
+      end
+    end
+  end
+
   describe "#deploy_solution" do
     before do
       allow(Dir).to receive(:glob).and_return([])

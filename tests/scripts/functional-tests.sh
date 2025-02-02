@@ -164,6 +164,8 @@ press_runner_with_error_app() {
 #  18. Ruby project (no gemspec, with gemfile)
 #  19. Ruby project (no gemspec, with gemfile, with ffi extension)
 #  20. Net/http Ruby script [sits here and not on tests-2 in order to allow cross test MacOS x86_64 --> MacOS arm64]
+#  21. Ruby gem (with gemspec, with gemfile, with lockfile)
+#  22. Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)
 
 # ......................................................................
 #  AU1. Check that it is possible to extract image content (--tebako-extract option)
@@ -364,6 +366,23 @@ test_tebako_press_20() {
    press_runner_"${MODE}" "${DIR_TESTS}/test-20" "tebako-test-run.rb" "test-20-package"
    package_runner_"${MODE}" "./test-20-package" "Response: 302 Found"
 }
+
+# ......................................................................
+#  21. Ruby gem (with gemspec, with gemfile, with lockfile)
+test_tebako_press_21() {
+   echo "==> Ruby gem (with gemspec, with gemfile, with lockfile)"
+   press_runner_"${MODE}" "${DIR_TESTS}/test-21" "tebako-test-run.rb" "test-21-package"
+   package_runner_"${MODE}" "./test-21-package" "| a1 | b1 |"
+}
+
+# ......................................................................
+# 22. Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)
+test_tebako_press_22() {
+   echo "==> Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)"
+   press_runner_"${MODE}" "${DIR_TESTS}/test-22" "tebako-test-run.rb" "test-22-package"
+   package_runner_"${MODE}" "./test-22-package" "Hello, World via libc puts using FFI on tebako package"
+}
+
 
 # ......................................................................
 # main

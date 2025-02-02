@@ -132,14 +132,14 @@ module Tebako
     def initialize(ruby_version, gemfile_path)
       # Assuming that it does not attempt to load any gems or resolve dependencies
       # this can be done with any bundler version
-      gemfile = Bundler::Definition.build(gemfile_path, nil, nil)
-      ruby_v = gemfile.ruby_version&.versions
+      ruby_v = Bundler::Definition.build(gemfile_path, nil, nil).ruby_version&.versions
       if ruby_v.nil?
         super(ruby_version)
       else
         process_gemfile_ruby_version(ruby_version, ruby_v)
-        run_checks
       end
+    rescue Tebako::Error
+      raise
     rescue StandardError => e
       Tebako.packaging_error(115, e.message)
     end
@@ -153,12 +153,13 @@ module Tebako
       else
         process_gemfile_ruby_version_d(ruby_version, requirement)
       end
+      run_checks
     end
 
     def process_gemfile_ruby_version_d(ruby_version, requirement)
       current_version = Gem::Version.new(ruby_version)
       unless requirement.satisfied_by?(current_version)
-        raise Tebako::Error.new("Ruby version #{ruby_version} does not satisfy requirement #{ruby_v}", 116)
+        raise Tebako::Error.new("Ruby version #{ruby_version} does not satisfy requirement '#{requirement}'", 116)
       end
 
       @ruby_version = ruby_version

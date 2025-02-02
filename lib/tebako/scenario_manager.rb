@@ -50,16 +50,6 @@ module Tebako
 
     attr_reader :fs_entry_point, :fs_mount_point, :fs_entrance, :gemfile_path, :with_gemfile
 
-    def bundler_version_from_lockfile(lockfile_path)
-      return nil unless File.exist?(lockfile_path)
-
-      lockfile_content = File.read(lockfile_path)
-      parser = Bundler::LockfileParser.new(lockfile_content)
-
-      bundler_spec = parser.specs.find { |spec| spec.name == "bundler" }
-      bundler_spec&.version&.to_s
-    end
-
     def configure_scenario
       @fs_mount_point = if msys?
                           "A:/__tebako_memfs__"
@@ -139,7 +129,21 @@ module Tebako
       return unless File.exist?(@gemfile_lock_path)
 
       @with_gemfile_lock = true
-      @bundler_version = bundler_version_from_lockfile(@gemfile_lock_path)
+      puts "   ... using lockfile at #{@gemfile_lock_path}"
+      update_bundler_version_from_lockfile(@gemfile_lock_path)
+    end
+
+    def update_bundler_version_from_lockfile(lockfile_path)
+      Tebako.packaging_error 117 unless File.exist?(lockfile_path)
+
+      lockfile_content = File.read(lockfile_path)
+      Tebako.packaging_error 117 unless lockfile_content =~ /BUNDLED WITH\n\s+(#{Gem::Version::VERSION_PATTERN})\n/
+
+      @bundler_version = ::Regexp.last_match(1)
+      bundler_requirement = Gem::Requirement.new(">= #{BUNDLER_VERSION}")
+      return if bundler_requirement.satisfied_by?(Gem::Version.new(@bundler_version))
+
+      Tebako.packaging_error 118, " : #{@bundler_version} requested, #{BUNDLER_VERSION} minimum required"
     end
   end
 end
