@@ -97,8 +97,6 @@ module Tebako
     end
 
     def needs_bundler?
-      puts !@ruby_ver.ruby31?
-      puts @with_gemfile_lock
       @with_gemfile && (!@ruby_ver.ruby31? || @with_gemfile_lock)
     end
 

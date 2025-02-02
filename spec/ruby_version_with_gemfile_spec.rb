@@ -89,7 +89,7 @@ RSpec.describe Tebako::RubyVersionWithGemfile do
 
         expect do
           described_class.new("3.1.0", valid_gemfile_path)
-        end.to raise_error(Tebako::Error)
+        end.to raise_error(Tebako::Error) { |error| expect(error.error_code).to eq(116) }
       end
 
       it "handles version requirements with operators" do

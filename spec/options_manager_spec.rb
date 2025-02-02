@@ -722,6 +722,60 @@ RSpec.describe Tebako::OptionsManager do
       end
     end
   end
+  describe "#stash_dir_all" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    let(:fake_deps) { "/fake/deps" }
+
+    before do
+      allow(options_manager).to receive(:deps).and_return(fake_deps)
+    end
+
+    it "returns the correct stash directory path" do
+      expected_path = File.join(fake_deps, "stash")
+      expect(options_manager.stash_dir_all).to eq(expected_path)
+    end
+
+    it "caches the result" do
+      first_call = options_manager.stash_dir_all
+      # Change deps to verify we're using cached value
+      allow(options_manager).to receive(:deps).and_return("/different/deps")
+      expect(options_manager.stash_dir_all).to eq(first_call)
+    end
+  end
+
+  describe "#stash_dir" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    let(:fake_deps) { "/fake/deps" }
+    let(:ruby_ver) { "3.2.6" }
+
+    before do
+      allow(options_manager).to receive(:deps).and_return(fake_deps)
+      options_manager.instance_variable_set(:@ruby_ver, ruby_ver)
+    end
+
+    context "when called without arguments" do
+      it "returns path with default ruby version" do
+        expected_path = "#{File.join(fake_deps, "stash")}_#{ruby_ver}"
+        expect(options_manager.stash_dir).to eq(expected_path)
+      end
+
+      it "caches the result" do
+        first_call = options_manager.stash_dir
+        # Change ruby version to verify we're using cached value
+        options_manager.instance_variable_set(:@ruby_ver, "3.3.0")
+        expect(options_manager.stash_dir).to eq(first_call)
+      end
+    end
+
+    context "when called with specific ruby version" do
+      let(:specific_version) { "3.3.7" }
+
+      it "returns path with specified ruby version" do
+        expected_path = "#{File.join(fake_deps, "stash")}_#{specific_version}"
+        expect(options_manager.stash_dir(specific_version)).to eq(expected_path)
+      end
+    end
+  end
 end
 
 # rubocop:enable Metrics/BlockLength

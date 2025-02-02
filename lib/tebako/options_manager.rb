@@ -329,8 +329,8 @@ module Tebako
       @source ||= File.expand_path("../../..", c_path)
     end
 
-    def stash_dir
-      @stash_dir ||= "#{stash_dir_all}_#{@ruby_ver}"
+    def stash_dir(rver = nil)
+      @stash_dir ||= "#{stash_dir_all}_#{rver || @ruby_ver}"
     end
 
     def stash_dir_all

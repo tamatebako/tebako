@@ -69,6 +69,7 @@ RSpec.describe Tebako::ScenarioManager do
       end
     end
   end
+
   describe "#configure_scenario_inner" do
     before do
       allow(scenario_manager).to receive(:lookup_files)
@@ -196,70 +197,80 @@ RSpec.describe Tebako::ScenarioManager do
   end
 
   describe "#lookup_files" do
-    it "sets @gs_length, @with_gemfile, and @g_length correctly for only gemspec files" do
-      Dir.mktmpdir do |tmp_dir|
-        FileUtils.touch(File.join(tmp_dir, "example1.gemspec"))
-        FileUtils.touch(File.join(tmp_dir, "example2.gemspec"))
-        scenario_manager = Tebako::ScenarioManager.new(tmp_dir, fs_entrance)
+    let(:tmp_root) { Dir.mktmpdir }
+    let(:scenario_manager) { described_class.new(tmp_root, "dummy_entry.rb") }
 
-        scenario_manager.send(:lookup_files)
-
-        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(2)
-        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(false)
-        expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
-      end
+    after do
+      FileUtils.remove_entry(tmp_root)
     end
 
-    it "sets @gs_length, @with_gemfile, and @g_length correctly for only Gemfile" do
-      Dir.mktmpdir do |tmp_dir|
-        FileUtils.touch(File.join(tmp_dir, "Gemfile"))
-        scenario_manager = Tebako::ScenarioManager.new(tmp_dir, fs_entrance)
+    context "with complete project structure" do
+      before do
+        # Create test files
+        File.write(File.join(tmp_root, "Gemfile"), "source 'https://rubygems.org'")
+        File.write(File.join(tmp_root, "Gemfile.lock"), <<~LOCKFILE
+          GEM
+            remote: https://rubygems.org/
+            specs:
+              dummy (1.0.0)
+          BUNDLED WITH
+             2.5.23
+        LOCKFILE
+        )
+        File.write(File.join(tmp_root, "test.gemspec"), "# gemspec content")
+        FileUtils.touch(File.join(tmp_root, "test.gem"))
 
         scenario_manager.send(:lookup_files)
-
-        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(true)
-        expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
       end
-    end
 
-    it "sets @gs_length, @with_gemfile, and @g_length correctly for only gem files" do
-      Dir.mktmpdir do |tmp_dir|
-        FileUtils.touch(File.join(tmp_dir, "example1.gem"))
-        scenario_manager = Tebako::ScenarioManager.new(tmp_dir, fs_entrance)
-
-        scenario_manager.send(:lookup_files)
-
-        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(false)
-        expect(scenario_manager.instance_variable_get(:@g_length)).to eq(1)
-      end
-    end
-
-    it "sets @gs_length, @with_gemfile, and @g_length correctly for mixed files" do
-      Dir.mktmpdir do |tmp_dir|
-        FileUtils.touch(File.join(tmp_dir, "example1.gemspec"))
-        FileUtils.touch(File.join(tmp_dir, "Gemfile"))
-        FileUtils.touch(File.join(tmp_dir, "example2.gem"))
-        scenario_manager = Tebako::ScenarioManager.new(tmp_dir, fs_entrance)
-
-        scenario_manager.send(:lookup_files)
-
+      it "sets correct paths and counts" do
+        expect(scenario_manager.instance_variable_get(:@gemfile_path)).to eq(File.join(tmp_root, "Gemfile"))
+        expect(scenario_manager.instance_variable_get(:@gemfile_lock_path)).to eq(File.join(tmp_root, "Gemfile.lock"))
         expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(1)
-        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(true)
         expect(scenario_manager.instance_variable_get(:@g_length)).to eq(1)
+        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to be true
+        expect(scenario_manager.instance_variable_get(:@with_gemfile_lock)).to be true
+        expect(scenario_manager.instance_variable_get(:@bundler_version)).to eq("2.5.23")
       end
     end
 
-    it "sets @gs_length, @with_gemfile, and @g_length correctly when no relevant files are present" do
-      Dir.mktmpdir do |tmp_dir|
-        scenario_manager = Tebako::ScenarioManager.new(tmp_dir, fs_entrance)
-
+    context "with multiple gemspecs" do
+      before do
+        File.write(File.join(tmp_root, "test1.gemspec"), "# gemspec 1")
+        File.write(File.join(tmp_root, "test2.gemspec"), "# gemspec 2")
         scenario_manager.send(:lookup_files)
+      end
 
+      it "counts multiple gemspec files" do
+        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(2)
+      end
+    end
+
+    context "with only Gemfile" do
+      before do
+        File.write(File.join(tmp_root, "Gemfile"), "source 'https://rubygems.org'")
+        scenario_manager.send(:lookup_files)
+      end
+
+      it "sets Gemfile-related variables correctly" do
+        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to be true
+        expect(scenario_manager.instance_variable_get(:@with_gemfile_lock)).to be false
         expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to eq(false)
         expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
+      end
+    end
+
+    context "with empty directory" do
+      before do
+        scenario_manager.send(:lookup_files)
+      end
+
+      it "sets default/empty values" do
+        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to be false
+        expect(scenario_manager.instance_variable_get(:@with_gemfile_lock)).to be false
+        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
+        expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
+        expect(scenario_manager.instance_variable_get(:@bundler_version)).to eq(Tebako::BUNDLER_VERSION)
       end
     end
   end
@@ -282,6 +293,89 @@ RSpec.describe Tebako::ScenarioManager do
 
       it "returns false" do
         expect(scenario_manager.macos?).to be false
+      end
+    end
+  end
+
+  describe "#update_bundler_version_from_lockfile" do
+    let(:tmp_dir) { Dir.mktmpdir }
+    let(:scenario_manager) { described_class.new(tmp_dir, "dummy_entry.rb") }
+    let(:lockfile_path) { File.join(tmp_dir, "Gemfile.lock") }
+
+    after do
+      FileUtils.remove_entry(tmp_dir)
+    end
+
+    context "when lockfile exists with valid bundler version" do
+      context "when bundler version meets minimum requirement" do
+        before do
+          File.write(lockfile_path, <<~LOCKFILE
+            BUNDLED WITH
+               #{Tebako::BUNDLER_VERSION}
+          LOCKFILE
+          )
+        end
+
+        it "updates bundler version successfully" do
+          scenario_manager.send(:update_bundler_version_from_lockfile, lockfile_path)
+          expect(scenario_manager.instance_variable_get(:@bundler_version)).to eq(Tebako::BUNDLER_VERSION)
+        end
+      end
+
+      context "when bundler version is below minimum requirement" do
+        before do
+          File.write(lockfile_path, <<~LOCKFILE
+            BUNDLED WITH
+               2.2.14
+          LOCKFILE
+          )
+        end
+
+        it "raises error 118" do
+          expect do
+            scenario_manager.send(:update_bundler_version_from_lockfile, lockfile_path)
+          end.to raise_error(Tebako::Error) { |error|
+            expect(error.error_code).to eq(118)
+          }
+        end
+      end
+    end
+
+    context "when lockfile does not exist" do
+      it "raises error 117" do
+        expect do
+          scenario_manager.send(:update_bundler_version_from_lockfile, "nonexistent.lock")
+        end.to raise_error(Tebako::Error) { |error|
+          expect(error.error_code).to eq(117)
+        }
+      end
+    end
+
+    context "when lockfile has invalid content" do
+      before do
+        File.write(lockfile_path, "invalid content")
+      end
+
+      it "raises error 117" do
+        expect do
+          scenario_manager.send(:update_bundler_version_from_lockfile, lockfile_path)
+        end.to raise_error(Tebako::Error) { |error|
+          expect(error.error_code).to eq(117)
+        }
+      end
+    end
+
+    context "when lockfile is empty" do
+      before do
+        File.write(lockfile_path, "")
+      end
+
+      it "raises error 117" do
+        expect do
+          scenario_manager.send(:update_bundler_version_from_lockfile, lockfile_path)
+        end.to raise_error(Tebako::Error) { |error|
+          expect(error.error_code).to eq(117)
+        }
       end
     end
   end
