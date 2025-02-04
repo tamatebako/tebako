@@ -1075,33 +1075,47 @@ operation. The following table lists the possible exit codes and their meanings.
 | 116  | Ruby version does not satify Gemfile requirements
 |===
 
-== Package Ruby version selection rules
+== Ruby and bundler versions selection
 
 During packaging tebako creates its own Ruby execution environment that is independent from the host Ruby environment.
 The version of Ruby that is used in the package is defined by the combination of the `--Ruby` option and ruby requirement
 specified in Gemfile.
 
-.Package Ruby version selection Rules
+.Package Ruby version selection rules
 [cols="3", options="header"]
 |===
-| Gemfile requirement\--Ruby option | Specified | Not specified
+| Gemfile requirement
+| `--Ruby` option given
+| `--Ruby` option absent
 
-| Specified | The version specified by --Ruby option if it is supported and satisfies Gemfile requirement; error otherwise | The minimal supported Ruby option that satisfies Gemfile requirement; error otherwise
-| Not specified | The version specified by --Ruby option if it is supported; error otherwise | Default Tebako Ruby version (3.2.6).
+| *Specified*
+| The version specified by `--Ruby` option if it is supported and satisfies Gemfile requirement; error otherwise
+| The minimal supported Ruby version that satisfies Gemfile requirement; error otherwise
+| *Not specified*
+| The version specified by `--Ruby` option if it is supported; error otherwise | Default Tebako Ruby version (3.2.6).
 
 |===
 
+When bundler is used to package the application, the version of bundler that is used is determined by the Ruby version
+and the bundler version requirements specified in the Gemfile.
 
-== Packaging scenarios with Ruby
+.Package bundler version selection rules
+[cols="3", options="header"]
+|===
+| Gemfile requirement
+|  Ruby version 2.7.8, 3.0.7
+|  Ruby version 3.1.x or above
 
-Tebako for Ruby supports the following packaging scenarios.
+| *Specified*
+| The maximum version that meets Gemfile requirement if it is >= 2.4.22 ; error otherwise
+| The maximum version that meets Gemfile requirement if it is >= 2.4.22 ; error otherwise
+| *Not specified*
+| 2.4.22
+| Default bundler version for this version of Ruby.
 
-This is high-level description of the Tebako Ruby packaging mechanism.
+|===
 
-NOTE: These scenarios were inspired by the `ruby-packer` approach.
-
-NOTE: Tebako Ruby is created independently from `ruby-packer`, no line of code
-was copied from `ruby-packer`.
+== Packaging scenarios
 
 Depending on the configuration files that are present in the root project folder, the Tebako Ruby packager supports different packaging scenarios.
 
