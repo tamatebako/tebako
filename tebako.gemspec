@@ -63,8 +63,10 @@ Gem::Specification.new do |spec|
   spec.add_dependency "thor", "~> 1.2"
   spec.add_dependency "yaml", "~> 0.2.1"
 
+  spec.add_development_dependency "debug"
   spec.add_development_dependency "hoe"
   spec.add_development_dependency "minitest"
+  spec.add_development_dependency "rdbg"
   spec.add_development_dependency "rspec", "~> 3.2"
   spec.add_development_dependency "rubocop", "~> 1.52"
   spec.add_development_dependency "rubocop-rubycw"

@@ -28,6 +28,8 @@
 
 require "digest"
 require "fileutils"
+require "find"
+require "pathname"
 require "open3"
 require "thor"
 require "yaml"
@@ -36,6 +38,7 @@ require_relative "cache_manager"
 require_relative "cli_helpers"
 require_relative "error"
 require_relative "ruby_version"
+require_relative "scenario_manager"
 require_relative "version"
 
 # Tebako - an executable packager
@@ -66,10 +69,11 @@ module Tebako
       (om,) = bootstrap(clean: true)
 
       suffix = options["Ruby"].nil? ? "" : "_#{options["Ruby"]}"
-      nmr = "src/_ruby#{suffix}*"
-      nms = "stash#{suffix}*"
-      FileUtils.rm_rf(Dir.glob(File.join(om.deps, nmr)), secure: true)
-      FileUtils.rm_rf(Dir.glob(File.join(om.deps, nms)), secure: true)
+      nmr = Dir.glob(File.join(om.deps, "src", "_ruby#{suffix}*"))
+      nms = Dir.glob(File.join(om.deps, "stash#{suffix}*"))
+
+      FileUtils.rm_rf(nmr + nms, secure: true)
+      extra_win_clean(nmr)
     end
 
     desc "hash", "Print build script hash (ci cache key)"
@@ -147,13 +151,29 @@ module Tebako
         [options_manager, cache_manager]
       end
 
+      # Ruby extension maker sometimes creates files with 'NUL' name on Windows
+      # This method removes such files
+      def extra_win_clean(nmr)
+        return unless nmr.any? && ScenarioManagerBase.new.msys?
+
+        nmr.each do |path|
+          if File.basename(path) == "NUL"
+            full_path = "//?/#{path}"
+            FileUtils.rm_f(full_path)
+          end
+        end
+        FileUtils.rm_rf(nmr, secure: true)
+      end
+
       def initialize(*args)
         super
         return if args[2][:current_command].name.include?("hash")
 
         puts "Tebako executable packager version #{Tebako::VERSION}"
       end
+    end
 
+    no_commands do
       def options
         original_options = super
         tebafile = original_options["tebafile"].nil? ? DEFAULT_TEBAFILE : original_options["tebafile"]
@@ -164,9 +184,7 @@ module Tebako
           original_options
         end
       end
-    end
 
-    no_commands do
       def source
         c_path = Pathname.new(__FILE__).realpath
         @source ||= File.expand_path("../../..", c_path)
@@ -177,7 +195,10 @@ module Tebako
 
         opts = ""
         opts += " '--root'" if options["root"].nil?
-        opts += " '--entry-point'" if options["entry-point"].nil?
+        if options["entry-point"].nil?
+          opts += ", " unless opts.empty?
+          opts += " '--entry-point'"
+        end
         raise Thor::Error, "No value provided for required options #{opts}" unless opts.empty?
       end
     end
