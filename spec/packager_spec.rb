@@ -106,7 +106,7 @@ RSpec.describe Tebako::Packager do
     before do
       allow(Tebako::RubyBuilder).to receive(:new).and_return(ruby_builder)
       allow(ruby_builder).to receive(:target_build)
-      allow(Tebako::Packager::PatchHelpers).to receive(:exe_suffix).and_return("")
+      allow_any_instance_of(Tebako::ScenarioManagerBase).to receive(:exe_suffix).and_return("")
       allow(Tebako::Packager).to receive(:patchelf)
       allow(Tebako::Packager).to receive(:strip_or_copy)
     end

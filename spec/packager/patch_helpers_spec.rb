@@ -105,19 +105,6 @@ RSpec.describe Tebako::Packager::PatchHelpers do # rubocop:disable Metrics/Block
     end
   end
 
-  describe "#exe_suffix" do
-    it "returns '.exe' for msys-based platforms" do
-      expect(Tebako::Packager::PatchHelpers.exe_suffix("msys2")).to eq(".exe")
-      expect(Tebako::Packager::PatchHelpers.exe_suffix("mingw32")).to eq(".exe")
-      expect(Tebako::Packager::PatchHelpers.exe_suffix("cygwin")).to eq(".exe")
-    end
-
-    it "returns an empty string for non-msys platforms" do
-      expect(Tebako::Packager::PatchHelpers.exe_suffix("darwin")).to eq("")
-      expect(Tebako::Packager::PatchHelpers.exe_suffix("linux")).to eq("")
-    end
-  end
-
   describe "#restore_and_save_files" do # rubocop:disable Metrics/BlockLength
     let(:ruby_source_dir) { File.join(temp_dir, "ruby_source") }
     let(:test_files) { ["test1.rb", "test2.rb"] }

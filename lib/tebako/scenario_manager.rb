@@ -41,6 +41,7 @@ module Tebako
   # A couple of static Scenario definitions
   class ScenarioManagerBase
     def initialize
+      @linux = RUBY_PLATFORM =~ /linux/ ? true : false
       @macos = RUBY_PLATFORM =~ /darwin/ ? true : false
       @msys  = RUBY_PLATFORM =~ /msys|mingw|cygwin/ ? true : false
 
@@ -53,6 +54,33 @@ module Tebako
     end
 
     attr_reader :fs_mount_point, :exe_suffix
+
+    def b_env
+      u_flags = if @macos
+                  "-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0  #{ENV.fetch("CXXFLAGS", nil)}"
+                else
+                  ENV.fetch("CXXFLAGS", nil)
+                end
+      @b_env ||= { "CXXFLAGS" => u_flags }
+    end
+
+    def linux?
+      @linux
+    end
+
+    def m_files
+      # [TODO]
+      # Ninja generates incorrect script for tebako press target -- gets lost in a chain custom targets
+      # Using makefiles has negative performance impact so it needs to be fixed
+
+      @m_files ||= if @linux || @macos
+                     "Unix Makefiles"
+                   elsif @msys
+                     "MinGW Makefiles"
+                   else
+                     raise Tebako::Error.new("#{RUBY_PLATFORM} is not supported.", 112)
+                   end
+    end
 
     def macos?
       @macos

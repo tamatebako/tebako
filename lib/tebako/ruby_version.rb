@@ -120,8 +120,7 @@ module Tebako
     end
 
     def version_check_msys
-      if Gem::Version.new(@ruby_version) < Gem::Version.new(MIN_RUBY_VERSION_WINDOWS) &&
-         RUBY_PLATFORM =~ /msys|mingw|cygwin/
+      if Gem::Version.new(@ruby_version) < Gem::Version.new(MIN_RUBY_VERSION_WINDOWS) && ScenarioManagerBase.new.msys?
         raise Tebako::Error.new("Ruby version #{@ruby_version} is not supported on Windows", 111)
       end
     end
