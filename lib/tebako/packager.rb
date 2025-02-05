@@ -197,11 +197,11 @@ module Tebako
       def strip_or_copy(os_type, src_name, package_name)
         # [TODO] On MSys strip sometimes creates a broken executable
         # https://github.com/tamatebako/tebako/issues/172
-        if Packager::PatchHelpers.msys?(os_type)
-          FileUtils.cp(src_name, package_name)
-        else
+        # if Packager::PatchHelpers.msys?(os_type)
+        #  FileUtils.cp(src_name, package_name)
+        # else
           Tebako::Stripper.strip_file(src_name, package_name)
-        end
+        # end
       end
     end
   end
