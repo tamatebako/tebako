@@ -180,8 +180,7 @@ RSpec.describe Tebako::DeployHelper do
     before do
       allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
       stub_const("RUBY_PLATFORM", "linux")
-      allow(deploy_helper).to receive(:lookup_files)
-      allow(deploy_helper).to receive(:configure_scenario_inner)
+      allow(deploy_helper).to receive(:configure_scenario)
       deploy_helper.configure(ruby_ver, cwd)
     end
 
@@ -338,8 +337,7 @@ RSpec.describe Tebako::DeployHelper do
     before do
       allow(Tebako::BuildHelpers).to receive(:ncores).and_return(1) if RUBY_PLATFORM =~ /darwin/
       stub_const("RUBY_PLATFORM", "linux")
-      allow(deploy_helper).to receive(:lookup_files)
-      allow(deploy_helper).to receive(:configure_scenario_inner)
+      allow(deploy_helper).to receive(:configure_scenario)
       deploy_helper.configure(ruby_ver, cwd)
     end
 

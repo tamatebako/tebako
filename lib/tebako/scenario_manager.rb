@@ -38,47 +38,50 @@ module Tebako
   BUNDLER_VERSION = "2.4.22"
   RUBYGEMS_VERSION = "3.4.22"
 
+  # A couple of static Scenario definitions
+  class ScenarioManagerBase
+    def initialize
+      @macos = RUBY_PLATFORM =~ /darwin/ ? true : false
+      @msys  = RUBY_PLATFORM =~ /msys|mingw|cygwin/ ? true : false
+
+      @fs_mount_point = if @msys
+                          "A:/__tebako_memfs__"
+                        else
+                          "/__tebako_memfs__"
+                        end
+      @exe_suffix = @msys ? ".exe" : ""
+    end
+
+    attr_reader :fs_mount_point, :exe_suffix
+
+    def macos?
+      @macos
+    end
+
+    def msys?
+      @msys
+    end
+  end
+
   # Manages packaging scenario based on input files (gemfile, gemspec, etc)
-  class ScenarioManager
+  class ScenarioManager < ScenarioManagerBase
     def initialize(fs_root, fs_entrance)
+      super()
       @with_gemfile = @with_lockfile = @needs_bundler = false
       @bundler_version = BUNDLER_VERSION
       initialize_root(fs_root)
       initialize_entry_point(fs_entrance || "stub.rb")
     end
 
-    attr_reader :fs_entry_point, :fs_mount_point, :fs_entrance, :gemfile_path, :needs_bundler, :with_gemfile
+    attr_reader :fs_entry_point, :fs_entrance, :gemfile_path, :needs_bundler, :with_gemfile
 
     def bundler_reference
       @needs_bundler ? "_#{@bundler_version}_" : nil
     end
 
     def configure_scenario
-      @fs_mount_point = if msys?
-                          "A:/__tebako_memfs__"
-                        else
-                          "/__tebako_memfs__"
-                        end
-
       lookup_files
-      configure_scenario_inner
-    end
 
-    def exe_suffix
-      @exe_suffix ||= msys? ? ".exe" : ""
-    end
-
-    def macos?
-      @macos ||= RUBY_PLATFORM =~ /darwin/ ? true : false
-    end
-
-    def msys?
-      @msys ||= RUBY_PLATFORM =~ /msys|mingw|cygwin/ ? true : false
-    end
-
-    private
-
-    def configure_scenario_inner
       case @gs_length
       when 0
         configure_scenario_no_gemspec
@@ -88,6 +91,8 @@ module Tebako
         raise Tebako::Error, "Multiple Ruby gemspecs found in #{@fs_root}"
       end
     end
+
+    private
 
     def configure_scenario_no_gemspec
       @fs_entry_point = "/local/#{@fs_entrance}" if @with_gemfile || @g_length.zero?
