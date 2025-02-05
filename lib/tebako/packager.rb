@@ -97,7 +97,7 @@ module Tebako
         puts "-- Running finalize script"
 
         RubyBuilder.new(ruby_ver, src_dir).target_build
-        exe_suffix = Packager::PatchHelpers.exe_suffix(os_type)
+        exe_suffix = ScenarioManagerBase.new.exe_suffix
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
         patchelf(src_name, patchelf)
         package_name = "#{app_name}#{exe_suffix}"

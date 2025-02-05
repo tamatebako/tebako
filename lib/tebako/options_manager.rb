@@ -44,18 +44,10 @@ module Tebako
       @options = options
       @rv = Tebako::RubyVersion.new(@options["Ruby"])
       @ruby_ver, @ruby_hash = @rv.extend_ruby_version
+      @scmb = ScenarioManagerBase.new
     end
 
     attr_reader :ruby_ver, :rv
-
-    def b_env
-      u_flags = if RbConfig::CONFIG["host_os"] =~ /darwin/
-                  "-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0  #{ENV.fetch("CXXFLAGS", nil)}"
-                else
-                  ENV.fetch("CXXFLAGS", nil)
-                end
-      @b_env ||= { "CXXFLAGS" => u_flags }
-    end
 
     def cfg_options
       ## {v_parts[3]} may be something like rc1 that won't work with CMake
@@ -64,7 +56,7 @@ module Tebako
       # So we have to use \"xxx\"
       @cfg_options ||=
         "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{@ruby_ver}\" -DRUBY_HASH:STRING=\"#{@ruby_hash}\" " \
-        "-DDEPS:STRING=\"#{deps}\" -G \"#{m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
+        "-DDEPS:STRING=\"#{deps}\" -G \"#{@scmb.m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
         "#{remove_glibc_private} -DTEBAKO_VERSION:STRING=\"#{v_parts[0]}.#{v_parts[1]}.#{v_parts[2]}\""
     end
 
@@ -127,7 +119,7 @@ module Tebako
 
     def fs_current
       fs_current = Dir.pwd
-      if RUBY_PLATFORM =~ /msys|mingw|cygwin/
+      if @scmb.msys?
         fs_current, cygpath_res = Open3.capture2e("cygpath", "-w", fs_current)
         Tebako.packaging_error(101) unless cygpath_res.success?
         fs_current.strip!
@@ -156,20 +148,6 @@ module Tebako
 
     def mode
       @mode ||= @options["mode"].nil? ? "bundle" : @options["mode"]
-    end
-
-    def m_files
-      # [TODO]
-      # Ninja generates incorrect script for tebako press target -- gets lost in a chain custom targets
-      # Using makefiles has negative performance impact so it needs to be fixed
-      @m_files ||= case RUBY_PLATFORM
-                   when /linux/, /darwin/
-                     "Unix Makefiles"
-                   when /msys|mingw|cygwin/
-                     "MinGW Makefiles"
-                   else
-                     raise Tebako::Error.new("#{RUBY_PLATFORM} is not supported.", 112)
-                   end
     end
 
     def output_folder

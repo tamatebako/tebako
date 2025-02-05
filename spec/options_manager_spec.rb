@@ -37,48 +37,6 @@ RSpec.describe Tebako::OptionsManager do
   let(:ruby_ver) { "3.2.6" }
   let(:ruby_hash) { Tebako::RubyVersion::RUBY_VERSIONS["3.2.6"] }
 
-  describe "#b_env" do
-    let(:options_manager) { Tebako::OptionsManager.new({}) }
-    before do
-      @original_host_os = RbConfig::CONFIG["host_os"]
-      @original_cxxflags = ENV.fetch("CXXFLAGS", nil)
-    end
-
-    after do
-      RbConfig::CONFIG["host_os"] = @original_host_os
-      ENV["CXXFLAGS"] = @original_cxxflags
-    end
-
-    context "when host OS is Darwin" do
-      it "sets CXXFLAGS with TARGET_OS_SIMULATOR and TARGET_OS_IPHONE" do
-        RbConfig::CONFIG["host_os"] = "darwin"
-        ENV["CXXFLAGS"] = "-O2"
-
-        expected_flags = "-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0  -O2"
-        expect(options_manager.b_env["CXXFLAGS"]).to eq(expected_flags)
-      end
-    end
-
-    context "when host OS is not Darwin" do
-      it "sets CXXFLAGS with the value from ENV" do
-        RbConfig::CONFIG["host_os"] = "linux"
-        ENV["CXXFLAGS"] = "-O2"
-
-        expected_flags = "-O2"
-        expect(options_manager.b_env["CXXFLAGS"]).to eq(expected_flags)
-      end
-    end
-
-    context "when CXXFLAGS is not set in ENV" do
-      it "sets CXXFLAGS to nil" do
-        RbConfig::CONFIG["host_os"] = "linux"
-        ENV.delete("CXXFLAGS")
-
-        expect(options_manager.b_env["CXXFLAGS"]).to be_nil
-      end
-    end
-  end
-
   describe "#cfg_options" do
     let(:deps) { File.join(Dir.pwd, "deps") }
     let(:output_folder) { File.join(Dir.pwd, "o") }
@@ -246,50 +204,6 @@ RSpec.describe Tebako::OptionsManager do
 
       it "returns the value of the mode option" do
         expect(options_manager.mode).to eq("both")
-      end
-    end
-  end
-
-  describe "#m_files" do
-    let(:options) { {} }
-    let(:options_manager) { Tebako::OptionsManager.new(options) }
-    context "when on a Linux platform" do
-      before do
-        stub_const("RUBY_PLATFORM", "linux")
-      end
-
-      it 'returns "Unix Makefiles"' do
-        expect(options_manager.m_files).to eq("Unix Makefiles")
-      end
-    end
-
-    context "when on a macOS platform" do
-      before do
-        stub_const("RUBY_PLATFORM", "darwin")
-      end
-
-      it 'returns "Unix Makefiles"' do
-        expect(options_manager.m_files).to eq("Unix Makefiles")
-      end
-    end
-
-    context "when on a Windows platform" do
-      before do
-        stub_const("RUBY_PLATFORM", "msys")
-      end
-
-      it 'returns "MinGW Makefiles"' do
-        expect(options_manager.m_files).to eq("MinGW Makefiles")
-      end
-    end
-
-    context "when on an unsupported platform" do
-      before do
-        stub_const("RUBY_PLATFORM", "unsupported")
-      end
-
-      it "raises a Tebako::Error" do
-        expect { options_manager.m_files }.to raise_error(Tebako::Error, "unsupported is not supported.")
       end
     end
   end

@@ -56,6 +56,109 @@ RSpec.describe Tebako::ScenarioManagerBase do
     end
   end
 
+  describe "#b_env" do
+    before do
+      @original_cxxflags = ENV.fetch("CXXFLAGS", nil)
+    end
+
+    after do
+      ENV["CXXFLAGS"] = @original_cxxflags
+    end
+
+    context "when host OS is Darwin" do
+      it "sets CXXFLAGS with TARGET_OS_SIMULATOR and TARGET_OS_IPHONE" do
+        stub_const("RUBY_PLATFORM", "darwin")
+        ENV["CXXFLAGS"] = "-O2"
+
+        expected_flags = "-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0  -O2"
+        expect(described_class.new.b_env["CXXFLAGS"]).to eq(expected_flags)
+      end
+    end
+
+    context "when host OS is not Darwin" do
+      it "sets CXXFLAGS with the value from ENV" do
+        stub_const("RUBY_PLATFORM", "linux")
+        ENV["CXXFLAGS"] = "-O2"
+
+        expected_flags = "-O2"
+        expect(described_class.new.b_env["CXXFLAGS"]).to eq(expected_flags)
+      end
+    end
+
+    context "when CXXFLAGS is not set in ENV" do
+      it "sets CXXFLAGS to nil" do
+        RbConfig::CONFIG["host_os"] = "linux"
+        ENV.delete("CXXFLAGS")
+
+        expect(described_class.new.b_env["CXXFLAGS"]).to be_nil
+      end
+    end
+  end
+
+  describe "#linux?" do
+    context "on linux platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "linux")
+      end
+
+      it "returns true" do
+        expect(described_class.new.linux?).to be true
+      end
+    end
+
+    context "on non-linux platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "darwin")
+      end
+
+      it "returns false" do
+        expect(described_class.new.linux?).to be false
+      end
+    end
+  end
+
+  describe "#m_files" do
+    context "when on a Linux platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "linux")
+      end
+
+      it 'returns "Unix Makefiles"' do
+        expect(described_class.new.m_files).to eq("Unix Makefiles")
+      end
+    end
+
+    context "when on a macOS platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "darwin")
+      end
+
+      it 'returns "Unix Makefiles"' do
+        expect(described_class.new.m_files).to eq("Unix Makefiles")
+      end
+    end
+
+    context "when on a Windows platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "msys")
+      end
+
+      it 'returns "MinGW Makefiles"' do
+        expect(described_class.new.m_files).to eq("MinGW Makefiles")
+      end
+    end
+
+    context "when on an unsupported platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "unsupported")
+      end
+
+      it "raises a Tebako::Error" do
+        expect { described_class.new.m_files }.to raise_error(Tebako::Error, "unsupported is not supported.")
+      end
+    end
+  end
+
   describe "#macos?" do
     context "on macos platform" do
       before do

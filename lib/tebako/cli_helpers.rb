@@ -82,7 +82,7 @@ module Tebako
       return unless %w[both runtime bundle].include?(options_manager.mode)
 
       generate_files(options_manager, scenario_manager)
-      merged_env = ENV.to_h.merge(options_manager.b_env)
+      merged_env = ENV.to_h.merge(scenario_manager.b_env)
       Tebako.packaging_error(103) unless system(merged_env, press_cfg_cmd(options_manager))
       Tebako.packaging_error(104) unless system(merged_env, press_build_cmd(options_manager))
     end
@@ -90,7 +90,7 @@ module Tebako
     def do_setup(options_manager)
       puts "Setting up tebako packaging environment"
 
-      merged_env = ENV.to_h.merge(options_manager.b_env)
+      merged_env = ENV.to_h.merge(Tebako::ScenarioManagerBase.new.b_env)
       Tebako.packaging_error(101) unless system(merged_env, setup_cfg_cmd(options_manager))
       Tebako.packaging_error(102) unless system(merged_env, setup_build_cmd(options_manager))
     end
