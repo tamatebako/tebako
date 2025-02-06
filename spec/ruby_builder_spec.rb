@@ -39,7 +39,7 @@ RSpec.describe Tebako::RubyBuilder do
     let(:builder) { described_class.new(Tebako::RubyVersion.new(ruby_ver), src_dir) }
 
     before do
-      allow(Tebako::BuildHelpers).to receive(:ncores).and_return(ncores)
+      allow_any_instance_of(Tebako::ScenarioManagerBase).to receive(:ncores).and_return(ncores)
       allow(Tebako::BuildHelpers).to receive(:run_with_capture)
       allow(Dir).to receive(:chdir).with(src_dir).and_yield
     end
@@ -73,7 +73,7 @@ RSpec.describe Tebako::RubyBuilder do
     let(:builder) { described_class.new(Tebako::RubyVersion.new(ruby_ver), src_dir) }
 
     before do
-      allow(Tebako::BuildHelpers).to receive(:ncores).and_return(ncores)
+      allow_any_instance_of(Tebako::ScenarioManagerBase).to receive(:ncores).and_return(ncores)
       allow(Tebako::BuildHelpers).to receive(:run_with_capture)
       allow(Dir).to receive(:chdir).with(src_dir).and_yield
     end

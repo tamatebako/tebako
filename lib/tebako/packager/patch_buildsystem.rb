@@ -77,8 +77,8 @@ module Tebako
         "$(EXTOBJS) $(LIBRUBYARG_STATIC) $(OUTFLAG)$@\n" \
         "# -- End of tebako patch --"
 
-      def template_makefile_in_subst(ostype, ruby_ver)
-        if PatchHelpers.msys?(ostype)
+      def template_makefile_in_subst(ruby_ver)
+        if ScenarioManagerBase.new.msys?
           TEMPLATE_MAKEFILE_IN_BASE_PATCH_MSYS
         elsif !ruby_ver.ruby31?
           TEMPLATE_MAKEFILE_IN_BASE_PATCH_PRE_3_1
@@ -87,13 +87,13 @@ module Tebako
         end
       end
 
-      def template_makefile_in_patch_two(ostype, ruby_ver)
+      def template_makefile_in_patch_two(ruby_ver)
         if !ruby_ver.ruby31?
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => template_makefile_in_subst(ostype, ruby_ver) }
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_1 => template_makefile_in_subst(ruby_ver) }
         elsif !ruby_ver.ruby33?
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 => template_makefile_in_subst(ostype, ruby_ver) }
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN_PRE_3_3 => template_makefile_in_subst(ruby_ver) }
         else
-          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => template_makefile_in_subst(ostype, ruby_ver) }
+          { TEMPLATE_MAKEFILE_IN_BASE_PATTERN => template_makefile_in_subst(ruby_ver) }
         end
       end
 

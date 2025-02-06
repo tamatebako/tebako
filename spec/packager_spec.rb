@@ -96,7 +96,6 @@ RSpec.describe Tebako::Packager do
   end
 
   describe "#finalize" do
-    let(:os_type) { "linux" }
     let(:src_dir) { "/path/to/src" }
     let(:app_name) { "my_app" }
     let(:ruby_ver) { "2.7.2" }
@@ -108,30 +107,30 @@ RSpec.describe Tebako::Packager do
       allow(ruby_builder).to receive(:target_build)
       allow_any_instance_of(Tebako::ScenarioManagerBase).to receive(:exe_suffix).and_return("")
       allow(Tebako::Packager).to receive(:patchelf)
-      allow(Tebako::Packager).to receive(:strip_or_copy)
+      allow(Tebako::Stripper).to receive(:strip)
     end
 
     it "creates a new RubyBuilder with the correct parameters" do
       expect(Tebako::RubyBuilder).to receive(:new).with(ruby_ver, src_dir).and_return(ruby_builder)
-      Tebako::Packager.finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
+      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf)
     end
 
     it "calls target_build on the RubyBuilder" do
       expect(ruby_builder).to receive(:target_build)
-      Tebako::Packager.finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
+      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf)
     end
 
     it "calls patchelf with the correct parameters" do
       src_name = File.join(src_dir, "ruby")
       expect(Tebako::Packager).to receive(:patchelf).with(src_name, patchelf)
-      Tebako::Packager.finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
+      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf)
     end
 
-    it "calls strip_or_copy with the correct parameters" do
+    it "calls strip_file with the correct parameters" do
       src_name = File.join(src_dir, "ruby")
       package_name = app_name.to_s
-      expect(Tebako::Packager).to receive(:strip_or_copy).with(os_type, src_name, package_name)
-      Tebako::Packager.finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
+      expect(Tebako::Stripper).to receive(:strip_file).with(src_name, package_name)
+      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf)
     end
   end
 
@@ -307,34 +306,6 @@ RSpec.describe Tebako::Packager do
         params = [patchelf, "--remove-needed-version", "libpthread.so.0", "GLIBC_PRIVATE", src_name]
         expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(params)
         Tebako::Packager.send(:patchelf, src_name, patchelf)
-      end
-    end
-  end
-
-  describe "#strip_or_copy" do
-    let(:os_type) { "linux" }
-    let(:src_name) { "binary" }
-    let(:package_name) { "package" }
-
-    context "when running on MSys" do
-      before do
-        allow(Tebako::Packager::PatchHelpers).to receive(:msys?).with(os_type).and_return(true)
-      end
-
-      it "copies the file" do
-        expect(FileUtils).to receive(:cp).with(src_name, package_name)
-        Tebako::Packager.send(:strip_or_copy, os_type, src_name, package_name)
-      end
-    end
-
-    context "when not running on MSys" do
-      before do
-        allow(Tebako::Packager::PatchHelpers).to receive(:msys?).with(os_type).and_return(false)
-      end
-
-      it "strips the file" do
-        expect(Tebako::Stripper).to receive(:strip_file).with(src_name, package_name)
-        Tebako::Packager.send(:strip_or_copy, os_type, src_name, package_name)
       end
     end
   end
