@@ -31,55 +31,7 @@ require "tebako/build_helpers"
 # rubocop:disable Metrics/BlockLength
 
 RSpec.describe Tebako::BuildHelpers do
-  describe ".ncores" do
-    context "when on macOS" do
-      before do
-        stub_const("RUBY_PLATFORM", "darwin")
-        status_double = double(exitstatus: 0, signaled?: false)
-        allow(Open3).to receive(:capture2e).with("sysctl", "-n", "hw.ncpu").and_return(["4", status_double])
-      end
-
-      it "returns the number of cores" do
-        expect(described_class.ncores).to eq(4)
-      end
-    end
-
-    context "when on Linux" do
-      before do
-        stub_const("RUBY_PLATFORM", "linux")
-        status_double = double(exitstatus: 0, signaled?: false)
-        allow(Open3).to receive(:capture2e).with("nproc", "--all").and_return(["8", status_double])
-      end
-
-      it "returns the number of cores" do
-        expect(described_class.ncores).to eq(8)
-      end
-    end
-
-    context "when the command fails" do
-      before do
-        status_double = double(exitstatus: 1, signaled?: false)
-        allow(Open3).to receive(:capture2e).and_return(["", status_double])
-      end
-
-      it "returns 4 as a default value" do
-        expect(described_class.ncores).to eq(4)
-      end
-    end
-
-    context "when the command is terminated by a signal" do
-      before do
-        status_double = double(exitstatus: nil, signaled?: true, termsig: 9)
-        allow(Open3).to receive(:capture2e).and_return(["", status_double])
-      end
-
-      it "returns 4 as a default value" do
-        expect(described_class.ncores).to eq(4)
-      end
-    end
-  end
-
-  describe ".run_with_capture" do
+  describe "#run_with_capture" do
     let(:args) { %w[echo hello] }
 
     describe ".run_with_capture" do

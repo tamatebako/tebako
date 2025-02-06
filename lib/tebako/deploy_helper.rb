@@ -48,7 +48,6 @@ module Tebako
       @target_dir = target_dir
       @pre_dir = pre_dir
       @verbose = %w[yes true].include?(ENV.fetch("VERBOSE", nil))
-      @ncores = BuildHelpers.ncores
     end
 
     attr_reader :gem_home
@@ -162,7 +161,7 @@ module Tebako
       Dir.chdir(@pre_dir) do
         bundle_config
         puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{@ncores}"])
+        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{ncores}"])
         BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "exec", @gem_command, "build", gemspec])
         install_all_gems_or_fail
       end
@@ -222,7 +221,7 @@ module Tebako
       Dir.chdir(@tld) do
         bundle_config
         puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{@ncores}"])
+        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{ncores}"])
       end
 
       check_entry_point("local")

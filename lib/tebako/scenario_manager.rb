@@ -89,6 +89,19 @@ module Tebako
     def msys?
       @msys
     end
+
+    def ncores
+      if @ncores.nil?
+        if @macos
+          out, st = Open3.capture2e("sysctl", "-n", "hw.ncpu")
+        else
+          out, st = Open3.capture2e("nproc", "--all")
+        end
+
+        @ncores = !st.signaled? && st.exitstatus.zero? ? out.strip.to_i : 4
+      end
+      @ncores
+    end
   end
 
   # Manages packaging scenario based on input files (gemfile, gemspec, etc)

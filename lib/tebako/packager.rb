@@ -93,7 +93,7 @@ module Tebako
         patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
       end
 
-      def finalize(os_type, src_dir, app_name, ruby_ver, patchelf)
+      def finalize(src_dir, app_name, ruby_ver, patchelf)
         puts "-- Running finalize script"
 
         RubyBuilder.new(ruby_ver, src_dir).target_build
@@ -101,7 +101,8 @@ module Tebako
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
         patchelf(src_name, patchelf)
         package_name = "#{app_name}#{exe_suffix}"
-        strip_or_copy(os_type, src_name, package_name)
+        # strip_or_copy(os_type, src_name, package_name)
+        Tebako::Stripper.strip_file(src_name, package_name)
         puts "Created tebako package at \"#{package_name}\""
       end
 
@@ -194,15 +195,15 @@ module Tebako
         BuildHelpers.run_with_capture(params)
       end
 
-      def strip_or_copy(os_type, src_name, package_name)
-        # [TODO] On MSys strip sometimes creates a broken executable
-        # https://github.com/tamatebako/tebako/issues/172
-        # if Packager::PatchHelpers.msys?(os_type)
-        #  FileUtils.cp(src_name, package_name)
-        # else
-          Tebako::Stripper.strip_file(src_name, package_name)
-        # end
-      end
+      # def strip_or_copy(_os_type, src_name, package_name)
+      # [TODO] On MSys strip sometimes creates a broken executable
+      # https://github.com/tamatebako/tebako/issues/172
+      # if Packager::PatchHelpers.msys?(os_type)
+      # FileUtils.cp(src_name, package_name)
+      # else
+      # Tebako::Stripper.strip_file(src_name, package_name)
+      # end
+      # end
     end
   end
 end

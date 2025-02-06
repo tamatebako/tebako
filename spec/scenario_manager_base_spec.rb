@@ -87,7 +87,7 @@ RSpec.describe Tebako::ScenarioManagerBase do
 
     context "when CXXFLAGS is not set in ENV" do
       it "sets CXXFLAGS to nil" do
-        RbConfig::CONFIG["host_os"] = "linux"
+        stub_const("RUBY_PLATFORM", "linux")
         ENV.delete("CXXFLAGS")
 
         expect(described_class.new.b_env["CXXFLAGS"]).to be_nil
@@ -199,6 +199,54 @@ RSpec.describe Tebako::ScenarioManagerBase do
 
       it "returns false" do
         expect(described_class.new.msys?).to be false
+      end
+    end
+  end
+
+  describe "#ncores" do
+    context "when on macOS" do
+      before do
+        stub_const("RUBY_PLATFORM", "darwin")
+        status_double = double(exitstatus: 0, signaled?: false)
+        allow(Open3).to receive(:capture2e).with("sysctl", "-n", "hw.ncpu").and_return(["4", status_double])
+      end
+
+      it "returns the number of cores" do
+        expect(described_class.new.ncores).to eq(4)
+      end
+    end
+
+    context "when on Linux" do
+      before do
+        stub_const("RUBY_PLATFORM", "linux")
+        status_double = double(exitstatus: 0, signaled?: false)
+        allow(Open3).to receive(:capture2e).with("nproc", "--all").and_return(["8", status_double])
+      end
+
+      it "returns the number of cores" do
+        expect(described_class.new.ncores).to eq(8)
+      end
+    end
+
+    context "when the command fails" do
+      before do
+        status_double = double(exitstatus: 1, signaled?: false)
+        allow(Open3).to receive(:capture2e).and_return(["", status_double])
+      end
+
+      it "returns 4 as a default value" do
+        expect(described_class.new.ncores).to eq(4)
+      end
+    end
+
+    context "when the command is terminated by a signal" do
+      before do
+        status_double = double(exitstatus: nil, signaled?: true, termsig: 9)
+        allow(Open3).to receive(:capture2e).and_return(["", status_double])
+      end
+
+      it "returns 4 as a default value" do
+        expect(described_class.new.ncores).to eq(4)
       end
     end
   end

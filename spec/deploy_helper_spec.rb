@@ -52,7 +52,6 @@ RSpec.describe Tebako::DeployHelper do
       expect(deploy_helper.instance_variable_get(:@target_dir)).to eq(target_dir)
       expect(deploy_helper.instance_variable_get(:@pre_dir)).to eq(pre_dir)
       expect(deploy_helper.instance_variable_get(:@verbose)).to eq(false)
-      expect(deploy_helper.instance_variable_get(:@ncores)).to be_a(Integer)
     end
   end
 
@@ -519,7 +518,7 @@ RSpec.describe Tebako::DeployHelper do
       expect(deploy_helper).to receive(:bundle_config).ordered
       expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
         .with([deploy_helper.instance_variable_get(:@bundler_command), nil, "install",
-               "--jobs=#{deploy_helper.instance_variable_get(:@ncores)}"])
+               "--jobs=#{deploy_helper.ncores}"])
         .ordered
       expect(deploy_helper).to receive(:check_entry_point).with("local").ordered
 
@@ -763,4 +762,5 @@ RSpec.describe Tebako::DeployHelper do
     end
   end
 end
+
 # rubocop:enable Metrics/BlockLength

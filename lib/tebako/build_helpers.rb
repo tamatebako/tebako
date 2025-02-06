@@ -32,20 +32,6 @@ module Tebako
   # Ruby build helpers
   module BuildHelpers
     class << self
-      def ncores
-        if RUBY_PLATFORM.include?("darwin")
-          out, st = Open3.capture2e("sysctl", "-n", "hw.ncpu")
-        else
-          out, st = Open3.capture2e("nproc", "--all")
-        end
-
-        if !st.signaled? && st.exitstatus.zero?
-          out.strip.to_i
-        else
-          4
-        end
-      end
-
       def run_with_capture(args)
         args = args.compact
         puts "   ... @ #{args.join(" ")}"

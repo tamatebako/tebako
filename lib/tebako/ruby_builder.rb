@@ -37,7 +37,7 @@ module Tebako
     def initialize(ruby_ver, src_dir)
       @ruby_ver = ruby_ver
       @src_dir = src_dir
-      @ncores = BuildHelpers.ncores
+      @ncores = ScenarioManagerBase.new.ncores
     end
 
     # Final build of tebako package

@@ -40,7 +40,7 @@ module Tebako
         def get_patch_map(ostype, deps_lib_dir, ruby_ver)
           patch_map = get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
           patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if ostype =~ /linux-musl/
-          if PatchHelpers.msys?(ostype)
+          if ScenarioManagerBase.new.msys?
             patch_map.merge!(get_msys_patches(ruby_ver))
           elsif ruby_ver.ruby3x?
             patch_map.store("common.mk", COMMON_MK_PATCH)
@@ -55,28 +55,29 @@ module Tebako
         include Tebako::Packager::PatchBuildsystem
         include Tebako::Packager::PatchLiterals
         def extend_patch_map_r33(patch_map, ostype, deps_lib_dir, ruby_ver)
-          if ruby_ver.ruby33? || PatchHelpers.msys?(ostype)
+          if ruby_ver.ruby33? || ScenarioManagerBase.new.msys?
             patch_map.store("config.status",
                             get_config_status_patch(ostype, deps_lib_dir, ruby_ver))
           end
           patch_map
         end
 
-        def get_dir_c_patch(ostype)
-          pattern = PatchHelpers.msys?(ostype) ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST"
+        def get_dir_c_patch # rubocop:disable Naming/AccessorMethodName
+          pattern = ScenarioManagerBase.new.msys? ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST"
           dir_c_patch = PatchHelpers.patch_c_file_pre(pattern)
           dir_c_patch.merge!(DIR_C_BASE_PATCH)
           dir_c_patch
         end
 
-        def get_dln_c_patch(ostype, ruby_ver)
+        def get_dln_c_patch(ruby_ver)
           pattern = "#ifndef dln_loaderror"
           # Not using substitutions of dlxxx functions on Windows
+          is_msys = ScenarioManagerBase.new.msys?
           dln_c_patch = {
-            pattern => "#{PatchHelpers.msys?(ostype) ? C_FILE_SUBST_LESS : C_FILE_SUBST}\n#{pattern}\n"
+            pattern => "#{is_msys ? C_FILE_SUBST_LESS : C_FILE_SUBST}\n#{pattern}\n"
           }
 
-          if PatchHelpers.msys?(ostype)
+          if is_msys
             patch = ruby_ver.ruby32? ? DLN_C_MSYS_PATCH : DLN_C_MSYS_PATCH_PRE32
             dln_c_patch.merge!(patch)
           end
@@ -89,9 +90,9 @@ module Tebako
           io_c_msys_patch.merge(IO_C_MSYS_BASE_PATCH)
         end
 
-        def get_io_c_patch(ostype, ruby_ver)
+        def get_io_c_patch(ruby_ver)
           io_c_patch = PatchHelpers.patch_c_file_pre("/* define system APIs */")
-          io_c_patch.merge!(get_io_c_msys_patch(ruby_ver)) if PatchHelpers.msys?(ostype)
+          io_c_patch.merge!(get_io_c_msys_patch(ruby_ver)) if ScenarioManagerBase.new.msys?
           io_c_patch
         end
 
@@ -103,8 +104,8 @@ module Tebako
           end
         end
 
-        def get_tool_mkconfig_rb_patch(ostype)
-          subst = PatchHelpers.msys?(ostype) ? TOOL_MKCONFIG_RB_SUBST_MSYS : TOOL_MKCONFIG_RB_SUBST
+        def get_tool_mkconfig_rb_patch # rubocop:disable Naming/AccessorMethodName
+          subst = ScenarioManagerBase.new.msys? ? TOOL_MKCONFIG_RB_SUBST_MSYS : TOOL_MKCONFIG_RB_SUBST
           {
             "    if fast[name]" => subst
           }
@@ -122,9 +123,9 @@ module Tebako
         def get_patch_map_base(ostype, deps_lib_dir, ruby_ver)
           {
             "template/Makefile.in" => template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver),
-            "tool/mkconfig.rb" => get_tool_mkconfig_rb_patch(ostype),
-            "dir.c" => get_dir_c_patch(ostype),            "dln.c" => get_dln_c_patch(ostype, ruby_ver),
-            "io.c" => get_io_c_patch(ostype, ruby_ver),    "main.c" => PatchMain.get_main_c_patch(ruby_ver),
+            "tool/mkconfig.rb" => get_tool_mkconfig_rb_patch,
+            "dir.c" => get_dir_c_patch, "dln.c" => get_dln_c_patch(ruby_ver),
+            "io.c" => get_io_c_patch(ruby_ver), "main.c" => PatchMain.get_main_c_patch(ruby_ver),
             "file.c" => PatchHelpers.patch_c_file_pre("/* define system APIs */"),
             "util.c" => get_util_c_patch(ruby_ver)
           }
@@ -141,7 +142,7 @@ module Tebako
         end
 
         def template_makefile_in_patch(ostype, deps_lib_dir, ruby_ver)
-          template_makefile_in_patch_two(ostype, ruby_ver).merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
+          template_makefile_in_patch_two(ruby_ver).merge(mlibs_subst(ostype, deps_lib_dir, ruby_ver))
         end
       end
     end
