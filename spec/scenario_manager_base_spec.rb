@@ -117,6 +117,28 @@ RSpec.describe Tebako::ScenarioManagerBase do
     end
   end
 
+  describe "#musl?" do
+    context "on linux-musl platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "linux-musl")
+      end
+
+      it "returns true" do
+        expect(described_class.new.musl?).to be true
+      end
+    end
+
+    context "on non-linux platform" do
+      before do
+        stub_const("RUBY_PLATFORM", "darwin")
+      end
+
+      it "returns false" do
+        expect(described_class.new.musl?).to be false
+      end
+    end
+  end
+
   describe "#m_files" do
     context "when on a Linux platform" do
       before do

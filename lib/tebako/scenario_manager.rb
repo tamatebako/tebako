@@ -40,16 +40,14 @@ module Tebako
 
   # A couple of static Scenario definitions
   class ScenarioManagerBase
-    def initialize
-      @linux = RUBY_PLATFORM =~ /linux/ ? true : false
-      @macos = RUBY_PLATFORM =~ /darwin/ ? true : false
-      @msys  = RUBY_PLATFORM =~ /msys|mingw|cygwin/ ? true : false
+    def initialize(ostype = RUBY_PLATFORM)
+      @ostype = ostype
+      @linux = @ostype =~ /linux/ ? true : false
+      @musl = @ostype =~ /linux-musl/ ? true : false
+      @macos = @ostype =~ /darwin/ ? true : false
+      @msys  = @ostype =~ /msys|mingw|cygwin/ ? true : false
 
-      @fs_mount_point = if @msys
-                          "A:/__tebako_memfs__"
-                        else
-                          "/__tebako_memfs__"
-                        end
+      @fs_mount_point = @msys ? "A:/__tebako_memfs__" : "/__tebako_memfs__"
       @exe_suffix = @msys ? ".exe" : ""
     end
 
@@ -88,6 +86,10 @@ module Tebako
 
     def msys?
       @msys
+    end
+
+    def musl?
+      @musl
     end
 
     def ncores

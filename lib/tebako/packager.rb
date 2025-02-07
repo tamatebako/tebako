@@ -35,7 +35,7 @@ require_relative "ruby_builder"
 require_relative "stripper"
 require_relative "packager/pass1_patch"
 require_relative "packager/pass1a_patch"
-require_relative "packager/pass2"
+require_relative "packager/pass2_patch"
 require_relative "packager/patch_helpers"
 
 # Tebako - an executable packager
@@ -150,7 +150,8 @@ module Tebako
       def pass2(ostype, ruby_source_dir, deps_lib_dir, ruby_ver)
         puts "-- Running pass2 script"
 
-        do_patch(Pass2.get_patch_map(ostype, deps_lib_dir, ruby_ver), ruby_source_dir)
+        patch = Pass2Patch.new(ostype, deps_lib_dir, ruby_ver).patch_map
+        do_patch(patch, ruby_source_dir)
       end
 
       # Stash

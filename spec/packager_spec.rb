@@ -243,7 +243,7 @@ RSpec.describe Tebako::Packager do
     let(:patch_map) { { "file1" => "patch1", "file2" => "patch2" } }
 
     before do
-      allow(Tebako::Packager::Pass2).to receive(:get_patch_map).and_return(patch_map)
+      allow_any_instance_of(Tebako::Packager::Pass2Patch).to receive(:patch_map).and_return(patch_map)
       allow(Tebako::Packager).to receive(:do_patch)
     end
 
