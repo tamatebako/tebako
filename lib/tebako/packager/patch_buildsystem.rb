@@ -97,6 +97,10 @@ module Tebako
         end
       end
 
+      GNUMAKEFILE_IN_DLLTOOL_SUBST = <<~SUBST
+        $(Q) dlltool --output-lib=$(LIBRUBY) --output-def=tebako.def --export-all $(LIBRUBY_A) --output-exp=$(RUBY_EXP)   # tebako patched
+      SUBST
+
       # This MSYS specific thing ensure compilation of winmain.c
       # Did try to understand why it did not work out of the box
       GNUMAKEFILE_IN_WINMAIN_SUBST = <<~SUBST
