@@ -202,23 +202,21 @@ module Tebako
       def gnumakefile_in_patch_p1 # rubocop:disable Metrics/MethodLength
         objext = @ruby_ver.ruby32? ? "$(OBJEXT)" : "@OBJEXT@"
         {
-          "  DLLWRAP += -mno-cygwin" =>
-            "# tebako patched  DLLWRAP += -mno-cygwin",
+          "$(Q) $(DLLWRAP) \\" => GNUMAKEFILE_IN_DLLTOOL_SUBST,
 
           "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>
             "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
 
           "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
+
             "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@  # tebako patched",
 
-          "--output-exp=$(RUBY_EXP) \\" =>
-           "--output-exp=$(RUBY_EXP) --output-lib=$(LIBRUBY) --output-def=tebako.def \\",
+          "--output-exp=$(RUBY_EXP) \\" => "# tebako patched --output-exp=$(RUBY_EXP) \\",
 
           "--export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)" =>
-            "--export-all $(LIBRUBY_A) $(LIBS) -o program-stub.exe   # tebako patched",
+            "# tebako patched --export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)",
 
-          "@rm -f $(PROGRAM)" =>
-            "@rm -f program-stub.exe   # tebako patched",
+          "@rm -f $(PROGRAM)" => "# tebako patched @rm -f $(PROGRAM)",
 
           "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
            "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",

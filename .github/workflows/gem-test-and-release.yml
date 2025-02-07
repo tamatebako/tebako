@@ -49,7 +49,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 16
+  CACHE_VER: 18
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output
