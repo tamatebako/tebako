@@ -1,8 +1,13 @@
 # frozen_string_literal: true
 
+require "irb"
+require "yaml"
+
 puts "Hello!  This is test-01 talking from inside DwarFS"
 
+puts "Load path: #{$LOAD_PATH}"
 puts "Gem path: #{Gem.path}"
+
 exit 255 unless Gem.path.is_a?(Array)
 exit 255 unless Gem.path.all? { |element| element.include?("__tebako_memfs__") }
 

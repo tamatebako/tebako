@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2023, [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2025, [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -33,6 +33,13 @@ rt = RUBY_PLATFORM =~ /msys|mingw|cygwin|mswin/ ? "A:/__tebako_memfs__" : "/__te
 print "exist?(\"#{rt}/local/level-1/level-2/file-1.txt\") ... "
 r = File.exist?("#{rt}/local/level-1/level-2/file-1.txt")
 raise "exist? returned '#{r}' while 'true' was expected" unless r
+
+puts "OK(success)"
+
+# test 1+  readable? (aka access/eaccess)
+print "readable?(\"#{rt}/local/level-1/level-2/file-1.txt\") ... "
+r = File.readable?("#{rt}/local/level-1/level-2/file-1.txt")
+raise "readable? returned '#{r}' while 'true' was expected" unless r
 
 puts "OK(success)"
 
