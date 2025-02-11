@@ -160,7 +160,6 @@ runs:
       if: runner.os == 'macOS'
       shell: bash
       run: |
-        brew update
         if [ ! -f Brewfile ]; then
           pushd $(mktemp -d)
           curl https://raw.githubusercontent.com/tamatebako/tebako/refs/heads/main/Brewfile > Brewfile
