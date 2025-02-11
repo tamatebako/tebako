@@ -148,18 +148,16 @@ module Tebako
         #      This is fixed by ext/extmk.rb patch [TODO ?]
         # .....................................................
 
-        def mlibs(ostype, deps_lib_dir, ruby_ver, with_compression) # rubocop:disable Metrics/MethodLength
-          case ostype
-          when /linux-gnu/
-            linux_gnu_libraries(ruby_ver, with_compression)
-          when /linux-musl/
-            linux_musl_libraries(ruby_ver, with_compression)
-          when /darwin/
-            darwin_libraries(deps_lib_dir, ruby_ver, with_compression)
-          when /msys/
+        def mlibs(ostype, deps_lib_dir, ruby_ver, with_compression)
+          scmb = ScenarioManagerBase.new(ostype)
+          if scmb.msys?
             msys_libraries(ruby_ver, with_compression)
+          elsif scmb.macos?
+            darwin_libraries(deps_lib_dir, ruby_ver, with_compression)
+          elsif scmb.musl?
+            linux_musl_libraries(ruby_ver, with_compression)
           else
-            raise Tebako::Error, "Unknown ostype #{ostype}"
+            linux_gnu_libraries(ruby_ver, with_compression)
           end
         end
       end

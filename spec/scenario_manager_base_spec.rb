@@ -43,6 +43,18 @@ RSpec.describe Tebako::ScenarioManagerBase do
       end
     end
 
+    context "on msys platform reported as cygwin" do
+      before do
+        stub_const("RUBY_PLATFORM", "cygwin")
+      end
+
+      it "sets correct fs_mount_point and exe_suffix" do
+        manager = described_class.new
+        expect(manager.fs_mount_point).to eq("A:/__tebako_memfs__")
+        expect(manager.exe_suffix).to eq(".exe")
+      end
+    end
+
     context "on non-msys platform" do
       before do
         stub_const("RUBY_PLATFORM", "linux")
@@ -207,6 +219,16 @@ RSpec.describe Tebako::ScenarioManagerBase do
     context "on msys platform" do
       before do
         stub_const("RUBY_PLATFORM", "msys")
+      end
+
+      it "returns true" do
+        expect(described_class.new.msys?).to be true
+      end
+    end
+
+    context "on msys platform reported as cygwin" do
+      before do
+        stub_const("RUBY_PLATFORM", "cygwin")
       end
 
       it "returns true" do

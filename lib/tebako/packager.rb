@@ -141,8 +141,8 @@ module Tebako
       # Patch gem_prelude.rb
       def pass1a(ruby_source_dir)
         puts "-- Running pass1a script"
-        patch = Pass1APatch.new.patch_map
-        do_patch(patch, ruby_source_dir)
+        patch = Pass1APatch.new
+        do_patch(patch.patch_map, ruby_source_dir)
       end
 
       # Pass2
@@ -150,8 +150,8 @@ module Tebako
       def pass2(ostype, ruby_source_dir, deps_lib_dir, ruby_ver)
         puts "-- Running pass2 script"
 
-        patch = Pass2Patch.new(ostype, deps_lib_dir, ruby_ver).patch_map
-        do_patch(patch, ruby_source_dir)
+        patch = crt_pass2_patch(ostype, deps_lib_dir, ruby_ver)
+        do_patch(patch.patch_map, ruby_source_dir)
       end
 
       # Stash

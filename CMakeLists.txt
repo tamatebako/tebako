@@ -101,7 +101,7 @@ if("${OSTYPE_TXT}" MATCHES "^linux-gnu.*")
   endif(REMOVE_GLIBC_PRIVATE)
 elseif("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
   set(IS_MUSL ON)
-elseif("${OSTYPE_TXT}" MATCHES "^msys*")
+elseif("${OSTYPE_TXT}" MATCHES "^msys*" OR "${OSTYPE_TXT}" MATCHES "^cygwin*")
   set(IS_MSYS ON)
   # set(DWARFS_PRELOAD ON)
   set(RB_W32 ON)
@@ -425,9 +425,9 @@ if (${SETUP_MODE})
     ${DEPS_INCLUDE_DIR}/tebako/tebako-version.h
   )
 
-  if(${RUBY_VER} VERSION_LESS "3.3.0" AND "${OSTYPE_TXT}" MATCHES "^msys*")
+  if(${RUBY_VER} VERSION_LESS "3.3.0" AND ("${OSTYPE_TXT}" MATCHES "^msys*" OR "${OSTYPE_TXT}" MATCHES "^cygwin*"))
     target_compile_definitions(tebako-fs PUBLIC RB_W32_PRE_33)
-  endif(${RUBY_VER} VERSION_LESS "3.3.0" AND "${OSTYPE_TXT}" MATCHES "^msys*")
+  endif(${RUBY_VER} VERSION_LESS "3.3.0" AND ("${OSTYPE_TXT}" MATCHES "^msys*" OR "${OSTYPE_TXT}" MATCHES "^cygwin*"))
 
   add_dependencies(tebako-fs packaged_filesystem)
 

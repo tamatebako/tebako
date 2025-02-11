@@ -239,7 +239,7 @@ RSpec.describe Tebako::Packager do
     let(:ostype) { "linux-gnu" }
     let(:ruby_source_dir) { "/path/to/ruby_source" }
     let(:deps_lib_dir) { "/path/to/deps/lib" }
-    let(:ruby_ver) { "2.7.2" }
+    let(:ruby_ver) { Tebako::RubyVersion.new("3.3.6") }
     let(:patch_map) { { "file1" => "patch1", "file2" => "patch2" } }
 
     before do
