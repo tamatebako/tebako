@@ -197,8 +197,6 @@ module Tebako
 
       private
 
-      include Tebako::Packager::PatchBuildsystem
-
       def gnumakefile_in_patch_p1 # rubocop:disable Metrics/MethodLength
         objext = @ruby_ver.ruby32? ? "$(OBJEXT)" : "@OBJEXT@"
         {
@@ -208,7 +206,6 @@ module Tebako
             "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
 
           "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
-
             "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@  # tebako patched",
 
           "--output-exp=$(RUBY_EXP) \\" => "# tebako patched --output-exp=$(RUBY_EXP) \\",
