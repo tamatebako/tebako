@@ -28,6 +28,22 @@
 # Tebako - an executable packager
 module Tebako
   module Packager
+    # Substitutions for cygwin/Gnumakefile.in shared across Pass1 and Pass2
+    GNUMAKEFILE_IN_DLLTOOL_SUBST = <<~SUBST
+      $(Q) dlltool --output-lib=$(LIBRUBY) --output-def=tebako.def --export-all $(LIBRUBY_A) --output-exp=$(RUBY_EXP)   # tebako patched
+    SUBST
+
+    # This MSYS specific thing ensure compilation of winmain.c
+    # Did try to understand why it did not work out of the box
+    GNUMAKEFILE_IN_WINMAIN_SUBST = <<~SUBST
+      RUBYDEF = $(DLL_BASE_NAME).def
+
+      # Start of tebako patch
+      WINMAINOBJ    = win32/winmain.$(OBJEXT)
+      $(WINMAINOBJ): win32/winmain.c
+      # End of tebako patch
+    SUBST
+
     # Ruby patching definitions (common base)
     class Patch
       def patch_map

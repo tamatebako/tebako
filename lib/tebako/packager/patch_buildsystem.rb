@@ -97,21 +97,6 @@ module Tebako
         end
       end
 
-      GNUMAKEFILE_IN_DLLTOOL_SUBST = <<~SUBST
-        $(Q) dlltool --output-lib=$(LIBRUBY) --output-def=tebako.def --export-all $(LIBRUBY_A) --output-exp=$(RUBY_EXP)   # tebako patched
-      SUBST
-
-      # This MSYS specific thing ensure compilation of winmain.c
-      # Did try to understand why it did not work out of the box
-      GNUMAKEFILE_IN_WINMAIN_SUBST = <<~SUBST
-        RUBYDEF = $(DLL_BASE_NAME).def
-
-        # Start of tebako patch
-        WINMAINOBJ    = win32/winmain.$(OBJEXT)
-        $(WINMAINOBJ): win32/winmain.c
-        # End of tebako patch
-      SUBST
-
       def get_config_status_pattern(ostype)
         case ostype
         when /linux-/
@@ -143,6 +128,18 @@ module Tebako
         objext = ruby_ver.ruby32? ? "$(OBJEXT)" : "@OBJEXT@"
 
         {
+          "$(Q) $(DLLWRAP) \\" => GNUMAKEFILE_IN_DLLTOOL_SUBST,
+
+          "--output-exp=$(RUBY_EXP) \\" => "# tebako patched --output-exp=$(RUBY_EXP) \\",
+
+          "--export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)" =>
+            "# tebako patched --export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)",
+
+          "@rm -f $(PROGRAM)" => "# tebako patched @rm -f $(PROGRAM)",
+
+          "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
+           "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
+
           "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>
             "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
 
