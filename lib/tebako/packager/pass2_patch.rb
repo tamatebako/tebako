@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -33,7 +33,18 @@ require_relative "patch_buildsystem"
 
 # Tebako - an executable packager
 module Tebako
+  # Packager module
   module Packager
+    class << self
+      def crt_pass2_patch(ostype, deps_lib_dir, ruby_ver)
+        scmb = ScenarioManagerBase.new(ostype)
+        if scmb.msys?
+          Pass2MSysPatch.new(ostype, deps_lib_dir, ruby_ver)
+        else
+          Pass2NonMSysPatch.new(ostype, deps_lib_dir, ruby_ver)
+        end
+      end
+    end
     # Ruby patching definitions (pass2)
     class Pass2Patch < Patch
       def initialize(ostype, deps_lib_dir, ruby_ver)
@@ -45,32 +56,19 @@ module Tebako
       end
 
       def patch_map
-        patch_map = patch_map_base
-        patch_map.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if @scmb.musl?
-        if @scmb.msys?
-          patch_map.merge!(msys_patches)
-        elsif @ruby_ver.ruby3x?
-          patch_map.store("common.mk", COMMON_MK_PATCH)
-        end
-        extend_patch_map_r33(patch_map)
-        patch_map.store("prism_compile.c", PRISM_PATCHES) if @ruby_ver.ruby34?
-        patch_map
+        pm = patch_map_base
+        pm.store("thread_pthread.c", LINUX_MUSL_THREAD_PTHREAD_PATCH) if @scmb.musl?
+        pm.store("prism_compile.c", PRISM_PATCHES) if @ruby_ver.ruby34?
+        pm
       end
 
       private
 
       include Tebako::Packager::PatchBuildsystem
       include Tebako::Packager::PatchLiterals
-      def extend_patch_map_r33(patch_map)
-        if @ruby_ver.ruby33? || @scmb.msys?
-          patch_map.store("config.status",
-                          get_config_status_patch(@ostype, @deps_lib_dir, @ruby_ver))
-        end
-        patch_map
-      end
 
       def dir_c_patch
-        pattern = ScenarioManagerBase.new.msys? ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST"
+        pattern = @scmb.msys? ? "/* define system APIs */" : "#ifdef HAVE_GETATTRLIST"
         patch = PatchHelpers.patch_c_file_pre(pattern)
         patch.merge!(DIR_C_BASE_PATCH)
         patch
@@ -116,15 +114,6 @@ module Tebako
         }
       end
 
-      def msys_patches
-        {
-          "cygwin/GNUmakefile.in" => get_gnumakefile_in_patch_p2(@ruby_ver),
-          "ruby.c" => RUBY_C_MSYS_PATCHES,
-          "win32/file.c" => WIN32_FILE_C_MSYS_PATCHES,
-          "win32/win32.c" => WIN32_WIN32_C_MSYS_PATCHES
-        }
-      end
-
       def patch_map_base
         {
           "template/Makefile.in" => template_makefile_in_patch,
@@ -149,6 +138,82 @@ module Tebako
       def template_makefile_in_patch
         template_makefile_in_patch_two(@ruby_ver).merge(mlibs_subst)
       end
+    end
+
+    # Msys Pass2 patches
+    class Pass2MSysPatch < Pass2Patch
+      def patch_map
+        pm = super
+        pm.merge!(msys_patches)
+        pm.store("config.status", get_config_status_patch(@ostype, @deps_lib_dir, @ruby_ver))
+        pm
+      end
+
+      private
+
+      include Tebako::Packager::PatchBuildsystem
+      include Tebako::Packager::PatchLiterals
+
+      # Other MSYS (GNUMakefile) specific patches
+      #  - The same issue with libraries as for Makefile above
+      #  - 'Kill' ruby.exp regeneration on pass2
+      #     since we want to use output from pass1 for implib generation
+      #     [VERY UGLY HACK]
+      #  - Introduce LIBRUBY dependency on static extensions
+      #    This is an addition to COMMON_MK_PATCH specified above
+      def gnumakefile_in_patch_p2 # rubocop:disable Metrics/MethodLength
+        objext = @ruby_ver.ruby32? ? "$(OBJEXT)" : "@OBJEXT@"
+
+        {
+          "$(Q) $(DLLWRAP) \\" => GNUMAKEFILE_IN_DLLTOOL_SUBST,
+
+          "--output-exp=$(RUBY_EXP) \\" => "# tebako patched --output-exp=$(RUBY_EXP) \\",
+
+          "--export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)" =>
+            "# tebako patched --export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)",
+
+          "@rm -f $(PROGRAM)" => "# tebako patched @rm -f $(PROGRAM)",
+
+          "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
+           "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
+
+          "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>
+            "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
+
+          "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST,
+
+          "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
+            "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) -o $@  # tebako patched",
+
+          "$(RUBY_EXP): $(LIBRUBY_A)" => "dummy.exp: $(LIBRUBY_A) # tebako patched",
+
+          "$(PROGRAM): $(RUBY_INSTALL_NAME).res.#{objext}" =>
+            "$(PROGRAM): $(RUBY_INSTALL_NAME).res.#{objext} $(LIBRUBY_A) # tebako patched\n" \
+            "$(LIBRUBY_A): $(LIBRUBY_A_OBJS) $(INITOBJS) # tebako patched\n"
+        }
+      end
+
+      def msys_patches
+        {
+          "cygwin/GNUmakefile.in" => gnumakefile_in_patch_p2,
+          "ruby.c" => RUBY_C_MSYS_PATCHES,
+          "win32/file.c" => WIN32_FILE_C_MSYS_PATCHES,
+          "win32/win32.c" => WIN32_WIN32_C_MSYS_PATCHES
+        }
+      end
+    end
+
+    # Non-msys Pass2 patches
+    class Pass2NonMSysPatch < Pass2Patch
+      def patch_map
+        pm = super
+        pm.store("common.mk", COMMON_MK_PATCH) if @ruby_ver.ruby3x?
+        pm.store("config.status", get_config_status_patch(@ostype, @deps_lib_dir, @ruby_ver)) if @ruby_ver.ruby33?
+        pm
+      end
+
+      include Tebako::Packager::PatchBuildsystem
+      include Tebako::Packager::PatchLiterals
     end
   end
 end

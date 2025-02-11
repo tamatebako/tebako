@@ -28,7 +28,7 @@
 RSpec.describe Tebako::Packager do
   describe ".crt_pass1_patch" do
     let(:mount_point) { "/mnt" }
-    let(:ruby_ver) { "3.3.6" }
+    let(:ruby_ver) { Tebako::RubyVersion.new("3.3.6") }
 
     it "returns Pass1DarwinPatch for darwin os_type" do
       patch = described_class.crt_pass1_patch("darwin", mount_point, ruby_ver)

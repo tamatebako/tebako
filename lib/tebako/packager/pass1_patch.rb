@@ -35,11 +35,11 @@ module Tebako
   # Packager module
   module Packager
     class << self
-      def crt_pass1_patch(os_type, mount_point, ruby_ver)
-        case os_type
-        when /darwin/
+      def crt_pass1_patch(ostype, mount_point, ruby_ver)
+        scmb = ScenarioManagerBase.new(ostype)
+        if scmb.macos?
           Pass1DarwinPatch.new(mount_point, ruby_ver)
-        when /msys/
+        elsif scmb.msys?
           Pass1MSysPatch.new(mount_point, ruby_ver)
         else
           Pass1Patch.new(mount_point, ruby_ver)

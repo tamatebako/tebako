@@ -98,15 +98,13 @@ module Tebako
       end
 
       def get_config_status_pattern(ostype)
-        case ostype
-        when /linux-/
-          "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \""
-        when /darwin/
+        scmb = ScenarioManagerBase.new(ostype)
+        if scmb.macos?
           "S[\"MAINLIBS\"]=\"-ldl -lobjc -lpthread \""
-        when /msys/
+        elsif scmb.msys?
           "S[\"MAINLIBS\"]=\"-lshell32 -lws2_32 -liphlpapi -limagehlp -lshlwapi -lbcrypt \""
         else
-          raise Tebako::Error, "Unknown ostype #{ostype}"
+          "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \""
         end
       end
 
@@ -114,45 +112,6 @@ module Tebako
         {
           get_config_status_pattern(ostype) =>
             "S[\"MAINLIBS\"]=\"#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, false)}\""
-        }
-      end
-
-      # Other MSYS (GNUMakefile) specific patches
-      #  - The same issue with libraries as for Makefile above
-      #  - 'Kill' ruby.exp regeneration on pass2
-      #     since we want to use output from pass1 for implib generation
-      #     [VERY UGLY HACK]
-      #  - Introduce LIBRUBY dependency on static extensions
-      #    This is an addition to COMMON_MK_PATCH specified above
-      def get_gnumakefile_in_patch_p2(ruby_ver) # rubocop:disable Metrics/MethodLength
-        objext = ruby_ver.ruby32? ? "$(OBJEXT)" : "@OBJEXT@"
-
-        {
-          "$(Q) $(DLLWRAP) \\" => GNUMAKEFILE_IN_DLLTOOL_SUBST,
-
-          "--output-exp=$(RUBY_EXP) \\" => "# tebako patched --output-exp=$(RUBY_EXP) \\",
-
-          "--export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)" =>
-            "# tebako patched --export-all $(LIBRUBY_A) $(LIBS) -o $(PROGRAM)",
-
-          "@rm -f $(PROGRAM)" => "# tebako patched @rm -f $(PROGRAM)",
-
-          "	$(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)" =>
-           "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
-
-          "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext}" =>
-            "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
-
-          "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST,
-
-          "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
-            "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) -o $@  # tebako patched",
-
-          "$(RUBY_EXP): $(LIBRUBY_A)" => "dummy.exp: $(LIBRUBY_A) # tebako patched",
-
-          "$(PROGRAM): $(RUBY_INSTALL_NAME).res.#{objext}" =>
-            "$(PROGRAM): $(RUBY_INSTALL_NAME).res.#{objext} $(LIBRUBY_A) # tebako patched\n" \
-            "$(LIBRUBY_A): $(LIBRUBY_A_OBJS) $(INITOBJS) # tebako patched\n"
         }
       end
     end
