@@ -60,7 +60,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 20
+  CACHE_VER: 21
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output (yes/no)
@@ -112,7 +112,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7', '3.4.1' ]
+        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7' ]
         env:
           - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
           - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
@@ -162,7 +162,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7', '3.4.1' ]
+        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7' ]
         env:
           - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
           - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
@@ -211,7 +211,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7', '3.4.1' ]
+        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7' ]
         env:
           - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
           - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
