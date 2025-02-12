@@ -68,15 +68,37 @@ env:
 
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      ruby-versions: ${{ steps.set-matrix.outputs.ruby-versions }}
+      os-compiler-matrix: ${{ steps.set-matrix.outputs.os-compiler-matrix }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: set-matrix
+        run: |
+          # Determine which config to use based on event
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            prefix="tidy"
+          else
+            prefix="full"
+          fi
+
+          # Read and output the matrices
+          ruby_versions=$(jq -c ".$prefix.ruby-versions" .github/matrices/ubuntu.json)
+          os_compiler=$(jq -c ".$prefix.os-compiler" .github/matrices/ubuntu.json)
+
+          echo "ruby-versions=$ruby_versions" >> $GITHUB_OUTPUT
+          echo "os-compiler-matrix=$os_compiler" >> $GITHUB_OUTPUT
+
   setup:
     name: setup ${{ matrix.env.os }} [CC ${{ matrix.env.CC }}]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
-          - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
+        env: ${{fromJson(needs.prepare.outputs.os-compiler-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -112,10 +134,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7', '3.4.1' ]
-        env:
-          - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
-          - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-versions)}}
+        env: ${{fromJson(needs.prepare.outputs.os-compiler-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -144,7 +164,7 @@ jobs:
       - name: Shall upload artifacts?
         id: shall-upload
         run: |
-          if [ "${{ matrix.package_ruby_ver }}" == "3.2.6" ] && [ "${{ matrix.env.CC }}" == "gcc-10" ]; then
+          if [ "${{ matrix.package_ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.env.CC }}" == "gcc-10" ]; then
             echo "upload=true" >> $GITHUB_OUTPUT
           else
             echo "upload=false" >> $GITHUB_OUTPUT
@@ -162,10 +182,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7', '3.4.1' ]
-        env:
-          - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
-          - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-versions)}}
+        env: ${{fromJson(needs.prepare.outputs.os-compiler-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -211,11 +229,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: [ '2.7.8', '3.0.7', '3.1.6', '3.2.4', '3.2.5', '3.2.6', '3.3.3', '3.3.4', '3.3.5', '3.3.6', '3.3.7', '3.4.1' ]
-        env:
-          - { os: ubuntu-20.04, CC: gcc-10,   CXX: g++-10 }
-          - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
-
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-versions)}}
+        env: ${{fromJson(needs.prepare.outputs.os-compiler-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment

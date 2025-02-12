@@ -39,6 +39,7 @@ module Tebako
       "3.2.4" => "c72b3c5c30482dca18b0f868c9075f3f47d8168eaf626d4e682ce5b59c858692",
       "3.2.5" => "ef0610b498f60fb5cfd77b51adb3c10f4ca8ed9a17cb87c61e5bea314ac34a16",
       "3.2.6" => "d9cb65ecdf3f18669639f2638b63379ed6fbb17d93ae4e726d4eb2bf68a48370",
+      "3.2.7" => "8488fa620ff0333c16d437f2b890bba3b67f8745fdecb1472568a6114aad9741",
       "3.3.3" => "83c05b2177ee9c335b631b29b8c077b4770166d02fa527f3a9f6a40d13f3cce2",
       "3.3.4" => "fe6a30f97d54e029768f2ddf4923699c416cdbc3a6e96db3e2d5716c7db96a34",
       "3.3.5" => "3781a3504222c2f26cb4b9eb9c1a12dbf4944d366ce24a9ff8cf99ecbce75196",
@@ -48,7 +49,7 @@ module Tebako
     }.freeze
 
     MIN_RUBY_VERSION_WINDOWS = "3.1.6"
-    DEFAULT_RUBY_VERSION = "3.2.6"
+    DEFAULT_RUBY_VERSION = "3.3.7"
 
     def initialize(ruby_version)
       @ruby_version = ruby_version.nil? ? DEFAULT_RUBY_VERSION : ruby_version
@@ -90,8 +91,14 @@ module Tebako
       @ruby33 ||= ruby3x? && @ruby_version[2].to_i >= 3
     end
 
-    def ruby337?
-      @ruby337 ||= ruby34? || (ruby33? && @ruby_version[2] == "3" && @ruby_version[4].to_i >= 7)
+    def ruby33only?
+      @ruby33 ||= ruby3x? && @ruby_version[2] == "3"
+    end
+
+    def ruby3x7?
+      @ruby3x7 ||= ruby34? ||
+        (ruby33only? && @ruby_version[4].to_i >= 7) ||
+        (ruby32only? && @ruby_version[4].to_i >= 7)
     end
 
     def ruby34?

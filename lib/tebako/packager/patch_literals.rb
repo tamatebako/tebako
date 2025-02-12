@@ -220,23 +220,6 @@ module Tebako
             flags = fcntl(fd, F_GETFD); /* should not fail except EBADF. */
       SUBST
 
-      IO_C_MSYS_BASE_PATCH = {
-        "#define open	rb_w32_uopen" => "#define open(p, f, m) tebako_open(3, (p), (f), (m))"
-      }.freeze
-
-      IO_C_MSYS_PATCH_PRE_32 = {
-        "(rb_w32_io_cancelable_p((fptr)->fd) ? Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), Qnil))" =>
-            "((is_tebako_file_descriptor((fptr)->fd) || rb_w32_io_cancelable_p((fptr)->fd)) ? \\\n" \
-            "Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), Qnil))"
-      }.freeze
-
-      IO_C_MSYS_PATCH = {
-        "(rb_w32_io_cancelable_p((fptr)->fd) ? Qnil : rb_io_wait(fptr->self, " \
-        "RB_INT2NUM(RUBY_IO_READABLE), RUBY_IO_TIMEOUT_DEFAULT))" =>
-            "((is_tebako_file_descriptor((fptr)->fd) || rb_w32_io_cancelable_p((fptr)->fd)) ? \\\n" \
-            "Qnil : rb_io_wait(fptr->self, RB_INT2NUM(RUBY_IO_READABLE), RUBY_IO_TIMEOUT_DEFAULT))"
-      }.freeze
-
       FILE_C_MSYS_SUBST = <<~SUBST
         /* -- Start of tebako patch -- */
                if (is_tebako_file_descriptor((fptr)->fd)) return ENOTSUP;
@@ -246,71 +229,6 @@ module Tebako
 
       FILE_C_MSYS_PATCH = {
         "while ((int)rb_thread_io_blocking_region(rb_thread_flock, op, fptr->fd) < 0) {" => FILE_C_MSYS_SUBST
-      }.freeze
-
-      RUBY_C_MSYS_PATH_SUBST = <<~SUBST
-        /* -- Start of tebako patch -- */
-                VALUE path = within_tebako_memfs(paths) ?
-                                rb_str_new_cstr(paths) :
-                                RUBY_RELATIVE(paths, len);
-               /* -- End of tebako patch -- */
-      SUBST
-
-      RUBY_C_MSYS_PATCHES = {
-        "#ifndef MAXPATHLEN" => "#{C_FILE_SUBST_LESS}\n#ifndef MAXPATHLEN",
-        "VALUE path = RUBY_RELATIVE(paths, len);" => RUBY_C_MSYS_PATH_SUBST
-      }.freeze
-
-      WIN32_FILE_C_MSYS_SUBST = <<~SUBST
-        /* -- Start of tebako patch -- */
-          if (tebako_file_load_ok(path)) return ret;
-            /* -- End of tebako patch -- */
-        wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);
-      SUBST
-
-      WIN32_FILE_C_MSYS_PATCHES = {
-        "#ifndef INVALID_FILE_ATTRIBUTES" => "#{C_FILE_SUBST_LESS}\n#ifndef INVALID_FILE_ATTRIBUTES",
-        "wpath = mbstr_to_wstr(CP_UTF8, path, -1, &len);" => WIN32_FILE_C_MSYS_SUBST
-      }.freeze
-
-      WIN32_WIN32_C_MSYS_SUBST = <<~SUBST
-        /* -- Start of tebako patch -- */
-          if (is_tebako_cwd()) {
-            char* tebako_cwd = tebako_getcwd(NULL,0);
-            if (tebako_cwd == NULL) {
-              errno = ENOMEM;
-              return NULL;
-            }
-            len = strlen(tebako_cwd) + 1;
-
-            if (buffer) {
-              if (size < len) {
-                free(tebako_cwd);
-                errno = ERANGE;
-                return NULL;
-              }
-            }
-            else {
-              buffer = (*alloc)(len, arg);
-              if (!buffer) {
-                free(tebako_cwd);
-                errno = ENOMEM;
-                return NULL;
-              }
-            }
-            translate_char(tebako_cwd, (char)0x5c, '/', CP_UTF8);
-            strcpy(buffer, tebako_cwd);
-            free(tebako_cwd);
-            return buffer;
-          }
-          /* -- End of tebako patch -- */
-
-          len = GetCurrentDirectoryW(0, NULL);
-      SUBST
-
-      WIN32_WIN32_C_MSYS_PATCHES = {
-        "#if defined _MSC_VER && _MSC_VER <= 1200" => "#{C_FILE_SUBST_LESS}\n#if defined _MSC_VER && _MSC_VER <= 1200",
-        "len = GetCurrentDirectoryW(0, NULL);" => WIN32_WIN32_C_MSYS_SUBST
       }.freeze
 
       LINUX_PATCHES = {

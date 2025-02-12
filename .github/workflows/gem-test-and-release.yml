@@ -109,7 +109,7 @@ jobs:
       matrix:
         os: [ 'windows-latest' ]
         gem: [ fontist ]
-        package_ruby_ver: [ '3.2.6' ]
+        package_ruby_ver: [ '3.3.7' ]
         env:
           - { CC: gcc, CXX: g++ }
     env: ${{ matrix.env }}
@@ -168,7 +168,7 @@ jobs:
       matrix:
         os: [ 'alpine:3.17' ]
         gem: [ metanorma, fontist ]
-        package_ruby_ver: [ '3.2.6' ]
+        package_ruby_ver: [ '3.3.7' ]
         env:
           - { CC: gcc, CXX: g++ }
 
@@ -217,7 +217,7 @@ jobs:
       matrix:
         os: [ macos-13, macos-14 ]
         gem: [ metanorma, fontist ]
-        package_ruby_ver: [ '3.2.6' ]
+        package_ruby_ver: [ '3.3.7' ]
         env:
           - { CC: clang, CXX: clang++ }
     env: ${{ matrix.env }}
@@ -269,7 +269,7 @@ jobs:
       matrix:
         os: [ ubuntu-20.04 ]
         gem: [ metanorma, fontist ]
-        package_ruby_ver: [ '3.2.6' ]
+        package_ruby_ver: [ '3.3.7' ]
         env:
           - { CC: clang-12, CXX: clang++-12 }
     env: ${{ matrix.env }}

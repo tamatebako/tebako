@@ -236,7 +236,7 @@ module Tebako
       def msys_patches
         pm = msys_base_patches
 
-        if @ruby_ver.ruby337?
+        if @ruby_ver.ruby3x7?
           # ....................................................
           # RUBY_EXTERN shall be extern for static build but is set to __declspec(dllimport) for encodin libarary
           pm.store("include/ruby/onigmo.h", INCLUDE_RUBY_ONIGMO_H_PATCH)

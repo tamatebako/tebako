@@ -79,6 +79,10 @@ RSpec.describe Tebako::RubyVersion do
         expect(version.ruby33?).to be false
       end
 
+      it "returns false for ruby33only?" do
+        expect(version.ruby33only?).to be false
+      end
+
       it "returns false for ruby34?" do
         expect(version.ruby34?).to be false
       end
@@ -115,8 +119,56 @@ RSpec.describe Tebako::RubyVersion do
         expect(version.ruby33?).to be false
       end
 
-      it "returns false for ruby337?" do
-        expect(version.ruby337?).to be false
+      it "returns false for ruby33only?" do
+        expect(version.ruby33only?).to be false
+      end
+
+      it "returns false for ruby3x7?" do
+        expect(version.ruby3x7?).to be false
+      end
+
+      it "returns false for ruby34?" do
+        expect(version.ruby34?).to be false
+      end
+
+      it "returns '3.2.0' for api_version" do
+        expect(version.api_version).to eq("3.2.0")
+      end
+
+      it "returns '320' for lib_version" do
+        expect(version.lib_version).to eq("320")
+      end
+    end
+
+    context "with version 3.2.7" do
+      let(:version) { Tebako::RubyVersion.new("3.2.7") }
+
+      it "returns true for ruby3x?" do
+        expect(version.ruby3x?).to be true
+      end
+
+      it "returns true for ruby31?" do
+        expect(version.ruby31?).to be true
+      end
+
+      it "returns true for ruby32?" do
+        expect(version.ruby32?).to be true
+      end
+
+      it "returns true for ruby32only?" do
+        expect(version.ruby32only?).to be true
+      end
+
+      it "returns false for ruby33?" do
+        expect(version.ruby33?).to be false
+      end
+
+      it "returns false for ruby33only?" do
+        expect(version.ruby33only?).to be false
+      end
+
+      it "returns true for ruby3x7?" do
+        expect(version.ruby3x7?).to be true
       end
 
       it "returns false for ruby34?" do
@@ -155,8 +207,12 @@ RSpec.describe Tebako::RubyVersion do
         expect(version.ruby33?).to be true
       end
 
-      it "returns false for ruby337?" do
-        expect(version.ruby337?).to be false
+      it "returns true for ruby33only?" do
+        expect(version.ruby33only?).to be true
+      end
+
+      it "returns false for ruby3x7?" do
+        expect(version.ruby3x7?).to be false
       end
 
       it "returns false for ruby34?" do
@@ -195,8 +251,12 @@ RSpec.describe Tebako::RubyVersion do
         expect(version.ruby33?).to be true
       end
 
-      it "returns true for ruby337?" do
-        expect(version.ruby337?).to be true
+      it "returns true for ruby33only?" do
+        expect(version.ruby33only?).to be true
+      end
+
+      it "returns true for ruby3x7?" do
+        expect(version.ruby3x7?).to be true
       end
 
       it "returns false for ruby34?" do
@@ -235,8 +295,12 @@ RSpec.describe Tebako::RubyVersion do
         expect(version.ruby33?).to be true
       end
 
-      it "returns true for ruby337?" do
-        expect(version.ruby337?).to be true
+      it "returns false for ruby33only?" do
+        expect(version.ruby33only?).to be false
+      end
+
+      it "returns true for ruby3x7?" do
+        expect(version.ruby3x7?).to be true
       end
 
       it "returns true for ruby34?" do
@@ -311,8 +375,8 @@ RSpec.describe Tebako::RubyVersion do
   end
 
   describe "DEFAULT_RUBY_VERSION" do
-    it "is set to 3.2.6" do
-      expect(Tebako::RubyVersion::DEFAULT_RUBY_VERSION).to eq("3.2.6")
+    it "is set to 3.3.7" do
+      expect(Tebako::RubyVersion::DEFAULT_RUBY_VERSION).to eq("3.3.7")
     end
   end
 
