@@ -34,8 +34,8 @@ require "tebako/ruby_version"
 
 RSpec.describe Tebako::OptionsManager do
   let(:options) { {} }
-  let(:ruby_ver) { "3.2.6" }
-  let(:ruby_hash) { Tebako::RubyVersion::RUBY_VERSIONS["3.2.6"] }
+  let(:ruby_ver) { Tebako::RubyVersion::DEFAULT_RUBY_VERSION }
+  let(:ruby_hash) { Tebako::RubyVersion::RUBY_VERSIONS[Tebako::RubyVersion::DEFAULT_RUBY_VERSION] }
 
   describe "#cfg_options" do
     let(:deps) { File.join(Dir.pwd, "deps") }

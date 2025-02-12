@@ -35,7 +35,7 @@ require_relative "ruby_builder"
 require_relative "stripper"
 require_relative "packager/pass1_patch"
 require_relative "packager/pass1a_patch"
-require_relative "packager/pass2_patch"
+require_relative "packager/pass2_patch_crt"
 require_relative "packager/patch_helpers"
 
 # Tebako - an executable packager
