@@ -71,12 +71,14 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     outputs:
-      ruby-versions: ${{ steps.set-matrix.outputs.ruby-versions }}
-      os-compiler-matrix: ${{ steps.set-matrix.outputs.os-compiler-matrix }}
+      ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
+      env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
 
-      - id: set-matrix
+      - name: Read test matrix from file
+        id: set-matrix
         run: |
           # Determine which config to use based on event
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
@@ -86,19 +88,20 @@ jobs:
           fi
 
           # Read and output the matrices
-          ruby_versions=$(jq -c ".$prefix.ruby-versions" .github/matrices/ubuntu.json)
-          os_compiler=$(jq -c ".$prefix.os-compiler" .github/matrices/ubuntu.json)
+          ruby=$(jq -c ".$prefix.ruby" .github/matrices/ubuntu.json)
+          env=$(jq -c ".$prefix.env" .github/matrices/ubuntu.json)
 
-          echo "ruby-versions=$ruby_versions" >> $GITHUB_OUTPUT
-          echo "os-compiler-matrix=$os_compiler" >> $GITHUB_OUTPUT
+          echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
+          echo "env-matrix=$env" >> $GITHUB_OUTPUT
 
   setup:
     name: setup ${{ matrix.env.os }} [CC ${{ matrix.env.CC }}]
+    needs: [ prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        env: ${{fromJson(needs.prepare.outputs.os-compiler-matrix)}}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -128,14 +131,14 @@ jobs:
         run: ${{ github.workspace }}/exe/tebako setup -D
 
   tests-1:
-    needs: setup
     name: tests-1 ${{ matrix.env.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    needs: [ setup, prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-versions)}}
-        env: ${{fromJson(needs.prepare.outputs.os-compiler-matrix)}}
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -176,14 +179,14 @@ jobs:
           upload: "${{ steps.shall-upload.outputs.upload }}"
 
   tests-1-app:
-    needs: setup
     name: tests-1-app ${{ matrix.env.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    needs: [ setup, prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-versions)}}
-        env: ${{fromJson(needs.prepare.outputs.os-compiler-matrix)}}
+        package_ruby_ver: ${{ fromJson(needs.prepare.outputs.ruby-matrix) }}
+        env: ${{ fromJson(needs.prepare.outputs.env-matrix) }}
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
@@ -223,14 +226,14 @@ jobs:
           MODE=app RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
   tests-2:
-    needs: setup
     name: tests-2 ${{ matrix.env.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    needs: [ setup, prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-versions)}}
-        env: ${{fromJson(needs.prepare.outputs.os-compiler-matrix)}}
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Checkout tebako packaging environment
