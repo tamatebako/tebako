@@ -92,13 +92,13 @@ module Tebako
     end
 
     def ruby33only?
-      @ruby33 ||= ruby3x? && @ruby_version[2] == "3"
+      @ruby33only ||= ruby3x? && @ruby_version[2] == "3"
     end
 
     def ruby3x7?
       @ruby3x7 ||= ruby34? ||
-        (ruby33only? && @ruby_version[4].to_i >= 7) ||
-        (ruby32only? && @ruby_version[4].to_i >= 7)
+                   (ruby33only? && @ruby_version[4].to_i >= 7) ||
+                   (ruby32only? && @ruby_version[4].to_i >= 7)
     end
 
     def ruby34?
