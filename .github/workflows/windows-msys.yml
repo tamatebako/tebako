@@ -74,8 +74,6 @@ jobs:
           - sys: ucrt64
             CC: gcc
             CXX: g++
-            ASAN: 'OFF'
-            LOG_LEVEL: 'error'
     env: ${{ matrix.env }}
 
     defaults:

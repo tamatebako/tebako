@@ -60,11 +60,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  CACHE_VER: 21
+  CACHE_VER: 22
   DEBIAN_FRONTEND: "noninteractive"
   TZ: "Etc/UTC"
 # show cmake output (yes/no)
-  VERBOSE: no
+  VERBOSE: yes
 
 
 jobs:
@@ -177,6 +177,7 @@ jobs:
         uses: ./.github/actions/test-set-1
         with:
           upload: "${{ steps.shall-upload.outputs.upload }}"
+          verbose: ${{ env.VERBOSE }}
 
   tests-1-app:
     name: tests-1-app ${{ matrix.env.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}

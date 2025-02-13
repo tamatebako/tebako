@@ -65,17 +65,42 @@ env:
   VERBOSE: no
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
+      env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+
+      - name: Read test matrix from file
+        id: set-matrix
+        run: |
+          # Determine which config to use based on event
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            prefix="tidy"
+          else
+            prefix="full"
+          fi
+
+          # Read and output the matrices
+          ruby=$(jq -c ".$prefix.ruby" .github/matrices/alpine.json)
+          env=$(jq -c ".$prefix.env" .github/matrices/alpine.json)
+
+          echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
+          echo "env-matrix=$env" >> $GITHUB_OUTPUT
+
   setup:
     name: setup alpine-${{ matrix.env.ALPINE_VER }} CC ${{ matrix.env.CC }}
+    needs: [ prepare ]
     runs-on: ubuntu-latest
     container:
       image: alpine:${{ matrix.env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
-          - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -110,18 +135,16 @@ jobs:
         run: exe/tebako setup -D
 
   tests-1:
-    needs: setup
     name: tests-1 alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    needs: [ setup, prepare ]
     runs-on: ubuntu-latest
     container:
       image: alpine:${{ matrix.env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
-          - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.7', '3.3.7', '3.4.1' ]
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -155,7 +178,7 @@ jobs:
       - name: Shall upload artifacts?
         id: shall-upload
         run: |
-          if [ "${{ matrix.package_ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.env.CC }}" == "gcc" ]; then
+          if [ "${{ matrix.package_ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.env.CC }}" == "clang" ]; then
             echo "upload=true" >> $GITHUB_OUTPUT
           else
             echo "upload=false" >> $GITHUB_OUTPUT
@@ -167,18 +190,16 @@ jobs:
           upload: "${{ steps.shall-upload.outputs.upload }}"
 
   tests-1-app:
-    needs: setup
     name: tests-1-app alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    needs: [ setup, prepare ]
     runs-on: ubuntu-latest
     container:
       image: alpine:${{ matrix.env.ALPINE_VER }}
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
-          - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.7', '3.3.7', '3.4.1' ]
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
