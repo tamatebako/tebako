@@ -175,9 +175,16 @@ test_AUC_extract() {
    if [ "${MODE}" != "bundle" ]; then
       echo "Mode is not 'bundle'; skipping"
    else
-      result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 )
 
-      assertEquals 0 "${PIPESTATUS[0]}"
+      if [ "${VERBOSE}" == "yes" ]; then
+         "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 | tee tebako_test.log
+         assertEquals 0 "${PIPESTATUS[0]}"
+         result="$( cat tebako_test.log )"
+      else
+         result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 )
+         assertEquals 0 "${PIPESTATUS[0]}"
+      fi
+
       assertContains "$result" "Running tebako press script"
       assertContains "$result" "Created tebako package at"
 
@@ -409,5 +416,6 @@ else
 fi
 
 echo "Running tebako tests for Ruby $RUBY_VER"
+
 # shellcheck source=/dev/null
 . "$DIR_TESTS/shunit2/shunit2"
