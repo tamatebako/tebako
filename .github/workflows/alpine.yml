@@ -121,7 +121,7 @@ jobs:
         env:
           - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
           - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.6', '3.3.7' ]
+        package_ruby_ver: [ '3.2.6', '3.3.7', '3.4.1' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -178,7 +178,7 @@ jobs:
         env:
           - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
           - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.6', '3.3.7' ]
+        package_ruby_ver: [ '3.2.6', '3.3.7', '3.4.1' ]
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
@@ -234,7 +234,7 @@ jobs:
         env:
           - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
           - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.6', '3.3.7']
+        package_ruby_ver: [ '3.2.6', '3.3.7', '3.4.1']
     env: ${{ matrix.env }}
     steps:
       - name: Install packages
