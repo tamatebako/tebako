@@ -114,7 +114,7 @@ jobs:
           - { os: macos-14, xcode: 15.4 }
           - { os: macos-15, xcode: 16.1 }
 
-        package_ruby_ver: [ '3.2.6', '3.3.7' ]
+        package_ruby_ver: [ '3.2.6', '3.3.7', '3.4.1' ]
         ruby_ver: ['3.2.6']
     steps:
       - name: Checkout tebako packaging environment
@@ -167,7 +167,7 @@ jobs:
           - { os: macos-14, xcode: 15.4 }
           - { os: macos-15, xcode: 16.1 }
 
-        package_ruby_ver: [ '3.3.7' ]
+        package_ruby_ver: [ '3.3.7', '3.4.1' ]
         ruby_ver: ['3.2.6']
     steps:
       - name: Checkout tebako packaging environment
@@ -218,7 +218,7 @@ jobs:
           - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39}
           - { os: macos-14, xcode: 15.4 }
           - { os: macos-15, xcode: 16.1 }
-        package_ruby_ver: [ '3.2.6', '3.3.7' ]
+        package_ruby_ver: [ '3.2.6', '3.3.7', '3.4.1' ]
         ruby_ver: ['3.2.6']
     steps:
       - name: Checkout tebako packaging environment
