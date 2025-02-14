@@ -62,17 +62,40 @@ env:
   VERBOSE: no
 
 jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
+      env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+
+      - name: Read test matrix from file
+        id: set-matrix
+        run: |
+          # Determine which config to use based on event
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            prefix="tidy"
+          else
+            prefix="full"
+          fi
+
+          # Read and output the matrices
+          ruby=$(jq -c ".$prefix.ruby" .github/matrices/macos.json)
+          env=$(jq -c ".$prefix.env" .github/matrices/macos.json)
+
+          echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
+          echo "env-matrix=$env" >> $GITHUB_OUTPUT
+
   setup:
     name: setup ${{ matrix.env.os }} XCode ${{ matrix.env.xcode }} Ruby ${{ matrix.ruby_ver }}
+    needs: [ prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { os: macos-13, xcode: 14.3.1 }
-          - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39 }
-          - { os: macos-14, xcode: 15.4 }
-          - { os: macos-15, xcode: 16.1 }
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
         ruby_ver: ['3.3.7']
     steps:
       - name: Checkout tebako packaging environment
@@ -102,19 +125,14 @@ jobs:
           ${{ github.workspace }}/exe/tebako setup -D
 
   tests-1:
-    needs: setup
     name: tests-1 package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
+    needs: [ setup, prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { os: macos-13, xcode: 14.3.1 }
-          - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39}
-          - { os: macos-14, xcode: 15.4 }
-          - { os: macos-15, xcode: 16.1 }
-
-        package_ruby_ver: [ '3.2.7', '3.3.7', '3.4.1' ]
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
         ruby_ver: ['3.3.7']
     steps:
       - name: Checkout tebako packaging environment
@@ -156,18 +174,14 @@ jobs:
           verbose: ${{ env.VERBOSE }}
 
   tests-1-app:
-    needs: setup
     name: tests-1-app package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
+    needs: [ setup, prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { os: macos-13, xcode: 14.3.1 }
-          - { os: macos-14, xcode: 15.4 }
-          - { os: macos-15, xcode: 16.1 }
-
-        package_ruby_ver: [ '3.2.7', '3.3.7', '3.4.1' ]
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
         ruby_ver: ['3.2.7']
     steps:
       - name: Checkout tebako packaging environment
@@ -207,18 +221,14 @@ jobs:
           MODE=app RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
   tests-2:
-    needs: setup
     name: tests-2 package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
+    needs: [ setup, prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { os: macos-13, xcode: 14.3.1 }
-          - { os: macos-14, xcode: 15.0.1, LG_VADDR: 39}
-          - { os: macos-14, xcode: 15.4 }
-          - { os: macos-15, xcode: 16.1 }
-        package_ruby_ver: [ '3.2.7', '3.3.7', '3.4.1' ]
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
         ruby_ver: ['3.3.7']
     steps:
       - name: Checkout tebako packaging environment
