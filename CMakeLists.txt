@@ -108,13 +108,14 @@ elseif("${OSTYPE_TXT}" MATCHES "^msys*" OR "${OSTYPE_TXT}" MATCHES "^cygwin*")
   set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline,-test-/*")
 elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
   set(IS_DARWIN ON)
-  if(${RUBY_VER} VERSION_LESS "3.1.0")
-    set(OPENSSL_VER "1.1")
-  else(${RUBY_VER} VERSION_LESS "3.1.0")
-    set(OPENSSL_VER "3")
-  endif(${RUBY_VER} VERSION_LESS "3.1.0")
-  set(BUILD_OPENSSL_ROOT_DIR "${BREW_PREFIX}/opt/openssl@${OPENSSL_VER}")
 endif()
+
+if(${RUBY_VER} VERSION_LESS "3.1.0")
+  set(OPENSSL_VER "1.1")
+else(${RUBY_VER} VERSION_LESS "3.1.0")
+  set(OPENSSL_VER "3")
+endif(${RUBY_VER} VERSION_LESS "3.1.0")
+
 
 if(IS_DARWIN)
   execute_process(
@@ -177,7 +178,7 @@ string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 #  list(GET LIBDWARFS_WR_VER_COMPONENTS 2 LIBDWARFS_WR_VER_PATCH)
 #  set (LIBDWARFS_WR_VER_M ${LIBDWARFS_WR_VER_MAJOR}.${LIBDWARFS_WR_VER_MINOR}.${LIBDWARFS_WR_VER_PATCH})
 #else(DWARFS_PRELOAD)
-def_ext_prj_g(DWARFS_WR "v0.9.5")
+def_ext_prj_g(DWARFS_WR "v0.9.6.rc2")
 #endif(DWARFS_PRELOAD)
 
 def_ext_prj_g(PATCHELF "65e14792061c298f1d2bc44becd48a10cbf0bc81")
@@ -288,6 +289,7 @@ else(DWARFS_PRELOAD)
                -DWITH_ASAN:BOOL=OFF
                -DWITH_COVERAGE:BOOL=OFF
                -DTEBAKO_BUILD_SCOPE=MKD
+               -DOPENSSL_VERSION=${OPENSSL_VER}
                -DRB_W32=${RB_W32}
                -GNinja
     BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
@@ -335,6 +337,9 @@ if(IS_DARWIN)
 else(IS_DARWIN)
   if(IS_MUSL)
     string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DENABLE_PATH_CHECK=0")
+    if("${OPENSSL_VER}" EQUAL "1.1")
+      set(OPENSSL_RUBY_OPTION "--with-openssl-dir=${DEPS}")
+    endif("${OPENSSL_VER}" EQUAL "1.1")
   endif(IS_MUSL)
 
   if(RB_W32)
