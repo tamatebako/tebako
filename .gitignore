@@ -41,6 +41,7 @@ o
 
 # External dependencies
 deps
+d2
 
 # Generated files
 Gemfile.lock

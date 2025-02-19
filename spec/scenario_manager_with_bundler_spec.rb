@@ -168,7 +168,7 @@ RSpec.describe Tebako::ScenarioManagerWithBundler do
       before do
         File.write(gemfile_path, <<~GEMFILE
           source 'https://rubygems.org'
-          gem 'bundler', '~> 2.6.0'
+          gem 'bundler', '= 2.6.3'
         GEMFILE
         )
       end
@@ -209,7 +209,7 @@ RSpec.describe Tebako::ScenarioManagerWithBundler do
         before do
           File.write(lockfile_path, <<~LOCKFILE
             BUNDLED WITH
-               1.0.0
+               2.2.0
           LOCKFILE
           )
         end
@@ -219,7 +219,7 @@ RSpec.describe Tebako::ScenarioManagerWithBundler do
             scenario_manager.send(:update_bundler_version_from_lockfile, lockfile_path)
           end.to raise_error(Tebako::Error) { |error|
             expect(error.error_code).to eq(118)
-            expect(error.message).to include("1.0.0 requested")
+            expect(error.message).to include("2.2.0 requested")
             expect(error.message).to include("#{Tebako::BUNDLER_VERSION} minimum required")
           }
         end
