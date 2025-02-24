@@ -703,9 +703,8 @@ $ pacman -S git tar bison flex toolchain make cmake
 [[root-folder-selection]]
 === Tebako root folder (aka prefix) selection
 
-The Tebako prefix determines the base directory for the Tebako setup.
-
-It is an essential part of configuring how Tebako operates within your system.
+The Tebako prefix determines the base directory for the tebako packaging environment. It contain build artifacts for
+Tebako run-time, libraries and other components and is an essential part of configuring how Tebako operates within your system.
 
 The selection of the Tebako prefix follows a specific order of precedence to
 ensure flexibility and ease of use:
@@ -727,12 +726,14 @@ If no prefix is specified and the `TEBAKO_DIR` environment variable is not set,
 Tebako defaults to using a directory named `.tebako` in the user's home
 directory.
 
-
 Path Expansion: Regardless of the method used to set the Tebako prefix, Tebako
 expands the provided path to an absolute path. This expansion includes resolving
 relative paths based on the current working directory and expanding user
 directory shortcuts like `~`.
 
+Please do not use Tebako prefix under your application root (`--root` parameter). It is not an error
+but it will cause Tebako to place all build-time artifacts to tebako package dramatically increasing its size.
+You do not need it unless under very special circumstances like tebako packaging tebako itself.
 
 === Commands
 
