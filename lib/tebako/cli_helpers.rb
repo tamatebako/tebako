@@ -55,17 +55,34 @@ module Tebako
 
     WARN
 
+    WARN2 = <<~WARN
+
+      ******************************************************************************************************************
+      *                                                                                                                *
+      *  WARNING: You are creating packaging environment inside application root.                                      *
+      *  It is not an error but it means that all build-time artifacts will ne included in tebako package.             *
+      *  You do not need it unless under very special circumstances like tebako packaging tebako itself.               *
+      *                                                                                                                *
+      *  Please consider removing your exisitng `--prefix` folder abd use another one that points outside of `--root`  *
+      *  like tebako press --r ~/projects/myproject -e start.rb -o /temp/myproject.tebako -p ~/.tebako                 *
+      *                                                                                                                *
+      ******************************************************************************************************************
+
+    WARN
+
+    def check_warning(warn)
+      puts warn
+      sleep 5
+    end
+
     def do_press(options_manager)
       scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
       scenario_manager.configure_scenario
       options_manager.process_gemfile(scenario_manager.gemfile_path) if scenario_manager.with_gemfile
 
+      check_warning(WARN) if options_manager.package_within_root?
+      check_warning(WARN2) if options_manager.prefix_within_root?
       puts options_manager.press_announce(scenario_manager.msys?)
-
-      if options_manager.package_within_root?
-        puts WARN
-        sleep 5
-      end
 
       do_press_runtime(options_manager, scenario_manager)
       do_press_application(options_manager, scenario_manager)

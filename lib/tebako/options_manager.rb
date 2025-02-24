@@ -117,6 +117,15 @@ module Tebako
       @deps_lib_dir ||= File.join(deps, "lib")
     end
 
+    def folder_within_root?(folder)
+      folder_path = Pathname.new(folder.chomp("/"))
+      root_path = Pathname.new(root.chomp("/"))
+      folder_path.ascend do |path|
+        return true if path == root_path
+      end
+      false
+    end
+
     def fs_current
       fs_current = Dir.pwd
       if @scmb.msys?
@@ -168,12 +177,7 @@ module Tebako
     end
 
     def package_within_root?
-      package_path = Pathname.new(package.chomp("/"))
-      root_path = Pathname.new(root.chomp("/"))
-      package_path.ascend do |path|
-        return true if path == root_path
-      end
-      false
+      folder_within_root?(package)
     end
 
     def prefix
@@ -184,6 +188,10 @@ module Tebako
                   else
                     File.expand_path(@options["prefix"]&.gsub("\\", "/"))
                   end
+    end
+
+    def prefix_within_root?
+      folder_within_root?(prefix)
     end
 
     def press_announce(is_msys)
