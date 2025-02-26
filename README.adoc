@@ -777,7 +777,7 @@ tebako press \
 
 Where:
 
-`--entry-point`::
+`--entry-point=<entry-point>`::
 an executable file (binary executable or script) that shall be started when
 packaged file is called. This parameter is not required if the operation mode is `runtime`.
 
@@ -796,17 +796,24 @@ This parameter is not required if the operation mode is `runtime`.
 (optional)
 the output file name.
 +
-Defaults to `<current folder>/<entry point base name>`.
-+
 On Windows, the output file is automatically appended the `.exe` extension.
-+
-If the `-o` option is specified:
 
-** in `runtime` mode, the runtime package is named according to the `-o` option.
-** in `application` mode, the application package is named according to the `-o` option.
-** in `bundle` mode, the bundled package is named according to the `-o` option.
-** in `both` mode, the runtime package is named according to the `-o` option,
+** If the `-o` option is not specified:
+
+*** in `runtime` mode, the runtime package is created at `tebako-runtime`.
+*** in `application` mode, the application package is created at `<current-folder>/<entry-point-base-name>`.
+*** in `bundle` mode, the bundled package is created at `<current-folder>/<entry-point-base-name>`.
+*** in `both` mode, the runtime package is created at `<current-folder>/<entry-point-base-name>`,
+and the application package is created at `<current-folder>/<entry-point-base-name>.tebako`.
+
+** If the `-o` option is specified:
+
+*** in `runtime` mode, the runtime package is named according to the `-o` option.
+*** in `application` mode, the application package is named according to the `-o` option.
+*** in `bundle` mode, the bundled package is named according to the `-o` option.
+*** in `both` mode, the runtime package is named according to the `-o` option,
 and the application package is named according to the `-o` option with the `.tebako` extension.
+
 
 `--log-level=<error|warn|debug|trace>`::
 (optional, defaults to `error`)
