@@ -91,6 +91,7 @@ jobs:
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild == 'true' }}
         run: |
           bundle exec bin/check_prebuilt.rb generate $TEBAKO_VERSION $([ "$FORCE_REBUILD" = "true" ] && echo "--force-rebuild")
+          cat build-matrix.json
           echo "build-matrix=$(cat build-matrix.json)" >> "$GITHUB_OUTPUT"
 
       - name: Upload matrix
