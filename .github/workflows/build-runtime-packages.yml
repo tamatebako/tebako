@@ -237,7 +237,15 @@ jobs:
             echo "No new runtimes to build"
             echo "build-matrix={\"include\":[]}" >> $GITHUB_OUTPUT
           else
-            matrix=$(printf '{"include":[%s]}' "$(IFS=,; echo "${build_combinations[*]}")")
+            # Use jq to properly format the JSON array
+            matrix=$(jq -n --argjson combinations "$(printf '[%s]' "$(IFS=,; echo "${build_combinations[*]}")")" '{include: $combinations}')
+
+            # Validate JSON format before setting output
+            if ! jq empty <<< "$matrix"; then
+              echo "Error: Invalid JSON matrix generated"
+              exit 1
+            fi
+
             echo "build-matrix=$matrix" >> $GITHUB_OUTPUT
             echo "Matrix: $matrix"
           fi
