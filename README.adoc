@@ -580,21 +580,22 @@ The following instructions work for:
 
 We use Homebrew to install the necessary packages on macOS.
 
+Tebako provides a `Brewfile` at the repository root that you can install all
+dependencies using the `brew bundle` command.
+
 [source,sh]
 ----
-brew update
-brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib \
+$ brew bundle
+----
+
+Alternatively, you can install the packages manually.
+
+[source,sh]
+----
+$ brew update
+$ brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib \
   ncurses double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz \
   libyaml openssl@3
-brew bundle
-----
-
-Additionaly tebako repository includes `Brewfile` that can be used with
-`brew bundle` command.
-
-[source,sh]
-----
-brew bundle
 ----
 
 ====== Bison 3+
@@ -761,7 +762,7 @@ description of setup and clean commands below.
 ----
 tebako press \
   -e|--entry-point=<entry-point> \
-  -r|--root=<project-root-folder> \
+  -r|--project-root=<project-root-folder> \
   [-p|--prefix=<tebako-root-folder>] \
   [-R|--Ruby=<ruby-version>] \
   [-o|--output=<packaged-file-name>] \
@@ -779,11 +780,11 @@ Where:
 `<tebako-root-folder>`::
 the Tebako root folder (see details: <<root-folder-selection>>)
 
-`Ruby`::
+`--Ruby`::
 this parameter defines Ruby version that will be packaged (optional, defaults to
 `3.3.7`)
 
-`project-root`::
+`--project-root`::
 a folder at the host source file system where project files are located.
 This parameter is not required if the operation mode is `runtime`.
 
@@ -807,14 +808,15 @@ logging level for the Tebako built-in memory filesystem driver
 
 `cwd`::
 (optional)
-a folder within Tebako memfs where the packaged application will start. This folder should be specified relative to the memfs root.
+A folder within Tebako memfs where the packaged application will start. This
+folder should be specified relative to the memfs root.
 +
 If not provided, the application will start within the current folder of the
 host (i.e., at `$PWD`).
 +
 This argument is required because it is not possible to change the directory to
 a memfs folder until the package is started, as opposed to any host folder that
-can be set as the current directory before Tebako package invocation.  Tebako
+can be set as the current directory before Tebako package invocation. Tebako
 saves the original working directory in a global Ruby variable
 `$tebako_original_pwd`.
 
@@ -837,12 +839,14 @@ For example, a package created at Ubuntu 20 system can be used on Ubuntu 22.
 NOTE: The feature is exeprimental, we may consider another approach in the future.
 
 `mode`::
-output mode for tebako package (optional, defaults to `bundle`).
+(optional, defaults to `bundle`)
+Package output mode, determines whether the runtime and/or application are
+to be separately packaged.
 
-`bundle`::: place runtime and application to a single file
-`both`::: create both run-rime and application
-`application`::: create appplication only
-`runtime`::: create runtime only
+`bundle`::: Create a single package bundling both the runtime and application. The output file is named according to the `-o` option.
+`both`::: Create separate packages for the runtime and application. Outputs two separate files: one for the runtime at the location specified at the `-o {filename}` and one for the application at `{filename}.package`.
+`application`::: Create the application package only. The output file is named according to the `-o` option.
+`runtime`::: Create the runtime package only. The output file is named according to the `-o` option.
 
 `ref`::
 (optional)
@@ -851,7 +855,7 @@ When a Tebako application package is created on Windows, it is linked against a
 Tebako runtime file name. The `ref` parameter allows to specify the name of the
 runtime file.
 +
-NOTE: The `ref` option specificies the name of the runtime -- the runtime file
+NOTE: The `ref` option specifies the name of the runtime -- the runtime file
 can be recreated or changed but not renamed.
 
 `tebafile`::
@@ -1036,11 +1040,11 @@ samller order means higher proirity.
 | Order | Mode | Option source | Applicability
 
 | 1 | All | Command-line | All options
-| 2 | All |Tebako configuration file | All option except ``--tebafile`` (you can not specify new tebafile in a tebafile)
-.2+| 3 .2+| All .2+| Environment variable | TEBAKO_PREFIX to set ``--prefix`` option
-| LG_VADDR to set ``--with-lg-vaddr`` jemalloc parameter
-.2+| 4 | ``runtime`` | Tebako defaults | All options except ``--entry-point`` and ``--root`` that are mandatory
-| ``bundle``, ``both``, ``application`` | Tebako defaults | All options
+| 2 | All |Tebako configuration file | All option except `--tebafile` (you can not specify new tebafile in a tebafile)
+.2+| 3 .2+| All .2+| Environment variable | TEBAKO_PREFIX to set `--prefix` option
+| LG_VADDR to set `--with-lg-vaddr` jemalloc parameter
+.2+| 4 | `runtime` | Tebako defaults | All options except `--entry-point` and `--root` that are mandatory
+| `bundle`, `both`, `application` | Tebako defaults | All options
 
 |===
 
@@ -1226,52 +1230,189 @@ myproject --option --parameter value
 However there are several command-line parameters that are intercepted processed
 by Tebako bootstrap code as described below.
 
-=== Running tebako image by tebako runtime (`--tebako-run` option)
 
-Tebako provides an option to an extract its DwarFS filesystem from a package to
-a local folder for verification or execution.
+=== Creating a bundle package
+
+Tebako provides a method to create and manage a bundle package, which simplifies
+the process of packaging dependencies along with the application.
 
 [source,sh]
 ----
-$ <tebako-runtime> --tebako-run [<tebako application>]
+$ tebako bundle create -o <bundle-package> -r <project-root-folder> [-R <ruby-version>]
+----
+
+Where:
+
+`<bundle-package>`:: the bundle package file
+
+`<project-root-folder>`:: the root folder of the project
+
+`<ruby-version>`:: the Ruby version that will be packaged (optional, defaults to `3.3.7`)
+
+To run the bundle package, use the following command:
+
+[source,sh]
+----
+$ <bundle-package>
+----
+
+[example]
+====
+[source,sh]
+----
+$ tebako bundle create -o myproject-bundle -r ~/projects/myproject -R 3.4.1
+# => creates `myproject-bundle`, a bundle package for Ruby 3.4.1
+$ myproject-bundle
+# => runs the bundle package
+----
+====
+
+=== Creating separate runtime and application packages
+
+Tebako allows creating separate runtime and application packages that can be used
+to run a Tebako application package.
+
+[source,sh]
+----
+$ tebako press -m both \
+  -o <tebako-runtime-package> \
+  -e <entry-point> \
+  -r <project-root-folder> \
+  [-R <ruby-version>]
+----
+
+Where:
+
+`<tebako-runtime-package>`:: the Tebako runtime package file
+
+`<entry-point>`:: the entry point of the application
+
+`<project-root-folder>`:: the root folder of the project
+
+`<ruby-version>`:: the Ruby version that will be packaged (optional, defaults to `3.3.7`)
+
+The resulting packages will be generated in the current directory as:
+
+* Tebako runtime package at the `-o` location, i.e. `<tebako-runtime-package>`.
+* Tebako application package. The name of the application package will be the
+  same as the runtime package with the `.package` extension.
+
+
+=== Creating a Tebako runtime package
+
+Tebako allows creating a Tebako runtime package that can be used to run a Tebako
+application package.
+
+[source,sh]
+----
+$ tebako press -m runtime -o <tebako-runtime-package> [-R <ruby-version>]
+----
+
+Where:
+
+`<tebako-runtime-package>`:: the Tebako runtime package file
+
+`<ruby-version>`:: the Ruby version that will be packaged (optional, defaults to `3.3.7`)
+
+[example]
+====
+[source,sh]
+----
+$ tebako press -o tebako-ruby-3.4.1 -R 3.4.1
+# => creates `tebako-ruby-3.4.1`, a Tebako runtime package for Ruby 3.4.1
+----
+====
+
+=== Creating a Tebako application package
+
+Tebako allows creating a Tebako application package that can be run with a
+Tebako runtime package.
+
+[source,sh]
+----
+$ tebako press -m application \
+    -o <tebako-application-package> \
+    -e <entry-point> \
+    -r <project-root-folder> \
+    [-R <ruby-version>]
+----
+
+Where:
+
+`<tebako-application-package>`:: the Tebako application package file
+
+`<entry-point>`:: the entry point of the application
+
+`<project-root-folder>`:: the root folder of the project
+
+`<ruby-version>`:: the Ruby version that will be packaged (optional, defaults to `3.3.7`)
+
+[example]
+====
+[source,sh]
+----
+$ tebako press -m application \
+    -o tebako-application-package \
+    -e start.rb \
+    -r ~/projects/myproject \
+    -R 3.4.1
+# => creates `tebako-application-package`, a Tebako application package for Ruby 3.4.1
+----
+====
+
+
+=== Running Tebako application using a Tebako runtime (`--tebako-run` option)
+
+The Tebako application package can be executed by a Tebako runtime package.
+
+[source,sh]
+----
+$ <tebako-runtime-package> --tebako-run [<tebako-application-package>]
 ----
 
 Where,
 
-`<tebako runtime>`::
-The tebako runtime in ```runtime``` or ```both``` mode
+`<tebako-runtime-package>`::
+The Tebako runtime package file created using in `runtime` or `both` mode.
 
-`<tebako application>`::
-The tebako application package created in ```application``` or ```both``` mode
+`<tebako-application-package>`::
+The Tebako application package created in `application` or `both` mode.
 
 [example]
 ====
-Creating separate runtime and application and running it:
+Given a Ruby application at `hello.rb`:
 
-[source,sh]
-----
-tebako press -m runtime -o tebako-runtime
-tebako press -m application -o tebako-application -e hello.rb -r test
-tabako-runtime --tebako-run tebako-application Maxim
-----
-where hello.rb is the Ruby application
 [source,Ruby]
 ----
-# frozen_string_literal: true
-
 puts "Hello, #{ARGV[0]}!"
 ----
-And expected output from ```tabako-runtime --tebako-run tebako-application Maxim``` is
+
+Create separate runtime and application packages:
+
 [source,sh]
+----
+tebako press -m runtime -o tebako-runtime-package
+tebako press -m application -o tebako-application-package -e hello.rb -r test
+----
+
+Run the application using the pre-packaged runtime:
+
+[source,sh]
+----
+tebako-runtime-package --tebako-run tebako-application-package Maxim
+----
+
+The expected output is:
+
+[source]
 ----
 Hello, Maxim!
 ----
-
 ====
 
 === Image extraction (`--tebako-extract` option)
 
-Tebako provides an option to an extract its DwarFS filesystem from a package to
+Tebako provides an option to extract its DwarFS filesystem from a package to
 a local folder for verification or execution.
 
 [source,sh]
