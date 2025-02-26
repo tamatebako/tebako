@@ -23,7 +23,11 @@ class RuntimeBuilder
   PLATFORMS = PrebuiltMatrix::PLATFORMS
 
   def initialize(version, force_rebuild = false)
-    @client = Octokit::Client.new
+    @client = if ENV["GITHUB_TOKEN"]
+                Octokit::Client.new(access_token: ENV["GITHUB_TOKEN"])
+              else
+                Octokit::Client.new
+              end
     @force_rebuild = force_rebuild
     @tebako_version = version
   end
@@ -47,8 +51,14 @@ class RuntimeBuilder
       return { "url" => asset.browser_download_url } if asset
     end
     nil
-  rescue Octokit::NotFound
-    warn "Warning: Repository #{RUNTIME_REPO} not found or no access"
+  rescue Octokit::Unauthorized
+    warn "Warning: Invalid GitHub token or no access to #{RUNTIME_REPO}"
+    nil
+  rescue Octokit::TooManyRequests
+    warn "Warning: GitHub API rate limit exceeded"
+    nil
+  rescue Octokit::Error => e
+    warn "Warning: GitHub API error: #{e.message}"
     nil
   end
 
