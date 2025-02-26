@@ -34,23 +34,17 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
-      - .github/workflows/alpine.yml
-      - .github/workflows/gem-test-and-release.yml
-      - .github/workflows/lint.yml
-      - .github/workflows/ubuntu.yml
-      - .github/workflows/windows-msys.yml
       - .cirrus.yml
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/macos.yml'
   pull_request:
     paths-ignore:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
-      - .github/workflows/alpine.yml
-      - .github/workflows/gem-test-and-release.yml
-      - .github/workflows/lint.yml
-      - .github/workflows/ubuntu.yml
-      - .github/workflows/windows-msys.yml
       - .cirrus.yml
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/macos.yml'
   workflow_dispatch:
 
 concurrency:
