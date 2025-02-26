@@ -59,6 +59,8 @@ jobs:
   prepare:
     name: Prepare build matrix
     runs-on: ubuntu-latest
+    env:
+      BUNDLE_GEMFILE: ${{ github.workspace }}/bin/check_prebuilt.Gemfile
     outputs:
       tebako-version: ${{ steps.get-version.outputs.version }}
       build-matrix: ${{ steps.set-matrix.outputs.build-matrix }}
@@ -82,14 +84,16 @@ jobs:
         id: set-matrix
         env:
           TEBAKO_VERSION: ${{ steps.get-version.outputs.version }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RUNTIME_REPO: ${{ env.RUNTIME_REPO }}
           FORCE_REBUILD: ${{ github.event.inputs.force_rebuild == 'true' }}
-          BUNDLE_GEMFILE: bin/check_prebuilt.Gemfile
         run: |
-          bundle install
           bundle exec bin/check_prebuilt.rb generate $TEBAKO_VERSION $([ "$FORCE_REBUILD" = "true" ] && echo "--force-rebuild")
           echo "build-matrix=$(cat build-matrix.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Upload matrix
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-matrix.json
+          path: build-matrix.json
 
   build:
     name: Build runtime package for ${{ matrix.ruby_ver }} on ${{ matrix.env.os }}
@@ -98,7 +102,7 @@ jobs:
     runs-on: ${{ matrix.env.platform == 'alpine' && 'ubuntu-latest' || matrix.env.os }}
     strategy:
       fail-fast: false
-      matrix: ${{fromJson(needs.prepare.outputs.build-matrix)}}
+      matrix: ${{ fromJson(needs.prepare.outputs.build-matrix) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
