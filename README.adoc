@@ -762,12 +762,12 @@ description of setup and clean commands below.
 ----
 tebako press \
   -e|--entry-point=<entry-point> \
-  -r|--project-root=<project-root-folder> \
+  -r|--root=<project-root-folder> \
   [-p|--prefix=<tebako-root-folder>] \
   [-R|--Ruby=<ruby-version>] \
   [-o|--output=<packaged-file-name>] \
   [-l|--log-level=<error|warn|debug|trace>] \
-  [-c|--cwd=<package current working directory>]
+  [-c|--cwd=<package-current-working-directory>] \
   [-D|--devmode] \
   [-P|--patchelf] \
   [-m|--mode=<bundle|both|application|runtime>] \
@@ -777,36 +777,42 @@ tebako press \
 
 Where:
 
-`<tebako-root-folder>`::
-the Tebako root folder (see details: <<root-folder-selection>>)
-
-`--Ruby`::
-this parameter defines Ruby version that will be packaged (optional, defaults to
-`3.3.7`)
-
-`--project-root`::
-a folder at the host source file system where project files are located.
-This parameter is not required if the operation mode is `runtime`.
-
-`entry-point`::
+`--entry-point`::
 an executable file (binary executable or script) that shall be started when
 packaged file is called. This parameter is not required if the operation mode is `runtime`.
 
-`output`::
+`--prefix=<tebako-root-folder>`::
+the Tebako root folder (see details: <<root-folder-selection>>)
+
+`--Ruby=<ruby-version>`::
+this parameter defines Ruby version that will be packaged (optional, defaults to
+`3.3.7`)
+
+`--root=<project-root-folder>`::
+a folder at the host source file system where project files are located.
+This parameter is not required if the operation mode is `runtime`.
+
+`--output=<packaged-file-name>`::
 (optional)
 the output file name.
 +
 Defaults to `<current folder>/<entry point base name>`.
 +
-On Windows output file will have `exe` extension.
-If the application is to be a separate file (`both` or `application` mode), it
-will have the same name with the `.tebako` extension.
+On Windows, the output file is automatically appended the `.exe` extension.
++
+If the `-o` option is specified:
 
-`log-level`::
-logging level for the Tebako built-in memory filesystem driver
+** in `runtime` mode, the runtime package is named according to the `-o` option.
+** in `application` mode, the application package is named according to the `-o` option.
+** in `bundle` mode, the bundled package is named according to the `-o` option.
+** in `both` mode, the runtime package is named according to the `-o` option,
+and the application package is named according to the `-o` option with the `.tebako` extension.
+
+`--log-level=<error|warn|debug|trace>`::
 (optional, defaults to `error`)
+logging level for the Tebako built-in memory filesystem driver.
 
-`cwd`::
+`--cwd=<package-current-working-directory>`::
 (optional)
 A folder within Tebako memfs where the packaged application will start. This
 folder should be specified relative to the memfs root.
@@ -820,14 +826,14 @@ can be set as the current directory before Tebako package invocation. Tebako
 saves the original working directory in a global Ruby variable
 `$tebako_original_pwd`.
 
-`devmode`:: flag that activates development mode, in which Tebako's cache and
+`--devmode`:: flag that activates development mode, in which Tebako's cache and
 packaging consistency checks are relaxed.
 
-`patchelf`::
+`--patchelf`::
 Allows forward-compatibility of Tebako packages with Linux GNU distributions.
 +
 Specifically, this is a flag that removes a reference to the `GLIBC_PRIVATE`
-version of `libpthread` from a Tebako package.  This allows Linux GNU packages
+version of `libpthread` from a Tebako package. This allows Linux GNU packages
 to run against versions of `libpthread` that differ from the version used for
 packaging.
 +
@@ -838,7 +844,7 @@ For example, a package created at Ubuntu 20 system can be used on Ubuntu 22.
 +
 NOTE: The feature is exeprimental, we may consider another approach in the future.
 
-`mode`::
+`--mode=<mode>`::
 (optional, defaults to `bundle`)
 Package output mode, determines whether the runtime and/or application are
 to be separately packaged.
@@ -848,24 +854,24 @@ to be separately packaged.
 `application`::: Create the application package only. The output file is named according to the `-o` option.
 `runtime`::: Create the runtime package only. The output file is named according to the `-o` option.
 
-`ref`::
+`--ref`::
 (optional)
 Defaults to `tebako-runtime`.
 When a Tebako application package is created on Windows, it is linked against a
 Tebako runtime file name. The `ref` parameter allows to specify the name of the
 runtime file.
 +
-NOTE: The `ref` option specifies the name of the runtime -- the runtime file
+NOTE: The `--ref` option specifies the name of the runtime -- the runtime file
 can be recreated or changed but not renamed.
 
-`tebafile`::
+`--tebafile=<path>`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
 Please refer to the separate section below for description of the tebafile.
 +
 NOTE: Development mode is *not intended for production use* and should only be
 used during development.
 +
-NOTE: `entry-point` and `project-root-folder` are required parameters and may be
+NOTE: `--entry-point` and `--project-root-folder` are required parameters and may be
 provided either via command-line or in the tebafile.
 
 [example]
@@ -907,16 +913,18 @@ $ tebako setup \
 
 Where:
 
-`<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
+`--prefix=<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
 
-`Ruby`:: parameter defines package Ruby version (optional). This version is used in conjuction with requirements
-from the Gemfile as explained below in 'Package Ruby version selection rules' section.
+`--Ruby=<ruby-version>`::
+parameter defines package Ruby version (optional).
+This version is used in conjunction with requirements from the `Gemfile` as
+explained below in <<ruby-and-bundler-versions>>.
 
-`tebafile`::
+`--tebafile=<path>`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
 Please refer to the separate section below for tebafile description.
 
-`devmode`:: flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
+`--devmode`:: flag activates development mode, in which Tebako's cache and packaging consistency checks are relaxed.
 Please note that this mode is not intended for production use and should only be used during development.
 
 ==== Clean
@@ -935,9 +943,9 @@ $ tebako clean \
 
 Where:
 
-`<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
+`--prefix=<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
 
-`tebafile`::
+`--tebafile=<path>`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
 Please refer to the separate section below for tebafile description.
 
@@ -972,13 +980,14 @@ $ tebako clean_ruby
 
 Where:
 
-`<tebako-root-folder>`::
+`--prefix=<tebako-root-folder>`::
 the Tebako setup folder (optional, defaults to current folder)
 
-`Ruby`::
-defines Ruby version that will cleaned (optional, cleans all versions by default)
+`--Ruby=<ruby-version>`::
+(optional, cleans all versions by default)
+defines Ruby version that will be cleaned.
 
-`tebafile`::
+`--tebafile=<path>`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
 Please refer to the separate section below for tebafile description.
 
@@ -1079,6 +1088,7 @@ operation. The following table lists the possible exit codes and their meanings.
 | 116  | Ruby version does not satify Gemfile requirements
 |===
 
+[[ruby-and-bundler-versions]]
 == Ruby and bundler versions selection
 
 During packaging tebako creates its own Ruby execution environment that is independent from the host Ruby environment.
@@ -1241,14 +1251,6 @@ the process of packaging dependencies along with the application.
 $ tebako bundle create -o <bundle-package> -r <project-root-folder> [-R <ruby-version>]
 ----
 
-Where:
-
-`<bundle-package>`:: the bundle package file
-
-`<project-root-folder>`:: the root folder of the project
-
-`<ruby-version>`:: the Ruby version that will be packaged (optional, defaults to `3.3.7`)
-
 To run the bundle package, use the following command:
 
 [source,sh]
@@ -1281,16 +1283,6 @@ $ tebako press -m both \
   [-R <ruby-version>]
 ----
 
-Where:
-
-`<tebako-runtime-package>`:: the Tebako runtime package file
-
-`<entry-point>`:: the entry point of the application
-
-`<project-root-folder>`:: the root folder of the project
-
-`<ruby-version>`:: the Ruby version that will be packaged (optional, defaults to `3.3.7`)
-
 The resulting packages will be generated in the current directory as:
 
 * Tebako runtime package at the `-o` location, i.e. `<tebako-runtime-package>`.
@@ -1307,12 +1299,6 @@ application package.
 ----
 $ tebako press -m runtime -o <tebako-runtime-package> [-R <ruby-version>]
 ----
-
-Where:
-
-`<tebako-runtime-package>`:: the Tebako runtime package file
-
-`<ruby-version>`:: the Ruby version that will be packaged (optional, defaults to `3.3.7`)
 
 [example]
 ====
@@ -1336,16 +1322,6 @@ $ tebako press -m application \
     -r <project-root-folder> \
     [-R <ruby-version>]
 ----
-
-Where:
-
-`<tebako-application-package>`:: the Tebako application package file
-
-`<entry-point>`:: the entry point of the application
-
-`<project-root-folder>`:: the root folder of the project
-
-`<ruby-version>`:: the Ruby version that will be packaged (optional, defaults to `3.3.7`)
 
 [example]
 ====
