@@ -62,20 +62,6 @@ class RuntimeBuilder
     nil
   end
 
-  def build_combinations
-    matrices = load_matrices
-    ruby_versions = matrices.values.map { |m| m["ruby"] }.flatten.uniq
-    env_configs = tag_environments_with_platforms(matrices)
-
-    ruby_versions.each_with_object([]) do |ruby_ver, combinations|
-      env_configs.each do |env_config|
-        config = build_config(ruby_ver, env_config)
-        config["release"] = find_release_info(config["filename"])
-        combinations << config
-      end
-    end
-  end
-
   def load_matrices
     PLATFORMS.map { |platform| [platform, read_matrix_file(platform)] }.to_h
   end
@@ -86,36 +72,55 @@ class RuntimeBuilder
     end
   end
 
-  def build_config(ruby_ver, env_config)
+  def build_config(ruby_ver, env_config, arch = nil)
     platform = env_config["platform"]
     os = env_config["os"]
-    platform_name, arch = get_platform_info(platform, os, env_config)
+    platform_name, arch_info = get_platform_info(platform, os, env_config, arch)
     ext = platform == "windows" ? ".exe" : ""
-    filename = "tebako-ruby-#{@tebako_version}-#{ruby_ver}-#{platform_name}-#{arch}#{ext}"
+    filename = "tebako-ruby-#{@tebako_version}-#{ruby_ver}-#{platform_name}-#{arch_info}#{ext}"
 
     {
       "ruby_ver" => ruby_ver,
-      "env" => env_config,
+      "env" => env_config.merge("arch" => arch_info),
       "platform" => platform,
       "platform_name" => platform_name,
-      "arch" => arch,
+      "arch" => arch_info,
       "filename" => filename
     }
   end
 
-  def get_platform_info(platform, os, env_config)
+  def get_platform_info(platform, os, env_config, arch = nil)
     case platform
     when "macos"
       version = os.match(/macos-(\d+)/)[1]
-      arch = os.include?("-arm64") ? "arm64" : "x86_64"
-      ["macos#{version}", arch]
+      ["macos#{version}", arch || "x86_64"]
     when "windows"
       %w[windows x64]
     when "ubuntu"
       version = os.match(/ubuntu-(\d+\.\d+)/)[1]
-      ["ubuntu#{version}", "x86_64"]
+      ["ubuntu#{version}", arch || "x86_64"]
     when "alpine"
-      ["alpine#{env_config["ALPINE_VER"]}", "x86_64"]
+      ["alpine#{env_config["ALPINE_VER"]}", arch || "x86_64"]
+    end
+  end
+
+  def build_combinations
+    matrices = load_matrices
+    ruby_versions = matrices.values.map { |m| m["ruby"] }.flatten.uniq
+    env_configs = tag_environments_with_platforms(matrices)
+
+    ruby_versions.each_with_object([]) do |ruby_ver, combinations|
+      env_configs.each do |env_config|
+        case env_config["platform"]
+        when "macos", "ubuntu", "alpine"
+          # Generate both x86_64 and arm64 for macOS, Ubuntu, and Alpine
+          combinations << build_config(ruby_ver, env_config, "x86_64")
+          combinations << build_config(ruby_ver, env_config, "arm64")
+        else
+          combinations << build_config(ruby_ver, env_config)
+        end
+        combinations.last["release"] = find_release_info(combinations.last["filename"])
+      end
     end
   end
 end
