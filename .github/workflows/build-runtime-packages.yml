@@ -1,0 +1,449 @@
+# Copyright (c) 2021-2025 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions
+# are met:
+# 1. Redistributions of source code must retain the above copyright
+#    notice, this list of conditions and the following disclaimer.
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in the
+#    documentation and/or other materials provided with the distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+# ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
+# TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDERS OR CONTRIBUTORS
+# BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+# POSSIBILITY OF SUCH DAMAGE.
+
+name: build-runtime-packages
+
+on:
+  schedule:
+    - cron: "0 3 * * *"  # Run daily at midnight UTC
+  push:
+    branches: [ main ]
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - .cirrus.yml
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/build-runtime-packages.yml'
+      - Brewfile
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: 'Force rebuild and overwrite existing runtime packages'
+        type: boolean
+        default: false
+
+concurrency:
+  group: '${{ github.workflow }}-${{ github.job }}-${{ github.head_ref || github.ref_name }}'
+  cancel-in-progress: true
+
+env:
+  CACHE_VER: 1
+  VERBOSE: no
+  RUNTIME_REPO: tamatebako/tebako-runtime-ruby
+
+jobs:
+  prepare:
+    name: Prepare build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
+      env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
+      tebako-version: ${{ steps.get-version.outputs.version }}
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+
+      - name: Read matrices from files
+        id: set-matrix
+        run: |
+          # Read all matrix files
+          macos_ruby=$(jq -c ".full.ruby" .github/matrices/macos.json)
+          macos_env=$(jq -c ".full.env" .github/matrices/macos.json)
+
+          ubuntu_ruby=$(jq -c ".full.ruby" .github/matrices/ubuntu.json)
+          ubuntu_env=$(jq -c ".full.env" .github/matrices/ubuntu.json)
+
+          windows_ruby=$(jq -c ".full.ruby" .github/matrices/windows-msys.json)
+          windows_env=$(jq -c ".full.env" .github/matrices/windows-msys.json)
+
+          alpine_ruby=$(jq -c ".full.ruby" .github/matrices/alpine.json)
+          alpine_env=$(jq -c ".full.env" .github/matrices/alpine.json)
+
+          # Combine all ruby versions (will be deduplicated later)
+          all_ruby=$(jq -s 'add | unique' <<< "[$macos_ruby, $ubuntu_ruby, $windows_ruby, $alpine_ruby]")
+
+          # Tag each environment with its platform
+          macos_env_tagged=$(jq -c '[.[] | . + {"platform": "macos"}]' <<< "$macos_env")
+          ubuntu_env_tagged=$(jq -c '[.[] | . + {"platform": "ubuntu"}]' <<< "$ubuntu_env")
+          windows_env_tagged=$(jq -c '[.[] | . + {"platform": "windows"}]' <<< "$windows_env")
+          alpine_env_tagged=$(jq -c '[.[] | . + {"platform": "alpine"}]' <<< "$alpine_env")
+
+          # Combine all environments
+          all_env=$(jq -s 'add' <<< "[$macos_env_tagged, $ubuntu_env_tagged, $windows_env_tagged, $alpine_env_tagged]")
+
+          echo "ruby-matrix=$all_ruby" >> $GITHUB_OUTPUT
+          echo "env-matrix=$all_env" >> $GITHUB_OUTPUT
+
+      - name: Get Tebako version
+        id: get-version
+        run: |
+          version=$(grep -m 1 "VERSION =" lib/tebako/version.rb | cut -d'"' -f2)
+          echo "version=$version" >> $GITHUB_OUTPUT
+
+      - name: Debug GITHUB_OUTPUT
+        run: |
+          echo "Debugging GITHUB_OUTPUT for verification:"
+          cat $GITHUB_OUTPUT
+
+  check-releases:
+    name: Check existing releases
+    needs: prepare
+    runs-on: ubuntu-latest
+    outputs:
+      build-matrix: ${{ steps.check.outputs.build-matrix }}
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+
+      - name: Check existing releases
+        id: check
+        env:
+          TEBAKO_VERSION: ${{ needs.prepare.outputs.tebako-version }}
+          RUBY_MATRIX: ${{ needs.prepare.outputs.ruby-matrix }}
+          ENV_MATRIX: ${{ needs.prepare.outputs.env-matrix }}
+          FORCE_REBUILD: ${{ github.event.inputs.force_rebuild == 'true' }}
+        run: |
+          # Function to check if a runtime exists in the release
+          runtime_exists() {
+            local filename="$1"
+            local release_id="$2"
+
+            # Check if the asset exists in the release
+            assets=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$RUNTIME_REPO/releases/$release_id/assets")
+
+            echo "$assets" | jq -e ".[] | select(.name == \"$filename\")" > /dev/null
+            return $?
+          }
+
+          # Function to get or create a release
+          get_or_create_release() {
+            local tag="$1"
+            local title="$2"
+            local version="$3"
+
+            # Check if release exists
+            local release_info=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$RUNTIME_REPO/releases/tags/$tag")
+
+            if [[ $(echo "$release_info" | jq -r '.message') == "Not Found" ]]; then
+              echo "Creating new release for $tag"
+              release_info=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
+                -d "{\"tag_name\":\"$tag\",\"name\":\"$title\",\"body\":\"## Tebako runtime packages\n\nTebako version: $version\nBuild date: $tag\n\n\"}" \
+                "https://api.github.com/repos/$RUNTIME_REPO/releases")
+            fi
+
+            echo "$release_info"
+          }
+
+          # Get today's date for release tag
+          today=$(date +%Y-%m-%d)
+          release_title="Tebako runtime packages $today"
+
+          # Get or create the release
+          release_info=$(get_or_create_release "$today" "$release_title" "$TEBAKO_VERSION")
+          release_id=$(echo "$release_info" | jq -r '.id')
+
+          # Parse matrices
+          ruby_versions=$(echo "$RUBY_MATRIX" | jq -c '.')
+          env_configs=$(echo "$ENV_MATRIX" | jq -c '.')
+
+          # Build matrix of combinations that need building
+          build_combinations=()
+
+          for ruby_ver in $(echo "$ruby_versions" | jq -r '.[]'); do
+            for env_config in $(echo "$env_configs" | jq -c '.[]'); do
+              os=$(echo "$env_config" | jq -r '.os')
+              xcode=$(echo "$env_config" | jq -r '.xcode')
+
+              # Get platform from the environment config
+              platform=$(echo "$env_config" | jq -r '.platform')
+
+              # Format platform name for filename
+              if [[ "$platform" == "macos" ]]; then
+                # Extract version number from macos-XX
+                platform_version=$(echo "$os" | sed -E 's/macos-([0-9]+).*/\1/')
+                platform_name="macos${platform_version}"
+
+                # Determine architecture
+                if [[ "$os" == *"-arm64" ]]; then
+                  arch="arm64"
+                else
+                  arch="x86_64"
+                fi
+              elif [[ "$platform" == "windows" ]]; then
+                platform_name="windows"
+                arch="x64"
+                filename="tebako-ruby-${TEBAKO_VERSION}-${ruby_ver}-${platform_name}-${arch}.exe"
+              elif [[ "$platform" == "ubuntu" ]]; then
+                # Extract version number from ubuntu-XX.XX
+                platform_version=$(echo "$os" | sed -E 's/ubuntu-([0-9]+\.[0-9]+).*/\1/')
+                platform_name="ubuntu${platform_version}"
+                arch="x86_64"
+              elif [[ "$platform" == "alpine" ]]; then
+                # Use Alpine version from environment
+                alpine_ver=$(echo "$env_config" | jq -r '.ALPINE_VER')
+                platform_name="alpine${alpine_ver}"
+                arch="x86_64"
+              else
+                # Default fallback
+                platform_name="$platform"
+                arch="x86_64"
+              fi
+
+              # Generate filename using shared pattern
+              if [[ "$platform" == "windows" ]]; then
+                filename="tebako-ruby-${TEBAKO_VERSION}-${ruby_ver}-${platform_name}-${arch}.exe"
+              else
+                filename="tebako-ruby-${TEBAKO_VERSION}-${ruby_ver}-${platform_name}-${arch}"
+              fi
+
+              # Check if we need to build this combination
+              if [[ "$FORCE_REBUILD" == "true" ]] || ! runtime_exists "$filename" "$release_id"; then
+                # Add to build matrix with filename
+                build_combinations+=("{\"ruby_ver\":\"$ruby_ver\",\"env\":$env_config,\"platform\":\"$platform\",\"platform_name\":\"$platform_name\",\"arch\":\"$arch\",\"filename\":\"$filename\"}")
+              else
+                echo "Runtime already exists: $filename"
+              fi
+            done
+          done
+
+          # Create the build matrix JSON
+          if [ ${#build_combinations[@]} -eq 0 ]; then
+            echo "No new runtimes to build"
+            echo "build-matrix={\"include\":[]}" >> $GITHUB_OUTPUT
+          else
+            matrix=$(printf '{"include":[%s]}' "$(IFS=,; echo "${build_combinations[*]}")")
+            echo "build-matrix=$matrix" >> $GITHUB_OUTPUT
+            echo "Matrix: $matrix"
+          fi
+
+      - name: Debug GITHUB_OUTPUT
+        run: |
+          echo "Debugging GITHUB_OUTPUT for verification:"
+          cat $GITHUB_OUTPUT
+
+  build:
+    name: Build runtime package for ${{ matrix.ruby_ver }} on ${{ matrix.env.os }}
+    needs: [prepare, check-releases]
+    if: ${{ fromJson(needs.check-releases.outputs.build-matrix).include[0] }}
+    runs-on: ${{ matrix.env.platform == 'alpine' && 'ubuntu-latest' || matrix.env.os }}
+    strategy:
+      fail-fast: false
+      matrix: ${{fromJson(needs.check-releases.outputs.build-matrix)}}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      # Consolidated environment setup using shared actions
+      - name: Setup build environment
+        uses: ./.github/actions/setup-tebako
+        with:
+          platform: ${{ matrix.env.platform }}
+          ruby_version: ${{ matrix.ruby_ver }}
+          xcode: ${{ matrix.env.xcode }}
+          cc: ${{ matrix.env.CC }}
+          cxx: ${{ matrix.env.CXX }}
+          alpine_version: ${{ matrix.env.ALPINE_VER }}
+          cache: "off"
+          install: "off"
+          verbose: ${{ env.VERBOSE }}
+
+      - name: Setup development dependencies
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          platform: ${{ matrix.env.platform }}
+          ruby_version: ${{ matrix.ruby_ver }}
+          os: ${{ matrix.env.os || matrix.env.sys || 'ubuntu-latest' }}
+          cc: ${{ matrix.env.CC || 'gcc' }}
+          xcode: ${{ matrix.env.xcode }}
+          alpine_version: ${{ matrix.env.ALPINE_VER }}
+          path: deps
+          version: ${{ env.CACHE_VER }}
+
+      # Build the runtime
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 3.3
+          bundler-cache: true
+
+      - name: Build Tebako runtime
+        env:
+          TEBAKO_VERSION: ${{ needs.prepare.outputs.tebako-version }}
+          RUBY_VER: ${{ matrix.ruby_ver }}
+          PLATFORM: ${{ matrix.platform_name || matrix.platform }}
+          ARCH: ${{ matrix.arch }}
+          OUTPUT_FILE: ${{ matrix.filename }}
+        run: |
+          # Build the runtime package
+          bundle exec tebako press -m runtime -o "$OUTPUT_FILE" -R "$RUBY_VER"
+
+          # Test the runtime
+          if [[ "${{ matrix.env.platform }}" == "windows" ]]; then
+            ./"$OUTPUT_FILE" -e 'puts "hi"'
+          else
+            chmod +x "$OUTPUT_FILE"
+            ./"$OUTPUT_FILE" -e 'puts "hi"'
+          fi
+
+          # Check the output of the runtime
+          if [[ $? -ne 0 ]]; then
+            echo "Runtime test failed for $OUTPUT_FILE"
+            exit 1
+          fi
+
+          # Upload as artifact for the release job
+          mkdir -p runtime-packages
+          mv "$OUTPUT_FILE" runtime-packages/
+
+      - name: Upload runtime package
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-packages
+          path: runtime-packages/*
+          retention-days: 1
+
+  release:
+    name: Update release packages
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    if: ${{ always() && needs.build.result != 'cancelled' }}
+    steps:
+      - name: Download all runtime packages
+        uses: actions/download-artifact@v4
+        with:
+          name: runtime-packages
+          path: runtime-packages
+
+      - name: List built packages
+        run: |
+          ls -la runtime-packages/
+
+      - name: Update release
+        env:
+          TEBAKO_VERSION: ${{ needs.prepare.outputs.tebako-version }}
+        run: |
+          # Function to get or create a release
+          get_or_create_release() {
+            local tag="$1"
+            local title="$2"
+            local version="$3"
+
+            # Check if release exists
+            local release_info=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+              "https://api.github.com/repos/$RUNTIME_REPO/releases/tags/$tag")
+
+            if [[ $(echo "$release_info" | jq -r '.message') == "Not Found" ]]; then
+              echo "Creating new release for $tag"
+              release_info=$(curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
+                -d "{\"tag_name\":\"$tag\",\"name\":\"$title\",\"body\":\"## Tebako runtime packages\n\nTebako version: $version\nBuild date: $tag\n\n\"}" \
+                "https://api.github.com/repos/$RUNTIME_REPO/releases")
+            fi
+
+            echo "$release_info"
+          }
+
+          # Get today's date for release tag
+          today=$(date +%Y-%m-%d)
+          release_title="Tebako runtime packages $today"
+
+          # Get or create the release
+          release_info=$(get_or_create_release "$today" "$release_title" "$TEBAKO_VERSION")
+          release_id=$(echo "$release_info" | jq -r '.id')
+
+          # Generate release notes sections
+          windows_exes=""
+          macos_exes=""
+          ubuntu_exes=""
+          alpine_exes=""
+
+          # Upload each runtime package
+          for package in runtime-packages/*; do
+            filename=$(basename "$package")
+
+            # Check if asset already exists and delete it if force rebuild
+            if [[ "${{ github.event.inputs.force_rebuild }}" == "true" ]]; then
+              assets=$(curl -s -H "Authorization: token $GITHUB_TOKEN" \
+                "https://api.github.com/repos/$RUNTIME_REPO/releases/$release_id/assets")
+
+              asset_id=$(echo "$assets" | jq -r ".[] | select(.name == \"$filename\") | .id")
+
+              if [[ -n "$asset_id" && "$asset_id" != "null" ]]; then
+                echo "Deleting existing asset: $filename (ID: $asset_id)"
+                curl -s -X DELETE -H "Authorization: token $GITHUB_TOKEN" \
+                  "https://api.github.com/repos/$RUNTIME_REPO/releases/assets/$asset_id"
+              fi
+            fi
+
+            # Upload the asset
+            echo "Uploading $filename to release $release_id"
+            upload_url=$(echo "$release_info" | jq -r '.upload_url' | sed 's/{?name,label}//')
+
+            curl -s -X POST -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$package" \
+              "$upload_url?name=$filename"
+
+            # Add to appropriate section in release notes
+            if [[ "$filename" == *"windows"* ]]; then
+              windows_exes="$windows_exes\n- $filename"
+            elif [[ "$filename" == *"macos"* ]]; then
+              macos_exes="$macos_exes\n- $filename"
+            elif [[ "$filename" == *"ubuntu"* ]]; then
+              ubuntu_exes="$ubuntu_exes\n- $filename"
+            elif [[ "$filename" == *"alpine"* ]]; then
+              alpine_exes="$alpine_exes\n- $filename"
+            fi
+          done
+
+          # Update release notes
+          release_body="## Tebako runtime packages\n\nTebako version: $TEBAKO_VERSION\nBuild date: $today\n"
+
+          if [[ -n "$windows_exes" ]]; then
+            release_body="$release_body\n### Windows executables$windows_exes\n"
+          fi
+
+          if [[ -n "$macos_exes" ]]; then
+            release_body="$release_body\n### MacOS executables$macos_exes\n"
+          fi
+
+          if [[ -n "$ubuntu_exes" ]]; then
+            release_body="$release_body\n### Ubuntu executables$ubuntu_exes\n"
+          fi
+
+          if [[ -n "$alpine_exes" ]]; then
+            release_body="$release_body\n### Alpine executables$alpine_exes\n"
+          fi
+
+          # Update the release
+          curl -s -X PATCH -H "Authorization: token $GITHUB_TOKEN" \
+            -d "{\"body\":\"$release_body\"}" \
+            "https://api.github.com/repos/$RUNTIME_REPO/releases/$release_id"
