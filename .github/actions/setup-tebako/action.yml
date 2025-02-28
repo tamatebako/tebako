@@ -81,9 +81,6 @@ runs:
   steps:
     - name: Prepare compiler environment
       shell: sh
-# [TODO]
-# This is really bad selector:
-#     if [ "${{ runner.arch }}" = "X64" ]; then
       run: |
         OS=$(uname -s)
         if [ "$OS" = "Linux" ] && [ -e "/etc/lsb-release" ]; then
@@ -151,13 +148,13 @@ runs:
         gem install bundler
 
     - name: Select XCode
-      if: runner.os == 'macOS'
+      if: env.TOOLCHAIN == 'macos-arm64' || env.TOOLCHAIN == 'macos-x86_64'
       uses: maxim-lobanov/setup-xcode@v1
       with:
         xcode-version: ${{ env.XCODE_VERSION }}
 
     - name: Install brew packages
-      if: runner.os == 'macOS'
+      if: env.TOOLCHAIN == 'macos-arm64' || env.TOOLCHAIN == 'macos-x86_64'
       shell: bash
       run: |
         if [ ! -f Brewfile ]; then
@@ -203,9 +200,9 @@ runs:
       shell: sh
       run: gem install tebako
 
-    - name: Install tebako
+    - name: Install tebako on MSys
       if: env.TOOLCHAIN == 'msys' && inputs.install != 'off'
-      shell: sh
+      shell: msys2 {0}
       run: |
         git config --global core.longpaths true
         gem install tebako
@@ -221,9 +218,9 @@ runs:
       shell: sh
       run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
 
-    - name: Create cache key
+    - name: Create cache key on MSys
       if: env.TOOLCHAIN == 'msys' && inputs.cache != 'off'
-      id: cache-key-mingw
+      id: cache-key-msys
       shell: msys2 {0}
       run: echo "key=$(tebako hash)" >> $GITHUB_OUTPUT
 
@@ -232,5 +229,5 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ inputs.cache_path }}
-        key: ${{ env.TOOLCHAIN }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}-${{ steps.cache-key-mingw.outputs.key }}-v${{ inputs.cache_ver }}
+        key: ${{ env.TOOLCHAIN }}-${{ env.CC }}-${{ steps.cache-key.outputs.key }}-${{ steps.cache-key-msys.outputs.key }}-v${{ inputs.cache_ver }}
         fail-on-cache-miss: inputs.cache == 'use'
