@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -325,6 +325,35 @@ RSpec.describe Tebako::OptionsManager do
       it "returns the cached value" do
         options_manager.instance_variable_set(:@prefix, "cached_value")
         expect(options_manager.prefix).to eq("cached_value")
+      end
+    end
+  end
+
+  describe "#prefix_within_root?" do
+    context "when the prefix path is within the root directory" do
+      let(:options) { { "root" => "relative/path", "prefix" => "relative/path/prefix" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns true" do
+        expect(options_manager.prefix_within_root?).to be(true)
+      end
+    end
+
+    context "when the prefix path is outside the root directory" do
+      let(:options) { { "root" => "relative/path", "prefix" => "relative/otherpath/prefix" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns false" do
+        expect(options_manager.prefix_within_root?).to be(false)
+      end
+    end
+
+    context "when the prefix path is outside the root directory (funcky case)" do
+      let(:options) { { "root" => "relative/path/prefix-dir", "prefix" => "relative/path/prefix" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns false" do
+        expect(options_manager.prefix_within_root?).to be(false)
       end
     end
   end
