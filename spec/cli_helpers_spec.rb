@@ -132,6 +132,62 @@ RSpec.describe Tebako::CliHelpers do
         expect { do_press(options_manager) }.to output(/WARNING/).to_stdout
       end
     end
+  end
+
+  describe "#check_warnings" do
+    let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+    context "when mode is runtime" do
+      before do
+        options["mode"] = "runtime"
+      end
+
+      it "does not display any warnings" do
+        expect { check_warnings(options_manager) }.not_to output.to_stdout
+      end
+    end
+
+    context "when package is within root" do
+      before do
+        options["mode"] = "both"
+        allow(options_manager).to receive(:package_within_root?).and_return(true)
+        allow(options_manager).to receive(:prefix_within_root?).and_return(false)
+        allow(self).to receive(:sleep)
+      end
+
+      it "displays package warning" do
+        expect { check_warnings(options_manager) }.to output(Tebako::CliHelpers::WARN).to_stdout
+      end
+    end
+
+    context "when prefix is within root" do
+      before do
+        options["mode"] = "both"
+        allow(options_manager).to receive(:package_within_root?).and_return(false)
+        allow(options_manager).to receive(:prefix_within_root?).and_return(true)
+        allow(self).to receive(:sleep)
+      end
+
+      it "displays prefix warning" do
+        expect { check_warnings(options_manager) }.to output(Tebako::CliHelpers::WARN2).to_stdout
+      end
+    end
+
+    context "when both package and prefix are within root" do
+      before do
+        options["mode"] = "both"
+        allow(options_manager).to receive(:package_within_root?).and_return(true)
+        allow(options_manager).to receive(:prefix_within_root?).and_return(true)
+        allow(self).to receive(:sleep)
+      end
+
+      it "displays both warnings" do
+        expect do
+          check_warnings(options_manager)
+        end.to output(Tebako::CliHelpers::WARN + Tebako::CliHelpers::WARN2).to_stdout
+      end
+    end
+  end
 
   describe "#do_setup" do
     let(:options_manager) { Tebako::OptionsManager.new(options) }
