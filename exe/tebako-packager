@@ -67,21 +67,6 @@ begin
     Tebako::Packager.pass1a(ARGV[2])
     Tebako::Packager.stash(ARGV[4], ARGV[5], ARGV[2], ruby_ver)
     Tebako::Packager.pass2(ARGV[1], ARGV[2], ARGV[3], ruby_ver)
-
-  when "finalize"
-    #       ARGV[0] -- command
-    #       ARGV[1] -- RUBY_SOURCE_DIR
-    #       ARGV[2] -- APP_NAME
-    #       ARGV[3] -- RUBY_VER
-    #       ARGV[4] -- patchelf executable
-    #       ARGV[5] -- WITH_PATHELF
-    unless ARGV.length == 6
-      raise Tebako::Error,
-            "tebako-packager finalize command expects 6 arguments, #{ARGV.length} has been provided."
-    end
-    ruby_ver = Tebako::RubyVersion.new(ARGV[3])
-    with_patchelf = ARGV[5].casecmp("ON").zero? || ARGV[5].casecmp("YES").zero?
-    Tebako::Packager.finalize(ARGV[1], ARGV[2], ruby_ver, with_patchelf ? ARGV[4] : nil)
   else
     raise Tebako::Error, "tebako-packager cannot process #{ARGV[0]} command"
   end

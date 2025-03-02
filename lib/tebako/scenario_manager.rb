@@ -66,6 +66,14 @@ module Tebako
       @linux
     end
 
+    def linux_gnu?
+      @linux && !@musl
+    end
+
+    def linux_musl?
+      @linux && @musl
+    end
+
     def m_files
       # [TODO]
       # Ninja generates incorrect script for tebako press target -- gets lost in a chain custom targets

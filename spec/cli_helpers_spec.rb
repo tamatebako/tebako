@@ -78,6 +78,7 @@ RSpec.describe Tebako::CliHelpers do
         allow(self).to receive(:system).and_return(true)
         allow(Tebako::Codegen).to receive(:generate_tebako_version_h).and_return(true)
         allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
+        allow(Tebako::Packager).to receive(:finalize)
 
         expect { do_press(options_manager) }.not_to raise_error
       end
@@ -102,6 +103,7 @@ RSpec.describe Tebako::CliHelpers do
         allow(Tebako::Codegen).to receive(:generate_tebako_version_h).and_return(true)
         allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
         allow(Tebako::Codegen).to receive(:generate_package_header).and_return(true)
+        allow(Tebako::Packager).to receive(:finalize)
 
         expect { do_press(options_manager) }.not_to raise_error
       end
@@ -127,6 +129,7 @@ RSpec.describe Tebako::CliHelpers do
         allow(Tebako::Codegen).to receive(:generate_tebako_version_h).and_return(true)
         allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp).and_return(true)
         allow(Tebako::Codegen).to receive(:generate_package_header).and_return(true)
+        allow(Tebako::Packager).to receive(:finalize)
 
         allow(self).to receive(:sleep).with(any_args).and_return(nil)
         expect { do_press(options_manager) }.to output(/WARNING/).to_stdout
@@ -207,6 +210,149 @@ RSpec.describe Tebako::CliHelpers do
         allow(FileUtils).to receive(:rm_rf)
         allow(self).to receive(:system).and_return(false)
         expect { do_setup(options_manager) }.to raise_error(Tebako::Error)
+      end
+    end
+  end
+
+  describe "#finalize" do
+    let(:options_manager) { Tebako::OptionsManager.new(options) }
+    let(:scenario_manager) { Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance) }
+    let(:patchelf_path) { File.join(options_manager.deps_bin_dir, "patchelf") }
+
+    before do
+      allow(Tebako::Packager).to receive(:finalize)
+    end
+
+    context "when patchelf is enabled and running on GNU/Linux" do
+      before do
+        options["patchelf"] = true
+        allow(scenario_manager).to receive(:linux_gnu?).and_return(true)
+      end
+
+      it "calls Packager.finalize with patchelf path" do
+        expect(Tebako::Packager).to receive(:finalize).with(
+          options_manager.ruby_src_dir,
+          options_manager.package,
+          options_manager.rv,
+          patchelf_path
+        )
+        finalize(options_manager, scenario_manager)
+      end
+    end
+
+    context "when patchelf is disabled" do
+      before do
+        options["patchelf"] = false
+        allow(scenario_manager).to receive(:linux_gnu?).and_return(true)
+      end
+
+      it "calls Packager.finalize without patchelf path" do
+        expect(Tebako::Packager).to receive(:finalize).with(
+          options_manager.ruby_src_dir,
+          options_manager.package,
+          options_manager.rv,
+          nil
+        )
+        finalize(options_manager, scenario_manager)
+      end
+    end
+
+    context "when not running on GNU/Linux" do
+      before do
+        options["patchelf"] = true
+        allow(scenario_manager).to receive(:linux_gnu?).and_return(false)
+      end
+
+      it "calls Packager.finalize without patchelf path" do
+        expect(Tebako::Packager).to receive(:finalize).with(
+          options_manager.ruby_src_dir,
+          options_manager.package,
+          options_manager.rv,
+          nil
+        )
+        finalize(options_manager, scenario_manager)
+      end
+    end
+  end
+
+  describe "#do_press_runtime" do
+    let(:options_manager) { Tebako::OptionsManager.new(options) }
+    let(:scenario_manager) { Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance) }
+
+    before do
+      allow(Tebako::Codegen).to receive(:generate_tebako_version_h)
+      allow(Tebako::Codegen).to receive(:generate_tebako_fs_cpp)
+      allow(Tebako::Codegen).to receive(:generate_deploy_rb)
+      allow(Tebako::Codegen).to receive(:generate_stub_rb)
+      allow(self).to receive(:system).and_return(true)
+      allow(self).to receive(:finalize)
+    end
+
+    context "when mode is 'both'" do
+      before { options["mode"] = "both" }
+
+      it "generates files and executes commands" do
+        expect(Tebako::Codegen).to receive(:generate_tebako_version_h)
+        expect(Tebako::Codegen).to receive(:generate_tebako_fs_cpp)
+        expect(Tebako::Codegen).to receive(:generate_deploy_rb)
+        expect(Tebako::Codegen).to receive(:generate_stub_rb)
+        expect(self).to receive(:system).exactly(2).times.and_return(true)
+        expect(self).to receive(:finalize)
+        do_press_runtime(options_manager, scenario_manager)
+      end
+    end
+
+    context "when mode is 'runtime'" do
+      before { options["mode"] = "runtime" }
+
+      it "generates files and executes commands" do
+        expect(Tebako::Codegen).to receive(:generate_tebako_version_h)
+        expect(Tebako::Codegen).to receive(:generate_tebako_fs_cpp)
+        expect(Tebako::Codegen).to receive(:generate_deploy_rb)
+        expect(Tebako::Codegen).to receive(:generate_stub_rb)
+        expect(self).to receive(:system).exactly(2).times.and_return(true)
+        expect(self).to receive(:finalize)
+        do_press_runtime(options_manager, scenario_manager)
+      end
+    end
+
+    context "when mode is 'bundle'" do
+      before { options["mode"] = "bundle" }
+
+      it "generates files and executes commands" do
+        expect(Tebako::Codegen).to receive(:generate_tebako_version_h)
+        expect(Tebako::Codegen).to receive(:generate_tebako_fs_cpp)
+        expect(Tebako::Codegen).to receive(:generate_deploy_rb)
+        expect(Tebako::Codegen).not_to receive(:generate_stub_rb)
+        expect(self).to receive(:system).exactly(2).times.and_return(true)
+        expect(self).to receive(:finalize)
+        do_press_runtime(options_manager, scenario_manager)
+      end
+    end
+
+    context "when mode is 'application'" do
+      before { options["mode"] = "application" }
+
+      it "returns early without doing anything" do
+        expect(Tebako::Codegen).not_to receive(:generate_tebako_version_h)
+        expect(self).not_to receive(:system)
+        expect(self).not_to receive(:finalize)
+        do_press_runtime(options_manager, scenario_manager)
+      end
+    end
+
+    context "when system commands fail" do
+      before { options["mode"] = "bundle" }
+
+      it "raises error when press_cfg_cmd fails" do
+        allow(self).to receive(:system).and_return(false)
+        expect { do_press_runtime(options_manager, scenario_manager) }.to raise_error(Tebako::Error)
+      end
+
+      it "raises error when press_build_cmd fails" do
+        allow(self).to receive(:system).with(anything, press_cfg_cmd(options_manager)).and_return(true)
+        allow(self).to receive(:system).with(anything, press_build_cmd(options_manager)).and_return(false)
+        expect { do_press_runtime(options_manager, scenario_manager) }.to raise_error(Tebako::Error)
       end
     end
   end

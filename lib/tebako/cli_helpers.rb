@@ -103,6 +103,7 @@ module Tebako
       merged_env = ENV.to_h.merge(scenario_manager.b_env)
       Tebako.packaging_error(103) unless system(merged_env, press_cfg_cmd(options_manager))
       Tebako.packaging_error(104) unless system(merged_env, press_build_cmd(options_manager))
+      finalize(options_manager, scenario_manager)
     end
 
     def do_setup(options_manager)
@@ -124,6 +125,12 @@ module Tebako
       return unless %w[both runtime].include?(options_manager.mode)
 
       Tebako::Codegen.generate_stub_rb(options_manager)
+    end
+
+    def finalize(options_manager, scenario_manager)
+      use_patchelf = options_manager.patchelf? && scenario_manager.linux_gnu?
+      patchelf = use_patchelf ? "#{options_manager.deps_bin_dir}/patchelf" : nil
+      Tebako::Packager.finalize(options_manager.ruby_src_dir, options_manager.package, options_manager.rv, patchelf)
     end
 
     def options_from_tebafile(tebafile)

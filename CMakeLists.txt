@@ -436,7 +436,7 @@ if (${SETUP_MODE})
 
   add_dependencies(tebako-fs packaged_filesystem)
 
-  add_custom_target(tebako COMMAND ruby ${EXE}/tebako-packager finalize ${RUBY_SOURCE_DIR} ${APP_NAME} ${RUBY_VER} ${DEPS_BIN_DIR}/patchelf ${WITH_PATCHELF})
+  add_custom_target(tebako COMMAND ${CMAKE_COMMAND} -E true)
   add_dependencies(tebako setup tebako-fs)
 
 endif(${SETUP_MODE})
