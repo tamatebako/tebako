@@ -70,8 +70,11 @@ module Tebako
 
     WARN
 
-    def check_warning(warn)
-      puts warn
+    def check_warnings(options_manager)
+      return unless options_manager.mode != "runtime"
+
+      puts WARN if options_manager.package_within_root?
+      puts WARN2 if options_manager.prefix_within_root?
       sleep 5
     end
 
@@ -79,9 +82,7 @@ module Tebako
       scenario_manager = Tebako::ScenarioManager.new(options_manager.root, options_manager.fs_entrance)
       scenario_manager.configure_scenario
       options_manager.process_gemfile(scenario_manager.gemfile_path) if scenario_manager.with_gemfile
-
-      check_warning(WARN) if options_manager.package_within_root?
-      check_warning(WARN2) if options_manager.prefix_within_root?
+      check_warnings(options_manager)
       puts options_manager.press_announce(scenario_manager.msys?)
 
       do_press_runtime(options_manager, scenario_manager)

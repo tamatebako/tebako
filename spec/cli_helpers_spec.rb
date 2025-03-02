@@ -132,7 +132,6 @@ RSpec.describe Tebako::CliHelpers do
         expect { do_press(options_manager) }.to output(/WARNING/).to_stdout
       end
     end
-  end
 
   describe "#do_setup" do
     let(:options_manager) { Tebako::OptionsManager.new(options) }
