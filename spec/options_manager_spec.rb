@@ -73,14 +73,6 @@ RSpec.describe Tebako::OptionsManager do
     end
   end
 
-  describe "#deps_lib_dir" do
-    let(:options_manager) { Tebako::OptionsManager.new({}) }
-    it "returns the correct lib directory path" do
-      allow(options_manager).to receive(:prefix).and_return("/fake/prefix")
-      expect(options_manager.deps_lib_dir).to eq("/fake/prefix/deps/lib")
-    end
-  end
-
   describe "#data_bundle_file" do
     let(:options_manager) { Tebako::OptionsManager.new({}) }
     it "returns the correct data bundle file path" do
@@ -94,6 +86,14 @@ RSpec.describe Tebako::OptionsManager do
     it "returns the correct data stub file path" do
       allow(options_manager).to receive(:data_bin_dir).and_return("/path/to/data_bin")
       expect(options_manager.data_stub_file).to eq("/path/to/data_bin/fs.bin")
+    end
+  end
+
+  describe "#deps_lib_dir" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+    it "returns the correct lib directory path" do
+      allow(options_manager).to receive(:prefix).and_return("/fake/prefix")
+      expect(options_manager.deps_lib_dir).to eq("/fake/prefix/deps/lib")
     end
   end
 
@@ -209,8 +209,6 @@ RSpec.describe Tebako::OptionsManager do
   end
 
   describe "#package" do
-    let(:options_manager) { OptionsManager.new(options) }
-
     context 'when @options["output"] is set' do
       let(:options) { { "output" => "custom_package" } }
       let(:options_manager) { Tebako::OptionsManager.new(options) }
@@ -218,15 +216,55 @@ RSpec.describe Tebako::OptionsManager do
       it "returns the package option" do
         expect(options_manager.package).to eq(File.expand_path("custom_package"))
       end
+
+      context "with Windows-style paths" do
+        let(:options) { { "output" => "C:/path/to/package" } }
+
+        it "converts backslashes to forward slashes" do
+          expect(options_manager.package).to eq("C:/path/to/package")
+        end
+      end
     end
 
     context 'when @options["output"] is not set' do
-      let(:options) { { "entry-point" => "app.rb" } }
-      let(:options_manager) { Tebako::OptionsManager.new(options) }
+      context 'when mode is "runtime"' do
+        let(:options) { { "mode" => "runtime" } }
+        let(:options_manager) { Tebako::OptionsManager.new(options) }
 
-      it "returns the default package name based on entry-point" do
-        expected_package = File.join(Dir.pwd, "app")
-        expect(options_manager.package).to eq(expected_package)
+        it "returns tebako-runtime in current directory" do
+          expected_package = File.join(Dir.pwd, "tebako-runtime")
+          expect(options_manager.package).to eq(expected_package)
+        end
+      end
+
+      context 'when mode is "bundle" or not set' do
+        let(:options) { { "entry-point" => "app.rb" } }
+        let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+        it "returns package name based on entry-point without extension" do
+          expected_package = File.join(Dir.pwd, "app")
+          expect(options_manager.package).to eq(expected_package)
+        end
+      end
+
+      context 'when mode is "application"' do
+        let(:options) { { "mode" => "application", "entry-point" => "app.rb" } }
+        let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+        it "returns package name based on entry-point without extension" do
+          expected_package = File.join(Dir.pwd, "app")
+          expect(options_manager.package).to eq(expected_package)
+        end
+      end
+
+      context 'when mode is "both"' do
+        let(:options) { { "mode" => "both", "entry-point" => "app.rb" } }
+        let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+        it "returns package name based on entry-point without extension" do
+          expected_package = File.join(Dir.pwd, "app")
+          expect(options_manager.package).to eq(expected_package)
+        end
       end
     end
 
@@ -239,7 +277,7 @@ RSpec.describe Tebako::OptionsManager do
         allow(options_manager).to receive(:relative?).and_return(true)
       end
 
-      it "returns the absolute package path" do
+      it "joins with fs_current to create absolute path" do
         expected_package = File.join("/current/fs/path", "relative/path/to/package")
         expect(options_manager.package).to eq(expected_package)
       end
@@ -253,7 +291,7 @@ RSpec.describe Tebako::OptionsManager do
         allow(options_manager).to receive(:relative?).and_return(false)
       end
 
-      it "returns the absolute package path" do
+      it "uses the path as is" do
         expect(options_manager.package).to eq("/absolute/path/to/package")
       end
     end
@@ -466,7 +504,7 @@ RSpec.describe Tebako::OptionsManager do
       end
       let(:options_manager) { Tebako::OptionsManager.new(options) }
       let(:root) { File.join(Dir.pwd, options["root"]) }
-      let(:pckg) { File.join(Dir.pwd, "main") }
+      let(:pckg) { File.join(Dir.pwd, "tebako-runtime") }
       let(:prefix) { File.expand_path("~/.tebako") }
 
       it "returns the correct announcement with default cwd" do
@@ -489,19 +527,6 @@ RSpec.describe Tebako::OptionsManager do
       allow(options_manager).to receive(:ref).and_return("ref")
       expect(options_manager.press_announce_ref(true)).to eq(" referencing runtime at 'ref'")
       expect(options_manager.press_announce_ref(false)).to eq("")
-    end
-  end
-
-  describe "#ref" do
-    it "returns 'tebako-runtime' if no ref is specified" do
-      options_manager = described_class.new({})
-      expect(options_manager.ref).to eq("tebako-runtime")
-    end
-
-    it "returns the given ref, converting backslashes to forward slashes" do
-      options = { "ref" => "some\\path\\ref" }
-      options_manager = described_class.new(options)
-      expect(options_manager.ref).to eq("some/path/ref")
     end
   end
 
@@ -572,6 +597,20 @@ RSpec.describe Tebako::OptionsManager do
       end
     end
   end
+
+  describe "#ref" do
+    it "returns 'tebako-runtime' if no ref is specified" do
+      options_manager = described_class.new({})
+      expect(options_manager.ref).to eq("tebako-runtime")
+    end
+
+    it "returns the given ref, converting backslashes to forward slashes" do
+      options = { "ref" => "some\\path\\ref" }
+      options_manager = described_class.new(options)
+      expect(options_manager.ref).to eq("some/path/ref")
+    end
+  end
+
   describe "#relative?" do
     let(:options_manager) { Tebako::OptionsManager.new({}) }
     it "returns true for a relative path" do
