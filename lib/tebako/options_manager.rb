@@ -165,7 +165,7 @@ module Tebako
 
     def package
       package = if @options["output"].nil?
-                  File.join(Dir.pwd, File.basename(fs_entrance, ".*"))
+                  File.join(Dir.pwd, mode == "runtime" ? "tebako-runtime" : File.basename(fs_entrance, ".*"))
                 else
                   @options["output"]&.gsub("\\", "/")
                 end
