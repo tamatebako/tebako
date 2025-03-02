@@ -180,6 +180,10 @@ module Tebako
       folder_within_root?(package)
     end
 
+    def patchelf?
+      @options["patchelf"]
+    end
+
     def prefix
       @prefix ||= if @options["prefix"].nil?
                     handle_nil_prefix

@@ -254,6 +254,70 @@ RSpec.describe Tebako::ScenarioManager do
     end
   end
 
+  describe "#linux_gnu?" do
+    context "when running on GNU/Linux" do
+      before do
+        stub_const("RUBY_PLATFORM", "x86_64-linux-gnu")
+      end
+
+      it "returns true" do
+        expect(scenario_manager.linux_gnu?).to be true
+      end
+    end
+
+    context "when running on Linux musl" do
+      before do
+        stub_const("RUBY_PLATFORM", "x86_64-linux-musl")
+      end
+
+      it "returns false" do
+        expect(scenario_manager.linux_gnu?).to be false
+      end
+    end
+
+    context "when not running on Linux" do
+      before do
+        stub_const("RUBY_PLATFORM", "darwin")
+      end
+
+      it "returns false" do
+        expect(scenario_manager.linux_gnu?).to be false
+      end
+    end
+  end
+
+  describe "#linux_musl?" do
+    context "when running on Linux musl" do
+      before do
+        stub_const("RUBY_PLATFORM", "x86_64-linux-musl")
+      end
+
+      it "returns true" do
+        expect(scenario_manager.linux_musl?).to be true
+      end
+    end
+
+    context "when running on GNU/Linux" do
+      before do
+        stub_const("RUBY_PLATFORM", "x86_64-linux-gnu")
+      end
+
+      it "returns false" do
+        expect(scenario_manager.linux_musl?).to be false
+      end
+    end
+
+    context "when not running on Linux" do
+      before do
+        stub_const("RUBY_PLATFORM", "darwin")
+      end
+
+      it "returns false" do
+        expect(scenario_manager.linux_musl?).to be false
+      end
+    end
+  end
+
   describe "#macos?" do
     context "when running on macOS" do
       before do

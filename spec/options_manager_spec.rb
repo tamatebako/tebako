@@ -217,9 +217,9 @@ RSpec.describe Tebako::OptionsManager do
         expect(options_manager.package).to eq(File.expand_path("custom_package"))
       end
 
-      context "with Windows-style paths" do
-        let(:options) { { "output" => "C:/path/to/package" } }
-
+      # requires platform to have cygpath
+      context "with Windows-style paths", if: Gem.win_platform? do
+        let(:options) { { "output" => "C:\\path\\to\\package" } }
         it "converts backslashes to forward slashes" do
           expect(options_manager.package).to eq("C:/path/to/package")
         end
@@ -722,6 +722,35 @@ RSpec.describe Tebako::OptionsManager do
       # Change deps to verify we're using cached value
       allow(options_manager).to receive(:deps).and_return("/different/deps")
       expect(options_manager.stash_dir_all).to eq(first_call)
+    end
+  end
+
+  describe "#patchelf?" do
+    context "when patchelf option is set to true" do
+      let(:options) { { "patchelf" => true } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns true" do
+        expect(options_manager.patchelf?).to be true
+      end
+    end
+
+    context "when patchelf option is set to false" do
+      let(:options) { { "patchelf" => false } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns false" do
+        expect(options_manager.patchelf?).to be false
+      end
+    end
+
+    context "when patchelf option is not set" do
+      let(:options) { {} }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns nil" do
+        expect(options_manager.patchelf?).to be_nil
+      end
     end
   end
 
