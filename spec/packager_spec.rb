@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -27,6 +27,7 @@
 
 require "fileutils"
 require_relative "../lib/tebako/packager"
+require_relative "../lib/tebako/ruby_version"
 
 # rubocop:disable Metrics/BlockLength
 RSpec.describe Tebako::Packager do
@@ -102,35 +103,43 @@ RSpec.describe Tebako::Packager do
     let(:patchelf) { "/usr/bin/patchelf" }
     let(:ruby_builder) { instance_double(Tebako::RubyBuilder) }
 
+    let(:output_type) { "runtime package" }
+
     before do
       allow(Tebako::RubyBuilder).to receive(:new).and_return(ruby_builder)
       allow(ruby_builder).to receive(:target_build)
       allow_any_instance_of(Tebako::ScenarioManagerBase).to receive(:exe_suffix).and_return("")
       allow(Tebako::Packager).to receive(:patchelf)
-      allow(Tebako::Stripper).to receive(:strip)
+      allow(Tebako::Stripper).to receive(:strip_file)
     end
 
     it "creates a new RubyBuilder with the correct parameters" do
       expect(Tebako::RubyBuilder).to receive(:new).with(ruby_ver, src_dir).and_return(ruby_builder)
-      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf)
+      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf, output_type)
     end
 
-    it "calls target_build on the RubyBuilder" do
-      expect(ruby_builder).to receive(:target_build)
-      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf)
+    it "calls target_build on the RubyBuilder with correct output_type" do
+      expect(ruby_builder).to receive(:target_build).with(output_type)
+      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf, output_type)
     end
 
     it "calls patchelf with the correct parameters" do
       src_name = File.join(src_dir, "ruby")
       expect(Tebako::Packager).to receive(:patchelf).with(src_name, patchelf)
-      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf)
+      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf, output_type)
     end
 
     it "calls strip_file with the correct parameters" do
       src_name = File.join(src_dir, "ruby")
       package_name = app_name.to_s
       expect(Tebako::Stripper).to receive(:strip_file).with(src_name, package_name)
-      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf)
+      Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf, output_type)
+    end
+
+    it "prints the correct completion message" do
+      expect { Tebako::Packager.finalize(src_dir, app_name, ruby_ver, patchelf, output_type) }.to output(
+        /Created tebako #{output_type} at "#{app_name}"/
+      ).to_stdout
     end
   end
 
@@ -262,6 +271,7 @@ RSpec.describe Tebako::Packager do
     before do
       allow(Tebako::Packager::PatchHelpers).to receive(:recreate)
       allow(FileUtils).to receive(:cp_r)
+      allow_any_instance_of(Tebako::ScenarioManagerBase).to receive(:ncores).and_return(4)
     end
 
     it "recreates the source directory" do

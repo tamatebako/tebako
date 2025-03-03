@@ -93,17 +93,17 @@ module Tebako
         patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
       end
 
-      def finalize(src_dir, app_name, ruby_ver, patchelf)
+      def finalize(src_dir, app_name, ruby_ver, patchelf, output_type)
         puts "-- Running finalize script"
 
-        RubyBuilder.new(ruby_ver, src_dir).target_build
+        RubyBuilder.new(ruby_ver, src_dir).target_build(output_type)
         exe_suffix = ScenarioManagerBase.new.exe_suffix
         src_name = File.join(src_dir, "ruby#{exe_suffix}")
         patchelf(src_name, patchelf)
         package_name = "#{app_name}#{exe_suffix}"
         # strip_or_copy(os_type, src_name, package_name)
         Tebako::Stripper.strip_file(src_name, package_name)
-        puts "Created tebako package at \"#{package_name}\""
+        puts "Created tebako #{output_type} at \"#{package_name}\""
       end
 
       # Init

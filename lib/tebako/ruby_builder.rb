@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -50,8 +50,8 @@ module Tebako
     end
 
     # Final build of tebako package
-    def target_build
-      puts "   ... building tebako package"
+    def target_build(output_type)
+      puts "   ... building tebako #{output_type}"
       Dir.chdir(@src_dir) do
         BuildHelpers.run_with_capture(["make", "ruby", "-j#{@ncores}"]) if @ruby_ver.ruby3x?
         BuildHelpers.run_with_capture(["make", "-j#{@ncores}"])

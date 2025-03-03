@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -130,7 +130,8 @@ module Tebako
     def finalize(options_manager, scenario_manager)
       use_patchelf = options_manager.patchelf? && scenario_manager.linux_gnu?
       patchelf = use_patchelf ? "#{options_manager.deps_bin_dir}/patchelf" : nil
-      Tebako::Packager.finalize(options_manager.ruby_src_dir, options_manager.package, options_manager.rv, patchelf)
+      Tebako::Packager.finalize(options_manager.ruby_src_dir, options_manager.package,
+                                options_manager.rv, patchelf, options_manager.output_type_first)
     end
 
     def options_from_tebafile(tebafile)

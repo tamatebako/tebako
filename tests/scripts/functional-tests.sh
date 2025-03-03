@@ -63,7 +63,7 @@ press_runner_app() {
    fi
 
 # Check the first and the last messages expected from CMake script
-   assertContains "$result" "Created tebako package at"
+   assertContains "$result" "Created tebako application package at"
 }
 
 
@@ -217,7 +217,7 @@ test_AU_runtime() {
 
       assertEquals 0 "${PIPESTATUS[0]}"
       assertContains "$result" "Running tebako press script"
-      assertContains "$result" "Created tebako package at"
+      assertContains "$result" "Created tebako runtime package at"
    fi
 }
 

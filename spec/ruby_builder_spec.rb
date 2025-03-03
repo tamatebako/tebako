@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -37,6 +37,7 @@ RSpec.describe Tebako::RubyBuilder do
     let(:src_dir) { "/path/to/src" }
     let(:ncores) { 4 }
     let(:builder) { described_class.new(Tebako::RubyVersion.new(ruby_ver), src_dir) }
+    let(:output_type) { "package" }
 
     before do
       allow_any_instance_of(Tebako::ScenarioManagerBase).to receive(:ncores).and_return(ncores)
@@ -44,25 +45,35 @@ RSpec.describe Tebako::RubyBuilder do
       allow(Dir).to receive(:chdir).with(src_dir).and_yield
     end
 
-    it "prints the building message" do
-      expect { builder.target_build }.to output(/building tebako package/).to_stdout
-    end
+    shared_examples "build behavior" do |type|
+      it "prints the correct building message" do
+        expect { builder.target_build(type) }.to output(/building tebako #{type}/).to_stdout
+      end
 
-    it "changes to the source directory" do
-      expect(Dir).to receive(:chdir).with(src_dir).and_yield
-      builder.target_build
-    end
+      it "changes to the source directory" do
+        expect(Dir).to receive(:chdir).with(src_dir).and_yield
+        builder.target_build(type)
+      end
 
-    context "when ruby version is 3.x" do
-      it "runs make ruby with the correct number of cores" do
-        expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "ruby", "-j#{ncores}"])
-        builder.target_build
+      context "when ruby version is 3.x" do
+        it "runs make ruby with the correct number of cores" do
+          expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "ruby", "-j#{ncores}"])
+          builder.target_build(type)
+        end
+      end
+
+      it "runs make with the correct number of cores" do
+        expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "-j#{ncores}"])
+        builder.target_build(type)
       end
     end
 
-    it "runs make with the correct number of cores" do
-      expect(Tebako::BuildHelpers).to receive(:run_with_capture).with(["make", "-j#{ncores}"])
-      builder.target_build
+    context "with 'package' output type" do
+      include_examples "build behavior", "package"
+    end
+
+    context "with 'runtime package' output type" do
+      include_examples "build behavior", "runtime package"
     end
   end
 
