@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -234,7 +234,8 @@ RSpec.describe Tebako::CliHelpers do
           options_manager.ruby_src_dir,
           options_manager.package,
           options_manager.rv,
-          patchelf_path
+          patchelf_path,
+          "package"
         )
         finalize(options_manager, scenario_manager)
       end
@@ -251,7 +252,8 @@ RSpec.describe Tebako::CliHelpers do
           options_manager.ruby_src_dir,
           options_manager.package,
           options_manager.rv,
-          nil
+          nil,
+          "package"
         )
         finalize(options_manager, scenario_manager)
       end
@@ -268,7 +270,8 @@ RSpec.describe Tebako::CliHelpers do
           options_manager.ruby_src_dir,
           options_manager.package,
           options_manager.rv,
-          nil
+          nil,
+          "package"
         )
         finalize(options_manager, scenario_manager)
       end

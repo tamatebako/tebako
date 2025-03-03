@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2023-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -61,7 +61,7 @@ module Tebako
       deploy
       FileUtils.rm_f(name)
       Tebako::Packager.mkdwarfs(@opts.deps_bin_dir, name, @opts.data_src_dir, codegen)
-      puts "Created tebako package at \"#{name}\""
+      puts "Created tebako #{@opts.output_type_second} at \"#{name}\""
     end
 
     def deploy

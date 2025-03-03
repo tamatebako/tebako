@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tebako
 #
@@ -35,7 +35,7 @@ RSpec.describe Tebako::PackagerLite do
     double("OptionsManager", stash_dir: "/tmp/stash", data_src_dir: "/tmp/src", data_pre_dir: "/tmp/pre",
                              data_bin_dir: "/tmp/bin", deps_bin_dir: "/tmp/deps_bin", mode: "both",
                              package: "test_package", rv: "3.2.5", ruby_ver: "3.2.5", root: "/", cwd: "/app",
-                             ruby_src_dir: "/tmp/ruby_src")
+                             ruby_src_dir: "/tmp/ruby_src", output_type_second: "application package")
   end
   let(:scenario_manager) { double("ScenarioManager", fs_entrance: "/entry") }
 
@@ -66,16 +66,26 @@ RSpec.describe Tebako::PackagerLite do
   end
 
   describe "#create_package" do
-    it "calls Packager methods to create the package" do
-      packager_lite = described_class.new(options_manager, scenario_manager)
+    let(:packager_lite) { described_class.new(options_manager, scenario_manager) }
+
+    before do
       allow(packager_lite).to receive(:codegen).and_return("codegen_result")
       allow(scenario_manager).to receive(:msys?).and_return(true)
       allow(Tebako::Packager).to receive(:create_def)
       allow(Tebako::Packager).to receive(:create_implib)
+    end
+
+    it "calls Packager methods to create the package" do
       packager_lite.create_package
       expect(FileUtils).to have_received(:rm_f).with("test_package.tebako")
       expect(Tebako::Packager).to have_received(:mkdwarfs).with("/tmp/deps_bin", "test_package.tebako", "/tmp/src",
                                                                 "codegen_result")
+    end
+
+    it "prints the correct completion message" do
+      expect { packager_lite.create_package }.to output(
+        /Created tebako application package at "test_package\.tebako"/
+      ).to_stdout
     end
   end
 

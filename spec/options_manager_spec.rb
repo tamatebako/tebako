@@ -787,6 +787,43 @@ RSpec.describe Tebako::OptionsManager do
       end
     end
   end
+
+  describe "#output_type_first" do
+    context "when mode is 'both'" do
+      let(:options) { { "mode" => "both" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns 'runtime package'" do
+        expect(options_manager.output_type_first).to eq("runtime package")
+      end
+    end
+
+    context "when mode is 'runtime'" do
+      let(:options) { { "mode" => "runtime" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns 'runtime package'" do
+        expect(options_manager.output_type_first).to eq("runtime package")
+      end
+    end
+
+    context "when mode is anything else" do
+      let(:options) { { "mode" => "bundle" } }
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "returns 'package'" do
+        expect(options_manager.output_type_first).to eq("package")
+      end
+    end
+  end
+
+  describe "#output_type_second" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+
+    it "returns 'application package'" do
+      expect(options_manager.output_type_second).to eq("application package")
+    end
+  end
 end
 
 # rubocop:enable Metrics/BlockLength
