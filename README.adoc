@@ -1504,4 +1504,5 @@ information.
 
 Copyright Ribose. All rights reserved.
 
-Tebako is released under the BSD 2-Clause License. See the LICENSE file for details.
+Tebako is released under the BSD 2-Clause License. See the
+link:LICENSE.md[LICENSE.md] file for details.
