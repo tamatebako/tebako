@@ -1,20 +1,38 @@
 = Tebako: An advanced image packager for interpretive languages
 
-Platform tests on GitHub:
-image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu amd64", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
-image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
-image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["macOS amd64", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
-image:https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml/badge.svg["Windows msys", link="https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml"]
+.Continuous Integration Status
+[cols="1,1,3"]
+|===
+|*Platform Tests* |Architecture |Status
 
-Platform tests on Cirrus:
-image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
+.2+|Ubuntu
+|amd64 | image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu amd64", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
+|arm64 |image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
 
-Tools tests on GitHub:
-image:https://github.com/tamatebako/tebako-ci-containers/actions/workflows/build-containers.yml/badge.svg["Tebako cobtainers", link="https://github.com/tamatebako/tebako-ci-containers/actions/workflows/build-containers.yml"]
+|Alpine
+|amd64 |image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
 
-Quality:
-image:https://github.com/tamatebako/tebako/actions/workflows/lint-and-rspec.yml/badge.svg["lint and rspec", link="https://github.com/tamatebako/tebako/actions/workflows/lint-and-rspec.yml"]
-image:https://codecov.io/gh/tamatebako/tebako/graph/badge.svg?token=XD3emQ5qsY["Tebako cli rspec coverage", link="https://codecov.io/gh/tamatebako/tebako"]
+|macOS
+|amd64 + arm64
+|image:https://github.com/tamatebako/tebako/actions/workflows/macos.yml/badge.svg["macOS amd64 + arm64", link="https://github.com/tamatebako/tebako/actions/workflows/macos.yml"]
+
+|Windows MSYS2
+|amd64 |image:https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml/badge.svg["Windows MSYS2", link="https://github.com/tamatebako/tebako/actions/workflows/windows-msys.yml"]
+
+3+|*Tools Tests*
+
+|Tebako containers
+| |image:https://github.com/tamatebako/tebako-ci-containers/actions/workflows/build-containers.yml/badge.svg["Tebako containers", link="https://github.com/tamatebako/tebako-ci-containers/actions/workflows/build-containers.yml"]
+
+3+|*Quality*
+
+|Lint and RSpec
+| |image:https://github.com/tamatebako/tebako/actions/workflows/lint-and-rspec.yml/badge.svg["Lint and RSpec", link="https://github.com/tamatebako/tebako/actions/workflows/lint-and-rspec.yml"]
+
+|Code Coverage
+| |image:https://codecov.io/gh/tamatebako/tebako/graph/badge.svg?token=XD3emQ5qsY["Tebako CLI RSpec coverage", link="https://codecov.io/gh/tamatebako/tebako"]
+|===
+
 
 == Purpose
 
@@ -56,6 +74,8 @@ architectures.
 
 3+| **Linux**
 | Ubuntu 20.04 | amd64, aarch64 | gcc/g+\+: 10; clang/clang++: 12
+| Ubuntu 22.04 | amd64, aarch64 | gcc/g+\+: 10; clang/clang++: 12
+| Ubuntu 24.04 | amd64, aarch64 | gcc/g+\+: 10; clang/clang++: 12
 | Alpine 3.17 | amd64 | gcc/g+\+: default; clang/clang++: default
 
 3+| **macOS**
@@ -131,7 +151,8 @@ macOS packages are forward portable across different macOS versions.
 A Tebako executable package built on macOS 13 (Ventura) can be executed on
 macOS 14 (Sonoma), but not vice versa.
 
-`x86_64` macOS packages can be run on Apple M (ARM) systems.
+macOS packages compiled on `x86_64` can be run on Apple M (ARM64/aarch64)
+systems.
 
 
 === Linux distributions using `musl`
