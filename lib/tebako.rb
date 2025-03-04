@@ -32,3 +32,4 @@ end
 
 require_relative "tebako/version"
 require_relative "tebako/error"
+require_relative "tebako/cli"

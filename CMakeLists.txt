@@ -367,7 +367,7 @@ ExternalProject_Add(${RUBY_PRJ}
   SOURCE_DIR ${RUBY_SOURCE_DIR}
   BUILD_IN_SOURCE true
   CONFIGURE_COMMAND ""
-  BUILD_COMMAND ruby -r${CMAKE_CURRENT_SOURCE_DIR}/lib/tebako -e "Tebako::Cli.start(['patch', 'pass1', '--ostype=${OSTYPE_TXT}', '--ruby-source-dir=${RUBY_SOURCE_DIR}', '--fs-mount-point=${FS_MOUNT_POINT}', '--data-src-dir=${DATA_SRC_DIR}', '--ruby-ver=${RUBY_VER}'])"
+  BUILD_COMMAND ruby ${EXE}/tebako patch pass1 --ostype=${OSTYPE_TXT} --ruby-source-dir=${RUBY_SOURCE_DIR} --fs-mount-point=${FS_MOUNT_POINT} --data-src-dir=${DATA_SRC_DIR} --ruby-ver=${RUBY_VER}
   # Make it for MacOS otherwise LDFLAGS are invalid
   # COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS_LIB_DIR}
   COMMAND ${GNU_BASH} -c "${RUBY_SOURCE_DIR}/configure  ${OPENSSL_RUBY_OPTION} ${LIBYAML_RUBY_OPTION} \
@@ -381,7 +381,7 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         --prefix=${DATA_SRC_DIR}              \
                                                         ${C_FLAGS_DEST}=\"${RUBY_C_FLAGS}\"   \
                                                         LDFLAGS=\"${RUBY_L_FLAGS}\""
-  COMMAND   ruby -r${CMAKE_CURRENT_SOURCE_DIR}/lib/tebako -e "Tebako::Cli.start(['patch', 'pass2', '--ostype=${OSTYPE_TXT}', '--ruby-source-dir=${RUBY_SOURCE_DIR}', '--deps-lib-dir=${DEPS_LIB_DIR}', '--data-src-dir=${DATA_SRC_DIR}', '--ruby-stash-dir=${RUBY_STASH_DIR}', '--ruby-ver=${RUBY_VER}'])"
+  COMMAND   ruby ${EXE}/tebako patch pass2 --ostype=${OSTYPE_TXT} --ruby-source-dir=${RUBY_SOURCE_DIR} --deps-lib-dir=${DEPS_LIB_DIR} --data-src-dir=${DATA_SRC_DIR} --ruby-stash-dir=${RUBY_STASH_DIR} --ruby-ver=${RUBY_VER}
   INSTALL_COMMAND  ""
 )
 
