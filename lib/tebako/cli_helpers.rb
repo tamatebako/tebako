@@ -49,7 +49,7 @@ module Tebako
       *  It is not an error but we do not recommend it because it is a way to keep packaging old versions recrsively.  *
       *                                                                                                                *
       *  For example, ensure that `--root=` differs from `--output=` as described in README.adoc:                      *
-      *  tebako press --root='~/projects/myproject' --entry=start.rb --output=/temp/myproject.tebako                   *
+      *  `tebako press --root='~/projects/myproject' --entry=start.rb --output=/temp/myproject.tebako`                 *
       *                                                                                                                *
       ******************************************************************************************************************
 
@@ -60,11 +60,11 @@ module Tebako
       ******************************************************************************************************************
       *                                                                                                                *
       *  WARNING: You are creating packaging environment inside application root.                                      *
-      *  It is not an error but it means that all build-time artifacts will ne included in tebako package.             *
+      *  It is not an error but it means that all build-time artifacts will be included in tebako package.             *
       *  You do not need it unless under very special circumstances like tebako packaging tebako itself.               *
       *                                                                                                                *
-      *  Please consider removing your exisitng `--prefix` folder abd use another one that points outside of `--root`  *
-      *  like tebako press --r ~/projects/myproject -e start.rb -o /temp/myproject.tebako -p ~/.tebako                 *
+      *  Please consider removing your existing `--prefix` folder and use another one that points outside of `--root`  *
+      *  like `tebako press --r ~/projects/myproject -e start.rb -o /temp/myproject.tebako -p ~/.tebako`               *
       *                                                                                                                *
       ******************************************************************************************************************
 

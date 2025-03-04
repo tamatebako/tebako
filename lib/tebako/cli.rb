@@ -37,6 +37,7 @@ require "yaml"
 require_relative "cache_manager"
 require_relative "cli_helpers"
 require_relative "error"
+require_relative "patch_commands"
 require_relative "ruby_version"
 require_relative "scenario_manager"
 require_relative "version"
@@ -137,6 +138,9 @@ module Tebako
       puts "Tebako script failed: #{e.message} [#{e.error_code}]"
       exit e.error_code
     end
+
+    desc "patch SUBCOMMAND ...ARGS", "Ruby patching commands"
+    subcommand "patch", PatchCommands
 
     def self.exit_on_failure?
       true
