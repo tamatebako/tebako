@@ -332,6 +332,14 @@ Removes Tebako Ruby artifacts.
 `hash`::
 Calculates the Tebako script hash for use as a cache key in CI/CD environments.
 
+`patch`::
+Ruby patching commands for low-level operations.
++
+Subcommands include:
++
+* `pass1`: Run pass1 Ruby patching operations for preparing the build environment
+* `pass2`: Run pass2 Ruby patching operations for creating the packaging environment
+
 `version`::
 Displays the Tebako version.
 
