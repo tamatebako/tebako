@@ -1518,8 +1518,12 @@ Since "tamatebako" is rather long for the non-Japanese speaker, we use "tebako"
 
 == Contributing
 
-We welcome contributions! Please see our contributing guidelines for more
-information.
+We welcome contributions!
+
+Please see our link:CONTRIBUTING.adoc[contribution guidelines] and our
+link:CODE_OF_CONDUCT.adoc[code of conduct] for more information,.
+
+NOTE: Our guidelines are aligned with the contribution guidelines from the RNP project.
 
 == License
 

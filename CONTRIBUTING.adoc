@@ -1,0 +1,294 @@
+= Contributing to Tebako
+
+The following are a set of conventions and guidelines that are relevant to
+contributors to the Tebako project. These guidelines are based on the
+contribution guidelines from the RNP project, as both projects are developed by
+Ribose.
+
+== Pull requests
+
+See also: https://github.com/thoughtbot/guides/tree/master/code-review[Thoughtbot's Code Review guide]
+
+Pull Requests should be used for any non-trivial changes. This presents an
+opportunity for feedback and allows the CI tests to complete prior to merging.
+
+The `main` branch should generally always be in a buildable and functional state.
+
+Pull Requests should be:
+
+* Focused. Do not include changes that are unrelated to the main purpose of the PR.
+
+* As small as possible. Sometimes large pull requests may be necessary for
+adding complex features, but generally they should be kept as small as possible
+to ensure a quick and thorough review process.
+
+* Related to a GH issue to which you are assigned. If there is none, file one
+(but search first!). This ensures there is no duplication of effort and allows
+for a discussion prior to beginning work. (This may not be necessary for PRs
+that are purely documentation updates)
+
+* Approved by **2** reviewers before merging.
+
+* Merged by a reviewer via the most appropriate method.
+
+== Branches
+
+Git branches should be used generously. Most branches should be topic branches,
+created for adding a specific feature or fixing a specific bug.
+
+Keep branches short-lived (treat them as disposable/transient) and try to avoid
+long-running branches.
+
+A good example of using a branch would be:
+
+* User `@joe` notices a bug where a NULL pointer is dereferenced. `@joe` creates GH issue `#500`.
+* He creates a new branch to fix this bug named `joe-500-fix-null-deref-in-function`.
+* Joe commits a fix for the issue to this new branch.
+* Joe creates a Pull Request to merge this branch into main.
+* Once merged, Joe deletes the branch since it is no longer useful.
+
+Branch names may vary but should be somewhat descriptive, with words separated
+by hyphens. It is also helpful to start the branch name with your GitHub
+username, to make it clear who created the branch and prevent naming conflicts.
+
+Remember that branch names may be preserved permanently in the commit history of
+`main`, depending on how they are merged.
+
+== Commits
+
+* Try to keep commits as small as possible. This may be difficult or impractical
+at times, so use your best judgment.
+
+* Each commit should be buildable and should pass all tests. This helps to
+ensure that git bisect remains a useful method of pinpointing issues.
+
+* Commit messages should follow 50/72 rule.
+
+* When integrating pull requests, merge function should be preferred over
+squashing. From the other hand, developers should squash commits and create
+meaningful commit stack before PR is merged into mainstream branch. Merging
+commits like "Fix build" or "Implement comments from code review" should be
+avoided.
+
+== Code conventions
+
+The Tebako project includes both C/C++ and Ruby code. Each has its own set of conventions.
+
+=== C/C++ code conventions
+
+==== Code formatting
+
+C/C++ code should be formatted using `clang-format` (v11.0.0), utilizing the
+`.clang-format` file included in the repository.
+
+==== Style guide for C/C++
+
+In order to keep the code base consistent, we should define and adhere to a single style.
+
+When in doubt, consult the existing code base.
+
+===== Naming
+
+The following are samples that demonstrate the style for naming different things in C/C++ code:
+
+* Functions: `some_function`
+* Variables: `some_variable`
+* Filenames: `file-name.c` `file-name.h`
+* Struct: `tebako_struct_t`
+* Typedefed Enums: `tebako_enum_t`
+* Enum Values: `TEBAKO_ENUM_VALUE = 1`
+* Constants (macro): `TEBAKO_BUFSIZ`
+
+===== General guidelines for C/C++
+
+Do:
+
+* Do use header guards (`#ifndef SOME_HEADER_H [...]`) in headers.
+* Do use `sizeof(variable)`, rather than `sizeof(type)`. Or `sizeof(*variable)` as appropriate.
+* Do use commit messages that close GitHub issues automatically, when
+applicable. `Fix XYZ. Closes #78.` See
+https://help.github.com/articles/closing-issues-via-commit-messages/[here].
+* Do declare functions `static` when they do not need to be referenced outside the current source file.
+* Do always use braces for conditionals, even if the block only contains a single statement.
++
+[source,c]
+--
+if (something) {
+  return val;
+}
+--
+
+* Do use a default failure (not success) value for `ret` variables. Example:
++
+[source,c]
+--
+rnp_result_t ret = RNP_ERROR_GENERIC;
+// ...
+
+return ret;
+--
+
+Do not:
+
+* Do not use the static storage class for local variables, *unless* they are constant.
++
+**Not OK**
++
+[source,c]
+--
+int somefunc() {
+  static char buffer[256];
+  //...
+}
+--
++
+**OK**
++
+[source,c]
+--
+int somefunc() {
+  static const uint16_t some_data[] = {
+    0x00, 0x01, 0x02, //...
+  };
+}
+--
+
+* Do not use `pragma`, and try to avoid `__attribute__` as well.
+* Do not use uninitialized memory. Try to ensure your code will not cause any errors in valgrind and other memory checkers.
+
+==== Documentation for C/C++
+
+Documentation is done in Doxygen comments format, which must be put in header files.
+
+Exceptions are static or having only definition functions -- it is not required to
+document them, however if they are documented then this should be done in the
+source file and using the @private tag.
+
+Comments should use doxygen markdown style, like the following example:
+
+[source,c]
+--
+/** Some comments regarding the file purpose, like 'Tebako filesystem utilities'
+ *  @file
+ *
+ *  This file contains functions and definitions related to the Tebako filesystem.
+ *  Ensure to document all public interfaces thoroughly.
+ */
+
+/** brief description of the sample function which does something, keyword 'brief' is omitted
+ *  Which may be continued here
+ *
+ *  After an empty line you may add detailed description in case it is needed. You may put
+ *  details about the memory allocation, what happens if function fails and so on.
+ *
+ *  @param param1 first parameter, null-terminated string which should not be NULL
+ *  @param param2 integer, some number representing something
+ *  @param size number of bytes available to store in buffer
+ *  @param buffer buffer to store results, may be NULL. In this case size can be used to
+ *                obtain the required buffer length
+ *  @return 0 if operation succeeds, or error code otherwise. If operation succeeds then buffer
+ *          is populated with the resulting data, and size contains the length of this data.
+ *          if error code is E_BUF_TOOSMALL then size will contain the required size to store
+ *          the result
+ **/
+rnp_result_t
+tebako_do_operation(const char *param1, const int param2, int *size, char *buffer);
+--
+
+=== Ruby code conventions
+
+==== Code formatting
+
+Ruby code should follow the style defined in the `.rubocop.yml` file included in
+the repository. We adhere to the Ruby community's conventions with some
+project-specific modifications defined in this file.
+
+==== Style guide for Ruby
+
+Ruby code should generally follow the Ruby Style Guide (https://rubystyle.guide/), with customizations specific to the Tebako project.
+
+===== Naming
+
+* Classes and Modules: `CamelCase`
+* Methods and Variables: `snake_case`
+* Constants: `SCREAMING_SNAKE_CASE`
+* Predicate methods (returning boolean): end with question mark `available?`
+* Dangerous methods (modifying `self` or arguments): end with exclamation mark `save!`
+* Private methods: `_leading_underscore` (or just use the `private` keyword)
+
+===== General guidelines for Ruby
+
+* Use 2 spaces for indentation, never tabs
+* Limit lines to 100 characters when possible
+* Use `def` with parentheses when there are parameters
+* Use parentheses for method calls with arguments
+* Never use `and`/`or` for control flow; use `&&`/`||` instead
+* Avoid multi-line ternary operators
+* Use `snake_case` for naming files and directories
+* Prefer string interpolation and template strings to string concatenation
+* Prefer double quotes for strings unless the string contains double quotes
+
+==== Documentation for Ruby
+
+Ruby code should be documented using YARD.
+
+[source,ruby]
+--
+# A person class to represent individuals
+class Person
+  # @return [String] the person's full name
+  attr_reader :name
+
+  # Creates a new person
+  #
+  # @param name [String] the person's full name
+  # @param age [Integer] the person's age in years
+  # @return [Person] a new instance of Person
+  def initialize(name, age)
+    @name = name
+    @age = age
+  end
+
+  # Determines if the person is an adult
+  #
+  # @return [Boolean] true if the person is 18 or older
+  def adult?
+    @age >= 18
+  end
+end
+--
+
+=== Testing
+
+==== C/C++ testing
+:cpp: C++
+C/{cpp} code should have appropriate tests. Tests for C/{cpp} code should be:
+
+* Comprehensive, covering normal operation and error conditions
+* Written to validate both public API and internal functionality
+* Organized in logical test suites
+
+==== Ruby testing
+
+Ruby code should have RSpec tests. Tests for Ruby code should:
+
+* Follow the RSpec style guide
+* Use descriptive contexts and examples
+* Use appropriate RSpec matchers
+* Mock external dependencies when appropriate
+* Achieve high test coverage (as reported by the coverage tool)
+
+== Code of conduct
+
+The Tebako project has adopted the Contributor Covenant as its Code of Conduct.
+All contributors are expected to adhere to these guidelines to foster an open
+and welcoming community.
+
+For the full Code of Conduct, please refer to link:CODE_OF_CONDUCT.adoc[CODE_OF_CONDUCT.adoc].
+
+== References
+
+For more detailed guidelines, please refer to the RNP project's development guidelines:
+
+* RNP Code of Conduct: https://github.com/rnpgp/rnp/blob/main/docs/code-of-conduct.adoc
+* RNP Development Guide: https://github.com/rnpgp/rnp/blob/main/docs/develop.adoc
