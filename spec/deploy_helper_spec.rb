@@ -81,6 +81,10 @@ RSpec.describe Tebako::DeployHelper do
           .once
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
+          .with([bundle, nil, "config", "set", "--local", "build.wxruby3", "prebuilt=only"])
+          .once
+        expect(Tebako::BuildHelpers)
+          .to receive(:run_with_capture_v)
           .with([bundle, nil, "config", "set", "--local", "force_ruby_platform", "false"])
           .once
 
@@ -106,6 +110,10 @@ RSpec.describe Tebako::DeployHelper do
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
           .with([bundle, nil, "config", "set", "--local", "build.nokogiri", "--use-system-libraries"])
+          .once
+        expect(Tebako::BuildHelpers)
+          .to receive(:run_with_capture_v)
+          .with([bundle, nil, "config", "set", "--local", "build.wxruby3", "prebuilt=only"])
           .once
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
