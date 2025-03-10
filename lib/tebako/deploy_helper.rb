@@ -110,12 +110,13 @@ module Tebako
     private
 
     def bundle_config
-      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "config", "set", "--local", "build.ffi",
-                                       "--disable-system-libffi"])
-      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "config",
-                                       "set", "--local", "build.nokogiri", @nokogiri_option])
-      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "config",
-                                       "set", "--local", "force_ruby_platform", @force_ruby_platform])
+      bundle_config_option(["build.ffi", "--disable-system-libffi"])
+      bundle_config_option(["build.nokogiri", @nokogiri_option])
+      bundle_config_option(["force_ruby_platform", @force_ruby_platform])
+    end
+
+    def bundle_config_option(opt)
+      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "config", "set", "--local"] + opt)
     end
 
     def check_entry_point(entry_point_root)
