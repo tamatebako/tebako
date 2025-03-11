@@ -1,4 +1,16 @@
 {
+    "minimal": {
+      "ruby": [
+        "3.3.7"
+      ],
+      "env": [
+        {
+            "ALPINE_VER": "3.17",
+            "CC": "clang",
+            "CXX": "clang++"
+        }
+      ]
+    },
     "tidy": {
       "ruby": [
         "3.2.7",

@@ -72,26 +72,12 @@ jobs:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
 
-      - name: Read test matrix from file
+      - name: Setup test matrix
         id: set-matrix
-        run: |
-          # Determine which config to use based on event
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            prefix="tidy"
-            prefixm="minimal"
-          else
-            prefix="full"
-            prefixm="tidy"
-          fi
-
-          # Read and output the matrices
-          ruby=$(jq -c ".$prefix.ruby" .github/matrices/ubuntu.json)
-          rubym=$(jq -c ".$prefixm.ruby" .github/matrices/ubuntu.json)
-          env=$(jq -c ".$prefix.env" .github/matrices/ubuntu.json)
-
-          echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
-          echo "ruby-matrix-minimal=$rubym" >> $GITHUB_OUTPUT
-          echo "env-matrix=$env" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/setup-test-matrix
+        with:
+          matrix-file: .github/matrices/ubuntu.json
+          event-name: ${{ github.event_name }}
 
   setup:
     name: setup ${{ matrix.env.os }}-${{ matrix.architecture.name }} [CC ${{ matrix.env.CC }}]
@@ -106,7 +92,9 @@ jobs:
           - { host: 'ubuntu-22.04', name: x86_64 }
           - { host: 'ubuntu-22.04-arm', name: arm64 }
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
     steps:
       - name: Fix git configuration
         run: |
@@ -117,15 +105,6 @@ jobs:
         with:
           fetch-depth: 1
           submodules: true
-
-#      - name: Setup tebako environment
-#        uses: ./.github/actions/setup-tebako
-#        with:
-#          cache: off
-#          cc: ${{ env.CC }}
-#          cxx: ${{ env.CXX }}
-#          install: off
-#          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
@@ -152,7 +131,9 @@ jobs:
           - { host: 'ubuntu-22.04-arm', name: arm64 }
         package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix-minimal)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
     steps:
       - name: Fix git configuration
         run: |
@@ -163,15 +144,6 @@ jobs:
         with:
           fetch-depth: 1
           submodules: true
-
-#      - name: Setup ci environment
-#        uses: ./.github/actions/setup-tebako
-#        with:
-#          cache: off
-#          cc: ${{ env.CC }}
-#          cxx: ${{ env.CXX }}
-#          install: off
-#          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
@@ -210,7 +182,9 @@ jobs:
           - { host: 'ubuntu-22.04-arm', name: arm64 }
         package_ruby_ver: ${{ fromJson(needs.prepare.outputs.ruby-matrix-minimal) }}
         env: ${{ fromJson(needs.prepare.outputs.env-matrix) }}
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
     steps:
       - name: Fix git configuration
         run: |
@@ -221,15 +195,6 @@ jobs:
         with:
           fetch-depth: 1
           submodules: true
-
-#      - name: Setup ci environment
-#        uses: ./.github/actions/setup-tebako
-#        with:
-#          cache: off
-#          cc: ${{ env.CC }}
-#          cxx: ${{ env.CXX }}
-#          install: off
-#          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
@@ -266,7 +231,9 @@ jobs:
           - { host: 'ubuntu-22.04-arm', name: arm64 }
         package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
     steps:
       - name: Fix git configuration
         run: |
@@ -277,15 +244,6 @@ jobs:
         with:
           fetch-depth: 1
           submodules: true
-
-#      - name: Setup ci environment
-#        uses: ./.github/actions/setup-tebako
-#        with:
-#          cache: off
-#          cc: ${{ env.CC }}
-#          cxx: ${{ env.CXX }}
-#          install: off
-#          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
