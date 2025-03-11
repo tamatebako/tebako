@@ -1,0 +1,52 @@
+# Copyright (c) 2024 [Ribose Inc](https://www.ribose.com).
+# All rights reserved.
+# This file is a part of tamatebako
+
+name: 'Setup test matrix'
+description: 'Sets up test matrix configuration for tebako tests'
+
+inputs:
+  matrix-file:
+    description: 'Path to the matrix configuration JSON file'
+    required: true
+    type: string
+  event-name:
+    description: 'GitHub event name'
+    required: true
+    type: string
+
+outputs:
+  ruby-matrix:
+    description: 'Ruby versions matrix configuration'
+    value: ${{ steps.set-matrix.outputs.ruby-matrix }}
+  ruby-matrix-minimal:
+    description: 'Minimal Ruby versions matrix configuration'
+    value: ${{ steps.set-matrix.outputs.ruby-matrix-minimal }}
+  env-matrix:
+    description: 'Environment matrix configuration'
+    value: ${{ steps.set-matrix.outputs.env-matrix }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Read test matrix from file
+      id: set-matrix
+      shell: bash
+      run: |
+        # Determine which config to use based on event
+        if [[ "${{ inputs.event-name }}" == "pull_request" ]]; then
+          prefix="tidy"
+          prefixm="minimal"
+        else
+          prefix="full"
+          prefixm="tidy"
+        fi
+
+        # Read and output the matrices
+        ruby=$(jq -c ".$prefix.ruby" ${{ inputs.matrix-file }})
+        rubym=$(jq -c ".$prefixm.ruby" ${{ inputs.matrix-file }})
+        env=$(jq -c ".$prefix.env" ${{ inputs.matrix-file }})
+
+        echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
+        echo "ruby-matrix-minimal=$rubym" >> $GITHUB_OUTPUT
+        echo "env-matrix=$env" >> $GITHUB_OUTPUT
