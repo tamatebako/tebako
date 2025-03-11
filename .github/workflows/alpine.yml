@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -83,7 +83,7 @@ jobs:
           event-name: ${{ github.event_name }}
 
   setup:
-    name: setup setup ${{ matrix.env.os }}-${{ matrix.architecture.name }} CC ${{ matrix.env.CC }}
+    name: setup ${{ matrix.env.os }}-${{ matrix.architecture.name }} CC ${{ matrix.env.CC }}
     needs: [ prepare ]
     runs-on: ubuntu-latest
     container:
@@ -102,7 +102,6 @@ jobs:
       - name: Fix git configuration
         run: |
           git config --global --add safe.directory $PWD
-          gem install bundler
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -142,7 +141,6 @@ jobs:
       - name: Fix git configuration
         run: |
           git config --global --add safe.directory $PWD
-          gem install bundler
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -193,7 +191,6 @@ jobs:
       - name: Fix git configuration
         run: |
           git config --global --add safe.directory $PWD
-          gem install bundler
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -243,7 +240,6 @@ jobs:
       - name: Fix git configuration
         run: |
           git config --global --add safe.directory $PWD
-          gem install bundler
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -278,3 +274,29 @@ jobs:
           set -o errexit -o pipefail -o noclobber -o nounset
           chmod +x test-*-package
           for TP in test-*-package; do "./$TP"; done
+
+  test-on-alpine-arm64:
+    # Node.js GitHub actions do not support Alpine arm64 containers (for now ?)
+    # It means no cache action and checkout v1 only
+    # Due to this limitation we manually run one test set
+    runs-on: ubuntu-latest
+    container:
+      image: 'ghcr.io/${{ github.repository_owner }}/tebako-alpine-3.17-dev'
+    env:
+      CC: gcc
+      CXX: g++
+    steps:
+    - name: Fix git configuration
+      run: |
+        git config --global --add safe.directory $PWD
+
+    - name: Checkout tebako packaging environment
+      uses: actions/checkout@v1
+      with:
+        submodules: true
+
+    - name: Run tebako tests (with defaults)
+      shell: bash
+      run: |
+        bundle install
+        ruby tests-2/tebako-test.rb

@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com)
+# Copyright (c) 2023-2025 [Ribose Inc](https://www.ribose.com)
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -102,7 +102,7 @@ jobs:
 
   package-tests-windows:
     needs: build-gem
-    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }}
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -110,9 +110,9 @@ jobs:
         os: [ 'windows-latest' ]
         gem: [ fontist ]
         package_ruby_ver: [ '3.3.7' ]
-        env:
-          - { CC: gcc, CXX: g++ }
-    env: ${{ matrix.env }}
+    env:
+      CC: gcc
+      CXX: g++
 
     defaults:
       run:
@@ -157,26 +157,25 @@ jobs:
       if: matrix.gem == 'metanorma'
       uses: ./.github/actions/test-package-metanorma-windows
 
-  package-tests-alpine:
+  package-tests-linux:
     needs: build-gem
-    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    name: Use gem to package ${{ matrix.gem }} ${{ matrix.env.os }} Ruby ${{ matrix.package_ruby_ver }}
     runs-on: ubuntu-latest
     container:
-      image: ${{ matrix.os }}
+      image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
     strategy:
       fail-fast: false
       matrix:
-        os: [ 'alpine:3.17' ]
         gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.3.7' ]
         env:
-          - { CC: gcc, CXX: g++ }
+        - { os: alpine-3.17, CC: clang, CXX: clang++ }
+        - { os: ubuntu-20.04, CC: clang-12, CXX: clang++-12 }
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
 
-    env: ${{ matrix.env }}
     steps:
-    - name: Install packages
-      run: apk --no-cache --upgrade add bash
-
     - name: Download actions
       uses: actions/download-artifact@v4
       with:
@@ -196,7 +195,7 @@ jobs:
       uses: ./.github/actions/setup-tebako-integration-test
       with:
         path: .tebako/deps
-        os: ${{ matrix.os }}
+        os: ${{ matrix.env.os }}
         cc:  ${{ env.CC }}
         version: ${{ env.CACHE_VER }}
 
@@ -204,13 +203,35 @@ jobs:
       if: matrix.gem == 'fontist'
       uses: ./.github/actions/test-package-fontist
 
+    - name: Upload fontist test package
+      if: matrix.gem == 'fontist' && matrix.env.os == 'ubuntu-20.04'
+      uses: actions/upload-artifact@v4
+      with:
+        name: fontist-package
+        retention-days: 1
+        path: |
+          fontist-package
+
     - name: Package metanorma
       if: matrix.gem == 'metanorma'
       uses: ./.github/actions/test-package-metanorma
 
+    - name: Package metanorma
+      if: matrix.gem == 'metanorma'
+      uses: ./.github/actions/test-package-metanorma
+
+    - name: Upload metanorma test package
+      if: matrix.gem == 'metanorma' && matrix.env.os == 'ubuntu-20.04'
+      uses: actions/upload-artifact@v4
+      with:
+        name: metanorma-package
+        retention-days: 1
+        path: |
+          metanorma-package
+
   package-tests-macos:
     needs: build-gem
-    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -218,9 +239,9 @@ jobs:
         os: [ macos-13, macos-14 ]
         gem: [ metanorma, fontist ]
         package_ruby_ver: [ '3.3.7' ]
-        env:
-          - { CC: clang, CXX: clang++ }
-    env: ${{ matrix.env }}
+    env:
+      CC: clang
+      CXX: clang++
     steps:
     - name: Download actions
       uses: actions/download-artifact@v4
@@ -260,73 +281,9 @@ jobs:
       if: matrix.gem == 'metanorma'
       uses: ./.github/actions/test-package-metanorma
 
-  package-tests-ubuntu:
-    needs: build-gem
-    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ ubuntu-20.04 ]
-        gem: [ metanorma, fontist ]
-        package_ruby_ver: [ '3.3.7' ]
-        env:
-          - { CC: clang-12, CXX: clang++-12 }
-    env: ${{ matrix.env }}
-    steps:
-    - name: Download actions
-      uses: actions/download-artifact@v4
-      with:
-        name: actions
-        path: .github/actions
-
-    - name: Setup ci environment
-      uses: ./.github/actions/setup-tebako
-      with:
-        cache: off
-        ruby_version: ${{ matrix.package_ruby_ver }}
-        cc: ${{ env.CC }}
-        cxx: ${{ env.CXX }}
-        install: off
-        verbose: ${{ env.VERBOSE }}
-
-    - name: Setup integration testing environment
-      uses: ./.github/actions/setup-tebako-integration-test
-      with:
-        path: .tebako/deps
-        os: ${{ matrix.os }}
-        cc:  ${{ env.CC }}
-        version: ${{ env.CACHE_VER }}
-
-    - name: Package fontist
-      if: matrix.gem == 'fontist'
-      uses: ./.github/actions/test-package-fontist
-
-    - name: Upload fontist test package
-      if: matrix.gem == 'fontist'
-      uses: actions/upload-artifact@v4
-      with:
-        name: fontist-package
-        retention-days: 1
-        path: |
-          fontist-package
-
-    - name: Package metanorma
-      if: matrix.gem == 'metanorma'
-      uses: ./.github/actions/test-package-metanorma
-
-    - name: Upload metanorma test package
-      if: matrix.gem == 'metanorma'
-      uses: actions/upload-artifact@v4
-      with:
-        name: metanorma-package
-        retention-days: 1
-        path: |
-          metanorma-package
-
   package-tests-ubuntu-newer:
     name: cross-test on ${{ matrix.os }}
-    needs: [ package-tests-ubuntu ]
+    needs: [ package-tests-linux ]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -347,7 +304,7 @@ jobs:
 
   release:
     name: Release gem
-    needs: [ package-tests-windows, package-tests-ubuntu-newer, package-tests-alpine, package-tests-macos ]
+    needs: [ package-tests-windows, package-tests-ubuntu-newer, package-tests-linux, package-tests-macos ]
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
     steps:
