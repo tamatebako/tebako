@@ -61,26 +61,17 @@ jobs:
     outputs:
       ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
       env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
+      ruby-matrix-minimal: ${{ steps.set-matrix.outputs.ruby-matrix-minimal }}
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
 
-      - name: Read test matrix from file
+      - name: Setup test matrix
         id: set-matrix
-        run: |
-          # Determine which config to use based on event
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            prefix="tidy"
-          else
-            prefix="full"
-          fi
-
-          # Read and output the matrices
-          ruby=$(jq -c ".$prefix.ruby" .github/matrices/macos.json)
-          env=$(jq -c ".$prefix.env" .github/matrices/macos.json)
-
-          echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
-          echo "env-matrix=$env" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/setup-test-matrix
+        with:
+          matrix-file: .github/matrices/macos.json
+          event-name: ${{ github.event_name }}
 
   setup:
     name: setup ${{ matrix.env.os }} XCode ${{ matrix.env.xcode }} Ruby ${{ matrix.ruby_ver }}
@@ -125,7 +116,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix-minimal)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
         ruby_ver: ['3.3.7']
     steps:
