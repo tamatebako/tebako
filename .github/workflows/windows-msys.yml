@@ -68,27 +68,19 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
+      ruby-matrix-minimal: ${{ steps.set-matrix.outputs.ruby-matrix-minimal }}
       env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
 
-      - name: Read test matrix from file
+      - name: Setup test matrix
         id: set-matrix
-        run: |
-          # Determine which config to use based on event
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            prefix="tidy"
-          else
-            prefix="full"
-          fi
+        uses: ./.github/actions/setup-test-matrix
+        with:
+          matrix-file: .github/matrices/windows-msys.json
+          event-name: ${{ github.event_name }}
 
-          # Read and output the matrices
-          ruby=$(jq -c ".$prefix.ruby" .github/matrices/windows-msys.json)
-          env=$(jq -c ".$prefix.env" .github/matrices/windows-msys.json)
-
-          echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
-          echo "env-matrix=$env" >> $GITHUB_OUTPUT
   setup:
     name: setup windows-msys [${{ matrix.env.sys }}, CC ${{ matrix.env.CC }} ]
     needs: [ prepare ]
@@ -96,11 +88,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - sys: ucrt64
-            CC: gcc
-            CXX: g++
-    env: ${{ matrix.env }}
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
 
     defaults:
       run:
@@ -172,7 +163,9 @@ jobs:
         package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
         script: ['bundle', 'app']
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
 
     defaults:
       run:
@@ -249,9 +242,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix-minimal)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
 
     defaults:
       run:

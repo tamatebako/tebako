@@ -5,9 +5,9 @@
       ],
       "env": [
         {
-            "ALPINE_VER": "3.17",
-            "CC": "clang",
-            "CXX": "clang++"
+          "os": "alpine-3.17",
+          "CC": "clang",
+          "CXX": "clang++"
         }
       ]
     },
@@ -19,9 +19,9 @@
       ],
       "env": [
         {
-            "ALPINE_VER": "3.17",
-            "CC": "clang",
-            "CXX": "clang++"
+          "os": "alpine-3.17",
+          "CC": "clang",
+          "CXX": "clang++"
         }
       ]
     },
@@ -34,12 +34,12 @@
       ],
       "env": [
         {
-          "ALPINE_VER": "3.17",
+          "os": "alpine-3.17",
           "CC": "gcc",
           "CXX": "g++"
         },
         {
-          "ALPINE_VER": "3.17",
+          "os": "alpine-3.17",
           "CC": "clang",
           "CXX": "clang++"
         }

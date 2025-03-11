@@ -70,43 +70,39 @@ jobs:
     outputs:
       ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
       env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
+      ruby-matrix-minimal: ${{ steps.set-matrix.outputs.ruby-matrix-minimal }}
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
 
-      - name: Read test matrix from file
+      - name: Setup test matrix
         id: set-matrix
-        run: |
-          # Determine which config to use based on event
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            prefix="tidy"
-          else
-            prefix="full"
-          fi
-
-          # Read and output the matrices
-          ruby=$(jq -c ".$prefix.ruby" .github/matrices/alpine.json)
-          env=$(jq -c ".$prefix.env" .github/matrices/alpine.json)
-
-          echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
-          echo "env-matrix=$env" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/setup-test-matrix
+        with:
+          matrix-file: .github/matrices/alpine.json
+          event-name: ${{ github.event_name }}
 
   setup:
-    name: setup alpine-${{ matrix.env.ALPINE_VER }} CC ${{ matrix.env.CC }}
+    name: setup setup ${{ matrix.env.os }}-${{ matrix.architecture.name }} CC ${{ matrix.env.CC }}
     needs: [ prepare ]
     runs-on: ubuntu-latest
     container:
-      image: alpine:${{ matrix.env.ALPINE_VER }}
+      image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
     strategy:
       fail-fast: false
       matrix:
+        architecture:
+          - { host: 'ubuntu-22.04', name: x86_64 }
+#          - { host: 'ubuntu-22.04-arm', name: arm64 }
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
     steps:
-      - name: Install packages
+      - name: Fix git configuration
         run: |
-          apk --no-cache --upgrade add git bash
           git config --global --add safe.directory $PWD
+          gem install bundler
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -114,20 +110,11 @@ jobs:
           fetch-depth: 1
           submodules: true
 
-      - name: Setup ci environment
-        uses: ./.github/actions/setup-tebako
-        with:
-          cache: off
-          cc: ${{ env.CC }}
-          cxx: ${{ env.CXX }}
-          install: off
-          verbose: ${{ env.VERBOSE }}
-
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
-          os: alpine-${{ matrix.env.ALPINE_VER }}
+          os: setup ${{ matrix.env.os }}-${{ matrix.architecture.name }}
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 
@@ -135,22 +122,27 @@ jobs:
         run: exe/tebako setup -D
 
   tests-1:
-    name: tests-1 alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    name: tests-1 setup ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     needs: [ setup, prepare ]
     runs-on: ubuntu-latest
     container:
-      image: alpine:${{ matrix.env.ALPINE_VER }}
+      image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
     strategy:
       fail-fast: false
       matrix:
+        architecture:
+          - { host: 'ubuntu-22.04', name: x86_64 }
+#        - { host: 'ubuntu-22.04-arm', name: arm64 }
         package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
     steps:
-      - name: Install packages
+      - name: Fix git configuration
         run: |
-          apk --no-cache --upgrade add git bash
           git config --global --add safe.directory $PWD
+          gem install bundler
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -158,27 +150,18 @@ jobs:
           fetch-depth: 1
           submodules: true
 
-      - name: Setup ci environment
-        uses: ./.github/actions/setup-tebako
-        with:
-          cache: off
-          cc: ${{ env.CC }}
-          cxx: ${{ env.CXX }}
-          install: off
-          verbose: ${{ env.VERBOSE }}
-
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
-          os: alpine-${{ matrix.env.ALPINE_VER }}
+          os: setup ${{ matrix.env.os }}-${{ matrix.architecture.name }}
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 
       - name: Shall upload artifacts?
         id: shall-upload
         run: |
-          if [ "${{ matrix.package_ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.env.CC }}" == "clang" ]; then
+          if [ "${{ matrix.package_ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.env.CC }}" == "clang" ] && [ "${{ matrix.architecture.name }}" == "x86_64" ] ; then
             echo "upload=true" >> $GITHUB_OUTPUT
           else
             echo "upload=false" >> $GITHUB_OUTPUT
@@ -190,37 +173,33 @@ jobs:
           upload: "${{ steps.shall-upload.outputs.upload }}"
 
   tests-1-app:
-    name: tests-1-app alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    needs: [ setup, prepare ]
+    name: tests-1-app setup ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    needs: [prepare, setup]
     runs-on: ubuntu-latest
     container:
-      image: alpine:${{ matrix.env.ALPINE_VER }}
+      image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
+        architecture:
+          - { host: 'ubuntu-22.04', name: x86_64 }
+#        - { host: 'ubuntu-22.04-arm', name: arm64 }
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix-minimal)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env: ${{ matrix.env }}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
     steps:
-      - name: Install packages
+      - name: Fix git configuration
         run: |
-          apk --no-cache --upgrade add git bash
           git config --global --add safe.directory $PWD
+          gem install bundler
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
           submodules: true
-
-      - name: Setup ci environment
-        uses: ./.github/actions/setup-tebako
-        with:
-          cache: off
-          cc: ${{ env.CC }}
-          cxx: ${{ env.CXX }}
-          install: off
-          verbose: ${{ env.VERBOSE }}
 
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
@@ -244,24 +223,27 @@ jobs:
           MODE=app RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
   tests-2:
-    needs: setup
-    name: tests-2 alpine-${{ matrix.env.ALPINE_VER }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
+    needs: [prepare, setup]
+    name: tests-2 setup ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
     runs-on: ubuntu-latest
     container:
-      image: alpine:${{ matrix.env.ALPINE_VER }}
+      image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
     strategy:
       fail-fast: false
       matrix:
-        env:
-          - { CC: gcc,   CXX: g++,     ALPINE_VER: "3.17" }
-          - { CC: clang, CXX: clang++, ALPINE_VER: "3.17" }
-        package_ruby_ver: [ '3.2.7', '3.3.7', '3.4.1']
-    env: ${{ matrix.env }}
+        architecture:
+          - { host: 'ubuntu-22.04', name: x86_64 }
+#        - { host: 'ubuntu-22.04-arm', name: arm64 }
+        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix-minimal)}}
+    env:
+      CC: ${{ matrix.env.CC }}
+      CXX: ${{ matrix.env.CXX }}
     steps:
-      - name: Install packages
+      - name: Fix git configuration
         run: |
-          apk --no-cache --upgrade add git bash
           git config --global --add safe.directory $PWD
+          gem install bundler
 
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -269,20 +251,11 @@ jobs:
           fetch-depth: 1
           submodules: true
 
-      - name: Setup ci environment
-        uses: ./.github/actions/setup-tebako
-        with:
-          cache: off
-          cc: ${{ env.CC }}
-          cxx: ${{ env.CXX }}
-          install: off
-          verbose: ${{ env.VERBOSE }}
-
       - name: Setup development environment
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
-          os: alpine-${{ matrix.env.ALPINE_VER }}
+          os: setup ${{ matrix.env.os }}-${{ matrix.architecture.name }}
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 
