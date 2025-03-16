@@ -1,6 +1,6 @@
 # Copyright (c) 2021-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
-# This file is a part of tebako
+# This file is a part of the Tebako project.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
