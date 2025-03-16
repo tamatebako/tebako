@@ -1,0 +1,231 @@
+= Tebako: Local Installation
+
+== General
+
+This document describes how to install Tebako locally on your machine.
+It covers installation on the following platforms:
+
+. Ubuntu (version 20.04)
+. Alpine (version 3.17)
+. macOS
+. Windows
+
+== Prerequisites
+
+=== Ubuntu 20.04
+
+==== GNU C/C++ 10+ or Clang C/C++ 12+
+
+[source,sh]
+----
+apt install -y gcc-10 g++-10
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10
+update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10
+----
+
+or
+
+[source,sh]
+----
+apt install -y clang-12
+update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 150
+update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 150
+----
+
+==== CMake version 3.20+
+
+Tebako requires CMake version 3.20 or later.
+
+If such a CMake version is not available as a default package, set it up as follows.
+
+.Installing CMake 3.20+
+[source,sh]
+----
+apt-get remove --purge --auto-remove cmake
+apt-get update
+apt-get install -y software-properties-common lsb-release curl
+apt-get clean all
+curl https://apt.kitware.com/kitware-archive.sh | bash
+apt-get install cmake
+----
+
+==== Other Development Tools and Libraries
+
+[source,sh]
+----
+apt-get -y install sudo git curl build-essential pkg-config bison flex autoconf  \
+   binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev libiberty-dev    \
+   libdouble-conversion-dev liblz4-dev liblzma-dev libssl-dev libunwind-dev      \
+   libboost-filesystem-dev libboost-program-options-dev libboost-system-dev      \
+   libboost-iostreams-dev libboost-date-time-dev libboost-context-dev            \
+   libboost-regex-dev libboost-thread-dev libbrotli-dev libdwarf-dev libelf-dev  \
+   libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev libncurses-dev          \
+   libreadline-dev libutfcpp-dev ruby-dev ruby-bundler
+----
+
+=== Alpine 3.17
+
+==== APK Packages
+
+Run the following command to install all prerequisites.
+
+[source,sh]
+----
+apk --no-cache --upgrade add build-base cmake git bash autoconf boost-static   \
+   boost-dev flex-dev bison make binutils-dev libevent-dev acl-dev sed python3 \
+   pkgconfig lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl libdwarf-dev \
+   libunwind-dev gflags-dev elfutils-dev libevent-static openssl-libs-static   \
+   lz4-static xz-dev zlib-static libunwind-static acl-static tar libffi-dev    \
+   gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static readline-dev       \
+   readline-static p7zip ruby-dev gcompat gettext-dev gperf brotli-dev         \
+   brotli-static jemalloc-dev fmt-dev xz-static
+----
+
+=== macOS
+
+==== General
+
+There are several prerequisites that need to be installed on macOS for Tebako
+to work correctly.
+
+The following instructions apply to:
+
+* macOS 13 (Ventura) through macOS 15 (Sequoia)
+
+==== Homebrew Packages
+
+We use Homebrew to install the necessary packages on macOS.
+
+Tebako provides a `Brewfile` at the repository root, allowing you to install
+all dependencies using the `brew bundle` command.
+
+[source,sh]
+----
+brew bundle
+----
+
+Alternatively, you can install the packages manually.
+
+[source,sh]
+----
+brew update
+brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib \
+  ncurses double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz \
+  libyaml openssl@3
+----
+
+==== Bison 3+
+
+Tebako requires Bison 3 or later.
+
+On macOS 14, the default Bison version is 2.3, and the Homebrew formula is keg-only,
+meaning the full path to the Bison binary must be used.
+
+Run the following command prior to using Tebako, or add it to your shell profile.
+
+[source,sh]
+----
+export PATH="$(brew --prefix bison)/bin:$PATH"
+----
+
+==== jemalloc Library Build
+
+On macOS, the `libdwarfs` build script creates an additional `jemalloc` installation
+to satisfy linking requirements. However, this uses a static library.
+
+If `jemalloc` is built within an emulated environment (QEMU, Rosetta, etc.), there are known issues
+(link:https://github.com/jemalloc/jemalloc/issues/1997[jemalloc issue #1997])
+where `jemalloc` incorrectly detects the number of significant virtual address bits (`lg-vaddr`).
+
+These issues can be fixed by explicitly setting the `--with-lg-vaddr` parameter during the `jemalloc`
+build. However, Tebako does not automate this due to lack of sufficient test coverage.
+
+Instead, our build script accepts the `LG_VADDR` environment variable, which is passed as `--with-lg-vaddr=${LG_VADDR}`.
+
+The `LG_VADDR` parameter specifies the number of significant virtual address bits, which can
+vary based on CPU architecture and emulation status.
+
+This is a simple example script to set `LG_VADDR`.
+
+NOTE: This is provided for illustration only.
+
+[example]
+====
+[source,sh]
+----
+#!/bin/bash
+
+# Check the CPU architecture
+ARCH=$(uname -m)
+
+# Check if running under Rosetta 2 emulation
+if [[ "$ARCH" == "x86_64" && $(sysctl -n sysctl.proc_translated) == "1" ]]; then
+  echo "Running on Apple Silicon under Rosetta 2 emulation"
+  export LG_VADDR=39
+elif [[ "$ARCH" == "arm64" ]]; then
+  echo "Running on Apple Silicon"
+  export LG_VADDR=39
+else
+  echo "Running on Intel Silicon"
+  export LG_VADDR=48
+fi
+
+echo "Setting lg-vaddr to $LG_VADDR"
+----
+====
+
+=== Windows
+
+==== General
+
+The following instructions have been tested on:
+
+* Windows 10, 11
+* Windows Server 2019, 2022
+
+==== Ruby
+
+To run Tebako, a Ruby development environment is required.
+The simplest option is to use the Ruby development environment provided by
+https://rubyinstaller.org[RubyInstaller].
+
+For example, Ruby+Devkit 3.3.7-1.
+
+==== MinGW ucrt64
+
+Enable MinGW ucrt64 and install the necessary packages.
+
+The `ridk` command originates from the RubyInstaller installation.
+
+[source,sh]
+----
+ridk enable ucrt64
+pacman -S git tar bison flex toolchain make cmake \
+          boost diffutils libevent double-conversion \
+          fmt glog dlfcn gtest autotools ncurses libyaml
+----
+
+== Gem Installation
+
+Tebako is distributed as a Ruby gem. A Ruby environment is necessary.
+
+[source,sh]
+----
+gem install tebako
+----
+
+== Post-Install Setup (Not Generally Required)
+
+Tebako requires a post-install setup after gem installation, as described in
+link:README.adoc[README.adoc].
+
+Post-install setup is called automatically during the first packaging.
+Manual setup is only required if a pristine Tebako packaging environment is needed
+to implement a caching strategy.
+
+== License
+
+Copyright Ribose. All rights reserved.
+
+Tebako is released under the BSD 2-Clause License. See the
+link:LICENSE.md[LICENSE.md] file for details.
