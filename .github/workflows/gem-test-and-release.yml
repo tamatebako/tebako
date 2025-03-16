@@ -1,4 +1,4 @@
-# Copyright (c) 2023-2024 [Ribose Inc](https://www.ribose.com)
+# Copyright (c) 2023-2025 [Ribose Inc](https://www.ribose.com)
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -35,13 +35,17 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
-      - .github/workflows/alpine.yml
-      - .github/workflows/lint.yml
-      - .github/workflows/macos.yml
-      - .github/workflows/ubuntu.yml
-      - .github/workflows/windows-msys.yml
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/gem-test-and-release.yml'
       - .cirrus.yml
   pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**.adoc'
+      - '**.md'
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/gem-test-and-release.yml'
+      - .cirrus.yml
   workflow_dispatch:
 
 concurrency:
