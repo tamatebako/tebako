@@ -1,4 +1,4 @@
-# Copyright (c) 2021-2024 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of tamatebako
 #
@@ -34,11 +34,8 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
-      - .github/workflows/alpine.yml
-      - .github/workflows/gem-test-and-release.yml
-      - .github/workflows/lint.yml
-      - .github/workflows/macos.yml
-      - .github/workflows/windows-msys.yml
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/ubuntu.yml'
       - .cirrus.yml
       - Brewfile
   pull_request:
@@ -46,11 +43,8 @@ on:
       - 'docs/**'
       - '**.adoc'
       - '**.md'
-      - .github/workflows/alpine.yml
-      - .github/workflows/gem-test-and-release.yml
-      - .github/workflows/lint.yml
-      - .github/workflows/macos.yml
-      - .github/workflows/windows-msys.yml
+      - '.github/workflows/*.yml'
+      - '!.github/workflows/ubuntu.yml'
       - .cirrus.yml
       - Brewfile
   workflow_dispatch:
