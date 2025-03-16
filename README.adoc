@@ -1151,6 +1151,28 @@ Hello, Maxim!
 ----
 ====
 
+== Packaging Ruby Gems with Post-Installation Requirements in Tebako
+
+Unlike the traditional approach to Ruby program distribution, Tebako is designed with a clear separation between the build and
+target environments. We assume that a Tebako package created in the build environment should remain independent of it and run unchanged
+in the target environment.
+
+While this approach is appealing, it imposes certain limitations on some Ruby gems, including Tebako itself. Specifically, gems that
+require a post-installation setup step often establish a strong dependency on the target environment. This setup might involve installing
+native libraries, linking to existing system components, or otherwise relying on the target system’s configuration.
+
+To be packaged by Tebako, gems that require post-installation setup must meet two additional requirements:
+
+1. *Ability to run post-installation setup from a read-only filesystem, outside the gem installation folder.*
+   For example, Tebako uses the location specified by the `prefix` parameter to create any necessary files during post-installation.
+
+2. *Automatic execution of the post-installation setup when required.*
+   For instance, when the `tebako press` command is executed, it first checks whether `tebako setup` has been run and triggers it if necessary.
+
+By adhering to these principles, gems that require post-installation setup will not only be compatible with Tebako but will also provide a more
+robust and consistent runtime experience, allowing them to run seamlessly across different environments.
+
+
 == Run-time options
 
 === General
