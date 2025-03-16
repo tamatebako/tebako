@@ -156,7 +156,6 @@ press_runner_with_error_app() {
 #  09. Ruby gem (xxx.gem, no gemspec, no gemfile)
 #  10. Ruby gem (xxx.gem, no gemspec, no gemfile), entry point does not exist                               [Expected error at build step]
 #  11. Ruby gem (no gemfile, with gemspec)
-#  12. Ruby gem (no gemfile, with gemspec), multiple gemspecs  --- moved to RSpec tests                     [Expected error at configure step]
 #  13. Ruby gem (no gemfile, with gemspec), gemspec error                                                   [Expected error at build step]
 #  15. Ruby gem (with gemspec, with gemfile)
 #  16. Ruby gem (with gemspec, with gemfile), gemfile with error                                            [Expected error at build step]
@@ -167,6 +166,7 @@ press_runner_with_error_app() {
 #  21. Ruby gem (with gemspec, with gemfile, with lockfile)
 #  22. Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)
 #  23. Ruby gem (with gemspec, with gemfile, with bundler requirement in gemfile)
+#  24. Ruby gem (with gemspec, with gemfile, with a gem installed from GitHub)
 
 # ......................................................................
 #  AU1. Check that it is possible to extract image content (--tebako-extract option)
@@ -397,6 +397,14 @@ test_tebako_press_23() {
    echo "==> Ruby gem (with gemspec, with gemfile, with bundler requirement in gemfile)"
    press_runner_"${MODE}" "${DIR_TESTS}/test-23" "tebako-test-run.rb" "test-23-package"
    package_runner_"${MODE}" "./test-23-package" "| a1 | b1 |"
+}
+
+# ......................................................................
+# 24. Ruby gem (with gemspec, with gemfile, with a gem installed from GitHub)
+test_tebako_press_24() {
+   echo "==> Ruby gem (with gemspec, with gemfile, with a gem installed from GitHub)"
+   press_runner_"${MODE}" "${DIR_TESTS}/test-24" "tebako-test-run.rb" "test-24-package"
+   package_runner_"${MODE}" "./test-24-package" "SevenZipRuby version: 1."
 }
 
 # ......................................................................

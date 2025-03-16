@@ -60,6 +60,7 @@ module Tebako
       @tbd = File.join(@target_dir, "bin")
       @tgd = @gem_home = File.join(@target_dir, "lib", "ruby", "gems", @ruby_ver.api_version)
       @tld = File.join(@target_dir, "local")
+      @target_bundle_dir = File.join(@target_dir, ".bundle")
 
       configure_scenario
       configure_commands
@@ -69,8 +70,8 @@ module Tebako
       BuildHelpers.with_env(deploy_env) do
         update_rubygems
         system("#{@gem_command} env") if @verbose
-        install_gem("tebako-runtime", "0.5.5")
-        install_gem("bundler", @bundler_version) if @needs_bundler
+        install_gem("tebako-runtime")
+        install_gem("bundler", ver: @bundler_version) if @needs_bundler
         deploy_solution
         check_cwd
       end
@@ -85,13 +86,13 @@ module Tebako
       }
     end
 
-    def install_gem(name, ver = nil)
+    def install_gem(name, bundled: false, ver: nil)
       puts "   ... installing #{name} gem#{" version #{ver}" if ver}"
 
-      params = [@gem_command, "install", name.to_s]
+      params = bundled ? [@bundler_command, "exec"] : []
+      params += [@gem_command, "install", name.to_s]
       params += ["-v", ver.to_s] if ver
       params += ["--no-document", "--install-dir", @tgd, "--bindir", @tbd]
-      params += ["--platform", "ruby"] if msys?
       BuildHelpers.run_with_capture_v(params)
     end
 
@@ -108,10 +109,13 @@ module Tebako
 
     private
 
-    def bundle_config
+    def bundle_config_and_install
       bundle_config_option(["build.ffi", "--disable-system-libffi"])
       bundle_config_option(["build.nokogiri", @nokogiri_option])
       bundle_config_option(["force_ruby_platform", @force_ruby_platform])
+
+      puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
+      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{ncores}"])
     end
 
     def bundle_config_option(opt)
@@ -142,12 +146,8 @@ module Tebako
       copy_files(@pre_dir)
 
       Dir.chdir(@pre_dir) do
-        # spec = Bundler.load_gemspec(gemspec)
-        # puts spec.executables.first unless spec.executables.empty?
-        # puts spec.bindir
-
         BuildHelpers.run_with_capture_v([@gem_command, "build", gemspec])
-        install_all_gems_or_fail
+        install_all_gems_or_fail(false)
       end
 
       check_entry_point("bin")
@@ -159,11 +159,10 @@ module Tebako
       copy_files(@pre_dir)
 
       Dir.chdir(@pre_dir) do
-        bundle_config
-        puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{ncores}"])
+        bundle_config_and_install
         BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "exec", @gem_command, "build", gemspec])
-        install_all_gems_or_fail
+        copy_bundle_files(gemspec)
+        install_all_gems_or_fail(true)
       end
 
       check_entry_point("bin")
@@ -194,6 +193,16 @@ module Tebako
       @nokogiri_option = "--no-use-system-libraries"
     end
 
+    def copy_bundle_files(gemspec = nil)
+      FileUtils.mkdir_p(@target_bundle_dir)
+      files = ["Gemfile", "Gemfile.lock"]
+      files.each do |file|
+        src = File.join(Dir.pwd, file)
+        FileUtils.cp(src, @target_bundle_dir) if File.exist?(src)
+      end
+      FileUtils.cp(gemspec, @target_bundle_dir) if gemspec && File.exist?(gemspec)
+    end
+
     def copy_files(dest)
       FileUtils.mkdir_p(dest)
       if Dir.exist?(@fs_root) && File.readable?(@fs_root)
@@ -219,9 +228,8 @@ module Tebako
       copy_files(@tld)
 
       Dir.chdir(@tld) do
-        bundle_config
-        puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{ncores}"])
+        bundle_config_and_install
+        copy_bundle_files
       end
 
       check_entry_point("local")
@@ -248,11 +256,11 @@ module Tebako
       end
     end
 
-    def install_all_gems_or_fail
+    def install_all_gems_or_fail(bundled)
       gem_files = Dir.glob("*.gem").map { |file| File.expand_path(file) }
       raise Tebako::Error, "No gem files found after build" if gem_files.empty?
 
-      gem_files.each { |gem_file| install_gem(gem_file) }
+      gem_files.each { |gem_file| install_gem(gem_file, bundled: bundled) }
     end
   end
 end
