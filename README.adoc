@@ -307,6 +307,41 @@ single, performant, executable binary.
 |===
 
 
+== Installation
+
+=== General
+
+Tebako installation is only required for packaging applications.
+
+Users who run packaged applications do not need to install anything.
+
+Tebako can be used for packaging in two ways:
+
+* Through the link:https://github.com/tamatebako/tebako-ci-containers[Tebako CI docker containers]
+* Through local installation
+
+Installation for both GNU and musl Linux distributions may heavily depend on the OS version,
+so we recommend using link:https://github.com/tamatebako/tebako-ci-containers[Tebako CI docker containers]
+for Linux packaging.
+
+=== Local installation
+
+To use Tebako on macOS or Windows, you need to install it locally.
+
+On Linux, there may be cases where Docker is not suitable for your needs, such as:
+
+1. Administrative privileges: Running Docker requires administrative privileges,
+which may not be available to all users on their machines.
+
+2. Performance impact: Docker introduces performance overhead due to
+containerization. This can be a concern when packaging complex
+applications that require significant memory resources.
+
+In such cases, you can choose to install Tebako locally on Linux as well.
+
+Please refer to the separate document link:INSTALLATION.adoc[INSTALLATION.adoc]
+for instructions on how to install Tebako.
+
 == Usage
 
 === Command-line interface
@@ -314,64 +349,35 @@ single, performant, executable binary.
 Tebako works by packaging your project into a single executable binary that
 includes all the necessary dependencies.
 
-The way to work with Tebako is through its command-line interface (CLI).
-It provides the following commands:
+You interact with Tebako through its command-line interface (CLI),
+which provides the following commands:
 
-`setup`::
-Prepares the Tebako packaging environment.
+Basic use:
 
 `press`::
 Packages a project into a single executable binary.
+See <<press>> section for details.
+
+Advanced use:
+
+`setup`::
+Runs post-install setup and creates the Tebako packaging environment.
+See <<setup>> section for details.
 
 `clean`::
 Removes Tebako artifacts.
+See <<clean>> section for details.
 
 `clean_ruby`::
 Removes Tebako Ruby artifacts.
+See <<clean_ruby>> section for details.
 
 `hash`::
 Calculates the Tebako script hash for use as a cache key in CI/CD environments.
-
-`version`::
-Displays the Tebako version.
+See <<hash>> section for details.
 
 `help`::
 Displays the help message.
-
-
-== Usage
-
-=== General
-
-Installation of Tebako is only needed in order to package an application.
-
-There is no need to install anything for users who run the packaged application.
-
-Tebako can be used for packaging in two ways:
-
-* Through the Tebako container
-* Local installation
-
-Installation for both GNU and musl Linux distributions may heavily depend on the OS version
-so we encourage to use link:https://github.com/tamatebako/tebako-ci-containers[ Tebako CI docker containers] for Linux packaging.
-
-=== Local installation
-
-To use Tebako in MacOS or Windows, you need to install Tebako locally.
-
-On Linux there may be cases where Docker may not be suitable for your needs, such as:
-
-. Admin privileges: Running Docker requires administrative privileges, which
-means Docker may not be available to users on their machines.
-
-. Performance penalty: Docker introduces a performance penalty due to the
-overhead of running containers. This can be a concern when packaging complex
-applications that require heavy memory usage.
-
-In such cases, you can choose to install Tebako locall on Linux as well.
-
-Please refer to the separate document link:INSTALLATION.adoc[INSTALLATION.adoc] on how to install Tebako..
-
 
 == Packaging
 
@@ -1151,7 +1157,7 @@ Hello, Maxim!
 ----
 ====
 
-== Packaging Ruby Gems with Post-Installation Requirements in Tebako
+== Packaging Ruby Gems with Post-Installation Requirements
 
 Unlike the traditional approach to Ruby program distribution, Tebako is designed with a clear separation between the build and
 target environments. We assume that a Tebako package created in the build environment should remain independent of it and run unchanged
@@ -1177,7 +1183,7 @@ robust and consistent runtime experience, allowing them to run seamlessly across
 
 === General
 
-Generally Tebako package passes command line options to the packaged application.
+Generally, Tebako packages pass command line options to the packaged application.
 
 [example]
 ====
@@ -1205,14 +1211,14 @@ myproject --option --parameter value
 ----
 ====
 
-However there are several command-line parameters that are intercepted processed
+However, there are several command-line parameters that are intercepted and processed
 by Tebako bootstrap code as described below.
 
 
 === Image extraction (`--tebako-extract` option)
 
 Tebako provides an option to extract its DwarFS filesystem from a package to
-a local folder for verification or execution.
+a local folder for verification or examination.
 
 [source,sh]
 ----
@@ -1265,11 +1271,11 @@ change the paths for temporary files, caches, and sockets.
 To address this inevitable limitation for Ruby applications,
 Tebako provides an option to mount a host folder to the memfs tree.
 
-When using Tebako, consider the packaging scenario mentioned above, as it
-defines the layout of the application tree.
+When using Tebako, be aware of how your application's directory structure is packaged,
+as this affects which paths may need mounting.
 
-The `--tebako-extract` option may be useful for understanding the placement of
-files and folders.
+You can use the `--tebako-extract` option described earlier to better understand
+your application's file structure before deciding which folders to mount.
 
 [example]
 ====
@@ -1294,8 +1300,8 @@ The `--tebako-mount` option has the following syntax:
 The `--tebako-mount` option can be repeated multiple times to mount more than
 one object. The `memfs path` is relative to the memfs root, and it is
 recommended to use absolute paths for host objects. Both directories and files
-can be mounted in this way. Tebako allows overlaying existing memfs objects, so
-there are no significant limitations.
+can be mounted in this way. Tebako allows you to overlay host directories on existing memfs objects,
+providing a flexible solution for handling read-write requirements in packaged applications.
 
 == Trivia: origin of name
 
