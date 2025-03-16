@@ -536,6 +536,8 @@ to be separately packaged.
 `application`::: Create the application package only. The output file is named according to the `-o` option.
 `runtime`::: Create the runtime package only. The output file is named according to the `-o` option.
 
+More information on the `mode` option is available in the <<Tebako runtime and application packages. Splitting and bundling.>> section.
+
 `--ref`::
 (optional)
 Defaults to `tebako-runtime`.
@@ -997,41 +999,12 @@ Here is a summary of the scenarios:
 
 These scenarios determine how the project is packaged and where the entry point is located within the packaged filesystem.
 
-== Run-time options
+== Tebako runtime and application packages. Splitting and bundling.
 
 === General
 
-Generally Tebako package passes command line options to the packaged application.
-
-[example]
-====
-For example, if the package was created with the following command
-
-[source,sh]
-----
-tebako press \
-  --root='~/projects/myproject' \
-  --entry=start.rb \
-  --output=/temp/myproject.tebako
-----
-running
-
-[source,sh]
-----
-/temp/myproject.tebako --option --parameter value
-----
-
-will be translated by Tebako bootstrap code to
-
-[source,sh]
-----
-myproject --option --parameter value
-----
-====
-
-However there are several command-line parameters that are intercepted processed
-by Tebako bootstrap code as described below.
-
+Tebako provides a method either to create a single bundle package that contains  Ruby run-time and the application or create separate
+reusable runtime package and application package that can be deployed without a runtime.
 
 === Creating a bundle package
 
@@ -1177,6 +1150,42 @@ The expected output is:
 Hello, Maxim!
 ----
 ====
+
+== Run-time options
+
+=== General
+
+Generally Tebako package passes command line options to the packaged application.
+
+[example]
+====
+For example, if the package was created with the following command
+
+[source,sh]
+----
+tebako press \
+  --root='~/projects/myproject' \
+  --entry=start.rb \
+  --output=/temp/myproject.tebako
+----
+running
+
+[source,sh]
+----
+/temp/myproject.tebako --option --parameter value
+----
+
+will be translated by Tebako bootstrap code to
+
+[source,sh]
+----
+myproject --option --parameter value
+----
+====
+
+However there are several command-line parameters that are intercepted processed
+by Tebako bootstrap code as described below.
+
 
 === Image extraction (`--tebako-extract` option)
 
