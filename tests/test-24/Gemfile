@@ -1,0 +1,6 @@
+source "https://rubygems.org"
+
+gem "bundler"
+gem "seven-zip", git: "https://github.com/fontist/seven_zip_ruby.git", :require => "seven_zip_ruby"
+
+gemspec
