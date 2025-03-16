@@ -343,141 +343,23 @@ Displays the help message.
 
 === General
 
-Tebako can be used in two ways:
-
-* Through the Tebako container
-* Local installation
-
-Please refer to the <<installation>> section on how to install Tebako.
-
-
-[[installation]]
-== Installation
-
-=== General
-
 Installation of Tebako is only needed in order to package an application.
 
 There is no need to install anything for users who run the packaged application.
 
+Tebako can be used for packaging in two ways:
 
-=== Using Docker
+* Through the Tebako container
+* Local installation
 
-==== General
-
-If you have Docker installed and available, the easiest way to run Tebako is
-through the official Docker containers.
-
-Docker containers with preinstalled Tebako packaging environments for Ubuntu and
-Alpine Linux are available at
-https://github.com/tamatebako/tebako-ci-containers[tebako-ci-containers].
-
-
-==== Pull the container
-
-Pull the Tebako container image.
-
-[source,sh]
-----
-docker pull ghcr.io/tamatebako/tebako-<container_tag>:latest
-----
-
-`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
-
-
-==== Running Tebako commands in the container
-
-Simply prefix the Tebako command with `docker run` and the container image.
-
-[source,sh]
-----
-docker run -v <application_folder>:/mnt/w \
-  -t ghcr.io/tamatebako/tebako-<container_tag>:latest \
-  tebako {command} {parameters}
-----
-
-==== Packaging from outside the container
-
-To package your application from outside the container, just run a single Docker
-command.
-
-This command mounts the application folder into the container and runs the
-`tebako press` command, specifying the application root, entry point, output
-location, and Ruby version.
-
-[source,sh]
-----
-docker run -v <application_folder>:/mnt/w \
-  -t ghcr.io/tamatebako/tebako-<container_tag>:latest \
-  tebako press <tebako-press-parameters>
-----
-
-`<application_folder>`:: is the path to your application folder.
-
-`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
-
-
-[example]
-====
-Assume that you have a Ruby application in the `fontist` folder of the current
-directory.
-
-You can package it to `./fontist-package` using the following command:
-
-[source,sh]
-----
-docker run -v $PWD:/mnt/w \
-  -t ghcr.io/tamatebako/tebako-ubuntu-20.04:latest \
-  tebako press --root=/mnt/w/fontist --entry-point=fontist --output=/mnt/w/fontist-package --Ruby=3.2.4
-----
-====
-
-==== Packaging from inside the container
-
-It is also possible to package an application from inside the Tebako container.
-
-Start and enter the container interactively.
-
-[source,sh]
-----
-docker run -it --rm -v <application_folder>:/mnt/w \
-  ghcr.io/tamatebako/tebako-<container_tag>:latest bash
-----
-
-`<application_folder>`:: is the path to your application folder.
-
-`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
-
-
-Once inside, run the `tebako press` command:
-
-[source,sh]
-----
-tebako press <tebako press parameters>
-----
-
-[example]
-====
-Assume that you have a Ruby application in the `fontist` folder of the current
-directory.
-
-You can package it to `./fontist-package` using the following command:
-
-[source,sh]
-----
-$ docker run -it --rm -v $PWD:/mnt/w ghcr.io/tamatebako/tebako-<container_tag>:latest bash
-
-# Inside the container:
-$ tebako press --root=/mnt/w/fontist --entry-point=fontist --output=/mnt/w/fontist-package --Ruby=3.2.4
-----
-====
-
+Installation for both GNU and musl Linux distributions may heavily depend on the OS version
+so we encourage to use link:https://github.com/tamatebako/tebako-ci-containers[ Tebako CI docker containers] for Linux packaging.
 
 === Local installation
 
-==== General
+To use Tebako in MacOS or Windows, you need to install Tebako locally.
 
-There are cases where Docker may not be suitable for your needs, such as:
+On Linux there may be cases where Docker may not be suitable for your needs, such as:
 
 . Admin privileges: Running Docker requires administrative privileges, which
 means Docker may not be available to users on their machines.
@@ -486,238 +368,9 @@ means Docker may not be available to users on their machines.
 overhead of running containers. This can be a concern when packaging complex
 applications that require heavy memory usage.
 
-In such cases, you can choose to install Tebako locally.
+In such cases, you can choose to install Tebako locall on Linux as well.
 
-Tebako is distributed as a Ruby gem. A Ruby environment is necessary.
-
-
-[source,sh]
-----
-$ gem install tebako
-----
-
-
-==== Prerequisites
-
-These prerequisites are needed only for users who want to install Tebako on
-their machine and build all Tebako components locally.
-
-If you use Docker, there is no need to set up these prerequisites.
-
-===== Ubuntu 20.04
-
-====== General
-
-There are several prerequisites that need to be installed on Ubuntu 20.04 for
-Tebako to work correctly.
-
-
-====== GNU C/C++ 10+ or Clang C/C++ 12+
-
-[source,sh]
-----
-apt install -y gcc-10 g++-10
-update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 10
-update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 10
-----
-
-or
-
-[source,sh]
-----
-apt install -y clang-12
-update-alternatives --install /usr/bin/clang clang /usr/bin/clang-12 150
-update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-12 150
-----
-
-====== CMake version 3.20+
-
-Tebako requires CMake at a version of at least 3.20+.
-
-If such CMake version is not available as a default package, set it up as
-follows.
-
-.Installing CMake 3.20+
-[source,sh]
-----
-apt-get remove --purge --auto-remove cmake
-apt-get update
-apt-get install -y software-properties-common lsb-release curl
-apt-get clean all
-curl https://apt.kitware.com/kitware-archive.sh | bash
-apt-get install cmake
-----
-
-====== Other development tools and libraries
-
-[source,sh]
-----
-apt-get -y install sudo git curl build-essential pkg-config bison flex autoconf  \
-   binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev libiberty-dev    \
-   libdouble-conversion-dev liblz4-dev liblzma-dev libssl-dev libunwind-dev      \
-   libboost-filesystem-dev libboost-program-options-dev libboost-system-dev      \
-   libboost-iostreams-dev  libboost-date-time-dev libboost-context-dev           \
-   libboost-regex-dev libboost-thread-dev libbrotli-dev libdwarf-dev libelf-dev  \
-   libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev libncurses-dev          \
-   libreadline-dev libncurses-dev libreadline-dev ruby-dev ruby-bundler          \
-   libutfcpp-dev
-----
-
-===== Alpine 3.17
-
-====== General
-
-There are several prerequisites that need to be installed on Alpine 3.17 for
-Tebako to work correctly.
-
-====== APK packages
-
-Run the following command to install all prerequisites.
-
-[source,sh]
-----
-apk --no-cache --upgrade add build-base cmake git bash autoconf boost-static   \
-   boost-dev flex-dev bison make binutils-dev libevent-dev acl-dev sed python3 \
-   pkgconfig lz4-dev openssl-dev zlib-dev xz ninja zip unzip curl libdwarf-dev \
-   libunwind-dev gflags-dev elfutils-dev libevent-static openssl-libs-static   \
-   lz4-static xz-dev zlib-static libunwind-static acl-static tar libffi-dev    \
-   gdbm-dev yaml-dev yaml-static ncurses-dev ncurses-static readline-dev       \
-   readline-static p7zip ruby-dev gcompat gettext-dev gperf brotli-dev         \
-   brotli-static jemalloc-dev fmt-dev xz-static
-----
-
-===== macOS
-
-====== General
-
-There are several prerequisites that need to be installed on macOS for Tebako to work correctly.
-
-The following instructions work for:
-
-* macOS 13 (Ventura) through macOS 15 (Sequoia)
-
-
-====== Homebrew packages
-
-We use Homebrew to install the necessary packages on macOS.
-
-Tebako provides a `Brewfile` at the repository root that you can install all
-dependencies using the `brew bundle` command.
-
-[source,sh]
-----
-$ brew bundle
-----
-
-Alternatively, you can install the packages manually.
-
-[source,sh]
-----
-$ brew update
-$ brew install gnu-sed bash pkg-config bison flex binutils libffi gdbm zlib \
-  ncurses double-conversion boost jemalloc fmt glog libevent libsodium lz4 xz \
-  libyaml openssl@3
-----
-
-====== Bison 3+
-
-Tebako requires Bison 3+.
-
-On macOS 14, the default Bison version is 2.3, and the Homebrew formula is
-keg-only, which means that the full path to the Bison binary must be used to
-utilize the correct version.
-
-Run the following command prior to using Tebako, or add it into your shell
-profile.
-
-[source,sh]
-----
-export PATH="$(brew --prefix bison)/bin:$PATH"
-----
-
-====== jemalloc library build
-
-On macOS, the `libdwarfs` build script creates an additional `jemalloc`
-installation. This is done to satisfy the magic applied by folly during linking
-but uses a static library.
-
-If the `jemalloc` library is built within an emulated environment (QEMU,
-Rosetta, etc.), there are known issues
-(link:https://github.com/jemalloc/jemalloc/issues/1997[jemalloc issue #1997])
-where `jemalloc` incorrectly detects the number of significant virtual address
-bits and therefore defines them wrongly (`lg-vaddr` parameter).
-
-Technically, these issues can be fixed by explicitly setting the
-`--with-lg-vaddr` parameter for the `jemalloc` build. However, we decided not to
-automate this since we do not feel that we can provide reasonable test coverage.
-
-Instead, our build script accepts the `LG_VADDR` environment variable and passes
-it to the jemalloc build as `--with-lg-vaddr=${LG_VADDR}`.
-
-The `LG_VADDR` parameter specifies the number of significant virtual address
-bits, which can vary based on the CPU architecture and emulation status.
-
-This is a simple example script to set `LG_VADDR`.
-
-NOTE: This is provided for illustration only.
-
-[example]
-====
-[source,sh]
-----
-#!/bin/bash
-
-# Check the CPU architecture
-ARCH=$(uname -m)
-
-# Check if running under Rosetta 2 emulation
-if [[ "$ARCH" == "x86_64" && $(sysctl -n sysctl.proc_translated) == "1" ]]; then
-  echo "Running on Apple Silicon under Rosetta 2 emulation"
-  export LG_VADDR=39
-elif [[ "$ARCH" == "arm64" ]]; then
-  echo "Running on Apple Silicon"
-  export LG_VADDR=39
-else
-  echo "Running on Intel Silicon"
-  export LG_VADDR=48
-fi
-
-echo "Setting lg-vaddr to $LG_VADDR"
-----
-====
-
-
-===== Windows
-
-====== General
-
-The following instructions work for:
-
-* Windows 10, 11
-* Windows Server 2019, 2022
-
-====== Ruby
-
-To run Tebako you need to have Ruby installed.
-It is simplest to use the Ruby development environment provided by
-https://rubyinstaller.org[RubyInstaller].
-
-For example, Ruby+Devkit 3.1.4-1.
-
-====== MinGW ucrt64
-
-Enable MinGW ucrt64 and install the necessary packages.
-
-The `ridk` command originates from the RubyInstaller installation.
-
-[source,sh]
-----
-$ ridk enable ucrt64
-$ pacman -S git tar bison flex toolchain make cmake
-          boost diffutils libevent double-conversion
-          fmt glog dlfcn gtest autotools ncurses libyaml
-----
-
+Please refer to the separate document link:INSTALLATION.adoc[INSTALLATION.adoc] on how to install Tebako..
 
 
 == Packaging
@@ -916,20 +569,19 @@ tebako press \
 
 ==== Setup
 
-This command sets up the Tebako packaging environment.
+Tebako requires post-install setup after gem installation .
+Post-intall setup is called automatically during the first packaging.
+There is no need run setup manually unless you need pristine Tebako
+packaging environment to implement caching strategy.
+We recommended to build cache based on `tebako setup` output. Building cache
+based on `tebako press` may create inconsistent environment upon restore.
 
-Collects required packages, builds the and creates packaging environment. This
+
+Setup collects required packages, builds the and creates packaging environment. This
 is a lengthy task that can take significant time, up to 1 hour.
 
 Tebako supports several configurations at a single system given that their root
 directories differ and multiple Ruby versions within single configuration
-
-This command is optional, tebako creates packaging environment automatically
-upon the first invocation of press command.
-
-However, if you plan to use tebako in CI/CD environment with caching it is
-highly recommended to build cache based on `tebako setup` output. Building cache
-based on `tebako press` may create inconsistent environment upon restore.
 
 [source,sh]
 ----
@@ -1038,6 +690,117 @@ as a cache key in CI/CD pipelines.
 $ tebako hash
 ----
 
+=== Using Docker
+
+==== General
+
+If you have Docker installed and available, the easiest way to run Tebako is
+through the official Docker containers.
+
+Docker containers with preinstalled Tebako packaging environments for Ubuntu and
+Alpine Linux are available at
+https://github.com/tamatebako/tebako-ci-containers[tebako-ci-containers].
+
+
+==== Pull the container
+
+Pull the Tebako container image.
+
+[source,sh]
+----
+docker pull ghcr.io/tamatebako/tebako-<container_tag>:latest
+----
+
+`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
+
+
+==== Running Tebako commands in the container
+
+Simply prefix the Tebako command with `docker run` and the container image.
+
+[source,sh]
+----
+docker run -v <application_folder>:/mnt/w \
+  -t ghcr.io/tamatebako/tebako-<container_tag>:latest \
+  tebako {command} {parameters}
+----
+
+==== Packaging from outside the container
+
+To package your application from outside the container, just run a single Docker
+command.
+
+This command mounts the application folder into the container and runs the
+`tebako press` command, specifying the application root, entry point, output
+location, and Ruby version.
+
+[source,sh]
+----
+docker run -v <application_folder>:/mnt/w \
+  -t ghcr.io/tamatebako/tebako-<container_tag>:latest \
+  tebako press <tebako-press-parameters>
+----
+
+`<application_folder>`:: is the path to your application folder.
+
+`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
+
+
+[example]
+====
+Assume that you have a Ruby application in the `fontist` folder of the current
+directory.
+
+You can package it to `./fontist-package` using the following command:
+
+[source,sh]
+----
+docker run -v $PWD:/mnt/w \
+  -t ghcr.io/tamatebako/tebako-ubuntu-20.04:latest \
+  tebako press --root=/mnt/w/fontist --entry-point=fontist --output=/mnt/w/fontist-package --Ruby=3.2.4
+----
+====
+
+==== Packaging from inside the container
+
+It is also possible to package an application from inside the Tebako container.
+
+Start and enter the container interactively.
+
+[source,sh]
+----
+docker run -it --rm -v <application_folder>:/mnt/w \
+  ghcr.io/tamatebako/tebako-<container_tag>:latest bash
+----
+
+`<application_folder>`:: is the path to your application folder.
+
+`<container_tag>`:: is the desired image tag (e.g., `ubuntu-20.04` or `alpine-3.17`).
+
+
+Once inside, run the `tebako press` command:
+
+[source,sh]
+----
+tebako press <tebako press parameters>
+----
+
+[example]
+====
+Assume that you have a Ruby application in the `fontist` folder of the current
+directory.
+
+You can package it to `./fontist-package` using the following command:
+
+[source,sh]
+----
+$ docker run -it --rm -v $PWD:/mnt/w ghcr.io/tamatebako/tebako-<container_tag>:latest bash
+
+# Inside the container:
+$ tebako press --root=/mnt/w/fontist --entry-point=fontist --output=/mnt/w/fontist-package --Ruby=3.2.4
+----
+====
+
 === Tebako configuration file
 
 It is possible to provide all or some options for the `tebako
@@ -1068,7 +831,7 @@ options:
 ----
 ====
 
-=== Options prefernce order
+=== Options preference order
 
 Tebako supports several methods to set options. The table below show preference order and limitations for specific options.
 samller order means higher proirity.
