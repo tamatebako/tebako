@@ -45,7 +45,8 @@ module Tebako
       "3.3.5" => "3781a3504222c2f26cb4b9eb9c1a12dbf4944d366ce24a9ff8cf99ecbce75196",
       "3.3.6" => "8dc48fffaf270f86f1019053f28e51e4da4cce32a36760a0603a9aee67d7fd8d",
       "3.3.7" => "9c37c3b12288c7aec20ca121ce76845be5bb5d77662a24919651aaf1d12c8628",
-      "3.4.1" => "3d385e5d22d368b064c817a13ed8e3cc3f71a7705d7ed1bae78013c33aa7c87f"
+      "3.4.1" => "3d385e5d22d368b064c817a13ed8e3cc3f71a7705d7ed1bae78013c33aa7c87f",
+      "3.4.2" => "41328ac21f2bfdd7de6b3565ef4f0dd7543354d37e96f157a1552a6bd0eb364b"
     }.freeze
 
     MIN_RUBY_VERSION_WINDOWS = "3.1.6"
