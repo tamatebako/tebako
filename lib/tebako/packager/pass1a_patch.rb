@@ -38,7 +38,7 @@ module Tebako
           # -- Start of tebako patch --
           begin
             require 'tebako-runtime'
-            TebakoRuntine.set_bundle_gemfile
+            TebakoRuntime.set_bundle_gemfile
           rescue LoadError
             warn "'tebako-runtime' was not loaded."
           end
