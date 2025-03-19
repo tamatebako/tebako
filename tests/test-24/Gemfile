@@ -1,0 +1,7 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+gem "maxirmx_test_gem", git: "https://github.com/sw-consulting/test-gem"
+
+gemspec
