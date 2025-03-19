@@ -1,0 +1,9 @@
+# frozen_string_literal: true
+
+source "https://rubygems.org"
+
+source "https://rubygems.pkg.github.com/sw-consulting" do
+  gem "maxirmx_test_gem", "0.4.2"
+end
+
+gemspec

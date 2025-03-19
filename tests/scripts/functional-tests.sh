@@ -404,7 +404,7 @@ test_tebako_press_23() {
 test_tebako_press_24() {
    echo "==> Ruby gem (with gemspec, with gemfile, with a gem installed from GitHub)"
    press_runner_"${MODE}" "${DIR_TESTS}/test-24" "tebako-test-run.rb" "test-24-package"
-   package_runner_"${MODE}" "./test-24-package" "SevenZipRuby version: 1."
+   package_runner_"${MODE}" "./test-24-package" "TestGem version: 0.4"
 }
 
 # ......................................................................
