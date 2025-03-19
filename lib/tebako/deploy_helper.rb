@@ -194,13 +194,16 @@ module Tebako
     end
 
     def copy_bundle_files(gemspec = nil)
-      FileUtils.mkdir_p(@target_bundle_dir)
+      bbdir = File.join(@target_bundle_dir, ".bundle")
+      FileUtils.mkdir_p(bbdir)
       files = ["Gemfile", "Gemfile.lock"]
       files.each do |file|
         src = File.join(Dir.pwd, file)
         FileUtils.cp(src, @target_bundle_dir) if File.exist?(src)
       end
       FileUtils.cp(gemspec, @target_bundle_dir) if gemspec && File.exist?(gemspec)
+      config = File.join(Dir.pwd, ".bundle", "config")
+      FileUtils.cp(config, bbdir) if File.exist?(config)
     end
 
     def copy_files(dest)
