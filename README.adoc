@@ -910,79 +910,128 @@ and the bundler version requirements specified in the Gemfile.
 
 == Packaging scenarios
 
-Depending on the configuration files that are present in the root project folder, the Tebako Ruby packager supports different packaging scenarios.
+There are two common methods for distributing a Ruby application:
 
-These scenarios differ in what files are packaged and where the entry point is located.
+* Copying the entire directory tree of the application to the target system.
+* Creating a Ruby gem from the application and publishing or distributing it
+  as a gem.
 
-Here is a summary of the scenarios:
+Tebako supports both methods, but with an important distinction: during
+packaging, it does not deploy the application to the target system. Instead,
+it places it in a pristine Ruby environment that functions as an in-memory
+filesystem ("memfs").
 
-[cols="a,2a,4a,3a,a,a,a"]
+Regardless of the packaging scenario, Tebako requires two inputs:
+
+* A root folder containing the application to be packaged.
+* An entry point — a Ruby file that will be executed when the packaged
+  application starts.
+
+The appropriate packaging scenario is determined by the contents of the
+root folder:
+
+[cols="3", options="header"]
 |===
-| Scenario | Description | Packaging | Entry point | `*.gemspec` | `Gemfile`  | `*.gem`
+| #
+| Conditions
+| Scenario Description
 
 | 1
-| Simple ruby script
-| Copy `<project-root>` with all sub-folders to packaged filesystem
-| `<mount_point>/local/<entry_point base name>`
-| No
-| No
-| No
-
+| No `Gemfile`, `.gemspec`, or `.gem` files
+| <<1-simple-script,Simple Script>>
 
 | 2
-| Packaged gem
-| Install the gem with `gem install` to packaged filesystem
-| `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
-| No
-| No
-| One
-
+| `Gemfile` present, no `.gemspec` files
+| <<2-bundled-project, Bundled Project>>
 
 | 3
-| Gem source, no `bundler`
-|
-. Build the gem using `gem build` command at the host
-. Install it with `gem install` to packaged filesystem
-
-| `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
-| One
-| No
-| Any
-
+| `.gemspec` present, no `Gemfile`
+| <<3-gem, Gem>>
 
 | 4
-| Gem source, `bundler`
-|
-. Collect dependencies at the host with `bundle install`
-. Build the gem using `gem build` command
-. Install it with `gem install` to packaged file system
+| Both `.gemspec` and `Gemfile` present
+| <<4-bundled-gem, Bundled Gem>>
 
-| `<mount_point>/bin/<entry_point base name>` (i.e., binstub is expected)
-| One
-| One
-| Any
-
-
-| Error
-| Error: Two or more `*.gem` files present
-| -
-| -
-| No
-| No
-| Two or more
-
-
-| Error
-| Error: Two or more `*.gemspec` files present
-| -
-| -
-| Two or more
-| Any
-| Any
+| 5
+| `.gem` files present, no `Gemfile` or `.gemspec`
+| <<5-prebuilt-gem, Prebuilt Gem>>
 
 |===
 
-These scenarios determine how the project is packaged and where the entry point is located within the packaged filesystem.
+=== 1. Simple Script
+If the root folder does not contain a `Gemfile`, `.gemspec`, or `.gem`
+files, Tebako treats the application as a simple script.
+
+In this case:
+
+* The entire root folder (including subdirectories) is copied to
+  `<memfs root>/local`.
+* On startup, Tebako executes `<memfs root>/local/<entry point>`.
+
+=== 2. Bundled Project
+If the root folder contains a `Gemfile` but no `.gemspec` files, the
+application is considered a bundled project. This is common for Rails or
+Sinatra projects.
+
+In this scenario, Tebako:
+
+* Runs `bundle install` using the provided `Gemfile` within the pristine
+  Ruby environment.
+* Copies the root folder and all subdirectories to `<memfs root>/local`.
+* Executes `<memfs root>/local/<entry point>` on startup.
+
+=== 3. Gem
+If the root folder contains a `.gemspec` file but no `Gemfile`, Tebako
+assumes it is packaging a gem.
+
+In this case:
+
+* Tebako runs the following commands within the pristine Ruby environment:
+
+[source,sh]
+----
+gem build
+gem install
+----
+
+* The entry point is assumed to be one of the gem’s executables, placed in
+  the binary folder during installation. Within Tebako’s in-memory
+  filesystem, this folder is `<memfs root>/bin`.
+* On startup, Tebako executes `<memfs root>/bin/<entry point>`.
+
+NOTE: Multiple `.gemspec` files in the root folder are not supported.
+
+=== 4. Bundled Gem
+If the root folder contains both a `.gemspec` file and a `Gemfile`, Tebako
+assumes it is packaging a bundled gem.
+
+In this case:
+
+* Tebako runs the following commands within the pristine Ruby environment:
+
+[source,sh]
+----
+bundle install
+bundle exec gem build
+bundle exec gem install
+----
+
+* The entry point follows the same logic as in the Gem Packaging scenario
+  (`<memfs root>/bin/<entry point>`).
+
+NOTE: Multiple `.gemspec` files in the root folder are not supported.
+
+=== 5. Prebuilt Gem
+If the root folder contains `.gem` files but no `Gemfile` or `.gemspec`,
+Tebako assumes it is packaging prebuilt gems.
+
+In this case:
+
+* Tebako runs `gem install` for all `.gem` files in the root folder, in
+  a random order.
+* The entry point follows the same logic as in the Gem Packaging scenario
+  (`<memfs root>/bin/<entry point>`).
+
 
 == Tebako runtime and application packages. Splitting and bundling.
 
