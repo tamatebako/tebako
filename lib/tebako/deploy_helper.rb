@@ -202,8 +202,8 @@ module Tebako
         FileUtils.cp(src, @target_bundle_dir) if File.exist?(src)
       end
       FileUtils.cp(gemspec, @target_bundle_dir) if gemspec && File.exist?(gemspec)
-      config = File.join(Dir.pwd, ".bundle", "config")
-      FileUtils.cp(config, bbdir) if File.exist?(config)
+      #      config = File.join(Dir.pwd, ".bundle", "config")
+      #      FileUtils.cp(config, bbdir) if File.exist?(config)
     end
 
     def copy_files(dest)
