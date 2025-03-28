@@ -44,8 +44,10 @@ module Tebako
     def toolchain_build
       puts "   ... building toolchain Ruby"
       Dir.chdir(@src_dir) do
-        BuildHelpers.run_with_capture(["make", "-j#{@ncores}"])
-        BuildHelpers.run_with_capture(["make", "install", "-j#{@ncores}"])
+        BuildHelpers.with_env({ "TEBAKO_PASS_THROUGH" => "1" }) do
+          BuildHelpers.run_with_capture(["make", "-j#{@ncores}"])
+          BuildHelpers.run_with_capture(["make", "install", "-j#{@ncores}"])
+        end
       end
     end
 
@@ -53,8 +55,10 @@ module Tebako
     def target_build(output_type)
       puts "   ... building tebako #{output_type}"
       Dir.chdir(@src_dir) do
-        BuildHelpers.run_with_capture(["make", "ruby", "-j#{@ncores}"]) if @ruby_ver.ruby3x?
-        BuildHelpers.run_with_capture(["make", "-j#{@ncores}"])
+        BuildHelpers.with_env({ "TEBAKO_PASS_THROUGH" => "1" }) do
+          BuildHelpers.run_with_capture(["make", "ruby", "-j#{@ncores}"]) if @ruby_ver.ruby3x?
+          BuildHelpers.run_with_capture(["make", "-j#{@ncores}"])
+        end
       end
     end
   end

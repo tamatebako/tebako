@@ -36,10 +36,14 @@ module Tebako
           if defined?(DidYouMean)
 
           # -- Start of tebako patch --
-          begin
-            require 'tebako-runtime'
-          rescue LoadError
-            warn "'tebako-runtime' was not loaded."
+          if ENV.fetch("TEBAKO_PASS_THROUGH", nil).nil?
+            begin
+              puts "ENV[TEBAKO_PASS_THROUGH] = " + ENV.fetch("TEBAKO_PASS_THROUGH", nil).to_s
+              require 'tebako-runtime'
+            rescue LoadError
+              warn "'tebako-runtime' was not loaded."
+              gets
+            end
           end
           # -- End of tebako patch --
         SUBST
