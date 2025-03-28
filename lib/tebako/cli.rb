@@ -154,12 +154,19 @@ module Tebako
       # Ruby extension maker sometimes creates files with 'NUL' name on Windows
       # This method removes such files
       def extra_win_clean(nmr)
+        puts "--> #{nmr.any?}  #{ScenarioManagerBase.new.msys?}"
         return unless nmr.any? && ScenarioManagerBase.new.msys?
 
-        nmr.each do |path|
-          if File.basename(path) == "NUL"
-            full_path = "//?/#{path}"
-            FileUtils.rm_f(full_path)
+        nmr.each do |dir_path|
+#          puts "Looking at: #{dir_path}"
+          if File.directory?(dir_path)
+            Find.find(dir_path) do |path|
+              if File.basename(path) == "NUL"
+                 full_path = "//?/#{path}"
+                  FileUtils.rm_f(full_path)
+#                  puts "Removed NUL file at: #{path}"
+              end
+            end
           end
         end
         FileUtils.rm_rf(nmr, secure: true)

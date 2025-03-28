@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require "irb"
 require "yaml"
 
 puts "Hello!  This is test-01 talking from inside DwarFS"
