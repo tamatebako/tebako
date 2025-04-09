@@ -5,12 +5,11 @@
 |===
 |*Platform Tests* |Architecture |Status
 
-.2+|Ubuntu
-|amd64 | image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu amd64", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
-|arm64 |image:https://api.cirrus-ci.com/github/tamatebako/tebako.svg?branch=main&task=ubuntu-aarch64["Ubuntu aarch64", link="https://cirrus-ci.com/github/tamatebako/tebako"]
+|Ubuntu
+|amd64 + arm64 | image:https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml/badge.svg["Ubuntu amd64", link="https://github.com/tamatebako/tebako/actions/workflows/ubuntu.yml"]
 
 |Alpine
-|amd64 |image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
+|amd64 + arm64 |image:https://github.com/tamatebako/tebako/actions/workflows/alpine.yml/badge.svg["Alpine", link="https://github.com/tamatebako/tebako/actions/workflows/alpine.yml"]
 
 |macOS
 |amd64 + arm64
@@ -24,6 +23,9 @@
 |Tebako containers
 | |image:https://github.com/tamatebako/tebako-ci-containers/actions/workflows/build-containers.yml/badge.svg["Tebako containers", link="https://github.com/tamatebako/tebako-ci-containers/actions/workflows/build-containers.yml"]
 
+|Runtimes
+| |image:https://github.com/tamatebako/tebako-runtime-ruby/actions/workflows/build-runtime-packages.yml/badge.svg["Ruby runtimes", link="https://github.com/tamatebako/tebako-runtime-ruby/actions/workflows/build-runtime-packages.yml"]
+
 3+|*Quality*
 
 |Lint and RSpec
@@ -31,8 +33,11 @@
 
 |Code Coverage
 | |image:https://codecov.io/gh/tamatebako/tebako/graph/badge.svg?token=XD3emQ5qsY["Tebako CLI RSpec coverage", link="https://codecov.io/gh/tamatebako/tebako"]
-|===
 
+3+|*Info*
+|Gem
+| |image:https://img.shields.io/gem/v/tebako.svg["Version", link="https://rubygems.org/gems/tebako"]
+|===
 
 == Purpose
 
