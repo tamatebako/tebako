@@ -114,7 +114,7 @@ module Tebako
 
         def msys_libraries(ruby_ver, with_compression)
           libraries = with_compression ? ["-Wl,-Bstatic"] : []
-          libraries = libraries + COMMON_LINUX_LIBRARIES + MSYS_LIBRARIES
+          libraries += COMMON_LINUX_LIBRARIES + ["libx64-ucrt-ruby#{ruby_ver.lib_version}.a"] + MSYS_LIBRARIES
           linux_libraries(libraries, ruby_ver, with_compression)
         end
 

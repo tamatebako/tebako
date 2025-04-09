@@ -102,7 +102,7 @@ module Tebako
         if scmb.macos?
           "S[\"MAINLIBS\"]=\"-ldl -lobjc -lpthread \""
         elsif scmb.msys?
-          "S[\"MAINLIBS\"]=\"-lshell32 -lws2_32 -liphlpapi -limagehlp -lshlwapi -lbcrypt \""
+          "S[\"MAINLIBS\"]=\"-lx64-ucrt-ruby330 -lshell32 -lws2_32 -liphlpapi -limagehlp -lshlwapi -lbcrypt \""
         else
           "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \""
         end
