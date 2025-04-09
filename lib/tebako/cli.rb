@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Copyright (c) 2021-2023 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2021-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of the Tebako project.
 #
@@ -157,30 +157,33 @@ module Tebako
         puts "--> #{nmr.any?}  #{ScenarioManagerBase.new.msys?}"
         return unless nmr.any? && ScenarioManagerBase.new.msys?
 
-        nmr.each do |dir_path|
-#          puts "Looking at: #{dir_path}"
-          if File.directory?(dir_path)
-            Find.find(dir_path) do |path|
-              if File.basename(path) == "NUL"
-                 full_path = "//?/#{path}"
-                  FileUtils.rm_f(full_path)
-#                  puts "Removed NUL file at: #{path}"
-              end
-            end
-          end
+        nmr.each do |path|
+          next unless File.directory?(path)
+
+          extra_win_clean_dir(path)
         end
+
         FileUtils.rm_rf(nmr, secure: true)
       end
 
+      def extra_win_clean_dir(path)
+        Find.find(path) do |file_path|
+          full_path = "//?/#{file_path}"
+          next unless File.file?(full_path) && File.basename(full_path) == "NUL"
+
+          FileUtils.rm_f(full_path)
+        end
+      end
+    end
+
+    no_commands do
       def initialize(*args)
         super
         return if args[2][:current_command].name.include?("hash")
 
         puts "Tebako executable packager version #{Tebako::VERSION}"
       end
-    end
 
-    no_commands do
       def options
         original_options = super
         tebafile = original_options["tebafile"].nil? ? DEFAULT_TEBAFILE : original_options["tebafile"]
@@ -196,7 +199,9 @@ module Tebako
         c_path = Pathname.new(__FILE__).realpath
         @source ||= File.expand_path("../../..", c_path)
       end
+    end
 
+    no_commands do
       def validate_press_options
         return unless options["mode"] != "runtime"
 
@@ -208,9 +213,7 @@ module Tebako
         end
         raise Thor::Error, "No value provided for required options #{opts}" unless opts.empty?
       end
-    end
 
-    no_commands do
       include Tebako::CliHelpers
     end
   end

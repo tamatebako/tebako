@@ -185,6 +185,9 @@ The following instructions have been tested on:
 
 ==== Ruby
 
+Ensure that you have long filenames enabled in Windows.
+https://learn.microsoft.com/en-us/windows/win32/fileio/maximum-file-path-limitation?tabs=registry#enable-long-paths-in-windows-10-version-1607-and-later[long filenames enabled in Windows]. This is required for the majority of applications.
+
 To run Tebako, a Ruby development environment is required.
 The simplest option is to use the Ruby development environment provided by
 https://rubyinstaller.org[RubyInstaller].
@@ -199,10 +202,9 @@ The `ridk` command originates from the RubyInstaller installation.
 
 [source,sh]
 ----
-ridk enable ucrt64
-pacman -S git tar bison flex toolchain make cmake \
-          boost diffutils libevent double-conversion \
-          fmt glog dlfcn gtest autotools ncurses libyaml
+idk enable ucrt64
+pacman -S git tar bison flex pactoys
+bash -c "pacboy sync toolchain:p make:p cmake:p boost:p diffutils:p libevent:p double-conversion:p fmt:p glog:p dlfcn:p gtest:p autotools:p ncurses:p libyaml:p"
 ----
 
 == Gem Installation
