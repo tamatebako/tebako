@@ -80,14 +80,13 @@ module Tebako
         ].freeze
 
         MSYS_LIBRARIES = [
-          "-l:liblz4.a",             "-l:libz.a",             "-l:libzstd.a",            "-l:liblzma.a",
-          "-l:libncurses.a",         "-l:libunwind.a",        "-l:liblzma.a",            "-l:libiberty.a",
-          "LIBYAML",                 "-l:libffi.a", "-l:libboost_chrono-mt.a", # "-l:libboost_system-mt.a",
-          "-l:libstdc++.a",          "-l:libdl.a",            "-static-libgcc",          "-static-libstdc++",
-          "-l:libssl.a",             "-l:libcrypto.a",        "-l:libz.a",               "-l:libwinpthread.a",
-          "-lcrypt32",               "-lshlwapi",             "-lwsock32",               "-liphlpapi",
-          "-limagehlp",              "-lbcrypt",              "-lole32",                 "-loleaut32",
-          "-luuid",                  "-lws2_32"
+          "-l:liblz4.a",             "-l:libz.a",               "-l:libzstd.a",            "-l:liblzma.a",
+          "-l:libncurses.a",         "-l:liblzma.a",            "-l:libiberty.a",          "LIBYAML",
+          "-l:libffi.a",             "-l:libboost_chrono-mt.a", "-l:libstdc++.a",          "-l:libdl.a",
+          "-static-libgcc",          "-static-libstdc++",       "-l:libssl.a",             "-l:libcrypto.a",
+          "-l:libz.a",               "-l:libwinpthread.a",      "-lcrypt32",               "-lshlwapi",
+          "-lwsock32",               "-liphlpapi",              "-limagehlp",              "-lbcrypt",
+          "-lole32",                 "-loleaut32",              "-luuid",                  "-lws2_32"
         ].freeze
 
         def linux_gnu_libraries(ruby_ver, with_compression)
