@@ -34,7 +34,8 @@ module Tebako
     SUBST
 
     # This MSYS specific thing ensure compilation of winmain.c
-    # Did try to understand why it did not work out of the box
+    # Did not try to understand why it did not work out of the box
+    # It is shared across Pass1 and Pass2
     GNUMAKEFILE_IN_WINMAIN_SUBST = <<~SUBST
       RUBYDEF = $(DLL_BASE_NAME).def
 
