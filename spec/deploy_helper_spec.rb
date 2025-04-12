@@ -703,25 +703,60 @@ RSpec.describe Tebako::DeployHelper do
       deploy_helper.instance_variable_set(:@tbd, "/path/to/tbd")
       deploy_helper.instance_variable_set(:@gem_command, gem_command)
       deploy_helper.instance_variable_set(:@bundler_command, bundler_command)
-      allow(Open3).to receive(:capture2e).and_return(["", double("status", signaled?: false, exitstatus: 0)])
+      allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
     end
 
-    context "when gem version is provided" do
-      it "installs the gem with the specified version" do
-        expect(Open3).to receive(:capture2e)
-          .with(deploy_helper.instance_variable_get(:@gem_command), "install",
-                gem_name, "-v", gem_version, "--no-document",
-                "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd")
-        deploy_helper.install_gem(gem_name, gem_version)
+    context "when msys? is true" do
+      before do
+        allow(deploy_helper).to receive(:msys?).and_return(true)
+      end
+
+      context "when version is provided" do
+        it "installs the gem with platform ruby parameter" do
+          expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+            .with([gem_command, "install", gem_name, "-v", gem_version, "--no-document",
+                   "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd",
+                   "--platform", "ruby"])
+
+          deploy_helper.install_gem(gem_name, gem_version)
+        end
+      end
+
+      context "when version is not provided" do
+        it "installs the gem with platform ruby parameter" do
+          expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+            .with([gem_command, "install", gem_name, "--no-document",
+                   "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd",
+                   "--platform", "ruby"])
+
+          deploy_helper.install_gem(gem_name)
+        end
       end
     end
 
-    context "when gem version is not provided" do
-      it "installs the gem without specifying the version" do
-        expect(Open3).to receive(:capture2e)
-          .with(deploy_helper.instance_variable_get(:@gem_command), "install", gem_name, "--no-document",
-                "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd")
-        deploy_helper.install_gem(gem_name)
+    context "when msys? is false" do
+      before do
+        allow(deploy_helper).to receive(:msys?).and_return(false)
+      end
+
+      context "when version is provided" do
+        it "installs the gem without platform ruby parameter" do
+          expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+            .with([gem_command, "install", gem_name, "-v", gem_version, "--no-document",
+                   "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd"])
+
+          deploy_helper.install_gem(gem_name, gem_version)
+        end
+      end
+
+      context "when version is not provided" do
+        it "installs the gem without platform ruby parameter" do
+          expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+            .with([gem_command, "install", gem_name, "--no-document",
+                   "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd"])
+
+          deploy_helper.install_gem(gem_name)
+        end
       end
     end
   end

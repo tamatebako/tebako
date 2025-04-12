@@ -89,10 +89,9 @@ module Tebako
       puts "   ... installing #{name} gem#{" version #{ver}" if ver}"
 
       params = [@gem_command, "install", name.to_s]
-      params.push("-v", ver.to_s) if ver
-      ["--no-document", "--install-dir", @tgd, "--bindir", @tbd].each do |param|
-        params.push(param)
-      end
+      params += ["-v", ver.to_s] if ver
+      params += ["--no-document", "--install-dir", @tgd, "--bindir", @tbd]
+      params += ["--platform", "ruby"] if msys?
       BuildHelpers.run_with_capture_v(params)
     end
 
