@@ -56,8 +56,9 @@ module Tebako
                             desc: "tebako configuration file 'tebafile', '$PWD/.tebako.yml' by default"
     desc "clean", "Clean tebako packaging environment"
     def clean
-      (_, cm) = bootstrap(clean: true)
+      (om, cm) = bootstrap(clean: true)
       cm.clean_cache
+      extra_win_clean([om.deps])
     end
 
     desc "clean_ruby", "Clean Ruby source from tebako packaging environment"
