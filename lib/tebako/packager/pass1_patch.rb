@@ -189,6 +189,11 @@ module Tebako
           "wWinMain(HINSTANCE current, HINSTANCE prev, LPWSTR cmdline, int showcmd) /* tebako patched */"
       }.freeze
 
+      EXT_IO_CONSOLE_WIN32_VK_INC_PATCH = {
+        "static const struct vktable *console_win32_vk(/*const char *, unsigned int*/);" =>
+          "/* tebako patched */ static const struct vktable *console_win32_vk(const char *, size_t);"
+      }.freeze
+
       def patch_map
         pm = msys_patches
         pm.merge!(super)
@@ -229,7 +234,10 @@ module Tebako
           "cygwin/GNUmakefile.in" => gnumakefile_in_patch_p1,
           # ....................................................
           # RUBY_EXPORT=1 (shall be set for static builds but is missing in openssl extension)
-          "ext/openssl/extconf.rb" => OPENSSL_EXTCONF_RB_PATCH
+          "ext/openssl/extconf.rb" => OPENSSL_EXTCONF_RB_PATCH,
+          # ....................................................
+          # Fix the signature of console_win32_vk
+          "ext/io/console/win32_vk.inc" => EXT_IO_CONSOLE_WIN32_VK_INC_PATCH
         }
       end
 
