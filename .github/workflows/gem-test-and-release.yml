@@ -192,6 +192,7 @@ jobs:
         cxx: ${{ env.CXX }}
         install: off
         verbose: ${{ env.VERBOSE }}
+        ruby_version: skip
 
     - name: Setup integration testing environment
       uses: ./.github/actions/setup-tebako-integration-test
