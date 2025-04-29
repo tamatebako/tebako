@@ -319,7 +319,7 @@ endif(IS_GNU)
 # Ruby
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
-set(RUBY_C_FLAGS "-fPIC -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include")
+set(RUBY_C_FLAGS "-fPIC -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include -Wno-error=incompatible-pointer-types")
 
 # Shadow
 # https://github.com/deivid-rodriguez/byebug/issues/825
