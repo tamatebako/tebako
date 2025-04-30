@@ -71,7 +71,7 @@ jobs:
 #        with:
 #          message: clang-format fixes
 #          committer_name: GitHub Actions
-#""          committer_email: actions@github.com
+#          committer_email: actions@github.com
 
   rubocop:
     runs-on: ubuntu-latest
@@ -87,11 +87,12 @@ jobs:
         run: bundle exec rubocop
 
   rspec:
+    name: rspec on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ ubuntu-20.04, macos-14, windows-2019 ]
+        os: [ macos-14, windows-2019 ]
     env:
       CODECOV_TOKEN: 795f17c3-2dc3-4253-9627-e2d0a2e59223
     steps:
@@ -101,6 +102,30 @@ jobs:
         with:
           ruby-version: '3.1'
           bundler-cache: true
+
+      - name: Run rspec
+        run: bundle exec rspec
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ env.CODECOV_TOKEN }}
+
+  rspec-linux:
+    name: rspec on ${{ matrix.os }}
+    runs-on: ubuntu-latest
+    container:
+      image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.os }}-dev'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ alpine-3.17, ubuntu-20.04 ]
+    env:
+      CODECOV_TOKEN: 795f17c3-2dc3-4253-9627-e2d0a2e59223
+    steps:
+      - uses: actions/checkout@v4
+
+      - run: bundle install
 
       - name: Run rspec
         run: bundle exec rspec
