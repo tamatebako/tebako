@@ -195,6 +195,7 @@ RSpec.describe Tebako::Packager::Pass1MSysPatch do # rubocop:disable Metrics/Blo
           "ext/bigdecimal/bigdecimal.h" => described_class::EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH,
           "lib/rubygems/openssl.rb" => described_class::RUBYGEMS_OPENSSL_RB_PATCH,
           "cygwin/GNUmakefile.in" => patch.send(:gnumakefile_in_patch_p1),
+          "ext/io/console/win32_vk.inc" => described_class::EXT_IO_CONSOLE_WIN32_VK_INC_PATCH,
           "ext/openssl/extconf.rb" => described_class::OPENSSL_EXTCONF_RB_PATCH
         )
         expect(patch.patch_map).to eq(expected_patch_map)
@@ -209,6 +210,7 @@ RSpec.describe Tebako::Packager::Pass1MSysPatch do # rubocop:disable Metrics/Blo
         expected_patch_map = base_patch_map.merge(
           "ext/bigdecimal/bigdecimal.h" => described_class::EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH,
           "cygwin/GNUmakefile.in" => patch.send(:gnumakefile_in_patch_p1),
+          "ext/io/console/win32_vk.inc" => described_class::EXT_IO_CONSOLE_WIN32_VK_INC_PATCH,
           "ext/openssl/extconf.rb" => described_class::OPENSSL_EXTCONF_RB_PATCH,
           "lib/rubygems/openssl.rb" => described_class::RUBYGEMS_OPENSSL_RB_PATCH,
           "include/ruby/onigmo.h" => described_class::INCLUDE_RUBY_ONIGMO_H_PATCH,
@@ -225,6 +227,7 @@ RSpec.describe Tebako::Packager::Pass1MSysPatch do # rubocop:disable Metrics/Blo
       it "includes additional patches for MSys and ruby 3.4.1" do
         expected_patch_map = base_patch_map.merge(
           "cygwin/GNUmakefile.in" => patch.send(:gnumakefile_in_patch_p1),
+          "ext/io/console/win32_vk.inc" => described_class::EXT_IO_CONSOLE_WIN32_VK_INC_PATCH,
           "ext/openssl/extconf.rb" => described_class::OPENSSL_EXTCONF_RB_PATCH,
           "lib/rubygems/openssl.rb" => described_class::RUBYGEMS_OPENSSL_RB_PATCH,
           "include/ruby/onigmo.h" => described_class::INCLUDE_RUBY_ONIGMO_H_PATCH,
