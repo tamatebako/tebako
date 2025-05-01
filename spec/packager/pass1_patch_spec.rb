@@ -106,6 +106,7 @@ RSpec.describe Tebako::Packager::Pass1Patch do # rubocop:disable Metrics/BlockLe
 
       it "does not include additional patches for ruby3x" do
         expected_patch_map = base_patch_map.merge(
+          "enc/jis/props.h" => described_class::ENC_JIS_PROPS_H_PATCH,
           "ext/bigdecimal/bigdecimal.h" => described_class::EXT_BIGDECIMAL_BIGDECIMAL_H_PATCH
         )
         expect(patch.patch_map).to eq(expected_patch_map)
