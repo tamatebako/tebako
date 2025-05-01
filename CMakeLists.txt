@@ -321,6 +321,10 @@ endif(IS_GNU)
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
 set(RUBY_C_FLAGS "-fPIC -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include -Wno-incompatible-pointer-types")
 
+if(${RUBY_VER} VERSION_LESS "3.2.0")
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -std=gnu17")
+endif(${RUBY_VER} VERSION_LESS "3.2.0")
+
 # Shadow
 # https://github.com/deivid-rodriguez/byebug/issues/825
 # (it happens under some conditions though it is hard to explain when)

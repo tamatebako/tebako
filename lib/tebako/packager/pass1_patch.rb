@@ -121,6 +121,11 @@ module Tebako
         "Logging::message \"=== Checking done. ===\\n\"" => OPENSSL_EXTCONF_RB_SUBST
       }.freeze
 
+      ENC_JIS_PROPS_H_PATCH = {
+        "static const struct enc_property *onig_jis_property(/*const char *str, unsigned int len*/);" =>
+          "/* tebako patched */ static const struct enc_property *onig_jis_property(const char *str, size_t len);"
+      }.freeze
+
       def initialize(mount_point, ruby_ver)
         super(mount_point)
         @ruby_ver = ruby_ver
@@ -160,6 +165,10 @@ module Tebako
         # autoload :OpenSSL, "openssl"
         # fails to deal with a default gem from statically linked extension
         pm.store("lib/rubygems/openssl.rb", RUBYGEMS_OPENSSL_RB_PATCH) if @ruby_ver.ruby3x?
+
+        # ....................................................
+        # fix onig_jis_property signature (gcc 15 compatibility issue)
+        pm.store("enc/jis/props.h", ENC_JIS_PROPS_H_PATCH) unless @ruby_ver.ruby32?
 
         pm.freeze
       end
