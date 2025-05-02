@@ -229,7 +229,7 @@ RSpec.describe Tebako::DeployHelper do
       expect(Tebako::BuildHelpers)
         .to have_received(:run_with_capture_v)
         .with([deploy_helper.instance_variable_get(:@gem_command), "build", gemspec])
-      expect(deploy_helper).to have_received(:install_all_gems_or_fail)
+      expect(deploy_helper).to have_received(:install_all_gems_or_fail).with(false)
       expect(deploy_helper).to have_received(:check_entry_point).with("bin")
     end
   end
@@ -265,7 +265,7 @@ RSpec.describe Tebako::DeployHelper do
         .with([deploy_helper.instance_variable_get(:@bundler_command), nil, "exec",
                deploy_helper.instance_variable_get(:@gem_command), "build",
                gemspec])
-      expect(deploy_helper).to have_received(:install_all_gems_or_fail)
+      expect(deploy_helper).to have_received(:install_all_gems_or_fail).with(true)
       expect(deploy_helper).to have_received(:check_entry_point).with("bin")
     end
   end
@@ -410,7 +410,7 @@ RSpec.describe Tebako::DeployHelper do
       it "executes deployment steps in order" do
         expect(deploy_helper).to receive(:update_rubygems).ordered
         expect(deploy_helper).to receive(:install_gem).with("tebako-runtime").ordered
-        expect(deploy_helper).to receive(:install_gem).with("bundler", Tebako::BUNDLER_VERSION).ordered
+        expect(deploy_helper).to receive(:install_gem).with("bundler", ver: Tebako::BUNDLER_VERSION).ordered
         expect(deploy_helper).to receive(:deploy_solution).ordered
         expect(deploy_helper).to receive(:check_cwd).ordered
 
@@ -660,10 +660,16 @@ RSpec.describe Tebako::DeployHelper do
         allow(Dir).to receive(:glob).with("*.gem").and_return(["gem1.gem", "gem2.gem"])
       end
 
-      it "installs all gems" do
-        expect(deploy_helper).to receive(:install_gem).with("/expanded/gem1.gem")
-        expect(deploy_helper).to receive(:install_gem).with("/expanded/gem2.gem")
-        deploy_helper.send(:install_all_gems_or_fail)
+      it "installs all gems, not bundled" do
+        expect(deploy_helper).to receive(:install_gem).with("/expanded/gem1.gem", bundled: false)
+        expect(deploy_helper).to receive(:install_gem).with("/expanded/gem2.gem", bundled: false)
+        deploy_helper.send(:install_all_gems_or_fail, false)
+      end
+
+      it "installs all gems, bundled" do
+        expect(deploy_helper).to receive(:install_gem).with("/expanded/gem1.gem", bundled: true)
+        expect(deploy_helper).to receive(:install_gem).with("/expanded/gem2.gem", bundled: true)
+        deploy_helper.send(:install_all_gems_or_fail, true)
       end
     end
 
@@ -673,7 +679,7 @@ RSpec.describe Tebako::DeployHelper do
       end
 
       it "raises an error" do
-        expect { deploy_helper.send(:install_all_gems_or_fail) }
+        expect { deploy_helper.send(:install_all_gems_or_fail, false) }
           .to raise_error(Tebako::Error, "No gem files found after build")
       end
     end
@@ -686,7 +692,7 @@ RSpec.describe Tebako::DeployHelper do
       end
 
       it "propagates the error" do
-        expect { deploy_helper.send(:install_all_gems_or_fail) }
+        expect { deploy_helper.send(:install_all_gems_or_fail, true) }
           .to raise_error(Tebako::Error)
       end
     end
@@ -706,31 +712,13 @@ RSpec.describe Tebako::DeployHelper do
       allow(Tebako::BuildHelpers).to receive(:run_with_capture_v)
     end
 
-    context "when msys? is true" do
-      before do
-        allow(deploy_helper).to receive(:msys?).and_return(true)
-      end
-
-      context "when version is provided" do
-        it "installs the gem with platform ruby parameter" do
-          expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
-            .with([gem_command, "install", gem_name, "-v", gem_version, "--no-document",
-                   "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd",
-                   "--platform", "ruby"])
-
-          deploy_helper.install_gem(gem_name, gem_version)
-        end
-      end
-
-      context "when version is not provided" do
-        it "installs the gem with platform ruby parameter" do
-          expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
-            .with([gem_command, "install", gem_name, "--no-document",
-                   "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd",
-                   "--platform", "ruby"])
-
-          deploy_helper.install_gem(gem_name)
-        end
+    context "when gem version is provided" do
+      it "installs the gem with the specified version" do
+        expect(Open3).to receive(:capture2e)
+          .with(deploy_helper.instance_variable_get(:@gem_command), "install",
+                gem_name, "-v", gem_version, "--no-document",
+                "--install-dir", "/path/to/tgd", "--bindir", "/path/to/tbd")
+        deploy_helper.install_gem(gem_name, ver: gem_version)
       end
     end
 

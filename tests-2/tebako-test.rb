@@ -237,15 +237,16 @@ class TebakoTest < Minitest::Test
     end
   end
 
+  # (Moved to the first test set as test-24 with a gem installed from GitHub)
   # seven_zip gem should be automatically included and usable in packaged app
-  def test_212_seven_zip
-    print "\n#{name = "gems-seven-zip"} "
-    with_fixture_press_and_env name do |package|
-      out, st = Open3.capture2(package)
-      assert_equal 0, st.exitstatus
-      assert_match(/Hello! SevenZipRuby welcomes you to the magic world of ruby gems\./, out)
-    end
-  end
+  # def test_212_seven_zip
+  #  print "\n#{name = "gems-seven-zip"} "
+  #  with_fixture_press_and_env name do |package|
+  #    out, st = Open3.capture2(package)
+  #    assert_equal 0, st.exitstatus
+  #    assert_match(/Hello! SevenZipRuby welcomes you to the magic world of ruby gems\./, out)
+  #  end
+  # end
 
   # bundler gem should be automatically included and usable in packaged app
   def test_211_bundler
