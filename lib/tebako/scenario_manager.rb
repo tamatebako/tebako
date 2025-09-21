@@ -56,6 +56,8 @@ module Tebako
     def b_env
       u_flags = if @macos
                   "-DTARGET_OS_SIMULATOR=0 -DTARGET_OS_IPHONE=0  #{ENV.fetch("CXXFLAGS", nil)}"
+                elsif @msys
+                  "-DGFLAGS_IS_A_DLL=0   #{ENV.fetch("CXXFLAGS", nil)}"
                 else
                   ENV.fetch("CXXFLAGS", nil)
                 end

@@ -24,7 +24,6 @@
         "3.4.2"
       ],
       "env": [
-        { "os": "macos-14", "xcode": "15.0.1", "LG_VADDR": "39" },
         { "os": "macos-14", "xcode": "15.4" },
         { "os": "macos-15", "xcode": "16.1" }
       ]

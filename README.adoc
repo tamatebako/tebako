@@ -84,7 +84,6 @@ architectures.
 | Alpine 3.17 | amd64 | gcc/g+\+: default; clang/clang++: default
 
 3+| **macOS**
-| macOS 13 (Ventura)  | amd64, arm64 | tested agains xcode: [14.3.1]
 | macOS 14 (Sonoma)   | amd64, arm64 | tested agains xcode: [15.0.1, 15.4]
 | macOS 15 (Sequoia)  | amd64, arm64 | tested agains xcode: [16.1]
 
