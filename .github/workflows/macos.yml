@@ -268,4 +268,4 @@ jobs:
         uses: tamatebako/tebako/.github/actions/setup-tebako@main
         with:
           cache: off
-          xcode: 15.0.1
+          xcode: 15.6

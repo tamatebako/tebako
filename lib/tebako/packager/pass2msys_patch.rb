@@ -113,7 +113,11 @@ module Tebako
     WIN32_WIN32_C_MSYS_PATCHES = {
       "#if defined _MSC_VER && _MSC_VER <= 1200" =>
         "#{PatchLiterals::C_FILE_SUBST_LESS}\n#if defined _MSC_VER && _MSC_VER <= 1200",
-      "len = GetCurrentDirectoryW(0, NULL);" => WIN32_WIN32_C_MSYS_SUBST
+      "len = GetCurrentDirectoryW(0, NULL);" => WIN32_WIN32_C_MSYS_SUBST,
+      "clock_gettime(clockid_t clock_id, struct timespec *sp)" =>
+        "_dummy_clock_gettime(clockid_t clock_id, struct timespec *sp)",
+      "clock_getres(clockid_t clock_id, struct timespec *sp)" =>
+        "_dummy_clock_getres(clockid_t clock_id, struct timespec *sp)"
     }.freeze
 
     # Msys Pass2 patches
