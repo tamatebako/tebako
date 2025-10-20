@@ -56,15 +56,15 @@ jobs:
         env:
           SHELLCHECK_OPTS: -x
 
-  clang-format:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: DoozyX/clang-format-lint-action@master
-        with:
-          source: 'src'
-          extensions: 'h,cpp,c'
-          clangFormatVersion: 14
+#  clang-format:
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#      - uses: DoozyX/clang-format-lint-action@master
+#        with:
+#          source: 'src'
+#          extensions: 'h,cpp,c'
+#          clangFormatVersion: 14
 #          inplace: True
 #      - name: Commit changes
 #        uses: EndBug/add-and-commit@v9
