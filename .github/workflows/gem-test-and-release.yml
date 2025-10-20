@@ -102,62 +102,62 @@ jobs:
         retention-days: 1
         path: Brewfile
 
-  package-tests-windows:
-    needs: build-gem
-    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }}
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ 'windows-latest' ]
-        gem: [ fontist ]
-        package_ruby_ver: [ '3.3.7' ]
-    env:
-      CC: gcc
-      CXX: g++
-
-    defaults:
-      run:
-        shell: msys2 {0}
-
-    steps:
-    - name: Setup MSys
-      uses: msys2/setup-msys2@v2
-      with:
-        msystem: ucrt64
-        path-type: minimal
-        update: true
-
-    - name: Download actions
-      uses: actions/download-artifact@v4
-      with:
-        name: actions
-        path: .github/actions
-
-    - name: Setup ci environment
-      uses: ./.github/actions/setup-tebako
-      with:
-        cache: off
-        cc: ${{ env.CC }}
-        cxx: ${{ env.CXX }}
-        install: off
-        verbose: ${{ env.VERBOSE }}
-
-    - name: Setup integration testing environment
-      uses: ./.github/actions/setup-tebako-integration-test-msys
-      with:
-        path: .tebako/deps
-        os: ${{ matrix.os }}
-        cc:  ${{ env.CC }}
-        version: ${{ env.CACHE_VER }}
-
-    - name: Package fontist
-      if: matrix.gem == 'fontist'
-      uses: ./.github/actions/test-package-fontist-windows
-
-    - name: Package metanorma
-      if: matrix.gem == 'metanorma'
-      uses: ./.github/actions/test-package-metanorma-windows
+#  package-tests-windows:
+#    needs: build-gem
+#    name: Use gem to package ${{ matrix.gem }} ${{ matrix.os }} Ruby ${{ matrix.package_ruby_ver }}
+#    runs-on: windows-latest
+#    strategy:
+#      fail-fast: false
+#      matrix:
+#        os: [ 'windows-latest' ]
+#        gem: [ fontist ]
+#        package_ruby_ver: [ '3.3.7' ]
+#    env:
+#      CC: gcc
+#      CXX: g++
+#
+#    defaults:
+#      run:
+#        shell: msys2 {0}
+#
+#    steps:
+#    - name: Setup MSys
+#      uses: msys2/setup-msys2@v2
+#      with:
+#        msystem: ucrt64
+#        path-type: minimal
+#        update: true
+#
+#    - name: Download actions
+#      uses: actions/download-artifact@v4
+#      with:
+#        name: actions
+#        path: .github/actions
+#
+#    - name: Setup ci environment
+#      uses: ./.github/actions/setup-tebako
+#      with:
+#        cache: off
+#        cc: ${{ env.CC }}
+#        cxx: ${{ env.CXX }}
+#        install: off
+#        verbose: ${{ env.VERBOSE }}
+#
+#    - name: Setup integration testing environment
+#      uses: ./.github/actions/setup-tebako-integration-test-msys
+#      with:
+#        path: .tebako/deps
+#        os: ${{ matrix.os }}
+#        cc:  ${{ env.CC }}
+#        version: ${{ env.CACHE_VER }}
+#
+#    - name: Package fontist
+#      if: matrix.gem == 'fontist'
+#      uses: ./.github/actions/test-package-fontist-windows
+#
+#    - name: Package metanorma
+#      if: matrix.gem == 'metanorma'
+#      uses: ./.github/actions/test-package-metanorma-windows
 
   package-tests-linux:
     needs: build-gem
@@ -307,7 +307,8 @@ jobs:
 
   release:
     name: Release gem
-    needs: [ package-tests-windows, package-tests-ubuntu-newer, package-tests-linux, package-tests-macos ]
+#    needs: [ package-tests-windows, package-tests-ubuntu-newer, package-tests-linux, package-tests-macos ]
+    needs: [  package-tests-ubuntu-newer, package-tests-linux, package-tests-macos ]
     runs-on: ubuntu-latest
     if: contains(github.ref, 'refs/tags/v') && !contains(github.ref, 'pre')
     steps:

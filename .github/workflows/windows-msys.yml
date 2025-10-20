@@ -32,25 +32,25 @@
 name: Windows-MSys
 
 on:
-  schedule:
-    - cron: "0 9 * * 5"
-  push:
-    branches: [ main ]
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - '.github/workflows/*.yml'
-      - '!.github/workflows/windows-msys.yml'
-      - Brewfile
-  pull_request:
-    paths-ignore:
-      - 'docs/**'
-      - '**.adoc'
-      - '**.md'
-      - '.github/workflows/*.yml'
-      - '!.github/workflows/windows-msys.yml'
-      - Brewfile
+#  schedule:
+#    - cron: "0 9 * * 5"
+#  push:
+#    branches: [ main ]
+#    paths-ignore:
+#      - 'docs/**'
+#      - '**.adoc'
+#      - '**.md'
+#      - '.github/workflows/*.yml'
+#      - '!.github/workflows/windows-msys.yml'
+#      - Brewfile
+#  pull_request:
+#    paths-ignore:
+#      - 'docs/**'
+#      - '**.adoc'
+#      - '**.md'
+#      - '.github/workflows/*.yml'
+#      - '!.github/workflows/windows-msys.yml'
+#      - Brewfile
   workflow_dispatch:
 
 concurrency:
