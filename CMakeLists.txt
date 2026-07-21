@@ -91,7 +91,7 @@ set(IS_MSYS OFF)
 set(IS_DARWIN OFF)
 set(RB_W32 OFF)
 set(RUBY_WITHOUT_EXT "dbm,win32,win32ole,-test-/*")
-set(DWARFS_PRELOAD OFF)
+option(DWARFS_PRELOAD "Deploy the prebuilt libtfs package from the GitHub release (OFF builds libtfs from source with the vcpkg toolchain)" ON)
 set(WITH_PATCHELF OFF)
 
 if("${OSTYPE_TXT}" MATCHES "^linux-gnu.*")
@@ -103,7 +103,6 @@ elseif("${OSTYPE_TXT}" MATCHES "^linux-musl.*")
   set(IS_MUSL ON)
 elseif("${OSTYPE_TXT}" MATCHES "^msys*" OR "${OSTYPE_TXT}" MATCHES "^cygwin*")
   set(IS_MSYS ON)
-  # set(DWARFS_PRELOAD ON)
   set(RB_W32 ON)
   set(RUBY_WITHOUT_EXT "dbm,syslog,pty,gdbm,readline,-test-/*")
 elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
@@ -168,18 +167,15 @@ set(RUBY_STASH_DIR ${DEPS}/stash_${RUBY_VER})
 string(SUBSTRING ${RUBY_VER} 0 3 RUBY_VER_BASE)
 string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 
-#if(DWARFS_PRELOAD)
-#  def_ext_prj_t(LIBDWARFS_WR "0.5.8" "7bf8e5b4432f35b65f6034f614067c2018995c1bebaf935e8cdddc1a3e045c01")
-#
-#  string(REGEX REPLACE "^([0-9]+)\\.([0-9]+)\\.([0-9]+).*" "\\1;\\2;\\3" LIBDWARFS_WR_VER_COMPONENTS ${LIBDWARFS_WR_VER})
-#
-#  list(GET LIBDWARFS_WR_VER_COMPONENTS 0 LIBDWARFS_WR_VER_MAJOR)
-#  list(GET LIBDWARFS_WR_VER_COMPONENTS 1 LIBDWARFS_WR_VER_MINOR)
-#  list(GET LIBDWARFS_WR_VER_COMPONENTS 2 LIBDWARFS_WR_VER_PATCH)
-#  set (LIBDWARFS_WR_VER_M ${LIBDWARFS_WR_VER_MAJOR}.${LIBDWARFS_WR_VER_MINOR}.${LIBDWARFS_WR_VER_PATCH})
-#else(DWARFS_PRELOAD)
-def_ext_prj_g(DWARFS_WR "v0.11.0")
-#endif(DWARFS_PRELOAD)
+# libtfs (former libdwarfs-wr): DWARFS_WR_TAG selects the libtfs git tag for
+# the source build and the matching GitHub release for the prebuilt package
+def_ext_prj_g(DWARFS_WR "v0.12.0")
+
+# Provisions libtfs (prebuilt package or vcpkg toolchain for the source
+# build), the prebuilt mkdwarfs, and -- for the prebuilt path -- the
+# transitive static dependencies the libtfs package does not ship.
+# Sets LIBTFS_* variables summarized below.
+include(${CMAKE_SOURCE_DIR}/cmake/tebako-libtfs.cmake)
 
 def_ext_prj_g(PATCHELF "65e14792061c298f1d2bc44becd48a10cbf0bc81")
 
@@ -192,10 +188,17 @@ message("Configuration summary:")
 message(STATUS "ruby: v${RUBY_VER} at ${RUBY_SOURCE_DIR}")
 
 if(DWARFS_PRELOAD)
-  message(STATUS "dwarfs with tebako wrapper: deploying v${LIBDWARFS_WR_VER} to ${LIBDWARFS_WR_SOURCE_DIR}")
+  message(STATUS "libtfs: v${LIBTFS_VERSION} prebuilt package (${LIBTFS_PLATFORM}) at ${LIBTFS_LIB_DIR}")
 else(DWARFS_PRELOAD)
-  message(STATUS "dwarfs with tebako wrapper: @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
+  message(STATUS "libtfs: source build @${DWARFS_WR_TAG} at ${DWARFS_WR_SOURCE_DIR}")
 endif(DWARFS_PRELOAD)
+message(STATUS "libtfs headers: ${LIBTFS_INCLUDE_DIR}")
+message(STATUS "mkdwarfs: ${LIBTFS_MKDWARFS}")
+if(LIBTFS_VCPKG_TRIPLET_DIR)
+  message(STATUS "libtfs transitive dependencies (vcpkg): ${LIBTFS_VCPKG_TRIPLET_DIR}")
+else()
+  message(STATUS "libtfs transitive dependencies (vcpkg): ${LIBTFS_VCPKG_INSTALLED_DIR}/<triplet> (resolved during the libtfs build)")
+endif()
 
 # ...................................................................
 # Filesystem locations
@@ -241,43 +244,30 @@ message(STATUS "Removing GLIBC_PRIVATE reference: ${WITH_PATCHELF}")
 message(STATUS "Not building Ruby extensions: ${RUBY_WITHOUT_EXT}")
 
 # ...................................................................
-# DwarFS with tebako wrapper
+# DwarFS-based tebako filesystem library (libtfs)
 
 # ...................................................................
-# The libraries that are build by DwarFS project
-# libdwarfs libfolly libfsst libxxhash libmetadata_thrift libthrift_light
-# These forward-declarations and BUILD_BYPRODICTS are required to support 'Ninja'
+# The libraries provided by libtfs (prebuilt package or source build):
+# libtfs.a plus its pure-C dirent helper. These forward-declarations and
+# BUILD_BYPRODUCTS are required to support 'Ninja'
 # Otherwise add_dependencies would be enough for 'Unix makefiles' generator
 
-set(__LIBDWARFS_WR "${DEPS_LIB_DIR}/libdwarfs-wr.a")
-set(__LIBDWARFS "${DEPS_LIB_DIR}/libdwarfs.a")
-set(__LIBFOLLY "${DEPS_LIB_DIR}/libfolly.a")
-set(__LIBFSST "${DEPS_LIB_DIR}/libfsst.a")
-set(__LIBT_METADATA "${DEPS_LIB_DIR}/libmetadata_thrift.a")
-set(__LIBT_LIGHT "${DEPS_LIB_DIR}/libthrift_light.a")
-set(__LIBXXHASH "${DEPS_LIB_DIR}/libxxhash.a")
-set(__LIBZSTD "${DEPS_LIB_DIR}/libzstd.a")
-set(__LIBARCHIVE "${DEPS_LIB_DIR}/libarchive.a")
+set(__LIBTFS "${DEPS_LIB_DIR}/libtfs.a")
+set(__LIBTFS_HELPER "${DEPS_LIB_DIR}/libtebako_dirent_helper_c.a")
 
 if(DWARFS_PRELOAD)
-  ExternalProject_Add(${LIBDWARFS_WR_PRJ}
-    PREFIX ${DEPS}
-    URL https://github.com/tamatebako/libdwarfs/releases/download/v${LIBDWARFS_WR_VER}/libdwarfs-wr-${LIBDWARFS_WR_VER_M}-mingw-ucrt64.7z
-    URL_HASH SHA256=${LIBDWARFS_WR_HASH}
-    DOWNLOAD_NO_PROGRESS true
-    SOURCE_DIR ${LIBDWARFS_WR_SOURCE_DIR}
-    UPDATE_COMMAND ""
-    CONFIGURE_COMMAND ""
-    BUILD_COMMAND ""
-    INSTALL_COMMAND ${CMAKE_COMMAND} -E make_directory ${DEPS}
-            COMMAND ${CMAKE_COMMAND} -E copy_directory ${LIBDWARFS_WR_SOURCE_DIR} ${DEPS}
-    TEST_COMMAND ""
+  # Everything for the prebuilt path (download, SHA256 verification,
+  # deployment to ${DEPS}, vcpkg transitive dependencies) was done at
+  # configure time by cmake/tebako-libtfs.cmake; the target only keeps the
+  # dependency graph (ruby, setup) intact.
+  add_custom_target(${DWARFS_WR_PRJ}
+    COMMAND ${CMAKE_COMMAND} -E echo "libtfs v${LIBTFS_VERSION} prebuilt package (${LIBTFS_PLATFORM}) deployed to ${DEPS}"
   )
 else(DWARFS_PRELOAD)
   ExternalProject_Add(${DWARFS_WR_PRJ}
     GIT_SHALLOW true
     PREFIX ${DEPS}
-    GIT_REPOSITORY https://github.com/tamatebako/libdwarfs.git
+    GIT_REPOSITORY https://github.com/tamatebako/libtfs.git
     GIT_TAG ${DWARFS_WR_TAG}
     SOURCE_DIR ${DWARFS_WR_SOURCE_DIR}
     BINARY_DIR ${DWARFS_WR_BINARY_DIR}
@@ -288,13 +278,17 @@ else(DWARFS_PRELOAD)
                -DWITH_TESTS:BOOL=OFF
                -DWITH_ASAN:BOOL=OFF
                -DWITH_COVERAGE:BOOL=OFF
-               -DTEBAKO_BUILD_SCOPE=MKD
+               -DWITH_LEGACY_TEBAKO_API:BOOL=ON
+               -DMKDWARFS=${DEPS_BIN_DIR}/mkdwarfs
+               -DTEBAKO_BUILD_SCOPE=LIB
                -DOPENSSL_VERSION=${OPENSSL_VER}
                -DRB_W32=${RB_W32}
+               -DCMAKE_TOOLCHAIN_FILE=${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake
+               -DVCPKG_INSTALLED_DIR=${LIBTFS_VCPKG_INSTALLED_DIR}
+               ${LIBTFS_VCPKG_EP_TRIPLET_ARG}
                -GNinja
-    BUILD_BYPRODUCTS ${__LIBDWARFS_WR}
-                     ${__LIBDWARFS} ${__LIBFSST} ${__LIBFOLLY} ${__LIBT_METADATA}
-                     ${__LIBT_LIGHT} ${__LIBXXHASH} ${__LIBZSTD} ${__LIBARCHIVE}
+    BUILD_BYPRODUCTS ${__LIBTFS}
+                     ${__LIBTFS_HELPER}
   )
 endif(DWARFS_PRELOAD)
 
