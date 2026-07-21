@@ -261,7 +261,7 @@ if(DWARFS_PRELOAD)
   # configure time by cmake/tebako-libtfs.cmake; the target only keeps the
   # dependency graph (ruby, setup) intact.
   add_custom_target(${DWARFS_WR_PRJ}
-    COMMAND ${CMAKE_COMMAND} -E echo "libtfs v${LIBTFS_VERSION} prebuilt package (${LIBTFS_PLATFORM}) deployed to ${DEPS}"
+    COMMAND ${CMAKE_COMMAND} -E echo "libtfs v${LIBTFS_VERSION} prebuilt package [${LIBTFS_PLATFORM}] deployed to ${DEPS}"
   )
 else(DWARFS_PRELOAD)
   ExternalProject_Add(${DWARFS_WR_PRJ}
