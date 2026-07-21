@@ -279,6 +279,9 @@ else(DWARFS_PRELOAD)
                -DWITH_ASAN:BOOL=OFF
                -DWITH_COVERAGE:BOOL=OFF
                -DWITH_LEGACY_TEBAKO_API:BOOL=ON
+               # SquashFS adapter stays off in tebako builds (LGPL; tebako
+               # packages use the dwarfs/zip backends only)
+               -DWITH_SQUASHFS:BOOL=OFF
                -DMKDWARFS=${DEPS_BIN_DIR}/mkdwarfs
                -DTEBAKO_BUILD_SCOPE=LIB
                -DOPENSSL_VERSION=${OPENSSL_VER}
@@ -313,6 +316,12 @@ endif(IS_GNU)
 # Ruby
 
 set(RUBY_L_FLAGS "-L${DEPS_LIB_DIR} -L${CMAKE_CURRENT_BINARY_DIR}")
+if(LIBTFS_VCPKG_TRIPLET_DIR)
+  # Transitive static deps of libtfs (dwarfs reader set, flatbuffers, zip,
+  # codecs) live in the vcpkg install tree; referenced as -l:lib<name>.a in
+  # the patched ruby MAINLIBS (lib/tebako/packager/patch_libraries.rb)
+  string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${LIBTFS_VCPKG_TRIPLET_DIR}/lib")
+endif(LIBTFS_VCPKG_TRIPLET_DIR)
 set(RUBY_C_FLAGS "-fPIC -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include -Wno-incompatible-pointer-types")
 
 if(${RUBY_VER} VERSION_LESS "3.2.0" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "15.0.0" AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")

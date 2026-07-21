@@ -364,6 +364,16 @@ if(NOT LIBTFS_VCPKG_TRIPLET)
     endif()
   endforeach()
 endif()
+if(NOT LIBTFS_VCPKG_TRIPLET)
+  # Source build on a cold tree: the triplet dir only appears when vcpkg
+  # installs during the libtfs build, so compute vcpkg's default host
+  # triplet the way the libtfs release builds do.
+  if(IS_DARWIN)
+    set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-osx")
+  elseif(IS_GNU OR IS_MUSL)
+    set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-linux")
+  endif()
+endif()
 if(LIBTFS_VCPKG_TRIPLET)
   set(LIBTFS_VCPKG_TRIPLET_DIR "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
 endif()
