@@ -175,7 +175,7 @@ string(CONCAT RUBY_API_VER ${RUBY_VER_BASE} ".0")
 # NOTE: the env override in def_ext_prj_g (tebako-tools) is currently broken
 # (`if (DEFINED ENV{${TAG})` is missing a closing brace, so the test never
 # fires); this default is the operative tag selection.
-def_ext_prj_g(DWARFS_WR "v0.12.2")
+def_ext_prj_g(DWARFS_WR "v0.12.4")
 
 # Provisions libtfs (prebuilt package or vcpkg toolchain for the source
 # build), the prebuilt mkdwarfs, and -- for the prebuilt path -- the
