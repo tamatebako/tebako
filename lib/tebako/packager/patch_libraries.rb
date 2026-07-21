@@ -36,37 +36,47 @@ module Tebako
         # rubocop:disable Style/WordArray
         DARWIN_BREW_LIBS = [
           ["zlib", "z"],              ["gdbm", "gdbm"],           ["readline", "readline"], ["libffi", "ffi"],
-          ["ncurses", "ncurses"],     ["lz4", "lz4"],             ["xz", "lzma"],           ["libyaml", "yaml"],
-          ["boost", "boost_chrono"],  ["double-conversion", "double-conversion"]
+          ["ncurses", "ncurses"],     ["lz4", "lz4"],             ["xz", "lzma"],           ["libyaml", "yaml"]
         ].freeze
 
         DARWIN_BREW_LIBS_PRE_31 = [["openssl@1.1", "ssl"], ["openssl@1.1", "crypto"]].freeze
 
         DARWIN_BREW_LIBS_31 = [["openssl@3", "ssl"], ["openssl@3", "crypto"]].freeze
 
-        DARWIN_DEP_LIBS_1 = ["folly", "fsst",   "metadata_thrift", "thrift_light", "xxhash",       "zstd"].freeze
-        DARWIN_DEP_LIBS_2 = ["glog",  "gflags", "brotlienc",       "brotlidec",    "brotlicommon", "fmt"].freeze
+        DARWIN_DEP_LIBS_1 = ["tfs", "tebako_dirent_helper_c"].freeze
+        DARWIN_DEP_LIBS_2 = ["-l:libdwarfs_reader.a",           "-l:libdwarfs_common.a",   "-l:libdwarfs_metadata_legacy.a",
+                             "-l:libdwarfs_decompressor.a",     "-l:libflatbuffers.a",     "-l:libzip.a",
+                             "-l:libfmt.a",                     "-l:libxxhash.a",          "-l:libzstd.a",
+                             "-l:libbrotlidec.a",               "-l:libbrotlienc.a",       "-l:libbrotlicommon.a",
+                             "-l:libbz2.a",                     "-l:libboost_filesystem.a", "-l:libboost_chrono.a"].freeze
         # rubocop:enable Style/WordArray
 
         LIBTEBAKOFS = "-Wl,--push-state,--whole-archive -l:libtebako-fs.a -Wl,--pop-state"
 
+        # libtfs (libtfs.a + its pure-C dirent helper) and the transitive static
+        # set resolved by vcpkg into deps/vcpkg_installed/<triplet>/lib: the
+        # dwarfs reader side, flatbuffers, zip and the C++ support libs.
+        # Compression codecs register explicitly (compression_registry ctor),
+        # so no --whole-archive compression lib is needed anymore.
         COMMON_LINUX_LIBRARIES = [
-          LIBTEBAKOFS,            "-l:libdwarfs-wr.a",          "-l:libdwarfs.a",             "LIBCOMPRESSION",
-          "-l:libfolly.a",        "-l:libfsst.a",               "-l:libmetadata_thrift.a",    "-l:libthrift_light.a",
-          "-l:libxxhash.a",       "-l:libfmt.a",                "-l:libdouble-conversion.a",  "-l:libglog.a",
-          "-l:libgflags.a",       "-l:libevent.a"
+          LIBTEBAKOFS,            "-l:libtfs.a",                "-l:libtebako_dirent_helper_c.a",
+          "-l:libdwarfs_reader.a",  "-l:libdwarfs_common.a",    "-l:libdwarfs_metadata_legacy.a",
+          "-l:libdwarfs_decompressor.a", "-l:libflatbuffers.a", "-l:libzip.a",
+          "-l:libfmt.a",            "-l:libxxhash.a",           "-l:libboost_filesystem.a",
+          "-l:libboost_chrono.a"
         ].freeze
 
         COMMON_ARCHIEVE_LIBRARIES = [
-          "-l:libarchive.a",     "-l:liblz4.a",        "-l:libz.a",             "-l:libzstd.a",
-          "-l:libbrotlienc.a",   "-l:libbrotlidec.a",  "-l:libbrotlicommon.a",  "-l:liblzma.a"
+          "-l:liblz4.a",           "-l:libz.a",         "-l:libzstd.a",
+          "-l:libbrotlienc.a",     "-l:libbrotlidec.a", "-l:libbrotlicommon.a",
+          "-l:liblzma.a",          "-l:libbz2.a"
         ].freeze
 
         LINUX_GNU_LIBRARIES = [
           "-l:libiberty.a",      "-l:libacl.a",          "-l:libssl.a",           "-l:libcrypto.a",
           "-l:libgdbm.a",        "-l:libreadline.a",     "-l:libtinfo.a",         "-l:libffi.a",
           "-l:libncurses.a",     "-l:libjemalloc.a",     "-l:libcrypt.a",         "-l:libanl.a",
-          "LIBYAML",             "-l:libboost_system.a", "-l:libboost_chrono.a",  "-l:libutil.a",
+          "LIBYAML",             "-l:libutil.a",
           "-l:libstdc++.a",      "-lgcc_eh",             "-l:libunwind.a",        "-l:liblzma.a",
           "-l:librt.a",          "-ldl",                 "-lpthread",             "-lm"
         ].freeze
@@ -74,15 +84,15 @@ module Tebako
         LINUX_MUSL_LIBRARIES = [
           "-l:libiberty.a",       "-l:libacl.a",          "-l:libssl.a",          "-l:libcrypto.a",
           "-l:libreadline.a",     "-l:libgdbm.a",         "-l:libffi.a",          "-l:libncurses.a",
-          "-l:libjemalloc.a",     "-l:libcrypt.a",        "LIBYAML",              "-l:libboost_system.a",
-          "-l:libboost_chrono.a", "-l:librt.a",           "-l:libstdc++.a",       "-lgcc_eh",
+          "-l:libjemalloc.a",     "-l:libcrypt.a",        "LIBYAML",
+          "-l:librt.a",           "-l:libstdc++.a",       "-lgcc_eh",
           " -l:libunwind.a",      "-l:liblzma.a",         "-ldl",                 "-lpthread"
         ].freeze
 
         MSYS_LIBRARIES = [
           "-l:liblz4.a",             "-l:libz.a",               "-l:libzstd.a",            "-l:liblzma.a",
           "-l:libncurses.a",         "-l:liblzma.a",            "-l:libiberty.a",          "LIBYAML",
-          "-l:libffi.a",             "-l:libboost_chrono-mt.a", "-l:libstdc++.a",          "-l:libdl.a",
+          "-l:libffi.a",             "-l:libstdc++.a",          "-l:libdl.a",
           "-static-libgcc",          "-static-libstdc++",       "-l:libssl.a",             "-l:libcrypto.a",
           "-l:libz.a",               "-l:libwinpthread.a",      "-lcrypt32",               "-lshlwapi",
           "-lwsock32",               "-liphlpapi",              "-limagehlp",              "-lbcrypt",
@@ -99,12 +109,10 @@ module Tebako
           linux_libraries(libraries, ruby_ver, with_compression)
         end
 
-        def linux_libraries(libraries, ruby_ver, with_compression)
+        def linux_libraries(libraries, ruby_ver, _with_compression)
           libraries.map! do |lib|
             if lib == "LIBYAML"
               PatchHelpers.yaml_reference(ruby_ver)
-            elsif lib == "LIBCOMPRESSION"
-              with_compression ? "-Wl,--push-state,--whole-archive -l:libdwarfs_compression.a -Wl,--pop-state" : ""
             else
               lib
             end
@@ -122,17 +130,16 @@ module Tebako
           brew_libs.each { |lib| libs << "#{PatchHelpers.get_prefix_macos(lib[0]).chop}/lib/lib#{lib[1]}.a " }
         end
 
-        def darwin_libraries(deps_lib_dir, ruby_ver, with_compression)
+        def darwin_libraries(deps_lib_dir, ruby_ver, _with_compression)
           libs = String.new
 
           DARWIN_DEP_LIBS_1.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
           process_brew_libs!(libs, ruby_ver.ruby31? ? DARWIN_BREW_LIBS_31 : DARWIN_BREW_LIBS_PRE_31)
           process_brew_libs!(libs, DARWIN_BREW_LIBS)
 
-          DARWIN_DEP_LIBS_2.each { |lib| libs << "#{deps_lib_dir}/lib#{lib}.a " }
+          DARWIN_DEP_LIBS_2.each { |lib| libs << "#{lib} " }
 
-          compression_lib = with_compression ? "-force_load #{deps_lib_dir}/libdwarfs_compression.a" : ""
-          "-ltebako-fs -ldwarfs-wr -ldwarfs #{compression_lib} #{libs} -ljemalloc -lc++ -lc++abi"
+          "-ltebako-fs #{libs}-ljemalloc -lc++ -lc++abi"
         end
 
         # .....................................................
