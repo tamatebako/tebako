@@ -44,11 +44,14 @@ module Tebako
         DARWIN_BREW_LIBS_31 = [["openssl@3", "ssl"], ["openssl@3", "crypto"]].freeze
 
         DARWIN_DEP_LIBS_1 = ["tfs", "tebako_dirent_helper_c"].freeze
-        DARWIN_DEP_LIBS_2 = ["-l:libdwarfs_reader.a",           "-l:libdwarfs_common.a",   "-l:libdwarfs_metadata_legacy.a",
-                             "-l:libdwarfs_decompressor.a",     "-l:libflatbuffers.a",     "-l:libzip.a",
-                             "-l:libfmt.a",                     "-l:libxxhash.a",          "-l:libzstd.a",
-                             "-l:libbrotlidec.a",               "-l:libbrotlienc.a",       "-l:libbrotlicommon.a",
-                             "-l:libbz2.a",                     "-l:libboost_filesystem.a", "-l:libboost_chrono.a"].freeze
+        # Referenced by full path from the vcpkg triplet lib dir (see
+        # darwin_libraries): Apple ld does not implement the GNU-style
+        # -l:<filename> library search, so -l:libX.a refs do not resolve.
+        DARWIN_DEP_LIBS_2 = ["dwarfs_reader", "dwarfs_common", "dwarfs_metadata_legacy",
+                             "dwarfs_decompressor", "flatbuffers", "zip",
+                             "fmt", "xxhash", "zstd",
+                             "brotlidec", "brotlienc", "brotlicommon",
+                             "bz2", "boost_filesystem", "boost_chrono"].freeze
         # rubocop:enable Style/WordArray
 
         LIBTEBAKOFS = "-Wl,--push-state,--whole-archive -l:libtebako-fs.a -Wl,--pop-state"
@@ -137,7 +140,9 @@ module Tebako
           process_brew_libs!(libs, ruby_ver.ruby31? ? DARWIN_BREW_LIBS_31 : DARWIN_BREW_LIBS_PRE_31)
           process_brew_libs!(libs, DARWIN_BREW_LIBS)
 
-          DARWIN_DEP_LIBS_2.each { |lib| libs << "#{lib} " }
+          # The vcpkg set by full path: Apple ld does not implement -l:<filename>
+          vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).sort.first
+          DARWIN_DEP_LIBS_2.each { |lib| libs << "#{vcpkg_lib_dir}/lib#{lib}.a " }
 
           "-ltebako-fs #{libs}-ljemalloc -lc++ -lc++abi"
         end
