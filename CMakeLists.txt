@@ -180,6 +180,37 @@ def_ext_prj_g(DWARFS_WR "v0.12.1")
 # Sets LIBTFS_* variables summarized below.
 include(${CMAKE_SOURCE_DIR}/cmake/tebako-libtfs.cmake)
 
+# incbin (graphitemaster/incbin): single-header asset embedding used by
+# include/tebako/tebako-fs.h and the codegen templates. It was deployed into
+# ${DEPS_INCLUDE_DIR} by the libdwarfs-wr package; libtfs does not carry it,
+# so tebako provisions it directly. The pin matches common.env INCBIN_TAG
+# (which reaches this file only when the tebako-tools env override works --
+# see the DWARFS_WR note above).
+def_ext_prj_g(INCBIN "6e576cae5ab5810f25e2631f2e0b80cbe7dc8cbf")
+set(INCBIN_HEADER "${DEPS_INCLUDE_DIR}/incbin/incbin.h")
+set(INCBIN_SHA256 "70995329299ec55d414ad6df6929ddcfe0a43a40102cf6c05ff3c74ddd2765cb")
+set(__INCBIN_DOWNLOAD ON)
+if(EXISTS "${INCBIN_HEADER}")
+  file(SHA256 "${INCBIN_HEADER}" __INCBIN_CURRENT)
+  if(__INCBIN_CURRENT STREQUAL INCBIN_SHA256)
+    set(__INCBIN_DOWNLOAD OFF)
+  endif()
+endif()
+if(__INCBIN_DOWNLOAD)
+  message(STATUS "incbin: fetching incbin.h @ ${INCBIN_TAG}")
+  file(MAKE_DIRECTORY "${DEPS_INCLUDE_DIR}/incbin")
+  file(DOWNLOAD "https://raw.githubusercontent.com/graphitemaster/incbin/${INCBIN_TAG}/incbin.h"
+       "${INCBIN_HEADER}" EXPECTED_HASH "SHA256=${INCBIN_SHA256}"
+       STATUS __INCBIN_STATUS)
+  list(GET __INCBIN_STATUS 0 __INCBIN_CODE)
+  list(GET __INCBIN_STATUS 1 __INCBIN_MSG)
+  if(NOT __INCBIN_CODE EQUAL 0)
+    file(REMOVE "${INCBIN_HEADER}")
+    message(FATAL_ERROR "incbin: failed to download incbin.h: ${__INCBIN_MSG}")
+  endif()
+  message(STATUS "incbin: SHA256 verified (${INCBIN_SHA256})")
+endif()
+
 def_ext_prj_g(PATCHELF "65e14792061c298f1d2bc44becd48a10cbf0bc81")
 
 set(LIBYAML_RUBY_OPTION "")
