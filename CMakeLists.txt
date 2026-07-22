@@ -360,6 +360,14 @@ if(LIBTFS_VCPKG_TRIPLET_DIR)
   string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -L${LIBTFS_VCPKG_TRIPLET_DIR}/lib")
 endif(LIBTFS_VCPKG_TRIPLET_DIR)
 set(RUBY_C_FLAGS "-fPIC -I${DEPS_INCLUDE_DIR} -I${CMAKE_CURRENT_SOURCE_DIR}/include -Wno-incompatible-pointer-types")
+if(LIBTFS_VCPKG_TRIPLET_DIR)
+  # The transitive deps' headers (deployed from the libtfs-deps package or
+  # installed by vcpkg) live in the triplet include dir. Baked into rbconfig
+  # via the ruby build, this -I lets mkmf-driven gem native extensions
+  # (e.g. the brotli gem) resolve headers like <brotli/encode.h> when the
+  # packaged build runs gem install.
+  string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -I${LIBTFS_VCPKG_TRIPLET_DIR}/include")
+endif(LIBTFS_VCPKG_TRIPLET_DIR)
 
 if(${RUBY_VER} VERSION_LESS "3.2.0" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "15.0.0" AND "${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -std=gnu17")
