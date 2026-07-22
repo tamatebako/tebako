@@ -104,6 +104,10 @@ else()
   set(LIBTFS_MKDWARFS "${DEPS_BIN_DIR}/mkdwarfs")
 endif()
 
+# Self-contained transitive static-lib package (libtfs releases >= v0.12.5).
+# When present, consumers need no vcpkg at all on the prebuilt path.
+set(LIBTFS_DEPS_PKG_NAME "libtfs-deps-${LIBTFS_VERSION}-${LIBTFS_PLATFORM}.tar.gz")
+
 set(LIBTFS_INCLUDE_DIR "${DEPS_INCLUDE_DIR}")
 set(LIBTFS_LIB_DIR "${DEPS_LIB_DIR}")
 set(LIBTFS_VCPKG_INSTALLED_DIR "${DEPS}/vcpkg_installed")
@@ -146,6 +150,7 @@ endif()
 
 set(LIBTFS_PKG_HASH "")
 set(LIBTFS_MKDWARFS_HASH "")
+set(LIBTFS_DEPS_HASH "")
 file(STRINGS "${LIBTFS_SUMS_FILE}" __SUMS_LINES)
 foreach(__LINE IN LISTS __SUMS_LINES)
   # Note: CMake's regex engine mishandles {64} interval repetition, so the
@@ -156,6 +161,8 @@ foreach(__LINE IN LISTS __SUMS_LINES)
       set(LIBTFS_PKG_HASH "${CMAKE_MATCH_1}")
     elseif(__HASH_LEN EQUAL 64 AND CMAKE_MATCH_2 STREQUAL LIBTFS_MKDWARFS_NAME)
       set(LIBTFS_MKDWARFS_HASH "${CMAKE_MATCH_1}")
+    elseif(__HASH_LEN EQUAL 64 AND CMAKE_MATCH_2 STREQUAL LIBTFS_DEPS_PKG_NAME)
+      set(LIBTFS_DEPS_HASH "${CMAKE_MATCH_1}")
     endif()
   endif()
 endforeach()
@@ -165,6 +172,16 @@ if(NOT LIBTFS_PKG_HASH)
 endif()
 if(NOT LIBTFS_MKDWARFS_HASH)
   message(FATAL_ERROR "libtfs: ${LIBTFS_MKDWARFS_NAME} not found in the release SHA256SUMS")
+endif()
+
+# The self-contained deps package exists in releases >= v0.12.5; older tags
+# fall back to the vcpkg manifest path for transitive deps.
+if(LIBTFS_DEPS_HASH)
+  set(LIBTFS_DEPS_AVAILABLE ON)
+  message(STATUS "libtfs: self-contained deps package available (${LIBTFS_DEPS_PKG_NAME}) — no vcpkg needed")
+else()
+  set(LIBTFS_DEPS_AVAILABLE OFF)
+  message(STATUS "libtfs: no self-contained deps package in this release — falling back to vcpkg for transitive deps")
 endif()
 
 # ...................................................................
@@ -183,73 +200,77 @@ if(NOT IS_MSYS)
 endif()
 
 # ...................................................................
-# vcpkg bootstrap (both modes)
-#   - VCPKG_ROOT from the environment wins;
-#   - otherwise clone microsoft/vcpkg at the pinned baseline into
-#     ${DEPS}/vcpkg and bootstrap it.
+# vcpkg bootstrap — only when actually needed:
+#   - source fallback (DWARFS_PRELOAD=OFF): always
+#   - prebuilt mode: only when the self-contained deps package is absent
+#     (older tags); with libtfs-deps there is no vcpkg in the loop at all.
 
-if(DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
-  set(VCPKG_ROOT "$ENV{VCPKG_ROOT}")
-  message(STATUS "libtfs: using VCPKG_ROOT from environment: ${VCPKG_ROOT}")
-else()
-  set(VCPKG_ROOT "${DEPS}/vcpkg")
-  if(NOT EXISTS "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
-    message(STATUS "libtfs: bootstrapping vcpkg at ${VCPKG_ROOT} (baseline ${LIBTFS_VCPKG_BASELINE})")
-    find_package(Git REQUIRED)
-    file(MAKE_DIRECTORY "${VCPKG_ROOT}")
-    # NB: multiple COMMANDs in one execute_process run concurrently as a
-    # pipeline, so the git steps run as separate sequential calls.
+if(NOT DWARFS_PRELOAD OR NOT LIBTFS_DEPS_AVAILABLE)
+
+  if(DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+    set(VCPKG_ROOT "$ENV{VCPKG_ROOT}")
+    message(STATUS "libtfs: using VCPKG_ROOT from environment: ${VCPKG_ROOT}")
+  else()
+    set(VCPKG_ROOT "${DEPS}/vcpkg")
+    if(NOT EXISTS "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
+      message(STATUS "libtfs: bootstrapping vcpkg at ${VCPKG_ROOT} (baseline ${LIBTFS_VCPKG_BASELINE})")
+      find_package(Git REQUIRED)
+      file(MAKE_DIRECTORY "${VCPKG_ROOT}")
+      # NB: multiple COMMANDs in one execute_process run concurrently as a
+      # pipeline, so the git steps run as separate sequential calls.
+      execute_process(
+        COMMAND ${GIT_EXECUTABLE} init
+        WORKING_DIRECTORY "${VCPKG_ROOT}"
+        RESULT_VARIABLE __VCPKG_CLONE_RES
+      )
+      if(__VCPKG_CLONE_RES EQUAL 0)
+        execute_process(
+          COMMAND ${GIT_EXECUTABLE} remote add origin https://github.com/microsoft/vcpkg.git
+          WORKING_DIRECTORY "${VCPKG_ROOT}"
+          RESULT_VARIABLE __VCPKG_CLONE_RES
+        )
+      endif()
+      if(__VCPKG_CLONE_RES EQUAL 0)
+        execute_process(
+          COMMAND ${GIT_EXECUTABLE} fetch --depth 1 origin ${LIBTFS_VCPKG_BASELINE}
+          WORKING_DIRECTORY "${VCPKG_ROOT}"
+          RESULT_VARIABLE __VCPKG_CLONE_RES
+        )
+      endif()
+      if(__VCPKG_CLONE_RES EQUAL 0)
+        execute_process(
+          COMMAND ${GIT_EXECUTABLE} checkout -q FETCH_HEAD
+          WORKING_DIRECTORY "${VCPKG_ROOT}"
+          RESULT_VARIABLE __VCPKG_CLONE_RES
+        )
+      endif()
+      if(NOT __VCPKG_CLONE_RES EQUAL 0)
+        file(REMOVE_RECURSE "${VCPKG_ROOT}")
+        message(FATAL_ERROR "libtfs: failed to clone vcpkg at baseline ${LIBTFS_VCPKG_BASELINE}")
+      endif()
+    endif()
+  endif()
+
+  if(WIN32)
+    set(__VCPKG_EXE "${VCPKG_ROOT}/vcpkg.exe")
+    set(__VCPKG_BOOTSTRAP cmd /c "${VCPKG_ROOT}/bootstrap-vcpkg.bat" -disableMetrics)
+  else()
+    set(__VCPKG_EXE "${VCPKG_ROOT}/vcpkg")
+    set(__VCPKG_BOOTSTRAP "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics)
+  endif()
+
+  if(NOT EXISTS "${__VCPKG_EXE}")
+    message(STATUS "libtfs: running vcpkg bootstrap")
     execute_process(
-      COMMAND ${GIT_EXECUTABLE} init
+      COMMAND ${__VCPKG_BOOTSTRAP}
       WORKING_DIRECTORY "${VCPKG_ROOT}"
-      RESULT_VARIABLE __VCPKG_CLONE_RES
+      RESULT_VARIABLE __VCPKG_BOOT_RES
     )
-    if(__VCPKG_CLONE_RES EQUAL 0)
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} remote add origin https://github.com/microsoft/vcpkg.git
-        WORKING_DIRECTORY "${VCPKG_ROOT}"
-        RESULT_VARIABLE __VCPKG_CLONE_RES
-      )
-    endif()
-    if(__VCPKG_CLONE_RES EQUAL 0)
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} fetch --depth 1 origin ${LIBTFS_VCPKG_BASELINE}
-        WORKING_DIRECTORY "${VCPKG_ROOT}"
-        RESULT_VARIABLE __VCPKG_CLONE_RES
-      )
-    endif()
-    if(__VCPKG_CLONE_RES EQUAL 0)
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} checkout -q FETCH_HEAD
-        WORKING_DIRECTORY "${VCPKG_ROOT}"
-        RESULT_VARIABLE __VCPKG_CLONE_RES
-      )
-    endif()
-    if(NOT __VCPKG_CLONE_RES EQUAL 0)
-      file(REMOVE_RECURSE "${VCPKG_ROOT}")
-      message(FATAL_ERROR "libtfs: failed to clone vcpkg at baseline ${LIBTFS_VCPKG_BASELINE}")
+    if(NOT __VCPKG_BOOT_RES EQUAL 0 OR NOT EXISTS "${__VCPKG_EXE}")
+      message(FATAL_ERROR "libtfs: vcpkg bootstrap failed")
     endif()
   endif()
-endif()
 
-if(WIN32)
-  set(__VCPKG_EXE "${VCPKG_ROOT}/vcpkg.exe")
-  set(__VCPKG_BOOTSTRAP cmd /c "${VCPKG_ROOT}/bootstrap-vcpkg.bat" -disableMetrics)
-else()
-  set(__VCPKG_EXE "${VCPKG_ROOT}/vcpkg")
-  set(__VCPKG_BOOTSTRAP "${VCPKG_ROOT}/bootstrap-vcpkg.sh" -disableMetrics)
-endif()
-
-if(NOT EXISTS "${__VCPKG_EXE}")
-  message(STATUS "libtfs: running vcpkg bootstrap")
-  execute_process(
-    COMMAND ${__VCPKG_BOOTSTRAP}
-    WORKING_DIRECTORY "${VCPKG_ROOT}"
-    RESULT_VARIABLE __VCPKG_BOOT_RES
-  )
-  if(NOT __VCPKG_BOOT_RES EQUAL 0 OR NOT EXISTS "${__VCPKG_EXE}")
-    message(FATAL_ERROR "libtfs: vcpkg bootstrap failed")
-  endif()
 endif()
 
 if(IS_MSYS)
@@ -300,52 +321,84 @@ if(DWARFS_PRELOAD)
 
 # ...................................................................
 # Transitive dependencies (prebuilt mode)
-# The libtfs package ships no third-party static libs, so resolve them with
-# vcpkg using libtfs' own manifest at the pinned tag (vcpkg.json +
-# vcpkg-configuration.json + vcpkg-overlay ports, notably the dwarfs fork
-# tebako-v0.14.1-10). The installed tree lands in
-# ${DEPS}/vcpkg_installed/<triplet>; its lib/ dir is the transitive
-# static-lib list location for tebako's link step.
+# Preferred: the self-contained libtfs-deps package (libtfs releases >=
+# v0.12.5) — download, verify, deploy; no vcpkg in the loop.
+# Fallback (older tags): resolve with vcpkg using libtfs' own manifest at
+# the pinned tag.
 
-  set(LIBTFS_MANIFEST_DIR "${DEPS_SRC_DIR}/libtfs-manifest")
-  find_package(Git REQUIRED)
-  if(EXISTS "${LIBTFS_MANIFEST_DIR}/.git")
-    execute_process(
-      COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match HEAD
-      WORKING_DIRECTORY "${LIBTFS_MANIFEST_DIR}"
-      RESULT_VARIABLE __MANIFEST_TAG_RES
-      OUTPUT_VARIABLE __MANIFEST_TAG
-      OUTPUT_STRIP_TRAILING_WHITESPACE
-      ERROR_QUIET
-    )
-    if(NOT __MANIFEST_TAG_RES EQUAL 0 OR NOT "${__MANIFEST_TAG}" STREQUAL "${DWARFS_WR_TAG}")
-      message(STATUS "libtfs: manifest checkout is at '${__MANIFEST_TAG}', need '${DWARFS_WR_TAG}'; refreshing")
-      file(REMOVE_RECURSE "${LIBTFS_MANIFEST_DIR}")
-    endif()
-  endif()
-  if(NOT EXISTS "${LIBTFS_MANIFEST_DIR}/.git")
-    message(STATUS "libtfs: fetching vcpkg manifest from tamatebako/libtfs @ ${DWARFS_WR_TAG}")
-    execute_process(
-      COMMAND ${GIT_EXECUTABLE} clone --depth 1 --branch ${DWARFS_WR_TAG}
-              https://github.com/tamatebako/libtfs.git "${LIBTFS_MANIFEST_DIR}"
-      RESULT_VARIABLE __MANIFEST_CLONE_RES
-    )
-    if(NOT __MANIFEST_CLONE_RES EQUAL 0)
-      message(FATAL_ERROR "libtfs: failed to clone tamatebako/libtfs @ ${DWARFS_WR_TAG} (vcpkg manifest source)")
-    endif()
-  endif()
+  if(LIBTFS_DEPS_AVAILABLE)
 
-  message(STATUS "libtfs: resolving transitive dependencies with vcpkg (this can take a while on a cold cache)")
-  execute_process(
-    COMMAND ${CMAKE_COMMAND} -E env VCPKG_DISABLE_METRICS=1
-            "${__VCPKG_EXE}" install
-            --x-manifest-root=${LIBTFS_MANIFEST_DIR}
-            --x-install-root=${LIBTFS_VCPKG_INSTALLED_DIR}
-            ${__LIBTFS_VCPKG_TRIPLET_ARGS}
-    RESULT_VARIABLE __VCPKG_INSTALL_RES
-  )
-  if(NOT __VCPKG_INSTALL_RES EQUAL 0)
-    message(FATAL_ERROR "libtfs: vcpkg install of transitive dependencies failed")
+    libtfs_download("${LIBTFS_RELEASE_URL}/${LIBTFS_DEPS_PKG_NAME}"
+                    "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_DEPS_PKG_NAME}" "${LIBTFS_DEPS_HASH}"
+                    "libtfs transitive deps package (${LIBTFS_DEPS_PKG_NAME})")
+
+    if(NOT LIBTFS_VCPKG_TRIPLET)
+      if(IS_DARWIN)
+        set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-osx")
+      elseif(IS_GNU OR IS_MUSL)
+        set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-linux")
+      endif()
+    endif()
+
+    set(__LIBTFS_DEPS_EXTRACT_DIR "${LIBTFS_DOWNLOAD_DIR}/extract-deps-${LIBTFS_PLATFORM}")
+    file(REMOVE_RECURSE "${__LIBTFS_DEPS_EXTRACT_DIR}")
+    file(MAKE_DIRECTORY "${__LIBTFS_DEPS_EXTRACT_DIR}")
+    file(ARCHIVE_EXTRACT INPUT "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_DEPS_PKG_NAME}"
+         DESTINATION "${__LIBTFS_DEPS_EXTRACT_DIR}")
+
+    # Deploy into the triplet-shaped install dir the link lists consume
+    file(MAKE_DIRECTORY "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
+    file(COPY "${__LIBTFS_DEPS_EXTRACT_DIR}/"
+         DESTINATION "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
+    file(GLOB __LIBTFS_DEPS_LIBS "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}/lib/*.a")
+    if(NOT __LIBTFS_DEPS_LIBS)
+      message(FATAL_ERROR "libtfs: deps package contains no static libraries")
+    endif()
+    message(STATUS "libtfs: deployed ${LIBTFS_DEPS_PKG_NAME} to ${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
+
+  else()
+
+    set(LIBTFS_MANIFEST_DIR "${DEPS_SRC_DIR}/libtfs-manifest")
+    find_package(Git REQUIRED)
+    if(EXISTS "${LIBTFS_MANIFEST_DIR}/.git")
+      execute_process(
+        COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match HEAD
+        WORKING_DIRECTORY "${LIBTFS_MANIFEST_DIR}"
+        RESULT_VARIABLE __MANIFEST_TAG_RES
+        OUTPUT_VARIABLE __MANIFEST_TAG
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+      )
+      if(NOT __MANIFEST_TAG_RES EQUAL 0 OR NOT "${__MANIFEST_TAG}" STREQUAL "${DWARFS_WR_TAG}")
+        message(STATUS "libtfs: manifest checkout is at '${__MANIFEST_TAG}', need '${DWARFS_WR_TAG}'; refreshing")
+        file(REMOVE_RECURSE "${LIBTFS_MANIFEST_DIR}")
+      endif()
+    endif()
+    if(NOT EXISTS "${LIBTFS_MANIFEST_DIR}/.git")
+      message(STATUS "libtfs: fetching vcpkg manifest from tamatebako/libtfs @ ${DWARFS_WR_TAG}")
+      execute_process(
+        COMMAND ${GIT_EXECUTABLE} clone --depth 1 --branch ${DWARFS_WR_TAG}
+                https://github.com/tamatebako/libtfs.git "${LIBTFS_MANIFEST_DIR}"
+        RESULT_VARIABLE __MANIFEST_CLONE_RES
+      )
+      if(NOT __MANIFEST_CLONE_RES EQUAL 0)
+        message(FATAL_ERROR "libtfs: failed to clone tamatebako/libtfs @ ${DWARFS_WR_TAG} (vcpkg manifest source)")
+      endif()
+    endif()
+
+    message(STATUS "libtfs: resolving transitive dependencies with vcpkg (this can take a while on a cold cache)")
+    execute_process(
+      COMMAND ${CMAKE_COMMAND} -E env VCPKG_DISABLE_METRICS=1
+              "${__VCPKG_EXE}" install
+              --x-manifest-root=${LIBTFS_MANIFEST_DIR}
+              --x-install-root=${LIBTFS_VCPKG_INSTALLED_DIR}
+              ${__LIBTFS_VCPKG_TRIPLET_ARGS}
+      RESULT_VARIABLE __VCPKG_INSTALL_RES
+    )
+    if(NOT __VCPKG_INSTALL_RES EQUAL 0)
+      message(FATAL_ERROR "libtfs: vcpkg install of transitive dependencies failed")
+    endif()
+
   endif()
 
 endif(DWARFS_PRELOAD)
