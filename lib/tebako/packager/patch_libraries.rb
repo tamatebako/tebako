@@ -62,10 +62,10 @@ module Tebako
         # Compression codecs register explicitly (compression_registry ctor),
         # so no --whole-archive compression lib is needed anymore.
         COMMON_LINUX_LIBRARIES = [
-          LIBTEBAKOFS,            "-l:libtfs.a",                "-l:libtebako_dirent_helper_c.a",
-          "-l:libdwarfs_reader.a",  "-l:libdwarfs_common.a",    "-l:libdwarfs_metadata_legacy.a",
+          LIBTEBAKOFS, "-l:libtfs.a", "-l:libtebako_dirent_helper_c.a",
+          "-l:libdwarfs_reader.a", "-l:libdwarfs_common.a", "-l:libdwarfs_metadata_legacy.a",
           "-l:libdwarfs_decompressor.a", "-l:libflatbuffers.a", "-l:libzip.a",
-          "-l:libfmt.a",            "-l:libxxhash.a",           "-l:libboost_filesystem.a",
+          "-l:libfmt.a", "-l:libxxhash.a", "-l:libboost_filesystem.a",
           "-l:libboost_chrono.a"
         ].freeze
 
@@ -89,7 +89,7 @@ module Tebako
           "-l:libreadline.a",     "-l:libgdbm.a",         "-l:libffi.a",          "-l:libncurses.a",
           "-l:libjemalloc.a",     "-l:libcrypt.a",        "LIBYAML",
           "-l:librt.a",           "-l:libstdc++.a",       "-lgcc_eh",
-          " -l:libunwind.a",      "-l:liblzma.a",         "-ldl",                 "-lpthread"
+          " -l:libunwind.a",      "-l:liblzma.a",         "-ldl", "-lpthread"
         ].freeze
 
         MSYS_LIBRARIES = [
@@ -141,7 +141,7 @@ module Tebako
           process_brew_libs!(libs, DARWIN_BREW_LIBS)
 
           # The vcpkg set by full path: Apple ld does not implement -l:<filename>
-          vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).sort.first
+          vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).min
           DARWIN_DEP_LIBS_2.each { |lib| libs << "#{vcpkg_lib_dir}/lib#{lib}.a " }
 
           "-ltebako-fs #{libs}-ljemalloc -lc++ -lc++abi"
