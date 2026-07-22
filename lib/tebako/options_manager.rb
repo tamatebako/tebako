@@ -33,6 +33,7 @@ require "rbconfig"
 require_relative "codegen"
 require_relative "error"
 require_relative "ruby_version"
+require_relative "stitcher"
 require_relative "version"
 
 # Tebako - an executable packager
@@ -157,6 +158,39 @@ module Tebako
 
     def mode
       @mode ||= @options["mode"].nil? ? "bundle" : @options["mode"]
+    end
+
+    # Runtime provenance: "prebuilt" (resolve/download a prebuilt runtime
+    # package and stitch the application image onto it) or "source" (the
+    # Stage-2 source build). Default is "prebuilt" for the bundle mode;
+    # other modes always build from source, and --build-runtime forces the
+    # source path everywhere (back-compat alias for '--runtime source').
+    def runtime_source
+      @runtime_source ||= checked_runtime_source(requested_runtime_source)
+    end
+
+    def prebuilt_runtime?
+      runtime_source == "prebuilt"
+    end
+
+    # Additional images for the stitched package, from repeatable
+    # '--image <path>:<mount-point>' (split on the last colon so Windows
+    # drive-letter paths survive)
+    def images
+      @images ||= Array(@options["image"]).map do |spec|
+        path, _sep, mount = spec.to_s.rpartition(":")
+        if path.empty? || mount.empty?
+          Tebako.packaging_error(130, "invalid --image specification '#{spec}' ('<path>:<mount-point>' expected)")
+        end
+
+        { path: path, mount_point: mount, format_id: Tebako::Stitcher::FORMAT_DWARFS }
+      end
+    end
+
+    # Platform id of the host, as used by tebako-runtime-ruby package names
+    # (e.g. "macos-arm64", "linux-gnu-x86_64")
+    def host_platform(ostype = RUBY_PLATFORM, arch = RbConfig::CONFIG["host_cpu"])
+      @host_platform ||= "#{host_os_id(ostype)}-#{host_arch_id(arch)}"
     end
 
     def output_folder
@@ -333,6 +367,43 @@ module Tebako
 
     def stash_dir_all
       @stash_dir_all ||= File.join(deps, "stash")
+    end
+
+    private
+
+    def requested_runtime_source
+      explicit = @options["runtime"]
+      return "source" if @options["build-runtime"]
+      return mode == "bundle" ? "prebuilt" : "source" if explicit.nil?
+
+      explicit
+    end
+
+    def checked_runtime_source(source)
+      if source == "prebuilt" && mode != "bundle"
+        Tebako.packaging_error(130, "--runtime prebuilt is supported in bundle mode only (mode: '#{mode}')")
+      end
+      source
+    end
+
+    def host_os_id(ostype)
+      case ostype
+      when /msys|mingw|cygwin/ then "windows"
+      when /darwin/ then "macos"
+      when /linux-musl/ then "linux-musl"
+      when /linux/ then "linux-gnu"
+      else
+        Tebako.packaging_error(112, ostype)
+      end
+    end
+
+    def host_arch_id(arch)
+      case arch
+      when /^(x86_64|amd64)$/ then "x86_64"
+      when /^(aarch64|arm64)$/ then "arm64"
+      else
+        Tebako.packaging_error(112, arch)
+      end
     end
   end
 end

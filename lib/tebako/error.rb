@@ -53,6 +53,10 @@ module Tebako
     123 => "TEBAKO_OFFLINE is set and the requested tebako runtime package is not cached",
     124 => "Runtime package release carries no usable package index",
     125 => "Timed out waiting for the runtime package cache lock",
+    126 => "Invalid stitch specification",
+    127 => "Stitch input file is not accessible",
+    128 => "Prebuilt runtime press requires the packaging environment (run 'tebako setup' first)",
+    130 => "Option combination is not supported",
     201 => "Warning. Could not create cache version file"
   }.freeze
 
