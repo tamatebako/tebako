@@ -69,6 +69,7 @@ RSpec.describe Tebako::CliHelpers do
     context "when mode is set to 'bundle'" do
       before do
         options["mode"] = "bundle"
+        options["runtime"] = "source"
       end
 
       let(:options_manager) { Tebako::OptionsManager.new(options) }
@@ -93,6 +94,7 @@ RSpec.describe Tebako::CliHelpers do
     context "when mode is set to 'runtime'" do
       before do
         options["mode"] = "bundle"
+        options["runtime"] = "source"
       end
 
       let(:options_manager) { Tebako::OptionsManager.new(options) }
@@ -118,6 +120,7 @@ RSpec.describe Tebako::CliHelpers do
     context "when package_within_root? is true" do
       before do
         options["mode"] = "bundle"
+        options["runtime"] = "source"
         options["output"] = "/tmp/path/to/root/output"
       end
 
@@ -133,6 +136,51 @@ RSpec.describe Tebako::CliHelpers do
 
         allow(self).to receive(:sleep).with(any_args).and_return(nil)
         expect { do_press(options_manager) }.to output(/WARNING/).to_stdout
+      end
+    end
+
+    context "when runtime is prebuilt (the bundle-mode default)" do
+      before do
+        options["mode"] = "bundle"
+      end
+
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "resolves the runtime, builds the app image and stitches" do
+        expect(Tebako::Packager).to receive(:check_prebuilt_env!)
+        expect(Tebako::RuntimeManager).to receive(:resolve)
+          .with(options_manager.ruby_ver, options_manager.host_platform)
+          .and_return("/cached/runtime")
+        expect(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
+        expect(Tebako::Stitcher).to receive(:stitch) do |runtime, images:, output:|
+          expect(runtime).to eq("/cached/runtime")
+          expect(images.first[:path]).to eq("/o/p/fs.bin")
+          expect(images.first[:mount_point]).to eq("/__tebako_memfs__")
+          expect(output).to eq(options_manager.package)
+        end
+
+        do_press(options_manager)
+      end
+
+      it "appends --image entries after the application image" do
+        options["image"] = ["/data/extra.tfs:extra"]
+        allow(Tebako::Packager).to receive(:check_prebuilt_env!)
+        allow(Tebako::RuntimeManager).to receive(:resolve).and_return("/cached/runtime")
+        allow(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
+        expect(Tebako::Stitcher).to receive(:stitch) do |_runtime, images:, **_|
+          expect(images.size).to eq(2)
+          expect(images.last).to eq({ path: "/data/extra.tfs", mount_point: "extra",
+                                      format_id: Tebako::Stitcher::FORMAT_DWARFS })
+        end
+
+        do_press(options_manager)
+      end
+
+      it "fails with error 128 when the packaging environment is missing" do
+        allow(Tebako::Packager).to receive(:check_prebuilt_env!)
+          .and_raise(Tebako::Error.new("Prebuilt runtime press requires the packaging environment", 128))
+        expect(Tebako::RuntimeManager).not_to receive(:resolve)
+        expect { do_press(options_manager) }.to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(128) }
       end
     end
   end

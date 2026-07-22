@@ -68,7 +68,7 @@ module Tebako
       win32/file.c
     ].freeze
 
-    class << self
+    class << self # rubocop:disable Metrics/ClassLength
       # Create implib
       def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
         a_name = File.basename(app_name, ".*")
@@ -113,6 +113,45 @@ module Tebako
         puts "   ... creating packaging environment at #{src_dir}"
         PatchHelpers.recreate([src_dir, pre_dir, bin_dir])
         FileUtils.cp_r "#{stash_dir}/.", src_dir
+      end
+
+      # Check that the packaging environment the prebuilt-runtime press
+      # needs (pristine Ruby stash + mkdwarfs) is in place
+      def check_prebuilt_env!(stash_dir, deps_bin_dir)
+        missing = []
+        missing << "Ruby environment stash (#{stash_dir})" unless Dir.exist?(stash_dir)
+        missing << "mkdwarfs (#{deps_bin_dir})" if Dir.glob(File.join(deps_bin_dir, "mkdwarfs*")).empty?
+        return if missing.empty?
+
+        Tebako.packaging_error(128, missing.join(", "))
+      end
+
+      # Deploy the application and build its DwarFS image for stitching onto
+      # a prebuilt runtime. Same layout as the bundle-mode image, plus an
+      # entry dispatcher at /local/stub.rb (the runtime's compiled-in entry).
+      def build_app_image(options_manager, scenario_manager) # rubocop:disable Metrics/AbcSize
+        init(options_manager.stash_dir, options_manager.data_src_dir, options_manager.data_pre_dir,
+             options_manager.data_bin_dir)
+        deploy(options_manager.data_src_dir, options_manager.data_pre_dir, options_manager.rv,
+               options_manager.root, scenario_manager.fs_entrance, options_manager.cwd)
+        write_entry_dispatcher(options_manager.data_src_dir, scenario_manager, options_manager.cwd)
+        mkdwarfs(options_manager.deps_bin_dir, options_manager.data_bundle_file, options_manager.data_src_dir)
+        options_manager.data_bundle_file
+      end
+
+      # The prebuilt runtime packages are pressed in 'runtime' mode, so their
+      # compiled-in entry point is /local/stub.rb. A stitched package mounts
+      # the application image as the root filesystem; the dispatcher written
+      # here receives control from the runtime and loads the real entry point
+      # (replicating the bundle-mode working directory when --cwd was given).
+      def write_entry_dispatcher(data_src_dir, scenario_manager, cwd)
+        dispatcher = +""
+        dispatcher << "Dir.chdir(\"#{scenario_manager.fs_mount_point}/#{cwd}\")\n" unless cwd.nil?
+        dispatcher << "load \"#{scenario_manager.fs_mount_point}#{scenario_manager.fs_entry_point}\"\n"
+
+        local_dir = File.join(data_src_dir, "local")
+        FileUtils.mkdir_p(local_dir)
+        File.write(File.join(local_dir, "stub.rb"), dispatcher)
       end
 
       def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir, descriptor = nil)

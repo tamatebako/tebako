@@ -173,6 +173,17 @@ module Tebako
       #{" " * 65}# If this parameter is not set, the application will start in the current directory of the host file system.
     DESC
 
+    RUNTIME_DESCRIPTION = <<~DESC
+      Runtime provenance: 'prebuilt' resolves/downloads a prebuilt tebako runtime package and stitches the
+      #{" " * 65}# application image onto it (default for the 'bundle' mode); 'source' keeps the Stage-2 source build.
+      #{" " * 65}# Modes other than 'bundle' always build from source.
+    DESC
+
+    IMAGE_DESCRIPTION = <<~DESC
+      Additional image to stitch into the package, '<path>:<mount-point>'; repeatable, mount points
+      #{" " * 65}# must be distinct. Prebuilt runtime only.
+    DESC
+
     desc "press", "Press tebako image"
     method_option :cwd, type: :string, aliases: "-c", required: false, desc: CWD_DESCRIPTION
     method_option :"log-level", type: :string, aliases: "-l", required: false, enum: %w[error warn debug trace],
@@ -189,6 +200,10 @@ module Tebako
     method_option :mode, type: :string, aliases: "-m", required: false, enum: %w[bundle both runtime application],
                          desc: "Tebako press mode, 'bundle' by default"
     method_option :ref, type: :string, aliases: "-u", required: false, desc: REF_DESCRIPTION
+    method_option :runtime, type: :string, required: false, enum: %w[prebuilt source], desc: RUNTIME_DESCRIPTION
+    method_option :"build-runtime", type: :boolean, required: false,
+                                    desc: "Build the runtime from source (alias for '--runtime source')"
+    method_option :image, type: :array, required: false, desc: IMAGE_DESCRIPTION
 
     def press
       validate_press_options

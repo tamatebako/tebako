@@ -33,7 +33,9 @@ require "rbconfig"
 require_relative "codegen"
 require_relative "error"
 require_relative "options_manager"
+require_relative "runtime_manager"
 require_relative "scenario_manager"
+require_relative "stitcher"
 require_relative "packager_lite"
 
 # Tebako - an executable packager
@@ -85,8 +87,30 @@ module Tebako
       check_warnings(options_manager)
       puts options_manager.press_announce(scenario_manager.msys?)
 
+      if options_manager.prebuilt_runtime?
+        do_press_prebuilt(options_manager, scenario_manager)
+      else
+        do_press_source(options_manager, scenario_manager)
+      end
+    end
+
+    def do_press_source(options_manager, scenario_manager)
       do_press_runtime(options_manager, scenario_manager)
       do_press_application(options_manager, scenario_manager)
+    end
+
+    # Press onto a prebuilt runtime package: resolve (download/verify/cache)
+    # the runtime, deploy the application image, stitch, re-sign on macOS.
+    def do_press_prebuilt(options_manager, scenario_manager)
+      Tebako::Packager.check_prebuilt_env!(options_manager.stash_dir, options_manager.deps_bin_dir)
+      runtime_path = Tebako::RuntimeManager.resolve(options_manager.ruby_ver, options_manager.host_platform)
+      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager)
+
+      images = [{ path: app_image, mount_point: scenario_manager.fs_mount_point,
+                  format_id: Tebako::Stitcher::FORMAT_DWARFS }] + options_manager.images
+      package = "#{options_manager.package}#{scenario_manager.exe_suffix}"
+      Tebako::Stitcher.stitch(runtime_path, images: images, output: package)
+      puts "Created tebako #{options_manager.output_type_first} at \"#{package}\""
     end
 
     def do_press_application(options_manager, scenario_manager)

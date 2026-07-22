@@ -824,6 +824,120 @@ RSpec.describe Tebako::OptionsManager do
       expect(options_manager.output_type_second).to eq("application package")
     end
   end
+
+  describe "#runtime_source / #prebuilt_runtime?" do
+    context "when nothing is given and mode is 'bundle'" do
+      let(:options_manager) { Tebako::OptionsManager.new({}) }
+
+      it "defaults to 'prebuilt'" do
+        expect(options_manager.runtime_source).to eq("prebuilt")
+        expect(options_manager.prebuilt_runtime?).to be(true)
+      end
+    end
+
+    context "when nothing is given and mode is not 'bundle'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "mode" => "runtime" }) }
+
+      it "stays on the source build" do
+        expect(options_manager.runtime_source).to eq("source")
+        expect(options_manager.prebuilt_runtime?).to be(false)
+      end
+    end
+
+    context "when --runtime source is given" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "runtime" => "source" }) }
+
+      it "selects the source build" do
+        expect(options_manager.runtime_source).to eq("source")
+      end
+    end
+
+    context "when --build-runtime is given" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "build-runtime" => true }) }
+
+      it "forces the source build" do
+        expect(options_manager.runtime_source).to eq("source")
+      end
+    end
+
+    context "when --runtime prebuilt is given with a non-bundle mode" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "runtime" => "prebuilt", "mode" => "runtime" }) }
+
+      it "fails with error 130" do
+        expect { options_manager.runtime_source }
+          .to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(130) }
+      end
+    end
+  end
+
+  describe "#images" do
+    context "when --image is not given" do
+      let(:options_manager) { Tebako::OptionsManager.new({}) }
+
+      it "returns an empty list" do
+        expect(options_manager.images).to eq([])
+      end
+    end
+
+    context "when --image is given once" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "image" => ["/data/extra.tfs:extra"] }) }
+
+      it "parses path and mount point with the dwarfs format" do
+        expect(options_manager.images).to eq([{ path: "/data/extra.tfs", mount_point: "extra",
+                                                format_id: Tebako::Stitcher::FORMAT_DWARFS }])
+      end
+    end
+
+    context "when --image is repeated" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "image" => ["a.tfs:/mnt/a", "b.tfs:/mnt/b"] }) }
+
+      it "parses every entry" do
+        expect(options_manager.images.map { |image| image[:mount_point] }).to eq(["/mnt/a", "/mnt/b"])
+      end
+    end
+
+    context "when the path contains a colon (Windows drive letter)" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "image" => ["C:/data/extra.tfs:extra"] }) }
+
+      it "splits on the last colon" do
+        expect(options_manager.images.first[:path]).to eq("C:/data/extra.tfs")
+        expect(options_manager.images.first[:mount_point]).to eq("extra")
+      end
+    end
+
+    context "when the mount point is missing" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "image" => ["a.tfs"] }) }
+
+      it "fails with error 130" do
+        expect { options_manager.images }.to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(130) }
+      end
+    end
+  end
+
+  describe "#host_platform" do
+    let(:options_manager) { Tebako::OptionsManager.new({}) }
+
+    it "maps darwin/arm64 to macos-arm64" do
+      expect(options_manager.host_platform("arm64-darwin23", "arm64")).to eq("macos-arm64")
+    end
+
+    it "maps linux/x86_64 to linux-gnu-x86_64" do
+      expect(options_manager.host_platform("x86_64-linux", "x86_64")).to eq("linux-gnu-x86_64")
+    end
+
+    it "maps linux-musl/aarch64 to linux-musl-arm64" do
+      expect(options_manager.host_platform("aarch64-linux-musl", "aarch64")).to eq("linux-musl-arm64")
+    end
+
+    it "maps msys to windows" do
+      expect(options_manager.host_platform("x64-mingw-ucrt", "x86_64")).to eq("windows-x86_64")
+    end
+
+    it "rejects an unsupported os with error 112" do
+      expect { options_manager.host_platform("sparc-solaris", "sparc") }
+        .to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(112) }
+    end
+  end
 end
 
 # rubocop:enable Metrics/BlockLength
