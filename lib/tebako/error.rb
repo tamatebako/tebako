@@ -47,6 +47,12 @@ module Tebako
     117 => "Failed to load Gemfile.lock",
     118 => "Bundler version in Gemfile.lock does satisfy minimal Tebako version requirememnts",
     119 => "Failed to find compatible bundler version",
+    120 => "No prebuilt tebako runtime package for the requested Ruby/platform combination",
+    121 => "SHA256 checksum mismatch for downloaded tebako runtime package",
+    122 => "Failed to download tebako runtime package",
+    123 => "TEBAKO_OFFLINE is set and the requested tebako runtime package is not cached",
+    124 => "Runtime package release carries no usable package index",
+    125 => "Timed out waiting for the runtime package cache lock",
     201 => "Warning. Could not create cache version file"
   }.freeze
 

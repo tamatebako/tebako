@@ -38,6 +38,7 @@ require_relative "cache_manager"
 require_relative "cli_helpers"
 require_relative "error"
 require_relative "ruby_version"
+require_relative "runtime_manager"
 require_relative "scenario_manager"
 require_relative "version"
 
@@ -45,6 +46,78 @@ require_relative "version"
 # Implementation of tebako command-line interface
 module Tebako
   DEFAULT_TEBAFILE = ".tebako.yml"
+
+  # 'tebako cache' subcommands: machine-wide prebuilt runtime package cache
+  class CacheCli < Thor
+    package_name "tebako cache"
+
+    desc "list", "List cached tebako runtime packages with sizes and ages"
+    def list
+      entries = runtime_manager.entries
+      return puts empty_message if entries.empty?
+
+      entries.each { |entry| puts entry_line(entry) }
+      puts total_line(entries)
+    end
+
+    desc "prune", "Remove cached tebako runtime packages"
+    method_option :all, type: :boolean, default: false, desc: "Remove all cached runtime packages"
+    method_option :"older-than", type: :string,
+                                 desc: "Remove runtime packages installed more than N days ago (e.g. 30d)"
+    def prune
+      removed = do_prune
+      return if removed.nil?
+
+      removed.each { |name| puts "Removed #{name}" }
+      puts "#{removed.size} cached runtime package(s) removed"
+    end
+
+    no_commands do
+      def runtime_manager
+        Tebako::RuntimeManager.new
+      end
+
+      def empty_message
+        "Runtime package cache is empty (#{File.join(runtime_manager.cache_root, "runtimes")})"
+      end
+
+      def entry_line(entry)
+        format("%<name>-44s %<size>9s  %<age>s", name: entry[:name], size: human_size(entry[:size_bytes]),
+                                                 age: human_age(entry[:installed_at]))
+      end
+
+      def total_line(entries)
+        format("%<label>-44s %<size>9s", label: "Total (#{entries.size} package(s))",
+                                         size: human_size(entries.sum { |entry| entry[:size_bytes] }))
+      end
+    end
+
+    no_commands do
+      def do_prune
+        return runtime_manager.prune(all: true) if options[:all]
+
+        match = /\A(?<days>\d+)d?\z/.match(options[:"older-than"].to_s)
+        return runtime_manager.prune(older_than_days: match[:days].to_i) if match
+
+        puts "Nothing to do: pass --all or --older-than Nd"
+        nil
+      end
+
+      def human_size(bytes)
+        format("%.1f MB", bytes / (1024.0 * 1024))
+      end
+
+      def human_age(installed_at)
+        age = Time.now - installed_at
+        if age < 3600 then "#{(age / 60).floor}m ago"
+        elsif age < 86_400 then "#{(age / 3600).floor}h ago"
+        else
+          "#{(age / 86_400).floor}d ago"
+        end
+      end
+    end
+  end
+
   # Tebako packager front-end
   class Cli < Thor # rubocop:disable Metrics/ClassLength
     package_name "Tebako"
@@ -81,6 +154,9 @@ module Tebako
     def hash
       print Digest::SHA256.hexdigest [File.read(File.join(source, "CMakeLists.txt")), Tebako::VERSION].join
     end
+
+    desc "cache SUBCOMMAND", "Manage the machine-wide cache of prebuilt tebako runtime packages"
+    subcommand "cache", Tebako::CacheCli
 
     CWD_DESCRIPTION = <<~DESC
       Current working directory for packaged application. This directory shall be specified relative to root.
