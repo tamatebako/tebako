@@ -106,6 +106,11 @@ endif()
 
 # Self-contained transitive static-lib package (libtfs releases >= v0.12.5).
 # When present, consumers need no vcpkg at all on the prebuilt path.
+# Releases built with the deps header contract also ship a curated include/
+# tree (brotli, zstd, lz4, lzma, zlib, bzip2, libzip, xxhash, fmt,
+# flatbuffers, boost filesystem+chrono subset) so consumers can compile
+# against the shipped archives — gem native extensions need e.g.
+# <brotli/encode.h>, which nothing else provides in the prebuilt world.
 set(LIBTFS_DEPS_PKG_NAME "libtfs-deps-${LIBTFS_VERSION}-${LIBTFS_PLATFORM}.tar.gz")
 
 set(LIBTFS_INCLUDE_DIR "${DEPS_INCLUDE_DIR}")
@@ -346,7 +351,10 @@ if(DWARFS_PRELOAD)
     file(ARCHIVE_EXTRACT INPUT "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_DEPS_PKG_NAME}"
          DESTINATION "${__LIBTFS_DEPS_EXTRACT_DIR}")
 
-    # Deploy into the triplet-shaped install dir the link lists consume
+    # Deploy into the triplet-shaped install dir the link lists consume.
+    # The whole-tree copy also restores the vcpkg layout — lib/, share/ and,
+    # for releases built with the deps header contract, include/ — so
+    # ${LIBTFS_VCPKG_TRIPLET_DIR}/include carries the curated dep headers.
     file(MAKE_DIRECTORY "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
     file(COPY "${__LIBTFS_DEPS_EXTRACT_DIR}/"
          DESTINATION "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
@@ -355,6 +363,22 @@ if(DWARFS_PRELOAD)
       message(FATAL_ERROR "libtfs: deps package contains no static libraries")
     endif()
     message(STATUS "libtfs: deployed ${LIBTFS_DEPS_PKG_NAME} to ${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
+
+    # Also deploy the curated dep headers into DEPS_INCLUDE_DIR, the include
+    # root the ruby build already carries as -I (RUBY_C_FLAGS) and that is
+    # baked into rbconfig — mkmf-driven gem native extensions (e.g. the
+    # brotli gem including <brotli/encode.h>) compile against these headers
+    # when the packaged build runs gem install. The check keys on the
+    # extracted package itself (not on possibly stale state in the triplet
+    # dir): older deps packages without an include/ tree keep the previous
+    # behavior (link-only self-contained).
+    if(EXISTS "${__LIBTFS_DEPS_EXTRACT_DIR}/include")
+      file(COPY "${__LIBTFS_DEPS_EXTRACT_DIR}/include/" DESTINATION "${LIBTFS_INCLUDE_DIR}")
+      message(STATUS "libtfs: deployed deps package headers to ${LIBTFS_INCLUDE_DIR}")
+    else()
+      message(WARNING "libtfs: deps package carries no include/ tree; "
+                      "native gem extensions wrapping shipped codecs (brotli, zstd, ...) will not compile")
+    endif()
 
   else()
 
