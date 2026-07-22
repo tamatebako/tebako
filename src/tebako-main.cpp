@@ -70,6 +70,20 @@
 #define TPKG_IMPLEMENTATION
 #include <tebako/tpkg.h>
 
+/*
+ * Launcher ABI v1 (Stage 3B) -- the bootstrap -> runtime handoff contract.
+ * A lean package's bootstrap execs the runtime as
+ *   <runtime> --tebako-image <file>:<slot>:<mount-point> ...
+ *             --tebako-entry <argv0> <user args...>
+ * and the runtime mounts the referenced image slots directly out of the
+ * bootstrap's file (spec 4.4). The Ruby-side constants and the full contract
+ * documentation live in lib/tebako/launcher_abi.rb -- keep the two in sync.
+ */
+#define TEBAKO_LAUNCHER_ABI_VERSION 1u
+#define TEBAKO_LAUNCHER_IMAGE_ARG "--tebako-image"
+#define TEBAKO_LAUNCHER_ENTRY_ARG "--tebako-entry"
+#define TEBAKO_LAUNCHER_VERSION_ARG "--tebako-launcher-abi"
+
 static int running_miniruby = 0;
 static tebako::cmdline_args* args = nullptr;
 static std::vector<char> package;
@@ -118,7 +132,8 @@ std::string self_executable_path()
 #endif
 }
 
-/* Open the running executable read-only; returns fd or -1 */
+/* Open a file read-only from a UTF-8 path (the running executable or a
+   --tebako-image package file); returns fd or -1 */
 int open_self_executable(const std::string& path)
 {
 #if defined(_WIN32)
@@ -210,6 +225,252 @@ int read_self_image(int fd)
   return 0;
 }
 
+/*
+ * Launcher ABI v1 (Stage 3B) -- runtime side of the bootstrap handoff.
+ */
+
+/* One --tebako-image reference, resolved against the file's tpkg trailer */
+struct launcher_image {
+  std::string file;
+  uint32_t slot = 0; /* index into the file's tpkg slot table */
+  std::string mount_point;
+  uint64_t size = 0;              /* image length in bytes, from the trailer */
+  const char* window = nullptr;   /* slot bytes, owned by launcher_image_store */
+};
+
+struct launcher_handoff {
+  bool present = false;           /* any launcher ABI option seen at all */
+  bool version_seen = false;      /* --tebako-launcher-abi given */
+  uint32_t version = 0;
+  std::string entry;              /* package argv[0]; empty when --tebako-entry is absent */
+  std::vector<launcher_image> images;
+  std::vector<std::string> user_args; /* everything after --tebako-entry <argv0> */
+  std::string error;              /* non-empty: malformed handoff */
+};
+
+/* Owns the image slot bytes read out of --tebako-image files;
+   process-lifetime like the incbin section itself. Appending moves the
+   outer vector but never the inner buffers, so window pointers stay valid. */
+static std::vector<std::vector<char>> launcher_image_store;
+
+bool parse_uint32(const std::string& s, uint32_t* out)
+{
+  if (s.empty() || s.size() > 10) {
+    return false;
+  }
+  uint64_t v = 0;
+  for (char c : s) {
+    if (c < '0' || c > '9') {
+      return false;
+    }
+    v = v * 10 + static_cast<uint64_t>(c - '0');
+    if (v > UINT32_MAX) {
+      return false;
+    }
+  }
+  *out = static_cast<uint32_t>(v);
+  return true;
+}
+
+/* Split "<file>:<slot>:<mount-point>" on the last two colons; the file
+   component may itself contain colons (e.g. Windows drive prefixes). */
+bool split_image_spec(const std::string& spec, std::string* file, uint32_t* slot, std::string* mount_point)
+{
+  size_t last = spec.rfind(':');
+  if (last == std::string::npos || last == 0) {
+    return false;
+  }
+  size_t prev = spec.rfind(':', last - 1);
+  if (prev == std::string::npos) {
+    return false;
+  }
+  *file = spec.substr(0, prev);
+  *mount_point = spec.substr(last + 1);
+  if (file->empty() || mount_point->empty()) {
+    return false;
+  }
+  return parse_uint32(spec.substr(prev + 1, last - prev - 1), slot);
+}
+
+/* Match one launcher ABI option, inline ("--opt=value") or bare ("--opt").
+   Returns 1 for --tebako-image, 2 for --tebako-entry, 3 for
+   --tebako-launcher-abi, 0 for anything else. For a bare match *had_inline
+   is false and *value is untouched; the caller consumes the next argument. */
+int match_launcher_arg(const std::string& arg, bool* had_inline, std::string* value)
+{
+  static const std::string keys[] = {TEBAKO_LAUNCHER_IMAGE_ARG, TEBAKO_LAUNCHER_ENTRY_ARG, TEBAKO_LAUNCHER_VERSION_ARG};
+  for (size_t k = 0; k < 3; ++k) {
+    if (arg == keys[k]) {
+      *had_inline = false;
+      return static_cast<int>(k) + 1;
+    }
+    if (arg.size() > keys[k].size() && arg.compare(0, keys[k].size(), keys[k]) == 0 && arg[keys[k].size()] == '=') {
+      *had_inline = true;
+      *value = arg.substr(keys[k].size() + 1);
+      return static_cast<int>(k) + 1;
+    }
+  }
+  return 0;
+}
+
+/*
+ * Scan argv for the launcher ABI handoff. The three ABI options are
+ * recognized until --tebako-entry is consumed; everything after its value is
+ * application argv. Non-ABI arguments preceding --tebako-entry are ignored
+ * (the bootstrap emits none). When no ABI option is present at all the
+ * returned handoff is !present and the caller runs the classic flow
+ * unchanged.
+ */
+launcher_handoff parse_launcher_handoff(int argc, char** argv)
+{
+  launcher_handoff h;
+  for (int i = 1; i < argc; ++i) {
+    bool had_inline = false;
+    std::string value;
+    int kind = match_launcher_arg(argv[i], &had_inline, &value);
+    if (kind == 0) {
+      continue;
+    }
+    h.present = true;
+    if (!had_inline) {
+      if (i + 1 >= argc) {
+        h.error = std::string("Error: ") + argv[i] +
+                  (kind == 1 ? " shall be followed by <file>:<slot>:<mount-point>"
+                             : (kind == 2 ? " shall be followed by the package argv[0]"
+                                          : " shall be followed by an ABI version number"));
+        return h;
+      }
+      value = argv[++i];
+    }
+    if (kind == 1) {
+      launcher_image img;
+      if (!split_image_spec(value, &img.file, &img.slot, &img.mount_point)) {
+        h.error = "Error: malformed --tebako-image value '" + value + "' -- expected <file>:<slot>:<mount-point>";
+        return h;
+      }
+      h.images.push_back(std::move(img));
+    }
+    else if (kind == 2) {
+      if (value.empty()) {
+        h.error = "Error: --tebako-entry shall be followed by the package argv[0]";
+        return h;
+      }
+      h.entry = value;
+      for (++i; i < argc; ++i) {
+        h.user_args.emplace_back(argv[i]);
+      }
+      break;
+    }
+    else {
+      if (!parse_uint32(value, &h.version)) {
+        h.error = "Error: malformed --tebako-launcher-abi value '" + value + "' -- expected an ABI version number";
+        return h;
+      }
+      h.version_seen = true;
+    }
+  }
+  return h;
+}
+
+/* 64-bit file positioning for image slot reads (slot offsets can exceed 2GB) */
+int seek_fd(int fd, uint64_t offset)
+{
+#if defined(_WIN32)
+  return _lseeki64(fd, static_cast<__int64>(offset), SEEK_SET) == -1 ? -1 : 0;
+#else
+  return lseek(fd, static_cast<off_t>(offset), SEEK_SET) == static_cast<off_t>(-1) ? -1 : 0;
+#endif
+}
+
+uint64_t file_size_fd(int fd)
+{
+#if defined(_WIN32)
+  __int64 end = _lseeki64(fd, 0, SEEK_END);
+  return end < 0 ? 0 : static_cast<uint64_t>(end);
+#else
+  off_t end = lseek(fd, 0, SEEK_END);
+  return end == static_cast<off_t>(-1) ? 0 : static_cast<uint64_t>(end);
+#endif
+}
+
+/* Read exactly n bytes from fd at absolute offset `offset` into dest */
+int read_region(int fd, uint64_t offset, char* dest, size_t n)
+{
+  if (seek_fd(fd, offset) != 0) {
+    return -1;
+  }
+  size_t got = 0;
+  while (got < n) {
+    ssize_t r = read(fd, dest + got, n - got);
+    if (r <= 0) {
+      return -1;
+    }
+    got += static_cast<size_t>(r);
+  }
+  return 0;
+}
+
+/*
+ * Resolve every --tebako-image reference against its file's tpkg manifest
+ * trailer and read the slot's bytes out of the file (no extraction, no temp
+ * copies; spec 4.4). On failure prints a named startup error and returns
+ * false; the caller must fail startup (spec 6: never a partial mount, one
+ * bad slot aborts with the slot index).
+ */
+bool resolve_launcher_images(launcher_handoff* h)
+{
+  for (auto& img : h->images) {
+    int fd = open_self_executable(img.file);
+    if (fd < 0) {
+      printf("Tebako: cannot open image file '%s': %s\n", img.file.c_str(), strerror(errno));
+      return false;
+    }
+    tpkg_manifest m;
+    if (tpkg_read_fd(fd, &m) != 0) {
+      int err = tpkg_errno();
+      close(fd);
+      if (err == TPKG_ERR_NO_TRAILER) {
+        printf("Tebako: image file '%s' carries no tpkg manifest trailer --\n"
+               "  --tebako-image expects a three-part package file (bootstrap + image slots + trailer)\n",
+               img.file.c_str());
+      }
+      else {
+        printf("Tebako: package manifest trailer in '%s' is corrupt (%s). "
+               "Re-stitch the package to repair the manifest.\n",
+               img.file.c_str(), tpkg_strerror(err));
+      }
+      return false;
+    }
+    if (img.slot >= m.slot_count) {
+      printf("Tebako: --tebako-image slot %u is out of range for '%s' (%u slot(s) in its manifest)\n", img.slot,
+             img.file.c_str(), m.slot_count);
+      close(fd);
+      return false;
+    }
+    const tpkg_slot& s = m.slots[img.slot];
+    uint64_t fsize = file_size_fd(fd);
+    if (s.offset > fsize || s.size > fsize - s.offset) {
+      printf("Tebako: package manifest trailer in '%s' is corrupt (slot %u outside file bounds). "
+             "Re-stitch the package to repair the manifest.\n",
+             img.file.c_str(), img.slot);
+      close(fd);
+      return false;
+    }
+    launcher_image_store.emplace_back(static_cast<size_t>(s.size));
+    std::vector<char>& buf = launcher_image_store.back();
+    if (read_region(fd, s.offset, buf.data(), buf.size()) != 0) {
+      printf("Tebako: failed to read image slot %u from '%s': %s\n", img.slot, img.file.c_str(), strerror(errno));
+      launcher_image_store.pop_back();
+      close(fd);
+      return false;
+    }
+    close(fd);
+    img.size = s.size;
+    img.window = buf.data();
+  }
+  return true;
+}
+
 }  // namespace
 
 static void tebako_clean(void)
@@ -243,17 +504,45 @@ extern "C" int tebako_main(int* argc, char*** argv)
     const void* data = &gfsData[0];
     size_t size = gfsSize;
     std::string root_image_offset = "auto";
-    /* Non-root tpkg slots: (recorded mount point, image offset, image size) */
+    /* Non-root image slots: (recorded mount point, image bytes, image size).
+       window points at the slot's image -- into self_image for the trailer
+       path, into launcher_image_store for the launcher ABI path. */
     struct extra_slot {
       std::string mount_point;
-      uint64_t offset;
+      const char* window;
       uint64_t size;
     };
     std::vector<extra_slot> extra_slots;
     bool trailer_corrupt = false;
+    bool handoff_failed = false;
 
     try {
-      args = new tebako::cmdline_args(*argc, (const char**)*argv);
+      /*
+       * Launcher ABI v1 (Stage 3B): a lean package's bootstrap execs the
+       * runtime with --tebako-image/--tebako-entry arguments. When present,
+       * they are consumed here -- before the classic cmdline/trailer/incbin
+       * logic -- and the interpreter is handed a synthetic argv of the
+       * package argv[0] and the application arguments.
+       */
+      launcher_handoff handoff = parse_launcher_handoff(*argc, *argv);
+      if (!handoff.error.empty()) {
+        printf("Tebako: %s\n", handoff.error.c_str());
+        handoff_failed = true;
+      }
+
+      int effective_argc = *argc;
+      char** effective_argv = *argv;
+      std::vector<const char*> synthetic_argv;
+      if (handoff.present && !handoff_failed) {
+        synthetic_argv.push_back(handoff.entry.empty() ? (*argv)[0] : handoff.entry.c_str());
+        for (const auto& a : handoff.user_args) {
+          synthetic_argv.push_back(a.c_str());
+        }
+        effective_argc = static_cast<int>(synthetic_argv.size());
+        effective_argv = const_cast<char**>(synthetic_argv.data());
+      }
+
+      args = new tebako::cmdline_args(effective_argc, (const char**)effective_argv);
       args->parse_arguments();
       if (args->with_application()) {
         args->process_package();
@@ -268,7 +557,52 @@ extern "C" int tebako_main(int* argc, char*** argv)
         }
       }
 
-      if (data == &gfsData[0]) {
+      if (handoff.present && !handoff_failed) {
+        /*
+         * Launcher ABI handoff (Stage 3B): mount the images the bootstrap
+         * named, directly out of its package file(s) -- no extraction.
+         */
+        if (handoff.version_seen && handoff.version > TEBAKO_LAUNCHER_ABI_VERSION) {
+          printf(
+              "Tebako: launcher ABI mismatch -- the bootstrap speaks ABI %u but this runtime supports ABI %u.\n"
+              "  Refresh the runtime via tebako cache, or re-bundle with a matching tebako-bootstrap.\n",
+              handoff.version, TEBAKO_LAUNCHER_ABI_VERSION);
+          handoff_failed = true;
+        }
+        else if (handoff.images.empty()) {
+          printf("Tebako: launcher ABI handoff without --tebako-image -- nothing to mount\n");
+          handoff_failed = true;
+        }
+        else if (!resolve_launcher_images(&handoff)) {
+          handoff_failed = true;  // resolve_launcher_images printed the reason
+        }
+        else if (data == &gfsData[0]) {
+          /* Root image: the one handed over for the package mount point;
+             fall back to the first image (mounted at the compiled-in root). */
+          size_t root_image = 0;
+          for (size_t i = 0; i < handoff.images.size(); ++i) {
+            if (mount_point == handoff.images[i].mount_point) {
+              root_image = i;
+              break;
+            }
+          }
+          data = handoff.images[root_image].window;
+          size = static_cast<size_t>(handoff.images[root_image].size);
+          root_image_offset = "0";
+          for (size_t i = 0; i < handoff.images.size(); ++i) {
+            if (i != root_image) {
+              extra_slots.push_back({handoff.images[i].mount_point, handoff.images[i].window, handoff.images[i].size});
+            }
+          }
+        }
+        else {
+          /* --tebako-run owns the root; every handed-over image mounts extra */
+          for (const auto& img : handoff.images) {
+            extra_slots.push_back({img.mount_point, img.window, img.size});
+          }
+        }
+      }
+      else if (data == &gfsData[0]) {
         /*
          * Incbin bundle startup: probe the own executable for a tpkg
          * manifest trailer (Stage 3A, spec §4.3).
@@ -309,8 +643,8 @@ extern "C" int tebako_main(int* argc, char*** argv)
             root_image_offset = "0";
             for (uint32_t i = 0; i < manifest.slot_count; ++i) {
               if (i != root_slot) {
-                extra_slots.push_back(
-                    {std::string(manifest.slots[i].mount_point), manifest.slots[i].offset, manifest.slots[i].size});
+                extra_slots.push_back({std::string(manifest.slots[i].mount_point),
+                                       self_image.data() + manifest.slots[i].offset, manifest.slots[i].size});
               }
             }
           }
@@ -324,14 +658,14 @@ extern "C" int tebako_main(int* argc, char*** argv)
         }
       }
 
-      if (!trailer_corrupt) {
+      if (!trailer_corrupt && !handoff_failed) {
         fsret = mount_root_memfs(data, size, tebako::fs_log_level, nullptr, nullptr, nullptr, nullptr,
                                  root_image_offset.c_str());
         if (fsret == 0) {
           for (const auto& slot : extra_slots) {
             // mount_memfs_at_root returns the memfs table index on success,
             // -1 on failure
-            if (mount_memfs_at_root(self_image.data() + slot.offset, static_cast<unsigned int>(slot.size), "0",
+            if (mount_memfs_at_root(slot.window, static_cast<unsigned int>(slot.size), "0",
                                     slot.mount_point.c_str()) == -1) {
               printf("Tebako: failed to mount package slot at '%s'\n", slot.mount_point.c_str());
               unmount_root_memfs();  // spec §6: never a partial mount
