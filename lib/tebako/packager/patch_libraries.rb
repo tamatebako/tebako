@@ -56,6 +56,14 @@ module Tebako
 
         LIBTEBAKOFS = "-Wl,--push-state,--whole-archive -l:libtebako-fs.a -Wl,--pop-state"
 
+        # --start-group/--end-group around the libtfs + transitive static
+        # archives: the dwarfs reader set has circular member-level references
+        # (compression registrar/registry) whose resolution order differs
+        # between producer toolchains (clang-18-built packages trip GNU ld's
+        # single-pass archive scanning where gcc-built ones did not).
+        GROUP_BEGIN = "-Wl,--start-group"
+        GROUP_END = "-Wl,--end-group"
+
         # libtfs (libtfs.a + its pure-C dirent helper) and the transitive static
         # set resolved by vcpkg into deps/vcpkg_installed/<triplet>/lib: the
         # dwarfs reader side, flatbuffers, zip and the C++ support libs.
@@ -103,12 +111,14 @@ module Tebako
         ].freeze
 
         def linux_gnu_libraries(ruby_ver, with_compression)
-          libraries = COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES + LINUX_GNU_LIBRARIES
+          libraries = [GROUP_BEGIN] + COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES +
+                      [GROUP_END] + LINUX_GNU_LIBRARIES
           linux_libraries(libraries, ruby_ver, with_compression)
         end
 
         def linux_musl_libraries(ruby_ver, with_compression)
-          libraries = COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES + LINUX_MUSL_LIBRARIES
+          libraries = [GROUP_BEGIN] + COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES +
+                      [GROUP_END] + LINUX_MUSL_LIBRARIES
           linux_libraries(libraries, ruby_ver, with_compression)
         end
 
