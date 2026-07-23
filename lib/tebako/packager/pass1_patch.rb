@@ -268,7 +268,10 @@ module Tebako
           "win32/win32.c" => WIN32_WIN32_C_CLOCK_PATCH,
           # ....................................................
           # Group-wrap the static-ext ruby.exe link libraries
-          "common.mk" => COMMON_MK_STATIC_RUBY_LINK_PATCH
+          "common.mk" => COMMON_MK_STATIC_RUBY_LINK_PATCH,
+          # ....................................................
+          # Group-wrap the generated Makefile's PROGRAM link (msys)
+          "template/Makefile.in" => TEMPLATE_MAKEFILE_IN_STATIC_RUBY_LINK_PATCH
         }
       end
 

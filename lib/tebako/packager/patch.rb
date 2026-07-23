@@ -56,6 +56,20 @@ module Tebako
         "-Wl,--end-group $(OUTFLAG)$@ # tebako patched"
     }.freeze
 
+    # The PROGRAM link in template/Makefile.in (the generated Makefile --
+    # the one the exts.mk submake actually links ruby.exe with) has the same
+    # static-lib ordering problem on msys. Ruby 3.3+ links
+    # MAINLIBS+EXTLIBS; 3.1/3.2 link MAINLIBS+LIBS+EXTLIBS -- wrap both
+    # shapes (only one matches per version, the other is a harmless no-op).
+    TEMPLATE_MAKEFILE_IN_STATIC_RUBY_LINK_PATCH = {
+      "$(LIBRUBYARG) $(MAINLIBS) $(EXTLIBS) $(OUTFLAG)$@" =>
+        "$(LIBRUBYARG) -Wl,--start-group $(MAINLIBS) $(EXTLIBS) -Wl,--end-group $(OUTFLAG)$@ " \
+        "# tebako patched",
+      "$(LIBRUBYARG) $(MAINLIBS) $(LIBS) $(EXTLIBS) $(OUTFLAG)$@" =>
+        "$(LIBRUBYARG) -Wl,--start-group $(MAINLIBS) $(LIBS) $(EXTLIBS) -Wl,--end-group " \
+        "$(OUTFLAG)$@ # tebako patched"
+    }.freeze
+
     # Ruby patching definitions (common base)
     class Patch
       def patch_map
