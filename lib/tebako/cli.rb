@@ -169,8 +169,8 @@ module Tebako
     DESC
 
     RGP_DESCRIPTION = <<~DESC
-      Current working directory for packaged application. This directory shall be specified relative to root.
-      #{" " * 65}# If this parameter is not set, the application will start in the current directory of the host file system.
+      Remove GLIBC_PRIVATE symbol dependencies (experimental, Linux GNU only).
+      #{" " * 65}# Makes the package forward portable to glibc 2.31 and above, e.g. built on Ubuntu 20.04, run on Rocky Linux 9.
     DESC
 
     RUNTIME_DESCRIPTION = <<~DESC
