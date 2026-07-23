@@ -34,6 +34,13 @@ runs:
         repository: metanorma/packed-mn
         path: ${{github.workspace}}/packed-mn
 
+    # The prebuilt-runtime press flow needs the packaging environment
+    # (ruby stash + mkdwarfs); the deps cache only carries .tebako/deps and
+    # misses on every release (tebako hash changes). Build the env here.
+    - name: Setup tebako environment
+      shell: bash
+      run: tebako setup --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
+
     - name: Package metanorma
       shell: bash
       run: tebako press --root=packed-mn --entry-point=bin/metanorma --output=metanorma-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako' --patchelf

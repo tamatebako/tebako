@@ -34,6 +34,13 @@ runs:
         repository: fontist/fontist
         path: ${{github.workspace}}/fontist
 
+    # The prebuilt-runtime press flow needs the packaging environment
+    # (ruby stash + mkdwarfs); the deps cache only carries .tebako/deps and
+    # misses on every release (tebako hash changes). Build the env here.
+    - name: Setup tebako environment
+      shell: bash
+      run: tebako setup --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako'
+
     - name: Package fontist
       shell: bash
       run: tebako press --root=fontist --entry-point=fontist --output=fontist-package --Ruby=${{ matrix.package_ruby_ver }} --prefix='.tebako' --patchelf
