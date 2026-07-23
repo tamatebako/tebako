@@ -61,8 +61,7 @@ module Tebako
         # (compression registrar/registry) whose resolution order differs
         # between producer toolchains (clang-18-built packages trip GNU ld's
         # single-pass archive scanning where gcc-built ones did not).
-        GROUP_BEGIN = "-Wl,--start-group"
-        GROUP_END = "-Wl,--end-group"
+        GROUP_BEGIN, GROUP_END = "-Wl,--start-group", "-Wl,--end-group"
 
         # libtfs (libtfs.a + its pure-C dirent helper) and the transitive static
         # set resolved by vcpkg into deps/vcpkg_installed/<triplet>/lib: the
@@ -154,10 +153,8 @@ module Tebako
           vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).min
           DARWIN_DEP_LIBS_2.each { |lib| libs << "#{vcpkg_lib_dir}/lib#{lib}.a " }
 
-          # Static jemalloc by full path (Apple ld has no -l:<filename> and the
-          # prebuilt libtfs packages no longer ship an allocator): a plain
-          # -ljemalloc would resolve to brew's dylib and fail the
-          # test_101_launcher no-shared-libs assertion.
+          # Static jemalloc by full path: prebuilt libtfs packages ship no
+          # allocator, so plain -ljemalloc resolved to brew's dylib.
           jemalloc_a = "#{PatchHelpers.get_prefix_macos("jemalloc").chop}/lib/libjemalloc.a"
 
           "-ltebako-fs #{libs}#{jemalloc_a} -lc++ -lc++abi"
