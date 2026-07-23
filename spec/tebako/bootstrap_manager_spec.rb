@@ -111,7 +111,13 @@ RSpec.describe Tebako::BootstrapManager do
 
         expect(path).to eq(executable)
         expect(File.binread(path)).to eq(package_body)
-        expect(File.executable?(path)).to be(true)
+        # File.executable? is extension-driven on Windows (only .exe/.bat/.com
+        # report executable regardless of the mode bits), so assert mode there
+        if Gem.win_platform?
+          expect(File.exist?(path)).to be(true)
+        else
+          expect(File.executable?(path)).to be(true)
+        end
         expect(File.read(File.join(entry_dir, "sha256"))).to include(package_sha256)
         expect(File.read(File.join(entry_dir, "origin"))).to include(filename)
       end
