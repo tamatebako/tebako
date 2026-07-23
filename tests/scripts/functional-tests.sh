@@ -39,7 +39,12 @@ press_runner_bundle() {
      result="$( cat tebako_test.log )"
    else
      result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 )
-     assertEquals 0 $?
+     rc=$?
+     # Press output is otherwise invisible in CI logs when it fails; print it
+     if [ $rc -ne 0 ]; then
+       printf '%s\n' "$result"
+     fi
+     assertEquals 0 $rc
    fi
 
 # Check the first and the last messages expected from CMake script
@@ -59,7 +64,11 @@ press_runner_app() {
      result="$( cat tebako_test.log )"
    else
      result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode=application 2>&1 )
-     assertEquals 0 $?
+     rc=$?
+     if [ $rc -ne 0 ]; then
+       printf '%s\n' "$result"
+     fi
+     assertEquals 0 $rc
    fi
 
 # Check the first and the last messages expected from CMake script
