@@ -147,7 +147,7 @@ module Tebako
           # The vcpkg set by full path: Apple ld does not implement -l:<filename>
           vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).min
           DARWIN_DEP_LIBS_2.each { |lib| libs << "#{vcpkg_lib_dir}/lib#{lib}.a " }
-          "-ltebako-fs #{libs}#{PatchHelpers.get_prefix_macos("jemalloc").chop}/lib/libjemalloc.a" \
+          "-ltebako-fs #{libs}#{PatchHelpers.get_prefix_macos("jemalloc").chop}/lib/libjemalloc.a " \
             "-lc++ -lc++abi"
         end
 
