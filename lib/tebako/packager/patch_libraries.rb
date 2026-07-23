@@ -154,7 +154,13 @@ module Tebako
           vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).min
           DARWIN_DEP_LIBS_2.each { |lib| libs << "#{vcpkg_lib_dir}/lib#{lib}.a " }
 
-          "-ltebako-fs #{libs}-ljemalloc -lc++ -lc++abi"
+          # Static jemalloc by full path (Apple ld has no -l:<filename> and the
+          # prebuilt libtfs packages no longer ship an allocator): a plain
+          # -ljemalloc would resolve to brew's dylib and fail the
+          # test_101_launcher no-shared-libs assertion.
+          jemalloc_a = "#{PatchHelpers.get_prefix_macos("jemalloc").chop}/lib/libjemalloc.a"
+
+          "-ltebako-fs #{libs}#{jemalloc_a} -lc++ -lc++abi"
         end
 
         # .....................................................
