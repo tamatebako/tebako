@@ -75,7 +75,7 @@ sha256_of() {
 # Number of runtime entries in a cache root
 runtime_entries() {
    if [ -d "$1/runtimes" ]; then
-      ls "$1/runtimes" | wc -l | tr -d ' '
+      find "$1/runtimes" -mindepth 1 -maxdepth 1 | wc -l | tr -d ' '
    else
       echo 0
    fi
@@ -98,7 +98,7 @@ press_app() {
         TEBAKO_BOOTSTRAP_MIRROR="file://${BOOTSTRAP_MIRROR}" \
         TEBAKO_BOOTSTRAP_VERSION="${BOOTSTRAP_VER}" \
         TEBAKO_RUNTIME_MIRROR="file://${RUNTIME_MIRROR}" \
-        "${DIR_BIN}/tebako" press -D -R "${RUBY_VER}" ${mode_arg} \
+        "${DIR_BIN}/tebako" press -D -R "${RUBY_VER}" ${mode_arg:+"$mode_arg"} \
         --root="${WORK}/${app}" --entry-point=app.rb --output="$out" \
         > "${WORK}/press-$(basename "$out").log" 2>&1 ) || {
       cat "${WORK}/press-$(basename "$out").log"
@@ -225,7 +225,7 @@ EOF
       # -- fixture applications (distinct content + data files)
       for app in app1 app2 app3 app4; do
          mkdir "${app}"
-         tag=$( echo "${app}" | tr 'a-z' 'A-Z' )
+         tag=$( echo "${app}" | tr '[:lower:]' '[:upper:]' )
          cat > "${app}/app.rb" <<RUBY
 puts "press-modes: ${app} ok"
 puts "press-modes: memfs: #{File.read('/__tebako_memfs__/local/data.txt').strip}"
