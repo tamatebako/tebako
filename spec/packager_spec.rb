@@ -187,6 +187,45 @@ RSpec.describe Tebako::Packager do
     end
   end
 
+  describe "#align_layout_to_runtime!" do
+    let(:ruby_ver) { Tebako::RubyVersion.new("3.3.7") }
+
+    it "renames the image arch dirs to the runtime's and drops in its rbconfig" do
+      Dir.mktmpdir do |tmp|
+        image = File.join(tmp, "img")
+        layout = File.join(tmp, "layout")
+        FileUtils.mkdir_p(File.join(image, "lib/ruby/3.3.0/arm64-darwin23"))
+        File.write(File.join(image, "lib/ruby/3.3.0/arm64-darwin23/rbconfig.rb"), "local")
+        FileUtils.mkdir_p(File.join(image, "lib/ruby/gems/3.3.0/extensions/arm64-darwin-23"))
+        FileUtils.mkdir_p(File.join(layout, "lib/ruby/3.3.0/arm64-darwin24"))
+        File.write(File.join(layout, "lib/ruby/3.3.0/arm64-darwin24/rbconfig.rb"), "runtime")
+        FileUtils.mkdir_p(File.join(layout, "lib/ruby/gems/3.3.0/extensions/arm64-darwin-24"))
+
+        Tebako::Packager.align_layout_to_runtime!(image, layout, ruby_ver)
+
+        expect(File.read(File.join(image, "lib/ruby/3.3.0/arm64-darwin24/rbconfig.rb"))).to eq("runtime")
+        expect(Dir).not_to exist(File.join(image, "lib/ruby/3.3.0/arm64-darwin23"))
+        expect(Dir).to exist(File.join(image, "lib/ruby/gems/3.3.0/extensions/arm64-darwin-24"))
+        expect(Dir).not_to exist(File.join(image, "lib/ruby/gems/3.3.0/extensions/arm64-darwin-23"))
+      end
+    end
+
+    it "is a no-op when the arch conventions already match" do
+      Dir.mktmpdir do |tmp|
+        image = File.join(tmp, "img")
+        layout = File.join(tmp, "layout")
+        FileUtils.mkdir_p(File.join(image, "lib/ruby/3.3.0/x86_64-linux"))
+        File.write(File.join(image, "lib/ruby/3.3.0/x86_64-linux/rbconfig.rb"), "same")
+        FileUtils.mkdir_p(File.join(layout, "lib/ruby/3.3.0/x86_64-linux"))
+        File.write(File.join(layout, "lib/ruby/3.3.0/x86_64-linux/rbconfig.rb"), "same")
+
+        Tebako::Packager.align_layout_to_runtime!(image, layout, ruby_ver)
+
+        expect(File.read(File.join(image, "lib/ruby/3.3.0/x86_64-linux/rbconfig.rb"))).to eq("same")
+      end
+    end
+  end
+
   describe "#mkdwarfs" do
     let(:deps_bin_dir) { "/path/to/deps/bin" }
     let(:data_bin_file) { "/path/to/output.dwarfs" }

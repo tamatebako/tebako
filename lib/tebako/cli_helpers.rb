@@ -112,7 +112,8 @@ module Tebako
     def do_press_prebuilt(options_manager, scenario_manager)
       Tebako::Packager.check_prebuilt_env!(options_manager.stash_dir, options_manager.deps_bin_dir)
       runtime_path = Tebako::RuntimeManager.resolve(options_manager.ruby_ver, options_manager.host_platform)
-      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager)
+      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager,
+                                                   Tebako::RuntimeManager.layout(runtime_path))
 
       images = [{ path: app_image, mount_point: scenario_manager.fs_mount_point,
                   format_id: Tebako::Stitcher::FORMAT_DWARFS }] + options_manager.images
@@ -128,31 +129,37 @@ module Tebako
     # slot, so the first run installs it without any network access.
     def do_press_three_part(options_manager, scenario_manager)
       bootstrap_path, runtime_path = resolve_three_part_parts(options_manager)
-      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager)
-      images = three_part_images(options_manager, scenario_manager, app_image, runtime_path)
+      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager,
+                                                   Tebako::RuntimeManager.layout(runtime_path))
+      payload_path = options_manager.fat? ? runtime_path : nil
+      images = three_part_images(options_manager, scenario_manager, app_image, payload_path)
       package = "#{options_manager.package}#{scenario_manager.exe_suffix}"
-      runtime_sha256 = runtime_path && Digest::SHA256.file(runtime_path).hexdigest
-      Tebako::Stitcher.stitch(bootstrap_path, images: images, output: package, lean: true,
-                                              ruby_version: options_manager.ruby_ver,
-                                              launcher_abi: Tebako::LauncherAbi::VERSION,
-                                              runtime_sha256: runtime_sha256)
+      stitch_three_part(options_manager, bootstrap_path, images, package, payload_path)
       puts "Created tebako #{options_manager.output_type_first} at \"#{package}\""
     end
 
+    def stitch_three_part(options_manager, bootstrap_path, images, package, payload_path)
+      Tebako::Stitcher.stitch(bootstrap_path, images: images, output: package, lean: true,
+                                              ruby_version: options_manager.ruby_ver,
+                                              launcher_abi: Tebako::LauncherAbi::VERSION,
+                                              runtime_sha256: payload_sha256(payload_path))
+    end
+
+    def payload_sha256(payload_path)
+      payload_path && Digest::SHA256.file(payload_path).hexdigest
+    end
+
     # Validate the options and the packaging environment, then resolve the
-    # bootstrap (and, for fat, the runtime payload) into the shared cache
+    # bootstrap and the runtime into the shared cache. The runtime is needed
+    # in both three-part modes: 'fat' embeds it as a payload slot, 'lean'
+    # uses its extracted layout to align the application image's arch
+    # conventions (and references it in the trailer for first-run resolution)
     def resolve_three_part_parts(options_manager)
       options_manager.runtime_source # validates the mode/provenance combination
       check_bootstrap_version!(options_manager)
       Tebako::Packager.check_prebuilt_env!(options_manager.stash_dir, options_manager.deps_bin_dir)
-      runtime_path = fat_runtime_path(options_manager)
+      runtime_path = Tebako::RuntimeManager.resolve(options_manager.ruby_ver, options_manager.host_platform)
       [Tebako::BootstrapManager.resolve(options_manager.host_platform), runtime_path]
-    end
-
-    def fat_runtime_path(options_manager)
-      return nil unless options_manager.fat?
-
-      Tebako::RuntimeManager.resolve(options_manager.ruby_ver, options_manager.host_platform)
     end
 
     def three_part_images(options_manager, scenario_manager, app_image, runtime_path)

@@ -31,6 +31,7 @@ require "json"
 require "net/http"
 require "uri"
 
+require_relative "build_helpers"
 require_relative "error"
 require_relative "version"
 
@@ -83,6 +84,10 @@ module Tebako
       def resolve(ruby_version, platform, tebako_version: Tebako::VERSION)
         new.resolve(ruby_version, platform, tebako_version: tebako_version)
       end
+
+      def layout(runtime_path)
+        new.layout(runtime_path)
+      end
     end
 
     def initialize(cache_root: nil, mirror: nil, lock_timeout: LOCK_TIMEOUT, retry_delay: RETRY_DELAY)
@@ -103,6 +108,22 @@ module Tebako
         install(executable, ruby_version, platform, tebako_version) unless File.file?(executable)
       end
       executable
+    end
+
+    # Extract the runtime package's filesystem layout next to the cached
+    # package (idempotent) and return the layout root. The layout is the
+    # authoritative source of the runtime's arch conventions (rbconfig
+    # location, gem extension dir naming), which the application image must
+    # match: ruby's compiled-in search paths come from the runtime build,
+    # while a local packaging environment names them after the press machine
+    # (macOS embeds the kernel version, e.g. arm64-darwin23 vs -darwin24).
+    def layout(runtime_path)
+      layout_dir = File.join(File.dirname(runtime_path), "layout")
+      return layout_dir if File.directory?(File.join(layout_dir, "lib"))
+
+      FileUtils.mkdir_p(layout_dir)
+      Tebako::BuildHelpers.run_with_capture_v([runtime_path, "--tebako-extract", layout_dir])
+      layout_dir
     end
 
     def entries

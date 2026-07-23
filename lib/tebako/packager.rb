@@ -129,14 +129,70 @@ module Tebako
       # Deploy the application and build its DwarFS image for stitching onto
       # a prebuilt runtime. Same layout as the bundle-mode image, plus an
       # entry dispatcher at /local/stub.rb (the runtime's compiled-in entry).
-      def build_app_image(options_manager, scenario_manager) # rubocop:disable Metrics/AbcSize
+      # When layout_dir is given (the resolved runtime's extracted layout),
+      # the image's arch conventions are aligned to the runtime's: ruby's
+      # compiled-in search paths come from the runtime build, while the
+      # local packaging environment names arch directories after the press
+      # machine -- on macOS the arch string embeds the kernel version
+      # (arm64-darwin23 vs arm64-darwin24), so they differ whenever press
+      # and runtime were built on different macOS releases.
+      def build_app_image(options_manager, scenario_manager, layout_dir = nil) # rubocop:disable Metrics/AbcSize
         init(options_manager.stash_dir, options_manager.data_src_dir, options_manager.data_pre_dir,
              options_manager.data_bin_dir)
         deploy(options_manager.data_src_dir, options_manager.data_pre_dir, options_manager.rv,
                options_manager.root, scenario_manager.fs_entrance, options_manager.cwd)
+        align_layout_to_runtime!(options_manager.data_src_dir, layout_dir, options_manager.rv) if layout_dir
         write_entry_dispatcher(options_manager.data_src_dir, scenario_manager, options_manager.cwd)
         mkdwarfs(options_manager.deps_bin_dir, options_manager.data_bundle_file, options_manager.data_src_dir)
         options_manager.data_bundle_file
+      end
+
+      # Rename the image's arch directories to the runtime's names and drop
+      # in the runtime's own rbconfig.rb. No-op when the conventions already
+      # match (always the case off macOS, where the arch string carries no
+      # OS version).
+      def align_layout_to_runtime!(data_src_dir, layout_dir, ruby_ver)
+        align_stdlib_arch!(data_src_dir, layout_dir, ruby_ver.api_version)
+        align_gem_ext_arch!(data_src_dir, layout_dir, ruby_ver.api_version)
+      end
+
+      def align_stdlib_arch!(data_src_dir, layout_dir, api_ver)
+        runtime_arch = arch_dir_of(File.join(layout_dir, "lib", "ruby", api_ver), "rbconfig.rb")
+        image_arch = arch_dir_of(File.join(data_src_dir, "lib", "ruby", api_ver), "rbconfig.rb")
+        return if runtime_arch.nil? || image_arch.nil? || runtime_arch == image_arch
+
+        puts "   ... aligning app image layout to the runtime (#{image_arch} -> #{runtime_arch})"
+        FileUtils.mv(File.join(data_src_dir, "lib", "ruby", api_ver, image_arch),
+                     File.join(data_src_dir, "lib", "ruby", api_ver, runtime_arch))
+        FileUtils.cp(File.join(layout_dir, "lib", "ruby", api_ver, runtime_arch, "rbconfig.rb"),
+                     File.join(data_src_dir, "lib", "ruby", api_ver, runtime_arch, "rbconfig.rb"))
+      end
+
+      # Native-gem extensions dir uses the dashed flavor of the arch string
+      # (arm64-darwin-23); align it to the runtime's as well
+      def align_gem_ext_arch!(data_src_dir, layout_dir, api_ver)
+        img_ext = File.join(data_src_dir, "lib", "ruby", "gems", api_ver, "extensions")
+        rt_ext = File.join(layout_dir, "lib", "ruby", "gems", api_ver, "extensions")
+        runtime_ext = first_dir(rt_ext)
+        return if runtime_ext.nil? || !Dir.exist?(img_ext)
+
+        Dir.children(img_ext).each do |d|
+          next if d == runtime_ext || !File.directory?(File.join(img_ext, d))
+
+          FileUtils.mv(File.join(img_ext, d), File.join(img_ext, runtime_ext))
+        end
+      end
+
+      def arch_dir_of(dir, marker)
+        return nil unless Dir.exist?(dir)
+
+        Dir.children(dir).find { |d| File.exist?(File.join(dir, d, marker)) }
+      end
+
+      def first_dir(dir)
+        return nil unless Dir.exist?(dir)
+
+        Dir.children(dir).find { |d| File.directory?(File.join(dir, d)) }
       end
 
       # The prebuilt runtime packages are pressed in 'runtime' mode, so their

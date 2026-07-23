@@ -151,6 +151,8 @@ RSpec.describe Tebako::CliHelpers do
         expect(Tebako::RuntimeManager).to receive(:resolve)
           .with(options_manager.ruby_ver, options_manager.host_platform)
           .and_return("/cached/runtime")
+        expect(Tebako::RuntimeManager).to receive(:layout)
+          .with("/cached/runtime").and_return("/cached/layout")
         expect(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
         expect(Tebako::Stitcher).to receive(:stitch) do |runtime, images:, output:|
           expect(runtime).to eq("/cached/runtime")
@@ -166,6 +168,7 @@ RSpec.describe Tebako::CliHelpers do
         options["image"] = ["/data/extra.tfs:extra"]
         allow(Tebako::Packager).to receive(:check_prebuilt_env!)
         allow(Tebako::RuntimeManager).to receive(:resolve).and_return("/cached/runtime")
+        allow(Tebako::RuntimeManager).to receive(:layout).and_return("/cached/layout")
         allow(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
         expect(Tebako::Stitcher).to receive(:stitch) do |_runtime, images:, **_|
           expect(images.size).to eq(2)
@@ -192,7 +195,13 @@ RSpec.describe Tebako::CliHelpers do
         expect(Tebako::BootstrapManager).to receive(:resolve)
           .with(options_manager.host_platform)
           .and_return("/cached/bootstrap")
-        expect(Tebako::RuntimeManager).not_to receive(:resolve)
+        # lean resolves the runtime too: its extracted layout aligns the app
+        # image's arch conventions (the payload slot and sha stay fat-only)
+        expect(Tebako::RuntimeManager).to receive(:resolve)
+          .with(options_manager.ruby_ver, options_manager.host_platform)
+          .and_return("/cached/runtime")
+        expect(Tebako::RuntimeManager).to receive(:layout)
+          .with("/cached/runtime").and_return("/cached/layout")
         expect(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
         expect(Tebako::Stitcher).to receive(:stitch) do |bootstrap, images:, output:, **kwargs|
           expect(bootstrap).to eq("/cached/bootstrap")
@@ -228,6 +237,8 @@ RSpec.describe Tebako::CliHelpers do
         expect(Tebako::RuntimeManager).to receive(:resolve)
           .with(options_manager.ruby_ver, options_manager.host_platform)
           .and_return("/cached/runtime")
+        expect(Tebako::RuntimeManager).to receive(:layout)
+          .with("/cached/runtime").and_return("/cached/layout")
         expect(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
         expect(Digest::SHA256).to receive(:file).with("/cached/runtime")
                                                 .and_return(instance_double(Digest::SHA256, hexdigest: "a" * 64))
@@ -257,6 +268,8 @@ RSpec.describe Tebako::CliHelpers do
       it "stitches onto a prebuilt runtime like bundle mode" do
         expect(Tebako::Packager).to receive(:check_prebuilt_env!)
         expect(Tebako::RuntimeManager).to receive(:resolve).and_return("/cached/runtime")
+        expect(Tebako::RuntimeManager).to receive(:layout)
+          .with("/cached/runtime").and_return("/cached/layout")
         expect(Tebako::BootstrapManager).not_to receive(:resolve)
         expect(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
         expect(Tebako::Stitcher).to receive(:stitch) do |runtime, images:, output:, **kwargs|

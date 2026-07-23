@@ -319,6 +319,24 @@ RSpec.describe Tebako::RuntimeManager do
     end
   end
 
+  describe ".layout" do
+    it "extracts the runtime layout once, next to the cached package" do
+      Dir.mktmpdir do |tmp|
+        runtime_path = File.join(tmp, "tebako-runtime-x")
+        layout_dir = File.join(tmp, "layout")
+
+        expect(Tebako::BuildHelpers).to receive(:run_with_capture_v)
+          .with([runtime_path, "--tebako-extract", layout_dir]) do
+            FileUtils.mkdir_p(File.join(layout_dir, "lib"))
+          end
+        expect(Tebako::RuntimeManager.layout(runtime_path)).to eq(layout_dir)
+
+        expect(Tebako::BuildHelpers).not_to receive(:run_with_capture_v)
+        expect(Tebako::RuntimeManager.layout(runtime_path)).to eq(layout_dir)
+      end
+    end
+  end
+
   describe "#entries and #prune" do
     def install_fake_entry(name, age_days)
       dir = File.join(@cache_root, "runtimes", name)
