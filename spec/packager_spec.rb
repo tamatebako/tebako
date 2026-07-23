@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "fileutils"
+require "tmpdir"
 require_relative "../lib/tebako/packager"
 require_relative "../lib/tebako/ruby_version"
 
@@ -162,6 +163,27 @@ RSpec.describe Tebako::Packager do
     it "copies the source directory to the stash directory" do
       expect(FileUtils).to receive(:cp_r).with("#{stash_dir}/.", src_dir)
       described_class.init(stash_dir, src_dir, pre_dir, bin_dir)
+    end
+  end
+
+  describe "#recreate" do
+    it "creates the directory when its parent does not exist yet" do
+      Dir.mktmpdir do |tmp|
+        nested = File.join(tmp, "o", "s")
+        Tebako::Packager::PatchHelpers.recreate(nested)
+        expect(Dir).to exist(nested)
+      end
+    end
+
+    it "removes existing contents before recreating" do
+      Dir.mktmpdir do |tmp|
+        dir = File.join(tmp, "s")
+        FileUtils.mkdir_p(dir)
+        File.write(File.join(dir, "stale"), "x")
+        Tebako::Packager::PatchHelpers.recreate(dir)
+        expect(Dir).to exist(dir)
+        expect(Dir.children(dir)).to be_empty
+      end
     end
   end
 

@@ -183,6 +183,92 @@ RSpec.describe Tebako::CliHelpers do
         expect { do_press(options_manager) }.to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(128) }
       end
     end
+
+    context "when mode is 'lean' (the default)" do
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "resolves the bootstrap and stitches a lean three-part package" do
+        expect(Tebako::Packager).to receive(:check_prebuilt_env!)
+        expect(Tebako::BootstrapManager).to receive(:resolve)
+          .with(options_manager.host_platform)
+          .and_return("/cached/bootstrap")
+        expect(Tebako::RuntimeManager).not_to receive(:resolve)
+        expect(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
+        expect(Tebako::Stitcher).to receive(:stitch) do |bootstrap, images:, output:, **kwargs|
+          expect(bootstrap).to eq("/cached/bootstrap")
+          expect(images.size).to eq(1)
+          expect(images.first[:path]).to eq("/o/p/fs.bin")
+          expect(images.first[:mount_point]).to eq("/__tebako_memfs__")
+          expect(output).to eq(options_manager.package)
+          expect(kwargs[:lean]).to be(true)
+          expect(kwargs[:ruby_version]).to eq(options_manager.ruby_ver)
+          expect(kwargs[:launcher_abi]).to eq(Tebako::LauncherAbi::VERSION)
+          expect(kwargs[:runtime_sha256]).to be_nil
+        end
+
+        do_press(options_manager)
+      end
+
+      it "rejects --runtime source with error 130 before resolving anything" do
+        options["runtime"] = "source"
+        expect(Tebako::BootstrapManager).not_to receive(:resolve)
+        expect(Tebako::Packager).not_to receive(:build_app_image)
+        expect { do_press(options_manager) }.to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(130) }
+      end
+    end
+
+    context "when mode is 'fat'" do
+      before { options["mode"] = "fat" }
+
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "adds the runtime as a payload slot with its checksum in the runtime_ref" do
+        expect(Tebako::Packager).to receive(:check_prebuilt_env!)
+        expect(Tebako::BootstrapManager).to receive(:resolve).and_return("/cached/bootstrap")
+        expect(Tebako::RuntimeManager).to receive(:resolve)
+          .with(options_manager.ruby_ver, options_manager.host_platform)
+          .and_return("/cached/runtime")
+        expect(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
+        expect(Digest::SHA256).to receive(:file).with("/cached/runtime")
+                                                .and_return(instance_double(Digest::SHA256, hexdigest: "a" * 64))
+        expect(Tebako::Stitcher).to receive(:stitch) do |_bootstrap, images:, **kwargs|
+          expect(images.size).to eq(2)
+          expect(images.last).to eq({ path: "/cached/runtime", mount_point: "",
+                                      format_id: Tebako::Stitcher::FORMAT_RUNTIME })
+          expect(kwargs[:lean]).to be(true)
+          expect(kwargs[:runtime_sha256]).to eq("a" * 64)
+        end
+
+        do_press(options_manager)
+      end
+
+      it "fails with error 134 when the selected bootstrap predates payload support" do
+        allow(Tebako::BootstrapManager).to receive(:default_version).and_return("0.1.0")
+        expect(Tebako::BootstrapManager).not_to receive(:resolve)
+        expect { do_press(options_manager) }.to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(134) }
+      end
+    end
+
+    context "when mode is 'classic'" do
+      before { options["mode"] = "classic" }
+
+      let(:options_manager) { Tebako::OptionsManager.new(options) }
+
+      it "stitches onto a prebuilt runtime like bundle mode" do
+        expect(Tebako::Packager).to receive(:check_prebuilt_env!)
+        expect(Tebako::RuntimeManager).to receive(:resolve).and_return("/cached/runtime")
+        expect(Tebako::BootstrapManager).not_to receive(:resolve)
+        expect(Tebako::Packager).to receive(:build_app_image).and_return("/o/p/fs.bin")
+        expect(Tebako::Stitcher).to receive(:stitch) do |runtime, images:, output:, **kwargs|
+          expect(runtime).to eq("/cached/runtime")
+          expect(images.first[:path]).to eq("/o/p/fs.bin")
+          expect(output).to eq(options_manager.package)
+          expect(kwargs[:lean]).to be_falsy
+        end
+
+        do_press(options_manager)
+      end
+    end
   end
 
   describe "#check_warnings" do
@@ -371,6 +457,20 @@ RSpec.describe Tebako::CliHelpers do
       before { options["mode"] = "bundle" }
 
       it "generates files and executes commands" do
+        expect(Tebako::Codegen).to receive(:generate_tebako_version_h)
+        expect(Tebako::Codegen).to receive(:generate_tebako_fs_cpp)
+        expect(Tebako::Codegen).to receive(:generate_deploy_rb)
+        expect(Tebako::Codegen).not_to receive(:generate_stub_rb)
+        expect(self).to receive(:system).exactly(2).times.and_return(true)
+        expect(self).to receive(:finalize)
+        do_press_runtime(options_manager, scenario_manager)
+      end
+    end
+
+    context "when mode is 'classic'" do
+      before { options["mode"] = "classic" }
+
+      it "builds from source exactly like bundle mode" do
         expect(Tebako::Codegen).to receive(:generate_tebako_version_h)
         expect(Tebako::Codegen).to receive(:generate_tebako_fs_cpp)
         expect(Tebako::Codegen).to receive(:generate_deploy_rb)

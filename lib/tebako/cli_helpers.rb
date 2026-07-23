@@ -25,13 +25,16 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require "digest"
 require "etc"
 require "fileutils"
 require "pathname"
 require "rbconfig"
 
+require_relative "bootstrap_manager"
 require_relative "codegen"
 require_relative "error"
+require_relative "launcher_abi"
 require_relative "options_manager"
 require_relative "runtime_manager"
 require_relative "scenario_manager"
@@ -86,8 +89,13 @@ module Tebako
       options_manager.process_gemfile(scenario_manager.gemfile_path) if scenario_manager.with_gemfile
       check_warnings(options_manager)
       puts options_manager.press_announce(scenario_manager.msys?)
+      dispatch_press(options_manager, scenario_manager)
+    end
 
-      if options_manager.prebuilt_runtime?
+    def dispatch_press(options_manager, scenario_manager)
+      if options_manager.three_part?
+        do_press_three_part(options_manager, scenario_manager)
+      elsif options_manager.prebuilt_runtime?
         do_press_prebuilt(options_manager, scenario_manager)
       else
         do_press_source(options_manager, scenario_manager)
@@ -113,6 +121,66 @@ module Tebako
       puts "Created tebako #{options_manager.output_type_first} at \"#{package}\""
     end
 
+    # Press a three-part package (Stage 3B): tebako-bootstrap + application
+    # image slot(s) + tpkg trailer with the runtime reference (launcher ABI
+    # v1). 'lean' (the default) resolves the runtime into the shared cache at
+    # first run; 'fat' additionally embeds the runtime package as a payload
+    # slot, so the first run installs it without any network access.
+    def do_press_three_part(options_manager, scenario_manager)
+      bootstrap_path, runtime_path = resolve_three_part_parts(options_manager)
+      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager)
+      images = three_part_images(options_manager, scenario_manager, app_image, runtime_path)
+      package = "#{options_manager.package}#{scenario_manager.exe_suffix}"
+      runtime_sha256 = runtime_path && Digest::SHA256.file(runtime_path).hexdigest
+      Tebako::Stitcher.stitch(bootstrap_path, images: images, output: package, lean: true,
+                                              ruby_version: options_manager.ruby_ver,
+                                              launcher_abi: Tebako::LauncherAbi::VERSION,
+                                              runtime_sha256: runtime_sha256)
+      puts "Created tebako #{options_manager.output_type_first} at \"#{package}\""
+    end
+
+    # Validate the options and the packaging environment, then resolve the
+    # bootstrap (and, for fat, the runtime payload) into the shared cache
+    def resolve_three_part_parts(options_manager)
+      options_manager.runtime_source # validates the mode/provenance combination
+      check_bootstrap_version!(options_manager)
+      Tebako::Packager.check_prebuilt_env!(options_manager.stash_dir, options_manager.deps_bin_dir)
+      runtime_path = fat_runtime_path(options_manager)
+      [Tebako::BootstrapManager.resolve(options_manager.host_platform), runtime_path]
+    end
+
+    def fat_runtime_path(options_manager)
+      return nil unless options_manager.fat?
+
+      Tebako::RuntimeManager.resolve(options_manager.ruby_ver, options_manager.host_platform)
+    end
+
+    def three_part_images(options_manager, scenario_manager, app_image, runtime_path)
+      images = [{ path: app_image, mount_point: scenario_manager.fs_mount_point,
+                  format_id: Tebako::Stitcher::FORMAT_DWARFS }] + options_manager.images
+      images << { path: runtime_path, mount_point: "", format_id: Tebako::Stitcher::FORMAT_RUNTIME } if runtime_path
+      images
+    end
+
+    # The fat payload slot is installed by the bootstrap at first run — a
+    # capability added in tebako-bootstrap 0.2.0
+    def check_bootstrap_version!(options_manager)
+      return unless options_manager.fat?
+
+      version = Tebako::BootstrapManager.default_version
+      minimum = Tebako::BootstrapManager::PAYLOAD_MIN_VERSION
+      return if payload_capable?(version, minimum)
+
+      Tebako.packaging_error(134, "fat mode requires tebako-bootstrap >= #{minimum} (selected: #{version}; " \
+                                  "set TEBAKO_BOOTSTRAP_VERSION to a payload-capable release)")
+    end
+
+    def payload_capable?(version, minimum)
+      Gem::Version.new(version) >= Gem::Version.new(minimum)
+    rescue ArgumentError
+      false
+    end
+
     def do_press_application(options_manager, scenario_manager)
       return unless %w[both application].include?(options_manager.mode)
 
@@ -121,7 +189,7 @@ module Tebako
     end
 
     def do_press_runtime(options_manager, scenario_manager)
-      return unless %w[both runtime bundle].include?(options_manager.mode)
+      return unless %w[both runtime bundle classic].include?(options_manager.mode)
 
       generate_files(options_manager, scenario_manager)
       merged_env = ENV.to_h.merge(scenario_manager.b_env)

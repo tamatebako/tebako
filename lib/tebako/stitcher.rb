@@ -75,7 +75,10 @@ module Tebako
     FORMAT_DWARFS = 1
     FORMAT_SQUASHFS = 2
     FORMAT_ZIP = 3
-    FORMAT_IDS = (FORMAT_AUTO..FORMAT_ZIP).freeze
+    # Runtime payload slot of a fat package: installed into the shared cache
+    # by the bootstrap at first run, never mounted (tpkg.h TPKG_FORMAT_RUNTIME)
+    FORMAT_RUNTIME = 4
+    FORMAT_IDS = (FORMAT_AUTO..FORMAT_RUNTIME).freeze
 
     # Header field offsets
     OFF_PACKAGE_FLAGS = 14
@@ -89,17 +92,21 @@ module Tebako
       # copy of the runtime at +runtime_path+, writing +output+.
       # lean: true marks the package LEAN and records runtime_ref
       # ("ruby@<ruby_version>;tebako=<tebako_version>"); classic packages
-      # carry an empty runtime_ref.
+      # carry an empty runtime_ref. runtime_sha256 appends ";sha256=<hex>" to
+      # the runtime_ref — the checksum the bootstrap verifies a fat package's
+      # runtime payload slot against before installing it into the cache.
       def stitch(runtime_path, images:, output:, lean: false, ruby_version: nil, # rubocop:disable Metrics/ParameterLists
-                 tebako_version: Tebako::VERSION, launcher_abi: 0)
+                 tebako_version: Tebako::VERSION, launcher_abi: 0, runtime_sha256: nil)
         images = normalize_images(images)
         validate_inputs!(runtime_path, images, lean, ruby_version)
+        validate_runtime_sha256!(runtime_sha256)
 
         FileUtils.mkdir_p(File.dirname(output))
         FileUtils.cp(runtime_path, output)
         FileUtils.chmod(0o755, output)
 
-        append(images, output, package_flags(lean), runtime_ref(lean, ruby_version, tebako_version), launcher_abi)
+        append(images, output, package_flags(lean), runtime_ref(lean, ruby_version, tebako_version, runtime_sha256),
+               launcher_abi)
         resign_if_needed(output)
         output
       end
@@ -157,6 +164,8 @@ module Tebako
         seen = {}
         images.each do |image|
           validate_image!(image)
+          next if image[:format_id] == FORMAT_RUNTIME # payload slots are never mounted
+
           mount = image[:mount_point]
           Tebako.packaging_error(126, "duplicate mount point '#{mount}'") if seen[mount]
 
@@ -166,7 +175,7 @@ module Tebako
 
       def validate_image!(image)
         unless FORMAT_IDS.cover?(image[:format_id])
-          Tebako.packaging_error(126, "invalid format_id #{image[:format_id]} (0..3 expected)")
+          Tebako.packaging_error(126, "invalid format_id #{image[:format_id]} (0..4 expected)")
         end
         return unless image[:mount_point].bytesize >= MOUNT_POINT_LEN
 
@@ -174,14 +183,21 @@ module Tebako
                                "mount point '#{image[:mount_point][0, 32]}...' exceeds #{MOUNT_POINT_LEN - 1} bytes")
       end
 
+      def validate_runtime_sha256!(runtime_sha256)
+        return if runtime_sha256.nil? || runtime_sha256.match?(/\A[0-9a-f]{64}\z/)
+
+        Tebako.packaging_error(126, "runtime_sha256 must be 64 lowercase hex characters")
+      end
+
       def package_flags(lean)
         lean ? FLAG_LEAN : 0
       end
 
-      def runtime_ref(lean, ruby_version, tebako_version)
+      def runtime_ref(lean, ruby_version, tebako_version, runtime_sha256)
         return "" unless lean
 
         ref = "ruby@#{ruby_version};tebako=#{tebako_version}"
+        ref += ";sha256=#{runtime_sha256}" if runtime_sha256
         if ref.bytesize >= RUNTIME_REF_LEN
           Tebako.packaging_error(126, "runtime_ref '#{ref}' exceeds #{RUNTIME_REF_LEN - 1} bytes")
         end

@@ -41,6 +41,13 @@ require_relative "version"
 module Tebako
   # Cli helpers
   class OptionsManager # rubocop:disable Metrics/ClassLength
+    # Press modes producing three-part packages (tebako-bootstrap + image
+    # slots + tpkg trailer): 'lean' resolves the runtime at first run, 'fat'
+    # additionally embeds it as a payload slot (self-installing, offline)
+    THREE_PART_MODES = %w[lean fat].freeze
+    # Modes whose default runtime provenance is a prebuilt runtime package
+    PREBUILT_DEFAULT_MODES = %w[bundle classic lean fat].freeze
+
     def initialize(options)
       @options = options
       @rv = Tebako::RubyVersion.new(@options["Ruby"])
@@ -157,14 +164,24 @@ module Tebako
     end
 
     def mode
-      @mode ||= @options["mode"].nil? ? "bundle" : @options["mode"]
+      @mode ||= @options["mode"].nil? ? "lean" : @options["mode"]
+    end
+
+    def three_part?
+      THREE_PART_MODES.include?(mode)
+    end
+
+    def fat?
+      mode == "fat"
     end
 
     # Runtime provenance: "prebuilt" (resolve/download a prebuilt runtime
-    # package and stitch the application image onto it) or "source" (the
-    # Stage-2 source build). Default is "prebuilt" for the bundle mode;
-    # other modes always build from source, and --build-runtime forces the
-    # source path everywhere (back-compat alias for '--runtime source').
+    # package) or "source" (the Stage-2 source build). Default is "prebuilt"
+    # for the bundle/classic/lean/fat modes; other modes always build from
+    # source, and --build-runtime forces the source path everywhere it is
+    # allowed (back-compat alias for '--runtime source'). The three-part
+    # modes (lean/fat) require prebuilt runtime packages: the bootstrap
+    # resolves tebako-runtime-ruby releases at run time.
     def runtime_source
       @runtime_source ||= checked_runtime_source(requested_runtime_source)
     end
@@ -246,7 +263,7 @@ module Tebako
         press_announce_application(is_msys)
       when "both"
         press_announce_both
-      when "bundle"
+      when "bundle", "classic", "lean", "fat"
         press_announce_bundle
       when "runtime"
         press_announce_runtime
@@ -290,7 +307,7 @@ module Tebako
     def press_announce_bundle
       <<~ANN
         Running tebako press at #{prefix}
-           Mode:                      'bundle'
+           Mode:                      '#{mode}'
            Ruby version:              '#{@ruby_ver}'
            Project root:              '#{root}'
            Application entry point:   '#{fs_entrance}'
@@ -374,14 +391,19 @@ module Tebako
     def requested_runtime_source
       explicit = @options["runtime"]
       return "source" if @options["build-runtime"]
-      return mode == "bundle" ? "prebuilt" : "source" if explicit.nil?
+      return PREBUILT_DEFAULT_MODES.include?(mode) ? "prebuilt" : "source" if explicit.nil?
 
       explicit
     end
 
     def checked_runtime_source(source)
-      if source == "prebuilt" && mode != "bundle"
-        Tebako.packaging_error(130, "--runtime prebuilt is supported in bundle mode only (mode: '#{mode}')")
+      if source == "prebuilt" && !PREBUILT_DEFAULT_MODES.include?(mode)
+        Tebako.packaging_error(130, "--runtime prebuilt is supported in bundle, classic, lean and fat modes only " \
+                                    "(mode: '#{mode}')")
+      end
+      if source == "source" && three_part?
+        Tebako.packaging_error(130, "mode '#{mode}' requires a prebuilt runtime package " \
+                                    "(the bootstrap resolves tebako-runtime-ruby releases at first run)")
       end
       source
     end
@@ -399,7 +421,7 @@ module Tebako
 
     def host_arch_id(arch)
       case arch
-      when /^(x86_64|amd64)$/ then "x86_64"
+      when /^(x86_64|amd64|x64)$/ then "x86_64"
       when /^(aarch64|arm64)$/ then "arm64"
       else
         Tebako.packaging_error(112, arch)

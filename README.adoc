@@ -420,7 +420,7 @@ tebako press \
   [-c|--cwd=<package-current-working-directory>] \
   [-D|--devmode] \
   [-P|--patchelf] \
-  [-m|--mode=<bundle|both|application|runtime>] \
+  [-m|--mode=<lean|fat|classic|bundle|both|application|runtime>] \
   [-u|--ref=<runtime-reference>] \
   [-t|--tebafile=<path-to-tebafile>]
 ----
@@ -452,6 +452,7 @@ On Windows, the output file is automatically appended the `.exe` extension.
 
 *** in `runtime` mode, the runtime package is created at `tebako-runtime`.
 *** in `application` mode, the application package is created at `<current-folder>/<entry-point-base-name>`.
+*** in `lean`, `fat` and `classic` modes, the package is created at `<current-folder>/<entry-point-base-name>`.
 *** in `bundle` mode, the bundled package is created at `<current-folder>/<entry-point-base-name>`.
 *** in `both` mode, the runtime package is created at `<current-folder>/<entry-point-base-name>`,
 and the application package is created at `<current-folder>/<entry-point-base-name>.tebako`.
@@ -460,6 +461,7 @@ and the application package is created at `<current-folder>/<entry-point-base-na
 
 *** in `runtime` mode, the runtime package is named according to the `-o` option.
 *** in `application` mode, the application package is named according to the `-o` option.
+*** in `lean`, `fat` and `classic` modes, the package is named according to the `-o` option.
 *** in `bundle` mode, the bundled package is named according to the `-o` option.
 *** in `both` mode, the runtime package is named according to the `-o` option,
 and the application package is named according to the `-o` option with the `.tebako` extension.
@@ -502,10 +504,13 @@ For example, a package created at Ubuntu 20 system can be used on Ubuntu 22.
 NOTE: The feature is exeprimental, we may consider another approach in the future.
 
 `--mode=<mode>`::
-(optional, defaults to `bundle`)
-Package output mode, determines whether the runtime and/or application are
-to be separately packaged.
+(optional, defaults to `lean`)
+Package output mode, determines the package layout (three-part or runtime-stitched)
+and whether the runtime and/or application are separately packaged.
 
+`lean`::: Create a three-part package: the tebako-bootstrap launcher plus the application image slot(s) and a tpkg manifest trailer carrying the runtime reference. At first run the bootstrap resolves (downloads, verifies and caches) the referenced prebuilt runtime into the machine-wide cache (`~/.tebako` or `$TEBAKO_HOME`); subsequent runs of any lean package built for the same runtime share that cache entry. The output file is named according to the `-o` option.
+`fat`::: Like `lean`, but the runtime package is also embedded as a payload slot. The first run installs it into the cache without network access (works with `TEBAKO_OFFLINE=1`). The output file is named according to the `-o` option.
+`classic`::: Stitch the application image onto a prebuilt runtime package (the Stage-3A layout; identical to `bundle` with the default `--runtime prebuilt`). The output file is named according to the `-o` option.
 `bundle`::: Create a single package bundling both the runtime and application. The output file is named according to the `-o` option.
 `both`::: Create separate packages for the runtime and application. Outputs two separate files: one for the runtime at the location specified at the `-o {filename}` and one for the application at `{filename}.package`.
 `application`::: Create the application package only. The output file is named according to the `-o` option.

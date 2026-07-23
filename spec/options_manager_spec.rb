@@ -193,8 +193,8 @@ RSpec.describe Tebako::OptionsManager do
     context "when mode option is not set" do
       let(:options) { {} }
       let(:options_manager) { Tebako::OptionsManager.new(options) }
-      it 'returns "bundle"' do
-        expect(options_manager.mode).to eq("bundle")
+      it 'returns "lean" (the default press mode)' do
+        expect(options_manager.mode).to eq("lean")
       end
     end
 
@@ -450,7 +450,8 @@ RSpec.describe Tebako::OptionsManager do
 
     context 'when mode is "bundle" and options["cwd"] is set' do
       let(:options) do
-        { "cwd" => "/some/path", "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" }
+        { "cwd" => "/some/path", "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root",
+          "mode" => "bundle" }
       end
       let(:options_manager) { Tebako::OptionsManager.new(options) }
       let(:root) { File.join(Dir.pwd, options["root"]) }
@@ -475,7 +476,7 @@ RSpec.describe Tebako::OptionsManager do
 
     context 'when  mode is "bundle" and options["cwd"] is not set' do
       let(:options) do
-        { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root" }
+        { "entry-point" => "main.rb", "log-level" => "info", "root" => "test_root", "mode" => "bundle" }
       end
       let(:options_manager) { Tebako::OptionsManager.new(options) }
       let(:root) { File.join(Dir.pwd, options["root"]) }
@@ -826,7 +827,7 @@ RSpec.describe Tebako::OptionsManager do
   end
 
   describe "#runtime_source / #prebuilt_runtime?" do
-    context "when nothing is given and mode is 'bundle'" do
+    context "when nothing is given (default mode is 'lean')" do
       let(:options_manager) { Tebako::OptionsManager.new({}) }
 
       it "defaults to 'prebuilt'" do
@@ -835,7 +836,34 @@ RSpec.describe Tebako::OptionsManager do
       end
     end
 
-    context "when nothing is given and mode is not 'bundle'" do
+    context "when nothing is given and mode is 'bundle'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "mode" => "bundle" }) }
+
+      it "defaults to 'prebuilt'" do
+        expect(options_manager.runtime_source).to eq("prebuilt")
+        expect(options_manager.prebuilt_runtime?).to be(true)
+      end
+    end
+
+    context "when nothing is given and mode is 'classic'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "mode" => "classic" }) }
+
+      it "defaults to 'prebuilt'" do
+        expect(options_manager.runtime_source).to eq("prebuilt")
+        expect(options_manager.prebuilt_runtime?).to be(true)
+      end
+    end
+
+    context "when nothing is given and mode is 'fat'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "mode" => "fat" }) }
+
+      it "defaults to 'prebuilt'" do
+        expect(options_manager.runtime_source).to eq("prebuilt")
+        expect(options_manager.prebuilt_runtime?).to be(true)
+      end
+    end
+
+    context "when nothing is given and mode is not bundle/classic/lean/fat" do
       let(:options_manager) { Tebako::OptionsManager.new({ "mode" => "runtime" }) }
 
       it "stays on the source build" do
@@ -844,19 +872,53 @@ RSpec.describe Tebako::OptionsManager do
       end
     end
 
-    context "when --runtime source is given" do
-      let(:options_manager) { Tebako::OptionsManager.new({ "runtime" => "source" }) }
+    context "when --runtime source is given with mode 'bundle'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "runtime" => "source", "mode" => "bundle" }) }
 
       it "selects the source build" do
         expect(options_manager.runtime_source).to eq("source")
       end
     end
 
-    context "when --build-runtime is given" do
-      let(:options_manager) { Tebako::OptionsManager.new({ "build-runtime" => true }) }
+    context "when --runtime source is given with mode 'classic'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "runtime" => "source", "mode" => "classic" }) }
+
+      it "selects the source build (classic behaves as bundle)" do
+        expect(options_manager.runtime_source).to eq("source")
+      end
+    end
+
+    context "when --build-runtime is given with mode 'bundle'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "build-runtime" => true, "mode" => "bundle" }) }
 
       it "forces the source build" do
         expect(options_manager.runtime_source).to eq("source")
+      end
+    end
+
+    context "when --runtime source is given with the default ('lean') mode" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "runtime" => "source" }) }
+
+      it "fails with error 130" do
+        expect { options_manager.runtime_source }
+          .to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(130) }
+      end
+    end
+
+    context "when --build-runtime is given with mode 'fat'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "build-runtime" => true, "mode" => "fat" }) }
+
+      it "fails with error 130" do
+        expect { options_manager.runtime_source }
+          .to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(130) }
+      end
+    end
+
+    context "when --runtime prebuilt is given with mode 'lean'" do
+      let(:options_manager) { Tebako::OptionsManager.new({ "runtime" => "prebuilt", "mode" => "lean" }) }
+
+      it "accepts the (only possible) provenance" do
+        expect(options_manager.runtime_source).to eq("prebuilt")
       end
     end
 
