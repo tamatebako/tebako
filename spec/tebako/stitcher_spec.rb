@@ -178,6 +178,17 @@ RSpec.describe Tebako::Stitcher do
       expect(read_trailer(@output)[:runtime_ref]).to eq("ruby@3.2.7;tebako=0.15.0")
     end
 
+    it "appends ;sha256= to the runtime_ref for a fat package" do
+      sha256 = "a" * 64
+      stitch(lean: true, ruby_version: "3.3.7", runtime_sha256: sha256)
+      expect(read_trailer(@output)[:runtime_ref]).to eq("ruby@3.3.7;tebako=#{Tebako::VERSION};sha256=#{sha256}")
+    end
+
+    it "rejects a malformed runtime_sha256" do
+      expect { stitch(lean: true, ruby_version: "3.3.7", runtime_sha256: "XYZ") }
+        .to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(126) }
+    end
+
     it "fails without a ruby_version" do
       expect { stitch(lean: true) }.to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(126) }
     end
@@ -205,8 +216,19 @@ RSpec.describe Tebako::Stitcher do
     end
 
     it "rejects an out-of-range format_id" do
-      expect { stitch(images: [{ path: @img1, mount_point: "m", format_id: 4 }]) }
+      expect { stitch(images: [{ path: @img1, mount_point: "m", format_id: 5 }]) }
         .to raise_error(Tebako::Error) { |e| expect(e.error_code).to eq(126) }
+    end
+
+    it "accepts a runtime payload slot (format_id 4) with an empty mount point" do
+      stitch(lean: true, ruby_version: "3.3.7",
+             images: [{ path: @img1, mount_point: "/__tebako_memfs__", format_id: 1 },
+                      { path: @img2, mount_point: "", format_id: Tebako::Stitcher::FORMAT_RUNTIME }])
+      trailer = read_trailer(@output)
+      expect(trailer[:slot_count]).to eq(2)
+      expect(trailer[:slots].last[:format_id]).to eq(4)
+      expect(trailer[:slots].last[:mount_point]).to eq("")
+      expect(File.binread(@output, image_two.bytesize, trailer[:slots].last[:offset])).to eq(image_two)
     end
 
     it "rejects a missing runtime" do
