@@ -81,6 +81,22 @@ apk --no-cache --upgrade add build-base cmake git bash autoconf boost-static   \
    brotli-static jemalloc-dev fmt-dev xz-static
 ----
 
+=== Arch Linux
+
+==== Pacman
+
+[source,sh]
+----
+sudo pacman -S --needed pkg-config bison flex autoconf  \                        
+   binutils-dev libevent-dev acl-dev libfmt-dev libjemalloc-dev libiberty-dev    \
+   libdouble-conversion-dev liblz4-dev liblzma-dev libssl-dev libunwind-dev      \
+   libboost-filesystem-dev libboost-program-options-dev libboost-system-dev      \
+   libboost-iostreams-dev libboost-date-time-dev libboost-context-dev            \
+   libboost-regex-dev libboost-thread-dev libbrotli-dev libdwarf-dev libelf-dev  \
+   libgoogle-glog-dev libffi-dev libgdbm-dev libyaml-dev libncurses-dev          \
+   libreadline-dev libutfcpp-dev ruby-dev ruby-bundler
+----
+
 === macOS
 
 ==== General
@@ -231,3 +247,4 @@ Copyright Ribose. All rights reserved.
 
 Tebako is released under the BSD 2-Clause License. See the
 link:LICENSE.md[LICENSE.md] file for details.
+
