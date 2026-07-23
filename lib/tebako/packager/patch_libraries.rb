@@ -54,21 +54,17 @@ module Tebako
                              "bz2", "boost_filesystem", "boost_chrono"].freeze
         # rubocop:enable Style/WordArray
 
-        LIBTEBAKOFS = "-Wl,--push-state,--whole-archive -l:libtebako-fs.a -Wl,--pop-state"
-
         # --start-group/--end-group around the libtfs + transitive static archives:
         # the dwarfs reader set has circular member-level references that trip GNU
         # ld's single-pass scanning when built with clang (compression registrar).
-        GROUP_BEGIN = "-Wl,--start-group"
-        GROUP_END = "-Wl,--end-group"
-
         # libtfs (libtfs.a + its pure-C dirent helper) and the transitive static
         # set resolved by vcpkg into deps/vcpkg_installed/<triplet>/lib: the
         # dwarfs reader side, flatbuffers, zip and the C++ support libs.
         # Compression codecs register explicitly (compression_registry ctor),
         # so no --whole-archive compression lib is needed anymore.
         COMMON_LINUX_LIBRARIES = [
-          LIBTEBAKOFS, "-l:libtfs.a", "-l:libtebako_dirent_helper_c.a",
+          "-Wl,--push-state,--whole-archive -l:libtebako-fs.a -Wl,--pop-state",
+          "-l:libtfs.a", "-l:libtebako_dirent_helper_c.a",
           "-l:libdwarfs_reader.a", "-l:libdwarfs_common.a", "-l:libdwarfs_metadata_legacy.a",
           "-l:libdwarfs_decompressor.a", "-l:libflatbuffers.a", "-l:libzip.a",
           "-l:libfmt.a", "-l:libxxhash.a", "-l:libboost_filesystem.a",
@@ -109,14 +105,14 @@ module Tebako
         ].freeze
 
         def linux_gnu_libraries(ruby_ver, with_compression)
-          libraries = [GROUP_BEGIN] + COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES +
-                      [GROUP_END] + LINUX_GNU_LIBRARIES
+          libraries = ["-Wl,--start-group"] + COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES +
+                      ["-Wl,--end-group"] + LINUX_GNU_LIBRARIES
           linux_libraries(libraries, ruby_ver, with_compression)
         end
 
         def linux_musl_libraries(ruby_ver, with_compression)
-          libraries = [GROUP_BEGIN] + COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES +
-                      [GROUP_END] + LINUX_MUSL_LIBRARIES
+          libraries = ["-Wl,--start-group"] + COMMON_LINUX_LIBRARIES + COMMON_ARCHIEVE_LIBRARIES +
+                      ["-Wl,--end-group"] + LINUX_MUSL_LIBRARIES
           linux_libraries(libraries, ruby_ver, with_compression)
         end
 
@@ -151,7 +147,6 @@ module Tebako
           # The vcpkg set by full path: Apple ld does not implement -l:<filename>
           vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).min
           DARWIN_DEP_LIBS_2.each { |lib| libs << "#{vcpkg_lib_dir}/lib#{lib}.a " }
-
           "-ltebako-fs #{libs}#{PatchHelpers.get_prefix_macos("jemalloc").chop}/lib/libjemalloc.a" \
             "-lc++ -lc++abi"
         end
