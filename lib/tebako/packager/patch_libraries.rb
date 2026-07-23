@@ -147,8 +147,12 @@ module Tebako
           # The vcpkg set by full path: Apple ld does not implement -l:<filename>
           vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).min
           DARWIN_DEP_LIBS_2.each { |lib| libs << "#{vcpkg_lib_dir}/lib#{lib}.a " }
-          "-ltebako-fs #{libs}#{PatchHelpers.get_prefix_macos("jemalloc").chop}/lib/libjemalloc.a " \
-            "-lc++ -lc++abi"
+          # No allocator link: brew's static libjemalloc.a crashes tebako
+          # binaries at startup on the XCode 15.4 runners (je_arena_ralloc
+          # SEGV at builtin init), and the dylib fails the test_101
+          # no-shared-libs assertion. System malloc until a properly built
+          # static jemalloc ships with libtfs-deps.
+          "-ltebako-fs #{libs}-lc++ -lc++abi"
         end
 
         # .....................................................
