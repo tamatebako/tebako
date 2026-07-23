@@ -56,12 +56,11 @@ module Tebako
 
         LIBTEBAKOFS = "-Wl,--push-state,--whole-archive -l:libtebako-fs.a -Wl,--pop-state"
 
-        # --start-group/--end-group around the libtfs + transitive static
-        # archives: the dwarfs reader set has circular member-level references
-        # (compression registrar/registry) whose resolution order differs
-        # between producer toolchains (clang-18-built packages trip GNU ld's
-        # single-pass archive scanning where gcc-built ones did not).
-        GROUP_BEGIN, GROUP_END = "-Wl,--start-group", "-Wl,--end-group"
+        # --start-group/--end-group around the libtfs + transitive static archives:
+        # the dwarfs reader set has circular member-level references that trip GNU
+        # ld's single-pass scanning when built with clang (compression registrar).
+        GROUP_BEGIN = "-Wl,--start-group"
+        GROUP_END = "-Wl,--end-group"
 
         # libtfs (libtfs.a + its pure-C dirent helper) and the transitive static
         # set resolved by vcpkg into deps/vcpkg_installed/<triplet>/lib: the
@@ -153,11 +152,9 @@ module Tebako
           vcpkg_lib_dir = Dir.glob(File.join(deps_lib_dir, "..", "vcpkg_installed", "*", "lib")).min
           DARWIN_DEP_LIBS_2.each { |lib| libs << "#{vcpkg_lib_dir}/lib#{lib}.a " }
 
-          # Static jemalloc by full path: prebuilt libtfs packages ship no
-          # allocator, so plain -ljemalloc resolved to brew's dylib.
-          jemalloc_a = "#{PatchHelpers.get_prefix_macos("jemalloc").chop}/lib/libjemalloc.a"
-
-          "-ltebako-fs #{libs}#{jemalloc_a} -lc++ -lc++abi"
+          # Static jemalloc by full path: prebuilt libtfs ships no allocator, so plain -ljemalloc resolved to brew's dylib.
+          jemalloc_a = PatchHelpers.get_prefix_macos("jemalloc").chop
+          "-ltebako-fs #{libs}#{jemalloc_a}/lib/libjemalloc.a -lc++ -lc++abi"
         end
 
         # .....................................................
