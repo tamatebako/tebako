@@ -78,20 +78,20 @@ module Tebako
         ].freeze
 
         LINUX_GNU_LIBRARIES = [
-          "-l:libiberty.a",      "-l:libacl.a",          "-l:libssl.a",           "-l:libcrypto.a",
+          "-l:libacl.a", "-l:libssl.a", "-l:libcrypto.a",
           "-l:libgdbm.a",        "-l:libreadline.a",     "-l:libtinfo.a",         "-l:libffi.a",
           "-l:libncurses.a",     "-l:libjemalloc.a",     "-l:libcrypt.a",         "-l:libanl.a",
           "LIBYAML",             "-l:libutil.a",
-          "-l:libstdc++.a",      "-lgcc_eh",             "-l:libunwind.a",        "-l:liblzma.a",
-          "-l:librt.a",          "-ldl",                 "-lpthread",             "-lm"
+          "-l:libstdc++.a",      "-lgcc_eh",             "-l:liblzma.a",
+          "-l:librt.a",          "-ldl",                 "-lpthread", "-lm"
         ].freeze
 
         LINUX_MUSL_LIBRARIES = [
-          "-l:libiberty.a",       "-l:libacl.a",          "-l:libssl.a",          "-l:libcrypto.a",
-          "-l:libreadline.a",     "-l:libgdbm.a",         "-l:libffi.a",          "-l:libncurses.a",
+          "-l:libacl.a",          "-l:libssl.a",          "-l:libcrypto.a",
+          "-l:libreadline.a",     "-l:libgdbm.a",         "-l:libffi.a", "-l:libncurses.a",
           "-l:libjemalloc.a",     "-l:libcrypt.a",        "LIBYAML",
           "-l:librt.a",           "-l:libstdc++.a",       "-lgcc_eh",
-          " -l:libunwind.a",      "-l:liblzma.a",         "-ldl", "-lpthread"
+          "-l:liblzma.a",         "-ldl", "-lpthread"
         ].freeze
 
         MSYS_LIBRARIES = [
@@ -157,11 +157,9 @@ module Tebako
 
         # .....................................................
         #  Notes re linux libraries
-        #   1) This order is important: -lgcc_eh -l:libunwind.a -l:liblzma.a  lzma is used to process debug sections.
-        #      gcc_eh shall be linked before unwind to avoid duplicate symbols.
-        #   2) -lgcc_eh assumes -static-libgcc (applied in CMakeLists.ext, RUBY_C_FLAGS)
-        #   3) -static-libstdc++ did not work, not sure why  [TODO ?]
-        #   4) When clang is used linker links libraries specified in exensions in such way that they are linked shared
+        #   1) -lgcc_eh assumes -static-libgcc (applied in CMakeLists.ext, RUBY_C_FLAGS)
+        #   2) -static-libstdc++ did not work, not sure why  [TODO ?]
+        #   3) When clang is used linker links libraries specified in exensions in such way that they are linked shared
         #      (libz, libffi, libreadline, libncurses, libtinfo, ... )
         #      Using stuff like -l:libz.a  does not help; there is a reference to libz.so anyway.
         #      This is fixed by ext/extmk.rb patch [TODO ?]
