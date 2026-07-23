@@ -421,7 +421,7 @@ module Tebako
 
     def host_arch_id(arch)
       case arch
-      when /^(x86_64|amd64)$/ then "x86_64"
+      when /^(x86_64|amd64|x64)$/ then "x86_64"
       when /^(aarch64|arm64)$/ then "arm64"
       else
         Tebako.packaging_error(112, arch)
