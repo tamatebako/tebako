@@ -265,7 +265,10 @@ module Tebako
           # ....................................................
           # Rename ruby's clock_gettime/clock_getres fallbacks before the
           # toolchain build (winpthreads static-inline collision)
-          "win32/win32.c" => WIN32_WIN32_C_CLOCK_PATCH
+          "win32/win32.c" => WIN32_WIN32_C_CLOCK_PATCH,
+          # ....................................................
+          # Group-wrap the static-ext ruby.exe link libraries
+          "common.mk" => COMMON_MK_STATIC_RUBY_LINK_PATCH
         }
       end
 

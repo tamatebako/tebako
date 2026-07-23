@@ -198,7 +198,8 @@ RSpec.describe Tebako::Packager::Pass1MSysPatch do # rubocop:disable Metrics/Blo
           "cygwin/GNUmakefile.in" => patch.send(:gnumakefile_in_patch_p1),
           "ext/io/console/win32_vk.inc" => described_class::EXT_IO_CONSOLE_WIN32_VK_INC_PATCH,
           "ext/openssl/extconf.rb" => described_class::OPENSSL_EXTCONF_RB_PATCH,
-          "win32/win32.c" => described_class::WIN32_WIN32_C_CLOCK_PATCH
+          "win32/win32.c" => described_class::WIN32_WIN32_C_CLOCK_PATCH,
+          "common.mk" => Tebako::Packager::COMMON_MK_STATIC_RUBY_LINK_PATCH
         )
         expect(patch.patch_map).to eq(expected_patch_map)
       end
@@ -217,7 +218,8 @@ RSpec.describe Tebako::Packager::Pass1MSysPatch do # rubocop:disable Metrics/Blo
           "lib/rubygems/openssl.rb" => described_class::RUBYGEMS_OPENSSL_RB_PATCH,
           "include/ruby/onigmo.h" => described_class::INCLUDE_RUBY_ONIGMO_H_PATCH,
           "win32/winmain.c" => described_class::WIN32_WINMAIN_C_PATCH,
-          "win32/win32.c" => described_class::WIN32_WIN32_C_CLOCK_PATCH
+          "win32/win32.c" => described_class::WIN32_WIN32_C_CLOCK_PATCH,
+          "common.mk" => Tebako::Packager::COMMON_MK_STATIC_RUBY_LINK_PATCH
         )
         expect(patch.patch_map).to eq(expected_patch_map)
       end
@@ -235,7 +237,8 @@ RSpec.describe Tebako::Packager::Pass1MSysPatch do # rubocop:disable Metrics/Blo
           "lib/rubygems/openssl.rb" => described_class::RUBYGEMS_OPENSSL_RB_PATCH,
           "include/ruby/onigmo.h" => described_class::INCLUDE_RUBY_ONIGMO_H_PATCH,
           "win32/winmain.c" => described_class::WIN32_WINMAIN_C_PATCH,
-          "win32/win32.c" => described_class::WIN32_WIN32_C_CLOCK_PATCH
+          "win32/win32.c" => described_class::WIN32_WIN32_C_CLOCK_PATCH,
+          "common.mk" => Tebako::Packager::COMMON_MK_STATIC_RUBY_LINK_PATCH
         )
         expect(patch.patch_map).to eq(expected_patch_map)
       end

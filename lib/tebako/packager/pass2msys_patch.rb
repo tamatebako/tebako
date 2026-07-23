@@ -185,7 +185,10 @@ module Tebako
           "cygwin/GNUmakefile.in" => gnumakefile_in_patch_p2,
           "ruby.c" => RUBY_C_MSYS_PATCHES,
           "win32/file.c" => WIN32_FILE_C_MSYS_PATCHES,
-          "win32/win32.c" => WIN32_WIN32_C_MSYS_PATCHES
+          "win32/win32.c" => WIN32_WIN32_C_MSYS_PATCHES,
+          # Group-wrap the static-ext ruby.exe link libraries for the final
+          # build (same common.mk STATIC_RUBY rule as the toolchain build)
+          "common.mk" => COMMON_MK_STATIC_RUBY_LINK_PATCH
         }
       end
     end

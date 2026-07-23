@@ -44,6 +44,18 @@ module Tebako
       # End of tebako patch
     SUBST
 
+    # The static-ext ruby.exe link (common.mk STATIC_RUBY rule, identical in
+    # ruby 3.1-4.0) puts the vcpkg static OpenSSL ahead of the Windows system
+    # libs it references (Cert* from crypt32, WspiapiGet* from ws2_32); GNU
+    # ld's single pass then leaves them unresolved (tebako#345). Group-wrap
+    # the libs so resolution is order-insensitive. Shared across Pass1
+    # (toolchain build) and Pass2 (final build, re-patched from pristine).
+    COMMON_MK_STATIC_RUBY_LINK_PATCH = {
+      "$(MAINOBJ) $(DLDOBJS) $(LIBRUBY_A) $(MAINLIBS) $(EXTLIBS) $(LIBS) $(OUTFLAG)$@" =>
+        "$(MAINOBJ) $(DLDOBJS) $(LIBRUBY_A) -Wl,--start-group $(MAINLIBS) $(EXTLIBS) $(LIBS) " \
+        "-Wl,--end-group $(OUTFLAG)$@ # tebako patched"
+    }.freeze
+
     # Ruby patching definitions (common base)
     class Patch
       def patch_map

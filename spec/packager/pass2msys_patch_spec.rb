@@ -46,6 +46,7 @@ RSpec.describe Tebako::Packager::Pass2MSysPatch do
         "ruby.c",
         "win32/file.c",
         "win32/win32.c",
+        "common.mk",
         "config.status"
       )
     end
