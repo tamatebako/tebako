@@ -33,12 +33,14 @@ press_runner_bundle() {
 # $1 -- project root
 # $2 -- entry point
 # $3 -- tebako package name
+# 3B-3 note: the default press mode is 'lean' now; pin the legacy
+# source-build semantics these tests were written for
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode=bundle --runtime=source 2>&1 | tee tebako_test.log
      assertEquals 0 "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 )
+     result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode=bundle --runtime=source 2>&1 )
      rc=$?
      # Press output is otherwise invisible in CI logs when it fails; print it
      if [ $rc -ne 0 ]; then
@@ -119,11 +121,11 @@ press_runner_with_error_bundle() {
 # $4 -- expected error code
 # $5 -- expected error message (optional)
    if [ "${VERBOSE}" == "yes" ]; then
-     "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 | tee tebako_test.log
+     "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode=bundle --runtime=source 2>&1 | tee tebako_test.log
      assertEquals "$4" "${PIPESTATUS[0]}"
      result="$( cat tebako_test.log )"
    else
-     result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" 2>&1 )
+     result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root="$1" --entry-point="$2" --output="$3" --mode=bundle --runtime=source 2>&1 )
      assertEquals "$4" "${PIPESTATUS[0]}"
    fi
 
@@ -186,11 +188,11 @@ test_AUC_extract() {
    else
 
       if [ "${VERBOSE}" == "yes" ]; then
-         "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 | tee tebako_test.log
+         "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package --mode=bundle --runtime=source 2>&1 | tee tebako_test.log
          assertEquals 0 "${PIPESTATUS[0]}"
          result="$( cat tebako_test.log )"
       else
-         result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package 2>&1 )
+         result=$( "$DIR_BIN"/tebako press -D -R "$RUBY_VER" --root=tests/test-01 --entry=tebako-test-run.rb --output=test-AUC-package --mode=bundle --runtime=source 2>&1 )
          assertEquals 0 "${PIPESTATUS[0]}"
       fi
 

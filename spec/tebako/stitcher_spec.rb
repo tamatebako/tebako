@@ -102,7 +102,10 @@ RSpec.describe Tebako::Stitcher do
 
     it "creates the output directory and an executable output" do
       expect(File.file?(@output)).to be true
-      expect(File.executable?(@output)).to be true
+      # File.executable? is extension-driven on Windows (only .exe/.bat/.com
+      # report executable regardless of the mode bits), so assert existence
+      # there -- the mode bits are a POSIX concept the spec exercises elsewhere
+      expect(File.executable?(@output)).to be true unless Gem.win_platform?
     end
 
     it "appends the image at the next 8-byte aligned offset" do
