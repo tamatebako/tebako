@@ -46,7 +46,14 @@ module Tebako
       "3.3.6" => "8dc48fffaf270f86f1019053f28e51e4da4cce32a36760a0603a9aee67d7fd8d",
       "3.3.7" => "9c37c3b12288c7aec20ca121ce76845be5bb5d77662a24919651aaf1d12c8628",
       "3.4.1" => "3d385e5d22d368b064c817a13ed8e3cc3f71a7705d7ed1bae78013c33aa7c87f",
-      "3.4.2" => "41328ac21f2bfdd7de6b3565ef4f0dd7543354d37e96f157a1552a6bd0eb364b"
+      "3.4.2" => "41328ac21f2bfdd7de6b3565ef4f0dd7543354d37e96f157a1552a6bd0eb364b",
+      "4.0.0" => "2e8389c8c072cb658c93a1372732d9eac84082c88b065750db1e52a5ac630271",
+      "4.0.1" => "3924be2d05db30f4e35f859bf028be85f4b7dd01714142fd823e4af5de2faf9d",
+      "4.0.2" => "51502b26b50b68df4963336ca41e368cde92c928faf91654de4c4c1791f82aac",
+      "4.0.3" => "77964acc370d5c8375b9502e5ba6c13c03ef91ab9eb9f521c84fb42b9c9a6b0f",
+      "4.0.4" => "f35f6edfa3dabb3f723f9d0cf1906c6512ae77f4e412ab1e68cc6e91d230fa80",
+      "4.0.5" => "7d6149079a63f8ae1d326c9fa65c6019ba2dc3155eae7b39159817911c88958e",
+      "4.0.6" => "837d299e8f7ddf2be31a229a7a7e019d354979825117989acb3b32b1a9be262a"
     }.freeze
 
     MIN_RUBY_VERSION_WINDOWS = "3.1.6"
@@ -72,38 +79,40 @@ module Tebako
       @lib_version ||= "#{@ruby_version.split(".")[0..1].join}0"
     end
 
+    # Version gates compare numerically so 4.x lines fall out naturally
+    # (string indexing broke the moment the major version hit 4)
     def ruby3x?
-      @ruby3x ||= @ruby_version[0] == "3"
+      @ruby3x ||= version_at_least?(3, 0)
     end
 
     def ruby31?
-      @ruby31 ||= ruby3x? && @ruby_version[2].to_i >= 1
+      @ruby31 ||= version_at_least?(3, 1)
     end
 
     def ruby32?
-      @ruby32 ||= ruby3x? && @ruby_version[2].to_i >= 2
+      @ruby32 ||= version_at_least?(3, 2)
     end
 
     def ruby32only?
-      @ruby32only ||= ruby3x? && @ruby_version[2] == "2"
+      @ruby32only ||= major_minor == [3, 2]
     end
 
     def ruby33?
-      @ruby33 ||= ruby3x? && @ruby_version[2].to_i >= 3
+      @ruby33 ||= version_at_least?(3, 3)
     end
 
     def ruby33only?
-      @ruby33only ||= ruby3x? && @ruby_version[2] == "3"
+      @ruby33only ||= major_minor == [3, 3]
     end
 
     def ruby3x7?
       @ruby3x7 ||= ruby34? ||
-                   (ruby33only? && @ruby_version[4].to_i >= 7) ||
-                   (ruby32only? && @ruby_version[4].to_i >= 7)
+                   (ruby33only? && patch_version >= 7) ||
+                   (ruby32only? && patch_version >= 7)
     end
 
     def ruby34?
-      @ruby34 ||= ruby3x? && @ruby_version[2].to_i >= 4
+      @ruby34 ||= version_at_least?(3, 4)
     end
 
     def run_checks
@@ -111,6 +120,22 @@ module Tebako
       version_check
       version_check_msys
     end
+
+    private
+
+    def major_minor
+      @major_minor ||= @ruby_version.split(".").first(2).map(&:to_i)
+    end
+
+    def patch_version
+      @patch_version ||= @ruby_version.split(".")[2].to_i
+    end
+
+    def version_at_least?(major, minor)
+      (major_minor <=> [major, minor]) >= 0
+    end
+
+    public
 
     def version_check
       return if RUBY_VERSIONS.key?(@ruby_version)
