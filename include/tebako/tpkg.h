@@ -50,7 +50,7 @@
  *        8     8    u64 size   (image length in bytes)
  *       16     4    u32 format_id (0=auto(magic), 1=dwarfs, 2=squashfs, 3=zip, 4=runtime payload)
  *       20     4    u32 flags
- *       24   256    char mount_point[256] (UTF-8, NUL-padded; empty for runtime payloads)
+ *       24   256    char mount_point[256] (UTF-8, NUL-padded)
  *
  * Reader algorithm: read the fixed-size header at EOF - TPKG_HEADER_SIZE,
  * check the magic, verify header_crc32, then read slot_count slot records at
@@ -97,8 +97,8 @@ extern "C" {
 #define TPKG_MOUNT_POINT_LEN 256u
 #define TPKG_RUNTIME_REF_LEN 128u
 #define TPKG_MAGIC "TEBAKOTFS"
-#define TPKG_MAGIC_LEN 10u        /* including the terminating NUL */
-#define TPKG_MAGIC_PREFIX_LEN 4u  /* "TEBA": absent-vs-corrupt discriminator */
+#define TPKG_MAGIC_LEN 10u       /* including the terminating NUL */
+#define TPKG_MAGIC_PREFIX_LEN 4u /* "TEBA": absent-vs-corrupt discriminator */
 
 /* package_flags */
 #define TPKG_FLAG_LEAN 0x1u
@@ -108,8 +108,8 @@ extern "C" {
 #define TPKG_FORMAT_DWARFS 1u
 #define TPKG_FORMAT_SQUASHFS 2u
 #define TPKG_FORMAT_ZIP 3u
-/* runtime payload slot of a fat package: the bootstrap installs it into the
- * shared cache at first run; it is never mounted as a filesystem image */
+/* A runtime payload slot (fat packages): the compressed language-runtime
+ * package the bootstrap installs into the shared cache on first run. */
 #define TPKG_FORMAT_RUNTIME 4u
 
 /* ---- error codes (returned by tpkg_errno) -------------------------------- */
@@ -223,19 +223,12 @@ enum {
 };
 
 /* slot record field offsets */
-enum {
-  TPKG__REC_OFFSET = 0,
-  TPKG__REC_SIZE = 8,
-  TPKG__REC_FORMAT = 16,
-  TPKG__REC_FLAGS = 20,
-  TPKG__REC_MOUNT = 24
-};
+enum { TPKG__REC_OFFSET = 0, TPKG__REC_SIZE = 8, TPKG__REC_FORMAT = 16, TPKG__REC_FLAGS = 20, TPKG__REC_MOUNT = 24 };
 
 /* wire sizes are fixed by the format; catch exotic padding at compile time */
 typedef char tpkg__assert_slot_size[(sizeof(tpkg_slot) == TPKG_SLOT_SIZE) ? 1 : -1];
-typedef char tpkg__assert_manifest_size[(sizeof(tpkg_manifest) ==
-                                         4 * sizeof(uint32_t) + TPKG_RUNTIME_REF_LEN +
-                                             TPKG_MAX_SLOTS * sizeof(tpkg_slot))
+typedef char tpkg__assert_manifest_size[(sizeof(tpkg_manifest) == 4 * sizeof(uint32_t) + TPKG_RUNTIME_REF_LEN +
+                                                                      TPKG_MAX_SLOTS * sizeof(tpkg_slot))
                                             ? 1
                                             : -1];
 
