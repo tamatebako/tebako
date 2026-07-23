@@ -76,7 +76,9 @@ module Tebako
 
         def recreate(dirname)
           FileUtils.rm_rf(dirname, noop: nil, verbose: nil, secure: true)
-          FileUtils.mkdir(dirname)
+          # mkdir_p: in three-part/prebuilt press flows no cmake configure runs,
+          # so the parent output folder may not exist yet
+          FileUtils.mkdir_p(dirname)
         end
 
         def restore_and_save(fname, strict: true)
