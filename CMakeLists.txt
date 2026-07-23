@@ -217,6 +217,7 @@ endif()
 def_ext_prj_g(PATCHELF "65e14792061c298f1d2bc44becd48a10cbf0bc81")
 
 set(LIBYAML_RUBY_OPTION "")
+set(RUBY_LIBS "")
 if(${RUBY_VER} VERSION_LESS "3.2.0")
   set(LIBYAML_RUBY_OPTION "--enable-bundled-libyaml")
 endif(${RUBY_VER} VERSION_LESS "3.2.0")
@@ -397,6 +398,16 @@ else(IS_DARWIN)
   if(RB_W32)
     string(CONCAT RUBY_C_FLAGS ${RUBY_C_FLAGS} " -DRB_W32=1")
     string(CONCAT RUBY_L_FLAGS ${RUBY_L_FLAGS} " -l:libstdc++.a -L${TLIBD}")
+    # vcpkg's static libcrypto.a (the CAPI engine, e_capi.obj) references
+    # the CryptoAPI certificate store (CertFreeCertificateContext & co.),
+    # but ruby's default mingw $LIBS lack -lcrypt32, so every ext/openssl
+    # have_func link probe failed with undefined Cert* references and the
+    # OpenSSL-1.1.0 accessor fallbacks in openssl_missing.c compiled
+    # against opaque 3.x structs (tebako#345). mkmf appends $LIBS after
+    # -lssl/-lcrypto, so LIBS here lands in the right order for static
+    # linking; advapi32/user32 cover the rest of the usual static-openssl
+    # system-lib tail.
+    set(RUBY_LIBS "-lcrypt32 -ladvapi32 -luser32")
     set(C_FLAGS_DEST cppflags)
   endif(RB_W32)
 
@@ -432,7 +443,8 @@ ExternalProject_Add(${RUBY_PRJ}
                                                         --with-out-ext=${RUBY_WITHOUT_EXT}    \
                                                         --prefix=${DATA_SRC_DIR}              \
                                                         ${C_FLAGS_DEST}=\"${RUBY_C_FLAGS}\"   \
-                                                        LDFLAGS=\"${RUBY_L_FLAGS}\""
+                                                        LDFLAGS=\"${RUBY_L_FLAGS}\"              \
+                                                        LIBS=\"${RUBY_LIBS}\""
   COMMAND   ruby ${EXE}/tebako-packager pass2 ${OSTYPE_TXT} ${RUBY_SOURCE_DIR} ${DEPS_LIB_DIR} ${DATA_SRC_DIR} ${RUBY_STASH_DIR} ${RUBY_VER}
   INSTALL_COMMAND  ""
 )
