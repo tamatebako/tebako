@@ -57,6 +57,9 @@ module Tebako
     127 => "Stitch input file is not accessible",
     128 => "Prebuilt runtime press requires the packaging environment (run 'tebako setup' first)",
     130 => "Option combination is not supported",
+    131 => "No tebako-bootstrap package for the requested platform",
+    132 => "TEBAKO_OFFLINE is set and the requested tebako-bootstrap package is not cached",
+    134 => "Fat mode requires a payload-capable tebako-bootstrap release",
     201 => "Warning. Could not create cache version file"
   }.freeze
 

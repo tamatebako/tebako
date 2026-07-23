@@ -87,7 +87,7 @@ module Tebako
 
     def initialize(cache_root: nil, mirror: nil, lock_timeout: LOCK_TIMEOUT, retry_delay: RETRY_DELAY)
       @cache_root = cache_root || self.class.default_cache_root
-      @mirror = (mirror || ENV.fetch("TEBAKO_RUNTIME_MIRROR", nil) || DEFAULT_MIRROR).sub(%r{/+\z}, "")
+      @mirror = (mirror || ENV.fetch(mirror_env_var, nil) || default_mirror).sub(%r{/+\z}, "")
       @lock_timeout = lock_timeout
       @retry_delay = retry_delay
     end
@@ -106,7 +106,7 @@ module Tebako
     end
 
     def entries
-      base = File.join(@cache_root, RUNTIMES_DIR)
+      base = File.join(@cache_root, cache_subdir)
       return [] unless Dir.exist?(base)
 
       Dir.children(base).sort.filter_map do |name|
@@ -131,6 +131,29 @@ module Tebako
 
     private
 
+    # ---- extension points for BootstrapManager (tebako-bootstrap release
+    # resolution); overridden there, everything else is shared machinery ----
+
+    def default_mirror
+      DEFAULT_MIRROR
+    end
+
+    def mirror_env_var
+      "TEBAKO_RUNTIME_MIRROR"
+    end
+
+    def index_files
+      INDEX_FILES
+    end
+
+    def cache_subdir
+      RUNTIMES_DIR
+    end
+
+    def release_name
+      "tebako-runtime-ruby"
+    end
+
     def install(executable, ruby_version, platform, tebako_version)
       ref = runtime_ref(ruby_version, platform, tebako_version)
       offline_check(ref, tebako_version)
@@ -146,7 +169,7 @@ module Tebako
 
       Tebako.packaging_error(123, "#{ref} is not cached and downloads are disabled " \
                                   "(release index: #{index_urls(tebako_version).join(", ")}; " \
-                                  "TEBAKO_RUNTIME_MIRROR=#{@mirror})")
+                                  "#{mirror_env_var}=#{@mirror})")
     end
 
     def find_entry(index, ruby_version, platform, tebako_version)
@@ -178,14 +201,14 @@ module Tebako
 
     def fetch_index(tebako_version)
       tried = []
-      INDEX_FILES.each do |name|
+      index_files.each do |name|
         return parse_index(name, fetch_text(index_url(name, tebako_version)), tebako_version)
       rescue IndexUnavailable
         tried << index_url(name, tebako_version)
       rescue DownloadFailed => e
         Tebako.packaging_error(122, e.message)
       end
-      Tebako.packaging_error(124, "tebako-runtime-ruby release v#{tebako_version} provides no usable package " \
+      Tebako.packaging_error(124, "#{release_name} release v#{tebako_version} provides no usable package " \
                                   "index (tried: #{tried.join(", ")})")
     end
 
@@ -333,7 +356,7 @@ module Tebako
     end
 
     def index_urls(tebako_version)
-      INDEX_FILES.map { |name| index_url(name, tebako_version) }
+      index_files.map { |name| index_url(name, tebako_version) }
     end
 
     def package_url(filename, tebako_version)
