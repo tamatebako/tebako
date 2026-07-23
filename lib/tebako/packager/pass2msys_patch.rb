@@ -163,7 +163,7 @@ module Tebako
           "RUBYDEF = $(DLL_BASE_NAME).def" => GNUMAKEFILE_IN_WINMAIN_SUBST,
 
           "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
-            "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) -o $@  # tebako patched",
+            "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) -Wl,--start-group $(MAINLIBS) -Wl,--end-group -o $@  # tebako",
 
           "$(RUBY_EXP): $(LIBRUBY_A)" => "dummy.exp: $(LIBRUBY_A) # tebako patched",
 

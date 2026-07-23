@@ -235,7 +235,7 @@ module Tebako
             "$(WPROGRAM): $(RUBYW_INSTALL_NAME).res.#{objext} $(WINMAINOBJ)  # tebako patched",
 
           "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
-            "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@  # tebako patched",
+            "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) -Wl,--start-group $(LIBS) -Wl,--end-group -o $@  # tebako patched",
 
           "--output-exp=$(RUBY_EXP) \\" => "# tebako patched --output-exp=$(RUBY_EXP) \\",
 

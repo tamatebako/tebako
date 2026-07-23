@@ -72,7 +72,7 @@ RSpec.describe Tebako::Packager::Pass2MSysPatch do
             "# tebako patched  $(Q) $(LDSHARED) $(DLDFLAGS) $(OBJS) dmyext.o $(SOLIBS) -o $(PROGRAM)",
           "RUBYDEF = $(DLL_BASE_NAME).def" => Tebako::Packager::GNUMAKEFILE_IN_WINMAIN_SUBST,
           "$(MAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(LIBS) -o $@" =>
-            "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) $(MAINLIBS) -o $@  # tebako patched",
+            "$(WINMAINOBJ) $(EXTOBJS) $(LIBRUBYARG) -Wl,--start-group $(MAINLIBS) -Wl,--end-group -o $@  # tebako",
           "$(RUBY_EXP): $(LIBRUBY_A)" => "dummy.exp: $(LIBRUBY_A) # tebako patched"
         )
       end
