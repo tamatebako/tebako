@@ -174,14 +174,25 @@ module Tebako
     DESC
 
     RUNTIME_DESCRIPTION = <<~DESC
-      Runtime provenance: 'prebuilt' resolves/downloads a prebuilt tebako runtime package and stitches the
-      #{" " * 65}# application image onto it (default for the 'bundle' mode); 'source' keeps the Stage-2 source build.
-      #{" " * 65}# Modes other than 'bundle' always build from source.
+      Runtime provenance: 'prebuilt' resolves/downloads a prebuilt tebako runtime package (default for the
+      #{" " * 65}# 'bundle', 'classic', 'lean' and 'fat' modes); 'source' keeps the Stage-2 source build
+      #{" " * 65}# (not available for 'lean'/'fat' -- the bootstrap resolves tebako-runtime-ruby releases
+      #{" " * 65}# at run time). Modes other than those always build from source.
     DESC
 
     IMAGE_DESCRIPTION = <<~DESC
       Additional image to stitch into the package, '<path>:<mount-point>'; repeatable, mount points
       #{" " * 65}# must be distinct. Prebuilt runtime only.
+    DESC
+
+    MODE_DESCRIPTION = <<~DESC
+      Tebako press mode, 'lean' by default.
+      #{" " * 65}# 'lean' presses a three-part package (tebako-bootstrap + application image(s) + tpkg trailer);
+      #{" " * 65}# the runtime is resolved into the shared cache at first run.
+      #{" " * 65}# 'fat' is 'lean' plus the runtime package as a payload slot -- the first run installs it
+      #{" " * 65}# into the cache without network access.
+      #{" " * 65}# 'classic' stitches the application image onto a prebuilt runtime (Stage-3A layout);
+      #{" " * 65}# 'bundle', 'both', 'application' and 'runtime' keep their legacy behaviors.
     DESC
 
     desc "press", "Press tebako image"
@@ -197,8 +208,9 @@ module Tebako
                          enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
                          desc: "Tebako package Ruby version, #{Tebako::RubyVersion::DEFAULT_RUBY_VERSION} by default"
     method_option :patchelf, aliases: "-P", type: :boolean, desc: RGP_DESCRIPTION
-    method_option :mode, type: :string, aliases: "-m", required: false, enum: %w[bundle both runtime application],
-                         desc: "Tebako press mode, 'bundle' by default"
+    method_option :mode, type: :string, aliases: "-m", required: false,
+                         enum: %w[lean fat classic bundle both runtime application],
+                         desc: MODE_DESCRIPTION
     method_option :ref, type: :string, aliases: "-u", required: false, desc: REF_DESCRIPTION
     method_option :runtime, type: :string, required: false, enum: %w[prebuilt source], desc: RUNTIME_DESCRIPTION
     method_option :"build-runtime", type: :boolean, required: false,

@@ -30,6 +30,12 @@ module Tebako
   # three-part package model (spec §4.4).
   #
   # A lean package is [tebako-bootstrap][.tfs image slots][tpkg trailer].
+  # A fat package has the same layout plus the runtime package itself as a
+  # payload slot (format_id TPKG_FORMAT_RUNTIME, empty mount point,
+  # ";sha256=<hex>" appended to the trailer's runtime_ref): at first run the
+  # bootstrap installs the payload into the shared cache instead of
+  # downloading it. Payload slots are never handed over as --tebako-image.
+  #
   # The bootstrap (tamatebako/tebako-bootstrap) parses the trailer of its own
   # executable, resolves the language runtime into the shared cache, and
   # execs it as:
