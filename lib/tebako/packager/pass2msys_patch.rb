@@ -114,6 +114,9 @@ module Tebako
       "#if defined _MSC_VER && _MSC_VER <= 1200" =>
         "#{PatchLiterals::C_FILE_SUBST_LESS}\n#if defined _MSC_VER && _MSC_VER <= 1200",
       "len = GetCurrentDirectoryW(0, NULL);" => WIN32_WIN32_C_MSYS_SUBST,
+      # Keep the clock renames in sync with Pass1MSysPatch::WIN32_WIN32_C_CLOCK_PATCH:
+      # pass1 applies them for the toolchain build, this pass re-applies them
+      # from pristine sources for the final build
       "clock_gettime(clockid_t clock_id, struct timespec *sp)" =>
         "_dummy_clock_gettime(clockid_t clock_id, struct timespec *sp)",
       "clock_getres(clockid_t clock_id, struct timespec *sp)" =>

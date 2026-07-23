@@ -203,6 +203,21 @@ module Tebako
           "/* tebako patched */ static const struct vktable *console_win32_vk(const char *, size_t);"
       }.freeze
 
+      # Ruby's win32.c defines clock_gettime/clock_getres fallbacks with no
+      # HAVE_* configure guard (at least through 3.4); modern mingw-w64
+      # winpthreads headers (pthread_time.h, pulled in by time.h) carry
+      # static-inline definitions of the same symbols, so the toolchain
+      # build fails with redefinition errors. Rename ruby's fallbacks
+      # before the toolchain build; the CRT/winpthreads implementations
+      # (which configure detects) serve the calls. Pass2 re-applies the
+      # same rename from pristine sources for the final build.
+      WIN32_WIN32_C_CLOCK_PATCH = {
+        "clock_gettime(clockid_t clock_id, struct timespec *sp)" =>
+          "_dummy_clock_gettime(clockid_t clock_id, struct timespec *sp)",
+        "clock_getres(clockid_t clock_id, struct timespec *sp)" =>
+          "_dummy_clock_getres(clockid_t clock_id, struct timespec *sp)"
+      }.freeze
+
       def patch_map
         pm = msys_patches
         pm.merge!(super)
@@ -246,7 +261,11 @@ module Tebako
           "ext/openssl/extconf.rb" => OPENSSL_EXTCONF_RB_PATCH,
           # ....................................................
           # Fix the signature of console_win32_vk
-          "ext/io/console/win32_vk.inc" => EXT_IO_CONSOLE_WIN32_VK_INC_PATCH
+          "ext/io/console/win32_vk.inc" => EXT_IO_CONSOLE_WIN32_VK_INC_PATCH,
+          # ....................................................
+          # Rename ruby's clock_gettime/clock_getres fallbacks before the
+          # toolchain build (winpthreads static-inline collision)
+          "win32/win32.c" => WIN32_WIN32_C_CLOCK_PATCH
         }
       end
 
