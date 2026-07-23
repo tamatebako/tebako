@@ -190,7 +190,11 @@ module Tebako
     def configure_commands_not_msys
       @cmd_suffix = ""
       @bat_suffix = ""
-      @force_ruby_platform = "false"
+      # Force the ruby (source) platform for gems: precompiled variants link
+      # against shared system libraries (libffi & co.) that do not exist
+      # inside a tebako package -- e.g. ffi-x86_64-linux-gnu fails to load in
+      # the memfs (tebako#343). msys has always forced this.
+      @force_ruby_platform = "true"
       @nokogiri_option = "--no-use-system-libraries"
     end
 

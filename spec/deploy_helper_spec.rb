@@ -81,7 +81,7 @@ RSpec.describe Tebako::DeployHelper do
           .once
         expect(Tebako::BuildHelpers)
           .to receive(:run_with_capture_v)
-          .with([bundle, nil, "config", "set", "--local", "force_ruby_platform", "false"])
+          .with([bundle, nil, "config", "set", "--local", "force_ruby_platform", "true"])
           .once
 
         deploy_helper.send(:bundle_config)
@@ -317,7 +317,7 @@ RSpec.describe Tebako::DeployHelper do
       end
 
       it "sets the correct force ruby platform" do
-        expect(deploy_helper.instance_variable_get(:@force_ruby_platform)).to eq("false")
+        expect(deploy_helper.instance_variable_get(:@force_ruby_platform)).to eq("true")
       end
 
       it "sets the correct nokogiri option" do
