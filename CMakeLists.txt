@@ -112,6 +112,16 @@ elseif("${OSTYPE_TXT}" MATCHES "^darwin.*")
   set(IS_DARWIN ON)
 endif()
 
+if(IS_MSYS AND DWARFS_PRELOAD)
+  # The prebuilt windows-ucrt64 libtfs package carries the modern API only:
+  # the legacy tebako API (tebako-io/memfs, which tebako-main.cpp consumes)
+  # is excluded from the standalone MinGW build by design because its
+  # ruby-win32 shims only compile inside the ruby build context. Windows
+  # runtimes therefore always build libtfs from source (tebako#345).
+  message(STATUS "DWARFS_PRELOAD forced OFF on msys (the prebuilt package lacks the legacy tebako API)")
+  set(DWARFS_PRELOAD OFF CACHE BOOL "Deploy the prebuilt libtfs package from the GitHub release" FORCE)
+endif()
+
 if(${RUBY_VER} VERSION_LESS "3.1.0")
   set(OPENSSL_VER "1.1")
 else(${RUBY_VER} VERSION_LESS "3.1.0")
