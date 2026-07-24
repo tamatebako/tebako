@@ -102,7 +102,11 @@ module Tebako
         if scmb.macos?
           "S[\"MAINLIBS\"]=\"-ldl -lobjc -lpthread \""
         elsif scmb.msys?
-          "S[\"MAINLIBS\"]=\"-lshell32 -lws2_32 -liphlpapi -limagehlp -lshlwapi -lbcrypt \""
+          # The configure LIBS env (crypt32 & co. for the static vcpkg OpenSSL,
+          # tebako#345) is appended to MAINLIBS after ruby's defaults; the
+          # pattern must match the resulting line exactly or the mlibs
+          # substitution silently misses and the engine libs never get in
+          "S[\"MAINLIBS\"]=\"-lshell32 -lws2_32 -liphlpapi -limagehlp -lshlwapi -lbcrypt -lcrypt32 -ladvapi32 -luser32 "
         else
           "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \""
         end
