@@ -52,6 +52,9 @@ concurrency:
 env:
   CACHE_VER: 24
   VERBOSE: no
+# Shared prebuilt runtime/bootstrap cache (Tebako::RuntimeManager); cached
+# per runner platform and packaged Ruby version by the press jobs below
+  TEBAKO_HOME: ${{ github.workspace }}/.tebako-home
 
 jobs:
   prepare:
@@ -71,45 +74,9 @@ jobs:
           matrix-file: .github/matrices/macos.json
           event-name: ${{ github.event_name }}
 
-  setup:
-    name: setup ${{ matrix.env.os }} XCode ${{ matrix.env.xcode }} Ruby ${{ matrix.ruby_ver }}
-    needs: [ prepare ]
-    runs-on: ${{ matrix.env.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-        ruby_ver: ['3.3.7']
-    steps:
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          submodules: true
-
-      - name: Setup ci environment
-        uses: ./.github/actions/setup-tebako
-        with:
-          cache: off
-          install: off
-          ruby_version: ${{ matrix.ruby_ver }}
-          xcode: ${{ matrix.env.xcode }}
-
-      - name: Setup development environment
-        uses: ./.github/actions/setup-tebako-development
-        with:
-          path: deps
-          os: ${{ matrix.env.os }}
-          cc: ruby-${{ matrix.ruby_ver }}-XCode-${{ matrix.env.xcode }}
-          version: ${{ env.CACHE_VER }}
-
-      - name: tebako setup
-        run: |
-          ${{ github.workspace }}/exe/tebako setup -D
-
   tests-1:
     name: tests-1 package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
-    needs: [ setup, prepare ]
+    needs: [ prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
@@ -141,10 +108,19 @@ jobs:
           cc: ruby-${{ matrix.ruby_ver }}-XCode-${{ matrix.env.xcode }}
           version: ${{ env.CACHE_VER }}
 
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: exe/tebako setup -D
+
       - name: Shall upload artifacts?
         id: shall-upload
         run: |
-          if [ "${{ matrix.package_ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.env.os }}" == "macos-13" ]; then
+          if [ "${{ matrix.package_ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.ruby_ver }}" == "3.3.7" ] && [ "${{ matrix.env.os }}" == "macos-14" ]; then
             echo "upload=true" >> $GITHUB_OUTPUT
           else
             echo "upload=false" >> $GITHUB_OUTPUT
@@ -158,7 +134,7 @@ jobs:
 
   tests-1-app:
     name: tests-1-app package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
-    needs: [ setup, prepare ]
+    needs: [ prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
@@ -190,6 +166,15 @@ jobs:
           cc: ruby-${{ matrix.ruby_ver }}-XCode-${{ matrix.env.xcode }}
           version: ${{ env.CACHE_VER }}
 
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: exe/tebako setup -D
+
       - name: Checkout shell test framework
         uses: actions/checkout@v4
         with:
@@ -197,15 +182,15 @@ jobs:
           path: ${{github.workspace}}/tests/shunit2
           fetch-depth: 1
 
-      - name: Run tebako tests (set no. 1) for separately packaged application
+      - name: Run tebako tests (set no. 1) for lean three-part packages
         shell: bash
         run: |
           bundle install
-          MODE=app RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+          MODE=lean RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
   tests-2:
     name: tests-2 package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
-    needs: [ setup, prepare ]
+    needs: [ prepare ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
@@ -232,9 +217,18 @@ jobs:
         uses: ./.github/actions/setup-tebako-development
         with:
           path: deps
-          os: ${{ matrix.env.os }}-ruby-${{ matrix.ruby_ver }}
+          os: ${{ matrix.env.os }}
           cc: ruby-${{ matrix.ruby_ver }}-XCode-${{ matrix.env.xcode }}
           version: ${{ env.CACHE_VER }}
+
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: exe/tebako setup -D
 
       - name: Run tebako tests (set no. 2)
         run: |

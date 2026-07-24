@@ -31,6 +31,12 @@
 # in different environment, not GHA.
 name: Windows-MSys
 
+# NOTE: this workflow is manual-only (workflow_dispatch) for now.
+# tebako-runtime-ruby does not publish windows runtime packages yet, so every
+# press mode fails at runtime resolution (error 120). The job structure below
+# already follows the slim prebuilt-runtime model (tebako setup in-job, slim
+# press modes) so the legs become meaningful as soon as windows runtime
+# assets appear in https://github.com/tamatebako/tebako-runtime-ruby/releases.
 on:
 #  schedule:
 #    - cron: "0 9 * * 5"
@@ -60,6 +66,9 @@ concurrency:
 env:
   CACHE_VER: 21
   VERBOSE: no
+# Shared prebuilt runtime/bootstrap cache (Tebako::RuntimeManager); cached
+# per runner platform and packaged Ruby version by the press jobs below
+  TEBAKO_HOME: ${{ github.workspace }}/.tebako-home
 
 jobs:
   prepare:
@@ -79,88 +88,16 @@ jobs:
           matrix-file: .github/matrices/windows-msys.json
           event-name: ${{ github.event_name }}
 
-  setup:
-    name: setup windows-msys [${{ matrix.env.sys }}, CC ${{ matrix.env.CC }} ]
-    needs: [ prepare ]
-    runs-on: windows-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env:
-      CC: ${{ matrix.env.CC }}
-      CXX: ${{ matrix.env.CXX }}
-
-    defaults:
-      run:
-        shell: msys2 {0}
-
-    steps:
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v4
-        with:
-          submodules: true
-
-      - name: Setup MSys
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: ${{matrix.env.sys}}
-          path-type: minimal
-          update: true
-          install: >-
-            git
-            tar
-            bison
-            flex
-          pacboy: >-
-            cmake:p
-            boost:p
-            diffutils:p
-            libevent:p
-            double-conversion:p
-            fmt:p
-            glog:p
-            dlfcn:p
-            ninja:p
-            gtest:p
-            autotools:p
-            ncurses:p
-            ruby:p
-            toolchain:p
-            openssl:p
-            make:p
-            libyaml:p
-            libxslt:p
-
-      - name: Enable long filenames
-        run: git config --global core.longpaths true
-
-      - name: Setup environment
-        run: cat common.env >> $GITHUB_ENV
-
-      - name: Create deps folder
-        run: mkdir ${{env.DEPS}}
-
-      - name: Setup development environment
-        uses: ./.github/actions/setup-tebako-development-msys
-        with:
-          path: deps
-          cc: ${{ env.CC }}
-          version: ${{ env.CACHE_VER }}
-
-      - name: Tebako setup
-        run: exe/tebako setup -D
-
   tests-1:
     name: tests-1-${{ matrix.script }} windows-msys [${{ matrix.env.sys }}, Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}]
-    needs: [ setup, prepare ]
+    needs: [ prepare ]
     runs-on: windows-latest
     strategy:
       fail-fast: false
       matrix:
         package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-        script: ['bundle', 'app']
+        script: ['classic', 'lean']
     env:
       CC: ${{ matrix.env.CC }}
       CXX: ${{ matrix.env.CXX }}
@@ -222,6 +159,15 @@ jobs:
           path: deps
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
+
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: Tebako setup
+        run: exe/tebako setup -D
 
       - name: Checkout shell test framework
         uses: actions/checkout@v4
@@ -231,11 +177,11 @@ jobs:
           fetch-depth: 1
 
       - name: Run tebako tests (set no. 1)
-        run: APP=${{ matrix.script }} RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+        run: MODE=${{ matrix.script }} RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
   tests-2:
     name: tests-2 windows-msys [${{ matrix.env.sys }}, Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}]
-    needs: [ setup, prepare ]
+    needs: [ prepare ]
     runs-on: windows-latest
     strategy:
       fail-fast: false
@@ -303,6 +249,15 @@ jobs:
           path: deps
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
+
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: Tebako setup
+        run: exe/tebako setup -D
 
       - name: Run tebako tests (set no. 2)
         run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb
