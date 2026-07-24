@@ -97,26 +97,35 @@ module Tebako
         end
       end
 
+      # The configure LIBS env (crypt32 & co. for the static vcpkg OpenSSL,
+      # tebako#345) is appended to MAINLIBS after ruby's defaults. config.status
+      # may or may not pad the value with a trailing space before the closing
+      # quote, so both variants must be matched or the mlibs substitution
+      # silently misses and the engine libs never get into the final link
+      MSYS_MAINLIBS_LINE =
+        "-lshell32 -lws2_32 -liphlpapi -limagehlp -lshlwapi -lbcrypt -lcrypt32 -ladvapi32 -luser32"
+
       def get_config_status_pattern(ostype)
         scmb = ScenarioManagerBase.new(ostype)
         if scmb.macos?
           "S[\"MAINLIBS\"]=\"-ldl -lobjc -lpthread \""
         elsif scmb.msys?
-          # The configure LIBS env (crypt32 & co. for the static vcpkg OpenSSL,
-          # tebako#345) is appended to MAINLIBS after ruby's defaults; the
-          # pattern must match the resulting line exactly or the mlibs
-          # substitution silently misses and the engine libs never get in
-          "S[\"MAINLIBS\"]=\"-lshell32 -lws2_32 -liphlpapi -limagehlp -lshlwapi -lbcrypt -lcrypt32 -ladvapi32 -luser32 "
+          "S[\"MAINLIBS\"]=\"#{MSYS_MAINLIBS_LINE} \""
         else
           "S[\"MAINLIBS\"]=\"-lz -lrt -lrt -ldl -lcrypt -lm -lpthread \""
         end
       end
 
       def get_config_status_patch(ostype, deps_lib_dir, ruby_ver)
-        {
-          get_config_status_pattern(ostype) =>
-            "S[\"MAINLIBS\"]=\"#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, false)}\""
-        }
+        subst = "S[\"MAINLIBS\"]=\"#{PatchLibraries.mlibs(ostype, deps_lib_dir, ruby_ver, false)}\""
+        if ScenarioManagerBase.new(ostype).msys?
+          {
+            "S[\"MAINLIBS\"]=\"#{MSYS_MAINLIBS_LINE} \"" => subst,
+            "S[\"MAINLIBS\"]=\"#{MSYS_MAINLIBS_LINE}\"" => subst
+          }
+        else
+          { get_config_status_pattern(ostype) => subst }
+        end
       end
     end
   end
