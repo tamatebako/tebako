@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# Copyright (c)  2024-2025 [Ribose Inc](https://www.ribose.com).
+# Copyright (c) 2024-2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
 # This file is a part of the Tebako project.
 #
@@ -25,8 +25,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "spec_helper"
-require "tebako/stripper"
 require "fileutils"
 require "open3"
 
@@ -34,140 +32,78 @@ require "open3"
 
 RSpec.describe Tebako::Stripper do
   describe ".strip" do
-    let(:scm) { double("scm") }
+    let(:scm) { double("scm", exe_suffix: ".exe", msys?: false, macos?: false) }
     let(:src_dir) { "/path/to/src" }
 
-    before do
-      allow(described_class).to receive(:strip_bs)
-      allow(described_class).to receive(:strip_fi)
-      allow(described_class).to receive(:strip_li)
-    end
-
-    it "calls strip_bs with the correct parameters" do
-      expect(described_class).to receive(:strip_bs).with(src_dir)
-      described_class.strip(scm, src_dir)
-    end
-
-    it "calls strip_fi with the correct parameters" do
-      expect(described_class).to receive(:strip_fi).with(scm, src_dir)
-      described_class.strip(scm, src_dir)
-    end
-
-    it "calls strip_li with the correct parameters" do
-      expect(described_class).to receive(:strip_li).with(scm, src_dir)
-      described_class.strip(scm, src_dir)
-    end
-  end
-
-  describe ".strip_file" do
-    let(:file_in) { "/path/to/file_in" }
-    let(:file_out) { "/path/to/file_out" }
-
-    context "when file_out is not provided" do
-      it "runs strip with the correct parameters" do
-        params = ["strip", "-S", file_in]
-        expect(Open3).to receive(:capture2e).with(*params).and_return(["",
-                                                                       instance_double(Process::Status, exitstatus: 0)])
-        described_class.strip_file(file_in)
-      end
-    end
-
-    context "when file_out is provided" do
-      it "runs strip with the correct parameters" do
-        params = ["strip", "-S", file_in, "-o", file_out]
-        expect(Open3).to receive(:capture2e).with(*params).and_return(["",
-                                                                       instance_double(Process::Status, exitstatus: 0)])
-        described_class.strip_file(file_in, file_out)
-      end
-    end
-
-    context "when strip command fails" do
-      it "prints a warning message" do
-        params = ["strip", "-S", file_in]
-        expect(Open3).to receive(:capture2e).with(*params).and_return(["error message",
-                                                                       instance_double(Process::Status, exitstatus: 1)])
-        expect { described_class.strip_file(file_in) }.to output(/Warning: could not strip/).to_stdout
-      end
-    end
-  end
-
-  describe ".get_files" do
-    let(:scm) { double("scm", exe_suffix: ".exe") }
-
-    it "returns the correct list of files" do
-      expected_files = Tebako::Stripper::BIN_FILES.flat_map do |f|
-        [f, "#{f}#{Tebako::Stripper::CMD_SUFFIX}", "#{f}#{Tebako::Stripper::BAT_SUFFIX}"]
-      end
-      expected_files += ["ruby.exe", "rubyw.exe"]
-
-      expect(described_class.send(:get_files, scm)).to eq(expected_files)
-    end
-  end
-
-  describe ".strip_bs" do
-    let(:src_dir) { "/path/to/src" }
-
-    it "removes the share directory" do
+    it "removes build artefact directories" do
+      allow(Find).to receive(:find)
       expect(FileUtils).to receive(:rm_rf)
         .with([File.join(src_dir, "share"), File.join(src_dir, "include"), File.join(src_dir, "lib", "pkgconfig")])
-      described_class.send(:strip_bs, src_dir)
+      described_class.strip(scm, src_dir)
     end
-  end
 
-  describe ".strip_fi" do
-    let(:scm) { double("scm", exe_suffix: ".exe") }
-    let(:src_dir) { "/path/to/src" }
-    let(:files) do
-      Tebako::Stripper::BIN_FILES.flat_map do |f|
-        ["#{src_dir}/bin/#{f}", "#{src_dir}/bin/#{f}.cmd",
-         "#{src_dir}/bin/#{f}.bat"]
+    it "removes the ruby tooling binaries" do
+      allow(Find).to receive(:find)
+      files = Tebako::Stripper::BIN_FILES.flat_map do |f|
+        ["#{src_dir}/bin/#{f}", "#{src_dir}/bin/#{f}.cmd", "#{src_dir}/bin/#{f}.bat"]
       end + ["#{src_dir}/bin/ruby.exe", "#{src_dir}/bin/rubyw.exe"]
-    end
 
-    it "removes the correct files" do
       expect(FileUtils).to receive(:rm).with(files, force: true)
-      described_class.send(:strip_fi, scm, src_dir)
-    end
-  end
-
-  describe ".strip_li" do
-    let(:scm) { double("scm", msys?: false, macos?: false) }
-    let(:src_dir) { "/path/to/src" }
-    let(:file) { "/path/to/src/file.so" }
-
-    before do
-      allow(Find).to receive(:find).and_yield(file)
-      allow(File).to receive(:directory?).and_return(false)
-      allow(File).to receive(:extname).and_return(".so")
+      described_class.strip(scm, src_dir)
     end
 
-    it "strips the correct files" do
-      expect(described_class).to receive(:strip_file).with(file)
-      described_class.send(:strip_li, scm, src_dir)
-    end
+    context "when walking the output tree" do
+      let(:object_file) { "/path/to/src/file.o" }
+      let(:shared_file) { "/path/to/src/file.so" }
 
-    it "removes files with DELETE_EXTENSIONS" do
-      allow(File).to receive(:extname).and_return(".o")
-      expect(FileUtils).to receive(:rm).with(file)
-      described_class.send(:strip_li, scm, src_dir)
-    end
-  end
+      before do
+        allow(FileUtils).to receive(:rm_rf)
+        allow(FileUtils).to receive(:rm)
+        allow(File).to receive(:directory?).and_return(false)
+      end
 
-  describe ".strip_extensions" do
-    let(:scm) { double("scm", msys?: false, macos?: false) }
+      it "removes files with build-artefact extensions" do
+        allow(Find).to receive(:find).and_yield(object_file)
+        expect(FileUtils).to receive(:rm).with(object_file)
+        described_class.strip(scm, src_dir)
+      end
 
-    it "returns the correct extensions for non-msys and non-macos" do
-      expect(described_class.send(:strip_extensions, scm)).to eq(["so"])
-    end
+      it "strips shared libraries" do
+        allow(Find).to receive(:find).and_yield(shared_file)
+        allow(File).to receive(:extname).and_return(".so")
+        expect(Open3).to receive(:capture2e).with("strip", "-S", shared_file)
+                                            .and_return(["", instance_double(Process::Status, exitstatus: 0)])
+        described_class.strip(scm, src_dir)
+      end
 
-    it "returns the correct extensions for msys" do
-      allow(scm).to receive(:msys?).and_return(true)
-      expect(described_class.send(:strip_extensions, scm)).to eq(%w[so dll])
-    end
+      it "prints a warning when strip fails" do
+        allow(Find).to receive(:find).and_yield(shared_file)
+        allow(File).to receive(:extname).and_return(".so")
+        allow(Open3).to receive(:capture2e).with("strip", "-S", shared_file)
+                                           .and_return(["error message",
+                                                        instance_double(Process::Status, exitstatus: 1)])
+        expect { described_class.strip(scm, src_dir) }.to output(/Warning: could not strip/).to_stdout
+      end
 
-    it "returns the correct extensions for macos" do
-      allow(scm).to receive(:macos?).and_return(true)
-      expect(described_class.send(:strip_extensions, scm)).to eq(%w[so dylib bundle])
+      it "strips dylib and bundle files on macOS" do
+        mac_scm = double("scm", exe_suffix: "", msys?: false, macos?: true)
+        dylib_file = "/path/to/src/file.dylib"
+        allow(Find).to receive(:find).and_yield(dylib_file)
+        allow(File).to receive(:extname).and_return(".dylib")
+        expect(Open3).to receive(:capture2e).with("strip", "-S", dylib_file)
+                                            .and_return(["", instance_double(Process::Status, exitstatus: 0)])
+        described_class.strip(mac_scm, src_dir)
+      end
+
+      it "strips dll files on msys" do
+        msys_scm = double("scm", exe_suffix: ".exe", msys?: true, macos?: false)
+        dll_file = "/path/to/src/file.dll"
+        allow(Find).to receive(:find).and_yield(dll_file)
+        allow(File).to receive(:extname).and_return(".dll")
+        expect(Open3).to receive(:capture2e).with("strip", "-S", dll_file)
+                                            .and_return(["", instance_double(Process::Status, exitstatus: 0)])
+        described_class.strip(msys_scm, src_dir)
+      end
     end
   end
 end

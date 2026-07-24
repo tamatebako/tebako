@@ -25,8 +25,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require_relative "runtime_manager"
-
 # Tebako - an executable packager
 module Tebako
   # Resolution, download, verification and machine-wide caching of the

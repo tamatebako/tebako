@@ -27,19 +27,18 @@
 
 # require "bundler"
 require "fileutils"
-require "find"
-
-require_relative "error"
-require_relative "build_helpers"
-require_relative "packager/patch_helpers"
-require_relative "scenario_manager"
-
-require_relative "packager/patch"
-require_relative "packager/rubygems_patch"
+require "openssl"
 
 # Tebako - an executable packager
 module Tebako
   # Tebako packaging support (deployer)
+  #
+  # Stages the application into the packaging environment (host file system)
+  # and collects the gem/bundler operations the scenario needs. The
+  # operations run inside the resolved prebuilt runtime (Tebako::RuntimeDeployer)
+  # because the runtime image ships no bin/ tooling to shell out to; the
+  # tebako-runtime gem itself ships pre-installed in the runtime layout the
+  # packaging environment is seeded from.
   class DeployHelper < ScenarioManagerWithBundler # rubocop:disable Metrics/ClassLength
     def initialize(fs_root, fs_entrance, target_dir, pre_dir)
       super(fs_root, fs_entrance)
@@ -54,7 +53,6 @@ module Tebako
 
     def configure(ruby_ver, cwd)
       @ruby_ver = ruby_ver
-      @needs_bundler = true unless @ruby_ver.ruby31?
       @cwd = cwd
 
       @tbd = File.join(@target_dir, "bin")
@@ -62,18 +60,19 @@ module Tebako
       @tld = File.join(@target_dir, "local")
 
       configure_scenario
-      configure_commands
     end
 
-    def deploy
-      BuildHelpers.with_env(deploy_env) do
-        update_rubygems
-        system("#{@gem_command} env") if @verbose
-        install_gem("tebako-runtime")
-        install_gem("bundler", @bundler_version) if @needs_bundler
-        deploy_solution
-        check_cwd
-      end
+    def deploy(deployer)
+      verify_runtime_gem!
+
+      ops = []
+      ops << install_gem_op("bundler", @bundler_version) if @needs_bundler
+      ops << ["gem", ["env"]] if @verbose
+      deploy_solution(ops)
+      deployer.execute(ops, deploy_env, @target_dir, verbose: @verbose) unless ops.empty?
+
+      check_solution
+      check_cwd
     end
 
     def deploy_env
@@ -81,41 +80,64 @@ module Tebako
         "GEM_HOME" => gem_home,
         "GEM_PATH" => gem_home,
         "GEM_SPEC_CACHE" => File.join(@target_dir, "spec_cache"),
-        "TEBAKO_PASS_THROUGH" => "1"
+        # The runtime's OpenSSL carries the build machine's certificate
+        # paths; the deploy driver fetches gems through the press host's
+        # certificate store instead
+        "SSL_CERT_FILE" => OpenSSL::X509::DEFAULT_CERT_FILE,
+        "SSL_CERT_DIR" => OpenSSL::X509::DEFAULT_CERT_DIR
       }
-    end
-
-    def install_gem(name, ver = nil)
-      puts "   ... installing #{name} gem#{" version #{ver}" if ver}"
-
-      params = [@gem_command, "install", name.to_s]
-      params += ["-v", ver.to_s] if ver
-      params += ["--no-document", "--install-dir", @tgd, "--bindir", @tbd]
-      params += ["--platform", "ruby"] if msys?
-      BuildHelpers.run_with_capture_v(params)
-    end
-
-    def update_rubygems
-      return if @ruby_ver.ruby31?
-
-      puts "   ... updating rubygems to #{Tebako::RUBYGEMS_VERSION}"
-      BuildHelpers.run_with_capture_v([@gem_command, "update", "--no-doc", "--system",
-                                       Tebako::RUBYGEMS_VERSION])
-
-      patch = Packager::RubygemsUpdatePatch.new(@fs_mount_point).patch_map
-      Packager.do_patch(patch, "#{@target_dir}/lib/ruby/site_ruby/#{@ruby_ver.api_version}")
     end
 
     private
 
-    def bundle_config
-      bundle_config_option(["build.ffi", "--disable-system-libffi"])
-      bundle_config_option(["build.nokogiri", @nokogiri_option])
-      bundle_config_option(["force_ruby_platform", @force_ruby_platform])
+    # The runtime layout the packaging environment is seeded from carries the
+    # tebako-runtime gem pre-installed (the runtime contract); the legacy
+    # flow installed it from rubygems.org at deploy time
+    def verify_runtime_gem!
+      return unless Dir.glob(File.join(@tgd, "specifications", "tebako-runtime-*.gemspec")).empty?
+
+      Tebako.packaging_error(129, File.join(@tgd, "specifications"))
     end
 
-    def bundle_config_option(opt)
-      BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "config", "set", "--local"] + opt)
+    def install_gem_op(name, ver = nil)
+      puts "   ... installing #{name} gem#{" version #{ver}" if ver}"
+
+      argv = ["install", name.to_s]
+      argv += ["-v", ver.to_s] if ver
+      ["gem", argv + install_argv_tail]
+    end
+
+    def install_argv_tail
+      tail = ["--no-document", "--install-dir", @tgd, "--bindir", @tbd]
+      tail << "--verbose" if @verbose
+      tail += ["--platform", "ruby"] if msys?
+      tail
+    end
+
+    # The version the bundle ops activate, mirroring the legacy bundle
+    # binstub reference ('_x.y.z_' when the scenario pinned a bundler
+    # version, the runtime's default otherwise)
+    def bundler_activation
+      @needs_bundler ? @bundler_version : nil
+    end
+
+    def bundle_op(argv)
+      ["bundle", bundler_activation, argv]
+    end
+
+    def bundle_config_ops
+      bundle_config_option_ops(["build.ffi", "--disable-system-libffi"]) +
+        bundle_config_option_ops(["build.nokogiri", @nokogiri_option]) +
+        bundle_config_option_ops(["force_ruby_platform", @force_ruby_platform])
+    end
+
+    def bundle_config_option_ops(opt)
+      [bundle_op(["config", "set", "--local"] + opt)]
+    end
+
+    def bundle_install_op
+      puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
+      bundle_op(["install", "--jobs=#{ncores}"])
     end
 
     def check_entry_point(entry_point_root)
@@ -136,37 +158,36 @@ module Tebako
       raise Tebako::Error.new("Package working directory #{@cwd} does not exist", 108)
     end
 
-    def collect_and_deploy_gem(gemspec)
-      puts "   ... collecting gem from gemspec #{gemspec}"
-
-      copy_files(@pre_dir)
-
-      Dir.chdir(@pre_dir) do
-        # spec = Bundler.load_gemspec(gemspec)
-        # puts spec.executables.first unless spec.executables.empty?
-        # puts spec.bindir
-
-        BuildHelpers.run_with_capture_v([@gem_command, "build", gemspec])
-        install_all_gems_or_fail
+    def check_solution
+      case @scenario
+      when :simple_script, :gemfile
+        check_entry_point("local")
+      when :gem, :gemspec, :gemspec_and_gemfile
+        check_entry_point("bin")
       end
-
-      check_entry_point("bin")
     end
 
-    def collect_and_deploy_gem_and_gemfile(gemspec)
+    def collect_and_deploy_gem(gemspec, ops)
+      puts "   ... collecting gem from gemspec #{gemspec}"
+
+      stage_pre_dir(ops)
+      ops << ["gem", ["build", gemspec]]
+      ops << ["install_all", @pre_dir, install_argv_tail]
+    end
+
+    def collect_and_deploy_gem_and_gemfile(gemspec, ops)
       puts "   ... collecting gem from gemspec #{gemspec} and Gemfile"
 
-      copy_files(@pre_dir)
+      stage_pre_dir(ops)
+      ops.concat(bundle_config_ops)
+      ops << bundle_install_op
+      ops << bundle_op(["exec", "gem", "build", gemspec])
+      ops << ["install_all", @pre_dir, install_argv_tail]
+    end
 
-      Dir.chdir(@pre_dir) do
-        bundle_config
-        puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{ncores}"])
-        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "exec", @gem_command, "build", gemspec])
-        install_all_gems_or_fail
-      end
-
-      check_entry_point("bin")
+    def configure_scenario
+      super
+      configure_commands
     end
 
     def configure_commands
@@ -175,21 +196,14 @@ module Tebako
       else
         configure_commands_not_msys
       end
-
-      @gem_command = File.join(@tbd, "gem#{@cmd_suffix}")
-      @bundler_command = File.join(@tbd, "bundle#{@bat_suffix}")
     end
 
     def configure_commands_msys
-      @cmd_suffix = ".cmd"
-      @bat_suffix = ".bat"
       @force_ruby_platform = "true"
       @nokogiri_option = "--use-system-libraries"
     end
 
     def configure_commands_not_msys
-      @cmd_suffix = ""
-      @bat_suffix = ""
       # Force the ruby (source) platform for gems: precompiled variants link
       # against shared system libraries (libffi & co.) that do not exist
       # inside a tebako package -- e.g. ffi-x86_64-linux-gnu fails to load in
@@ -211,52 +225,46 @@ module Tebako
       raise Tebako::Error.new("#{@fs_root} is not accessible or is not a directory.", 107)
     end
 
-    def deploy_gem(gem)
+    def deploy_gem(gem, ops)
       puts "   ... installing Ruby gem from #{gem}"
-      copy_files(@pre_dir)
-      Dir.chdir(@pre_dir) { install_gem(gem) }
-      check_entry_point("bin")
+
+      stage_pre_dir(ops)
+      ops << ["gem", ["install", gem] + install_argv_tail]
     end
 
-    def deploy_gemfile
+    def deploy_gemfile(ops)
       puts "   ... deploying Gemfile"
+
       copy_files(@tld)
-
-      Dir.chdir(@tld) do
-        bundle_config
-        puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-        BuildHelpers.run_with_capture_v([@bundler_command, bundler_reference, "install", "--jobs=#{ncores}"])
-      end
-
-      check_entry_point("local")
+      ops << ["chdir", @tld]
+      ops.concat(bundle_config_ops)
+      ops << bundle_install_op
     end
 
     def deploy_simple_script
       puts "   ... collecting simple Ruby script from #{@fs_root}"
+
       copy_files(@tld)
-      check_entry_point("local")
     end
 
-    def deploy_solution # rubocop:disable Metrics/MethodLength
+    def deploy_solution(ops) # rubocop:disable Metrics/MethodLength
       case @scenario
       when :simple_script
         deploy_simple_script
       when :gem
-        deploy_gem(Dir.glob(File.join(@fs_root, "*.gem")).first)
+        deploy_gem(Dir.glob(File.join(@fs_root, "*.gem")).first, ops)
       when :gemfile
-        deploy_gemfile
+        deploy_gemfile(ops)
       when :gemspec
-        collect_and_deploy_gem(Dir.glob(File.join(@fs_root, "*.gemspec")).first)
+        collect_and_deploy_gem(Dir.glob(File.join(@fs_root, "*.gemspec")).first, ops)
       when :gemspec_and_gemfile
-        collect_and_deploy_gem_and_gemfile(Dir.glob(File.join(@fs_root, "*.gemspec")).first)
+        collect_and_deploy_gem_and_gemfile(Dir.glob(File.join(@fs_root, "*.gemspec")).first, ops)
       end
     end
 
-    def install_all_gems_or_fail
-      gem_files = Dir.glob("*.gem").map { |file| File.expand_path(file) }
-      raise Tebako::Error, "No gem files found after build" if gem_files.empty?
-
-      gem_files.each { |gem_file| install_gem(gem_file) }
+    def stage_pre_dir(ops)
+      copy_files(@pre_dir)
+      ops << ["chdir", @pre_dir]
     end
   end
 end

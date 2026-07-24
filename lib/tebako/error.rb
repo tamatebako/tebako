@@ -27,51 +27,6 @@
 
 # Tebako - an executable packager
 module Tebako
-  PACKAGING_ERRORS = {
-    101 => "'tebako setup' configure step failed",
-    102 => "'tebako setup' build step failed",
-    103 => "'tebako press' configure step failed",
-    104 => "'tebako press' build step failed",
-    105 => "Failed to map MSys path to Windows",
-    106 => "Entry point does not exist or is not accessible",
-    107 => "Project root does not exist or is not accessible",
-    108 => "Package working directory does not exist",
-    109 => "Invalid Ruby version format",
-    110 => "Ruby version is not supported",
-    111 => "Ruby version is not supported on Windows",
-    112 => "OS is not supported",
-    113 => "Path to root shall be absolute. Relative path is not allowed",
-    114 => "Entry point is not within the project root",
-    115 => "Failed to load Gemfile",
-    116 => "Ruby version does not satify Gemfile requirements",
-    117 => "Failed to load Gemfile.lock",
-    118 => "Bundler version in Gemfile.lock does satisfy minimal Tebako version requirememnts",
-    119 => "Failed to find compatible bundler version",
-    120 => "No prebuilt tebako runtime package for the requested Ruby/platform combination",
-    121 => "SHA256 checksum mismatch for downloaded tebako runtime package",
-    122 => "Failed to download tebako runtime package",
-    123 => "TEBAKO_OFFLINE is set and the requested tebako runtime package is not cached",
-    124 => "Runtime package release carries no usable package index",
-    125 => "Timed out waiting for the runtime package cache lock",
-    126 => "Invalid stitch specification",
-    127 => "Stitch input file is not accessible",
-    128 => "Prebuilt runtime press requires the packaging environment (run 'tebako setup' first)",
-    130 => "Option combination is not supported",
-    131 => "No tebako-bootstrap package for the requested platform",
-    132 => "TEBAKO_OFFLINE is set and the requested tebako-bootstrap package is not cached",
-    134 => "Fat mode requires a payload-capable tebako-bootstrap release",
-    201 => "Warning. Could not create cache version file"
-  }.freeze
-
-  class << self
-    def packaging_error(code, extm = nil)
-      msg = PACKAGING_ERRORS[code]
-      msg += ": #{extm}" unless extm.nil?
-      msg = "Unknown packaging error" if msg.nil?
-      raise Tebako::Error.new msg, code
-    end
-  end
-
   # Tebako error class
   class Error < StandardError
     def initialize(msg = "Unspecified error", code = 255)

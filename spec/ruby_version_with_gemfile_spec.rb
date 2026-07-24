@@ -25,9 +25,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "tebako/error"
-require "tebako/ruby_version"
-
 # rubocop:disable Metrics/BlockLength
 
 RSpec.describe Tebako::RubyVersionWithGemfile do
@@ -144,19 +141,6 @@ RSpec.describe Tebako::RubyVersionWithGemfile do
           end.to raise_error(Tebako::Error, /No available Ruby version satisfies requirement/)
         end
       end
-    end
-  end
-
-  describe "#extend_ruby_version" do
-    before do
-      File.write(valid_gemfile_path, "source 'https://rubygems.org'")
-    end
-
-    it "returns array with version and hash" do
-      instance = described_class.new(ruby_version, valid_gemfile_path)
-      version, hash = instance.extend_ruby_version
-      expect(version).to eq(ruby_version)
-      expect(hash).to eq(Tebako::RubyVersion::RUBY_VERSIONS[ruby_version])
     end
   end
 end

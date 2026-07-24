@@ -26,122 +26,46 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "fileutils"
-require "find"
-require "pathname"
-
-require_relative "error"
-require_relative "deploy_helper"
-require_relative "ruby_builder"
-require_relative "stripper"
-require_relative "packager/pass1_patch"
-require_relative "packager/pass1a_patch"
-require_relative "packager/pass2_patch_crt"
-require_relative "packager/patch_helpers"
 
 # Tebako - an executable packager
 module Tebako
   # Tebako packaging support (internal)
   module Packager
-    FILES_TO_RESTORE = %w[
-      common.mk
-      configure
-      config.status
-      dir.c
-      dln.c
-      file.c
-      gem_prelude.rb
-      io.c
-      main.c
-      Makefile
-      ruby.c
-      thread_pthread.c
-      util.c
-      ext/bigdecimal/bigdecimal.h
-      ext/Setup
-      cygwin/GNUmakefile.in
-      include/ruby/onigmo.h
-      lib/rubygems/openssl.rb
-      lib/rubygems/path_support.rb
-      template/Makefile.in
-      tool/mkconfig.rb
-      win32/winmain.c
-      win32/file.c
-    ].freeze
-
-    class << self # rubocop:disable Metrics/ClassLength
-      # Create implib
-      def create_implib(src_dir, package_src_dir, app_name, ruby_ver)
-        a_name = File.basename(app_name, ".*")
-        create_def(src_dir, a_name)
-        puts "   ... creating Windows import library"
-        params = ["dlltool", "-d", def_fname(src_dir, a_name), "-D", out_fname(a_name), "--output-lib",
-                  lib_fname(package_src_dir, ruby_ver)]
-        BuildHelpers.run_with_capture(params)
-      end
-
+    class << self
       # Deploy
-      def deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd) # rubocop:disable Metrics/ParameterLists
+      def deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer) # rubocop:disable Metrics/ParameterLists
         puts "-- Running deploy script"
 
         deploy_helper = Tebako::DeployHelper.new(fs_root, fs_entrance, target_dir, pre_dir)
         deploy_helper.configure(ruby_ver, cwd)
-        deploy_helper.deploy
+        deploy_helper.deploy(deployer)
         Tebako::Stripper.strip(deploy_helper, target_dir)
       end
 
-      def do_patch(patch_map, root)
-        patch_map.each { |fname, mapping| PatchHelpers.patch_file("#{root}/#{fname}", mapping) }
-      end
+      # Check that the packaging environment the press needs (the prebuilt
+      # mkdwarfs provisioned by 'tebako setup') is in place
+      def check_prebuilt_env!(deps_bin_dir)
+        return unless Dir.glob(File.join(deps_bin_dir, "mkdwarfs*")).empty?
 
-      def finalize(src_dir, app_name, ruby_ver, patchelf, output_type)
-        puts "-- Running finalize script"
-
-        RubyBuilder.new(ruby_ver, src_dir).target_build(output_type)
-        exe_suffix = ScenarioManagerBase.new.exe_suffix
-        src_name = File.join(src_dir, "ruby#{exe_suffix}")
-        patchelf(src_name, patchelf)
-        package_name = "#{app_name}#{exe_suffix}"
-        # strip_or_copy(os_type, src_name, package_name)
-        Tebako::Stripper.strip_file(src_name, package_name)
-        puts "Created tebako #{output_type} at \"#{package_name}\""
-      end
-
-      # Init
-      def init(stash_dir, src_dir, pre_dir, bin_dir)
-        puts "-- Running init script"
-
-        puts "   ... creating packaging environment at #{src_dir}"
-        PatchHelpers.recreate([src_dir, pre_dir, bin_dir])
-        FileUtils.cp_r "#{stash_dir}/.", src_dir
-      end
-
-      # Check that the packaging environment the prebuilt-runtime press
-      # needs (pristine Ruby stash + mkdwarfs) is in place
-      def check_prebuilt_env!(stash_dir, deps_bin_dir)
-        missing = []
-        missing << "Ruby environment stash (#{stash_dir})" unless Dir.exist?(stash_dir)
-        missing << "mkdwarfs (#{deps_bin_dir})" if Dir.glob(File.join(deps_bin_dir, "mkdwarfs*")).empty?
-        return if missing.empty?
-
-        Tebako.packaging_error(128, missing.join(", "))
+        Tebako.packaging_error(128, "mkdwarfs (#{deps_bin_dir})")
       end
 
       # Deploy the application and build its DwarFS image for stitching onto
-      # a prebuilt runtime. Same layout as the bundle-mode image, plus an
-      # entry dispatcher at /local/stub.rb (the runtime's compiled-in entry).
-      # When layout_dir is given (the resolved runtime's extracted layout),
-      # the image's arch conventions are aligned to the runtime's: ruby's
-      # compiled-in search paths come from the runtime build, while the
-      # local packaging environment names arch directories after the press
-      # machine -- on macOS the arch string embeds the kernel version
-      # (arm64-darwin23 vs arm64-darwin24), so they differ whenever press
-      # and runtime were built on different macOS releases.
-      def build_app_image(options_manager, scenario_manager, layout_dir = nil) # rubocop:disable Metrics/AbcSize
-        init(options_manager.stash_dir, options_manager.data_src_dir, options_manager.data_pre_dir,
+      # a prebuilt runtime. The image is seeded from the resolved runtime's
+      # extracted filesystem layout: the pristine Ruby environment the deploy
+      # step runs against. The layout also carries an entry dispatcher
+      # placeholder at /local/stub.rb (the runtime's compiled-in entry),
+      # replaced below with the application's dispatcher.
+      def build_app_image(options_manager, scenario_manager, runtime_path) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+        layout_dir = Tebako::RuntimeManager.layout(runtime_path)
+        init(layout_dir, options_manager.data_src_dir, options_manager.data_pre_dir,
              options_manager.data_bin_dir)
         deploy(options_manager.data_src_dir, options_manager.data_pre_dir, options_manager.rv,
-               options_manager.root, scenario_manager.fs_entrance, options_manager.cwd)
-        align_layout_to_runtime!(options_manager.data_src_dir, layout_dir, options_manager.rv) if layout_dir
+               options_manager.root, scenario_manager.fs_entrance, options_manager.cwd,
+               Tebako::RuntimeDeployer.new(runtime_path, options_manager.deps_bin_dir,
+                                           options_manager.data_bin_dir, scenario_manager.fs_mount_point,
+                                           options_manager.rv))
+        align_layout_to_runtime!(options_manager.data_src_dir, layout_dir, options_manager.rv)
         write_entry_dispatcher(options_manager.data_src_dir, scenario_manager, options_manager.cwd)
         mkdwarfs(options_manager.deps_bin_dir, options_manager.data_bundle_file, options_manager.data_src_dir)
         options_manager.data_bundle_file
@@ -149,8 +73,9 @@ module Tebako
 
       # Rename the image's arch directories to the runtime's names and drop
       # in the runtime's own rbconfig.rb. No-op when the conventions already
-      # match (always the case off macOS, where the arch string carries no
-      # OS version).
+      # match (always the case when the image was seeded from the runtime's
+      # own layout, and off macOS in general, where the arch string carries
+      # no OS version).
       def align_layout_to_runtime!(data_src_dir, layout_dir, ruby_ver)
         align_stdlib_arch!(data_src_dir, layout_dir, ruby_ver.api_version)
         align_gem_ext_arch!(data_src_dir, layout_dir, ruby_ver.api_version)
@@ -210,96 +135,24 @@ module Tebako
         File.write(File.join(local_dir, "stub.rb"), dispatcher)
       end
 
-      def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir, descriptor = nil)
+      def mkdwarfs(deps_bin_dir, data_bin_file, data_src_dir)
         puts "-- Running mkdwarfs script"
         FileUtils.chmod("a+x", Dir.glob(File.join(deps_bin_dir, "mkdwarfs*")))
         params = [File.join(deps_bin_dir, "mkdwarfs"), "-o", data_bin_file, "-i", data_src_dir, "--no-progress"]
-        params << "--header" << descriptor if descriptor
         BuildHelpers.run_with_capture_v(params)
       end
 
-      # Pass1
-      # Executed before Ruby build, patching ensures that Ruby itself is linked statically
-      def pass1(ostype, ruby_source_dir, mount_point, src_dir, ruby_ver)
-        puts "-- Running pass1 script"
-        PatchHelpers.recreate(src_dir)
+      # Init
+      # Seeds the packaging environment from the resolved runtime's extracted
+      # filesystem layout (the pristine Ruby environment applications are
+      # deployed against)
+      def init(layout_dir, src_dir, pre_dir, bin_dir)
+        puts "-- Running init script"
 
-        # Roll all known patches
-        # Just in case we are recovering after some error
-        PatchHelpers.restore_and_save_files(FILES_TO_RESTORE, ruby_source_dir, strict: false)
-
-        patch = crt_pass1_patch(ostype, mount_point, ruby_ver)
-        do_patch(patch.patch_map, ruby_source_dir)
+        puts "   ... creating packaging environment at #{src_dir}"
+        BuildHelpers.recreate([src_dir, pre_dir, bin_dir])
+        FileUtils.cp_r "#{layout_dir}/.", src_dir
       end
-
-      # Pass1A
-      # Patch gem_prelude.rb
-      def pass1a(ruby_source_dir)
-        puts "-- Running pass1a script"
-        patch = Pass1APatch.new
-        do_patch(patch.patch_map, ruby_source_dir)
-      end
-
-      # Pass2
-      # Creates packaging environment, patching ensures that tebako package is linked statically
-      def pass2(ostype, ruby_source_dir, deps_lib_dir, ruby_ver)
-        puts "-- Running pass2 script"
-
-        patch = crt_pass2_patch(ostype, deps_lib_dir, ruby_ver)
-        do_patch(patch.patch_map, ruby_source_dir)
-      end
-
-      # Stash
-      # Created and saves pristine Ruby environment that is used to deploy applications for packaging
-      def stash(src_dir, stash_dir, ruby_source_dir, ruby_ver)
-        puts "-- Running stash script"
-        RubyBuilder.new(ruby_ver, ruby_source_dir).toolchain_build
-
-        puts "   ... saving pristine Ruby environment to #{stash_dir}"
-        PatchHelpers.recreate(stash_dir)
-        FileUtils.cp_r "#{src_dir}/.", stash_dir
-      end
-
-      private
-
-      def create_def(src_dir, app_name)
-        puts "   ... creating Windows def file"
-        File.open(def_fname(src_dir, app_name), "w") do |file|
-          file.puts "LIBRARY #{out_fname(app_name)}"
-          File.readlines(File.join(src_dir, "tebako.def")).each do |line|
-            file.puts line unless line.include?("DllMain")
-          end
-        end
-      end
-
-      def def_fname(src_dir, app_name)
-        File.join(src_dir, "#{app_name}.def")
-      end
-
-      def out_fname(app_name)
-        File.join("#{app_name}.exe")
-      end
-
-      def lib_fname(src_dir, ruby_ver)
-        File.join(src_dir, "lib", "libx64-ucrt-ruby#{ruby_ver.lib_version}.a")
-      end
-
-      def patchelf(src_name, patchelf)
-        return if patchelf.nil?
-
-        params = [patchelf, "--remove-needed-version", "libpthread.so.0", "GLIBC_PRIVATE", src_name]
-        BuildHelpers.run_with_capture(params)
-      end
-
-      # def strip_or_copy(_os_type, src_name, package_name)
-      # [TODO] On MSys strip sometimes creates a broken executable
-      # https://github.com/tamatebako/tebako/issues/172
-      # if Packager::PatchHelpers.msys?(os_type)
-      # FileUtils.cp(src_name, package_name)
-      # else
-      # Tebako::Stripper.strip_file(src_name, package_name)
-      # end
-      # end
     end
   end
 end

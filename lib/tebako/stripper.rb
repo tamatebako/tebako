@@ -27,8 +27,7 @@
 
 require "fileutils"
 require "find"
-
-require_relative "packager/patch_helpers"
+require "open3"
 
 # Tebako - an executable packager
 module Tebako
@@ -52,6 +51,8 @@ module Tebako
         strip_li(scm, src_dir)
       end
 
+      private
+
       def strip_file(file_in, file_out = nil)
         params = ["strip", "-S", file_in]
         params << "-o" << file_out unless file_out.nil?
@@ -65,8 +66,6 @@ module Tebako
 
         puts "Warning: could not strip #{file_in}:\n #{out}" unless st.exitstatus.zero?
       end
-
-      private
 
       def get_files(scm)
         exe_suffix = scm.exe_suffix

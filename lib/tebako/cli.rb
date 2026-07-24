@@ -30,17 +30,8 @@ require "digest"
 require "fileutils"
 require "find"
 require "pathname"
-require "open3"
 require "thor"
 require "yaml"
-
-require_relative "cache_manager"
-require_relative "cli_helpers"
-require_relative "error"
-require_relative "ruby_version"
-require_relative "runtime_manager"
-require_relative "scenario_manager"
-require_relative "version"
 
 # Tebako - an executable packager
 # Implementation of tebako command-line interface
@@ -134,22 +125,6 @@ module Tebako
       extra_win_clean([om.deps])
     end
 
-    desc "clean_ruby", "Clean Ruby source from tebako packaging environment"
-    method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
-                         desc: "Ruby version to clean, all available versions by default"
-    def clean_ruby
-      puts "Cleaning Ruby sources from tebako packaging environment"
-      (om,) = bootstrap(clean: true)
-
-      suffix = options["Ruby"].nil? ? "" : "_#{options["Ruby"]}"
-      nmr = Dir.glob(File.join(om.deps, "src", "_ruby#{suffix}*"))
-      nms = Dir.glob(File.join(om.deps, "stash#{suffix}*"))
-
-      FileUtils.rm_rf(nmr + nms, secure: true)
-      extra_win_clean(nmr)
-    end
-
     desc "hash", "Print build script hash (ci cache key)"
     def hash
       print Digest::SHA256.hexdigest [File.read(File.join(source, "CMakeLists.txt")), Tebako::VERSION].join
@@ -163,23 +138,6 @@ module Tebako
       #{" " * 65}# If this parameter is not set, the application will start in the current directory of the host file system.
     DESC
 
-    REF_DESCRIPTION = <<~DESC
-      "Referenced tebako run-time package; 'tebako-runtime' by default".
-      #{" " * 65}# This option specifies the tebako runtime to be used by the application on Windows and if mode is 'application' only .
-    DESC
-
-    RGP_DESCRIPTION = <<~DESC
-      Current working directory for packaged application. This directory shall be specified relative to root.
-      #{" " * 65}# If this parameter is not set, the application will start in the current directory of the host file system.
-    DESC
-
-    RUNTIME_DESCRIPTION = <<~DESC
-      Runtime provenance: 'prebuilt' resolves/downloads a prebuilt tebako runtime package (default for the
-      #{" " * 65}# 'bundle', 'classic', 'lean' and 'fat' modes); 'source' keeps the Stage-2 source build
-      #{" " * 65}# (not available for 'lean'/'fat' -- the bootstrap resolves tebako-runtime-ruby releases
-      #{" " * 65}# at run time). Modes other than those always build from source.
-    DESC
-
     IMAGE_DESCRIPTION = <<~DESC
       Additional image to stitch into the package, '<path>:<mount-point>'; repeatable, mount points
       #{" " * 65}# must be distinct. Prebuilt runtime only.
@@ -191,8 +149,9 @@ module Tebako
       #{" " * 65}# the runtime is resolved into the shared cache at first run.
       #{" " * 65}# 'fat' is 'lean' plus the runtime package as a payload slot -- the first run installs it
       #{" " * 65}# into the cache without network access.
-      #{" " * 65}# 'classic' stitches the application image onto a prebuilt runtime (Stage-3A layout);
-      #{" " * 65}# 'bundle', 'both', 'application' and 'runtime' keep their legacy behaviors.
+      #{" " * 65}# 'classic' stitches the application image onto a prebuilt runtime (single-file package).
+      #{" " * 65}# 'runtime' is deprecated: runtime packages are produced by the tebako-runtime-ruby pipeline
+      #{" " * 65}# (https://github.com/tamatebako/tebako-runtime-ruby) and resolved automatically by the modes above.
     DESC
 
     desc "press", "Press tebako image"
@@ -205,16 +164,11 @@ module Tebako
                                   desc: "Ruby application entry point"
     method_option :root, type: :string, aliases: "-r", required: false, desc: "Root folder of the Ruby application"
     method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
+                         enum: Tebako::RubyVersion::RUBY_VERSIONS,
                          desc: "Tebako package Ruby version, #{Tebako::RubyVersion::DEFAULT_RUBY_VERSION} by default"
-    method_option :patchelf, aliases: "-P", type: :boolean, desc: RGP_DESCRIPTION
     method_option :mode, type: :string, aliases: "-m", required: false,
-                         enum: %w[lean fat classic bundle both runtime application],
+                         enum: %w[lean fat classic runtime],
                          desc: MODE_DESCRIPTION
-    method_option :ref, type: :string, aliases: "-u", required: false, desc: REF_DESCRIPTION
-    method_option :runtime, type: :string, required: false, enum: %w[prebuilt source], desc: RUNTIME_DESCRIPTION
-    method_option :"build-runtime", type: :boolean, required: false,
-                                    desc: "Build the runtime from source (alias for '--runtime source')"
     method_option :image, type: :array, required: false, desc: IMAGE_DESCRIPTION
 
     def press
@@ -229,9 +183,6 @@ module Tebako
     end
 
     desc "setup", "Set up tebako packaging environment"
-    method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::RubyVersion::RUBY_VERSIONS.keys,
-                         desc: "Tebako package Ruby version, #{Tebako::RubyVersion::DEFAULT_RUBY_VERSION} by default."
     def setup
       (om, cm) = bootstrap
 
@@ -306,7 +257,7 @@ module Tebako
 
     no_commands do
       def validate_press_options
-        return unless options["mode"] != "runtime"
+        Tebako.packaging_error(133) if options["mode"] == "runtime"
 
         opts = ""
         opts += " '--root'" if options["root"].nil?

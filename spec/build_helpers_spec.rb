@@ -25,12 +25,34 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require "fileutils"
 require "open3"
-require "tebako/build_helpers"
+require "tmpdir"
 
 # rubocop:disable Metrics/BlockLength
 
 RSpec.describe Tebako::BuildHelpers do
+  describe "#recreate" do
+    it "creates the directory when its parent does not exist yet" do
+      Dir.mktmpdir do |tmp|
+        nested = File.join(tmp, "o", "s")
+        described_class.recreate(nested)
+        expect(Dir).to exist(nested)
+      end
+    end
+
+    it "removes existing contents before recreating" do
+      Dir.mktmpdir do |tmp|
+        dir = File.join(tmp, "s")
+        FileUtils.mkdir_p(dir)
+        File.write(File.join(dir, "stale"), "x")
+        described_class.recreate(dir)
+        expect(Dir).to exist(dir)
+        expect(Dir.children(dir)).to be_empty
+      end
+    end
+  end
+
   describe "#run_with_capture" do
     let(:args) { %w[echo hello] }
 

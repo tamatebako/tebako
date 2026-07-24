@@ -372,10 +372,6 @@ See <<setup>> section for details.
 Removes Tebako artifacts.
 See <<clean>> section for details.
 
-`clean_ruby`::
-Removes Tebako Ruby artifacts.
-See <<clean_ruby>> section for details.
-
 `hash`::
 Calculates the Tebako script hash for use as a cache key in CI/CD environments.
 See <<hash>> section for details.
@@ -397,13 +393,10 @@ root folder (`<tebako-root-folder>`).
 
 [NOTE]
 ====
-The first invocation of the `press` command can take up to an hour as it sets up
-the packaging environment and collects the required dependencies. Subsequent
-invocations are much faster.
+The first invocation of the `press` command sets up the packaging environment
+and resolves the prebuilt runtime package (downloaded into the machine-wide
+cache). Subsequent invocations reuse both and are much faster.
 ====
-
-Upon the next invocation, Tebako will use previously created packaging
-environment. The press process itself takes minutes.
 
 You can manage setup of packaging environment manually; please refer to
 description of setup and clean commands below.
@@ -419,9 +412,8 @@ tebako press \
   [-l|--log-level=<error|warn|debug|trace>] \
   [-c|--cwd=<package-current-working-directory>] \
   [-D|--devmode] \
-  [-P|--patchelf] \
-  [-m|--mode=<lean|fat|classic|bundle|both|application|runtime>] \
-  [-u|--ref=<runtime-reference>] \
+  [-m|--mode=<lean|fat|classic|runtime>] \
+  [--image=<path>:<mount-point>] \
   [-t|--tebafile=<path-to-tebafile>]
 ----
 
@@ -429,7 +421,7 @@ Where:
 
 `--entry-point=<entry-point>`::
 an executable file (binary executable or script) that shall be started when
-packaged file is called. This parameter is not required if the operation mode is `runtime`.
+packaged file is called.
 
 `--prefix=<tebako-root-folder>`::
 the Tebako root folder (see details: <<root-folder-selection>>)
@@ -440,7 +432,6 @@ this parameter defines Ruby version that will be packaged (optional, defaults to
 
 `--root=<project-root-folder>`::
 a folder at the host source file system where project files are located.
-This parameter is not required if the operation mode is `runtime`.
 
 `--output=<packaged-file-name>`::
 (optional)
@@ -448,23 +439,9 @@ the output file name.
 +
 On Windows, the output file is automatically appended the `.exe` extension.
 
-** If the `-o` option is not specified:
+** If the `-o` option is not specified, the package is created at `<current-folder>/<entry-point-base-name>`.
 
-*** in `runtime` mode, the runtime package is created at `tebako-runtime`.
-*** in `application` mode, the application package is created at `<current-folder>/<entry-point-base-name>`.
-*** in `lean`, `fat` and `classic` modes, the package is created at `<current-folder>/<entry-point-base-name>`.
-*** in `bundle` mode, the bundled package is created at `<current-folder>/<entry-point-base-name>`.
-*** in `both` mode, the runtime package is created at `<current-folder>/<entry-point-base-name>`,
-and the application package is created at `<current-folder>/<entry-point-base-name>.tebako`.
-
-** If the `-o` option is specified:
-
-*** in `runtime` mode, the runtime package is named according to the `-o` option.
-*** in `application` mode, the application package is named according to the `-o` option.
-*** in `lean`, `fat` and `classic` modes, the package is named according to the `-o` option.
-*** in `bundle` mode, the bundled package is named according to the `-o` option.
-*** in `both` mode, the runtime package is named according to the `-o` option,
-and the application package is named according to the `-o` option with the `.tebako` extension.
+** If the `-o` option is specified, the package is named according to the `-o` option.
 
 
 `--log-level=<error|warn|debug|trace>`::
@@ -488,45 +465,18 @@ saves the original working directory in a global Ruby variable
 `--devmode`:: flag that activates development mode, in which Tebako's cache and
 packaging consistency checks are relaxed.
 
-`--patchelf`::
-Allows forward-compatibility of Tebako packages with Linux GNU distributions.
-+
-Specifically, this is a flag that removes a reference to the `GLIBC_PRIVATE`
-version of `libpthread` from a Tebako package. This allows Linux GNU packages
-to run against versions of `libpthread` that differ from the version used for
-packaging.
-+
-NOTE: This option only works on GNU Linux only.
-+
-[example]
-For example, a package created at Ubuntu 20 system can be used on Ubuntu 22.
-+
-NOTE: The feature is exeprimental, we may consider another approach in the future.
-
 `--mode=<mode>`::
 (optional, defaults to `lean`)
-Package output mode, determines the package layout (three-part or runtime-stitched)
-and whether the runtime and/or application are separately packaged.
+Package output mode, determines the package layout (three-part or runtime-stitched).
 
 `lean`::: Create a three-part package: the tebako-bootstrap launcher plus the application image slot(s) and a tpkg manifest trailer carrying the runtime reference. At first run the bootstrap resolves (downloads, verifies and caches) the referenced prebuilt runtime into the machine-wide cache (`~/.tebako` or `$TEBAKO_HOME`); subsequent runs of any lean package built for the same runtime share that cache entry. The output file is named according to the `-o` option.
 `fat`::: Like `lean`, but the runtime package is also embedded as a payload slot. The first run installs it into the cache without network access (works with `TEBAKO_OFFLINE=1`). The output file is named according to the `-o` option.
-`classic`::: Stitch the application image onto a prebuilt runtime package (the Stage-3A layout; identical to `bundle` with the default `--runtime prebuilt`). The output file is named according to the `-o` option.
-`bundle`::: Create a single package bundling both the runtime and application. The output file is named according to the `-o` option.
-`both`::: Create separate packages for the runtime and application. Outputs two separate files: one for the runtime at the location specified at the `-o {filename}` and one for the application at `{filename}.package`.
-`application`::: Create the application package only. The output file is named according to the `-o` option.
-`runtime`::: Create the runtime package only. The output file is named according to the `-o` option.
+`classic`::: Stitch the application image onto a prebuilt runtime package (a single-file package). The output file is named according to the `-o` option.
+`runtime`::: Deprecated. Prebuilt runtime packages are produced by the https://github.com/tamatebako/tebako-runtime-ruby[tebako-runtime-ruby] pipeline (built from the pre-patched Ruby source published by https://github.com/tamatebako/ruby[tamatebako/ruby]) and are resolved automatically by the `lean`, `fat` and `classic` modes; `tebako press --mode=runtime` fails with an explanatory error.
 
-More information on the `mode` option is available in the <<Tebako runtime and application packages. Splitting and bundling.>> section.
-
-`--ref`::
-(optional)
-Defaults to `tebako-runtime`.
-When a Tebako application package is created on Windows, it is linked against a
-Tebako runtime file name. The `ref` parameter allows to specify the name of the
-runtime file.
-+
-NOTE: The `--ref` option specifies the name of the runtime -- the runtime file
-can be recreated or changed but not renamed.
+`--image=<path>:<mount-point>`::
+(optional, repeatable)
+an additional image to stitch into the package; mount points must be distinct.
 
 `--tebafile=<path>`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
@@ -558,18 +508,21 @@ packaging environment to implement caching strategy.
 We recommended to build cache based on `tebako setup` output. Building cache
 based on `tebako press` may create inconsistent environment upon restore.
 
-
-Setup collects required packages, builds the and creates packaging environment. This
-is a lengthy task that can take significant time, up to 1 hour.
+Setup provisions the prebuilt https://github.com/tamatebako/libtfs[libtfs]
+package set (including the `mkdwarfs` image builder the press pipeline runs)
+into the packaging environment. No Ruby is built locally: the prebuilt
+runtime packages are produced by the
+https://github.com/tamatebako/tebako-runtime-ruby[tebako-runtime-ruby]
+pipeline and are resolved (downloaded, verified and cached) at press or
+first run time.
 
 Tebako supports several configurations at a single system given that their root
-directories differ and multiple Ruby versions within single configuration
+directories differ
 
 [source,sh]
 ----
 $ tebako setup \
   [-p|--prefix=<tebako-root-folder>] \
-  [-R|--Ruby=<ruby-version>] \
   [-D|--devmode] \
   [-t|--tebafile=<path-to-tebafile>]
 ----
@@ -577,11 +530,6 @@ $ tebako setup \
 Where:
 
 `--prefix=<tebako-root-folder>`:: the Tebako root folder (see details: <<root-folder-selection>>)
-
-`--Ruby=<ruby-version>`::
-parameter defines package Ruby version (optional).
-This version is used in conjunction with requirements from the `Gemfile` as
-explained below in <<ruby-and-bundler-versions>>.
 
 `--tebafile=<path>`::
 the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
@@ -617,48 +565,6 @@ Please refer to the separate section below for tebafile description.
 [source,sh]
 ----
 tebako clean --prefix='~/.tebako'
-----
-====
-
-<<clean_ruby>>
-==== Clean Ruby
-
-This command cleans up only the Ruby artifacts from the specified prefix
-directory.
-
-NOTE: These artifacts are created by the `setup` and `press` commands.
-Normally you do not need to do it, since Tebako packager optimizes artifacts
-lifecycle on its own.
-
-NOTE: Compiled DwarFS libraries are not cleaned.
-
-[source,sh]
-----
-$ tebako clean_ruby
-  [-p|--prefix=<tebako-root-folder>] \
-  [-R|--Ruby=<ruby-version>] \
-  [-t|--tebafile=<path-to-tebafile>]
-
-----
-
-Where:
-
-`--prefix=<tebako-root-folder>`::
-the Tebako setup folder (optional, defaults to current folder)
-
-`--Ruby=<ruby-version>`::
-(optional, cleans all versions by default)
-defines Ruby version that will be cleaned.
-
-`--tebafile=<path>`::
-the tebako configuration file (optional, defaults to `$PWD/.tebako.yml`).
-Please refer to the separate section below for tebafile description.
-
-[example]
-====
-[source,sh]
-----
-tebako clean_ruby --prefix='~/.tebako'
 ----
 ====
 
@@ -787,7 +693,7 @@ $ tebako press --root=/mnt/w/fontist --entry-point=fontist --output=/mnt/w/fonti
 === Tebako configuration file
 
 It is possible to provide all or some options for the `tebako
-{setup | press | clean | clean_ruby}` commands via a Tebako configuration file
+{setup | press | clean}` commands via a Tebako configuration file
 ('tebafile').
 
 Tebafile is a YAML file with a single key `options`. The options are the same as

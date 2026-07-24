@@ -25,18 +25,16 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require "open3"
 require "pathname"
 require "bundler"
 
-require_relative "error"
-
 # Tebako - an executable packager
 module Tebako
-  # Magic version numbers used to ensure compatibility for Ruby 2.7.x, 3.0.x
-  # These are the minimal versions required to provide linux-gnu / linux-musl differentiation by bundler
-  # Ruby 3.1+ default rubygems versions work correctly out of the box
+  # Magic version number used to ensure compatibility for bundler-driven
+  # deploys: the minimal bundler version that provides linux-gnu / linux-musl
+  # differentiation
   BUNDLER_VERSION = "2.4.22"
-  RUBYGEMS_VERSION = "3.4.22"
 
   # A couple of static Scenario definitions
   class ScenarioManagerBase
@@ -123,7 +121,7 @@ module Tebako
       @with_gemfile = @with_lockfile = @needs_bundler = false
       @bundler_version = BUNDLER_VERSION
       initialize_root(fs_root)
-      initialize_entry_point(fs_entrance || "stub.rb")
+      initialize_entry_point(fs_entrance)
     end
 
     attr_reader :fs_entry_point, :fs_entrance, :gemfile_path, :needs_bundler, :with_gemfile

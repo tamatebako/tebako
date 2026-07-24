@@ -30,9 +30,6 @@ require "open3"
 require "rbconfig"
 require "zlib"
 
-require_relative "error"
-require_relative "version"
-
 # Tebako - an executable packager
 module Tebako
   # Stitches tebako images onto a prebuilt runtime binary, producing a

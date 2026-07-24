@@ -30,8 +30,6 @@ require "fileutils"
 require "json"
 require "tmpdir"
 
-require "tebako/bootstrap_manager"
-
 # rubocop:disable Metrics/BlockLength
 
 RSpec.describe Tebako::BootstrapManager do
