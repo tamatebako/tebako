@@ -56,6 +56,9 @@ env:
   TZ: "Etc/UTC"
 # show cmake output
   VERBOSE: no
+# Shared prebuilt runtime/bootstrap cache (Tebako::RuntimeManager); cached
+# per runner platform and packaged Ruby version by the packaging legs
+  TEBAKO_HOME: ${{ github.workspace }}/.tebako-home
 
 
 jobs:
@@ -218,10 +221,6 @@ jobs:
         retention-days: 1
         path: |
           fontist-package
-
-    - name: Package metanorma
-      if: matrix.gem == 'metanorma'
-      uses: ./.github/actions/test-package-metanorma
 
     - name: Package metanorma
       if: matrix.gem == 'metanorma'

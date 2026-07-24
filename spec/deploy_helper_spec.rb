@@ -65,6 +65,17 @@ RSpec.describe Tebako::DeployHelper do
     ops
   end
 
+  # Platform-conditional deploy details (DeployHelper#configure_commands_msys):
+  # msys installs gems with '--platform ruby' and points nokogiri at system
+  # libraries; other platforms do the opposite
+  def install_arg_tail
+    Tebako::ScenarioManagerBase.new.msys? ? ["--platform", "ruby"] : []
+  end
+
+  def nokogiri_option
+    Tebako::ScenarioManagerBase.new.msys? ? "--use-system-libraries" : "--no-use-system-libraries"
+  end
+
   describe "#configure" do
     before { FileUtils.mkdir_p(fs_root) }
 
@@ -136,7 +147,7 @@ RSpec.describe Tebako::DeployHelper do
         expect(ops).to eq(
           [["chdir", tld],
            ["bundle", nil, ["config", "set", "--local", "build.ffi", "--disable-system-libffi"]],
-           ["bundle", nil, ["config", "set", "--local", "build.nokogiri", "--no-use-system-libraries"]],
+           ["bundle", nil, ["config", "set", "--local", "build.nokogiri", nokogiri_option]],
            ["bundle", nil, ["config", "set", "--local", "force_ruby_platform", "true"]],
            ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}"]]]
         )
@@ -165,7 +176,8 @@ RSpec.describe Tebako::DeployHelper do
           ops = captured_ops { deploy_helper.deploy(deployer) }
 
           expect(ops.first).to eq(
-            ["gem", ["install", "bundler", "-v", "2.4.22", "--no-document", "--install-dir", tgd, "--bindir", tbd]]
+            ["gem", ["install", "bundler", "-v", "2.4.22", "--no-document", "--install-dir", tgd, "--bindir", tbd] +
+                    install_arg_tail]
           )
           expect(ops).to include(["bundle", "2.4.22", ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}"]])
         end
@@ -193,7 +205,7 @@ RSpec.describe Tebako::DeployHelper do
         expect(deployer).to have_received(:execute) do |ops, _env, _seed, verbose:|
           expect(ops).to eq(
             [["chdir", pre_dir],
-             ["gem", ["install", gem_file, "--no-document", "--install-dir", tgd, "--bindir", tbd]]]
+             ["gem", ["install", gem_file, "--no-document", "--install-dir", tgd, "--bindir", tbd] + install_arg_tail]]
           )
           expect(verbose).to be(false)
         end
@@ -229,7 +241,7 @@ RSpec.describe Tebako::DeployHelper do
           expect(ops).to eq(
             [["chdir", pre_dir],
              ["gem", ["build", gemspec]],
-             ["install_all", pre_dir, ["--no-document", "--install-dir", tgd, "--bindir", tbd]]]
+             ["install_all", pre_dir, ["--no-document", "--install-dir", tgd, "--bindir", tbd] + install_arg_tail]]
           )
           expect(verbose).to be(false)
         end
@@ -259,11 +271,11 @@ RSpec.describe Tebako::DeployHelper do
           expect(ops).to eq(
             [["chdir", pre_dir],
              ["bundle", nil, ["config", "set", "--local", "build.ffi", "--disable-system-libffi"]],
-             ["bundle", nil, ["config", "set", "--local", "build.nokogiri", "--no-use-system-libraries"]],
+             ["bundle", nil, ["config", "set", "--local", "build.nokogiri", nokogiri_option]],
              ["bundle", nil, ["config", "set", "--local", "force_ruby_platform", "true"]],
              ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}"]],
              ["bundle", nil, ["exec", "gem", "build", gemspec]],
-             ["install_all", pre_dir, ["--no-document", "--install-dir", tgd, "--bindir", tbd]]]
+             ["install_all", pre_dir, ["--no-document", "--install-dir", tgd, "--bindir", tbd] + install_arg_tail]]
           )
           expect(verbose).to be(false)
         end
