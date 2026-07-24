@@ -183,9 +183,6 @@ module Tebako
     end
 
     desc "setup", "Set up tebako packaging environment"
-    method_option :Ruby, type: :string, aliases: "-R", required: false,
-                         enum: Tebako::RubyVersion::RUBY_VERSIONS,
-                         desc: "Tebako package Ruby version, #{Tebako::RubyVersion::DEFAULT_RUBY_VERSION} by default."
     def setup
       (om, cm) = bootstrap
 
