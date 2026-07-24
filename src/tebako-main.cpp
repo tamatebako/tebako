@@ -68,6 +68,7 @@
 
 #include <string>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <vector>
 #include <stdexcept>
