@@ -1,3 +1,2 @@
 options:
   prefix: PWD
-  patchelf: true
