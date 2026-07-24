@@ -55,6 +55,7 @@ module Tebako
     126 => "Invalid stitch specification",
     127 => "Stitch input file is not accessible",
     128 => "Prebuilt runtime press requires the packaging environment (run 'tebako setup' first)",
+    129 => "The resolved runtime package does not carry the tebako-runtime gem",
     130 => "Option combination is not supported",
     131 => "No tebako-bootstrap package for the requested platform",
     132 => "TEBAKO_OFFLINE is set and the requested tebako-bootstrap package is not cached",
@@ -86,6 +87,7 @@ module Tebako
   autoload :Packager, "tebako/packager"
   autoload :RubyVersion, "tebako/ruby_version"
   autoload :RubyVersionWithGemfile, "tebako/ruby_version"
+  autoload :RuntimeDeployer, "tebako/runtime_deployer"
   autoload :RuntimeManager, "tebako/runtime_manager"
   autoload :ScenarioManager, "tebako/scenario_manager"
   autoload :ScenarioManagerBase, "tebako/scenario_manager"

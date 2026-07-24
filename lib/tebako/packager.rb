@@ -33,12 +33,12 @@ module Tebako
   module Packager
     class << self
       # Deploy
-      def deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd) # rubocop:disable Metrics/ParameterLists
+      def deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer) # rubocop:disable Metrics/ParameterLists
         puts "-- Running deploy script"
 
         deploy_helper = Tebako::DeployHelper.new(fs_root, fs_entrance, target_dir, pre_dir)
         deploy_helper.configure(ruby_ver, cwd)
-        deploy_helper.deploy
+        deploy_helper.deploy(deployer)
         Tebako::Stripper.strip(deploy_helper, target_dir)
       end
 
@@ -52,15 +52,19 @@ module Tebako
 
       # Deploy the application and build its DwarFS image for stitching onto
       # a prebuilt runtime. The image is seeded from the resolved runtime's
-      # extracted filesystem layout (layout_dir): the pristine Ruby
-      # environment the deploy step runs against. The layout also carries an
-      # entry dispatcher placeholder at /local/stub.rb (the runtime's
-      # compiled-in entry), replaced below with the application's dispatcher.
-      def build_app_image(options_manager, scenario_manager, layout_dir) # rubocop:disable Metrics/AbcSize
+      # extracted filesystem layout: the pristine Ruby environment the deploy
+      # step runs against. The layout also carries an entry dispatcher
+      # placeholder at /local/stub.rb (the runtime's compiled-in entry),
+      # replaced below with the application's dispatcher.
+      def build_app_image(options_manager, scenario_manager, runtime_path) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+        layout_dir = Tebako::RuntimeManager.layout(runtime_path)
         init(layout_dir, options_manager.data_src_dir, options_manager.data_pre_dir,
              options_manager.data_bin_dir)
         deploy(options_manager.data_src_dir, options_manager.data_pre_dir, options_manager.rv,
-               options_manager.root, scenario_manager.fs_entrance, options_manager.cwd)
+               options_manager.root, scenario_manager.fs_entrance, options_manager.cwd,
+               Tebako::RuntimeDeployer.new(runtime_path, options_manager.deps_bin_dir,
+                                           options_manager.data_bin_dir, scenario_manager.fs_mount_point,
+                                           options_manager.rv))
         align_layout_to_runtime!(options_manager.data_src_dir, layout_dir, options_manager.rv)
         write_entry_dispatcher(options_manager.data_src_dir, scenario_manager, options_manager.cwd)
         mkdwarfs(options_manager.deps_bin_dir, options_manager.data_bundle_file, options_manager.data_src_dir)

@@ -38,6 +38,7 @@ RSpec.describe Tebako::Packager do
     let(:fs_entrance) { "/path/to/fs_entrance" }
     let(:cwd) { "/path/to/cwd" }
     let(:deploy_helper) { instance_double(Tebako::DeployHelper) }
+    let(:deployer) { instance_double(Tebako::RuntimeDeployer) }
 
     before do
       allow(Tebako::DeployHelper).to receive(:new).and_return(deploy_helper)
@@ -50,22 +51,22 @@ RSpec.describe Tebako::Packager do
       expect(Tebako::DeployHelper).to receive(:new)
         .with(fs_root, fs_entrance, target_dir, pre_dir)
         .and_return(deploy_helper)
-      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd)
+      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer)
     end
 
     it "configures the DeployHelper with the correct parameters" do
       expect(deploy_helper).to receive(:configure).with(ruby_ver, cwd)
-      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd)
+      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer)
     end
 
-    it "calls deploy on the DeployHelper" do
-      expect(deploy_helper).to receive(:deploy)
-      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd)
+    it "calls deploy on the DeployHelper with the deployer" do
+      expect(deploy_helper).to receive(:deploy).with(deployer)
+      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer)
     end
 
     it "calls strip on the Tebako::Stripper" do
       expect(Tebako::Stripper).to receive(:strip).with(deploy_helper, target_dir)
-      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd)
+      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer)
     end
   end
 

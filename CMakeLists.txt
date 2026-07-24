@@ -50,6 +50,7 @@ include(${CMAKE_SOURCE_DIR}/tools/cmake-scripts/def-external-project.cmake)
 # releases; provisioning is the only mode this project has.
 
 option(SETUP_MODE "Tebako setup" ON)
+message(STATUS "Tebako setup mode: ${SETUP_MODE} (provisioning is the only mode this project has)")
 
 # This is the default that will be overwritten for MacOS and MSys
 set(GNU_BASH "bash")

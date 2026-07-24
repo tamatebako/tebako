@@ -92,8 +92,7 @@ module Tebako
     def do_press_prebuilt(options_manager, scenario_manager)
       Tebako::Packager.check_prebuilt_env!(options_manager.deps_bin_dir)
       runtime_path = Tebako::RuntimeManager.resolve(options_manager.ruby_ver, options_manager.host_platform)
-      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager,
-                                                   Tebako::RuntimeManager.layout(runtime_path))
+      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager, runtime_path)
 
       images = [{ path: app_image, mount_point: scenario_manager.fs_mount_point,
                   format_id: Tebako::Stitcher::FORMAT_DWARFS }] + options_manager.images
@@ -109,8 +108,7 @@ module Tebako
     # slot, so the first run installs it without any network access.
     def do_press_three_part(options_manager, scenario_manager)
       bootstrap_path, runtime_path = resolve_three_part_parts(options_manager)
-      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager,
-                                                   Tebako::RuntimeManager.layout(runtime_path))
+      app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager, runtime_path)
       payload_path = options_manager.fat? ? runtime_path : nil
       images = three_part_images(options_manager, scenario_manager, app_image, payload_path)
       package = "#{options_manager.package}#{scenario_manager.exe_suffix}"
