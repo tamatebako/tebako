@@ -79,3 +79,6 @@ coverage/
 
 # Homebrew
 Brewfile.lock.json
+
+# Local prebuilt runtime/bootstrap cache (TEBAKO_HOME)
+.tebako-home/
