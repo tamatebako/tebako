@@ -45,137 +45,27 @@ RSpec.describe Tebako::ScenarioManager do
     context "on non-Windows" do
       before do
         stub_const("RUBY_PLATFORM", "linux")
-        scenario_manager.configure_scenario
       end
 
-      it "sets instance variables correctly" do
-        expect(scenario_manager.instance_variable_get(:@fs_root)).to eq(fs_root)
-        expect(scenario_manager.instance_variable_get(:@fs_entrance)).to eq(fs_entrance)
+      it "sets the project root and entry point" do
+        expect(scenario_manager.fs_root).to eq(fs_root)
+        expect(scenario_manager.fs_entrance).to eq(fs_entrance)
       end
     end
 
     context "on Windows" do
       before do
         stub_const("RUBY_PLATFORM", "msys")
-        scenario_manager.configure_scenario
       end
 
-      it "sets instance variables correctly" do
-        expect(scenario_manager.instance_variable_get(:@fs_root)).to eq(fs_root)
-        expect(scenario_manager.instance_variable_get(:@fs_entrance)).to eq(fs_entrance)
+      it "sets the project root and entry point" do
+        expect(scenario_manager.fs_root).to eq(fs_root)
+        expect(scenario_manager.fs_entrance).to eq(fs_entrance)
       end
     end
   end
 
   describe "#configure_scenario" do
-    before do
-      allow(scenario_manager).to receive(:lookup_files)
-    end
-
-    context "when no gemspecs are present" do
-      before do
-        scenario_manager.instance_variable_set(:@gs_length, 0)
-        scenario_manager.instance_variable_set(:@g_length, 0)
-      end
-
-      it "sets scenario to :simple_script" do
-        scenario_manager.configure_scenario
-        expect(scenario_manager.instance_variable_get(:@scenario)).to eq(:simple_script)
-      end
-
-      context "with Gemfile" do
-        before do
-          scenario_manager.instance_variable_set(:@with_gemfile, true)
-        end
-
-        it "sets scenario to :gemfile" do
-          scenario_manager.configure_scenario
-          expect(scenario_manager.instance_variable_get(:@scenario)).to eq(:gemfile)
-        end
-      end
-    end
-
-    context "when one gemspec is present" do
-      before do
-        scenario_manager.instance_variable_set(:@gs_length, 1)
-      end
-
-      context "without Gemfile" do
-        before do
-          scenario_manager.instance_variable_set(:@with_gemfile, false)
-        end
-
-        it "sets scenario to :gemspec" do
-          scenario_manager.configure_scenario
-          expect(scenario_manager.instance_variable_get(:@scenario)).to eq(:gemspec)
-        end
-      end
-
-      context "with Gemfile" do
-        before do
-          scenario_manager.instance_variable_set(:@with_gemfile, true)
-        end
-
-        it "sets scenario to :gemspec_and_gemfile" do
-          scenario_manager.configure_scenario
-          expect(scenario_manager.instance_variable_get(:@scenario)).to eq(:gemspec_and_gemfile)
-        end
-      end
-    end
-
-    context "when multiple gemspecs are present" do
-      before do
-        scenario_manager.instance_variable_set(:@gs_length, 2)
-      end
-
-      it "raises error" do
-        expect { scenario_manager.configure_scenario }.to raise_error(
-          Tebako::Error,
-          "Multiple Ruby gemspecs found in #{fs_root}"
-        )
-      end
-    end
-  end
-
-  describe "#configure_scenario_no_gemspec" do
-    context "when @with_gemfile is true" do
-      before do
-        scenario_manager.instance_variable_set(:@with_gemfile, true)
-        scenario_manager.instance_variable_set(:@g_length, 0)
-        scenario_manager.send(:configure_scenario_no_gemspec)
-      end
-
-      it "sets @scenario to :gemfile" do
-        expect(scenario_manager.instance_variable_get(:@scenario)).to eq(:gemfile)
-      end
-    end
-
-    context "when @with_gemfile is false and @g_length is positive" do
-      before do
-        scenario_manager.instance_variable_set(:@with_gemfile, false)
-        scenario_manager.instance_variable_set(:@g_length, 1)
-        scenario_manager.send(:configure_scenario_no_gemspec)
-      end
-
-      it "sets @scenario to :gem" do
-        expect(scenario_manager.instance_variable_get(:@scenario)).to eq(:gem)
-      end
-    end
-
-    context "when @with_gemfile is false and @g_length is 0" do
-      before do
-        scenario_manager.instance_variable_set(:@with_gemfile, false)
-        scenario_manager.instance_variable_set(:@g_length, 0)
-        scenario_manager.send(:configure_scenario_no_gemspec)
-      end
-
-      it "sets @scenario to :simple_script" do
-        expect(scenario_manager.instance_variable_get(:@scenario)).to eq(:simple_script)
-      end
-    end
-  end
-
-  describe "#lookup_files" do
     let(:tmp_root) { Dir.mktmpdir }
     let(:scenario_manager) { described_class.new(tmp_root, "dummy_entry.rb") }
 
@@ -183,9 +73,66 @@ RSpec.describe Tebako::ScenarioManager do
       FileUtils.remove_entry(tmp_root)
     end
 
-    context "with complete project structure" do
+    context "with an empty project" do
+      it "selects the :simple_script scenario with a /local entry point" do
+        scenario_manager.configure_scenario
+        expect(scenario_manager.scenario).to eq(:simple_script)
+        expect(scenario_manager.fs_entry_point).to eq("/local/dummy_entry.rb")
+        expect(scenario_manager.with_gemfile).to be false
+      end
+    end
+
+    context "with only a Gemfile" do
       before do
-        # Create test files
+        File.write(File.join(tmp_root, "Gemfile"), "source 'https://rubygems.org'")
+      end
+
+      it "selects the :gemfile scenario with a /local entry point" do
+        scenario_manager.configure_scenario
+        expect(scenario_manager.scenario).to eq(:gemfile)
+        expect(scenario_manager.with_gemfile).to be true
+        expect(scenario_manager.gemfile_path).to eq(File.join(tmp_root, "Gemfile"))
+        expect(scenario_manager.fs_entry_point).to eq("/local/dummy_entry.rb")
+      end
+    end
+
+    context "with only a gem package" do
+      before do
+        FileUtils.touch(File.join(tmp_root, "test.gem"))
+      end
+
+      it "selects the :gem scenario with a /bin entry point" do
+        scenario_manager.configure_scenario
+        expect(scenario_manager.scenario).to eq(:gem)
+        expect(scenario_manager.fs_entry_point).to eq("/bin/dummy_entry.rb")
+      end
+    end
+
+    context "with one gemspec" do
+      before do
+        File.write(File.join(tmp_root, "test.gemspec"), "# gemspec content")
+      end
+
+      it "selects the :gemspec scenario" do
+        scenario_manager.configure_scenario
+        expect(scenario_manager.scenario).to eq(:gemspec)
+        expect(scenario_manager.fs_entry_point).to eq("/bin/dummy_entry.rb")
+      end
+
+      context "and a Gemfile" do
+        before do
+          File.write(File.join(tmp_root, "Gemfile"), "source 'https://rubygems.org'")
+        end
+
+        it "selects the :gemspec_and_gemfile scenario" do
+          scenario_manager.configure_scenario
+          expect(scenario_manager.scenario).to eq(:gemspec_and_gemfile)
+        end
+      end
+    end
+
+    context "with a complete project structure" do
+      before do
         File.write(File.join(tmp_root, "Gemfile"), "source 'https://rubygems.org'")
         File.write(File.join(tmp_root, "Gemfile.lock"), <<~LOCKFILE
           GEM
@@ -198,17 +145,13 @@ RSpec.describe Tebako::ScenarioManager do
         )
         File.write(File.join(tmp_root, "test.gemspec"), "# gemspec content")
         FileUtils.touch(File.join(tmp_root, "test.gem"))
-
-        scenario_manager.send(:lookup_files)
       end
 
-      it "sets correct paths and counts" do
-        expect(scenario_manager.instance_variable_get(:@gemfile_path)).to eq(File.join(tmp_root, "Gemfile"))
-        expect(scenario_manager.instance_variable_get(:@lockfile_path)).to eq(File.join(tmp_root, "Gemfile.lock"))
-        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(1)
-        expect(scenario_manager.instance_variable_get(:@g_length)).to eq(1)
-        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to be true
-        expect(scenario_manager.instance_variable_get(:@with_lockfile)).to be true
+      it "prefers the gemspec and exposes the Gemfile path" do
+        scenario_manager.configure_scenario
+        expect(scenario_manager.scenario).to eq(:gemspec_and_gemfile)
+        expect(scenario_manager.gemfile_path).to eq(File.join(tmp_root, "Gemfile"))
+        expect(scenario_manager.with_gemfile).to be true
       end
     end
 
@@ -216,39 +159,13 @@ RSpec.describe Tebako::ScenarioManager do
       before do
         File.write(File.join(tmp_root, "test1.gemspec"), "# gemspec 1")
         File.write(File.join(tmp_root, "test2.gemspec"), "# gemspec 2")
-        scenario_manager.send(:lookup_files)
       end
 
-      it "counts multiple gemspec files" do
-        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(2)
-      end
-    end
-
-    context "with only Gemfile" do
-      before do
-        File.write(File.join(tmp_root, "Gemfile"), "source 'https://rubygems.org'")
-        scenario_manager.send(:lookup_files)
-      end
-
-      it "sets Gemfile-related variables correctly" do
-        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to be true
-        expect(scenario_manager.instance_variable_get(:@with_lockfile)).to be false
-        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
-      end
-    end
-
-    context "with empty directory" do
-      before do
-        scenario_manager.send(:lookup_files)
-      end
-
-      it "sets default/empty values" do
-        expect(scenario_manager.instance_variable_get(:@with_gemfile)).to be false
-        expect(scenario_manager.instance_variable_get(:@with_lockfile)).to be false
-        expect(scenario_manager.instance_variable_get(:@gs_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@g_length)).to eq(0)
-        expect(scenario_manager.instance_variable_get(:@bundler_version)).to eq(Tebako::BUNDLER_VERSION)
+      it "raises an error" do
+        expect { scenario_manager.configure_scenario }.to raise_error(
+          Tebako::Error,
+          "Multiple Ruby gemspecs found in #{scenario_manager.fs_root}"
+        )
       end
     end
   end

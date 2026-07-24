@@ -98,16 +98,6 @@ RSpec.describe Tebako::OptionsManager do
         expect(options_manager.fs_current).to eq(Dir.pwd)
       end
     end
-
-    context "when @fs_current is already set" do
-      before do
-        options_manager.instance_variable_set(:@fs_current, "/cached/path")
-      end
-
-      it "returns the cached value" do
-        expect(options_manager.fs_current).to eq("/cached/path")
-      end
-    end
   end
 
   describe "#handle_nil_prefix" do
@@ -120,9 +110,9 @@ RSpec.describe Tebako::OptionsManager do
 
       it "prints a message and returns the expanded path to ~/.tebako" do
         expect do
-          options_manager.send(:handle_nil_prefix)
+          options_manager.handle_nil_prefix
         end.to output("No prefix specified, using ~/.tebako\n").to_stdout
-        expect(options_manager.send(:handle_nil_prefix)).to eq(File.expand_path("~/.tebako"))
+        expect(options_manager.handle_nil_prefix).to eq(File.expand_path("~/.tebako"))
       end
     end
 
@@ -135,9 +125,9 @@ RSpec.describe Tebako::OptionsManager do
 
       it "prints a message and returns the expanded path to the environment variable" do
         expect do
-          options_manager.send(:handle_nil_prefix)
+          options_manager.handle_nil_prefix
         end.to output("Using TEBAKO_PREFIX environment variable as prefix\n").to_stdout
-        expect(options_manager.send(:handle_nil_prefix)).to eq(File.expand_path(env_prefix))
+        expect(options_manager.handle_nil_prefix).to eq(File.expand_path(env_prefix))
       end
     end
   end
@@ -308,13 +298,14 @@ RSpec.describe Tebako::OptionsManager do
       end
     end
 
-    context 'when @options["prefix"] is already set' do
+    context "when the prefix is queried repeatedly" do
       let(:options) { { "prefix" => "some/path" } }
       let(:options_manager) { Tebako::OptionsManager.new(options) }
 
-      it "returns the cached value" do
-        options_manager.instance_variable_set(:@prefix, "cached_value")
-        expect(options_manager.prefix).to eq("cached_value")
+      it "resolves the path only once" do
+        expect(File).to receive(:expand_path).with("some/path").once.and_return("/cached_value")
+        expect(options_manager.prefix).to eq("/cached_value")
+        expect(options_manager.prefix).to eq("/cached_value")
       end
     end
   end
