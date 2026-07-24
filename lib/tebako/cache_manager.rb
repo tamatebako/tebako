@@ -26,7 +26,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "fileutils"
-require_relative "version"
 
 # Tebako - an executable packager
 module Tebako
@@ -47,12 +46,7 @@ module Tebako
     end
 
     def clean_output
-      puts "Cleaning CMake cache and Ruby build files"
-
-      nmr = "src/_ruby_*"
-      nms = "stash_*"
-      FileUtils.rm_rf(Dir.glob(File.join(@deps, nmr)), secure: true)
-      FileUtils.rm_rf(Dir.glob(File.join(@deps, nms)), secure: true)
+      puts "Cleaning CMake cache"
 
       # Using File.join(output_folder, "") to ensure that the slashes are appropriate
       FileUtils.rm_rf(File.join(@out_dir, ""), secure: true)

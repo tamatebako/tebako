@@ -25,7 +25,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require_relative "../lib/tebako/deploy_helper"
 require "open3"
 # rubocop:disable Metrics/BlockLength
 
@@ -400,7 +399,6 @@ RSpec.describe Tebako::DeployHelper do
 
     context "when deployment succeeds" do
       before do
-        allow(deploy_helper).to receive(:update_rubygems)
         allow(deploy_helper).to receive(:install_gem)
         allow(deploy_helper).to receive(:deploy_solution)
         allow(deploy_helper).to receive(:check_cwd)
@@ -408,7 +406,6 @@ RSpec.describe Tebako::DeployHelper do
       end
 
       it "executes deployment steps in order" do
-        expect(deploy_helper).to receive(:update_rubygems).ordered
         expect(deploy_helper).to receive(:install_gem).with("tebako-runtime").ordered
         expect(deploy_helper).to receive(:install_gem).with("bundler", Tebako::BUNDLER_VERSION).ordered
         expect(deploy_helper).to receive(:deploy_solution).ordered
@@ -432,7 +429,6 @@ RSpec.describe Tebako::DeployHelper do
 
     context "when bundler is not needed" do
       before do
-        allow(deploy_helper).to receive(:update_rubygems)
         allow(deploy_helper).to receive(:install_gem)
         allow(deploy_helper).to receive(:deploy_solution)
         allow(deploy_helper).to receive(:check_cwd)
@@ -447,7 +443,6 @@ RSpec.describe Tebako::DeployHelper do
 
     context "when deployment fails" do
       before do
-        allow(deploy_helper).to receive(:update_rubygems)
         allow(deploy_helper).to receive(:install_gem).with("tebako-runtime")
                                                      .and_raise(Tebako::Error.new("Installation failed", 1))
       end
@@ -757,42 +752,6 @@ RSpec.describe Tebako::DeployHelper do
 
           deploy_helper.install_gem(gem_name)
         end
-      end
-    end
-  end
-
-  describe "#update_rubygems" do
-    let(:ruby_ver) { instance_double("RubyVersion", ruby31?: false, api_version: "2.7.0") }
-    let(:gem_command) { "/path/to/gem" }
-
-    before do
-      deploy_helper.instance_variable_set(:@ruby_ver, ruby_ver)
-      deploy_helper.instance_variable_set(:@gem_command, gem_command)
-      allow(Open3).to receive(:capture2e).and_return(["", double("status", signaled?: false, exitstatus: 0)])
-      allow(Tebako::Packager::PatchHelpers).to receive(:patch_file).and_return(true)
-    end
-
-    context "when ruby version is 3.1 or higher" do
-      before do
-        allow(ruby_ver).to receive(:ruby31?).and_return(true)
-      end
-
-      it "does not update rubygems" do
-        expect(Tebako::BuildHelpers).not_to receive(:run_with_capture_v)
-        deploy_helper.update_rubygems
-      end
-    end
-
-    context "when ruby version is lower than 3.1" do
-      before do
-        allow(ruby_ver).to receive(:ruby31?).and_return(false)
-      end
-
-      it "updates rubygems to the specified version" do
-        expect(Open3).to receive(:capture2e)
-          .with("/path/to/gem", "update", "--no-doc", "--system", Tebako::RUBYGEMS_VERSION)
-          .and_return(["", double("status", signaled?: false, exitstatus: 0)])
-        deploy_helper.update_rubygems
       end
     end
   end

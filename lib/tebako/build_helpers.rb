@@ -25,6 +25,7 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+require "fileutils"
 require "open3"
 
 # Tebako - an executable packager
@@ -32,6 +33,13 @@ module Tebako
   # Ruby build helpers
   module BuildHelpers
     class << self
+      # rm_rf + mkdir_p: in the prebuilt press flows no cmake configure runs,
+      # so the parent output folder may not exist yet
+      def recreate(dirname)
+        FileUtils.rm_rf(dirname, noop: nil, verbose: nil, secure: true)
+        FileUtils.mkdir_p(dirname)
+      end
+
       def run_with_capture(args)
         args = args.compact
         puts "   ... @ #{args.join(" ")}"

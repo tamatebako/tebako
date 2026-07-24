@@ -27,15 +27,6 @@
 
 # require "bundler"
 require "fileutils"
-require "find"
-
-require_relative "error"
-require_relative "build_helpers"
-require_relative "packager/patch_helpers"
-require_relative "scenario_manager"
-
-require_relative "packager/patch"
-require_relative "packager/rubygems_patch"
 
 # Tebako - an executable packager
 module Tebako
@@ -54,7 +45,6 @@ module Tebako
 
     def configure(ruby_ver, cwd)
       @ruby_ver = ruby_ver
-      @needs_bundler = true unless @ruby_ver.ruby31?
       @cwd = cwd
 
       @tbd = File.join(@target_dir, "bin")
@@ -67,7 +57,6 @@ module Tebako
 
     def deploy
       BuildHelpers.with_env(deploy_env) do
-        update_rubygems
         system("#{@gem_command} env") if @verbose
         install_gem("tebako-runtime")
         install_gem("bundler", @bundler_version) if @needs_bundler
@@ -93,17 +82,6 @@ module Tebako
       params += ["--no-document", "--install-dir", @tgd, "--bindir", @tbd]
       params += ["--platform", "ruby"] if msys?
       BuildHelpers.run_with_capture_v(params)
-    end
-
-    def update_rubygems
-      return if @ruby_ver.ruby31?
-
-      puts "   ... updating rubygems to #{Tebako::RUBYGEMS_VERSION}"
-      BuildHelpers.run_with_capture_v([@gem_command, "update", "--no-doc", "--system",
-                                       Tebako::RUBYGEMS_VERSION])
-
-      patch = Packager::RubygemsUpdatePatch.new(@fs_mount_point).patch_map
-      Packager.do_patch(patch, "#{@target_dir}/lib/ruby/site_ruby/#{@ruby_ver.api_version}")
     end
 
     private

@@ -26,7 +26,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "yaml"
-require "tebako/cache_manager"
 
 # rubocop:disable Metrics/BlockLength
 
@@ -57,11 +56,7 @@ RSpec.describe Tebako::CacheManager do
   end
 
   describe "#clean_output" do
-    it "cleans the output by removing the appropriate files and directories" do
-      nmr = "src/_ruby_*"
-      nms = "stash_*"
-      expect(FileUtils).to receive(:rm_rf).with(Dir.glob(File.join(deps, nmr)), secure: true)
-      expect(FileUtils).to receive(:rm_rf).with(Dir.glob(File.join(deps, nms)), secure: true)
+    it "cleans the output by removing the output folder" do
       expect(FileUtils).to receive(:rm_rf).with(File.join(output_folder, ""), secure: true)
       cache_manager.clean_output
     end

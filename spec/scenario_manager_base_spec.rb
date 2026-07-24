@@ -26,7 +26,6 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "tmpdir"
-require_relative "../lib/tebako/scenario_manager"
 
 # rubocop:disable Metrics/BlockLength
 RSpec.describe Tebako::ScenarioManagerBase do

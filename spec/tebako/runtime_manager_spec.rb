@@ -31,9 +31,6 @@ require "json"
 require "stringio"
 require "tmpdir"
 
-require "tebako/cli"
-require "tebako/runtime_manager"
-
 # rubocop:disable Metrics/BlockLength
 
 RSpec.describe Tebako::RuntimeManager do

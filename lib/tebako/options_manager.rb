@@ -27,14 +27,9 @@
 
 require "etc"
 require "fileutils"
+require "open3"
 require "pathname"
 require "rbconfig"
-
-require_relative "codegen"
-require_relative "error"
-require_relative "ruby_version"
-require_relative "stitcher"
-require_relative "version"
 
 # Tebako - an executable packager
 # Command-line interface methods
@@ -45,13 +40,11 @@ module Tebako
     # slots + tpkg trailer): 'lean' resolves the runtime at first run, 'fat'
     # additionally embeds it as a payload slot (self-installing, offline)
     THREE_PART_MODES = %w[lean fat].freeze
-    # Modes whose default runtime provenance is a prebuilt runtime package
-    PREBUILT_DEFAULT_MODES = %w[bundle classic lean fat].freeze
 
     def initialize(options)
       @options = options
       @rv = Tebako::RubyVersion.new(@options["Ruby"])
-      @ruby_ver, @ruby_hash = @rv.extend_ruby_version
+      @ruby_ver = @rv.ruby_version
       @scmb = ScenarioManagerBase.new
     end
 
@@ -63,9 +56,8 @@ module Tebako
       # Cannot use 'xxx' as parameters because it does not work in Windows shells
       # So we have to use \"xxx\"
       @cfg_options ||=
-        "-DCMAKE_BUILD_TYPE=Release -DRUBY_VER:STRING=\"#{@ruby_ver}\" -DRUBY_HASH:STRING=\"#{@ruby_hash}\" " \
-        "-DDEPS:STRING=\"#{deps}\" -G \"#{@scmb.m_files}\" -B \"#{output_folder}\" -S \"#{source}\" " \
-        "#{remove_glibc_private} -DTEBAKO_VERSION:STRING=\"#{v_parts[0]}.#{v_parts[1]}.#{v_parts[2]}\""
+        "-DCMAKE_BUILD_TYPE=Release -DDEPS:STRING=\"#{deps}\" -G \"#{@scmb.m_files}\" -B \"#{output_folder}\" " \
+        "-S \"#{source}\" -DTEBAKO_VERSION:STRING=\"#{v_parts[0]}.#{v_parts[1]}.#{v_parts[2]}\""
     end
 
     def cwd
@@ -83,22 +75,9 @@ module Tebako
       @data_bin_dir ||= File.join(output_folder, "p")
     end
 
-    #  Mode       File(s)                       Content
-    #  bundle     fs.bin                      Application
-    #  both       fs.bin, fs2.bin     Stub, application respectively
-    #  runtime    fs.bin                         Stub
-    #  app        fs2.bin                     Application
-
+    # DATA_BIN_FILE is the packaged filesystem itself (fs.bin)
     def data_bundle_file
       @data_bundle_file ||= File.join(data_bin_dir, "fs.bin")
-    end
-
-    def data_stub_file
-      @data_stub_file ||= File.join(data_bin_dir, "fs.bin")
-    end
-
-    def data_app_file
-      @data_app_file ||= File.join(data_bin_dir, "fs2.bin")
     end
 
     # DATA_PRE_DIR folder is used to build gems  that need to be packaged
@@ -119,10 +98,6 @@ module Tebako
 
     def deps_bin_dir
       @deps_bin_dir ||= File.join(deps, "bin")
-    end
-
-    def deps_lib_dir
-      @deps_lib_dir ||= File.join(deps, "lib")
     end
 
     def folder_within_root?(folder)
@@ -175,21 +150,6 @@ module Tebako
       mode == "fat"
     end
 
-    # Runtime provenance: "prebuilt" (resolve/download a prebuilt runtime
-    # package) or "source" (the Stage-2 source build). Default is "prebuilt"
-    # for the bundle/classic/lean/fat modes; other modes always build from
-    # source, and --build-runtime forces the source path everywhere it is
-    # allowed (back-compat alias for '--runtime source'). The three-part
-    # modes (lean/fat) require prebuilt runtime packages: the bootstrap
-    # resolves tebako-runtime-ruby releases at run time.
-    def runtime_source
-      @runtime_source ||= checked_runtime_source(requested_runtime_source)
-    end
-
-    def prebuilt_runtime?
-      runtime_source == "prebuilt"
-    end
-
     # Additional images for the stitched package, from repeatable
     # '--image <path>:<mount-point>' (split on the last colon so Windows
     # drive-letter paths survive)
@@ -214,17 +174,9 @@ module Tebako
       @output_folder ||= File.join(prefix, "o")
     end
 
-    def output_type_first
-      @output_type_first ||= %w[both runtime].include?(mode) ? "runtime package" : "package"
-    end
-
-    def output_type_second
-      "application package"
-    end
-
     def package
       package = if @options["output"].nil?
-                  File.join(Dir.pwd, mode == "runtime" ? "tebako-runtime" : File.basename(fs_entrance, ".*"))
+                  File.join(Dir.pwd, File.basename(fs_entrance, ".*"))
                 else
                   @options["output"]&.gsub("\\", "/")
                 end
@@ -237,10 +189,6 @@ module Tebako
 
     def package_within_root?
       folder_within_root?(package)
-    end
-
-    def patchelf?
-      @options["patchelf"]
     end
 
     def prefix
@@ -257,54 +205,7 @@ module Tebako
       folder_within_root?(prefix)
     end
 
-    def press_announce(is_msys)
-      case mode
-      when "application"
-        press_announce_application(is_msys)
-      when "both"
-        press_announce_both
-      when "bundle", "classic", "lean", "fat"
-        press_announce_bundle
-      when "runtime"
-        press_announce_runtime
-      end
-    end
-
-    def press_announce_ref(is_msys)
-      if is_msys
-        " referencing runtime at '#{ref}'"
-      else
-        ""
-      end
-    end
-
-    def press_announce_application(is_msys)
-      <<~ANN
-        Running tebako press at #{prefix}
-           Mode:                      'application'
-           Ruby version:              '#{@ruby_ver}'
-           Project root:              '#{root}'
-           Application entry point:   '#{fs_entrance}'
-           Package file name:         '#{package}.tebako'#{press_announce_ref(is_msys)}
-           Package working directory: '#{cwd_announce}'
-      ANN
-    end
-
-    def press_announce_both
-      <<~ANN
-        Running tebako press at #{prefix}
-           Mode:                      'both'
-           Ruby version:              '#{@ruby_ver}'
-           Project root:              '#{root}'
-           Application entry point:   '#{fs_entrance}'
-           Runtime file name:         '#{package}'
-           Package file name:         '#{package}.tebako'
-           Loging level:              '#{l_level}'
-           Package working directory: '#{cwd_announce}'
-      ANN
-    end
-
-    def press_announce_bundle
+    def press_announce
       <<~ANN
         Running tebako press at #{prefix}
            Mode:                      '#{mode}'
@@ -317,20 +218,6 @@ module Tebako
       ANN
     end
 
-    def press_announce_runtime
-      <<~ANN
-        Running tebako press at #{prefix}
-           Mode:                      'runtime'
-           Ruby version:              '#{@ruby_ver}'
-           Runtime file name:         '#{package}'
-           Loging level:              '#{l_level}'
-      ANN
-    end
-
-    def press_options
-      @press_options ||= "-DPCKG:STRING='#{package}' -DLOG_LEVEL:STRING='#{l_level}' " \
-    end
-
     def process_gemfile(gemfile_path)
       folder = File.dirname(gemfile_path)
       filename = File.basename(gemfile_path)
@@ -340,24 +227,11 @@ module Tebako
       Dir.chdir(folder) do
         @rv = Tebako::RubyVersionWithGemfile.new(@options["Ruby"], filename)
       end
-      @ruby_ver, @ruby_hash = @rv.extend_ruby_version
-      @ruby_src_dir = nil
+      @ruby_ver = @rv.ruby_version
     end
 
     def relative?(path)
       Pathname.new(path).relative?
-    end
-
-    def ref
-      @ref ||= @options["ref"].nil? ? "tebako-runtime" : @options["ref"].gsub("\\", "/")
-    end
-
-    def remove_glibc_private
-      @remove_glibc_private ||= if RUBY_PLATFORM.end_with?("linux") || RUBY_PLATFORM.end_with?("linux-gnu")
-                                  "-DREMOVE_GLIBC_PRIVATE=#{@options["patchelf"] ? "ON" : "OFF"}"
-                                else
-                                  ""
-                                end
     end
 
     def root
@@ -369,44 +243,12 @@ module Tebako
                 end
     end
 
-    def ruby_src_dir
-      @ruby_src_dir ||= File.join(deps, "src", "_ruby_#{@ruby_ver}")
-    end
-
     def source
       c_path = Pathname.new(__FILE__).realpath
       @source ||= File.expand_path("../../..", c_path)
     end
 
-    def stash_dir(rver = nil)
-      @stash_dir ||= "#{stash_dir_all}_#{rver || @ruby_ver}"
-    end
-
-    def stash_dir_all
-      @stash_dir_all ||= File.join(deps, "stash")
-    end
-
     private
-
-    def requested_runtime_source
-      explicit = @options["runtime"]
-      return "source" if @options["build-runtime"]
-      return PREBUILT_DEFAULT_MODES.include?(mode) ? "prebuilt" : "source" if explicit.nil?
-
-      explicit
-    end
-
-    def checked_runtime_source(source)
-      if source == "prebuilt" && !PREBUILT_DEFAULT_MODES.include?(mode)
-        Tebako.packaging_error(130, "--runtime prebuilt is supported in bundle, classic, lean and fat modes only " \
-                                    "(mode: '#{mode}')")
-      end
-      if source == "source" && three_part?
-        Tebako.packaging_error(130, "mode '#{mode}' requires a prebuilt runtime package " \
-                                    "(the bootstrap resolves tebako-runtime-ruby releases at first run)")
-      end
-      source
-    end
 
     def host_os_id(ostype)
       case ostype

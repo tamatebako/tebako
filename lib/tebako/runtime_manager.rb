@@ -31,10 +31,6 @@ require "json"
 require "net/http"
 require "uri"
 
-require_relative "build_helpers"
-require_relative "error"
-require_relative "version"
-
 # Tebako - an executable packager
 module Tebako
   # Resolution, download, verification and machine-wide caching of prebuilt

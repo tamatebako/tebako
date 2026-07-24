@@ -26,37 +26,29 @@
 # ...................................................................
 # libtfs provisioning (included from the top-level CMakeLists.txt)
 #
-# Two consumption modes for the DwarFS-based tebako filesystem library:
-#   DWARFS_PRELOAD=ON  (default) -- download the prebuilt libtfs package
-#       (libtfs-<ver>-<platform>.tar.gz) and the prebuilt mkdwarfs binary
-#       from the libtfs GitHub release, verify both against the release
-#       SHA256SUMS, and deploy them into ${DEPS}. The tarball is NOT
-#       self-contained (its libtfsConfig.cmake does find_dependency(dwarfs)
-#       and find_dependency(libzip), and no third-party static libs ship in
-#       it), so the transitive static dependencies are resolved by installing
-#       libtfs' own vcpkg manifest (pinned tag, overlay ports included) into
-#       ${DEPS}/vcpkg_installed. vcpkg's per-package archive cache makes
-#       repeated installs fast; set VCPKG_BINARY_SOURCES /
-#       VCPKG_DEFAULT_BINARY_CACHE to control the cache location (mirrors
-#       libtfs CI, which uses a files backend cache with readwrite access).
-#   DWARFS_PRELOAD=OFF -- build libtfs from source (ExternalProject,
-#       tamatebako/libtfs.git @ ${DWARFS_WR_TAG}) with the vcpkg toolchain.
-#       mkdwarfs still comes from the prebuilt release set (the press
-#       pipeline runs ${DEPS}/bin/mkdwarfs) and is passed to the libtfs
-#       build via -DMKDWARFS (which also selects TEBAKO_BUILD_SCOPE=LIB).
+# Downloads the prebuilt libtfs package (libtfs-<ver>-<platform>.tar.gz) and
+# the prebuilt mkdwarfs binary from the libtfs GitHub release, verifies both
+# against the release SHA256SUMS, and deploys them into ${DEPS}.
+#
+# Transitive static dependencies: the libtfs tarball is NOT self-contained
+# (its libtfsConfig.cmake does find_dependency(dwarfs) and
+# find_dependency(libzip), and no third-party static libs ship in it), so
+# they come from the self-contained libtfs-deps package (libtfs releases >=
+# v0.12.5). Older tags without that package fall back to installing libtfs'
+# own vcpkg manifest (pinned tag, overlay ports included) into
+# ${DEPS}/vcpkg_installed. vcpkg's per-package archive cache makes repeated
+# installs fast; set VCPKG_BINARY_SOURCES / VCPKG_DEFAULT_BINARY_CACHE to
+# control the cache location (mirrors libtfs CI, which uses a files backend
+# cache with readwrite access).
 #
 # Expected on entry (set by the top-level CMakeLists.txt):
 #   DEPS, DEPS_INCLUDE_DIR, DEPS_LIB_DIR, DEPS_BIN_DIR, DEPS_SRC_DIR
 #   IS_GNU, IS_MUSL, IS_MSYS, IS_DARWIN
-#   DWARFS_PRELOAD (option), DWARFS_WR_TAG (e.g. "v0.12.0")
+#   DWARFS_WR_TAG (e.g. "v0.12.0")
 # Sets for the rest of the build:
 #   LIBTFS_VERSION, LIBTFS_PLATFORM
-#   LIBTFS_INCLUDE_DIR        -- libtfs headers (deps/include)
-#   LIBTFS_LIB_DIR            -- libtfs.a + helper (deps/lib)
 #   LIBTFS_MKDWARFS           -- mkdwarfs executable (deps/bin/mkdwarfs[.exe])
-#   LIBTFS_VCPKG_INSTALLED_DIR / LIBTFS_VCPKG_TRIPLET_DIR
-#                             -- transitive static libs/headers (vcpkg)
-#   VCPKG_ROOT                -- vcpkg checkout (env, cache, or bootstrapped)
+#   VCPKG_ROOT                -- vcpkg checkout (only on the fallback path)
 
 # Pinned to the default-registry baseline of libtfs v0.12.0
 # vcpkg-configuration.json. Only used when tebako bootstraps vcpkg itself
@@ -103,7 +95,7 @@ else()
 endif()
 
 # Self-contained transitive static-lib package (libtfs releases >= v0.12.5).
-# When present, consumers need no vcpkg at all on the prebuilt path.
+# When present, consumers need no vcpkg at all.
 # Releases built with the deps header contract also ship a curated include/
 # tree (brotli, zstd, lz4, lzma, zlib, bzip2, libzip, xxhash, fmt,
 # flatbuffers, boost filesystem+chrono subset) so consumers can compile
@@ -188,7 +180,7 @@ else()
 endif()
 
 # ...................................................................
-# mkdwarfs comes from the prebuilt release set in BOTH modes
+# mkdwarfs comes from the prebuilt release set
 # (the press pipeline runs ${DEPS}/bin/mkdwarfs)
 
 file(MAKE_DIRECTORY "${DEPS_BIN_DIR}")
@@ -203,12 +195,10 @@ if(NOT IS_MSYS)
 endif()
 
 # ...................................................................
-# vcpkg bootstrap — only when actually needed:
-#   - source fallback (DWARFS_PRELOAD=OFF): always
-#   - prebuilt mode: only when the self-contained deps package is absent
-#     (older tags); with libtfs-deps there is no vcpkg in the loop at all.
+# vcpkg bootstrap — only when the self-contained deps package is absent
+# (older tags); with libtfs-deps there is no vcpkg in the loop at all.
 
-if(NOT DWARFS_PRELOAD OR NOT LIBTFS_DEPS_AVAILABLE)
+if(NOT LIBTFS_DEPS_AVAILABLE)
 
   if(DEFINED ENV{VCPKG_ROOT} AND EXISTS "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake")
     set(VCPKG_ROOT "$ENV{VCPKG_ROOT}")
@@ -279,176 +269,137 @@ endif()
 if(IS_MSYS)
   set(LIBTFS_VCPKG_TRIPLET "x64-mingw-static")
   set(__LIBTFS_VCPKG_TRIPLET_ARGS "--triplet" "x64-mingw-static")
-  set(LIBTFS_VCPKG_EP_TRIPLET_ARG "-DVCPKG_TARGET_TRIPLET=x64-mingw-static")
 else()
   # vcpkg default-host-triplet detection (matches the libtfs release builds)
   set(LIBTFS_VCPKG_TRIPLET "")
   set(__LIBTFS_VCPKG_TRIPLET_ARGS "")
-  set(LIBTFS_VCPKG_EP_TRIPLET_ARG "")
 endif()
 
 # ...................................................................
-if(DWARFS_PRELOAD)
-# ...................................................................
-# Prebuilt mode: download, verify and deploy the libtfs package
+# Download, verify and deploy the libtfs package
 
-  if(IS_MSYS)
-    message(WARNING "libtfs: the prebuilt ${LIBTFS_PLATFORM} package is modern-API-only; "
-                    "the legacy tebako API that tebako links requires -DDWARFS_PRELOAD=OFF (source build)")
-  endif()
+libtfs_download("${LIBTFS_RELEASE_URL}/${LIBTFS_PKG_NAME}"
+                "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_PKG_NAME}" "${LIBTFS_PKG_HASH}"
+                "prebuilt libtfs package (${LIBTFS_PKG_NAME})")
 
-  libtfs_download("${LIBTFS_RELEASE_URL}/${LIBTFS_PKG_NAME}"
-                  "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_PKG_NAME}" "${LIBTFS_PKG_HASH}"
-                  "prebuilt libtfs package (${LIBTFS_PKG_NAME})")
+set(__LIBTFS_EXTRACT_DIR "${LIBTFS_DOWNLOAD_DIR}/extract-${LIBTFS_PLATFORM}")
+file(REMOVE_RECURSE "${__LIBTFS_EXTRACT_DIR}")
+file(MAKE_DIRECTORY "${__LIBTFS_EXTRACT_DIR}")
+file(ARCHIVE_EXTRACT INPUT "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_PKG_NAME}"
+     DESTINATION "${__LIBTFS_EXTRACT_DIR}")
 
-  set(__LIBTFS_EXTRACT_DIR "${LIBTFS_DOWNLOAD_DIR}/extract-${LIBTFS_PLATFORM}")
-  file(REMOVE_RECURSE "${__LIBTFS_EXTRACT_DIR}")
-  file(MAKE_DIRECTORY "${__LIBTFS_EXTRACT_DIR}")
-  file(ARCHIVE_EXTRACT INPUT "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_PKG_NAME}"
-       DESTINATION "${__LIBTFS_EXTRACT_DIR}")
-
-  # Deploy headers and static libraries into deps/. The bundled CMake package
-  # config (lib/cmake/libtfs) is intentionally NOT deployed: it does
-  # find_dependency(dwarfs) + find_dependency(libzip) and is only usable with
-  # a vcpkg prefix; tebako consumes the artifacts via DEPS_INCLUDE_DIR /
-  # DEPS_LIB_DIR and its own static link lists.
-  file(COPY "${__LIBTFS_EXTRACT_DIR}/include/" DESTINATION "${LIBTFS_INCLUDE_DIR}")
-  file(GLOB __LIBTFS_LIBS "${__LIBTFS_EXTRACT_DIR}/lib/*.a" "${__LIBTFS_EXTRACT_DIR}/lib/*.lib")
-  if(NOT __LIBTFS_LIBS)
-    message(FATAL_ERROR "libtfs: prebuilt package contains no static libraries")
-  endif()
-  file(COPY ${__LIBTFS_LIBS} DESTINATION "${LIBTFS_LIB_DIR}")
-  foreach(__LIB IN LISTS __LIBTFS_LIBS)
-    message(STATUS "libtfs: deployed ${__LIB}")
-  endforeach()
+# Deploy headers and static libraries into deps/. The bundled CMake package
+# config (lib/cmake/libtfs) is intentionally NOT deployed: it does
+# find_dependency(dwarfs) + find_dependency(libzip) and is only usable with
+# a vcpkg prefix; tebako consumes the artifacts via DEPS_INCLUDE_DIR /
+# DEPS_LIB_DIR and its own static link lists.
+file(COPY "${__LIBTFS_EXTRACT_DIR}/include/" DESTINATION "${LIBTFS_INCLUDE_DIR}")
+file(GLOB __LIBTFS_LIBS "${__LIBTFS_EXTRACT_DIR}/lib/*.a" "${__LIBTFS_EXTRACT_DIR}/lib/*.lib")
+if(NOT __LIBTFS_LIBS)
+  message(FATAL_ERROR "libtfs: prebuilt package contains no static libraries")
+endif()
+file(COPY ${__LIBTFS_LIBS} DESTINATION "${LIBTFS_LIB_DIR}")
+foreach(__LIB IN LISTS __LIBTFS_LIBS)
+  message(STATUS "libtfs: deployed ${__LIB}")
+endforeach()
 
 # ...................................................................
-# Transitive dependencies (prebuilt mode)
+# Transitive dependencies
 # Preferred: the self-contained libtfs-deps package (libtfs releases >=
 # v0.12.5) — download, verify, deploy; no vcpkg in the loop.
 # Fallback (older tags): resolve with vcpkg using libtfs' own manifest at
 # the pinned tag.
 
-  if(LIBTFS_DEPS_AVAILABLE)
+if(LIBTFS_DEPS_AVAILABLE)
 
-    libtfs_download("${LIBTFS_RELEASE_URL}/${LIBTFS_DEPS_PKG_NAME}"
-                    "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_DEPS_PKG_NAME}" "${LIBTFS_DEPS_HASH}"
-                    "libtfs transitive deps package (${LIBTFS_DEPS_PKG_NAME})")
+  libtfs_download("${LIBTFS_RELEASE_URL}/${LIBTFS_DEPS_PKG_NAME}"
+                  "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_DEPS_PKG_NAME}" "${LIBTFS_DEPS_HASH}"
+                  "libtfs transitive deps package (${LIBTFS_DEPS_PKG_NAME})")
 
-    if(NOT LIBTFS_VCPKG_TRIPLET)
-      if(IS_DARWIN)
-        set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-osx")
-      elseif(IS_GNU OR IS_MUSL)
-        set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-linux")
-      endif()
+  if(NOT LIBTFS_VCPKG_TRIPLET)
+    if(IS_DARWIN)
+      set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-osx")
+    elseif(IS_GNU OR IS_MUSL)
+      set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-linux")
     endif()
+  endif()
 
-    set(__LIBTFS_DEPS_EXTRACT_DIR "${LIBTFS_DOWNLOAD_DIR}/extract-deps-${LIBTFS_PLATFORM}")
-    file(REMOVE_RECURSE "${__LIBTFS_DEPS_EXTRACT_DIR}")
-    file(MAKE_DIRECTORY "${__LIBTFS_DEPS_EXTRACT_DIR}")
-    file(ARCHIVE_EXTRACT INPUT "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_DEPS_PKG_NAME}"
-         DESTINATION "${__LIBTFS_DEPS_EXTRACT_DIR}")
+  set(__LIBTFS_DEPS_EXTRACT_DIR "${LIBTFS_DOWNLOAD_DIR}/extract-deps-${LIBTFS_PLATFORM}")
+  file(REMOVE_RECURSE "${__LIBTFS_DEPS_EXTRACT_DIR}")
+  file(MAKE_DIRECTORY "${__LIBTFS_DEPS_EXTRACT_DIR}")
+  file(ARCHIVE_EXTRACT INPUT "${LIBTFS_DOWNLOAD_DIR}/${LIBTFS_DEPS_PKG_NAME}"
+       DESTINATION "${__LIBTFS_DEPS_EXTRACT_DIR}")
 
-    # Deploy into the triplet-shaped install dir the link lists consume.
-    # The whole-tree copy also restores the vcpkg layout — lib/, share/ and,
-    # for releases built with the deps header contract, include/ — so
-    # ${LIBTFS_VCPKG_TRIPLET_DIR}/include carries the curated dep headers.
-    file(MAKE_DIRECTORY "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
-    file(COPY "${__LIBTFS_DEPS_EXTRACT_DIR}/"
-         DESTINATION "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
-    file(GLOB __LIBTFS_DEPS_LIBS "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}/lib/*.a")
-    if(NOT __LIBTFS_DEPS_LIBS)
-      message(FATAL_ERROR "libtfs: deps package contains no static libraries")
-    endif()
-    message(STATUS "libtfs: deployed ${LIBTFS_DEPS_PKG_NAME} to ${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
+  # Deploy into the triplet-shaped install dir the link lists consume.
+  # The whole-tree copy also restores the vcpkg layout — lib/, share/ and,
+  # for releases built with the deps header contract, include/ — so
+  # ${LIBTFS_VCPKG_INSTALLED_DIR}/<triplet>/include carries the curated dep
+  # headers.
+  file(MAKE_DIRECTORY "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
+  file(COPY "${__LIBTFS_DEPS_EXTRACT_DIR}/"
+       DESTINATION "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
+  file(GLOB __LIBTFS_DEPS_LIBS "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}/lib/*.a")
+  if(NOT __LIBTFS_DEPS_LIBS)
+    message(FATAL_ERROR "libtfs: deps package contains no static libraries")
+  endif()
+  message(STATUS "libtfs: deployed ${LIBTFS_DEPS_PKG_NAME} to ${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
 
-    # Also deploy the curated dep headers into DEPS_INCLUDE_DIR, the include
-    # root the ruby build already carries as -I (RUBY_C_FLAGS) and that is
-    # baked into rbconfig — mkmf-driven gem native extensions (e.g. the
-    # brotli gem including <brotli/encode.h>) compile against these headers
-    # when the packaged build runs gem install. The check keys on the
-    # extracted package itself (not on possibly stale state in the triplet
-    # dir): older deps packages without an include/ tree keep the previous
-    # behavior (link-only self-contained).
-    if(EXISTS "${__LIBTFS_DEPS_EXTRACT_DIR}/include")
-      file(COPY "${__LIBTFS_DEPS_EXTRACT_DIR}/include/" DESTINATION "${LIBTFS_INCLUDE_DIR}")
-      message(STATUS "libtfs: deployed deps package headers to ${LIBTFS_INCLUDE_DIR}")
-    else()
-      message(WARNING "libtfs: deps package carries no include/ tree; "
-                      "native gem extensions wrapping shipped codecs (brotli, zstd, ...) will not compile")
-    endif()
-
+  # Also deploy the curated dep headers into DEPS_INCLUDE_DIR, the include
+  # root runtime builds carry as -I (baked into rbconfig) — mkmf-driven gem
+  # native extensions (e.g. the brotli gem including <brotli/encode.h>)
+  # compile against these headers when the packaged build runs gem install.
+  # The check keys on the extracted package itself (not on possibly stale
+  # state in the triplet dir): older deps packages without an include/ tree
+  # keep the previous behavior (link-only self-contained).
+  if(EXISTS "${__LIBTFS_DEPS_EXTRACT_DIR}/include")
+    file(COPY "${__LIBTFS_DEPS_EXTRACT_DIR}/include/" DESTINATION "${LIBTFS_INCLUDE_DIR}")
+    message(STATUS "libtfs: deployed deps package headers to ${LIBTFS_INCLUDE_DIR}")
   else()
+    message(WARNING "libtfs: deps package carries no include/ tree; "
+                    "native gem extensions wrapping shipped codecs (brotli, zstd, ...) will not compile")
+  endif()
 
-    set(LIBTFS_MANIFEST_DIR "${DEPS_SRC_DIR}/libtfs-manifest")
-    find_package(Git REQUIRED)
-    if(EXISTS "${LIBTFS_MANIFEST_DIR}/.git")
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match HEAD
-        WORKING_DIRECTORY "${LIBTFS_MANIFEST_DIR}"
-        RESULT_VARIABLE __MANIFEST_TAG_RES
-        OUTPUT_VARIABLE __MANIFEST_TAG
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        ERROR_QUIET
-      )
-      if(NOT __MANIFEST_TAG_RES EQUAL 0 OR NOT "${__MANIFEST_TAG}" STREQUAL "${DWARFS_WR_TAG}")
-        message(STATUS "libtfs: manifest checkout is at '${__MANIFEST_TAG}', need '${DWARFS_WR_TAG}'; refreshing")
-        file(REMOVE_RECURSE "${LIBTFS_MANIFEST_DIR}")
-      endif()
-    endif()
-    if(NOT EXISTS "${LIBTFS_MANIFEST_DIR}/.git")
-      message(STATUS "libtfs: fetching vcpkg manifest from tamatebako/libtfs @ ${DWARFS_WR_TAG}")
-      execute_process(
-        COMMAND ${GIT_EXECUTABLE} clone --depth 1 --branch ${DWARFS_WR_TAG}
-                https://github.com/tamatebako/libtfs.git "${LIBTFS_MANIFEST_DIR}"
-        RESULT_VARIABLE __MANIFEST_CLONE_RES
-      )
-      if(NOT __MANIFEST_CLONE_RES EQUAL 0)
-        message(FATAL_ERROR "libtfs: failed to clone tamatebako/libtfs @ ${DWARFS_WR_TAG} (vcpkg manifest source)")
-      endif()
-    endif()
+else()
 
-    message(STATUS "libtfs: resolving transitive dependencies with vcpkg (this can take a while on a cold cache)")
+  set(LIBTFS_MANIFEST_DIR "${DEPS_SRC_DIR}/libtfs-manifest")
+  find_package(Git REQUIRED)
+  if(EXISTS "${LIBTFS_MANIFEST_DIR}/.git")
     execute_process(
-      COMMAND ${CMAKE_COMMAND} -E env VCPKG_DISABLE_METRICS=1
-              "${__VCPKG_EXE}" install
-              --x-manifest-root=${LIBTFS_MANIFEST_DIR}
-              --x-install-root=${LIBTFS_VCPKG_INSTALLED_DIR}
-              ${__LIBTFS_VCPKG_TRIPLET_ARGS}
-      RESULT_VARIABLE __VCPKG_INSTALL_RES
+      COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match HEAD
+      WORKING_DIRECTORY "${LIBTFS_MANIFEST_DIR}"
+      RESULT_VARIABLE __MANIFEST_TAG_RES
+      OUTPUT_VARIABLE __MANIFEST_TAG
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+      ERROR_QUIET
     )
-    if(NOT __VCPKG_INSTALL_RES EQUAL 0)
-      message(FATAL_ERROR "libtfs: vcpkg install of transitive dependencies failed")
+    if(NOT __MANIFEST_TAG_RES EQUAL 0 OR NOT "${__MANIFEST_TAG}" STREQUAL "${DWARFS_WR_TAG}")
+      message(STATUS "libtfs: manifest checkout is at '${__MANIFEST_TAG}', need '${DWARFS_WR_TAG}'; refreshing")
+      file(REMOVE_RECURSE "${LIBTFS_MANIFEST_DIR}")
     endif()
-
+  endif()
+  if(NOT EXISTS "${LIBTFS_MANIFEST_DIR}/.git")
+    message(STATUS "libtfs: fetching vcpkg manifest from tamatebako/libtfs @ ${DWARFS_WR_TAG}")
+    execute_process(
+      COMMAND ${GIT_EXECUTABLE} clone --depth 1 --branch ${DWARFS_WR_TAG}
+              https://github.com/tamatebako/libtfs.git "${LIBTFS_MANIFEST_DIR}"
+      RESULT_VARIABLE __MANIFEST_CLONE_RES
+    )
+    if(NOT __MANIFEST_CLONE_RES EQUAL 0)
+      message(FATAL_ERROR "libtfs: failed to clone tamatebako/libtfs @ ${DWARFS_WR_TAG} (vcpkg manifest source)")
+    endif()
   endif()
 
-endif(DWARFS_PRELOAD)
-
-# ...................................................................
-# Detect the vcpkg triplet directory (transitive static-lib location).
-# There is exactly one triplet dir per tebako build; 'vcpkg' is vcpkg's
-# own bookkeeping subdirectory of the install root.
-
-if(NOT LIBTFS_VCPKG_TRIPLET)
-  file(GLOB __TRIPLET_DIRS LIST_DIRECTORIES true "${LIBTFS_VCPKG_INSTALLED_DIR}/*")
-  foreach(__DIR IN LISTS __TRIPLET_DIRS)
-    get_filename_component(__NAME "${__DIR}" NAME)
-    if(NOT __NAME STREQUAL "vcpkg")
-      set(LIBTFS_VCPKG_TRIPLET "${__NAME}")
-    endif()
-  endforeach()
-endif()
-if(NOT LIBTFS_VCPKG_TRIPLET)
-  # Source build on a cold tree: the triplet dir only appears when vcpkg
-  # installs during the libtfs build, so compute vcpkg's default host
-  # triplet the way the libtfs release builds do.
-  if(IS_DARWIN)
-    set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-osx")
-  elseif(IS_GNU OR IS_MUSL)
-    set(LIBTFS_VCPKG_TRIPLET "${__LIBTFS_ARCH}-linux")
+  message(STATUS "libtfs: resolving transitive dependencies with vcpkg (this can take a while on a cold cache)")
+  execute_process(
+    COMMAND ${CMAKE_COMMAND} -E env VCPKG_DISABLE_METRICS=1
+            "${__VCPKG_EXE}" install
+            --x-manifest-root=${LIBTFS_MANIFEST_DIR}
+            --x-install-root=${LIBTFS_VCPKG_INSTALLED_DIR}
+            ${__LIBTFS_VCPKG_TRIPLET_ARGS}
+    RESULT_VARIABLE __VCPKG_INSTALL_RES
+  )
+  if(NOT __VCPKG_INSTALL_RES EQUAL 0)
+    message(FATAL_ERROR "libtfs: vcpkg install of transitive dependencies failed")
   endif()
-endif()
-if(LIBTFS_VCPKG_TRIPLET)
-  set(LIBTFS_VCPKG_TRIPLET_DIR "${LIBTFS_VCPKG_INSTALLED_DIR}/${LIBTFS_VCPKG_TRIPLET}")
+
 endif()

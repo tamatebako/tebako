@@ -25,8 +25,6 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-require "tebako/launcher_abi"
-
 RSpec.describe Tebako::LauncherAbi do
   # These values are the wire contract with tebako-bootstrap and with
   # src/tebako-main.cpp — changing any of them is an ABI break.

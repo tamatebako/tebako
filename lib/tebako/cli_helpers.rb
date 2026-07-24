@@ -27,19 +27,7 @@
 
 require "digest"
 require "etc"
-require "fileutils"
-require "pathname"
-require "rbconfig"
-
-require_relative "bootstrap_manager"
-require_relative "codegen"
-require_relative "error"
-require_relative "launcher_abi"
-require_relative "options_manager"
-require_relative "runtime_manager"
-require_relative "scenario_manager"
-require_relative "stitcher"
-require_relative "packager_lite"
+require "yaml"
 
 # Tebako - an executable packager
 # Command-line interface methods
@@ -76,8 +64,6 @@ module Tebako
     WARN
 
     def check_warnings(options_manager)
-      return unless options_manager.mode != "runtime"
-
       puts WARN if options_manager.package_within_root?
       puts WARN2 if options_manager.prefix_within_root?
       sleep 5
@@ -88,29 +74,23 @@ module Tebako
       scenario_manager.configure_scenario
       options_manager.process_gemfile(scenario_manager.gemfile_path) if scenario_manager.with_gemfile
       check_warnings(options_manager)
-      puts options_manager.press_announce(scenario_manager.msys?)
+      puts options_manager.press_announce
       dispatch_press(options_manager, scenario_manager)
     end
 
     def dispatch_press(options_manager, scenario_manager)
       if options_manager.three_part?
         do_press_three_part(options_manager, scenario_manager)
-      elsif options_manager.prebuilt_runtime?
-        do_press_prebuilt(options_manager, scenario_manager)
       else
-        do_press_source(options_manager, scenario_manager)
+        do_press_prebuilt(options_manager, scenario_manager)
       end
     end
 
-    def do_press_source(options_manager, scenario_manager)
-      do_press_runtime(options_manager, scenario_manager)
-      do_press_application(options_manager, scenario_manager)
-    end
-
-    # Press onto a prebuilt runtime package: resolve (download/verify/cache)
-    # the runtime, deploy the application image, stitch, re-sign on macOS.
+    # Press onto a prebuilt runtime package ('classic'): resolve (download/
+    # verify/cache) the runtime, deploy the application image, stitch,
+    # re-sign on macOS.
     def do_press_prebuilt(options_manager, scenario_manager)
-      Tebako::Packager.check_prebuilt_env!(options_manager.stash_dir, options_manager.deps_bin_dir)
+      Tebako::Packager.check_prebuilt_env!(options_manager.deps_bin_dir)
       runtime_path = Tebako::RuntimeManager.resolve(options_manager.ruby_ver, options_manager.host_platform)
       app_image = Tebako::Packager.build_app_image(options_manager, scenario_manager,
                                                    Tebako::RuntimeManager.layout(runtime_path))
@@ -119,7 +99,7 @@ module Tebako
                   format_id: Tebako::Stitcher::FORMAT_DWARFS }] + options_manager.images
       package = "#{options_manager.package}#{scenario_manager.exe_suffix}"
       Tebako::Stitcher.stitch(runtime_path, images: images, output: package)
-      puts "Created tebako #{options_manager.output_type_first} at \"#{package}\""
+      puts "Created tebako package at \"#{package}\""
     end
 
     # Press a three-part package (Stage 3B): tebako-bootstrap + application
@@ -135,7 +115,7 @@ module Tebako
       images = three_part_images(options_manager, scenario_manager, app_image, payload_path)
       package = "#{options_manager.package}#{scenario_manager.exe_suffix}"
       stitch_three_part(options_manager, bootstrap_path, images, package, payload_path)
-      puts "Created tebako #{options_manager.output_type_first} at \"#{package}\""
+      puts "Created tebako package at \"#{package}\""
     end
 
     def stitch_three_part(options_manager, bootstrap_path, images, package, payload_path)
@@ -149,15 +129,14 @@ module Tebako
       payload_path && Digest::SHA256.file(payload_path).hexdigest
     end
 
-    # Validate the options and the packaging environment, then resolve the
-    # bootstrap and the runtime into the shared cache. The runtime is needed
-    # in both three-part modes: 'fat' embeds it as a payload slot, 'lean'
-    # uses its extracted layout to align the application image's arch
-    # conventions (and references it in the trailer for first-run resolution)
+    # Validate the packaging environment, then resolve the bootstrap and the
+    # runtime into the shared cache. The runtime is needed in both three-part
+    # modes: 'fat' embeds it as a payload slot, 'lean' uses its extracted
+    # layout to seed the application image (and references it in the trailer
+    # for first-run resolution)
     def resolve_three_part_parts(options_manager)
-      options_manager.runtime_source # validates the mode/provenance combination
       check_bootstrap_version!(options_manager)
-      Tebako::Packager.check_prebuilt_env!(options_manager.stash_dir, options_manager.deps_bin_dir)
+      Tebako::Packager.check_prebuilt_env!(options_manager.deps_bin_dir)
       runtime_path = Tebako::RuntimeManager.resolve(options_manager.ruby_ver, options_manager.host_platform)
       [Tebako::BootstrapManager.resolve(options_manager.host_platform), runtime_path]
     end
@@ -188,49 +167,12 @@ module Tebako
       false
     end
 
-    def do_press_application(options_manager, scenario_manager)
-      return unless %w[both application].include?(options_manager.mode)
-
-      packager = Tebako::PackagerLite.new(options_manager, scenario_manager)
-      packager.create_package
-    end
-
-    def do_press_runtime(options_manager, scenario_manager)
-      return unless %w[both runtime bundle classic].include?(options_manager.mode)
-
-      generate_files(options_manager, scenario_manager)
-      merged_env = ENV.to_h.merge(scenario_manager.b_env)
-      Tebako.packaging_error(103) unless system(merged_env, press_cfg_cmd(options_manager))
-      Tebako.packaging_error(104) unless system(merged_env, press_build_cmd(options_manager))
-      finalize(options_manager, scenario_manager)
-    end
-
     def do_setup(options_manager)
       puts "Setting up tebako packaging environment"
 
       merged_env = ENV.to_h.merge(Tebako::ScenarioManagerBase.new.b_env)
       Tebako.packaging_error(101) unless system(merged_env, setup_cfg_cmd(options_manager))
       Tebako.packaging_error(102) unless system(merged_env, setup_build_cmd(options_manager))
-    end
-
-    def generate_files(options_manager, scenario_manager)
-      puts "-- Generating files"
-
-      v_parts = Tebako::VERSION.split(".")
-      Tebako::Codegen.generate_tebako_version_h(options_manager, v_parts)
-      Tebako::Codegen.generate_tebako_fs_cpp(options_manager, scenario_manager)
-      Tebako::Codegen.generate_deploy_rb(options_manager, scenario_manager)
-
-      return unless %w[both runtime].include?(options_manager.mode)
-
-      Tebako::Codegen.generate_stub_rb(options_manager)
-    end
-
-    def finalize(options_manager, scenario_manager)
-      use_patchelf = options_manager.patchelf? && scenario_manager.linux_gnu?
-      patchelf = use_patchelf ? "#{options_manager.deps_bin_dir}/patchelf" : nil
-      Tebako::Packager.finalize(options_manager.ruby_src_dir, options_manager.package,
-                                options_manager.rv, patchelf, options_manager.output_type_first)
     end
 
     def options_from_tebafile(tebafile)
@@ -243,14 +185,6 @@ module Tebako
       puts "An unexpected error occurred while loading the tebafile '#{tebafile}'."
       puts e.message
       {}
-    end
-
-    def press_build_cmd(options_manager)
-      "cmake --build #{options_manager.output_folder} --target tebako --parallel #{Etc.nprocessors}"
-    end
-
-    def press_cfg_cmd(options_manager)
-      "cmake -DSETUP_MODE:BOOLEAN=OFF #{options_manager.cfg_options} #{options_manager.press_options}"
     end
 
     def setup_build_cmd(options_manager)

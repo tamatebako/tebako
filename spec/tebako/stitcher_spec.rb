@@ -29,9 +29,6 @@ require "fileutils"
 require "tmpdir"
 require "zlib"
 
-require "tebako/error"
-require "tebako/stitcher"
-
 # rubocop:disable Metrics/BlockLength
 
 RSpec.describe Tebako::Stitcher do
