@@ -124,11 +124,7 @@ module Tebako
       initialize_entry_point(fs_entrance)
     end
 
-    attr_reader :fs_entry_point, :fs_entrance, :gemfile_path, :needs_bundler, :with_gemfile
-
-    def bundler_reference
-      @needs_bundler ? "_#{@bundler_version}_" : nil
-    end
+    attr_reader :fs_entry_point, :fs_entrance, :fs_root, :gemfile_path, :needs_bundler, :scenario, :with_gemfile
 
     def configure_scenario
       lookup_files
@@ -189,6 +185,8 @@ module Tebako
 
   # Configure scenraio and do bundler resolution
   class ScenarioManagerWithBundler < ScenarioManager
+    attr_reader :bundler_version
+
     protected
 
     def lookup_files
