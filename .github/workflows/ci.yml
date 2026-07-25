@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain (rustup)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # NB: pure-cargo pipeline — no vcpkg, no native deps (the vendored
+      # dwarfs build arrives with the dwarfs backend milestone).
+      # `cargo build` first: it produces the libtfs cdylib the C harness
+      # links against (cargo test alone builds deps as rlibs only).
+      - name: cargo build
+        run: cargo build --workspace
+
+      - name: cargo test
+        run: cargo test --workspace
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  fmt:
+    name: fmt
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
