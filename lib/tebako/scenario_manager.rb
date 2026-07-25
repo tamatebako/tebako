@@ -101,22 +101,23 @@ module Tebako
     end
 
     def ncores
-      if @ncores.nil?
-        out, st = begin
-          if @macos
-            Open3.capture2e("sysctl", "-n", "hw.ncpu")
-          else
-            # nproc does not exist on Windows
-            Open3.capture2e("nproc", "--all")
-          end
-        rescue Errno::ENOENT
-          [nil, nil]
-        end
-
-        @ncores = !st.nil? && !st.signaled? && st.exitstatus.zero? ? out.strip.to_i : 4
+      @ncores ||= begin
+        out, st = cpu_count
+        !st.nil? && !st.signaled? && st.exitstatus.zero? ? out.strip.to_i : 4
       end
-      @ncores
     end
+
+    private
+
+    # nproc does not exist on Windows; fall back to 4 when it (or sysctl) is
+    # unavailable, matching the existing non-zero-exit fallback
+    def cpu_count
+      @macos ? Open3.capture2e("sysctl", "-n", "hw.ncpu") : Open3.capture2e("nproc", "--all")
+    rescue Errno::ENOENT
+      [nil, nil]
+    end
+
+    public
   end
 
   # Manages packaging scenario based on input files (gemfile, gemspec, etc)
