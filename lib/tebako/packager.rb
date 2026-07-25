@@ -33,11 +33,11 @@ module Tebako
   module Packager
     class << self
       # Deploy
-      def deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer) # rubocop:disable Metrics/ParameterLists
+      def deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer, deps_dir = nil) # rubocop:disable Metrics/ParameterLists
         puts "-- Running deploy script"
 
         deploy_helper = Tebako::DeployHelper.new(fs_root, fs_entrance, target_dir, pre_dir)
-        deploy_helper.configure(ruby_ver, cwd)
+        deploy_helper.configure(ruby_ver, cwd, deps_dir)
         deploy_helper.deploy(deployer)
         Tebako::Stripper.strip(deploy_helper, target_dir)
       end
@@ -64,7 +64,8 @@ module Tebako
                options_manager.root, scenario_manager.fs_entrance, options_manager.cwd,
                Tebako::RuntimeDeployer.new(runtime_path, options_manager.deps_bin_dir,
                                            options_manager.data_bin_dir, scenario_manager.fs_mount_point,
-                                           options_manager.rv))
+                                           options_manager.rv),
+               options_manager.deps)
         align_layout_to_runtime!(options_manager.data_src_dir, layout_dir, options_manager.rv)
         write_entry_dispatcher(options_manager.data_src_dir, scenario_manager, options_manager.cwd)
         mkdwarfs(options_manager.deps_bin_dir, options_manager.data_bundle_file, options_manager.data_src_dir)

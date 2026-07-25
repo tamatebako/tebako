@@ -52,6 +52,12 @@ module Tebako
     MARKER_FILE = ".sdk-complete"
     LOCK_FILE = ".sdk.lock"
     LOCK_TIMEOUT = 600
+    STUB_EXCLUDED_CRT = %w[
+      main start init fini end edata bss_start data_start
+      libc_start_main libc_csu_init libc_csu_fini dso_handle
+      progname program_invocation_name IO_stdin_used TMC_END
+    ].freeze
+    STUB_INCLUDED_PREFIXES = %w[rb_ ruby_ onig st_ Init_ iseq_].freeze
 
     class << self
       # SDK root for the runtime at +runtime_path+; provisions on first use
@@ -234,7 +240,7 @@ module Tebako
       out, st = Open3.capture2e(*nm_command)
       Tebako.packaging_error(135, "nm failed on #{@runtime_path}: #{out}") unless st.success?
 
-      symbols = out.scan(/^\h+ [A-Za-z] (\S+)$/).flatten.uniq.reject { |s| s.start_with?("__mh_") }
+      symbols = out.scan(/^\h+ [A-Za-z] (\S+)$/).flatten.uniq.reject { |s| stub_excluded?(s) }
       Tebako.packaging_error(135, "no exported symbols found in #{@runtime_path}") if symbols.empty?
 
       asm = File.join(tmp, "symbols.s")
@@ -247,6 +253,21 @@ module Tebako
 
       out, st = Open3.capture2e("ar", "rcs", File.join(stub_dir, "libruby-stub.a"), object)
       Tebako.packaging_error(135, "ar failed: #{out}") unless st.success?
+    end
+
+    # Symbols the probe executable must not be offered: re-declaring them in
+    # the stub collides with the probe's own startup/runtime objects
+    # (Mach-O's header pseudo-symbols on darwin, the ELF CRT boundary
+    # symbols elsewhere), and third-party symbols collide with the static
+    # libraries those probes link (the runtime executable exports its
+    # statically linked OpenSSL & co; a stub carrying them duplicates
+    # libssl/libcrypto)
+    def stub_excluded?(symbol)
+      name = symbol.sub(/\A_/, "")
+      return true if name.start_with?("__mh_")
+      return true if STUB_EXCLUDED_CRT.include?(name)
+
+      STUB_INCLUDED_PREFIXES.none? { |prefix| name.start_with?(prefix) }
     end
 
     def nm_command

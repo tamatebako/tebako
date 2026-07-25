@@ -189,9 +189,26 @@ module Tebako
       File.write(bundle_exec_script, <<~RUBY)
         # THIS FILE WAS GENERATED AUTOMATICALLY BY TEBAKO. DO NOT CHANGE IT, PLEASE
         version = ARGV.shift
-        gem "bundler", version unless version.empty?
+        gem "bundler", version unless version.nil? || version.empty?
         require "bundler"
         Bundler.setup
+        # The runtime eagerly loads its default openssl at boot; the
+        # default's ASN1 layer removes indefinite_length= and
+        # infinite_length= from OpenSSL::ASN1::Primitive, which kills a
+        # bundle pinning openssl 3.3+ (its asn1.rb undefs the
+        # already-removed methods). On that exact failure, re-declare the
+        # methods on Primitive and let the gem's own undefs run.
+        begin
+          require "openssl"
+        rescue NameError => e
+          raise unless e.message.include?("OpenSSL::ASN1::Primitive")
+
+          primitive = OpenSSL::ASN1::Primitive
+          primitive.attr_accessor :indefinite_length
+          primitive.alias_method :infinite_length, :indefinite_length
+          primitive.alias_method :infinite_length=, :indefinite_length=
+          require "openssl"
+        end
         require "rubygems"
         require "rubygems/gem_runner"
         begin
@@ -242,6 +259,26 @@ module Tebako
           end
         end
         Gem::Request.singleton_class.prepend(TebakoDeployCerts)
+
+        # The runtime eagerly loads its default openssl at interpreter boot;
+        # the default's ASN1 layer removes indefinite_length= and
+        # infinite_length= from OpenSSL::ASN1::Primitive. When the gem home
+        # also carries a newer openssl (3.3+), the newer gem's asn1.rb dies
+        # in undef_method because the methods are already gone. Load openssl
+        # through this shim: on that exact failure, re-declare the methods
+        # on Primitive and let the gem's own undefs run.
+        def tg_require_openssl
+          require "openssl"
+        rescue NameError => e
+          raise unless e.message.include?("OpenSSL::ASN1::Primitive")
+
+          primitive = OpenSSL::ASN1::Primitive
+          primitive.attr_accessor :indefinite_length
+          primitive.alias_method :infinite_length, :indefinite_length
+          primitive.alias_method :infinite_length=, :indefinite_length=
+          require "openssl"
+        end
+        tg_require_openssl
 
         # rubygems commands end with terminate_interaction(0) on success,
         # which raises Gem::SystemExitException (< SystemExit) and would end

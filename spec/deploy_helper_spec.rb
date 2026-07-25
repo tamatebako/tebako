@@ -142,6 +142,26 @@ RSpec.describe Tebako::DeployHelper do
         )
       end
 
+      it "adds build.openssl when the deps carry the vcpkg OpenSSL prefix" do
+        vcpkg = File.join(@tmp, "deps", "vcpkg_installed", "aarch64-linux")
+        FileUtils.mkdir_p(File.join(vcpkg, "include", "openssl"))
+        File.write(File.join(vcpkg, "include", "openssl", "ssl.h"), "/* ssl.h */")
+        seed_runtime_gem
+        deploy_helper.configure(ruby_ver, nil, File.join(@tmp, "deps"))
+        tld = File.join(target_dir, "local")
+        ops = captured_ops { deploy_helper.deploy(deployer) }
+
+        expect(ops).to eq(
+          [["chdir", tld],
+           ["bundle", nil, ["config", "set", "--local", "build.ffi", "--disable-system-libffi"]],
+           ["bundle", nil, ["config", "set", "--local", "build.nokogiri", "--no-use-system-libraries"]],
+           ["bundle", nil, ["config", "set", "--local", "force_ruby_platform", "true"]],
+           ["bundle", nil, ["config", "set", "--local", "build.openssl",
+                            "--with-openssl-dir=#{vcpkg} --with-ldflags=-ldl -lz"]],
+           ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}"]]]
+        )
+      end
+
       it "passes the gem environment and the target dir to the deployer" do
         configure_deploy_helper
         expect(deployer).to receive(:execute) do |ops, env, seed_dir, verbose:|
