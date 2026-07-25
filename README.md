@@ -38,6 +38,31 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (milestone 4)
+
+- **`crates/tebako-pkg` — the package (tpkg) trailer surgery CLI** (item 25's
+  scoping: TPKG TRAILER operations ONLY — generic image ops belong to the
+  future tfs-cli). Subcommands with the exact C++ tebakofs semantics
+  (flags, output formats, exit codes, stderr bodies):
+  - `info <archive>` — trailer dump (slots/offsets/mounts/lean/abi/
+    runtime_ref) or plain-archive summary via the tfs C ABI
+  - `bundle --bootstrap <exe> --image <img[:mountpoint]>... -o <file>
+    [--runtime-ref <ref>] [--lean] [--launcher-abi <n>]`
+  - `unbundle <binary> -o <dir>` (bootstrap.bin + image-N.bin +
+    manifest.json with per-part crc32)
+  - `reassemble <dir> -o <file>`
+  - `insert-image <binary> <img[:mountpoint]>` /
+    `remove-image <binary> <slot>` /
+    `set-runtime <binary> <runtime-file>` (atomic in-place rewrites)
+  Built on `crates/tpkg` (trailer byte-parity; a streaming `tpkg::Crc32`
+  was added for the part checksums) and `crates/tfs` (the info fallback).
+  **Golden parity vs the C++ tool (proven byte-for-byte)**: bundle output,
+  info output, manifest.json, unbundled parts, reassemble round-trip,
+  insert/remove/set-runtime rewrites — all byte-identical to tebakofs
+  (libtfs main). Golden tests auto-detect the oracle (`TEBAKOFS_CPP`, the
+  libtfs build tree, or PATH) and skip without it; the round-trip and CLI
+  suites are oracle-free.
+
 ### SHIPPED (milestone 3)
 
 - **tfs: SquashFS backend via `crates/sqfs-sys`** — hand-written FFI to
@@ -116,7 +141,8 @@ Rust-consumable surface for it.
 
 ### PLANNED (next milestones, in order)
 
-1. `crates/tebako-pkg` (trailer surgery), `crates/tfs-cli`.
+1. `crates/tfs-cli` (generic image ops: mkimage/ls/cat/tree/stat/extract/
+   find — the non-trailer half of the C++ tebakofs).
 2. `crates/tebako-cli` (item 17), `crates/tebako-bootstrap` (item 22,
    size-gated < 2 MB), cbindgen `tpkg.h` with it.
 3. crates.io publication of `tpkg`/`tfs` (after the API settles
