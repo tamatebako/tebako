@@ -106,6 +106,9 @@ fn main() {
                 attempt += 1;
                 let mut cmd = Command::new(&vcpkg_exe);
                 cmd.arg("install")
+                    .arg("--vcpkg-root")
+                    .arg(&vcpkg_root)
+                    .arg("--x-wait-for-lock")
                     .arg("--x-manifest-root")
                     .arg(&manifest_dir)
                     .arg("--x-install-root")

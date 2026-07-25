@@ -77,6 +77,8 @@ jobs:
         run: |
           if [ "${{ runner.os }}" = "Linux" ]; then TRIPLET=x64-linux-static; else TRIPLET=arm64-osx-static; fi
           ../.vcpkg-root/vcpkg install \
+            --vcpkg-root "${{ github.workspace }}/.vcpkg-root" \
+            --x-wait-for-lock \
             --x-manifest-root crates/sqfs-sys \
             --x-install-root "${{ github.workspace }}/.sqfs-installed" \
             --triplet "$TRIPLET" \
