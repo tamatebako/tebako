@@ -268,7 +268,22 @@ impl Harness {
         for (k, v) in extra_env {
             cmd.env(k, v);
         }
-        let out = cmd.output().expect("run package");
+        let out = {
+            // Linux ETXTBSY race: a freshly stitched fixture binary can
+            // transiently be reported busy when spawned while parallel
+            // tests execute their own fixture binaries. Retry bounded.
+            let mut attempt = 0;
+            loop {
+                match cmd.output() {
+                    Ok(o) => break o,
+                    Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && attempt < 20 => {
+                        attempt += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    Err(e) => panic!("run package {}: {e}", pkg.display()),
+                }
+            }
+        };
         (
             out.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&out.stdout).into_owned(),
