@@ -62,7 +62,7 @@ mod io;
 mod model;
 
 pub use codec::{encode_trailer, parse_trailer};
-pub use crc32::crc32;
+pub use crc32::{crc32, Crc32};
 pub use error::{strerror, TpkgError};
 pub use io::{read_from, write_to};
 pub use model::{Manifest, Slot};
