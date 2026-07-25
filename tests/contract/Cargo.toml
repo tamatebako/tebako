@@ -1,0 +1,17 @@
+[package]
+name = "tebako-contract-tests"
+description = "Contract tests: the C++ libtfs c_api cases running through the Rust tebako_fs_* ABI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish = false
+
+[dependencies]
+tfs = { version = "0.1.0", path = "../../crates/tfs" }
+libc = "0.2"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
