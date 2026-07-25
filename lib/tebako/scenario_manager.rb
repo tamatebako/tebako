@@ -102,13 +102,18 @@ module Tebako
 
     def ncores
       if @ncores.nil?
-        if @macos
-          out, st = Open3.capture2e("sysctl", "-n", "hw.ncpu")
-        else
-          out, st = Open3.capture2e("nproc", "--all")
+        out, st = begin
+          if @macos
+            Open3.capture2e("sysctl", "-n", "hw.ncpu")
+          else
+            # nproc does not exist on Windows
+            Open3.capture2e("nproc", "--all")
+          end
+        rescue Errno::ENOENT
+          [nil, nil]
         end
 
-        @ncores = !st.signaled? && st.exitstatus.zero? ? out.strip.to_i : 4
+        @ncores = !st.nil? && !st.signaled? && st.exitstatus.zero? ? out.strip.to_i : 4
       end
       @ncores
     end

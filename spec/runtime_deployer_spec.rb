@@ -152,7 +152,9 @@ RSpec.describe Tebako::RuntimeDeployer do
       expect(driver).to include('tg_config["EXTDLDFLAGS"] = ""')
     end
 
-    it "writes an executable ruby shim that re-enters the driver image" do
+    # Windows has no exec-bit concept the POSIX shim relies on (and the shim
+    # itself is not written there); the exec check is POSIX-only
+    it "writes an executable ruby shim that re-enters the driver image", unless: Gem.win_platform? do
       deployer.execute([], env, seed_dir)
       shim = File.join(staging_dir, "ruby")
 
@@ -161,6 +163,12 @@ RSpec.describe Tebako::RuntimeDeployer do
       expect(content).to include(%(exec "#{runtime_path}"))
       expect(content).to include(%(--tebako-image "#{File.join(staging_dir, "deploy-driver.pkg")}:0:/__tebako_memfs__"))
       expect(content).to include("--tebako-entry ruby")
+    end
+
+    it "does not write a ruby shim on Windows", if: Gem.win_platform? do
+      deployer.execute([], env, seed_dir)
+
+      expect(File.exist?(File.join(staging_dir, "ruby"))).to be(false)
     end
 
     it "continues after a successful gem command (the fontist deploy regression)" do
