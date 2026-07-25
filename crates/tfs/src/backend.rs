@@ -61,6 +61,13 @@ pub trait Backend: Send + Sync {
     /// List a directory's direct children (no `.`/`..`).
     /// `Err(ENOTDIR)` when `path` is not a directory.
     fn read_dir(&self, path: &str) -> Result<Vec<RawDirEntry>, i32>;
+
+    /// Image-level metadata as JSON (item 24's `image_info_json`), when the
+    /// backend exposes it. Default: None (backend has no image metadata
+    /// surface).
+    fn image_info_json(&self) -> Option<String> {
+        None
+    }
 }
 
 /// Detected archive format (magic sniffing).
