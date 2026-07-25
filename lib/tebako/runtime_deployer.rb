@@ -50,6 +50,35 @@ module Tebako
     EMPTY_BASE = "deploy-driver.base"
     BUNDLE_EXEC_SCRIPT_NAME = "bundle_exec.rb"
 
+    # Toolchain candidates for mkmf/cmake builds inside the deploy driver:
+    # the runtime's recorded tool first (a no-op when it exists), then an
+    # available equivalent. CC/CXX prefer clang (the recorded flags are
+    # clang-flavored); the llvm tools fall back to binutils.
+    CLANG_VERSIONS = %w[20 19 18 17 16 15 14 13 12 11].freeze
+    TOOLCHAIN_FALLBACKS = {
+      "CC" => %w[clang cc gcc],
+      "CXX" => ["clang++", "c++", "g++"],
+      "AR" => %w[ar],
+      "RANLIB" => %w[ranlib],
+      "NM" => %w[nm],
+      "OBJDUMP" => %w[objdump],
+      "OBJCOPY" => %w[objcopy]
+    }.freeze
+    TOOLCHAIN_ENV_KEYS = TOOLCHAIN_FALLBACKS.keys.freeze
+
+    class << self
+      # [recorded tool, fallbacks...] for +key+ (one of TOOLCHAIN_ENV_KEYS)
+      def tool_candidates(key, recorded)
+        first, *rest = TOOLCHAIN_FALLBACKS[key]
+        llvm_name = if key == "CC"
+                      "clang"
+                    else
+                      (key == "CXX" ? "clang++" : "llvm-#{key.downcase}")
+                    end
+        [recorded, first, *CLANG_VERSIONS.map { |version| "#{llvm_name}-#{version}" }, *rest]
+      end
+    end
+
     def initialize(runtime_path, deps_bin_dir, staging_bin_dir, fs_mount_point, ruby_ver)
       @runtime_path = runtime_path
       @deps_bin_dir = deps_bin_dir
@@ -80,20 +109,39 @@ module Tebako
     # it at interpreter boot (setting it in the driver script would be too
     # late). TEBAKO_PASS_THROUGH joins it: the tebako-patched rubygems
     # filters gem paths to the memfs mount point unless it is set, and the
-    # driver installs into the packaging environment on the host.
+    # driver installs into the packaging environment on the host. The
+    # resolved toolchain is exported for subprocess builds that never read
+    # rbconfig (mini_portile/cmake: "CMAKE_C_COMPILER not set"), without
+    # overriding CC/CXX & co the user set in their own environment
     def execute(ops, env, seed_dir, verbose: false)
       write_driver(seed_dir, ops)
       Tebako::Packager.mkdwarfs(@deps_bin_dir, driver_image, seed_dir)
       stitch_driver_package
       write_bundle_exec_script if @shim_supported
       write_ruby_shim if @shim_supported
-      out = BuildHelpers.with_env(env.merge("TEBAKO_PASS_THROUGH" => "1")) do
+      out = BuildHelpers.with_env(toolchain_env.merge(env).merge("TEBAKO_PASS_THROUGH" => "1")) do
         BuildHelpers.run_with_capture([@runtime_path, "--tebako-image", driver_image_ref])
       end
       puts out if verbose
     end
 
     private
+
+    # Toolchain for the driver process environment: the resolved tool per
+    # key, but only for keys the user has not already set in their own
+    # environment (explicit user CC/CXX/... wins)
+    def toolchain_env
+      TOOLCHAIN_ENV_KEYS.filter_map do |key|
+        next unless ENV[key].nil? || ENV[key].empty?
+
+        tool = first_tool(self.class.tool_candidates(key, RbConfig::CONFIG[key]))
+        [key, tool] unless tool.nil?
+      end.to_h
+    end
+
+    def first_tool(candidates)
+      candidates.find { |candidate| !candidate.to_s.empty? && system("command -v #{candidate} >/dev/null 2>&1") }
+    end
 
     def bundle_exec_script
       File.join(@staging_bin_dir, BUNDLE_EXEC_SCRIPT_NAME)
@@ -230,28 +278,29 @@ module Tebako
     # generate an executable file", "command not found"). Fall back to the
     # first available equivalent: newer/older clang for the compilers
     # (recorded flags are clang-flavored), binutils for the llvm tools
-    def cc_override
-      <<~RUBY
-        def tg_first_tool(*candidates)
-          candidates.find { |tg_c| !tg_c.to_s.empty? && system("command -v \#{tg_c} >/dev/null 2>&1") }
-        end
+    def cc_override # rubocop:disable Metrics/MethodLength
+      lines = ["def tg_first_tool(*candidates)",
+               "  candidates.find { |tg_c| !tg_c.to_s.empty? && system(\"command -v \#{tg_c} >/dev/null 2>&1\") }",
+               "end",
+               ""]
+      lines << "{"
+      TOOLCHAIN_ENV_KEYS.each do |key|
+        recorded = key == "NM" ? "RbConfig::CONFIG[\"NM\"].to_s.split.first" : "RbConfig::CONFIG[#{key.inspect}]"
+        lines << "  #{key.inspect} => [#{override_candidates(key, recorded)}],"
+      end
+      lines << "}.each do |tg_key, tg_candidates|"
+      lines << "  tg_tool = tg_first_tool(*tg_candidates)"
+      lines << "  next if tg_tool.nil?"
+      lines << "  [RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each { |tg_config| tg_config[tg_key] = tg_tool }"
+      lines << "end"
+      "#{lines.join("\n")}\n"
+    end
 
-        tg_llvm = %w[20 19 18 17 16 15 14 13 12 11]
-        {
-          "CC" => [RbConfig::CONFIG["CC"], "clang", *tg_llvm.map { |tg_v| "clang-\#{tg_v}" }, "cc", "gcc"],
-          "CXX" => [RbConfig::CONFIG["CXX"], "clang++", *tg_llvm.map { |tg_v| "clang++-\#{tg_v}" }, "c++", "g++"],
-          "AR" => [RbConfig::CONFIG["AR"], *tg_llvm.map { |tg_v| "llvm-ar-\#{tg_v}" }, "ar"],
-          "RANLIB" => [RbConfig::CONFIG["RANLIB"], *tg_llvm.map { |tg_v| "llvm-ranlib-\#{tg_v}" }, "ranlib"],
-          "NM" => [RbConfig::CONFIG["NM"].to_s.split.first, *tg_llvm.map { |tg_v| "llvm-nm-\#{tg_v}" }, "nm"],
-          "OBJDUMP" => [RbConfig::CONFIG["OBJDUMP"], *tg_llvm.map { |tg_v| "llvm-objdump-\#{tg_v}" }, "objdump"],
-          "OBJCOPY" => [RbConfig::CONFIG["OBJCOPY"], *tg_llvm.map { |tg_v| "llvm-objcopy-\#{tg_v}" }, "objcopy"]
-        }.each do |tg_key, tg_candidates|
-          tg_tool = tg_first_tool(*tg_candidates)
-          next if tg_tool.nil?
-
-          [RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each { |tg_config| tg_config[tg_key] = tg_tool }
-        end
-      RUBY
+    # The emitted candidate list for +key+: the recorded tool as a code
+    # reference (it reads the runtime's rbconfig inside the driver), then the
+    # literal fallbacks
+    def override_candidates(key, recorded)
+      self.class.tool_candidates(key, recorded).map { |c| c.start_with?("RbConfig::") ? c : c.inspect }.join(", ")
     end
 
     def driver_body(ops)
