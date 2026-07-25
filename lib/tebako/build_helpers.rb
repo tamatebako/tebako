@@ -32,6 +32,17 @@ require "open3"
 module Tebako
   # Ruby build helpers
   module BuildHelpers
+    # Environment bindings that couple a spawned process to the press host's
+    # own Ruby/bundler setup. Runtime spawns (layout extraction, the deploy
+    # driver) boot the prebuilt runtime's embedded Ruby, which must resolve
+    # gems against the memfs and the deploy GEM_HOME alone: an inherited
+    # bundler context (a 'bundle exec'-driven press) makes that Ruby boot
+    # into the press's own bundle -- crashing with Bundler::GemNotFound at
+    # best, silently deploying the wrong gem set at worst. Scrubbed at this
+    # single spawn choke point (nil values unset the variable in the child).
+    RUBY_ENV_SCRUB = %w[RUBYOPT RUBYLIB].freeze
+    RUBY_ENV_SCRUB_PREFIXES = %w[BUNDLE_ BUNDLER_].freeze
+
     class << self
       # rm_rf + mkdir_p: in the prebuilt press flows no cmake configure runs,
       # so the parent output folder may not exist yet
@@ -43,10 +54,18 @@ module Tebako
       def run_with_capture(args)
         args = args.compact
         puts "   ... @ #{args.join(" ")}"
-        out, st = Open3.capture2e(*args)
+        out, st = Open3.capture2e(ruby_env_scrub, *args)
         raise Tebako::Error, "Failed to run #{args.join(" ")} (#{st}):\n #{out}" if st.signaled? || !st.exitstatus.zero?
 
         out
+      end
+
+      # The scrub environment for spawned processes: RUBYOPT/RUBYLIB plus
+      # every BUNDLE_*/BUNDLER_* variable currently set, all mapped to nil
+      def ruby_env_scrub
+        ENV.each_key.with_object(RUBY_ENV_SCRUB.to_h { |key| [key, nil] }) do |key, scrub|
+          scrub[key] = nil if RUBY_ENV_SCRUB_PREFIXES.any? { |prefix| key.start_with?(prefix) }
+        end
       end
 
       def run_with_capture_v(args)
