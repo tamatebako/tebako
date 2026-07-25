@@ -36,7 +36,7 @@ jobs:
           submodules: recursive
 
       - name: Install toolchain (rustup)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: clippy
 
@@ -94,12 +94,25 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          path: tebako-rs
+
+      # tfs's optional dwarfs-t path dependency must resolve even with the
+      # feature off, so the sibling checkout is still required.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: clippy
       # The no-dwarfs configuration must stay buildable and testable
       # without any vcpkg involvement (dwarfs mounts then fail ENOTSUP).
       - name: cargo test (no default features)
+        working-directory: tebako-rs
         run: cargo test -p tfs --no-default-features
 
   fmt:
@@ -107,7 +120,7 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
