@@ -180,7 +180,7 @@ module Tebako
       stage_pre_dir(ops)
       ops.concat(bundle_config_ops)
       ops << bundle_install_op
-      ops << bundle_op(["exec", "gem", "build", gemspec])
+      ops << ["bundle_exec", bundler_activation, ["build", gemspec]]
       ops << ["install_all", @pre_dir, install_argv_tail]
     end
 

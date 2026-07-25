@@ -243,7 +243,7 @@ RSpec.describe Tebako::DeployHelper do
         File.write(File.join(fs_root, "Gemfile"), "source 'https://rubygems.org'\n")
       end
 
-      it "collects bundler, bundle-exec build and install-all operations" do
+      it "collects bundler, in-process build setup and install-all operations" do
         configure_deploy_helper
         tgd = File.join(target_dir, "lib", "ruby", "gems", api_ver)
         tbd = File.join(target_dir, "bin")
@@ -262,7 +262,7 @@ RSpec.describe Tebako::DeployHelper do
              ["bundle", nil, ["config", "set", "--local", "build.nokogiri", "--no-use-system-libraries"]],
              ["bundle", nil, ["config", "set", "--local", "force_ruby_platform", "true"]],
              ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}"]],
-             ["bundle", nil, ["exec", "gem", "build", gemspec]],
+             ["bundle_exec", nil, ["build", gemspec]],
              ["install_all", pre_dir, ["--no-document", "--install-dir", tgd, "--bindir", tbd]]]
           )
           expect(verbose).to be(false)
