@@ -60,7 +60,12 @@ RSpec.describe Tebako::RubyVersion do
       "3.3.7" => "3.3.0",
       "3.4.2" => "3.4.0"
     }.each do |ruby_version, api_version|
-      it "returns '#{api_version}' for Ruby #{ruby_version}" do
+      # Constructing a RubyVersion below MIN_RUBY_VERSION_WINDOWS raises on
+      # msys hosts (version_check_msys), so that example is POSIX-only; the
+      # Windows rejection itself is covered by #version_check_msys below
+      below_windows_floor = Gem::Version.new(ruby_version) <
+                            Gem::Version.new(Tebako::RubyVersion::MIN_RUBY_VERSION_WINDOWS)
+      it "returns '#{api_version}' for Ruby #{ruby_version}", unless: below_windows_floor && Gem.win_platform? do
         expect(Tebako::RubyVersion.new(ruby_version).api_version).to eq(api_version)
       end
     end

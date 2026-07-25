@@ -57,6 +57,20 @@ RSpec.describe Tebako::RuntimeDeployer do
   end
 
   describe "#execute" do
+    # Run the example with AR unset and CC/CXX user-set, restoring the real
+    # environment afterwards
+    def with_toolchain_env
+      user_cc = ENV.fetch("CC", nil)
+      user_cxx = ENV.fetch("CXX", nil)
+      ENV.delete("AR")
+      ENV["CC"] = "user-cc"
+      ENV["CXX"] = "user-c++"
+      yield
+    ensure
+      ENV["CC"] = user_cc
+      ENV["CXX"] = user_cxx
+    end
+
     it "builds the driver image from the seeded environment" do
       deployer.execute([], env, seed_dir)
       expect(Tebako::Packager).to have_received(:mkdwarfs)
@@ -92,13 +106,11 @@ RSpec.describe Tebako::RuntimeDeployer do
       deployer.execute([], env, seed_dir)
     end
 
-    it "exports a resolved toolchain for subprocess builds, without overriding user-set variables" do
-      user_cc = ENV.fetch("CC", nil)
-      user_cxx = ENV.fetch("CXX", nil)
-      begin
-        ENV.delete("AR")
-        ENV["CC"] = "user-cc"
-        ENV["CXX"] = "user-c++"
+    # Toolchain resolution is POSIX-only (the command -v probe has no shell
+    # on Windows, matching the POSIX-only in-driver overrides)
+    it "exports a resolved toolchain for subprocess builds, without overriding user-set variables",
+       unless: Gem.win_platform? do
+      with_toolchain_env do
         expect(Tebako::BuildHelpers).to receive(:with_env) do |env_hash, &block|
           # user-set CC/CXX are not clobbered: they reach the driver by
           # environment inheritance, not through the override hash
@@ -109,9 +121,19 @@ RSpec.describe Tebako::RuntimeDeployer do
           block.call
         end
         deployer.execute([], env, seed_dir)
-      ensure
-        ENV["CC"] = user_cc
-        ENV["CXX"] = user_cxx
+      end
+    end
+
+    it "exports no toolchain variables on Windows", if: Gem.win_platform? do
+      with_toolchain_env do
+        expect(Tebako::BuildHelpers).to receive(:with_env) do |env_hash, &block|
+          expect(env_hash).not_to have_key("CC")
+          expect(env_hash).not_to have_key("CXX")
+          expect(env_hash).not_to have_key("AR")
+          expect(env_hash).not_to have_key("RANLIB")
+          block.call
+        end
+        deployer.execute([], env, seed_dir)
       end
     end
   end
