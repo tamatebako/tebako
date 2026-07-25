@@ -189,7 +189,7 @@ module Tebako
       File.write(bundle_exec_script, <<~RUBY)
         # THIS FILE WAS GENERATED AUTOMATICALLY BY TEBAKO. DO NOT CHANGE IT, PLEASE
         version = ARGV.shift
-        gem "bundler", version unless version.empty?
+        gem "bundler", version unless version.nil? || version.empty?
         require "bundler"
         Bundler.setup
         require "rubygems"

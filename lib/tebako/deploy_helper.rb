@@ -50,9 +50,10 @@ module Tebako
 
     attr_reader :gem_home
 
-    def configure(ruby_ver, cwd)
+    def configure(ruby_ver, cwd, deps_dir = nil)
       @ruby_ver = ruby_ver
       @cwd = cwd
+      @deps_dir = deps_dir
 
       @tbd = File.join(@target_dir, "bin")
       @tgd = @gem_home = File.join(@target_dir, "lib", "ruby", "gems", @ruby_ver.api_version)
@@ -125,9 +126,36 @@ module Tebako
     end
 
     def bundle_config_ops
-      bundle_config_option_ops(["build.ffi", "--disable-system-libffi"]) +
-        bundle_config_option_ops(["build.nokogiri", @nokogiri_option]) +
-        bundle_config_option_ops(["force_ruby_platform", @force_ruby_platform])
+      ops = bundle_config_option_ops(["build.ffi", "--disable-system-libffi"]) +
+            bundle_config_option_ops(["build.nokogiri", @nokogiri_option]) +
+            bundle_config_option_ops(["force_ruby_platform", @force_ruby_platform])
+      if openssl_dir.nil?
+        ops
+      else
+        ops + bundle_config_option_ops(
+          ["build.openssl", "--with-openssl-dir=#{openssl_dir} --with-ldflags=-ldl -lz"]
+        )
+      end
+    end
+
+    # The libtfs-deps package provisioned by 'tebako setup' carries the
+    # OpenSSL headers and static libraries the runtime itself was built
+    # with; building the openssl gem against them keeps the extension on
+    # the runtime's own OpenSSL (linking a shared system libssl would
+    # collide with the statically linked one in the runtime executable).
+    # The static libcrypto/libssl need -ldl -lz to link.
+    def openssl_dir
+      return @openssl_dir if defined?(@openssl_dir)
+
+      @openssl_dir = if @deps_dir.nil?
+                       nil
+                     else
+                       Dir.glob(File.join(@deps_dir, "vcpkg_installed", "*"))
+                          .find do |dir|
+                         File.exist?(File.join(dir, "include", "openssl",
+                                               "ssl.h"))
+                       end
+                     end
     end
 
     def bundle_config_option_ops(opt)
@@ -136,7 +164,13 @@ module Tebako
 
     def bundle_install_op
       puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-      bundle_op(["install", "--jobs=#{ncores}"])
+      # --prefer-local resolves to the runtime's own default gems whenever
+      # they satisfy the requirements: the statically linked default
+      # extensions own their namespaces (a newer native gem of the same
+      # name -- e.g. openssl -- crashes against the runtime's compiled-in
+      # copy), and it avoids needless native builds for gems the image
+      # already carries
+      bundle_op(["install", "--jobs=#{ncores}", "--prefer-local"])
     end
 
     def check_entry_point(entry_point_root)

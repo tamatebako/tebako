@@ -75,7 +75,7 @@ RSpec.describe Tebako::RuntimeSdk do
   # Fake the external steps of provisioning: extraction plants the source
   # tree, configure plants the generated arch header, nm/cc/ar plant the
   # symbol stub archive
-  def stub_build_steps(recorded) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
+  def stub_build_steps(recorded, nm_output: nil, asm_contents: []) # rubocop:disable Metrics/AbcSize, Metrics/MethodLength
     src_name = "tfs-ruby-3.3.7-src"
     ok = instance_double(Process::Status, success?: true)
     allow(Open3).to receive(:capture2e) do |*args, **kwargs|
@@ -92,8 +92,9 @@ RSpec.describe Tebako::RuntimeSdk do
         File.write(File.join(hdr, "config.h"), "/* config.h */")
         ["", ok]
       when "nm"
-        ["0000000100001234 T _rb_eval_string\n0000000100005678 T _rb_intern", ok]
+        [nm_output || "0000000100001234 T _rb_eval_string\n0000000100005678 T _rb_intern", ok]
       when "cc"
+        asm_contents << File.read(args[2])
         FileUtils.touch(args.last)
         ["", ok]
       when "ar"
@@ -174,6 +175,33 @@ RSpec.describe Tebako::RuntimeSdk do
       expect(File.read(File.join(sdk.archhdr_dir, "ruby", "config.h"))).to eq("/* config.h */")
       expect(File.file?(File.join(sdk_root, "lib", "libruby-stub.a"))).to be(true)
       expect(File.file?(File.join(sdk_root, described_class::MARKER_FILE))).to be(true)
+    end
+
+    it "keeps CRT boundary symbols, Mach-O pseudo-symbols and third-party library symbols out of the stub" do
+      write_layout_rbconfig("'--without-gmp'")
+      allow(Tebako::RuntimeManager).to receive(:layout).and_return(layout_dir)
+      stub_http
+      asm_contents = []
+      stub_build_steps([], asm_contents: asm_contents,
+                           nm_output: "000000000029aa44 T _start\n" \
+                                      "0000000001a16740 B __bss_start\n" \
+                                      "0000000001a0ffa0 D __data_start\n" \
+                                      "0000000001acd7b0 B _end\n" \
+                                      "0000000100001234 T __mh_execute_header\n" \
+                                      "00000001002cd2c8 T _rb_hash_bulk_insert\n" \
+                                      "0000000100abcdef T _ruby_xmalloc\n" \
+                                      "0000000100202068 T _EVP_PKEY_new_raw_private_key\n" \
+                                      "0000000100ffffff T _SSL_CTX_set_ciphersuites\n")
+
+      sdk.resolve
+
+      asm = asm_contents.join
+      expect(asm).to include(".globl _rb_hash_bulk_insert")
+      expect(asm).to include(".globl _ruby_xmalloc")
+      %w[_start __bss_start __data_start _end __mh_execute_header
+         _EVP_PKEY_new_raw_private_key _SSL_CTX_set_ciphersuites].each do |symbol|
+        expect(asm).not_to include(".globl #{symbol}\n")
+      end
     end
   end
 end

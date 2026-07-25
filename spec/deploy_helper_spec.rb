@@ -149,7 +149,27 @@ RSpec.describe Tebako::DeployHelper do
            ["bundle", nil, ["config", "set", "--local", "build.ffi", "--disable-system-libffi"]],
            ["bundle", nil, ["config", "set", "--local", "build.nokogiri", nokogiri_option]],
            ["bundle", nil, ["config", "set", "--local", "force_ruby_platform", "true"]],
-           ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}"]]]
+           ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}", "--prefer-local"]]]
+        )
+      end
+
+      it "adds build.openssl when the deps carry the vcpkg OpenSSL prefix" do
+        vcpkg = File.join(@tmp, "deps", "vcpkg_installed", "aarch64-linux")
+        FileUtils.mkdir_p(File.join(vcpkg, "include", "openssl"))
+        File.write(File.join(vcpkg, "include", "openssl", "ssl.h"), "/* ssl.h */")
+        seed_runtime_gem
+        deploy_helper.configure(ruby_ver, nil, File.join(@tmp, "deps"))
+        tld = File.join(target_dir, "local")
+        ops = captured_ops { deploy_helper.deploy(deployer) }
+
+        expect(ops).to eq(
+          [["chdir", tld],
+           ["bundle", nil, ["config", "set", "--local", "build.ffi", "--disable-system-libffi"]],
+           ["bundle", nil, ["config", "set", "--local", "build.nokogiri", "--no-use-system-libraries"]],
+           ["bundle", nil, ["config", "set", "--local", "force_ruby_platform", "true"]],
+           ["bundle", nil, ["config", "set", "--local", "build.openssl",
+                            "--with-openssl-dir=#{vcpkg} --with-ldflags=-ldl -lz"]],
+           ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}", "--prefer-local"]]]
         )
       end
 
@@ -179,7 +199,8 @@ RSpec.describe Tebako::DeployHelper do
             ["gem", ["install", "bundler", "-v", "2.4.22", "--no-document", "--install-dir", tgd, "--bindir", tbd] +
                     install_arg_tail]
           )
-          expect(ops).to include(["bundle", "2.4.22", ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}"]])
+          expect(ops).to include(["bundle", "2.4.22",
+                                  ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}", "--prefer-local"]])
         end
       end
     end
@@ -273,7 +294,7 @@ RSpec.describe Tebako::DeployHelper do
              ["bundle", nil, ["config", "set", "--local", "build.ffi", "--disable-system-libffi"]],
              ["bundle", nil, ["config", "set", "--local", "build.nokogiri", nokogiri_option]],
              ["bundle", nil, ["config", "set", "--local", "force_ruby_platform", "true"]],
-             ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}"]],
+             ["bundle", nil, ["install", "--jobs=#{Tebako::ScenarioManagerBase.new.ncores}", "--prefer-local"]],
              ["bundle_exec", nil, ["build", gemspec]],
              ["install_all", pre_dir, ["--no-document", "--install-dir", tgd, "--bindir", tbd]]]
           )
