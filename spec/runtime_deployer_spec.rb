@@ -152,6 +152,16 @@ RSpec.describe Tebako::RuntimeDeployer do
       expect(driver).to include('tg_config["EXTDLDFLAGS"] = ""')
     end
 
+    it "falls back to an available host toolchain when the recorded one is missing" do
+      driver = generated_driver([])
+
+      expect(driver).to include("def tg_first_tool(*candidates)")
+      expect(driver).to include('"CC" => [RbConfig::CONFIG["CC"], "clang"')
+      expect(driver).to include('"AR" => [RbConfig::CONFIG["AR"]')
+      expect(driver).to include('"NM" => [RbConfig::CONFIG["NM"].to_s.split.first')
+      expect(driver).to include("tg_config[tg_key] = tg_tool")
+    end
+
     # Windows has no exec-bit concept the POSIX shim relies on (and the shim
     # itself is not written there); the exec check is POSIX-only
     it "writes an executable ruby shim that re-enters the driver image", unless: Gem.win_platform? do

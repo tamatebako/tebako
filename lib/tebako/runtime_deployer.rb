@@ -221,7 +221,37 @@ module Tebako
       lines << "  tg_config[\"rubyarchhdrdir\"] = #{File.join(sdk_root, "archhdr").inspect}"
       lines << "  tg_config[\"LIBRUBYARG\"] = #{File.join(sdk_root, "lib", "libruby-stub.a").inspect}"
       lines << "  tg_config[\"EXTDLDFLAGS\"] = \"\""
-      "#{lines.join("\n")}\nend\n"
+      "#{lines.join("\n")}\n#{cc_override}end\n"
+    end
+
+    # The recorded toolchain comes from the runtime's build machine (an
+    # LLVM release); when it is not installed on the press host, mkmf probes
+    # and bundled-library links die at shell level ("The compiler failed to
+    # generate an executable file", "command not found"). Fall back to the
+    # first available equivalent: newer/older clang for the compilers
+    # (recorded flags are clang-flavored), binutils for the llvm tools
+    def cc_override
+      <<~RUBY
+        def tg_first_tool(*candidates)
+          candidates.find { |tg_c| !tg_c.to_s.empty? && system("command -v \#{tg_c} >/dev/null 2>&1") }
+        end
+
+        tg_llvm = %w[20 19 18 17 16 15 14 13 12 11]
+        {
+          "CC" => [RbConfig::CONFIG["CC"], "clang", *tg_llvm.map { |tg_v| "clang-\#{tg_v}" }, "cc", "gcc"],
+          "CXX" => [RbConfig::CONFIG["CXX"], "clang++", *tg_llvm.map { |tg_v| "clang++-\#{tg_v}" }, "c++", "g++"],
+          "AR" => [RbConfig::CONFIG["AR"], *tg_llvm.map { |tg_v| "llvm-ar-\#{tg_v}" }, "ar"],
+          "RANLIB" => [RbConfig::CONFIG["RANLIB"], *tg_llvm.map { |tg_v| "llvm-ranlib-\#{tg_v}" }, "ranlib"],
+          "NM" => [RbConfig::CONFIG["NM"].to_s.split.first, *tg_llvm.map { |tg_v| "llvm-nm-\#{tg_v}" }, "nm"],
+          "OBJDUMP" => [RbConfig::CONFIG["OBJDUMP"], *tg_llvm.map { |tg_v| "llvm-objdump-\#{tg_v}" }, "objdump"],
+          "OBJCOPY" => [RbConfig::CONFIG["OBJCOPY"], *tg_llvm.map { |tg_v| "llvm-objcopy-\#{tg_v}" }, "objcopy"]
+        }.each do |tg_key, tg_candidates|
+          tg_tool = tg_first_tool(*tg_candidates)
+          next if tg_tool.nil?
+
+          [RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each { |tg_config| tg_config[tg_key] = tg_tool }
+        end
+      RUBY
     end
 
     def driver_body(ops)
