@@ -38,6 +38,26 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (milestone 5)
+
+- **`crates/tfs-cli` — the `tfs` binary, the generic VFS image tool** (item
+  25's tfs : libtfs :: sqlite3 : libsqlite3; the image-operation half of
+  the C++ tebakofs — trailer surgery stays in tebako-pkg). Exact C++
+  output/exit-code/stream-split parity, verified against the tebakofs
+  oracle: `info` (plain-archive summary; `--json` for backend metadata
+  JSON — item 24's image_info_json on dwarfs), `ls`/`ls -r`/`ls -l`,
+  `tree`, `cat` (pread-chunked, no full materialization), `stat`,
+  `extract` (whole-archive via `tebako_fs_extract_all` with mtime
+  preservation + selected paths with the stderr warning split), `find`
+  (fnmatch), `mkimage` (shells out to mkdwarfs via `TEBAKO_MKDWARFS`/PATH
+  — **the dwarfs WRITER is deliberately not bound; binding it is a
+  separate future decision**, like the tebako-pkg golden leg CI downloads
+  the released mkdwarfs/tebakofs binaries per platform).
+  Contract discovery folded in: the zip backend is **explicit-entry-only**
+  through the C ABI (implicit parents of deeper entries list nothing and
+  ENOENT — verified 1:1 against the oracle), and ZIP DOS timestamps are
+  interpreted in the local timezone (libzip semantics).
+
 ### SHIPPED (milestone 4)
 
 - **`crates/tebako-pkg` — the package (tpkg) trailer surgery CLI** (item 25's
@@ -141,12 +161,12 @@ Rust-consumable surface for it.
 
 ### PLANNED (next milestones, in order)
 
-1. `crates/tfs-cli` (generic image ops: mkimage/ls/cat/tree/stat/extract/
-   find — the non-trailer half of the C++ tebakofs).
-2. `crates/tebako-cli` (item 17), `crates/tebako-bootstrap` (item 22,
+1. `crates/tebako-cli` (item 17), `crates/tebako-bootstrap` (item 22,
    size-gated < 2 MB), cbindgen `tpkg.h` with it.
-3. crates.io publication of `tpkg`/`tfs` (after the API settles
+2. crates.io publication of `tpkg`/`tfs` (after the API settles
    post-parity).
+3. tfs-cli interactive shell + serve/exec modes (later; the
+   inspection/one-shot half shipped in milestone 5).
 
 ### v2 notes (recorded decisions)
 
