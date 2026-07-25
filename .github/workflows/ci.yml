@@ -69,6 +69,21 @@ jobs:
           restore-keys: |
             vcpkg-archives-${{ runner.os }}-
 
+      # Pre-install libsquashfs & co in a serialized step: sqfs-sys's
+      # build.rs would otherwise race dwarfs-t-sys's CMake-driven vcpkg run
+      # on the vcpkg-root filesystem lock (held ~45 min on a cold cache).
+      - name: Pre-install squashfs-tools-ng (serialized)
+        working-directory: tebako-rs
+        run: |
+          if [ "${{ runner.os }}" = "Linux" ]; then TRIPLET=x64-linux-static; else TRIPLET=arm64-osx-static; fi
+          ../.vcpkg-root/vcpkg install \
+            --x-manifest-root crates/sqfs-sys \
+            --x-install-root "${{ github.workspace }}/.sqfs-installed" \
+            --triplet "$TRIPLET" \
+            --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
+            --overlay-ports crates/sqfs-sys/vcpkg_ports
+          echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/$TRIPLET" >> "$GITHUB_ENV"
+
       # `cargo build` first: it produces the libtfs cdylib the C harness
       # links against (cargo test alone builds deps as rlibs only).
       - name: cargo build
