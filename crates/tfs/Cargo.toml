@@ -1,0 +1,26 @@
+[package]
+name = "tfs"
+description = "libtfs-rs: the tebako_fs_* C ABI (VFS for embedded archives) in Rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "tfs", "vfs", "embedded", "archive"]
+categories = ["filesystem", "api-bindings"]
+
+[lib]
+# libtfs.{so,dylib,dll} + libtfs.{a,lib} as a drop-in for C++ libtfs,
+# plus rlib for in-workspace Rust consumers (tests/contract, future crates).
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[dependencies]
+libc = "0.2"
+# The `zip` crate (pure Rust) rather than libzip-sys: the C ABI contract is
+# behavioral, not library-level; a pure-Rust reader keeps consumers and CI
+# free of a native libzip build, and the v1 scope (read-only, no encryption)
+# is well inside its feature set. deflate-only keeps the staticlib lean.
+zip = { version = "2", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
