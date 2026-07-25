@@ -62,6 +62,7 @@ module Tebako
     133 => "The 'runtime' press mode was removed: runtime packages are produced by the " \
            "tebako-runtime-ruby pipeline and resolved automatically by the lean/fat/classic modes",
     134 => "Fat mode requires a payload-capable tebako-bootstrap release",
+    135 => "Failed to provision the runtime SDK for native extension builds",
     201 => "Warning. Could not create cache version file"
   }.freeze
 
@@ -89,6 +90,7 @@ module Tebako
   autoload :RubyVersionWithGemfile, "tebako/ruby_version"
   autoload :RuntimeDeployer, "tebako/runtime_deployer"
   autoload :RuntimeManager, "tebako/runtime_manager"
+  autoload :RuntimeSdk, "tebako/runtime_sdk"
   autoload :ScenarioManager, "tebako/scenario_manager"
   autoload :ScenarioManagerBase, "tebako/scenario_manager"
   autoload :ScenarioManagerWithBundler, "tebako/scenario_manager"

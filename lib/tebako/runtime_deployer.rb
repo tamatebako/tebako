@@ -44,10 +44,11 @@ module Tebako
   # will run with -- and installs into the packaging environment through
   # absolute host paths (paths outside the memfs mount point reach the host
   # filesystem directly).
-  class RuntimeDeployer
+  class RuntimeDeployer # rubocop:disable Metrics/ClassLength
     DRIVER_IMAGE = "deploy-driver.dwarfs"
     DRIVER_PACKAGE = "deploy-driver.pkg"
     EMPTY_BASE = "deploy-driver.base"
+    BUNDLE_EXEC_SCRIPT_NAME = "bundle_exec.rb"
 
     def initialize(runtime_path, deps_bin_dir, staging_bin_dir, fs_mount_point, ruby_ver)
       @runtime_path = runtime_path
@@ -55,6 +56,10 @@ module Tebako
       @staging_bin_dir = staging_bin_dir
       @fs_mount_point = fs_mount_point
       @ruby_ver = ruby_ver
+      # The deploy ruby shim re-enters the driver image through a POSIX
+      # shell exec; msys has no such exec path (native extension builds on
+      # Windows are out of the shim's reach)
+      @shim_supported = !Gem.win_platform?
     end
 
     # ops: array of deploy directives, executed in order
@@ -62,6 +67,13 @@ module Tebako
     #   ["gem", argv]                  -- Gem::GemRunner.run(argv)
     #   ["bundle", version|nil, argv]  -- activate bundler (pinned when
     #                                     version given) and run its CLI
+    #   ["bundle_exec", version|nil, argv]
+    #                                  -- Bundler.setup + the gem command in
+    #                                     a fresh re-exec (the 'bundle exec'
+    #                                     environment; a default gem already
+    #                                     activated in the driver process
+    #                                     cannot be re-activated at the
+    #                                     bundle's version)
     #   ["install_all", dir, argv]     -- gem install every *.gem in dir
     # env: GEM_HOME/GEM_PATH/GEM_SPEC_CACHE/SSL_CERT_* for the deploy; it
     # travels in the process environment because Gem::PathSupport snapshots
@@ -73,6 +85,8 @@ module Tebako
       write_driver(seed_dir, ops)
       Tebako::Packager.mkdwarfs(@deps_bin_dir, driver_image, seed_dir)
       stitch_driver_package
+      write_bundle_exec_script if @shim_supported
+      write_ruby_shim if @shim_supported
       out = BuildHelpers.with_env(env.merge("TEBAKO_PASS_THROUGH" => "1")) do
         BuildHelpers.run_with_capture([@runtime_path, "--tebako-image", driver_image_ref])
       end
@@ -80,6 +94,20 @@ module Tebako
     end
 
     private
+
+    def bundle_exec_script
+      File.join(@staging_bin_dir, BUNDLE_EXEC_SCRIPT_NAME)
+    end
+
+    # mkmf-driven native extension builds spawn RbConfig.ruby / Gem.ruby as
+    # a subprocess (the extconf.rb run) and compile against rubyhdrdir, both
+    # stripped from the runtime image. The shim re-enters the driver image
+    # for the spawn; the runtime SDK provides the headers.
+    def sdk_root
+      return nil unless @shim_supported
+
+      @sdk_root ||= Tebako::RuntimeSdk.resolve(@runtime_path, File.dirname(@deps_bin_dir), @ruby_ver)
+    end
 
     def driver_image
       File.join(@staging_bin_dir, DRIVER_IMAGE)
@@ -91,6 +119,25 @@ module Tebako
 
     def driver_image_ref
       "#{driver_package}:0:#{@fs_mount_point}"
+    end
+
+    # mkmf-driven native extension builds spawn RbConfig.ruby / Gem.ruby as
+    # a subprocess (the extconf.rb run). The runtime image ships no bin/ruby,
+    # so the driver's bindir points at this host shim: it re-enters the
+    # driver image with the script as argument -- the same launcher-ABI
+    # handoff the driver itself was started with (the stub runs it in
+    # script mode)
+    def write_ruby_shim
+      File.write(ruby_shim_path, <<~SHIM)
+        #!/bin/sh
+        TEBAKO_DEPLOY_BINDIR="$(dirname "$0")"; export TEBAKO_DEPLOY_BINDIR
+        exec "#{@runtime_path}" --tebako-image "#{driver_image_ref}" --tebako-entry ruby "$@"
+      SHIM
+      FileUtils.chmod(0o755, ruby_shim_path)
+    end
+
+    def ruby_shim_path
+      File.join(@staging_bin_dir, "ruby")
     end
 
     def write_driver(seed_dir, ops)
@@ -118,7 +165,67 @@ module Tebako
         require "rubygems/gem_runner"
         require "rubygems/request"
         require "fileutils"
+        require "tmpdir"
 
+        BUNDLE_EXEC_SCRIPT = #{bundle_exec_script.inspect}
+
+        #{build_overrides}if ARGV.any?
+          # Script mode: mkmf-driven extension builds spawn the ruby at
+          # RbConfig's bindir (the host shim); the shim re-enters this image
+          # with the script as argument. mkmf derives srcdir from $0, so the
+          # script takes over the program name before it is loaded.
+          $0 = ARGV.first
+          load ARGV.shift
+        else
+        #{driver_body(ops)}
+        end
+      RUBY
+    end
+
+    # Companion to the driver's 'bundle_exec' directive: runs in the fresh
+    # interpreter the shim re-enters (a default gem already activated in the
+    # driver process cannot be re-activated at the bundle's version)
+    def write_bundle_exec_script # rubocop:disable Metrics/MethodLength
+      File.write(bundle_exec_script, <<~RUBY)
+        # THIS FILE WAS GENERATED AUTOMATICALLY BY TEBAKO. DO NOT CHANGE IT, PLEASE
+        version = ARGV.shift
+        gem "bundler", version unless version.empty?
+        require "bundler"
+        Bundler.setup
+        require "rubygems"
+        require "rubygems/gem_runner"
+        begin
+          Gem::GemRunner.new.run(ARGV)
+        rescue SystemExit => e
+          exit(e.status)
+        end
+      RUBY
+    end
+
+    # extconf/make recipes spawn RbConfig.ruby / Gem.ruby and compile
+    # against rubyhdrdir; point bindir at the host shim and the header dirs
+    # at the runtime SDK. mkmf's link probes expand $(LIBRUBYARG) only for
+    # throwaway executables, so it receives the SDK's symbol stub archive --
+    # true yes/no resolution; the shipped extension .so never links it and
+    # resolves against the runtime executable (which exports the symbols) at
+    # load time. mkmf reads MAKEFILE_CONFIG, rubygems reads CONFIG -- both
+    # take the overrides.
+    def build_overrides # rubocop:disable Metrics/AbcSize
+      return "" unless @shim_supported
+
+      lines = ["[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|"]
+      lines << "  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", #{@staging_bin_dir.inspect})"
+      return "#{lines.join("\n")}\nend\n" if sdk_root.nil?
+
+      lines << "  tg_config[\"rubyhdrdir\"] = #{File.join(sdk_root, "include").inspect}"
+      lines << "  tg_config[\"rubyarchhdrdir\"] = #{File.join(sdk_root, "archhdr").inspect}"
+      lines << "  tg_config[\"LIBRUBYARG\"] = #{File.join(sdk_root, "lib", "libruby-stub.a").inspect}"
+      lines << "  tg_config[\"EXTDLDFLAGS\"] = \"\""
+      "#{lines.join("\n")}\nend\n"
+    end
+
+    def driver_body(ops)
+      <<~RUBY
         # OpenSSL reads certificate files at the C level, where the memfs is
         # invisible; give rubygems and bundler host-side copies of the CA
         # certs vendored in the image
@@ -136,16 +243,41 @@ module Tebako
         end
         Gem::Request.singleton_class.prepend(TebakoDeployCerts)
 
+        # rubygems commands end with terminate_interaction(0) on success,
+        # which raises Gem::SystemExitException (< SystemExit) and would end
+        # this process before the remaining operations; bundler exits the
+        # same way on failure. Guard both and re-raise on non-zero status.
         def tg_run_gem(args)
           puts "   ... @ gem \#{args.join(" ")}"
-          Gem::GemRunner.new.run(args)
+          begin
+            Gem::GemRunner.new.run(args)
+          rescue SystemExit => e
+            raise "gem \#{args.first} failed (exit \#{e.status})" unless e.status.zero?
+          end
+          # Gems this operation installed must be visible to the following
+          # ones (rubygems caches the spec index at interpreter boot)
+          Gem::Specification.reset
         end
 
         def tg_run_bundle(version, args)
           puts "   ... @ bundle \#{args.join(" ")}"
           gem "bundler", version unless version.nil?
           ARGV.replace(args)
-          load Gem.bin_path("bundler", "bundle")
+          begin
+            load Gem.bin_path("bundler", "bundle")
+          rescue SystemExit => e
+            raise "bundle \#{args.first} failed (exit \#{e.status})" unless e.status.zero?
+          end
+        end
+
+        # 'bundle exec' needs a fresh process: the driver itself may already
+        # have activated a default gem at another version (openssl for the
+        # fetch above), and a gem cannot be re-activated at the bundle's
+        # version. The shim re-enters this image with the companion script
+        # in a clean interpreter.
+        def tg_bundle_exec(version, argv)
+          puts "   ... @ bundle exec \#{argv.join(" ")}"
+          raise "bundle exec \#{argv.first} failed" unless system(RbConfig.ruby, BUNDLE_EXEC_SCRIPT, version.to_s, *argv)
         end
 
         def tg_install_all(dir, args)
@@ -163,11 +295,12 @@ module Tebako
       ops.map { |step| op_line(step) }.join("\n")
     end
 
-    def op_line(step)
+    def op_line(step) # rubocop:disable Metrics/AbcSize
       case step[0]
       when "chdir" then "Dir.chdir(#{step[1].inspect})"
       when "gem" then "tg_run_gem(#{step[1].inspect})"
       when "bundle" then "tg_run_bundle(#{step[1].inspect}, #{step[2].inspect})"
+      when "bundle_exec" then "tg_bundle_exec(#{step[1].inspect}, #{step[2].inspect})"
       when "install_all" then "tg_install_all(#{step[1].inspect}, #{step[2].inspect})"
       else
         raise Tebako::Error, "Internal error: unknown deploy directive '#{step[0]}'"

@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 require "fileutils"
+require "open3"
 require "tmpdir"
 
 # rubocop:disable Metrics/BlockLength
@@ -52,6 +53,7 @@ RSpec.describe Tebako::RuntimeDeployer do
     allow(Tebako::Packager).to receive(:mkdwarfs)
     allow(Tebako::Stitcher).to receive(:stitch)
     allow(Tebako::BuildHelpers).to receive(:run_with_capture).and_return("")
+    allow(Tebako::RuntimeSdk).to receive(:resolve).and_return("/sdk/ruby-3.3.7")
   end
 
   describe "#execute" do
@@ -104,17 +106,69 @@ RSpec.describe Tebako::RuntimeDeployer do
       ops = [["chdir", "/target/local"],
              ["gem", ["install", "bundler", "-v", "2.4.22"]],
              ["bundle", "2.4.22", ["install", "--jobs=8"]],
-             ["bundle", nil, ["exec", "gem", "build", "app.gemspec"]],
+             ["bundle_exec", "2.4.22", ["build", "app.gemspec"]],
              ["install_all", "/pre/dir", ["--no-document"]]]
       driver = generated_driver(ops)
 
       expect(driver).to include('Dir.chdir("/target/local")')
       expect(driver).to include('tg_run_gem(["install", "bundler", "-v", "2.4.22"])')
       expect(driver).to include('tg_run_bundle("2.4.22", ["install", "--jobs=8"])')
-      expect(driver).to include('tg_run_bundle(nil, ["exec", "gem", "build", "app.gemspec"])')
+      expect(driver).to include('tg_bundle_exec("2.4.22", ["build", "app.gemspec"])')
       expect(driver).to include('tg_install_all("/pre/dir", ["--no-document"])')
       expect(driver.index('Dir.chdir("/target/local")')).to be < driver.index('tg_run_gem(["install", "bundler"')
       expect(driver.index('tg_run_gem(["install", "bundler"')).to be < driver.index('tg_install_all("/pre/dir"')
+    end
+
+    it "writes the bundle_exec companion script" do
+      deployer.execute([["bundle_exec", nil, ["build", "app.gemspec"]]], env, seed_dir)
+      script = File.join(staging_dir, "bundle_exec.rb")
+
+      expect(File.file?(script)).to be(true)
+      expect(File.read(script)).to include("Bundler.setup")
+    end
+
+    it "guards gem and bundle operations against the status-0 exit rubygems ends with" do
+      driver = generated_driver([["gem", ["--version"]]])
+
+      expect(driver).to include("rescue SystemExit => e")
+      expect(driver).to include("unless e.status.zero?")
+    end
+
+    it "points the driver's bindir at the host shim and dispatches script mode" do
+      driver = generated_driver([])
+
+      expect(driver).to include("[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|")
+      expect(driver).to include(%(tg_config["bindir"] = ENV.fetch("TEBAKO_DEPLOY_BINDIR", "#{staging_dir}")))
+      expect(driver).to include("$0 = ARGV.first")
+      expect(driver).to include("load ARGV.shift")
+    end
+
+    it "points the driver's header dirs at the runtime SDK and links probes against the symbol stub" do
+      driver = generated_driver([])
+
+      expect(driver).to include('tg_config["rubyhdrdir"] = "/sdk/ruby-3.3.7/include"')
+      expect(driver).to include('tg_config["rubyarchhdrdir"] = "/sdk/ruby-3.3.7/archhdr"')
+      expect(driver).to include('tg_config["LIBRUBYARG"] = "/sdk/ruby-3.3.7/lib/libruby-stub.a"')
+      expect(driver).to include('tg_config["EXTDLDFLAGS"] = ""')
+    end
+
+    it "writes an executable ruby shim that re-enters the driver image" do
+      deployer.execute([], env, seed_dir)
+      shim = File.join(staging_dir, "ruby")
+
+      expect(File.executable?(shim)).to be(true)
+      content = File.read(shim)
+      expect(content).to include(%(exec "#{runtime_path}"))
+      expect(content).to include(%(--tebako-image "#{File.join(staging_dir, "deploy-driver.pkg")}:0:/__tebako_memfs__"))
+      expect(content).to include("--tebako-entry ruby")
+    end
+
+    it "continues after a successful gem command (the fontist deploy regression)" do
+      ops = [["gem", ["--version"]], ["gem", ["--version"]]]
+      generated_driver(ops)
+
+      out = Open3.capture2e(Gem.ruby, File.join(seed_dir, "local", "stub.rb")).first
+      expect(out.scan("... @ gem --version").size).to eq(2)
     end
 
     it "raises Tebako::Error for an unknown directive" do
