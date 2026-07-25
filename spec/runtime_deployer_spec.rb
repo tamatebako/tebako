@@ -152,7 +152,19 @@ RSpec.describe Tebako::RuntimeDeployer do
       expect(driver).to include('tg_config["EXTDLDFLAGS"] = ""')
     end
 
-    it "writes an executable ruby shim that re-enters the driver image" do
+    it "falls back to an available host toolchain when the recorded one is missing" do
+      driver = generated_driver([])
+
+      expect(driver).to include("def tg_first_tool(*candidates)")
+      expect(driver).to include('"CC" => [RbConfig::CONFIG["CC"], "clang"')
+      expect(driver).to include('"AR" => [RbConfig::CONFIG["AR"]')
+      expect(driver).to include('"NM" => [RbConfig::CONFIG["NM"].to_s.split.first')
+      expect(driver).to include("tg_config[tg_key] = tg_tool")
+    end
+
+    # Windows has no exec-bit concept the POSIX shim relies on (and the shim
+    # itself is not written there); the exec check is POSIX-only
+    it "writes an executable ruby shim that re-enters the driver image", unless: Gem.win_platform? do
       deployer.execute([], env, seed_dir)
       shim = File.join(staging_dir, "ruby")
 
@@ -161,6 +173,12 @@ RSpec.describe Tebako::RuntimeDeployer do
       expect(content).to include(%(exec "#{runtime_path}"))
       expect(content).to include(%(--tebako-image "#{File.join(staging_dir, "deploy-driver.pkg")}:0:/__tebako_memfs__"))
       expect(content).to include("--tebako-entry ruby")
+    end
+
+    it "does not write a ruby shim on Windows", if: Gem.win_platform? do
+      deployer.execute([], env, seed_dir)
+
+      expect(File.exist?(File.join(staging_dir, "ruby"))).to be(false)
     end
 
     it "continues after a successful gem command (the fontist deploy regression)" do

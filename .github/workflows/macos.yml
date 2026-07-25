@@ -268,6 +268,6 @@ jobs:
         uses: tamatebako/tebako/.github/actions/setup-tebako@main
         with:
           cache: off
-          # macos-latest (macos-15) no longer ships 16.4.0; 16.1 is present
-          # (same selection as tebako-runtime-ruby's macos-15 legs)
-          xcode: 16.1
+          # macos-latest no longer ships a fixed Xcode 16.x (only 26.x);
+          # float with the runner's current stable release
+          xcode: latest-stable

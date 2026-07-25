@@ -394,8 +394,15 @@ class TebakoTest < Minitest::Test
     out, st = if RbConfig::CONFIG["host_os"] =~ /darwin/
                 Open3.capture2("otool", "-L", package)
               else # linux assumed
-                Open3.capture2("ldd", package)
+                # capture stderr as well: ldd reports static executables
+                # ("not a dynamic executable") there with a non-zero status
+                Open3.capture2e("ldd", package)
               end
+    # Lean packages are statically linked (the tebako-bootstrap launcher):
+    # they reference no shared libraries at all, and ldd reports exactly
+    # that with a non-zero exit status -- not a failure for this check
+    return [] if st.exitstatus != 0 && out.match?(/not a dynamic executable|not a valid dynamic program/i)
+
     assert_equal 0, st.exitstatus
     out.lines.map(&:strip)
   end
