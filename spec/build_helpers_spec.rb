@@ -85,6 +85,53 @@ RSpec.describe Tebako::BuildHelpers do
           allow(Open3).to receive(:capture2e).and_return(["", status_double])
         end
       end
+
+      # Runtime spawns boot the prebuilt runtime's embedded Ruby; the press
+      # host's own bundler setup (a 'bundle exec'-driven press) must not leak
+      # into them (Bundler::GemNotFound at boot, or the wrong gem set deployed)
+      context "when the press runs inside a bundler context" do
+        around do |example|
+          saved = ENV.to_h
+          ENV.delete("BUNDLE_BIN_PATH")
+          ENV["BUNDLE_GEMFILE"] = "/press/Gemfile"
+          ENV["BUNDLER_VERSION"] = "2.6.9"
+          ENV["RUBYOPT"] = "-rbundler/setup"
+          ENV["RUBYLIB"] = "/press/bundler/lib"
+          example.run
+        ensure
+          ENV.replace(saved)
+        end
+
+        it "spawns the process with the host bundler/ruby bindings unset" do
+          status_double = double(exitstatus: 0, signaled?: false)
+          allow(Open3).to receive(:capture2e).and_return(["output", status_double])
+
+          described_class.run_with_capture(args)
+
+          expect(Open3).to have_received(:capture2e) do |env, *_cmd|
+            expect(env).to include("BUNDLE_GEMFILE" => nil, "BUNDLER_VERSION" => nil,
+                                   "RUBYOPT" => nil, "RUBYLIB" => nil)
+          end
+        end
+
+        it "leaves bundler variables that are not set out of the scrub environment" do
+          status_double = double(exitstatus: 0, signaled?: false)
+          allow(Open3).to receive(:capture2e).and_return(["output", status_double])
+
+          described_class.run_with_capture(args)
+
+          expect(Open3).to have_received(:capture2e) do |env, *_cmd|
+            expect(env).not_to have_key("BUNDLE_BIN_PATH")
+          end
+        end
+
+        it "unsets the bindings in the spawned process for real" do
+          probe = "puts ENV.keys.grep(/\\A(BUNDLE|BUNDLER)_|\\ARUBYOPT\\z|\\ARUBYLIB\\z/)"
+          out = described_class.run_with_capture([Gem.ruby, "-e", probe])
+
+          expect(out.strip).to eq("")
+        end
+      end
     end
   end
 
