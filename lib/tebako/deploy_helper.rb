@@ -164,7 +164,13 @@ module Tebako
 
     def bundle_install_op
       puts "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
-      bundle_op(["install", "--jobs=#{ncores}"])
+      # --prefer-local resolves to the runtime's own default gems whenever
+      # they satisfy the requirements: the statically linked default
+      # extensions own their namespaces (a newer native gem of the same
+      # name -- e.g. openssl -- crashes against the runtime's compiled-in
+      # copy), and it avoids needless native builds for gems the image
+      # already carries
+      bundle_op(["install", "--jobs=#{ncores}", "--prefer-local"])
     end
 
     def check_entry_point(entry_point_root)
