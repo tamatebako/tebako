@@ -1,10 +1,10 @@
 # Parity audit — C++ libtfs (493 tests) vs tebako-rs contract suite
 
 As of milestone 3 (`feat/milestone-3`). The C++ suite was enumerated with
-`ctest -N` in libtfs-pkgwt/build (493 tests). The Rust contract suite runs
-**171 tests** through the `tebako_fs_*` C ABI (155 via Rust harnesses + the
-tpkg crate's 17 format tests that cover the tpkg.h contract), plus the
-plain-C harness leg.
+`ctest -N` in libtfs-pkgwt/build (493 tests). The Rust workspace runs
+**164 tests**: 146 contract cases through the `tebako_fs_*` C ABI
+(64 zip + 18 multi-mount + 22 io-surface + 12 dwarfs + 20 squashfs +
+9 extraction + 1 plain-C harness) + 17 tpkg format tests + 1 unit test.
 
 Verdict: every C++ test group that exercises the **`tebako_fs_*` C ABI**
 (the machine contract) is ported; the remainder are C++-implementation

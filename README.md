@@ -59,8 +59,9 @@ Rust-consumable surface for it.
 - **Extraction parity**: `tebako_fs_extract_all` now preserves mtime as
   well as permissions (best effort); ported the C++ `ExtractionTest`
   mappable cases incl. sqfs permissions/empty-dir and spaced paths.
-- **Contract suite: 155 tests** (64 zip + 18 multi-mount + 22 io-surface
-  + 12 dwarfs + 20 squashfs + 9 extraction + tpkg/c-harness/unit).
+- **Contract suite: 164 tests** (64 zip + 18 multi-mount + 22 io-surface
+  + 12 dwarfs + 20 squashfs + 9 extraction + 1 C harness + 17 tpkg
+  + 1 unit).
 
 ### SHIPPED (milestone 2)
 
