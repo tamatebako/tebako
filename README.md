@@ -38,6 +38,31 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (milestone 3)
+
+- **tfs: SquashFS backend via `crates/sqfs-sys`** — hand-written FFI to
+  libsquashfs (squashfs-tools-ng), same discipline as dwarfs-t-sys: ~15
+  externs pinned by `abi_check.c` (`_Static_assert`s over struct
+  sizes/offsets/constants), a tiny `shim.c` keeping the variable-layout
+  `sqfs_compressor_config_t` C-side, and a Rust-side memory-backed
+  `sqfs_file_t` (mirrors the C++ one). Installed via vcpkg with the SAME
+  overlay port libtfs uses (squashfs-tools-ng 1.3.2, gzip/lz4/xz/zstd
+  decompressors) — version parity on both sides of the gate. Feature flag
+  `vendored-squashfs` (default on). squashfs-tools-ng is POSIX/autotools
+  only (no Windows — same restriction as the C++ side).
+- **Contract parity audit** ([docs/parity.md](docs/parity.md)): every
+  C-ABI-visible C++ test group ported (CApiTest 79/79, CApiMultiMountTest
+  18/18, CApiOffsetTest 11/11, abi version 1/1, squashfs 20 through the
+  ABI, extraction 11), the remainder consciously not ported with reasons
+  (C++-internal types, path utils, tebako-pkg binary functionality,
+  perf/large fixtures).
+- **Extraction parity**: `tebako_fs_extract_all` now preserves mtime as
+  well as permissions (best effort); ported the C++ `ExtractionTest`
+  mappable cases incl. sqfs permissions/empty-dir and spaced paths.
+- **Contract suite: 164 tests** (64 zip + 18 multi-mount + 22 io-surface
+  + 12 dwarfs + 20 squashfs + 9 extraction + 1 C harness + 17 tpkg
+  + 1 unit).
+
 ### SHIPPED (milestone 2)
 
 - **tfs: dwarfs backend via the external
@@ -91,14 +116,10 @@ Rust-consumable surface for it.
 
 ### PLANNED (next milestones, in order)
 
-1. Contract suite: import the full 493-test libtfs suite + the multi-mount
-   and dlmap2file suites as they grow (runs against EITHER implementation
-   through the C ABI — same tests, no forks).
-2. tfs: squashfs backend (squashfs-tools-ng FFI).
-3. `crates/tebako-pkg` (trailer surgery), `crates/tfs-cli`.
-4. `crates/tebako-cli` (item 17), `crates/tebako-bootstrap` (item 22,
+1. `crates/tebako-pkg` (trailer surgery), `crates/tfs-cli`.
+2. `crates/tebako-cli` (item 17), `crates/tebako-bootstrap` (item 22,
    size-gated < 2 MB), cbindgen `tpkg.h` with it.
-5. crates.io publication of `tpkg`/`tfs` (after the API settles
+3. crates.io publication of `tpkg`/`tfs` (after the API settles
    post-parity).
 
 ### v2 notes (recorded decisions)
@@ -128,18 +149,20 @@ from the C++ side and run unchanged against the Rust implementation:
 ## Building
 
 ```console
-$ export DWARFS_RS_VCPKG_ROOT=/path/to/vcpkg   # for the dwarfs backend
+$ export DWARFS_RS_VCPKG_ROOT=/path/to/vcpkg   # dwarfs + squashfs backends
 $ cargo test --workspace    # tpkg + tfs + contract (incl. the C harness)
 
 $ cargo test -p tfs --no-default-features   # pure-cargo, no vcpkg
 ```
 
-The dwarfs backend builds the vendored dwarfs-t sources through dwarfs-rs
-(CMake + vcpkg; first cold build compiles the whole native dep chain, the
-vcpkg archive cache makes later builds fast). Without default features the
-workspace is pure-cargo. CI: ubuntu-24.04 + macos-14 with the dwarfs-t
-vcpkg baseline pinned (same commit as dwarfs-t's and dwarfs-rs's CI) plus
-an archive cache, and a separate `--no-default-features` leg.
+The native backends come from vcpkg: dwarfs-t via dwarfs-rs's CMake
+submodule build (env `DWARFS_RS_VCPKG_ROOT`) and squashfs-tools-ng via
+sqfs-sys's manifest+overlay port (env `SQFS_SYS_VCPKG_ROOT`, falling back
+to `DWARFS_RS_VCPKG_ROOT` / `VCPKG_ROOT`). First cold builds compile the
+native dep chains; the vcpkg archive cache makes later builds fast.
+Without default features the workspace is pure-cargo. CI: ubuntu-24.04 +
+macos-14 with the dwarfs-t vcpkg baseline pinned plus an archive cache
+keyed on both manifests, and a separate `--no-default-features` leg.
 
 ## License
 

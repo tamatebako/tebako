@@ -664,7 +664,8 @@ fn extract_dir_recursive(
     Ok(())
 }
 
-/// Stream one file out of a backend onto the host (permissions best effort).
+/// Stream one file out of a backend onto the host (permissions and
+/// modification time preserved, best effort).
 fn extract_file(backend: &dyn Backend, rel: &str, host: &std::path::Path) -> Result<(), i32> {
     use std::io::Write as _;
     let st = backend.stat(rel)?;
@@ -683,6 +684,9 @@ fn extract_file(backend: &dyn Backend, rel: &str, host: &std::path::Path) -> Res
     {
         use std::os::unix::fs::PermissionsExt as _;
         let _ = std::fs::set_permissions(host, std::fs::Permissions::from_mode(st.perms));
+        let _ = out.set_modified(
+            std::time::UNIX_EPOCH + std::time::Duration::from_secs(st.mtime.max(0) as u64),
+        );
     }
     Ok(())
 }

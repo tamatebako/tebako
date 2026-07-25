@@ -1,0 +1,4 @@
+squashfs-tools-ng provides CMake targets:
+
+    find_package(squashfs-tools-ng CONFIG REQUIRED)
+    target_link_libraries(main PRIVATE squashfs-tools-ng::squashfs)

@@ -1,0 +1,22 @@
+[package]
+name = "sqfs-sys"
+description = "Raw FFI bindings to libsquashfs (squashfs-tools-ng), the SquashFS reader C library"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["squashfs", "sqfs", "ffi", "sys", "filesystem"]
+categories = ["external-ffi-bindings", "filesystem"]
+links = "squashfs"
+build = "build.rs"
+
+[features]
+# `vendored` (the only mode in v1): install libsquashfs + its compression
+# dependencies via vcpkg (manifest in this crate) and link them statically.
+default = ["vendored"]
+vendored = []
+
+[build-dependencies]
+cc = "1"

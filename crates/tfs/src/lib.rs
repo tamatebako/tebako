@@ -49,6 +49,8 @@
 pub mod backend;
 #[cfg(feature = "vendored-dwarfs")]
 pub mod backends_dwarfs;
+#[cfg(feature = "vendored-squashfs")]
+pub mod backends_squashfs;
 pub mod backends_zip;
 pub mod c_api;
 pub mod context;
