@@ -225,11 +225,7 @@ RSpec.describe Tebako::DeployHelper do
         expect(deployer).to have_received(:execute) do |ops, _env, _seed, verbose:|
           expect(ops).to eq(
             [["chdir", pre_dir],
-<<<<<<< HEAD
-             ["gem", ["install", gem_file, "--no-document", "--install-dir", tgd, "--bindir", tbd] + install_arg_tail]]
-=======
              ["gem", ["install", gem_file] + install_tail(tgd, tbd)]]
->>>>>>> main
           )
           expect(verbose).to be(false)
         end
@@ -265,11 +261,7 @@ RSpec.describe Tebako::DeployHelper do
           expect(ops).to eq(
             [["chdir", pre_dir],
              ["gem", ["build", gemspec]],
-<<<<<<< HEAD
-             ["install_all", pre_dir, ["--no-document", "--install-dir", tgd, "--bindir", tbd] + install_arg_tail]]
-=======
              ["install_all", pre_dir, install_tail(tgd, tbd)]]
->>>>>>> main
           )
           expect(verbose).to be(false)
         end
