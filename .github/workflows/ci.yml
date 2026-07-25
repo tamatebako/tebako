@@ -95,17 +95,36 @@ jobs:
           if [ "${{ runner.os }}" = "Linux" ]; then
             TEBAKOFS=tebakofs-linux-gnu-x86_64
             MKDWARFS=mkdwarfs-linux-gnu-x86_64
+            BOOTSTRAP=tebako-bootstrap-0.2.0-linux-gnu-x86_64
           else
             TEBAKOFS=tebakofs-macos-arm64
             MKDWARFS=mkdwarfs-macos-arm64
+            BOOTSTRAP=tebako-bootstrap-0.2.0-macos-arm64
           fi
           curl -fsSL -o .oracle/tebakofs \
             "https://github.com/tamatebako/libtfs/releases/download/v0.13.0/$TEBAKOFS"
           curl -fsSL -o .oracle/mkdwarfs \
             "https://github.com/tamatebako/libtfs/releases/download/v0.13.0/$MKDWARFS"
-          chmod +x .oracle/tebakofs .oracle/mkdwarfs
+          curl -fsSL -o .oracle/tebako-bootstrap \
+            "https://github.com/tamatebako/tebako-bootstrap/releases/download/v0.2.0/$BOOTSTRAP"
+          chmod +x .oracle/tebakofs .oracle/mkdwarfs .oracle/tebako-bootstrap
           echo "TEBAKOFS_CPP=${{ github.workspace }}/.oracle/tebakofs" >> "$GITHUB_ENV"
           echo "TEBAKO_MKDWARFS=${{ github.workspace }}/.oracle/mkdwarfs" >> "$GITHUB_ENV"
+          echo "TEBAKO_CPP_BOOTSTRAP=${{ github.workspace }}/.oracle/tebako-bootstrap" >> "$GITHUB_ENV"
+
+      # item 22's hard gate: the Rust bootstrap must stay under 2 MB
+      # absolute. Publishes the table and fails the job when over.
+      - name: Bootstrap size gate (< 2 MB)
+        working-directory: tebako-rs
+        run: |
+          cargo build -p tebako-bootstrap --release
+          SIZE=$(stat -c %s target/release/tebako-bootstrap 2>/dev/null || stat -f %z target/release/tebako-bootstrap)
+          CPP_SIZE=$(stat -c %s ../.oracle/tebako-bootstrap 2>/dev/null || stat -f %z ../.oracle/tebako-bootstrap)
+          echo "| platform | Rust bootstrap | C++ v0.2.0 | budget |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| ${{ runner.os }} | $SIZE B | $CPP_SIZE B | < 2 MB |" >> "$GITHUB_STEP_SUMMARY"
+          echo "tebako-bootstrap: $SIZE bytes (budget 2097152)"
+          test "$SIZE" -lt 2097152
 
       # `cargo build` first: it produces the libtfs cdylib the C harness
       # links against (cargo test alone builds deps as rlibs only).

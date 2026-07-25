@@ -38,6 +38,44 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (milestone 6)
+
+- **`crates/tebako-bootstrap` — the Rust bootstrap runner** (item 22): a
+  port of the C99 `tebako-bootstrap.c` v0.2.0 contract. Trailer parse
+  (crates/tpkg), launcher-ABI check (v1), runtime_ref parse
+  (`type@version;tebako=<abi>[;sha256=<hex>]`), shared-cache hit, **fat**
+  payload extraction from its own executable (SHA256-verified against the
+  `;sha256=` parameter), **lean** download from the release mirror
+  (manifest.json primary, SHA256SUMS.txt fallback; `TEBAKO_OFFLINE` cache
+  mode; `TEBAKO_RUNTIME_MIRROR`), per-entry install lock (flock, 120 s
+  timeout with the stale-lock hint), atomic install (tmp + rename,
+  sha256/origin metadata), and the launcher-ABI-v1 exec handoff
+  (`--tebako-image <self>:<slot>:<mount>` … `--tebako-entry <argv0> <user
+  args…>`; runtime payload slots never handed over; `--tebako-extract` is
+  a runtime-side option that rides the passthrough like the C++). Named
+  exit codes 65/66/67/69/70/74 with the C++ message bodies. The ten
+  `self-test.sh` scenarios ported as integration tests, plus a direct
+  parity run of the same fixtures against the C++ oracle binary
+  (`TEBAKO_CPP_BOOTSTRAP`).
+- **SIZE — the 2 MB gate (item 22, hard gate)**: release profile
+  `opt-level="z", lto="fat", codegen-units=1, panic="abort",
+  strip="symbols"`; no async runtime, no clap. Measured:
+
+  | platform | Rust bootstrap | C++ v0.2.0 | budget |
+  |---|---|---|---|
+  | macOS arm64 | **371,776 B (363 KB)** | 53,536 B | < 2 MB ✔ (5.3× under) |
+
+  (CI publishes the per-platform artifact sizes on every run and fails
+  at ≥ 2 MB.)
+- **HTTP/TLS choice — audit per item 22**: the download path shells out
+  to the `curl` CLI (present on modern macOS/Linux/Windows 10+), exactly
+  like the C++ bootstrap. Size cost in the artifact: **0 B** — vs ~1–1.5 MB
+  for ureq+rustls and ~2–4 MB for reqwest+native-tls (measured on a
+  scratch crate; would eat most of the budget). Platform-native TLS for
+  free, and the mirror path (`TEBAKO_RUNTIME_MIRROR=file://…`) needs no
+  network stack at all. Windows exec/lock ports land with the Windows CI
+  leg (v1 ships macOS/Linux like the rest of the matrix).
+
 ### SHIPPED (milestone 5)
 
 - **`crates/tfs-cli` — the `tfs` binary, the generic VFS image tool** (item
@@ -161,12 +199,12 @@ Rust-consumable surface for it.
 
 ### PLANNED (next milestones, in order)
 
-1. `crates/tebako-cli` (item 17), `crates/tebako-bootstrap` (item 22,
-   size-gated < 2 MB), cbindgen `tpkg.h` with it.
+1. `crates/tebako-cli` (item 17: press/deploy/cache/resolve — consumes
+   tpkg + tfs + tebako-pkg + tebako-bootstrap).
 2. crates.io publication of `tpkg`/`tfs` (after the API settles
-   post-parity).
-3. tfs-cli interactive shell + serve/exec modes (later; the
-   inspection/one-shot half shipped in milestone 5).
+   post-parity); cbindgen `tpkg.h` with it.
+3. tebako-bootstrap Windows exec/lock port + windows CI leg (v1 shipped
+   macOS/Linux); tfs-cli interactive shell + serve/exec modes (later).
 
 ### v2 notes (recorded decisions)
 
