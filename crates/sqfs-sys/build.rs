@@ -83,24 +83,43 @@ fn main() {
 
     // ---------------------------------------------------------------
     // vcpkg install (manifest mode, into OUT_DIR)
+    //
+    // NB: dwarfs-t-sys's CMake build may hold the vcpkg-root filesystem
+    // lock concurrently (parallel build scripts). vcpkg fails fast in
+    // that case, so retry with backoff for up to ~45 minutes.
     // ---------------------------------------------------------------
     let install_root = out_dir.join("vcpkg_installed");
     if !install_root.join(&triplet).join("include").exists() {
-        let mut cmd = Command::new(&vcpkg_exe);
-        cmd.arg("install")
-            .arg("--x-manifest-root")
-            .arg(&manifest_dir)
-            .arg("--x-install-root")
-            .arg(&install_root)
-            .arg("--triplet")
-            .arg(&triplet)
-            .arg("--overlay-triplets")
-            .arg(manifest_dir.join("vcpkg_triplets"))
-            .arg("--overlay-ports")
-            .arg(manifest_dir.join("vcpkg_ports"))
-            .env("VCPKG_ROOT", &vcpkg_root)
-            .env_remove("VCPKG_MANIFEST_FEATURES");
-        run(cmd, verbose, "vcpkg install squashfs-tools-ng");
+        let mut attempt = 0u32;
+        loop {
+            attempt += 1;
+            let mut cmd = Command::new(&vcpkg_exe);
+            cmd.arg("install")
+                .arg("--x-manifest-root")
+                .arg(&manifest_dir)
+                .arg("--x-install-root")
+                .arg(&install_root)
+                .arg("--triplet")
+                .arg(&triplet)
+                .arg("--overlay-triplets")
+                .arg(manifest_dir.join("vcpkg_triplets"))
+                .arg("--overlay-ports")
+                .arg(manifest_dir.join("vcpkg_ports"))
+                .env("VCPKG_ROOT", &vcpkg_root)
+                .env_remove("VCPKG_MANIFEST_FEATURES");
+            match run(cmd, verbose) {
+                Ok(()) => break,
+                Err(e) => {
+                    if attempt >= 90 {
+                        panic!("vcpkg install squashfs-tools-ng failed after {attempt} attempts: {e}");
+                    }
+                    println!(
+                        "cargo:warning=vcpkg install failed (attempt {attempt}, retrying in 30s): {e}"
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(30));
+                }
+            }
+        }
     }
 
     let prefix = install_root.join(&triplet);
@@ -141,26 +160,29 @@ fn default_triplet(target: &str) -> String {
     .to_string()
 }
 
-fn run(mut cmd: Command, verbose: bool, what: &str) {
+fn run(mut cmd: Command, verbose: bool) -> Result<(), String> {
     let display = format!("{cmd:?}");
     let output = if verbose {
         let status = cmd
             .status()
-            .unwrap_or_else(|e| panic!("failed to spawn {what}: {e}\n  {display}"));
-        if status.success() {
-            return;
-        }
-        panic!("{what} failed with {status}\n  {display}");
+            .map_err(|e| format!("failed to spawn: {e}\n  {display}"))?;
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(format!("exit status: {status}\n  {display}"))
+        };
     } else {
         cmd.output()
-            .unwrap_or_else(|e| panic!("failed to spawn {what}: {e}\n  {display}"))
+            .map_err(|e| format!("failed to spawn: {e}\n  {display}"))?
     };
-    if !output.status.success() {
-        panic!(
-            "{what} failed with {}\n  {display}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "exit status: {}\n  {display}\n--- stdout ---\n{}\n--- stderr ---\n{}",
             output.status,
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
-        );
+        ))
     }
 }
