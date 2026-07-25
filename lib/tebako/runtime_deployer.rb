@@ -129,8 +129,13 @@ module Tebako
 
     # Toolchain for the driver process environment: the resolved tool per
     # key, but only for keys the user has not already set in their own
-    # environment (explicit user CC/CXX/... wins)
+    # environment (explicit user CC/CXX/... wins). POSIX-only, like the
+    # in-driver cc_override: on Windows the deploy driver relies on the
+    # runtime's own recorded toolchain (and the command -v probe has no
+    # shell to run in anyway)
     def toolchain_env
+      return {} unless @shim_supported
+
       TOOLCHAIN_ENV_KEYS.filter_map do |key|
         next unless ENV[key].nil? || ENV[key].empty?
 
