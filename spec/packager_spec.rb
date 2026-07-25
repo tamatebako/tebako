@@ -55,8 +55,13 @@ RSpec.describe Tebako::Packager do
     end
 
     it "configures the DeployHelper with the correct parameters" do
-      expect(deploy_helper).to receive(:configure).with(ruby_ver, cwd)
+      expect(deploy_helper).to receive(:configure).with(ruby_ver, cwd, nil)
       Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer)
+    end
+
+    it "passes the deps dir through to the DeployHelper" do
+      expect(deploy_helper).to receive(:configure).with(ruby_ver, cwd, "/path/to/deps")
+      Tebako::Packager.deploy(target_dir, pre_dir, ruby_ver, fs_root, fs_entrance, cwd, deployer, "/path/to/deps")
     end
 
     it "calls deploy on the DeployHelper with the deployer" do
