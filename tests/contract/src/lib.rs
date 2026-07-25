@@ -1,5 +1,24 @@
 //! Contract-test package root (tests live in `tests/`).
 
+/// Build a zip from an in-memory entry list. `dirs` are explicit directory
+/// entries; `files` are (path, content) pairs. Mirrors the trees built by
+/// the C++ multi-mount fixture (`CApiMultiMountTest::SetUp`).
+pub fn build_zip(path: &std::path::Path, dirs: &[&str], files: &[(&str, &[u8])]) {
+    use std::io::Write as _;
+
+    let file = std::fs::File::create(path).expect("create zip");
+    let mut w = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default();
+    for d in dirs {
+        w.add_directory(*d, opts).unwrap();
+    }
+    for (name, content) in files {
+        w.start_file(name, opts).unwrap();
+        w.write_all(content).unwrap();
+    }
+    w.finish().unwrap();
+}
+
 /// Build the standard zip fixture used by the C++ `CApiTest` suite
 /// (libtfs `tests/test_c_api.cpp`, `create_test_archive()`), so both
 /// implementations are exercised against the SAME tree:
@@ -11,23 +30,19 @@
 /// content/empty.txt           ""
 /// ```
 pub fn build_fixture_zip(path: &std::path::Path) {
-    use std::io::Write as _;
-
-    let file = std::fs::File::create(path).expect("create fixture zip");
-    let mut w = zip::ZipWriter::new(file);
-    let opts = zip::write::SimpleFileOptions::default();
-
-    w.add_directory("content/", opts).unwrap();
-    w.start_file("content/hello.txt", opts).unwrap();
-    w.write_all(b"Hello, World!").unwrap();
-    w.start_file("content/data.bin", opts).unwrap();
-    w.write_all(&vec![b'X'; 1024]).unwrap();
-    w.add_directory("content/subdir/", opts).unwrap();
-    w.start_file("content/subdir/nested.txt", opts).unwrap();
-    w.write_all(b"Nested file content").unwrap();
-    w.start_file("content/empty.txt", opts).unwrap();
-    w.write_all(b"").unwrap();
-    w.finish().unwrap();
+    build_zip(
+        path,
+        &["content/", "content/subdir/"],
+        &[
+            ("content/hello.txt", b"Hello, World!".as_slice()),
+            ("content/data.bin", vec![b'X'; 1024].as_slice()),
+            (
+                "content/subdir/nested.txt",
+                b"Nested file content".as_slice(),
+            ),
+            ("content/empty.txt", b"".as_slice()),
+        ],
+    );
 }
 
 /// A temporary directory that cleans itself up. Paths are unique per
