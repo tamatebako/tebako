@@ -1,0 +1,27 @@
+[package]
+name = "tebako-pkg"
+description = "tebako package (tpkg) trailer surgery: bundle/unbundle/reassemble/insert-image/remove-image/set-runtime/info"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "tpkg", "package", "cli"]
+categories = ["filesystem", "command-line-utilities"]
+
+[dependencies]
+tpkg = { version = "0.1.0", path = "../tpkg" }
+tfs = { version = "0.1.0", path = "../tfs" }
+libc = "0.2"
+
+[dev-dependencies]
+tebako-contract-tests = { version = "0.1.0", path = "../../tests/contract" }
+
+[[bin]]
+name = "tebako-pkg"
+path = "src/main.rs"
+
+[lib]
+name = "tebako_pkg"
+path = "src/lib.rs"
