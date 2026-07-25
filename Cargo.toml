@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/tpkg", "crates/tfs", "crates/sqfs-sys", "crates/tebako-pkg", "crates/tfs-cli", "tests/contract"]
+members = ["crates/tpkg", "crates/tfs", "crates/sqfs-sys", "crates/tebako-pkg", "crates/tfs-cli", "crates/tebako-bootstrap", "tests/contract"]
 
 [workspace.package]
 version = "0.1.0"
@@ -11,5 +11,11 @@ repository = "https://github.com/tamatebako/tebako-rs"
 homepage = "https://github.com/tamatebako/tebako-rs"
 
 [profile.release]
-# The tfs cdylib/staticlib ships as a drop-in for C++ libtfs; keep it lean.
-lto = "thin"
+# Size discipline for the tebako-bootstrap artifact (item 22's < 2 MB
+# absolute budget): minimal size, full LTO, abort on panic, stripped.
+# Dev/test profiles are unaffected (the workspace test suite runs in dev).
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
