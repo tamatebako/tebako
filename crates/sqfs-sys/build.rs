@@ -111,7 +111,9 @@ fn main() {
                 Ok(()) => break,
                 Err(e) => {
                     if attempt >= 90 {
-                        panic!("vcpkg install squashfs-tools-ng failed after {attempt} attempts: {e}");
+                        panic!(
+                            "vcpkg install squashfs-tools-ng failed after {attempt} attempts: {e}"
+                        );
                     }
                     println!(
                         "cargo:warning=vcpkg install failed (attempt {attempt}, retrying in 30s): {e}"
