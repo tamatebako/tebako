@@ -1,0 +1,9 @@
+{
+  "name": "sqfs-sys",
+  "version": "0.1.0",
+  "description": "libsquashfs (squashfs-tools-ng) for the sqfs-sys crate",
+  "builtin-baseline": "11bbc873e00e9e58d4e9dffb30b7a5493a030e0b",
+  "dependencies": [
+    "squashfs-tools-ng"
+  ]
+}

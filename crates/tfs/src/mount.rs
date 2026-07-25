@@ -1,7 +1,7 @@
 //! Mount construction: open an image (file / file region / memory), sniff
-//! its format, build the backend. Mirrors the C++ BackendFactory dispatch.
-//! Squashfs stays an ENOTSUP stub; DwarFS is real when the
-//! `vendored-dwarfs` feature is on (default) and an ENOTSUP stub without it.
+//! its format, build the backend. Mirrors the C++ BackendFactory dispatch:
+//! DwarFS (vendored-dwarfs) and SquashFS (vendored-squashfs) are real with
+//! their default features on, ENOTSUP stubs without.
 
 use std::ffi::CString;
 use std::fs::File;
@@ -15,6 +15,8 @@ use crate::context::Mount;
 
 #[cfg(feature = "vendored-dwarfs")]
 use crate::backends_dwarfs::DwarfsBackend;
+#[cfg(feature = "vendored-squashfs")]
+use crate::backends_squashfs::SquashfsBackend;
 
 const MAGIC_LEN: usize = 8;
 
@@ -52,6 +54,9 @@ pub fn build_from_file(archive_path: &str, mount_point: &str) -> Result<Mount, i
         ImageFormat::Dwarfs => Box::new(DwarfsBackend::from_file(Path::new(archive_path))?),
         #[cfg(not(feature = "vendored-dwarfs"))]
         ImageFormat::Dwarfs => return Err(libc::ENOTSUP),
+        #[cfg(feature = "vendored-squashfs")]
+        ImageFormat::Squashfs => Box::new(SquashfsBackend::from_file(archive_path)?),
+        #[cfg(not(feature = "vendored-squashfs"))]
         ImageFormat::Squashfs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };
@@ -98,12 +103,9 @@ pub fn build_from_file_at(
     let format = detect_format(&magic[..n]);
 
     let backend: Box<dyn Backend> = match format {
-        ImageFormat::Zip => {
-            let mut data = vec![0u8; length as usize];
-            file.seek(SeekFrom::Start(offset)).map_err(|_| libc::EIO)?;
-            file.read_exact(&mut data).map_err(|_| libc::EIO)?;
-            Box::new(ZipBackend::from_memory(data)?)
-        }
+        ImageFormat::Zip => Box::new(ZipBackend::from_memory(read_region(
+            &mut file, offset, length,
+        )?)?),
         #[cfg(feature = "vendored-dwarfs")]
         ImageFormat::Dwarfs => Box::new(DwarfsBackend::from_file_at(
             Path::new(archive_path),
@@ -112,10 +114,24 @@ pub fn build_from_file_at(
         )?),
         #[cfg(not(feature = "vendored-dwarfs"))]
         ImageFormat::Dwarfs => return Err(libc::ENOTSUP),
+        #[cfg(feature = "vendored-squashfs")]
+        ImageFormat::Squashfs => Box::new(SquashfsBackend::from_memory(read_region(
+            &mut file, offset, length,
+        )?)?),
+        #[cfg(not(feature = "vendored-squashfs"))]
         ImageFormat::Squashfs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };
     Ok(make_mount(mount_point, Some(archive_path), backend))
+}
+
+/// Read `[offset, offset+length)` of a file into memory (region mounts of
+/// seek-less backends, mirroring the C++ copy semantics).
+fn read_region(file: &mut File, offset: u64, length: u64) -> Result<Vec<u8>, i32> {
+    let mut data = vec![0u8; length as usize];
+    file.seek(SeekFrom::Start(offset)).map_err(|_| libc::EIO)?;
+    file.read_exact(&mut data).map_err(|_| libc::EIO)?;
+    Ok(data)
 }
 
 /// Mount an archive residing in memory. The image is COPIED (stronger than
@@ -132,6 +148,9 @@ pub fn build_from_memory(data: &[u8], mount_point: &str) -> Result<Mount, i32> {
         ImageFormat::Dwarfs => Box::new(DwarfsBackend::from_memory(data)?),
         #[cfg(not(feature = "vendored-dwarfs"))]
         ImageFormat::Dwarfs => return Err(libc::ENOTSUP),
+        #[cfg(feature = "vendored-squashfs")]
+        ImageFormat::Squashfs => Box::new(SquashfsBackend::from_memory(data.to_vec())?),
+        #[cfg(not(feature = "vendored-squashfs"))]
         ImageFormat::Squashfs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };

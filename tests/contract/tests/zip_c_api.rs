@@ -969,7 +969,8 @@ fn init_from_file_at_bad_region() {
 #[test]
 fn dwarfs_and_unknown_formats_fail_cleanly() {
     let f = setup();
-    // Squashfs-magic blob: detected, but the backend is a stub -> ENOTSUP.
+    // Squashfs-magic garbage (backend is REAL since milestone 3): the mount
+    // is attempted and fails in the superblock read -> EIO, not a crash.
     let mut fake_squashfs = b"hsqs".to_vec();
     fake_squashfs.extend_from_slice(&[0u8; 64]);
     let rc = unsafe {
@@ -980,7 +981,7 @@ fn dwarfs_and_unknown_formats_fail_cleanly() {
         )
     };
     assert_eq!(rc, -1);
-    assert_eq!(unsafe { errno() }, libc::ENOTSUP);
+    assert_eq!(unsafe { errno() }, libc::EIO);
     assert_eq!(unsafe { is_initialized() }, 0);
 
     // Dwarfs-magic garbage (backend is REAL since milestone 2): the mount
@@ -996,6 +997,14 @@ fn dwarfs_and_unknown_formats_fail_cleanly() {
     };
     assert_eq!(rc, -1);
     assert_eq!(unsafe { errno() }, libc::EIO);
+    assert_eq!(unsafe { is_initialized() }, 0);
+
+    // Truly unknown magic -> EINVAL.
+    let junk = [0xFFu8; 64];
+    let rc =
+        unsafe { tfs::c_api::tebako_fs_init(junk.as_ptr().cast(), junk.len(), f.mp_c().as_ptr()) };
+    assert_eq!(rc, -1);
+    assert_eq!(unsafe { errno() }, libc::EINVAL);
     assert_eq!(unsafe { is_initialized() }, 0);
 }
 

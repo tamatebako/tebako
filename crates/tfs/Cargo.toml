@@ -27,11 +27,17 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # the vendored dwarfs-t CMake/vcpkg build into compilation; disable default
 # features to stay pure-cargo (the dwarfs backend then returns ENOTSUP).
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs", optional = true }
+# libsquashfs (squashfs-tools-ng) via vcpkg for the SquashFS backend.
+sqfs-sys = { version = "0.1.0", path = "../sqfs-sys", optional = true }
 
 [features]
 # `vendored-dwarfs` (default): build the dwarfs backend against the vendored
 # dwarfs-t sources via dwarfs-rs (requires DWARFS_RS_VCPKG_ROOT).
-default = ["vendored-dwarfs"]
+# `vendored-squashfs` (default): build the SquashFS backend against vcpkg's
+# squashfs-tools-ng (requires SQFS_SYS_VCPKG_ROOT, falls back to
+# DWARFS_RS_VCPKG_ROOT / VCPKG_ROOT).
+default = ["vendored-dwarfs", "vendored-squashfs"]
 vendored-dwarfs = ["dep:dwarfs-t"]
+vendored-squashfs = ["dep:sqfs-sys"]
 
 [dev-dependencies]
