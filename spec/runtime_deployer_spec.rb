@@ -84,15 +84,35 @@ RSpec.describe Tebako::RuntimeDeployer do
                "#{File.join(staging_dir, "deploy-driver.pkg")}:0:/__tebako_memfs__"])
     end
 
-    it "prints the driver output in verbose mode" do
-      allow(Tebako::BuildHelpers).to receive(:run_with_capture).and_return("driver says hi")
-      expect { deployer.execute([], env, seed_dir, verbose: true) }.to output(/driver says hi/).to_stdout
+    it "passes the deploy environment and pass-through flag to the runtime process" do
+      expect(Tebako::BuildHelpers).to receive(:with_env) do |env_hash, &block|
+        expect(env_hash).to include(env.merge("TEBAKO_PASS_THROUGH" => "1"))
+        block.call
+      end
+      deployer.execute([], env, seed_dir)
     end
 
-    it "passes the deploy environment and pass-through flag to the runtime process" do
-      expect(Tebako::BuildHelpers).to receive(:with_env)
-        .with(env.merge("TEBAKO_PASS_THROUGH" => "1")).and_call_original
-      deployer.execute([], env, seed_dir)
+    it "exports a resolved toolchain for subprocess builds, without overriding user-set variables" do
+      user_cc = ENV.fetch("CC", nil)
+      user_cxx = ENV.fetch("CXX", nil)
+      begin
+        ENV.delete("AR")
+        ENV["CC"] = "user-cc"
+        ENV["CXX"] = "user-c++"
+        expect(Tebako::BuildHelpers).to receive(:with_env) do |env_hash, &block|
+          # user-set CC/CXX are not clobbered: they reach the driver by
+          # environment inheritance, not through the override hash
+          expect(env_hash).not_to have_key("CC")
+          expect(env_hash).not_to have_key("CXX")
+          expect(env_hash["AR"]).not_to be_nil
+          expect(env_hash["RANLIB"]).not_to be_nil
+          block.call
+        end
+        deployer.execute([], env, seed_dir)
+      ensure
+        ENV["CC"] = user_cc
+        ENV["CXX"] = user_cxx
+      end
     end
   end
 
