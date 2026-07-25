@@ -79,4 +79,8 @@ impl Backend for DwarfsBackend {
         }
         Ok(out)
     }
+
+    fn image_info_json(&self) -> Option<String> {
+        self.fs.image_info_json().ok()
+    }
 }

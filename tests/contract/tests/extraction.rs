@@ -240,11 +240,12 @@ fn dwarfs_extraction_multiple_backends_supported() {
 #[test]
 fn extracted_files_paths_with_spaces() {
     let f = setup();
-    // A zip with a spaced filename (mirrors EdgeCase_PathWithSpaces).
+    // A zip with a spaced filename (mirrors EdgeCase_PathWithSpaces) —
+    // with explicit directory entries, like the C++ fixture helper writes.
     let archive = f._tmp.0.join("spaced.zip");
     tebako_contract_tests::build_zip(
         &archive,
-        &[],
+        &["dir with space/"],
         &[("dir with space/file name.txt", b"spaced".as_slice())],
     );
     let rc = unsafe {

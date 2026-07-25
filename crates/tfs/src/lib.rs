@@ -59,3 +59,12 @@ pub mod mount;
 
 pub use backend::{Backend, EntryType, RawDirEntry, RawStat};
 pub use context::{TebakoCDirent, DT_DIR, DT_REG, TEBAKO_FD_FLAG, TEBAKO_FD_MAX};
+
+/// Image-level metadata as JSON for an image file (item 24's
+/// `image_info_json`), built straight from the backend — outside the
+/// mount-table C ABI. `Err(ENOTSUP)` for backends without a metadata
+/// surface, `Err(errno)` on open failures.
+pub fn image_info_json(path: &str) -> Result<String, i32> {
+    let mount = mount::build_from_file(path, "/mnt")?;
+    mount.backend.image_info_json().ok_or(libc::ENOTSUP)
+}

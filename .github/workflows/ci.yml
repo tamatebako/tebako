@@ -87,15 +87,25 @@ jobs:
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/$TRIPLET" >> "$GITHUB_ENV"
 
       # The tebako-pkg golden suite compares against the C++ tebakofs
-      # oracle; use the libtfs release binary for the runner's platform.
-      - name: Download the C++ tebakofs oracle (libtfs release)
+      # oracle, and tfs-cli's mkimage against mkdwarfs; use the libtfs
+      # release binaries for the runner's platform.
+      - name: Download the C++ oracle binaries (libtfs release)
         run: |
           mkdir -p .oracle
-          if [ "${{ runner.os }}" = "Linux" ]; then ASSET=tebakofs-linux-gnu-x86_64; else ASSET=tebakofs-macos-arm64; fi
+          if [ "${{ runner.os }}" = "Linux" ]; then
+            TEBAKOFS=tebakofs-linux-gnu-x86_64
+            MKDWARFS=mkdwarfs-linux-gnu-x86_64
+          else
+            TEBAKOFS=tebakofs-macos-arm64
+            MKDWARFS=mkdwarfs-macos-arm64
+          fi
           curl -fsSL -o .oracle/tebakofs \
-            "https://github.com/tamatebako/libtfs/releases/download/v0.13.0/$ASSET"
-          chmod +x .oracle/tebakofs
+            "https://github.com/tamatebako/libtfs/releases/download/v0.13.0/$TEBAKOFS"
+          curl -fsSL -o .oracle/mkdwarfs \
+            "https://github.com/tamatebako/libtfs/releases/download/v0.13.0/$MKDWARFS"
+          chmod +x .oracle/tebakofs .oracle/mkdwarfs
           echo "TEBAKOFS_CPP=${{ github.workspace }}/.oracle/tebakofs" >> "$GITHUB_ENV"
+          echo "TEBAKO_MKDWARFS=${{ github.workspace }}/.oracle/mkdwarfs" >> "$GITHUB_ENV"
 
       # `cargo build` first: it produces the libtfs cdylib the C harness
       # links against (cargo test alone builds deps as rlibs only).
