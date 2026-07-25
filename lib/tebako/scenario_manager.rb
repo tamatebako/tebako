@@ -116,8 +116,6 @@ module Tebako
     rescue Errno::ENOENT
       [nil, nil]
     end
-
-    public
   end
 
   # Manages packaging scenario based on input files (gemfile, gemspec, etc)
