@@ -65,7 +65,7 @@ jobs:
           path: |
             ~/.cache/vcpkg
             ~/Library/Caches/vcpkg
-          key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**') }}
+          key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**', 'tebako-rs/crates/sqfs-sys/vcpkg.json', 'tebako-rs/crates/sqfs-sys/vcpkg_ports/**', 'tebako-rs/crates/sqfs-sys/vcpkg_triplets/**') }}
           restore-keys: |
             vcpkg-archives-${{ runner.os }}-
 
