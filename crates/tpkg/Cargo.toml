@@ -1,0 +1,16 @@
+[package]
+name = "tpkg"
+description = "The tebako package manifest (tpkg) trailer format — parse, serialize, validate"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "tpkg", "package", "manifest", "trailer"]
+categories = ["data-structures", "filesystem", "parser-implementations"]
+
+[dependencies]
+
+[dev-dependencies]
+proptest = "1"

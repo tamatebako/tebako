@@ -1,0 +1,160 @@
+//! Manifest model types, mirroring the C `tpkg_manifest`/`tpkg_slot`.
+
+use crate::error::TpkgError;
+use crate::{
+    TPKG_FORMAT_RUNTIME, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN, TPKG_RUNTIME_REF_LEN, TPKG_VERSION,
+};
+
+/// One payload slot (the in-Rust form of C `tpkg_slot`).
+///
+/// `mount_point` is the full fixed-width field (NUL-padded on the wire);
+/// use [`Slot::mount_point`] / [`Slot::set_mount_point`] for string access.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Slot {
+    /// Image start (absolute file offset).
+    pub offset: u64,
+    /// Image length in bytes.
+    pub size: u64,
+    /// `TPKG_FORMAT_*` id.
+    pub format_id: u32,
+    /// Slot flags (format-specific; 0 for now).
+    pub flags: u32,
+    /// Fixed-width mount point field (NUL-padded).
+    pub mount_point: [u8; TPKG_MOUNT_POINT_LEN],
+}
+
+impl Default for Slot {
+    fn default() -> Self {
+        Slot {
+            offset: 0,
+            size: 0,
+            format_id: 0,
+            flags: 0,
+            mount_point: [0; TPKG_MOUNT_POINT_LEN],
+        }
+    }
+}
+
+impl Slot {
+    /// Create a slot from string parts (convenience).
+    pub fn new(offset: u64, size: u64, format_id: u32, mount_point: &str) -> Slot {
+        let mut slot = Slot {
+            offset,
+            size,
+            format_id,
+            flags: 0,
+            ..Default::default()
+        };
+        slot.set_mount_point(mount_point.as_bytes());
+        slot
+    }
+
+    /// The mount point as bytes, up to (not including) the first NUL.
+    pub fn mount_point(&self) -> &[u8] {
+        let len = strnlen(&self.mount_point);
+        &self.mount_point[..len]
+    }
+
+    /// The mount point as `&str`, if it is valid UTF-8.
+    pub fn mount_point_str(&self) -> Option<&str> {
+        std::str::from_utf8(self.mount_point()).ok()
+    }
+
+    /// Set the mount point from bytes; NUL-pads the remainder.
+    /// Bytes at or beyond the field width are ignored.
+    pub fn set_mount_point(&mut self, s: &[u8]) {
+        put_str(&mut self.mount_point, s);
+    }
+}
+
+/// The package manifest (the in-Rust form of C `tpkg_manifest`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Manifest {
+    /// Format version (`TPKG_VERSION`).
+    pub version: u32,
+    /// `TPKG_FLAG_*` bits.
+    pub package_flags: u32,
+    /// Launcher ABI version understood by the bootstrap.
+    pub launcher_abi: u32,
+    /// Fixed-width runtime reference field (NUL-padded; empty = classic bundle).
+    pub runtime_ref: [u8; TPKG_RUNTIME_REF_LEN],
+    /// Payload slots (`1..=TPKG_MAX_SLOTS` entries in a valid manifest).
+    pub slots: Vec<Slot>,
+}
+
+impl Default for Manifest {
+    fn default() -> Self {
+        Manifest {
+            version: TPKG_VERSION,
+            package_flags: 0,
+            launcher_abi: 0,
+            runtime_ref: [0; TPKG_RUNTIME_REF_LEN],
+            slots: Vec::new(),
+        }
+    }
+}
+
+impl Manifest {
+    /// The runtime reference as bytes, up to (not including) the first NUL.
+    pub fn runtime_ref(&self) -> &[u8] {
+        let len = strnlen(&self.runtime_ref);
+        &self.runtime_ref[..len]
+    }
+
+    /// The runtime reference as `&str`, if it is valid UTF-8.
+    pub fn runtime_ref_str(&self) -> Option<&str> {
+        std::str::from_utf8(self.runtime_ref()).ok()
+    }
+
+    /// Set the runtime reference from bytes; NUL-pads the remainder.
+    pub fn set_runtime_ref(&mut self, s: &[u8]) {
+        put_str(&mut self.runtime_ref, s);
+    }
+
+    /// True when `TPKG_FLAG_LEAN` is set.
+    pub fn is_lean(&self) -> bool {
+        self.package_flags & crate::TPKG_FLAG_LEAN != 0
+    }
+
+    /// Magic-independent structural checks, mirroring the C `tpkg_validate()`:
+    /// version supported, `1..=TPKG_MAX_SLOTS` slots, `offset+size`
+    /// non-overflowing, `format_id <= TPKG_FORMAT_RUNTIME`, `runtime_ref` and
+    /// mount points NUL-terminated within their fixed fields.
+    pub fn validate(&self) -> Result<(), TpkgError> {
+        if self.version != TPKG_VERSION {
+            return Err(TpkgError::Version);
+        }
+        if self.slots.is_empty() || self.slots.len() > TPKG_MAX_SLOTS as usize {
+            return Err(TpkgError::Slots);
+        }
+        if strnlen(&self.runtime_ref) == TPKG_RUNTIME_REF_LEN {
+            return Err(TpkgError::Invalid);
+        }
+        for slot in &self.slots {
+            if slot.size > u64::MAX - slot.offset {
+                return Err(TpkgError::Invalid);
+            }
+            if slot.format_id > TPKG_FORMAT_RUNTIME {
+                return Err(TpkgError::Invalid);
+            }
+            if strnlen(&slot.mount_point) == TPKG_MOUNT_POINT_LEN {
+                return Err(TpkgError::Invalid);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Length up to the first NUL, capped at the field width (C `tpkg__strnlen`).
+pub(crate) fn strnlen(s: &[u8]) -> usize {
+    s.iter().position(|&b| b == 0).unwrap_or(s.len())
+}
+
+/// Copy bytes into a fixed-width field, zero-padding the remainder
+/// (C `tpkg__put_str`): content is truncated at the field width and at the
+/// first interior NUL.
+pub(crate) fn put_str(field: &mut [u8], s: &[u8]) {
+    field.fill(0);
+    let n = strnlen(s).min(field.len());
+    field[..n].copy_from_slice(&s[..n]);
+}

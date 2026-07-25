@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/tpkg", "crates/tfs", "tests/contract"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.79"
+license = "BSD-2-Clause"
+repository = "https://github.com/tamatebako/tebako-rs"
+homepage = "https://github.com/tamatebako/tebako-rs"
+
+[profile.release]
+# The tfs cdylib/staticlib ships as a drop-in for C++ libtfs; keep it lean.
+lto = "thin"
