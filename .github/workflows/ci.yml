@@ -120,7 +120,19 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      # cargo fmt resolves the workspace; tfs's optional dwarfs-t path
+      # dependency must exist (manifests only — no submodules needed).
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+
       - uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+        working-directory: tebako-rs
