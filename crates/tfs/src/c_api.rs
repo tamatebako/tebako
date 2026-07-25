@@ -334,6 +334,11 @@ pub unsafe extern "C" fn tebako_fs_dir_is_embedded(dir: *mut c_void) -> libc::c_
 // ===================================================================
 
 /// Fill a caller's `struct stat` from a RawStat (zeroed first, like C++).
+// The S_IF* constant widths differ per platform (u16 on macOS, u32 on
+// Linux): the widening `as u32` is required on macOS and an identity cast
+// on Linux, so the platform-dependent unnecessary_cast lint is allowed
+// here deliberately.
+#[allow(clippy::unnecessary_cast)]
 fn fill_stat(st: *mut libc::stat, raw: &crate::backend::RawStat) -> i32 {
     // SAFETY: caller guarantees `st` points to a valid struct stat.
     let out = unsafe { &mut *st };
