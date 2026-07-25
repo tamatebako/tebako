@@ -22,26 +22,33 @@
 //!                   └── squashfs         (PLANNED: squashfs-tools-ng FFI)
 //! ```
 //!
-//! ## v1 surface (SHIPPED)
+//! ## Surface (milestone 2)
 //!
+//! ABI: `tebako_fs_abi_version` (== 1, byte-for-byte with libtfs main).
 //! Lifecycle: `tebako_fs_init_from_file`, `tebako_fs_init_from_file_at`,
 //! `tebako_fs_init`, `tebako_fs_unmount`, `tebako_is_initialized`.
-//! Files: `tebako_fs_open`, `read`, `pread`, `lseek`, `close`, `stat`,
-//! `fstat`. Directories: `tebako_fs_opendir`, `readdir`, `closedir`,
-//! `tebako_fs_dir_is_embedded`. Utility: `tebako_get_errno`,
-//! `tebako_strerror`, `tebako_get_mount_point`, `tebako_get_archive_path`,
-//! `tebako_get_backend_name`, `tebako_path_is_embedded`,
-//! `tebako_fd_is_embedded`. Backend: ZIP (dwarfs/squashfs mounts fail
-//! cleanly with ENOTSUP).
+//! Multi-mount: `tebako_fs_mount_from_file`, `..._from_file_at`,
+//! `..._from_memory`, `tebako_fs_unmount_handle`. Files: `tebako_fs_open`,
+//! `read`, `pread`, `lseek`, `close`, `stat`, `fstat`. Directories:
+//! `tebako_fs_opendir`, `readdir`, `closedir`, `rewinddir`, `telldir`,
+//! `seekdir`, `tebako_fs_dir_is_embedded`. Extraction/dlopen:
+//! `tebako_fs_extract_all`, `tebako_fs_dlmap2file`. Utility:
+//! `tebako_get_errno`, `tebako_strerror`, `tebako_get_mount_point`,
+//! `tebako_get_archive_path`, `tebako_get_backend_name`,
+//! `tebako_path_is_embedded`, `tebako_fd_is_embedded`. Backends: ZIP
+//! (pure-Rust `zip` crate) and DwarFS (external `dwarfs-rs` crate, feature
+//! `vendored-dwarfs`, default on); squashfs mounts fail cleanly with
+//! ENOTSUP.
 //!
 //! ## PLANNED (next milestones)
 //!
-//! Multi-mount (`tebako_fs_mount_*`/`tebako_fs_unmount_handle`), the dwarfs
-//! backend via the external [`dwarfs`](https://github.com/tamatebako/dwarfs-rs)
-//! crate, squashfs backend, `tebako_fs_rewinddir`/`telldir`/`seekdir`,
-//! `tebako_fs_extract_all`, `tebako_fs_dlmap2file`.
+//! Squashfs backend; the full 493-test C++ contract import; then
+//! crates/tebako-pkg, tfs-cli, tebako-cli, tebako-bootstrap per the locked
+//! repo strategy.
 
 pub mod backend;
+#[cfg(feature = "vendored-dwarfs")]
+pub mod backends_dwarfs;
 pub mod backends_zip;
 pub mod c_api;
 pub mod context;

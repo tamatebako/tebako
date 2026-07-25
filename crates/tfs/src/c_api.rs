@@ -334,6 +334,11 @@ pub unsafe extern "C" fn tebako_fs_dir_is_embedded(dir: *mut c_void) -> libc::c_
 // ===================================================================
 
 /// Fill a caller's `struct stat` from a RawStat (zeroed first, like C++).
+// The S_IF* constant widths differ per platform (u16 on macOS, u32 on
+// Linux): the widening `as u32` is required on macOS and an identity cast
+// on Linux, so the platform-dependent unnecessary_cast lint is allowed
+// here deliberately.
+#[allow(clippy::unnecessary_cast)]
 fn fill_stat(st: *mut libc::stat, raw: &crate::backend::RawStat) -> i32 {
     // SAFETY: caller guarantees `st` points to a valid struct stat.
     let out = unsafe { &mut *st };
@@ -341,8 +346,8 @@ fn fill_stat(st: *mut libc::stat, raw: &crate::backend::RawStat) -> i32 {
     let type_bits: u32 = match raw.entry_type {
         EntryType::File => libc::S_IFREG as u32,
         EntryType::Directory => libc::S_IFDIR as u32,
-        EntryType::Symlink => libc::S_IFLNK as u32,
-        EntryType::Other => return libc::EINVAL,
+        // C++ returns EINVAL for anything that is neither file nor dir.
+        _ => return libc::EINVAL,
     };
     out.st_mode = (type_bits | raw.perms) as libc::mode_t;
     out.st_size = raw.size as libc::off_t;
@@ -491,4 +496,270 @@ pub unsafe extern "C" fn tebako_get_backend_name() -> *const c_char {
         Some(name) => name.as_ptr(),
         None => std::ptr::null(),
     }
+}
+
+// ===================================================================
+// ABI Version
+// ===================================================================
+
+/// `tebako_fs_abi_version`: the C ABI version of this library
+/// (== TEBAKO_FS_ABI_VERSION in the headers).
+///
+/// # Safety
+/// C ABI entry point.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_abi_version() -> libc::c_int {
+    1
+}
+
+// ===================================================================
+// Multi-Mount Management
+// ===================================================================
+
+/// Shared tail of the mount_* exports: insert the mount, report the handle.
+fn finish_mount(
+    result: Result<crate::context::Mount, i32>,
+    out_handle: *mut libc::c_int,
+) -> libc::c_int {
+    let mount = match result {
+        Ok(m) => m,
+        Err(e) => return fail(e),
+    };
+    match context().write().unwrap().mount_checked(mount) {
+        Ok(handle) => {
+            // SAFETY: out_handle was NULL-checked by the caller.
+            unsafe { *out_handle = handle };
+            set_errno(0);
+            0
+        }
+        Err(e) => fail(e),
+    }
+}
+
+/// `tebako_fs_mount_from_file`.
+///
+/// # Safety
+/// C ABI entry point: pointer arguments must follow the C contract.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_mount_from_file(
+    archive_path: *const c_char,
+    mount_point: *const c_char,
+    out_handle: *mut libc::c_int,
+) -> libc::c_int {
+    if out_handle.is_null() {
+        return fail(libc::EINVAL);
+    }
+    let (archive_path, mount_point) = match (unsafe { path_arg(archive_path) }, unsafe {
+        path_arg(mount_point)
+    }) {
+        (Ok(a), Ok(m)) => (a, m),
+        _ => return fail(libc::EINVAL),
+    };
+    if mount_point.is_empty() {
+        return fail(libc::EINVAL);
+    }
+    finish_mount(
+        mount::build_from_file(archive_path, mount_point),
+        out_handle,
+    )
+}
+
+/// `tebako_fs_mount_from_file_at`.
+///
+/// # Safety
+/// C ABI entry point: pointer arguments must follow the C contract.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_mount_from_file_at(
+    archive_path: *const c_char,
+    offset: u64,
+    length: u64,
+    mount_point: *const c_char,
+    out_handle: *mut libc::c_int,
+) -> libc::c_int {
+    if out_handle.is_null() {
+        return fail(libc::EINVAL);
+    }
+    let (archive_path, mount_point) = match (unsafe { path_arg(archive_path) }, unsafe {
+        path_arg(mount_point)
+    }) {
+        (Ok(a), Ok(m)) => (a, m),
+        _ => return fail(libc::EINVAL),
+    };
+    if mount_point.is_empty() {
+        return fail(libc::EINVAL);
+    }
+    finish_mount(
+        mount::build_from_file_at(archive_path, offset, length, mount_point),
+        out_handle,
+    )
+}
+
+/// `tebako_fs_mount_from_memory`.
+///
+/// # Safety
+/// `data` must point to `size` readable bytes (the image is copied).
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_mount_from_memory(
+    data: *const c_void,
+    size: usize,
+    mount_point: *const c_char,
+    out_handle: *mut libc::c_int,
+) -> libc::c_int {
+    if out_handle.is_null() {
+        return fail(libc::EINVAL);
+    }
+    if data.is_null() || size == 0 {
+        return fail(libc::EINVAL);
+    }
+    let mount_point = match unsafe { path_arg(mount_point) } {
+        Ok(m) => m,
+        Err(e) => return fail(e),
+    };
+    if mount_point.is_empty() {
+        return fail(libc::EINVAL);
+    }
+    let data = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), size) };
+    finish_mount(mount::build_from_memory(data, mount_point), out_handle)
+}
+
+/// `tebako_fs_unmount_handle`.
+///
+/// # Safety
+/// C ABI entry point.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_unmount_handle(handle: libc::c_int) -> libc::c_int {
+    match context().write().unwrap().unmount_handle(handle) {
+        Ok(()) => {
+            set_errno(0);
+            0
+        }
+        Err(e) => fail(e),
+    }
+}
+
+// ===================================================================
+// Directory positioning
+// ===================================================================
+
+/// `tebako_fs_rewinddir`.
+///
+/// # Safety
+/// `dir` must be a handle from tebako_fs_opendir.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_rewinddir(dir: *mut c_void) {
+    if dir.is_null() {
+        fail(libc::EBADF);
+        return;
+    }
+    match context().write().unwrap().rewinddir(dir as usize) {
+        Ok(()) => {
+            set_errno(0);
+        }
+        Err(e) => {
+            fail(e);
+        }
+    }
+}
+
+/// `tebako_fs_telldir`.
+///
+/// # Safety
+/// `dir` must be a handle from tebako_fs_opendir.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_telldir(dir: *mut c_void) -> libc::c_long {
+    if dir.is_null() {
+        return fail(libc::EBADF) as libc::c_long;
+    }
+    match context().read().unwrap().telldir(dir as usize) {
+        Ok(pos) => {
+            set_errno(0);
+            pos as libc::c_long
+        }
+        Err(e) => fail(e) as libc::c_long,
+    }
+}
+
+/// `tebako_fs_seekdir` (index-based cookies).
+///
+/// # Safety
+/// `dir` must be a handle from tebako_fs_opendir.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_seekdir(dir: *mut c_void, pos: libc::c_long) {
+    if dir.is_null() {
+        fail(libc::EBADF);
+        return;
+    }
+    match context().write().unwrap().seekdir(dir as usize, pos) {
+        Ok(()) => {
+            set_errno(0);
+        }
+        Err(e) => {
+            fail(e);
+        }
+    }
+}
+
+// ===================================================================
+// Extraction
+// ===================================================================
+
+/// `tebako_fs_extract_all`.
+///
+/// # Safety
+/// `dest_path` must be a valid C string.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_extract_all(dest_path: *const c_char) -> libc::c_int {
+    let dest = match unsafe { path_arg(dest_path) } {
+        Ok(d) => d,
+        Err(e) => return fail(e),
+    };
+    match context()
+        .write()
+        .unwrap()
+        .extract_all(std::path::Path::new(dest))
+    {
+        Ok(()) => {
+            set_errno(0);
+            0
+        }
+        Err(e) => fail(e),
+    }
+}
+
+// ===================================================================
+// Dynamic Loading Support
+// ===================================================================
+
+/// `tebako_fs_dlmap2file`: the returned string is heap-allocated with
+/// libc `malloc` — the C contract says the caller releases it with `free()`.
+///
+/// # Safety
+/// `path` must be a valid C string.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_char {
+    let path = match unsafe { path_arg(path) } {
+        Ok(p) => p,
+        Err(e) => {
+            fail(e);
+            return std::ptr::null_mut();
+        }
+    };
+    let host = match context().write().unwrap().dlmap2file(path) {
+        Ok(h) => h,
+        Err(e) => {
+            fail(e);
+            return std::ptr::null_mut();
+        }
+    };
+    // Allocate with libc malloc so the C caller can free() the string.
+    let bytes = host.as_bytes_with_nul();
+    // SAFETY: malloc'd buffer of bytes.len(); copy then hand over ownership.
+    let out = unsafe { libc::malloc(bytes.len()).cast::<c_char>() };
+    if out.is_null() {
+        fail(libc::ENOMEM);
+        return std::ptr::null_mut();
+    }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr().cast(), out, bytes.len()) };
+    set_errno(0);
+    out
 }

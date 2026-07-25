@@ -38,7 +38,38 @@ Rust-consumable surface for it.
 
 ## Status
 
-### SHIPPED (this milestone)
+### SHIPPED (milestone 2)
+
+- **tfs: dwarfs backend via the external
+  [`dwarfs-rs`](https://github.com/tamatebako/dwarfs-rs) crate** (crates
+  `dwarfs-t`/`dwarfs-t-sys`; currently a *path* dependency — becomes a git
+  dependency when dwarfs-rs has a release, crates.io later). Mount from
+  file / memory / region (offset+length — the C++ semantics: dwarfs
+  regions open in place, zip regions read into memory), stat, pread,
+  directory iteration. The milestone-1 ENOTSUP cases are now real: dwarfs
+  images mount with backend name "DwarFS" and pass the ported
+  `CApiOffsetTest` suite; squashfs stays ENOTSUP. Feature flag:
+  `vendored-dwarfs` (default on; `--no-default-features` keeps the build
+  pure-cargo with dwarfs mounts failing ENOTSUP).
+- **tfs: multi-mount** — `tebako_mount_t` handles (monotonic, never
+  reused), `tebako_fs_mount_from_file` / `_from_file_at` / `_from_memory`,
+  `tebako_fs_unmount_handle` (force-closes only the mount's own fds/dirs →
+  EBADF, releases the mount point), longest-prefix dispatch (nested mounts
+  shadow outer ones), legacy `init*` single-mount semantics on top (EEXIST
+  when anything is mounted, `tebako_fs_unmount()` tears down everything),
+  extract rules (1 mount → dest root; N mounts → per-mount
+  mount-point-basename subtrees).
+- **tfs: remaining io surface** — `tebako_fs_dir_is_embedded`,
+  `rewinddir`, `telldir`/`seekdir` (index-based cookies),
+  `tebako_fs_extract_all`, `tebako_fs_dlmap2file` (per-process tmpdir,
+  memfs-path→host cache keyed by full path, caller-`free()`d returned
+  string, teardown removal at exit), and `tebako_fs_abi_version()`
+  (== `TEBAKO_FS_ABI_VERSION` = 1, byte-for-byte with libtfs main
+  0f3e444).
+- **Contract suite: 116 ported cases** — 64 zip (M1) + 18 multi-mount +
+  22 io-surface + 12 dwarfs offset/backend, plus the plain-C harness.
+
+### SHIPPED (milestone 1)
 
 - **`crates/tpkg` — complete.** Parse / serialize / validate / crc32 for
   the tpkg v1 trailer, byte-exact with the reference C implementation
@@ -49,48 +80,36 @@ Rust-consumable surface for it.
   proptest round-trips (encode→parse identity, parser never panics on
   garbage). Error codes and strings are 1:1 with `TPKG_ERR_*` /
   `tpkg_strerror()`.
-  *cbindgen note:* the locked strategy wants a generated C `tpkg.h` from
-  this crate. v1 deliberately skips the pipeline: the C++ side still
-  vendors the self-contained C99 `tpkg.h`, so nothing consumes a
-  Rust-generated header yet; the generation target lands with
-  `crates/tebako-bootstrap` (item 22), the first real consumer.
-- **`crates/tfs` — skeleton with real bones.** The `tebako_fs_*` C ABI in
-  safe Rust (one `unsafe` module: the FFI boundary): thread-local errno
+  *cbindgen note:* the generated C `tpkg.h` target lands with
+  `crates/tebako-bootstrap` (item 22), the first real C-side consumer.
+- **`crates/tfs` — the `tebako_fs_*` C ABI core.** Thread-local errno
   channel, `FsContext` mount table + fd/dir tables, longest-prefix
-  dispatch, the legacy single-mount `init*` API on top, `Backend` trait,
-  and a real ZIP backend (pure-Rust [`zip`] crate — the ABI contract is
-  behavioral, not library-level; no native libzip keeps consumers and CI
-  pure-cargo). Exported symbols: exactly the 23 `tebako_*` functions
-  (verified by nm; nothing else leaks). SHIPPED surface: lifecycle
-  (`init_from_file` / `init_from_file_at` / `init` / `unmount` /
-  `is_initialized`), files (`open` / `read` / `pread` / `lseek` / `close` /
-  `stat` / `fstat`), directories (`opendir` / `readdir` / `closedir` /
-  `dir_is_embedded`), utility (`get_errno` / `strerror` /
-  `get_mount_point` / `get_archive_path` / `get_backend_name` /
-  `path_is_embedded` / `fd_is_embedded`). Dwarfs/squashfs mounts fail
-  cleanly with `ENOTSUP` (backends land next).
-- **`tests/contract` — the parity oracle, zip leg.** The zip-backed cases
-  of the C++ `CApiTest` suite (libtfs `tests/test_c_api.cpp`) ported
-  1:1 against the SAME fixture tree (built in-process by both sides),
-  running through the Rust C ABI — 64 cases covering lifecycle, memory
-  mounts, file/dir/metadata ops, path detection, error channel, and full
-  workflow — plus a plain-C harness (`tests/contract/c_harness/
-  mount_read.c`) compiled against `libtfs.{so,dylib}` that mounts a zip and
-  reads a file with no Rust in sight.
+  dispatch, `Backend` trait, ZIP backend (pure-Rust [`zip`] crate — the
+  ABI contract is behavioral, not library-level; no native libzip).
+  Exported symbols: exactly the `tebako_*` functions (nm-verified; nothing
+  else leaks).
 
 ### PLANNED (next milestones, in order)
 
-1. tfs: dwarfs backend via the external `dwarfs-rs` crate (brings the
-   vendored CMake/vcpkg build + a `vendored-dwarfs` cargo feature).
-2. tfs: multi-mount (`tebako_fs_mount_*` / `tebako_fs_unmount_handle`,
-   item 10 semantics), `rewinddir`/`telldir`/`seekdir`, `extract_all`,
-   `dlmap2file`; squashfs backend; `tebako_fs_abi_version`.
-3. Contract suite: import the full 493-test libtfs suite + the multi-mount
-   and dlmap2file suites (runs against EITHER implementation through the
-   C ABI — same tests, no forks).
-4. `crates/tebako-pkg` (trailer surgery), `crates/tfs-cli`.
-5. `crates/tebako-cli` (item 17), `crates/tebako-bootstrap` (item 22,
-   size-gated < 2 MB).
+1. Contract suite: import the full 493-test libtfs suite + the multi-mount
+   and dlmap2file suites as they grow (runs against EITHER implementation
+   through the C ABI — same tests, no forks).
+2. tfs: squashfs backend (squashfs-tools-ng FFI).
+3. `crates/tebako-pkg` (trailer surgery), `crates/tfs-cli`.
+4. `crates/tebako-cli` (item 17), `crates/tebako-bootstrap` (item 22,
+   size-gated < 2 MB), cbindgen `tpkg.h` with it.
+5. crates.io publication of `tpkg`/`tfs` (after the API settles
+   post-parity).
+
+### v2 notes (recorded decisions)
+
+- **Byte paths**: v1 validates path arguments as UTF-8 at the FFI boundary
+  (non-UTF-8 → `EINVAL`). Ruby integration will need byte paths (`OsStr`
+  on POSIX — ruby paths are raw bytes, not guaranteed UTF-8). The v2 C API
+  revision is where this lands; the errno surface does not change.
+- **ZIP mtime**: interpreted as UTC (ZIP DOS timestamps carry no zone);
+  libzip (C++ libtfs) uses process-local time. The contract never compares
+  mtimes; documented in `backends_zip.rs`.
 
 ## Parity-oracle approach
 
@@ -109,15 +128,21 @@ from the C++ side and run unchanged against the Rust implementation:
 ## Building
 
 ```console
+$ export DWARFS_RS_VCPKG_ROOT=/path/to/vcpkg   # for the dwarfs backend
 $ cargo test --workspace    # tpkg + tfs + contract (incl. the C harness)
+
+$ cargo test -p tfs --no-default-features   # pure-cargo, no vcpkg
 ```
 
-No vcpkg, no native deps beyond a C compiler for the harness. CI:
-ubuntu-24.04 + macos-14, `cargo build` (produces the cdylib the C harness
-links), `cargo test`, `clippy -D warnings`, `rustfmt --check`.
+The dwarfs backend builds the vendored dwarfs-t sources through dwarfs-rs
+(CMake + vcpkg; first cold build compiles the whole native dep chain, the
+vcpkg archive cache makes later builds fast). Without default features the
+workspace is pure-cargo. CI: ubuntu-24.04 + macos-14 with the dwarfs-t
+vcpkg baseline pinned (same commit as dwarfs-t's and dwarfs-rs's CI) plus
+an archive cache, and a separate `--no-default-features` leg.
 
 ## License
 
 BSD-2-Clause (same as the tebako C++ project). Note the DwarFS backend
-(when it lands) links dwarfs-t / DwarFS, which is GPL-3.0 — see the
-dwarfs-rs README for the plain statement of what that means for binaries.
+links dwarfs-t / DwarFS, which is GPL-3.0 — see the dwarfs-rs README for
+the plain statement of what that means for binaries.

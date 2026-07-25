@@ -2,11 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/*]
   pull_request:
 
 env:
   CARGO_TERM_COLOR: always
+  # Must match the builtin-baseline in dwarfs-t/vcpkg.json (mirrors
+  # dwarfs-t's and dwarfs-rs's CI; the vendored dwarfs build needs vcpkg).
+  VCPKG_COMMIT: f14401ca0f2754347c3864da7488a9b955b4e47a
 
 jobs:
   test:
@@ -18,31 +21,118 @@ jobs:
         os: [ubuntu-24.04, macos-14]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The dwarfs backend's path dependency (../dwarfs-rs) brings the
+          # dwarfs-t submodule with it.
+          submodules: recursive
+          path: tebako-rs
+
+      # dwarfs-rs is a sibling path dependency until it has a release.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
 
       - name: Install toolchain (rustup)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: clippy
 
-      # NB: pure-cargo pipeline — no vcpkg, no native deps (the vendored
-      # dwarfs build arrives with the dwarfs backend milestone).
+      - name: Install native build tools (ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            autoconf automake autoconf-archive libtool \
+            curl zip unzip tar ca-certificates
+
+      - name: Install native build tools (macos)
+        if: runner.os == 'macOS'
+        run: brew install ninja autoconf automake autoconf-archive libtool
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      - name: Cache vcpkg package archives
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/vcpkg
+            ~/Library/Caches/vcpkg
+          key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**') }}
+          restore-keys: |
+            vcpkg-archives-${{ runner.os }}-
+
       # `cargo build` first: it produces the libtfs cdylib the C harness
       # links against (cargo test alone builds deps as rlibs only).
       - name: cargo build
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: cargo build --workspace
 
       - name: cargo test
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: cargo test --workspace
 
       - name: clippy
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test-pure-cargo:
+    name: test (--no-default-features, ubuntu)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      # tfs's optional dwarfs-t path dependency must resolve even with the
+      # feature off, so the sibling checkout is still required.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          components: clippy
+      # The no-dwarfs configuration must stay buildable and testable
+      # without any vcpkg involvement (dwarfs mounts then fail ENOTSUP).
+      - name: cargo test (no default features)
+        working-directory: tebako-rs
+        run: cargo test -p tfs --no-default-features
 
   fmt:
     name: fmt
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+        with:
+          path: tebako-rs
+
+      # cargo fmt resolves the workspace; tfs's optional dwarfs-t path
+      # dependency must exist (manifests only — no submodules needed).
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+
+      - uses: dtolnay/rust-toolchain@1.94.1
         with:
           components: rustfmt
       - run: cargo fmt --all -- --check
+        working-directory: tebako-rs

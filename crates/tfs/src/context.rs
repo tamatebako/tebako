@@ -106,6 +106,11 @@ pub struct FsContext {
     /// The mount made through the legacy single-mount `init*` API; the
     /// compat getters (`tebako_get_mount_point`, ...) report on it.
     compat_handle: Option<i32>,
+    /// Per-process temp dir for dlmap2file extractions (created lazily).
+    dl_tmpdir: Option<std::path::PathBuf>,
+    /// dlmap2file cache: memfs path -> extracted host path. Extractions
+    /// live for the process run and are removed at teardown (atexit).
+    dl_cache: BTreeMap<String, std::path::PathBuf>,
 }
 
 impl FsContext {
@@ -118,6 +123,8 @@ impl FsContext {
             next_fd: 1,
             next_dir_id: 1,
             compat_handle: None,
+            dl_tmpdir: None,
+            dl_cache: BTreeMap::new(),
         }
     }
 
@@ -142,6 +149,34 @@ impl FsContext {
         let mount = Mount { handle, ..mount };
         self.mounts.insert(mount.handle, mount);
         handle
+    }
+
+    /// Multi-mount API: validate + insert, with the C++ errno contract.
+    /// `Err` on taken mount point (EEXIST) or empty mount point (EINVAL).
+    pub fn mount_checked(&mut self, mount: Mount) -> Result<i32, i32> {
+        if mount.mount_point.is_empty() {
+            return Err(libc::EINVAL);
+        }
+        if self.mount_point_taken(&mount.mount_point) {
+            return Err(libc::EEXIST);
+        }
+        Ok(self.insert_mount(mount))
+    }
+
+    /// Unmount a single mount by handle: force-close only its own fds and
+    /// dir handles (they fail with EBADF afterwards), drop the mount, and
+    /// release the mount point. Handles are never reused.
+    pub fn unmount_handle(&mut self, handle: i32) -> Result<(), i32> {
+        if !self.mounts.contains_key(&handle) {
+            return Err(libc::ENODEV);
+        }
+        self.fd_table.retain(|_, e| e.owner != handle);
+        self.dir_table.retain(|_, e| e.owner != handle);
+        self.mounts.remove(&handle);
+        if self.compat_handle == Some(handle) {
+            self.compat_handle = None;
+        }
+        Ok(())
     }
 
     /// Unmount everything; all fds and dir handles become invalid.
@@ -197,8 +232,8 @@ impl FsContext {
         let st = mount.backend.stat(rel)?;
         match st.entry_type {
             EntryType::File => {}
-            EntryType::Directory => return Err(libc::EISDIR),
-            _ => return Err(libc::EINVAL),
+            // C++ maps NotAFile -> EISDIR for any non-regular open.
+            _ => return Err(libc::EISDIR),
         }
         let owner = mount.handle;
         let fd = self.next_fd;
@@ -363,6 +398,30 @@ impl FsContext {
         self.dir_table.contains_key(&dir)
     }
 
+    /// tebako_fs_telldir: ordinal of the entry the next readdir returns.
+    pub fn telldir(&self, dir: usize) -> Result<i64, i32> {
+        let state = self.dir_table.get(&dir).ok_or(libc::EBADF)?;
+        Ok(state.position as i64)
+    }
+
+    /// tebako_fs_rewinddir.
+    pub fn rewinddir(&mut self, dir: usize) -> Result<(), i32> {
+        let state = self.dir_table.get_mut(&dir).ok_or(libc::EBADF)?;
+        state.position = 0;
+        Ok(())
+    }
+
+    /// tebako_fs_seekdir (index-based cookies; seeking past the end leaves
+    /// the stream at end-of-directory).
+    pub fn seekdir(&mut self, dir: usize, pos: i64) -> Result<(), i32> {
+        if pos < 0 {
+            return Err(libc::EINVAL);
+        }
+        let state = self.dir_table.get_mut(&dir).ok_or(libc::EBADF)?;
+        state.position = (pos as usize).min(state.entries.len());
+        Ok(())
+    }
+
     // ---------------------------------------------------------------
     // Metadata
     // ---------------------------------------------------------------
@@ -391,6 +450,109 @@ impl FsContext {
     /// tebako_path_is_embedded.
     pub fn path_is_embedded(&self, path: &str) -> bool {
         self.find_mount(path).is_some()
+    }
+
+    // ---------------------------------------------------------------
+    // Extraction
+    // ---------------------------------------------------------------
+
+    /// tebako_fs_extract_all: one mount extracts directly into `dest`;
+    /// multiple mounts each extract into `<dest>/<mount-point-basename>`.
+    pub fn extract_all(&mut self, dest: &std::path::Path) -> Result<(), i32> {
+        if self.mounts.is_empty() {
+            return Err(libc::ENODEV);
+        }
+        if std::fs::create_dir_all(dest).is_err() {
+            return Err(libc::EIO);
+        }
+        if self.mounts.len() == 1 {
+            // Single mount: historic behavior — tree directly into dest.
+            let mount = self.mounts.values().next().unwrap();
+            extract_dir_recursive(mount.backend.as_ref(), "", dest)?;
+        } else {
+            let mounts: Vec<&Mount> = self.mounts.values().collect();
+            for mount in mounts {
+                let subtree = dest.join(mount_point_basename(&mount.mount_point));
+                if std::fs::create_dir_all(&subtree).is_err() {
+                    return Err(libc::EIO);
+                }
+                extract_dir_recursive(mount.backend.as_ref(), "", &subtree)?;
+            }
+        }
+        Ok(())
+    }
+
+    // ---------------------------------------------------------------
+    // dlmap2file
+    // ---------------------------------------------------------------
+
+    /// tebako_fs_dlmap2file: extract a memfs file to a host path for
+    /// dlopen, with per-process cache and tmpdir (legacy semantics).
+    pub fn dlmap2file(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        let mount = self.find_mount(path).ok_or(libc::ENOENT)?;
+        let owner = mount.handle;
+        let mount_point = mount.mount_point.clone();
+        let rel_owned = Self::relative_path(mount, path).to_string();
+        let mount = self.mounts.get(&owner).unwrap();
+
+        if let Some(cached) = self.dl_cache.get(path) {
+            let s = cached.to_string_lossy().into_owned();
+            return std::ffi::CString::new(s).map_err(|_| libc::EIO);
+        }
+
+        if rel_owned.is_empty() {
+            return Err(libc::EISDIR);
+        }
+        let st = mount.backend.stat(&rel_owned)?;
+        if st.entry_type != EntryType::File {
+            return Err(libc::EISDIR);
+        }
+
+        let tmpdir = match &self.dl_tmpdir {
+            Some(d) => d.clone(),
+            None => {
+                let d = create_dl_tmpdir().ok_or(libc::EIO)?;
+                register_dl_cleanup(&d);
+                self.dl_tmpdir = Some(d.clone());
+                d
+            }
+        };
+
+        let host_path = tmpdir
+            .join(mount_point_basename(&mount_point))
+            .join(&rel_owned);
+        if let Some(parent) = host_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|_| libc::EIO)?;
+        }
+
+        // Stream the file out in chunks.
+        let mut out = std::fs::File::create(&host_path).map_err(|_| libc::EIO)?;
+        let mut offset = 0u64;
+        let mut buf = vec![0u8; 8192];
+        loop {
+            let n = mount.backend.pread(&rel_owned, &mut buf, offset)?;
+            if n == 0 {
+                break;
+            }
+            use std::io::Write as _;
+            out.write_all(&buf[..n]).map_err(|_| {
+                let _ = std::fs::remove_file(&host_path);
+                libc::EIO
+            })?;
+            offset += n as u64;
+        }
+        drop(out);
+
+        // Permissions, best effort (dlopen needs a readable file).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let _ = std::fs::set_permissions(&host_path, std::fs::Permissions::from_mode(st.perms));
+        }
+
+        self.dl_cache.insert(path.to_string(), host_path.clone());
+        let s = host_path.to_string_lossy().into_owned();
+        std::ffi::CString::new(s).map_err(|_| libc::EIO)
     }
 
     /// Compat getters (report on the legacy init mount).
@@ -424,6 +586,105 @@ fn path_is_in_mount(path: &str, mount: &str) -> bool {
         return true;
     }
     path.as_bytes()[mount.len()] == b'/'
+}
+
+/// Basename of a mount point for per-mount extraction subtrees
+/// (mirrors the C++ `mount_point_basename`): strips trailing slashes and
+/// takes the last component; "root" when nothing usable remains.
+fn mount_point_basename(mount_point: &str) -> &str {
+    let mp = mount_point.trim_end_matches('/');
+    let base = mp.rsplit('/').next().unwrap_or(mp);
+    if base.is_empty() {
+        "root"
+    } else {
+        base
+    }
+}
+
+/// Create the per-process temporary directory for dlmap2file extractions
+/// (mirrors the legacy C++ semantics: a unique subdirectory of the system
+/// temp dir; a handful of attempts before giving up).
+fn create_dl_tmpdir() -> Option<std::path::PathBuf> {
+    let base = std::env::temp_dir();
+    let mut seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos();
+    for _ in 0..16 {
+        seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        let dir = base.join(format!("tebako-dl-{:x}", (seed >> 33) as u64));
+        if std::fs::create_dir(&dir).is_ok() {
+            return Some(dir);
+        }
+    }
+    None
+}
+
+/// Register process-teardown removal of the dl tmpdir (the C++ FsContext
+/// destructor semantics), once per process.
+fn register_dl_cleanup(dir: &std::path::Path) {
+    use std::sync::{Mutex, Once};
+    static CLEANUP_DIR: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        *CLEANUP_DIR.lock().unwrap() = Some(dir.to_path_buf());
+        extern "C" fn cleanup() {
+            if let Some(d) = CLEANUP_DIR.lock().unwrap().take() {
+                let _ = std::fs::remove_dir_all(d);
+            }
+        }
+        unsafe { libc::atexit(cleanup) };
+    });
+}
+
+/// Recursively extract a backend tree (`rel_dir` is in-image, "" = root)
+/// into `host_dir` (created). Errors are errno values (EIO on host
+/// failures).
+fn extract_dir_recursive(
+    backend: &dyn Backend,
+    rel_dir: &str,
+    host_dir: &std::path::Path,
+) -> Result<(), i32> {
+    std::fs::create_dir_all(host_dir).map_err(|_| libc::EIO)?;
+    for entry in backend.read_dir(rel_dir)? {
+        let child_rel = if rel_dir.is_empty() {
+            entry.name.clone()
+        } else {
+            format!("{rel_dir}/{}", entry.name)
+        };
+        let child_host = host_dir.join(&entry.name);
+        if entry.is_dir {
+            extract_dir_recursive(backend, &child_rel, &child_host)?;
+        } else {
+            extract_file(backend, &child_rel, &child_host)?;
+        }
+    }
+    Ok(())
+}
+
+/// Stream one file out of a backend onto the host (permissions best effort).
+fn extract_file(backend: &dyn Backend, rel: &str, host: &std::path::Path) -> Result<(), i32> {
+    use std::io::Write as _;
+    let st = backend.stat(rel)?;
+    let mut out = std::fs::File::create(host).map_err(|_| libc::EIO)?;
+    let mut offset = 0u64;
+    let mut buf = vec![0u8; 8192];
+    loop {
+        let n = backend.pread(rel, &mut buf, offset)?;
+        if n == 0 {
+            break;
+        }
+        out.write_all(&buf[..n]).map_err(|_| libc::EIO)?;
+        offset += n as u64;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _ = std::fs::set_permissions(host, std::fs::Permissions::from_mode(st.perms));
+    }
+    Ok(())
 }
 
 /// The process-global context. Public C API functions lock it for the

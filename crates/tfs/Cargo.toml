@@ -22,5 +22,16 @@ libc = "0.2"
 # free of a native libzip build, and the v1 scope (read-only, no encryption)
 # is well inside its feature set. deflate-only keeps the staticlib lean.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# The DwarFS backend binds the EXTERNAL dwarfs-rs crate (path dep until
+# dwarfs-rs has a release to pin against; crates.io eventually). It pulls
+# the vendored dwarfs-t CMake/vcpkg build into compilation; disable default
+# features to stay pure-cargo (the dwarfs backend then returns ENOTSUP).
+dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs", optional = true }
+
+[features]
+# `vendored-dwarfs` (default): build the dwarfs backend against the vendored
+# dwarfs-t sources via dwarfs-rs (requires DWARFS_RS_VCPKG_ROOT).
+default = ["vendored-dwarfs"]
+vendored-dwarfs = ["dep:dwarfs-t"]
 
 [dev-dependencies]

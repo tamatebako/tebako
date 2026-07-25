@@ -969,7 +969,22 @@ fn init_from_file_at_bad_region() {
 #[test]
 fn dwarfs_and_unknown_formats_fail_cleanly() {
     let f = setup();
-    // A dwarfs-magic blob: detected, but the backend is a v1 stub -> ENOTSUP.
+    // Squashfs-magic blob: detected, but the backend is a stub -> ENOTSUP.
+    let mut fake_squashfs = b"hsqs".to_vec();
+    fake_squashfs.extend_from_slice(&[0u8; 64]);
+    let rc = unsafe {
+        tfs::c_api::tebako_fs_init(
+            fake_squashfs.as_ptr().cast(),
+            fake_squashfs.len(),
+            f.mp_c().as_ptr(),
+        )
+    };
+    assert_eq!(rc, -1);
+    assert_eq!(unsafe { errno() }, libc::ENOTSUP);
+    assert_eq!(unsafe { is_initialized() }, 0);
+
+    // Dwarfs-magic garbage (backend is REAL since milestone 2): the mount
+    // is attempted and fails in the image parser -> EIO, not a crash.
     let mut fake_dwarfs = b"DWARFS".to_vec();
     fake_dwarfs.extend_from_slice(&[0u8; 64]);
     let rc = unsafe {
@@ -980,7 +995,7 @@ fn dwarfs_and_unknown_formats_fail_cleanly() {
         )
     };
     assert_eq!(rc, -1);
-    assert_eq!(unsafe { errno() }, libc::ENOTSUP);
+    assert_eq!(unsafe { errno() }, libc::EIO);
     assert_eq!(unsafe { is_initialized() }, 0);
 }
 
