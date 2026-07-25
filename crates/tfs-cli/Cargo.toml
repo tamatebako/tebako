@@ -1,0 +1,26 @@
+[package]
+name = "tfs-cli"
+description = "tfs — the generic VFS image tool (info/ls/tree/cat/stat/extract/find/mkimage) over libtfs backends"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "tfs", "vfs", "cli", "archive"]
+categories = ["filesystem", "command-line-utilities"]
+
+[dependencies]
+tfs = { version = "0.1.0", path = "../tfs" }
+libc = "0.2"
+
+[[bin]]
+name = "tfs"
+path = "src/main.rs"
+
+[lib]
+name = "tfs_cli"
+path = "src/lib.rs"
+
+[dev-dependencies]
+tebako-contract-tests = { version = "0.1.0", path = "../../tests/contract" }
