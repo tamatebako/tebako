@@ -41,8 +41,15 @@ git -C "$WS/.vcpkg-musl" checkout --quiet "$VCPKG_COMMIT"
 SQFS_TRIPLETS="$WS/tebako-rs/crates/sqfs-sys/vcpkg_triplets"
 DWARFS_TRIPLETS="$WS/dwarfs-rs/dwarfs-t/vcpkg_triplets"
 mk_triplet() {  # $1 = new name, $2 = arch (x64|arm64), $3 = linkage (static|dynamic)
+  # CRT linkage must follow library linkage: with VCPKG_CRT_LINKAGE static,
+  # vcpkg's Linux toolchain appends -static to CMAKE_*_LINKER_FLAGS, which
+  # vcpkg_configure_make exports as LDFLAGS and breaks shared-library links
+  # (botan:x64-linux-musl-dynamic failed with crtbeginT.o/__TMC_END__
+  # relocation errors; release run 30217620407).
+  crt=static; [ "$3" = dynamic ] && crt=dynamic
   sed -e "s/VCPKG_TARGET_ARCHITECTURE x64/VCPKG_TARGET_ARCHITECTURE $2/" \
       -e "s/VCPKG_LIBRARY_LINKAGE static/VCPKG_LIBRARY_LINKAGE $3/" \
+      -e "s/VCPKG_CRT_LINKAGE static/VCPKG_CRT_LINKAGE $crt/" \
       "$DWARFS_TRIPLETS/x64-linux-musl.cmake" > "$DWARFS_TRIPLETS/$1.cmake"
 }
 [ -f "$DWARFS_TRIPLETS/$TRIPLET.cmake" ] || {
@@ -50,10 +57,14 @@ mk_triplet() {  # $1 = new name, $2 = arch (x64|arm64), $3 = linkage (static|dyn
     arm64-linux-musl) mk_triplet "$TRIPLET" arm64 static ;;
   esac
 }
-case "$DYN_TRIPLET" in
-  x64-linux-musl-dynamic)   mk_triplet "$DYN_TRIPLET" x64 dynamic ;;
-  arm64-linux-musl-dynamic) mk_triplet "$DYN_TRIPLET" arm64 dynamic ;;
-esac
+# The musl-dynamic triplets are checked in under dwarfs-t/vcpkg_triplets
+# (with the CRT fix above baked in); only generate on the fly as a fallback.
+[ -f "$DWARFS_TRIPLETS/$DYN_TRIPLET.cmake" ] || {
+  case "$DYN_TRIPLET" in
+    x64-linux-musl-dynamic)   mk_triplet "$DYN_TRIPLET" x64 dynamic ;;
+    arm64-linux-musl-dynamic) mk_triplet "$DYN_TRIPLET" arm64 dynamic ;;
+  esac
+}
 if [ ! -f "$SQFS_TRIPLETS/$TRIPLET.cmake" ]; then
   sed -e "s/VCPKG_TARGET_ARCHITECTURE x64/VCPKG_TARGET_ARCHITECTURE $( [ "$TRIPLET" = "arm64-linux-musl" ] && echo arm64 || echo x64 )/" \
       "$DWARFS_TRIPLETS/x64-linux-musl.cmake" > "$SQFS_TRIPLETS/$TRIPLET.cmake"
