@@ -23,8 +23,9 @@ name: Release
 on:
   release:
     types:
+      # 'published' fires for final releases AND prereleases (the
+      # 'prereleased' type would double-trigger for the latter).
       - published
-      - prereleased
   workflow_dispatch:
 
 env:
