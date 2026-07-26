@@ -81,12 +81,10 @@ jobs:
             target: aarch64-apple-darwin
             platform: macos-arm64
             triplet: arm64-osx-static
-            dyn_triplet: arm64-osx-dynamic
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-x86_64
             triplet: x64-osx-static
-            dyn_triplet: x64-osx-dynamic
     steps:
       - uses: actions/checkout@v4
         with:
@@ -131,15 +129,10 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
 
-      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs emits
-      # dylib links for the crypto deps, hence the dynamic triplet.
-      - name: Provision Botan-3 + json-c (vcpkg)
-        working-directory: tebako-rs
-        env:
-          TRIPLET: ${{ matrix.dyn_triplet }}
-          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
-        run: bash ci/provision-crypto.sh
+      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs finds
+      # and links brew's botan/json-c itself on macOS.
+      - name: Provision Botan-3 + json-c (brew)
+        run: brew install botan json-c
 
       - name: Build the four binaries (release)
         working-directory: tebako-rs
