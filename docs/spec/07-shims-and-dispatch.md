@@ -1,7 +1,32 @@
 # Spec 07 — Shims and dispatch
 
 Normative specification of executable registration and version
-management. Status: PLANNED (roadmap 08; retires `mnenv`).
+management. Status: PARTIAL — the dispatcher and version manager
+(§2–§4) ship as `crates/tebako-shim` in tebako-rs (roadmap 08; retires
+`mnenv`). Still PLANNED: remote registry fetch (roadmap 07; v1 resolves
+`file://` registry refs only), `tebako use` writing the user default
+(v1: author `~/.tebako/config.yaml` directly), jail application
+(spec 08), and a runtime registry (v1 downloads resolve through the
+`runtimes:` preference in `config.yaml` as the exact ref).
+
+## 0. v1 concrete choices (normative where the sections above were open)
+
+- **Project pin file** `.tebako-tools.yaml` is a FLAT YAML mapping of
+  command name → version; a nearer file that does not pin the command
+  does not shadow a farther one that does.
+- **`~/.tebako/config.yaml` keys:** `defaults:` (command → version),
+  `registries:` (spec 04 refs), `runtimes:` (engine → `{version,
+  tebako}` runtime preference). The shim never writes this file.
+- **Disabled state** is shim-managed state, not authored config:
+  `~/.tebako/shims/.disabled.yaml` (command → `[versions] | [all]`).
+- **Installed payload record** (the dispatcher-visible manifest mirror,
+  spec 03 §4 tier 3 rationale): `payloads/<name>/<version>.tfs`,
+  `<version>.tfs.sha256`, `<version>.manifest.yaml`.
+- **Zero-runtime dispatch** (spec 03 §2.2): the payload image itself is
+  the program — the self-launching-image contract; dependency mounts
+  still ride the ABI v1 argv shape minus the runtime prefix.
+- **Registry payload mounts** are bare images: slot `0` (whole image),
+  mount point `/` of the jail namespace.
 
 ## 1. The model
 
