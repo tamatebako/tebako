@@ -109,26 +109,37 @@ signed `.tfs` per (version × ruby line) → registry → dispatcher).
 
 ## 8. Native exec from inside an image (the whole-chain model, locked)
 
-Running a NATIVE executable from a mounted payload loses the VFS view
-(extracted binaries see the host) and drags its dependency chain. Old
-tebako never solved this (its memfs was ruby-only; metanorma-on-tebako
-required host-installed inkscape). The locked model is three tiers:
+Running a NATIVE executable from a mounted payload raises two problems:
+the exec'd binary loses the VFS view (it sees the host), and its dynamic
+dependency chain must resolve. Old tebako never solved this (its memfs
+was ruby-only; metanorma-on-tebako required host-installed inkscape).
+The locked model is three tiers — **interposition-first, never FUSE**:
 
-1. **Prefer static/self-contained native payloads.** Toolkit factories
-   (inkscape-class) build static or mostly-static (musl) binaries —
-   then extract-to-exec-cache is COMPLETE: one file, content-addressed
-   (`~/.tebako/exec/<sha256>/…`, 0755, verified at install), exec.
-2. **Dynamic tools: whole-closure extraction.** The manifest declares
-   the exec closure; the dispatcher materializes binary + deps into the
-   exec cache. Tools are BUILT with image-relative loader paths
-   (`$ORIGIN/../lib` RPATH), so any mount/extract location works — no
-   install-time rewriting. Once per digest, shared across consumers.
-3. **True VFS transparency for native processes = the FUSE driver**
-   (spec 11, access matrix #2): mount the payload at a real path, exec
-   natively — the only honest "binary sees the VFS" answer. Opt-in
-   (host FUSE: macFUSE/WinFsp — the one host-dependent mechanism).
-- **ptrace/syscall-interposition (retrace-class): REJECTED** as a
-  foundation — glibc+linux only, version-fragile, no macOS/Windows path.
-- Interpreted payloads (ruby) never have this problem: io-routing
-  patches virtualize file IO in-process. Other languages get the same
-  treatment via per-language runtime patches, or tier 3.
+1. **Dynamic native tools (the mainline): the preload interposition
+   shim** — `libtfs-preload`, injected via `LD_PRELOAD` (ELF),
+   `DYLD_INSERT_LIBRARIES` (Mach-O), or DLL injection (Windows), mapping
+   the libc/dyld file-IO family (open/stat/opendir/pread/dlopen…) onto
+   `tebako_fs_*`. The launcher seeds the mount table via env
+   (`TEBAKO_TFS_MOUNTS=image:mount,…`); the binary AND its whole dynamic
+   chain see the mounted image — **no extraction, no chain problem**.
+   retrace (in-family: linux/macOS/windows CI, v2 config-driven
+   interception) is the reference technique. Bonus: interposed IO flows
+   through the same `host_policy` — **jails extend to these binaries**
+   (spec 08). Limit: dynamic binaries only; the shim is a TFS consumer,
+   never a format.
+2. **Static/self-contained tools**: extract-to-exec-cache
+   (`~/.tebako/exec/<sha256>/…`, 0755, verified at install). Complete
+   because there is no chain; image-resident data they need travels in
+   the closure (manifest-declared). Honest limits: static binaries make
+   syscalls directly — they escape interposition AND jails (documented).
+   Still the preferred shape for toolkit payloads (simplicity + no
+   injection), with tier 1 when VFS/jails are required.
+3. **Interpreted payloads (ruby)**: in-process io-routing patches
+   virtualize file IO — the existing mechanism, no exec at all.
+
+- **FUSE is NOT an exec mechanism.** It remains an optional,
+  host-dependent HUMAN convenience (`tfs mount`, spec 11 access
+  matrix #2) — never on the package/exec path. (Correction 2026-07-26:
+  tebako has never used FUSE; interposition is the tebako way.)
+- ptrace/syscall-tracing (retrace-v1-style tracing for vulnerability
+  research) is a debugging tool, not an exec foundation.

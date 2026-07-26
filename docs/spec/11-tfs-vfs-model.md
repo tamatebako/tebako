@@ -101,8 +101,9 @@ namespace is a potential filesystem.
 3. **serve** — `--serve=nfs|webdav` (PLANNED): userland server; the OS's
    native client mounts it — no FUSE anywhere.
 4. **shell** — interactive browse + one-shots (`tfs ls/cat/tree/stat`).
-5. **exec** — `tfs exec image -- cmd` (PLANNED): VFS injected via an
-   opt-in preload shim (a convenience, NOT the product ABI).
+5. **exec** — `tfs exec image -- cmd` (PLANNED): VFS injected via the
+   preload interposition shim (spec 07 §8, tier 1) — the MAINLINE
+   native-exec mechanism, and a TFS consumer like any other.
 6. **extract** — materialize to disk (exists; the honest fallback).
 
 Trade-off stated plainly: without the kernel there is no system-wide

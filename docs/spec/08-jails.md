@@ -93,8 +93,11 @@ compose: manifest request ∩ user policy = effective jail.
 ## 5. Scope (honest, locked 2026-07-26)
 
 Jails are FILESYSTEM-ONLY. `capabilities.network` is advisory metadata
-(displayed by the info surface, spec 15), not an enforcement promise;
-exec policy is out of scope (any native code can syscall directly — the
-jail covers IO routed through TFS, which is every interpreted-payload
-route). OS-level network confinement (seatbelt/seccomp/WFP) is a
-possible later layer, never claimed today.
+(displayed by the info surface, spec 15), not an enforcement promise.
+Coverage: every IO route through TFS — all interpreted payloads AND
+native binaries running under the preload interposition shim
+(spec 07 §8 tier 1, whose IO flows through the same `host_policy`).
+NOT covered: statically-linked binaries (direct syscalls, no
+interposition point) and any process that escapes the shim — stated
+honestly in the manifest and docs. OS-level network confinement
+(seatbelt/seccomp/WFP) is a possible later layer, never claimed today.
