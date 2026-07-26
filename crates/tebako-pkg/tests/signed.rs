@@ -3,7 +3,7 @@
 //! status. Uses a temp TEBAECO_HOME so the real user keyring is never
 //! touched (the env is process-global, so these tests serialize on a lock).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
 use tebako_pkg::{bundle, info, PackageImage, PackageOptions};
