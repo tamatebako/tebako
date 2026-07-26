@@ -19,8 +19,9 @@
 //!           --tebako-entry <argv0> <user args...>
 //! ```
 //!
-//! Downloads are delegated to the curl CLI (present on modern
-//! macOS/Linux/Windows 10+) — platform-native TLS at ZERO binary cost
+//! Downloads are in-process via crates/tebako-http (ureq + rustls with
+//! webpki-roots bundled; HTTPS-only, `file://` mirrors; the OS trust
+//! store is opt-in via TEBAKO_TLS_PLATFORM_ROOTS) — no curl anywhere
 //! (see README for the size audit).
 
 pub mod platform;
@@ -31,7 +32,7 @@ use std::path::{Path, PathBuf};
 
 use platform::{
     copy_file, exe_suffix, file_exists, flock_acquire, lock_release, make_executable, mkdir_p,
-    os_rename, platform_string, remove_file, spawn_curl, write_small_file, EntryLock,
+    os_rename, platform_string, remove_file, write_small_file, EntryLock,
 };
 use sha::sha256_file_hex;
 
@@ -365,15 +366,28 @@ fn publish_entry(
 }
 
 // ---------------------------------------------------------------------
-// fetch (curl CLI for http(s), copy for local mirrors)
+// fetch (tebako-http in-process for http(s), copy for local mirrors)
 // ---------------------------------------------------------------------
 
 #[allow(clippy::result_unit_err)] // C-style -1 error by design
 fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
     if local {
-        copy_file(Path::new(url), out).map_err(|_| ())
-    } else {
-        spawn_curl(url, out)
+        return copy_file(Path::new(url), out).map_err(|_| ());
+    }
+    // curl --retry 3 parity: transient failures get three attempts; a
+    // missing object (404) fails fast.
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        match tebako_http::get(url) {
+            Ok(bytes) => return std::fs::write(out, bytes).map_err(|_| ()),
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => return Err(()),
+            Err(tebako_http::FetchError::DownloadFailed(_)) => {
+                if attempts >= 3 {
+                    return Err(());
+                }
+            }
+        }
     }
 }
 
@@ -622,7 +636,7 @@ fn resolve_runtime(
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "cannot resolve runtime \"{runtime_ref}\": download failed\n  url: {asset_url}\n  the download helper is curl (PowerShell on Windows) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
+                "cannot resolve runtime \"{runtime_ref}\": download failed\n  url: {asset_url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
             ),
         );
     }

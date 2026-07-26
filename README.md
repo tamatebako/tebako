@@ -27,7 +27,7 @@ tebako-rs/
                        # webpki-roots bundled) shared by the CLI and the
                        # bootstrap
     tebako-bootstrap/  # the Rust bootstrap runner (item 22,
-                       # < 2 MB static, size-gated)
+                       # < 3 MB static, size-gated)
   tests/contract/      # the parity oracle: the C++ libtfs c_api suite
                        # running through the Rust C ABI
 ```

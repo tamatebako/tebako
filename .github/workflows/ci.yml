@@ -133,9 +133,10 @@ jobs:
       - name: Point the golden test at the reference gem
         run: echo "TEBAKO_REFERENCE_GEM=${{ github.workspace }}/reference-gem" >> "$GITHUB_ENV"
 
-      # item 22's hard gate: the Rust bootstrap must stay under 2 MB
+      # item 22's hard gate: the Rust bootstrap must stay under 3 MB
+      # (budget raised 2 MB -> 3 MB when downloads went in-process)
       # absolute. Publishes the table and fails the job when over.
-      - name: Bootstrap size gate (< 2 MB)
+      - name: Bootstrap size gate (< 3 MB)
         working-directory: tebako-rs
         run: |
           cargo build -p tebako-bootstrap --release
@@ -143,9 +144,9 @@ jobs:
           CPP_SIZE=$(stat -c %s ../.oracle/tebako-bootstrap 2>/dev/null || stat -f %z ../.oracle/tebako-bootstrap)
           echo "| platform | Rust bootstrap | C++ v0.2.0 | budget |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ${{ runner.os }} | $SIZE B | $CPP_SIZE B | < 2 MB |" >> "$GITHUB_STEP_SUMMARY"
-          echo "tebako-bootstrap: $SIZE bytes (budget 2097152)"
-          test "$SIZE" -lt 2097152
+          echo "| ${{ runner.os }} | $SIZE B | $CPP_SIZE B | < 3 MB |" >> "$GITHUB_STEP_SUMMARY"
+          echo "tebako-bootstrap: $SIZE bytes (budget 3145728)"
+          test "$SIZE" -lt 3145728
 
       # `cargo build` first: it produces the libtfs cdylib the C harness
       # links against (cargo test alone builds deps as rlibs only).

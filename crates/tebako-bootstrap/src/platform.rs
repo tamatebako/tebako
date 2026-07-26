@@ -1,5 +1,5 @@
-//! Platform helpers: identity mapping, file ops, the install lock, and the
-//! curl-CLI download (platform-native TLS at zero binary cost).
+//! Platform helpers: identity mapping, file ops, the install lock, and
+//! the exec handoff.
 
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -77,21 +77,6 @@ pub fn copy_file(src: &Path, dst: &Path) -> io::Result<()> {
 
 pub fn write_small_file(path: &Path, content: &str) -> io::Result<()> {
     std::fs::write(path, content)
-}
-
-/// curl CLI (present on modern macOS/Linux/Windows 10+): platform-native
-/// TLS without a line of TLS code in the binary.
-#[allow(clippy::result_unit_err)] // C-style -1 error by design
-pub fn spawn_curl(url: &str, out: &Path) -> Result<(), ()> {
-    let status = std::process::Command::new("curl")
-        .args(["-fSLsS", "--retry", "3", "--connect-timeout", "30", "-o"])
-        .arg(out)
-        .arg(url)
-        .status();
-    match status {
-        Ok(s) if s.success() => Ok(()),
-        _ => Err(()),
-    }
 }
 
 // ---------------------------------------------------------------------
