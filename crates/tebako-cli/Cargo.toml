@@ -14,9 +14,17 @@ categories = ["command-line-utilities"]
 tpkg = { version = "0.1.0", path = "../tpkg" }
 tebako-pkg = { version = "0.1.0", path = "../tebako-pkg" }
 tebako-http = { version = "0.1.0", path = "../tebako-http" }
+# Registry/payload resolution for `tebako add-registry | install` (spec 04).
 tebako-resolve = { version = "0.1.0", path = "../tebako-resolve" }
+# Config writes (registries:), the manifest mirror and the shim link/unlink
+# — called as a library, never spawned (spec 14 §3: no shell-outs).
+tebako-shim = { version = "0.1.0", path = "../tebako-shim" }
+# OpenPGP verification of signed registry entries (spec 09; strict when the
+# entry carries a signature, the v1-legacy warn when it does not).
+tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
 # The runtime image is extracted in-process through the tfs C ABI
-# (item 30b layout seeding).
+# (item 30b layout seeding); install reads the embedded payload manifest
+# (spec 03 §1) through the same ABI.
 tfs = { version = "0.1.0", path = "../tfs" }
 # The in-process DwarFS writer (dwarfs-t-rs): the application and deploy
 # driver images are built without any mkdwarfs binary.
@@ -38,3 +46,6 @@ name = "tebako_cli"
 path = "src/lib.rs"
 
 [dev-dependencies]
+# Install fixtures build ZIP images carrying /__tpkg__/manifest.yaml (the
+# tfs ZIP backend is pure Rust) — same crate/version as tfs itself.
+zip = { version = "2", default-features = false, features = ["deflate"] }

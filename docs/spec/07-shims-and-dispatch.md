@@ -3,11 +3,14 @@
 Normative specification of executable registration and version
 management. Status: PARTIAL — the dispatcher and version manager
 (§2–§4) ship as `crates/tebako-shim` in tebako-rs (roadmap 08; retires
-`mnenv`). Still PLANNED: remote registry fetch (roadmap 07; v1 resolves
-`file://` registry refs only), `tebako use` writing the user default
-(v1: author `~/.tebako/config.yaml` directly), jail application
-(spec 08), and a runtime registry (v1 downloads resolve through the
-`runtimes:` preference in `config.yaml` as the exact ref).
+`mnenv`). Remote registry fetch ships with `tebako add-registry |
+install` (roadmap 28.1 — the CLI resolves every registry form of
+spec 04 §2); still PLANNED: the dispatch-time registry cache (v1: the
+registry-default chain link reads `file://` registry refs only), `tebako
+use` writing the user default (v1: author `~/.tebako/config.yaml`
+directly), jail application (spec 08), and a runtime registry (v1
+downloads resolve through the `runtimes:` preference in `config.yaml`
+as the exact ref).
 
 ## 0. v1 concrete choices (normative where the sections above were open)
 

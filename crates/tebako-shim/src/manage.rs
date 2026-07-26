@@ -343,7 +343,7 @@ fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
                     }
                 } else {
                     notes.push(format!(
-                        "registry {reg}: remote refs resolve with roadmap 07 (skipped)"
+                        "registry {reg}: remote refs are install-time resolved by the CLI (dispatch-time cache PLANNED; skipped)"
                     ));
                 }
             }
@@ -446,6 +446,112 @@ fn sha256_file_hex(path: &std::path::Path) -> std::io::Result<String> {
     }
     let digest = h.finalize();
     Ok(digest.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+// ---------------------------------------------------------------------
+// shim links (the installer's registration half — library API for the
+// `tebako` CLI; spec 07 §1: ONE tebako-shim binary, linked per command)
+// ---------------------------------------------------------------------
+
+/// The directory every shim lives in (the ONE PATH entry, spec 07 §3).
+pub fn shims_dir(home: &std::path::Path) -> PathBuf {
+    home.join("shims")
+}
+
+/// Link `shim_binary` as `~/.tebako/shims/<command>` for every command —
+/// symlink on unix, a copy on Windows (symlink creation needs privilege
+/// there). Existing links are replaced (install/reinstall is
+/// idempotent). Returns the linked paths in command order.
+pub fn link_shims(
+    home: &std::path::Path,
+    shim_binary: &std::path::Path,
+    commands: &[String],
+) -> Result<Vec<PathBuf>, ShimError> {
+    if !shim_binary.is_file() {
+        return fail(
+            EX_TEBAKO_IO,
+            format!(
+                "the dispatcher binary {} does not exist — shims would point at nothing",
+                shim_binary.display()
+            ),
+        );
+    }
+    let dir = shims_dir(home);
+    std::fs::create_dir_all(&dir).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot create {}: {e}", dir.display()),
+        )
+    })?;
+    let mut linked = Vec::new();
+    for command in commands {
+        manifest::check_path_component("command name", command)?;
+        let link = dir.join(command);
+        if link.symlink_metadata().is_ok() {
+            std::fs::remove_file(&link).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot replace {}: {e}", link.display()),
+                )
+            })?;
+        }
+        link_one(shim_binary, &link)?;
+        linked.push(link);
+    }
+    Ok(linked)
+}
+
+#[cfg(unix)]
+fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<(), ShimError> {
+    std::os::unix::fs::symlink(shim_binary, link).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!(
+                "cannot link {} -> {}: {e}",
+                link.display(),
+                shim_binary.display()
+            ),
+        )
+    })
+}
+
+#[cfg(windows)]
+fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<(), ShimError> {
+    std::fs::copy(shim_binary, link).map(|_| ()).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!(
+                "cannot copy {} to {}: {e}",
+                shim_binary.display(),
+                link.display()
+            ),
+        )
+    })
+}
+
+/// Remove `~/.tebako/shims/<command>` for every command (idempotent —
+/// missing links are skipped). Returns the paths actually removed.
+pub fn unlink_shims(
+    home: &std::path::Path,
+    commands: &[String],
+) -> Result<Vec<PathBuf>, ShimError> {
+    let dir = shims_dir(home);
+    let mut removed = Vec::new();
+    for command in commands {
+        manifest::check_path_component("command name", command)?;
+        let link = dir.join(command);
+        match std::fs::remove_file(&link) {
+            Ok(()) => removed.push(link),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                return fail(
+                    EX_TEBAKO_IO,
+                    format!("cannot remove {}: {e}", link.display()),
+                )
+            }
+        }
+    }
+    Ok(removed)
 }
 
 // ---------------------------------------------------------------------

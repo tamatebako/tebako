@@ -40,6 +40,45 @@ impl fmt::Display for ReferenceError {
 
 impl std::error::Error for ReferenceError {}
 
+/// Registry errors (spec 04 §2): a bad registry *reference*, an
+/// unparseable `tpkg-registry.yaml`, or a semantically invalid one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RegistryError {
+    /// The registry reference matches no registry form — rejected with the
+    /// forms listed, never a fallback chain (spec 04 §2: exactly one
+    /// location per form).
+    BadRef { input: String, reason: String },
+    /// YAML structural failure (the document does not match the model).
+    Yaml { reason: String },
+    /// Semantic validation failure (bad schema_version, dangling default,
+    /// malformed sha256, …).
+    Invalid { reason: String },
+}
+
+/// The registry reference forms, spelled out in every
+/// [`RegistryError::BadRef`] message.
+pub const REGISTRY_REF_FORMS: &str =
+    "tfs:<service>:owner/repo (default-branch tpkg-registry.yaml), \
+     tfs:<service>:owner/repo:version#tpkg-registry.yaml (release artifact), \
+     tfs+git://host/owner/repo.git[@ref]#path, file:///path/tpkg-registry.yaml";
+
+impl fmt::Display for RegistryError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RegistryError::BadRef { input, reason } => write!(
+                f,
+                "invalid registry reference '{input}': {reason}; expected one of {REGISTRY_REF_FORMS}"
+            ),
+            RegistryError::Yaml { reason } => {
+                write!(f, "cannot parse the registry yaml: {reason}")
+            }
+            RegistryError::Invalid { reason } => write!(f, "invalid registry: {reason}"),
+        }
+    }
+}
+
+impl std::error::Error for RegistryError {}
+
 /// Fetch / cache errors (spec 04 §3, spec 05 §4).
 #[derive(Debug)]
 pub enum ResolveError {
@@ -56,12 +95,15 @@ pub enum ResolveError {
         expected: String,
         actual: String,
     },
-    /// A service release carries no `.tfs` asset.
+    /// A service release carries no `.tfs` asset (no `#artifact` given), or
+    /// no asset with the requested `#artifact` name (spec 04 §1).
     AssetNotFound {
         service: Service,
         owner: String,
         repo: String,
         version: String,
+        /// The `#artifact` selector when one was given.
+        artifact: Option<String>,
     },
     /// A service release carries several candidate `.tfs` assets and there
     /// is no rule to pick one (never a guess — the registry's per-platform
@@ -94,6 +136,8 @@ pub enum ResolveError {
         path: PathBuf,
         reason: String,
     },
+    /// The registry reference/model layer (spec 04 §2).
+    Registry(RegistryError),
 }
 
 impl fmt::Display for ResolveError {
@@ -117,11 +161,19 @@ impl fmt::Display for ResolveError {
                 owner,
                 repo,
                 version,
-            } => write!(
-                f,
-                "{} release {owner}/{repo}:{version} carries no .tfs asset",
-                service.name()
-            ),
+                artifact,
+            } => match artifact {
+                Some(a) => write!(
+                    f,
+                    "{} release {owner}/{repo}:{version} carries no asset named '{a}'",
+                    service.name()
+                ),
+                None => write!(
+                    f,
+                    "{} release {owner}/{repo}:{version} carries no .tfs asset",
+                    service.name()
+                ),
+            },
             ResolveError::AmbiguousAssets {
                 service,
                 owner,
@@ -130,7 +182,7 @@ impl fmt::Display for ResolveError {
                 assets,
             } => write!(
                 f,
-                "{} release {owner}/{repo}:{version} carries several .tfs assets ({}); resolve a per-platform entry from the registry instead",
+                "{} release {owner}/{repo}:{version} carries several .tfs assets ({}); re-run with #name to select one, or resolve a per-platform entry from the registry",
                 service.name(),
                 assets.join(", ")
             ),
@@ -160,6 +212,7 @@ impl fmt::Display for ResolveError {
             ResolveError::CacheIo { op, path, reason } => {
                 write!(f, "{reason} ({op} {})", path.display())
             }
+            ResolveError::Registry(e) => write!(f, "{e}"),
         }
     }
 }
@@ -169,5 +222,11 @@ impl std::error::Error for ResolveError {}
 impl From<ReferenceError> for ResolveError {
     fn from(e: ReferenceError) -> Self {
         ResolveError::Reference(e)
+    }
+}
+
+impl From<RegistryError> for ResolveError {
+    fn from(e: RegistryError) -> Self {
+        ResolveError::Registry(e)
     }
 }

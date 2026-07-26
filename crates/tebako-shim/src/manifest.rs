@@ -9,35 +9,35 @@
 //! (`~/.tebako/payloads/<name>/<version>.manifest.yaml`). When the shared
 //! model lands, replace this module with it and delete this note.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{fail, ShimError, EX_TEBAKO_MANIFEST};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Manifest {
     pub name: String,
     pub version: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entrypoints: Vec<Entrypoint>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires: Vec<Require>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entrypoint {
     /// The command name; the shim registers and dispatches under it.
     pub name: String,
     /// The executable inside the payload image (the `--tebako-entry`).
     pub path: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args_default: Vec<String>,
     /// `None` = native / self-contained entrypoint: zero-runtime dispatch
     /// (spec 03 §2.2 locked); the dispatcher mounts zero runtime payloads.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_requirement: Option<RuntimeRequirement>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeRequirement {
     pub engine: String,
     /// Range form (`>= 3.3, < 5.0`) for pure-language payloads; abi-line
@@ -49,16 +49,16 @@ pub struct RuntimeRequirement {
 /// dispatcher needs are modeled; `mount` is consumer-declared (locked
 /// MOUNT RULE). `kind: language` edges are the runtime axis and are
 /// resolved through the entrypoint's `runtime_requirement`, never mounted.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Require {
     pub kind: String,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub constraint: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mount: Option<String>,
 }
 
@@ -90,6 +90,48 @@ impl Manifest {
             )
         })?;
         Manifest::parse(&text, path)
+    }
+
+    /// Write the manifest mirror (the installer's half of the payload
+    /// record): tmp + rename, like every cache-managed file.
+    pub fn save(&self, path: &std::path::Path) -> Result<(), ShimError> {
+        let text = serde_yaml::to_string(self).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!("cannot serialize the manifest mirror: {e}"),
+            )
+        })?;
+        let dir = path.parent().ok_or_else(|| {
+            ShimError::new(
+                crate::EX_TEBAKO_IO,
+                format!("{} has no parent directory", path.display()),
+            )
+        })?;
+        std::fs::create_dir_all(dir).map_err(|e| {
+            ShimError::new(
+                crate::EX_TEBAKO_IO,
+                format!("cannot create {}: {e}", dir.display()),
+            )
+        })?;
+        let tmp = dir.join(format!(
+            ".{}.{}.tmp",
+            path.file_name()
+                .map(|n| n.to_string_lossy())
+                .unwrap_or_default(),
+            std::process::id()
+        ));
+        std::fs::write(&tmp, text).map_err(|e| {
+            ShimError::new(
+                crate::EX_TEBAKO_IO,
+                format!("cannot write {}: {e}", tmp.display()),
+            )
+        })?;
+        std::fs::rename(&tmp, path).map_err(|e| {
+            ShimError::new(
+                crate::EX_TEBAKO_IO,
+                format!("cannot install {}: {e}", path.display()),
+            )
+        })
     }
 }
 

@@ -29,8 +29,10 @@
 //! ~/.tebako/payloads/<name>/<version>.manifest.yaml    # mirrored manifest fields
 //! ```
 //!
-//! The mirror files are written by the installer (roadmap 07); until it
-//! ships, tests and early adopters seed them directly.
+//! The mirror files are written by the installer (`tebako install`,
+//! roadmap 28.1 — from the image's embedded manifest when present, else
+//! synthesized from the registry's tier-3 fields); tests and early
+//! adopters may also seed them directly.
 
 pub mod config;
 pub mod dispatch;

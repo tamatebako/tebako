@@ -7,6 +7,10 @@
 //!                [--tebako-version <v>]
 //!   tebako cache list
 //!   tebako cache prune [--all] [--older-than Nd]
+//!   tebako add-registry <ref>
+//!   tebako list-registries
+//!   tebako install <ref | name[@version]>
+//!   tebako uninstall <name>
 //!
 //! Lean press flow (gem's do_press_three_part): resolve the runtime into
 //! the shared cache (in-process HTTPS via crates/tebako-http) → seed the
@@ -14,6 +18,11 @@
 //! the runtime itself (stub driver) → build the application image
 //! in-process (the dwarfs-t Writer, `.tfs`) → stitch onto the bootstrap
 //! with a tpkg trailer (runtime_ref + launcher ABI v1).
+//!
+//! The registry/install surface (spec 04 §2, spec 16 §3.3) resolves and
+//! fetches through tebako-resolve, verifies signatures through
+//! tebako-signer, and registers shims through tebako-shim — all as
+//! libraries, no process spawns (spec 14 §3).
 //!
 //! Documented deviations from the gem (README carries the full list):
 //! - the bootstrap portion defaults to the in-workspace Rust
@@ -34,6 +43,8 @@ pub mod deploy;
 pub mod error;
 pub mod fetch;
 pub mod image;
+pub mod image_manifest;
+pub mod install;
 pub mod options;
 pub mod packager;
 pub mod resolve;
