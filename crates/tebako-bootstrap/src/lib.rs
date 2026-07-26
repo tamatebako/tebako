@@ -1594,16 +1594,15 @@ fn resolve_image(
 // exec handoff (launcher ABI v1)
 // ---------------------------------------------------------------------
 
-#[cfg(unix)]
-fn exec_runtime(
+/// The launcher ABI v1 handoff argv — byte-identical on every platform:
+/// nargv[0] is the runtime, then one `--tebako-image <self>:<slot>:<mount>`
+/// pair per non-runtime slot, then `--tebako-entry <argv0> <user args...>`.
+fn handoff_argv(
     runtime: &Path,
-    image: Option<&Path>,
     self_path: &Path,
     m: &tpkg::Manifest,
     argv: &[String],
-) -> BootError {
-    use std::os::unix::process::CommandExt;
-
+) -> Vec<String> {
     let mut nargv: Vec<String> = vec![runtime.to_string_lossy().into_owned()];
     for (s, slot) in m.slots.iter().enumerate() {
         if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
@@ -1623,7 +1622,21 @@ fn exec_runtime(
             .unwrap_or_else(|| self_path.to_string_lossy().into_owned()),
     );
     nargv.extend(argv.iter().skip(1).cloned());
+    nargv
+}
 
+/// Unix: execv(3) replaces the bootstrap — never returns on success.
+#[cfg(unix)]
+fn exec_runtime(
+    runtime: &Path,
+    image: Option<&Path>,
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    argv: &[String],
+) -> BootError {
+    use std::os::unix::process::CommandExt;
+
+    let nargv = handoff_argv(runtime, self_path, m, argv);
     let mut cmd = std::process::Command::new(runtime);
     cmd.args(&nargv[1..]);
     if let Some(image) = image {
@@ -1639,22 +1652,26 @@ fn exec_runtime(
     )
 }
 
-#[cfg(not(unix))]
+/// Windows has no execve(2): the runtime is spawned as a child process,
+/// waited on, and the bootstrap exits with the child's exit code
+/// (platform::spawn_handoff) — the exit-code contract holds: the user
+/// sees the runtime's code, and the loader errors (65–74) still
+/// originate loader-side before this point. Never returns on success;
+/// the spawn/wait failure maps onto the same EX_TEBAKO_IO message body
+/// as the unix exec failure.
+#[cfg(windows)]
 fn exec_runtime(
     runtime: &Path,
-    _image: Option<&Path>,
-    _self_path: &Path,
-    _m: &tpkg::Manifest,
-    _argv: &[String],
+    image: Option<&Path>,
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    argv: &[String],
 ) -> BootError {
-    // The Windows exec port lands with the windows CI leg (item 22 v1 ships
-    // macOS/Linux); fail cleanly rather than misbehave.
+    let nargv = handoff_argv(runtime, self_path, m, argv);
+    let err = platform::spawn_handoff(runtime, &nargv[1..], image);
     BootError::new(
         EX_TEBAKO_IO,
-        format!(
-            "cannot execute runtime {}: exec is not implemented on this platform in v1",
-            runtime.display()
-        ),
+        format!("cannot execute runtime {}: {err}", runtime.display()),
     )
 }
 
@@ -1662,9 +1679,10 @@ fn exec_runtime(
 // main flow
 // ---------------------------------------------------------------------
 
-/// Run the bootstrap. `argv` includes argv[0]. Returns Ok on exec failure
-/// or a named error with its exit code (exec replaces the process on
-/// success on unix).
+/// Run the bootstrap. `argv` includes argv[0]. Never returns Ok on any
+/// platform (unix exec replaces the process; the Windows spawn handoff
+/// exits with the child's code) — the return is a named error with its
+/// exit code.
 pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
     let self_path = std::env::current_exe()
         .and_then(|p| p.canonicalize())
