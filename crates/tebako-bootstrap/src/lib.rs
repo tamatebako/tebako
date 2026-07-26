@@ -31,6 +31,12 @@
 //! webpki-roots bundled; HTTPS-only, `file://` mirrors; the OS trust
 //! store is opt-in via TEBAKO_TLS_PLATFORM_ROOTS) — no curl anywhere
 //! (see README for the size audit).
+//!
+//! Fetches render the spec 06 §5 progress UX (crates/tebako-term) on
+//! stderr — `resolving` → `downloading` + live bar → `verifying sha256` →
+//! `installing (locked)` → `installed … and shared by every tebako app on
+//! this machine`; a cache hit is one quiet `runtime <ref> (cached)` line.
+//! stdout is the payload's and is never touched.
 
 pub mod platform;
 pub mod sha;
@@ -413,6 +419,108 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
 }
 
 // ---------------------------------------------------------------------
+// progress UX (spec 06 §5, locked): phases + bar on stderr, never stdout
+// ---------------------------------------------------------------------
+
+/// The quiet cache-hit line: `runtime ruby-3.4.2 (cached)`.
+pub fn cached_line(r#type: &str, version: &str) -> String {
+    format!("runtime {type}-{version} (cached)")
+}
+
+/// The benefit line (spec 06 §5): on completion the user SEES what
+/// landed, where it landed, and that it is shared.
+pub fn installed_line(name: &str, size: u64, dir: &Path) -> String {
+    format!(
+        "installed {name} ({}) — cached at {} and shared by every tebako app on this machine",
+        tebako_term::human_bytes(size),
+        dir.display()
+    )
+}
+
+/// The progress surface for one bootstrap run: a tebako-term renderer
+/// over stderr plus the once-per-run `resolving <runtime_ref>` phase.
+struct BootUx {
+    prog: tebako_term::Progress<std::io::Stderr>,
+    resolving_announced: bool,
+}
+
+impl BootUx {
+    fn new() -> BootUx {
+        BootUx {
+            prog: tebako_term::Progress::stderr(),
+            resolving_announced: false,
+        }
+    }
+
+    /// `resolving <runtime_ref>` — once per run, ahead of the first fetch.
+    fn resolving(&mut self, runtime_ref: &str) {
+        if !self.resolving_announced {
+            self.prog.phase(&format!("resolving {runtime_ref}"));
+            self.resolving_announced = true;
+        }
+    }
+
+    /// The quiet cache-hit line.
+    fn cached(&mut self, rr: &RuntimeRef) {
+        self.prog.line(&cached_line(&rr.r#type, &rr.version));
+    }
+}
+
+/// Fetch the runtime executable or image with the spec 06 §5 progress:
+/// `downloading <asset> (<size>)` plus the live bar (transport-fed via
+/// tebako-http's on_progress; one truthful tick for instant local-mirror
+/// copies). Same curl --retry 3 parity as fetch_url.
+#[allow(clippy::result_unit_err)] // C-style -1 error by design
+fn fetch_asset(
+    url: &str,
+    local: bool,
+    out: &Path,
+    asset: &str,
+    prog: &mut tebako_term::Progress<std::io::Stderr>,
+) -> Result<(), ()> {
+    if local {
+        prog.download_begin(asset);
+        return match copy_file(Path::new(url), out) {
+            Ok(()) => {
+                let n = std::fs::metadata(out).map(|m| m.len()).unwrap_or(0);
+                prog.download_tick(n, Some(n));
+                prog.download_end();
+                Ok(())
+            }
+            Err(_) => {
+                prog.download_abort();
+                Err(())
+            }
+        };
+    }
+    let mut attempts = 0;
+    loop {
+        attempts += 1;
+        prog.download_begin(asset);
+        let result = {
+            let mut tick = |so_far: u64, total: Option<u64>| prog.download_tick(so_far, total);
+            tebako_http::get_with_progress(url, Some(&mut tick))
+        };
+        match result {
+            Ok(bytes) => {
+                prog.download_end();
+                return std::fs::write(out, bytes).map_err(|_| ());
+            }
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => {
+                prog.download_abort();
+                return Err(());
+            }
+            Err(tebako_http::FetchError::DownloadFailed(_)) => {
+                prog.download_abort();
+                if attempts >= 3 {
+                    return Err(());
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
 // release checksum extraction (manifest.json / SHA256SUMS.txt)
 // ---------------------------------------------------------------------
 
@@ -530,9 +638,11 @@ struct CacheLayout {
 
 fn install_payload(
     runtime_ref: &str,
+    rr: &RuntimeRef,
     self_path: &Path,
     slot: &tpkg::Slot,
     layout: &CacheLayout,
+    ux: &mut BootUx,
 ) -> Result<PathBuf, BootError> {
     let (root, entry_dir, exe_path, asset, entry) = (
         &layout.root,
@@ -551,6 +661,7 @@ fn install_payload(
     })?;
 
     let Some(ins) = begin_entry_install(root, entry, exe_path, asset, runtime_ref)? else {
+        ux.cached(rr);
         return Ok(exe_path.clone());
     };
 
@@ -1091,27 +1202,37 @@ fn resolve_runtime(
         ..layout
     };
 
+    let mut ux = BootUx::new();
+
     // The interpreter: cache hit / fat payload slot / download+verify.
     let exe = if file_exists(&layout.exe_path) {
+        ux.cached(rr);
         layout.exe_path.clone()
     } else {
         let mut payload_exe = None;
         // fat package: the runtime rides along as a payload slot.
         for slot in &m.slots {
             if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
-                payload_exe = Some(install_payload(runtime_ref, self_path, slot, &layout)?);
+                payload_exe = Some(install_payload(
+                    runtime_ref,
+                    rr,
+                    self_path,
+                    slot,
+                    &layout,
+                    &mut ux,
+                )?);
                 break;
             }
         }
         match payload_exe {
             Some(exe) => exe,
-            None => download_executable(runtime_ref, rr, &layout)?,
+            None => download_executable(runtime_ref, rr, &layout, &mut ux)?,
         }
     };
 
     // item 30b: the `;image` flag resolves the runtime image alongside.
     let image = if runtime_ref_wants_image(runtime_ref) {
-        Some(resolve_image(runtime_ref, rr, &layout)?)
+        Some(resolve_image(runtime_ref, rr, &layout, &mut ux)?)
     } else {
         None
     };
@@ -1122,6 +1243,7 @@ fn download_executable(
     runtime_ref: &str,
     rr: &RuntimeRef,
     layout: &CacheLayout,
+    ux: &mut BootUx,
 ) -> Result<PathBuf, BootError> {
     let (root, entry_dir, asset, entry) = (
         &layout.root,
@@ -1148,11 +1270,14 @@ fn download_executable(
         );
     }
 
+    ux.resolving(runtime_ref);
+
     let Some(ins) = begin_entry_install(root, entry, exe_path, asset, runtime_ref)? else {
+        ux.cached(rr);
         return Ok(exe_path.clone());
     };
 
-    if fetch_url(&asset_url, local, &ins.tmp_asset).is_err() {
+    if fetch_asset(&asset_url, local, &ins.tmp_asset, asset, &mut ux.prog).is_err() {
         cleanup_tmp_entry(&ins.tmp_dir, asset);
         lock_release(ins.lock);
         return fail(
@@ -1162,6 +1287,8 @@ fn download_executable(
             ),
         );
     }
+
+    ux.prog.phase("verifying sha256");
 
     // expected checksum: manifest.json primary, SHA256SUMS.txt fallback.
     const DIAG_NAMES: [&str; 5] = [
@@ -1239,7 +1366,11 @@ fn download_executable(
     }
 
     let origin = format!("runtime_ref={runtime_ref}\nurl={asset_url}\nsha256={actual}\n");
-    publish_entry(ins, entry_dir, exe_path, asset, &actual, &origin)
+    ux.prog.phase("installing (locked)");
+    let installed = publish_entry(ins, entry_dir, exe_path, asset, &actual, &origin)?;
+    let size = std::fs::metadata(&installed).map(|m| m.len()).unwrap_or(0);
+    ux.prog.line(&installed_line(entry, size, entry_dir));
+    Ok(installed)
 }
 
 // ---------------------------------------------------------------------
@@ -1255,6 +1386,7 @@ fn resolve_image(
     runtime_ref: &str,
     rr: &RuntimeRef,
     layout: &CacheLayout,
+    ux: &mut BootUx,
 ) -> Result<PathBuf, BootError> {
     let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
     let image_asset = format!("{}.tfs", layout.asset_base);
@@ -1281,6 +1413,8 @@ fn resolve_image(
             ),
         );
     }
+
+    ux.resolving(runtime_ref);
 
     // Serialize against other bootstraps installing this entry (the same
     // lock file the executable install uses).
@@ -1338,7 +1472,7 @@ fn resolve_image(
         e
     };
 
-    if fetch_url(&image_url, local, &tmp_image).is_err() {
+    if fetch_asset(&image_url, local, &tmp_image, &image_asset, &mut ux.prog).is_err() {
         return Err(fail_image(
             lock,
             BootError::new(
@@ -1349,6 +1483,8 @@ fn resolve_image(
             ),
         ));
     }
+
+    ux.prog.phase("verifying sha256");
 
     // expected checksum: manifest.json `image` key primary, SHA256SUMS
     // line fallback (the same sources the executable's checksum uses).
@@ -1427,6 +1563,7 @@ fn resolve_image(
     }
 
     // Install: the image is immutable (0444) with trusted markers.
+    ux.prog.phase("installing (locked)");
     make_readonly(&tmp_image);
     if let Err(e) = os_rename(&tmp_image, &image_path) {
         return Err(fail_image(
@@ -1448,6 +1585,8 @@ fn resolve_image(
     );
     cleanup_tmp_entry(&tmp_dir, &image_asset);
     lock_release(lock);
+    let size = std::fs::metadata(&image_path).map(|m| m.len()).unwrap_or(0);
+    ux.prog.line(&installed_line(&image_asset, size, entry_dir));
     Ok(image_path)
 }
 

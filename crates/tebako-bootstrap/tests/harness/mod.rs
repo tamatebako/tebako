@@ -15,13 +15,18 @@ pub struct TempDir(pub PathBuf);
 
 impl TempDir {
     pub fn new(tag: &str) -> TempDir {
+        // nanos alone can collide across threads (µs-granularity clocks);
+        // the counter makes paths unique within the process, the pid
+        // across test binaries.
+        static COUNTER: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let uniq = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
         let path = std::env::temp_dir().join(format!(
-            "tebako-rs-boot-{tag}-{}-{uniq}",
-            std::process::id()
+            "tebako-rs-boot-{tag}-{}-{uniq}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
         ));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).expect("create temp dir");
@@ -297,12 +302,28 @@ impl Harness {
         extra_env: &[(&str, &str)],
         args: &[&str],
     ) -> (i32, String, String) {
+        let (rc, out, err) = self.run_raw(pkg, home, extra_env, args);
+        (rc, out, strip_progress(strip_legacy_warning(err)))
+    }
+
+    /// The raw run: stderr exactly as the bootstrap emitted it. The spec
+    /// 06 §5 progress transcript (tests/progress.rs) is asserted from
+    /// this; legacy comparisons use run(), which strips.
+    pub fn run_raw(
+        &self,
+        pkg: &Path,
+        home: &Path,
+        extra_env: &[(&str, &str)],
+        args: &[&str],
+    ) -> (i32, String, String) {
         let mut cmd = Command::new(pkg);
         cmd.args(args)
             .env("TEBAKO_HOME", home)
             .env("TEBAKO_RUNTIME_MIRROR", &self.mirror_root)
             // Deterministic env: no ambient knobs leaking in.
-            .env_remove("TEBAKO_OFFLINE");
+            .env_remove("TEBAKO_OFFLINE")
+            .env_remove("TEBAKO_NO_PROGRESS")
+            .env_remove("NO_COLOR");
         for (k, v) in extra_env {
             cmd.env(k, v);
         }
@@ -329,7 +350,7 @@ impl Harness {
         (
             out.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&out.stdout).into_owned(),
-            strip_legacy_warning(String::from_utf8_lossy(&out.stderr).into_owned()),
+            String::from_utf8_lossy(&out.stderr).into_owned(),
         )
     }
 
@@ -347,7 +368,7 @@ impl Harness {
 /// Strip it for output comparison — the warning's emission, the legacy
 /// acceptance and the REQUIRE_SIGNED hard fail are covered by
 /// tests/chain.rs, and removing the warning itself would violate item 29.
-fn strip_legacy_warning(stderr: String) -> String {
+pub fn strip_legacy_warning(stderr: String) -> String {
     let mut out = String::new();
     let mut skip_next = false;
     for line in stderr.lines() {
@@ -363,6 +384,29 @@ fn strip_legacy_warning(stderr: String) -> String {
         }
         out.push_str(line);
         out.push('\n');
+    }
+    out
+}
+
+/// Spec 06 §5 (locked): fetches print progress on stderr BY DESIGN — the
+/// start + done lines even non-TTY, phase lines and the bar on a TTY; a
+/// cache hit is one quiet line. The C++ oracle and the pre-existing
+/// success-path assertions predate that contract, so run() strips these
+/// additive lines (error bodies are untouched — golden parity holds).
+/// The exact transcript itself is asserted in tests/progress.rs.
+fn strip_progress(stderr: String) -> String {
+    let mut out = String::new();
+    for line in stderr.lines() {
+        let is_progress = line.starts_with("resolving ")
+            || line.starts_with("downloading ")
+            || line.starts_with("installed ")
+            || line == "verifying sha256"
+            || line == "installing (locked)"
+            || (line.starts_with("runtime ") && line.ends_with(" (cached)"));
+        if !is_progress {
+            out.push_str(line);
+            out.push('\n');
+        }
     }
     out
 }

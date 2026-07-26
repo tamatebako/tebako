@@ -1,0 +1,17 @@
+[package]
+name = "tebako-term"
+description = "Terminal progress for the tebako stack (spec 06 §5): TTY detect, hand-rolled ANSI bar/spinner, phase lines — zero dependencies"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "terminal", "progress"]
+categories = ["command-line-interface"]
+
+[dependencies]
+
+[lib]
+name = "tebako_term"
+path = "src/lib.rs"
