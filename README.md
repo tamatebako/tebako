@@ -21,8 +21,9 @@ tebako-rs/
                        # unbundle/reassemble/insert-image/remove-image/
                        # set-runtime/info; item 25)
     tfs-cli/           # PLANNED — the tfs binary (generic VFS ops; item 25)
-    tebako-cli/        # PLANNED — press/deploy/cache/resolve (item 17)
-    tebako-bootstrap/  # PLANNED — the Rust bootstrap runner (item 22,
+    tebako-cli/        # the tebako packager CLI: lean/fat press, cache
+                       # (item 17)
+    tebako-bootstrap/  # the Rust bootstrap runner (item 22,
                        # < 2 MB static, size-gated)
   tests/contract/      # the parity oracle: the C++ libtfs c_api suite
                        # running through the Rust C ABI
@@ -37,6 +38,41 @@ when published). dwarfs-t stays C++ forever; `libdwarfs_c` is the only
 Rust-consumable surface for it.
 
 ## Status
+
+### SHIPPED (milestone 7)
+
+- **`crates/tebako-cli` — the `tebako` packager CLI** (item 17's
+  SELF-HOSTING design): a port of the reference gem's lean/fat press
+  (tebako-chainwt `lib/tebako`). `tebako press -r <root> -e <entry>
+  [-o pkg] [-p prefix] [-c cwd] [-R ruby] [-m lean|fat] [--image
+  path:mount]...` resolves the prebuilt runtime into the shared cache
+  (gem-identical `~/.tebako` layout, flock'd installs, manifest.json /
+  SHA256SUMS index, TEBAKO_OFFLINE / mirror env vars, error codes
+  120–125), seeds the packaging environment from the runtime's extracted
+  layout, deploys the application **under the runtime itself** (the
+  mkdwarfs'd stub-driver image stitched onto an empty base and exec'd via
+  `--tebako-image`, with the RUBYOPT/RUBYLIB/BUNDLE_* env scrub),
+  mkdwarfs's the app image and stitches a three-part package (LEAN flag,
+  launcher ABI 1, `ruby@<rv>;tebako=<v>` runtime_ref, fat mode adds the
+  FORMAT_RUNTIME payload slot + `;sha256=`). Scenarios: simple script and
+  Gemfile (lockfile-pinned bundler per `BUNDLED WITH`; Gemfile `ruby`
+  directive honored). `tebako cache list` / `cache prune [--all]
+  [--older-than Nd]` manage the runtime cache. **Golden parity vs the
+  gem**: same fixture, same prefix — the press stdout and the packaged
+  binaries' output are byte-identical (CI leg checks out
+  `tamatebako/tebako` feat/ci-slim-model and diffs side-by-side; the
+  RuntimeSdk provisioning lines are filtered — see below).
+  **Documented deviations**: the bootstrap portion defaults to the
+  in-workspace Rust tebako-bootstrap (`--bootstrap`/`TEBAKO_BOOTSTRAP`
+  override; otherwise the C++ release is resolved like the gem does);
+  mkdwarfs lookup is `--mkdwarfs` > `TEBAKO_MKDWARFS` > PATH >
+  `<prefix>/deps/bin/mkdwarfs*`; the RuntimeSdk/src-release subsystem is
+  not ported (pure-ruby bundler flows never need it — native-extension
+  deploy is a later milestone), and neither are the gem/gemspec scenarios,
+  classic mode, `.tebako.yml`, or the gem's unconditional 5 s press pause
+  (kept only when a warning is actually printed); images stitch densely
+  (tpkg slots carry absolute offsets; the gem's 8-byte padding is
+  cosmetic).
 
 ### SHIPPED (milestone 6)
 
@@ -199,12 +235,12 @@ Rust-consumable surface for it.
 
 ### PLANNED (next milestones, in order)
 
-1. `crates/tebako-cli` (item 17: press/deploy/cache/resolve — consumes
-   tpkg + tfs + tebako-pkg + tebako-bootstrap).
-2. crates.io publication of `tpkg`/`tfs` (after the API settles
+1. crates.io publication of `tpkg`/`tfs` (after the API settles
    post-parity); cbindgen `tpkg.h` with it.
-3. tebako-bootstrap Windows exec/lock port + windows CI leg (v1 shipped
+2. tebako-bootstrap Windows exec/lock port + windows CI leg (v1 shipped
    macOS/Linux); tfs-cli interactive shell + serve/exec modes (later).
+3. tebako-cli: classic press mode, gem/gemspec scenarios, the
+   RuntimeSdk/src-release subsystem (native-extension deploy), .tebako.yml.
 
 ### v2 notes (recorded decisions)
 

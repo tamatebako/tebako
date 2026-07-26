@@ -112,6 +112,27 @@ jobs:
           echo "TEBAKO_MKDWARFS=${{ github.workspace }}/.oracle/mkdwarfs" >> "$GITHUB_ENV"
           echo "TEBAKO_CPP_BOOTSTRAP=${{ github.workspace }}/.oracle/tebako-bootstrap" >> "$GITHUB_ENV"
 
+      # tebako-cli's golden e2e presses side-by-side with the reference
+      # Ruby gem (three-part model branch) and diffs both the press stdout
+      # and the packaged binaries' output.
+      - name: Checkout the reference gem (golden side-by-side)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/tebako
+          ref: feat/ci-slim-model
+          path: reference-gem
+
+      - name: Set up ruby for the reference gem
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.4"
+
+      - name: Install thor (the reference gem's only non-stdlib dependency)
+        run: gem install thor --no-document
+
+      - name: Point the golden test at the reference gem
+        run: echo "TEBAKO_REFERENCE_GEM=${{ github.workspace }}/reference-gem" >> "$GITHUB_ENV"
+
       # item 22's hard gate: the Rust bootstrap must stay under 2 MB
       # absolute. Publishes the table and fails the job when over.
       - name: Bootstrap size gate (< 2 MB)

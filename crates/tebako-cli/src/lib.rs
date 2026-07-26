@@ -1,0 +1,509 @@
+//! tebako-cli — the packager CLI (item 17's SELF-HOSTING design), a port of
+//! the reference gem's lean press (tebako-chainwt lib/tebako):
+//!
+//!   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>]
+//!                [--cwd <dir>] [-R <ruby>] [-m lean|fat]
+//!                [--image <path>:<mount>]... [--bootstrap <path>]
+//!                [--mkdwarfs <path>] [--tebako-version <v>]
+//!   tebako cache list
+//!   tebako cache prune [--all] [--older-than Nd]
+//!
+//! Lean press flow (gem's do_press_three_part): resolve the runtime into
+//! the shared cache → seed the packaging environment from its layout →
+//! deploy the application under the runtime itself (stub driver) →
+//! mkdwarfs the application image → stitch onto the bootstrap with a tpkg
+//! trailer (runtime_ref + launcher ABI v1).
+//!
+//! Documented deviations from the gem (README carries the full list):
+//! - the bootstrap portion defaults to the in-workspace Rust
+//!   tebako-bootstrap (sibling of the tebako binary); --bootstrap /
+//!   TEBAKO_BOOTSTRAP override, otherwise the C++ release is resolved
+//!   with the gem's BootstrapManager machinery;
+//! - mkdwarfs is looked up as --mkdwarfs > $TEBAKO_MKDWARFS > PATH >
+//!   <prefix>/deps/bin/mkdwarfs* (the gem's only source is the last one);
+//! - the RuntimeSdk/src-release subsystem is not ported (no native
+//!   extension builds inside deploy), and neither are the gem/gemspec
+//!   scenarios;
+//! - images are stitched densely (tpkg slots carry absolute offsets; the
+//!   gem's 8-byte padding is cosmetic);
+//! - .tebako.yml is not read.
+
+pub mod deploy;
+pub mod error;
+pub mod fetch;
+pub mod options;
+pub mod packager;
+pub mod resolve;
+pub mod runner;
+pub mod scenario;
+pub mod strip;
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use error::{packaging_error, plain_error, TebakoError};
+use options::{host_platform, PressMode, PressOptions};
+use resolve::{Flavor, Resolver};
+use scenario::{check_ruby_version, ruby_version_with_gemfile, ScenarioManager};
+
+/// Launcher ABI v1 — the bootstrap → runtime handoff contract.
+pub const LAUNCHER_ABI: u32 = 1;
+
+/// The tebako version this CLI presses with: the runtime release consumed
+/// and the tebako=<...> component of the trailer's runtime_ref. Matches
+/// the reference gem's Tebako::VERSION at port time.
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.15.9";
+
+pub const VERSION_BANNER: &str = "Tebako executable packager version 0.15.9";
+
+const WARN: &str = "
+******************************************************************************************************************
+*                                                                                                                *
+*  WARNING: You are packaging in-place, i.e.: tebako package will be placed inside application root.             *
+*  It is not an error but we do not recommend it because it is a way to keep packaging old versions recrsively.  *
+*                                                                                                                *
+*  For example, ensure that `--root=` differs from `--output=` as described in README.adoc:                      *
+*  tebako press --root='~/projects/myproject' --entry=start.rb --output=/temp/myproject.tebako                   *
+*                                                                                                                *
+******************************************************************************************************************
+";
+
+const WARN2: &str = "
+******************************************************************************************************************
+*                                                                                                                *
+*  WARNING: You are creating packaging environment inside application root.                                      *
+*  It is not an error but it means that all build-time artifacts will ne included in tebako package.             *
+*  You do not need it unless under very special circumstances like tebako packaging tebako itself.               *
+*                                                                                                                *
+*  Please consider removing your exisitng `--prefix` folder abd use another one that points outside of `--root`  *
+*  like tebako press --r ~/projects/myproject -e start.rb -o /temp/myproject.tebako -p ~/.tebako                 *
+*                                                                                                                *
+******************************************************************************************************************
+";
+
+// ---------------------------------------------------------------------
+// press
+// ---------------------------------------------------------------------
+
+/// Where the package's bootstrap portion comes from.
+enum BootstrapSource {
+    /// An explicit local binary (--bootstrap, $TEBAKO_BOOTSTRAP, or the
+    /// Rust tebako-bootstrap sitting next to the tebako binary).
+    Path(PathBuf),
+    /// Resolve the C++ release with the gem's BootstrapManager machinery.
+    Download,
+}
+
+pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
+    if opts.mode == PressMode::Runtime {
+        return Err(packaging_error(133, None));
+    }
+    if opts.mode == PressMode::Classic {
+        return Err(plain_error(
+            "the 'classic' press mode is a later tebako-rs milestone (use --mode=lean or --mode=fat)",
+        ));
+    }
+
+    // OptionsManager construction order: the --Ruby value is validated
+    // before any scenario checks.
+    if let Some(requested) = &opts.ruby_requested {
+        check_ruby_version(requested)?;
+    }
+
+    let mut scenario = ScenarioManager::new(&opts.root(), &opts.fs_entrance())?;
+    scenario.configure_scenario()?;
+
+    let ruby_ver = if scenario.with_gemfile {
+        ruby_version_with_gemfile(opts.ruby_requested.as_deref(), &scenario.gemfile_path)?
+    } else {
+        opts.ruby_requested
+            .clone()
+            .unwrap_or_else(|| scenario::DEFAULT_RUBY_VERSION.to_string())
+    };
+
+    check_warnings(opts);
+    println!("{}", opts.press_announce(&ruby_ver));
+
+    let platform = host_platform()?;
+    let bootstrap_source = decide_bootstrap(opts);
+    if opts.mode == PressMode::Fat {
+        if let BootstrapSource::Download = bootstrap_source {
+            check_bootstrap_version()?;
+        }
+    }
+    let mkdwarfs = packager::resolve_mkdwarfs(opts)?;
+
+    let runtime_resolver = Resolver::new(Flavor::Runtime);
+    let runtime_path = runtime_resolver.resolve(&ruby_ver, &platform, &opts.tebako_version)?;
+
+    let bootstrap_path = match &bootstrap_source {
+        BootstrapSource::Path(path) => {
+            if !path.is_file() {
+                return Err(packaging_error(
+                    127,
+                    Some(&format!("runtime not found: {}", path.display())),
+                ));
+            }
+            path.clone()
+        }
+        BootstrapSource::Download => Resolver::new(Flavor::Bootstrap).resolve(
+            &resolve::default_bootstrap_version(),
+            &platform,
+            &resolve::default_bootstrap_version(),
+        )?,
+    };
+
+    let app_image =
+        packager::build_app_image(opts, &mut scenario, &runtime_path, &mkdwarfs, &ruby_ver)?;
+
+    let mut images: Vec<(PathBuf, String, u32)> = vec![(
+        app_image,
+        scenario.fs_mount_point.clone(),
+        tpkg::TPKG_FORMAT_DWARFS,
+    )];
+    for (path, mount) in opts.images()? {
+        images.push((PathBuf::from(path), mount, tpkg::TPKG_FORMAT_DWARFS));
+    }
+    let payload_sha256 = if opts.mode == PressMode::Fat {
+        let sha = resolve::sha256_file_hex(&runtime_path)
+            .ok_or_else(|| plain_error(format!("cannot hash {}", runtime_path.display())))?;
+        images.push((
+            runtime_path.clone(),
+            String::new(),
+            tpkg::TPKG_FORMAT_RUNTIME,
+        ));
+        Some(sha)
+    } else {
+        None
+    };
+
+    let package = format!("{}{}", opts.package(), scenario.exe_suffix);
+    stitch(
+        &bootstrap_path,
+        &images,
+        &package,
+        &ruby_ver,
+        &opts.tebako_version,
+        payload_sha256.as_deref(),
+    )?;
+    println!("Created tebako package at \"{package}\"");
+    ensure_version_file(opts);
+    Ok(PathBuf::from(package))
+}
+
+fn check_warnings(opts: &PressOptions) {
+    let mut warned = false;
+    if opts.package_within_root() {
+        println!("{WARN}");
+        warned = true;
+    }
+    if opts.prefix_within_root() {
+        println!("{WARN2}");
+        warned = true;
+    }
+    if warned {
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
+}
+
+/// Bootstrap lookup: --bootstrap > $TEBAKO_BOOTSTRAP > the Rust
+/// tebako-bootstrap next to the tebako binary > the C++ release download.
+fn decide_bootstrap(opts: &PressOptions) -> BootstrapSource {
+    if let Some(path) = &opts.bootstrap {
+        return BootstrapSource::Path(path.clone());
+    }
+    if let Ok(env_path) = std::env::var("TEBAKO_BOOTSTRAP") {
+        if !env_path.is_empty() {
+            return BootstrapSource::Path(PathBuf::from(env_path));
+        }
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let name = if cfg!(windows) {
+                "tebako-bootstrap.exe"
+            } else {
+                "tebako-bootstrap"
+            };
+            let sibling = dir.join(name);
+            if sibling.is_file() {
+                return BootstrapSource::Path(sibling);
+            }
+        }
+    }
+    BootstrapSource::Download
+}
+
+/// The fat payload slot is installed by the bootstrap at first run — a
+/// capability added in tebako-bootstrap 0.2.0 (error 134). Applies to the
+/// downloaded C++ bootstrap; the in-workspace Rust bootstrap is
+/// payload-capable by construction.
+fn check_bootstrap_version() -> Result<(), TebakoError> {
+    let version = resolve::default_bootstrap_version();
+    if scenario::version_cmp(&version, resolve::PAYLOAD_MIN_VERSION) != std::cmp::Ordering::Less {
+        return Ok(());
+    }
+    Err(packaging_error(
+        134,
+        Some(&format!(
+            "fat mode requires tebako-bootstrap >= {} (selected: {version}; set TEBAKO_BOOTSTRAP_VERSION to a payload-capable release)",
+            resolve::PAYLOAD_MIN_VERSION
+        )),
+    ))
+}
+
+/// Stitcher.stitch (lean three-part): validate per the gem's error codes,
+/// then assemble with tebako-pkg (dense image layout — tpkg slots carry
+/// absolute offsets, so the gem's 8-byte padding is not required), chmod,
+/// and re-sign ad-hoc on macOS when the binary was signed.
+fn stitch(
+    bootstrap_path: &Path,
+    images: &[(PathBuf, String, u32)],
+    package: &str,
+    ruby_version: &str,
+    tebako_version: &str,
+    runtime_sha256: Option<&str>,
+) -> Result<(), TebakoError> {
+    if images.is_empty() {
+        return Err(packaging_error(126, Some("at least one image is required")));
+    }
+    if images.len() > tpkg::TPKG_MAX_SLOTS as usize {
+        return Err(packaging_error(
+            126,
+            Some(&format!(
+                "{} images given, at most {} are supported",
+                images.len(),
+                tpkg::TPKG_MAX_SLOTS
+            )),
+        ));
+    }
+    if !bootstrap_path.is_file() {
+        return Err(packaging_error(
+            127,
+            Some(&format!("runtime not found: {}", bootstrap_path.display())),
+        ));
+    }
+    for (path, mount, format_id) in images {
+        if !path.is_file() {
+            return Err(packaging_error(
+                127,
+                Some(&format!("image not found: {}", path.display())),
+            ));
+        }
+        if *format_id > tpkg::TPKG_FORMAT_RUNTIME {
+            return Err(packaging_error(
+                126,
+                Some(&format!("invalid format_id {format_id} (0..4 expected)")),
+            ));
+        }
+        if mount.len() >= tpkg::TPKG_MOUNT_POINT_LEN {
+            return Err(packaging_error(
+                126,
+                Some(&format!(
+                    "mount point '{}'... exceeds {} bytes",
+                    &mount[..32.min(mount.len())],
+                    tpkg::TPKG_MOUNT_POINT_LEN - 1
+                )),
+            ));
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    for (_, mount, format_id) in images {
+        if *format_id == tpkg::TPKG_FORMAT_RUNTIME {
+            continue; // payload slots are never mounted
+        }
+        if !seen.insert(mount) {
+            return Err(packaging_error(
+                126,
+                Some(&format!("duplicate mount point '{mount}'")),
+            ));
+        }
+    }
+    if let Some(sha) = runtime_sha256 {
+        let valid = sha.len() == 64
+            && sha
+                .bytes()
+                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase());
+        if !valid {
+            return Err(packaging_error(
+                126,
+                Some("runtime_sha256 must be 64 lowercase hex characters"),
+            ));
+        }
+    }
+
+    let mut runtime_ref = format!("ruby@{ruby_version};tebako={tebako_version}");
+    if let Some(sha) = runtime_sha256 {
+        runtime_ref.push_str(&format!(";sha256={sha}"));
+    }
+    if runtime_ref.len() >= tpkg::TPKG_RUNTIME_REF_LEN {
+        return Err(packaging_error(
+            126,
+            Some(&format!(
+                "runtime_ref '{runtime_ref}' exceeds {} bytes",
+                tpkg::TPKG_RUNTIME_REF_LEN - 1
+            )),
+        ));
+    }
+
+    let output = Path::new(package);
+    if let Some(dir) = output.parent() {
+        fs::create_dir_all(dir).map_err(|e| plain_error(format!("{e}")))?;
+    }
+    let pkg_images: Vec<tebako_pkg::PackageImage> = images
+        .iter()
+        .map(|(path, mount, format_id)| tebako_pkg::PackageImage {
+            path: path.clone(),
+            mount_point: mount.clone(),
+            format_id: *format_id,
+        })
+        .collect();
+    let pkg_options = tebako_pkg::PackageOptions {
+        runtime_ref,
+        package_flags: tpkg::TPKG_FLAG_LEAN,
+        launcher_abi: LAUNCHER_ABI,
+    };
+    tebako_pkg::bundle_exact(bootstrap_path, &pkg_images, output, &pkg_options)
+        .map_err(plain_error)?;
+    chmod_755(output);
+    resign_if_needed(output);
+    Ok(())
+}
+
+fn chmod_755(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(m) = fs::metadata(path) {
+            let mut perms = m.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(path, perms);
+        }
+    }
+}
+
+/// Codesigning: appending bytes invalidates any embedded code signature.
+/// On macOS a signed binary (ad-hoc included) is re-signed ad-hoc,
+/// best-effort — codesign(1) refuses to re-sign thin Mach-O binaries
+/// carrying trailing payload, so on failure a warning is printed and the
+/// package is kept (it still executes on macOS).
+fn resign_if_needed(output: &Path) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    let signed = std::process::Command::new("codesign")
+        .args(["-dv"])
+        .arg(output)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !signed {
+        return;
+    }
+    let ok = std::process::Command::new("codesign")
+        .arg("--remove-signature")
+        .arg(output)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+        && std::process::Command::new("codesign")
+            .args(["--sign", "-", "--force"])
+            .arg(output)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+    if !ok {
+        // the gem warns on stderr (Kernel#warn)
+        eprintln!(
+            "Warning: ad-hoc re-sign failed for {}; the package still executes on macOS, but its code signature is invalidated by the appended images. Re-sign it with your own identity if you need a valid signature.",
+            output.display()
+        );
+    }
+}
+
+/// CacheManager#ensure_version_file (best effort).
+fn ensure_version_file(opts: &PressOptions) {
+    let deps = opts.deps();
+    let _ = fs::create_dir_all(&deps);
+    let version_file = deps.join(".environment.version");
+    let src = env!("CARGO_MANIFEST_DIR");
+    if let Err(e) = fs::write(&version_file, format!("{} at {src}", opts.tebako_version)) {
+        println!(
+            "{} .environment.version: {e}",
+            error::packaging_message(201).unwrap_or("Warning. Could not create cache version file")
+        );
+    }
+}
+
+// ---------------------------------------------------------------------
+// cache subcommands (CacheCli port)
+// ---------------------------------------------------------------------
+
+pub fn cache_list() {
+    let manager = Resolver::new(Flavor::Runtime);
+    let entries = manager.entries();
+    if entries.is_empty() {
+        println!(
+            "Runtime package cache is empty ({})",
+            manager.cache_root.join("runtimes").display()
+        );
+        return;
+    }
+    let mut total = 0u64;
+    for entry in &entries {
+        total += entry.size_bytes;
+        println!(
+            "{:<44} {:>9}  {}",
+            entry.name,
+            human_size(entry.size_bytes),
+            human_age(entry.installed_at)
+        );
+    }
+    println!(
+        "{:<44} {:>9}",
+        format!("Total ({} package(s))", entries.len()),
+        human_size(total)
+    );
+}
+
+pub fn cache_prune(all: bool, older_than: Option<&str>) -> Result<(), TebakoError> {
+    let manager = Resolver::new(Flavor::Runtime);
+    let removed = if all {
+        manager.prune(true, None)?
+    } else if let Some(days) = older_than.and_then(parse_days) {
+        manager.prune(false, Some(days))?
+    } else {
+        println!("Nothing to do: pass --all or --older-than Nd");
+        return Ok(());
+    };
+    for name in &removed {
+        println!("Removed {name}");
+    }
+    println!("{} cached runtime package(s) removed", removed.len());
+    Ok(())
+}
+
+fn parse_days(spec: &str) -> Option<u64> {
+    let digits = spec.strip_suffix('d').unwrap_or(spec);
+    if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+fn human_size(bytes: u64) -> String {
+    format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+}
+
+fn human_age(installed_at: std::time::SystemTime) -> String {
+    let age = std::time::SystemTime::now()
+        .duration_since(installed_at)
+        .unwrap_or_default()
+        .as_secs();
+    if age < 3600 {
+        format!("{}m ago", age / 60)
+    } else if age < 86_400 {
+        format!("{}h ago", age / 3600)
+    } else {
+        format!("{}d ago", age / 86_400)
+    }
+}

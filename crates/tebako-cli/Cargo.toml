@@ -1,0 +1,27 @@
+[package]
+name = "tebako-cli"
+description = "tebako — the packager CLI (lean press): resolve runtime, deploy under it, image, stitch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "packager", "ruby", "dwarfs", "cli"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+tpkg = { version = "0.1.0", path = "../tpkg" }
+tebako-pkg = { version = "0.1.0", path = "../tebako-pkg" }
+libc = "0.2"
+sha2 = "0.10"
+
+[[bin]]
+name = "tebako"
+path = "src/main.rs"
+
+[lib]
+name = "tebako_cli"
+path = "src/lib.rs"
+
+[dev-dependencies]

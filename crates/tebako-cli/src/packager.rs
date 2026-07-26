@@ -1,0 +1,613 @@
+//! Port of the gem's Packager + DeployHelper (lib/tebako/packager.rb,
+//! lib/tebako/deploy_helper.rb): seed the packaging environment from the
+//! resolved runtime's extracted layout, stage the application, run the
+//! deploy ops under the runtime, strip, align the arch layout, write the
+//! entry dispatcher and mkdwarfs the application image.
+
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use crate::deploy::{Op, RuntimeDeployer};
+use crate::error::{packaging_error, plain_error, TebakoError};
+use crate::options::PressOptions;
+use crate::runner::run_with_capture_v;
+use crate::scenario::{api_version, Scenario, ScenarioManager};
+
+/// mkdwarfs lookup: --mkdwarfs > $TEBAKO_MKDWARFS > PATH >
+/// <prefix>/deps/bin/mkdwarfs* (the gem's only source) > error 128.
+pub fn resolve_mkdwarfs(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
+    if let Some(path) = &opts.mkdwarfs {
+        if path.is_file() {
+            return Ok(path.clone());
+        }
+        return Err(packaging_error(
+            128,
+            Some(&format!("mkdwarfs ({})", path.display())),
+        ));
+    }
+    if let Ok(env_path) = std::env::var("TEBAKO_MKDWARFS") {
+        if !env_path.is_empty() && Path::new(&env_path).is_file() {
+            return Ok(PathBuf::from(env_path));
+        }
+    }
+    if let Some(found) = which("mkdwarfs") {
+        return Ok(found);
+    }
+    let deps_bin = opts.deps_bin_dir();
+    if let Ok(children) = fs::read_dir(&deps_bin) {
+        let mut candidates: Vec<PathBuf> = children
+            .filter_map(|c| c.ok())
+            .map(|c| c.path())
+            .filter(|p| {
+                p.file_name()
+                    .map(|n| n.to_string_lossy().starts_with("mkdwarfs"))
+                    .unwrap_or(false)
+            })
+            .collect();
+        candidates.sort();
+        if let Some(first) = candidates.into_iter().next() {
+            return Ok(first);
+        }
+    }
+    Err(packaging_error(
+        128,
+        Some(&format!("mkdwarfs ({})", deps_bin.display())),
+    ))
+}
+
+fn which(tool: &str) -> Option<PathBuf> {
+    let path_var = std::env::var("PATH").ok()?;
+    for dir in path_var.split(if cfg!(windows) { ';' } else { ':' }) {
+        let candidate = Path::new(dir).join(tool);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Packager.mkdwarfs: chmod a+x and run with the gem's parameter shape.
+pub fn run_mkdwarfs(
+    mkdwarfs: &Path,
+    data_bin_file: &Path,
+    data_src_dir: &Path,
+    verbose: bool,
+) -> Result<(), TebakoError> {
+    println!("-- Running mkdwarfs script");
+    chmod_a_x(mkdwarfs);
+    let args = vec![
+        "-o".to_string(),
+        data_bin_file.to_string_lossy().into_owned(),
+        "-i".to_string(),
+        data_src_dir.to_string_lossy().into_owned(),
+        "--no-progress".to_string(),
+    ];
+    run_with_capture_v(mkdwarfs, &args, &[], verbose)?;
+    Ok(())
+}
+
+fn chmod_a_x(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(m) = fs::metadata(path) {
+            let mut perms = m.permissions();
+            perms.set_mode(perms.mode() | 0o111);
+            let _ = fs::set_permissions(path, perms);
+        }
+    }
+}
+
+/// Deploy the application and build its DwarFS image for stitching;
+/// returns the image path (fs.bin).
+pub fn build_app_image(
+    opts: &PressOptions,
+    scenario: &mut ScenarioManager,
+    runtime_path: &Path,
+    mkdwarfs: &Path,
+    ruby_ver: &str,
+) -> Result<PathBuf, TebakoError> {
+    let resolver = crate::resolve::Resolver::new(crate::resolve::Flavor::Runtime);
+    let layout_dir = resolver.layout(runtime_path, opts.verbose)?;
+    init(&layout_dir, opts)?;
+    deploy(opts, scenario, runtime_path, mkdwarfs, ruby_ver)?;
+    align_layout_to_runtime(&opts.data_src_dir(), &layout_dir, ruby_ver);
+    write_entry_dispatcher(&opts.data_src_dir(), scenario, opts.cwd.as_deref());
+    run_mkdwarfs(
+        mkdwarfs,
+        &opts.data_bundle_file(),
+        &opts.data_src_dir(),
+        opts.verbose,
+    )?;
+    Ok(opts.data_bundle_file())
+}
+
+/// Init: recreate o/{s,r,p} and seed s/ from the runtime layout.
+fn init(layout_dir: &Path, opts: &PressOptions) -> Result<(), TebakoError> {
+    println!("-- Running init script");
+    let src = opts.data_src_dir();
+    println!("   ... creating packaging environment at {}", src.display());
+    for dir in [src.clone(), opts.data_pre_dir(), opts.data_bin_dir()] {
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir)
+            .map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
+    }
+    cp_r_contents(layout_dir, &src)
+        .map_err(|e| plain_error(format!("{e} seeding {}", src.display())))
+}
+
+/// Deploy: stage the app, build and run the deploy ops, check, strip.
+fn deploy(
+    opts: &PressOptions,
+    scenario: &mut ScenarioManager,
+    runtime_path: &Path,
+    mkdwarfs: &Path,
+    ruby_ver: &str,
+) -> Result<(), TebakoError> {
+    println!("-- Running deploy script");
+    let target = opts.data_src_dir();
+    let api = api_version(ruby_ver);
+    let tbd = target.join("bin");
+    let tgd = target.join("lib").join("ruby").join("gems").join(&api);
+    let tld = target.join("local");
+
+    // Bundler resolution happens here (ScenarioManagerWithBundler).
+    scenario.resolve_bundler()?;
+
+    verify_runtime_gem(&tgd)?;
+
+    let mut ops: Vec<Op> = Vec::new();
+    if scenario.needs_bundler {
+        println!(
+            "   ... installing bundler gem version {}",
+            scenario.bundler_version
+        );
+        ops.push(Op::Gem(install_gem_argv(
+            "bundler",
+            Some(&scenario.bundler_version),
+            &tgd,
+            &tbd,
+            opts.verbose,
+        )));
+    }
+    if opts.verbose {
+        ops.push(Op::Gem(vec!["env".to_string()]));
+    }
+
+    match scenario.scenario {
+        Scenario::SimpleScript => {
+            // DeployHelper prints OptionsManager#root (trailing slash kept)
+            println!("   ... collecting simple Ruby script from {}", opts.root());
+            copy_app_files(&scenario.fs_root, &tld)?;
+        }
+        Scenario::Gemfile => {
+            println!("   ... deploying Gemfile");
+            copy_app_files(&scenario.fs_root, &tld)?;
+            ops.push(Op::Chdir(tld.to_string_lossy().into_owned()));
+            let activation = bundler_activation(scenario);
+            for opt in bundle_config_options(opts) {
+                let mut argv = vec![
+                    "config".to_string(),
+                    "set".to_string(),
+                    "--local".to_string(),
+                ];
+                argv.extend(opt);
+                ops.push(Op::Bundle(activation.clone(), argv));
+            }
+            println!(
+                "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
+            );
+            ops.push(Op::Bundle(
+                activation,
+                vec![
+                    "install".to_string(),
+                    format!("--jobs={}", ncores()),
+                    "--prefer-local".to_string(),
+                ],
+            ));
+        }
+        // gem/gemspec scenarios need the bundle_exec op and the RuntimeSdk
+        // (native builds) — a later milestone.
+        Scenario::Gem | Scenario::Gemspec | Scenario::GemspecAndGemfile => {
+            return Err(packaging_error(
+                130,
+                Some("gem/gemspec scenarios are not supported by this milestone (use a Gemfile root)"),
+            ));
+        }
+    }
+
+    if !ops.is_empty() {
+        let deployer = RuntimeDeployer {
+            runtime_path: runtime_path.to_path_buf(),
+            mkdwarfs: mkdwarfs.to_path_buf(),
+            staging_bin_dir: opts.data_bin_dir(),
+            fs_mount_point: scenario.fs_mount_point.clone(),
+            ruby_version: ruby_ver.to_string(),
+            tebako_version: opts.tebako_version.clone(),
+            verbose: opts.verbose,
+        };
+        deployer.execute(&ops, &deploy_env(&target, &api), &target)?;
+    }
+
+    check_solution(&target, scenario)?;
+    check_cwd(&target, opts.cwd.as_deref())?;
+    crate::strip::strip(&target, &scenario.exe_suffix);
+    Ok(())
+}
+
+/// DeployHelper#verify_runtime_gem!: the runtime layout carries the
+/// tebako-runtime gem pre-installed (error 129 otherwise).
+fn verify_runtime_gem(tgd: &Path) -> Result<(), TebakoError> {
+    let specs = tgd.join("specifications");
+    let found = fs::read_dir(&specs)
+        .map(|rd| {
+            rd.filter_map(|e| e.ok()).any(|e| {
+                e.file_name()
+                    .to_string_lossy()
+                    .starts_with("tebako-runtime-")
+                    && e.file_name().to_string_lossy().ends_with(".gemspec")
+            })
+        })
+        .unwrap_or(false);
+    if found {
+        Ok(())
+    } else {
+        Err(packaging_error(129, Some(&specs.to_string_lossy())))
+    }
+}
+
+/// DeployHelper#install_gem_op (+ install_argv_tail).
+fn install_gem_argv(
+    name: &str,
+    version: Option<&str>,
+    tgd: &Path,
+    tbd: &Path,
+    verbose: bool,
+) -> Vec<String> {
+    let mut argv = vec!["install".to_string(), name.to_string()];
+    if let Some(v) = version {
+        argv.push("-v".to_string());
+        argv.push(v.to_string());
+    }
+    argv.push("--no-document".to_string());
+    argv.push("--install-dir".to_string());
+    argv.push(tgd.to_string_lossy().into_owned());
+    argv.push("--bindir".to_string());
+    argv.push(tbd.to_string_lossy().into_owned());
+    if verbose {
+        argv.push("--verbose".to_string());
+    }
+    if cfg!(windows) {
+        argv.push("--platform".to_string());
+        argv.push("ruby".to_string());
+    }
+    argv
+}
+
+/// The version the bundle ops activate ('_x.y.z_' when pinned, the
+/// runtime's default otherwise).
+fn bundler_activation(scenario: &ScenarioManager) -> Option<String> {
+    if scenario.needs_bundler {
+        Some(scenario.bundler_version.clone())
+    } else {
+        None
+    }
+}
+
+/// DeployHelper#bundle_config_ops: ffi/nokogiri/force_ruby_platform, plus
+/// the openssl build config when a libtfs-deps vcpkg tree is provisioned.
+fn bundle_config_options(opts: &PressOptions) -> Vec<Vec<String>> {
+    let nokogiri = if cfg!(windows) {
+        "--use-system-libraries"
+    } else {
+        "--no-use-system-libraries"
+    };
+    let mut out = vec![
+        vec![
+            "build.ffi".to_string(),
+            "--disable-system-libffi".to_string(),
+        ],
+        vec!["build.nokogiri".to_string(), nokogiri.to_string()],
+        vec!["force_ruby_platform".to_string(), "true".to_string()],
+    ];
+    if let Some(dir) = openssl_dir(&opts.deps()) {
+        out.push(vec![
+            "build.openssl".to_string(),
+            format!(
+                "--with-openssl-dir={} --with-ldflags=-ldl -lz",
+                dir.display()
+            ),
+        ]);
+    }
+    out
+}
+
+/// The libtfs-deps package provisioned by 'tebako setup' carries the
+/// OpenSSL headers and static libraries the runtime itself was built with.
+fn openssl_dir(deps: &Path) -> Option<PathBuf> {
+    let vcpkg = deps.join("vcpkg_installed");
+    let children = fs::read_dir(vcpkg).ok()?;
+    for child in children.filter_map(|c| c.ok()) {
+        let dir = child.path();
+        if dir.join("include").join("openssl").join("ssl.h").is_file() {
+            return Some(dir);
+        }
+    }
+    None
+}
+
+/// DeployHelper#deploy_env: GEM_HOME/GEM_PATH/GEM_SPEC_CACHE plus the
+/// press host's certificate store (the runtime's OpenSSL carries the
+/// build machine's certificate paths).
+fn deploy_env(target: &Path, api: &str) -> Vec<(String, String)> {
+    let gem_home = target
+        .join("lib")
+        .join("ruby")
+        .join("gems")
+        .join(api)
+        .to_string_lossy()
+        .into_owned();
+    let mut env = vec![
+        ("GEM_HOME".to_string(), gem_home.clone()),
+        ("GEM_PATH".to_string(), gem_home),
+        (
+            "GEM_SPEC_CACHE".to_string(),
+            target.join("spec_cache").to_string_lossy().into_owned(),
+        ),
+    ];
+    if let Some(cert_file) = default_cert_file() {
+        env.push(("SSL_CERT_FILE".to_string(), cert_file));
+    }
+    if let Some(cert_dir) = default_cert_dir() {
+        env.push(("SSL_CERT_DIR".to_string(), cert_dir));
+    }
+    env
+}
+
+/// OpenSSL::X509::DEFAULT_CERT_FILE of the press host: honor an explicit
+/// setting, then probe the well-known locations.
+fn default_cert_file() -> Option<String> {
+    if let Ok(v) = std::env::var("SSL_CERT_FILE") {
+        if !v.is_empty() && Path::new(&v).is_file() {
+            return Some(v);
+        }
+    }
+    const CANDIDATES: &[&str] = &[
+        "/etc/ssl/certs/ca-certificates.crt",   // Debian/Ubuntu/Alpine
+        "/etc/pki/tls/certs/ca-bundle.crt",     // Fedora/RHEL
+        "/etc/ssl/ca-bundle.pem",               // openSUSE
+        "/etc/ssl/cert.pem",                    // macOS (LibreSSL)
+        "/opt/homebrew/etc/openssl@3/cert.pem", // Homebrew arm64
+        "/usr/local/etc/openssl@3/cert.pem",    // Homebrew Intel
+    ];
+    CANDIDATES
+        .iter()
+        .find(|p| Path::new(p).is_file())
+        .map(|s| s.to_string())
+}
+
+fn default_cert_dir() -> Option<String> {
+    if let Ok(v) = std::env::var("SSL_CERT_DIR") {
+        if !v.is_empty() && Path::new(&v).is_dir() {
+            return Some(v);
+        }
+    }
+    const CANDIDATES: &[&str] = &[
+        "/etc/ssl/certs",
+        "/opt/homebrew/etc/openssl@3/certs",
+        "/usr/local/etc/openssl@3/certs",
+        "/System/Library/OpenSSL/certs",
+    ];
+    CANDIDATES
+        .iter()
+        .find(|p| Path::new(p).is_dir())
+        .map(|s| s.to_string())
+}
+
+/// DeployHelper#copy_files: cp -r <root>/. <dest> (error 107 when the
+/// root is not a readable directory).
+fn copy_app_files(fs_root: &str, dest: &Path) -> Result<(), TebakoError> {
+    fs::create_dir_all(dest).map_err(|e| plain_error(format!("{e}")))?;
+    let root = Path::new(fs_root);
+    if !(root.is_dir() && fs::metadata(root).is_ok()) {
+        return Err(TebakoError::new(
+            format!("{fs_root} is not accessible or is not a directory."),
+            107,
+        ));
+    }
+    cp_r_contents(root, dest).map_err(|_| {
+        TebakoError::new(
+            format!("{fs_root} does not exist or is not accessible."),
+            107,
+        )
+    })
+}
+
+/// cp_r "src/." dest: copy the CONTENTS (including dotfiles), preserving
+/// symlinks and permission bits, like FileUtils.cp_r.
+pub fn cp_r_contents(src: &Path, dest: &Path) -> std::io::Result<()> {
+    for child in fs::read_dir(src)? {
+        let child = child?;
+        let target = dest.join(child.file_name());
+        copy_entry(&child.path(), &target)?;
+    }
+    Ok(())
+}
+
+fn copy_entry(src: &Path, dest: &Path) -> std::io::Result<()> {
+    let meta = fs::symlink_metadata(src)?;
+    if meta.file_type().is_symlink() {
+        let link = fs::read_link(src)?;
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&link, dest)?;
+        #[cfg(windows)]
+        {
+            if link.is_dir() {
+                std::os::windows::fs::symlink_dir(&link, dest)?;
+            } else {
+                std::os::windows::fs::symlink_file(&link, dest)?;
+            }
+        }
+        return Ok(());
+    }
+    if meta.is_dir() {
+        fs::create_dir_all(dest)?;
+        for child in fs::read_dir(src)? {
+            let child = child?;
+            copy_entry(&child.path(), &dest.join(child.file_name()))?;
+        }
+        return Ok(());
+    }
+    fs::copy(src, dest)?;
+    fs::set_permissions(dest, meta.permissions())?;
+    Ok(())
+}
+
+/// DeployHelper#check_solution: the entry point must exist post-deploy.
+fn check_solution(target: &Path, scenario: &ScenarioManager) -> Result<(), TebakoError> {
+    let root = match scenario.scenario {
+        Scenario::SimpleScript | Scenario::Gemfile => "local",
+        Scenario::Gem | Scenario::Gemspec | Scenario::GemspecAndGemfile => "bin",
+    };
+    let fs_entry = format!("{root}/{}", scenario.fs_entrance);
+    println!(
+        "   ... target entry point will be at {}/{}",
+        scenario.fs_mount_point, fs_entry
+    );
+    if target.join(&fs_entry).exists() {
+        Ok(())
+    } else {
+        Err(TebakoError::new(
+            format!("Entry point {fs_entry} does not exist or is not accessible"),
+            106,
+        ))
+    }
+}
+
+fn check_cwd(target: &Path, cwd: Option<&str>) -> Result<(), TebakoError> {
+    let Some(cwd) = cwd else { return Ok(()) };
+    if target.join(cwd).is_dir() {
+        Ok(())
+    } else {
+        Err(TebakoError::new(
+            format!("Package working directory {cwd} does not exist"),
+            108,
+        ))
+    }
+}
+
+/// Packager.align_layout_to_runtime!: rename the image's arch directories
+/// to the runtime's names and drop in the runtime's own rbconfig.rb.
+fn align_layout_to_runtime(data_src_dir: &Path, layout_dir: &Path, ruby_ver: &str) {
+    let api = api_version(ruby_ver);
+    align_stdlib_arch(data_src_dir, layout_dir, &api);
+    align_gem_ext_arch(data_src_dir, layout_dir, &api);
+}
+
+fn align_stdlib_arch(data_src_dir: &Path, layout_dir: &Path, api: &str) {
+    let runtime_arch = arch_dir_of(
+        &layout_dir.join("lib").join("ruby").join(api),
+        "rbconfig.rb",
+    );
+    let image_arch = arch_dir_of(
+        &data_src_dir.join("lib").join("ruby").join(api),
+        "rbconfig.rb",
+    );
+    let (Some(runtime_arch), Some(image_arch)) = (runtime_arch, image_arch) else {
+        return;
+    };
+    if runtime_arch == image_arch {
+        return;
+    }
+    println!("   ... aligning app image layout to the runtime ({image_arch} -> {runtime_arch})");
+    let base = data_src_dir.join("lib").join("ruby").join(api);
+    let _ = fs::rename(base.join(&image_arch), base.join(&runtime_arch));
+    let _ = fs::copy(
+        layout_dir
+            .join("lib")
+            .join("ruby")
+            .join(api)
+            .join(&runtime_arch)
+            .join("rbconfig.rb"),
+        base.join(&runtime_arch).join("rbconfig.rb"),
+    );
+}
+
+fn align_gem_ext_arch(data_src_dir: &Path, layout_dir: &Path, api: &str) {
+    let img_ext = data_src_dir
+        .join("lib")
+        .join("ruby")
+        .join("gems")
+        .join(api)
+        .join("extensions");
+    let rt_ext = layout_dir
+        .join("lib")
+        .join("ruby")
+        .join("gems")
+        .join(api)
+        .join("extensions");
+    let Some(runtime_ext) = first_dir(&rt_ext) else {
+        return;
+    };
+    if !img_ext.is_dir() {
+        return;
+    }
+    let Ok(children) = fs::read_dir(&img_ext) else {
+        return;
+    };
+    for child in children.filter_map(|c| c.ok()) {
+        let name = child.file_name().to_string_lossy().into_owned();
+        if name != runtime_ext && child.path().is_dir() {
+            let _ = fs::rename(child.path(), img_ext.join(&runtime_ext));
+        }
+    }
+}
+
+fn arch_dir_of(dir: &Path, marker: &str) -> Option<String> {
+    let children = fs::read_dir(dir).ok()?;
+    for child in children.filter_map(|c| c.ok()) {
+        let name = child.file_name().to_string_lossy().into_owned();
+        if dir.join(&name).join(marker).is_file() {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn first_dir(dir: &Path) -> Option<String> {
+    let children = fs::read_dir(dir).ok()?;
+    for child in children.filter_map(|c| c.ok()) {
+        if child.path().is_dir() {
+            return Some(child.file_name().to_string_lossy().into_owned());
+        }
+    }
+    None
+}
+
+/// Packager.write_entry_dispatcher: the runtime's compiled-in entry point
+/// is /local/stub.rb; the dispatcher receives control and loads the real
+/// entry point (replicating the bundle-mode working directory when --cwd
+/// was given).
+fn write_entry_dispatcher(data_src_dir: &Path, scenario: &ScenarioManager, cwd: Option<&str>) {
+    let mut dispatcher = String::new();
+    if let Some(cwd) = cwd {
+        dispatcher.push_str(&format!(
+            "Dir.chdir(\"{}/{cwd}\")\n",
+            scenario.fs_mount_point
+        ));
+    }
+    dispatcher.push_str(&format!(
+        "load \"{}{}\"\n",
+        scenario.fs_mount_point, scenario.fs_entry_point
+    ));
+    let local = data_src_dir.join("local");
+    let _ = fs::create_dir_all(&local);
+    let _ = fs::write(local.join("stub.rb"), dispatcher);
+}
+
+/// ScenarioManagerBase#ncores (sysctl/nproc, 4 on failure).
+fn ncores() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+}
