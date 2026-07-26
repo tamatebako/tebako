@@ -48,6 +48,7 @@ spec 02 §5).
 13. [13 — Factories and releases](13-factories-and-releases.md) — source/runtime factories, drift loop, pipelines
 14. [14 — Engineering process](14-process.md) — design → implementation → validation order, coding rules
 15. [15 — The info surface](15-info-command.md) — payload and package introspection (`tfs info` / `tebako-pkg info`), verification exit codes, JSON contract
+16. [16 — Distribution and installation](16-distribution-and-installation.md) — personas, channels (brew/curl|sh/tebako install), slim/fat, trust per channel
 
 ## Locked invariants (all specs subordinate to these)
 
