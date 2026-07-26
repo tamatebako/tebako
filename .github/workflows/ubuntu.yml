@@ -302,6 +302,11 @@ jobs:
   test-on-ubuntu-newer:
     name: cross-test on ${{ matrix.os }}
     needs: tests-1
+    # Run even when a tests-1 leg failed: the 4.0.6 linux-gnu legs are red by
+    # upstream defect (statx shim, fixed in tamatebako/ruby v0.2.8 -- green
+    # once tebako-runtime-ruby ships rebuilt 4.0.6 packages) and must not take
+    # the downstream coverage with them
+    if: ${{ !cancelled() }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
