@@ -9,7 +9,8 @@
 use std::collections::BTreeMap;
 use std::sync::RwLock;
 
-use crate::backend::{Backend, EntryType, RawDirEntry, RawStat};
+use crate::backend::{Backend, EntryType, RawDirEntry, RawStat, WritableBackend};
+use crate::mount::MountMode;
 use crate::policy::{HostAccess, HostPolicy};
 
 /// Flag bit distinguishing libtfs FDs from host OS FDs.
@@ -67,6 +68,8 @@ pub struct Mount {
     pub archive_path: Option<Box<std::ffi::CString>>,
     /// The backend.
     pub backend: Box<dyn Backend>,
+    /// Mount mode (spec 11 §3; writes on RO mounts fail with EROFS).
+    pub mode: MountMode,
 }
 
 /// One open file descriptor.
@@ -265,7 +268,9 @@ impl FsContext {
             self.host_check(path, need)?;
             return Err(libc::ENOENT);
         };
-        // Only O_RDONLY is supported (memfs paths).
+        // Only O_RDONLY is supported: fd-based writes land with the
+        // spec 11 §7 write family; path-level writes (pwrite_path & co)
+        // are gated by the mount mode.
         if (flags & libc::O_ACCMODE) != libc::O_RDONLY {
             return Err(libc::EROFS);
         }
@@ -490,6 +495,54 @@ impl FsContext {
         let (_, entry) = self.lookup_fd(fd).ok_or(libc::EBADF)?;
         let path = entry.path.clone();
         self.stat(&path)
+    }
+
+    // ---------------------------------------------------------------
+    // Write operations (mount-mode gated; spec 11 §3/§4)
+    //
+    // Path-level writes route to the backend's WritableBackend view:
+    // RO mounts fail EROFS (unchanged behavior), mounts whose backend
+    // has no write view fail ENOTSUP. fd-based writes (the spec 11 §7
+    // write family) are a later, additive milestone.
+    // ---------------------------------------------------------------
+
+    /// The writable backend owning `path`, with the in-image path.
+    fn writable_for(&self, path: &str) -> Result<(&dyn WritableBackend, String), i32> {
+        if self.mounts.is_empty() {
+            return Err(libc::ENODEV);
+        }
+        let mount = self.find_mount(path).ok_or(libc::ENOENT)?;
+        if mount.mode == MountMode::ReadOnly {
+            return Err(libc::EROFS);
+        }
+        let rel = Self::relative_path(mount, path).to_string();
+        let w = mount.backend.writable().ok_or(libc::ENOTSUP)?;
+        Ok((w, rel))
+    }
+
+    /// Write `data` at `offset` in `path` (COW: copy-up into the overlay).
+    pub fn pwrite_path(&self, path: &str, data: &[u8], offset: u64) -> Result<usize, i32> {
+        let (w, rel) = self.writable_for(path)?;
+        w.pwrite(&rel, data, offset)
+    }
+
+    /// Truncate `path` to `len` bytes.
+    pub fn truncate_path(&self, path: &str, len: u64) -> Result<(), i32> {
+        let (w, rel) = self.writable_for(path)?;
+        w.truncate(&rel, len)
+    }
+
+    /// Create a single directory.
+    pub fn mkdir_path(&self, path: &str, perms: u32) -> Result<(), i32> {
+        let (w, rel) = self.writable_for(path)?;
+        w.mkdir(&rel, perms)
+    }
+
+    /// Remove a file, symlink or empty directory (COW: whiteouts the
+    /// base entry).
+    pub fn remove_path(&self, path: &str) -> Result<(), i32> {
+        let (w, rel) = self.writable_for(path)?;
+        w.remove(&rel)
     }
 
     // ---------------------------------------------------------------

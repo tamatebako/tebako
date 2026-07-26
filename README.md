@@ -42,6 +42,45 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (milestone 9)
+
+- **tfs: tar/tar.gz/tar.zst backend (pure Rust, read-only)** — roadmap 13's
+  tar adapter (`backends_tar.rs`): a mount-time offset index built in ONE
+  streaming pass (ustar/GNU-longname/pax via the `tar` crate), directories
+  synthesized from entry paths, hard links resolved at lookup, GNU sparse
+  files stat-only (pread → ENOTSUP), duplicate names last-wins. Detection
+  follows spec 11 §3: strong magic first, the tar header-checksum heuristic
+  LAST (gzip/zstd envelopes claim tar since it is the only gzip/zstd
+  payload). Random access: plain tar does positioned reads (1 GiB archive,
+  512 scattered preads: **+1.6 MiB peak RSS vs the 64 MiB budget**);
+  tar.gz resumes from cloned miniz_oxide `InflateState` checkpoints every
+  16 MiB of uncompressed stream (~0.2 % memory, the zran pattern, no C
+  zlib); tar.zst uses a forward-only ruzstd cursor (cold backward seeks
+  re-decode from the start — documented cost model, no state snapshots
+  exist in pure Rust). Memory profile documented in the module docs.
+
+- **tfs: COW overlay + mount modes (spec 11 §3/§4, the transforms law)** —
+  `CowBackend { base, overlay }` (`backends_cow.rs`) stacks any image
+  backend over `HostDirBackend` (`backends_hostdir.rs`, a host directory
+  exposed as a TFS backend — independently useful, disposable by
+  deletion). Reads fall through to the base unless shadowed; writes and
+  deletes land in the overlay only (base files copy up on first write);
+  deletes record whiteouts in `.tfs-whiteouts` inside the overlay (strict
+  v1 text format, atomic rewrites — the complete delete-side audit
+  delta). Whiteouts mask base entries only: an overlay entry of the same
+  name always wins (upper-replaces-whiteout, overlayfs semantics). The
+  base image is byte-identical after unmount (proven in tests). Mount
+  modes wire through every mount entry point: `TEBAKO_MOUNT_RO` (0,
+  default — writes EROFS, behavior unchanged), `TEBAKO_MOUNT_COW` (1,
+  overlay dir created when missing), `TEBAKO_MOUNT_RW` (2, honestly
+  ENOTSUP — no in-tree backend writes in place). Additive ABI:
+  `tebako_fs_mount_from_{file,file_at,memory}_with_mode`; the legacy
+  entry points delegate as RO. Path-level writes route through the
+  context (`pwrite_path`/`truncate_path`/`mkdir_path`/`remove_path`);
+  the fd-based write family (spec 11 §7) stays PLANNED. Write support
+  lives ONLY in the composite layer — format backends never learn to
+  write (spec 00, invariant 5).
+
 ### PARTIAL (roadmap 07)
 
 - **`crates/tebako-resolve` — references, fetch, payload cache** (spec
