@@ -14,9 +14,7 @@ use std::path::{Path, PathBuf};
 
 use tpkg::{Crc32, Manifest, Slot, TpkgError};
 
-mod json;
-
-pub use json::{escape as json_escape, parse as json_parse, Value as JsonValue};
+pub use tebako_json::{escape as json_escape, parse as json_parse, Value as JsonValue};
 
 /// Copy chunk size (1 MiB, like the C++ side).
 const COPY_BUF: usize = 1 << 20;

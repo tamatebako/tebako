@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/tpkg", "crates/tfs", "crates/sqfs-sys", "crates/tebako-pkg", "crates/tfs-cli", "crates/tebako-bootstrap", "crates/tebako-cli", "crates/tebako-http", "crates/tebako-signer", "crates/tebako-shim", "tests/contract"]
+
+members = ["crates/tpkg", "crates/tfs", "crates/sqfs-sys", "crates/tebako-pkg", "crates/tfs-cli", "crates/tebako-bootstrap", "crates/tebako-cli", "crates/tebako-http", "crates/tebako-signer", "crates/tebako-shim", "crates/tebako-json", "crates/tebako-resolve", "tests/contract"]
 
 [workspace.package]
 version = "0.1.0"

@@ -42,6 +42,24 @@ Rust-consumable surface for it.
 
 ## Status
 
+### PARTIAL (roadmap 07)
+
+- **`crates/tebako-resolve` — references, fetch, payload cache** (spec
+  04/05): the MECE reference parser (`tfs:github:` / `tfs:gitlab:` /
+  `tfs:bb:` / `tfs+git://` / `tfs+https://` / bare `https://` /
+  `file://`, `?sha256=<hex>` pin on any class — no default service,
+  unknown forms are a named error listing the classes; proptest
+  round-trip + never-panic), a fetcher over an injected `Transport`
+  (tebako-http in production, mocks in tests; `tfs+git:` via gitoxide —
+  never the git CLI — with GitHub/GitLab/Bitbucket release-API adapters
+  behind one trait), and the shared `~/.tebako/payloads/<name>/<version>.tfs`
+  cache (per-entry flock 120 s, tmp+rename, 0444 + `.sha256` trust
+  anchor + `.origin` markers, `TEBAKO_OFFLINE` hard error, digest
+  mismatch caches nothing). Pure-cargo. Remaining: `tpkg-registry.yaml`
+  listing/resolution (spec 04 §2) and CLI wiring. The workspace JSON
+  parser moved to **`crates/tebako-json`** (re-exported by tebako-pkg —
+  API unchanged) so the release adapters stay free of native deps.
+
 ### SHIPPED (milestone 8)
 
 - **Runtime-as-image, consumer side (item 30b)**: the runtime splits into

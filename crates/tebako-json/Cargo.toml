@@ -1,0 +1,17 @@
+[package]
+name = "tebako-json"
+description = "Minimal JSON for the tebako stack: exact-format writer + small recursive parser, no serde (extracted from tebako-pkg)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "json", "parser"]
+categories = ["parser-implementations"]
+
+[dependencies]
+
+[lib]
+name = "tebako_json"
+path = "src/lib.rs"

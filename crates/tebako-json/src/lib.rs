@@ -1,7 +1,10 @@
-//! Minimal JSON for manifest.json: an exact-format writer (mirrors the C++
-//! `package.cpp` output byte for byte) and a small recursive parser
-//! (mirrors the C++ `JsonParser` semantics for the fields reassemble
-//! needs). No serde — the wire format is fixed and tiny.
+//! Minimal JSON for the tebako stack: an exact-format writer (mirrors the
+//! C++ `package.cpp` output byte for byte) and a small recursive parser
+//! (mirrors the C++ `JsonParser` semantics for the fields consumers
+//! need). No serde — the wire formats are fixed and tiny.
+//!
+//! One owner, two consumers: tebako-pkg (manifest.json reassembly) and
+//! tebako-resolve (release-API responses).
 
 /// Escape a string for JSON output (mirrors the C++ `json_escape`).
 pub fn escape(s: &str) -> String {
