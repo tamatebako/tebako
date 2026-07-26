@@ -15,6 +15,7 @@ use crate::backend::EntryType;
 use crate::context::{context, TebakoCDirent, TEBAKO_FD_FLAG};
 use crate::errno::{get_errno, set_errno, strerror};
 use crate::mount;
+use crate::policy::{HostAccess, HostMountSpec, HostPolicy};
 
 /// Convert a borrowed C string argument to &str (EINVAL on NULL/non-UTF-8).
 ///
@@ -70,6 +71,15 @@ pub unsafe extern "C" fn tebako_fs_init_from_file_at(
     };
     if mount_point.is_empty() {
         return fail(libc::EINVAL);
+    }
+    // Reading the image off the host is a host-passthrough decision:
+    // the policy gates it (spec 08; a no-op under the default open policy).
+    if let Err(e) = context()
+        .read()
+        .unwrap()
+        .host_check(archive_path, HostAccess::Ro)
+    {
+        return fail(e);
     }
     let mount = match mount::build_from_file_at(archive_path, offset, length, mount_point) {
         Ok(m) => m,
@@ -558,6 +568,14 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file(
     if mount_point.is_empty() {
         return fail(libc::EINVAL);
     }
+    // Reading the image off the host is a host-passthrough decision (spec 08).
+    if let Err(e) = context()
+        .read()
+        .unwrap()
+        .host_check(archive_path, HostAccess::Ro)
+    {
+        return fail(e);
+    }
     finish_mount(
         mount::build_from_file(archive_path, mount_point),
         out_handle,
@@ -587,6 +605,14 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file_at(
     };
     if mount_point.is_empty() {
         return fail(libc::EINVAL);
+    }
+    // Reading the image off the host is a host-passthrough decision (spec 08).
+    if let Err(e) = context()
+        .read()
+        .unwrap()
+        .host_check(archive_path, HostAccess::Ro)
+    {
+        return fail(e);
     }
     finish_mount(
         mount::build_from_file_at(archive_path, offset, length, mount_point),
@@ -762,4 +788,102 @@ pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_cha
     unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr().cast(), out, bytes.len()) };
     set_errno(0);
     out
+}
+
+// ===================================================================
+// Host-Access Policy (Jails, spec 08)
+// ===================================================================
+
+/// `tebako_host_mount_t` from spec 08 §3: one host-mount grant
+/// (docker `-v host:mount:access` semantics).
+#[repr(C)]
+pub struct TebakoHostMount {
+    /// Host directory; realpath-canonicalized at bind time.
+    pub host: *const c_char,
+    /// Virtual mount point the host dir is exposed at; must be absolute.
+    pub mount: *const c_char,
+    /// Access grant: 0 = read-only, 1 = read-write.
+    pub access: libc::c_int,
+}
+
+/// `tebako_fs_host_policy`: install the host-access policy (spec 08 §3),
+/// replacing any previous one.
+///
+/// `default_open != 0` keeps today's pass-through as the namespace default;
+/// `default_open == 0` denies every host path not covered by a mount grant
+/// or an argument file. Mount sources and argument files are
+/// realpath-canonicalized NOW (a missing one fails the call with its
+/// errno); enforcement re-canonicalizes on each IO route, so symlinks
+/// swapped in after this call resolve to their target and escapes fail.
+///
+/// Enforcement: the host-passthrough path of every IO route — open, stat,
+/// opendir, dlmap2file, extract_all's destination, and the mount family's
+/// image read — answers EPERM (denied) / EROFS (write against an ro grant)
+/// instead of the ENOENT that tells the consumer to fall through to the
+/// host fs. memfs mounts are unaffected. The policy is process state:
+/// `tebako_fs_unmount` does NOT reset it (fail-closed). Install it after
+/// the payload mounts are established — the mount family itself is
+/// policy-gated once a policy is active.
+///
+/// # Safety
+/// C ABI entry point: `mounts` must point to `n_mounts` valid entries and
+/// `arg_files` to `n_arg_files` C-string pointers; either may be NULL when
+/// its count is 0.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_host_policy(
+    default_open: libc::c_int,
+    mounts: *const TebakoHostMount,
+    n_mounts: usize,
+    arg_files: *const *const c_char,
+    n_arg_files: usize,
+) -> libc::c_int {
+    if n_mounts > 0 && mounts.is_null() {
+        return fail(libc::EINVAL);
+    }
+    if n_arg_files > 0 && arg_files.is_null() {
+        return fail(libc::EINVAL);
+    }
+    // SAFETY: counts NULL-checked above; entries valid per the C contract.
+    let mounts: &[TebakoHostMount] = if n_mounts == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(mounts, n_mounts) }
+    };
+    let mut specs = Vec::with_capacity(n_mounts);
+    for m in mounts {
+        let (host, mount) = match (unsafe { path_arg(m.host) }, unsafe { path_arg(m.mount) }) {
+            (Ok(h), Ok(v)) => (h, v),
+            _ => return fail(libc::EINVAL),
+        };
+        let access = match m.access {
+            0 => HostAccess::Ro,
+            1 => HostAccess::Rw,
+            _ => return fail(libc::EINVAL),
+        };
+        specs.push(HostMountSpec {
+            host: std::path::PathBuf::from(host),
+            mount: mount.to_string(),
+            access,
+        });
+    }
+    // SAFETY: same contract as mounts.
+    let arg_files: &[*const c_char] = if n_arg_files == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(arg_files, n_arg_files) }
+    };
+    let mut files = Vec::with_capacity(n_arg_files);
+    for &f in arg_files {
+        match unsafe { path_arg(f) } {
+            Ok(f) => files.push(std::path::PathBuf::from(f)),
+            Err(e) => return fail(e),
+        }
+    }
+    let policy = match HostPolicy::bind(default_open != 0, specs, files) {
+        Ok(p) => p,
+        Err(e) => return fail(e),
+    };
+    context().write().unwrap().set_host_policy(policy);
+    set_errno(0);
+    0
 }

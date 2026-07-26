@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::RwLock;
 
 use crate::backend::{Backend, EntryType, RawDirEntry, RawStat};
+use crate::policy::{HostAccess, HostPolicy};
 
 /// Flag bit distinguishing libtfs FDs from host OS FDs.
 pub const TEBAKO_FD_FLAG: i32 = 0x4000_0000;
@@ -111,6 +112,12 @@ pub struct FsContext {
     /// dlmap2file cache: memfs path -> extracted host path. Extractions
     /// live for the process run and are removed at teardown (atexit).
     dl_cache: BTreeMap<String, std::path::PathBuf>,
+    /// Host-access policy (spec 08 jails): consulted on every
+    /// host-passthrough path decision (a path no memfs mount claims, and
+    /// the mount family's image read). Process state, not namespace state:
+    /// `unmount()` deliberately does NOT reset it (fail-closed); only the
+    /// `tebako_fs_host_policy` C entry replaces it.
+    host_policy: HostPolicy,
 }
 
 impl FsContext {
@@ -125,7 +132,28 @@ impl FsContext {
             compat_handle: None,
             dl_tmpdir: None,
             dl_cache: BTreeMap::new(),
+            host_policy: HostPolicy::open(),
         }
+    }
+
+    // ---------------------------------------------------------------
+    // Host-access policy (spec 08)
+    // ---------------------------------------------------------------
+
+    /// Install the host-access policy, replacing the current one.
+    pub fn set_host_policy(&mut self, policy: HostPolicy) {
+        self.host_policy = policy;
+    }
+
+    /// Gate one host-passthrough path decision against the policy.
+    /// Ok(()) = allowed (answer ENOENT, the consumer passes through to the
+    /// host fs as today); Err(EPERM)/Err(EROFS) = the jail's answer.
+    pub fn host_check<P: AsRef<std::path::Path>>(
+        &self,
+        path: P,
+        need: HostAccess,
+    ) -> Result<(), i32> {
+        self.host_policy.check(path.as_ref(), need)
     }
 
     // ---------------------------------------------------------------
@@ -223,11 +251,24 @@ impl FsContext {
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
-        // Only O_RDONLY is supported.
+        let Some(mount) = self.find_mount(path) else {
+            // Host-passthrough decision (spec 08): the policy gates the
+            // consumer's fall-through to the host fs, for reads AND writes
+            // alike — Ok => ENOENT ("not ours, pass through", today's
+            // answer); Err => EPERM (outside every grant under deny) or
+            // EROFS (write against an ro grant).
+            let need = if (flags & libc::O_ACCMODE) == libc::O_RDONLY {
+                HostAccess::Ro
+            } else {
+                HostAccess::Rw
+            };
+            self.host_check(path, need)?;
+            return Err(libc::ENOENT);
+        };
+        // Only O_RDONLY is supported (memfs paths).
         if (flags & libc::O_ACCMODE) != libc::O_RDONLY {
             return Err(libc::EROFS);
         }
-        let mount = self.find_mount(path).ok_or(libc::ENOENT)?;
         let rel = Self::relative_path(mount, path);
         let st = mount.backend.stat(rel)?;
         match st.entry_type {
@@ -346,7 +387,11 @@ impl FsContext {
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
-        let mount = self.find_mount(path).ok_or(libc::ENOENT)?;
+        let Some(mount) = self.find_mount(path) else {
+            // Host-passthrough decision (spec 08), see open().
+            self.host_check(path, HostAccess::Ro)?;
+            return Err(libc::ENOENT);
+        };
         let rel = Self::relative_path(mount, path);
         let entries = mount.backend.read_dir(rel)?;
         let owner = mount.handle;
@@ -431,7 +476,11 @@ impl FsContext {
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
-        let mount = self.find_mount(path).ok_or(libc::ENOENT)?;
+        let Some(mount) = self.find_mount(path) else {
+            // Host-passthrough decision (spec 08), see open().
+            self.host_check(path, HostAccess::Ro)?;
+            return Err(libc::ENOENT);
+        };
         let rel = Self::relative_path(mount, path);
         mount.backend.stat(rel)
     }
@@ -462,6 +511,9 @@ impl FsContext {
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
+        // The destination is a host-WRITE decision (spec 08): the policy
+        // must grant it before any memfs content lands on the host.
+        self.host_check(dest, HostAccess::Rw)?;
         if std::fs::create_dir_all(dest).is_err() {
             return Err(libc::EIO);
         }
@@ -489,7 +541,13 @@ impl FsContext {
     /// tebako_fs_dlmap2file: extract a memfs file to a host path for
     /// dlopen, with per-process cache and tmpdir (legacy semantics).
     pub fn dlmap2file(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
-        let mount = self.find_mount(path).ok_or(libc::ENOENT)?;
+        let Some(mount) = self.find_mount(path) else {
+            // Host-passthrough decision (spec 08), see open(). The tmpdir
+            // writes dlmap2file itself performs are process-internal and
+            // not policy-gated.
+            self.host_check(path, HostAccess::Ro)?;
+            return Err(libc::ENOENT);
+        };
         let owner = mount.handle;
         let mount_point = mount.mount_point.clone();
         let rel_owned = Self::relative_path(mount, path).to_string();

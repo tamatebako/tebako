@@ -109,6 +109,8 @@ zero privileges, every platform, in-process speed.
 Current: mount/multi-mount family, stat/pread/dir family (incl.
 `rewinddir`, `telldir`/`seekdir` index cookies, `dir_is_embedded`),
 `extract_all`, `dlmap2file` (memfs path → host cache for dlopen),
+`tebako_fs_host_policy` + `tebako_host_mount_t` (spec 08 jails — gates
+the host-passthrough path of every IO route; additive),
 `abi_version()` = 1. Write family (gated by mount mode): write/pwrite/
 mkdir/rmdir/unlink/rename/chmod/utimens/truncate/fsync + mount-with-mode
 entry points — ADDITIVE; RO-only consumers see zero change; abi version
