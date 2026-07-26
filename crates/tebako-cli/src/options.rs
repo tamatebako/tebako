@@ -57,6 +57,12 @@ pub struct PressOptions {
     pub bootstrap: Option<PathBuf>,
     /// tebako version (runtime release + runtime_ref), default crate const.
     pub tebako_version: String,
+    /// --prefer-local: restore the gem-era `bundle install --prefer-local`
+    /// (resolution prefers the runtime's own gems — bundled/default gems
+    /// are used in place). Off by default: a remote (re)resolution under
+    /// --prefer-local degrades to dependency-free gems (fontist 3.0.10
+    /// came out as 0.1.0). A no-op with a complete Gemfile.lock.
+    pub prefer_local: bool,
     pub verbose: bool,
     /// -D/--devmode: skip the cache version guard.
     pub devmode: bool,

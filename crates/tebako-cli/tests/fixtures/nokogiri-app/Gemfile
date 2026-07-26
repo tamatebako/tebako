@@ -1,0 +1,4 @@
+source "https://rubygems.org"
+ruby "3.3.7"
+
+gem "nokogiri", "1.19.4"

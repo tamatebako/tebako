@@ -1,0 +1,20 @@
+source "https://rubygems.org"
+ruby "3.3.7"
+
+gem "fontist", "3.0.10"
+
+# Native default/bundled gems pinned to the versions the tebako runtime
+# carries (their C extensions are linked into the runtime itself): a
+# newer ruby-platform release needs a source build the packaging
+# environment cannot perform (no headers; the RuntimeSdk is roadmap 25
+# item 1).
+gem "bigdecimal", "3.1.5"
+gem "json", "2.7.2"
+gem "racc", "1.7.3"
+
+# liquid >= 5.5 depends on strscan (>= 3.1.1; the runtime carries 3.0.9,
+# C extension) — 5.4.0 is dependency-free and satisfies lutaml-model.
+gem "liquid", "5.4.0"
+
+# minitest >= 6 depends on prism (C extension, ruby-platform only).
+gem "minitest", "< 6"

@@ -33,7 +33,9 @@ pub fn strip(src_dir: &Path, exe_suffix: &str) {
 fn strip_file(file: &Path) {
     let out = Command::new("strip").args(["-S"]).arg(file).output();
     match out {
-        Ok(o) if o.status.success() => {}
+        Ok(o) if o.status.success() => {
+            resign_after_strip(file);
+        }
         Ok(o) => {
             let text = String::from_utf8_lossy(&o.stdout).into_owned()
                 + &String::from_utf8_lossy(&o.stderr);
@@ -48,6 +50,32 @@ fn strip_file(file: &Path) {
         }
     }
 }
+
+/// strip -S rewrites the file and thereby invalidates any embedded code
+/// signature ("changes being made to the file will invalidate the code
+/// signature"). On macOS arm64 every mapped page must be signed — the
+/// kernel kills the dlopen of a modified-after-sign .bundle (AMFI
+/// cs_invalid_page), which breaks precompiled platform gems (nokogiri &
+/// co.) at package runtime. Re-sign ad-hoc, best-effort, like the
+/// stitcher's package re-sign.
+#[cfg(target_os = "macos")]
+fn resign_after_strip(file: &Path) {
+    let ok = Command::new("codesign")
+        .args(["--sign", "-", "--force"])
+        .arg(file)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    if !ok {
+        println!(
+            "Warning: could not ad-hoc re-sign {} after stripping",
+            file.display()
+        );
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn resign_after_strip(_file: &Path) {}
 
 fn strip_bs(src_dir: &Path) {
     let _ = std::fs::remove_dir_all(src_dir.join("share"));

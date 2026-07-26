@@ -8,7 +8,7 @@ design): a port of the reference Ruby gem's lean/fat press
 $ tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>]
                [-c <cwd>] [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
-               [--tebako-version <v>]
+               [--tebako-version <v>] [--prefer-local]
 $ tebako cache list
 $ tebako cache prune [--all] [--older-than Nd]
 ```
@@ -46,13 +46,19 @@ the launcher ABI.
 - **simple script** (`-e app.rb` or a root without Gemfile/*.gem) — the
   script tree is packaged as-is, no deploy step;
 - **Gemfile** (`<root>/Gemfile`) — `bundle config set --local` for
-  ffi/nokogiri/force_ruby_platform (+ openssl when a libtfs-deps vcpkg
-  tree is provisioned) and `bundle install --jobs=N --prefer-local`,
-  executed inside the runtime's own ruby. `Gemfile.lock` pins the bundler
-  version (`BUNDLED WITH`, minimum 2.4.22); the Gemfile `ruby` directive
-  selects the runtime's ruby version. Gems with **native extensions**
-  build inside the deploy driver against the runtime SDK (below) — the
-  built artifacts land at their gem-correct paths inside the app image.
+  dependencies, executed inside the runtime's own ruby (`bundle config
+  set --local` + `bundle install --jobs=N`; the gem's unconditional
+  `--prefer-local` degrades remote resolution to dependency-free gems —
+  it is an opt-in press flag, a no-op with a complete lockfile; its
+  `force_ruby_platform=true` is NOT emitted — precompiled platform gems
+  are the default). `Gemfile.lock` pins the bundler version (`BUNDLED
+  WITH`, minimum 2.4.22); the Gemfile `ruby` directive selects the
+  runtime's ruby version. Gems with **native extensions** use
+  precompiled platform gems when available, else build inside the
+  deploy driver against the runtime SDK (below) — the built artifacts
+  land at their gem-correct paths inside the app image. The deploy's
+  strip re-signs ad-hoc on macOS so precompiled .so/.bundle stay
+  loadable.
 
 ## RuntimeSdk (native-extension deploy)
 
@@ -89,7 +95,22 @@ the ruby shim, whose script mode emulates the ruby command line:
 recorded toolchain against the press host. Failures are named errors:
 135 (missing headers/configure/nm/stub/platform mismatch), 122 (src
 download), 125 (SDK lock timeout).
-
+=======
+  ffi/nokogiri build hints (+ openssl when a libtfs-deps vcpkg tree is
+  provisioned) and `bundle install --jobs=N`, executed inside the
+  runtime's own ruby. Resolution uses the modern compact index, so
+  precompiled platform gems are installed as-is (nokogiri & co. — no
+  source build); bundler falls back to the ruby (source) platform only
+  for gems without a precompiled variant. `Gemfile.lock` pins the
+  bundler version (`BUNDLED WITH`, minimum 2.4.22); the Gemfile `ruby`
+  directive selects the runtime's ruby version. `--prefer-local`
+  restores the gem-era `bundle install --prefer-local`: resolution then
+  prefers the runtime's own gems, so bundled/default gems are used in
+  place (their statically linked extensions own their namespaces — and
+  the runtime's bundled native gems, racc & co., need no source build).
+  Use it when every native dependency of the app is a bundled/default
+  gem of the runtime; with a complete `Gemfile.lock` the flag is a
+  no-op (locked specs are installed as resolved).
 ## Where the pieces come from
 
 - **runtime**: `~/.tebako/runtimes/...` (downloaded from the
@@ -137,6 +158,31 @@ download), 125 (SDK lock timeout).
   **classic** press mode, `tebako setup/clean/hash`, and `.tebako.yml`
   are later milestones (the `runtime` mode is rejected with exit 133
   like the gem);
+- the gem's **bundler deploy behavior is modernized** (fontist
+  feedstock, roadmap 25 items 4–5): the gem passes `bundle install
+  --prefer-local` unconditionally, but a remote (re)resolution under
+  `--prefer-local` restricts candidates to runtime-local gems and
+  backtracks to dependency-free versions (fontist 3.0.10 came out as
+  0.1.0); in environments without the compact index the fetch layer
+  additionally falls back to the retired rubygems dependency API (404
+  "The dependency API has gone away"), to the same effect. The CLI
+  resolves through the compact index by default and keeps
+  `--prefer-local` as an opt-in press flag (a no-op with a complete
+  lockfile). Likewise the gem's unconditional
+  `force_ruby_platform=true` bundle config is not emitted: it is viable
+  only with the (unported) RuntimeSdk supplying build headers, and
+  otherwise forces precompiled platform gems into doomed source builds.
+  Gems without a precompiled variant still take the ruby-platform
+  source-build path — bundler's own fallback, the correct trigger;
+- the deploy's strip step **re-signs ad-hoc after stripping** on macOS
+  (the gem does not): `strip -S` invalidates the embedded signature of
+  precompiled .so/.bundle files, and arm64 kernels kill the dlopen of a
+  modified-after-sign binary (AMFI `cs_invalid_page`) — precompiled
+  platform gems must survive strip to load at package runtime;
+- the **gem/gemspec scenarios** (which ride the `bundle_exec` op and the
+  SDK), the **classic** press mode, `tebako setup/clean/hash`, and
+  `.tebako.yml` are later milestones (the `runtime` mode is rejected with
+  exit 133 like the gem);
 - the bundler version for a lockfile-less Gemfile that pins bundler is
   taken from rubygems' `latest.json` (the gem's SpecFetcher picks the
   latest released bundler satisfying the requirement — identical unless
