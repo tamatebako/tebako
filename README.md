@@ -371,6 +371,48 @@ Without default features the workspace is pure-cargo. CI: ubuntu-24.04 +
 macos-14 with the dwarfs-t vcpkg baseline pinned plus an archive cache
 keyed on both manifests, and a separate `--no-default-features` leg.
 
+## Releasing (item 31)
+
+Tags `v*` run [.github/workflows/release.yml](.github/workflows/release.yml)
+(the parsanol-rs shape: prepare → native runners per platform → upload):
+each builds the four binaries with the release profile (vendored
+dwarfs-t/sqfs via vcpkg — no vcpkg in the consumer path), strips them,
+and publishes the size table; `tebako-bootstrap` is hard-gated at
+**< 3 MB** (item 22's extended budget).
+
+- **Artifacts** per platform, raw binaries named
+  `<tool>-<version>-<platform>`: `tebako-bootstrap` (the lean/fat
+  launcher), `tfs` (the VFS image tool), `tebako-pkg` (trailer surgery),
+  `tebako` (the packager CLI).
+- **Platforms**: `macos-arm64`, `macos-x86_64`, `linux-gnu-x86_64`,
+  `linux-gnu-arm64` (native runners, including `ubuntu-24.04-arm`),
+  `linux-musl-x86_64`, `linux-musl-arm64` (Alpine containers via
+  `docker run` from the host — node actions cannot run on musl; vcpkg
+  bootstrapped from source with the musl overlay triplets, the proven
+  native-musl path — see `ci/musl-build.sh`). Windows (ucrt64) is a
+  disabled leg with the blockers documented in the workflow
+  (dwarfs-t-sys's windows state, sqfs POSIX-only, the bootstrap's
+  exec/lock ports).
+- **Integrity**: `SHA256SUMS` over every asset from day one; detached
+  OpenPGP signatures slot into the finalize job with item 29 phase 2's
+  tooling (no restructuring — unsigned is a supported state).
+- **manifest.json** in exactly the shape the gem's BootstrapManager and
+  tebako-cli's resolution consume today (`assets[]` per platform for the
+  bootstrap, plus an additive `tools` map for the other binaries).
+- The finalize job carries the item-11 completeness gate: the release
+  fails unless every expected asset (4 × platforms + sums + manifest)
+  actually landed.
+
+**Consuming the Rust bootstrap today** (before the repo switch flips):
+```console
+$ export TEBAKO_BOOTSTRAP_MIRROR=https://github.com/tamatebako/tebako-rs/releases/download
+$ export TEBAKO_BOOTSTRAP_VERSION=<tag-minus-v>
+$ tebako press ...   # the gem (or tebako-cli) resolves our tebako-bootstrap
+```
+tebako-cli itself needs no installer: download `tebako-<version>-<platform>`
+onto PATH (a pure-Ruby installer shim for the `gem install tebako` habit
+is the gem-retirement path, item 31's note).
+
 ## License
 
 BSD-2-Clause (same as the tebako C++ project). Note the DwarFS backend

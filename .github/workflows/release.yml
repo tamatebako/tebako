@@ -452,6 +452,7 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           UPLOAD: ${{ needs.prepare.outputs.upload_url }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .github/workflows/lib/finalize.sh
 
       - name: Upload SHA256SUMS
