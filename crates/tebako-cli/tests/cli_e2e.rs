@@ -106,12 +106,29 @@ fn press_env(tag: &str, fixture: &str) -> Option<PressEnv> {
     fs::create_dir_all(&deps_bin).unwrap();
     let mkdwarfs = deps_bin.join(source.file_name().unwrap());
     fs::copy(&source, &mkdwarfs).unwrap();
+    // Seed the CLI's cache version key so the cache guard stays silent
+    // (and does not clean prefix/deps, which carries the mkdwarfs copy).
+    // The golden re-seeds the reference gem's key before the gem press.
+    seed_rs_version_file(&prefix);
     Some(PressEnv {
         work,
         root,
         prefix,
         mkdwarfs,
     })
+}
+
+/// The CLI's own cache version key ("<version> at <crate manifest dir>").
+fn seed_rs_version_file(prefix: &Path) {
+    fs::write(
+        prefix.join("deps").join(".environment.version"),
+        format!(
+            "{} at {}",
+            tebako_cli::DEFAULT_TEBAKO_VERSION,
+            env!("CARGO_MANIFEST_DIR")
+        ),
+    )
+    .unwrap();
 }
 
 fn press_command(env: &PressEnv, entry: &str, output: &Path) -> Command {
@@ -412,6 +429,9 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
     let (code, gem_out) = run(&mut Command::new(&package));
     assert_eq!(code, 0, "gem-pressed binary failed:\n{gem_out}");
 
+    // The gem's press left its own version key; re-seed the CLI's so its
+    // cache guard stays silent as well.
+    seed_rs_version_file(&env.prefix);
     let (code, rs_log) = run(&mut press_command(&env, entry, &package));
     assert!(code == 0, "tebako-rs press failed:\n{rs_log}");
     let (code, rs_out) = run(&mut Command::new(&package));
@@ -454,4 +474,94 @@ fn golden_side_by_side_with_the_gem() {
         "main.rb",
         "Hello from gemfile app with rake ",
     );
+}
+
+#[test]
+fn cache_version_guard_matches_the_gem() {
+    // A press that fails fast (missing root) AFTER the guard ran: the
+    // guard's lines must precede the error, and the guard must act.
+    let run_press = |prefix: &Path, extra: &[&str]| {
+        let mut cmd = Command::new(tebako_bin());
+        cmd.arg("press")
+            .arg("-r")
+            .arg("/nonexistent-tebako-root")
+            .arg("-e")
+            .arg("x.rb")
+            .arg("-p")
+            .arg(prefix)
+            .args(extra);
+        run(&mut cmd)
+    };
+
+    // Fresh prefix: "not recognized" + clean_cache (both lines), then 107.
+    let work = workdir("vcache-fresh");
+    let prefix = work.join("prefix");
+    let (code, out) = run_press(&prefix, &[]);
+    assert_eq!(code, 107, "{out}");
+    assert!(
+        out.contains(
+            "CMake cache version was not recognized, cleaning up\nCleaning tebako packaging environment\n"
+        ),
+        "{out}"
+    );
+
+    // Stale version: "created by a gem version" + clean_cache.
+    let work = workdir("vcache-stale");
+    let prefix = work.join("prefix");
+    let deps = prefix.join("deps");
+    fs::create_dir_all(&deps).unwrap();
+    fs::write(deps.join(".environment.version"), "0.0.0 at somewhere").unwrap();
+    fs::create_dir_all(prefix.join("o")).unwrap();
+    let (code, out) = run_press(&prefix, &[]);
+    assert_eq!(code, 107, "{out}");
+    assert!(
+        out.contains("Tebako cache was created by a gem version 0.0.0 and cannot be used for gem version 0.15.9"),
+        "{out}"
+    );
+    assert!(!deps.exists(), "stale cache must be cleaned");
+    assert!(!prefix.join("o").exists(), "stale output must be cleaned");
+
+    // Foreign source: "different source directory" + clean_output only.
+    let work = workdir("vcache-foreign");
+    let prefix = work.join("prefix");
+    let deps = prefix.join("deps");
+    fs::create_dir_all(&deps).unwrap();
+    fs::write(
+        deps.join(".environment.version"),
+        "0.15.9 at /some/other/source",
+    )
+    .unwrap();
+    fs::create_dir_all(prefix.join("o")).unwrap();
+    let (code, out) = run_press(&prefix, &[]);
+    assert_eq!(code, 107, "{out}");
+    assert!(
+        out.contains(
+            "CMake cache was created for a different source directory '/some/other/source'"
+        ),
+        "{out}"
+    );
+    assert!(deps.exists(), "deps survive a source mismatch");
+    assert!(!prefix.join("o").exists(), "output is cleaned");
+
+    // Own key: silent. Devmode: silent even with a foreign key.
+    let work = workdir("vcache-own");
+    let prefix = work.join("prefix");
+    let deps = prefix.join("deps");
+    fs::create_dir_all(&deps).unwrap();
+    fs::write(
+        deps.join(".environment.version"),
+        format!(
+            "{} at {}",
+            tebako_cli::DEFAULT_TEBAKO_VERSION,
+            env!("CARGO_MANIFEST_DIR")
+        ),
+    )
+    .unwrap();
+    let (code, out) = run_press(&prefix, &[]);
+    assert_eq!(code, 107, "{out}");
+    assert!(!out.contains("CMake cache"), "{out}");
+
+    let (code, out) = run_press(&prefix, &["-D"]);
+    assert_eq!(code, 107, "{out}");
+    assert!(!out.contains("CMake cache"), "{out}");
 }

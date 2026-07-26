@@ -110,6 +110,12 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         check_ruby_version(requested)?;
     }
 
+    // Cli#bootstrap: the cache version guard runs before the press
+    // (skipped in devmode, like the gem).
+    if !opts.devmode {
+        version_cache_check(opts);
+    }
+
     let mut scenario = ScenarioManager::new(&opts.root(), &opts.fs_entrance())?;
     scenario.configure_scenario()?;
 
@@ -425,13 +431,63 @@ fn ensure_version_file(opts: &PressOptions) {
     let deps = opts.deps();
     let _ = fs::create_dir_all(&deps);
     let version_file = deps.join(".environment.version");
-    let src = env!("CARGO_MANIFEST_DIR");
-    if let Err(e) = fs::write(&version_file, format!("{} at {src}", opts.tebako_version)) {
+    if let Err(e) = fs::write(&version_file, version_key(opts)) {
         println!(
             "{} .environment.version: {e}",
             error::packaging_message(201).unwrap_or("Warning. Could not create cache version file")
         );
     }
+}
+
+/// The version key: "<tebako version> at <CLI source dir>" (the gem uses
+/// the gem's source checkout; the CLI uses its crate manifest dir).
+fn version_key(opts: &PressOptions) -> String {
+    format!("{} at {}", opts.tebako_version, env!("CARGO_MANIFEST_DIR"))
+}
+
+/// CacheManager#version_cache_check: a stale or foreign packaging
+/// environment is cleaned up before the press. Missing/unparseable file
+/// → "not recognized" + clean_cache; version mismatch → "created by a
+/// gem version" + clean_cache; source mismatch → "created for a
+/// different source directory" + clean_output.
+fn version_cache_check(opts: &PressOptions) {
+    let version_file = opts.deps().join(".environment.version");
+    let parsed = fs::read_to_string(&version_file).ok().and_then(|content| {
+        let line = content.lines().next()?.to_string();
+        let (version, source) = line.split_once(" at ")?;
+        Some((version.to_string(), source.to_string()))
+    });
+    let Some((version, source)) = parsed else {
+        println!("CMake cache version was not recognized, cleaning up");
+        clean_cache(opts);
+        return;
+    };
+    if version != opts.tebako_version {
+        println!(
+            "Tebako cache was created by a gem version {version} and cannot be used for gem version {}",
+            opts.tebako_version
+        );
+        clean_cache(opts);
+    } else if source != env!("CARGO_MANIFEST_DIR") {
+        println!(
+            "CMake cache was created for a different source directory '{source}' and cannot be used for '{}'",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        clean_output(opts);
+    }
+}
+
+/// clean_cache: rm -rf <prefix>/deps and <prefix>/o.
+fn clean_cache(opts: &PressOptions) {
+    println!("Cleaning tebako packaging environment");
+    let _ = fs::remove_dir_all(opts.deps());
+    let _ = fs::remove_dir_all(opts.output_folder());
+}
+
+/// clean_output: rm -rf <prefix>/o.
+fn clean_output(opts: &PressOptions) {
+    println!("Cleaning CMake cache");
+    let _ = fs::remove_dir_all(opts.output_folder());
 }
 
 // ---------------------------------------------------------------------

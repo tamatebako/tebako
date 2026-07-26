@@ -124,6 +124,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut mkdwarfs: Option<PathBuf> = None;
     let mut bootstrap: Option<PathBuf> = None;
     let mut tebako_version = tebako_cli::DEFAULT_TEBAKO_VERSION.to_string();
+    let mut devmode = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -157,7 +158,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--mkdwarfs" => mkdwarfs = Some(PathBuf::from(take_value(&mut i)?)),
             "--bootstrap" => bootstrap = Some(PathBuf::from(take_value(&mut i)?)),
             "--tebako-version" => tebako_version = take_value(&mut i)?,
-            "-D" | "--devmode" => {}
+            "-D" | "--devmode" => devmode = true,
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
                 return Err(CliExit::Usage(
@@ -206,6 +207,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         bootstrap,
         tebako_version,
         verbose: verbose_mode(),
+        devmode,
         fs_current,
     })
 }

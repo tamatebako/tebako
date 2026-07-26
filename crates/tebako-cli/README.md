@@ -93,9 +93,7 @@ the launcher ABI.
 - images are stitched **densely** (tpkg slots carry absolute offsets; the
   gem's 8-byte alignment padding is cosmetic);
 - the gem's unconditional 5-second press pause runs only when a
-  package/prefix-inside-root warning was actually printed;
-- the cache version file is written but never checked-and-cleaned (the
-  gem's cmake-cache-era guard).
+  package/prefix-inside-root warning was actually printed.
 
 Everything else is byte-level parity: the press stdout, the produced
 package's trailer fields, the packaged binary's output, the cache layout

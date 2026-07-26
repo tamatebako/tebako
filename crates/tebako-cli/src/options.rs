@@ -60,6 +60,8 @@ pub struct PressOptions {
     /// tebako version (runtime release + runtime_ref), default crate const.
     pub tebako_version: String,
     pub verbose: bool,
+    /// -D/--devmode: skip the cache version guard.
+    pub devmode: bool,
     /// Press-time current directory.
     pub fs_current: String,
 }
