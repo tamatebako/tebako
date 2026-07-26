@@ -164,6 +164,98 @@ fn stream_part(
     Ok((n, crc.finish()))
 }
 
+/// Copy `size` bytes at `offset` of `source.path` into `out`, computing
+/// the SHA-256 of the copied bytes in the same pass (used for the v2
+/// trailer's per-slot digests).
+fn stream_part_sha(source: &PartSource, out: &mut fs::File) -> Result<(u64, [u8; 32]), String> {
+    use sha2::Digest;
+
+    let mut input = fs::File::open(&source.path)
+        .map_err(|_| format!("cannot open part file: {}", source.path.display()))?;
+    let file_size = input
+        .metadata()
+        .map_err(|_| format!("cannot open part file: {}", source.path.display()))?
+        .len();
+    if source.offset > file_size {
+        return Err(format!(
+            "part offset {} is beyond the end of file: {}",
+            source.offset,
+            source.path.display()
+        ));
+    }
+    let available = file_size - source.offset;
+    let n = source.length.map_or(available, |l| l.min(available));
+    input
+        .seek(SeekFrom::Start(source.offset))
+        .map_err(|_| format!("read failed: {}", source.path.display()))?;
+
+    let mut buf = vec![0u8; COPY_BUF];
+    let mut h = sha2::Sha256::new();
+    let mut remaining = n;
+    while remaining > 0 {
+        let chunk = remaining.min(buf.len() as u64) as usize;
+        input
+            .read_exact(&mut buf[..chunk])
+            .map_err(|_| format!("read failed: {}", source.path.display()))?;
+        out.write_all(&buf[..chunk])
+            .map_err(|_| "write failed while streaming part".to_string())?;
+        h.update(&buf[..chunk]);
+        remaining -= chunk as u64;
+    }
+    let digest: [u8; 32] = h.finalize().into();
+    Ok((n, digest))
+}
+
+// ---------------------------------------------------------------------
+// trailer signing (item 29: every package is signed)
+// ---------------------------------------------------------------------
+
+/// Sign the trailer of the just-assembled package: compute the v2
+/// extension (per-slot digests, press-local signer keyid, OpenPGP
+/// signature over the canonical trailer bytes) and append the signed v2
+/// trailer. `f` is the package file positioned anywhere (seeked inside).
+/// `m` is updated to version 2 in place.
+fn sign_and_write_trailer(
+    f: &mut fs::File,
+    m: &mut Manifest,
+    digests: &[[u8; 32]],
+) -> Result<(), String> {
+    let home = tebako_signer::default_home().map_err(|e| e.to_string())?;
+
+    // Press-local key (generated on first use) + auto-registration into
+    // the local trusted keyring (item 29 point 7: dev iteration uses the
+    // local press key, registered automatically — never unsigned).
+    let press = tebako_signer::press_local_key(&home).map_err(|e| e.to_string())?;
+    let _ = tebako_signer::register_trusted(&home, &press.public_key).map_err(|e| e.to_string())?;
+
+    if digests.len() != m.slots.len() {
+        return Err("internal error: digest count does not match slot count".into());
+    }
+    let mut v2 = tpkg::V2Extension::default();
+    for (i, d) in digests.iter().enumerate() {
+        v2.slot_digests[i] = *d;
+    }
+    v2.signer_keyid = press.keyid;
+    v2.signature = vec![0u8]; // placeholder (excluded from the signed region)
+
+    m.package_flags |= tpkg::TPKG_FLAG_SIGNED_V2;
+    m.v2 = Some(v2);
+
+    let end = f
+        .seek(SeekFrom::End(0))
+        .map_err(|_| "cannot seek package for trailer signing".to_string())?;
+    let trailer = tpkg::encode_trailer(m, end)
+        .map_err(|e| format!("tpkg trailer encode failed: {}", tpkg::strerror(e.code())))?;
+    let region = tpkg::v2_signed_region(&trailer)
+        .map_err(|e| format!("tpkg trailer encode failed: {}", tpkg::strerror(e.code())))?;
+    let signature = tebako_signer::sign_detached(&region, &press.secret_key, &press.fingerprint)
+        .map_err(|e| e.to_string())?;
+
+    m.v2.as_mut().unwrap().signature = signature;
+    tpkg::write_to(f, m)
+        .map_err(|e| format!("tpkg trailer write failed: {}", tpkg::strerror(e.code())))
+}
+
 // ---------------------------------------------------------------------
 // assemble (shared core)
 // ---------------------------------------------------------------------
@@ -240,8 +332,9 @@ fn assemble(
                 return Err(e);
             }
         }
+        let mut digests: Vec<[u8; 32]> = Vec::with_capacity(slots.len());
         for s in slots {
-            let (written, _) = match stream_part(&s.source, &mut out, false) {
+            let (written, digest) = match stream_part_sha(&s.source, &mut out) {
                 Ok(r) => r,
                 Err(e) => {
                     drop(out);
@@ -252,6 +345,7 @@ fn assemble(
             let mut slot = Slot::new(total, written, s.format_id, &s.mount_point);
             slot.flags = s.flags;
             m.slots.push(slot);
+            digests.push(digest);
             total += written;
         }
         if out.flush().is_err() {
@@ -259,26 +353,17 @@ fn assemble(
             cleanup(output);
             return Err(format!("write failed: {}", output.display()));
         }
+        let _ = total;
+
+        // Sign the trailer (item 29: every package is signed with the
+        // press-local key) and append the v2 trailer.
+        if let Err(e) = sign_and_write_trailer(&mut out, &mut m, &digests) {
+            drop(out);
+            cleanup(output);
+            return Err(e);
+        }
     }
 
-    let mut f = match fs::OpenOptions::new().read(true).write(true).open(output) {
-        Ok(f) => f,
-        Err(_) => {
-            cleanup(output);
-            return Err(format!(
-                "cannot open output file for trailer write: {}",
-                output.display()
-            ));
-        }
-    };
-    if let Err(e) = tpkg::write_to(&mut f, &m) {
-        drop(f);
-        cleanup(output);
-        return Err(format!(
-            "tpkg trailer write failed: {}",
-            tpkg::strerror(e.code())
-        ));
-    }
     Ok(())
 }
 
@@ -888,6 +973,47 @@ pub fn format_size(size: i64) -> String {
     format!("{size_d:.1} {}", UNITS[unit])
 }
 
+/// The `info` signature report (item 29): v2 → signer keyid + trust state
+/// against the local trusted keyring; v1 → legacy unsigned notice.
+fn signature_status(archive: &Path, m: &Manifest) -> String {
+    let Some(v2) = &m.v2 else {
+        return "Signature: none (v1 legacy trailer — unsigned)\n".to_string();
+    };
+
+    let keyid_hex = v2.signer_keyid_hex();
+    let trust = (|| -> Result<String, String> {
+        let home = tebako_signer::default_home().map_err(|e| e.to_string())?;
+        let keyring = tebako_signer::trusted_keyring_bytes(&home).map_err(|e| e.to_string())?;
+
+        let mut f = fs::File::open(archive).map_err(|_| "cannot re-read package".to_string())?;
+        let tlen = tpkg::trailer_len(m);
+        f.seek(std::io::SeekFrom::End(-(tlen as i64)))
+            .map_err(|_| "cannot re-read trailer".to_string())?;
+        let mut trailer = vec![0u8; tlen as usize];
+        use std::io::Read;
+        f.read_exact(&mut trailer)
+            .map_err(|_| "cannot re-read trailer".to_string())?;
+        let region =
+            tpkg::v2_signed_region(&trailer).map_err(|e| tpkg::strerror(e.code()).to_string())?;
+
+        let outcome =
+            tebako_signer::verify_detached(&keyring, &region, &v2.signature, &v2.signer_keyid)
+                .map_err(|e| e.to_string())?;
+        Ok(match outcome {
+            tebako_signer::VerifyOutcome::Trusted(_) => "trusted".to_string(),
+            tebako_signer::VerifyOutcome::Untrusted(_) => {
+                "UNTRUSTED (signer key not in the local keyring)".to_string()
+            }
+            tebako_signer::VerifyOutcome::Invalid(_) => "INVALID SIGNATURE".to_string(),
+        })
+    })();
+
+    match trust {
+        Ok(t) => format!("Signature: OpenPGP v2, signer={keyid_hex} [{t}]\n"),
+        Err(e) => format!("Signature: OpenPGP v2, signer={keyid_hex} [trust unknown: {e}]\n"),
+    }
+}
+
 /// Dump a three-part package trailer (exact C++ `cmd_info` tpkg output),
 /// or fall through to a plain-archive summary (via the tfs C ABI).
 /// Errors match the C++ message bodies.
@@ -921,8 +1047,15 @@ pub fn info(archive: &Path) -> Result<String, String> {
             total_size
         ));
         out.push_str(&format!("Flags: 0x{:x}", m.package_flags));
-        if m.is_lean() {
-            out.push_str(" (LEAN)");
+        if m.is_lean() || m.package_flags & tpkg::TPKG_FLAG_SIGNED_V2 != 0 {
+            let mut names: Vec<&str> = Vec::new();
+            if m.is_lean() {
+                names.push("LEAN");
+            }
+            if m.package_flags & tpkg::TPKG_FLAG_SIGNED_V2 != 0 {
+                names.push("SIGNED_V2");
+            }
+            out.push_str(&format!(" ({})", names.join("|")));
         }
         out.push('\n');
         out.push_str(&format!("Launcher ABI: {}\n", m.launcher_abi));
@@ -949,6 +1082,7 @@ pub fn info(archive: &Path) -> Result<String, String> {
             ));
         }
         out.push_str("Trailer: valid (magic and crc32 ok)\n");
+        out.push_str(&signature_status(archive, &m));
         return Ok(out);
     }
 

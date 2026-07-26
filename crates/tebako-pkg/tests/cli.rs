@@ -320,6 +320,7 @@ fn flag_forms() {
     let (rc, out, _) = run(&["info", pkg.to_str().unwrap()], &w.0);
     assert_eq!(rc, 0);
     assert!(out.contains("Runtime ref: rt"), "{out}");
-    assert!(out.contains("Flags: 0x1 (LEAN)"), "{out}");
+    assert!(out.contains("Flags: 0x3 (LEAN|SIGNED_V2)"), "{out}");
     assert!(out.contains("Launcher ABI: 2"), "{out}");
+    assert!(out.contains("Signature: OpenPGP v2"), "{out}");
 }

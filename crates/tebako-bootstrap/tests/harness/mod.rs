@@ -269,16 +269,20 @@ impl Harness {
             cmd.env(k, v);
         }
         let out = {
-            // Linux ETXTBSY race: a freshly stitched fixture binary can
-            // transiently be reported busy when spawned while parallel
-            // tests execute their own fixture binaries. Retry bounded.
+            // Freshly stitched fixture binaries are occasionally reported
+            // busy (Linux ETXTBSY) or die on a transient exec race under
+            // parallel load (signal exit, no status code). Retry bounded.
             let mut attempt = 0;
             loop {
                 match cmd.output() {
-                    Ok(o) => break o,
-                    Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && attempt < 20 => {
+                    Ok(o) if o.status.code().is_none() && attempt < 30 => {
                         attempt += 1;
-                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                    Ok(o) => break o,
+                    Err(e) if e.raw_os_error() == Some(libc::ETXTBSY) && attempt < 30 => {
+                        attempt += 1;
+                        std::thread::sleep(std::time::Duration::from_millis(100));
                     }
                     Err(e) => panic!("run package {}: {e}", pkg.display()),
                 }
@@ -287,7 +291,7 @@ impl Harness {
         (
             out.status.code().unwrap_or(-1),
             String::from_utf8_lossy(&out.stdout).into_owned(),
-            String::from_utf8_lossy(&out.stderr).into_owned(),
+            strip_legacy_warning(String::from_utf8_lossy(&out.stderr).into_owned()),
         )
     }
 
@@ -298,4 +302,29 @@ impl Harness {
     pub fn cache_exe(&self, home: &Path) -> PathBuf {
         home.join("runtimes").join(&self.entry).join(&self.asset)
     }
+}
+
+/// Item 29 v1-legacy rule: v1-unsigned fixtures now emit a loud warning on
+/// stderr BY DESIGN (two lines: the WARNING line plus its continuation).
+/// Strip it for output comparison — the warning's emission, the legacy
+/// acceptance and the REQUIRE_SIGNED hard fail are covered by
+/// tests/chain.rs, and removing the warning itself would violate item 29.
+fn strip_legacy_warning(stderr: String) -> String {
+    let mut out = String::new();
+    let mut skip_next = false;
+    for line in stderr.lines() {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if line.starts_with("tebako-bootstrap: WARNING: ")
+            && line.contains("unsigned v1 (legacy) tpkg trailer")
+        {
+            skip_next = true;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }

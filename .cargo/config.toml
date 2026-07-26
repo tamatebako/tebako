@@ -1,0 +1,5 @@
+# librnp is a system dylib on dev machines (Homebrew on macOS); make it
+# findable at runtime without DYLD_LIBRARY_PATH. On Linux it installs into
+# the default linker paths, so nothing is needed there.
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-args=-Wl,-rpath,/opt/homebrew/lib,-rpath,/usr/local/lib"]

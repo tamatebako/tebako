@@ -31,6 +31,46 @@
 //!     24   256    char mount_point[256] (UTF-8, NUL-padded)
 //! ```
 //!
+//! # Wire layout (v2 — the chain-of-trust extension)
+//!
+//! v2 carries the integrity/authenticity material BETWEEN the slot table
+//! and the trailer header, keeping the header exactly where v1 readers
+//! expect it (at EOF, version field still 1). v2-ness is marked by
+//! `TPKG_FLAG_SIGNED_V2` (bit 1) in package_flags — a flag old readers
+//! pass through untouched (the C `tpkg_validate` does not inspect flags,
+//! and its bounds check never requires the table to abut the header), so
+//! v1-era runtimes keep reading v2 packages exactly as before (they just
+//! don't verify), while v2-aware readers enforce the chain. The header
+//! keeps the v1 codec exactly (little-endian numerics, crc32 over header
+//! bytes [0, 162) — the crc is an accident-integrity check, NOT
+//! authenticity); slot records are unchanged as well. All NEW v2
+//! extension numerics are big-endian:
+//!
+//! ```text
+//! [payload][slot records][v2 extension][trailer header (166, at EOF)]
+//!
+//! v2 extension (TPKG_V2_EXT_FIXED = 268 bytes + variable signature):
+//!   offset  size  field
+//!      0   256    slot sha256 digests: 8 * 32 bytes, digest of slot i's
+//!                  bytes at i*32; entries beyond slot_count are zeroed
+//!    256     8    signer keyid (low 64 bits of the OpenPGP fingerprint,
+//!                  big-endian)
+//!    264 sig_len  OpenPGP detached signature (binary packets) over the
+//!                  canonical trailer bytes
+//! 264+sig_len 4  u32be signature length sig_len (1..TPKG_SIG_MAX)
+//!
+//! canonical (signed) bytes: slot table || digest array || keyid ||
+//! trailer header — the two contiguous spans concatenated (everything
+//! except the signature and its length field).
+//! ```
+//!
+//! Detection: parse the v1 header at EOF as always; if
+//! `TPKG_FLAG_SIGNED_V2` is set, the extension of exactly
+//! `256 + 8 + sig_len + 4` bytes must fill the gap between the slot table
+//! and the header (with the digest tail zeroed). A v1 trailer (flag
+//! clear) has no extension and still parses exactly as before — v1 =
+//! legacy unsigned (see item 29's v1-legacy rule).
+//!
 //! # Absent vs. corrupt
 //!
 //! A file whose last-166-byte window does not start with the 4-byte prefix
@@ -61,13 +101,15 @@ mod error;
 mod io;
 mod model;
 
-pub use codec::{encode_trailer, parse_trailer};
+pub use codec::{encode_trailer, parse_trailer, trailer_len, v2_signed_region};
 pub use crc32::{crc32, Crc32};
 pub use error::{strerror, TpkgError};
 pub use io::{read_from, write_to};
-pub use model::{Manifest, Slot};
+pub use model::{Manifest, Slot, V2Extension};
 
-/// Manifest format version.
+/// Manifest format version (stays 1: the chain-of-trust extension is
+/// flagged via `TPKG_FLAG_SIGNED_V2`, not a version bump, so v1-era
+/// readers keep working).
 pub const TPKG_VERSION: u32 = 1;
 /// Maximum number of payload slots.
 pub const TPKG_MAX_SLOTS: u32 = 8;
@@ -89,6 +131,11 @@ pub const TPKG_MAGIC_PREFIX_LEN: usize = 4;
 /// `package_flags` bit 0: lean package (bootstrap+images only, runtime
 /// resolved at run time).
 pub const TPKG_FLAG_LEAN: u32 = 0x1;
+/// `package_flags` bit 1: the package carries the v2 chain-of-trust
+/// extension between the slot table and the trailer header (item 29).
+/// Old readers pass the bit through untouched — that is what keeps v2
+/// packages readable by v1-era runtimes.
+pub const TPKG_FLAG_SIGNED_V2: u32 = 0x2;
 
 /// `format_id`: auto-detect from image magic.
 pub const TPKG_FORMAT_AUTO: u32 = 0;
@@ -100,6 +147,26 @@ pub const TPKG_FORMAT_SQUASHFS: u32 = 2;
 pub const TPKG_FORMAT_ZIP: u32 = 3;
 /// `format_id`: runtime payload slot (fat packages).
 pub const TPKG_FORMAT_RUNTIME: u32 = 4;
+
+// ---------------------------------------------------------------------
+// v2 chain-of-trust extension (all v2-extension numerics BIG-ENDIAN;
+// the 166-byte trailer header keeps the v1 codec — little-endian —
+// unchanged, as do the slot records; see the module docs)
+// ---------------------------------------------------------------------
+
+/// Length of one slot's SHA-256 digest in bytes.
+pub const TPKG_SHA256_LEN: usize = 32;
+/// Size of the per-slot digest array (one digest per possible slot).
+pub const TPKG_DIGESTS_SIZE: usize = TPKG_MAX_SLOTS as usize * TPKG_SHA256_LEN;
+/// Length of the signer key id (low 64 bits of the OpenPGP fingerprint).
+pub const TPKG_KEYID_LEN: usize = 8;
+/// Size of the big-endian signature-length field.
+pub const TPKG_SIGLEN_SIZE: usize = 4;
+/// Fixed part of the v2 extension (digests + keyid + siglen, signature
+/// bytes excluded).
+pub const TPKG_V2_EXT_FIXED: usize = TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN + TPKG_SIGLEN_SIZE;
+/// Maximum accepted signature size (sanity bound, not a format limit).
+pub const TPKG_SIG_MAX: u32 = 65536;
 
 /// Header field offsets (see the module docs).
 pub(crate) mod off {

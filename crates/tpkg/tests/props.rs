@@ -45,7 +45,9 @@ fn arb_manifest() -> impl Strategy<Value = Manifest> {
     )
         .prop_map(|(package_flags, launcher_abi, runtime_ref, slots)| {
             let mut m = Manifest {
-                package_flags,
+                // TPKG_FLAG_SIGNED_V2 is not arbitrary: it requires the
+                // v2 extension (covered by the v2 test suite)
+                package_flags: package_flags & !TPKG_FLAG_SIGNED_V2,
                 launcher_abi,
                 slots,
                 ..Default::default()

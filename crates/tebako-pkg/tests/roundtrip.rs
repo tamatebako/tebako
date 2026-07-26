@@ -138,7 +138,10 @@ fn set_runtime_changes_only_the_bootstrap_region() {
         std::fs::metadata(&t.a).unwrap().len() as usize
     );
     assert_eq!(m.slots[1].mount_point_str(), Some("/data"));
-    assert_eq!(m.package_flags, tpkg::TPKG_FLAG_LEAN);
+    assert_eq!(
+        m.package_flags,
+        tpkg::TPKG_FLAG_LEAN | tpkg::TPKG_FLAG_SIGNED_V2
+    );
     assert_eq!(m.launcher_abi, 2);
     assert_eq!(m.runtime_ref_str(), Some("rt-1.0"));
 
