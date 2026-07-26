@@ -18,7 +18,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14]
+        include:
+          - os: ubuntu-24.04
+            crypto_triplet: x64-linux-dynamic
+          - os: macos-14
+            crypto_triplet: arm64-osx-dynamic
     steps:
       - uses: actions/checkout@v4
         with:
@@ -85,6 +89,18 @@ jobs:
             --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/$TRIPLET" >> "$GITHUB_ENV"
+
+      # tebako-signer's rnp-rs builds librnp vendored (rnp 0.18 needs
+      # Botan-3; rnp-rs emits dylib links for the crypto deps, hence the
+      # dynamic triplet). Also exported: RUSTFLAGS -L and the test-time
+      # library paths.
+      - name: Provision Botan-3 + json-c (vcpkg, for vendored librnp)
+        working-directory: tebako-rs
+        env:
+          TRIPLET: ${{ matrix.crypto_triplet }}
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
+        run: bash ci/provision-crypto.sh
 
       # The tebako-pkg golden suite compares against the C++ tebakofs
       # oracle, and tfs-cli's mkimage against mkdwarfs; use the libtfs
