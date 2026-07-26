@@ -1,0 +1,18 @@
+[package]
+name = "tebako-http"
+description = "In-process HTTPS downloads for the tebako stack (ureq + rustls, webpki-roots bundled)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "https", "download"]
+categories = ["web-programming::http-client"]
+
+[dependencies]
+ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+
+[lib]
+name = "tebako_http"
+path = "src/lib.rs"
