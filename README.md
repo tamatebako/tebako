@@ -284,15 +284,40 @@ Rust-consumable surface for it.
 
 ### PLANNED (next milestones, in order)
 
-1. crates.io publication of `tpkg`/`tfs` (after the API settles
+1. **Chain-of-trust operations (item 29, remaining)**: the release key
+   ceremony (create the production root, fill
+   `EMBEDDED_ROOT_FINGERPRINT`), fingerprint publication on tebako.org,
+   CI secrets wiring for the release signing step, the revocation drill
+   (documented procedure + rehearsed successor statement), and the Ruby
+   `scripts/upload_release.rb` integration invoking `tebako-pkg sign`.
+2. crates.io publication of `tpkg`/`tfs` (after the API settles
    post-parity); cbindgen `tpkg.h` with it.
-2. tebako-bootstrap Windows exec/lock port + windows CI leg (v1 shipped
+3. tebako-bootstrap Windows exec/lock port + windows CI leg (v1 shipped
    macOS/Linux); tfs-cli interactive shell + serve/exec modes (later).
-3. tebako-cli: classic press mode, gem/gemspec scenarios, the
+4. tebako-cli: classic press mode, gem/gemspec scenarios, the
    RuntimeSdk/src-release subsystem (native-extension deploy), .tebako.yml.
 
 ### v2 notes (recorded decisions)
 
+- **Root of trust (item 29 phase 2, SHIPPED mechanics)**: one OpenPGP
+  keypair signs the tamatebako releases. **Creation/storage**: the root
+  key is generated offline, passphrase-protected, held on hardware
+  (YubiKey/HSM recommended); an armored, passphrase-protected export lives
+  in CI secrets for the release job's signing step, and only the public
+  half is distributed. **Publication**: the root fingerprint is published
+  on tebako.org and embedded in the bootstrap at release time
+  (`EMBEDDED_ROOT_FINGERPRINT`, empty until the ceremony);
+  `TEBAKO_TRUSTED_ROOT` (fingerprint, or path to the root public key)
+  overrides it in development. **Rotation**: a signed *successor-key
+  statement* (`TEBAKO-ROOT-SUCCESSOR-V1` — four canonical lines binding
+  predecessor → successor fingerprint, detached OpenPGP signature from
+  the predecessor) lets any machine forward trust with no out-of-band
+  step: the bootstrap applies the statement chain from a trusted root and
+  TOFU-registers the successor's public key. **Release tooling**:
+  `tebako-pkg sign` (detached `.asc` per artifact + signed `SHA256SUMS`;
+  the Ruby `scripts/upload_release.rb` in the tebako repo will invoke it
+  later) and `tebako-pkg verify` for consumers (Trusted/Untrusted/Invalid
+  per artifact).
 - **Signing and encryption are OPTIONAL, per package** (owner directive).
   `tebako-pkg bundle` produces an unsigned (v1, byte-identical to
   pre-signing) package unless `--sign[=keyid]` is given: `--sign` uses the

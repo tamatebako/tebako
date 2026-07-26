@@ -14,6 +14,7 @@ categories = ["filesystem", "no-std"]
 tpkg = { version = "0.1.0", path = "../tpkg" }
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
 tebako-http = { version = "0.1.0", path = "../tebako-http" }
+rnp = { git = "https://github.com/rnpgp/rnp-rs", rev = "9d459ea36398d9f21b920614aba4816501e2e767" }
 libc = "0.2"
 sha2 = "0.10"
 
@@ -26,3 +27,5 @@ name = "tebako_bootstrap"
 path = "src/lib.rs"
 
 [dev-dependencies]
+tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+rnp = { git = "https://github.com/rnpgp/rnp-rs", rev = "9d459ea36398d9f21b920614aba4816501e2e767" }

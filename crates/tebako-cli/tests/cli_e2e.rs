@@ -803,6 +803,7 @@ fn image_era_press_and_cold_run() {
             runtime_ref: runtime_ref.clone(),
             package_flags: tpkg::TPKG_FLAG_LEAN,
             launcher_abi: 1,
+            ..Default::default()
         },
     )
     .unwrap();

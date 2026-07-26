@@ -165,6 +165,13 @@ fn identify_secret(secret_key: &[u8]) -> Result<PressKey, SignerError> {
     })
 }
 
+/// Load a PressKey from secret key bytes (armored or binary export) — the
+/// public half is re-exported from the loaded secret key. Used by the
+/// release flow where the root secret arrives as a file from CI secrets.
+pub fn press_key_from_secret_bytes(secret_key: &[u8]) -> Result<PressKey, SignerError> {
+    identify_secret(secret_key)
+}
+
 /// Find a secret key in `$TEBAKO_HOME/keys` whose keyid (16-hex,
 /// case-insensitive) matches. Returns `Ok(None)` when no key matches —
 /// callers decide whether that is a named error.

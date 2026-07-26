@@ -47,6 +47,8 @@ fn main() -> ExitCode {
         "insert-image" => cmd_insert_image(rest),
         "remove-image" => cmd_remove_image(rest),
         "set-runtime" => cmd_set_runtime(rest),
+        "sign" => cmd_sign(rest),
+        "verify" => cmd_verify(rest),
         other => {
             eprintln!("Error: Unknown command: {other}");
             eprintln!("Use 'tebako-pkg help' for usage information");
@@ -71,6 +73,8 @@ struct Args {
     launcher_abi: Option<i64>,
     verbose: bool,
     sign: Option<SignRequest>,
+    key_file: Option<String>,
+    no_sums: bool,
 }
 
 impl Args {
@@ -105,6 +109,12 @@ impl Args {
                     });
                 }
                 "--bootstrap" => a.bootstrap = Some(take_value(&mut i)?),
+                "--key-file" => a.key_file = Some(take_value(&mut i)?),
+                "--no-sums" => a.no_sums = true,
+                "--key" => {
+                    let v = take_value(&mut i)?;
+                    a.sign = Some(SignRequest::Keyid(v));
+                }
                 "--image" => a.images.push(take_value(&mut i)?),
                 "-o" | "--output" => a.output = Some(take_value(&mut i)?),
                 "--runtime-ref" => a.runtime_ref = Some(take_value(&mut i)?),
@@ -334,6 +344,8 @@ fn print_help() {
     println!("  insert-image  Append an image slot to a package (in place)");
     println!("  remove-image  Remove an image slot from a package (in place)");
     println!("  set-runtime   Replace the bootstrap portion of a package (in place)");
+    println!("  sign          Sign artifacts (detached .asc per artifact + signed SHA256SUMS)");
+    println!("  verify        Verify artifacts against the trusted keyring");
     println!("  help          Show this help\n");
     println!("Signing is OPT-IN: packages are unsigned unless `bundle --sign[=keyid]`");
     println!("is given (--sign uses the press-local key, generated on first use;");
@@ -342,6 +354,192 @@ fn print_help() {
     println!("packages at run time is always strict.");
     println!("Options vary per command; the default mountpoint for image slot 0 is");
     println!("{} (slot N: {}).", default_mount(0), default_mount(1));
+}
+
+// ---------------------------------------------------------------------
+// sign / verify (release tooling: detached .asc per artifact + signed
+// SHA256SUMS; consumers verify against the trusted keyring)
+// ---------------------------------------------------------------------
+
+fn resolve_signing_key(a: &Args, home: &Path) -> Result<tebako_signer::PressKey, String> {
+    if let Some(path) = &a.key_file {
+        let bytes =
+            std::fs::read(path).map_err(|e| format!("cannot read the key file {path}: {e}"))?;
+        return tebako_signer::press_key_from_secret_bytes(&bytes).map_err(|e| e.to_string());
+    }
+    match &a.sign {
+        Some(SignRequest::Keyid(keyid)) => tebako_signer::secret_key_by_keyid(home, keyid)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| {
+                format!(
+                    "no secret key with keyid {keyid} under {}",
+                    home.join("keys").display()
+                )
+            }),
+        _ => tebako_signer::press_local_key(home).map_err(|e| e.to_string()),
+    }
+}
+
+fn sign_artifact(artifact: &Path, press: &tebako_signer::PressKey) -> Result<String, String> {
+    let data = std::fs::read(artifact)
+        .map_err(|_| format!("cannot read artifact: {}", artifact.display()))?;
+    let sig = tebako_signer::sign_detached(&data, &press.secret_key, &press.fingerprint)
+        .map_err(|e| e.to_string())?;
+    let armored = rnp::armor_bytes(&sig, rnp::ops::ArmorType::Signature)
+        .map_err(|e| format!("cannot armor the signature: {e}"))?;
+    let asc = artifact.with_file_name(format!(
+        "{}.asc",
+        artifact
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    ));
+    std::fs::write(&asc, &armored).map_err(|e| format!("cannot write {}: {e}", asc.display()))?;
+    let digest = {
+        use sha2::Digest;
+        sha2::Sha256::digest(&data)
+    };
+    Ok(tebako_signer::hex_lower(&digest))
+}
+
+fn cmd_sign(rest: &[String]) -> ExitCode {
+    let a = match Args::parse(rest) {
+        Ok(a) => a,
+        Err(e) => return fail("sign", &e),
+    };
+    if a.positional.is_empty() {
+        return fail(
+            "sign",
+            "usage: tebako-pkg sign [--key <keyid>|--key-file <path>] [--no-sums] <artifact...>",
+        );
+    }
+    let home = match tebako_signer::default_home() {
+        Ok(h) => h,
+        Err(e) => return fail("sign", &e.to_string()),
+    };
+    let press = match resolve_signing_key(&a, &home) {
+        Ok(k) => k,
+        Err(e) => return fail("sign", &e),
+    };
+    if let Err(e) = tebako_signer::register_trusted(&home, &press.public_key) {
+        return fail("sign", &e.to_string());
+    }
+
+    let mut entries = Vec::new();
+    for artifact in &a.positional {
+        let path = Path::new(artifact);
+        match sign_artifact(path, &press) {
+            Ok(digest) => {
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                entries.push(format!("{digest}  {name}"));
+            }
+            Err(e) => return fail("sign", &e),
+        }
+    }
+
+    if !a.no_sums {
+        let sums = entries.join("\n") + "\n";
+        let sums_path = Path::new("SHA256SUMS");
+        if let Err(e) = std::fs::write(sums_path, &sums) {
+            return fail("sign", &format!("cannot write SHA256SUMS: {e}"));
+        }
+        let sig = match tebako_signer::sign_detached(
+            sums.as_bytes(),
+            &press.secret_key,
+            &press.fingerprint,
+        ) {
+            Ok(s) => s,
+            Err(e) => return fail("sign", &e.to_string()),
+        };
+        let armored = match rnp::armor_bytes(&sig, rnp::ops::ArmorType::Signature) {
+            Ok(s) => s,
+            Err(e) => return fail("sign", &format!("cannot armor the signature: {e}")),
+        };
+        if let Err(e) = std::fs::write("SHA256SUMS.asc", &armored) {
+            return fail("sign", &format!("cannot write SHA256SUMS.asc: {e}"));
+        }
+    }
+
+    println!(
+        "signed {} artifact(s) with key {}",
+        a.positional.len(),
+        press.keyid_hex()
+    );
+    ExitCode::SUCCESS
+}
+
+fn cmd_verify(rest: &[String]) -> ExitCode {
+    let a = match Args::parse(rest) {
+        Ok(a) => a,
+        Err(e) => return fail("verify", &e),
+    };
+    if a.positional.is_empty() {
+        return fail(
+            "verify",
+            "usage: tebako-pkg verify [--keyring <path>] <artifact...>",
+        );
+    }
+    let keyring = match &a.key_file {
+        Some(path) => match std::fs::read(path) {
+            Ok(b) => b,
+            Err(e) => return fail("verify", &format!("cannot read the keyring {path}: {e}")),
+        },
+        None => {
+            let home = match tebako_signer::default_home() {
+                Ok(h) => h,
+                Err(e) => return fail("verify", &e.to_string()),
+            };
+            match tebako_signer::trusted_keyring_bytes(&home) {
+                Ok(b) => b,
+                Err(e) => return fail("verify", &e.to_string()),
+            }
+        }
+    };
+
+    let mut all_trusted = true;
+    for artifact in &a.positional {
+        let path = Path::new(artifact);
+        let asc = path.with_file_name(format!(
+            "{}.asc",
+            path.file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        ));
+        let (data, sig) = match (std::fs::read(path), std::fs::read(&asc)) {
+            (Ok(d), Ok(s)) => (d, s),
+            (Err(e), _) => return fail("verify", &format!("cannot read {}: {e}", path.display())),
+            (_, Err(e)) => return fail("verify", &format!("cannot read {}: {e}", asc.display())),
+        };
+        let sig = match rnp::dearmor_bytes(&sig) {
+            Ok(s) => s,
+            Err(e) => return fail("verify", &format!("cannot dearmor {}: {e}", asc.display())),
+        };
+        match tebako_signer::verify_detached_full(&keyring, &data, &sig) {
+            Ok(tebako_signer::VerifyOutcome::Trusted(_)) => {
+                println!("{artifact}: trusted");
+            }
+            Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) => {
+                all_trusted = false;
+                let signer = tebako_signer::signature_issuer_fingerprint(&sig)
+                    .unwrap_or_else(|_| keyid.clone());
+                println!("{artifact}: UNTRUSTED (signer {signer} not in the keyring)");
+            }
+            Ok(tebako_signer::VerifyOutcome::Invalid(_)) => {
+                all_trusted = false;
+                println!("{artifact}: INVALID SIGNATURE");
+            }
+            Err(e) => return fail("verify", &e.to_string()),
+        }
+    }
+
+    if all_trusted {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
 }
 
 // Keep PathBuf import used (some signatures may evolve).
