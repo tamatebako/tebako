@@ -84,6 +84,12 @@ the launcher ABI.
   taken from rubygems' `latest.json` (the gem's SpecFetcher picks the
   latest released bundler satisfying the requirement — identical unless
   the requirement excludes the latest release);
+- downloads shell out to the `curl` CLI (item 17's design note mentions
+  in-process ureq+rustls; the curl choice is milestone 6's audited TLS
+  decision — zero binary-weight, platform-native TLS, `file://` mirrors
+  for free, curl present on all supported hosts). `tebako setup`'s
+  checksummed mkdwarfs provisioning is a later milestone (mkdwarfs comes
+  from the lookup chain above until then);
 - images are stitched **densely** (tpkg slots carry absolute offsets; the
   gem's 8-byte alignment padding is cosmetic);
 - the gem's unconditional 5-second press pause runs only when a
