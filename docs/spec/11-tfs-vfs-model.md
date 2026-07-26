@@ -1,8 +1,9 @@
 # Spec 11 — TFS: the virtual filesystem layer
 
 Normative specification of the userland VFS. Status: core SHIPPED
-(`crates/tfs`, contract suite 164 tests); COW/ENC/write-family PLANNED
-(roadmap 12/13).
+(`crates/tfs`, contract suite 164 tests); tar adapter and the COW
+composite (HostDir overlay + whiteout journal, mount-mode flags)
+SHIPPED (roadmap 12/13); ENC/write-family (fd-based) PLANNED.
 
 ## 1. The model
 
@@ -43,7 +44,7 @@ model is honest per format — no uniform-RW pretense:
 | squashfs | ✓ | — | mksquashfs-class |
 | zip | ✓ | ✓ (add/delete) | — |
 | iso9660 | ✓ (PLANNED) | — | genisoimage-class |
-| tar | ✓ (PLANNED) | append-only | repack |
+| tar | ✓ | append-only | repack |
 | extN | ✓ (PLANNED) | ✓ (PLANNED) | mkfs |
 | FAT | ✓ (PLANNED) | ✓ (PLANNED) | mkfs |
 
@@ -60,11 +61,15 @@ model is honest per format — no uniform-RW pretense:
 a format: reads fall through to base unless shadowed; writes/deletes/attr
 changes land in the overlay; whiteouts (a small journal) hide base
 entries. **Exists ONLY in the Rust TFS** — dwarfs-t and all backends stay
-read-only (spec 00, invariant 5).
+read-only (spec 00, invariant 5). SHIPPED: `CowBackend` over
+`HostDirBackend`, whiteouts masking base entries only (an overlay entry
+of the same name wins — upper-replaces-whiteout, overlayfs semantics).
 
 - First overlay: **HostDirBackend** (a host directory exposed as a TFS
   backend — independently useful) + whiteout journal. Disposable by
-  deleting the dir.
+  deleting the dir. SHIPPED (journal: `.tfs-whiteouts` inside the
+  overlay, strict v1 text format, atomic rewrites — the delete-side
+  audit delta).
 - **Stackable, swappable, self-contained:** an overlay may itself be a
   CowBackend (layer stacks); an overlay may be a portable image file
   (detach, ship, re-attach); a base image may CARRY its overlay inside
@@ -111,10 +116,13 @@ Current: mount/multi-mount family, stat/pread/dir family (incl.
 `extract_all`, `dlmap2file` (memfs path → host cache for dlopen),
 `tebako_fs_host_policy` + `tebako_host_mount_t` (spec 08 jails — gates
 the host-passthrough path of every IO route; additive),
-`abi_version()` = 1. Write family (gated by mount mode): write/pwrite/
-mkdir/rmdir/unlink/rename/chmod/utimens/truncate/fsync + mount-with-mode
-entry points — ADDITIVE; RO-only consumers see zero change; abi version
-bumps per spec 14. Exported symbols: exactly `tebako_*` (nm-verified).
+`abi_version()` = 1, plus the additive mount-with-mode entry points
+(`tebako_fs_mount_from_{file,file_at,memory}_with_mode` taking
+`TEBAKO_MOUNT_RO`/`_COW`/`_RW`; SHIPPED — RO semantics unchanged, COW
+stacks the composite, RW is ENOTSUP). Write family (gated by mount
+mode): write/pwrite/mkdir/rmdir/unlink/rename/chmod/utimens/truncate/
+fsync — ADDITIVE; RO-only consumers see zero change; abi version bumps
+per spec 14. Exported symbols: exactly `tebako_*` (nm-verified).
 
 ## 8. libtfs for everyone
 

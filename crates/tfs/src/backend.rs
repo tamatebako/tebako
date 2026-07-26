@@ -68,6 +68,40 @@ pub trait Backend: Send + Sync {
     fn image_info_json(&self) -> Option<String> {
         None
     }
+
+    /// The writable view of this backend, when it is one of the composite
+    /// write-capable backends (COW overlay, host directory). Default: None
+    /// — every FORMAT backend is read-only forever (spec 00 invariant 5:
+    /// backends never learn to write; write support exists ONLY in the
+    /// Rust-TFS composite layer, spec 11 §4).
+    fn writable(&self) -> Option<&dyn WritableBackend> {
+        None
+    }
+}
+
+/// The write seam (spec 11 §4): positioned writes, directory creation and
+/// removal. Only composite/overlay backends implement this; format
+/// backends stay read-only. Errors are raw errno values.
+///
+/// `path` arguments follow the [`Backend`] convention (relative to the
+/// mount root, `/`-separated, `""` is the root).
+pub trait WritableBackend: Backend {
+    /// Write `data` at `offset` in `path`, creating the file (and its
+    /// parent directories, overlay-style) when missing. Never truncates;
+    /// returns the number of bytes written.
+    fn pwrite(&self, path: &str, data: &[u8], offset: u64) -> Result<usize, i32>;
+
+    /// Truncate `path` to `len` bytes. `Err(ENOENT)` when the file does
+    /// not exist.
+    fn truncate(&self, path: &str, len: u64) -> Result<(), i32>;
+
+    /// Create a single directory (no implicit parents). `Err(EEXIST)`
+    /// when it exists, `Err(ENOENT)` when the parent does not.
+    fn mkdir(&self, path: &str, perms: u32) -> Result<(), i32>;
+
+    /// Remove a file, symlink or EMPTY directory (`Err(ENOTEMPTY)`
+    /// otherwise). `Err(ENOENT)` when missing.
+    fn remove(&self, path: &str) -> Result<(), i32>;
 }
 
 /// Detected archive format (magic sniffing).

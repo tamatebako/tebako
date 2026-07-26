@@ -59,6 +59,28 @@ Rust-consumable surface for it.
   re-decode from the start — documented cost model, no state snapshots
   exist in pure Rust). Memory profile documented in the module docs.
 
+- **tfs: COW overlay + mount modes (spec 11 §3/§4, the transforms law)** —
+  `CowBackend { base, overlay }` (`backends_cow.rs`) stacks any image
+  backend over `HostDirBackend` (`backends_hostdir.rs`, a host directory
+  exposed as a TFS backend — independently useful, disposable by
+  deletion). Reads fall through to the base unless shadowed; writes and
+  deletes land in the overlay only (base files copy up on first write);
+  deletes record whiteouts in `.tfs-whiteouts` inside the overlay (strict
+  v1 text format, atomic rewrites — the complete delete-side audit
+  delta). Whiteouts mask base entries only: an overlay entry of the same
+  name always wins (upper-replaces-whiteout, overlayfs semantics). The
+  base image is byte-identical after unmount (proven in tests). Mount
+  modes wire through every mount entry point: `TEBAKO_MOUNT_RO` (0,
+  default — writes EROFS, behavior unchanged), `TEBAKO_MOUNT_COW` (1,
+  overlay dir created when missing), `TEBAKO_MOUNT_RW` (2, honestly
+  ENOTSUP — no in-tree backend writes in place). Additive ABI:
+  `tebako_fs_mount_from_{file,file_at,memory}_with_mode`; the legacy
+  entry points delegate as RO. Path-level writes route through the
+  context (`pwrite_path`/`truncate_path`/`mkdir_path`/`remove_path`);
+  the fd-based write family (spec 11 §7) stays PLANNED. Write support
+  lives ONLY in the composite layer — format backends never learn to
+  write (spec 00, invariant 5).
+
 ### PARTIAL (roadmap 07)
 
 - **`crates/tebako-resolve` — references, fetch, payload cache** (spec

@@ -31,6 +31,33 @@ unsafe fn path_arg<'a>(ptr: *const c_char) -> Result<&'a str, i32> {
     cstr.to_str().map_err(|_| libc::EINVAL)
 }
 
+/// Convert an OPTIONAL borrowed C string argument to Option<&str>
+/// (NULL → None; non-UTF-8 → EINVAL).
+///
+/// # Safety
+/// `ptr` must be NULL or point to a valid NUL-terminated string that
+/// outlives the call.
+unsafe fn optional_path_arg<'a>(ptr: *const c_char) -> Result<Option<&'a str>, i32> {
+    if ptr.is_null() {
+        return Ok(None);
+    }
+    // SAFETY: per the caller contract above.
+    let cstr = unsafe { CStr::from_ptr(ptr) };
+    cstr.to_str().map(Some).map_err(|_| libc::EINVAL)
+}
+
+/// Map the TEBAKO_MOUNT_* flag word to a MountMode (EINVAL otherwise;
+/// negative values wrap to huge u32 and land on EINVAL too).
+#[allow(clippy::cast_sign_loss)]
+fn parse_mount_mode(mode: libc::c_int) -> Result<mount::MountMode, i32> {
+    match mode as u32 {
+        mount::TEBAKO_MOUNT_RO => Ok(mount::MountMode::ReadOnly),
+        mount::TEBAKO_MOUNT_COW => Ok(mount::MountMode::Cow),
+        mount::TEBAKO_MOUNT_RW => Ok(mount::MountMode::ReadWrite),
+        _ => Err(libc::EINVAL),
+    }
+}
+
 fn fail(err: i32) -> i32 {
     set_errno(err);
     -1
@@ -556,6 +583,31 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file(
     mount_point: *const c_char,
     out_handle: *mut libc::c_int,
 ) -> libc::c_int {
+    // RO mount without an overlay (the historic behavior).
+    tebako_fs_mount_from_file_with_mode(
+        archive_path,
+        mount_point,
+        mount::TEBAKO_MOUNT_RO as libc::c_int,
+        std::ptr::null(),
+        out_handle,
+    )
+}
+
+/// `tebako_fs_mount_from_file_with_mode` (spec 11 §3, additive): mount
+/// with an explicit mode — TEBAKO_MOUNT_RO (0, the default),
+/// TEBAKO_MOUNT_COW (1; `overlay_dir` required, created when missing),
+/// TEBAKO_MOUNT_RW (2; ENOTSUP — no in-tree backend writes in place).
+///
+/// # Safety
+/// C ABI entry point: pointer arguments must follow the C contract.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_mount_from_file_with_mode(
+    archive_path: *const c_char,
+    mount_point: *const c_char,
+    mode: libc::c_int,
+    overlay_dir: *const c_char,
+    out_handle: *mut libc::c_int,
+) -> libc::c_int {
     if out_handle.is_null() {
         return fail(libc::EINVAL);
     }
@@ -576,8 +628,16 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file(
     {
         return fail(e);
     }
+    let mode = match parse_mount_mode(mode) {
+        Ok(m) => m,
+        Err(e) => return fail(e),
+    };
+    let overlay_dir = match unsafe { optional_path_arg(overlay_dir) } {
+        Ok(o) => o,
+        Err(e) => return fail(e),
+    };
     finish_mount(
-        mount::build_from_file(archive_path, mount_point),
+        mount::build_from_file_with_mode(archive_path, mount_point, mode, overlay_dir),
         out_handle,
     )
 }
@@ -594,6 +654,32 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file_at(
     mount_point: *const c_char,
     out_handle: *mut libc::c_int,
 ) -> libc::c_int {
+    // RO mount without an overlay (the historic behavior).
+    tebako_fs_mount_from_file_at_with_mode(
+        archive_path,
+        offset,
+        length,
+        mount_point,
+        mount::TEBAKO_MOUNT_RO as libc::c_int,
+        std::ptr::null(),
+        out_handle,
+    )
+}
+
+/// `tebako_fs_mount_from_file_at_with_mode` (spec 11 §3, additive).
+///
+/// # Safety
+/// C ABI entry point: pointer arguments must follow the C contract.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_mount_from_file_at_with_mode(
+    archive_path: *const c_char,
+    offset: u64,
+    length: u64,
+    mount_point: *const c_char,
+    mode: libc::c_int,
+    overlay_dir: *const c_char,
+    out_handle: *mut libc::c_int,
+) -> libc::c_int {
     if out_handle.is_null() {
         return fail(libc::EINVAL);
     }
@@ -614,8 +700,23 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file_at(
     {
         return fail(e);
     }
+    let mode = match parse_mount_mode(mode) {
+        Ok(m) => m,
+        Err(e) => return fail(e),
+    };
+    let overlay_dir = match unsafe { optional_path_arg(overlay_dir) } {
+        Ok(o) => o,
+        Err(e) => return fail(e),
+    };
     finish_mount(
-        mount::build_from_file_at(archive_path, offset, length, mount_point),
+        mount::build_from_file_at_with_mode(
+            archive_path,
+            offset,
+            length,
+            mount_point,
+            mode,
+            overlay_dir,
+        ),
         out_handle,
     )
 }
@@ -631,6 +732,30 @@ pub unsafe extern "C" fn tebako_fs_mount_from_memory(
     mount_point: *const c_char,
     out_handle: *mut libc::c_int,
 ) -> libc::c_int {
+    // RO mount without an overlay (the historic behavior).
+    tebako_fs_mount_from_memory_with_mode(
+        data,
+        size,
+        mount_point,
+        mount::TEBAKO_MOUNT_RO as libc::c_int,
+        std::ptr::null(),
+        out_handle,
+    )
+}
+
+/// `tebako_fs_mount_from_memory_with_mode` (spec 11 §3, additive).
+///
+/// # Safety
+/// `data` must point to `size` readable bytes (the image is copied).
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_mount_from_memory_with_mode(
+    data: *const c_void,
+    size: usize,
+    mount_point: *const c_char,
+    mode: libc::c_int,
+    overlay_dir: *const c_char,
+    out_handle: *mut libc::c_int,
+) -> libc::c_int {
     if out_handle.is_null() {
         return fail(libc::EINVAL);
     }
@@ -644,8 +769,19 @@ pub unsafe extern "C" fn tebako_fs_mount_from_memory(
     if mount_point.is_empty() {
         return fail(libc::EINVAL);
     }
+    let mode = match parse_mount_mode(mode) {
+        Ok(m) => m,
+        Err(e) => return fail(e),
+    };
+    let overlay_dir = match unsafe { optional_path_arg(overlay_dir) } {
+        Ok(o) => o,
+        Err(e) => return fail(e),
+    };
     let data = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), size) };
-    finish_mount(mount::build_from_memory(data, mount_point), out_handle)
+    finish_mount(
+        mount::build_from_memory_with_mode(data, mount_point, mode, overlay_dir),
+        out_handle,
+    )
 }
 
 /// `tebako_fs_unmount_handle`.
