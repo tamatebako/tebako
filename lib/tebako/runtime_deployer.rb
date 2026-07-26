@@ -225,10 +225,45 @@ module Tebako
         #{build_overrides}if ARGV.any?
           # Script mode: mkmf-driven extension builds spawn the ruby at
           # RbConfig's bindir (the host shim); the shim re-enters this image
-          # with the script as argument. mkmf derives srcdir from $0, so the
-          # script takes over the program name before it is loaded.
-          $0 = ARGV.first
-          load ARGV.shift
+          # with the spawn's full argv. Emulate the ruby command line: consume
+          # the usual interpreter switches first (-r/-I/-e/--), then run the
+          # script -- mkmf derives srcdir from $0, so the script takes over
+          # the program name before it is loaded.
+          tg_ran_eval = false
+          while ARGV.any?
+            case ARGV.first
+            when "-r"
+              ARGV.shift
+              require ARGV.shift
+            when /\\A-r(.+)/
+              require Regexp.last_match(1)
+              ARGV.shift
+            when "-I"
+              ARGV.shift
+              $LOAD_PATH.unshift ARGV.shift
+            when /\\A-I(.+)/
+              $LOAD_PATH.unshift Regexp.last_match(1)
+              ARGV.shift
+            when "-e"
+              ARGV.shift
+              eval(ARGV.shift, TOPLEVEL_BINDING, "-e") # rubocop:disable Security/Eval
+              tg_ran_eval = true
+            when /\\A-e(.+)/
+              eval(Regexp.last_match(1), TOPLEVEL_BINDING, "-e") # rubocop:disable Security/Eval
+              tg_ran_eval = true
+            when "--"
+              ARGV.shift
+              break
+            else
+              break
+            end
+          end
+          exit 0 if tg_ran_eval
+
+          if ARGV.any?
+            $0 = ARGV.first
+            load ARGV.shift
+          end
         else
         #{driver_body(ops)}
         end

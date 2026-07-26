@@ -194,6 +194,23 @@ RSpec.describe Tebako::RuntimeDeployer do
       expect(driver).to include("load ARGV.shift")
     end
 
+    # mkmf/rake recipes spawn the shim ruby with interpreter switches
+    # (e.g. `ruby -rrubygems exe/rake` from ffi-compiler2); the driver's
+    # script mode must consume them instead of loading "-rrubygems"
+    it "emulates ruby interpreter switches (-r/-I/-e/--) before the script", unless: Gem.win_platform? do
+      generated_driver([])
+      stub = File.join(seed_dir, "local", "stub.rb")
+
+      script = File.join(@tmp, "spawned.rb")
+      File.write(script, 'puts "spawned: #{defined?(StringIO)} #{ARGV.inspect}"')
+      out = Open3.capture2e(Gem.ruby, stub, "-rstringio", "--", script, "a1", "a2").first
+      expect(out).to include('spawned: constant ["a1", "a2"]')
+
+      out, st = Open3.capture2e(Gem.ruby, stub, "-e", 'puts "evaled #{1 + 1}"')
+      expect(st.exitstatus).to eq(0)
+      expect(out).to include("evaled 2")
+    end
+
     it "points the driver's header dirs at the runtime SDK and links probes against the symbol stub",
        unless: Gem.win_platform? do
       driver = generated_driver([])
