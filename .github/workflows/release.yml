@@ -103,15 +103,6 @@ jobs:
       - name: Install native build tools
         run: brew install ninja autoconf automake autoconf-archive libtool
 
-      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs emits
-      # dylib links for the crypto deps, hence the dynamic triplet.
-      - name: Provision Botan-3 + json-c (vcpkg)
-        working-directory: tebako-rs
-        env:
-          TRIPLET: ${{ matrix.dyn_triplet }}
-          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
-        run: bash ci/provision-crypto.sh
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -139,6 +130,16 @@ jobs:
             --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
+
+      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs emits
+      # dylib links for the crypto deps, hence the dynamic triplet.
+      - name: Provision Botan-3 + json-c (vcpkg)
+        working-directory: tebako-rs
+        env:
+          TRIPLET: ${{ matrix.dyn_triplet }}
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
+        run: bash ci/provision-crypto.sh
 
       - name: Build the four binaries (release)
         working-directory: tebako-rs
@@ -249,15 +250,6 @@ jobs:
             autoconf automake autoconf-archive libtool \
             curl zip unzip tar ca-certificates
 
-      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs emits
-      # dylib links for the crypto deps, hence the dynamic triplet.
-      - name: Provision Botan-3 + json-c (vcpkg)
-        working-directory: tebako-rs
-        env:
-          TRIPLET: ${{ matrix.dyn_triplet }}
-          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
-        run: bash ci/provision-crypto.sh
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -285,6 +277,16 @@ jobs:
             --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
+
+      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs emits
+      # dylib links for the crypto deps, hence the dynamic triplet.
+      - name: Provision Botan-3 + json-c (vcpkg)
+        working-directory: tebako-rs
+        env:
+          TRIPLET: ${{ matrix.dyn_triplet }}
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
+        run: bash ci/provision-crypto.sh
 
       - name: Build the four binaries (release)
         working-directory: tebako-rs
