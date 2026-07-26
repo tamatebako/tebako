@@ -202,11 +202,11 @@ RSpec.describe Tebako::RuntimeDeployer do
       stub = File.join(seed_dir, "local", "stub.rb")
 
       script = File.join(@tmp, "spawned.rb")
-      File.write(script, 'puts "spawned: #{defined?(StringIO)} #{ARGV.inspect}"')
+      File.write(script, "puts \"spawned: \#{defined?(StringIO)} \#{ARGV.inspect}\"")
       out = Open3.capture2e(Gem.ruby, stub, "-rstringio", "--", script, "a1", "a2").first
       expect(out).to include('spawned: constant ["a1", "a2"]')
 
-      out, st = Open3.capture2e(Gem.ruby, stub, "-e", 'puts "evaled #{1 + 1}"')
+      out, st = Open3.capture2e(Gem.ruby, stub, "-e", "puts \"evaled \#{1 + 1}\"")
       expect(st.exitstatus).to eq(0)
       expect(out).to include("evaled 2")
     end
