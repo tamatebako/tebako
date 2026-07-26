@@ -67,7 +67,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
-      ruby-matrix-minimal: ${{ steps.set-matrix.outputs.ruby-matrix-minimal }}
       env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
     steps:
       - name: Checkout tebako packaging environment
@@ -80,9 +79,60 @@ jobs:
           matrix-file: .github/matrices/ubuntu.json
           event-name: ${{ github.event_name }}
 
+  # Gate the matrix spawn: one end-to-end smoke (setup -> lean press ->
+  # package run) fails fast instead of turning a systemic breakage into a
+  # full matrix of red legs. Uses the newest boundary line (4.0.6) so the
+  # runtime/SDK resolution for the newest major is proven up front.
+  preflight:
+    name: preflight smoke (lean, Ruby 4.0.6)
+    needs: [ prepare ]
+    runs-on: ubuntu-22.04
+    container:
+      image: 'ghcr.io/${{ github.repository_owner }}/tebako-ubuntu-20.04-dev'
+    env:
+      CC: gcc-10
+      CXX: g++-10
+    steps:
+      - name: Fix git configuration
+        run: |
+          git config --global --add safe.directory $PWD
+
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: ubuntu-20.04-x86_64
+          cc: ${{ env.CC }}
+          version: ${{ env.CACHE_VER }}
+
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-4.0.6-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: exe/tebako setup -D
+
+      - name: Smoke press and run
+        run: |
+          exe/tebako press -D -R 4.0.6 --root=tests/test-01 --entry=tebako-test-run.rb --output=preflight-package --mode=lean
+          out="$(./preflight-package)"
+          echo "$out"
+          case "$out" in
+            *"Hello!  This is test-01 talking from inside DwarFS"*) echo "preflight OK" ;;
+            *) echo "preflight FAILED"; exit 1 ;;
+          esac
+
   tests-1:
     name: tests-1 ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    needs: [ prepare ]
+    needs: [ prepare, preflight ]
     runs-on: ${{ matrix.architecture.host }}
     container:
       image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
@@ -92,7 +142,7 @@ jobs:
         architecture:
           - { host: 'ubuntu-22.04', name: x86_64 }
           - { host: 'ubuntu-22.04-arm', name: arm64 }
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix-minimal)}}
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
     env:
       CC: ${{ matrix.env.CC }}
@@ -143,7 +193,7 @@ jobs:
 
   tests-1-app:
     name: tests-1-app ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    needs: [ prepare ]
+    needs: [ prepare, preflight ]
     runs-on: ${{ matrix.architecture.host }}
     container:
       image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
@@ -153,7 +203,7 @@ jobs:
         architecture:
           - { host: 'ubuntu-22.04', name: x86_64 }
           - { host: 'ubuntu-22.04-arm', name: arm64 }
-        package_ruby_ver: ${{ fromJson(needs.prepare.outputs.ruby-matrix-minimal) }}
+        package_ruby_ver: ${{ fromJson(needs.prepare.outputs.ruby-matrix) }}
         env: ${{ fromJson(needs.prepare.outputs.env-matrix) }}
     env:
       CC: ${{ matrix.env.CC }}
@@ -201,7 +251,7 @@ jobs:
 
   tests-2:
     name: tests-2 ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    needs: [ prepare ]
+    needs: [ prepare, preflight ]
     runs-on: ${{ matrix.architecture.host }}
     container:
       image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'

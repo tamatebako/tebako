@@ -62,7 +62,6 @@ jobs:
     outputs:
       ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
       env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
-      ruby-matrix-minimal: ${{ steps.set-matrix.outputs.ruby-matrix-minimal }}
     steps:
       - name: Checkout tebako packaging environment
         uses: actions/checkout@v4
@@ -74,14 +73,64 @@ jobs:
           matrix-file: .github/matrices/macos.json
           event-name: ${{ github.event_name }}
 
+  # Gate the matrix spawn: one end-to-end smoke (setup -> lean press ->
+  # package run) fails fast instead of turning a systemic breakage into a
+  # full matrix of red legs. Uses the newest boundary line (4.0.6) so the
+  # runtime/SDK resolution for the newest major is proven up front.
+  preflight:
+    name: preflight smoke (lean, Ruby 4.0.6)
+    needs: [ prepare ]
+    runs-on: macos-14
+    steps:
+      - name: Checkout tebako packaging environment
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          submodules: true
+
+      - name: Setup ci environment
+        uses: ./.github/actions/setup-tebako
+        with:
+          cache: off
+          install: off
+          ruby_version: '3.3.7'
+          xcode: '15.4'
+
+      - name: Setup development environment
+        uses: ./.github/actions/setup-tebako-development
+        with:
+          path: deps
+          os: macos-14
+          cc: ruby-3.3.7-XCode-15.4
+          version: ${{ env.CACHE_VER }}
+
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-4.0.6-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: exe/tebako setup -D
+
+      - name: Smoke press and run
+        run: |
+          exe/tebako press -D -R 4.0.6 --root=tests/test-01 --entry=tebako-test-run.rb --output=preflight-package --mode=lean
+          out="$(./preflight-package)"
+          echo "$out"
+          case "$out" in
+            *"Hello!  This is test-01 talking from inside DwarFS"*) echo "preflight OK" ;;
+            *) echo "preflight FAILED"; exit 1 ;;
+          esac
+
   tests-1:
     name: tests-1 package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
-    needs: [ prepare ]
+    needs: [ prepare, preflight ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix-minimal)}}
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
         ruby_ver: ['3.3.7']
     steps:
@@ -134,7 +183,7 @@ jobs:
 
   tests-1-app:
     name: tests-1-app package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
-    needs: [ prepare ]
+    needs: [ prepare, preflight ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false
@@ -190,7 +239,7 @@ jobs:
 
   tests-2:
     name: tests-2 package Ruby ${{ matrix.package_ruby_ver }} on ${{ matrix.env.os }}, XCode ${{ matrix.env.xcode }}, Ruby ${{ matrix.ruby_ver }}
-    needs: [ prepare ]
+    needs: [ prepare, preflight ]
     runs-on: ${{ matrix.env.os }}
     strategy:
       fail-fast: false

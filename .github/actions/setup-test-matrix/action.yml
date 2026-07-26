@@ -1,9 +1,9 @@
 # Copyright (c) 2025 [Ribose Inc](https://www.ribose.com).
 # All rights reserved.
-# This file is a part of the Tebako project.
+# This file is a part of the Tebako project
 
 name: 'Setup test matrix'
-description: 'Sets up test matrix configuration for tebako tests'
+description: 'Emits the tiered test matrix (ruby lines x environments) for tebako press tests'
 
 inputs:
   matrix-file:
@@ -19,9 +19,6 @@ outputs:
   ruby-matrix:
     description: 'Ruby versions matrix configuration'
     value: ${{ steps.set-matrix.outputs.ruby-matrix }}
-  ruby-matrix-minimal:
-    description: 'Minimal Ruby versions matrix configuration'
-    value: ${{ steps.set-matrix.outputs.ruby-matrix-minimal }}
   env-matrix:
     description: 'Environment matrix configuration'
     value: ${{ steps.set-matrix.outputs.env-matrix }}
@@ -33,20 +30,22 @@ runs:
       id: set-matrix
       shell: bash
       run: |
-        # Determine which config to use based on event
-        if [[ "${{ inputs.event-name }}" == "pull_request" ]]; then
-          prefix="tidy"
-          prefixm="minimal"
-        else
-          prefix="full"
-          prefixm="tidy"
-        fi
+        # Tiered version coverage (TODO.restructure/08, locked 2026-07-25):
+        #   push / pull_request        -> "gate": boundary lines x tier-1 envs
+        #   schedule / workflow_dispatch -> "full": full line set x all envs
+        case "${{ inputs.event-name }}" in
+          schedule | workflow_dispatch)
+            tier="full"
+            ;;
+          *)
+            tier="gate"
+            ;;
+        esac
 
-        # Read and output the matrices
-        ruby=$(jq -c ".$prefix.ruby" ${{ inputs.matrix-file }})
-        rubym=$(jq -c ".$prefixm.ruby" ${{ inputs.matrix-file }})
-        env=$(jq -c ".$prefix.env" ${{ inputs.matrix-file }})
+        ruby=$(jq -c ".$tier.ruby" ${{ inputs.matrix-file }})
+        env=$(jq -c ".$tier.env" ${{ inputs.matrix-file }})
+
+        echo "Selected '$tier' tier for event '${{ inputs.event-name }}': ruby=$ruby env=$env"
 
         echo "ruby-matrix=$ruby" >> $GITHUB_OUTPUT
-        echo "ruby-matrix-minimal=$rubym" >> $GITHUB_OUTPUT
         echo "env-matrix=$env" >> $GITHUB_OUTPUT

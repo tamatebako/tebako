@@ -75,7 +75,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       ruby-matrix: ${{ steps.set-matrix.outputs.ruby-matrix }}
-      ruby-matrix-minimal: ${{ steps.set-matrix.outputs.ruby-matrix-minimal }}
       env-matrix: ${{ steps.set-matrix.outputs.env-matrix }}
     steps:
       - name: Checkout tebako packaging environment
@@ -186,7 +185,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix-minimal)}}
+        package_ruby_ver: ${{fromJson(needs.prepare.outputs.ruby-matrix)}}
         env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
     env:
       CC: ${{ matrix.env.CC }}

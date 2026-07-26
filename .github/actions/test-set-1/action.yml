@@ -52,7 +52,12 @@ runs:
         bundle install
         VERBOSE=${{ inputs.verbose }} RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
+    # End-to-end press-modes coverage is mode/ABI-level, not version-level;
+    # run it once per leg set (on the prism boundary line) instead of once
+    # per ruby line -- each run presses lean x2 + fat + classic and downloads
+    # a runtime into deliberately fresh caches
     - name: Run press-modes end-to-end tests (lean/fat/classic)
+      if: matrix.package_ruby_ver == '3.4.2'
       shell: bash
       run: |
         RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/press-modes-tests.sh
