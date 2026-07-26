@@ -31,8 +31,8 @@ pub use keys::{
     press_local_key, secret_key_by_keyid, PressKey,
 };
 pub use root::{
-    apply_successor_chain, short_fingerprint, sign_successor_statement, verify_successor_statement,
-    SuccessorStatement, STATEMENT_FORMAT,
+    apply_successor_chain, parse_successor_statement, short_fingerprint, sign_successor_statement,
+    successor_chain_path, verify_successor_statement, SuccessorStatement, STATEMENT_FORMAT,
 };
 pub use sign::{
     sign_detached, signature_issuer_fingerprint, verify_detached, verify_detached_full,

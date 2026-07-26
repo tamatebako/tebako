@@ -283,6 +283,8 @@ fn successor_chain_forwards_trust() {
     let succ = home.join("keyring/successors");
     std::fs::create_dir_all(&succ).unwrap();
     let st01 = tebako_signer::sign_successor_statement(&r0_secret, &r0_fp, &r1_fp).unwrap();
+    eprintln!("DEBUG r0_fp={r0_fp} r1_fp={r1_fp}");
+    eprintln!("DEBUG st01:\n{}", String::from_utf8_lossy(&st01));
     let st12 = tebako_signer::sign_successor_statement(&r1_secret, &r1_fp, &r2_fp).unwrap();
     std::fs::write(succ.join("01.asc"), &st01).unwrap();
     std::fs::write(succ.join("02.asc"), &st12).unwrap();

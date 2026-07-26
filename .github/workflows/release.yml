@@ -147,7 +147,7 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
-        run: bash ../.github/workflows/lib/stage.sh
+        run: bash .github/workflows/lib/stage.sh
 
       - name: Upload fragment artifact
         uses: actions/upload-artifact@v4
@@ -294,7 +294,7 @@ jobs:
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
-        run: bash ../.github/workflows/lib/stage.sh
+        run: bash .github/workflows/lib/stage.sh
 
       - name: Upload fragment artifact
         uses: actions/upload-artifact@v4
