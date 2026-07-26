@@ -128,12 +128,21 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    (spec 08). Limit: dynamic binaries only; the shim is a TFS consumer,
    never a format.
 2. **Static/self-contained tools**: extract-to-exec-cache
-   (`~/.tebako/exec/<sha256>/…`, 0755, verified at install). Complete
-   because there is no chain; image-resident data they need travels in
-   the closure (manifest-declared). Honest limits: static binaries make
-   syscalls directly — they escape interposition AND jails (documented).
-   Still the preferred shape for toolkit payloads (simplicity + no
-   injection), with tier 1 when VFS/jails are required.
+   (`~/.tebako/exec/<sha256>/…`, 0755, verified at install). A static
+   binary is one monolithic block: no dynamic symbols, no interposition
+   point — it cannot be preload-shimmed, so it must be materialized on
+   the host, and every payload file it needs must travel in the
+   manifest-declared extraction closure (it sees only the host FS: no
+   TFS, no other payloads, no jails — spec 08 §5). Extraction is
+   content-addressed: once per digest per machine, shared across
+   consumers. Nuances: (a) a static binary BUILT against the
+   `tebako_fs_*` ABI carries the VFS inside itself and CAN read other
+   payloads (the "libtfs for everyone" embedding story — a build-time
+   property, not something imposable on an arbitrary binary); (b) the
+   only theoretical interposition for arbitrary static binaries is
+   kernel-level (seccomp user-notification / gVisor-class, Linux-only)
+   — explicitly out of scope. Prefer tier 1 (dynamic builds) whenever
+   VFS access or jails matter.
 3. **Interpreted payloads (ruby)**: in-process io-routing patches
    virtualize file IO — the existing mechanism, no exec at all.
 
