@@ -47,6 +47,11 @@ pub const EX_TEBAKO_ABI: u8 = 66;
 pub const EX_TEBAKO_RUNTIME_REF: u8 = 67;
 pub const EX_TEBAKO_UNAVAILABLE: u8 = 69;
 pub const EX_TEBAKO_SHA: u8 = 70;
+/// Trailer signature invalid, or an unsigned package in
+/// TEBAKO_REQUIRE_SIGNED=1 mode (item 29; named in README).
+pub const EX_TEBAKO_SIGNATURE: u8 = 71;
+/// The signer key of a v2-signed package is not in the trusted keyring.
+pub const EX_TEBAKO_TRUST: u8 = 72;
 pub const EX_TEBAKO_IO: u8 = 74;
 
 const DEFAULT_RELEASES_BASE: &str =
@@ -557,6 +562,256 @@ fn install_payload(
 }
 
 // ---------------------------------------------------------------------
+// chain of trust (item 29): trailer signature + per-slot sha256
+// ---------------------------------------------------------------------
+
+fn require_signed_mode() -> bool {
+    std::env::var("TEBAKO_REQUIRE_SIGNED").is_ok_and(|v| !v.is_empty() && v != "0")
+}
+
+/// Append one line to the audit journal ($TEBAKO_HOME/journal.log).
+/// Best-effort: journaling never fails the run.
+fn journal(home: &Path, line: &str) {
+    use std::io::Write;
+    let _ = std::fs::create_dir_all(home);
+    let path = home.join("journal.log");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    {
+        let _ = writeln!(f, "{now} {line}");
+    }
+}
+
+/// SHA-256 of `size` bytes at `offset` of `path` (streaming, one pass).
+fn sha256_region(path: &Path, offset: u64, size: u64) -> Result<[u8; 32], BootError> {
+    use sha2::Digest;
+
+    let mut f = std::fs::File::open(path).map_err(|e| BootError {
+        code: EX_TEBAKO_IO,
+        message: format!("cannot open {} for slot hashing: {e}", path.display()),
+    })?;
+    f.seek(SeekFrom::Start(offset)).map_err(|e| BootError {
+        code: EX_TEBAKO_IO,
+        message: format!("cannot seek in {}: {e}", path.display()),
+    })?;
+    let mut h = sha2::Sha256::new();
+    let mut buf = [0u8; 65536];
+    let mut left = size;
+    while left > 0 {
+        let chunk = left.min(buf.len() as u64) as usize;
+        f.read_exact(&mut buf[..chunk]).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot read {} for slot hashing: {e}", path.display()),
+        })?;
+        h.update(&buf[..chunk]);
+        left -= chunk as u64;
+    }
+    Ok(h.finalize().into())
+}
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(64);
+    for &b in bytes {
+        s.push(DIGITS[(b >> 4) as usize] as char);
+        s.push(DIGITS[(b & 15) as usize] as char);
+    }
+    s
+}
+
+/// Verify the chain of trust of the package at `self_path` (item 29):
+///
+/// - v2-signed trailer: the OpenPGP signature must verify against the
+///   trusted keyring (`EX_TEBAKO_SIGNATURE` when invalid,
+///   `EX_TEBAKO_TRUST` when the signer key is not registered), then every
+///   slot's SHA-256 is checked against the trailer's digest array
+///   (`EX_TEBAKO_SHA` on mismatch, streaming one pass at install; a
+///   trusted-cache marker avoids re-hashing unchanged packages).
+/// - v1 (legacy unsigned) trailer: accepted with a loud stderr warning
+///   and an audit-journal record — unless TEBAKO_REQUIRE_SIGNED=1, which
+///   turns it into a hard `EX_TEBAKO_SIGNATURE` failure.
+pub fn verify_chain(self_path: &Path, m: &tpkg::Manifest) -> Result<(), BootError> {
+    let home = cache_root()?;
+    verify_chain_with_home(self_path, m, &home)
+}
+
+/// The home-parameterized core of [`verify_chain`] (tests inject a temp
+/// home; production resolves it through `cache_root()`).
+pub fn verify_chain_with_home(
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    home: &Path,
+) -> Result<(), BootError> {
+    let Some(v2) = &m.v2 else {
+        // v1 legacy rule (item 29 point 8)
+        if require_signed_mode() {
+            return fail(
+                EX_TEBAKO_SIGNATURE,
+                format!(
+                    "{} carries an unsigned v1 (legacy) tpkg trailer and TEBAKO_REQUIRE_SIGNED=1 is set — refusing to execute\n  re-bundle the package to sign it, or unset TEBAKO_REQUIRE_SIGNED",
+                    self_path.display()
+                ),
+            );
+        }
+        eprintln!(
+            "tebako-bootstrap: WARNING: {} carries an unsigned v1 (legacy) tpkg trailer\n  — accepted for compatibility; re-bundle the package for integrity protection",
+            self_path.display()
+        );
+        journal(
+            &home,
+            &format!("event=legacy-v1-accepted package={}", self_path.display()),
+        );
+        return Ok(());
+    };
+
+    // -- signature verification -----------------------------------------
+    let keyring = tebako_signer::trusted_keyring_bytes(&home)
+        .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
+
+    let trailer = {
+        let mut f = std::fs::File::open(self_path).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!(
+                "cannot open {} for signature verification: {e}",
+                self_path.display()
+            ),
+        })?;
+        let tlen = tpkg::trailer_len(m);
+        f.seek(SeekFrom::End(-(tlen as i64)))
+            .map_err(|e| BootError {
+                code: EX_TEBAKO_IO,
+                message: format!("cannot seek trailer of {}: {e}", self_path.display()),
+            })?;
+        let mut buf = vec![0u8; tlen as usize];
+        f.read_exact(&mut buf).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot read trailer of {}: {e}", self_path.display()),
+        })?;
+        buf
+    };
+    let region = tpkg::v2_signed_region(&trailer).map_err(|_| BootError {
+        code: EX_TEBAKO_MANIFEST,
+        message: format!(
+            "corrupt tebako manifest trailer in {} (bad v2 extension bounds) — re-stitch the package",
+            self_path.display()
+        ),
+    })?;
+
+    let keyid_hex = v2.signer_keyid_hex();
+    let outcome = tebako_signer::verify_detached(&keyring, region, &v2.signature, &v2.signer_keyid)
+        .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+    match outcome {
+        tebako_signer::VerifyOutcome::Trusted(_) => {
+            journal(
+                &home,
+                &format!(
+                    "event=v2-trusted package={} signer={keyid_hex}",
+                    self_path.display()
+                ),
+            );
+        }
+        tebako_signer::VerifyOutcome::Untrusted(_) => {
+            return fail(
+                EX_TEBAKO_TRUST,
+                format!(
+                    "the signer of {} is not in the trusted keyring — refusing to execute\n  signer keyid: {keyid_hex}\n  keyring: {}\n  register the signer's public key with tebako-pkg (TOFU) if you trust it",
+                    self_path.display(),
+                    tebako_signer::trusted_keyring_path(&home).display()
+                ),
+            );
+        }
+        tebako_signer::VerifyOutcome::Invalid(_) => {
+            return fail(
+                EX_TEBAKO_SIGNATURE,
+                format!(
+                    "the trailer signature of {} is INVALID — the package or its trailer was tampered with, refusing to execute\n  signer keyid: {keyid_hex}",
+                    self_path.display()
+                ),
+            );
+        }
+    }
+
+    // -- per-slot sha256 (trusted-cache marker) --------------------------
+    let marker_key = {
+        use sha2::Digest;
+        sha256_hex(&sha2::Sha256::digest(region))
+    };
+    let marker_path = home
+        .join("trusted-cache")
+        .join(format!("{marker_key}.marker"));
+    let meta = std::fs::metadata(self_path).map_err(|e| BootError {
+        code: EX_TEBAKO_IO,
+        message: format!("cannot stat {}: {e}", self_path.display()),
+    })?;
+    let size = meta.len();
+    let mtime = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    if let Ok(marker) = std::fs::read_to_string(&marker_path) {
+        let mut parts = marker.split_whitespace();
+        let ok = parts.next() == Some(&*size.to_string())
+            && parts.next() == Some(&*mtime.to_string())
+            && parts.next() == Some(keyid_hex.as_str());
+        if ok {
+            journal(
+                &home,
+                &format!(
+                    "event=v2-slots-cache-hit package={} signer={keyid_hex}",
+                    self_path.display()
+                ),
+            );
+            return Ok(());
+        }
+    }
+
+    for (i, slot) in m.slots.iter().enumerate() {
+        let digest = sha256_region(self_path, slot.offset, slot.size)?;
+        if digest != v2.slot_digests[i] {
+            return fail(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for slot {i} ({}) of {} — refusing to install or execute\n  expected: {} (from the signed trailer)\n  actual:   {}\n  the package content was tampered with after signing",
+                    slot.mount_point_str().unwrap_or_default(),
+                    self_path.display(),
+                    sha256_hex(&v2.slot_digests[i]),
+                    sha256_hex(&digest)
+                ),
+            );
+        }
+    }
+
+    // publish the trusted-cache marker (best-effort)
+    let _ = std::fs::create_dir_all(home.join("trusted-cache"));
+    if let Err(e) = std::fs::write(&marker_path, format!("{size} {mtime} {keyid_hex}\n")) {
+        journal(
+            &home,
+            &format!(
+                "event=trusted-cache-write-failed path={} error={e}",
+                marker_path.display()
+            ),
+        );
+    }
+    journal(
+        &home,
+        &format!(
+            "event=v2-slots-verified package={} signer={keyid_hex}",
+            self_path.display()
+        ),
+    );
+    Ok(())
+}
+
+// ---------------------------------------------------------------------
 // runtime resolution
 // ---------------------------------------------------------------------
 
@@ -818,6 +1073,10 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
             );
         }
     };
+
+    // Chain of trust (item 29): verify the trailer signature and the
+    // per-slot digests before anything is extracted or mounted.
+    verify_chain(&self_path, &m)?;
 
     if m.launcher_abi > LAUNCHER_ABI {
         return fail(

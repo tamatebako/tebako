@@ -12,6 +12,7 @@ categories = ["filesystem", "no-std"]
 
 [dependencies]
 tpkg = { version = "0.1.0", path = "../tpkg" }
+tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
 tebako-http = { version = "0.1.0", path = "../tebako-http" }
 libc = "0.2"
 sha2 = "0.10"
