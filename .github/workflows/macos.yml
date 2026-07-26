@@ -75,10 +75,12 @@ jobs:
 
   # Gate the matrix spawn: one end-to-end smoke (setup -> lean press ->
   # package run) fails fast instead of turning a systemic breakage into a
-  # full matrix of red legs. Uses the newest boundary line (4.0.6) so the
-  # runtime/SDK resolution for the newest major is proven up front.
+  # full matrix of red legs. Runs on the prism boundary line (3.4.2): 4.0.6
+  # is not gate material today -- its linux-gnu runtime packages cannot even
+  # extract (upstream defect in the 4.0 glibc builds; the 4.0.6 legs report
+  # it individually without taking the workflow down).
   preflight:
-    name: preflight smoke (lean, Ruby 4.0.6)
+    name: preflight smoke (lean, Ruby 3.4.2)
     needs: [ prepare ]
     runs-on: macos-14
     steps:
@@ -108,14 +110,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .tebako-home
-          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-4.0.6-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-3.4.2-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
 
       - name: tebako setup
         run: exe/tebako setup -D
 
       - name: Smoke press and run
         run: |
-          exe/tebako press -D -R 4.0.6 --root=tests/test-01 --entry=tebako-test-run.rb --output=preflight-package --mode=lean
+          exe/tebako press -D -R 3.4.2 --root=tests/test-01 --entry=tebako-test-run.rb --output=preflight-package --mode=lean
           out="$(./preflight-package)"
           echo "$out"
           case "$out" in
