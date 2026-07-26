@@ -81,10 +81,12 @@ jobs:
             target: aarch64-apple-darwin
             platform: macos-arm64
             triplet: arm64-osx-static
+            dyn_triplet: arm64-osx-dynamic
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-x86_64
             triplet: x64-osx-static
+            dyn_triplet: x64-osx-dynamic
     steps:
       - uses: actions/checkout@v4
         with:
@@ -101,10 +103,15 @@ jobs:
       - name: Install native build tools
         run: brew install ninja autoconf automake autoconf-archive libtool
 
-      # tebako-signer's rnp-rs links the system librnp (dylib) — see the
-      # "librnp today" note in the workflow header comments.
-      - name: Install librnp
-        run: brew install rnp
+      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs emits
+      # dylib links for the crypto deps, hence the dynamic triplet.
+      - name: Provision Botan-3 + json-c (vcpkg)
+        working-directory: tebako-rs
+        env:
+          TRIPLET: ${{ matrix.dyn_triplet }}
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
+        run: bash ci/provision-crypto.sh
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -215,10 +222,12 @@ jobs:
             target: x86_64-unknown-linux-gnu
             platform: linux-gnu-x86_64
             triplet: x64-linux-static
+            dyn_triplet: x64-linux-dynamic
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             platform: linux-gnu-arm64
             triplet: arm64-linux-static
+            dyn_triplet: arm64-linux-dynamic
     steps:
       - uses: actions/checkout@v4
         with:
@@ -238,8 +247,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             autoconf automake autoconf-archive libtool \
-            curl zip unzip tar ca-certificates \
-            librnp-dev
+            curl zip unzip tar ca-certificates
+
+      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs emits
+      # dylib links for the crypto deps, hence the dynamic triplet.
+      - name: Provision Botan-3 + json-c (vcpkg)
+        working-directory: tebako-rs
+        env:
+          TRIPLET: ${{ matrix.dyn_triplet }}
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
+        run: bash ci/provision-crypto.sh
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -352,10 +370,12 @@ jobs:
             target: x86_64-unknown-linux-musl
             platform: linux-musl-x86_64
             triplet: x64-linux-musl
+            dyn_triplet: x64-linux-musl-dynamic
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             platform: linux-musl-arm64
             triplet: arm64-linux-musl
+            dyn_triplet: arm64-linux-musl-dynamic
     steps:
       - uses: actions/checkout@v4
         with:
@@ -381,6 +401,7 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
           TARGET: ${{ matrix.target }}
           TRIPLET: ${{ matrix.triplet }}
+          DYN_TRIPLET: ${{ matrix.dyn_triplet }}
           RUST_VERSION: ${{ env.RUST_VERSION }}
           VCPKG_COMMIT: ${{ env.VCPKG_COMMIT }}
           BOOTSTRAP_SIZE_BUDGET: ${{ env.BOOTSTRAP_SIZE_BUDGET }}
@@ -388,7 +409,7 @@ jobs:
           docker run --rm \
             -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
             -v "$HOME/.cache/vcpkg:/root/.cache/vcpkg" \
-            -e VERSION -e PLATFORM -e TARGET -e TRIPLET \
+            -e VERSION -e PLATFORM -e TARGET -e TRIPLET -e DYN_TRIPLET \
             -e RUST_VERSION -e VCPKG_COMMIT -e BOOTSTRAP_SIZE_BUDGET \
             -e GITHUB_STEP_SUMMARY -e GITHUB_WORKSPACE \
             alpine:3.21 sh "$GITHUB_WORKSPACE/tebako-rs/ci/musl-build.sh"
