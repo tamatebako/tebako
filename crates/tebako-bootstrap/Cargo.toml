@@ -1,0 +1,26 @@
+[package]
+name = "tebako-bootstrap"
+description = "the tebako bootstrap launcher in Rust — resolves the runtime (cache/download/payload, SHA256-verified) and execs it with launcher ABI v1"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "bootstrap", "launcher", "tpkg"]
+categories = ["filesystem", "no-std"]
+
+[dependencies]
+tpkg = { version = "0.1.0", path = "../tpkg" }
+libc = "0.2"
+sha2 = "0.10"
+
+[[bin]]
+name = "tebako-bootstrap"
+path = "src/main.rs"
+
+[lib]
+name = "tebako_bootstrap"
+path = "src/lib.rs"
+
+[dev-dependencies]
