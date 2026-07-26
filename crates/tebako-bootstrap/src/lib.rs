@@ -608,6 +608,153 @@ fn install_payload(
 // chain of trust (item 29): trailer signature + per-slot sha256
 // ---------------------------------------------------------------------
 
+// ---------------------------------------------------------------------
+// chain of trust (item 29): trailer signature + per-slot sha256
+// ---------------------------------------------------------------------
+
+/// The tamatebako release root-of-trust fingerprint, compile-time
+/// embedded in the bootstrap (item 29 point 1: the root fingerprint is
+/// published on tebako.org AND embedded in the artifacts). Empty until
+/// the release key ceremony fills it at release time;
+/// `TEBAKO_TRUSTED_ROOT` (a fingerprint) extends/overrides it for
+/// development.
+pub const EMBEDDED_ROOT_FINGERPRINT: &str = "";
+
+/// A trusted root: fingerprint plus optionally-bundled public key bytes
+/// (an env override may point at an armored public key file).
+struct TrustedRoot {
+    fingerprint: String,
+    public_key: Option<Vec<u8>>,
+}
+
+/// The trusted roots in effect: the embedded root (fingerprint only — its
+/// public key must reach the trusted keyring via the normal channel), and
+/// the `TEBAKO_TRUSTED_ROOT` override — a fingerprint (public key then
+/// expected in the trusted keyring) or a path to an armored public key
+/// file. A fingerprint never suffices on its own: the trailer signature
+/// is always cryptographically verified against the root's public key.
+fn trusted_roots() -> Vec<TrustedRoot> {
+    let mut roots = Vec::new();
+    if !EMBEDDED_ROOT_FINGERPRINT.is_empty() {
+        roots.push(TrustedRoot {
+            fingerprint: EMBEDDED_ROOT_FINGERPRINT.to_uppercase(),
+            public_key: None,
+        });
+    }
+    if let Ok(v) = std::env::var("TEBAKO_TRUSTED_ROOT") {
+        let v = v.trim();
+        if !v.is_empty() {
+            let path = Path::new(v);
+            if path.is_file() {
+                if let Ok(bytes) = std::fs::read(path) {
+                    let fp = (|| {
+                        let ctx = rnp::Context::new().ok()?;
+                        ctx.load_keys(rnp::KeyringFormat::Gpg, &bytes, rnp::LoadSaveFlags::PUBLIC)
+                            .ok()?;
+                        let mut ids = ctx.identifiers(rnp::IdentifierKind::Fingerprint).ok()?;
+                        ids.next()
+                    })();
+                    if let Some(fp) = fp {
+                        roots.push(TrustedRoot {
+                            fingerprint: fp.to_uppercase(),
+                            public_key: Some(bytes),
+                        });
+                    }
+                }
+            } else {
+                roots.push(TrustedRoot {
+                    fingerprint: v.to_uppercase(),
+                    public_key: None,
+                });
+            }
+        }
+    }
+    roots
+}
+
+/// Forward trust through the successor-statement chain (item 29
+/// rotation): `$TEBAKO_HOME/keyring/successors/` holds successor
+/// statements (`*.asc`) and the successor public keys (`<fingerprint>.pub`)
+/// they authorize. When every statement verifies from a trusted root to
+/// `signer_fp`, the signer's public key is registered in the trusted
+/// keyring and the trailer signature is re-verified against it.
+/// Returns Ok(true) only when the final signature verification is Trusted.
+fn forward_trust_from_successors(
+    home: &Path,
+    roots: &[TrustedRoot],
+    signer_fp: &str,
+    region: &[u8],
+    signature: &[u8],
+    signer_keyid: &[u8; 8],
+) -> Result<bool, BootError> {
+    let dir = home.join("keyring").join("successors");
+    let rd = match std::fs::read_dir(&dir) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(BootError::new(EX_TEBAKO_IO, format!("cannot read {}: {e}", dir.display()))),
+    };
+
+    let mut statements: Vec<Vec<u8>> = Vec::new();
+    let mut extended: Vec<u8> = tebako_signer::trusted_keyring_bytes(home)
+        .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
+    for root in roots {
+        if let Some(pk) = &root.public_key {
+            extended.extend_from_slice(pk);
+        }
+    }
+    for entry in rd.flatten() {
+        let path = entry.path();
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        if name.ends_with(".asc") {
+            if let Ok(bytes) = std::fs::read(&path) {
+                statements.push(bytes);
+            }
+        } else if name.ends_with(".pub") {
+            if let Ok(bytes) = std::fs::read(&path) {
+                // the trusted keyring is binary; successor public keys may
+                // be armored — dearmor before concatenating
+                let bytes = rnp::dearmor_bytes(&bytes).unwrap_or(bytes);
+                extended.extend_from_slice(&bytes);
+            }
+        }
+    }
+    statements.sort();
+    if statements.is_empty() || roots.is_empty() {
+        return Ok(false);
+    }
+
+    for root in roots {
+        // the signer may be any link in the rotation chain, not only its
+        // tip: try every prefix of the statement list
+        for k in 1..=statements.len() {
+            let Ok(final_fp) =
+                tebako_signer::apply_successor_chain(&root.fingerprint, &extended, &statements[..k])
+            else {
+                break;
+            };
+            if !final_fp.eq_ignore_ascii_case(signer_fp) {
+                continue;
+            }
+            // rotation proven: register the signer's public key
+            // (distributed alongside the statements) and re-verify
+            let pub_path = dir.join(format!("{}.pub", signer_fp.to_uppercase()));
+            let Ok(public_key) = std::fs::read(&pub_path) else {
+                continue;
+            };
+            tebako_signer::register_trusted(home, &public_key)
+                .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
+            let keyring = tebako_signer::trusted_keyring_bytes(home)
+                .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
+            let outcome = tebako_signer::verify_detached(&keyring, region, signature, signer_keyid)
+                .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+            if matches!(outcome, tebako_signer::VerifyOutcome::Trusted(_)) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
+}
+
 fn require_signed_mode() -> bool {
     std::env::var("TEBAKO_REQUIRE_SIGNED").is_ok_and(|v| !v.is_empty() && v != "0")
 }
@@ -761,14 +908,61 @@ pub fn verify_chain_with_home(
             );
         }
         tebako_signer::VerifyOutcome::Untrusted(_) => {
-            return fail(
-                EX_TEBAKO_TRUST,
-                format!(
-                    "the signer of {} is not in the trusted keyring — refusing to execute\n  signer keyid: {keyid_hex}\n  keyring: {}\n  register the signer's public key with tebako-pkg (TOFU) if you trust it",
-                    self_path.display(),
-                    tebako_signer::trusted_keyring_path(home).display()
-                ),
-            );
+            // Before the named trust error: the signer may be the
+            // embedded/dev trusted root, or reach trust through the
+            // successor-statement rotation chain.
+            let signer_fp = tebako_signer::signature_issuer_fingerprint(&v2.signature)
+                .unwrap_or_default();
+            let roots = trusted_roots();
+            let mut root_verified = false;
+            for root in &roots {
+                if !root.fingerprint.eq_ignore_ascii_case(&signer_fp) {
+                    continue;
+                }
+                // fingerprint matches a trusted root: the signature must
+                // still cryptographically verify against the root's public
+                // key (keyring, or bundled with the override)
+                let mut ring = tebako_signer::trusted_keyring_bytes(home)
+                    .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
+                if let Some(pk) = &root.public_key {
+                    ring.extend_from_slice(pk);
+                }
+                let outcome = tebako_signer::verify_detached(&ring, &region, &v2.signature, &v2.signer_keyid)
+                    .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+                if matches!(outcome, tebako_signer::VerifyOutcome::Trusted(_)) {
+                    journal(
+                        home,
+                        &format!(
+                            "event=v2-trusted-root package={} signer={signer_fp}",
+                            self_path.display()
+                        ),
+                    );
+                    root_verified = true;
+                }
+                break;
+            }
+            if !root_verified
+                && forward_trust_from_successors(home, &roots, &signer_fp, &region, &v2.signature, &v2.signer_keyid)?
+            {
+                journal(
+                    home,
+                    &format!(
+                        "event=v2-trusted-forwarded package={} signer={signer_fp}",
+                        self_path.display()
+                    ),
+                );
+                root_verified = true;
+            }
+            if !root_verified {
+                return fail(
+                    EX_TEBAKO_TRUST,
+                    format!(
+                        "the signer of {} is not in the trusted keyring — refusing to execute\n  signer keyid: {keyid_hex}\n  keyring: {}\n  register the signer's public key with tebako-pkg (TOFU) if you trust it",
+                        self_path.display(),
+                        tebako_signer::trusted_keyring_path(home).display()
+                    ),
+                );
+            }
         }
         tebako_signer::VerifyOutcome::Invalid(_) => {
             return fail(
