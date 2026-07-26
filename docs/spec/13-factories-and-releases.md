@@ -141,6 +141,12 @@ tebako-packages/index/            # the catalog: a registry-of-registries
   (`dynamic` | `wrapped` | `tfs-native` | `static`), `$ORIGIN/../lib`
   RPATH for dynamic builds, deps on other toolkit payloads via the
   spec-03 requires graph (inkscape → libxml2/poppler payloads).
+- **Release hosting (locked):** every package's built payloads —
+  platform-specific or platform-free (universal) — are published as
+  GitHub releases **in the package's own feedstock repo** (artifacts +
+  SHA256SUMS + its `tpkg-registry.yaml`). Nothing is hosted centrally:
+  the index carries only catalog entries pointing at each feedstock's
+  own releases.
 - CI per repo: build matrix per triplet (one mechanical leg each),
   boot-smoke per tool, release per (tool × version) with the payload
   manifest filled from the recipe. First reference port: inkscape (the
