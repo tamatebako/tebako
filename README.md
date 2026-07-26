@@ -35,7 +35,7 @@ tebako-rs/
 Naming is locked: crates are `tfs`, `tebako-pkg`, `tebako-cli`,
 `tebako-bootstrap`, `tpkg` ("-rs" belongs on repos, not crates). The DwarFS
 binding is NOT in this workspace: it lives in its own repo
-[`tamatebako/dwarfs-rs`](https://github.com/tamatebako/dwarfs-rs) and is
+[`tamatebako/dwarfs-t-rs`](https://github.com/tamatebako/dwarfs-t-rs) and is
 consumed as an ordinary external dependency (git/path dep early, crates.io
 when published). dwarfs-t stays C++ forever; `libdwarfs_c` is the only
 Rust-consumable surface for it.
@@ -234,7 +234,7 @@ Rust-consumable surface for it.
 ### SHIPPED (milestone 2)
 
 - **tfs: dwarfs backend via the external
-  [`dwarfs-rs`](https://github.com/tamatebako/dwarfs-rs) crate** (crates
+  [`dwarfs-rs`](https://github.com/tamatebako/dwarfs-t-rs) crate** (crates
   `dwarfs-t`/`dwarfs-t-sys`; currently a *path* dependency — becomes a git
   dependency when dwarfs-rs has a release, crates.io later). Mount from
   file / memory / region (offset+length — the C++ semantics: dwarfs
