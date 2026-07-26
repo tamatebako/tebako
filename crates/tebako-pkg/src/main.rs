@@ -363,8 +363,8 @@ fn print_help() {
 
 fn resolve_signing_key(a: &Args, home: &Path) -> Result<tebako_signer::PressKey, String> {
     if let Some(path) = &a.key_file {
-        let bytes = std::fs::read(path)
-            .map_err(|e| format!("cannot read the key file {path}: {e}"))?;
+        let bytes =
+            std::fs::read(path).map_err(|e| format!("cannot read the key file {path}: {e}"))?;
         return tebako_signer::press_key_from_secret_bytes(&bytes).map_err(|e| e.to_string());
     }
     match &a.sign {
@@ -380,10 +380,7 @@ fn resolve_signing_key(a: &Args, home: &Path) -> Result<tebako_signer::PressKey,
     }
 }
 
-fn sign_artifact(
-    artifact: &Path,
-    press: &tebako_signer::PressKey,
-) -> Result<String, String> {
+fn sign_artifact(artifact: &Path, press: &tebako_signer::PressKey) -> Result<String, String> {
     let data = std::fs::read(artifact)
         .map_err(|_| format!("cannot read artifact: {}", artifact.display()))?;
     let sig = tebako_signer::sign_detached(&data, &press.secret_key, &press.fingerprint)
@@ -397,8 +394,7 @@ fn sign_artifact(
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default()
     ));
-    std::fs::write(&asc, &armored)
-        .map_err(|e| format!("cannot write {}: {e}", asc.display()))?;
+    std::fs::write(&asc, &armored).map_err(|e| format!("cannot write {}: {e}", asc.display()))?;
     let digest = {
         use sha2::Digest;
         sha2::Sha256::digest(&data)
@@ -450,7 +446,11 @@ fn cmd_sign(rest: &[String]) -> ExitCode {
         if let Err(e) = std::fs::write(sums_path, &sums) {
             return fail("sign", &format!("cannot write SHA256SUMS: {e}"));
         }
-        let sig = match tebako_signer::sign_detached(sums.as_bytes(), &press.secret_key, &press.fingerprint) {
+        let sig = match tebako_signer::sign_detached(
+            sums.as_bytes(),
+            &press.secret_key,
+            &press.fingerprint,
+        ) {
             Ok(s) => s,
             Err(e) => return fail("sign", &e.to_string()),
         };

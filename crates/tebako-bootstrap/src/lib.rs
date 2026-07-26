@@ -691,7 +691,12 @@ fn forward_trust_from_successors(
     let rd = match std::fs::read_dir(&dir) {
         Ok(rd) => rd,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(BootError::new(EX_TEBAKO_IO, format!("cannot read {}: {e}", dir.display()))),
+        Err(e) => {
+            return Err(BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot read {}: {e}", dir.display()),
+            ))
+        }
     };
 
     let mut statements: Vec<Vec<u8>> = Vec::new();
@@ -704,7 +709,11 @@ fn forward_trust_from_successors(
     }
     for entry in rd.flatten() {
         let path = entry.path();
-        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let name = path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         if name.ends_with(".asc") {
             if let Ok(bytes) = std::fs::read(&path) {
                 statements.push(bytes);
@@ -727,9 +736,11 @@ fn forward_trust_from_successors(
         // the signer may be any link in the rotation chain, not only its
         // tip: try every prefix of the statement list
         for k in 1..=statements.len() {
-            let Ok(final_fp) =
-                tebako_signer::apply_successor_chain(&root.fingerprint, &extended, &statements[..k])
-            else {
+            let Ok(final_fp) = tebako_signer::apply_successor_chain(
+                &root.fingerprint,
+                &extended,
+                &statements[..k],
+            ) else {
                 break;
             };
             if !final_fp.eq_ignore_ascii_case(signer_fp) {
@@ -911,8 +922,8 @@ pub fn verify_chain_with_home(
             // Before the named trust error: the signer may be the
             // embedded/dev trusted root, or reach trust through the
             // successor-statement rotation chain.
-            let signer_fp = tebako_signer::signature_issuer_fingerprint(&v2.signature)
-                .unwrap_or_default();
+            let signer_fp =
+                tebako_signer::signature_issuer_fingerprint(&v2.signature).unwrap_or_default();
             let roots = trusted_roots();
             let mut root_verified = false;
             for root in &roots {
@@ -927,8 +938,9 @@ pub fn verify_chain_with_home(
                 if let Some(pk) = &root.public_key {
                     ring.extend_from_slice(pk);
                 }
-                let outcome = tebako_signer::verify_detached(&ring, &region, &v2.signature, &v2.signer_keyid)
-                    .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+                let outcome =
+                    tebako_signer::verify_detached(&ring, &region, &v2.signature, &v2.signer_keyid)
+                        .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
                 if matches!(outcome, tebako_signer::VerifyOutcome::Trusted(_)) {
                     journal(
                         home,
@@ -942,7 +954,14 @@ pub fn verify_chain_with_home(
                 break;
             }
             if !root_verified
-                && forward_trust_from_successors(home, &roots, &signer_fp, &region, &v2.signature, &v2.signer_keyid)?
+                && forward_trust_from_successors(
+                    home,
+                    &roots,
+                    &signer_fp,
+                    &region,
+                    &v2.signature,
+                    &v2.signer_keyid,
+                )?
             {
                 journal(
                     home,

@@ -25,10 +25,7 @@ fn make_key(userid: &str) -> (Vec<u8>, Vec<u8>, String) {
 }
 
 fn home(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "tebako-root-test-{}-{name}",
-        std::process::id()
-    ));
+    let dir = std::env::temp_dir().join(format!("tebako-root-test-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
@@ -150,7 +147,6 @@ fn chain_rejects_untrusted_and_invalid_links() {
     let st_bad = forge_statement(&stranger_secret, &stranger_fp, &s1_fp, &s2_fp);
     let err = apply_successor_chain(&root_fp, &keyring, &[st1, st_bad]).unwrap_err();
     assert!(err.to_string().contains("untrusted"), "{err}");
-    
 
     // tampered signature on the first link: flip a digit in the signed
     // body (the signature can never match after that)

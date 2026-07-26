@@ -26,8 +26,8 @@
 use std::fmt::Write as _;
 
 use crate::error::SignerError;
-use crate::sign::{sign_detached, verify_detached, VerifyOutcome};
 use crate::keys::keyid_bytes_from_fingerprint;
+use crate::sign::{sign_detached, verify_detached, VerifyOutcome};
 
 /// Statement format identifier.
 pub const STATEMENT_FORMAT: &str = "TEBAKO-ROOT-SUCCESSOR-V1";
@@ -146,8 +146,7 @@ pub fn verify_successor_statement(
     }
     check_fingerprint(predecessor, "predecessor")
         .map_err(|e| SignerError::Verify(e.to_string()))?;
-    check_fingerprint(successor, "successor")
-        .map_err(|e| SignerError::Verify(e.to_string()))?;
+    check_fingerprint(successor, "successor").map_err(|e| SignerError::Verify(e.to_string()))?;
 
     let keyid = keyid_bytes_from_fingerprint(predecessor)?;
     let signature = rnp::dearmor_bytes(signature)

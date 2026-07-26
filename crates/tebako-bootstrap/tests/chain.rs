@@ -37,7 +37,11 @@ fn sha256(data: &[u8]) -> [u8; 32] {
 fn make_package(dir: &Path, home: &Path, image: &[u8], v1: bool) -> (PathBuf, tpkg::Manifest) {
     let (pkg, m) = make_package_with(dir, image, v1, home, |home| {
         let press = tebako_signer::press_local_key(home).expect("press key");
-        (press.secret_key.clone(), press.fingerprint.clone(), press.keyid)
+        (
+            press.secret_key.clone(),
+            press.fingerprint.clone(),
+            press.keyid,
+        )
     });
     (pkg, m)
 }
@@ -308,7 +312,7 @@ fn broken_successor_chain_keeps_trust_error() {
     let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("brokenfwd");
     let home = dir.join("home");
-    let (r0_secret, _r0_public, r0_fp, _r0_keyid) = make_key("root-b0");
+    let (_r0_secret, _r0_public, r0_fp, _r0_keyid) = make_key("root-b0");
     let (r1_secret, _r1_public, r1_fp, r1_keyid) = make_key("root-b1");
     let (stranger_secret, _sp, _sfp, _sk) = make_key("stranger-b");
 

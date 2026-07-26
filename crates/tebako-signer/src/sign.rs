@@ -45,18 +45,18 @@ pub fn signature_issuer_fingerprint(signature: &[u8]) -> Result<String, SignerEr
     let json = rnp::dump_packets_bytes_to_json(signature, Default::default())
         .map_err(|e| SignerError::Verify(format!("cannot parse the signature: {e}")))?;
     let needle = "\"issuer fingerprint\"";
-    let pos = json
-        .find(needle)
-        .ok_or_else(|| SignerError::Verify("no issuer fingerprint subpacket in the signature".into()))?;
+    let pos = json.find(needle).ok_or_else(|| {
+        SignerError::Verify("no issuer fingerprint subpacket in the signature".into())
+    })?;
     let rest = &json[pos..];
     let tag = "\"fingerprint\":\"";
     let fp_pos = rest
         .find(tag)
         .ok_or_else(|| SignerError::Verify("no fingerprint value in the signature".into()))?;
     let fp = &rest[fp_pos + tag.len()..];
-    let end = fp
-        .find('"')
-        .ok_or_else(|| SignerError::Verify("malformed fingerprint value in the signature".into()))?;
+    let end = fp.find('"').ok_or_else(|| {
+        SignerError::Verify("malformed fingerprint value in the signature".into())
+    })?;
     Ok(fp[..end].to_uppercase())
 }
 

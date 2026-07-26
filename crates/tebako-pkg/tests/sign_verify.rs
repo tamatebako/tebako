@@ -69,11 +69,7 @@ fn sign_then_verify_all_trusted() {
     let home = test_home("sv1");
 
     let (rc, out, err) = run(
-        &[
-            "sign",
-            a.to_str().unwrap(),
-            b.to_str().unwrap(),
-        ],
+        &["sign", a.to_str().unwrap(), b.to_str().unwrap()],
         &w.0,
         &home,
     );
@@ -84,8 +80,14 @@ fn sign_then_verify_all_trusted() {
 
     // the checksums file lists both artifacts with the right digests
     let sums = std::fs::read_to_string(w.0.join("SHA256SUMS")).unwrap();
-    assert!(sums.contains(&format!("{}  a.bin", sha256(b"artifact A payload"))), "{sums}");
-    assert!(sums.contains(&format!("{}  b.bin", sha256(b"artifact B payload"))), "{sums}");
+    assert!(
+        sums.contains(&format!("{}  a.bin", sha256(b"artifact A payload"))),
+        "{sums}"
+    );
+    assert!(
+        sums.contains(&format!("{}  b.bin", sha256(b"artifact B payload"))),
+        "{sums}"
+    );
 
     let (rc, out, err) = run(
         &["verify", a.to_str().unwrap(), b.to_str().unwrap()],
@@ -102,7 +104,11 @@ fn verify_reports_invalid_and_untrusted() {
     let w = TempDir::new("sv2");
     let (a, b) = write_artifacts(&w);
     let home = test_home("sv2");
-    let (rc, _, _) = run(&["sign", a.to_str().unwrap(), b.to_str().unwrap()], &w.0, &home);
+    let (rc, _, _) = run(
+        &["sign", a.to_str().unwrap(), b.to_str().unwrap()],
+        &w.0,
+        &home,
+    );
     assert_eq!(rc, 0);
 
     // tampered artifact -> INVALID SIGNATURE + exit 1
