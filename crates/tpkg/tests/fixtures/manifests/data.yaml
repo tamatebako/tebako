@@ -1,0 +1,33 @@
+# Golden fixture — kind: data (spec 03 §2.2)
+#
+# Read-only font data. `mount_semantics.suggested` is a SUGGESTION only —
+# under the MOUNT RULE the consumer's manifest decides where this payload
+# actually lands. `version` shows a two-component datever: identity.version
+# is a free-form string, so `2024.11` MUST be quoted in YAML (unquoted it
+# is a float). One licensed subtree is encrypted per-part; envelope_refs
+# are references to the externally-held grant envelopes — NEVER keys.
+identity:
+  schema_version: 1
+  kind: data
+  name: liberation-fonts
+  version: "2024.11"
+  producer: {tool: tebako-cli, tool_version: 0.16.0}
+  created: "2026-07-22T14:45:00Z"
+  source:
+    src_sha256: 61c92e8ab39ded5e9e0a29e740dec3f1fc780d4707fe04b3273666deda2f195d
+  digest:
+    tree_hash: sha256:8e809d0241ad26bd5bfe8dafbf09bd32c161a9af4e9ac4d87ba24f86ad8248c0
+    blob_sha256: 3131eae802653f4b67e306960ec2f351b6f38e6980caebefae4b4d94d5a2bf69
+  signing: {state: unsigned}
+  encryption:
+    state: encrypted
+    parts:
+      - paths: [/fonts/licensed/]
+        algorithm: age-x25519
+        envelope_refs: [vault:tebako/fonts-dek#3]
+  annotations:
+    license: OFL-1.1
+provides:
+  mount_semantics: {suggested: /usr/share/fonts}
+  consumers: [metanorma]
+  capabilities: {exec: false, read: true}

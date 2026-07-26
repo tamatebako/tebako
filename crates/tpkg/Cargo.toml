@@ -11,6 +11,18 @@ keywords = ["tebako", "tpkg", "package", "manifest", "trailer"]
 categories = ["data-structures", "filesystem", "parser-implementations"]
 
 [dependencies]
+# The payload manifest (manifest.rs) is authored YAML: serde + serde_yml
+# (owner rule: YAML for all authored manifests, never JSON). The version
+# constraint grammar is NOT cargo-semver — spec 03 mixes cargo-style ranges
+# (">= 3.3, < 5.0") with ruby-style abi lines ("~> 3.3.0") and datever
+# (">= 2024.1"), so manifest.rs carries its own small parse-only grammar.
+serde = { version = "1", features = ["derive"] }
+serde_yml = "0.0.12"
 
 [dev-dependencies]
 proptest = "1"
+# Cross-checks the serde model against schema/tpkg-manifest-v1.schema.json
+# (keeps the schema and the Rust model MECE with each other).
+jsonschema = "0.30"
+# YAML -> JSON value conversion feeding the jsonschema cross-check.
+serde_json = "1"

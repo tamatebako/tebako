@@ -1,0 +1,39 @@
+# Golden fixture — kind: runtime (spec 03 §2.2)
+#
+# A ruby 4.0.6 runtime image covering TWO triplets in one image (a
+# universal2 macOS build): `provides` takes the list form. N=1 runtimes
+# use the spec's single-mapping form; both parse to the same model.
+identity:
+  schema_version: 1
+  kind: runtime
+  name: tebako-runtime-ruby
+  version: 4.0.6
+  producer: {tool: tebako-cli, tool_version: 0.16.0}
+  created: "2026-07-20T12:00:00Z"
+  source:
+    src_sha256: 30d8e0ca023d280ac184420d9176d4fbb849f1d7b0644de9900d154dc91f95c4
+    builder: gha:run:20260720-4711
+  sbom: {ref: sbom/tebako-runtime-ruby-4.0.6.spdx.json}
+  digest:
+    tree_hash: sha256:5c588908986596fe6b7f4e9d255d6f2589e03c0ae62caf44362e7b81e7e36f3e
+    blob_sha256: 34985efeff660d5b9cadf9369114d27fe51c2eff20f82fb0d38d5d13ddd1a817
+  signing:
+    state: signed
+    keyid: 0123456789abcdef
+    mechanism: openpgp
+  encryption: {state: none}
+  annotations:
+    tebako.io/abi: "1"
+    upstream: https://www.ruby-lang.org/en/downloads/
+    ci/build-number: 4711
+provides:
+  provides:
+    - {engine: ruby, version: 4.0.6, abi_line: "4.0", platform: aarch64-macos}
+    - {engine: ruby, version: 4.0.6, abi_line: "4.0", platform: x86_64-macos}
+  built_from:
+    src_sha256: 30d8e0ca023d280ac184420d9176d4fbb849f1d7b0644de9900d154dc91f95c4
+    patch_set: v0.2.8
+  env:
+    GEM_HOME: /__tebako__/gems
+    GEM_PATH: /__tebako__/gems
+  capabilities: {exec: true, read: true, runtime: true}
