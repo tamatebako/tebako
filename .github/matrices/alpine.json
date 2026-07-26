@@ -26,11 +26,6 @@
         "os": "alpine-3.17",
         "CC": "clang",
         "CXX": "clang++"
-      },
-      {
-        "os": "alpine-3.17",
-        "CC": "gcc",
-        "CXX": "g++"
       }
     ]
   }
