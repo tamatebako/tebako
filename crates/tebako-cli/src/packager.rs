@@ -12,6 +12,7 @@ use crate::deploy::{Op, RuntimeDeployer};
 use crate::error::{packaging_error, plain_error, TebakoError};
 use crate::image::build_image;
 use crate::options::PressOptions;
+use crate::resolve::Resolved;
 use crate::scenario::{api_version, Scenario, ScenarioManager};
 
 /// Deploy the application and build its DwarFS image for stitching;
@@ -19,21 +20,46 @@ use crate::scenario::{api_version, Scenario, ScenarioManager};
 pub fn build_app_image(
     opts: &PressOptions,
     scenario: &mut ScenarioManager,
-    runtime_path: &Path,
+    resolved: &Resolved,
     ruby_ver: &str,
 ) -> Result<PathBuf, TebakoError> {
-    let resolver = crate::resolve::Resolver::new(crate::resolve::Flavor::Runtime);
-    let layout_dir = resolver.layout(runtime_path, opts.verbose)?;
-    init(&layout_dir, opts)?;
+    let runtime_path = &resolved.executable;
+    // Layout source (item 30b): the runtime image when the release is
+    // image-era (extracted in-process into the packaging environment —
+    // no extracted tree in the cache); otherwise the runtime's own
+    // extracted layout (v1 flow, byte-identical to the gem).
+    let image_path = resolved.image.as_ref().map(|img| {
+        resolved
+            .executable
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(&img.filename)
+    });
+    let layout_dir = if image_path.is_none() {
+        let resolver = crate::resolve::Resolver::new(crate::resolve::Flavor::Runtime);
+        Some(resolver.layout(runtime_path, opts.verbose)?)
+    } else {
+        None
+    };
+    init(layout_dir.as_deref(), image_path.as_deref(), opts)?;
     deploy(opts, scenario, runtime_path, ruby_ver)?;
-    align_layout_to_runtime(&opts.data_src_dir(), &layout_dir, ruby_ver);
+    if let Some(layout_dir) = &layout_dir {
+        // Image-era seeds come from the runtime's own image, so the arch
+        // layout matches by construction (alignment is a no-op).
+        align_layout_to_runtime(&opts.data_src_dir(), layout_dir, ruby_ver);
+    }
     write_entry_dispatcher(&opts.data_src_dir(), scenario, opts.cwd.as_deref());
     build_image(&opts.data_bundle_file(), &opts.data_src_dir())?;
     Ok(opts.data_bundle_file())
 }
 
-/// Init: recreate o/{s,r,p} and seed s/ from the runtime layout.
-fn init(layout_dir: &Path, opts: &PressOptions) -> Result<(), TebakoError> {
+/// Init: recreate o/{s,r,p} and seed s/ from the runtime image
+/// (image-era) or the extracted layout (v1).
+fn init(
+    layout_dir: Option<&Path>,
+    image_path: Option<&Path>,
+    opts: &PressOptions,
+) -> Result<(), TebakoError> {
     println!("-- Running init script");
     let src = opts.data_src_dir();
     println!("   ... creating packaging environment at {}", src.display());
@@ -42,8 +68,60 @@ fn init(layout_dir: &Path, opts: &PressOptions) -> Result<(), TebakoError> {
         fs::create_dir_all(&dir)
             .map_err(|e| plain_error(format!("{e} creating {}", dir.display())))?;
     }
-    cp_r_contents(layout_dir, &src)
-        .map_err(|e| plain_error(format!("{e} seeding {}", src.display())))
+    match (image_path, layout_dir) {
+        (Some(image), _) => {
+            println!("   ... extracting the runtime image {}", image.display());
+            extract_runtime_image(image, &src)
+        }
+        (None, Some(layout)) => cp_r_contents(layout, &src)
+            .map_err(|e| plain_error(format!("{e} seeding {}", src.display()))),
+        (None, None) => Err(plain_error("internal error: no layout source")),
+    }
+}
+
+/// Mount the runtime image through the tfs C ABI and extract it into the
+/// packaging environment (in-process; the image itself stays immutable
+/// in the cache).
+fn extract_runtime_image(image: &Path, dest: &Path) -> Result<(), TebakoError> {
+    use tfs::c_api::*;
+
+    let path = std::ffi::CString::new(image.to_string_lossy().as_bytes())
+        .map_err(|_| plain_error(format!("invalid image path: {}", image.display())))?;
+    let mount = std::ffi::CString::new("/mnt").unwrap();
+    let rc = unsafe { tebako_fs_init_from_file(path.as_ptr(), mount.as_ptr()) };
+    if rc != 0 {
+        return Err(plain_error(format!(
+            "cannot mount the runtime image {}",
+            image.display()
+        )));
+    }
+    struct Unmount;
+    impl Drop for Unmount {
+        fn drop(&mut self) {
+            unsafe { tebako_fs_unmount() };
+        }
+    }
+    let _guard = Unmount;
+
+    let dest_c = std::ffi::CString::new(dest.to_string_lossy().as_bytes())
+        .map_err(|_| plain_error(format!("invalid path: {}", dest.display())))?;
+    let rc = unsafe { tebako_fs_extract_all(dest_c.as_ptr()) };
+    if rc != 0 {
+        let errno = unsafe { tebako_get_errno() };
+        let message = unsafe {
+            let ptr = tebako_strerror(errno);
+            if ptr.is_null() {
+                format!("errno {errno}")
+            } else {
+                std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+            }
+        };
+        return Err(plain_error(format!(
+            "cannot extract the runtime image {}: {message}",
+            image.display()
+        )));
+    }
+    Ok(())
 }
 
 /// Deploy: stage the app, build and run the deploy ops, check, strip.

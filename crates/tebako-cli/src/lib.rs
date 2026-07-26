@@ -142,7 +142,8 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     }
 
     let runtime_resolver = Resolver::new(Flavor::Runtime);
-    let runtime_path = runtime_resolver.resolve(&ruby_ver, &platform, &opts.tebako_version)?;
+    let resolved = runtime_resolver.resolve_runtime(&ruby_ver, &platform, &opts.tebako_version)?;
+    let runtime_path = resolved.executable.clone();
 
     let bootstrap_path = match &bootstrap_source {
         BootstrapSource::Path(path) => {
@@ -161,7 +162,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         )?,
     };
 
-    let app_image = packager::build_app_image(opts, &mut scenario, &runtime_path, &ruby_ver)?;
+    let app_image = packager::build_app_image(opts, &mut scenario, &resolved, &ruby_ver)?;
 
     let mut images: Vec<(PathBuf, String, u32)> = vec![(
         app_image,
@@ -192,6 +193,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         &ruby_ver,
         &opts.tebako_version,
         payload_sha256.as_deref(),
+        resolved.image.is_some(),
     )?;
     println!("Created tebako package at \"{package}\"");
     ensure_version_file(opts);
@@ -262,6 +264,7 @@ fn check_bootstrap_version() -> Result<(), TebakoError> {
 /// then assemble with tebako-pkg (dense image layout — tpkg slots carry
 /// absolute offsets, so the gem's 8-byte padding is not required), chmod,
 /// and re-sign ad-hoc on macOS when the binary was signed.
+/// `image_era`: the runtime_ref carries the `;image` flag (item 30b).
 fn stitch(
     bootstrap_path: &Path,
     images: &[(PathBuf, String, u32)],
@@ -269,6 +272,7 @@ fn stitch(
     ruby_version: &str,
     tebako_version: &str,
     runtime_sha256: Option<&str>,
+    image_era: bool,
 ) -> Result<(), TebakoError> {
     if images.is_empty() {
         return Err(packaging_error(126, Some("at least one image is required")));
@@ -339,6 +343,11 @@ fn stitch(
     }
 
     let mut runtime_ref = format!("ruby@{ruby_version};tebako={tebako_version}");
+    if image_era {
+        // item 30b: the runtime is image-era — the bootstrap resolves
+        // the .tfs alongside the interpreter at first run.
+        runtime_ref.push_str(";image");
+    }
     if let Some(sha) = runtime_sha256 {
         runtime_ref.push_str(&format!(";sha256={sha}"));
     }

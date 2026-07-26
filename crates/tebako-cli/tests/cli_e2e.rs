@@ -576,3 +576,333 @@ fn cache_version_guard_matches_the_gem() {
     assert_eq!(code, 107, "{out}");
     assert!(!out.contains("CMake cache"), "{out}");
 }
+
+// ---------------------------------------------------------------------
+// item 30b e2e (gated on TEBAKO_IMAGE_FIXTURES = the tebako-runtime-ruby
+// runtime-packages dir holding the real interpreter + .tfs/.dwarfs
+// images): press against a file:// mirror whose index carries the image
+// entry, then a cold first run — the bootstrap resolves interpreter +
+// image, the app runs, and the cache holds the image + markers only.
+// ---------------------------------------------------------------------
+
+fn image_era_fixture(tag: &str) -> Option<(PathBuf, String, String, String)> {
+    let dir = std::env::var("TEBAKO_IMAGE_FIXTURES")
+        .ok()
+        .map(PathBuf::from)?;
+    let plat = tebako_cli::options::host_platform().ok()?;
+    let ver = tebako_cli::DEFAULT_TEBAKO_VERSION;
+    let ruby = "3.3.7";
+    let asset = format!("tebako-runtime-{ver}-{ruby}-{plat}");
+    let exe_src = dir.join(&asset);
+    let image_name = format!("{asset}.tfs");
+    let img_src = [dir.join(&image_name), dir.join(format!("{asset}.dwarfs"))]
+        .into_iter()
+        .find(|p| p.is_file());
+    let Some(img_src) = img_src else {
+        eprintln!(
+            "skipping {tag}: no runtime image fixture in {}",
+            dir.display()
+        );
+        return None;
+    };
+    if !exe_src.is_file() {
+        eprintln!(
+            "skipping {tag}: no runtime executable fixture in {}",
+            dir.display()
+        );
+        return None;
+    }
+
+    let work = workdir(tag);
+    let mirror_root = work.join("mirror");
+    let mirror = mirror_root.join(format!("v{ver}"));
+    fs::create_dir_all(&mirror).unwrap();
+    fs::copy(&exe_src, mirror.join(&asset)).unwrap();
+    fs::copy(&img_src, mirror.join(&image_name)).unwrap();
+    let sha_exe = sha256_hex(&mirror.join(&asset));
+    let sha_img = sha256_hex(&mirror.join(&image_name));
+    fs::write(
+        mirror.join("manifest.json"),
+        format!(
+            "[\n  {{\n    \"tebako_version\": \"{ver}\",\n    \"ruby_version\": \"{ruby}\",\n    \"platform\": \"{plat}\",\n    \"filename\": \"{asset}\",\n    \"sha256\": \"{sha_exe}\",\n    \"size_bytes\": 1,\n    \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{sha_img}\", \"size_bytes\": 1}}\n  }}\n]\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        mirror.join("SHA256SUMS.txt"),
+        format!("{sha_exe}  {asset}\n{sha_img}  {image_name}\n"),
+    )
+    .unwrap();
+    Some((
+        work,
+        mirror_root.to_string_lossy().into_owned(),
+        asset,
+        image_name,
+    ))
+}
+
+fn sha256_hex(path: &Path) -> String {
+    use sha2::Digest;
+    let bytes = fs::read(path).unwrap();
+    let digest = sha2::Sha256::digest(&bytes);
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn press_against_mirror(
+    work: &Path,
+    fixture: &str,
+    entry: &str,
+    package: &Path,
+    mirror_root: &str,
+) -> (i32, String) {
+    let root = work.join("root");
+    copy_dir(&fixtures().join(fixture), &root);
+    let prefix = work.join("prefix");
+    fs::create_dir_all(prefix.join("deps")).unwrap();
+    seed_rs_version_file(&prefix);
+    let mut cmd = Command::new(tebako_bin());
+    cmd.arg("press")
+        .arg("-r")
+        .arg(&root)
+        .arg("-e")
+        .arg(entry)
+        .arg("-o")
+        .arg(package)
+        .arg("-p")
+        .arg(&prefix)
+        .arg("-R")
+        .arg("3.3.7")
+        .env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
+        .env("TEBAKO_HOME", work.join("home"));
+    let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
+        "tebako-bootstrap.exe"
+    } else {
+        "tebako-bootstrap"
+    });
+    if sibling.is_file() {
+        cmd.env("TEBAKO_BOOTSTRAP", sibling);
+    }
+    run(&mut cmd)
+}
+
+#[test]
+fn image_era_press_and_cold_run() {
+    let _guard = press_lock().lock().unwrap();
+    if !e2e_allowed() {
+        return;
+    }
+    let Some((work, mirror_root, asset, image_name)) = image_era_fixture("image-era") else {
+        return;
+    };
+    let home = work.join("home");
+    let package = work.join("pkg");
+
+    // Press (simple script): the runtime image is extracted in-process.
+    let (code, log) = press_against_mirror(&work, "test-00", "test.rb", &package, &mirror_root);
+    assert!(code == 0, "press failed:\n{log}");
+    assert!(
+        log.contains("extracting the runtime image"),
+        "press must seed from the image:\n{log}"
+    );
+
+    // The trailer carries the `;image` flag.
+    let mut f = fs::File::open(&package).unwrap();
+    let manifest = tpkg::read_from(&mut f).unwrap();
+    let runtime_ref = manifest.runtime_ref_str().unwrap().to_string();
+    assert!(
+        runtime_ref.contains(";image"),
+        "runtime_ref must carry the ;image flag: {runtime_ref}"
+    );
+
+    // The press installed the image into the cache (bootstrap interop).
+    let entry_dir = home.join("runtimes").join(format!(
+        "ruby-3.3.7-{}-{}",
+        tebako_cli::DEFAULT_TEBAKO_VERSION,
+        tebako_cli::options::host_platform().unwrap()
+    ));
+    assert!(entry_dir.join(&asset).is_file(), "interpreter missing");
+    assert!(entry_dir.join(&image_name).is_file(), "image missing");
+    assert!(
+        entry_dir.join(format!("{image_name}.sha256")).is_file(),
+        "trusted marker missing"
+    );
+    assert!(
+        !entry_dir.join("layout").exists(),
+        "no extracted tree in the cache"
+    );
+
+    // Cold run: wipe the cache — the bootstrap downloads interpreter +
+    // image from the mirror and the app runs.
+    fs::remove_dir_all(&home).unwrap();
+    let mut cold = Command::new(&package);
+    cold.env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
+        .env("TEBAKO_HOME", &home);
+    let (code, out) = run(&mut cold);
+    assert_eq!(code, 0, "cold run failed:\n{out}");
+    assert!(
+        out.contains("Hello!  This is test-00 talking from inside DwarFS"),
+        "{out}"
+    );
+
+    // The cache holds interpreter + immutable image + markers — nothing else.
+    assert!(entry_dir.join(&asset).is_file());
+    let image = entry_dir.join(&image_name);
+    assert!(image.is_file());
+    assert!(entry_dir.join(format!("{image_name}.sha256")).is_file());
+    assert!(entry_dir.join(format!("{image_name}.origin")).is_file());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = fs::metadata(&image).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o444, "image must be read-only: {mode:o}");
+    }
+    assert!(
+        !entry_dir.join("layout").exists(),
+        "no extracted tree in the cache"
+    );
+
+    // The runtime executes a stub from the standalone image (the driver
+    // mounts it, zero driver change): wrap the image as a tpkg package
+    // and hand it over via the v1 --tebako-image mechanism.
+    let base = work.join("empty.base");
+    fs::write(&base, b"").unwrap();
+    let wrapped = work.join("wrapped-runtime.pkg");
+    tebako_pkg::bundle_exact(
+        &base,
+        &[tebako_pkg::PackageImage {
+            path: entry_dir.join(&image_name),
+            mount_point: "/__tebako_memfs__".to_string(),
+            format_id: tpkg::TPKG_FORMAT_DWARFS,
+        }],
+        &wrapped,
+        &tebako_pkg::PackageOptions {
+            runtime_ref: runtime_ref.clone(),
+            package_flags: tpkg::TPKG_FLAG_LEAN,
+            launcher_abi: 1,
+        },
+    )
+    .unwrap();
+    let mut wrapped_run = Command::new(entry_dir.join(&asset));
+    wrapped_run
+        .arg("--tebako-image")
+        .arg(format!("{}:0:/__tebako_memfs__", wrapped.display()));
+    let (code, out) = run(&mut wrapped_run);
+    assert_eq!(code, 0, "standalone image mount failed:\n{out}");
+    assert!(
+        out.contains("Tebako runtime stub"),
+        "the runtime image's own stub must execute from the mount:\n{out}"
+    );
+}
+
+/// Build an image-era mirror from the OFFICIAL released runtime: extract
+/// its own layout (v1 mechanism, used only to manufacture the fixture)
+/// and image it in-process (the same writer 30a's pipeline uses) — a
+/// build-matched executable+image pair.
+fn official_pair_fixture(tag: &str) -> Option<(PathBuf, String, String, String)> {
+    let plat = tebako_cli::options::host_platform().ok()?;
+    let ver = tebako_cli::DEFAULT_TEBAKO_VERSION;
+    let ruby = "3.3.7";
+    let asset = format!("tebako-runtime-{ver}-{ruby}-{plat}");
+    let image_name = format!("{asset}.tfs");
+
+    let work = workdir(tag);
+    let mirror_root = work.join("mirror");
+    let mirror = mirror_root.join(format!("v{ver}"));
+    fs::create_dir_all(&mirror).unwrap();
+
+    // Resolve the official runtime through the CLI itself (live download
+    // or the shared cache), then extract its layout for imaging.
+    let home = work.join("resolve-home");
+    let resolver = tebako_cli::resolve::Resolver::new(tebako_cli::resolve::Flavor::Runtime);
+    let runtime = resolver.resolve(ruby, &plat, ver).ok()?;
+    fs::copy(&runtime, mirror.join(&asset)).unwrap();
+    let layout = work.join("layout-src");
+    let mut extract = Command::new(&runtime);
+    extract
+        .arg("--tebako-extract")
+        .arg(&layout)
+        .env("TEBAKO_HOME", &home);
+    let (code, out) = run(&mut extract);
+    assert_eq!(code, 0, "layout extraction failed:\n{out}");
+
+    // Image the layout in-process (dwarfs-t native, the 30a format).
+    let image_out = mirror.join(&image_name);
+    let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default()).unwrap();
+    writer.add_tree(&layout, "/").unwrap();
+    writer.write(&image_out).unwrap();
+
+    let sha_exe = sha256_hex(&mirror.join(&asset));
+    let sha_img = sha256_hex(&image_out);
+    fs::write(
+        mirror.join("manifest.json"),
+        format!(
+            "[\n  {{\n    \"tebako_version\": \"{ver}\",\n    \"ruby_version\": \"{ruby}\",\n    \"platform\": \"{plat}\",\n    \"filename\": \"{asset}\",\n    \"sha256\": \"{sha_exe}\",\n    \"size_bytes\": 1,\n    \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{sha_img}\", \"size_bytes\": 1}}\n  }}\n]\n"
+        ),
+    )
+    .unwrap();
+    fs::write(
+        mirror.join("SHA256SUMS.txt"),
+        format!("{sha_exe}  {asset}\n{sha_img}  {image_name}\n"),
+    )
+    .unwrap();
+    Some((
+        work,
+        mirror_root.to_string_lossy().into_owned(),
+        asset,
+        image_name,
+    ))
+}
+
+#[test]
+fn image_era_full_flow_official_pair() {
+    let _guard = press_lock().lock().unwrap();
+    if !e2e_allowed() {
+        return;
+    }
+    let Some((work, mirror_root, _asset, image_name)) = official_pair_fixture("image-era-official")
+    else {
+        eprintln!("skipping official-pair image-era e2e: runtime resolution failed");
+        return;
+    };
+    let home = work.join("home");
+    let entry_dir = home.join("runtimes").join(format!(
+        "ruby-3.3.7-{}-{}",
+        tebako_cli::DEFAULT_TEBAKO_VERSION,
+        tebako_cli::options::host_platform().unwrap()
+    ));
+
+    for (fixture, entry, expect) in [
+        (
+            "test-00",
+            "test.rb",
+            "Hello!  This is test-00 talking from inside DwarFS",
+        ),
+        (
+            "gemfile-app",
+            "main.rb",
+            "Hello from gemfile app with rake ",
+        ),
+    ] {
+        let package = work.join(format!("pkg-{fixture}"));
+        let (code, log) = press_against_mirror(&work, fixture, entry, &package, &mirror_root);
+        assert!(code == 0, "{fixture} press failed:\n{log}");
+
+        // Cold run: wipe the cache; the bootstrap resolves interpreter +
+        // image from the mirror and the app runs.
+        fs::remove_dir_all(&home).unwrap();
+        let mut cold = Command::new(&package);
+        cold.env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
+            .env("TEBAKO_HOME", &home);
+        let (code, out) = run(&mut cold);
+        assert_eq!(code, 0, "{fixture} cold run failed:\n{out}");
+        assert!(out.contains(expect), "{fixture}: {out}");
+        assert!(
+            entry_dir.join(&image_name).is_file(),
+            "{fixture}: image missing"
+        );
+        assert!(
+            !entry_dir.join("layout").exists(),
+            "{fixture}: no extracted tree"
+        );
+    }
+}

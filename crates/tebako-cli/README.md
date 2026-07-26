@@ -55,7 +55,14 @@ the launcher ABI.
 ## Where the pieces come from
 
 - **runtime**: `~/.tebako/runtimes/...` (downloaded from the
-  tebako-runtime-ruby release, `v<tebako-version>`; default 0.15.9);
+  tebako-runtime-ruby release, `v<tebako-version>`; default 0.15.9).
+  Image-era releases additionally carry `tebako-runtime-<...>.tfs` (the
+  runtime's files as a dwarfs-t-native image, item 30): the CLI resolves
+  it into the same cache entry (read-only + trusted markers), seeds the
+  packaging environment by extracting it **in-process** through the tfs
+  C ABI (no `layout/` tree in the cache), and emits the `;image` flag in
+  the package's runtime_ref so the first run resolves the image too
+  ([../../docs/runtime-as-image.md](../../docs/runtime-as-image.md));
 - **bootstrap**: `--bootstrap` > `$TEBAKO_BOOTSTRAP` > the Rust
   `tebako-bootstrap` binary next to the `tebako` executable (dogfooding
   milestone 6) > the C++ tebako-bootstrap release, resolved with the gem's

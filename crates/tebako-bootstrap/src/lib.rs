@@ -6,14 +6,22 @@
 //! 1. find its own executable path;
 //! 2. parse the tpkg manifest trailer at EOF (crates/tpkg);
 //! 3. check the trailer's launcher_abi against TEBAKO_BOOTSTRAP_LAUNCHER_ABI;
-//! 4. parse runtime_ref "type@version;tebako=<abi>[;sha256=<hex>]";
+//! 4. parse runtime_ref "type@version;tebako=<abi>[;image][;sha256=<hex>]";
 //! 5. resolve the language runtime — shared cache hit, else a fat-package
 //!    payload extraction (SHA256-verified against the ;sha256= parameter of
 //!    runtime_ref), else a download from the tebako-runtime-ruby releases
 //!    (or $TEBAKO_RUNTIME_MIRROR), SHA256-verified against the release
 //!    manifest.json (SHA256SUMS.txt fallback), atomically installed
 //!    (tmp + rename) under a per-entry lock;
-//! 6. exec the runtime, launcher ABI v1:
+//!
+//! 5b. item 30b: when the ref carries the bare `;image` flag, also resolve
+//!    the runtime image (`<asset>.tfs`) — downloaded and SHA256-verified
+//!    against the same release index (manifest `image` key primary,
+//!    SHA256SUMS line fallback), installed READ-ONLY with
+//!    `<image>.sha256`/`<image>.origin` trusted markers, never extracted;
+//!
+//! 6. exec the runtime, launcher ABI v1 (byte-identical handoff; an
+//!    image-era run additionally exports TEBAKO_RUNTIME_IMAGE):
 //! ```text
 //! <runtime> --tebako-image <self>:<slot>:<mount> ...
 //!           --tebako-entry <argv0> <user args...>
@@ -31,8 +39,8 @@ use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 use platform::{
-    copy_file, exe_suffix, file_exists, flock_acquire, lock_release, make_executable, mkdir_p,
-    os_rename, platform_string, remove_file, write_small_file, EntryLock,
+    copy_file, exe_suffix, file_exists, flock_acquire, lock_release, make_executable,
+    make_readonly, mkdir_p, os_rename, platform_string, remove_file, write_small_file, EntryLock,
 };
 use sha::sha256_file_hex;
 
@@ -166,6 +174,14 @@ pub fn runtime_ref_sha256(ref_: &str) -> Result<String, ()> {
     } else {
         Err(())
     }
+}
+
+/// The `;image` flag (item 30b): the runtime is image-era — its
+/// filesystem image (`<asset>.tfs`) is a separate artifact resolved
+/// alongside the executable. Whole-segment match on the `;`-separated
+/// runtime_ref parameters.
+pub fn runtime_ref_wants_image(ref_: &str) -> bool {
+    ref_.split(';').any(|segment| segment == "image")
 }
 
 // ---------------------------------------------------------------------
@@ -442,6 +458,30 @@ pub fn sha_from_sums(text: &str, asset: &str) -> Result<String, ()> {
     Err(())
 }
 
+/// manifest.json, the image entry (item 30b): locate "<image_asset>"
+/// (the .tfs filename — it appears only inside the package entry's
+/// additive `image` key) and read the NEXT "sha256" after it.
+#[allow(clippy::result_unit_err)] // C-style -1 error by design
+pub fn sha_from_manifest_image(text: &str, image_asset: &str) -> Result<String, ()> {
+    let needle = format!("\"{image_asset}\"");
+    let p = text.find(&needle).ok_or(())?;
+    let body = &text[p + needle.len()..];
+    let k = body.find("\"sha256\"").ok_or(())?;
+    let after = &body[k + 8..];
+    let after = after.trim_start_matches([':', ' ', '\t', '\n', '\r']);
+    if !after.starts_with('"') {
+        return Err(());
+    }
+    let hex = &after[1..];
+    let endq = hex.find('"').ok_or(())?;
+    let hex = &hex[..endq];
+    if hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(hex.to_string())
+    } else {
+        Err(())
+    }
+}
+
 // ---------------------------------------------------------------------
 // fat package: install the runtime payload slot
 // ---------------------------------------------------------------------
@@ -482,6 +522,9 @@ struct CacheLayout {
     entry_dir: PathBuf,
     exe_path: PathBuf,
     asset: String,
+    /// The asset name without the platform executable suffix; the runtime
+    /// image is `<asset_base>.tfs` (item 30b).
+    asset_base: String,
     entry: String,
 }
 
@@ -821,18 +864,15 @@ fn resolve_runtime(
     rr: &RuntimeRef,
     self_path: &Path,
     m: &tpkg::Manifest,
-) -> Result<PathBuf, BootError> {
+) -> Result<(PathBuf, Option<PathBuf>), BootError> {
     let platform = platform_string();
+    let asset_base = format!("tebako-runtime-{}-{}-{platform}", rr.abi, rr.version);
     let layout = CacheLayout {
         root: cache_root()?,
         entry_dir: PathBuf::new(),
         exe_path: PathBuf::new(),
-        asset: format!(
-            "tebako-runtime-{}-{}-{platform}{}",
-            rr.abi,
-            rr.version,
-            exe_suffix()
-        ),
+        asset: format!("{asset_base}{}", exe_suffix()),
+        asset_base,
         entry: format!("{}-{}-{}-{platform}", rr.r#type, rr.version, rr.abi),
     };
     let layout = CacheLayout {
@@ -844,25 +884,45 @@ fn resolve_runtime(
             .join(&layout.asset),
         ..layout
     };
-    let (root, entry_dir, exe_path, asset, entry) = (
+
+    // The interpreter: cache hit / fat payload slot / download+verify.
+    let exe = if file_exists(&layout.exe_path) {
+        layout.exe_path.clone()
+    } else {
+        let mut payload_exe = None;
+        // fat package: the runtime rides along as a payload slot.
+        for slot in &m.slots {
+            if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
+                payload_exe = Some(install_payload(runtime_ref, self_path, slot, &layout)?);
+                break;
+            }
+        }
+        match payload_exe {
+            Some(exe) => exe,
+            None => download_executable(runtime_ref, rr, &layout)?,
+        }
+    };
+
+    // item 30b: the `;image` flag resolves the runtime image alongside.
+    let image = if runtime_ref_wants_image(runtime_ref) {
+        Some(resolve_image(runtime_ref, rr, &layout)?)
+    } else {
+        None
+    };
+    Ok((exe, image))
+}
+
+fn download_executable(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    layout: &CacheLayout,
+) -> Result<PathBuf, BootError> {
+    let (root, entry_dir, asset, entry) = (
         &layout.root,
         &layout.entry_dir,
-        &layout.exe_path,
         &layout.asset,
         &layout.entry,
     );
-
-    // cache hit
-    if file_exists(exe_path) {
-        return Ok(exe_path.clone());
-    }
-
-    // fat package: the runtime rides along as a payload slot.
-    for slot in &m.slots {
-        if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
-            return install_payload(runtime_ref, self_path, slot, &layout);
-        }
-    }
 
     let exe_path = &layout.exe_path;
     let base_raw = releases_base();
@@ -977,12 +1037,222 @@ fn resolve_runtime(
 }
 
 // ---------------------------------------------------------------------
+// runtime image resolution (item 30b, the `;image` flag)
+// ---------------------------------------------------------------------
+
+/// Resolve the runtime image (`<asset_base>.tfs`) into the executable's
+/// cache entry: download (same mirror/offline rules), verify against the
+/// release index (manifest.json `image` key primary, SHA256SUMS line
+/// fallback), install read-only with `<image>.sha256`/`<image>.origin`
+/// trusted markers. The image is never extracted into the cache.
+fn resolve_image(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    layout: &CacheLayout,
+) -> Result<PathBuf, BootError> {
+    let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
+    let image_asset = format!("{}.tfs", layout.asset_base);
+    let image_path = entry_dir.join(&image_asset);
+    let marker = entry_dir.join(format!("{image_asset}.sha256"));
+
+    if file_exists(&image_path) && file_exists(&marker) {
+        return Ok(image_path);
+    }
+
+    let base_raw = releases_base();
+    let base = skip_file_scheme(&base_raw).to_string();
+    let local = base_is_local(&base_raw);
+    let image_url = format!("{base}/v{}/{image_asset}", rr.abi);
+    let manifest_url = format!("{base}/v{}/manifest.json", rr.abi);
+    let sums_url = format!("{base}/v{}/SHA256SUMS.txt", rr.abi);
+
+    if offline_mode() {
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "cannot resolve runtime image \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {image_url}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
+                entry_dir.display()
+            ),
+        );
+    }
+
+    // Serialize against other bootstraps installing this entry (the same
+    // lock file the executable install uses).
+    let locks = root.join("locks");
+    mkdir_p(&locks).map_err(|e| {
+        BootError::new(
+            EX_TEBAKO_IO,
+            format!(
+                "cannot create tebako cache directories under {}: {e}",
+                root.display()
+            ),
+        )
+    })?;
+    let lock_path = locks.join(format!("{entry}.lock"));
+    let lock = flock_acquire(&lock_path, LOCK_TIMEOUT_MS).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::TimedOut {
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "timed out after {}s waiting for another tebako bootstrap to finish installing \"{runtime_ref}\"\n  lock: {}\n  if no other tebako process is running, remove the stale lock file",
+                    LOCK_TIMEOUT_MS / 1000,
+                    lock_path.display()
+                ),
+            )
+        } else {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot acquire install lock {}: {e}", lock_path.display()),
+            )
+        }
+    })?;
+
+    // re-check under the lock
+    if file_exists(&image_path) && file_exists(&marker) {
+        lock_release(lock);
+        return Ok(image_path);
+    }
+
+    let tmp_dir = root
+        .join("tmp")
+        .join(format!("{entry}.{}.image", std::process::id()));
+    let tmp_image = tmp_dir.join(&image_asset);
+    cleanup_tmp_entry(&tmp_dir, &image_asset);
+    if let Err(e) = std::fs::create_dir(&tmp_dir) {
+        lock_release(lock);
+        return Err(BootError::new(
+            EX_TEBAKO_IO,
+            format!("cannot create {}: {e}", tmp_dir.display()),
+        ));
+    }
+
+    let fail_image = |lock: EntryLock, e: BootError| -> BootError {
+        cleanup_tmp_entry(&tmp_dir, &image_asset);
+        lock_release(lock);
+        e
+    };
+
+    if fetch_url(&image_url, local, &tmp_image).is_err() {
+        return Err(fail_image(
+            lock,
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime image \"{runtime_ref}\": download failed\n  url: {image_url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
+                ),
+            ),
+        ));
+    }
+
+    // expected checksum: manifest.json `image` key primary, SHA256SUMS
+    // line fallback (the same sources the executable's checksum uses).
+    const DIAG_NAMES: [&str; 5] = [
+        "not tried",
+        "download failed",
+        "read failed",
+        "no matching entry",
+        "ok",
+    ];
+    let mut expected: Option<String> = None;
+    let mut diag_manifest = 1;
+    let manifest_tmp = tmp_dir.join("manifest.json");
+    if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
+        diag_manifest = 2;
+        if let Ok(text) = std::fs::read_to_string(&manifest_tmp) {
+            diag_manifest = 3;
+            if let Ok(sha) = sha_from_manifest_image(&text, &image_asset) {
+                diag_manifest = 4;
+                expected = Some(sha);
+            }
+        }
+    }
+    let mut diag_sums = 0;
+    if expected.is_none() {
+        diag_sums = 1;
+        let sums_tmp = tmp_dir.join("SHA256SUMS.txt");
+        if fetch_url(&sums_url, local, &sums_tmp).is_ok() {
+            diag_sums = 2;
+            if let Ok(text) = std::fs::read_to_string(&sums_tmp) {
+                diag_sums = 3;
+                if let Ok(sha) = sha_from_sums(&text, &image_asset) {
+                    diag_sums = 4;
+                    expected = Some(sha);
+                }
+            }
+        }
+    }
+    let Some(expected) = expected else {
+        return Err(fail_image(
+            lock,
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime image \"{runtime_ref}\": no checksum for {image_asset} in the release\n  tried: {manifest_url} ({})\n         {sums_url} ({})",
+                    DIAG_NAMES[diag_manifest], DIAG_NAMES[diag_sums]
+                ),
+            ),
+        ));
+    };
+
+    let actual = match sha256_file_hex(&tmp_image) {
+        Ok(a) => a,
+        Err(e) => {
+            return Err(fail_image(
+                lock,
+                BootError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot hash downloaded file {}: {e}", tmp_image.display()),
+                ),
+            ));
+        }
+    };
+
+    let expected = expected.to_lowercase();
+    if expected != actual {
+        return Err(fail_image(
+            lock,
+            BootError::new(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for downloaded runtime image {image_asset} — refusing to install or execute\n  expected: {expected} (from {manifest_url})\n  actual:   {actual}\n  the download was deleted; the cache was not touched"
+                ),
+            ),
+        ));
+    }
+
+    // Install: the image is immutable (0444) with trusted markers.
+    make_readonly(&tmp_image);
+    if let Err(e) = os_rename(&tmp_image, &image_path) {
+        return Err(fail_image(
+            lock,
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot install runtime image into the cache ({} -> {}): {e}",
+                    tmp_image.display(),
+                    image_path.display()
+                ),
+            ),
+        ));
+    }
+    let _ = write_small_file(&marker, &format!("{actual}  {image_asset}\n"));
+    let _ = write_small_file(
+        &entry_dir.join(format!("{image_asset}.origin")),
+        &format!("runtime_ref={runtime_ref}\nurl={image_url}\nsha256={actual}\n"),
+    );
+    cleanup_tmp_entry(&tmp_dir, &image_asset);
+    lock_release(lock);
+    Ok(image_path)
+}
+
+// ---------------------------------------------------------------------
 // exec handoff (launcher ABI v1)
 // ---------------------------------------------------------------------
 
 #[cfg(unix)]
 fn exec_runtime(
     runtime: &Path,
+    image: Option<&Path>,
     self_path: &Path,
     m: &tpkg::Manifest,
     argv: &[String],
@@ -1009,7 +1279,15 @@ fn exec_runtime(
     );
     nargv.extend(argv.iter().skip(1).cloned());
 
-    let err = std::process::Command::new(runtime).args(&nargv[1..]).exec();
+    let mut cmd = std::process::Command::new(runtime);
+    cmd.args(&nargv[1..]);
+    if let Some(image) = image {
+        // item 30b: the runtime image rides the environment; image-era
+        // drivers mount it instead of an embedded image, v1 drivers
+        // ignore it. The handoff options themselves are unchanged.
+        cmd.env("TEBAKO_RUNTIME_IMAGE", image);
+    }
+    let err = cmd.exec();
     BootError::new(
         EX_TEBAKO_IO,
         format!("cannot execute runtime {}: {err}", runtime.display()),
@@ -1019,6 +1297,7 @@ fn exec_runtime(
 #[cfg(not(unix))]
 fn exec_runtime(
     runtime: &Path,
+    _image: Option<&Path>,
     _self_path: &Path,
     _m: &tpkg::Manifest,
     _argv: &[String],
@@ -1099,6 +1378,12 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
     }
     let rr = parse_runtime_ref(&runtime_ref)?;
 
-    let runtime = resolve_runtime(&runtime_ref, &rr, &self_path, &m)?;
-    Err(exec_runtime(&runtime, &self_path, &m, argv))
+    let (runtime, image) = resolve_runtime(&runtime_ref, &rr, &self_path, &m)?;
+    Err(exec_runtime(
+        &runtime,
+        image.as_deref(),
+        &self_path,
+        &m,
+        argv,
+    ))
 }

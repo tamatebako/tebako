@@ -44,6 +44,8 @@ pub struct Harness {
     pub entry: String,
     pub runtime_ref: String,
     pub sha: String,
+    pub image_asset: String,
+    pub image_sha: String,
 }
 
 pub const TEBAKO_VER: &str = "9.9.9";
@@ -101,7 +103,7 @@ pub fn sha256_of(path: &Path) -> String {
 pub fn write_fake_runtime(path: &Path) {
     std::fs::write(
         path,
-        "#!/bin/sh\necho FAKE-RUNTIME\ni=0\nfor a in \"$@\"; do\n  echo \"argv[$i]=$a\"\n  i=$((i+1))\ndone\n",
+        "#!/bin/sh\necho FAKE-RUNTIME\necho \"TEBAKO_RUNTIME_IMAGE=$TEBAKO_RUNTIME_IMAGE\"\ni=0\nfor a in \"$@\"; do\n  echo \"argv[$i]=$a\"\n  i=$((i+1))\ndone\n",
     )
     .unwrap();
     #[cfg(unix)]
@@ -129,11 +131,23 @@ impl Harness {
         std::fs::create_dir_all(&mirror).unwrap();
         std::fs::copy(&fake_runtime, mirror.join(&asset)).unwrap();
         let sha = sha256_of(&mirror.join(&asset));
-        std::fs::write(mirror.join("SHA256SUMS.txt"), format!("{sha}  {asset}\n")).unwrap();
+
+        // item 30b: the image-era sibling (<asset>.tfs) + its index entries
+        let image_asset = asset.strip_suffix(exe).unwrap_or(&asset).to_string() + ".tfs";
+        let fake_runtime_image = tmp.0.join("fake-runtime-image");
+        std::fs::write(&fake_runtime_image, b"FAKE TFS RUNTIME IMAGE PAYLOAD").unwrap();
+        std::fs::copy(&fake_runtime_image, mirror.join(&image_asset)).unwrap();
+        let image_sha = sha256_of(&mirror.join(&image_asset));
+
+        std::fs::write(
+            mirror.join("SHA256SUMS.txt"),
+            format!("{sha}  {asset}\n{image_sha}  {image_asset}\n"),
+        )
+        .unwrap();
         std::fs::write(
             mirror.join("manifest.json"),
             format!(
-                "[\n  {{\n    \"tebako_version\": \"{TEBAKO_VER}\",\n    \"ruby_version\": \"{RUBY_VER}\",\n    \"platform\": \"{plat}\",\n    \"filename\": \"{asset}\",\n    \"sha256\": \"{sha}\",\n    \"size_bytes\": 12345\n  }}\n]\n"
+                "[\n  {{\n    \"tebako_version\": \"{TEBAKO_VER}\",\n    \"ruby_version\": \"{RUBY_VER}\",\n    \"platform\": \"{plat}\",\n    \"filename\": \"{asset}\",\n    \"sha256\": \"{sha}\",\n    \"size_bytes\": 12345,\n    \"image\": {{\"filename\": \"{image_asset}\", \"sha256\": \"{image_sha}\", \"size_bytes\": 6789}}\n  }}\n]\n"
             ),
         )
         .unwrap();
@@ -147,6 +161,8 @@ impl Harness {
             entry,
             runtime_ref,
             sha,
+            image_asset,
+            image_sha,
         }
     }
 
@@ -213,6 +229,28 @@ impl Harness {
             &out,
         );
         out
+    }
+
+    /// An image-era lean package: runtime_ref carries the `;image` flag
+    /// (item 30b).
+    pub fn lean_pkg_image(&self, name: &str) -> PathBuf {
+        let out = self.tmp.0.join(name);
+        let img = self.fake_image();
+        self.stitch(
+            &self.bootstrap,
+            &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__")],
+            &format!("{};image", self.runtime_ref),
+            0,
+            &out,
+        );
+        out
+    }
+
+    /// The cached runtime image path for a home.
+    pub fn cache_image(&self, home: &Path) -> PathBuf {
+        home.join("runtimes")
+            .join(&self.entry)
+            .join(&self.image_asset)
     }
 
     pub fn fat_pkg(&self, name: &str, payload: &Path) -> PathBuf {
