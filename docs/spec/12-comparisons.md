@@ -84,10 +84,17 @@ A person who wants to *run* metanorma (or any tebako app):
 
 A person *shipping* an application:
 
-- **Package once.** The payload image is built one time. Per-platform
-  stitching is mechanical — bootstrap + trailer, no recompilation of the
-  app — so the release matrix is a cheap fan-out, not N porting efforts.
-  For pure-language apps there is literally one payload for every OS.
+- **Package once.** The payload image is built one time per variant: a
+  pure-language app is ONE universal payload for every OS; a
+  platform-triplet-bound payload builds in a matrix — but each leg is ONE
+  mechanical press step (never a porting effort), and per-platform
+  handling (platform-specific content, flags, entrypoints) is a
+  first-class feature of the manifest, not a hack.
+- **Runtimes are optional, not assumed.** A payload whose entrypoint is
+  native needs no interpreter at all — tebako serves runtime-free slices
+  (the inkscape case) exactly as it serves ruby apps. Runtime payloads
+  (ruby today; python, julia, others tomorrow) plug into the same
+  provides/requires graph when they ARE needed.
 - **No per-distro packaging, ever again.** No deb, rpm, AUR, formula,
   cask, snapcraft.yaml, flatpak manifest, MSI, dmg, pkg, store review
   queue, or per-store policy surprise. One artifact type, one flow:

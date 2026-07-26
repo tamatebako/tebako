@@ -47,10 +47,17 @@ entrypoints:                          # ARRAY — multi-entry suites; N=1 for si
     path: /app/bin/metanorma          # inside the image
     args_default: []
     runtime_requirement: {engine: ruby, constraint: ">= 3.3, < 5.0"}
-      # range for pure-ruby; abi-line "~> 3.3.0" for native-extension payloads
+      # OPTIONAL — omit entirely for native entrypoints (see below);
+      # range for pure-language; abi-line "~> 3.3.0" for native-extension payloads
 platforms: universal                  # OR explicit triplet list (§3)
 capabilities: {exec: true, read: true}
 ```
+**Zero-runtime entrypoints (locked):** an entrypoint whose executable is
+native (or self-contained) needs NO interpreter payload — inkscape-class
+slices, static binaries, shell-free tools. Such apps declare no
+`runtime_requirement` and the dispatcher mounts zero runtime payloads.
+Runtimes (ruby today; python, julia, others tomorrow) are just one
+payload kind among many — never an assumed layer.
 A SUITE is one package with N entrypoints — the shim layer exposes one
 command per entry, each dispatching to its own image and its own runtime
 requirement (spec 07).

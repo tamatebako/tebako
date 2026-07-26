@@ -35,8 +35,9 @@ jobs:
    compatible (spec 05 §5). **Swapping runtimes needs no payload change**
    — the payload is immutable; only the dispatch-time choice changes
    (`tebako use --runtime ruby@3.4.2`, or a per-project pin).
-3. **Hand-off:** mount payload + runtime (+ declared dependency mounts,
-   spec 03 §2.3), apply the jail view (spec 08), exec the entrypoint.
+3. **Hand-off:** mount payload + ZERO OR MORE runtime payloads (native
+   entrypoints need none — spec 03) + declared dependency mounts
+   (spec 03 §2.3), apply the jail view (spec 08), exec the entrypoint.
    Signed payloads are verified at install time, not per run.
 
 ## 3. Shell integration (no per-shell magic)
