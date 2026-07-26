@@ -23,8 +23,8 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
-name: 'Test: Package metanorma'
-description: 'Test: Package metanorma using locally deployed tebako gem'
+name: 'Test set 1'
+description: 'Run tebako functional test set 1 and press-modes end-to-end tests'
 inputs:
   upload:
     description: 'Upload arfifacts for tests on other OS version'
@@ -51,6 +51,11 @@ runs:
       run: |
         bundle install
         VERBOSE=${{ inputs.verbose }} RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+
+    - name: Run press-modes end-to-end tests (lean/fat/classic)
+      shell: bash
+      run: |
+        RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/press-modes-tests.sh
 
     - name: Strip tebako test packages
       if: ${{ !contains(matrix.env.os, 'macos') && inputs.upload == 'true' }}

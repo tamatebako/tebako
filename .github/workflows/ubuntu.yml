@@ -57,6 +57,9 @@ env:
   TZ: "Etc/UTC"
 # show cmake output (yes/no)
   VERBOSE: no
+# Shared prebuilt runtime/bootstrap cache (Tebako::RuntimeManager); cached
+# per runner platform and packaged Ruby version by the press jobs below
+  TEBAKO_HOME: ${{ github.workspace }}/.tebako-home
 
 
 jobs:
@@ -77,47 +80,9 @@ jobs:
           matrix-file: .github/matrices/ubuntu.json
           event-name: ${{ github.event_name }}
 
-  setup:
-    name: setup ${{ matrix.env.os }}-${{ matrix.architecture.name }} [CC ${{ matrix.env.CC }}]
-    needs: [ prepare ]
-    runs-on: ${{ matrix.architecture.host }}
-    container:
-      image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
-    strategy:
-      fail-fast: false
-      matrix:
-        architecture:
-          - { host: 'ubuntu-22.04', name: x86_64 }
-          - { host: 'ubuntu-22.04-arm', name: arm64 }
-        env: ${{fromJson(needs.prepare.outputs.env-matrix)}}
-    env:
-      CC: ${{ matrix.env.CC }}
-      CXX: ${{ matrix.env.CXX }}
-    steps:
-      - name: Fix git configuration
-        run: |
-          git config --global --add safe.directory $PWD
-
-      - name: Checkout tebako packaging environment
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          submodules: true
-
-      - name: Setup development environment
-        uses: ./.github/actions/setup-tebako-development
-        with:
-          path: deps
-          os: ${{ matrix.env.os }}-${{ matrix.architecture.name }}
-          cc: ${{ env.CC }}
-          version: ${{ env.CACHE_VER }}
-
-      - name: tebako setup
-        run: exe/tebako setup -D
-
   tests-1:
     name: tests-1 ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    needs: [ setup, prepare ]
+    needs: [ prepare ]
     runs-on: ${{ matrix.architecture.host }}
     container:
       image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
@@ -151,6 +116,15 @@ jobs:
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: exe/tebako setup -D
+
       - name: Shall upload artifacts?
         id: shall-upload
         shell: bash
@@ -169,7 +143,7 @@ jobs:
 
   tests-1-app:
     name: tests-1-app ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    needs: [ setup, prepare ]
+    needs: [ prepare ]
     runs-on: ${{ matrix.architecture.host }}
     container:
       image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
@@ -203,6 +177,15 @@ jobs:
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
 
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: exe/tebako setup -D
+
       - name: Checkout shell test framework
         uses: actions/checkout@v4
         with:
@@ -210,15 +193,15 @@ jobs:
           path: tests/shunit2
           fetch-depth: 1
 
-      - name: Run tebako tests (set no. 1) for separately packaged application
+      - name: Run tebako tests (set no. 1) for lean three-part packages
         shell: bash
         run: |
           bundle install
-          MODE=app RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
+          MODE=lean RUBY_VER=${{ matrix.package_ruby_ver }} tests/scripts/functional-tests.sh
 
   tests-2:
     name: tests-2 ${{ matrix.env.os }}-${{ matrix.architecture.name }} Ruby ${{ matrix.package_ruby_ver }} CC ${{ matrix.env.CC }}
-    needs: [ setup, prepare ]
+    needs: [ prepare ]
     runs-on: ${{ matrix.architecture.host }}
     container:
       image: 'ghcr.io/${{ github.repository_owner }}/tebako-${{ matrix.env.os }}-dev'
@@ -251,6 +234,15 @@ jobs:
           os: ${{ matrix.env.os }}-${{ matrix.architecture.name }}
           cc: ${{ env.CC }}
           version: ${{ env.CACHE_VER }}
+
+      - name: Cache resolved runtimes (TEBAKO_HOME)
+        uses: actions/cache@v4
+        with:
+          path: .tebako-home
+          key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ hashFiles('lib/tebako/version.rb') }}-v${{ env.CACHE_VER }}
+
+      - name: tebako setup
+        run: exe/tebako setup -D
 
       - name: Run tebako tests (set no. 2)
         run: RUBY_VER=${{ matrix.package_ruby_ver }} ruby tests-2/tebako-test.rb

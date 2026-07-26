@@ -28,12 +28,13 @@
 # ......................................................................
 # Press modes end-to-end test (Stage 3B-3): lean (default) / fat / classic.
 #
-# Verifies the full three-part flow on the local machine:
+# Verifies the full three-part flow against the published prebuilt packages:
 #   1. lean press (the default mode) produces a bootstrap-based package whose
 #      first run downloads the referenced runtime into a FRESH cache exactly
 #      once and runs the app (memfs content + argv passthrough proven);
 #   2. a second lean app (different image) with the same cache reuses the
-#      cached runtime -- proven by removing the mirror AND going offline;
+#      cached runtime -- proven by going offline (TEBAKO_OFFLINE=1), so any
+#      download attempt would fail the run;
 #   3. a lean package on a fresh cache with TEBAKO_OFFLINE=1 fails cleanly
 #      (exit 69, names the knobs);
 #   4. a fat package (runtime payload slot) runs on a fresh cache with
@@ -41,36 +42,17 @@
 #   5. a classic package (prebuilt runtime + images, Stage-3A layout) runs
 #      self-contained and never touches the cache.
 #
-# The runtime package is pressed from THIS repo's sources ('-m runtime'), so
-# it carries this tree's tebako-main (launcher ABI v1 + TPKG_FORMAT_RUNTIME
-# tolerance); it is served to the bootstrap through a local file mirror,
-# because no tebako-runtime-ruby release with the launcher ABI exists yet
-# (v0.15.0 packages are pending -- once they ship, TEBAKO_RUNTIME_MIRROR can
-# simply be unset to exercise the real release). The tebako-bootstrap
-# launcher (>= 0.2.0, payload install) is built from a sibling checkout and
-# likewise served through a local mirror.
+# Runtime packages are resolved from tebako-runtime-ruby releases and the
+# tebako-bootstrap launcher (>= 0.2.0, payload install) from tebako-bootstrap
+# releases -- the same artifacts end-user presses consume; no local mirrors.
 #
 # Usage:
 #   tests/scripts/press-modes-tests.sh
-# Requires 'exe/tebako setup -R $RUBY_VER' to have completed in this repo
-# (deps/ provisioned), cmake + a C compiler (for the bootstrap build), and a
-# tebako-bootstrap checkout with payload support at ../tebako-bootstrap
-# (override with TEBAKO_BOOTSTRAP_REPO).
+# Requires 'exe/tebako setup' to have completed in this repo (deps/
+# provisioned).
 
 # ......................................................................
 # Helpers
-
-size_of() {
-   wc -c < "$1" | tr -d ' '
-}
-
-sha256_of() {
-   if command -v sha256sum >/dev/null 2>&1; then
-      sha256sum "$1" | cut -d' ' -f1 | sed 's/^\\//'
-   else
-      shasum -a 256 "$1" | cut -d' ' -f1 | sed 's/^\\//'
-   fi
-}
 
 # Number of runtime entries in a cache root
 runtime_entries() {
@@ -95,9 +77,6 @@ press_app() {
    local mode="$1" app="$2" out="$3" mode_arg=""
    [ -n "$mode" ] && mode_arg="--mode=$mode"
    ( cd "${DIR_ROOT}" && env TEBAKO_HOME="${PRESS_HOME}" \
-        TEBAKO_BOOTSTRAP_MIRROR="file://${BOOTSTRAP_MIRROR}" \
-        TEBAKO_BOOTSTRAP_VERSION="${BOOTSTRAP_VER}" \
-        TEBAKO_RUNTIME_MIRROR="file://${RUNTIME_MIRROR}" \
         "${DIR_BIN}/tebako" press -D -R "${RUBY_VER}" ${mode_arg:+"$mode_arg"} \
         --root="${WORK}/${app}" --entry-point=app.rb --output="$out" \
         > "${WORK}/press-$(basename "$out").log" 2>&1 ) || {
@@ -115,7 +94,7 @@ press_app() {
 test_lean_first_run_downloads_runtime_once() {
    echo "==> lean first run downloads the runtime exactly once"
    package_runner_ok "press-modes: app1 ok" \
-      TEBAKO_HOME="${HOME_RUN}" TEBAKO_RUNTIME_MIRROR="file://${RUNTIME_MIRROR}" \
+      TEBAKO_HOME="${HOME_RUN}" \
       "${LEAN1}" one two
    assertContains "$result" "press-modes: memfs: APP1-DATA-CONTENT"
    assertContains "$result" 'press-modes: argv: ["one", "two"]'
@@ -124,11 +103,10 @@ test_lean_first_run_downloads_runtime_once() {
       "[ -f \"${HOME_RUN}/runtimes/ruby-${RUBY_VER}-${TEBAKO_VER}-${PLAT}/tebako-runtime-${TEBAKO_VER}-${RUBY_VER}-${PLAT}\" ]"
 }
 
-# second lean app, same cache: no second download -- the mirror is removed
-# and TEBAKO_OFFLINE=1 is set, so a download attempt would fail the run
+# second lean app, same cache: no second download -- TEBAKO_OFFLINE=1 is set,
+# so a download attempt would fail the run
 test_second_lean_app_uses_cached_runtime() {
-   echo "==> second lean app shares the cached runtime (mirror gone, offline)"
-   mv "${RUNTIME_MIRROR}" "${WORK}/runtime-mirror-gone"
+   echo "==> second lean app shares the cached runtime (offline)"
    package_runner_ok "press-modes: app2 ok" \
       TEBAKO_OFFLINE=1 TEBAKO_HOME="${HOME_RUN}" "${LEAN2}"
    assertContains "$result" "press-modes: memfs: APP2-DATA-CONTENT"
@@ -165,7 +143,7 @@ test_classic_runs_self_contained() {
 }
 
 # ......................................................................
-# Fixture build (once): runtime mirror, bootstrap mirror, four pressed apps
+# Fixture build (once): four pressed apps against the published releases
 oneTimeSetUp() {
    WORK="$( mktemp -d "${TMPDIR:-/tmp}/tebako-press-modes.XXXXXX" )"
    echo "==> building press-modes fixtures in ${WORK}"
@@ -175,52 +153,6 @@ oneTimeSetUp() {
 
       TEBAKO_VER=$( ruby -I "${DIR_ROOT}/lib" -rtebako/version -e 'print Tebako::VERSION' )
       echo "==> tebako ${TEBAKO_VER}, ruby ${RUBY_VER}, platform ${PLAT}"
-
-      # -- runtime mirror: pressed from this repo's sources (launcher ABI v1)
-      RT_ASSET="tebako-runtime-${TEBAKO_VER}-${RUBY_VER}-${PLAT}"
-      RUNTIME_MIRROR="${WORK}/runtime-mirror"
-      mkdir -p "${RUNTIME_MIRROR}/v${TEBAKO_VER}"
-      echo "==> pressing the runtime package (this can take a few minutes)"
-      ( cd "${DIR_ROOT}" && "${DIR_BIN}/tebako" press -D -R "${RUBY_VER}" -m runtime \
-         --output "${RUNTIME_MIRROR}/v${TEBAKO_VER}/${RT_ASSET}" \
-         > "${WORK}/press-runtime.log" 2>&1 ) || { cat "${WORK}/press-runtime.log"; exit 1; }
-      [ -f "${RUNTIME_MIRROR}/v${TEBAKO_VER}/${RT_ASSET}" ] || { echo "no runtime package"; exit 1; }
-      RT_SHA=$( sha256_of "${RUNTIME_MIRROR}/v${TEBAKO_VER}/${RT_ASSET}" )
-      cat > "${RUNTIME_MIRROR}/v${TEBAKO_VER}/manifest.json" <<EOF
-[
-  {
-    "tebako_version": "${TEBAKO_VER}",
-    "ruby_version": "${RUBY_VER}",
-    "platform": "${PLAT}",
-    "filename": "${RT_ASSET}",
-    "sha256": "${RT_SHA}",
-    "size_bytes": $( size_of "${RUNTIME_MIRROR}/v${TEBAKO_VER}/${RT_ASSET}" )
-  }
-]
-EOF
-      echo "${RT_SHA}  ${RT_ASSET}" > "${RUNTIME_MIRROR}/v${TEBAKO_VER}/SHA256SUMS.txt"
-
-      # -- bootstrap mirror: built from the sibling checkout (>= 0.2.0)
-      BOOTSTRAP_VER="0.2.0"
-      BS_ASSET="tebako-bootstrap-${BOOTSTRAP_VER}-${PLAT}"
-      BOOTSTRAP_MIRROR="${WORK}/bootstrap-mirror"
-      cmake -S "${TEBAKO_BOOTSTRAP_REPO}" -B "${WORK}/tbs-build" -DCMAKE_BUILD_TYPE=Release \
-         > "${WORK}/tbs-configure.log" 2>&1 || { cat "${WORK}/tbs-configure.log"; exit 1; }
-      cmake --build "${WORK}/tbs-build" --target tebako-bootstrap --parallel \
-         > "${WORK}/tbs-build.log" 2>&1 || { cat "${WORK}/tbs-build.log"; exit 1; }
-      mkdir -p "${BOOTSTRAP_MIRROR}/v${BOOTSTRAP_VER}"
-      cp "${WORK}/tbs-build/tebako-bootstrap" "${BOOTSTRAP_MIRROR}/v${BOOTSTRAP_VER}/${BS_ASSET}"
-      BS_SHA=$( sha256_of "${BOOTSTRAP_MIRROR}/v${BOOTSTRAP_VER}/${BS_ASSET}" )
-      cat > "${BOOTSTRAP_MIRROR}/v${BOOTSTRAP_VER}/manifest.json" <<EOF
-{
-  "name": "tebako-bootstrap",
-  "version": "${BOOTSTRAP_VER}",
-  "assets": [
-    { "platform": "${PLAT}", "file": "${BS_ASSET}", "sha256": "${BS_SHA}" }
-  ]
-}
-EOF
-      echo "${BS_SHA}  ${BS_ASSET}" > "${BOOTSTRAP_MIRROR}/v${BOOTSTRAP_VER}/SHA256SUMS"
 
       # -- fixture applications (distinct content + data files)
       for app in app1 app2 app3 app4; do
@@ -234,7 +166,8 @@ RUBY
          echo "${tag}-DATA-CONTENT" > "${app}/data.txt"
       done
 
-      # -- press lean (default) x2, fat, classic
+      # -- press lean (default) x2, fat, classic; runtimes/bootstraps come
+      #    from the published tebako-runtime-ruby/tebako-bootstrap releases
       PRESS_HOME="${WORK}/press-home"
       press_app ""       app1 "${WORK}/lean1"
       press_app ""       app2 "${WORK}/lean2"
@@ -243,8 +176,6 @@ RUBY
    ) || { echo "fixture build failed"; exit 1; }
 
    TEBAKO_VER=$( ruby -I "${DIR_ROOT}/lib" -rtebako/version -e 'print Tebako::VERSION' )
-   BOOTSTRAP_VER="0.2.0"
-   RUNTIME_MIRROR="${WORK}/runtime-mirror"
    LEAN1="${WORK}/lean1"
    LEAN2="${WORK}/lean2"
    FATPKG="${WORK}/fat"
@@ -266,7 +197,6 @@ DIR_ROOT=$( cd "$DIR0"/../.. && pwd )
 DIR_BIN=$( cd "$DIR_ROOT"/exe && pwd )
 DIR_TESTS=$( cd "$DIR_ROOT"/tests && pwd )
 RUBY_VER=${RUBY_VER:-3.3.7}
-TEBAKO_BOOTSTRAP_REPO=${TEBAKO_BOOTSTRAP_REPO:-$( cd "$DIR_ROOT/.." && pwd )/tebako-bootstrap}
 
 # platform id, as used by tebako-runtime-ruby/tebako-bootstrap asset names
 UNAME_S=$( uname -s )
@@ -293,23 +223,7 @@ esac
 
 if [ ! -x "${DIR_ROOT}/deps/bin/mkdwarfs" ]; then
    echo "ERROR: no provisioned mkdwarfs at ${DIR_ROOT}/deps/bin/mkdwarfs --"
-   echo "       run 'exe/tebako setup -R ${RUBY_VER}' from the repo root first"
-   exit 1
-fi
-
-if ! command -v cmake > /dev/null 2>&1 || ! command -v cc > /dev/null 2>&1; then
-   echo "ERROR: cmake and a C compiler are required to build tebako-bootstrap"
-   exit 1
-fi
-
-if [ ! -f "${TEBAKO_BOOTSTRAP_REPO}/src/tebako-bootstrap.c" ]; then
-   echo "ERROR: no tebako-bootstrap checkout at ${TEBAKO_BOOTSTRAP_REPO} --"
-   echo "       clone it there or set TEBAKO_BOOTSTRAP_REPO (payload support >= 0.2.0 required)"
-   exit 1
-fi
-
-if ! grep -q "TPKG_FORMAT_RUNTIME" "${TEBAKO_BOOTSTRAP_REPO}/include/tebako/tpkg.h"; then
-   echo "ERROR: ${TEBAKO_BOOTSTRAP_REPO} predates the runtime payload support (>= 0.2.0 required)"
+   echo "       run 'exe/tebako setup' from the repo root first"
    exit 1
 fi
 

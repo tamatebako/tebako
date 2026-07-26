@@ -67,3 +67,11 @@ runs:
       with:
         path: ${{ inputs.path }}
         key: ${{ inputs.os }}-${{ inputs.cc }}-${{ steps.cache-key.outputs.key }}-i${{ inputs.version }}
+
+    # Prebuilt runtime packages resolved by the press (TEBAKO_HOME); the big
+    # download of the slim model, cached per packaged Ruby version
+    - name: Cache resolved runtimes (TEBAKO_HOME)
+      uses: actions/cache@v4
+      with:
+        path: .tebako-home
+        key: tebako-home-${{ runner.os }}-${{ runner.arch }}-ruby-${{ matrix.package_ruby_ver }}-tebako-${{ steps.cache-key.outputs.key }}-i${{ inputs.version }}
