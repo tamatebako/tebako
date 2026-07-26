@@ -92,6 +92,17 @@
 //! (item 22), the first real consumer. The wire layout is meanwhile pinned
 //! by the golden vectors in `crates/tpkg/tests/golden.rs`, which are
 //! byte-exact outputs of the C implementation.
+//!
+//! # The payload manifest (spec 03)
+//!
+//! Besides the trailer, this crate owns the second tpkg surface: the
+//! in-image **payload manifest** at [`PAYLOAD_MANIFEST_PATH`] — authored
+//! YAML (never JSON, owner rule), IDENTITY + PROVIDES + DEPENDS on a
+//! common provenance/trust layer. See [`manifest`]'s module docs and the
+//! versioned JSON Schema `schema/tpkg-manifest-v1.schema.json`. The two
+//! surfaces have separate error types: [`TpkgError`] is 1:1 with the C
+//! `TPKG_ERR_*` codes while the payload manifest has no C counterpart
+//! ([`ManifestError`]).
 
 #![forbid(unsafe_code)]
 
@@ -99,12 +110,20 @@ mod codec;
 mod crc32;
 mod error;
 mod io;
+mod manifest;
 mod model;
 
 pub use codec::{encode_trailer, parse_trailer, trailer_len, v2_signed_region};
 pub use crc32::{crc32, Crc32};
 pub use error::{strerror, TpkgError};
 pub use io::{read_from, write_to};
+pub use manifest::{
+    AppProvides, BuiltFrom, Capabilities, Constraint, DataProvides, Digest, Encryption,
+    EncryptionPart, EncryptionState, EngineProvides, Entrypoint, Identity, ManifestError,
+    MountSemantics, PayloadKind, PayloadManifest, Platform, Platforms, Producer, Provides,
+    Requirement, RuntimeProvides, RuntimeRequirement, Sbom, Signing, SigningMechanism,
+    SigningState, Source, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
+};
 pub use model::{Manifest, Slot, V2Extension};
 
 /// Manifest format version (stays 1: the chain-of-trust extension is

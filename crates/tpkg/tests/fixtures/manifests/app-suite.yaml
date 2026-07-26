@@ -1,0 +1,51 @@
+# Golden fixture — kind: app (spec 03 §2.2)
+#
+# A multi-entry suite (N=2): one package, two commands, DIFFERENT runtime
+# requirements — `metanorma` is pure ruby (range), `metanorma-nokogiri`
+# links a native extension and pins the abi line ("~> 3.3.0"). DEPENDS
+# shows the consumer-declared MOUNT RULE: the toolkit layer's mount point
+# is named HERE, in the consumer's manifest — the provider never dictates.
+identity:
+  schema_version: 1
+  kind: app
+  name: metanorma
+  version: 1.2.3
+  producer: {tool: tebako-cli, tool_version: 0.16.0}
+  created: "2026-07-21T09:30:00Z"
+  source:
+    commit: 4f3c2b1a9d8e7f605a4b3c2d1e0f9a8b7c6d5e4f
+    builder: gha:run:20260721-1042
+  sbom: {ref: sbom/metanorma-1.2.3.spdx.json}
+  digest:
+    tree_hash: sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3
+    blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1
+  signing: {state: unsigned}
+  encryption: {state: none}
+  annotations:
+    metanorma.org/support: support@metanorma.org
+    metanorma.org/flavor: full
+provides:
+  entrypoints:
+    - name: metanorma
+      path: /__app__/bin/metanorma
+      args_default: [--format, pretty]
+      runtime_requirement:
+        engine: ruby
+        constraint: ">= 3.3, < 5.0"       # pure ruby: a range
+    - name: metanorma-nokogiri
+      path: /__app__/bin/metanorma-nokogiri
+      args_default: []
+      runtime_requirement:
+        engine: ruby
+        constraint: "~> 3.3.0"            # native extension: the abi line
+  platforms: [aarch64-macos, x86_64-linux-gnu]
+  capabilities: {exec: true, read: true}
+requires:
+  - kind: language
+    engine: ruby
+    constraint: "~> 3.3.0"
+  - kind: toolkit
+    name: gtk-layer
+    constraint: ">= 3.24, < 3.25"
+    triplets: [aarch64-macos, x86_64-linux-gnu]   # where this dep ships
+    mount: /__layers__/gtk                        # consumer-declared (MOUNT RULE)
