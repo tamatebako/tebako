@@ -48,7 +48,31 @@ fn run(cmd: &mut Command) -> (i32, String) {
     let out = cmd.output().unwrap_or_else(|e| panic!("spawn failed: {e}"));
     let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&out.stderr));
-    (out.status.code().unwrap_or(-1), text)
+    (out.status.code().unwrap_or(-1), strip_legacy_warning(&text))
+}
+
+/// Item 29 v1-legacy rule: packages built unsigned (the default, per the
+/// opt-in rule) make the bootstrap print a loud warning on stderr BY
+/// DESIGN (two lines). Strip it for output comparison — the warning's
+/// emission is covered by the bootstrap chain tests.
+fn strip_legacy_warning(text: &str) -> String {
+    let mut out = String::new();
+    let mut skip_next = false;
+    for line in text.lines() {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if line.starts_with("tebako-bootstrap: WARNING: ")
+            && line.contains("unsigned v1 (legacy) tpkg trailer")
+        {
+            skip_next = true;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 fn copy_dir(src: &Path, dst: &Path) {

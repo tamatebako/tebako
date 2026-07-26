@@ -19,6 +19,9 @@ sha2 = "0.10"
 
 [dev-dependencies]
 tebako-contract-tests = { version = "0.1.0", path = "../../tests/contract" }
+tebako-bootstrap = { version = "0.1.0", path = "../tebako-bootstrap" }
+tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+rnp = { git = "https://github.com/rnpgp/rnp-rs", rev = "9d459ea36398d9f21b920614aba4816501e2e767" }
 
 [[bin]]
 name = "tebako-pkg"

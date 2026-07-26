@@ -21,12 +21,31 @@ pub use json::{escape as json_escape, parse as json_parse, Value as JsonValue};
 /// Copy chunk size (1 MiB, like the C++ side).
 const COPY_BUF: usize = 1 << 20;
 
+/// Signing request for package-producing operations (item 29, owner
+/// directive: signing is OPT-IN). Only the presence of a signature is
+/// optional; verification of signed packages is always strict.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub enum SignRequest {
+    /// No signing: a v1-unsigned trailer, byte-identical to pre-signing
+    /// output; no key material is generated, loaded or prompted for.
+    #[default]
+    None,
+    /// Sign with the press-local key (generated and cached under
+    /// $TEBAKO_HOME/keys on first use, auto-registered locally).
+    PressLocal,
+    /// Sign with the secret key from $TEBAKO_HOME/keys whose keyid
+    /// (16 hex chars) matches.
+    Keyid(String),
+}
+
 /// Package-level options (trailer fields besides the slots).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PackageOptions {
     pub runtime_ref: String,
     pub package_flags: u32,
     pub launcher_abi: u32,
+    /// Signing is opt-in; `None` produces an unsigned (v1) package.
+    pub sign: SignRequest,
 }
 
 /// An image spec: path + optional explicit mount point + format override.
@@ -211,21 +230,34 @@ fn stream_part_sha(source: &PartSource, out: &mut fs::File) -> Result<(u64, [u8;
 // ---------------------------------------------------------------------
 
 /// Sign the trailer of the just-assembled package: compute the v2
-/// extension (per-slot digests, press-local signer keyid, OpenPGP
-/// signature over the canonical trailer bytes) and append the signed v2
-/// trailer. `f` is the package file positioned anywhere (seeked inside).
-/// `m` is updated to version 2 in place.
+/// extension (per-slot digests, signer keyid, OpenPGP signature over the
+/// canonical trailer bytes) and append the signed v2 trailer. `f` is the
+/// package file positioned anywhere (seeked inside). `m` is updated to
+/// carry the SIGNED_V2 flag and the extension in place.
 fn sign_and_write_trailer(
     f: &mut fs::File,
     m: &mut Manifest,
     digests: &[[u8; 32]],
+    request: &SignRequest,
 ) -> Result<(), String> {
     let home = tebako_signer::default_home().map_err(|e| e.to_string())?;
 
-    // Press-local key (generated on first use) + auto-registration into
-    // the local trusted keyring (item 29 point 7: dev iteration uses the
-    // local press key, registered automatically — never unsigned).
-    let press = tebako_signer::press_local_key(&home).map_err(|e| e.to_string())?;
+    // Resolve the signing key (generated on first explicit use) and make
+    // sure its public half is registered in the local trusted keyring.
+    let press = match request {
+        SignRequest::PressLocal => {
+            tebako_signer::press_local_key(&home).map_err(|e| e.to_string())?
+        }
+        SignRequest::Keyid(keyid) => tebako_signer::secret_key_by_keyid(&home, keyid)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| {
+                format!(
+                    "no secret key with keyid {keyid} under {}",
+                    home.join("keys").display()
+                )
+            })?,
+        SignRequest::None => unreachable!("sign_and_write_trailer without a signing request"),
+    };
     let _ = tebako_signer::register_trusted(&home, &press.public_key).map_err(|e| e.to_string())?;
 
     if digests.len() != m.slots.len() {
@@ -355,12 +387,28 @@ fn assemble(
         }
         let _ = total;
 
-        // Sign the trailer (item 29: every package is signed with the
-        // press-local key) and append the v2 trailer.
-        if let Err(e) = sign_and_write_trailer(&mut out, &mut m, &digests) {
-            drop(out);
-            cleanup(output);
-            return Err(e);
+        match &options.sign {
+            SignRequest::None => {
+                // Opt-in rule: without a signing request the trailer is a
+                // plain v1 trailer — byte-identical to pre-signing output,
+                // and no key material is touched at all.
+                m.package_flags &= !tpkg::TPKG_FLAG_SIGNED_V2;
+                if let Err(e) = tpkg::write_to(&mut out, &m) {
+                    drop(out);
+                    cleanup(output);
+                    return Err(format!(
+                        "tpkg trailer write failed: {}",
+                        tpkg::strerror(e.code())
+                    ));
+                }
+            }
+            request => {
+                if let Err(e) = sign_and_write_trailer(&mut out, &mut m, &digests, request) {
+                    drop(out);
+                    cleanup(output);
+                    return Err(e);
+                }
+            }
         }
     }
 
@@ -406,10 +454,23 @@ fn slots_from_manifest(binary: &Path, m: &Manifest) -> Vec<SlotSource> {
 }
 
 fn options_from_manifest(m: &Manifest) -> PackageOptions {
+    // Rewrite operations preserve the input's signing state: a signed
+    // package is re-signed (with the local press key — the original signer
+    // cannot be assumed present), an unsigned package stays unsigned.
+    let signed = m.v2.is_some();
     PackageOptions {
         runtime_ref: m.runtime_ref_str().unwrap_or_default().to_string(),
-        package_flags: m.package_flags,
+        package_flags: if signed {
+            m.package_flags
+        } else {
+            m.package_flags & !tpkg::TPKG_FLAG_SIGNED_V2
+        },
         launcher_abi: m.launcher_abi,
+        sign: if signed {
+            SignRequest::PressLocal
+        } else {
+            SignRequest::None
+        },
     }
 }
 
@@ -721,6 +782,11 @@ pub fn reassemble(input_dir: &Path, output: &Path) -> Result<(), String> {
                 manifest_path.display()
             )
         })? as u32;
+    }
+    // reassemble preserves the source package's signing state: signed
+    // sources are re-signed (local press key), unsigned stay unsigned.
+    if opts.package_flags & tpkg::TPKG_FLAG_SIGNED_V2 != 0 {
+        opts.sign = SignRequest::PressLocal;
     }
     if let Some(a) = root.find("launcher_abi") {
         opts.launcher_abi = a.as_u64().ok_or_else(|| {

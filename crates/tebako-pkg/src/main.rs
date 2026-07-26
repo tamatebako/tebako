@@ -23,7 +23,7 @@ use std::process::ExitCode;
 
 use tebako_pkg::{
     bundle, default_mount, info, insert_image, parse_image_spec, reassemble, remove_image,
-    set_runtime, unbundle, PackageImage, PackageOptions,
+    set_runtime, unbundle, PackageImage, PackageOptions, SignRequest,
 };
 
 fn main() -> ExitCode {
@@ -70,6 +70,7 @@ struct Args {
     lean: bool,
     launcher_abi: Option<i64>,
     verbose: bool,
+    sign: Option<SignRequest>,
 }
 
 impl Args {
@@ -94,6 +95,15 @@ impl Args {
             match name {
                 "-v" | "--verbose" => a.verbose = true,
                 "--lean" => a.lean = true,
+                "--sign" => {
+                    // --sign (press-local key) or --sign=<keyid> (a secret
+                    // key from $TEBAKO_HOME/keys). The space form is not
+                    // consumed: a bare --sign never eats a positional.
+                    a.sign = Some(match value.take() {
+                        Some(keyid) => SignRequest::Keyid(keyid),
+                        None => SignRequest::PressLocal,
+                    });
+                }
                 "--bootstrap" => a.bootstrap = Some(take_value(&mut i)?),
                 "--image" => a.images.push(take_value(&mut i)?),
                 "-o" | "--output" => a.output = Some(take_value(&mut i)?),
@@ -181,6 +191,7 @@ fn cmd_bundle(rest: &[String]) -> ExitCode {
         launcher_abi: a
             .launcher_abi
             .map_or(0, |n| if n < 0 { 0 } else { n as u32 }),
+        sign: a.sign.unwrap_or_default(),
     };
     match bundle(Path::new(&bootstrap), &images, Path::new(&output), &opts) {
         Ok(()) => {
@@ -324,6 +335,11 @@ fn print_help() {
     println!("  remove-image  Remove an image slot from a package (in place)");
     println!("  set-runtime   Replace the bootstrap portion of a package (in place)");
     println!("  help          Show this help\n");
+    println!("Signing is OPT-IN: packages are unsigned unless `bundle --sign[=keyid]`");
+    println!("is given (--sign uses the press-local key, generated on first use;");
+    println!("--sign=<keyid> selects a secret key from $TEBAKO_HOME/keys). Rewrite");
+    println!("operations preserve the input's signing state. Verification of signed");
+    println!("packages at run time is always strict.");
     println!("Options vary per command; the default mountpoint for image slot 0 is");
     println!("{} (slot N: {}).", default_mount(0), default_mount(1));
 }

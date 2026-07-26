@@ -97,67 +97,12 @@ fn run(tool: &Path, args: &[&str], cwd: &Path) -> (i32, String, String) {
 }
 
 /// Semantic package equality in the signing era (item 29): the oracle
-/// produces v1-unsigned trailers while the Rust tool signs every package
-/// with the press-local key, so byte-identity is impossible by design
-/// (signatures are per-key and per-time). What MUST hold:
-/// - the payload region (bootstrap + images) is byte-identical;
-/// - the v1-visible manifest fields match: version, slots, runtime_ref,
-///   launcher_abi, package_flags modulo TPKG_FLAG_SIGNED_V2;
-/// - the Rust package carries a non-empty v2 signature.
-fn assert_packages_semantically_equal(cpp: &Path, rs: &Path) {
-    let cpp_bytes = std::fs::read(cpp).unwrap();
-    let rs_bytes = std::fs::read(rs).unwrap();
-    let mc = tpkg::read_from(&mut std::fs::File::open(cpp).unwrap()).unwrap();
-    let mr = tpkg::read_from(&mut std::fs::File::open(rs).unwrap()).unwrap();
-
-    let payload_end =
-        |m: &tpkg::Manifest| m.slots.iter().map(|s| s.offset + s.size).max().unwrap_or(0) as usize;
-    assert_eq!(
-        &cpp_bytes[..payload_end(&mc)],
-        &rs_bytes[..payload_end(&mr)],
-        "payload region must be byte-identical"
-    );
-
-    assert_eq!(mc.version, mr.version, "version");
-    assert_eq!(mc.launcher_abi, mr.launcher_abi, "launcher_abi");
-    assert_eq!(mc.runtime_ref, mr.runtime_ref, "runtime_ref");
-    assert_eq!(
-        mc.package_flags & !tpkg::TPKG_FLAG_SIGNED_V2,
-        mr.package_flags & !tpkg::TPKG_FLAG_SIGNED_V2,
-        "package_flags (modulo SIGNED_V2)"
-    );
-    assert_eq!(mc.slots, mr.slots, "slots");
-
-    let v2 = mr.v2.as_ref().expect("rust package must be signed (v2)");
-    assert!(!v2.signature.is_empty());
-}
-
 /// The rust `info` adds a Signature line that the oracle does not have.
 fn strip_signature_line(out: &str) -> String {
     out.lines()
         .filter(|l| !l.starts_with("Signature:"))
         .map(|l| format!("{l}\n"))
         .collect()
-}
-
-/// unbundle's manifest.json carries the trailer's package_flags (the
-/// SIGNED_V2 bit) and header_crc32 (recomputed over the signed header) —
-/// both necessarily differ from the unsigned oracle. Normalize them out
-/// for the comparison.
-fn normalize_manifest_json(text: &str) -> String {
-    let mut out = String::new();
-    for l in text.lines() {
-        let t = l.trim_start();
-        if t.starts_with("\"package_flags\":") {
-            out.push_str("  \"package_flags\": 0,\n");
-        } else if t.starts_with("\"header_crc32\":") {
-            out.push_str("  \"header_crc32\": 0,\n");
-        } else {
-            out.push_str(l);
-            out.push('\n');
-        }
-    }
-    out
 }
 
 #[test]
@@ -215,9 +160,13 @@ fn golden_bundle_info_unbundle_reassemble() {
         &w.0,
     );
     assert_eq!((rc, err.as_str()), (0, ""), "rust bundle");
-    // Byte-identity is impossible by design (the Rust tool signs every
-    // package; the oracle does not) — assert the semantic contract.
-    assert_packages_semantically_equal(&pkg_cpp, &pkg_rs);
+    // Signing is opt-in: the default bundle is unsigned, byte-identical
+    // to the oracle's unsigned package.
+    assert_eq!(
+        std::fs::read(&pkg_cpp).unwrap(),
+        std::fs::read(&pkg_rs).unwrap(),
+        "unsigned bundle output must be byte-identical to the oracle"
+    );
 
     // info on the SAME package file → identical output modulo the rust-only
     // Signature line (here: unsigned v1 oracle package, reported as legacy).
@@ -251,9 +200,9 @@ fn golden_bundle_info_unbundle_reassemble() {
         0
     );
     assert_eq!(
-        normalize_manifest_json(&std::fs::read_to_string(parts_cpp.join("manifest.json")).unwrap()),
-        normalize_manifest_json(&std::fs::read_to_string(parts_rs.join("manifest.json")).unwrap()),
-        "manifest.json must match (modulo signing fields)"
+        std::fs::read(parts_cpp.join("manifest.json")).unwrap(),
+        std::fs::read(parts_rs.join("manifest.json")).unwrap(),
+        "manifest.json must be identical"
     );
     for name in ["bootstrap.bin", "image-0.bin", "image-1.bin"] {
         assert_eq!(
@@ -294,16 +243,14 @@ fn golden_bundle_info_unbundle_reassemble() {
         .0,
         0
     );
-    // reassemble: re-signs with the local press key (the signature cannot
-    // be byte-preserved), so compare semantically — and the reassembled
-    // package must match the original oracle bundle on the v1 surface.
-    assert_packages_semantically_equal(&re_cpp, &re_rs);
-    let mc = tpkg::read_from(&mut std::fs::File::open(&pkg_cpp).unwrap()).unwrap();
-    let mr = tpkg::read_from(&mut std::fs::File::open(&re_rs).unwrap()).unwrap();
-    assert_eq!(mc.slots, mr.slots, "reassemble must preserve slots");
     assert_eq!(
-        mc.runtime_ref, mr.runtime_ref,
-        "reassemble must preserve runtime_ref"
+        std::fs::read(&re_cpp).unwrap(),
+        std::fs::read(&re_rs).unwrap()
+    );
+    assert_eq!(
+        std::fs::read(&pkg_cpp).unwrap(),
+        std::fs::read(&re_rs).unwrap(),
+        "bundle / unbundle / reassemble must round-trip exactly"
     );
 }
 
@@ -338,7 +285,11 @@ fn golden_insert_remove_set_runtime() {
     }
     let pkg_cpp = w.0.join("pkg-cpp");
     let pkg_rs = w.0.join("pkg-rs");
-    assert_packages_semantically_equal(&pkg_cpp, &pkg_rs);
+    assert_eq!(
+        std::fs::read(&pkg_cpp).unwrap(),
+        std::fs::read(&pkg_rs).unwrap(),
+        "unsigned bundle output must be byte-identical"
+    );
 
     // insert-image with an explicit mount point.
     assert_eq!(
@@ -363,12 +314,20 @@ fn golden_insert_remove_set_runtime() {
         .0,
         0
     );
-    assert_packages_semantically_equal(&pkg_cpp, &pkg_rs);
+    assert_eq!(
+        std::fs::read(&pkg_cpp).unwrap(),
+        std::fs::read(&pkg_rs).unwrap(),
+        "insert-image output must be identical"
+    );
 
     // remove the inserted slot.
     assert_eq!(run(&cpp, &["remove-image", "pkg-cpp", "1"], &w.0).0, 0);
     assert_eq!(run(&rs, &["remove-image", "pkg-rs", "1"], &w.0).0, 0);
-    assert_packages_semantically_equal(&pkg_cpp, &pkg_rs);
+    assert_eq!(
+        std::fs::read(&pkg_cpp).unwrap(),
+        std::fs::read(&pkg_rs).unwrap(),
+        "remove-image output must be identical"
+    );
 
     // set-runtime swaps only the bootstrap region.
     let boot2 = w.0.join("boot2.bin");
@@ -391,7 +350,11 @@ fn golden_insert_remove_set_runtime() {
         .0,
         0
     );
-    assert_packages_semantically_equal(&pkg_cpp, &pkg_rs);
+    assert_eq!(
+        std::fs::read(&pkg_cpp).unwrap(),
+        std::fs::read(&pkg_rs).unwrap(),
+        "set-runtime output must be identical"
+    );
 }
 
 #[test]

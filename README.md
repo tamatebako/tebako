@@ -256,6 +256,19 @@ Rust-consumable surface for it.
 
 ### v2 notes (recorded decisions)
 
+- **Signing and encryption are OPTIONAL, per package** (owner directive).
+  `tebako-pkg bundle` produces an unsigned (v1, byte-identical to
+  pre-signing) package unless `--sign[=keyid]` is given: `--sign` uses the
+  press-local key (generated and cached under `$TEBAKO_HOME/keys` on
+  first explicit use, auto-registered in the local trusted keyring),
+  `--sign=<keyid>` selects a secret key from `$TEBAKO_HOME/keys`. Rewrite
+  operations (insert-image/remove-image/set-runtime/reassemble) preserve
+  the input's signing state. **Only the presence of a signature is
+  optional — verification of signed packages is always strict** (v2-signed
+  → full OpenPGP verify against the trusted keyring + per-slot SHA-256,
+  named exit codes; unsigned v1 → legacy acceptance with a loud warning
+  + journal; `TEBAKO_REQUIRE_SIGNED=1` hard-fails unsigned). Encryption
+  (item 28, when it lands) is likewise per-image opt-in by design.
 - **Byte paths**: v1 validates path arguments as UTF-8 at the FFI boundary
   (non-UTF-8 → `EINVAL`). Ruby integration will need byte paths (`OsStr`
   on POSIX — ruby paths are raw bytes, not guaranteed UTF-8). The v2 C API

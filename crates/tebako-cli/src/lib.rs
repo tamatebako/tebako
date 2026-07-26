@@ -368,6 +368,7 @@ fn stitch(
         runtime_ref,
         package_flags: tpkg::TPKG_FLAG_LEAN,
         launcher_abi: LAUNCHER_ABI,
+        ..Default::default()
     };
     tebako_pkg::bundle_exact(bootstrap_path, &pkg_images, output, &pkg_options)
         .map_err(plain_error)?;

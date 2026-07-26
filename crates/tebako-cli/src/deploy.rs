@@ -137,6 +137,7 @@ impl RuntimeDeployer {
             runtime_ref: format!("ruby@{};tebako={}", self.ruby_version, self.tebako_version),
             package_flags: tpkg::TPKG_FLAG_LEAN,
             launcher_abi: crate::LAUNCHER_ABI,
+            ..Default::default()
         };
         tebako_pkg::bundle_exact(&empty_base, &images, &self.driver_package(), &options)
             .map_err(crate::error::plain_error)

@@ -320,7 +320,30 @@ fn flag_forms() {
     let (rc, out, _) = run(&["info", pkg.to_str().unwrap()], &w.0);
     assert_eq!(rc, 0);
     assert!(out.contains("Runtime ref: rt"), "{out}");
-    assert!(out.contains("Flags: 0x3 (LEAN|SIGNED_V2)"), "{out}");
+    assert!(out.contains("Flags: 0x1 (LEAN)"), "{out}");
     assert!(out.contains("Launcher ABI: 2"), "{out}");
+    // default bundle is unsigned (signing is opt-in)
+    assert!(out.contains("Signature: none"), "{out}");
+
+    // --sign opts into the press-local signature
+    let signed_pkg = w.0.join("pkg-signed");
+    let (rc, _, err) = run(
+        &[
+            "bundle",
+            &format!("--bootstrap={}", boot.display()),
+            &format!("--image={}", fixture("simple.dwarfs").display()),
+            "--runtime-ref=rt",
+            "--lean",
+            "--launcher-abi=2",
+            "--sign",
+            "-o",
+            signed_pkg.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "bundle --sign");
+    let (rc, out, _) = run(&["info", signed_pkg.to_str().unwrap()], &w.0);
+    assert_eq!(rc, 0);
+    assert!(out.contains("Flags: 0x3 (LEAN|SIGNED_V2)"), "{out}");
     assert!(out.contains("Signature: OpenPGP v2"), "{out}");
 }
