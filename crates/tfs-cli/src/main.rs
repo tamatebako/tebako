@@ -11,6 +11,7 @@
 //! tfs extract [-v] [-q|--quiet] [-d|--dest <dir>] <image> [files...]
 //! tfs find [-v] <image> <pattern>
 //! tfs mkimage --format dwarfs <srcdir> -o <img> [-v]
+//! tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] -- <cmd> [args...]
 //! ```
 //!
 //! The flag-less `tfs info` output is the C++ parity summary (unchanged);
@@ -22,8 +23,8 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use tfs_cli::{
-    cmd_cat, cmd_extract, cmd_find, cmd_info, cmd_info_json, cmd_info_rich, cmd_ls, cmd_mkimage,
-    cmd_stat, cmd_tree, ExtractOptions, InfoOptions, ListOptions,
+    cmd_cat, cmd_exec, cmd_extract, cmd_find, cmd_info, cmd_info_json, cmd_info_rich, cmd_ls,
+    cmd_mkimage, cmd_stat, cmd_tree, ExecOptions, ExtractOptions, InfoOptions, ListOptions,
 };
 
 fn main() -> ExitCode {
@@ -48,6 +49,7 @@ fn main() -> ExitCode {
         "extract" => cmd_extract_main(rest),
         "find" => cmd_find_main(rest),
         "mkimage" => cmd_mkimage_main(rest),
+        "exec" => cmd_exec_main(rest),
         other => {
             eprintln!("Error: Unknown command: {other}");
             eprintln!("Use 'tfs help' for usage information");
@@ -400,6 +402,79 @@ fn cmd_mkimage_main(rest: &[String]) -> ExitCode {
     }
 }
 
+// ---------------------------------------------------------------------
+// exec (spec 07 §8 tier 1)
+// ---------------------------------------------------------------------
+
+/// `tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] --
+/// <cmd> [args...]` — everything after `--` is the command, verbatim (the
+/// generic flag parser must never see the command's own flags).
+fn cmd_exec_main(rest: &[String]) -> ExitCode {
+    const USAGE: &str =
+        "tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] -- <cmd> [args...]";
+    let Some(sep) = rest.iter().position(|a| a == "--") else {
+        return fail(&format!(
+            "Error: tfs exec requires `--` before the command\nusage: {USAGE}"
+        ));
+    };
+    let (ours, cmd) = (&rest[..sep], &rest[sep + 1..]);
+    if cmd.is_empty() {
+        return fail(&format!(
+            "Error: missing command after `--`\nusage: {USAGE}"
+        ));
+    }
+    let mut images: Vec<String> = Vec::new();
+    let mut jail: Option<String> = None;
+    let mut i = 0;
+    while i < ours.len() {
+        let arg = ours[i].as_str();
+        let (name, mut value) = match arg.split_once('=') {
+            Some((n, v)) => (n, Some(v.to_string())),
+            None => (arg, None),
+        };
+        let mut take_value = |i: &mut usize| -> Result<String, String> {
+            if let Some(v) = value.take() {
+                return Ok(v);
+            }
+            *i += 1;
+            ours.get(*i)
+                .cloned()
+                .ok_or_else(|| format!("missing value for {name}"))
+        };
+        match name {
+            "--image" => images.push(match take_value(&mut i) {
+                Ok(v) => v,
+                Err(e) => return fail(&format!("Error: {e}")),
+            }),
+            "--jail" => match take_value(&mut i) {
+                Ok(v) => jail = Some(v),
+                Err(e) => return fail(&format!("Error: {e}")),
+            },
+            _ if arg.starts_with('-') => {
+                return fail(&format!("Error: unknown option: {arg}\nusage: {USAGE}"));
+            }
+            _ => images.push(arg.to_string()),
+        }
+        i += 1;
+    }
+    if images.is_empty() {
+        return fail(&format!("Error: missing image\nusage: {USAGE}"));
+    }
+    let opts = ExecOptions {
+        images,
+        jail,
+        cmd: cmd.to_vec(),
+    };
+    match cmd_exec(&opts) {
+        // Unreachable on unix (exec replaces us); the not-unix port errors.
+        Ok(()) => ExitCode::SUCCESS,
+        Err((msg, rc)) => {
+            eprintln!("{msg}");
+            ExitCode::from(rc as u8)
+        }
+    }
+}
+
 fn print_help() {
     println!("tfs - generic VFS image tool (tebako)\n");
     println!("Usage: tfs <command> [options]\n");
@@ -414,6 +489,7 @@ fn print_help() {
     println!("  extract  Extract archive contents (-d dest, default .)");
     println!("  find     Search for files by name glob");
     println!("  mkimage  Create a dwarfs (.tfs) image from a directory (in-process writer)");
+    println!("  exec     Run a dynamic native command with the VFS injected (preload shim)");
     println!("  help     Show help\n");
     println!("Package (tpkg trailer) operations live in tebako-pkg.");
 }

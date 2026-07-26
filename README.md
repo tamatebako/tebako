@@ -21,6 +21,10 @@ tebako-rs/
                        # unbundle/reassemble/insert-image/remove-image/
                        # set-runtime/info; item 25)
     tfs-cli/           # PLANNED — the tfs binary (generic VFS ops; item 25)
+    libtfs-preload/    # the preload interposition shim (spec 07 §8 tier 1;
+                       # roadmap 30) — cdylib injected via
+                       # DYLD_INSERT_LIBRARIES / LD_PRELOAD; plus the safe
+                       # TEBAKO_TFS_MOUNTS spec parser shared with tfs exec
     tebako-cli/        # the tebako packager CLI: lean/fat press, cache
                        # (item 17)
     tebako-http/       # in-process HTTPS downloads (ureq+rustls,
@@ -43,6 +47,41 @@ when published). dwarfs-t stays C++ forever; `libdwarfs_c` is the only
 Rust-consumable surface for it.
 
 ## Status
+
+### SHIPPED (roadmap 30)
+
+- **libtfs-preload + `tfs exec`: the preload interposition shim (spec 07
+  §8 tier 1)** — the mainline native-exec mechanism for DYNAMIC binaries:
+  `crates/libtfs-preload` (a cdylib, `libtfs_preload.{dylib,so}`)
+  interposes the libc file-IO family (open/openat/stat/lstat/fstat/
+  access/faccessat/opendir/readdir(+readdir64)/closedir/pread/read/lseek/
+  close/mkdir/unlink/rename + dlopen) via `DYLD_INSERT_LIBRARIES` (macOS
+  `__DATA,__interpose`) and `LD_PRELOAD` (linux-gnu symbol interposition).
+  On init the shim mounts `TEBAKO_TFS_MOUNTS` (`image:mount,…`) through
+  the tfs crate in-process and installs `TEBAKO_JAIL` (the spec 08 §1 env
+  form: `open|deny`, docker-style `host:mount:ro|rw` grants, `@` argument
+  files — parsed in `tfs::policy::JailSpec`, shared with the launcher).
+  Memfs paths are served by the engine; host paths pass through gated by
+  the SAME `host_policy` (deny → EPERM, ro-grant writes → EROFS); memfs
+  libraries dlopen via the `dlmap2file` host cache; unsafe is confined to
+  the interpose/dlsym module. The `tfs exec <image>[:mount] [--image
+  <image:mount>]... [--jail <spec>] -- <cmd> [args...]` launcher (tfs-cli)
+  sets the preload env on the CHILD ONLY, materializes an in-image
+  entrypoint through `dlmap2file` (execve needs a host path), and execs
+  with stdio inherited — children inherit the env, so the process tree
+  stays in the VFS (SIP platform binaries strip `DYLD_*` and leave it).
+  The shim is located next to the `tfs` binary (`TEBAKO_TFS_PRELOAD`
+  overrides).
+  Misformatted `TEBAKO_TFS_MOUNTS`/`TEBAKO_JAIL` is a named error (clear
+  stderr + exit 78). macOS and linux-gnu first-class; windows is phase 2
+  (DLL injection). v1 limits (stated in the crate docs): execve of memfs
+  paths not virtualized (children re-spawn via `argv[0]`), no
+  fstatat/statx/getdents64/openat2/__xstat interposition, non-UTF-8 paths
+  always pass through, a mount at `/` is refused (jail bypass). E2E
+  proofs (macOS native + linux): in-image tool reads data with no
+  extraction, deny jail fails /etc reads EPERM while memfs stays
+  readable, a grandchild stays in the VFS, dlopen of a memfs
+  .dylib/.so works; the proof tools skip cleanly without a `cc`.
 
 ### SHIPPED (milestone 10)
 
