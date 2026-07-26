@@ -17,6 +17,13 @@
 # uploading .asc files — no restructuring.
 #
 # Windows (ucrt64) is a disabled leg, documented at the bottom.
+#
+# librnp today: tebako-signer (via rnp-rs) links the system librnp
+# DYNAMICALLY in every current mode, so the legs provision it per OS
+# (brew rnp / apt librnp-dev / apk rnp-dev) and the shipped tebako-pkg
+# carries that dependency until the signing stack's static-vendored
+# story lands (upstream work; the provisioning is one step per leg so it
+# swaps out cleanly).
 
 name: Release
 
@@ -93,6 +100,11 @@ jobs:
 
       - name: Install native build tools
         run: brew install ninja autoconf automake autoconf-archive libtool
+
+      # tebako-signer's rnp-rs links the system librnp (dylib) — see the
+      # "librnp today" note in the workflow header comments.
+      - name: Install librnp
+        run: brew install rnp
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -226,7 +238,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             autoconf automake autoconf-archive libtool \
-            curl zip unzip tar ca-certificates
+            curl zip unzip tar ca-certificates \
+            librnp-dev
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -377,7 +390,7 @@ jobs:
             -v "$HOME/.cache/vcpkg:/root/.cache/vcpkg" \
             -e VERSION -e PLATFORM -e TARGET -e TRIPLET \
             -e RUST_VERSION -e VCPKG_COMMIT -e BOOTSTRAP_SIZE_BUDGET \
-            -e GITHUB_STEP_SUMMARY \
+            -e GITHUB_STEP_SUMMARY -e GITHUB_WORKSPACE \
             alpine:3.21 sh "$GITHUB_WORKSPACE/tebako-rs/ci/musl-build.sh"
 
       - name: Upload fragment artifact

@@ -18,7 +18,8 @@ echo "== apk toolchain =="
 apk --no-cache add \
   build-base cmake ninja git bash sudo \
   autoconf automake libtool make pkgconfig perl python3 \
-  curl zip unzip tar ca-certificates linux-headers
+  curl zip unzip tar ca-certificates linux-headers \
+  rnp-dev
 
 echo "== rustup ($RUST_VERSION, $TARGET) =="
 curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh
