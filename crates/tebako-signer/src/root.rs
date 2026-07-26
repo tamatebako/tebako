@@ -97,14 +97,12 @@ pub fn sign_successor_statement(
     Ok(out)
 }
 
-/// Parse + verify a successor statement against the trusted keyring.
-/// Returns the statement and the signature's trust classification
-/// ([`VerifyOutcome::Trusted`] when the predecessor's key is trusted and
-/// the signature is valid).
-pub fn verify_successor_statement(
-    trusted_keyring: &[u8],
+/// Parse a successor statement (format, fields, dearmored signature) —
+/// no trust evaluation. Returns the statement, the canonical body bytes,
+/// and the dearmored detached signature.
+pub fn parse_successor_statement(
     statement: &[u8],
-) -> Result<(SuccessorStatement, VerifyOutcome), SignerError> {
+) -> Result<(SuccessorStatement, Vec<u8>, Vec<u8>), SignerError> {
     let text = std::str::from_utf8(statement)
         .map_err(|_| SignerError::Verify("successor statement is not UTF-8".into()))?;
     let Some(begin) = text.find(BEGIN_STATEMENT) else {
@@ -148,10 +146,8 @@ pub fn verify_successor_statement(
         .map_err(|e| SignerError::Verify(e.to_string()))?;
     check_fingerprint(successor, "successor").map_err(|e| SignerError::Verify(e.to_string()))?;
 
-    let keyid = keyid_bytes_from_fingerprint(predecessor)?;
     let signature = rnp::dearmor_bytes(signature)
         .map_err(|e| SignerError::Verify(format!("signature block does not dearmor: {e}")))?;
-    let outcome = verify_detached(trusted_keyring, body.as_bytes(), &signature, &keyid)?;
 
     Ok((
         SuccessorStatement {
@@ -159,15 +155,34 @@ pub fn verify_successor_statement(
             successor_fingerprint: successor.to_uppercase(),
             created_unix: created,
         },
-        outcome,
+        body.as_bytes().to_vec(),
+        signature,
     ))
 }
 
-/// Evaluate a rotation chain: starting at `root_fingerprint`, apply the
-/// statements in order. Each statement must (a) name the current
-/// fingerprint as predecessor and (b) verify as [`VerifyOutcome::Trusted`]
-/// against the trusted keyring. Returns the final root fingerprint after
-/// the last verified rotation.
+/// Parse + verify a successor statement against the trusted keyring.
+/// Returns the statement and the signature's trust classification
+/// ([`VerifyOutcome::Trusted`] when the predecessor's key is trusted and
+/// the signature is valid).
+pub fn verify_successor_statement(
+    trusted_keyring: &[u8],
+    statement: &[u8],
+) -> Result<(SuccessorStatement, VerifyOutcome), SignerError> {
+    let (stmt, body, signature) = parse_successor_statement(statement)?;
+    let keyid = keyid_bytes_from_fingerprint(&stmt.predecessor_fingerprint)?;
+    let outcome = verify_detached(trusted_keyring, &body, &signature, &keyid)?;
+    Ok((stmt, outcome))
+}
+
+/// Evaluate a rotation chain: starting at `root_fingerprint`, walk the
+/// statements by matching each hop's predecessor to the current root —
+/// statements arrive in arbitrary order (directory scans, filename
+/// sorting), so positional order is never assumed. The signature is
+/// verified only for the statement taken at each hop; every statement is
+/// consumed at most once, so gaps, misorderings, and cycles all
+/// terminate in a named error. STRICT: any unclaimable or unverifiable
+/// statement fails the whole chain. Returns the final root fingerprint
+/// after the last verified rotation.
 pub fn apply_successor_chain(
     root_fingerprint: &str,
     trusted_keyring: &[u8],
@@ -175,31 +190,84 @@ pub fn apply_successor_chain(
 ) -> Result<String, SignerError> {
     let mut current = root_fingerprint.to_uppercase();
     check_fingerprint(&current, "root")?;
-    for (i, statement) in statements.iter().enumerate() {
-        let (stmt, outcome) = verify_successor_statement(trusted_keyring, statement)?;
-        if stmt.predecessor_fingerprint != current {
+    let mut pending: Vec<(SuccessorStatement, Vec<u8>, Vec<u8>)> = statements
+        .iter()
+        .map(|s| parse_successor_statement(s))
+        .collect::<Result<_, _>>()?;
+    while !pending.is_empty() {
+        let Some(idx) = pending
+            .iter()
+            .position(|(stmt, _, _)| stmt.predecessor_fingerprint == current)
+        else {
+            let available: Vec<&str> = pending
+                .iter()
+                .map(|(stmt, _, _)| stmt.predecessor_fingerprint.as_str())
+                .collect();
             return Err(SignerError::Verify(format!(
-                "successor chain broken at statement {i}: predecessor {} does not match the current root {current}",
-                stmt.predecessor_fingerprint
+                "successor chain broken: predecessors {available:?} does not match the current root {current}"
             )));
-        }
-        match outcome {
+        };
+        let (stmt, body, signature) = pending.swap_remove(idx);
+        let keyid = keyid_bytes_from_fingerprint(&stmt.predecessor_fingerprint)?;
+        match verify_detached(trusted_keyring, &body, &signature, &keyid)? {
             VerifyOutcome::Trusted(_) => {
                 current = stmt.successor_fingerprint;
             }
             VerifyOutcome::Untrusted(keyid) => {
                 return Err(SignerError::Trust(format!(
-                    "successor statement {i} signed by an untrusted key {keyid}"
+                    "successor statement signed by an untrusted key {keyid}"
                 )));
             }
             VerifyOutcome::Invalid(_) => {
-                return Err(SignerError::Verify(format!(
-                    "successor statement {i} has an invalid signature"
-                )));
+                return Err(SignerError::Verify(
+                    "successor statement has an invalid signature".into(),
+                ));
             }
         }
     }
     Ok(current)
+}
+
+/// Walk the rotation chain from `root_fingerprint` as far as it VERIFIES,
+/// returning the verified trust path `[root, …, furthest reachable]`.
+/// TOLERANT: the walk stops at the first hop that is unclaimed,
+/// untrusted, or invalid — anything beyond a broken link is unreachable
+/// anyway, and every fingerprint in the returned path was reached through
+/// verified links only. Statements arrive in arbitrary order; each is
+/// consumed at most once. This is the membership oracle for consumers
+/// whose signer may be ANY link of the chain, not only its tip.
+pub fn successor_chain_path(
+    root_fingerprint: &str,
+    trusted_keyring: &[u8],
+    statements: &[Vec<u8>],
+) -> Vec<String> {
+    let mut current = root_fingerprint.to_uppercase();
+    let mut path = vec![current.clone()];
+    let mut pending: Vec<(SuccessorStatement, Vec<u8>, Vec<u8>)> = statements
+        .iter()
+        .map(|s| parse_successor_statement(s))
+        .collect::<Result<_, _>>()
+        .unwrap_or_default();
+    while let Some(idx) = pending
+        .iter()
+        .position(|(stmt, _, _)| stmt.predecessor_fingerprint == current)
+    {
+        let (stmt, body, signature) = pending.swap_remove(idx);
+        let Ok(keyid) = keyid_bytes_from_fingerprint(&stmt.predecessor_fingerprint) else {
+            break;
+        };
+        let Ok(outcome) = verify_detached(trusted_keyring, &body, &signature, &keyid) else {
+            break;
+        };
+        match outcome {
+            VerifyOutcome::Trusted(_) => {
+                current = stmt.successor_fingerprint;
+                path.push(current.clone());
+            }
+            VerifyOutcome::Untrusted(_) | VerifyOutcome::Invalid(_) => break,
+        }
+    }
+    path
 }
 
 /// Format a fingerprint for display (first 8 + last 16 hex chars).

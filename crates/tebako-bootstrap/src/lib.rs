@@ -727,40 +727,33 @@ fn forward_trust_from_successors(
             }
         }
     }
-    statements.sort();
     if statements.is_empty() || roots.is_empty() {
         return Ok(false);
     }
 
     for root in roots {
         // the signer may be any link in the rotation chain, not only its
-        // tip: try every prefix of the statement list
-        for k in 1..=statements.len() {
-            let Ok(final_fp) = tebako_signer::apply_successor_chain(
-                &root.fingerprint,
-                &extended,
-                &statements[..k],
-            ) else {
-                break;
-            };
-            if !final_fp.eq_ignore_ascii_case(signer_fp) {
-                continue;
-            }
-            // rotation proven: register the signer's public key
-            // (distributed alongside the statements) and re-verify
-            let pub_path = dir.join(format!("{}.pub", signer_fp.to_uppercase()));
-            let Ok(public_key) = std::fs::read(&pub_path) else {
-                continue;
-            };
-            tebako_signer::register_trusted(home, &public_key)
-                .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
-            let keyring = tebako_signer::trusted_keyring_bytes(home)
-                .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
-            let outcome = tebako_signer::verify_detached(&keyring, region, signature, signer_keyid)
-                .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
-            if matches!(outcome, tebako_signer::VerifyOutcome::Trusted(_)) {
-                return Ok(true);
-            }
+        // tip: walk the verified path once and test membership (statement
+        // order in the directory is irrelevant — the walk matches
+        // predecessors; a broken link simply ends the reachable path).
+        let path = tebako_signer::successor_chain_path(&root.fingerprint, &extended, &statements);
+        if !path.iter().any(|fp| fp.eq_ignore_ascii_case(signer_fp)) {
+            continue;
+        }
+        // rotation proven: register the signer's public key
+        // (distributed alongside the statements) and re-verify
+        let pub_path = dir.join(format!("{}.pub", signer_fp.to_uppercase()));
+        let Ok(public_key) = std::fs::read(&pub_path) else {
+            continue;
+        };
+        tebako_signer::register_trusted(home, &public_key)
+            .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
+        let keyring = tebako_signer::trusted_keyring_bytes(home)
+            .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
+        let outcome = tebako_signer::verify_detached(&keyring, region, signature, signer_keyid)
+            .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+        if matches!(outcome, tebako_signer::VerifyOutcome::Trusted(_)) {
+            return Ok(true);
         }
     }
     Ok(false)
