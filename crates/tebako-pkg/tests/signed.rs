@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::sync::{Mutex, OnceLock};
 
-use tebako_pkg::{bundle, info, PackageImage, PackageOptions};
+use tebako_pkg::{bundle, info, PackageImage, PackageOptions, SignRequest};
 
 static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -48,6 +48,7 @@ fn bundle_produces_signed_v2_package() {
             runtime_ref: String::new(),
             package_flags: 0,
             launcher_abi: 1,
+            sign: SignRequest::PressLocal,
         };
         bundle(&bootstrap, &images, &out, &options).expect("bundle");
 
@@ -97,6 +98,7 @@ fn tampered_slot_is_named_by_the_digest() {
                 runtime_ref: String::new(),
                 package_flags: 0,
                 launcher_abi: 1,
+                sign: SignRequest::PressLocal,
             },
         )
         .unwrap();

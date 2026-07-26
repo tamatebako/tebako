@@ -127,6 +127,76 @@ fn identify(public_key: &[u8], secret_key: &[u8]) -> Result<PressKey, SignerErro
     })
 }
 
+/// Load a secret key from `path` and derive its full identity (the public
+/// half is re-exported from the loaded secret key, so a lone `.key` file
+/// is sufficient).
+fn identify_secret(secret_key: &[u8]) -> Result<PressKey, SignerError> {
+    let ctx = Context::new().map_err(|e| SignerError::KeyStore(e.to_string()))?;
+    // PGP private key blocks carry the public key material as well; load
+    // both halves so the public key can be re-exported from the secret
+    // file alone.
+    ctx.load_keys(
+        rnp::KeyringFormat::Gpg,
+        secret_key,
+        rnp::LoadSaveFlags::PUBLIC | rnp::LoadSaveFlags::SECRET,
+    )
+    .map_err(|e| SignerError::KeyStore(format!("secret key is unreadable: {e}")))?;
+    let mut fingerprints = ctx
+        .identifiers(rnp::IdentifierKind::Fingerprint)
+        .map_err(|e| SignerError::KeyStore(e.to_string()))?;
+    let Some(fingerprint) = fingerprints.next() else {
+        return Err(SignerError::KeyStore(
+            "secret key file contains no key".into(),
+        ));
+    };
+    let key = ctx
+        .find_key(rnp::KeyIdentifier::Fingerprint(&fingerprint))
+        .map_err(|e| SignerError::KeyStore(e.to_string()))?
+        .ok_or_else(|| SignerError::KeyStore("cannot re-read the secret key".into()))?;
+    let public_key = key
+        .export(ExportFlags::ARMORED | ExportFlags::PUBLIC | ExportFlags::SUBKEYS)
+        .map_err(|e| SignerError::KeyStore(e.to_string()))?;
+    let keyid = keyid_bytes_from_fingerprint(&fingerprint)?;
+    Ok(PressKey {
+        public_key,
+        secret_key: secret_key.to_vec(),
+        keyid,
+        fingerprint,
+    })
+}
+
+/// Find a secret key in `$TEBAKO_HOME/keys` whose keyid (16-hex,
+/// case-insensitive) matches. Returns `Ok(None)` when no key matches —
+/// callers decide whether that is a named error.
+pub fn secret_key_by_keyid(home: &Path, keyid_hex: &str) -> Result<Option<PressKey>, SignerError> {
+    let want = keyid_hex.to_lowercase();
+    if want.len() != 16 || !want.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(SignerError::KeyStore(format!(
+            "invalid keyid (want 16 hex chars): {keyid_hex}"
+        )));
+    }
+    let dir = home.join(KEYS_DIR);
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(rd) => rd,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(io_err(&dir, &e)),
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("key") {
+            continue;
+        }
+        let secret = std::fs::read(&path).map_err(|e| io_err(&path, &e))?;
+        let Ok(key) = identify_secret(&secret) else {
+            continue; // not a usable secret key file
+        };
+        if key.keyid_hex() == want {
+            return Ok(Some(key));
+        }
+    }
+    Ok(None)
+}
+
 /// The low 64 bits of a hex OpenPGP fingerprint as raw bytes.
 pub fn keyid_bytes_from_fingerprint(fingerprint: &str) -> Result<[u8; 8], SignerError> {
     let hex: String = fingerprint.chars().filter(|c| !c.is_whitespace()).collect();
