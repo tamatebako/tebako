@@ -165,6 +165,41 @@ impl PayloadCache {
         }))
     }
 
+    /// List the cached payloads (artifact + trust anchor present), sorted
+    /// by name then version like tebako-cli's runtime `entries` —
+    /// read-only, for the spec-15 `cache list --json` surface.
+    pub fn list(&self) -> Vec<CacheEntry> {
+        let base = self.root.join("payloads");
+        let mut names: Vec<String> = Vec::new();
+        if let Ok(children) = fs::read_dir(&base) {
+            for child in children.flatten() {
+                if child.path().is_dir() {
+                    names.push(child.file_name().to_string_lossy().into_owned());
+                }
+            }
+        }
+        names.sort();
+        let mut out = Vec::new();
+        for name in names {
+            let mut versions: Vec<String> = Vec::new();
+            if let Ok(files) = fs::read_dir(base.join(&name)) {
+                for file in files.flatten() {
+                    let file_name = file.file_name().to_string_lossy().into_owned();
+                    if let Some(version) = file_name.strip_suffix(".tfs") {
+                        versions.push(version.to_string());
+                    }
+                }
+            }
+            versions.sort();
+            for version in versions {
+                if let Ok(Some(entry)) = self.get(&name, &version) {
+                    out.push(entry);
+                }
+            }
+        }
+        out
+    }
+
     /// Cache hit or install: fetch (via `fetch`), verify against
     /// `expected_sha256` when given (registry-supplied trust anchor), and
     /// place atomically under the per-entry flock. A digest mismatch
@@ -453,6 +488,41 @@ mod tests {
                 Err(ResolveError::InvalidCacheKey { .. })
             ));
         }
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn list_returns_entries_with_trust_anchors() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        cache
+            .install("tool", "1.0", None, || Ok(fetched(b"one")))
+            .unwrap();
+        cache
+            .install("tool", "2.0", None, || Ok(fetched(b"two")))
+            .unwrap();
+        cache
+            .install("other", "0.1", None, || Ok(fetched(b"three")))
+            .unwrap();
+        // An anchor-less artifact is not a cache entry (never listed).
+        fs::create_dir_all(root.join("payloads/stray")).unwrap();
+        fs::write(root.join("payloads/stray/9.9.tfs"), b"stray").unwrap();
+
+        let entries = cache.list();
+        let keys: Vec<(&str, &str)> = entries
+            .iter()
+            .map(|e| (e.name.as_str(), e.version.as_str()))
+            .collect();
+        assert_eq!(
+            keys,
+            vec![("other", "0.1"), ("tool", "1.0"), ("tool", "2.0")]
+        );
+        assert_eq!(entries[1].sha256, crate::fetch::sha256_hex(b"one"));
+        assert_eq!(
+            entries[1].origin.as_deref(),
+            Some("https://cdn.example.com/tool.tfs")
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

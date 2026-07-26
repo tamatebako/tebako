@@ -5,7 +5,8 @@
 //! tfs-cli):
 //!
 //! ```text
-//! tebako-pkg info <archive>
+//! tebako-pkg info [--full|--slot N|--json|--verify|--depth N|--require-signed] <archive>
+//! tebako-pkg validate [--require-signed] <binary>
 //! tebako-pkg bundle --bootstrap <exe> --image <img[:mountpoint]>... -o <file>
 //!                    [--runtime-ref <ref>] [--lean] [--launcher-abi <n>]
 //! tebako-pkg unbundle <binary> -o <dir>
@@ -15,15 +16,18 @@
 //! tebako-pkg set-runtime <binary> <runtime-file>
 //! ```
 //!
-//! Exit codes: 0 success, 1 any error. Errors print
+//! Exit codes: 0 success, 1 any error; `info --verify` and `validate`
+//! exit with the spec-15 §5 codes (0/65/70/71/72). Errors print
 //! `Error: <cmd> failed: <message>` to stderr (matching the C++ tool).
+//! The flag-less `info` output keeps byte-parity with the C++ oracle.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use tebako_pkg::{
-    bundle, default_mount, info, insert_image, parse_image_spec, reassemble, remove_image,
-    set_runtime, unbundle, PackageImage, PackageOptions, SignRequest,
+    bundle, default_mount, info, info_rich, insert_image, parse_image_spec, reassemble,
+    remove_image, set_runtime, unbundle, validate, InfoOptions, PackageImage, PackageOptions,
+    SignRequest,
 };
 
 fn main() -> ExitCode {
@@ -41,6 +45,7 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         "info" => cmd_info(rest),
+        "validate" => cmd_validate(rest),
         "bundle" => cmd_bundle(rest),
         "unbundle" => cmd_unbundle(rest),
         "reassemble" => cmd_reassemble(rest),
@@ -75,6 +80,12 @@ struct Args {
     sign: Option<SignRequest>,
     key_file: Option<String>,
     no_sums: bool,
+    full: bool,
+    slot: Option<String>,
+    json: bool,
+    verify: bool,
+    require_signed: bool,
+    depth: Option<String>,
 }
 
 impl Args {
@@ -99,6 +110,12 @@ impl Args {
             match name {
                 "-v" | "--verbose" => a.verbose = true,
                 "--lean" => a.lean = true,
+                "--full" => a.full = true,
+                "--json" => a.json = true,
+                "--verify" => a.verify = true,
+                "--require-signed" => a.require_signed = true,
+                "--slot" => a.slot = Some(take_value(&mut i)?),
+                "--depth" => a.depth = Some(take_value(&mut i)?),
                 "--sign" => {
                     // --sign (press-local key) or --sign=<keyid> (a secret
                     // key from $TEBAKO_HOME/keys). The space form is not
@@ -161,13 +178,86 @@ fn cmd_info(rest: &[String]) -> ExitCode {
         Ok(a) => a,
         Err(e) => return fail("info", &e),
     };
-    if let Err(e) = a.need_positional(1, "tebako-pkg info <archive>") {
+    if let Err(e) = a.need_positional(
+        1,
+        "tebako-pkg info [--full|--slot N|--json|--verify|--depth N|--require-signed] <archive>",
+    ) {
         return fail("info", &e);
     }
-    match info(Path::new(&a.positional[0])) {
+    let binary = Path::new(&a.positional[0]);
+    let opts = match info_options(&a) {
+        Ok(o) => o,
+        Err(e) => return fail("info", &e),
+    };
+    if opts.any_rich() {
+        return match info_rich(binary, &opts) {
+            Ok((text, code)) => {
+                print!("{text}");
+                ExitCode::from(code as u8)
+            }
+            Err(e) => {
+                eprintln!("Error: {e}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    match info(binary) {
         Ok(text) => {
             print!("{text}");
             ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("Error: {e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+fn info_options(a: &Args) -> Result<InfoOptions, String> {
+    if a.require_signed && !a.verify {
+        return Err("--require-signed only applies with --verify".to_string());
+    }
+    let slot = match &a.slot {
+        Some(text) => Some(
+            text.parse::<u32>()
+                .map_err(|_| format!("invalid --slot value: {text}"))?,
+        ),
+        None => None,
+    };
+    let depth = match &a.depth {
+        Some(text) => {
+            let d = text
+                .parse::<u8>()
+                .map_err(|_| format!("invalid --depth value: {text} (want 0, 1 or 2)"))?;
+            if d > 2 {
+                return Err(format!("invalid --depth value: {text} (want 0, 1 or 2)"));
+            }
+            Some(d)
+        }
+        None => None,
+    };
+    Ok(InfoOptions {
+        full: a.full,
+        slot,
+        json: a.json,
+        verify: a.verify,
+        require_signed: a.require_signed,
+        depth,
+    })
+}
+
+fn cmd_validate(rest: &[String]) -> ExitCode {
+    let a = match Args::parse(rest) {
+        Ok(a) => a,
+        Err(e) => return fail("validate", &e),
+    };
+    if let Err(e) = a.need_positional(1, "tebako-pkg validate [--require-signed] <binary>") {
+        return fail("validate", &e);
+    }
+    match validate(Path::new(&a.positional[0]), a.require_signed) {
+        Ok((text, code)) => {
+            print!("{text}");
+            ExitCode::from(code as u8)
         }
         Err(e) => {
             eprintln!("Error: {e}");
@@ -337,7 +427,10 @@ fn print_help() {
     println!("tebako-pkg - tebako package (tpkg) trailer surgery\n");
     println!("Usage: tebako-pkg <command> [options]\n");
     println!("Commands:");
-    println!("  info          Dump a three-part package trailer (or archive summary)");
+    println!("  info          Dump a three-part package trailer (or archive summary);");
+    println!("                --full container report, --slot N payload, --json document,");
+    println!("                --verify strict checks, --depth 0|1|2 (spec 15)");
+    println!("  validate      Strict package verification (exit 0/65/70/71/72)");
     println!("  bundle        Assemble a three-part package (bootstrap + images + trailer)");
     println!("  unbundle      Decompose a three-part package into a directory");
     println!("  reassemble    Rebuild a binary from an unbundled directory");

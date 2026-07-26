@@ -39,6 +39,11 @@ pub enum VerifyOutcome {
     Invalid(Option<String>),
 }
 
+/// Dearmor an armored OpenPGP block (detached signatures, key material).
+pub fn dearmor_bytes(data: &[u8]) -> Result<Vec<u8>, SignerError> {
+    rnp::dearmor_bytes(data).map_err(|e| SignerError::Verify(e.to_string()))
+}
+
 /// Extract the issuer fingerprint (40-hex, uppercase) of a detached
 /// signature, via the OpenPGP packet dump — no keyring needed.
 pub fn signature_issuer_fingerprint(signature: &[u8]) -> Result<String, SignerError> {

@@ -270,6 +270,103 @@ fn cache_list_and_prune() {
 }
 
 #[test]
+fn cache_list_json() {
+    let work = workdir("cachejson");
+    let home = work.join("home");
+
+    // A runtime entry with trust anchor + origin markers.
+    let entry = home.join("runtimes").join("ruby-9.9.9-0.0.1-testplatform");
+    fs::create_dir_all(&entry).unwrap();
+    fs::write(
+        entry.join("tebako-runtime-0.0.1-9.9.9-testplatform"),
+        b"fake",
+    )
+    .unwrap();
+    fs::write(entry.join("sha256"), format!("{}\n", "a".repeat(64))).unwrap();
+    fs::write(entry.join("origin"), "https://example.test/runtime\n").unwrap();
+
+    // A payload entry (spec 05 layout: artifact + .sha256 + .origin).
+    let payload_dir = home.join("payloads").join("metanorma");
+    fs::create_dir_all(&payload_dir).unwrap();
+    fs::write(payload_dir.join("1.2.3.tfs"), b"payload-bytes").unwrap();
+    fs::write(
+        payload_dir.join("1.2.3.tfs.sha256"),
+        format!("{}  1.2.3.tfs\n", "b".repeat(64)),
+    )
+    .unwrap();
+    fs::write(
+        payload_dir.join("1.2.3.tfs.origin"),
+        "https://example.test/metanorma-1.2.3.tfs\n",
+    )
+    .unwrap();
+
+    let out = Command::new(tebako_bin())
+        .args(["cache", "list", "--json"])
+        .env("TEBAKO_HOME", &home)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code().unwrap_or(-1), 0);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    // The banner moves to stderr for the machine contract.
+    assert!(stderr.contains("Tebako executable packager"), "{stderr}");
+    let doc = tebako_pkg::json_parse(&stdout).expect("stdout must be one JSON document");
+    assert_eq!(
+        doc.find("info_schema").and_then(|v| v.as_u64()),
+        Some(1),
+        "{stdout}"
+    );
+    let runtimes = doc.find("runtimes").unwrap();
+    let tebako_pkg::JsonValue::Array(rts) = runtimes else {
+        panic!("runtimes must be an array: {stdout}")
+    };
+    assert_eq!(rts.len(), 1, "{stdout}");
+    assert_eq!(
+        rts[0].find("name").and_then(|v| v.as_string()).as_deref(),
+        Some("ruby-9.9.9-0.0.1-testplatform")
+    );
+    assert_eq!(
+        rts[0]
+            .find("trust_anchor_sha256")
+            .and_then(|v| v.as_string())
+            .as_deref()
+            .map(str::len),
+        Some(64)
+    );
+    assert_eq!(
+        rts[0].find("origin").and_then(|v| v.as_string()).as_deref(),
+        Some("https://example.test/runtime")
+    );
+    let payloads = doc.find("payloads").unwrap();
+    let tebako_pkg::JsonValue::Array(pls) = payloads else {
+        panic!("payloads must be an array: {stdout}")
+    };
+    assert_eq!(pls.len(), 1, "{stdout}");
+    assert_eq!(
+        pls[0].find("name").and_then(|v| v.as_string()).as_deref(),
+        Some("metanorma")
+    );
+    assert_eq!(
+        pls[0]
+            .find("version")
+            .and_then(|v| v.as_string())
+            .as_deref(),
+        Some("1.2.3")
+    );
+    assert_eq!(pls[0].find("size_bytes").and_then(|v| v.as_u64()), Some(13));
+    let total = doc.find("total_bytes").and_then(|v| v.as_u64()).unwrap();
+    assert!(total >= 13 + 4, "{stdout}");
+
+    // Unknown cache option stays a usage error.
+    let out = Command::new(tebako_bin())
+        .args(["cache", "list", "--frobnicate"])
+        .env("TEBAKO_HOME", &home)
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code().unwrap_or(-1), 1);
+}
+
+#[test]
 fn press_option_errors() {
     let fixture = fixtures().join("test-00");
     let cases: Vec<(Vec<String>, i32, &str)> = vec![

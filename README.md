@@ -44,6 +44,39 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (milestone 10)
+
+- **The info surface (spec 15)** — payload and package introspection in
+  the two MECE front-ends, sharing the new **`crates/tebako-info`**
+  engine (no third tool; default outputs keep C++ byte-parity, every
+  richer view is an explicit flag):
+  - `tfs info` (tfs-cli): `--manifest` (the parsed model re-serialized as
+    YAML), `--provides` / `--requires` / `--platforms` (kind-specialized
+    sections; edges as `kind:name:constraint → mount`; triplet ↔
+    release-asset-name mapping via tpkg's `Platform`), `--json` (one
+    document, `"info_schema": 1`), `--backend-json` (the pre-spec-15
+    `--json`: backend metadata), `--verify` / `--require-signed` (spec 03
+    checks with exit codes 0/65/70/71/72). Derived block: shims from
+    entrypoints, runtime compatibility vs `~/.tebako/runtimes`
+    (satisfied-by / requires-download / incompatible), dependency names
+    (1 level). A manifest-less image is a named note, not an error.
+  - `tebako-pkg info`: `--full` (the §3 container report — package line,
+    size/trailer/bootstrap bytes, runtime_ref, trust section (stored
+    state labeled `unverified` until `--verify` runs) and the per-slot
+    table with in-place mount-from-region payload reads), `--slot N`,
+    `--json`, `--verify`, `--depth 0|1|2`, and **`tebako-pkg validate`**
+    (the strict standalone form: tpkg structural → per-slot sha256 (v2) →
+    signature → per-slot manifest schema → digest agreement). Formats are
+    auto-detected per slot (dwarfs-t FlatBuffers vs upstream Thrift read
+    off the schema-section marker in the backend's own metadata JSON;
+    squashfs, zip, tar) — `format_id` stays a hint, and 4 is reported as
+    `runtime (legacy role)`.
+  - `tebako cache list --json`: cached runtimes and payloads with their
+    trust anchors, origins and sizes (additive; the version banner moves
+    to stderr so stdout is the document alone).
+  The tar backend's offset-0 region mounts got their index-pass seek
+  fixed along the way (`crates/tfs`, regression test included).
+
 ### SHIPPED (roadmap 25)
 
 - **Native-extension deploy in `crates/tebako-cli`** (the last M7
@@ -290,8 +323,9 @@ Rust-consumable surface for it.
   25's tfs : libtfs :: sqlite3 : libsqlite3; the image-operation half of
   the C++ tebakofs — trailer surgery stays in tebako-pkg). Exact C++
   output/exit-code/stream-split parity, verified against the tebakofs
-  oracle: `info` (plain-archive summary; `--json` for backend metadata
-  JSON — item 24's image_info_json on dwarfs), `ls`/`ls -r`/`ls -l`,
+  oracle: `info` (plain-archive summary; the spec-15 surface of milestone
+  10 added `--manifest`/`--provides`/`--requires`/`--platforms`/`--json`/
+  `--backend-json`/`--verify`), `ls`/`ls -r`/`ls -l`,
   `tree`, `cat` (pread-chunked, no full materialization), `stat`,
   `extract` (whole-archive via `tebako_fs_extract_all` with mtime
   preservation + selected paths with the stderr warning split), `find`

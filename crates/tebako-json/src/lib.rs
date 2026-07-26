@@ -1,10 +1,11 @@
-//! Minimal JSON for the tebako stack: an exact-format writer (mirrors the
-//! C++ `package.cpp` output byte for byte) and a small recursive parser
-//! (mirrors the C++ `JsonParser` semantics for the fields consumers
-//! need). No serde — the wire formats are fixed and tiny.
+//! Minimal JSON for the tebako stack: string escaping for the exact-format
+//! emitters (mirrors the C++ `package.cpp` output byte for byte), a small
+//! recursive parser (mirrors the C++ `JsonParser` semantics for the fields
+//! consumers need) and a deterministic pretty writer for the spec-15 info
+//! documents. No serde — the wire formats are fixed and tiny.
 //!
-//! One owner, two consumers: tebako-pkg (manifest.json reassembly) and
-//! tebako-resolve (release-API responses).
+//! One owner: tebako-pkg (manifest.json reassembly), tebako-resolve
+//! (release-API responses) and tebako-info (spec-15 documents) consume it.
 
 /// Escape a string for JSON output (mirrors the C++ `json_escape`).
 pub fn escape(s: &str) -> String {
@@ -279,5 +280,110 @@ fn utf8_len(first: u8) -> usize {
         0xC0..=0xDF => 2,
         0xE0..=0xEF => 3,
         _ => 4,
+    }
+}
+
+// ---------------------------------------------------------------------
+// Writer (spec 15's info documents: one deterministic pretty form)
+// ---------------------------------------------------------------------
+
+/// Serialize a [`Value`] in the deterministic pretty form (2-space indent,
+/// one member per line, no trailing newline). `Number` values are emitted
+/// verbatim (they round-trip through the parser unchanged).
+pub fn to_string(v: &Value) -> String {
+    let mut out = String::new();
+    write_value(v, 0, &mut out);
+    out
+}
+
+fn write_value(v: &Value, indent: usize, out: &mut String) {
+    match v {
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Number(n) => out.push_str(n),
+        Value::String(s) => {
+            out.push('"');
+            out.push_str(&escape(s));
+            out.push('"');
+        }
+        Value::Array(items) => {
+            if items.is_empty() {
+                out.push_str("[]");
+                return;
+            }
+            out.push_str("[\n");
+            for (i, item) in items.iter().enumerate() {
+                out.push_str(&"  ".repeat(indent + 1));
+                write_value(item, indent + 1, out);
+                out.push_str(if i + 1 < items.len() { ",\n" } else { "\n" });
+            }
+            out.push_str(&"  ".repeat(indent));
+            out.push(']');
+        }
+        Value::Object(members) => {
+            if members.is_empty() {
+                out.push_str("{}");
+                return;
+            }
+            out.push_str("{\n");
+            for (i, (k, val)) in members.iter().enumerate() {
+                out.push_str(&"  ".repeat(indent + 1));
+                out.push('"');
+                out.push_str(&escape(k));
+                out.push_str("\": ");
+                write_value(val, indent + 1, out);
+                out.push_str(if i + 1 < members.len() { ",\n" } else { "\n" });
+            }
+            out.push_str(&"  ".repeat(indent));
+            out.push('}');
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn writer_round_trips_through_the_parser() {
+        let v = Value::Object(vec![
+            ("info_schema".into(), Value::Number("1".into())),
+            ("name".into(), Value::String("metanorma".into())),
+            ("signed".into(), Value::Bool(true)),
+            ("nothing".into(), Value::Null),
+            (
+                "shims".into(),
+                Value::Array(vec![
+                    Value::String("mn".into()),
+                    Value::String("mn2".into()),
+                ]),
+            ),
+            ("empty_obj".into(), Value::Object(vec![])),
+            ("empty_arr".into(), Value::Array(vec![])),
+            ("nested".into(), {
+                Value::Object(vec![(
+                    "quote\"".into(),
+                    Value::String("line1\nline2 \\ done".into()),
+                )])
+            }),
+        ]);
+        let text = to_string(&v);
+        let back = parse(&text).unwrap();
+        assert_eq!(back, v);
+    }
+
+    #[test]
+    fn writer_is_deterministic_and_pretty() {
+        let v = Value::Object(vec![
+            ("a".into(), Value::Number("1".into())),
+            ("b".into(), Value::Array(vec![Value::Bool(false)])),
+        ]);
+        assert_eq!(
+            to_string(&v),
+            "{\n  \"a\": 1,\n  \"b\": [\n    false\n  ]\n}"
+        );
+        assert_eq!(to_string(&Value::Object(vec![])), "{}");
+        assert_eq!(to_string(&Value::Array(vec![])), "[]");
+        assert_eq!(to_string(&Value::Null), "null");
     }
 }

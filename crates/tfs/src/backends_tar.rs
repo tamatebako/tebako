@@ -681,7 +681,11 @@ fn index_plain(source: &Source) -> Result<IndexBuild, i32> {
         Source::File(f)
             if f.base == 0 && f.len == f.file.metadata().map_err(|_| libc::EIO)?.len() =>
         {
-            let clone = f.file.try_clone().map_err(|_| libc::EIO)?;
+            // The shared handle may sit anywhere (a caller's sniff pass
+            // consumed the first block): index from the region base, not
+            // from the inherited position.
+            let mut clone = f.file.try_clone().map_err(|_| libc::EIO)?;
+            clone.seek(SeekFrom::Start(0)).map_err(|_| libc::EIO)?;
             index_from_seekable(clone)
         }
         _ => index_from_reader(source.reader_at(0)?),
@@ -1236,6 +1240,24 @@ mod tests {
         let mount = crate::mount::build_from_file(path.to_str().unwrap(), "/t").unwrap();
         assert_eq!(mount.backend.name().to_str().unwrap(), "TAR");
         assert_eq!(mount.backend.stat("hello.txt").unwrap().size, 9);
+    }
+
+    #[test]
+    fn plain_tar_offset_zero_region_mount() {
+        // A region spanning the whole file (offset 0): the sniff pass
+        // leaves the shared handle past the first block, and the index
+        // must still start at the region base.
+        let dir = tempfile::tempdir().unwrap();
+        let tar = tree_tar();
+        let path = dir.path().join("tree.tar");
+        std::fs::write(&path, &tar).unwrap();
+        let mount =
+            crate::mount::build_from_file_at(path.to_str().unwrap(), 0, tar.len() as u64, "/r")
+                .unwrap();
+        assert_eq!(mount.backend.name().to_str().unwrap(), "TAR");
+        assert_eq!(mount.backend.stat("hello.txt").unwrap().size, 9);
+        let mut buf = vec![0u8; 9];
+        assert_eq!(mount.backend.pread("hello.txt", &mut buf, 0).unwrap(), 9);
     }
 
     #[test]

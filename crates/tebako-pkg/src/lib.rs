@@ -14,7 +14,9 @@ use std::path::{Path, PathBuf};
 
 use tpkg::{Crc32, Manifest, Slot, TpkgError};
 
-pub use tebako_json::{escape as json_escape, parse as json_parse, Value as JsonValue};
+pub use tebako_json::{
+    escape as json_escape, parse as json_parse, to_string as json_to_string, Value as JsonValue,
+};
 
 /// Copy chunk size (1 MiB, like the C++ side).
 const COPY_BUF: usize = 1 << 20;
@@ -1232,4 +1234,132 @@ fn count_recursive(path: &str, files: &mut i64, dirs: &mut i64, total: &mut i64)
         }
     }
     unsafe { tebako_fs_closedir(dir) };
+}
+
+// ---------------------------------------------------------------------
+// info: the spec-15 surface (--full/--slot/--json/--verify/--depth)
+// ---------------------------------------------------------------------
+
+use tebako_info::package::{self as pkg_info, Depth};
+use tebako_info::verify as pkg_verify;
+
+/// The spec-15 `tebako-pkg info` flags (all additive; with none of them
+/// the output is the legacy trailer dump — the parity default above).
+#[derive(Debug, Clone, Default)]
+pub struct InfoOptions {
+    /// `--full`: the full container report (spec 15 §3).
+    pub full: bool,
+    /// `--slot N`: inspect slot N's payload through the tfs-info sections.
+    pub slot: Option<u32>,
+    /// `--json`: everything as one JSON document (`"info_schema": 1`).
+    pub json: bool,
+    /// `--verify`: strict verification with named exit codes (spec 15 §5).
+    pub verify: bool,
+    /// `--require-signed`: unsigned fails the signature check (71).
+    pub require_signed: bool,
+    /// `--depth 0|1|2` (default 1 with --full/--json/--slot).
+    pub depth: Option<u8>,
+}
+
+impl InfoOptions {
+    /// True when the rich (non-legacy) path handles the call.
+    pub fn any_rich(&self) -> bool {
+        self.full || self.slot.is_some() || self.json || self.verify || self.depth.is_some()
+    }
+
+    fn depth(&self) -> Result<Depth, String> {
+        match self.depth {
+            Some(d) => Depth::parse(&d.to_string()).map_err(|e| e.0),
+            None => Ok(Depth::Manifests),
+        }
+    }
+}
+
+/// `tebako-pkg validate`: the strict standalone form of `info --verify`
+/// (same checks, same exit codes — spec 15 §5).
+pub fn validate(binary: &Path, require_signed: bool) -> Result<(String, i32), String> {
+    let (checks, _) = pkg_verify::verify_package(binary, require_signed).map_err(|e| e.0)?;
+    let code = pkg_verify::exit_code_of(&checks);
+    Ok((
+        pkg_verify::render_report(&binary.display().to_string(), &checks),
+        code,
+    ))
+}
+
+/// The rich `tebako-pkg info` (spec 15 §3). Returns (output, exit code);
+/// the exit code is 0 outside `--verify`.
+pub fn info_rich(binary: &Path, opts: &InfoOptions) -> Result<(String, i32), String> {
+    let depth = opts.depth()?;
+
+    if opts.verify {
+        let (checks, inspection) =
+            pkg_verify::verify_package(binary, opts.require_signed).map_err(|e| e.0)?;
+        let code = pkg_verify::exit_code_of(&checks);
+        let outcome = pkg_verify::trust_outcome(&checks);
+        if opts.json {
+            let mut doc = match &inspection {
+                Some(p) => pkg_info::package_json(p, depth, outcome.as_deref()),
+                None => tebako_json::Value::Object(vec![
+                    (
+                        "info_schema".to_string(),
+                        tebako_json::Value::Number("1".into()),
+                    ),
+                    (
+                        "artifact".to_string(),
+                        tebako_json::Value::Object(vec![
+                            (
+                                "path".to_string(),
+                                tebako_json::Value::String(binary.display().to_string()),
+                            ),
+                            (
+                                "kind".to_string(),
+                                tebako_json::Value::String("package".into()),
+                            ),
+                        ]),
+                    ),
+                ]),
+            };
+            if let tebako_json::Value::Object(members) = &mut doc {
+                members.push(("checks".to_string(), pkg_verify::checks_json(&checks)));
+            }
+            return Ok((format!("{}\n", tebako_json::to_string(&doc)), code));
+        }
+        let mut out = String::new();
+        if opts.full {
+            if let Some(p) = &inspection {
+                out.push_str(&pkg_info::render_full(p, depth, outcome.as_deref()));
+            }
+        }
+        out.push_str(&pkg_verify::render_report(
+            &binary.display().to_string(),
+            &checks,
+        ));
+        if let (Some(p), Some(n)) = (&inspection, opts.slot) {
+            out.push_str(&pkg_info::render_slot(p, n as usize).map_err(|e| e.0)?);
+        }
+        return Ok((out, code));
+    }
+
+    // Non-verify rich views require a tpkg container (a plain archive is
+    // a named error here; the flag-less path keeps its archive fallback).
+    pkg_info::read_trailer(binary).map_err(|e| e.0)?;
+
+    if let Some(n) = opts.slot {
+        let p = pkg_info::inspect_package(binary, Depth::Manifests, Some(n as usize))
+            .map_err(|e| e.0)?;
+        if opts.json {
+            let doc = pkg_info::package_json(&p, Depth::Manifests, None);
+            return Ok((format!("{}\n", tebako_json::to_string(&doc)), 0));
+        }
+        let out = pkg_info::render_slot(&p, n as usize).map_err(|e| e.0)?;
+        return Ok((out, 0));
+    }
+
+    let p = pkg_info::inspect_package(binary, depth, None).map_err(|e| e.0)?;
+    if opts.json {
+        let doc = pkg_info::package_json(&p, depth, None);
+        return Ok((format!("{}\n", tebako_json::to_string(&doc)), 0));
+    }
+    // --full (or a bare --depth).
+    Ok((pkg_info::render_full(&p, depth, None), 0))
 }
