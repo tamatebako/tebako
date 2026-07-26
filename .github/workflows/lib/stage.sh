@@ -13,20 +13,18 @@ BUDGET="${BOOTSTRAP_SIZE_BUDGET:-3145728}"
 TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 EXE="${EXE_SUFFIX:-}"
 
-declare -A BINS=(
-  [tebako-bootstrap]=tebako-bootstrap
-  [tfs]=tfs
-  [tebako-pkg]=tebako-pkg
-  [tebako]=tebako
-)
+# Tool list: binary names equal the artifact tool names (no mapping
+# table — this script must also run under bash 3.2 / POSIX sh, which
+# have no `declare -A`).
+TOOLS="tebako-bootstrap tfs tebako-pkg tebako"
 
 mkdir -p out "fragments/frag-$PLATFORM"
 
 echo "| platform | binary | size (bytes) |" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 echo "|---|---|---|" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
-for tool in tebako-bootstrap tfs tebako-pkg tebako; do
-  src="target/${TARGET}/release/${BINS[$tool]}${EXE}"
+for tool in $TOOLS; do
+  src="target/${TARGET}/release/${tool}${EXE}"
   test -x "$src" || { echo "missing build output: $src"; exit 1; }
   dest="out/${tool}-${VERSION}-${PLATFORM}${EXE}"
   cp "$src" "$dest"
