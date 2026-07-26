@@ -31,6 +31,37 @@
 //!     24   256    char mount_point[256] (UTF-8, NUL-padded)
 //! ```
 //!
+//! # Wire layout (v2 — the chain-of-trust extension)
+//!
+//! v2 appends the integrity/authenticity material AFTER the (otherwise
+//! unchanged) trailer header. The header keeps the v1 codec exactly
+//! (little-endian numerics, crc32 over header bytes [0, 162) — the crc is
+//! an accident-integrity check, NOT authenticity); slot records are
+//! unchanged as well. All NEW v2 extension numerics are big-endian:
+//!
+//! ```text
+//! [payload][slot records][trailer header (166, version = 2)][v2 extension][EOF]
+//!
+//! v2 extension (TPKG_V2_EXT_FIXED = 268 bytes + variable signature):
+//!   offset  size  field
+//!      0   256    slot sha256 digests: 8 * 32 bytes, digest of slot i's
+//!                  bytes at i*32; entries beyond slot_count are zeroed
+//!    256     8    signer keyid (low 64 bits of the OpenPGP fingerprint,
+//!                  big-endian)
+//!    264 sig_len  OpenPGP detached signature (binary packets) over the
+//!                  canonical trailer bytes
+//! 264+sig_len 4  u32be signature length sig_len (1..TPKG_SIG_MAX)
+//!
+//! canonical (signed) bytes: one contiguous span — the slot table, the
+//! trailer header, the digest array and the keyid, i.e. everything except
+//! the trailing [signature][sig_len field].
+//! ```
+//!
+//! Detection: the last 4 bytes of the file are the big-endian sig_len;
+//! the v2 header sits `4 + sig_len + 8 + 256 + 166` bytes before EOF.
+//! A v1 trailer is still parsed exactly as before (header at EOF, no
+//! extension) — v1 = legacy unsigned (see item 29's v1-legacy rule).
+//!
 //! # Absent vs. corrupt
 //!
 //! A file whose last-166-byte window does not start with the 4-byte prefix
@@ -61,14 +92,16 @@ mod error;
 mod io;
 mod model;
 
-pub use codec::{encode_trailer, parse_trailer};
+pub use codec::{encode_trailer, parse_trailer, trailer_len, v2_signed_region};
 pub use crc32::{crc32, Crc32};
 pub use error::{strerror, TpkgError};
 pub use io::{read_from, write_to};
-pub use model::{Manifest, Slot};
+pub use model::{Manifest, Slot, V2Extension};
 
-/// Manifest format version.
+/// Manifest format version (legacy unsigned trailers; still parsed).
 pub const TPKG_VERSION: u32 = 1;
+/// Manifest format version carrying the chain-of-trust extension.
+pub const TPKG_VERSION_2: u32 = 2;
 /// Maximum number of payload slots.
 pub const TPKG_MAX_SLOTS: u32 = 8;
 /// Trailer header size in bytes.
@@ -100,6 +133,26 @@ pub const TPKG_FORMAT_SQUASHFS: u32 = 2;
 pub const TPKG_FORMAT_ZIP: u32 = 3;
 /// `format_id`: runtime payload slot (fat packages).
 pub const TPKG_FORMAT_RUNTIME: u32 = 4;
+
+// ---------------------------------------------------------------------
+// v2 chain-of-trust extension (all v2-extension numerics BIG-ENDIAN;
+// the 166-byte trailer header keeps the v1 codec — little-endian —
+// unchanged, as do the slot records; see the module docs)
+// ---------------------------------------------------------------------
+
+/// Length of one slot's SHA-256 digest in bytes.
+pub const TPKG_SHA256_LEN: usize = 32;
+/// Size of the per-slot digest array (one digest per possible slot).
+pub const TPKG_DIGESTS_SIZE: usize = TPKG_MAX_SLOTS as usize * TPKG_SHA256_LEN;
+/// Length of the signer key id (low 64 bits of the OpenPGP fingerprint).
+pub const TPKG_KEYID_LEN: usize = 8;
+/// Size of the big-endian signature-length field.
+pub const TPKG_SIGLEN_SIZE: usize = 4;
+/// Fixed part of the v2 extension (digests + keyid + siglen, signature
+/// bytes excluded).
+pub const TPKG_V2_EXT_FIXED: usize = TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN + TPKG_SIGLEN_SIZE;
+/// Maximum accepted signature size (sanity bound, not a format limit).
+pub const TPKG_SIG_MAX: u32 = 65536;
 
 /// Header field offsets (see the module docs).
 pub(crate) mod off {

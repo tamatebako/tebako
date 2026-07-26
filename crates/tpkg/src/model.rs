@@ -2,7 +2,8 @@
 
 use crate::error::TpkgError;
 use crate::{
-    TPKG_FORMAT_RUNTIME, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN, TPKG_RUNTIME_REF_LEN, TPKG_VERSION,
+    TPKG_FORMAT_RUNTIME, TPKG_KEYID_LEN, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN, TPKG_RUNTIME_REF_LEN,
+    TPKG_SHA256_LEN, TPKG_SIG_MAX, TPKG_VERSION, TPKG_VERSION_2,
 };
 
 /// One payload slot (the in-Rust form of C `tpkg_slot`).
@@ -67,10 +68,49 @@ impl Slot {
     }
 }
 
+/// The v2 chain-of-trust extension (item 29): per-slot SHA-256 digests,
+/// the signer keyid and the OpenPGP detached signature over the canonical
+/// trailer bytes. Present iff `Manifest::version == TPKG_VERSION_2`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct V2Extension {
+    /// One SHA-256 digest per possible slot; slot i's digest at index i,
+    /// entries beyond the slot count zeroed.
+    pub slot_digests: [[u8; TPKG_SHA256_LEN]; TPKG_MAX_SLOTS as usize],
+    /// Signer key id: the low 64 bits of the OpenPGP fingerprint (BE on
+    /// the wire; kept as raw bytes).
+    pub signer_keyid: [u8; TPKG_KEYID_LEN],
+    /// The OpenPGP detached signature (binary packets) over the canonical
+    /// trailer bytes.
+    pub signature: Vec<u8>,
+}
+
+impl V2Extension {
+    /// The digest of slot `i` (`None` when out of range).
+    pub fn slot_digest(&self, i: usize) -> Option<&[u8; TPKG_SHA256_LEN]> {
+        self.slot_digests.get(i)
+    }
+
+    /// The signer keyid as a 16-character lowercase hex string (the
+    /// usual OpenPGP keyid rendering).
+    pub fn signer_keyid_hex(&self) -> String {
+        crate::codec::hex_lower(&self.signer_keyid)
+    }
+}
+
+impl Default for V2Extension {
+    fn default() -> Self {
+        V2Extension {
+            slot_digests: [[0; TPKG_SHA256_LEN]; TPKG_MAX_SLOTS as usize],
+            signer_keyid: [0; TPKG_KEYID_LEN],
+            signature: Vec::new(),
+        }
+    }
+}
+
 /// The package manifest (the in-Rust form of C `tpkg_manifest`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
-    /// Format version (`TPKG_VERSION`).
+    /// Format version (`TPKG_VERSION` = 1 or `TPKG_VERSION_2` = 2).
     pub version: u32,
     /// `TPKG_FLAG_*` bits.
     pub package_flags: u32,
@@ -80,6 +120,8 @@ pub struct Manifest {
     pub runtime_ref: [u8; TPKG_RUNTIME_REF_LEN],
     /// Payload slots (`1..=TPKG_MAX_SLOTS` entries in a valid manifest).
     pub slots: Vec<Slot>,
+    /// Chain-of-trust extension (present iff `version == TPKG_VERSION_2`).
+    pub v2: Option<V2Extension>,
 }
 
 impl Default for Manifest {
@@ -90,6 +132,7 @@ impl Default for Manifest {
             launcher_abi: 0,
             runtime_ref: [0; TPKG_RUNTIME_REF_LEN],
             slots: Vec::new(),
+            v2: None,
         }
     }
 }
@@ -119,9 +162,11 @@ impl Manifest {
     /// Magic-independent structural checks, mirroring the C `tpkg_validate()`:
     /// version supported, `1..=TPKG_MAX_SLOTS` slots, `offset+size`
     /// non-overflowing, `format_id <= TPKG_FORMAT_RUNTIME`, `runtime_ref` and
-    /// mount points NUL-terminated within their fixed fields.
+    /// mount points NUL-terminated within their fixed fields; v2 additionally
+    /// requires the extension with zeroed trailing digests, a non-empty
+    /// signature (bounded by `TPKG_SIG_MAX`) and a non-zero signer keyid.
     pub fn validate(&self) -> Result<(), TpkgError> {
-        if self.version != TPKG_VERSION {
+        if self.version != TPKG_VERSION && self.version != TPKG_VERSION_2 {
             return Err(TpkgError::Version);
         }
         if self.slots.is_empty() || self.slots.len() > TPKG_MAX_SLOTS as usize {
@@ -140,6 +185,25 @@ impl Manifest {
             if strnlen(&slot.mount_point) == TPKG_MOUNT_POINT_LEN {
                 return Err(TpkgError::Invalid);
             }
+        }
+        match (&self.v2, self.version == TPKG_VERSION_2) {
+            (None, true) => return Err(TpkgError::Invalid),
+            (Some(_), false) => return Err(TpkgError::Invalid),
+            (Some(v2), true) => {
+                if v2.slot_digests[self.slots.len()..]
+                    .iter()
+                    .any(|d| *d != [0; TPKG_SHA256_LEN])
+                {
+                    return Err(TpkgError::Invalid);
+                }
+                if v2.signature.is_empty() || v2.signature.len() > TPKG_SIG_MAX as usize {
+                    return Err(TpkgError::Invalid);
+                }
+                if v2.signer_keyid == [0; TPKG_KEYID_LEN] {
+                    return Err(TpkgError::Invalid);
+                }
+            }
+            (None, false) => {}
         }
         Ok(())
     }
