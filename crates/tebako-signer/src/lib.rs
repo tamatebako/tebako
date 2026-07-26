@@ -25,5 +25,8 @@ mod sign;
 
 pub use error::SignerError;
 pub use keyring::{register_trusted, trusted_keyring_bytes, trusted_keyring_path, RegisterOutcome};
-pub use keys::{default_home, hex_lower, keyid_bytes_from_fingerprint, press_local_key, PressKey};
+pub use keys::{
+    default_home, hex_lower, keyid_bytes_from_fingerprint, press_local_key, secret_key_by_keyid,
+    PressKey,
+};
 pub use sign::{sign_detached, verify_detached, VerifyOutcome};
