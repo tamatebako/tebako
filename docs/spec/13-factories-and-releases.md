@@ -106,3 +106,35 @@ manifest/runtime_ref pinning a missing runtime (typo, pre-release ref)
 fails with the named exit-69 class error plus a hint to inspect
 available versions — never a silent fallback to a different runtime.
 Cache GC stays user-driven (`tebako cache prune`).
+
+## 9. The toolkit factory (distro-maintainer model, locked 2026-07-26)
+
+Making third-party native software work inside tebako payloads is a
+**packaging concern, owned by a factory repo** — the same discipline
+distro maintainers apply when patching software into their ports tree,
+and the same shape as tamatebako/ruby:
+
+```
+tamatebako/toolkits/
+  packages/<name>/
+    recipe.yml          # upstream url+sha256, versions, build system,
+                        # link mode, deps (other toolkits), platforms
+    patches/            # per-version patch sets, ruby-factory naming rules
+    manifests/          # payload manifest templates (provides/exec tier)
+```
+
+Recipe-declared axes:
+
+- **link mode → exec tier** (spec 07 §8): `dynamic` (tier 1, preload
+  shim at run time — default), `wrapped` (link-time interposition
+  archive inside the binary), `tfs-native` (source patches +
+  libtfs linked — the ruby model; survives static linking), `static`
+  (plain static, extraction closure, no TFS).
+- **relocatability**: dynamic tools build with `$ORIGIN/../lib` RPATH —
+  any mount/extract location works, no install-time rewriting.
+- **deps**: other toolkit payloads via the spec-03 requires graph
+  (inkscape depends on libxml2/poppler payloads, consumer-mounted).
+
+CI: build matrix per triplet (one mechanical leg each), boot-smoke per
+tool, release per (tool × version) with the payload manifest filled
+from the recipe. First reference port: inkscape (the metanorma case).

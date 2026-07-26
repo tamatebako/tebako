@@ -179,3 +179,17 @@ env: {…}                          # package-level env (composition rules: spec
   multi-runtime packages); the trailer's v1 field stays for v1 loaders.
 - v1-era packages without the block behave exactly as today (stub.rb /
   local conventions); the block is additive.
+
+**toolkit** (native layer, e.g. inkscape/gtk — the distro-ports model,
+spec 13 §9):
+```yaml
+provides:
+  executables: [{name: inkscape, path: /bin/inkscape, version: 1.3}]
+  libraries: [{name: xml2, path: /lib, abi: "2.12"}]
+exec_tier: dynamic | wrapped | tfs-native | static   # spec 07 §8
+exec_closure: [/bin, /lib, /share/inkscape]          # static tier only
+capabilities: {exec: true, read: true}
+```
+`exec_tier` tells the dispatcher HOW to run its executables (preload
+shim / link-wrapped / already-TFS-native / extract-closure) — consumers
+never care which path a tool took.
