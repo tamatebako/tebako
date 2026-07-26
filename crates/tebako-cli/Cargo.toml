@@ -13,6 +13,10 @@ categories = ["command-line-utilities"]
 [dependencies]
 tpkg = { version = "0.1.0", path = "../tpkg" }
 tebako-pkg = { version = "0.1.0", path = "../tebako-pkg" }
+tebako-http = { version = "0.1.0", path = "../tebako-http" }
+# The in-process DwarFS writer (dwarfs-t-rs): the application and deploy
+# driver images are built without any mkdwarfs binary.
+dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 libc = "0.2"
 sha2 = "0.10"
 

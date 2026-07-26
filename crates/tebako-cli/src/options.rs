@@ -53,8 +53,6 @@ pub struct PressOptions {
     pub log_level: String,
     /// Repeatable --image '<path>:<mount-point>'.
     pub image_specs: Vec<String>,
-    /// --mkdwarfs override.
-    pub mkdwarfs: Option<PathBuf>,
     /// --bootstrap override.
     pub bootstrap: Option<PathBuf>,
     /// tebako version (runtime release + runtime_ref), default crate const.
@@ -98,7 +96,7 @@ impl PressOptions {
     }
 
     pub fn data_bundle_file(&self) -> PathBuf {
-        self.data_bin_dir().join("fs.bin")
+        self.data_bin_dir().join("fs.tfs")
     }
 
     pub fn deps(&self) -> PathBuf {

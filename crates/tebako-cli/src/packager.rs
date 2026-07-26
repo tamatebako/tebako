@@ -2,123 +2,33 @@
 //! lib/tebako/deploy_helper.rb): seed the packaging environment from the
 //! resolved runtime's extracted layout, stage the application, run the
 //! deploy ops under the runtime, strip, align the arch layout, write the
-//! entry dispatcher and mkdwarfs the application image.
+//! entry dispatcher and build the application image in-process (the
+//! dwarfs-t Writer — no mkdwarfs binary anywhere).
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::deploy::{Op, RuntimeDeployer};
 use crate::error::{packaging_error, plain_error, TebakoError};
+use crate::image::build_image;
 use crate::options::PressOptions;
-use crate::runner::run_with_capture_v;
 use crate::scenario::{api_version, Scenario, ScenarioManager};
 
-/// mkdwarfs lookup: --mkdwarfs > $TEBAKO_MKDWARFS > PATH >
-/// <prefix>/deps/bin/mkdwarfs* (the gem's only source) > error 128.
-pub fn resolve_mkdwarfs(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
-    if let Some(path) = &opts.mkdwarfs {
-        if path.is_file() {
-            return Ok(path.clone());
-        }
-        return Err(packaging_error(
-            128,
-            Some(&format!("mkdwarfs ({})", path.display())),
-        ));
-    }
-    if let Ok(env_path) = std::env::var("TEBAKO_MKDWARFS") {
-        if !env_path.is_empty() && Path::new(&env_path).is_file() {
-            return Ok(PathBuf::from(env_path));
-        }
-    }
-    if let Some(found) = which("mkdwarfs") {
-        return Ok(found);
-    }
-    let deps_bin = opts.deps_bin_dir();
-    if let Ok(children) = fs::read_dir(&deps_bin) {
-        let mut candidates: Vec<PathBuf> = children
-            .filter_map(|c| c.ok())
-            .map(|c| c.path())
-            .filter(|p| {
-                p.file_name()
-                    .map(|n| n.to_string_lossy().starts_with("mkdwarfs"))
-                    .unwrap_or(false)
-            })
-            .collect();
-        candidates.sort();
-        if let Some(first) = candidates.into_iter().next() {
-            return Ok(first);
-        }
-    }
-    Err(packaging_error(
-        128,
-        Some(&format!("mkdwarfs ({})", deps_bin.display())),
-    ))
-}
-
-fn which(tool: &str) -> Option<PathBuf> {
-    let path_var = std::env::var("PATH").ok()?;
-    for dir in path_var.split(if cfg!(windows) { ';' } else { ':' }) {
-        let candidate = Path::new(dir).join(tool);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-/// Packager.mkdwarfs: chmod a+x and run with the gem's parameter shape.
-pub fn run_mkdwarfs(
-    mkdwarfs: &Path,
-    data_bin_file: &Path,
-    data_src_dir: &Path,
-    verbose: bool,
-) -> Result<(), TebakoError> {
-    println!("-- Running mkdwarfs script");
-    chmod_a_x(mkdwarfs);
-    let args = vec![
-        "-o".to_string(),
-        data_bin_file.to_string_lossy().into_owned(),
-        "-i".to_string(),
-        data_src_dir.to_string_lossy().into_owned(),
-        "--no-progress".to_string(),
-    ];
-    run_with_capture_v(mkdwarfs, &args, &[], verbose)?;
-    Ok(())
-}
-
-fn chmod_a_x(path: &Path) {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        if let Ok(m) = fs::metadata(path) {
-            let mut perms = m.permissions();
-            perms.set_mode(perms.mode() | 0o111);
-            let _ = fs::set_permissions(path, perms);
-        }
-    }
-}
-
 /// Deploy the application and build its DwarFS image for stitching;
-/// returns the image path (fs.bin).
+/// returns the image path (fs.tfs).
 pub fn build_app_image(
     opts: &PressOptions,
     scenario: &mut ScenarioManager,
     runtime_path: &Path,
-    mkdwarfs: &Path,
     ruby_ver: &str,
 ) -> Result<PathBuf, TebakoError> {
     let resolver = crate::resolve::Resolver::new(crate::resolve::Flavor::Runtime);
     let layout_dir = resolver.layout(runtime_path, opts.verbose)?;
     init(&layout_dir, opts)?;
-    deploy(opts, scenario, runtime_path, mkdwarfs, ruby_ver)?;
+    deploy(opts, scenario, runtime_path, ruby_ver)?;
     align_layout_to_runtime(&opts.data_src_dir(), &layout_dir, ruby_ver);
     write_entry_dispatcher(&opts.data_src_dir(), scenario, opts.cwd.as_deref());
-    run_mkdwarfs(
-        mkdwarfs,
-        &opts.data_bundle_file(),
-        &opts.data_src_dir(),
-        opts.verbose,
-    )?;
+    build_image(&opts.data_bundle_file(), &opts.data_src_dir())?;
     Ok(opts.data_bundle_file())
 }
 
@@ -141,7 +51,6 @@ fn deploy(
     opts: &PressOptions,
     scenario: &mut ScenarioManager,
     runtime_path: &Path,
-    mkdwarfs: &Path,
     ruby_ver: &str,
 ) -> Result<(), TebakoError> {
     println!("-- Running deploy script");
@@ -219,7 +128,6 @@ fn deploy(
     if !ops.is_empty() {
         let deployer = RuntimeDeployer {
             runtime_path: runtime_path.to_path_buf(),
-            mkdwarfs: mkdwarfs.to_path_buf(),
             staging_bin_dir: opts.data_bin_dir(),
             fs_mount_point: scenario.fs_mount_point.clone(),
             ruby_version: ruby_ver.to_string(),

@@ -23,6 +23,9 @@ tebako-rs/
     tfs-cli/           # PLANNED — the tfs binary (generic VFS ops; item 25)
     tebako-cli/        # the tebako packager CLI: lean/fat press, cache
                        # (item 17)
+    tebako-http/       # in-process HTTPS downloads (ureq+rustls,
+                       # webpki-roots bundled) shared by the CLI and the
+                       # bootstrap
     tebako-bootstrap/  # the Rust bootstrap runner (item 22,
                        # < 2 MB static, size-gated)
   tests/contract/      # the parity oracle: the C++ libtfs c_api suite
@@ -50,29 +53,35 @@ Rust-consumable surface for it.
   SHA256SUMS index, TEBAKO_OFFLINE / mirror env vars, error codes
   120–125), seeds the packaging environment from the runtime's extracted
   layout, deploys the application **under the runtime itself** (the
-  mkdwarfs'd stub-driver image stitched onto an empty base and exec'd via
-  `--tebako-image`, with the RUBYOPT/RUBYLIB/BUNDLE_* env scrub),
-  mkdwarfs's the app image and stitches a three-part package (LEAN flag,
-  launcher ABI 1, `ruby@<rv>;tebako=<v>` runtime_ref, fat mode adds the
-  FORMAT_RUNTIME payload slot + `;sha256=`). Scenarios: simple script and
-  Gemfile (lockfile-pinned bundler per `BUNDLED WITH`; Gemfile `ruby`
-  directive honored). `tebako cache list` / `cache prune [--all]
-  [--older-than Nd]` manage the runtime cache. **Golden parity vs the
-  gem**: same fixture, same prefix — the press stdout and the packaged
-  binaries' output are byte-identical (CI leg checks out
-  `tamatebako/tebako` feat/ci-slim-model and diffs side-by-side; the
-  RuntimeSdk provisioning lines are filtered — see below).
+  stub-driver image stitched onto an empty base and exec'd via
+  `--tebako-image`, with the RUBYOPT/RUBYLIB/BUNDLE_* env scrub), images
+  the app and stitches a three-part package (LEAN flag, launcher ABI 1,
+  `ruby@<rv>;tebako=<v>` runtime_ref, fat mode adds the FORMAT_RUNTIME
+  payload slot + `;sha256=`). Scenarios: simple script and Gemfile
+  (lockfile-pinned bundler per `BUNDLED WITH`; Gemfile `ruby` directive
+  honored). `tebako cache list` / `cache prune [--all] [--older-than Nd]`
+  manage the runtime cache. **Everything in-process (owner rule)**: all
+  downloads via `crates/tebako-http` (ureq + rustls, webpki-roots
+  bundled, HTTPS-only, `file://` mirrors, OS trust opt-in via
+  `TEBAKO_TLS_PLATFORM_ROOTS` — no curl anywhere) and all images via the
+  dwarfs-t `Writer` binding (dwarfs-t-rs) — no mkdwarfs binary, no PATH
+  lookup; produced images carry dwarfs-t-native FlatBuffers metadata and
+  are named `.tfs` (`fs.tfs`, `deploy-driver.tfs`; `.dwarfs` stays for
+  upstream-compatible images). tfs-cli's `mkimage` moved to the same
+  Writer. **Golden parity vs the gem**: same fixture, same prefix — the
+  press stdout and the packaged binaries' output are byte-identical (CI
+  leg checks out `tamatebako/tebako` feat/ci-slim-model and diffs
+  side-by-side; the RuntimeSdk provisioning lines and the two sides'
+  image-build lines are filtered — see the crate README).
   **Documented deviations**: the bootstrap portion defaults to the
   in-workspace Rust tebako-bootstrap (`--bootstrap`/`TEBAKO_BOOTSTRAP`
-  override; otherwise the C++ release is resolved like the gem does);
-  mkdwarfs lookup is `--mkdwarfs` > `TEBAKO_MKDWARFS` > PATH >
-  `<prefix>/deps/bin/mkdwarfs*`; the RuntimeSdk/src-release subsystem is
-  not ported (pure-ruby bundler flows never need it — native-extension
-  deploy is a later milestone), and neither are the gem/gemspec scenarios,
-  classic mode, `.tebako.yml`, or the gem's unconditional 5 s press pause
-  (kept only when a warning is actually printed); images stitch densely
-  (tpkg slots carry absolute offsets; the gem's 8-byte padding is
-  cosmetic).
+  override; otherwise the C++ release is resolved like the gem does); the
+  RuntimeSdk/src-release subsystem is not ported (pure-ruby bundler flows
+  never need it — native-extension deploy is a later milestone), and
+  neither are the gem/gemspec scenarios, classic mode, `.tebako.yml`, or
+  the gem's unconditional 5 s press pause (kept only when a warning is
+  actually printed); images stitch densely (tpkg slots carry absolute
+  offsets; the gem's 8-byte padding is cosmetic).
 
 ### SHIPPED (milestone 6)
 
@@ -93,24 +102,27 @@ Rust-consumable surface for it.
   `self-test.sh` scenarios ported as integration tests, plus a direct
   parity run of the same fixtures against the C++ oracle binary
   (`TEBAKO_CPP_BOOTSTRAP`).
-- **SIZE — the 2 MB gate (item 22, hard gate)**: release profile
+- **SIZE — the 3 MB gate (item 22, hard gate; budget raised 2 MB → 3 MB
+  by the owner when the download path went in-process)**: release profile
   `opt-level="z", lto="fat", codegen-units=1, panic="abort",
   strip="symbols"`; no async runtime, no clap. Measured:
 
   | platform | Rust bootstrap | C++ v0.2.0 | budget |
   |---|---|---|---|
-  | macOS arm64 | **371,776 B (363 KB)** | 53,536 B | < 2 MB ✔ (5.3× under) |
+  | macOS arm64 | **1,238,384 B (1.18 MB)** | 53,536 B | < 3 MB ✔ (2.5× under) |
 
   (CI publishes the per-platform artifact sizes on every run and fails
-  at ≥ 2 MB.)
-- **HTTP/TLS choice — audit per item 22**: the download path shells out
-  to the `curl` CLI (present on modern macOS/Linux/Windows 10+), exactly
-  like the C++ bootstrap. Size cost in the artifact: **0 B** — vs ~1–1.5 MB
-  for ureq+rustls and ~2–4 MB for reqwest+native-tls (measured on a
-  scratch crate; would eat most of the budget). Platform-native TLS for
-  free, and the mirror path (`TEBAKO_RUNTIME_MIRROR=file://…`) needs no
-  network stack at all. Windows exec/lock ports land with the Windows CI
-  leg (v1 ships macOS/Linux like the rest of the matrix).
+  at ≥ 3 MB.)
+- **HTTP/TLS choice (owner rule: no curl anywhere)**: all downloads are
+  in-process via `crates/tebako-http` — ureq + rustls (ring) with
+  webpki-roots **bundled** (the OS trust store is opt-in via
+  `TEBAKO_TLS_PLATFORM_ROOTS`), HTTPS-only, redirects ≤ 5, `file://`
+  mirrors. Size cost in the artifact: **≈ +867 KB** vs the previous
+  curl-CLI path (371,776 B → 1,238,384 B on macOS arm64) — the owner
+  extended the budget 2 MB → 3 MB to pay for it. The C++ bootstrap
+  shells out to curl; the Rust side no longer does anywhere.
+  Windows exec/lock ports land with the Windows CI leg (v1 ships
+  macOS/Linux like the rest of the matrix).
 
 ### SHIPPED (milestone 5)
 

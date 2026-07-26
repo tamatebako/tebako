@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use crate::error::TebakoError;
 use crate::runner::run_with_capture;
 
-const DRIVER_IMAGE: &str = "deploy-driver.dwarfs";
+const DRIVER_IMAGE: &str = "deploy-driver.tfs";
 const DRIVER_PACKAGE: &str = "deploy-driver.pkg";
 const EMPTY_BASE: &str = "deploy-driver.base";
 const BUNDLE_EXEC_SCRIPT_NAME: &str = "bundle_exec.rb";
@@ -45,7 +45,6 @@ pub enum Op {
 
 pub struct RuntimeDeployer {
     pub runtime_path: PathBuf,
-    pub mkdwarfs: PathBuf,
     pub staging_bin_dir: PathBuf,
     pub fs_mount_point: String,
     pub ruby_version: String,
@@ -67,12 +66,7 @@ impl RuntimeDeployer {
         seed_dir: &Path,
     ) -> Result<(), TebakoError> {
         self.write_driver(seed_dir, ops);
-        crate::packager::run_mkdwarfs(
-            &self.mkdwarfs,
-            &self.driver_image(),
-            seed_dir,
-            self.verbose,
-        )?;
+        crate::image::build_image(&self.driver_image(), seed_dir)?;
         self.stitch_driver_package()?;
         if self.shim_supported() {
             self.write_bundle_exec_script()?;

@@ -8,7 +8,7 @@ design): a port of the reference Ruby gem's lean/fat press
 $ tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>]
                [-c <cwd>] [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
-               [--mkdwarfs <path>] [--tebako-version <v>]
+               [--tebako-version <v>]
 $ tebako cache list
 $ tebako cache prune [--all] [--older-than Nd]
 ```
@@ -18,20 +18,21 @@ $ tebako cache prune [--all] [--older-than Nd]
 1. **resolve** the prebuilt runtime into the shared cache (`$TEBAKO_HOME`
    or `~/.tebako`; gem-identical layout, flock'd installs, manifest.json /
    SHA256SUMS release index, `TEBAKO_OFFLINE`, `TEBAKO_RUNTIME_MIRROR`,
-   error codes 120–125);
+   error codes 120–125) — downloads are in-process (crates/tebako-http);
 2. **seed** the packaging environment (`<prefix>/o/s`) from the runtime's
    extracted filesystem layout;
 3. **deploy** the application under the runtime itself: the deploy ops
    (bundle config/install for the Gemfile scenario) are serialized into a
    stub driver placed at `/local/stub.rb` of a throwaway image, which is
-   mkdwarfs'd, stitched onto an empty base and exec'd as
+   imaged in-process, stitched onto an empty base and exec'd as
    `runtime --tebako-image <driver>:0:/__tebako_memfs__` with a scrubbed
    environment (`RUBYOPT`/`RUBYLIB`/`BUNDLE_*`/`BUNDLER_*` unset,
    `GEM_HOME`/`GEM_PATH`/`GEM_SPEC_CACHE`/`SSL_CERT_*`/
    `TEBAKO_PASS_THROUGH` set);
 4. **strip** build artefacts, align the arch layout to the runtime, write
    the entry dispatcher at `/local/stub.rb`;
-5. **mkdwarfs** the app image and **stitch** the three-part package:
+5. **image** the app (in-process dwarfs-t Writer → `fs.tfs`) and
+   **stitch** the three-part package:
    bootstrap + image slot(s) + tpkg trailer (LEAN flag, launcher ABI 1,
    runtime_ref `ruby@<rv>;tebako=<v>`; `fat` mode adds the runtime as a
    FORMAT_RUNTIME payload slot and appends `;sha256=<hex>`).
@@ -60,16 +61,25 @@ the launcher ABI.
   milestone 6) > the C++ tebako-bootstrap release, resolved with the gem's
   BootstrapManager machinery (`TEBAKO_BOOTSTRAP_VERSION`,
   `TEBAKO_BOOTSTRAP_MIRROR`);
-- **mkdwarfs**: `--mkdwarfs` > `$TEBAKO_MKDWARFS` > PATH >
-  `<prefix>/deps/bin/mkdwarfs*` (error 128 otherwise).
+- **downloads**: all in-process via `crates/tebako-http` (ureq + rustls,
+  webpki-roots bundled; HTTPS-only, redirects ≤ 5, `file://` mirrors,
+  `TEBAKO_OFFLINE`; the OS trust store is opt-in via
+  `TEBAKO_TLS_PLATFORM_ROOTS`). No curl anywhere;
+- **images**: built in-process via the dwarfs-t `Writer` (dwarfs-t-rs) —
+  no mkdwarfs binary, no PATH lookup, no provisioning. Images carry
+  dwarfs-t-native (FlatBuffers) metadata and are named `.tfs`
+  (`fs.tfs`, `deploy-driver.tfs`); `.dwarfs` stays for
+  upstream-compatible images.
 
 ## Deviations from the reference gem (documented, deliberate)
 
 - the bootstrap portion **defaults to the in-workspace Rust
   tebako-bootstrap**; the gem always uses the C++ release (reachable via
   the lookup chain above);
-- the mkdwarfs lookup chain adds the flag/env/PATH sources (the gem only
-  consults `<prefix>/deps/bin`);
+- **no mkdwarfs anywhere** (owner rule): the gem shells out to a
+  provisioned mkdwarfs binary; the CLI builds images in-process and the
+  golden test filters the two sides' image-build lines when diffing
+  press stdout;
 - the **RuntimeSdk / src-release subsystem is not ported** — the gem
   downloads the ruby source release so native-extension builds (mkmf,
   cmake) can compile inside the deploy driver. Pure-ruby bundler flows
@@ -84,12 +94,6 @@ the launcher ABI.
   taken from rubygems' `latest.json` (the gem's SpecFetcher picks the
   latest released bundler satisfying the requirement — identical unless
   the requirement excludes the latest release);
-- downloads shell out to the `curl` CLI (item 17's design note mentions
-  in-process ureq+rustls; the curl choice is milestone 6's audited TLS
-  decision — zero binary-weight, platform-native TLS, `file://` mirrors
-  for free, curl present on all supported hosts). `tebako setup`'s
-  checksummed mkdwarfs provisioning is a later milestone (mkdwarfs comes
-  from the lookup chain above until then);
 - images are stitched **densely** (tpkg slots carry absolute offsets; the
   gem's 8-byte alignment padding is cosmetic);
 - the gem's unconditional 5-second press pause runs only when a
@@ -104,12 +108,13 @@ table).
 
 ```console
 $ cargo test -p tebako-cli                     # unit + fast CLI tests
-$ TEBAKO_MKDWARFS=/path/to/mkdwarfs \
-  TEBAKO_REFERENCE_GEM=/path/to/tebako-gem \   # optional: golden diff
+$ TEBAKO_REFERENCE_GEM=/path/to/tebako-gem \   # optional: golden diff
+  TEBAKO_MKDWARFS=/path/to/mkdwarfs \          # (for the gem's own press)
   cargo test -p tebako-cli --test cli_e2e      # press + run + golden
 ```
 
 The e2e tests download the prebuilt runtime into the cache (network) and
-skip cleanly when mkdwarfs is unavailable or `TEBAKO_CLI_SKIP_E2E` is set.
-The golden test additionally needs a host ruby with the thor gem and a
-checkout of the reference gem at the matching version.
+skip cleanly when `TEBAKO_CLI_SKIP_E2E` is set. The golden test
+additionally needs a host ruby with the thor gem, a checkout of the
+reference gem at the matching version, and an mkdwarfs binary **for the
+reference gem's own press** (the CLI itself needs none).

@@ -32,22 +32,6 @@ fn press_lock() -> &'static Mutex<()> {
     LOCK.get_or_init(|| Mutex::new(()))
 }
 
-fn mkdwarfs() -> Option<PathBuf> {
-    if let Ok(p) = std::env::var("TEBAKO_MKDWARFS") {
-        if Path::new(&p).is_file() {
-            return Some(PathBuf::from(p));
-        }
-    }
-    let path_var = std::env::var("PATH").ok()?;
-    for dir in path_var.split(if cfg!(windows) { ';' } else { ':' }) {
-        let candidate = Path::new(dir).join("mkdwarfs");
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
 fn e2e_allowed() -> bool {
     std::env::var_os("TEBAKO_CLI_SKIP_E2E").is_none()
 }
@@ -80,13 +64,14 @@ fn copy_dir(src: &Path, dst: &Path) {
     }
 }
 
-/// A scratch press environment: fixture root copied in, mkdwarfs placed
-/// in <prefix>/deps/bin (the gem's layout, which the CLI also honors).
+/// A scratch press environment: the fixture root copied into a temp dir,
+/// an empty packaging prefix (the CLI builds images in-process — no
+/// mkdwarfs to provision; the golden's reference gem still provisions
+/// its own, see golden_scenario).
 struct PressEnv {
     work: PathBuf,
     root: PathBuf,
     prefix: PathBuf,
-    mkdwarfs: PathBuf,
 }
 
 fn press_env(tag: &str, fixture: &str) -> Option<PressEnv> {
@@ -94,28 +79,16 @@ fn press_env(tag: &str, fixture: &str) -> Option<PressEnv> {
         eprintln!("skipping {tag}: TEBAKO_CLI_SKIP_E2E is set");
         return None;
     }
-    let source = mkdwarfs().or_else(|| {
-        eprintln!("skipping {tag}: no mkdwarfs (set TEBAKO_MKDWARFS)");
-        None
-    })?;
     let work = workdir(tag);
     let root = work.join("root");
     copy_dir(&fixtures().join(fixture), &root);
     let prefix = work.join("prefix");
-    let deps_bin = prefix.join("deps").join("bin");
-    fs::create_dir_all(&deps_bin).unwrap();
-    let mkdwarfs = deps_bin.join(source.file_name().unwrap());
-    fs::copy(&source, &mkdwarfs).unwrap();
+    fs::create_dir_all(prefix.join("deps")).unwrap();
     // Seed the CLI's cache version key so the cache guard stays silent
-    // (and does not clean prefix/deps, which carries the mkdwarfs copy).
-    // The golden re-seeds the reference gem's key before the gem press.
+    // (and does not clean prefix/deps). The golden re-seeds the reference
+    // gem's key before the gem press.
     seed_rs_version_file(&prefix);
-    Some(PressEnv {
-        work,
-        root,
-        prefix,
-        mkdwarfs,
-    })
+    Some(PressEnv { work, root, prefix })
 }
 
 /// The CLI's own cache version key ("<version> at <crate manifest dir>").
@@ -141,8 +114,7 @@ fn press_command(env: &PressEnv, entry: &str, output: &Path) -> Command {
         .arg("-o")
         .arg(output)
         .arg("-p")
-        .arg(&env.prefix)
-        .env("TEBAKO_MKDWARFS", &env.mkdwarfs);
+        .arg(&env.prefix);
     // Dogfood the in-workspace Rust bootstrap when it sits next to the
     // tebako binary (the decide_bootstrap default); otherwise the C++
     // release is downloaded — both are valid press paths.
@@ -404,17 +376,48 @@ fn gem_press_command(gem: &GoldenGem, env: &PressEnv, entry: &str, output: &Path
     cmd
 }
 
-/// The RuntimeSdk provisioning lines are the documented deviation: the
-/// CLI does not download the ruby src release (pure-ruby deploys never
-/// need it).
-fn normalize_gem_log(log: &str) -> String {
+/// Lines that legitimately differ between the two presses:
+/// - the RuntimeSdk provisioning (the documented deviation: the CLI does
+///   not download the ruby src release — pure-ruby deploys never need
+///   it);
+/// - the `--tebako-extract` layout extraction, which only the FIRST
+///   press on a cold runtime cache performs (whichever tool runs first —
+///   an environment-state difference, not a behavioral one);
+/// - the image build lines: the gem shells out to mkdwarfs ("-- Running
+///   mkdwarfs script" + the "   ... @ <mkdwarfs> ..." echo) while the CLI
+///   builds in-process ("-- Building DwarFS image ...") — the owner rule
+///   is no mkdwarfs anywhere on the Rust side.
+fn normalize_press_log(log: &str) -> String {
     log.lines()
         .filter(|line| {
+            let gem_image_build = line.starts_with("-- Running mkdwarfs script")
+                || (line.starts_with("   ... @ ") && line.contains("mkdwarfs"));
             !line.starts_with("-- Provisioning the runtime SDK")
                 && !line.starts_with("   ... tfs-ruby-")
+                && !line.contains(" --tebako-extract ")
+                && !line.starts_with("-- Building DwarFS image")
+                && !gem_image_build
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+/// The reference gem still shells out to mkdwarfs; it is provisioned for
+/// its press only (TEBAKO_MKDWARFS or PATH).
+fn mkdwarfs_for_gem() -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("TEBAKO_MKDWARFS") {
+        if Path::new(&p).is_file() {
+            return Some(PathBuf::from(p));
+        }
+    }
+    let path_var = std::env::var("PATH").ok()?;
+    for dir in path_var.split(if cfg!(windows) { ';' } else { ':' }) {
+        let candidate = Path::new(dir).join("mkdwarfs");
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
 }
 
 fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expect: &str) {
@@ -422,6 +425,13 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
         return;
     };
     let package = env.work.join("pkg");
+
+    // The gem errors 128 without <prefix>/deps/bin/mkdwarfs*; the CLI
+    // needs nothing (in-process Writer).
+    let mkdwarfs = mkdwarfs_for_gem().expect("golden requires mkdwarfs for the reference gem");
+    let deps_bin = env.prefix.join("deps").join("bin");
+    fs::create_dir_all(&deps_bin).unwrap();
+    fs::copy(&mkdwarfs, deps_bin.join(mkdwarfs.file_name().unwrap())).unwrap();
 
     seed_gem_version_file(gem, &env.prefix);
     let (code, gem_log) = run(&mut gem_press_command(gem, &env, entry, &package));
@@ -437,7 +447,8 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
     let (code, rs_out) = run(&mut Command::new(&package));
     assert_eq!(code, 0, "tebako-rs-pressed binary failed:\n{rs_out}");
 
-    let gem_log = normalize_gem_log(&gem_log);
+    let gem_log = normalize_press_log(&gem_log);
+    let rs_log = normalize_press_log(&rs_log);
     assert_eq!(
         gem_log.trim_end(),
         rs_log.trim_end(),
@@ -453,8 +464,8 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
 #[test]
 fn golden_side_by_side_with_the_gem() {
     let _guard = press_lock().lock().unwrap();
-    if !e2e_allowed() || mkdwarfs().is_none() {
-        eprintln!("skipping golden: e2e disabled or no mkdwarfs");
+    if !e2e_allowed() || mkdwarfs_for_gem().is_none() {
+        eprintln!("skipping golden: e2e disabled or no mkdwarfs for the reference gem");
         return;
     }
     let Some(gem) = reference_gem() else {

@@ -4,23 +4,25 @@
 //!   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>]
 //!                [--cwd <dir>] [-R <ruby>] [-m lean|fat]
 //!                [--image <path>:<mount>]... [--bootstrap <path>]
-//!                [--mkdwarfs <path>] [--tebako-version <v>]
+//!                [--tebako-version <v>]
 //!   tebako cache list
 //!   tebako cache prune [--all] [--older-than Nd]
 //!
 //! Lean press flow (gem's do_press_three_part): resolve the runtime into
-//! the shared cache → seed the packaging environment from its layout →
-//! deploy the application under the runtime itself (stub driver) →
-//! mkdwarfs the application image → stitch onto the bootstrap with a tpkg
-//! trailer (runtime_ref + launcher ABI v1).
+//! the shared cache (in-process HTTPS via crates/tebako-http) → seed the
+//! packaging environment from its layout → deploy the application under
+//! the runtime itself (stub driver) → build the application image
+//! in-process (the dwarfs-t Writer, `.tfs`) → stitch onto the bootstrap
+//! with a tpkg trailer (runtime_ref + launcher ABI v1).
 //!
 //! Documented deviations from the gem (README carries the full list):
 //! - the bootstrap portion defaults to the in-workspace Rust
 //!   tebako-bootstrap (sibling of the tebako binary); --bootstrap /
 //!   TEBAKO_BOOTSTRAP override, otherwise the C++ release is resolved
 //!   with the gem's BootstrapManager machinery;
-//! - mkdwarfs is looked up as --mkdwarfs > $TEBAKO_MKDWARFS > PATH >
-//!   <prefix>/deps/bin/mkdwarfs* (the gem's only source is the last one);
+//! - no mkdwarfs binary anywhere: images are built in-process via the
+//!   dwarfs-t Writer and named `.tfs` (dwarfs-t-native FlatBuffers
+//!   metadata; `.dwarfs` stays for upstream-compatible images);
 //! - the RuntimeSdk/src-release subsystem is not ported (no native
 //!   extension builds inside deploy), and neither are the gem/gemspec
 //!   scenarios;
@@ -31,6 +33,7 @@
 pub mod deploy;
 pub mod error;
 pub mod fetch;
+pub mod image;
 pub mod options;
 pub mod packager;
 pub mod resolve;
@@ -137,7 +140,6 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
             check_bootstrap_version()?;
         }
     }
-    let mkdwarfs = packager::resolve_mkdwarfs(opts)?;
 
     let runtime_resolver = Resolver::new(Flavor::Runtime);
     let runtime_path = runtime_resolver.resolve(&ruby_ver, &platform, &opts.tebako_version)?;
@@ -159,8 +161,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         )?,
     };
 
-    let app_image =
-        packager::build_app_image(opts, &mut scenario, &runtime_path, &mkdwarfs, &ruby_ver)?;
+    let app_image = packager::build_app_image(opts, &mut scenario, &runtime_path, &ruby_ver)?;
 
     let mut images: Vec<(PathBuf, String, u32)> = vec![(
         app_image,

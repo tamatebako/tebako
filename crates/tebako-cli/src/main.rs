@@ -12,7 +12,7 @@ const USAGE: &str = "Usage:
   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>] [-c <cwd>]
                [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
-               [--mkdwarfs <path>] [--tebako-version <v>]
+               [--tebako-version <v>]
   tebako cache list
   tebako cache prune [--all] [--older-than Nd]";
 
@@ -121,7 +121,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut mode = PressMode::Lean;
     let mut log_level = "error".to_string();
     let mut image_specs: Vec<String> = Vec::new();
-    let mut mkdwarfs: Option<PathBuf> = None;
     let mut bootstrap: Option<PathBuf> = None;
     let mut tebako_version = tebako_cli::DEFAULT_TEBAKO_VERSION.to_string();
     let mut devmode = false;
@@ -155,7 +154,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             }
             "-l" | "--log-level" => log_level = take_value(&mut i)?,
             "--image" => image_specs.push(take_value(&mut i)?),
-            "--mkdwarfs" => mkdwarfs = Some(PathBuf::from(take_value(&mut i)?)),
             "--bootstrap" => bootstrap = Some(PathBuf::from(take_value(&mut i)?)),
             "--tebako-version" => tebako_version = take_value(&mut i)?,
             "-D" | "--devmode" => devmode = true,
@@ -203,7 +201,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         mode,
         log_level,
         image_specs,
-        mkdwarfs,
         bootstrap,
         tebako_version,
         verbose: verbose_mode(),
