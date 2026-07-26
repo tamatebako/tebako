@@ -319,8 +319,10 @@ jobs:
     container:
       image: 'ghcr.io/${{ github.repository_owner }}/tebako-alpine-3.17-dev'
     env:
-      CC: gcc
-      CXX: g++
+      # must match the prebuilt runtime's recorded toolchain (clang), like the
+      # collapsed matrix envs -- gcc here breaks native-extension deploys
+      CC: clang
+      CXX: clang++
     steps:
     - name: Fix git configuration
       run: |
