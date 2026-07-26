@@ -98,3 +98,11 @@ dwarfs-t (C++ format lib) → releases → dwarfs-rs (FFI crate) → tebako-rs
 
 `repository_dispatch` via the `TEBAKO_CI_PAT_TOKEN` secret (existing
 mechanism; no new secrets). Bot PRs use the PAT so pull_request CI fires.
+
+## 8. Runtime retirement (locked 2026-07-26)
+
+Factory releases are KEEP-FOREVER: no deletion, no retention clock. A
+manifest/runtime_ref pinning a missing runtime (typo, pre-release ref)
+fails with the named exit-69 class error plus a hint to inspect
+available versions — never a silent fallback to a different runtime.
+Cache GC stays user-driven (`tebako cache prune`).

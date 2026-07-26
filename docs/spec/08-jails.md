@@ -89,3 +89,12 @@ The payload manifest (spec 03) gains `capabilities.host` — the access the
 payload was built to need (e.g. metanorma: read the input file's
 directory, write the output directory). Dispatch surfaces (spec 07)
 compose: manifest request ∩ user policy = effective jail.
+
+## 5. Scope (honest, locked 2026-07-26)
+
+Jails are FILESYSTEM-ONLY. `capabilities.network` is advisory metadata
+(displayed by the info surface, spec 15), not an enforcement promise;
+exec policy is out of scope (any native code can syscall directly — the
+jail covers IO routed through TFS, which is every interpreted-payload
+route). OS-level network confinement (seatbelt/seccomp/WFP) is a
+possible later layer, never claimed today.

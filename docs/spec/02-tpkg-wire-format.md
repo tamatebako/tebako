@@ -69,6 +69,39 @@ cleanup path: slot role moves to slot flags / package manifest, and
 `format_id` returns to pure image-format semantics. New semantics must
 never again be smuggled into the format axis.
 
+## 5b. Typed extension blocks (the L2 home; locked 2026-07-26)
+
+Following OCI's model — the manifest is a separate blob BESIDE the
+layers, readable without pulling any image — the package-level (L2)
+manifest lives in the container but OUTSIDE every payload image. The v2
+signing extension already proved the mechanism: blocks between the slot
+table and the trailer header are invisible to v1 readers (they only read
+the header at EOF and the slot table at its recorded offset; the bounds
+check never requires the table to abut the header).
+
+Generalized layout:
+
+```
+[bootstrap][payload slots][slot table][ext blocks…][v2 signing ext?][header @EOF]
+
+ext block: [u32be type][u32be length][payload bytes]
+  type 1 = v2 signing extension (historical: immediately before the
+           header, self-delimiting from the tail via its sig_len field)
+  type 2 = package manifest (YAML — spec 03 §6; identity, entrypoint/
+           suite composition, package-level jail + env, per-entry
+           runtime refs)
+```
+
+Rules: blocks walk forward from the end of the slot table (type+length
+self-delimit); the v2 signing ext, when present, is LAST before the
+header (unchanged bytes/position); unknown block types are skipped by
+v1-era-aware readers (forward-compat) but rejected by `validate` with a
+named error; a package manifest never duplicates payload manifests — it
+references slots, and payload manifests (spec 03) stay inside images
+(self-describing payloads). The 128-byte single `runtime_ref` remains
+for v1-era loaders; per-entry runtime references for suites and
+multi-runtime packages live in the type-2 manifest (no size cap).
+
 ## 6. Absent vs corrupt; validation
 
 - Last-166-byte window without the `"TEBA"` prefix → `NoTrailer` (classic

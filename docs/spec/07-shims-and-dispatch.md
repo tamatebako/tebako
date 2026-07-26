@@ -106,3 +106,29 @@ signed `.tfs` per (version × ruby line) → registry → dispatcher).
   error, never a segfault.
 - Shim target payload missing/corrupt → named error pointing at
   `tebako doctor`.
+
+## 8. Native exec from inside an image (the whole-chain model, locked)
+
+Running a NATIVE executable from a mounted payload loses the VFS view
+(extracted binaries see the host) and drags its dependency chain. Old
+tebako never solved this (its memfs was ruby-only; metanorma-on-tebako
+required host-installed inkscape). The locked model is three tiers:
+
+1. **Prefer static/self-contained native payloads.** Toolkit factories
+   (inkscape-class) build static or mostly-static (musl) binaries —
+   then extract-to-exec-cache is COMPLETE: one file, content-addressed
+   (`~/.tebako/exec/<sha256>/…`, 0755, verified at install), exec.
+2. **Dynamic tools: whole-closure extraction.** The manifest declares
+   the exec closure; the dispatcher materializes binary + deps into the
+   exec cache. Tools are BUILT with image-relative loader paths
+   (`$ORIGIN/../lib` RPATH), so any mount/extract location works — no
+   install-time rewriting. Once per digest, shared across consumers.
+3. **True VFS transparency for native processes = the FUSE driver**
+   (spec 11, access matrix #2): mount the payload at a real path, exec
+   natively — the only honest "binary sees the VFS" answer. Opt-in
+   (host FUSE: macFUSE/WinFsp — the one host-dependent mechanism).
+- **ptrace/syscall-interposition (retrace-class): REJECTED** as a
+  foundation — glibc+linux only, version-fragile, no macOS/Windows path.
+- Interpreted payloads (ruby) never have this problem: io-routing
+  patches virtualize file IO in-process. Other languages get the same
+  treatment via per-language runtime patches, or tier 3.

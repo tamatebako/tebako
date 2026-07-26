@@ -151,3 +151,31 @@ dispatcher, release tooling, and registry consume the SAME mapping.
   manifest (`runtime_requirement` vs cached runtimes' `provides`).
 - The bootstrap reads entrypoint/requirement from the manifest when
   present; the trailer stays the minimal path.
+
+## 6. The package manifest (L2, extension block type 2)
+
+Locked 2026-07-26 (OCI model: manifest beside the layers, readable
+without backend knowledge — spec 02 §5b). The package manifest is a YAML
+extension block in the container, OUTSIDE every payload image. It owns
+composition; payload manifests (this spec) own self-description.
+
+```yaml
+schema_version: 1
+package: {name: metanorma, version: 1.2.3, producer: {…}, created: …}
+entries:                          # one per invocable command (N=1 for simple apps)
+  - name: metanorma
+    slot: 0                       # which payload image
+    entrypoint: metanorma         # which PROVIDES entrypoint inside it
+    runtime_ref: ruby@3.4.2;tebako=0.15.9   # per-entry — suites/multi-runtime
+  - name: mn2pdf
+    slot: 1
+    entrypoint: mn2pdf
+    runtime_ref: ruby@3.3.7;tebako=0.15.9
+jail: {…}                         # package-level request (spec 08)
+env: {…}                          # package-level env (composition rules: spec 07)
+```
+
+- `runtime_ref` per entry kills the 128-byte single-field limit (suites,
+  multi-runtime packages); the trailer's v1 field stays for v1 loaders.
+- v1-era packages without the block behave exactly as today (stub.rb /
+  local conventions); the block is additive.
