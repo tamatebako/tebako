@@ -2,4 +2,11 @@
 
 source "https://rubygems.org"
 
-gem "nokogiri" # rubocop:disable Gemspec/DevelopmentDependencies
+# The modern pin is load-bearing, not cosmetic: left unpinned, the deploy
+# driver's bundler environment resolves nokogiri 1.5.11 (2012, pre-mini_portile),
+# which ignores --no-use-system-libraries and links the host's system libxml2 --
+# building only where that libxml2 is 2012-era (macOS) and failing where it is
+# current (CI containers, libxml2 2.14: "incompatible pointer to integer
+# conversion" in xslt_stylesheet.c). >= 1.16 forces the mini_portile vendored
+# libxml2 build this scenario is meant to exercise.
+gem "nokogiri", ">= 1.16"
