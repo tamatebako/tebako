@@ -1,36 +1,53 @@
 # Spec 04 — References and registries (L3)
 
 Normative specification of how payloads are named, located, and listed.
-Status: syntax LOCKED; resolver implementation PARTIAL (roadmap 07).
+Status: syntax LOCKED (multi-artifact + repo/release-class rules locked
+2026-07-26); resolver implementation PARTIAL (roadmap 07/28).
 
 ## 1. The reference syntax (MECE, no default service)
 
 One scheme family; the adapter is explicit in the scheme, never inferred:
 
 ```
-SERVICE adapters:
-  tfs:github:owner/repo:version        → GitHub releases API
-  tfs:gitlab:owner/repo:version        → GitLab releases/packages API
-  tfs:bb:owner/repo:version            → Bitbucket downloads API
+SERVICE adapters (the service's ARTIFACT storage — never the git tree):
+  tfs:github:owner/repo:version[#artifact]   → GitHub releases API
+  tfs:gitlab:owner/repo:version[#artifact]   → GitLab releases/packages API
+  tfs:bb:owner/repo:version[#artifact]       → Bitbucket downloads API
 
 PROTOCOL adapters:
   tfs+git://host/owner/repo.git@<ref>#<path-in-repo>
-      (git protocol, any host, LFS-aware; #path selects the file when a
-       repo holds many images; optional when the repo IS the registry)
+      (the GIT SOURCE — any host incl. github/gitlab/bitbucket, LFS-aware;
+       #path selects the file when a repo holds many images; optional when
+       the repo IS the registry)
   tfs+https://cdn.example.com/tool.tfs → verbatim fetch
 
 LOCAL:
   file:///opt/images/tool.tfs
 
-DIGEST PIN (any class, query form — never clashes with #path):
+DIGEST PIN (any class, query form — never clashes with #artifact/#path):
   ...?sha256=<hex>
 ```
+
+**Repo vs releases is a class distinction, never a flag.** The git tree
+is addressed ONLY by `tfs+git:`; release artifacts ONLY by
+`tfs:<service>:`. Both are supported by design — a service form never
+means "the repo", a git form never means "the release".
+
+**Multi-artifact releases (locked — no magic):**
+
+- `#artifact-name` selects one artifact within the release (same `#`
+  convention as `#path-in-repo`).
+- No `#`: the candidate class is `.tfs` images. Exactly ONE candidate →
+  used (there is no choice to guess). ZERO → `AssetNotFound`. MORE THAN
+  ONE → `AmbiguousAssets` naming every candidate so the user re-runs
+  with `#name`. The adapter NEVER auto-picks by host triplet — platform
+  selection is the registry's declarative job (§2).
 
 **Dispatch rule** (deterministic, exactly one home per reference):
 
 | scheme | adapter |
 |--------|---------|
-| `tfs:github:` / `tfs:gitlab:` / `tfs:bb:` | that service's API |
+| `tfs:github:` / `tfs:gitlab:` / `tfs:bb:` | that service's releases API |
 | `tfs+git:` | git protocol adapter |
 | `tfs+https:` (or bare http(s)) | http fetch |
 | `file://` | local file |
@@ -40,15 +57,21 @@ There is **NO default service or namespace** anywhere: every reference is
 fully explicit. (Superseded forms — `tfs://github.com/owner/repo:version`
 and any host-inferred shorthand — are rejected, never guessed.)
 
-A repo may be a COLLECTION: `#path` addresses any image inside it, and the
-repo's `tpkg-registry.yaml` lists them all. Manifest `requires` entries
-(spec 03) resolve through `{ref, constraint, mount}`.
+Manifest `requires` entries (spec 03) resolve through `{ref, constraint,
+mount}`.
 
 ## 2. The registry (developer-hosted, zero central infrastructure)
 
-A **registry** is ANY git host repo carrying `tpkg-registry.yaml` (in-repo
-or attached to its releases). The git host's releases ARE the storage —
-no server to run.
+A **registry** is ANY git host repo carrying `tpkg-registry.yaml`. The
+git host's releases ARE the storage — no server to run.
+
+**Registry resolution (locked):** `tfs:<service>:owner/repo` (no version)
+resolves the registry file from the repo's DEFAULT-BRANCH ROOT via the
+service contents API (`/tpkg-registry.yaml`); the pinned-immutable form
+`tfs:<service>:owner/repo:version#tpkg-registry.yaml` reads it as a
+release artifact (versioned with its payloads); `tfs+git://…#path` reads
+it from any git ref/path. No other locations, no search, no fallback
+chain — exactly one location per form.
 
 ```yaml
 schema_version: 1
@@ -57,25 +80,33 @@ payloads:
     kind: app
     versions:
       - version: 1.2.3
-        platforms: universal            # or per-triplet entries
-        ref: tfs:github:metanorma/metanorma:1.2.3
-        sha256: "…"
-        signature: {keyid: "…", asc: "metanorma-1.2.3.tfs.asc"}
-        runtime_requirement: {engine: ruby, constraint: ">= 3.3, < 5.0"}
+        platforms:                    # per-triplet for native-ext apps;
+          x86_64-linux-gnu:           # "universal" for pure-language
+            artifact: metanorma-1.2.3-linux-gnu-x86_64.tfs
+            sha256: "…"
+          aarch64-macos:
+            artifact: metanorma-1.2.3-macos-arm64.tfs
+            sha256: "…"
+        release: {ref: tfs:github:metanorma/metanorma:1.2.3}
+        signature: {keyid: "…", asc: "…"}        # opt-in
+        runtime_requirement: {engine: ruby, constraint: "~> 3.3.0"}
         entrypoints: [metanorma]
     default: 1.2.3
 ```
 
 - The registry MIRRORS only resolution-relevant fields (spec 03 §4 tier 3)
   — the dispatcher resolves without downloading every payload.
-- `tebako add-registry <ref>` registers one; our own tools ship built-in
-  defaults.
-- Install = resolve the manifest → download payload (signed per spec 09)
-  → verify → cache (`~/.tebako/payloads/<name>/<version>.tfs`) → link the
-  shim(s) (spec 07).
-- A developer's release flow: press → sign → upload payload + update
-  `tpkg-registry.yaml` in their repo (a `tebako publish` helper later;
-  manual first).
+- **Host-triplet selection happens HERE, declaratively**: the dispatcher
+  reads `platforms[host_triplet].artifact` (or `universal`), fetches THAT
+  artifact from the named release. Never adapter-side guessing.
+- `tebako add-registry <ref>` registers one; shipped config has ZERO
+  registries (explicit only — spec 16).
+- Install = resolve the registry → select the host entry → download →
+  verify (sha256 and/or OpenPGP signature, spec 09) → content-addressed
+  cache (`~/.tebako/payloads/<name>/<version>.tfs`) → register shims
+  (spec 07).
+- A developer's release flow: press → sign → upload payloads → commit
+  `tpkg-registry.yaml` (a `tebako publish` helper later; manual first).
 
 ## 3. Fetch discipline
 
