@@ -60,3 +60,30 @@ republish of v1-era runtimes needed.
 
 stderr body: `tebako-bootstrap: <message>\n` — message bodies match the
 C++ reference bootstrap 1:1 (golden parity).
+
+## 5. Progress UX (locked 2026-07-26)
+
+When the loader fetches a runtime or image, the user SEES the work and
+the benefit. Rules:
+
+- **TTY-only:** full progress rendering iff stderr is a TTY and
+  `TERM != dumb`; otherwise exactly two single lines (start + done), CI/
+  log-safe. Opt-outs: `NO_COLOR`, `TEBAKO_NO_PROGRESS=1`.
+- **Phases, one line each:** `resolving <runtime_ref>` →
+  `downloading <asset> (<size>)` with the live bar →
+  `verifying sha256` → `installing (locked)` → done.
+- **The bar** (hand-rolled ANSI, no deps — the size gate forbids
+  indicatif-class crates): `\r[=====>    ] 62%  14.2/23.0 MB  3.1 MB/s`
+  throttled to ≤ 10 redraws/s; unknown content-length → spinner frames +
+  byte count.
+- **The benefit is stated:** on completion —
+  `installed ruby-3.4.2-0.15.9-linux-gnu-x86_64 (23.0 MB) — cached at
+  ~/.tebako/runtimes/… and shared by every tebako app on this machine`.
+  A cache HIT prints one quiet line: `runtime ruby-3.4.2 (cached)`.
+- Progress output goes to **stderr**, never stdout (stdout belongs to
+  the payload).
+- Implementation: a tiny `tebako-term` micro-crate (TTY detect, bar,
+  spinner, phase lines) consumed by tebako-bootstrap; tebako-shim and
+  tebako-cli reuse it (no third copy). tebako-http gains an
+  `on_progress(bytes_so_far, content_length)` callback hooking the
+  stream — the bar is transport-accurate, not estimated.

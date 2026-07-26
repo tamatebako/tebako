@@ -49,7 +49,8 @@ entrypoints:                          # ARRAY — multi-entry suites; N=1 for si
     runtime_requirement: {engine: ruby, constraint: ">= 3.3, < 5.0"}
       # OPTIONAL — omit entirely for native entrypoints (see below);
       # range for pure-language; abi-line "~> 3.3.0" for native-extension payloads
-platforms: universal                  # OR explicit triplet list (§3)
+  platforms: [x86_64-linux-gnu, aarch64-macos]  # native-ext apps are triplet-bound;
+                                                # universal only for pure-language
 capabilities: {exec: true, read: true}
 ```
 **Zero-runtime entrypoints (locked):** an entrypoint whose executable is
