@@ -438,7 +438,8 @@ pub fn cmd_info(image: &Path) -> Result<String, (String, i32)> {
     let ty = match ext.as_str() {
         "zip" => "ZIP",
         "sqfs" | "squashfs" => "SquashFS",
-        "dwarfs" => "DwarFS",
+        // .tfs is the dwarfs-t-native (FlatBuffers metadata) extension
+        "dwarfs" | "tfs" => "DwarFS",
         _ => "Unknown",
     };
 
@@ -659,57 +660,16 @@ fn name_matches(pattern: &str, name: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------
-// mkimage (mkdwarfs shell-out — the writer stays external)
+// mkimage (in-process dwarfs-t Writer — no mkdwarfs binary anywhere)
 // ---------------------------------------------------------------------
 
-/// Locate mkdwarfs: the TEBAKO_MKDWARFS env var, then PATH.
-pub fn find_mkdwarfs(tool: Option<&str>) -> Option<PathBuf> {
-    if let Some(t) = tool {
-        if !t.is_empty() {
-            return Some(PathBuf::from(t));
-        }
-    }
-    if let Ok(env) = std::env::var("TEBAKO_MKDWARFS") {
-        if !env.is_empty() {
-            return Some(PathBuf::from(env));
-        }
-    }
-    find_on_path("mkdwarfs")
-}
-
-fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path_env = std::env::var("PATH").ok()?;
-    for dir in path_env.split(':') {
-        let cand = PathBuf::from(dir).join(name);
-        if cand.is_file() && is_executable(&cand) {
-            return Some(cand);
-        }
-    }
-    None
-}
-
-#[cfg(unix)]
-fn is_executable(p: &Path) -> bool {
-    use std::os::unix::ffi::OsStrExt;
-    let Ok(c) = CString::new(p.as_os_str().as_bytes()) else {
-        return false;
-    };
-    unsafe { libc::access(c.as_ptr(), libc::X_OK) == 0 }
-}
-
-#[cfg(not(unix))]
-fn is_executable(p: &Path) -> bool {
-    p.is_file()
-}
-
-/// `tfs mkimage --format dwarfs <srcdir> -o <img>` — shells out to
-/// mkdwarfs (the dwarfs WRITER is deliberately not bound; see README).
-pub fn cmd_mkimage(
-    format: &str,
-    source_dir: &Path,
-    output: &Path,
-    tool: Option<&str>,
-) -> Result<(), (String, i32)> {
+/// `tfs mkimage --format dwarfs <srcdir> -o <img>` — builds the image
+/// in-process via the dwarfs-t Writer (the same C ABI the reader uses;
+/// no mkdwarfs binary, no PATH lookup). An existing output is replaced
+/// (the mkdwarfs --force parity). Images carry dwarfs-t-native
+/// (FlatBuffers) metadata — name them `.tfs` (the `.dwarfs` extension
+/// stays for upstream-compatible images).
+pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(), (String, i32)> {
     let fmt = format.to_lowercase();
     if fmt == "zip" {
         return Err((
@@ -737,47 +697,22 @@ pub fn cmd_mkimage(
             1,
         ));
     }
-    let Some(exe) = find_mkdwarfs(tool) else {
-        return Err((
-            "mkdwarfs not found on PATH (install dwarfs or set TEBAKO_MKDWARFS)".to_string(),
-            1,
-        ));
-    };
-    if !exe.is_file() {
-        return Err((format!("mkdwarfs not found: {}", exe.display()), 1));
+    // The Writer never overwrites; mkimage keeps the mkdwarfs --force
+    // semantics by removing the target first.
+    if output.exists() {
+        std::fs::remove_file(output)
+            .map_err(|e| (format!("cannot replace {}: {e}", output.display()), 1))?;
     }
-
-    let status = std::process::Command::new(&exe)
-        .arg("-i")
-        .arg(source_dir)
-        .arg("-o")
-        .arg(output)
-        .arg("--no-progress")
-        .arg("--force")
-        .status();
-    let Ok(status) = status else {
-        return Err((format!("mkdwarfs failed to start: {}", exe.display()), 1));
-    };
-    if !status.success() {
-        return Err((
-            format!(
-                "mkdwarfs failed (exit code {}): \"{}\" -i \"{}\" -o \"{}\" --no-progress --force",
-                status.code().unwrap_or(-1),
-                exe.display(),
-                source_dir.display(),
-                output.display()
-            ),
+    let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default())
+        .map_err(|e| (format!("dwarfs writer: {e}"), 1))?;
+    writer.add_tree(source_dir, "/").map_err(|e| {
+        (
+            format!("dwarfs writer: scanning {}: {e}", source_dir.display()),
             1,
-        ));
-    }
-    if !output.is_file() {
-        return Err((
-            format!(
-                "mkdwarfs did not produce an output file: {}",
-                output.display()
-            ),
-            1,
-        ));
-    }
+        )
+    })?;
+    writer
+        .write(output)
+        .map_err(|e| (format!("dwarfs writer: {}: {e}", output.display()), 1))?;
     Ok(())
 }

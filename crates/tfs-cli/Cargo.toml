@@ -12,6 +12,8 @@ categories = ["filesystem", "command-line-utilities"]
 
 [dependencies]
 tfs = { version = "0.1.0", path = "../tfs" }
+# The in-process DwarFS writer for mkimage (dwarfs-t-rs).
+dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 libc = "0.2"
 
 [[bin]]

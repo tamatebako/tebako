@@ -988,7 +988,9 @@ fn plain_archive_summary(archive: &Path) -> Result<String, String> {
     let ty = match ext.as_str() {
         "zip" => "ZIP",
         "sqfs" | "squashfs" => "SquashFS",
-        "dwarfs" => "DwarFS",
+        // .tfs is the dwarfs-t-native (FlatBuffers metadata) extension
+        // (postdates the C++ heuristics, which know .dwarfs only)
+        "dwarfs" | "tfs" => "DwarFS",
         _ => "Unknown",
     };
 

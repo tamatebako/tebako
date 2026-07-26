@@ -68,7 +68,6 @@ struct Args {
     dest: Option<String>,
     output: Option<String>,
     format: Option<String>,
-    mkdwarfs: Option<String>,
 }
 
 impl Args {
@@ -138,7 +137,6 @@ impl Args {
                 "-d" | "--dest" => a.dest = Some(take_value(&mut i)?),
                 "-o" | "--output" => a.output = Some(take_value(&mut i)?),
                 "--format" => a.format = Some(take_value(&mut i)?),
-                "--mkdwarfs" => a.mkdwarfs = Some(take_value(&mut i)?),
                 _ if arg.starts_with('-') => return Err(format!("unknown option: {arg}")),
                 _ => a.positional.push(arg.to_string()),
             }
@@ -333,12 +331,7 @@ fn cmd_mkimage_main(rest: &[String]) -> ExitCode {
     let Some(output) = a.output else {
         return fail("Error: missing required option --output");
     };
-    match cmd_mkimage(
-        &format,
-        Path::new(&a.positional[0]),
-        Path::new(&output),
-        a.mkdwarfs.as_deref(),
-    ) {
+    match cmd_mkimage(&format, Path::new(&a.positional[0]), Path::new(&output)) {
         Ok(()) => {
             if a.verbose {
                 println!("Wrote {} image: {output}", format.to_lowercase());
@@ -363,7 +356,7 @@ fn print_help() {
     println!("  stat     Show file/directory metadata");
     println!("  extract  Extract archive contents (-d dest, default .)");
     println!("  find     Search for files by name glob");
-    println!("  mkimage  Create a dwarfs image from a directory (wraps mkdwarfs)");
+    println!("  mkimage  Create a dwarfs (.tfs) image from a directory (in-process writer)");
     println!("  help     Show help\n");
     println!("Package (tpkg trailer) operations live in tebako-pkg.");
 }
