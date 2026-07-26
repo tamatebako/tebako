@@ -5,10 +5,10 @@ use crate::error::TpkgError;
 use crate::model::{put_str, Manifest, Slot, V2Extension};
 use crate::{crc32, off, rec};
 use crate::{
-    TPKG_DIGESTS_SIZE, TPKG_HEADER_SIZE, TPKG_KEYID_LEN, TPKG_MAGIC, TPKG_MAGIC_LEN,
-    TPKG_MAGIC_PREFIX_LEN, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN, TPKG_RUNTIME_REF_LEN,
-    TPKG_SHA256_LEN, TPKG_SIGLEN_SIZE, TPKG_SIG_MAX, TPKG_SLOT_SIZE, TPKG_V2_EXT_FIXED,
-    TPKG_VERSION, TPKG_VERSION_2,
+    TPKG_DIGESTS_SIZE, TPKG_FLAG_SIGNED_V2, TPKG_HEADER_SIZE, TPKG_KEYID_LEN, TPKG_MAGIC,
+    TPKG_MAGIC_LEN, TPKG_MAGIC_PREFIX_LEN, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN,
+    TPKG_RUNTIME_REF_LEN, TPKG_SHA256_LEN, TPKG_SIGLEN_SIZE, TPKG_SIG_MAX, TPKG_SLOT_SIZE,
+    TPKG_V2_EXT_FIXED, TPKG_VERSION,
 };
 
 fn get32(p: &[u8]) -> u32 {
@@ -59,11 +59,12 @@ pub(crate) fn hex_lower(bytes: &[u8]) -> String {
     s
 }
 
-/// Serialize the slot table + trailer header for `manifest`, placing the
-/// slot table at absolute file offset `slot_table_offset` (i.e. the current
-/// EOF when appending). Returns `slot_count * TPKG_SLOT_SIZE +
-/// TPKG_HEADER_SIZE` bytes for a v1 manifest, plus
-/// `TPKG_V2_EXT_FIXED + signature.len()` more for a v2 manifest.
+/// Serialize the slot table + v2 extension (when present) + trailer
+/// header for `manifest`, placing the slot table at absolute file offset
+/// `slot_table_offset` (i.e. the current EOF when appending). Returns
+/// `slot_count * TPKG_SLOT_SIZE + TPKG_HEADER_SIZE` bytes for an unsigned
+/// manifest, plus `TPKG_V2_EXT_FIXED + signature.len()` more for a signed
+/// (TPKG_FLAG_SIGNED_V2) one.
 ///
 /// The manifest is validated first; nothing is produced for a rejected
 /// manifest (mirrors the C writer appending nothing).
@@ -90,8 +91,23 @@ pub fn encode_trailer(manifest: &Manifest, slot_table_offset: u64) -> Result<Vec
         );
     }
 
-    // trailer header
-    let hbase = manifest.slots.len() * TPKG_SLOT_SIZE;
+    // v2 chain-of-trust extension (between the slot table and the header;
+    // sig_len big-endian, immediately before the header)
+    let hbase = manifest.slots.len() * TPKG_SLOT_SIZE + ext_len;
+    if let Some(v2) = &manifest.v2 {
+        let xbase = manifest.slots.len() * TPKG_SLOT_SIZE;
+        let sig_len = v2.signature.len();
+        let x = &mut out[xbase..];
+        for (i, d) in v2.slot_digests.iter().enumerate() {
+            x[i * TPKG_SHA256_LEN..(i + 1) * TPKG_SHA256_LEN].copy_from_slice(d);
+        }
+        x[TPKG_DIGESTS_SIZE..TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN].copy_from_slice(&v2.signer_keyid);
+        let sig_base = TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN;
+        x[sig_base..sig_base + sig_len].copy_from_slice(&v2.signature);
+        put32be(&mut x[sig_base + sig_len..], sig_len as u32);
+    }
+
+    // trailer header (at EOF, exactly as v1)
     let hdr = &mut out[hbase..hbase + TPKG_HEADER_SIZE];
     hdr[off::MAGIC..off::MAGIC + TPKG_MAGIC_LEN].copy_from_slice(TPKG_MAGIC);
     put32(&mut hdr[off::VERSION..], manifest.version);
@@ -105,20 +121,6 @@ pub fn encode_trailer(manifest: &Manifest, slot_table_offset: u64) -> Result<Vec
     put32(&mut hdr[off::LAUNCHER_ABI..], manifest.launcher_abi);
     let crc = crc32(&hdr[..off::CRC32]);
     put32(&mut hdr[off::CRC32..], crc);
-
-    // v2 chain-of-trust extension (big-endian sig_len, at the very end)
-    if let Some(v2) = &manifest.v2 {
-        let xbase = hbase + TPKG_HEADER_SIZE;
-        let sig_len = v2.signature.len();
-        let x = &mut out[xbase..];
-        for (i, d) in v2.slot_digests.iter().enumerate() {
-            x[i * TPKG_SHA256_LEN..(i + 1) * TPKG_SHA256_LEN].copy_from_slice(d);
-        }
-        x[TPKG_DIGESTS_SIZE..TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN].copy_from_slice(&v2.signer_keyid);
-        let sig_base = TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN;
-        x[sig_base..sig_base + sig_len].copy_from_slice(&v2.signature);
-        put32be(&mut x[sig_base + sig_len..], sig_len as u32);
-    }
 
     Ok(out)
 }
@@ -228,7 +230,8 @@ pub(crate) fn parse_v2_extension(x: &[u8], slot_count: u32) -> Result<V2Extensio
     Ok(V2Extension {
         slot_digests,
         signer_keyid,
-        signature: x[TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN..TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN + sig_len]
+        signature: x
+            [TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN..TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN + sig_len]
             .to_vec(),
     })
 }
@@ -253,45 +256,38 @@ pub(crate) fn finish(
     Ok(manifest)
 }
 
-/// The v2 probe position of the trailer header within an image of `size`
-/// bytes, derived from the trailing big-endian sig_len field.
-/// `Some(header_offset)` when the sig_len is in range and the fixed v2
-/// structure fits; `None` when the file cannot be a v2 package.
-pub(crate) fn v2_header_offset(size: u64, sig_len: u32) -> Option<u64> {
-    if sig_len == 0 || sig_len > TPKG_SIG_MAX {
-        return None;
-    }
-    let tail = TPKG_SIGLEN_SIZE as u64 + u64::from(sig_len) + TPKG_KEYID_LEN as u64
-        + TPKG_DIGESTS_SIZE as u64
-        + TPKG_HEADER_SIZE as u64;
-    if size < tail {
-        return None;
-    }
-    Some(size - tail)
-}
-
-/// Read the big-endian sig_len field at the very end of an image.
-pub(crate) fn trailing_sig_len(last4: &[u8]) -> u32 {
-    debug_assert_eq!(last4.len(), TPKG_SIGLEN_SIZE);
-    get32be(last4)
-}
-
-/// The canonical (signed) region of a v2 trailer: everything except the
-/// trailing sig_len field and the signature itself. `trailer` must be the
-/// exact trailer bytes (slot table + header + extension).
-pub fn v2_signed_region(trailer: &[u8]) -> Result<&[u8], TpkgError> {
-    if trailer.len() < TPKG_SIGLEN_SIZE {
+/// The canonical (signed) region of a v2 trailer: slot table || digest
+/// array || keyid || trailer header — the two contiguous spans
+/// concatenated (everything except the signature and its length field).
+/// `trailer` must be the exact trailer bytes (slot table + extension +
+/// header).
+pub fn v2_signed_region(trailer: &[u8]) -> Result<Vec<u8>, TpkgError> {
+    if trailer.len() < TPKG_V2_EXT_FIXED + TPKG_HEADER_SIZE {
         return Err(TpkgError::Invalid);
     }
-    let sig_len = trailing_sig_len(&trailer[trailer.len() - TPKG_SIGLEN_SIZE..]) as usize;
-    if sig_len == 0 || trailer.len() < TPKG_SIGLEN_SIZE + sig_len {
+    let sig_len = get32be(
+        &trailer
+            [trailer.len() - TPKG_HEADER_SIZE - TPKG_SIGLEN_SIZE..trailer.len() - TPKG_HEADER_SIZE],
+    ) as usize;
+    if sig_len == 0 || sig_len > TPKG_SIG_MAX as usize {
         return Err(TpkgError::Invalid);
     }
-    Ok(&trailer[..trailer.len() - TPKG_SIGLEN_SIZE - sig_len])
+    let ext_len = TPKG_V2_EXT_FIXED + sig_len;
+    if trailer.len() < ext_len + TPKG_HEADER_SIZE {
+        return Err(TpkgError::Invalid);
+    }
+    let table_len = trailer.len() - TPKG_HEADER_SIZE - ext_len;
+    let mut region =
+        Vec::with_capacity(table_len + TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN + TPKG_HEADER_SIZE);
+    // span 1: slot table + digests + keyid
+    region.extend_from_slice(&trailer[..table_len + TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN]);
+    // span 2: the trailer header
+    region.extend_from_slice(&trailer[table_len + ext_len..]);
+    Ok(region)
 }
 
 /// Total on-disk trailer length for a parsed manifest (slot table +
-/// header [+ v2 extension]).
+/// [v2 extension +] header).
 pub fn trailer_len(m: &Manifest) -> u64 {
     let base = m.slots.len() as u64 * TPKG_SLOT_SIZE as u64 + TPKG_HEADER_SIZE as u64;
     base + m
@@ -301,43 +297,13 @@ pub fn trailer_len(m: &Manifest) -> u64 {
 }
 
 /// Read the manifest trailer from an in-memory image of the binary
-/// (mirrors the C `tpkg_read_mem()`, extended with the v2 probe).
+/// (mirrors the C `tpkg_read_mem()`, extended with the v2 flag check).
 pub fn parse_trailer(data: &[u8]) -> Result<Manifest, TpkgError> {
     let size = data.len() as u64;
     if size < TPKG_HEADER_SIZE as u64 {
         return Err(TpkgError::NoTrailer);
     }
 
-    // Stage A: v2 probe (big-endian sig_len at EOF, header before the
-    // extension). Commits to the v2 reading only when a fully valid
-    // (magic+crc) trailer header with version == 2 sits at the probe
-    // position; any earlier probe failure falls through to the v1 reading.
-    if size >= TPKG_SIGLEN_SIZE as u64 {
-        let sig_len = trailing_sig_len(&data[data.len() - TPKG_SIGLEN_SIZE..]);
-        if let Some(hoff) = v2_header_offset(size, sig_len) {
-            let hoff = hoff as usize;
-            if data[hoff..hoff + TPKG_MAGIC_PREFIX_LEN] == TPKG_MAGIC[..TPKG_MAGIC_PREFIX_LEN] {
-                if let Ok(header) =
-                    parse_header(&data[hoff..hoff + TPKG_HEADER_SIZE], (hoff + TPKG_HEADER_SIZE) as u64)
-                {
-                    if header.version == TPKG_VERSION_2 {
-                        // a valid v2 header: extension errors are hard failures
-                        let xbase = hoff + TPKG_HEADER_SIZE;
-                        let v2 = parse_v2_extension(&data[xbase..], header.slot_count)?;
-                        let table_start = header.slot_table_offset as usize;
-                        let slots = (0..header.slot_count as usize)
-                            .map(|i| {
-                                parse_slot_record(&data[table_start + i * TPKG_SLOT_SIZE..table_start + (i + 1) * TPKG_SLOT_SIZE])
-                            })
-                            .collect();
-                        return finish(&header, slots, Some(v2));
-                    }
-                }
-            }
-        }
-    }
-
-    // Stage B: v1 (header at EOF, no extension)
     let hdr = &data[data.len() - TPKG_HEADER_SIZE..];
     let header = parse_header(hdr, size)?;
     if header.version != TPKG_VERSION {
@@ -348,8 +314,20 @@ pub fn parse_trailer(data: &[u8]) -> Result<Manifest, TpkgError> {
     let table_len = header.slot_count as usize * TPKG_SLOT_SIZE;
     let table = &data[table_start..table_start + table_len];
 
-    let slots = (0..header.slot_count as usize)
+    let slots: Vec<Slot> = (0..header.slot_count as usize)
         .map(|i| parse_slot_record(&table[i * TPKG_SLOT_SIZE..(i + 1) * TPKG_SLOT_SIZE]))
         .collect();
-    finish(&header, slots, None)
+
+    let v2 = if header.package_flags & TPKG_FLAG_SIGNED_V2 != 0 {
+        let ext_start = table_start + table_len;
+        let ext_end = data.len() - TPKG_HEADER_SIZE;
+        Some(parse_v2_extension(
+            &data[ext_start..ext_end],
+            header.slot_count,
+        )?)
+    } else {
+        None
+    };
+
+    finish(&header, slots, v2)
 }

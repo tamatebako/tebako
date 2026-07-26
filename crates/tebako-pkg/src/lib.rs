@@ -238,7 +238,7 @@ fn sign_and_write_trailer(
     v2.signer_keyid = press.keyid;
     v2.signature = vec![0u8]; // placeholder (excluded from the signed region)
 
-    m.version = tpkg::TPKG_VERSION_2;
+    m.package_flags |= tpkg::TPKG_FLAG_SIGNED_V2;
     m.v2 = Some(v2);
 
     let end = f
@@ -248,7 +248,7 @@ fn sign_and_write_trailer(
         .map_err(|e| format!("tpkg trailer encode failed: {}", tpkg::strerror(e.code())))?;
     let region = tpkg::v2_signed_region(&trailer)
         .map_err(|e| format!("tpkg trailer encode failed: {}", tpkg::strerror(e.code())))?;
-    let signature = tebako_signer::sign_detached(region, &press.secret_key, &press.fingerprint)
+    let signature = tebako_signer::sign_detached(&region, &press.secret_key, &press.fingerprint)
         .map_err(|e| e.to_string())?;
 
     m.v2.as_mut().unwrap().signature = signature;
@@ -997,7 +997,7 @@ fn signature_status(archive: &Path, m: &Manifest) -> String {
             tpkg::v2_signed_region(&trailer).map_err(|e| tpkg::strerror(e.code()).to_string())?;
 
         let outcome =
-            tebako_signer::verify_detached(&keyring, region, &v2.signature, &v2.signer_keyid)
+            tebako_signer::verify_detached(&keyring, &region, &v2.signature, &v2.signer_keyid)
                 .map_err(|e| e.to_string())?;
         Ok(match outcome {
             tebako_signer::VerifyOutcome::Trusted(_) => "trusted".to_string(),
@@ -1047,8 +1047,15 @@ pub fn info(archive: &Path) -> Result<String, String> {
             total_size
         ));
         out.push_str(&format!("Flags: 0x{:x}", m.package_flags));
-        if m.is_lean() {
-            out.push_str(" (LEAN)");
+        if m.is_lean() || m.package_flags & tpkg::TPKG_FLAG_SIGNED_V2 != 0 {
+            let mut names: Vec<&str> = Vec::new();
+            if m.is_lean() {
+                names.push("LEAN");
+            }
+            if m.package_flags & tpkg::TPKG_FLAG_SIGNED_V2 != 0 {
+                names.push("SIGNED_V2");
+            }
+            out.push_str(&format!(" ({})", names.join("|")));
         }
         out.push('\n');
         out.push_str(&format!("Launcher ABI: {}\n", m.launcher_abi));

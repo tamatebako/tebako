@@ -53,7 +53,7 @@ fn bundle_produces_signed_v2_package() {
 
         let mut f = std::fs::File::open(&out).unwrap();
         let m = tpkg::read_from(&mut f).expect("parse trailer");
-        assert_eq!(m.version, tpkg::TPKG_VERSION_2);
+        assert_ne!(m.package_flags & tpkg::TPKG_FLAG_SIGNED_V2, 0);
         assert_eq!(m.slots.len(), 1);
 
         let v2 = m.v2.as_ref().expect("v2 extension");

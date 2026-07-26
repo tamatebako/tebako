@@ -15,8 +15,8 @@ fn digest(byte: u8) -> [u8; TPKG_SHA256_LEN] {
 
 fn golden_v2_manifest() -> Manifest {
     let mut m = Manifest {
-        version: TPKG_VERSION_2,
-        package_flags: TPKG_FLAG_LEAN,
+        version: TPKG_VERSION,
+        package_flags: TPKG_FLAG_LEAN | TPKG_FLAG_SIGNED_V2,
         launcher_abi: 3,
         ..Default::default()
     };
@@ -39,18 +39,11 @@ fn golden_v2_manifest() -> Manifest {
 fn v2_golden_layout_offsets() {
     let trailer = encode_trailer(&golden_v2_manifest(), PAYLOAD).unwrap();
 
-    // 2*280 slot records + 166 header + 256 digests + 8 keyid + 4 siglen + 130 sig
-    assert_eq!(trailer.len(), 2 * 280 + 166 + 256 + 8 + 4 + 130);
+    // 2*280 slot records + 256 digests + 8 keyid + 130 sig + 4 siglen + 166 header
+    assert_eq!(trailer.len(), 2 * 280 + 256 + 8 + 130 + 4 + 166);
 
-    let hbase = 2 * 280;
-    // header magic + version (v1 codec: little-endian)
-    assert_eq!(&trailer[hbase..hbase + 10], TPKG_MAGIC);
-    assert_eq!(&trailer[hbase + 10..hbase + 14], &2u32.to_le_bytes());
-    // slot table offset (LE, as v1)
-    assert_eq!(&trailer[hbase + 22..hbase + 30], &PAYLOAD.to_le_bytes());
-
-    // digests immediately after the header
-    let xbase = hbase + 166;
+    // extension immediately after the slot table
+    let xbase = 2 * 280;
     assert!(trailer[xbase..xbase + 32].iter().all(|&b| b == 0x11));
     assert!(trailer[xbase + 32..xbase + 64].iter().all(|&b| b == 0x22));
     // unused digest entries zeroed
@@ -63,11 +56,17 @@ fn v2_golden_layout_offsets() {
         &[0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xF0, 0x0D]
     );
 
-    // siglen BIG-ENDIAN at the very end, after the signature bytes
+    // signature, then siglen BIG-ENDIAN, then the v1 header at EOF
     let sbase = kbase + 8;
     assert!(trailer[sbase..sbase + 130].iter().all(|&b| b == 0x5A));
     let lbase = sbase + 130;
     assert_eq!(&trailer[lbase..lbase + 4], &130u32.to_be_bytes());
+
+    let hbase = lbase + 4;
+    assert_eq!(&trailer[hbase..hbase + 10], TPKG_MAGIC);
+    assert_eq!(&trailer[hbase + 10..hbase + 14], &1u32.to_le_bytes());
+    assert_eq!(&trailer[hbase + 14..hbase + 18], &3u32.to_le_bytes()); // LEAN|SIGNED_V2
+    assert_eq!(&trailer[hbase + 22..hbase + 30], &PAYLOAD.to_le_bytes());
 }
 
 #[test]
@@ -92,13 +91,39 @@ fn v2_round_trip_both_readers() {
 }
 
 #[test]
-fn v2_signed_region_is_the_contiguous_prefix() {
+fn v2_signed_region_spans_table_digests_keyid_header() {
     let m = golden_v2_manifest();
     let trailer = encode_trailer(&m, PAYLOAD).unwrap();
     let region = v2_signed_region(&trailer).unwrap();
-    // canonical = slot table + header + digests + keyid (no siglen, no sig)
-    assert_eq!(region.len(), 2 * 280 + 166 + 256 + 8);
-    assert_eq!(&region[..], &trailer[..region.len()]);
+    // canonical = slot table || digests || keyid || header (two spans)
+    let table_len = 2 * 280;
+    assert_eq!(region.len(), table_len + 256 + 8 + 166);
+    // span 1: table + digests + keyid (contiguous prefix of the trailer)
+    assert_eq!(
+        &region[..table_len + 256 + 8],
+        &trailer[..table_len + 256 + 8]
+    );
+    // span 2: the trailer header (from the end of the trailer)
+    assert_eq!(
+        &region[table_len + 256 + 8..],
+        &trailer[trailer.len() - 166..]
+    );
+}
+
+#[test]
+fn v1_reader_perspective_ignores_the_extension() {
+    // the backward-compatibility contract: a v2 file must present a valid
+    // v1 header at EOF (version stays 1, crc valid) — old runtimes read it
+    // and never look at the extension bytes between table and header
+    let m = golden_v2_manifest();
+    let trailer = encode_trailer(&m, PAYLOAD).unwrap();
+    let hdr = &trailer[trailer.len() - 166..];
+    assert_eq!(&hdr[..10], TPKG_MAGIC);
+    assert_eq!(&hdr[10..14], &1u32.to_le_bytes()); // version stays 1
+    assert!(crc32(&hdr[..162]) == u32::from_le_bytes(hdr[162..166].try_into().unwrap()));
+    // slot count + table offset read identically to the unsigned format
+    assert_eq!(&hdr[18..22], &2u32.to_le_bytes());
+    assert_eq!(&hdr[22..30], &PAYLOAD.to_le_bytes());
 }
 
 #[test]
@@ -130,9 +155,16 @@ fn v2_rejects_zero_keyid() {
 }
 
 #[test]
-fn v2_extension_without_version_2_is_rejected() {
+fn v2_extension_without_the_flag_is_rejected() {
     let mut m = golden_v2_manifest();
-    m.version = TPKG_VERSION; // v1 header carrying an extension
+    m.package_flags &= !TPKG_FLAG_SIGNED_V2; // extension but no flag
+    assert_eq!(encode_trailer(&m, PAYLOAD), Err(TpkgError::Invalid));
+}
+
+#[test]
+fn v2_flag_without_extension_is_rejected() {
+    let mut m = golden_v2_manifest();
+    m.v2 = None; // flag but no extension
     assert_eq!(encode_trailer(&m, PAYLOAD), Err(TpkgError::Invalid));
 }
 
@@ -148,12 +180,12 @@ fn truncated_signature_fails_closed() {
     let m = golden_v2_manifest();
     let mut image = vec![0u8; PAYLOAD as usize];
     image.extend_from_slice(&encode_trailer(&m, PAYLOAD).unwrap());
-    // drop 10 bytes from the middle of the signature: the trailing sig_len
-    // probe then lands off the header and the file no longer reads as a
-    // package at all — refused (fail closed), never silently accepted
-    let sig_start = PAYLOAD as usize + 2 * 280 + 166 + 264 + 20;
+    // drop 10 bytes from the middle of the signature: the extension's
+    // declared sig_len no longer matches its actual length — refused
+    // (fail closed), never silently accepted
+    let sig_start = PAYLOAD as usize + 2 * 280 + 264 + 20;
     image.drain(sig_start..sig_start + 10);
-    assert_eq!(parse_trailer(&image), Err(TpkgError::NoTrailer));
+    assert_eq!(parse_trailer(&image), Err(TpkgError::Invalid));
 }
 
 #[test]
@@ -161,8 +193,8 @@ fn tampered_digest_tail_is_rejected() {
     let m = golden_v2_manifest();
     let mut image = vec![0u8; PAYLOAD as usize];
     image.extend_from_slice(&encode_trailer(&m, PAYLOAD).unwrap());
-    // flip a byte in an unused digest entry
-    let hbase = PAYLOAD as usize + 2 * 280 + 166;
+    // flip a byte in an unused digest entry (digests follow the slot table)
+    let hbase = PAYLOAD as usize + 2 * 280;
     image[hbase + 7 * 32] ^= 0xFF;
     assert_eq!(parse_trailer(&image), Err(TpkgError::Invalid));
 }

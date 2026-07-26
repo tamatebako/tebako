@@ -33,14 +33,21 @@
 //!
 //! # Wire layout (v2 — the chain-of-trust extension)
 //!
-//! v2 appends the integrity/authenticity material AFTER the (otherwise
-//! unchanged) trailer header. The header keeps the v1 codec exactly
-//! (little-endian numerics, crc32 over header bytes [0, 162) — the crc is
-//! an accident-integrity check, NOT authenticity); slot records are
-//! unchanged as well. All NEW v2 extension numerics are big-endian:
+//! v2 carries the integrity/authenticity material BETWEEN the slot table
+//! and the trailer header, keeping the header exactly where v1 readers
+//! expect it (at EOF, version field still 1). v2-ness is marked by
+//! `TPKG_FLAG_SIGNED_V2` (bit 1) in package_flags — a flag old readers
+//! pass through untouched (the C `tpkg_validate` does not inspect flags,
+//! and its bounds check never requires the table to abut the header), so
+//! v1-era runtimes keep reading v2 packages exactly as before (they just
+//! don't verify), while v2-aware readers enforce the chain. The header
+//! keeps the v1 codec exactly (little-endian numerics, crc32 over header
+//! bytes [0, 162) — the crc is an accident-integrity check, NOT
+//! authenticity); slot records are unchanged as well. All NEW v2
+//! extension numerics are big-endian:
 //!
 //! ```text
-//! [payload][slot records][trailer header (166, version = 2)][v2 extension][EOF]
+//! [payload][slot records][v2 extension][trailer header (166, at EOF)]
 //!
 //! v2 extension (TPKG_V2_EXT_FIXED = 268 bytes + variable signature):
 //!   offset  size  field
@@ -52,15 +59,17 @@
 //!                  canonical trailer bytes
 //! 264+sig_len 4  u32be signature length sig_len (1..TPKG_SIG_MAX)
 //!
-//! canonical (signed) bytes: one contiguous span — the slot table, the
-//! trailer header, the digest array and the keyid, i.e. everything except
-//! the trailing [signature][sig_len field].
+//! canonical (signed) bytes: slot table || digest array || keyid ||
+//! trailer header — the two contiguous spans concatenated (everything
+//! except the signature and its length field).
 //! ```
 //!
-//! Detection: the last 4 bytes of the file are the big-endian sig_len;
-//! the v2 header sits `4 + sig_len + 8 + 256 + 166` bytes before EOF.
-//! A v1 trailer is still parsed exactly as before (header at EOF, no
-//! extension) — v1 = legacy unsigned (see item 29's v1-legacy rule).
+//! Detection: parse the v1 header at EOF as always; if
+//! `TPKG_FLAG_SIGNED_V2` is set, the extension of exactly
+//! `256 + 8 + sig_len + 4` bytes must fill the gap between the slot table
+//! and the header (with the digest tail zeroed). A v1 trailer (flag
+//! clear) has no extension and still parses exactly as before — v1 =
+//! legacy unsigned (see item 29's v1-legacy rule).
 //!
 //! # Absent vs. corrupt
 //!
@@ -98,10 +107,10 @@ pub use error::{strerror, TpkgError};
 pub use io::{read_from, write_to};
 pub use model::{Manifest, Slot, V2Extension};
 
-/// Manifest format version (legacy unsigned trailers; still parsed).
+/// Manifest format version (stays 1: the chain-of-trust extension is
+/// flagged via `TPKG_FLAG_SIGNED_V2`, not a version bump, so v1-era
+/// readers keep working).
 pub const TPKG_VERSION: u32 = 1;
-/// Manifest format version carrying the chain-of-trust extension.
-pub const TPKG_VERSION_2: u32 = 2;
 /// Maximum number of payload slots.
 pub const TPKG_MAX_SLOTS: u32 = 8;
 /// Trailer header size in bytes.
@@ -122,6 +131,11 @@ pub const TPKG_MAGIC_PREFIX_LEN: usize = 4;
 /// `package_flags` bit 0: lean package (bootstrap+images only, runtime
 /// resolved at run time).
 pub const TPKG_FLAG_LEAN: u32 = 0x1;
+/// `package_flags` bit 1: the package carries the v2 chain-of-trust
+/// extension between the slot table and the trailer header (item 29).
+/// Old readers pass the bit through untouched — that is what keeps v2
+/// packages readable by v1-era runtimes.
+pub const TPKG_FLAG_SIGNED_V2: u32 = 0x2;
 
 /// `format_id`: auto-detect from image magic.
 pub const TPKG_FORMAT_AUTO: u32 = 0;

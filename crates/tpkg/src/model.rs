@@ -2,8 +2,8 @@
 
 use crate::error::TpkgError;
 use crate::{
-    TPKG_FORMAT_RUNTIME, TPKG_KEYID_LEN, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN, TPKG_RUNTIME_REF_LEN,
-    TPKG_SHA256_LEN, TPKG_SIG_MAX, TPKG_VERSION, TPKG_VERSION_2,
+    TPKG_FLAG_SIGNED_V2, TPKG_FORMAT_RUNTIME, TPKG_KEYID_LEN, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN,
+    TPKG_RUNTIME_REF_LEN, TPKG_SHA256_LEN, TPKG_SIG_MAX, TPKG_VERSION,
 };
 
 /// One payload slot (the in-Rust form of C `tpkg_slot`).
@@ -70,7 +70,7 @@ impl Slot {
 
 /// The v2 chain-of-trust extension (item 29): per-slot SHA-256 digests,
 /// the signer keyid and the OpenPGP detached signature over the canonical
-/// trailer bytes. Present iff `Manifest::version == TPKG_VERSION_2`.
+/// trailer bytes. Present iff `package_flags` has `TPKG_FLAG_SIGNED_V2`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct V2Extension {
     /// One SHA-256 digest per possible slot; slot i's digest at index i,
@@ -110,7 +110,9 @@ impl Default for V2Extension {
 /// The package manifest (the in-Rust form of C `tpkg_manifest`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Manifest {
-    /// Format version (`TPKG_VERSION` = 1 or `TPKG_VERSION_2` = 2).
+    /// Format version (`TPKG_VERSION`; the v2 extension is flagged via
+    /// `TPKG_FLAG_SIGNED_V2`, not a version bump, so v1-era readers keep
+    /// working).
     pub version: u32,
     /// `TPKG_FLAG_*` bits.
     pub package_flags: u32,
@@ -120,7 +122,8 @@ pub struct Manifest {
     pub runtime_ref: [u8; TPKG_RUNTIME_REF_LEN],
     /// Payload slots (`1..=TPKG_MAX_SLOTS` entries in a valid manifest).
     pub slots: Vec<Slot>,
-    /// Chain-of-trust extension (present iff `version == TPKG_VERSION_2`).
+    /// Chain-of-trust extension (present iff `package_flags` has
+    /// `TPKG_FLAG_SIGNED_V2`).
     pub v2: Option<V2Extension>,
 }
 
@@ -162,11 +165,12 @@ impl Manifest {
     /// Magic-independent structural checks, mirroring the C `tpkg_validate()`:
     /// version supported, `1..=TPKG_MAX_SLOTS` slots, `offset+size`
     /// non-overflowing, `format_id <= TPKG_FORMAT_RUNTIME`, `runtime_ref` and
-    /// mount points NUL-terminated within their fixed fields; v2 additionally
-    /// requires the extension with zeroed trailing digests, a non-empty
-    /// signature (bounded by `TPKG_SIG_MAX`) and a non-zero signer keyid.
+    /// mount points NUL-terminated within their fixed fields. The v2
+    /// extension requires the `TPKG_FLAG_SIGNED_V2` flag and vice versa,
+    /// plus zeroed trailing digests, a non-empty signature (bounded by
+    /// `TPKG_SIG_MAX`) and a non-zero signer keyid.
     pub fn validate(&self) -> Result<(), TpkgError> {
-        if self.version != TPKG_VERSION && self.version != TPKG_VERSION_2 {
+        if self.version != TPKG_VERSION {
             return Err(TpkgError::Version);
         }
         if self.slots.is_empty() || self.slots.len() > TPKG_MAX_SLOTS as usize {
@@ -186,10 +190,9 @@ impl Manifest {
                 return Err(TpkgError::Invalid);
             }
         }
-        match (&self.v2, self.version == TPKG_VERSION_2) {
-            (None, true) => return Err(TpkgError::Invalid),
-            (Some(_), false) => return Err(TpkgError::Invalid),
-            (Some(v2), true) => {
+        let signed = self.package_flags & TPKG_FLAG_SIGNED_V2 != 0;
+        match (signed, &self.v2) {
+            (true, Some(v2)) => {
                 if v2.slot_digests[self.slots.len()..]
                     .iter()
                     .any(|d| *d != [0; TPKG_SHA256_LEN])
@@ -203,7 +206,8 @@ impl Manifest {
                     return Err(TpkgError::Invalid);
                 }
             }
-            (None, false) => {}
+            (true, None) | (false, Some(_)) => return Err(TpkgError::Invalid),
+            (false, None) => {}
         }
         Ok(())
     }

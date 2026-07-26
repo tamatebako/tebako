@@ -40,12 +40,8 @@ fn make_package(dir: &Path, home: &Path, image: &[u8], v1: bool) -> (PathBuf, tp
     bytes.extend_from_slice(image);
 
     let mut m = tpkg::Manifest {
-        version: if v1 {
-            tpkg::TPKG_VERSION
-        } else {
-            tpkg::TPKG_VERSION_2
-        },
-        package_flags: 0,
+        version: tpkg::TPKG_VERSION,
+        package_flags: if v1 { 0 } else { tpkg::TPKG_FLAG_SIGNED_V2 },
         launcher_abi: 1,
         ..Default::default()
     };
@@ -66,7 +62,7 @@ fn make_package(dir: &Path, home: &Path, image: &[u8], v1: bool) -> (PathBuf, tp
 
         let trailer = tpkg::encode_trailer(&m, bytes.len() as u64).unwrap();
         let region = tpkg::v2_signed_region(&trailer).unwrap();
-        let sig = tebako_signer::sign_detached(region, &press.secret_key, &press.fingerprint)
+        let sig = tebako_signer::sign_detached(&region, &press.secret_key, &press.fingerprint)
             .expect("sign");
         m.v2.as_mut().unwrap().signature = sig;
     }

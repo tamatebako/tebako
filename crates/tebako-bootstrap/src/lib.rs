@@ -664,14 +664,14 @@ pub fn verify_chain_with_home(
             self_path.display()
         );
         journal(
-            &home,
+            home,
             &format!("event=legacy-v1-accepted package={}", self_path.display()),
         );
         return Ok(());
     };
 
     // -- signature verification -----------------------------------------
-    let keyring = tebako_signer::trusted_keyring_bytes(&home)
+    let keyring = tebako_signer::trusted_keyring_bytes(home)
         .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
 
     let trailer = {
@@ -704,12 +704,13 @@ pub fn verify_chain_with_home(
     })?;
 
     let keyid_hex = v2.signer_keyid_hex();
-    let outcome = tebako_signer::verify_detached(&keyring, region, &v2.signature, &v2.signer_keyid)
-        .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+    let outcome =
+        tebako_signer::verify_detached(&keyring, &region, &v2.signature, &v2.signer_keyid)
+            .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
     match outcome {
         tebako_signer::VerifyOutcome::Trusted(_) => {
             journal(
-                &home,
+                home,
                 &format!(
                     "event=v2-trusted package={} signer={keyid_hex}",
                     self_path.display()
@@ -722,7 +723,7 @@ pub fn verify_chain_with_home(
                 format!(
                     "the signer of {} is not in the trusted keyring — refusing to execute\n  signer keyid: {keyid_hex}\n  keyring: {}\n  register the signer's public key with tebako-pkg (TOFU) if you trust it",
                     self_path.display(),
-                    tebako_signer::trusted_keyring_path(&home).display()
+                    tebako_signer::trusted_keyring_path(home).display()
                 ),
             );
         }
@@ -764,7 +765,7 @@ pub fn verify_chain_with_home(
             && parts.next() == Some(keyid_hex.as_str());
         if ok {
             journal(
-                &home,
+                home,
                 &format!(
                     "event=v2-slots-cache-hit package={} signer={keyid_hex}",
                     self_path.display()
@@ -794,7 +795,7 @@ pub fn verify_chain_with_home(
     let _ = std::fs::create_dir_all(home.join("trusted-cache"));
     if let Err(e) = std::fs::write(&marker_path, format!("{size} {mtime} {keyid_hex}\n")) {
         journal(
-            &home,
+            home,
             &format!(
                 "event=trusted-cache-write-failed path={} error={e}",
                 marker_path.display()
@@ -802,7 +803,7 @@ pub fn verify_chain_with_home(
         );
     }
     journal(
-        &home,
+        home,
         &format!(
             "event=v2-slots-verified package={} signer={keyid_hex}",
             self_path.display()
