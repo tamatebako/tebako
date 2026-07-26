@@ -1,0 +1,31 @@
+[package]
+name = "tebako-shim"
+description = "the tebako dispatcher / version manager (spec 07) — argv0 shim resolution, version chain, runtime resolution, launcher ABI v1 hand-off, shell integration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "shim", "dispatcher", "version-manager"]
+categories = ["command-line-utilities"]
+
+[dependencies]
+# The mirrored payload manifest / config / registry / project pins are all
+# YAML (spec 00 invariant 6). serde_yaml 0.9 is the cached, pure-Rust
+# (unsafe-libyaml) choice — no native build, no async, no clap.
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+# In-process HTTP for runtime downloads (spec 00 invariant 1) — the same
+# crate the bootstrap resolves through.
+tebako-http = { version = "0.1.0", path = "../tebako-http" }
+libc = "0.2"
+sha2 = "0.10"
+
+[[bin]]
+name = "tebako-shim"
+path = "src/main.rs"
+
+[lib]
+name = "tebako_shim"
+path = "src/lib.rs"

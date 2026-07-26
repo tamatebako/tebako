@@ -1,0 +1,160 @@
+//! Shared fixtures: temp homes, installed payload records, cached
+//! runtimes, file:// runtime mirrors.
+//!
+//! Each integration test compiles this module separately and uses its own
+//! subset — dead-code warnings are expected and allowed.
+#![allow(dead_code)]
+
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use tebako_shim::Ctx;
+
+static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+pub struct TempDir {
+    path: PathBuf,
+}
+
+impl TempDir {
+    pub fn new(tag: &str) -> TempDir {
+        let path = std::env::temp_dir().join(format!(
+            "tebako-shim-test-{tag}-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        TempDir { path }
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+pub fn ctx(home: &Path, cwd: &Path) -> Ctx {
+    Ctx {
+        home: home.to_path_buf(),
+        cwd: cwd.to_path_buf(),
+        env: BTreeMap::new(),
+    }
+}
+
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::Digest as _;
+    let digest = sha2::Sha256::digest(bytes);
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// An installed payload record (image + trust anchor + manifest mirror).
+pub fn write_payload(home: &Path, name: &str, version: &str, manifest_yaml: &str) -> PathBuf {
+    let dir = home.join("payloads").join(name);
+    std::fs::create_dir_all(&dir).expect("payload dir");
+    let image = dir.join(format!("{version}.tfs"));
+    let bytes = format!("fake tfs image {name} {version}\n");
+    std::fs::write(&image, &bytes).expect("image");
+    std::fs::write(
+        dir.join(format!("{version}.tfs.sha256")),
+        format!("{}  {version}.tfs\n", sha256_hex(bytes.as_bytes())),
+    )
+    .expect("sha marker");
+    std::fs::write(dir.join(format!("{version}.manifest.yaml")), manifest_yaml)
+        .expect("manifest mirror");
+    image
+}
+
+pub fn app_manifest(name: &str, version: &str, entrypoints: &str) -> String {
+    format!("schema_version: 1\nkind: app\nname: {name}\nversion: {version}\n{entrypoints}")
+}
+
+pub const RUBY_ENTRY: &str = "entrypoints:\n  - name: TOOL\n    path: /app/bin/TOOL\n    runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n";
+
+pub const NATIVE_ENTRY: &str = "entrypoints:\n  - name: TOOL\n    path: /app/bin/TOOL\n";
+
+pub fn entrypoint_yaml(template: &str, tool: &str) -> String {
+    template.replace("TOOL", tool)
+}
+
+pub fn platform() -> &'static str {
+    tebako_shim::runtime::platform_string()
+}
+
+/// A cached runtime entry
+/// `runtimes/ruby-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>`.
+pub fn write_runtime(home: &Path, lv: &str, ver: &str, with_image: bool) -> PathBuf {
+    let platform = platform();
+    let dir = home
+        .join("runtimes")
+        .join(format!("ruby-{lv}-{ver}-{platform}"));
+    std::fs::create_dir_all(&dir).expect("runtime dir");
+    let exe = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}"));
+    let exe_bytes = b"fake runtime exe\n";
+    std::fs::write(&exe, exe_bytes).expect("exe");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    std::fs::write(
+        dir.join("sha256"),
+        format!(
+            "{}  tebako-runtime-{ver}-{lv}-{platform}\n",
+            sha256_hex(exe_bytes)
+        ),
+    )
+    .ok();
+    if with_image {
+        let image = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}.tfs"));
+        let bytes = b"fake runtime image\n";
+        std::fs::write(&image, bytes).expect("image");
+        std::fs::write(
+            dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}.tfs.sha256")),
+            format!(
+                "{}  tebako-runtime-{ver}-{lv}-{platform}.tfs\n",
+                sha256_hex(bytes)
+            ),
+        )
+        .expect("image marker");
+    }
+    exe
+}
+
+/// A file:// runtime mirror holding one release (`v<ver>`) with exe,
+/// image, and a manifest.json index.
+pub fn write_mirror(root: &Path, lv: &str, ver: &str, tamper: bool) -> PathBuf {
+    let platform = platform();
+    let dir = root.join(format!("v{ver}"));
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    let exe_name = format!("tebako-runtime-{ver}-{lv}-{platform}");
+    let image_name = format!("{exe_name}.tfs");
+    let exe_bytes = b"mirrored runtime exe\n";
+    let image_bytes = b"mirrored runtime image\n";
+    std::fs::write(dir.join(&exe_name), exe_bytes).expect("exe");
+    std::fs::write(dir.join(&image_name), image_bytes).expect("image");
+    let exe_sha = sha256_hex(exe_bytes);
+    let image_sha = if tamper {
+        "f".repeat(64)
+    } else {
+        sha256_hex(image_bytes)
+    };
+    std::fs::write(
+        dir.join("manifest.json"),
+        format!(
+            "[{{\"filename\": \"{exe_name}\", \"sha256\": \"{exe_sha}\"}},\n {{\"filename\": \"{image_name}\", \"sha256\": \"{image_sha}\"}}]\n"
+        ),
+    )
+    .expect("manifest.json");
+    root.to_path_buf()
+}
+
+pub fn write_config(home: &Path, yaml: &str) {
+    std::fs::create_dir_all(home).expect("home");
+    std::fs::write(home.join("config.yaml"), yaml).expect("config");
+}
