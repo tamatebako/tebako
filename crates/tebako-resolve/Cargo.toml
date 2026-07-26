@@ -1,0 +1,42 @@
+[package]
+name = "tebako-resolve"
+description = "MECE payload references (spec 04), transport-agnostic fetchers and the shared payload cache (spec 05)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "resolve", "reference", "cache", "registry"]
+categories = ["data-structures", "filesystem", "parser-implementations"]
+
+[dependencies]
+tebako-http = { version = "0.1.0", path = "../tebako-http" }
+# Release-API JSON responses are parsed with the workspace's own minimal
+# JSON parser — no serde in the L3 stack, no native deps (tebako-pkg
+# proper pulls the imaging stack; the parser alone lives in tebako-json).
+tebako-json = { version = "0.1.0", path = "../tebako-json" }
+sha2 = "0.10"
+libc = "0.2"
+# tfs+git: via gitoxide (spec 04 §3) — never the git CLI. Local and
+# smart-protocol fetch in-process; reqwest's TLS is steered to rustls/ring
+# (the same provider tebako-http uses) instead of reqwest's aws-lc default.
+gix = { version = "0.86", default-features = false, features = [
+    "sha1",
+    "blocking-network-client",
+    "blocking-http-transport-reqwest",
+    "revision",
+    "tree-editor",
+] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+
+[lib]
+name = "tebako_resolve"
+path = "src/lib.rs"
+
+[dev-dependencies]
+proptest = "1"
+# The git fixtures are built with gix itself — no git CLI anywhere, tests
+# included (spec 14 §3).
+gix = { version = "0.86", default-features = false, features = ["sha1", "tree-editor"] }
