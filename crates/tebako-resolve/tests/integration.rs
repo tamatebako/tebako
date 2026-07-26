@@ -72,6 +72,18 @@ fn git_reference_fetches_through_the_real_adapter() {
     let fixture = dir.join("fixture.git");
     // A bare repo holding two payload images on a versioned branch.
     let repo = gix::init_bare(&fixture).unwrap();
+    drop(repo);
+    // gix commit needs an identity; CI runners have no ambient git
+    // config. Pin it in-repo (append — init already wrote [core]) and
+    // re-open so the config is re-read.
+    use std::io::Write as _;
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(fixture.join("config"))
+        .unwrap()
+        .write_all(b"[user]\n\tname = tebako-test\n\temail = tebako-test@example.org\n")
+        .unwrap();
+    let repo = gix::open(&fixture).unwrap();
     let blob = repo.write_blob(b"git-payload").unwrap();
     let empty = gix::hash::ObjectId::empty_tree(repo.object_hash());
     let tree = {

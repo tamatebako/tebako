@@ -108,6 +108,19 @@ mod tests {
                 .join(format!("tebako-resolve-git-{tag}-{}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             let repo = gix::init_bare(&dir).unwrap();
+            drop(repo);
+            // gix commit needs an identity; CI runners have no ambient
+            // git config (user.name/user.email). Pin it in-repo (append —
+            // init already wrote [core]) and re-open so the config is
+            // re-read; never rely on the environment.
+            use std::io::Write as _;
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(dir.join("config"))
+                .unwrap()
+                .write_all(b"[user]\n\tname = tebako-test\n\temail = tebako-test@example.org\n")
+                .unwrap();
+            let repo = gix::open(&dir).unwrap();
             let empty = gix::hash::ObjectId::empty_tree(repo.object_hash());
             let tree = |bytes: &[u8]| {
                 let blob = repo.write_blob(bytes).unwrap();
