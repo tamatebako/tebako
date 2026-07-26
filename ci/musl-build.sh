@@ -20,6 +20,10 @@ apk --no-cache add \
   autoconf automake libtool make pkgconfig perl python3 \
   curl zip unzip tar ca-certificates linux-headers
 
+# vcpkg's bootstrap downloads glibc-linked cmake/ninja by default — they
+# cannot run on musl (exit 127). Use the apk-provided tools everywhere.
+export VCPKG_FORCE_SYSTEM_BINARIES=1
+
 echo "== rustup ($RUST_VERSION, $TARGET) =="
 curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh
 sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain "$RUST_VERSION" --target "$TARGET"
