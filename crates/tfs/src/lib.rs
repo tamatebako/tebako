@@ -18,8 +18,9 @@
 //!                   ▼
 //!                backend.rs (Backend trait)
 //!                   ├── backends_zip.rs  (ZIP via the pure-Rust `zip` crate)
-//!                   ├── dwarfs           (PLANNED: external dwarfs-rs crate)
-//!                   └── squashfs         (PLANNED: squashfs-tools-ng FFI)
+//!                   ├── backends_tar.rs  (tar/tar.gz/tar.zst, offset index)
+//!                   ├── dwarfs           (external dwarfs-rs crate)
+//!                   └── squashfs         (squashfs-tools-ng FFI)
 //! ```
 //!
 //! ## Surface (milestone 2)
@@ -36,12 +37,14 @@
 //! `tebako_get_errno`, `tebako_strerror`, `tebako_get_mount_point`,
 //! `tebako_get_archive_path`, `tebako_get_backend_name`,
 //! `tebako_path_is_embedded`, `tebako_fd_is_embedded`. Backends: ZIP
-//! (pure-Rust `zip` crate) and DwarFS (external `dwarfs-rs` crate, feature
-//! `vendored-dwarfs`, default on); squashfs mounts fail cleanly with
-//! ENOTSUP. Jails (spec 08): `tebako_fs_host_policy` installs the
-//! host-access policy gating every host-passthrough path decision
-//! (`crates/tfs/src/policy.rs`); denied paths fail EPERM, writes against
-//! an ro grant EROFS, allowed paths keep today's ENOENT pass-through.
+//! (pure-Rust `zip` crate), tar/tar.gz/tar.zst (pure-Rust offset index —
+//! `backends_tar`), and DwarFS (external `dwarfs-rs` crate, feature
+//! `vendored-dwarfs`, default on); SquashFS via `crates/sqfs-sys` (feature
+//! `vendored-squashfs`, default on). Jails (spec 08): `tebako_fs_host_policy`
+//! installs the host-access policy gating every host-passthrough path
+//! decision (`crates/tfs/src/policy.rs`); denied paths fail EPERM, writes
+//! against an ro grant EROFS, allowed paths keep today's ENOENT
+//! pass-through.
 //!
 //! ## PLANNED (next milestones)
 //!
@@ -54,6 +57,7 @@ pub mod backend;
 pub mod backends_dwarfs;
 #[cfg(feature = "vendored-squashfs")]
 pub mod backends_squashfs;
+pub mod backends_tar;
 pub mod backends_zip;
 pub mod c_api;
 pub mod context;

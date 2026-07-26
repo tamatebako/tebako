@@ -10,6 +10,7 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use crate::backend::{detect_format, Backend, ImageFormat};
+use crate::backends_tar::{TarBackend, TarCompression};
 use crate::backends_zip::ZipBackend;
 use crate::context::Mount;
 
@@ -18,7 +19,19 @@ use crate::backends_dwarfs::DwarfsBackend;
 #[cfg(feature = "vendored-squashfs")]
 use crate::backends_squashfs::SquashfsBackend;
 
-const MAGIC_LEN: usize = 8;
+/// Sniff length: one full tar block, so the tar header-checksum heuristic
+/// (weak, last in the chain — spec 11 §3) has its 512 bytes.
+const SNIFF_LEN: usize = 512;
+
+/// The compression envelope matching a detected tar-family format.
+fn tar_compression(format: ImageFormat) -> TarCompression {
+    match format {
+        ImageFormat::Tar => TarCompression::None,
+        ImageFormat::TarGz => TarCompression::Gzip,
+        ImageFormat::TarZst => TarCompression::Zstd,
+        _ => unreachable!("tar_compression called for a non-tar format"),
+    }
+}
 
 fn cstring(s: &str) -> Box<CString> {
     // Paths reaching this layer have already been NUL-validated.
@@ -43,13 +56,16 @@ fn open_error(e: std::io::Error) -> i32 {
 /// supports it).
 pub fn build_from_file(archive_path: &str, mount_point: &str) -> Result<Mount, i32> {
     let mut file = File::open(archive_path).map_err(open_error)?;
-    let mut magic = [0u8; MAGIC_LEN];
+    let mut magic = [0u8; SNIFF_LEN];
     let n = file.read(&mut magic).map_err(|_| libc::EIO)?;
     file.seek(SeekFrom::Start(0)).map_err(|_| libc::EIO)?;
     let format = detect_format(&magic[..n]);
 
     let backend: Box<dyn Backend> = match format {
         ImageFormat::Zip => Box::new(ZipBackend::from_file(file)?),
+        ImageFormat::Tar | ImageFormat::TarGz | ImageFormat::TarZst => {
+            Box::new(TarBackend::from_file(file, tar_compression(format))?)
+        }
         #[cfg(feature = "vendored-dwarfs")]
         ImageFormat::Dwarfs => Box::new(DwarfsBackend::from_file(Path::new(archive_path))?),
         #[cfg(not(feature = "vendored-dwarfs"))]
@@ -97,7 +113,7 @@ pub fn build_from_file_at(
     }
 
     // Sniff the format at the region start.
-    let mut magic = [0u8; MAGIC_LEN];
+    let mut magic = [0u8; SNIFF_LEN];
     file.seek(SeekFrom::Start(offset)).map_err(|_| libc::EIO)?;
     let n = file.read(&mut magic).map_err(|_| libc::EIO)?;
     let format = detect_format(&magic[..n]);
@@ -106,6 +122,11 @@ pub fn build_from_file_at(
         ImageFormat::Zip => Box::new(ZipBackend::from_memory(read_region(
             &mut file, offset, length,
         )?)?),
+        // Tar regions are read in place (positioned reads relative to the
+        // region start; the index pass streams inside the region bounds).
+        ImageFormat::Tar | ImageFormat::TarGz | ImageFormat::TarZst => Box::new(
+            TarBackend::from_file_at(file, offset, length, tar_compression(format))?,
+        ),
         #[cfg(feature = "vendored-dwarfs")]
         ImageFormat::Dwarfs => Box::new(DwarfsBackend::from_file_at(
             Path::new(archive_path),
@@ -141,9 +162,12 @@ pub fn build_from_memory(data: &[u8], mount_point: &str) -> Result<Mount, i32> {
     if data.is_empty() {
         return Err(libc::EINVAL);
     }
-    let format = detect_format(&data[..data.len().min(MAGIC_LEN)]);
+    let format = detect_format(&data[..data.len().min(SNIFF_LEN)]);
     let backend: Box<dyn Backend> = match format {
         ImageFormat::Zip => Box::new(ZipBackend::from_memory(data.to_vec())?),
+        ImageFormat::Tar | ImageFormat::TarGz | ImageFormat::TarZst => Box::new(
+            TarBackend::from_memory(data.to_vec(), tar_compression(format))?,
+        ),
         #[cfg(feature = "vendored-dwarfs")]
         ImageFormat::Dwarfs => Box::new(DwarfsBackend::from_memory(data)?),
         #[cfg(not(feature = "vendored-dwarfs"))]

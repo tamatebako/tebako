@@ -22,6 +22,17 @@ libc = "0.2"
 # free of a native libzip build, and the v1 scope (read-only, no encryption)
 # is well inside its feature set. deflate-only keeps the staticlib lean.
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# The tar backend (read-only): the `tar` crate parses headers (ustar / GNU
+# longname / pax, incl. base-256 numeric fields) during the mount-time index
+# pass; xattr is extraction-only, so default features stay off.
+tar = { version = "0.4", default-features = false }
+# gzip-wrapped tar: checkpointed raw-DEFLATE resume (cloned InflateState at
+# uncompressed-byte boundaries — the zran pattern, pure Rust). flate2 does
+# not expose decompressor-state snapshots, so miniz_oxide is used directly.
+miniz_oxide = "0.8"
+# zstd-wrapped tar: pure-Rust decoder (no decompressor-state snapshots —
+# cold reads re-decode from the stream start; see backends_tar module docs).
+ruzstd = "0.7"
 # The DwarFS backend binds the EXTERNAL dwarfs-rs crate (path dep until
 # dwarfs-rs has a release to pin against; crates.io eventually). It pulls
 # the vendored dwarfs-t CMake/vcpkg build into compilation; disable default
@@ -41,3 +52,8 @@ vendored-dwarfs = ["dep:dwarfs-t"]
 vendored-squashfs = ["dep:sqfs-sys"]
 
 [dev-dependencies]
+# Tempdir scaffolding for backend tests (large-archive RSS fixtures).
+tempfile = "3"
+# gzip trailer checksums in tar-backend test fixtures.
+crc32fast = "1"
+

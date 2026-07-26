@@ -42,6 +42,23 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (milestone 9)
+
+- **tfs: tar/tar.gz/tar.zst backend (pure Rust, read-only)** — roadmap 13's
+  tar adapter (`backends_tar.rs`): a mount-time offset index built in ONE
+  streaming pass (ustar/GNU-longname/pax via the `tar` crate), directories
+  synthesized from entry paths, hard links resolved at lookup, GNU sparse
+  files stat-only (pread → ENOTSUP), duplicate names last-wins. Detection
+  follows spec 11 §3: strong magic first, the tar header-checksum heuristic
+  LAST (gzip/zstd envelopes claim tar since it is the only gzip/zstd
+  payload). Random access: plain tar does positioned reads (1 GiB archive,
+  512 scattered preads: **+1.6 MiB peak RSS vs the 64 MiB budget**);
+  tar.gz resumes from cloned miniz_oxide `InflateState` checkpoints every
+  16 MiB of uncompressed stream (~0.2 % memory, the zran pattern, no C
+  zlib); tar.zst uses a forward-only ruzstd cursor (cold backward seeks
+  re-decode from the start — documented cost model, no state snapshots
+  exist in pure Rust). Memory profile documented in the module docs.
+
 ### PARTIAL (roadmap 07)
 
 - **`crates/tebako-resolve` — references, fetch, payload cache** (spec
