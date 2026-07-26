@@ -48,7 +48,33 @@ fn run(cmd: &mut Command) -> (i32, String) {
     let out = cmd.output().unwrap_or_else(|e| panic!("spawn failed: {e}"));
     let mut text = String::from_utf8_lossy(&out.stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&out.stderr));
-    (out.status.code().unwrap_or(-1), strip_legacy_warning(&text))
+    (
+        out.status.code().unwrap_or(-1),
+        strip_progress(&strip_legacy_warning(&text)),
+    )
+}
+
+/// Spec 06 §5: fetches print progress on stderr BY DESIGN (phase lines +
+/// one quiet cache-hit line even non-TTY). The C++ oracle and the gem's
+/// golden outputs predate that contract, so comparisons strip these
+/// additive lines (error bodies are untouched — golden parity holds).
+/// Same shape as tebako-bootstrap's harness strip; the exact transcript
+/// is asserted in tebako-bootstrap's tests/progress.rs.
+fn strip_progress(text: &str) -> String {
+    let mut out = String::new();
+    for line in text.lines() {
+        let is_progress = line.starts_with("resolving ")
+            || line.starts_with("downloading ")
+            || line.starts_with("installed ")
+            || line == "verifying sha256"
+            || line == "installing (locked)"
+            || (line.starts_with("runtime ") && line.ends_with(" (cached)"));
+        if !is_progress {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    out
 }
 
 /// Item 29 v1-legacy rule: packages built unsigned (the default, per the
