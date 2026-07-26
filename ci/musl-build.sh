@@ -81,12 +81,28 @@ echo "== pre-install squashfs-tools-ng ($TRIPLET) =="
   --overlay-ports "$WS/tebako-rs/crates/sqfs-sys/vcpkg_ports"
 
 echo "== pre-install Botan-3 + json-c ($DYN_TRIPLET, for vendored librnp) =="
+crypto_rc=0
 "$WS/.vcpkg-musl/vcpkg" install botan json-c \
   --vcpkg-root "$WS/.vcpkg-musl" \
   --x-wait-for-lock \
   --x-install-root "$WS/.crypto-musl" \
   --triplet "$DYN_TRIPLET" \
-  --overlay-triplets "$DWARFS_TRIPLETS"
+  --overlay-triplets "$DWARFS_TRIPLETS" || crypto_rc=$?
+if [ "$crypto_rc" -ne 0 ]; then
+  # The workflow log shows only the failing make command; the real
+  # compiler/linker error lives in the container's buildtrees logs, which
+  # are lost when the container exits. Dump them before dying (plus the
+  # resource state — both musl legs of run 30221016817 died in botan's
+  # debug build with the real error never captured).
+  for log in "$WS"/.vcpkg-musl/buildtrees/*/build-*"$DYN_TRIPLET"*-err.log; do
+    [ -f "$log" ] || continue
+    echo "== $log (tail -n 120) =="
+    tail -n 120 "$log"
+  done
+  df -h "$WS" || true
+  free -m || true
+  exit "$crypto_rc"
+fi
 
 echo "== cargo build (release, $TARGET) =="
 cd "$WS/tebako-rs"
