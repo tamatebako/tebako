@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 
 use tebako_contract_tests::TempDir;
 use tebako_pkg::{
-    bundle, default_mount, insert_image, parse_image_spec, reassemble, remove_image, set_runtime,
-    sniff_format, unbundle, PackageImage, PackageOptions,
+    bundle, bundle_exact, default_mount, insert_image, parse_image_spec, reassemble, remove_image,
+    set_runtime, sniff_format, unbundle, PackageImage, PackageOptions,
 };
 
 fn patterned_bytes(n: usize, seed: u8) -> Vec<u8> {
@@ -264,4 +264,38 @@ fn validation_errors_match_cpp() {
             pkg.display()
         )
     );
+}
+
+#[test]
+fn bundle_exact_keeps_mount_points_as_given() {
+    let w = TempDir::new("rt6");
+    let t = tree(&w);
+    let out = w.0.join("exact.pkg");
+
+    // bundle: an empty mount point defaults per slot index (C++ contract).
+    let images = vec![
+        parse_image_spec(t.a.to_str().unwrap()),
+        parse_image_spec(t.b.to_str().unwrap()),
+    ];
+    bundle(&t.boot, &images, &out, &opts()).expect("bundle");
+    let mut f = std::fs::File::open(&out).unwrap();
+    let m = tpkg::read_from(&mut f).unwrap();
+    assert_eq!(m.slots[1].mount_point_str().unwrap(), default_mount(1));
+
+    // bundle_exact: the empty mount point stays empty (the Ruby Stitcher's
+    // semantics for a fat package's FORMAT_RUNTIME payload slot).
+    let images = vec![
+        parse_image_spec(&format!("{}:/app", t.a.display())),
+        PackageImage {
+            path: t.b.clone(),
+            mount_point: String::new(),
+            format_id: tpkg::TPKG_FORMAT_RUNTIME,
+        },
+    ];
+    bundle_exact(&t.boot, &images, &out, &opts()).expect("bundle_exact");
+    let mut f = std::fs::File::open(&out).unwrap();
+    let m = tpkg::read_from(&mut f).unwrap();
+    assert_eq!(m.slots[0].mount_point_str().unwrap(), "/app");
+    assert_eq!(m.slots[1].mount_point_str().unwrap(), "");
+    assert_eq!(m.slots[1].format_id, tpkg::TPKG_FORMAT_RUNTIME);
 }

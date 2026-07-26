@@ -372,11 +372,36 @@ fn rewrite_in_place(
 // ---------------------------------------------------------------------
 
 /// bundle: assemble a three-part package from a bootstrap file and images.
+/// Empty mount points default per slot index (the C++ cmd_bundle
+/// contract); use `bundle_exact` to keep them exactly as given.
 pub fn bundle(
     bootstrap: &Path,
     images: &[PackageImage],
     output: &Path,
     options: &PackageOptions,
+) -> Result<(), String> {
+    bundle_impl(bootstrap, images, output, options, true)
+}
+
+/// bundle_exact: like `bundle`, but mount points are used exactly as
+/// given — an empty mount point stays empty (the Ruby Stitcher's
+/// semantics; a fat package's FORMAT_RUNTIME payload slot carries an
+/// empty mount point).
+pub fn bundle_exact(
+    bootstrap: &Path,
+    images: &[PackageImage],
+    output: &Path,
+    options: &PackageOptions,
+) -> Result<(), String> {
+    bundle_impl(bootstrap, images, output, options, false)
+}
+
+fn bundle_impl(
+    bootstrap: &Path,
+    images: &[PackageImage],
+    output: &Path,
+    options: &PackageOptions,
+    default_mounts: bool,
 ) -> Result<(), String> {
     if images.is_empty() || images.len() > tpkg::TPKG_MAX_SLOTS as usize {
         return Err(format!(
@@ -410,7 +435,7 @@ pub fn bundle(
                 img.format_id
             },
             flags: 0,
-            mount_point: if img.mount_point.is_empty() {
+            mount_point: if img.mount_point.is_empty() && default_mounts {
                 default_mount(i as u32)
             } else {
                 img.mount_point.clone()
@@ -963,7 +988,9 @@ fn plain_archive_summary(archive: &Path) -> Result<String, String> {
     let ty = match ext.as_str() {
         "zip" => "ZIP",
         "sqfs" | "squashfs" => "SquashFS",
-        "dwarfs" => "DwarFS",
+        // .tfs is the dwarfs-t-native (FlatBuffers metadata) extension
+        // (postdates the C++ heuristics, which know .dwarfs only)
+        "dwarfs" | "tfs" => "DwarFS",
         _ => "Unknown",
     };
 
