@@ -13,7 +13,9 @@ categories = ["filesystem", "command-line-utilities"]
 [dependencies]
 tpkg = { version = "0.1.0", path = "../tpkg" }
 tfs = { version = "0.1.0", path = "../tfs" }
+tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
 libc = "0.2"
+sha2 = "0.10"
 
 [dev-dependencies]
 tebako-contract-tests = { version = "0.1.0", path = "../../tests/contract" }
