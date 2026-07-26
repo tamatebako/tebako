@@ -96,29 +96,6 @@ press_runner_with_error() {
 }
 
 # ......................................................................
-# Tests blocked by the current prebuilt-runtime gap: tebako-runtime-ruby
-# images strip bin/ruby (stripper strip_fi), so deploy-time subprocesses have
-# no ruby executable to run on -- native extension builds (extconf) and
-# gemspec-source gem builds cannot complete (error 255 / Gem::Ext::BuildError).
-# The fix belongs to the runtime pipeline (ship a bin/ruby in the runtime
-# image); until it lands these scenarios are loudly skipped, not run red.
-SLIM_BLOCKED_TESTS="15 17 19 21 22 23"
-
-# $1 -- test id, $2 -- test description; returns 0 (and prints the skip
-# notice) when the test is blocked
-blocked() {
-   case " ${SLIM_BLOCKED_TESTS} " in
-      *" $1 "*)
-         echo "SKIPPED test $2 -- blocked: prebuilt runtime images ship no bin/ruby;"
-         echo "  native-extension/gemspec-source deploy is not possible until tebako-runtime-ruby"
-         echo "  runtimes carry a ruby executable (extconf/gem build subprocesses)"
-         return 0
-         ;;
-   esac
-   return 1
-}
-
-# ......................................................................
 # Tests
 #  AU1. Check that it is possible to extract image content (--tebako-extract option)
 #  AU2. Check that the removed 'runtime' press mode fails with an accurate error
@@ -131,15 +108,15 @@ blocked() {
 #  11. Ruby gem (no gemfile, with gemspec)
 #  12. Ruby gem (no gemfile, with gemspec), multiple gemspecs  --- moved to RSpec tests                     [Expected error at configure step]
 #  13. Ruby gem (no gemfile, with gemspec), gemspec error                                                   [Expected error at deploy step]
-#  15. Ruby gem (with gemspec, with gemfile)                                                                 [BLOCKED: no bin/ruby in runtime image]
+#  15. Ruby gem (with gemspec, with gemfile)
 #  16. Ruby gem (with gemspec, with gemfile), gemfile with error                                            [Expected error at configure step]
-#  17. Ruby gem (with gemspec, with gemfile), entry point does not exist                                    [BLOCKED: no bin/ruby in runtime image]
+#  17. Ruby gem (with gemspec, with gemfile), entry point does not exist
 #  18. Ruby project (no gemspec, with gemfile)
-#  19. Ruby project (no gemspec, with gemfile, with ffi extension)                                          [BLOCKED: no bin/ruby in runtime image]
+#  19. Ruby project (no gemspec, with gemfile, with ffi extension)
 #  20. Net/http Ruby script [sits here and not on tests-2 in order to allow cross test MacOS x86_64 --> MacOS arm64]
-#  21. Ruby gem (with gemspec, with gemfile, with lockfile)                                                 [BLOCKED: no bin/ruby in runtime image]
-#  22. Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)                           [BLOCKED: no bin/ruby in runtime image]
-#  23. Ruby gem (with gemspec, with gemfile, with bundler requirement in gemfile)                           [BLOCKED: no bin/ruby in runtime image]
+#  21. Ruby gem (with gemspec, with gemfile, with lockfile)
+#  22. Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)
+#  23. Ruby gem (with gemspec, with gemfile, with bundler requirement in gemfile)
 
 # ......................................................................
 #  AU1. Check that it is possible to extract image content (--tebako-extract option)
@@ -271,7 +248,6 @@ test_tebako_press_13() {
 #  15. Ruby gem (with gemspec, with gemfile)
 test_tebako_press_15() {
    echo "==> Ruby gem (with gemspec, with gemfile)"
-   blocked 15 "Ruby gem (with gemspec, with gemfile)" && return 0
    press_runner "${DIR_TESTS}/test-15" "tebako-test-run.rb" "test-15-package"
    package_runner "./test-15-package" "| a1 | b1 |"
 }
@@ -291,7 +267,6 @@ test_tebako_press_16() {
 # 17. Ruby gem (with gemspec, with gemfile), entry point dows not exist
 test_tebako_press_17() {
    echo "==> Ruby gem (with gemspec, with gemfile), entry point does not exist"
-   blocked 17 "Ruby gem (with gemspec, with gemfile), entry point does not exist" && return 0
    press_runner_with_error "${DIR_TESTS}/test-15" \
                            "test-does-not-exist.rb" \
                            "test-17-package" \
@@ -310,7 +285,6 @@ test_tebako_press_18() {
 # 19. Ruby project (no gemspec, with gemfile, with ffi extension)
 test_tebako_press_19() {
    echo "==> Ruby project (no gemspec, with gemfile, with ffi extension)"
-   blocked 19 "Ruby project (no gemspec, with gemfile, with ffi extension)" && return 0
    press_runner "${DIR_TESTS}/test-19" "tebako-test-run.rb" "test-19-package"
    package_runner "./test-19-package" "Hello, World via libc puts using FFI on tebako package"
 }
@@ -327,7 +301,6 @@ test_tebako_press_20() {
 #  21. Ruby gem (with gemspec, with gemfile, with lockfile)
 test_tebako_press_21() {
    echo "==> Ruby gem (with gemspec, with gemfile, with lockfile)"
-   blocked 21 "Ruby gem (with gemspec, with gemfile, with lockfile)" && return 0
    press_runner "${DIR_TESTS}/test-21" "tebako-test-run.rb" "test-21-package"
    package_runner "./test-21-package" "| a1 | b1 |"
 }
@@ -336,7 +309,6 @@ test_tebako_press_21() {
 # 22. Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)
 test_tebako_press_22() {
    echo "==> Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)"
-   blocked 22 "Ruby project (no gemspec, with gemfile, with lockfile, with ffi extension)" && return 0
    press_runner "${DIR_TESTS}/test-22" "tebako-test-run.rb" "test-22-package"
    package_runner "./test-22-package" "Hello, World via libc puts using FFI on tebako package"
 }
@@ -345,7 +317,6 @@ test_tebako_press_22() {
 # 23. Ruby gem (with gemspec, with gemfile, with bundler requirement in gemfile)
 test_tebako_press_23() {
    echo "==> Ruby gem (with gemspec, with gemfile, with bundler requirement in gemfile)"
-   blocked 23 "Ruby gem (with gemspec, with gemfile, with bundler requirement in gemfile)" && return 0
    press_runner "${DIR_TESTS}/test-23" "tebako-test-run.rb" "test-23-package"
    package_runner "./test-23-package" "| a1 | b1 |"
 }
