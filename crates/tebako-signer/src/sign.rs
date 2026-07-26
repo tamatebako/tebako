@@ -39,7 +39,42 @@ pub enum VerifyOutcome {
     Invalid(Option<String>),
 }
 
-/// Verify a detached signature over `data` against the trusted keyring
+/// Extract the issuer fingerprint (40-hex, uppercase) of a detached
+/// signature, via the OpenPGP packet dump — no keyring needed.
+pub fn signature_issuer_fingerprint(signature: &[u8]) -> Result<String, SignerError> {
+    let json = rnp::dump_packets_bytes_to_json(signature, Default::default())
+        .map_err(|e| SignerError::Verify(format!("cannot parse the signature: {e}")))?;
+    let needle = "\"issuer fingerprint\"";
+    let pos = json
+        .find(needle)
+        .ok_or_else(|| SignerError::Verify("no issuer fingerprint subpacket in the signature".into()))?;
+    let rest = &json[pos..];
+    let tag = "\"fingerprint\":\"";
+    let fp_pos = rest
+        .find(tag)
+        .ok_or_else(|| SignerError::Verify("no fingerprint value in the signature".into()))?;
+    let fp = &rest[fp_pos + tag.len()..];
+    let end = fp
+        .find('"')
+        .ok_or_else(|| SignerError::Verify("malformed fingerprint value in the signature".into()))?;
+    Ok(fp[..end].to_uppercase())
+}
+
+/// Verify a detached signature with the full Trusted/Untrusted/Invalid
+/// classification, self-hinting from the signature's issuer fingerprint:
+/// a signature from a key that IS in the keyring but does not validate is
+/// `Invalid`; a signature from a key NOT in the keyring is `Untrusted`.
+pub fn verify_detached_full(
+    trusted_keyring: &[u8],
+    data: &[u8],
+    signature: &[u8],
+) -> Result<VerifyOutcome, SignerError> {
+    let hint = signature_issuer_fingerprint(signature)
+        .ok()
+        .and_then(|fp| crate::keys::keyid_bytes_from_fingerprint(&fp).ok())
+        .unwrap_or([0; 8]);
+    verify_detached(trusted_keyring, data, signature, &hint)
+}
 /// bytes (empty = trust nobody). `signer_keyid_hint` is the signer keyid
 /// recorded alongside the signature (the tpkg v2 trailer carries it);
 /// pass all-zero when unknown — it is used to classify an unknown signer
