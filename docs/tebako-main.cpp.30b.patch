@@ -1,0 +1,30 @@
+--- a/src/tebako-main.cpp
++++ b/src/tebako-main.cpp
+@@ -899,8 +899,25 @@
+           }
+         }
+         else {
+-          /* Classic incbin bundle: mount the embedded image from memory */
+-          if (tebako_fs_init(&gfsData[0], gfsSize, mount_point.c_str()) != 0) {
++          /* Classic incbin bundle startup: mount the embedded image from
++             memory -- or, when TEBAKO_RUNTIME_IMAGE is set, the runtime's
++             filesystem image it names (item 30b). The variable carries the
++             absolute path of the sha256-verified .tfs artifact the
++             bootstrap resolved into the shared cache; image-era builds ship
++             gfsSize == 0 and rely on it, v1 runtimes ignore it and mount
++             the embedded image exactly as before. */
++          const char* runtime_image = getenv("TEBAKO_RUNTIME_IMAGE");
++          if (runtime_image != nullptr && runtime_image[0] != '\0') {
++            if (tebako_fs_init_from_file(runtime_image, mount_point.c_str()) != 0) {
++              printf("Tebako: failed to mount the runtime filesystem image from '%s': %s\n",
++                     runtime_image, tebako_strerror(tebako_get_errno()));
++              startup_failed = true;
++            }
++            else {
++              mounted = true;
++            }
++          }
++          else if (tebako_fs_init(&gfsData[0], gfsSize, mount_point.c_str()) != 0) {
+             printf("Tebako: failed to mount the embedded filesystem image: %s\n",
+                    tebako_strerror(tebako_get_errno()));
+             startup_failed = true;

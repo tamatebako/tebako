@@ -14,6 +14,9 @@ categories = ["command-line-utilities"]
 tpkg = { version = "0.1.0", path = "../tpkg" }
 tebako-pkg = { version = "0.1.0", path = "../tebako-pkg" }
 tebako-http = { version = "0.1.0", path = "../tebako-http" }
+# The runtime image is extracted in-process through the tfs C ABI
+# (item 30b layout seeding).
+tfs = { version = "0.1.0", path = "../tfs" }
 # The in-process DwarFS writer (dwarfs-t-rs): the application and deploy
 # driver images are built without any mkdwarfs binary.
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }

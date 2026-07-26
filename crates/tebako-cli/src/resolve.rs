@@ -81,6 +81,24 @@ pub struct IndexEntry {
     pub platform: Option<String>,
     pub filename: String,
     pub sha256: String,
+    /// The runtime image sibling (item 30b): `<asset>.tfs` from the
+    /// manifest's additive `image` key or the SHA256SUMS line.
+    pub image: Option<ImageRef>,
+}
+
+/// A resolved runtime image reference (filename + expected sha256).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImageRef {
+    pub filename: String,
+    pub sha256: String,
+}
+
+/// The outcome of resolving a runtime: the interpreter plus, when the
+/// release is image-era, its runtime image reference.
+#[derive(Debug, Clone)]
+pub struct Resolved {
+    pub executable: PathBuf,
+    pub image: Option<ImageRef>,
 }
 
 #[derive(Debug)]
@@ -148,6 +166,137 @@ impl Resolver {
             },
         )?;
         Ok(executable)
+    }
+
+    /// Resolve a runtime for press (item 30b): the interpreter plus, when
+    /// the release index carries an image entry, the runtime image —
+    /// downloaded, verified and marked into the same cache entry the
+    /// bootstrap consumes at first run. On a cache hit the image metadata
+    /// comes from the entry's trusted marker.
+    pub fn resolve_runtime(
+        &self,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+    ) -> Result<Resolved, TebakoError> {
+        let dir = self.entry_dir(ruby_version, platform, tebako_version);
+        let executable = dir.join(self.filename(ruby_version, platform, tebako_version));
+        if executable.is_file() {
+            return Ok(Resolved {
+                executable,
+                image: self.read_image_marker(&dir, ruby_version, platform, tebako_version),
+            });
+        }
+        self.with_entry_lock(
+            &dir,
+            &self.entry_ref(ruby_version, platform, tebako_version),
+            || {
+                if executable.is_file() {
+                    return Ok(());
+                }
+                let entry = self.install(&executable, ruby_version, platform, tebako_version)?;
+                if let Some(image) = entry.image.clone() {
+                    self.install_image(&dir, &image, tebako_version)?;
+                }
+                Ok(())
+            },
+        )?;
+        Ok(Resolved {
+            executable,
+            image: self.read_image_marker(&dir, ruby_version, platform, tebako_version),
+        })
+    }
+
+    /// The image's expected filename in a cache entry
+    /// (`<asset-minus-exe-suffix>.tfs`).
+    fn image_filename(&self, ruby_version: &str, platform: &str, tebako_version: &str) -> String {
+        let asset = self.filename(ruby_version, platform, tebako_version);
+        let base = asset.strip_suffix(".exe").unwrap_or(&asset);
+        format!("{base}.tfs")
+    }
+
+    /// Read the entry's trusted image marker (`<image>.sha256`):
+    /// Some only when both the image and its marker exist.
+    fn read_image_marker(
+        &self,
+        dir: &Path,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+    ) -> Option<ImageRef> {
+        let filename = self.image_filename(ruby_version, platform, tebako_version);
+        if !dir.join(&filename).is_file() {
+            return None;
+        }
+        let marker = fs::read_to_string(dir.join(format!("{filename}.sha256"))).ok()?;
+        let sha256 = marker.split_whitespace().next()?.to_string();
+        if sha256.len() == 64 {
+            Some(ImageRef { filename, sha256 })
+        } else {
+            None
+        }
+    }
+
+    /// Download + verify + install the runtime image (0444 + trusted
+    /// markers), sharing the bootstrap's cache layout (item 30b). Called
+    /// with the entry lock already held.
+    fn install_image(
+        &self,
+        dir: &Path,
+        image: &ImageRef,
+        tebako_version: &str,
+    ) -> Result<(), TebakoError> {
+        let image_path = dir.join(&image.filename);
+        let marker = dir.join(format!("{}.sha256", image.filename));
+        if image_path.is_file() && marker.is_file() {
+            return Ok(());
+        }
+        let url = self.package_url(&image.filename, tebako_version);
+        let tmp_dir = self.cache_root.join(TMP_DIR);
+        let tmp = tmp_dir.join(format!("{}.{}.part", image.filename, std::process::id()));
+        match fetch_bytes(&url) {
+            Ok(bytes) => {
+                if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
+                }
+            }
+            Err(FetchError::IndexUnavailable(_)) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&format!("{url}: not found"))));
+            }
+            Err(FetchError::DownloadFailed(msg)) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&msg)));
+            }
+        }
+        let actual = sha256_file_hex(&tmp)
+            .ok_or_else(|| packaging_error(121, Some(&format!("cannot hash {}", tmp.display()))))?;
+        let expected = image.sha256.to_ascii_lowercase();
+        if actual != expected {
+            let _ = fs::remove_file(&tmp);
+            return Err(packaging_error(
+                121,
+                Some(&format!(
+                    "{}: expected {expected}, got {actual}; download deleted",
+                    image.filename
+                )),
+            ));
+        }
+        let err = |e: std::io::Error| {
+            crate::error::plain_error(format!("{e} installing {}", image_path.display()))
+        };
+        let mut perms = fs::metadata(&tmp).map_err(err)?.permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(&tmp, perms).map_err(err)?;
+        fs::rename(&tmp, &image_path).map_err(err)?;
+        fs::write(&marker, format!("{expected}  {}\n", image.filename)).map_err(err)?;
+        fs::write(
+            dir.join(format!("{}.origin", image.filename)),
+            format!("{url}\n"),
+        )
+        .map_err(err)?;
+        Ok(())
     }
 
     /// Extract the runtime package's filesystem layout next to the cached
@@ -299,7 +448,7 @@ impl Resolver {
         ruby_version: &str,
         platform: &str,
         tebako_version: &str,
-    ) -> Result<(), TebakoError> {
+    ) -> Result<IndexEntry, TebakoError> {
         let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
         self.offline_check(&entry_ref, tebako_version)?;
         let index = self.fetch_index(tebako_version)?;
@@ -307,7 +456,8 @@ impl Resolver {
         let url = self.package_url(&entry.filename, tebako_version);
         let tmp = self.download(&url, &entry.filename)?;
         self.verify(&tmp, entry)?;
-        self.place(&tmp, executable, entry, &url)
+        self.place(&tmp, executable, entry, &url)?;
+        Ok(entry.clone())
     }
 
     fn offline(&self) -> bool {
@@ -511,6 +661,15 @@ impl Resolver {
                             .and_then(|v| v.as_string())
                             .unwrap_or_default()
                             .to_ascii_lowercase(),
+                        image: e.find("image").and_then(|img| {
+                            Some(ImageRef {
+                                filename: img.find("filename").and_then(|v| v.as_string())?,
+                                sha256: img
+                                    .find("sha256")
+                                    .and_then(|v| v.as_string())?
+                                    .to_ascii_lowercase(),
+                            })
+                        }),
                     })
                     .collect())
             }
@@ -539,6 +698,7 @@ impl Resolver {
                             .and_then(|v| v.as_string())
                             .unwrap_or_default()
                             .to_ascii_lowercase(),
+                        image: None,
                     })
                     .collect())
             }
@@ -546,8 +706,11 @@ impl Resolver {
     }
 
     /// `<sha256>  <filename>` lines; filenames may carry a `*` prefix.
+    /// Runtime lines may name the image sibling (`<asset>.tfs`, item
+    /// 30b): they attach to the matching runtime entry as its `image`.
     fn parse_sha256sums(&self, body: &str, tebako_version: &str) -> Vec<IndexEntry> {
-        let mut out = Vec::new();
+        let mut out: Vec<IndexEntry> = Vec::new();
+        let mut images: Vec<(String, String, String)> = Vec::new(); // (rv, platform, ImageRef parts)
         for line in body.lines() {
             let mut parts = line.trim().splitn(2, char::is_whitespace);
             let (Some(sha256), Some(file)) = (parts.next(), parts.next()) else {
@@ -560,6 +723,14 @@ impl Resolver {
                     let Some(rest) = file.strip_prefix(&prefix) else {
                         continue;
                     };
+                    // The image sibling: strip .tfs instead of .exe and
+                    // record for the second pass.
+                    if let Some(rest) = rest.strip_suffix(".tfs") {
+                        if let Some((ruby_version, platform)) = split_ruby_platform(rest) {
+                            images.push((ruby_version, platform, format!("{file}|{sha256}")));
+                        }
+                        continue;
+                    }
                     let rest = rest.strip_suffix(".exe").unwrap_or(rest);
                     let Some((ruby_version, platform)) = split_ruby_platform(rest) else {
                         continue;
@@ -569,6 +740,7 @@ impl Resolver {
                         platform: Some(platform),
                         filename: file.to_string(),
                         sha256: sha256.to_ascii_lowercase(),
+                        image: None,
                     });
                 }
                 Flavor::Bootstrap => {
@@ -585,8 +757,23 @@ impl Resolver {
                         platform: Some(platform.to_string()),
                         filename: file.to_string(),
                         sha256: sha256.to_ascii_lowercase(),
+                        image: None,
                     });
                 }
+            }
+        }
+        for (ruby_version, platform, parts) in images {
+            let Some((filename, sha256)) = parts.split_once('|') else {
+                continue;
+            };
+            if let Some(entry) = out.iter_mut().find(|e| {
+                e.ruby_version.as_deref() == Some(ruby_version.as_str())
+                    && e.platform.as_deref() == Some(platform.as_str())
+            }) {
+                entry.image = Some(ImageRef {
+                    filename: filename.to_string(),
+                    sha256: sha256.to_ascii_lowercase(),
+                });
             }
         }
         out

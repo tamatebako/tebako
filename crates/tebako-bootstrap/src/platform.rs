@@ -71,6 +71,17 @@ pub fn make_executable(path: &Path) {
     let _ = path;
 }
 
+/// The runtime image is an immutable cache artifact (item 30b).
+pub fn make_readonly(path: &Path) {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o444));
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+}
+
 pub fn copy_file(src: &Path, dst: &Path) -> io::Result<()> {
     std::fs::copy(src, dst).map(|_| ())
 }

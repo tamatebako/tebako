@@ -371,3 +371,227 @@ fn parity_with_cpp_bootstrap() {
         assert_eq!(out.matches("--tebako-image").count(), 1, "{tag}: {out}");
     }
 }
+
+// ---------------------------------------------------------------------
+// item 30b: the `;image` flag (runtime-as-image resolution)
+// ---------------------------------------------------------------------
+
+#[test]
+fn s11_image_era_lean_resolves_image_and_hands_env() {
+    let h1 = h();
+    let pkg = h1.lean_pkg_image("imgapp");
+    let home = h1.home("home");
+    let (rc, out, err) = h1.run(&pkg, &home, &[], &["hello"]);
+    assert_eq!((rc, err.as_str()), (0, ""), "{err}");
+    assert!(out.contains("FAKE-RUNTIME"), "{out}");
+
+    // The image landed in the cache as an immutable artifact + markers.
+    let image = h1.cache_image(&home);
+    assert!(image.is_file(), "image not installed: {}", image.display());
+    let marker = home
+        .join("runtimes")
+        .join(&h1.entry)
+        .join(format!("{}.sha256", h1.image_asset));
+    assert!(marker.is_file(), "trusted marker missing");
+    let marker_text = std::fs::read_to_string(&marker).unwrap();
+    assert_eq!(
+        marker_text,
+        format!("{}  {}\n", h1.image_sha, h1.image_asset)
+    );
+    let origin = home
+        .join("runtimes")
+        .join(&h1.entry)
+        .join(format!("{}.origin", h1.image_asset));
+    assert!(origin.is_file(), "image origin missing");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = std::fs::metadata(&image).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o444, "image must be read-only: {mode:o}");
+    }
+    // No extracted layout tree anywhere in the cache.
+    assert!(
+        !home
+            .join("runtimes")
+            .join(&h1.entry)
+            .join("layout")
+            .exists(),
+        "the cache must not hold an extracted layout tree"
+    );
+
+    // The driver gets the image path in the environment; the handoff
+    // options themselves are the v1 shape.
+    assert!(
+        out.contains(&format!("TEBAKO_RUNTIME_IMAGE={}", image.display())),
+        "{out}"
+    );
+    assert!(out.contains("--tebako-image"), "{out}");
+    assert!(out.contains(":0:/__tebako_memfs__"), "{out}");
+
+    // A v1 (no-`;image`) package against the SAME image-carrying mirror
+    // resolves the executable only — byte-identical v1 behavior.
+    let h2 = h();
+    let pkg_v1 = h2.lean_pkg("plainapp");
+    let home_v1 = h2.home("home-v1");
+    let (rc, out, err) = h2.run(&pkg_v1, &home_v1, &[], &["hello"]);
+    assert_eq!((rc, err.as_str()), (0, ""), "{err}");
+    assert!(out.contains("TEBAKO_RUNTIME_IMAGE=\n"), "{out}");
+    assert!(
+        !h2.cache_image(&home_v1).exists(),
+        "v1 must not fetch the image"
+    );
+}
+
+#[test]
+fn s12_image_cache_hit_offline() {
+    let h = h();
+    let pkg = h.lean_pkg_image("imgapp");
+    let home = h.home("home");
+    assert_eq!(h.run(&pkg, &home, &[], &[]).0, 0);
+    // Remove the mirror and force offline: the cache must serve both.
+    std::fs::rename(&h.mirror_root, h.tmp.0.join("mirror-gone")).unwrap();
+    let (rc, out, _) = h.run(&pkg, &home, &[("TEBAKO_OFFLINE", "1")], &["hello"]);
+    assert_eq!(rc, 0);
+    assert!(out.contains("FAKE-RUNTIME"), "{out}");
+    assert!(out.contains("TEBAKO_RUNTIME_IMAGE="), "{out}");
+}
+
+#[test]
+fn s13_image_offline_miss_and_sha_mismatch() {
+    // executable cached but image missing + offline: the image offline
+    // error names the image (69).
+    let h1 = h();
+    let home = h1.home("home2");
+    let v1 = h1.lean_pkg("warmapp");
+    assert_eq!(h1.run(&v1, &home, &[], &[]).0, 0, "warm-up install");
+    let pkg = h1.lean_pkg_image("imgapp");
+    let (rc, _, err) = h1.run(&pkg, &home, &[("TEBAKO_OFFLINE", "1")], &[]);
+    assert_eq!(rc, 69, "{err}");
+    assert!(err.contains("runtime image"), "{err}");
+    assert!(err.contains("TEBAKO_OFFLINE"), "{err}");
+
+    // tampered mirror image: 70, download deleted, cache untouched.
+    let h2 = h();
+    let tampered = h2
+        .mirror_root
+        .join(format!("v{TEBAKO_VER}"))
+        .join(&h2.image_asset);
+    std::fs::write(&tampered, b"TAMPERED IMAGE BYTES").unwrap();
+    let pkg = h2.lean_pkg_image("imgapp2");
+    let home = h2.home("home3");
+    let (rc, _, err) = h2.run(&pkg, &home, &[], &[]);
+    assert_eq!(rc, 70, "{err}");
+    assert!(
+        err.contains("SHA256 mismatch for downloaded runtime image"),
+        "{err}"
+    );
+    assert!(
+        !h2.cache_image(&home).exists(),
+        "tampered image must not install"
+    );
+    assert!(
+        !home
+            .join("runtimes")
+            .join(&h2.entry)
+            .join(format!("{}.sha256", h2.image_asset))
+            .exists(),
+        "no marker without a verified image"
+    );
+}
+
+#[test]
+fn s14_image_sums_fallback_and_fat_payload() {
+    // manifest.json WITHOUT the image key: the SHA256SUMS line supplies
+    // the expected checksum.
+    let h1 = h();
+    let manifest = h1
+        .mirror_root
+        .join(format!("v{TEBAKO_VER}"))
+        .join("manifest.json");
+    std::fs::write(
+        &manifest,
+        format!(
+            "[\n  {{\n    \"tebako_version\": \"{TEBAKO_VER}\",\n    \"ruby_version\": \"{RUBY_VER}\",\n    \"platform\": \"{}\",\n    \"filename\": \"{}\",\n    \"sha256\": \"{}\",\n    \"size_bytes\": 12345\n  }}\n]\n",
+            harness::platform(),
+            h1.asset,
+            h1.sha
+        ),
+    )
+    .unwrap();
+    let pkg = h1.lean_pkg_image("imgapp");
+    let home = h1.home("home");
+    let (rc, _, err) = h1.run(&pkg, &home, &[], &[]);
+    assert_eq!((rc, err.as_str()), (0, ""), "{err}");
+    assert!(h1.cache_image(&home).is_file());
+
+    // fat package with the `;image` flag: the payload installs the
+    // executable, the image resolves from the mirror (offline-fat +
+    // online-mirror combination).
+    let h2 = h();
+    let fat = {
+        let out = h2.tmp.0.join("fatimg");
+        let img = h2.fake_image();
+        let ref_full = format!(
+            "{};image;sha256={}",
+            h2.runtime_ref,
+            harness::sha256_of(&h2.fake_runtime)
+        );
+        h2.stitch(
+            &h2.bootstrap,
+            &[
+                (img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__"),
+                (h2.fake_runtime.clone(), tpkg::TPKG_FORMAT_RUNTIME, ""),
+            ],
+            &ref_full,
+            0,
+            &out,
+        );
+        out
+    };
+    let home2 = h2.home("home-fat");
+    let (rc, out, err) = h2.run(&fat, &home2, &[], &["hello"]);
+    assert_eq!((rc, err.as_str()), (0, ""), "{err}");
+    assert!(out.contains("FAKE-RUNTIME"), "{out}");
+    assert!(
+        h2.cache_image(&home2).is_file(),
+        "image must resolve for ;image fat"
+    );
+}
+
+#[test]
+fn runtime_ref_wants_image_parsing() {
+    use tebako_bootstrap::runtime_ref_wants_image as wants;
+    assert!(wants("ruby@3.3.7;tebako=0.15.9;image"));
+    assert!(wants("ruby@3.3.7;tebako=0.15.9;image;sha256=604e87a1b1d74a6868b35ecdbb11c4e3db01b23286cea9f078636fdf246172b8"));
+    assert!(!wants("ruby@3.3.7;tebako=0.15.9"));
+    assert!(!wants("ruby@3.3.7;tebako=0.15.9;sha256=604e87a1b1d74a6868b35ecdbb11c4e3db01b23286cea9f078636fdf246172b8"));
+    assert!(!wants("ruby@3.3.7;tebako=0.15.9;imagefoo"));
+}
+
+#[test]
+fn manifest_image_sha_parsing() {
+    let text = r#"[
+  {
+    "tebako_version": "0.15.9",
+    "ruby_version": "3.3.7",
+    "platform": "macos-arm64",
+    "filename": "tebako-runtime-0.15.9-3.3.7-macos-arm64",
+    "sha256": "604e87a1b1d74a6868b35ecdbb11c4e3db01b23286cea9f078636fdf246172b8",
+    "size_bytes": 24191976,
+    "image": {"filename": "tebako-runtime-0.15.9-3.3.7-macos-arm64.tfs", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 20410208}
+  }
+]"#;
+    // the executable's checksum is unaffected by the image key
+    assert_eq!(
+        tebako_bootstrap::sha_from_manifest_json(text, "tebako-runtime-0.15.9-3.3.7-macos-arm64"),
+        Ok("604e87a1b1d74a6868b35ecdbb11c4e3db01b23286cea9f078636fdf246172b8".to_string())
+    );
+    assert_eq!(
+        tebako_bootstrap::sha_from_manifest_image(
+            text,
+            "tebako-runtime-0.15.9-3.3.7-macos-arm64.tfs"
+        ),
+        Ok("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string())
+    );
+    assert!(tebako_bootstrap::sha_from_manifest_image(text, "nope.tfs").is_err());
+}

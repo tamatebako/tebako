@@ -42,6 +42,43 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (milestone 8)
+
+- **Runtime-as-image, consumer side (item 30b)**: the runtime splits into
+  interpreter + `.tfs` image, and the launcher ABI learns the image era
+  ([docs/runtime-as-image.md](docs/runtime-as-image.md) — the exact
+  trailer/manifest/runtime_ref semantics). **`crates/tebako-bootstrap`**:
+  a runtime_ref carrying the bare **`;image` flag**
+  (`ruby@<rv>;tebako=<ver>[;image][;sha256=<hex>]`) resolves the
+  `<asset>.tfs` alongside the executable — download via tebako-http
+  (manifest `image` key primary, SHA256SUMS line fallback), sha256
+  verified against the release index, installed **read-only with
+  `<image>.sha256`/`<image>.origin` trusted markers** into the same cache
+  entry, never extracted — and exports `TEBAKO_RUNTIME_IMAGE=<path>` to
+  the runtime (the v1 handoff is byte-identical; refs without `;image`
+  change nothing). **`crates/tebako-cli`**: the index parsers learn the
+  additive image entries; press resolves the image into the cache
+  (bootstrap interop), seeds the packaging environment by extracting the
+  image **in-process through the tfs C ABI** (no `layout/` tree in the
+  cache, no `--tebako-extract` for image-era releases), and emits the
+  `;image` runtime_ref when the release carries an image entry (v1-era
+  refs stay byte-identical, golden parity intact). Proven end-to-end:
+  agent-123's published images (mirror mode) and a build-matched pair
+  manufactured from the official 0.15.9 runtime both press and cold-run
+  (the cache holds interpreter + image + markers only), and the current
+  driver mounts the standalone image and executes its stub with **zero
+  driver change**; the image-era driver patch
+  ([docs/tebako-main.cpp.30b.patch](docs/tebako-main.cpp.30b.patch) —
+  prefer `TEBAKO_RUNTIME_IMAGE` over the incbin image) is upstream's
+  only change, needed only for runtimes that stop embedding.
+- **Fixture note**: the locally-built 0.15.9 runtime in
+  `tebako-runtime-ruby/runtime-packages/` is not the released binary
+  (sha differs; its boot fails default-gem loading even from its own
+  image — `Gem.home` undefined, bundler's ProcessLock lands on the
+  read-only memfs). The gemfile scenario of the image-era e2e therefore
+  runs against the build-matched official pair; the simple scenario and
+  all mount/resolution proofs run against agent-123's pair.
+
 ### SHIPPED (milestone 7)
 
 - **`crates/tebako-cli` — the `tebako` packager CLI** (item 17's
