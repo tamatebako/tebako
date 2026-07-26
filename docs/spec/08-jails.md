@@ -1,9 +1,13 @@
 # Spec 08 — Jails: host-access policy
 
 Normative specification of host-filesystem access control for running
-payloads. Status: PLANNED (roadmap 09). Enforcement exists because every
-file access already flows through the TFS layer — one choke point covers
-every consumer.
+payloads. Status: PARTIAL (roadmap 09) — the TFS enforcement point (§1–§3)
+is SHIPPED in `crates/tfs` (policy model, `tebako_fs_host_policy`,
+per-route EPERM/EROFS gating, symlink re-validation, jail acceptance
+suite); manifest integration (§4), the dispatch-surface flags and the
+audit-journal logging of violations remain PLANNED. Enforcement exists
+because every file access already flows through the TFS layer — one choke
+point covers every consumer.
 
 ## 1. Policy model (docker `-v` semantics)
 
@@ -54,6 +58,30 @@ int tebako_fs_host_policy(int default_open /* 0 = deny */,
 - Implemented in the Rust TFS (`crates/tfs`) — the same layer that owns
   routing, so bootstrap, runtime driver, `tebako run`, and `tfs` all
   enforce identically with no per-app work.
+
+### Shipped semantics (crates/tfs, roadmap 09)
+
+- The policy is **process state, not namespace state**:
+  `tebako_fs_unmount` does not reset it (fail-closed); a later
+  `tebako_fs_host_policy` call replaces it. Install it after the payload
+  mounts are established — the mount family's image read is itself
+  policy-gated once a policy is active.
+- Gated host-passthrough decisions: `open` (read and write modes),
+  `stat`, `opendir`, `dlmap2file`, `extract_all`'s destination (a host
+  write), and the mount family's image read. An allowed host path keeps
+  the historic answer ENOENT ("not ours, pass through") for reads AND
+  writes — under `open` a host write attempt therefore answers ENOENT,
+  not EROFS, so the consumer's pass-through can perform the write
+  (profile 1: "cwd + writes pass through"). Memfs paths are byte-for-byte
+  unchanged (write opens on them stay EROFS).
+- A mount's access bit applies even under an `open` default (an ro bind
+  is ro in an otherwise open namespace, docker-style); longest host
+  prefix wins on path-component boundaries; argument files are an exact
+  read-only grant, even under deny.
+- Bind-time realpath covers mount sources and argument files (a missing
+  one fails the install with its errno); every gated decision
+  re-canonicalizes the target, so symlinks swapped in after install
+  resolve to their target and escapes fail EPERM.
 
 ## 4. Manifest integration
 

@@ -38,7 +38,10 @@
 //! `tebako_path_is_embedded`, `tebako_fd_is_embedded`. Backends: ZIP
 //! (pure-Rust `zip` crate) and DwarFS (external `dwarfs-rs` crate, feature
 //! `vendored-dwarfs`, default on); squashfs mounts fail cleanly with
-//! ENOTSUP.
+//! ENOTSUP. Jails (spec 08): `tebako_fs_host_policy` installs the
+//! host-access policy gating every host-passthrough path decision
+//! (`crates/tfs/src/policy.rs`); denied paths fail EPERM, writes against
+//! an ro grant EROFS, allowed paths keep today's ENOENT pass-through.
 //!
 //! ## PLANNED (next milestones)
 //!
@@ -56,9 +59,11 @@ pub mod c_api;
 pub mod context;
 pub mod errno;
 pub mod mount;
+pub mod policy;
 
 pub use backend::{Backend, EntryType, RawDirEntry, RawStat};
 pub use context::{TebakoCDirent, DT_DIR, DT_REG, TEBAKO_FD_FLAG, TEBAKO_FD_MAX};
+pub use policy::{HostAccess, HostMount, HostMountSpec, HostPolicy};
 
 /// Image-level metadata as JSON for an image file (item 24's
 /// `image_info_json`), built straight from the backend — outside the

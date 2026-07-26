@@ -48,4 +48,4 @@ internals, and are listed as consciously-not-ported with reasons.
   the dwarfs fixture likewise. The 10 MB `large.*` fixtures are excluded
   by design.
 - Symbol gate: `nm -gU libtfs.{dylib,so}` must show only `tebako_*`
-  (33 symbols) — checked in CI by inspection of the build artifacts.
+  (34 symbols) — checked in CI by inspection of the build artifacts.
