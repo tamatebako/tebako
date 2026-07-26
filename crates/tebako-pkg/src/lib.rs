@@ -39,13 +39,21 @@ pub enum SignRequest {
 }
 
 /// Package-level options (trailer fields besides the slots).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+///
+/// `Eq` is deliberately not derived: `package_manifest` carries YAML
+/// values (spec 08's `jail` block) which are `PartialEq` only.
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PackageOptions {
     pub runtime_ref: String,
     pub package_flags: u32,
     pub launcher_abi: u32,
     /// Signing is opt-in; `None` produces an unsigned (v1) package.
     pub sign: SignRequest,
+    /// The L2 package manifest to embed as extension block type 2 (spec 02
+    /// §5b / spec 03 §6). `None` embeds no block — the output is the exact
+    /// v1 shape. Rewrite operations do not use this field: they carry the
+    /// source package's raw blocks through the rewrite path instead.
+    pub package_manifest: Option<tpkg::PackageManifest>,
 }
 
 /// An image spec: path + optional explicit mount point + format override.
@@ -297,6 +305,7 @@ fn assemble(
     slots: &[SlotSource],
     output: &Path,
     options: &PackageOptions,
+    preserve_blocks: &[tpkg::ExtBlock],
 ) -> Result<(), String> {
     if slots.is_empty() || slots.len() > tpkg::TPKG_MAX_SLOTS as usize {
         return Err(format!(
@@ -317,6 +326,20 @@ fn assemble(
                 tpkg::TPKG_MOUNT_POINT_LEN - 1,
                 s.mount_point
             ));
+        }
+    }
+    // The L2 package manifest (ext block type 2, spec 03 §6) references
+    // slots by index — every entry must point at a real slot.
+    if let Some(pm) = &options.package_manifest {
+        for (i, entry) in pm.entries.iter().enumerate() {
+            if entry.slot as usize >= slots.len() {
+                return Err(format!(
+                    "package manifest entry {i} ({}) references slot {} but the package has {} slot(s)",
+                    entry.name,
+                    entry.slot,
+                    slots.len()
+                ));
+            }
         }
     }
 
@@ -345,6 +368,16 @@ fn assemble(
         ..Default::default()
     };
     m.set_runtime_ref(options.runtime_ref.as_bytes());
+    // Extension blocks: rewrite operations pass the source package's raw
+    // blocks (full preservation, byte-exact — no YAML re-serialization);
+    // an authored package manifest (bundle --package-manifest) then
+    // replaces the type-2 block on top.
+    m.ext_blocks = preserve_blocks.to_vec();
+    if let Some(pm) = &options.package_manifest {
+        if let Err(e) = m.set_package_manifest(pm) {
+            return Err(format!("invalid package manifest: {e}"));
+        }
+    }
 
     let cleanup = |out_path: &Path| {
         let _ = fs::remove_file(out_path);
@@ -471,16 +504,25 @@ fn options_from_manifest(m: &Manifest) -> PackageOptions {
         } else {
             SignRequest::None
         },
+        // Extension blocks do not flow through options on rewrites: the
+        // raw blocks are carried via rewrite_in_place's preserve_blocks
+        // (byte-exact, all types — no YAML re-serialization loss).
+        package_manifest: None,
     }
 }
 
 /// Rewrite `binary` from new part sources; the original is replaced
 /// (keeping its permissions) only after the new file is fully written.
+/// `preserve_blocks` carries the source package's extension blocks
+/// (spec 02 §5b) verbatim through the rewrite — blocks survive even when
+/// this build does not understand them, and a signed package is re-signed
+/// over them (they sit inside the canonical signed region).
 fn rewrite_in_place(
     binary: &Path,
     bootstrap: &PartSource,
     slots: &[SlotSource],
     options: &PackageOptions,
+    preserve_blocks: &[tpkg::ExtBlock],
 ) -> Result<(), String> {
     let perms = fs::metadata(binary).ok().map(|md| md.permissions());
 
@@ -495,7 +537,7 @@ fn rewrite_in_place(
         std::process::id()
     ));
 
-    assemble(bootstrap, slots, &tmp, options)?;
+    assemble(bootstrap, slots, &tmp, options, preserve_blocks)?;
     if let Some(p) = perms {
         let _ = fs::set_permissions(&tmp, p);
     }
@@ -588,7 +630,7 @@ fn bundle_impl(
             },
         });
     }
-    assemble(&boot, &slots, output, options)
+    assemble(&boot, &slots, output, options, &[])
 }
 
 /// unbundle: decompose a package into a directory of parts + manifest.json.
@@ -637,6 +679,20 @@ pub fn unbundle(binary: &Path, output_dir: &Path) -> Result<(), String> {
         eprintln!(
             "unbundle: warning: dropping {} trailing gap byte(s)",
             table_off - expected
+        );
+    }
+
+    // Extension blocks (spec 02 §5b) are not represented in manifest.json
+    // (the v1 unbundle format); warn that reassemble will drop them.
+    if !m.ext_blocks.is_empty() {
+        eprintln!(
+            "unbundle: warning: dropping {} extension block(s) ({}; not represented in manifest.json)",
+            m.ext_blocks.len(),
+            m.ext_blocks
+                .iter()
+                .map(|b| format!("type {}", b.block_type))
+                .collect::<Vec<_>>()
+                .join(", ")
         );
     }
 
@@ -914,6 +970,9 @@ pub fn reassemble(input_dir: &Path, output: &Path) -> Result<(), String> {
         &slots,
         output,
         &opts,
+        // manifest.json does not represent extension blocks (v1 format);
+        // unbundle warns when it drops them.
+        &[],
     )
 }
 
@@ -960,6 +1019,7 @@ pub fn insert_image(binary: &Path, image: &Path, mount_point: &str) -> Result<()
         },
         &slots,
         &options_from_manifest(&m),
+        &m.ext_blocks,
     )
 }
 
@@ -993,6 +1053,7 @@ pub fn remove_image(binary: &Path, slot_index: u32) -> Result<(), String> {
         },
         &slots,
         &options_from_manifest(&m),
+        &m.ext_blocks,
     )
 }
 
@@ -1020,6 +1081,7 @@ pub fn set_runtime(binary: &Path, runtime_file: &Path) -> Result<(), String> {
         },
         &slots,
         &options_from_manifest(&m),
+        &m.ext_blocks,
     )
 }
 
@@ -1080,10 +1142,73 @@ fn signature_status(archive: &Path, m: &Manifest) -> String {
     }
 }
 
+/// The `--full` package-manifest section (spec 15 §3 / spec 03 §6): the
+/// type-2 extension block rendered when present, an explicit "none" line
+/// otherwise, an INVALID notice (never a hard failure — info is read-only
+/// and lenient; `--verify`-class strictness is a separate mode) when the
+/// block does not parse.
+fn package_manifest_section(m: &Manifest) -> String {
+    let Some(block) = m.ext_block(tpkg::TPKG_EXT_TYPE_PACKAGE_MANIFEST) else {
+        return "Package manifest: none (v1 package)\n".to_string();
+    };
+    match m.package_manifest() {
+        Ok(Some(pm)) => {
+            let mut out = format!(
+                "Package manifest: schema v{} (ext block type 2, {} bytes)\n",
+                pm.schema_version,
+                block.payload.len()
+            );
+            out.push_str(&format!(
+                "  package: {} {}\n  producer: {} {}\n  created: {}\n",
+                pm.package.name,
+                pm.package.version,
+                pm.package.producer.tool,
+                pm.package.producer.tool_version,
+                pm.package.created
+            ));
+            out.push_str(&format!("  entries: {}\n", pm.entries.len()));
+            for (i, e) in pm.entries.iter().enumerate() {
+                out.push_str(&format!(
+                    "    [{i}] {} -> slot {}, entrypoint {}, runtime {}\n",
+                    e.name, e.slot, e.entrypoint, e.runtime_ref
+                ));
+            }
+            if !pm.env.is_empty() {
+                let env = pm
+                    .env
+                    .iter()
+                    .map(|(k, v)| format!("{k}={v}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                out.push_str(&format!("  env: {env}\n"));
+            }
+            if pm.jail.is_some() {
+                out.push_str("  jail: declared (spec 08)\n");
+            }
+            out
+        }
+        Ok(None) => "Package manifest: none (v1 package)\n".to_string(),
+        Err(e) => format!(
+            "Package manifest: present ({} bytes) but INVALID: {e}\n",
+            block.payload.len()
+        ),
+    }
+}
+
 /// Dump a three-part package trailer (exact C++ `cmd_info` tpkg output),
 /// or fall through to a plain-archive summary (via the tfs C ABI).
 /// Errors match the C++ message bodies.
 pub fn info(archive: &Path) -> Result<String, String> {
+    info_impl(archive, false)
+}
+
+/// `info --full` (spec 15 §3): the parity dump plus the package-manifest
+/// section (additive — the default `info` output is untouched).
+pub fn info_full(archive: &Path) -> Result<String, String> {
+    info_impl(archive, true)
+}
+
+fn info_impl(archive: &Path, full: bool) -> Result<String, String> {
     let mut out = String::new();
 
     let mut f =
@@ -1149,6 +1274,9 @@ pub fn info(archive: &Path) -> Result<String, String> {
         }
         out.push_str("Trailer: valid (magic and crc32 ok)\n");
         out.push_str(&signature_status(archive, &m));
+        if full {
+            out.push_str(&package_manifest_section(&m));
+        }
         return Ok(out);
     }
 

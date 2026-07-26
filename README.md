@@ -46,6 +46,36 @@ Rust-consumable surface for it.
 
 ### SHIPPED (milestone 10)
 
+- **tpkg: typed extension blocks + the L2 package manifest (spec 02 §5b /
+  spec 03 §6)** — the container's OCI-style L2 home: `[u32be type][u32be
+  length][payload]` blocks walked forward from the end of the slot table,
+  the v2 signing extension keeping its historical tail position (type 1 is
+  RESERVED, never reframed — it predates the block mechanism and delimits
+  from the tail). `crates/tpkg` owns the codec (`parse_ext_blocks` /
+  `encode_ext_blocks` free walkers, `Manifest::ext_block` /
+  `insert_ext_block` / `remove_ext_block`, `validate_strict`): readers
+  skip unknown types and carry them verbatim (rewrites preserve what they
+  do not understand), strict validation rejects them with a named error,
+  and v1/v2 trailers without blocks stay byte-identical (the C golden
+  vectors are untouched and green). Type 2 is the `PackageManifest`
+  (authored YAML, `schema/tpkg-package-manifest-v1.schema.json`,
+  schema-cross-checked): package identity, per-command entries with
+  per-entry `runtime_ref` (no 128-byte cap — suites, multi-runtime),
+  package-level jail + env. Blocks sit INSIDE the canonical signed
+  region — the v2 signature covers them. `crates/tebako-pkg`:
+  `bundle --package-manifest <file.yaml>` embeds the block, `info --full`
+  prints the package section when present (default `info` is parity-
+  untouched), and insert-image / remove-image / set-runtime carry the
+  block through the atomic rewrite path (signing state preserved as
+  before). `crates/tebako-bootstrap`: when the type-2 block is present,
+  `entries[0].runtime_ref` drives runtime resolution (block-less packages
+  fall back to the v1 trailer field byte-identically); the handoff argv
+  is unchanged — launcher ABI stays 1. Remaining (suite press, out of
+  scope here): unbundle/reassemble representation of extension blocks
+  (unbundle warns it drops them), `--slot N` / `--json` / `--verify`
+  info modes (spec 15), dispatcher-side per-entry suite dispatch
+  (spec 07).
+
 - **The info surface (spec 15)** — payload and package introspection in
   the two MECE front-ends, sharing the new **`crates/tebako-info`**
   engine (no third tool; default outputs keep C++ byte-parity, every

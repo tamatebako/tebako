@@ -60,6 +60,7 @@ fn opts(sign: SignRequest) -> PackageOptions {
         package_flags: 0,
         launcher_abi: 1,
         sign,
+        package_manifest: None,
     }
 }
 

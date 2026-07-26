@@ -71,6 +71,33 @@
 //! clear) has no extension and still parses exactly as before — v1 =
 //! legacy unsigned (see item 29's v1-legacy rule).
 //!
+//! # Wire layout (typed extension blocks — spec 02 §5b, the L2 home)
+//!
+//! ```text
+//! [bootstrap][payload slots][slot table][ext blocks…][v2 signing ext?][header @EOF]
+//!
+//! ext block: [u32be type][u32be length][payload bytes]
+//!   type 1 = RESERVED for the v2 signing extension — NOT a block: that
+//!            layout predates the block mechanism, it is delimited from
+//!            the TAIL via its sig_len field (a forward block walker
+//!            cannot parse it), and keeping its historical tail position
+//!            keeps v2-signed files byte-identical and the canonical
+//!            signed region stable. Reserving the type guarantees no
+//!            future block collides with a signature in the tail slot.
+//!   type 2 = package manifest (YAML — spec 03 §6, see the `package`
+//!            module): composition identity, entrypoint/suite entries,
+//!            package-level jail + env, per-entry runtime refs
+//! ```
+//!
+//! Blocks walk forward from the end of the slot table; the v2 signing
+//! extension, when present, is LAST before the header; extension blocks
+//! sit INSIDE the canonical signed region (the v2 signature covers them).
+//! Readers skip unknown block types (forward-compat) and carry them
+//! verbatim — rewrites preserve blocks they do not understand — while
+//! [`Manifest::validate_strict`] rejects unknown types with a named error.
+//! A v1/v2 file without blocks parses byte-identically to before (the
+//! golden vectors pin this).
+//!
 //! # Absent vs. corrupt
 //!
 //! A file whose last-166-byte window does not start with the 4-byte prefix
@@ -109,13 +136,19 @@
 mod codec;
 mod crc32;
 mod error;
+mod ext;
 mod io;
 mod manifest;
 mod model;
+mod package;
 
-pub use codec::{encode_trailer, parse_trailer, trailer_len, v2_signed_region};
+pub use codec::{
+    encode_ext_blocks, encode_trailer, parse_ext_blocks, parse_trailer, trailer_len,
+    v2_signed_region,
+};
 pub use crc32::{crc32, Crc32};
 pub use error::{strerror, TpkgError};
+pub use ext::{ExtBlock, ExtError};
 pub use io::{read_from, write_to};
 pub use manifest::{
     AppProvides, BuiltFrom, Capabilities, Constraint, DataProvides, Digest, Encryption,
@@ -125,6 +158,9 @@ pub use manifest::{
     SigningState, Source, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
 pub use model::{Manifest, Slot, V2Extension};
+pub use package::{
+    PackageEntry, PackageIdentity, PackageManifest, PackageManifestError, PACKAGE_SCHEMA_VERSION,
+};
 
 /// Manifest format version (stays 1: the chain-of-trust extension is
 /// flagged via `TPKG_FLAG_SIGNED_V2`, not a version bump, so v1-era
@@ -166,6 +202,23 @@ pub const TPKG_FORMAT_SQUASHFS: u32 = 2;
 pub const TPKG_FORMAT_ZIP: u32 = 3;
 /// `format_id`: runtime payload slot (fat packages).
 pub const TPKG_FORMAT_RUNTIME: u32 = 4;
+
+// ---------------------------------------------------------------------
+// Typed extension blocks (spec 02 §5b; all block numerics BIG-ENDIAN,
+// like the v2 extension's). Blocks sit between the slot table and the
+// v2 extension / trailer header; readers skip unknown types, rewrites
+// preserve them, `Manifest::validate_strict` rejects them.
+// ---------------------------------------------------------------------
+
+/// Extension block header size: u32be type + u32be length.
+pub const TPKG_EXT_HEADER_SIZE: usize = 8;
+/// Extension block type 1: RESERVED for the v2 chain-of-trust extension.
+/// Never a block — the signing extension predates the block mechanism, is
+/// self-delimiting from the tail via its sig_len field, and keeps its
+/// historical position immediately before the trailer header.
+pub const TPKG_EXT_TYPE_V2_SIGNING: u32 = 1;
+/// Extension block type 2: the L2 package manifest (YAML, spec 03 §6).
+pub const TPKG_EXT_TYPE_PACKAGE_MANIFEST: u32 = 2;
 
 // ---------------------------------------------------------------------
 // v2 chain-of-trust extension (all v2-extension numerics BIG-ENDIAN;

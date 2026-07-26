@@ -49,6 +49,7 @@ fn bundle_produces_signed_v2_package() {
             package_flags: 0,
             launcher_abi: 1,
             sign: SignRequest::PressLocal,
+            package_manifest: None,
         };
         bundle(&bootstrap, &images, &out, &options).expect("bundle");
 
@@ -99,6 +100,7 @@ fn tampered_slot_is_named_by_the_digest() {
                 package_flags: 0,
                 launcher_abi: 1,
                 sign: SignRequest::PressLocal,
+                package_manifest: None,
             },
         )
         .unwrap();

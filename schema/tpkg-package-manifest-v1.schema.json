@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tebako.org/schemas/tpkg-package-manifest-v1.schema.json",
+  "title": "tpkg package manifest v1",
+  "description": "The L2 package manifest (spec 03 §6), carried as tpkg extension block type 2 (spec 02 §5b) — YAML in the container, OUTSIDE every payload image, readable without backend knowledge. It owns composition (identity, entrypoint/suite entries, package-level jail + env, per-entry runtime refs); payload manifests stay inside images and own self-description. This schema is the STRUCTURAL contract; the tpkg crate's PackageManifest::validate() is the semantic gate (unique entry names, slot-capacity bound, non-empty fields). Unknown keys are tolerated at every level for forward compatibility; only jail is guaranteed lossless (its shape is spec 08's).",
+  "type": "object",
+  "required": ["schema_version", "package", "entries"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "package": { "$ref": "#/$defs/packageIdentity" },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/packageEntry" },
+      "description": "One entry per invocable command (N=1 for simple apps; N entries for suites). Entry names are unique (enforced by the crate's validate())."
+    },
+    "jail": {
+      "type": "object",
+      "description": "Package-level jail request. Opaque here: spec 08 owns the shape; the block is preserved verbatim."
+    },
+    "env": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Package-level environment (composition rules: spec 07)."
+    }
+  },
+  "$defs": {
+    "packageIdentity": {
+      "type": "object",
+      "required": ["name", "version", "producer", "created"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Free-form version string (semver AND datever packages exist)."
+        },
+        "producer": {
+          "type": "object",
+          "required": ["tool", "tool_version"],
+          "properties": {
+            "tool": { "type": "string", "minLength": 1 },
+            "tool_version": { "type": "string", "minLength": 1 }
+          }
+        },
+        "created": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Creation timestamp (RFC 3339 rendering)."
+        }
+      }
+    },
+    "packageEntry": {
+      "type": "object",
+      "required": ["name", "slot", "entrypoint", "runtime_ref"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The command name (the shim registers under this)."
+        },
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7,
+          "description": "Which payload slot carries the entrypoint's image (0..TPKG_MAX_SLOTS-1; the bound against the concrete package's slot count happens at embed time)."
+        },
+        "entrypoint": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Which PROVIDES entrypoint inside the slot's image."
+        },
+        "runtime_ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Per-entry runtime reference (type@version;tebako=<abi>[;params]) — kills the trailer's 128-byte single-field limit for suites and multi-runtime packages."
+        }
+      }
+    }
+  }
+}

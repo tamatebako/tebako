@@ -9,6 +9,7 @@
 //! tebako-pkg validate [--require-signed] <binary>
 //! tebako-pkg bundle --bootstrap <exe> --image <img[:mountpoint]>... -o <file>
 //!                    [--runtime-ref <ref>] [--lean] [--launcher-abi <n>]
+//!                    [--package-manifest <file.yaml>]
 //! tebako-pkg unbundle <binary> -o <dir>
 //! tebako-pkg reassemble <dir> -o <file>
 //! tebako-pkg insert-image <binary> <img[:mountpoint]>
@@ -74,6 +75,8 @@ struct Args {
     images: Vec<String>,
     output: Option<String>,
     runtime_ref: Option<String>,
+    package_manifest: Option<String>,
+    full: bool,
     lean: bool,
     launcher_abi: Option<i64>,
     verbose: bool,
@@ -135,6 +138,7 @@ impl Args {
                 "--image" => a.images.push(take_value(&mut i)?),
                 "-o" | "--output" => a.output = Some(take_value(&mut i)?),
                 "--runtime-ref" => a.runtime_ref = Some(take_value(&mut i)?),
+                "--package-manifest" => a.package_manifest = Some(take_value(&mut i)?),
                 "--launcher-abi" => {
                     let v = take_value(&mut i)?;
                     a.launcher_abi = Some(
@@ -285,6 +289,26 @@ fn cmd_bundle(rest: &[String]) -> ExitCode {
         return fail("bundle", "missing required option --bootstrap");
     };
     let images: Vec<PackageImage> = a.images.iter().map(|s| parse_image_spec(s)).collect();
+    // The L2 package manifest (spec 03 §6): authored YAML, embedded as
+    // extension block type 2 (spec 02 §5b).
+    let package_manifest = match &a.package_manifest {
+        Some(path) => {
+            let text = match std::fs::read_to_string(path) {
+                Ok(t) => t,
+                Err(e) => {
+                    return fail(
+                        "bundle",
+                        &format!("cannot read the package manifest {path}: {e}"),
+                    )
+                }
+            };
+            match tpkg::PackageManifest::from_yaml(&text) {
+                Ok(pm) => Some(pm),
+                Err(e) => return fail("bundle", &format!("invalid package manifest {path}: {e}")),
+            }
+        }
+        None => None,
+    };
     let opts = PackageOptions {
         runtime_ref: a.runtime_ref.unwrap_or_default(),
         package_flags: if a.lean { tpkg::TPKG_FLAG_LEAN } else { 0 },
@@ -292,6 +316,7 @@ fn cmd_bundle(rest: &[String]) -> ExitCode {
             .launcher_abi
             .map_or(0, |n| if n < 0 { 0 } else { n as u32 }),
         sign: a.sign.unwrap_or_default(),
+        package_manifest,
     };
     match bundle(Path::new(&bootstrap), &images, Path::new(&output), &opts) {
         Ok(()) => {
@@ -445,6 +470,9 @@ fn print_help() {
     println!("--sign=<keyid> selects a secret key from $TEBAKO_HOME/keys). Rewrite");
     println!("operations preserve the input's signing state. Verification of signed");
     println!("packages at run time is always strict.");
+    println!("`bundle --package-manifest <file.yaml>` embeds the L2 package manifest");
+    println!("(ext block type 2, spec 02 §5b / spec 03 §6); rewrites preserve extension");
+    println!("blocks, and `info --full` prints the package section when present.");
     println!("Options vary per command; the default mountpoint for image slot 0 is");
     println!("{} (slot N: {}).", default_mount(0), default_mount(1));
 }

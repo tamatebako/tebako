@@ -1,0 +1,21 @@
+# The spec 03 §6 example: a two-entry suite (metanorma + mn2pdf) with
+# per-entry runtime refs — the shape the type-2 extension block carries.
+schema_version: 1
+package:
+  name: metanorma
+  version: 1.2.3
+  producer: { tool: tebako-cli, tool_version: 0.16.0 }
+  created: 2026-07-26T00:00:00Z
+entries:
+  - name: metanorma
+    slot: 0
+    entrypoint: metanorma
+    runtime_ref: ruby@3.4.2;tebako=0.15.9
+  - name: mn2pdf
+    slot: 1
+    entrypoint: mn2pdf
+    runtime_ref: ruby@3.3.7;tebako=0.15.9
+jail:
+  profile: default
+env:
+  GEM_HOME: /__tebako__/gems

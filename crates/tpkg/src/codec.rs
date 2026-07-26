@@ -2,11 +2,12 @@
 //! implementation's `tpkg_write_fd()`/`tpkg_read_mem()`.
 
 use crate::error::TpkgError;
+use crate::ext::ExtBlock;
 use crate::model::{put_str, Manifest, Slot, V2Extension};
 use crate::{crc32, off, rec};
 use crate::{
-    TPKG_DIGESTS_SIZE, TPKG_FLAG_SIGNED_V2, TPKG_HEADER_SIZE, TPKG_KEYID_LEN, TPKG_MAGIC,
-    TPKG_MAGIC_LEN, TPKG_MAGIC_PREFIX_LEN, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN,
+    TPKG_DIGESTS_SIZE, TPKG_EXT_HEADER_SIZE, TPKG_FLAG_SIGNED_V2, TPKG_HEADER_SIZE, TPKG_KEYID_LEN,
+    TPKG_MAGIC, TPKG_MAGIC_LEN, TPKG_MAGIC_PREFIX_LEN, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN,
     TPKG_RUNTIME_REF_LEN, TPKG_SHA256_LEN, TPKG_SIGLEN_SIZE, TPKG_SIG_MAX, TPKG_SLOT_SIZE,
     TPKG_V2_EXT_FIXED, TPKG_VERSION,
 };
@@ -59,23 +60,81 @@ pub(crate) fn hex_lower(bytes: &[u8]) -> String {
     s
 }
 
-/// Serialize the slot table + v2 extension (when present) + trailer
-/// header for `manifest`, placing the slot table at absolute file offset
-/// `slot_table_offset` (i.e. the current EOF when appending). Returns
-/// `slot_count * TPKG_SLOT_SIZE + TPKG_HEADER_SIZE` bytes for an unsigned
-/// manifest, plus `TPKG_V2_EXT_FIXED + signature.len()` more for a signed
-/// (TPKG_FLAG_SIGNED_V2) one.
+/// Serialize the extension blocks (spec 02 §5b): `[u32be type][u32be
+/// length][payload]` per block, in wire order. Fails (`Invalid`) on the
+/// reserved type 1 and on payloads that do not fit the u32 length field;
+/// [`Manifest::validate`] applies the same checks, so an already-validated
+/// manifest always encodes.
+pub fn encode_ext_blocks(blocks: &[ExtBlock]) -> Result<Vec<u8>, TpkgError> {
+    let mut len = 0usize;
+    for b in blocks {
+        if b.block_type == crate::TPKG_EXT_TYPE_V2_SIGNING || b.payload.len() > u32::MAX as usize {
+            return Err(TpkgError::Invalid);
+        }
+        len += b.encoded_len();
+    }
+    let mut out = vec![0u8; len];
+    let mut pos = 0usize;
+    for b in blocks {
+        put32be(&mut out[pos..], b.block_type);
+        put32be(&mut out[pos + 4..], b.payload.len() as u32);
+        out[pos + TPKG_EXT_HEADER_SIZE..pos + b.encoded_len()].copy_from_slice(&b.payload);
+        pos += b.encoded_len();
+    }
+    Ok(out)
+}
+
+/// Walk an extension-block region (the bytes between the slot table and
+/// the v2 extension / trailer header), returning every block in wire
+/// order. Unknown types are returned like any other (readers skip what
+/// they do not know; [`Manifest::validate_strict`] rejects it). A
+/// truncated block header or an overrunning length is [`TpkgError::Invalid`]
+/// — garbage is never silently accepted.
+pub fn parse_ext_blocks(region: &[u8]) -> Result<Vec<ExtBlock>, TpkgError> {
+    let mut blocks = Vec::new();
+    let mut pos = 0usize;
+    while pos < region.len() {
+        if region.len() - pos < TPKG_EXT_HEADER_SIZE {
+            return Err(TpkgError::Invalid);
+        }
+        let block_type = get32be(&region[pos..]);
+        let length = get32be(&region[pos + 4..]) as usize;
+        pos += TPKG_EXT_HEADER_SIZE;
+        if length > region.len() - pos {
+            return Err(TpkgError::Invalid);
+        }
+        blocks.push(ExtBlock {
+            block_type,
+            payload: region[pos..pos + length].to_vec(),
+        });
+        pos += length;
+    }
+    Ok(blocks)
+}
+
+/// Serialize the slot table + extension blocks + v2 extension (when
+/// present) + trailer header for `manifest`, placing the slot table at
+/// absolute file offset `slot_table_offset` (i.e. the current EOF when
+/// appending). Returns `slot_count * TPKG_SLOT_SIZE + TPKG_HEADER_SIZE`
+/// bytes for an unsigned manifest without extension blocks, plus the
+/// encoded blocks and — for a signed (TPKG_FLAG_SIGNED_V2) manifest —
+/// `TPKG_V2_EXT_FIXED + signature.len()` more.
 ///
 /// The manifest is validated first; nothing is produced for a rejected
 /// manifest (mirrors the C writer appending nothing).
 pub fn encode_trailer(manifest: &Manifest, slot_table_offset: u64) -> Result<Vec<u8>, TpkgError> {
     manifest.validate()?;
 
+    let blocks = encode_ext_blocks(&manifest.ext_blocks)?;
     let ext_len = manifest
         .v2
         .as_ref()
         .map_or(0, |v2| TPKG_V2_EXT_FIXED + v2.signature.len());
-    let mut out = vec![0u8; manifest.slots.len() * TPKG_SLOT_SIZE + TPKG_HEADER_SIZE + ext_len];
+    let mut out =
+        vec![
+            0u8;
+            manifest.slots.len() * TPKG_SLOT_SIZE + blocks.len() + TPKG_HEADER_SIZE + ext_len
+        ];
 
     // slot table
     for (i, slot) in manifest.slots.iter().enumerate() {
@@ -91,13 +150,18 @@ pub fn encode_trailer(manifest: &Manifest, slot_table_offset: u64) -> Result<Vec
         );
     }
 
-    // v2 chain-of-trust extension (between the slot table and the header;
-    // sig_len big-endian, immediately before the header)
-    let hbase = manifest.slots.len() * TPKG_SLOT_SIZE + ext_len;
+    // extension blocks (spec 02 §5b — between the slot table and the v2
+    // extension / header)
+    let mut pos = manifest.slots.len() * TPKG_SLOT_SIZE;
+    out[pos..pos + blocks.len()].copy_from_slice(&blocks);
+    pos += blocks.len();
+
+    // v2 chain-of-trust extension (between the extension blocks and the
+    // header; sig_len big-endian, immediately before the header)
+    let hbase = pos + ext_len;
     if let Some(v2) = &manifest.v2 {
-        let xbase = manifest.slots.len() * TPKG_SLOT_SIZE;
         let sig_len = v2.signature.len();
-        let x = &mut out[xbase..];
+        let x = &mut out[pos..];
         for (i, d) in v2.slot_digests.iter().enumerate() {
             x[i * TPKG_SHA256_LEN..(i + 1) * TPKG_SHA256_LEN].copy_from_slice(d);
         }
@@ -242,6 +306,7 @@ pub(crate) fn parse_v2_extension(x: &[u8], slot_count: u32) -> Result<V2Extensio
 pub(crate) fn finish(
     header: &HeaderInfo,
     slots: Vec<Slot>,
+    ext_blocks: Vec<ExtBlock>,
     v2: Option<V2Extension>,
 ) -> Result<Manifest, TpkgError> {
     let manifest = Manifest {
@@ -250,17 +315,46 @@ pub(crate) fn finish(
         launcher_abi: header.launcher_abi,
         runtime_ref: header.runtime_ref,
         slots,
+        ext_blocks,
         v2,
     };
     manifest.validate()?;
     Ok(manifest)
 }
 
-/// The canonical (signed) region of a v2 trailer: slot table || digest
-/// array || keyid || trailer header — the two contiguous spans
-/// concatenated (everything except the signature and its length field).
-/// `trailer` must be the exact trailer bytes (slot table + extension +
-/// header).
+/// Split the gap between the slot table and the trailer header into the
+/// extension-block region and the v2 extension. Without the SIGNED_V2
+/// flag the whole gap is the block region; with it, the extension fills
+/// exactly `TPKG_V2_EXT_FIXED + sig_len` bytes at the END of the gap
+/// (its historical tail position — spec 02 §5b) and the blocks precede
+/// it. `gap` is `[slot table end, header start)`.
+pub(crate) fn split_gap(gap: &[u8], signed: bool) -> Result<(&[u8], Option<&[u8]>), TpkgError> {
+    if !signed {
+        return Ok((gap, None));
+    }
+    if gap.len() < TPKG_V2_EXT_FIXED {
+        return Err(TpkgError::Invalid);
+    }
+    let sig_len = get32be(&gap[gap.len() - TPKG_SIGLEN_SIZE..]) as usize;
+    if sig_len == 0 || sig_len > TPKG_SIG_MAX as usize {
+        return Err(TpkgError::Invalid);
+    }
+    let ext_len = TPKG_V2_EXT_FIXED + sig_len;
+    if ext_len > gap.len() {
+        return Err(TpkgError::Invalid);
+    }
+    Ok((
+        &gap[..gap.len() - ext_len],
+        Some(&gap[gap.len() - ext_len..]),
+    ))
+}
+
+/// The canonical (signed) region of a v2 trailer: slot table || extension
+/// blocks || digest array || keyid || trailer header — the two contiguous
+/// spans concatenated (everything except the signature and its length
+/// field). The extension blocks (spec 02 §5b) sit inside the signed
+/// region: the signature covers them. `trailer` must be the exact trailer
+/// bytes (slot table + [ext blocks +] extension + header).
 pub fn v2_signed_region(trailer: &[u8]) -> Result<Vec<u8>, TpkgError> {
     if trailer.len() < TPKG_V2_EXT_FIXED + TPKG_HEADER_SIZE {
         return Err(TpkgError::Invalid);
@@ -276,20 +370,22 @@ pub fn v2_signed_region(trailer: &[u8]) -> Result<Vec<u8>, TpkgError> {
     if trailer.len() < ext_len + TPKG_HEADER_SIZE {
         return Err(TpkgError::Invalid);
     }
-    let table_len = trailer.len() - TPKG_HEADER_SIZE - ext_len;
+    // everything before the v2 extension: slot table + extension blocks
+    let prefix_len = trailer.len() - TPKG_HEADER_SIZE - ext_len;
     let mut region =
-        Vec::with_capacity(table_len + TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN + TPKG_HEADER_SIZE);
-    // span 1: slot table + digests + keyid
-    region.extend_from_slice(&trailer[..table_len + TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN]);
+        Vec::with_capacity(prefix_len + TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN + TPKG_HEADER_SIZE);
+    // span 1: slot table + extension blocks + digests + keyid
+    region.extend_from_slice(&trailer[..prefix_len + TPKG_DIGESTS_SIZE + TPKG_KEYID_LEN]);
     // span 2: the trailer header
-    region.extend_from_slice(&trailer[table_len + ext_len..]);
+    region.extend_from_slice(&trailer[prefix_len + ext_len..]);
     Ok(region)
 }
 
 /// Total on-disk trailer length for a parsed manifest (slot table +
-/// [v2 extension +] header).
+/// [extension blocks +] [v2 extension +] header).
 pub fn trailer_len(m: &Manifest) -> u64 {
-    let base = m.slots.len() as u64 * TPKG_SLOT_SIZE as u64 + TPKG_HEADER_SIZE as u64;
+    let blocks: u64 = m.ext_blocks.iter().map(|b| b.encoded_len() as u64).sum();
+    let base = m.slots.len() as u64 * TPKG_SLOT_SIZE as u64 + blocks + TPKG_HEADER_SIZE as u64;
     base + m
         .v2
         .as_ref()
@@ -297,7 +393,8 @@ pub fn trailer_len(m: &Manifest) -> u64 {
 }
 
 /// Read the manifest trailer from an in-memory image of the binary
-/// (mirrors the C `tpkg_read_mem()`, extended with the v2 flag check).
+/// (mirrors the C `tpkg_read_mem()`, extended with the v2 flag check and
+/// the extension-block walk of spec 02 §5b).
 pub fn parse_trailer(data: &[u8]) -> Result<Manifest, TpkgError> {
     let size = data.len() as u64;
     if size < TPKG_HEADER_SIZE as u64 {
@@ -318,16 +415,12 @@ pub fn parse_trailer(data: &[u8]) -> Result<Manifest, TpkgError> {
         .map(|i| parse_slot_record(&table[i * TPKG_SLOT_SIZE..(i + 1) * TPKG_SLOT_SIZE]))
         .collect();
 
-    let v2 = if header.package_flags & TPKG_FLAG_SIGNED_V2 != 0 {
-        let ext_start = table_start + table_len;
-        let ext_end = data.len() - TPKG_HEADER_SIZE;
-        Some(parse_v2_extension(
-            &data[ext_start..ext_end],
-            header.slot_count,
-        )?)
-    } else {
-        None
-    };
+    let gap = &data[table_start + table_len..data.len() - TPKG_HEADER_SIZE];
+    let (block_region, ext) = split_gap(gap, header.package_flags & TPKG_FLAG_SIGNED_V2 != 0)?;
+    let v2 = ext
+        .map(|x| parse_v2_extension(x, header.slot_count))
+        .transpose()?;
+    let ext_blocks = parse_ext_blocks(block_region)?;
 
-    finish(&header, slots, v2)
+    finish(&header, slots, ext_blocks, v2)
 }

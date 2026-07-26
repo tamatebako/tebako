@@ -6,7 +6,13 @@
 //! 1. find its own executable path;
 //! 2. parse the tpkg manifest trailer at EOF (crates/tpkg);
 //! 3. check the trailer's launcher_abi against TEBAKO_BOOTSTRAP_LAUNCHER_ABI;
-//! 4. parse runtime_ref "type@version;tebako=<abi>[;image][;sha256=<hex>]";
+//! 4. parse runtime_ref "type@version;tebako=<abi>[;image][;sha256=<hex>]"
+//!    — when the package carries the L2 package manifest (extension block
+//!    type 2, spec 02 §5b / spec 03 §6), its entries[0].runtime_ref is
+//!    used instead of the trailer's 128-byte field (per-entry refs for
+//!    suites and multi-runtime packages; the trailer field stays for
+//!    v1-era loaders and block-less packages behave byte-identically).
+//!    Resolution only — the handoff argv is unchanged (ABI stays 1);
 //! 5. resolve the language runtime — shared cache hit, else a fat-package
 //!    payload extraction (SHA256-verified against the ;sha256= parameter of
 //!    runtime_ref), else a download from the tebako-runtime-ruby releases
@@ -188,6 +194,27 @@ pub fn runtime_ref_sha256(ref_: &str) -> Result<String, ()> {
 /// runtime_ref parameters.
 pub fn runtime_ref_wants_image(ref_: &str) -> bool {
     ref_.split(';').any(|segment| segment == "image")
+}
+
+/// Which runtime_ref this package resolves against (spec 02 §5b / spec 03
+/// §6): when the package carries the L2 package manifest (extension block
+/// type 2), its `entries[0].runtime_ref` wins — per-entry refs kill the
+/// trailer's 128-byte single-field limit (suites, multi-runtime
+/// packages). A block-less package reads the trailer field exactly as
+/// before (byte-identical behavior). Resolution only — the handoff argv
+/// is unchanged (launcher ABI stays 1).
+pub fn resolution_runtime_ref(m: &tpkg::Manifest) -> Result<String, BootError> {
+    match m.package_manifest() {
+        // from_yaml validates: entries is non-empty (N >= 1).
+        Ok(Some(pm)) => Ok(pm.entries[0].runtime_ref.clone()),
+        Ok(None) => Ok(m.runtime_ref_str().unwrap_or_default().to_string()),
+        Err(e) => fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "invalid package manifest (extension block type 2): {e} — re-stitch the package"
+            ),
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -1731,7 +1758,7 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         );
     }
 
-    let runtime_ref = m.runtime_ref_str().unwrap_or_default().to_string();
+    let runtime_ref = resolution_runtime_ref(&m)?;
     if runtime_ref.is_empty() {
         return fail(
             EX_TEBAKO_RUNTIME_REF,
