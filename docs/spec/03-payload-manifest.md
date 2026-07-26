@@ -31,8 +31,9 @@ created: 2026-07-26T00:00:00Z
 source: {src_sha256: "…", commit: "…", builder: "gha:run:123"}
 sbom: {ref: "…"}                      # optional
 digest:
-  tree_hash: "…"                      # plaintext merkle root — semantic identity (CAS)
-  blob_sha256: "…"                    # transport identity
+  tree_hash: "…"                      # plaintext merkle root over the tree MINUS the
+                                      # manifest path — semantic identity (CAS)
+  blob_sha256: "…"                    # transport identity — see the fixed-point rule
 signing: {state: unsigned | signed, keyid: "…", mechanism: openpgp}
 encryption: {state: none}             # or per-part list {paths, algorithm, envelope_refs} — NEVER keys
 annotations: {…}                      # free-form; unknown keys preserved
@@ -193,3 +194,19 @@ capabilities: {exec: true, read: true}
 `exec_tier` tells the dispatcher HOW to run its executables (preload
 shim / link-wrapped / already-TFS-native / extract-closure) — consumers
 never care which path a tool took.
+
+## 7. The digest fixed-point rule (locked 2026-07-26)
+
+A manifest inside the image it describes CANNOT name that image's
+sha256 (self-reference has no fixed point). Therefore:
+
+- `tree_hash` is computed over the payload tree EXCLUDING
+  `/__tpkg__/` (manifest-excluded merkle root — well-defined, and it is
+  what CAS/dedup/signing use).
+- `blob_sha256` is NOT stored inside an embedded manifest: it lives one
+  tier out — in the registry mirror (tier 3) and/or the tpkg trailer's
+  per-slot digest array (tier 2, spec 02 §4). Producers fill it there;
+  consumers verify the image against the OUTER record, never against a
+  self-digest. An embedded manifest carrying a `blob_sha256` is read as
+  advisory provenance only (e.g. the digest of the source image it was
+  built from), never as a verification input (spec 15 §5).
