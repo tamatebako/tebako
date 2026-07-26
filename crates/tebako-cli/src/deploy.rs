@@ -11,11 +11,14 @@
 //! The driver runs with the runtime's own Ruby and installs into the
 //! packaging environment through absolute host paths.
 //!
-//! Simplification vs the gem (documented in the crate README): the
-//! RuntimeSdk / src-release subsystem is not ported — native-extension
-//! builds inside deploy (mkmf/cmake) are out of this milestone's scope.
-//! The driver's build_overrides therefore carry only the bindir override,
-//! which is what the gem emits when no SDK was resolved.
+//! Native-extension deploy: when the runtime SDK was resolved (POSIX,
+//! ops present — src/sdk.rs), the driver's build_overrides also point
+//! rubyhdrdir/rubyarchhdrdir at the SDK header tree and LIBRUBYARG at
+//! the SDK's symbol stub, and the cc_override re-resolves the recorded
+//! toolchain against the press host — mkmf-driven extension builds
+//! inside the driver then compile against the runtime's own headers,
+//! exactly like the gem. Without the SDK the overrides carry only the
+//! bindir override (the gem's no-SDK branch).
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -50,6 +53,9 @@ pub struct RuntimeDeployer {
     pub ruby_version: String,
     pub tebako_version: String,
     pub verbose: bool,
+    /// The provisioned runtime SDK (native-extension deploy); None keeps
+    /// the gem's no-SDK build_overrides branch (bindir override only).
+    pub sdk: Option<crate::sdk::SdkPaths>,
 }
 
 impl RuntimeDeployer {
@@ -204,15 +210,45 @@ impl RuntimeDeployer {
     }
 
     /// Without the RuntimeSdk this is the gem's no-SDK branch: bindir
-    /// override only (no header/library overrides, no cc_override).
+    /// override only (no header/library overrides, no cc_override). With
+    /// it, extconf/make recipes spawn RbConfig.ruby / Gem.ruby (the shim)
+    /// and compile against rubyhdrdir; the overrides point bindir at the
+    /// host shim, the header dirs at the runtime SDK, and LIBRUBYARG at
+    /// the SDK's symbol stub — mkmf's link probes expand $(LIBRUBYARG)
+    /// only for throwaway executables, so they get true yes/no
+    /// resolution while the shipped extension .so never links the stub
+    /// and resolves against the runtime executable at load time. mkmf
+    /// reads MAKEFILE_CONFIG, rubygems reads CONFIG — both take the
+    /// overrides.
     fn build_overrides(&self) -> String {
         if !self.shim_supported() {
             return String::new();
         }
-        format!(
-            "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", {})\nend\n",
+        let mut out =
+            String::from("[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n");
+        out.push_str(&format!(
+            "  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", {})\n",
             rb_str(&self.staging_bin_dir.to_string_lossy())
-        )
+        ));
+        let Some(sdk) = &self.sdk else {
+            return format!("{out}end\n");
+        };
+        out.push_str(&format!(
+            "  tg_config[\"rubyhdrdir\"] = {}\n",
+            rb_str(&sdk.include.to_string_lossy())
+        ));
+        out.push_str(&format!(
+            "  tg_config[\"rubyarchhdrdir\"] = {}\n",
+            rb_str(&sdk.archhdr.to_string_lossy())
+        ));
+        out.push_str(&format!(
+            "  tg_config[\"LIBRUBYARG\"] = {}\n",
+            rb_str(&sdk.stub.to_string_lossy())
+        ));
+        out.push_str("  tg_config[\"EXTDLDFLAGS\"] = \"\"\n");
+        out.push_str(&cc_override());
+        out.push_str("end\n");
+        out
     }
 }
 
@@ -340,6 +376,50 @@ fn is_executable(path: &Path) -> bool {
 }
 
 // ---------------------------------------------------------------------
+// driver-side toolchain override (RuntimeDeployer#cc_override)
+// ---------------------------------------------------------------------
+
+/// The recorded toolchain comes from the runtime's build machine (an
+/// LLVM release); when it is not installed on the press host, mkmf probes
+/// and bundled-library links die at shell level ("The compiler failed to
+/// generate an executable file", "command not found"). The emitted driver
+/// code falls back to the first available equivalent: newer/older clang
+/// for the compilers (the recorded flags are clang-flavored), binutils
+/// for the llvm tools. Each candidate list starts with the recorded tool
+/// as a Ruby code reference (it reads the runtime's rbconfig inside the
+/// driver), followed by the literal fallbacks.
+fn cc_override() -> String {
+    let mut out = String::from(
+        "def tg_first_tool(*candidates)\n  candidates.find { |tg_c| !tg_c.to_s.empty? && system(\"command -v #{tg_c} >/dev/null 2>&1\") }\nend\n\n{\n",
+    );
+    for (key, fallbacks) in toolchain_candidates() {
+        out.push_str(&format!(
+            "  {} => [{}],\n",
+            rb_str(key),
+            override_candidates(key, &fallbacks)
+        ));
+    }
+    out.push_str(
+        "}.each do |tg_key, tg_candidates|\n  tg_tool = tg_first_tool(*tg_candidates)\n  next if tg_tool.nil?\n  [RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each { |tg_config| tg_config[tg_key] = tg_tool }\nend\n",
+    );
+    out
+}
+
+/// [recorded tool as a Ruby code reference, literal fallbacks...] — the
+/// gem's override_candidates; NM's recorded value carries flags
+/// (`nm --no-codesign` & co), hence the `.to_s.split.first`.
+fn override_candidates(key: &str, fallbacks: &[String]) -> String {
+    let recorded = if key == "NM" {
+        format!("RbConfig::CONFIG[{}].to_s.split.first", rb_str(key))
+    } else {
+        format!("RbConfig::CONFIG[{}]", rb_str(key))
+    };
+    let mut parts = vec![recorded];
+    parts.extend(fallbacks.iter().map(|c| rb_str(c)));
+    parts.join(", ")
+}
+
+// ---------------------------------------------------------------------
 // driver templates (verbatim ports of the gem's heredocs)
 // ---------------------------------------------------------------------
 
@@ -355,10 +435,45 @@ BUNDLE_EXEC_SCRIPT = @BUNDLE_EXEC_SCRIPT@
 @BUILD_OVERRIDES@if ARGV.any?
   # Script mode: mkmf-driven extension builds spawn the ruby at
   # RbConfig's bindir (the host shim); the shim re-enters this image
-  # with the script as argument. mkmf derives srcdir from $0, so the
-  # script takes over the program name before it is loaded.
-  $0 = ARGV.first
-  load ARGV.shift
+  # with the spawn's full argv. Emulate the ruby command line: consume
+  # the usual interpreter switches first (-r/-I/-e/--), then run the
+  # script -- mkmf derives srcdir from $0, so the script takes over
+  # the program name before it is loaded.
+  tg_ran_eval = false
+  while ARGV.any?
+    case ARGV.first
+    when "-r"
+      ARGV.shift
+      require ARGV.shift
+    when /\A-r(.+)/
+      require Regexp.last_match(1)
+      ARGV.shift
+    when "-I"
+      ARGV.shift
+      $LOAD_PATH.unshift ARGV.shift
+    when /\A-I(.+)/
+      $LOAD_PATH.unshift Regexp.last_match(1)
+      ARGV.shift
+    when "-e"
+      ARGV.shift
+      eval(ARGV.shift, TOPLEVEL_BINDING, "-e")
+      tg_ran_eval = true
+    when /\A-e(.+)/
+      eval(Regexp.last_match(1), TOPLEVEL_BINDING, "-e")
+      tg_ran_eval = true
+    when "--"
+      ARGV.shift
+      break
+    else
+      break
+    end
+  end
+  exit 0 if tg_ran_eval
+
+  if ARGV.any?
+    $0 = ARGV.first
+    load ARGV.shift
+  end
 else
 # OpenSSL reads certificate files at the C level, where the memfs is
 # invisible; give rubygems and bundler host-side copies of the CA
@@ -475,5 +590,98 @@ mod tests {
         assert_eq!(rb_str("a\"b"), "\"a\\\"b\"");
         assert_eq!(rb_str("a\\b"), "\"a\\\\b\"");
         assert_eq!(rb_str("plain"), "\"plain\"");
+    }
+
+    fn deployer(sdk: Option<crate::sdk::SdkPaths>) -> RuntimeDeployer {
+        RuntimeDeployer {
+            runtime_path: PathBuf::from("/tmp/runtime"),
+            staging_bin_dir: PathBuf::from("/tmp/o/p"),
+            fs_mount_point: "/__tebako_memfs__".to_string(),
+            ruby_version: "3.3.7".to_string(),
+            tebako_version: "0.15.9".to_string(),
+            verbose: false,
+            sdk,
+        }
+    }
+
+    fn sdk_paths() -> crate::sdk::SdkPaths {
+        crate::sdk::SdkPaths {
+            root: PathBuf::from("/tmp/deps/sdk/3.3.7-v0.2.1-test"),
+            include: PathBuf::from("/tmp/deps/sdk/3.3.7-v0.2.1-test/include"),
+            archhdr: PathBuf::from("/tmp/deps/sdk/3.3.7-v0.2.1-test/archhdr"),
+            stub: PathBuf::from("/tmp/deps/sdk/3.3.7-v0.2.1-test/lib/libruby-stub.a"),
+        }
+    }
+
+    #[test]
+    fn build_overrides_without_sdk_is_the_gem_no_sdk_branch() {
+        if cfg!(windows) {
+            assert_eq!(deployer(None).build_overrides(), "");
+            return;
+        }
+        assert_eq!(
+            deployer(None).build_overrides(),
+            "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\nend\n"
+        );
+    }
+
+    #[test]
+    fn build_overrides_with_sdk_matches_the_gem_rendering() {
+        if cfg!(windows) {
+            return;
+        }
+        let out = deployer(Some(sdk_paths())).build_overrides();
+        let head = "[RbConfig::CONFIG, RbConfig::MAKEFILE_CONFIG].each do |tg_config|\n  tg_config[\"bindir\"] = ENV.fetch(\"TEBAKO_DEPLOY_BINDIR\", \"/tmp/o/p\")\n  tg_config[\"rubyhdrdir\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/include\"\n  tg_config[\"rubyarchhdrdir\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/archhdr\"\n  tg_config[\"LIBRUBYARG\"] = \"/tmp/deps/sdk/3.3.7-v0.2.1-test/lib/libruby-stub.a\"\n  tg_config[\"EXTDLDFLAGS\"] = \"\"\n";
+        assert!(out.starts_with(head), "unexpected overrides head:\n{out}");
+        assert!(
+            out.ends_with("end\n"),
+            "overrides must close the each block"
+        );
+        assert!(
+            out.contains("def tg_first_tool(*candidates)\n"),
+            "cc_override helper missing:\n{out}"
+        );
+        assert!(
+            out.contains("\"CC\" => [RbConfig::CONFIG[\"CC\"], \"clang\", \"clang-20\""),
+            "CC candidates missing the recorded tool + fallbacks:\n{out}"
+        );
+        assert!(
+            out.contains("\"NM\" => [RbConfig::CONFIG[\"NM\"].to_s.split.first, \"nm\""),
+            "NM candidates must split the recorded value:\n{out}"
+        );
+        assert!(
+            out.contains("\"AR\" => [RbConfig::CONFIG[\"AR\"], \"ar\", \"llvm-ar-20\""),
+            "AR candidates:\n{out}"
+        );
+    }
+
+    #[test]
+    fn cc_override_candidate_lists_match_the_gem() {
+        let cc = override_candidates(
+            "CC",
+            &[
+                "clang".to_string(),
+                "clang-20".to_string(),
+                "cc".to_string(),
+            ],
+        );
+        assert_eq!(
+            cc,
+            "RbConfig::CONFIG[\"CC\"], \"clang\", \"clang-20\", \"cc\""
+        );
+        let nm = override_candidates("NM", &["nm".to_string()]);
+        assert_eq!(nm, "RbConfig::CONFIG[\"NM\"].to_s.split.first, \"nm\"");
+    }
+
+    #[test]
+    fn driver_script_mode_emulates_the_ruby_command_line() {
+        // mkmf/make spawn RbConfig.ruby with switches (-r/-I/-e/--); the
+        // gem's script mode consumes them before loading the script.
+        let src = DRIVER_TEMPLATE;
+        assert!(src.contains("tg_ran_eval = false"));
+        assert!(src.contains("when \"-I\""));
+        assert!(src.contains("when /\\A-r(.+)/"));
+        assert!(src.contains("exit 0 if tg_ran_eval"));
+        assert!(src.contains("$0 = ARGV.first"));
     }
 }

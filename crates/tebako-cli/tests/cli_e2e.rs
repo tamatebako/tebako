@@ -704,6 +704,7 @@ fn press_against_mirror(
     entry: &str,
     package: &Path,
     mirror_root: &str,
+    extra_env: &[(String, String)],
 ) -> (i32, String) {
     let root = work.join("root");
     copy_dir(&fixtures().join(fixture), &root);
@@ -724,6 +725,9 @@ fn press_against_mirror(
         .arg("3.3.7")
         .env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
         .env("TEBAKO_HOME", work.join("home"));
+    for (key, value) in extra_env {
+        cmd.env(key, value);
+    }
     let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
         "tebako-bootstrap.exe"
     } else {
@@ -748,7 +752,8 @@ fn image_era_press_and_cold_run() {
     let package = work.join("pkg");
 
     // Press (simple script): the runtime image is extracted in-process.
-    let (code, log) = press_against_mirror(&work, "test-00", "test.rb", &package, &mirror_root);
+    let (code, log) =
+        press_against_mirror(&work, "test-00", "test.rb", &package, &mirror_root, &[]);
     assert!(code == 0, "press failed:\n{log}");
     assert!(
         log.contains("extracting the runtime image"),
@@ -935,7 +940,7 @@ fn image_era_full_flow_official_pair() {
         ),
     ] {
         let package = work.join(format!("pkg-{fixture}"));
-        let (code, log) = press_against_mirror(&work, fixture, entry, &package, &mirror_root);
+        let (code, log) = press_against_mirror(&work, fixture, entry, &package, &mirror_root, &[]);
         assert!(code == 0, "{fixture} press failed:\n{log}");
 
         // Cold run: wipe the cache; the bootstrap resolves interpreter +
@@ -956,4 +961,256 @@ fn image_era_full_flow_official_pair() {
             "{fixture}: no extracted tree"
         );
     }
+}
+
+// ---------------------------------------------------------------------
+// roadmap 25 e2e: native-extension deploy. A Gemfile app whose vendored
+// toyext gem carries a C extension presses against an image-era runtime:
+// the deploy provisions the runtime SDK (headers replayed from the
+// runtime's own configure provenance + a symbol stub from its exported
+// symbols) and the extension builds inside the runtime's own ruby — the
+// built artifact lands in the app image at its gem-correct path and
+// loads from the memfs at runtime.
+// ---------------------------------------------------------------------
+
+/// Mirror the ruby src release the runtime was built from into a local
+/// directory, so the press exercises the SDK's file:// fetch path
+/// (TEBAKO_OFFLINE-compatible) while still sha-verifying against the
+/// release's real SHA256SUMS.
+fn sdk_mirror_fixture(work: &Path, ruby: &str) -> Option<PathBuf> {
+    let mirror = work.join("sdk-mirror");
+    let release = mirror.join(tebako_cli::sdk::DEFAULT_SRC_RELEASE);
+    fs::create_dir_all(&release).unwrap();
+    let base = format!(
+        "{}/{}",
+        tebako_cli::sdk::DEFAULT_MIRROR,
+        tebako_cli::sdk::DEFAULT_SRC_RELEASE
+    );
+    let sums = tebako_http::get_text(&format!("{base}/SHA256SUMS")).ok()?;
+    fs::write(release.join("SHA256SUMS"), &sums).unwrap();
+    let filename = format!("tfs-ruby-{ruby}-src.tar.gz");
+    let tarball = tebako_http::get(&format!("{base}/{filename}")).ok()?;
+    fs::write(release.join(filename), &tarball).unwrap();
+    Some(mirror)
+}
+
+/// Run the runtime against a throwaway driver image whose /local/stub.rb
+/// is `stub_source` — the same launcher-ABI handoff the CLI's deploy uses
+/// (the driver image is the full runtime layout plus the stub) — with
+/// TEBAKO_PASS_THROUGH so the stub reads/writes host paths.
+fn runtime_driver_exec(
+    work: &Path,
+    layout_src: &Path,
+    runtime: &Path,
+    stub_source: &str,
+) -> (i32, String) {
+    let seed = work.join("driver-seed");
+    let _ = fs::remove_dir_all(&seed);
+    copy_dir(layout_src, &seed);
+    fs::write(seed.join("local").join("stub.rb"), stub_source).unwrap();
+    let image = work.join("driver.tfs");
+    let _ = fs::remove_file(&image);
+    let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default()).unwrap();
+    writer.add_tree(&seed, "/").unwrap();
+    writer.write(&image).unwrap();
+    let base = work.join("driver.base");
+    fs::write(&base, b"").unwrap();
+    let pkg = work.join("driver.pkg");
+    let _ = fs::remove_file(&pkg);
+    tebako_pkg::bundle_exact(
+        &base,
+        &[tebako_pkg::PackageImage {
+            path: image,
+            mount_point: "/__tebako_memfs__".to_string(),
+            format_id: tpkg::TPKG_FORMAT_DWARFS,
+        }],
+        &pkg,
+        &tebako_pkg::PackageOptions {
+            runtime_ref: "ruby@3.3.7;tebako=0.15.9".to_string(),
+            package_flags: tpkg::TPKG_FLAG_LEAN,
+            launcher_abi: 1,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let mut cmd = Command::new(runtime);
+    cmd.arg("--tebako-image")
+        .arg(format!("{}:0:/__tebako_memfs__", pkg.display()))
+        .env("TEBAKO_PASS_THROUGH", "1");
+    run(&mut cmd)
+}
+
+/// Build toyext-0.1.0.gem from the fixture source with the resolved
+/// runtime itself (`gem build` — no host ruby anywhere).
+fn build_fixture_gem(work: &Path, mirror_root: &str, asset: &str) -> PathBuf {
+    let build = work.join("gem-build");
+    copy_dir(&fixtures().join("native-ext-gem"), &build);
+    let runtime = Path::new(mirror_root)
+        .join(format!("v{}", tebako_cli::DEFAULT_TEBAKO_VERSION))
+        .join(asset);
+    let stub = format!(
+        "require \"rubygems\"\nrequire \"rubygems/gem_runner\"\nDir.chdir({})\nGem::GemRunner.new.run([\"build\", \"toyext.gemspec\"])\n",
+        tebako_cli::deploy::rb_str(&build.to_string_lossy())
+    );
+    let (code, out) = runtime_driver_exec(work, &work.join("layout-src"), &runtime, &stub);
+    assert_eq!(code, 0, "gem build failed:\n{out}");
+    let gem = build.join("toyext-0.1.0.gem");
+    assert!(gem.is_file(), "gem build produced no artifact:\n{out}");
+    gem
+}
+
+#[test]
+fn native_ext_press_builds_and_packages() {
+    let _guard = press_lock().lock().unwrap();
+    if !e2e_allowed() {
+        return;
+    }
+    let Some((work, mirror_root, asset, _image_name)) = official_pair_fixture("native-ext") else {
+        eprintln!("skipping native-ext e2e: runtime resolution failed");
+        return;
+    };
+    let Some(sdk_mirror) = sdk_mirror_fixture(&work, "3.3.7") else {
+        eprintln!("skipping native-ext e2e: cannot mirror the ruby src release");
+        return;
+    };
+    let gem = build_fixture_gem(&work, &mirror_root, &asset);
+
+    // The app: the vendored .gem in vendor/cache satisfies the locked
+    // dependency without any remote fetch (TEBAKO_OFFLINE-compatible);
+    // installing a .gem builds its extension at install time (the fontist
+    // path — bundler deliberately skips extension builds for path gems).
+    let root = work.join("root");
+    copy_dir(&fixtures().join("native-ext-app"), &root);
+    let cache_dir = root.join("vendor").join("cache");
+    fs::create_dir_all(&cache_dir).unwrap();
+    fs::copy(&gem, cache_dir.join("toyext-0.1.0.gem")).unwrap();
+
+    let prefix = work.join("prefix");
+    fs::create_dir_all(prefix.join("deps")).unwrap();
+    seed_rs_version_file(&prefix);
+    let package = work.join("pkg-native-ext");
+    let mut cmd = Command::new(tebako_bin());
+    cmd.arg("press")
+        .arg("-r")
+        .arg(&root)
+        .arg("-e")
+        .arg("main.rb")
+        .arg("-o")
+        .arg(&package)
+        .arg("-p")
+        .arg(&prefix)
+        .arg("-R")
+        .arg("3.3.7")
+        .env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
+        .env("TEBAKO_HOME", work.join("home"))
+        .env(
+            "TEBAKO_SDK_SRC_MIRROR",
+            format!("file://{}", sdk_mirror.display()),
+        );
+    let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
+        "tebako-bootstrap.exe"
+    } else {
+        "tebako-bootstrap"
+    });
+    if sibling.is_file() {
+        cmd.env("TEBAKO_BOOTSTRAP", &sibling);
+    }
+    let (code, log) = run(&mut cmd);
+    assert!(code == 0, "native-ext press failed:\n{log}");
+    assert!(
+        log.contains("-- Provisioning the runtime SDK"),
+        "the press must provision the runtime SDK:\n{log}"
+    );
+
+    // The built extension sits in the app image at its gem-correct path
+    // (a .gem install drops the built artifact into the gem's lib tree).
+    let image = work.join("prefix").join("o").join("p").join("fs.tfs");
+    let fs_image = dwarfs_t::Filesystem::open(&image).unwrap();
+    let ext = if cfg!(target_os = "macos") {
+        "bundle"
+    } else {
+        "so"
+    };
+    let artifact = format!("lib/ruby/gems/3.3.0/gems/toyext-0.1.0/lib/toyext/toyext.{ext}");
+    assert!(
+        fs_image.stat(&artifact).is_ok(),
+        "built extension missing from the app image at {artifact}"
+    );
+
+    // Cold run: the packaged app loads the extension from the memfs.
+    let home = work.join("home-cold");
+    let mut cold = Command::new(&package);
+    cold.env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
+        .env("TEBAKO_HOME", &home);
+    let (code, out) = run(&mut cold);
+    assert_eq!(code, 0, "cold run failed:\n{out}");
+    assert!(
+        out.contains("native-ext app: toyext.answer = 42"),
+        "unexpected output: {out}"
+    );
+
+    // A failing extension build fails the press loudly: the deploy driver
+    // exits non-zero and the ext build output tail rides the error. The
+    // same prefix is reused, so the SDK is already provisioned.
+    let bad_build = work.join("gem-build-bad");
+    copy_dir(&fixtures().join("native-ext-gem"), &bad_build);
+    fs::write(
+        bad_build.join("ext").join("toyext").join("toyext.c"),
+        "#error \"intentional native-ext fixture failure\"\n",
+    )
+    .unwrap();
+    let stub = format!(
+        "require \"rubygems\"\nrequire \"rubygems/gem_runner\"\nDir.chdir({})\nGem::GemRunner.new.run([\"build\", \"toyext.gemspec\"])\n",
+        tebako_cli::deploy::rb_str(&bad_build.to_string_lossy())
+    );
+    let runtime = Path::new(&mirror_root)
+        .join(format!("v{}", tebako_cli::DEFAULT_TEBAKO_VERSION))
+        .join(&asset);
+    let (code, out) = runtime_driver_exec(&work, &work.join("layout-src"), &runtime, &stub);
+    assert_eq!(code, 0, "bad-fixture gem build failed:\n{out}");
+
+    let root_bad = work.join("root-bad");
+    copy_dir(&fixtures().join("native-ext-app"), &root_bad);
+    let cache_bad = root_bad.join("vendor").join("cache");
+    fs::create_dir_all(&cache_bad).unwrap();
+    fs::copy(
+        bad_build.join("toyext-0.1.0.gem"),
+        cache_bad.join("toyext-0.1.0.gem"),
+    )
+    .unwrap();
+    let package_bad = work.join("pkg-native-ext-bad");
+    let mut cmd = Command::new(tebako_bin());
+    cmd.arg("press")
+        .arg("-r")
+        .arg(&root_bad)
+        .arg("-e")
+        .arg("main.rb")
+        .arg("-o")
+        .arg(&package_bad)
+        .arg("-p")
+        .arg(&prefix)
+        .arg("-R")
+        .arg("3.3.7")
+        .env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
+        .env("TEBAKO_HOME", work.join("home"))
+        .env(
+            "TEBAKO_SDK_SRC_MIRROR",
+            format!("file://{}", sdk_mirror.display()),
+        );
+    if sibling.is_file() {
+        cmd.env("TEBAKO_BOOTSTRAP", &sibling);
+    }
+    let (code, log) = run(&mut cmd);
+    assert_eq!(
+        code, 255,
+        "a failing extension build must fail the press with the gem's deploy-failure code"
+    );
+    assert!(
+        log.contains("Failed to run"),
+        "the deploy failure must surface the driver output:\n{log}"
+    );
+    assert!(
+        log.contains("intentional native-ext fixture failure"),
+        "the ext build tail must surface in the error:\n{log}"
+    );
 }

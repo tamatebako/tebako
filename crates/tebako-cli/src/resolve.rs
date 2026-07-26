@@ -880,7 +880,9 @@ impl Resolver {
 }
 
 /// flock(2) wrapper; returns true when the operation succeeded.
-fn flock(file: &fs::File, op: i32) -> bool {
+/// pub(crate): the RuntimeSdk lock (src/sdk.rs) reuses it — the crate's
+/// only flock call sites stay here.
+pub(crate) fn flock(file: &fs::File, op: i32) -> bool {
     use std::os::unix::io::AsRawFd;
     unsafe { libc::flock(file.as_raw_fd(), op) == 0 }
 }

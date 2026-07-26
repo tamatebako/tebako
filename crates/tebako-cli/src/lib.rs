@@ -23,9 +23,9 @@
 //! - no mkdwarfs binary anywhere: images are built in-process via the
 //!   dwarfs-t Writer and named `.tfs` (dwarfs-t-native FlatBuffers
 //!   metadata; `.dwarfs` stays for upstream-compatible images);
-//! - the RuntimeSdk/src-release subsystem is not ported (no native
-//!   extension builds inside deploy), and neither are the gem/gemspec
-//!   scenarios;
+//! - the gem/gemspec scenarios are not ported (the RuntimeSdk — native
+//!   extension deploy, src/sdk.rs — is: the deploy driver builds gems'
+//!   native extensions against the runtime's provisioned header tree);
 //! - images are stitched densely (tpkg slots carry absolute offsets; the
 //!   gem's 8-byte padding is cosmetic);
 //! - .tebako.yml is not read.
@@ -39,6 +39,7 @@ pub mod packager;
 pub mod resolve;
 pub mod runner;
 pub mod scenario;
+pub mod sdk;
 pub mod strip;
 
 use std::fs;
