@@ -29,12 +29,21 @@ pub struct Entrypoint {
     pub name: String,
     /// The executable inside the payload image (the `--tebako-entry`).
     pub path: String,
+    /// The payload slot this entrypoint's image lives in (spec 03 §6
+    /// suites: a multi-entry package mounts the entry's own slot).
+    /// Absent in pre-suite mirrors — `0` (whole image) there.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub slot: u32,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args_default: Vec<String>,
     /// `None` = native / self-contained entrypoint: zero-runtime dispatch
     /// (spec 03 §2.2 locked); the dispatcher mounts zero runtime payloads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_requirement: Option<RuntimeRequirement>,
+}
+
+fn is_zero(v: &u32) -> bool {
+    *v == 0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

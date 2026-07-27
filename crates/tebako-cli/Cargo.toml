@@ -29,6 +29,10 @@ tfs = { version = "0.1.0", path = "../tfs" }
 # The in-process DwarFS writer (dwarfs-t-rs): the application and deploy
 # driver images are built without any mkdwarfs binary.
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
+# The suite composition file (--suite, spec 03 §6) is authored YAML:
+# serde + serde_yml, the tpkg manifest convention.
+serde = { version = "1", features = ["derive"] }
+serde_yml = "0.0.12"
 libc = "0.2"
 sha2 = "0.10"
 # RuntimeSdk provisioning extracts the ruby src release in-process (no tar

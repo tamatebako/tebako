@@ -55,6 +55,9 @@ pub struct PressOptions {
     pub image_specs: Vec<String>,
     /// --bootstrap override.
     pub bootstrap: Option<PathBuf>,
+    /// --suite <suite.yaml>: the multi-app press (spec 03 §6); root and
+    /// entrance come from the suite file's entries when set.
+    pub suite: Option<PathBuf>,
     /// tebako version (runtime release + runtime_ref), default crate const.
     pub tebako_version: String,
     /// --prefer-local: restore the gem-era `bundle install --prefer-local`

@@ -13,6 +13,9 @@ const USAGE: &str = "Usage:
                [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local]
+  tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
+               [-l error|warn|debug|trace] [--bootstrap <path>]
+               [--tebako-version <v>] [--prefer-local]
   tebako cache list [--json]
   tebako cache prune [--all] [--older-than Nd]
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
@@ -74,7 +77,14 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     match subcommand {
         "press" => {
             let opts = parse_press(rest)?;
-            press(&opts)?;
+            match &opts.suite {
+                Some(suite_path) => {
+                    tebako_cli::suite::press_suite(&opts, suite_path)?;
+                }
+                None => {
+                    press(&opts)?;
+                }
+            }
             Ok(())
         }
         "cache" => run_cache(rest),
@@ -244,6 +254,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut log_level = "error".to_string();
     let mut image_specs: Vec<String> = Vec::new();
     let mut bootstrap: Option<PathBuf> = None;
+    let mut suite: Option<PathBuf> = None;
     let mut tebako_version = tebako_cli::DEFAULT_TEBAKO_VERSION.to_string();
     let mut prefer_local = false;
     let mut devmode = false;
@@ -278,6 +289,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "-l" | "--log-level" => log_level = take_value(&mut i)?,
             "--image" => image_specs.push(take_value(&mut i)?),
             "--bootstrap" => bootstrap = Some(PathBuf::from(take_value(&mut i)?)),
+            "--suite" => suite = Some(PathBuf::from(take_value(&mut i)?)),
             "--tebako-version" => tebako_version = take_value(&mut i)?,
             "--prefer-local" => prefer_local = true,
             "-D" | "--devmode" => devmode = true,
@@ -293,12 +305,20 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         i += 1;
     }
 
-    // Thor's required-options check, message shape included.
+    // Thor's required-options check, message shape included. A suite
+    // press composes root/entry per entry from the suite file instead —
+    // mixing the two forms is a usage error, never a silent merge.
+    if suite.is_some() && (root.is_some() || entrance.is_some()) {
+        return Err(CliExit::Usage(
+            "--suite composes its own entries; -r/--root and -e/--entry-point do not apply"
+                .to_string(),
+        ));
+    }
     let mut missing = String::new();
-    if root.is_none() {
+    if suite.is_none() && root.is_none() {
         missing += " '--root'";
     }
-    if entrance.is_none() {
+    if suite.is_none() && entrance.is_none() {
         if !missing.is_empty() {
             missing += ", ";
         }
@@ -316,8 +336,8 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         .replace('\\', "/");
 
     Ok(PressOptions {
-        root_arg: root.unwrap().replace('\\', "/"),
-        entrance: entrance.unwrap().replace('\\', "/"),
+        root_arg: root.unwrap_or_default().replace('\\', "/"),
+        entrance: entrance.unwrap_or_default().replace('\\', "/"),
         output,
         prefix: resolve_prefix(prefix.as_deref()),
         cwd: cwd.map(|c| c.replace('\\', "/")),
@@ -326,6 +346,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         log_level,
         image_specs,
         bootstrap,
+        suite,
         tebako_version,
         prefer_local,
         verbose: verbose_mode(),

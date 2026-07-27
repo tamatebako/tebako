@@ -51,12 +51,18 @@ pub struct ExecPlan {
     pub runtime: RuntimeResolution,
 }
 
-/// Compose the mount set: the payload image at `/`, then each declared
+/// Compose the mount set: the entrypoint's OWN payload slot at `/` (spec
+/// 03 §6 suites: entry `slot` selects the image inside a multi-entry
+/// package; simple apps stay at slot 0, whole image), then each declared
 /// dependency (spec 03 §2.3) resolved against the payload cache.
-fn compose_mounts(res: &Resolution, ctx: &Ctx) -> Result<Vec<MountSpec>, ShimError> {
+fn compose_mounts(
+    res: &Resolution,
+    entry: &crate::manifest::Entrypoint,
+    ctx: &Ctx,
+) -> Result<Vec<MountSpec>, ShimError> {
     let mut mounts = vec![MountSpec {
         image: res.record.image.clone(),
-        slot: 0,
+        slot: entry.slot,
         mount: "/".to_string(),
     }];
     for req in &res.manifest.requires {
@@ -137,7 +143,7 @@ pub fn plan(
             )
         })?
         .clone();
-    let mounts = compose_mounts(res, ctx)?;
+    let mounts = compose_mounts(res, &entry, ctx)?;
     let runtime =
         runtime::resolve_runtime(entry.runtime_requirement.as_ref(), allow_download, ctx)?;
 

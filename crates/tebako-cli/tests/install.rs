@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write as _;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use tebako_cli::install;
 use tebako_resolve::{sha256_hex, Fetcher, Transport};
@@ -715,4 +715,225 @@ fn uninstall_removes_shims_and_cache_and_journals_the_anchors() {
     // uninstall is not idempotent: the named error
     let err = install::uninstall(&fx.home, "app").unwrap_err();
     assert!(err.message.contains("is not installed"), "{err:?}");
+}
+
+// ---------------------------------------------------------------------
+// suite install (spec 03 §6, spec 07 §2.0): ONE package, N entries →
+// N shims, each with its own slot and its own runtime requirement
+// ---------------------------------------------------------------------
+
+/// A suite tpkg: fake bootstrap bytes + N fake image slots + the type-2
+/// package manifest pinning each entry to its own runtime.
+fn suite_tpkg(name: &str, version: &str, entries: &[(&str, u32, &str)]) -> Vec<u8> {
+    let bootstrap = b"fake suite bootstrap";
+    let mut m = tpkg::Manifest {
+        package_flags: 0,
+        launcher_abi: 0,
+        ..Default::default()
+    };
+    // The v1 trailer field carries entries[0]'s ref (v1-era loaders).
+    m.set_runtime_ref(entries[0].2.as_bytes());
+    let mut pos = bootstrap.len() as u64;
+    let mut images: Vec<Vec<u8>> = Vec::new();
+    for (i, _) in entries.iter().enumerate() {
+        let bytes = format!("fake suite image {i}").into_bytes();
+        m.slots.push(tpkg::Slot::new(
+            pos,
+            bytes.len() as u64,
+            tpkg::TPKG_FORMAT_DWARFS,
+            "/__tebako_memfs__",
+        ));
+        pos += bytes.len() as u64;
+        images.push(bytes);
+    }
+    m.set_package_manifest(&tpkg::PackageManifest {
+        schema_version: tpkg::PACKAGE_SCHEMA_VERSION,
+        package: tpkg::PackageIdentity {
+            name: name.to_string(),
+            version: version.to_string(),
+            producer: tpkg::Producer {
+                tool: "tebako-cli".to_string(),
+                tool_version: "0.15.9".to_string(),
+            },
+            created: "2026-07-27T00:00:00Z".to_string(),
+        },
+        entries: entries
+            .iter()
+            .map(|&(name, slot, runtime_ref)| tpkg::PackageEntry {
+                name: name.to_string(),
+                slot,
+                entrypoint: name.to_string(),
+                runtime_ref: runtime_ref.to_string(),
+            })
+            .collect(),
+        jail: None,
+        env: Default::default(),
+    })
+    .unwrap();
+    let mut out = bootstrap.to_vec();
+    for img in &images {
+        out.extend_from_slice(img);
+    }
+    let mut cursor = std::io::Cursor::new(&mut out);
+    tpkg::write_to(&mut cursor, &m).unwrap();
+    out
+}
+
+/// A cached runtime entry (the dispatcher's resolution target), the shim
+/// tests' fixture shape.
+fn write_cached_runtime(home: &Path, lv: &str, ver: &str) -> PathBuf {
+    let platform = tebako_shim::runtime::platform_string();
+    let dir = home
+        .join("runtimes")
+        .join(format!("ruby-{lv}-{ver}-{platform}"));
+    fs::create_dir_all(&dir).unwrap();
+    let exe = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}"));
+    fs::write(&exe, b"fake runtime exe\n").unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    exe
+}
+
+#[test]
+fn suite_install_registers_every_entry_shim_and_dispatches_per_entry() {
+    let fx = Fixture::new("suite");
+    let pkg = suite_tpkg(
+        "hellosuite",
+        "1.0",
+        &[
+            ("hello34", 0, "ruby@3.4.2;tebako=0.15.9"),
+            ("hello33", 1, "ruby@3.3.7;tebako=0.15.9"),
+        ],
+    );
+    let payload_ref = fx.payload("hellosuite-1.0.tpkg", &pkg);
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: hellosuite\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        entrypoints: [hello34, hello33]\n    default: 1.0\n"
+    );
+    let reg_ref = fx.registry("tpkg-registry.yaml", &yaml);
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    let out = install::install(&fx.home, "hellosuite", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["hello34", "hello33"]);
+    assert_eq!(out.shims.len(), 2);
+    assert!(fx.home.join("shims/hello34").exists());
+    assert!(fx.home.join("shims/hello33").exists());
+
+    // The mirror carries each entry's own slot and exact runtime pin.
+    let mirror = tebako_shim::manifest::Manifest::load(
+        &fx.payloads_dir().join("hellosuite/1.0.manifest.yaml"),
+    )
+    .unwrap();
+    let e34 = mirror.entrypoint("hello34").unwrap();
+    assert_eq!(e34.slot, 0);
+    assert_eq!(e34.path, "hello34");
+    let req34 = e34.runtime_requirement.as_ref().unwrap();
+    assert_eq!(
+        (req34.engine.as_str(), req34.constraint.as_str()),
+        ("ruby", "3.4.2")
+    );
+    let e33 = mirror.entrypoint("hello33").unwrap();
+    assert_eq!(e33.slot, 1);
+    let req33 = e33.runtime_requirement.as_ref().unwrap();
+    assert_eq!(
+        (req33.engine.as_str(), req33.constraint.as_str()),
+        ("ruby", "3.3.7")
+    );
+
+    // The vertical end (spec 07 §2.0): both registered commands dispatch
+    // to their own slot of the ONE installed package against their own
+    // cached runtimes — differing versions, simultaneously usable.
+    let exe34 = write_cached_runtime(&fx.home, "3.4.2", "0.15.9");
+    let exe33 = write_cached_runtime(&fx.home, "3.3.7", "0.15.9");
+    let mut ctx = tebako_shim::Ctx {
+        home: fx.home.clone(),
+        cwd: fx.dir.clone(),
+        env: std::collections::BTreeMap::new(),
+    };
+    ctx.env
+        .insert("TEBAKO_HELLO34_VERSION".into(), "1.0".into());
+    ctx.env
+        .insert("TEBAKO_HELLO33_VERSION".into(), "1.0".into());
+    let plan34 = tebako_shim::dispatch::dispatch("hello34", &[], &ctx).unwrap();
+    let plan33 = tebako_shim::dispatch::dispatch("hello33", &[], &ctx).unwrap();
+    assert_eq!(plan34.program, exe34);
+    assert_eq!(plan33.program, exe33);
+    let image = fx.payloads_dir().join("hellosuite/1.0.tfs");
+    assert_eq!(
+        plan34.mounts[0].triple(),
+        format!("{}:0:/", image.display())
+    );
+    assert_eq!(
+        plan33.mounts[0].triple(),
+        format!("{}:1:/", image.display())
+    );
+
+    // uninstall removes every shim the suite registered.
+    let out = install::uninstall(&fx.home, "hellosuite").unwrap();
+    assert_eq!(out.shims_removed.len(), 2);
+    assert!(!fx.home.join("shims/hello34").exists());
+    assert!(!fx.home.join("shims/hello33").exists());
+}
+
+#[test]
+fn suite_install_identity_mismatch_with_the_registry_is_a_named_error() {
+    let fx = Fixture::new("suitebad");
+    let pkg = suite_tpkg(
+        "othersuite",
+        "9.9",
+        &[("hello34", 0, "ruby@3.4.2;tebako=0.15.9")],
+    );
+    let payload_ref = fx.payload("hellosuite-1.0.tpkg", &pkg);
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("hellosuite", "1.0", &payload_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    let err = install::install(&fx.home, "hellosuite", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("inconsistent"), "{err:?}");
+    assert!(err.message.contains("othersuite 9.9"), "{err:?}");
+}
+
+#[test]
+fn suite_install_corrupt_slot_reference_is_a_named_error() {
+    let fx = Fixture::new("suiteghost");
+    // entry "ghost" names slot 7; the package carries one slot.
+    let pkg = suite_tpkg(
+        "hellosuite",
+        "1.0",
+        &[
+            ("hello34", 0, "ruby@3.4.2;tebako=0.15.9"),
+            ("ghost", 7, "ruby@3.4.2;tebako=0.15.9"),
+        ],
+    );
+    let payload_ref = fx.payload("hellosuite-1.0.tpkg", &pkg);
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("hellosuite", "1.0", &payload_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    let err = install::install(&fx.home, "hellosuite", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("slot 7"), "{err:?}");
+}
+
+#[test]
+fn suite_install_rejects_a_malformed_runtime_ref() {
+    let fx = Fixture::new("suitebadref");
+    let pkg = suite_tpkg("hellosuite", "1.0", &[("hello34", 0, "not-a-ref")]);
+    let payload_ref = fx.payload("hellosuite-1.0.tpkg", &pkg);
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("hellosuite", "1.0", &payload_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    let err = install::install(&fx.home, "hellosuite", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(
+        err.message.contains("invalid entries[].runtime_ref"),
+        "{err:?}"
+    );
 }

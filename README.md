@@ -48,6 +48,38 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (roadmap 34)
+
+- **Suites: press + argv0 dispatch + shim registration (spec 07 §2.0,
+  spec 03 §6)** — one package, N commands, each with its own payload slot
+  and its own runtime:
+  - `tebako press --suite <suite.yaml>` (tebako-cli): the suite file lists
+    `entries: [{name, root, entry, runtime_ref?}]`; each entry is imaged
+    with the single-press pipeline into its own packaging environment and
+    slotted in order (all slots record the canonical `/__tebako_memfs__` —
+    exactly one mounts per invocation), and the type-2 package manifest is
+    written with per-entry `runtime_ref`s (an entry without one falls back
+    to the press-level `-R`). Lean mode only; the v1 trailer field carries
+    entries[0]'s ref for v1-era loaders.
+  - tebako-bootstrap: argv0 (the invocation name, `.exe`-stripped) selects
+    the entry — ITS runtime_ref resolves, ONLY its slot mounts,
+    `--tebako-entry` carries its entrypoint; no match falls back to
+    entries[0]; block-less (v1) packages are byte-identical. Launcher ABI
+    stays 1.
+  - tebako-shim: the mirror entrypoint gained `slot` (default 0 —
+    pre-suite mirrors parse unchanged); dispatch mounts the entry's own
+    slot and resolves its own runtime requirement, so two commands of one
+    installed suite run different cached runtime versions simultaneously.
+  - `tebako install`: a payload that is a tpkg carrying the type-2 block
+    installs as ONE package whose entries become N registered shims
+    (registry-identity cross-check, corrupt slot/ref named errors);
+    uninstall removes them all.
+  - E2E proofs: a two-app suite (hello pinned to ruby 3.4.2 and 3.3.7)
+    presses and both commands print their own ruby versions; the bootstrap
+    selftest runs a suite against two fake cached runtimes asserting the
+    per-entry slot/ref handoff; install tests cover shims, the mirror,
+    dispatch per entry, and the named errors; v1 golden parity untouched.
+
 ### SHIPPED (roadmap 30)
 
 - **libtfs-preload + `tfs exec`: the preload interposition shim (spec 07
@@ -107,13 +139,13 @@ Rust-consumable surface for it.
   untouched), and insert-image / remove-image / set-runtime carry the
   block through the atomic rewrite path (signing state preserved as
   before). `crates/tebako-bootstrap`: when the type-2 block is present,
-  `entries[0].runtime_ref` drives runtime resolution (block-less packages
-  fall back to the v1 trailer field byte-identically); the handoff argv
-  is unchanged — launcher ABI stays 1. Remaining (suite press, out of
-  scope here): unbundle/reassemble representation of extension blocks
-  (unbundle warns it drops them), `--slot N` / `--json` / `--verify`
-  info modes (spec 15), dispatcher-side per-entry suite dispatch
-  (spec 07).
+  the SELECTED entry's runtime_ref drives runtime resolution (argv0 is
+  the selector, entries[0] the fallback; block-less packages fall back to
+  the v1 trailer field byte-identically) — launcher ABI stays 1. Suite
+  press/dispatch/registration shipped in roadmap 34 (above). Remaining
+  (out of scope here): unbundle/reassemble representation of extension
+  blocks (unbundle warns it drops them), `--slot N` / `--json` /
+  `--verify` info modes (spec 15).
 
 - **The info surface (spec 15)** — payload and package introspection in
   the two MECE front-ends, sharing the new **`crates/tebako-info`**

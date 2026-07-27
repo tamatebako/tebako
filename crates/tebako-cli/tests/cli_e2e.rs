@@ -218,6 +218,87 @@ fn press_gemfile_runs() {
 }
 
 // ---------------------------------------------------------------------
+// Roadmap 34 (spec 07 §2.0, spec 03 §6): the suite press — two apps in
+// one package, each command running its own cached runtime version
+// ---------------------------------------------------------------------
+
+#[test]
+fn press_suite_two_apps_run_against_their_own_runtimes() {
+    let _guard = press_lock().lock().unwrap();
+    if !e2e_allowed() {
+        eprintln!("skipping suite press: TEBAKO_CLI_SKIP_E2E is set");
+        return;
+    }
+    let work = workdir("suite");
+    let root34 = work.join("app34");
+    let root33 = work.join("app33");
+    copy_dir(&fixtures().join("suite").join("app34"), &root34);
+    copy_dir(&fixtures().join("suite").join("app33"), &root33);
+    let prefix = work.join("prefix");
+    fs::create_dir_all(prefix.join("deps")).unwrap();
+    seed_rs_version_file(&prefix);
+
+    let suite_file = work.join("suite.yaml");
+    fs::write(
+        &suite_file,
+        format!(
+            "package: hellosuite\nversion: 1.0.0\nentries:\n  - name: hello34\n    root: {}\n    entry: hello.rb\n    runtime_ref: ruby@3.4.2;tebako=0.15.9\n  - name: hello33\n    root: {}\n    entry: hello.rb\n    runtime_ref: ruby@3.3.7;tebako=0.15.9\n",
+            root34.display(),
+            root33.display()
+        ),
+    )
+    .unwrap();
+    let package = work.join("hellosuite");
+    let mut cmd = Command::new(tebako_bin());
+    cmd.arg("press")
+        .arg("--suite")
+        .arg(&suite_file)
+        .arg("-o")
+        .arg(&package)
+        .arg("-p")
+        .arg(&prefix);
+    let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
+        "tebako-bootstrap.exe"
+    } else {
+        "tebako-bootstrap"
+    });
+    if sibling.is_file() {
+        cmd.env("TEBAKO_BOOTSTRAP", sibling);
+    }
+    let (code, log) = run(&mut cmd);
+    assert!(code == 0, "suite press failed:\n{log}");
+    assert!(
+        log.contains(&format!(
+            "Created tebako package at \"{}\"",
+            package.display()
+        )),
+        "unexpected press output:\n{log}"
+    );
+
+    // argv0 is the selector: the same package copied per entry name
+    // dispatches each command to ITS slot and ITS runtime — the two
+    // runtimes differ (spec 07's simultaneous-runtime case).
+    let hello34 = work.join("hello34");
+    fs::copy(&package, &hello34).unwrap();
+    let (code, out) = run(&mut Command::new(&hello34));
+    assert_eq!(code, 0, "hello34 failed:\n{out}");
+    assert_eq!(out, "hello34 on ruby 3.4.2\n");
+
+    let hello33 = work.join("hello33");
+    fs::copy(&package, &hello33).unwrap();
+    let (code, out) = run(&mut Command::new(&hello33));
+    assert_eq!(code, 0, "hello33 failed:\n{out}");
+    assert_eq!(out, "hello33 on ruby 3.3.7\n");
+
+    // an invocation name no entry declares falls back to entries[0].
+    let bare = work.join("hellosuite-anything");
+    fs::copy(&package, &bare).unwrap();
+    let (code, out) = run(&mut Command::new(&bare));
+    assert_eq!(code, 0, "fallback run failed:\n{out}");
+    assert_eq!(out, "hello34 on ruby 3.4.2\n");
+}
+
+// ---------------------------------------------------------------------
 // Roadmap 25 items 4-5 (the fontist feedstock): bundler resolution and
 // platform gems in the Gemfile deploy
 // ---------------------------------------------------------------------

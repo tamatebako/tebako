@@ -517,17 +517,23 @@ fn finish_install<T: Transport>(
     })
 }
 
-/// The manifest mirror for the payload record. The embedded manifest is
-/// authoritative; the name form cross-checks it against the registry (the
-/// registry is the trust source — a mismatch means it lied). Without an
-/// embedded manifest the mirror is synthesized from the registry's
-/// tier-3 fields (ref form: the payload name) with the `/<command>`
-/// entry-path convention — LOUD, never silent.
+/// The manifest mirror for the payload record. A SUITE package (a tpkg
+/// carrying the type-2 package manifest, spec 03 §6) installs as ONE
+/// package whose entries become the mirror's entrypoints — each with its
+/// own slot and its own runtime requirement. Otherwise the embedded
+/// manifest is authoritative; the name form cross-checks it against the
+/// registry (the registry is the trust source — a mismatch means it
+/// lied). Without an embedded manifest the mirror is synthesized from the
+/// registry's tier-3 fields (ref form: the payload name) with the
+/// `/<command>` entry-path convention — LOUD, never silent.
 fn build_mirror(
     entry: &tebako_resolve::CacheEntry,
     plan: &InstallPlan,
     notes: &mut Vec<String>,
 ) -> Result<Manifest, TebakoError> {
+    if let Some(mirror) = suite_mirror(entry, plan, notes)? {
+        return Ok(mirror);
+    }
     if let Some(text) = image_manifest::read_embedded_manifest(&entry.path)? {
         let embedded = tpkg::PayloadManifest::from_yaml(&text).map_err(|e| {
             err(
@@ -558,6 +564,7 @@ fn build_mirror(
                 .map(|e| manifest::Entrypoint {
                     name: e.name.clone(),
                     path: e.path.clone(),
+                    slot: 0,
                     args_default: e.args_default.clone(),
                     runtime_requirement: Some(manifest::RuntimeRequirement {
                         engine: e.runtime_requirement.engine.clone(),
@@ -592,6 +599,7 @@ fn build_mirror(
             .map(|n| manifest::Entrypoint {
                 path: format!("/{n}"),
                 name: n,
+                slot: 0,
                 args_default: Vec::new(),
                 runtime_requirement: plan.runtime_requirement.as_ref().map(
                     |(engine, constraint)| manifest::RuntimeRequirement {
@@ -603,6 +611,113 @@ fn build_mirror(
             .collect(),
         requires: Vec::new(),
     })
+}
+
+// ---------------------------------------------------------------------
+// the suite branch (spec 03 §6): ONE package, N entries → N shims
+// ---------------------------------------------------------------------
+
+/// When the cached payload is a tpkg carrying the type-2 package
+/// manifest, the mirror comes from its entries — each entry becomes a
+/// registered command with its own payload slot and its own runtime
+/// requirement (spec 07 §2.0: two commands of one package may pin
+/// different runtime versions). `Ok(None)` when the payload is not a
+/// tpkg or carries no package manifest — the other branches decide.
+fn suite_mirror(
+    entry: &tebako_resolve::CacheEntry,
+    plan: &InstallPlan,
+    notes: &mut Vec<String>,
+) -> Result<Option<Manifest>, TebakoError> {
+    let trailer = std::fs::File::open(&entry.path)
+        .ok()
+        .and_then(|mut f| tpkg::read_from(&mut f).ok());
+    let Some(trailer) = trailer else {
+        return Ok(None);
+    };
+    let pm = match trailer.package_manifest() {
+        Ok(Some(pm)) => pm,
+        Ok(None) => return Ok(None),
+        Err(e) => {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "the package manifest of {} does not parse: {e}",
+                    entry.path.display()
+                ),
+            ))
+        }
+    };
+
+    if pm.package.name != plan.name || pm.package.version != plan.version {
+        let msg = format!(
+            "the package manifest declares {} {} but the install named {} {}",
+            pm.package.name, pm.package.version, plan.name, plan.version
+        );
+        if plan.strict_identity {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!("{msg} — the registry entry is inconsistent with the payload it names"),
+            ));
+        }
+        notes.push(msg);
+    }
+
+    let mut entrypoints = Vec::with_capacity(pm.entries.len());
+    for e in &pm.entries {
+        if e.slot as usize >= trailer.slots.len() {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "the package manifest of {} names slot {} for entry \"{}\" but the package carries {} slot(s) — the payload is corrupt",
+                    entry.path.display(),
+                    e.slot,
+                    e.name,
+                    trailer.slots.len()
+                ),
+            ));
+        }
+        let (engine, constraint) = parse_suite_runtime_ref(&e.runtime_ref)
+            .map_err(|m| err(EX_TEBAKO_MANIFEST, format!("{}: {m}", entry.path.display())))?;
+        entrypoints.push(manifest::Entrypoint {
+            name: e.name.clone(),
+            path: e.entrypoint.clone(),
+            slot: e.slot,
+            args_default: Vec::new(),
+            runtime_requirement: Some(manifest::RuntimeRequirement { engine, constraint }),
+        });
+    }
+    Ok(Some(Manifest {
+        name: plan.name.clone(),
+        version: plan.version.clone(),
+        entrypoints,
+        requires: Vec::new(),
+    }))
+}
+
+/// A suite entry's `runtime_ref` (`<type>@<version>;tebako=<abi>[;params]`)
+/// → the mirror's runtime requirement: the engine plus an EXACT version
+/// pin (the dispatcher's bare-version constraint is an exact match — the
+/// entry runs the runtime it was pressed against).
+fn parse_suite_runtime_ref(runtime_ref: &str) -> Result<(String, String), String> {
+    let invalid = || {
+        format!("invalid entries[].runtime_ref \"{runtime_ref}\" — expected \"<type>@<version>;tebako=<abi>\"")
+    };
+    let at = runtime_ref
+        .find('@')
+        .filter(|&at| at > 0)
+        .ok_or_else(invalid)?;
+    let rest = &runtime_ref[at + 1..];
+    let semi = rest
+        .find(";tebako=")
+        .filter(|&s| s > 0)
+        .ok_or_else(invalid)?;
+    let engine = &runtime_ref[..at];
+    let version = &rest[..semi];
+    let abi = rest[semi + 8..].split(';').next().unwrap_or("");
+    if version.is_empty() || abi.is_empty() {
+        return Err(invalid());
+    }
+    Ok((engine.to_string(), version.to_string()))
 }
 
 /// The dispatcher binary the shims link to: the explicit override >

@@ -775,6 +775,7 @@ mod tests {
             log_level: "error".to_string(),
             image_specs: Vec::new(),
             bootstrap: None,
+            suite: None,
             tebako_version: crate::DEFAULT_TEBAKO_VERSION.to_string(),
             prefer_local,
             verbose: false,
