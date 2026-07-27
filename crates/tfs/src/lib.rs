@@ -79,6 +79,7 @@ pub mod errno;
 pub mod mount;
 pub mod mount_spec;
 pub mod policy;
+pub mod tree_walk;
 
 pub use backend::{Backend, EntryType, RawDirEntry, RawStat, WritableBackend};
 pub use context::{TebakoCDirent, DT_DIR, DT_REG, TEBAKO_FD_FLAG, TEBAKO_FD_MAX};

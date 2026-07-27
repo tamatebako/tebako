@@ -58,6 +58,15 @@ pub trait Backend: Send + Sync {
     /// Callers clamp to EOF; backends may read less.
     fn pread(&self, path: &str, buf: &mut [u8], offset: u64) -> Result<usize, i32>;
 
+    /// Read a symlink's target. Default: `Err(ENOTSUP)` — the backend
+    /// cannot resolve targets (or `path` is not a symlink). Additive and
+    /// NOT part of the C ABI: consumers are the in-process transforms
+    /// (the tree-hash walker of spec 03 §7, spec 10's EncBackend).
+    fn read_link(&self, path: &str) -> Result<String, i32> {
+        let _ = path;
+        Err(libc::ENOTSUP)
+    }
+
     /// List a directory's direct children (no `.`/`..`).
     /// `Err(ENOTDIR)` when `path` is not a directory.
     fn read_dir(&self, path: &str) -> Result<Vec<RawDirEntry>, i32>;

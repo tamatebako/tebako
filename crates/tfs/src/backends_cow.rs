@@ -398,6 +398,21 @@ impl Backend for CowBackend {
         }
     }
 
+    fn read_link(&self, path: &str) -> Result<String, i32> {
+        let path = normalize(path);
+        // Same shadowing rule as reads: the overlay wins, then the base.
+        match self.overlay.read_link(path) {
+            Err(libc::ENOENT) => {
+                if self.is_hidden(path) {
+                    Err(libc::ENOENT)
+                } else {
+                    self.base.read_link(path)
+                }
+            }
+            r => r,
+        }
+    }
+
     fn writable(&self) -> Option<&dyn WritableBackend> {
         Some(self)
     }

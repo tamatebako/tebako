@@ -548,7 +548,66 @@ pub fn verify_image(image: &Path, require_signed: bool) -> Result<Vec<Check>, In
         }
     }
 
+    // 5. Tree hash (spec 03 §7): recompute the manifest-excluded merkle
+    //    root over the mounted image and compare against the declared
+    //    tree_hash. For ENCRYPTED images the declared tree_hash is the
+    //    PLAINTEXT identity (spec 10 §2) — recomputation then needs the
+    //    recipient key, so the check skips with a named reason rather
+    //    than grading ciphertext against a plaintext digest.
+    if let Some(m) = manifest {
+        if m.identity.encryption.state == tpkg::EncryptionState::Encrypted {
+            checks.push(Check::skip(
+                "tree hash",
+                "encrypted image: tree_hash is the plaintext identity (spec 10 §2); recomputing needs the recipient key",
+            ));
+        } else {
+            match recompute_tree_hash(image) {
+                Ok(rendered) if rendered == m.identity.digest.tree_hash => {
+                    checks.push(Check::pass(
+                        "tree hash",
+                        "tree_hash matches the recomputed merkle root",
+                    ));
+                }
+                Ok(rendered) => {
+                    let declared = &m.identity.digest.tree_hash;
+                    checks.push(Check::fail(
+                        "tree hash",
+                        format!(
+                            "manifest tree_hash {}… != recomputed {}",
+                            &declared[..12.min(declared.len())],
+                            &rendered[..12.min(rendered.len())]
+                        ),
+                        exit_code::DIGEST,
+                    ));
+                }
+                Err(reason) => {
+                    // A recomputation that cannot run (special entries
+                    // the merkle construction does not cover, symlink
+                    // targets the backend cannot read) is a capability
+                    // state, not evidence of tampering.
+                    checks.push(Check::skip("tree hash", reason));
+                }
+            }
+        }
+    }
+
     Ok(checks)
+}
+
+/// Recompute the payload tree hash (spec 03 §7) over a fresh mount of
+/// the image. `Err` is the named reason recomputation cannot run.
+fn recompute_tree_hash(image: &Path) -> Result<String, String> {
+    let mount = tfs::mount::build_from_file(&image.to_string_lossy(), "/mnt")
+        .map_err(|e| format!("cannot mount for recomputation (errno {e})"))?;
+    let walk = tfs::tree_walk::BackendTree(&*mount.backend);
+    tpkg::tree_digest(&walk)
+        .map(|d| tpkg::render_tree_hash(&d))
+        .map_err(|e| match e {
+            libc::ENOTSUP => {
+                "tree contains entries recomputation cannot cover (special files, or symlink targets this backend cannot read)".to_string()
+            }
+            e => format!("recomputation failed (errno {e})"),
+        })
 }
 
 /// Parse a 16-hex keyid into bytes (named error otherwise).

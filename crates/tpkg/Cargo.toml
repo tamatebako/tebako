@@ -18,6 +18,9 @@ categories = ["data-structures", "filesystem", "parser-implementations"]
 # (">= 2024.1"), so manifest.rs carries its own small parse-only grammar.
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0.12"
+# The payload tree hash (merkle.rs, spec 03 §7): SHA-256 over the
+# length-prefixed domain-separated tfs-merkle-1 serialization.
+sha2 = "0.10"
 
 [dev-dependencies]
 proptest = "1"

@@ -212,6 +212,12 @@ impl Backend for HostDirBackend {
         Ok(out)
     }
 
+    fn read_link(&self, path: &str) -> Result<String, i32> {
+        let host = self.host(normalize(path))?;
+        let target = fs::read_link(&host).map_err(|e| io_errno(&e))?;
+        target.to_str().map(str::to_string).ok_or(libc::EINVAL)
+    }
+
     fn writable(&self) -> Option<&dyn WritableBackend> {
         Some(self)
     }

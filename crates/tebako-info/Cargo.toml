@@ -16,6 +16,8 @@ tfs = { version = "0.1.0", path = "../tfs" }
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
 sha2 = "0.10"
+# errno values for the tree-hash walker's named skip reasons (verify.rs).
+libc = "0.2"
 # Lenient manifest reads (structure without validate()) for the display
 # paths; same pin as tpkg.
 serde_yml = "0.0.12"

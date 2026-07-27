@@ -12,6 +12,12 @@ categories = ["filesystem", "command-line-utilities"]
 
 [dependencies]
 tfs = { version = "0.1.0", path = "../tfs" }
+# mkimage stamps identity.digest.tree_hash into a source tree's payload
+# manifest (spec 03 §7) via tpkg's merkle construction.
+tpkg = { version = "0.1.0", path = "../tpkg" }
+# Hardlink staging area for the stamped tree (the author's source is
+# never mutated).
+tempfile = "3"
 tebako-info = { version = "0.1.0", path = "../tebako-info" }
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
 # The in-process DwarFS writer for mkimage (dwarfs-t-rs).
