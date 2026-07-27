@@ -108,6 +108,7 @@
 
 mod codec;
 mod crc32;
+mod envelope;
 mod error;
 mod io;
 mod manifest;
@@ -117,6 +118,7 @@ mod model;
 
 pub use codec::{encode_trailer, parse_trailer, trailer_len, v2_signed_region};
 pub use crc32::{crc32, Crc32};
+pub use envelope::{EnvelopeManifest, Grant, Suite, ENVELOPES_PATH, ENVELOPES_SCHEMA_VERSION};
 pub use error::{strerror, TpkgError};
 pub use io::{read_from, write_to};
 pub use manifest::{

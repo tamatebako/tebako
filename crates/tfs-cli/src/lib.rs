@@ -12,6 +12,8 @@ use std::path::{Path, PathBuf};
 
 use tfs::c_api::*;
 
+pub mod enc;
+
 /// Options shared by the listing commands.
 #[derive(Debug, Clone, Default)]
 pub struct ListOptions {

@@ -40,9 +40,17 @@ ruzstd = "0.7"
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs", optional = true }
 # libsquashfs (squashfs-tools-ng) via vcpkg for the SquashFS backend.
 sqfs-sys = { version = "0.1.0", path = "../sqfs-sys", optional = true }
-# The tree-hash walker (tree_walk.rs) feeds mounted images to tpkg's
-# merkle construction (spec 03 §7).
+# The ENC stacking transform (spec 10, backends_enc): AES-256-GCM per-block
+# confidentiality with HKDF-SHA256 subtree keys, DEK grant envelopes via
+# tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
+# buffers. All pure-Rust RustCrypto crates — no shell-outs anywhere.
 tpkg = { version = "0.1.0", path = "../tpkg" }
+tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+aes-gcm = "0.10"
+hkdf = "0.12"
+sha2 = "0.10"
+zeroize = "1"
+getrandom = "0.2"
 
 [features]
 # `vendored-dwarfs` (default): build the dwarfs backend against the vendored
@@ -57,6 +65,8 @@ vendored-squashfs = ["dep:sqfs-sys"]
 [dev-dependencies]
 # Tempdir scaffolding for backend tests (large-archive RSS fixtures).
 tempfile = "3"
+# ENC tests mint recipient key pairs in-memory (same pin as tebako-signer).
+rnp = { git = "https://github.com/rnpgp/rnp-rs", rev = "9d459ea36398d9f21b920614aba4816501e2e767", features = ["vendored"] }
 # gzip trailer checksums in tar-backend test fixtures.
 crc32fast = "1"
 
