@@ -22,3 +22,10 @@ rnp = { package = "rnp-rs", version = "0.1.7", features = ["vendored"] }
 botan-sys = { version = "1", features = ["vendored"] }
 bzip2-sys = "0.1"
 sha2 = "0.10"
+
+[build-dependencies]
+# bzip2 1.0.8 never defines bz_internal_error (declared in bzlib_private.h,
+# called by AssertH): dynamic libbz2 tolerates the dangling reference,
+# static links fail full symbol resolution. build.rs compiles the
+# one-function shim (src/bz_internal_shim.c) into every dependent binary.
+cc = "1"
