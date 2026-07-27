@@ -90,6 +90,11 @@ jobs:
         working-directory: tebako-rs
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          # feat/encryption pins rnp to a git rev → librnp builds from the
+          # vendored submodule via cmake → FindBZip2/FindBotan need the
+          # vcpkg-installed static deps visible.
+          CMAKE_PREFIX_PATH: ${{ github.workspace }}/.crypto-vcpkg/x64-linux-static
+          PKG_CONFIG_PATH: ${{ github.workspace }}/.crypto-vcpkg/x64-linux-static/lib/pkgconfig
         run: cargo test -p tebako-pkg --test info --no-run
 
       - name: Run under valgrind
