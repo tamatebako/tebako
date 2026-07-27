@@ -1,0 +1,13 @@
+[package]
+name = "tfs-preload-rust-at-tool"
+description = "Test fixture for libtfs-preload e2e (roadmap 39): a rust-built dynamic tool exercising the *at family through the shim"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "rust-at-tool"
+path = "src/main.rs"
+
+[dependencies]
+libc = "0.2"

@@ -13,11 +13,15 @@
 //! Compatibility note (honest scope): binaries built against glibc ≥ 2.33
 //! call `stat`/`lstat`/`fstat` directly and are covered; binaries built
 //! against older glibc use the versioned `__xstat`/`__lxstat`/`__fxstat`
-//! entry points, which v1 does not interpose (documented in the crate
-//! docs). `open64`/`pread64` are aliases of the 64-bit entry points on
-//! linux-gnu 64-bit targets and are not interposed separately.
+//! entry points, which are interposed as well (the shim fills the modern
+//! `struct stat` — x86-64's only _STAT_VER layout). `open64`/`pread64`
+//! are aliases of the 64-bit entry points on linux-gnu 64-bit targets and
+//! are not interposed separately. glibc exports no `openat2` wrapper (and
+//! `getdents64` only since 2.30): the originals there fall back to the
+//! raw syscall — and `openat2` binds only for dlsym consumers, since no
+//! linked reference to it can exist.
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, c_long, c_void};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// Resolve the original libc implementation of `$sym` (cached).
@@ -136,6 +140,133 @@ real_fn!(
     real_dlopen,
     c"dlopen",
     unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
+);
+real_fn!(
+    real_fstatat,
+    c"fstatat",
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat, c_int) -> c_int
+);
+real_fn!(
+    real_statx,
+    c"statx",
+    unsafe extern "C" fn(c_int, *const c_char, c_int, libc::c_uint, *mut libc::statx) -> c_int
+);
+real_fn!(
+    real_xstat,
+    c"__xstat",
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat) -> c_int
+);
+real_fn!(
+    real_lxstat,
+    c"__lxstat",
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat) -> c_int
+);
+real_fn!(
+    real_fxstat,
+    c"__fxstat",
+    unsafe extern "C" fn(c_int, c_int, *mut libc::stat) -> c_int
+);
+real_fn!(
+    real_readdir_r,
+    c"readdir_r",
+    unsafe extern "C" fn(*mut libc::DIR, *mut libc::dirent, *mut *mut libc::dirent) -> c_int
+);
+real_fn!(
+    real_telldir,
+    c"telldir",
+    unsafe extern "C" fn(*mut libc::DIR) -> c_long
+);
+real_fn!(
+    real_seekdir,
+    c"seekdir",
+    unsafe extern "C" fn(*mut libc::DIR, c_long)
+);
+real_fn!(
+    real_rewinddir,
+    c"rewinddir",
+    unsafe extern "C" fn(*mut libc::DIR)
+);
+real_fn!(
+    real_execve,
+    c"execve",
+    unsafe extern "C" fn(*const c_char, *const *const c_char, *const *const c_char) -> c_int
+);
+real_fn!(
+    real_posix_spawn,
+    c"posix_spawn",
+    unsafe extern "C" fn(
+        *mut libc::pid_t,
+        *const c_char,
+        *const libc::posix_spawn_file_actions_t,
+        *const libc::posix_spawnattr_t,
+        *const *mut c_char,
+        *const *mut c_char
+    ) -> c_int
+);
+real_fn!(
+    real_posix_spawnp,
+    c"posix_spawnp",
+    unsafe extern "C" fn(
+        *mut libc::pid_t,
+        *const c_char,
+        *const libc::posix_spawn_file_actions_t,
+        *const libc::posix_spawnattr_t,
+        *const *mut c_char,
+        *const *mut c_char
+    ) -> c_int
+);
+
+/// dlsym-first resolution with a raw-syscall fallback, for symbols glibc
+/// may not export a wrapper for (`$sys` is the syscall's Rust fn). No
+/// assert: the syscall IS the original when no wrapper exists.
+macro_rules! real_fn_syscall {
+    ($name:ident, $sym:expr, $sys:ident, $ty:ty) => {
+        pub(super) fn $name() -> $ty {
+            static SLOT: AtomicUsize = AtomicUsize::new(0);
+            let mut p = SLOT.load(Ordering::Relaxed);
+            if p == 0 {
+                // SAFETY: dlsym with a valid NUL-terminated symbol name.
+                p = unsafe { libc::dlsym(libc::RTLD_NEXT, $sym.as_ptr()) } as usize;
+                if p == 0 {
+                    p = $sys as *const () as usize;
+                }
+                SLOT.store(p, Ordering::Relaxed);
+            }
+            // SAFETY: either the libc wrapper or `$sys`, both of type $ty.
+            unsafe { std::mem::transmute::<usize, $ty>(p) }
+        }
+    };
+}
+
+/// The openat2 original when glibc exports no wrapper: the raw syscall.
+unsafe extern "C" fn sys_openat2(
+    dirfd: c_int,
+    path: *const c_char,
+    how: *mut libc::open_how,
+    size: usize,
+) -> c_int {
+    // SAFETY: plain syscall forwarding the caller's arguments.
+    unsafe { libc::syscall(libc::SYS_openat2, dirfd, path, how, size) as c_int }
+}
+
+real_fn_syscall!(
+    real_openat2,
+    c"openat2",
+    sys_openat2,
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::open_how, usize) -> c_int
+);
+
+/// The getdents64 original on glibc < 2.30: the raw syscall.
+unsafe extern "C" fn sys_getdents64(fd: c_int, dirp: *mut c_void, count: usize) -> libc::ssize_t {
+    // SAFETY: plain syscall forwarding the caller's arguments.
+    unsafe { libc::syscall(libc::SYS_getdents64, fd, dirp, count) as libc::ssize_t }
+}
+
+real_fn_syscall!(
+    real_getdents64,
+    c"getdents64",
+    sys_getdents64,
+    unsafe extern "C" fn(c_int, *mut c_void, usize) -> libc::ssize_t
 );
 
 /// Library constructor: establish the namespace before the program's main.

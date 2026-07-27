@@ -10,7 +10,13 @@
 //!   on writes; rw grant passes),
 //! - the grandchild staying in the VFS (env propagation),
 //! - dlopen of a memfs library via the dlmap2file host cache,
-//! - named errors + EX_CONFIG (78) on misformatted env.
+//! - named errors + EX_CONFIG (78) on misformatted env,
+//! - roadmap 39: the *at family (fstatat/statx — linux —, getdents64,
+//!   the pre-glibc-2.33 `__xstat`; dirfd-relative resolution into the
+//!   memfs; the AT_FDCWD regression pin), dir positioning
+//!   (readdir_r/telldir/seekdir/rewinddir), execve/posix_spawn/
+//!   posix_spawnp of an in-image helper via the dlmap2file host cache,
+//!   and a rust-built dynamic tool proving the *at coverage end-to-end.
 //!
 //! Skip policy (documented in the crate README/spec): tests SKIP (pass
 //! trivially, with a note on stderr) when no C compiler (`cc`) is on PATH
@@ -123,11 +129,27 @@ fn build_fixtures() -> Option<Fixtures> {
     // Compile the tools (dynamic linking is the default; that is the whole
     // point — the shim interposes the libc they link against).
     let mut tools: Vec<(String, PathBuf)> = Vec::new();
-    for name in ["print-data", "list-dir", "dl-user", "spawn-self", "mk-dir"] {
+    let mut names = vec![
+        "print-data",
+        "list-dir",
+        "dl-user",
+        "spawn-self",
+        "mk-dir",
+        "at-probe",
+        "dir-walk",
+        "spawn-helper",
+        "helper",
+    ];
+    if cfg!(target_os = "linux") {
+        names.push("dents-probe");
+    }
+    for name in names {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
         std::fs::create_dir_all(out.parent().unwrap()).unwrap();
-        let extra: &[&str] = if name == "dl-user" && cfg!(target_os = "linux") {
+        let extra: &[&str] = if (name == "dl-user" || name == "dents-probe")
+            && cfg!(target_os = "linux")
+        {
             &["-ldl"]
         } else {
             &[]
@@ -155,7 +177,8 @@ fn build_fixtures() -> Option<Fixtures> {
     std::fs::create_dir_all(&work).unwrap();
     std::fs::write(work.join("hostfile.txt"), b"HOST-FILE\n").unwrap();
 
-    // The test image (zip backend): data, a directory, the plugin.
+    // The test image (zip backend): data, a directory, the plugin, the
+    // in-image helper binary (exec/spawn proofs).
     let zip_path = dir.join("img.zip");
     {
         let file = std::fs::File::create(&zip_path).unwrap();
@@ -172,6 +195,7 @@ fn build_fixtures() -> Option<Fixtures> {
         zw.add_directory("data/", rx).unwrap();
         zw.add_directory("dir/", rx).unwrap();
         zw.add_directory("lib/", rx).unwrap();
+        zw.add_directory("bin/", rx).unwrap();
         zw.start_file("data/secret.txt", ro).unwrap();
         zw.write_all(SECRET.as_bytes()).unwrap();
         zw.start_file("dir/a.txt", ro).unwrap();
@@ -180,7 +204,31 @@ fn build_fixtures() -> Option<Fixtures> {
         zw.write_all(b"b\n").unwrap();
         zw.start_file(format!("lib/{libname}"), rx).unwrap();
         zw.write_all(&std::fs::read(&plug_out).unwrap()).unwrap();
+        zw.start_file("bin/helper", rx).unwrap();
+        zw.write_all(&std::fs::read(dir.join("bin").join("helper")).unwrap())
+            .unwrap();
         zw.finish().unwrap();
+    }
+
+    // The rust-built dynamic tool (roadmap 39): a workspace member, built
+    // on demand so `cargo test -p libtfs-preload` alone has it too. cargo
+    // is always on PATH under cargo test; a failed build is a hard
+    // failure, never a silent skip.
+    {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .canonicalize()
+            .unwrap();
+        let o = Command::new("cargo")
+            .args(["build", "-p", "tfs-preload-rust-at-tool"])
+            .current_dir(&root)
+            .output()
+            .unwrap();
+        assert!(
+            o.status.success(),
+            "building the rust-at-tool fixture failed: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
     }
 
     Some(Fixtures {
@@ -212,10 +260,29 @@ struct Run {
 /// Run a fixture tool under the shim. `jail` is the TEBAKO_JAIL value
 /// (None = unset). The preload/mount env is set ONLY on the child.
 fn run(f: &Fixtures, tool: &str, args: &[&str], jail: Option<&str>) -> Run {
+    run_full(f, tool, args, jail, &[], None)
+}
+
+/// Full form: `extra_mounts` append `image:mount` pairs to
+/// TEBAKO_TFS_MOUNTS; `cwd` sets the child's working directory (the
+/// AT_FDCWD-relative proofs need a known cwd).
+fn run_full(
+    f: &Fixtures,
+    tool: &str,
+    args: &[&str],
+    jail: Option<&str>,
+    extra_mounts: &[String],
+    cwd: Option<&Path>,
+) -> Run {
+    let mut mounts = format!("{}:{MOUNT}", f.zip.display());
+    for m in extra_mounts {
+        mounts.push(',');
+        mounts.push_str(m);
+    }
     let mut cmd = Command::new(f.dir.join("bin").join(tool));
     cmd.args(args)
         .env(preload_var(), &f.shim)
-        .env("TEBAKO_TFS_MOUNTS", format!("{}:{MOUNT}", f.zip.display()))
+        .env("TEBAKO_TFS_MOUNTS", mounts)
         // Determinism: no inherited preload env from the test harness.
         .env_remove("DYLD_PRINT_LIBRARIES");
     match jail {
@@ -225,6 +292,47 @@ fn run(f: &Fixtures, tool: &str, args: &[&str], jail: Option<&str>) -> Run {
         None => {
             cmd.env_remove("TEBAKO_JAIL");
         }
+    }
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
+    }
+    let out = cmd.output().unwrap();
+    Run {
+        rc: out.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+/// The built rust-at-tool fixture binary (built in build_fixtures).
+fn rust_at_tool() -> PathBuf {
+    let target = target_dir();
+    for profile in ["debug", "release"] {
+        let cand = target
+            .join(profile)
+            .join(if cfg!(windows) {
+                "rust-at-tool.exe"
+            } else {
+                "rust-at-tool"
+            });
+        if cand.is_file() {
+            return cand;
+        }
+    }
+    panic!("rust-at-tool fixture binary not found under {}", target.display())
+}
+
+/// Run the rust-at-tool fixture under the shim (it lives outside the
+/// fixture bin dir, so it gets its own runner).
+fn run_rust(f: &Fixtures, args: &[&str], cwd: Option<&Path>) -> Run {
+    let mut cmd = Command::new(rust_at_tool());
+    cmd.args(args)
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", format!("{}:{MOUNT}", f.zip.display()))
+        .env_remove("TEBAKO_JAIL")
+        .env_remove("DYLD_PRINT_LIBRARIES");
+    if let Some(cwd) = cwd {
+        cmd.current_dir(cwd);
     }
     let out = cmd.output().unwrap();
     Run {
@@ -376,6 +484,189 @@ fn dlopen_memfs_library_via_dlmap2file() {
     let r = run(f, "dl-user", &[&format!("{MOUNT}/lib/{}", libname())], None);
     assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
     assert_eq!(r.stdout.trim(), "42", "stdout: {}", r.stdout);
+}
+
+// ---------------------------------------------------------------------
+// roadmap 39: the *at family, exec/spawn of memfs paths, dir positioning
+// ---------------------------------------------------------------------
+
+#[test]
+fn fstatat_and_statx_memfs() {
+    let Some(f) = fixtures() else { return };
+    let r = run(f, "at-probe", &[&format!("{MOUNT}/data/secret.txt")], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    // /tfs does not exist on the host: the *at answers came from the VFS.
+    assert!(r.stdout.contains("FSTATAT:15"), "stdout: {}", r.stdout);
+    if cfg!(target_os = "linux") {
+        assert!(r.stdout.contains("STATX:15"), "stdout: {}", r.stdout);
+    }
+}
+
+/// THE AT_FDCWD regression pin (the 4.0 lesson): TEBAKO_FD_FLAG is a bit
+/// check and AT_FDCWD (-100) has that bit set. An ungated is_memfs_fd
+/// branch in a *at shim answers ENOTDIR for a cwd-relative HOST path;
+/// the gated shim passes it through.
+#[test]
+fn at_fdcwd_relative_host_passthrough_regression() {
+    let Some(f) = fixtures() else { return };
+    let r = run_full(f, "at-probe", &["--rel", "hostfile.txt"], None, &[], Some(&f.work));
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), "REL:10", "stdout: {}", r.stdout);
+}
+
+#[test]
+fn at_dirfd_relative_into_memfs() {
+    let Some(f) = fixtures() else { return };
+    // A second mount INSIDE a host directory, so a dirfd-relative path
+    // resolves into the memfs through the dirfd's own host path.
+    let mnt = f.work.join("mnt");
+    let extra = format!("{}:{}", f.zip.display(), mnt.display());
+    let r = run_full(
+        f,
+        "at-probe",
+        &["--dirfd", f.work.to_str().unwrap(), "mnt/data/secret.txt"],
+        None,
+        &[extra],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(r.stdout.contains("FSTATAT:15"), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains(SECRET.trim_end()), "stdout: {}", r.stdout);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn getdents64_and_xstat() {
+    let Some(f) = fixtures() else { return };
+    let r = run(
+        f,
+        "dents-probe",
+        &[&format!("{MOUNT}/data/secret.txt"), f.work.to_str().unwrap()],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(
+        r.stdout.contains("DENTS-MEMFS:ENOTDIR"),
+        "stdout: {}",
+        r.stdout
+    );
+    assert!(r.stdout.contains("DENTS-HOST:ok"), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains("XSTAT:15"), "stdout: {}", r.stdout);
+}
+
+#[test]
+fn dir_positioning_and_readdir_r() {
+    let Some(f) = fixtures() else { return };
+    // memfs: index-based cookies, fully deterministic.
+    let r = run(f, "dir-walk", &[&format!("{MOUNT}/dir")], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(
+        r.stdout, "R1:a.txt\nTELL:1\nR2:b.txt\nBACK:b.txt\nREW:a.txt\nEND:eod\n",
+        "stdout: {}",
+        r.stdout
+    );
+    // host passthrough: cookie VALUES are the kernel's, but the seek/
+    // rewind behavior is deterministic (dot entries are skipped).
+    let r = run(f, "dir-walk", &[f.work.to_str().unwrap()], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    let lines: Vec<&str> = r.stdout.lines().collect();
+    assert_eq!(lines.first(), Some(&"R1:hostfile.txt"), "stdout: {}", r.stdout);
+    assert!(lines.get(1).is_some_and(|l| l.starts_with("TELL:")));
+    assert_eq!(lines.get(2), Some(&"R2:eod"), "stdout: {}", r.stdout);
+    assert_eq!(lines.get(3), Some(&"BACK:eod"), "stdout: {}", r.stdout);
+    assert_eq!(lines.get(4), Some(&"REW:hostfile.txt"), "stdout: {}", r.stdout);
+    assert_eq!(lines.get(5), Some(&"END:eod"), "stdout: {}", r.stdout);
+}
+
+#[test]
+fn posix_spawn_of_memfs_helper() {
+    let Some(f) = fixtures() else { return };
+    let args = [
+        "--spawn",
+        &format!("{MOUNT}/bin/helper"),
+        &format!("{MOUNT}/data/secret.txt"),
+    ];
+    let r = run(f, "spawn-helper", &args, None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(r.stdout.contains("HELPER:ok"), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains(SECRET.trim_end()), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains("SPAWN-RC:0"), "stdout: {}", r.stdout);
+    // …and under a deny jail the memfs helper still spawns (spec 08 §3:
+    // the policy is about HOST paths; memfs mounts are unaffected).
+    let r = run(f, "spawn-helper", &args, Some("deny"));
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(r.stdout.contains("SPAWN-RC:0"), "stdout: {}", r.stdout);
+}
+
+#[test]
+fn posix_spawnp_of_memfs_helper() {
+    let Some(f) = fixtures() else { return };
+    let r = run(
+        f,
+        "spawn-helper",
+        &[
+            "--spawnp",
+            &format!("{MOUNT}/bin/helper"),
+            &format!("{MOUNT}/data/secret.txt"),
+        ],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(r.stdout.contains("SPAWN-RC:0"), "stdout: {}", r.stdout);
+}
+
+#[test]
+fn execve_of_memfs_helper() {
+    let Some(f) = fixtures() else { return };
+    let r = run(
+        f,
+        "spawn-helper",
+        &[
+            "--execve",
+            &format!("{MOUNT}/bin/helper"),
+            &format!("{MOUNT}/data/secret.txt"),
+        ],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(r.stdout.contains("HELPER:ok"), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains(SECRET.trim_end()), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains("SPAWN-RC:0"), "stdout: {}", r.stdout);
+}
+
+#[test]
+fn spawn_of_host_path_denied() {
+    let Some(f) = fixtures() else { return };
+    // Jails extend to exec: posix_spawn of a host binary under a deny
+    // jail fails with the error NUMBER as posix_spawn's return value.
+    let r = run(
+        f,
+        "spawn-helper",
+        &["--spawn", "/bin/echo", "never"],
+        Some("deny"),
+    );
+    assert_eq!(r.rc, libc::EPERM, "stderr: {}", r.stderr);
+    assert!(r.stdout.contains("SPAWN-ERR:1"), "stdout: {}", r.stdout);
+}
+
+/// The rust-built dynamic tool (roadmap 39): std::fs plus direct
+/// fstatat/statx against in-image data — the *at coverage end-to-end.
+#[test]
+fn rust_tool_at_family_end_to_end() {
+    let Some(f) = fixtures() else { return };
+    let r = run_rust(
+        f,
+        &[&format!("{MOUNT}/data/secret.txt"), "hostfile.txt"],
+        Some(&f.work),
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(r.stdout.contains(SECRET.trim_end()), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains("META:15"), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains("FSTATAT:15"), "stdout: {}", r.stdout);
+    if cfg!(target_os = "linux") {
+        assert!(r.stdout.contains("STATX:15"), "stdout: {}", r.stdout);
+    }
+    assert!(r.stdout.contains("REL:10"), "stdout: {}", r.stdout);
 }
 
 #[test]

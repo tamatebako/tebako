@@ -27,7 +27,7 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{c_char, c_int, c_long, c_void, CStr, CString};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -128,6 +128,34 @@ fn resolve_dirfd(dirfd: c_int) -> Option<PathBuf> {
     Some(PathBuf::from(
         String::from_utf8_lossy(&buf[..end]).into_owned(),
     ))
+}
+
+/// The dirfd base for *at routing (openat/faccessat/fstatat/statx/
+/// openat2): absolute paths, AT_FDCWD-relative paths, and memfs dirfds
+/// need no host base (`resolve_at` answers for them itself). AT_FDCWD
+/// (-100) carries the TEBAKO_FD_FLAG bit — the explicit AT_FDCWD arm
+/// MUST precede any `is_memfs_fd` test, and the memfs-fd test is gated
+/// on `dirfd >= 0` regardless (the 4.0 lesson; pinned in route.rs).
+fn at_base(dirfd: c_int, p: &str) -> Option<PathBuf> {
+    if p.starts_with('/') || dirfd == libc::AT_FDCWD || (dirfd >= 0 && route::is_memfs_fd(dirfd)) {
+        None
+    } else {
+        resolve_dirfd(dirfd)
+    }
+}
+
+/// Route a *at path through `resolve_at` and run `vfs` on the routed
+/// path. `Ok(None)` means pass the original call through to the host.
+fn route_at<T>(
+    dirfd: c_int,
+    p: &str,
+    vfs: impl FnOnce(&str) -> PathRoute<T>,
+) -> Result<Option<PathRoute<T>>, c_int> {
+    let routed = match route::resolve_at(dirfd, p, at_base(dirfd, p)) {
+        Ok(rp) => rp,
+        Err(e) => return Err(e),
+    };
+    Ok(engine_call(|| vfs(&routed)))
 }
 
 // ---------------------------------------------------------------------
@@ -264,47 +292,89 @@ pub unsafe extern "C" fn openat(
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_openat()(dirfd, path, flags, mode) };
     };
-    let base = if p.starts_with('/') || dirfd == libc::AT_FDCWD || route::is_memfs_fd(dirfd) {
-        None
-    } else {
-        resolve_dirfd(dirfd)
-    };
-    let routed = match route::resolve_at(dirfd, p, base) {
-        Ok(rp) => rp,
-        Err(e) => {
-            set_errno(e);
-            return -1;
-        }
-    };
-    match engine_call(|| route::vfs_open(&routed, flags)) {
-        Some(PathRoute::Vfs(fd)) => fd,
-        Some(PathRoute::Denied(e)) => {
+    match route_at(dirfd, p, |rp| route::vfs_open(rp, flags)) {
+        Ok(Some(PathRoute::Vfs(fd))) => fd,
+        Ok(Some(PathRoute::Denied(e))) | Err(e) => {
             set_errno(e);
             -1
         }
-        Some(PathRoute::Host) | None => unsafe { plat::real_openat()(dirfd, path, flags, mode) },
+        Ok(Some(PathRoute::Host)) | Ok(None) => unsafe {
+            plat::real_openat()(dirfd, path, flags, mode)
+        },
     }
 }
 
-/// Shared body of stat/lstat.
+/// Serve `p` from the VFS into `st`. Returns `Some(rc)` when the call
+/// was answered (serve or fail), `None` to pass the original call
+/// through to the real libc implementation.
 ///
 /// # Safety
-/// `orig`/`st` follow the intercepted-call contract.
-unsafe fn stat_via(
-    p: Option<&str>,
-    orig: *const c_char,
-    st: *mut libc::stat,
-    real: unsafe extern "C" fn(*const c_char, *mut libc::stat) -> c_int,
-) -> c_int {
-    let Some(p) = p else {
-        return unsafe { real(orig, st) };
-    };
-    if st.is_null() {
-        return unsafe { real(orig, st) };
-    }
+/// `st` must be a valid `struct stat` pointer per the intercepted-call
+/// contract.
+unsafe fn vfs_stat_into(p: &str, st: *mut libc::stat) -> Option<c_int> {
     match engine_call(|| route::vfs_stat(p)) {
         // SAFETY: st is a valid struct stat pointer per the call contract.
         Some(PathRoute::Vfs(raw)) => match unsafe { fill_stat(&raw) } {
+            Ok(s) => {
+                unsafe { *st = s };
+                Some(0)
+            }
+            Err(e) => {
+                set_errno(e);
+                Some(-1)
+            }
+        },
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            Some(-1)
+        }
+        Some(PathRoute::Host) | None => None,
+    }
+}
+
+/// Shared body of stat/lstat/__xstat/__lxstat.
+///
+/// # Safety
+/// `st` follows the intercepted-call contract; `real` runs the original
+/// libc call with the original arguments.
+unsafe fn stat_via(p: Option<&str>, st: *mut libc::stat, real: impl FnOnce() -> c_int) -> c_int {
+    let Some(p) = p else {
+        return real();
+    };
+    if st.is_null() {
+        return real();
+    }
+    match unsafe { vfs_stat_into(p, st) } {
+        Some(rc) => rc,
+        None => real(),
+    }
+}
+
+/// Interposed `stat`.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn stat(path: *const c_char, st: *mut libc::stat) -> c_int {
+    unsafe { stat_via(c_path(path), st, || plat::real_stat()(path, st)) }
+}
+
+/// Interposed `lstat` (memfs has no symlink duality: lstat == stat).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn lstat(path: *const c_char, st: *mut libc::stat) -> c_int {
+    unsafe { stat_via(c_path(path), st, || plat::real_lstat()(path, st)) }
+}
+
+/// fstat on a memfs fd (shared by fstat/__fxstat and the AT_EMPTY_PATH
+/// arms of fstatat/statx).
+///
+/// # Safety
+/// `st` follows the intercepted-call contract.
+unsafe fn fstat_memfs(fd: c_int, st: *mut libc::stat) -> c_int {
+    if st.is_null() {
+        set_errno(libc::EFAULT);
+        return -1;
+    }
+    match engine_call(|| route::vfs_fstat(fd)) {
+        // SAFETY: st is valid per the call contract.
+        Some(Ok(raw)) => match unsafe { fill_stat(&raw) } {
             Ok(s) => {
                 unsafe { *st = s };
                 0
@@ -314,55 +384,22 @@ unsafe fn stat_via(
                 -1
             }
         },
-        Some(PathRoute::Denied(e)) => {
+        Some(Err(e)) => {
             set_errno(e);
             -1
         }
-        Some(PathRoute::Host) | None => unsafe { real(orig, st) },
+        None => {
+            set_errno(libc::EIO);
+            -1
+        }
     }
-}
-
-/// Interposed `stat`.
-#[cfg_attr(target_os = "linux", no_mangle)]
-pub unsafe extern "C" fn stat(path: *const c_char, st: *mut libc::stat) -> c_int {
-    unsafe { stat_via(c_path(path), path, st, plat::real_stat()) }
-}
-
-/// Interposed `lstat` (memfs has no symlink duality: lstat == stat).
-#[cfg_attr(target_os = "linux", no_mangle)]
-pub unsafe extern "C" fn lstat(path: *const c_char, st: *mut libc::stat) -> c_int {
-    unsafe { stat_via(c_path(path), path, st, plat::real_lstat()) }
 }
 
 /// Interposed `fstat` (fd-flag dispatch, no path).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn fstat(fd: c_int, st: *mut libc::stat) -> c_int {
     if route::is_memfs_fd(fd) {
-        if st.is_null() {
-            set_errno(libc::EFAULT);
-            return -1;
-        }
-        return match engine_call(|| route::vfs_fstat(fd)) {
-            // SAFETY: st is valid per the call contract.
-            Some(Ok(raw)) => match unsafe { fill_stat(&raw) } {
-                Ok(s) => {
-                    unsafe { *st = s };
-                    0
-                }
-                Err(e) => {
-                    set_errno(e);
-                    -1
-                }
-            },
-            Some(Err(e)) => {
-                set_errno(e);
-                -1
-            }
-            None => {
-                set_errno(libc::EIO);
-                -1
-            }
-        };
+        return unsafe { fstat_memfs(fd, st) };
     }
     unsafe { plat::real_fstat()(fd, st) }
 }
@@ -396,26 +433,264 @@ pub unsafe extern "C" fn faccessat(
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_faccessat()(dirfd, path, mode, flags) };
     };
-    let base = if p.starts_with('/') || dirfd == libc::AT_FDCWD || route::is_memfs_fd(dirfd) {
-        None
-    } else {
-        resolve_dirfd(dirfd)
-    };
-    let routed = match route::resolve_at(dirfd, p, base) {
-        Ok(rp) => rp,
-        Err(e) => {
-            set_errno(e);
-            return -1;
-        }
-    };
-    match engine_call(|| route::vfs_access(&routed, mode)) {
-        Some(PathRoute::Vfs(())) => 0,
-        Some(PathRoute::Denied(e)) => {
+    match route_at(dirfd, p, |rp| route::vfs_access(rp, mode)) {
+        Ok(Some(PathRoute::Vfs(()))) => 0,
+        Ok(Some(PathRoute::Denied(e))) | Err(e) => {
             set_errno(e);
             -1
         }
-        Some(PathRoute::Host) | None => unsafe { plat::real_faccessat()(dirfd, path, mode, flags) },
+        Ok(Some(PathRoute::Host)) | Ok(None) => unsafe {
+            plat::real_faccessat()(dirfd, path, mode, flags)
+        },
     }
+}
+
+/// Interposed `fstatat` (both platforms — the macOS *at stat call).
+/// The `flags` bits (AT_SYMLINK_NOFOLLOW) only refine the real call —
+/// the VFS answer is the same (no symlink duality). Linux' AT_EMPTY_PATH
+/// with an empty path stats the dirfd itself (a memfs dirfd is fstat'd);
+/// an empty path WITHOUT AT_EMPTY_PATH passes through (the kernel's
+/// ENOENT is its own answer).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn fstatat(
+    dirfd: c_int,
+    path: *const c_char,
+    st: *mut libc::stat,
+    flags: c_int,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_fstatat()(dirfd, path, st, flags) };
+    };
+    if st.is_null() {
+        return unsafe { plat::real_fstatat()(dirfd, path, st, flags) };
+    }
+    #[cfg(target_os = "linux")]
+    if p.is_empty() {
+        if (flags & libc::AT_EMPTY_PATH) != 0 && dirfd >= 0 && route::is_memfs_fd(dirfd) {
+            return unsafe { fstat_memfs(dirfd, st) };
+        }
+        return unsafe { plat::real_fstatat()(dirfd, path, st, flags) };
+    }
+    #[cfg(target_os = "macos")]
+    if p.is_empty() {
+        return unsafe { plat::real_fstatat()(dirfd, path, st, flags) };
+    }
+    match route_at(dirfd, p, route::vfs_stat) {
+        Ok(Some(PathRoute::Vfs(raw))) => match unsafe { fill_stat(&raw) } {
+            // SAFETY: st is valid per the call contract.
+            Ok(s) => {
+                unsafe { *st = s };
+                0
+            }
+            Err(e) => {
+                set_errno(e);
+                -1
+            }
+        },
+        Ok(Some(PathRoute::Denied(e))) | Err(e) => {
+            set_errno(e);
+            -1
+        }
+        Ok(Some(PathRoute::Host)) | Ok(None) => unsafe {
+            plat::real_fstatat()(dirfd, path, st, flags)
+        },
+    }
+}
+
+/// Fill a native `struct statx` from the engine's RawStat (the BASIC_STATS
+/// fields the engine can honestly answer: type+perms, size, mtime, nlink).
+#[cfg(target_os = "linux")]
+unsafe fn fill_statx(raw: &tfs::backend::RawStat) -> Result<libc::statx, i32> {
+    use tfs::backend::EntryType;
+    // SAFETY: a zeroed struct statx is valid (as in fill_stat).
+    let mut out: libc::statx = unsafe { std::mem::zeroed() };
+    let type_bits: u16 = match raw.entry_type {
+        EntryType::File => libc::S_IFREG as u16,
+        EntryType::Directory => libc::S_IFDIR as u16,
+        _ => return Err(libc::EINVAL),
+    };
+    out.stx_mask = libc::STATX_BASIC_STATS;
+    out.stx_blksize = 4096;
+    out.stx_nlink = 1;
+    out.stx_mode = type_bits | raw.perms as u16;
+    out.stx_size = raw.size as u64;
+    out.stx_mtime.tv_sec = raw.mtime;
+    Ok(out)
+}
+
+/// statx on a memfs fd (the AT_EMPTY_PATH arm of `statx`).
+///
+/// # Safety
+/// `buf` follows the intercepted-call contract.
+#[cfg(target_os = "linux")]
+unsafe fn statx_memfs(fd: c_int, buf: *mut libc::statx) -> c_int {
+    if buf.is_null() {
+        set_errno(libc::EFAULT);
+        return -1;
+    }
+    match engine_call(|| route::vfs_fstat(fd)) {
+        // SAFETY: buf is valid per the call contract.
+        Some(Ok(raw)) => match unsafe { fill_statx(&raw) } {
+            Ok(s) => {
+                unsafe { *buf = s };
+                0
+            }
+            Err(e) => {
+                set_errno(e);
+                -1
+            }
+        },
+        Some(Err(e)) => {
+            set_errno(e);
+            -1
+        }
+        None => {
+            set_errno(libc::EIO);
+            -1
+        }
+    }
+}
+
+/// Interposed `statx` (linux; glibc ≥ 2.28 exports the wrapper). The
+/// `flags`/`mask` bits only refine the real call — the VFS always
+/// answers BASIC_STATS.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn statx(
+    dirfd: c_int,
+    path: *const c_char,
+    flags: c_int,
+    mask: libc::c_uint,
+    buf: *mut libc::statx,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_statx()(dirfd, path, flags, mask, buf) };
+    };
+    if buf.is_null() {
+        return unsafe { plat::real_statx()(dirfd, path, flags, mask, buf) };
+    }
+    if p.is_empty() {
+        if (flags & libc::AT_EMPTY_PATH) != 0 && dirfd >= 0 && route::is_memfs_fd(dirfd) {
+            return unsafe { statx_memfs(dirfd, buf) };
+        }
+        return unsafe { plat::real_statx()(dirfd, path, flags, mask, buf) };
+    }
+    match route_at(dirfd, p, route::vfs_stat) {
+        Ok(Some(PathRoute::Vfs(raw))) => match unsafe { fill_statx(&raw) } {
+            // SAFETY: buf is valid per the call contract.
+            Ok(s) => {
+                unsafe { *buf = s };
+                0
+            }
+            Err(e) => {
+                set_errno(e);
+                -1
+            }
+        },
+        Ok(Some(PathRoute::Denied(e))) | Err(e) => {
+            set_errno(e);
+            -1
+        }
+        Ok(Some(PathRoute::Host)) | Ok(None) => unsafe {
+            plat::real_statx()(dirfd, path, flags, mask, buf)
+        },
+    }
+}
+
+/// Interposed `openat2` (linux). glibc exports no openat2 wrapper, so
+/// this binds only for `dlsym("openat2")` consumers — callers of the raw
+/// syscall bypass ALL interposition by construction (documented). For a
+/// memfs path the struct is validated (size covers open_how; resolve ==
+/// 0 — RESOLVE_* semantics are kernel path-walk rules the VFS does not
+/// reimplement) and the open routes exactly like openat.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn openat2(
+    dirfd: c_int,
+    path: *const c_char,
+    how: *mut libc::open_how,
+    size: usize,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_openat2()(dirfd, path, how, size) };
+    };
+    if how.is_null() {
+        set_errno(libc::EFAULT);
+        return -1;
+    }
+    // SAFETY: how is valid per the call contract; the size check below
+    // mirrors the kernel's ABI validation before any field is read.
+    let how_ref = unsafe { &*how };
+    if size < std::mem::size_of::<libc::open_how>() {
+        set_errno(libc::EINVAL);
+        return -1;
+    }
+    match route_at(dirfd, p, |rp| route::vfs_open(rp, how_ref.flags as i32)) {
+        Ok(Some(PathRoute::Vfs(fd))) => {
+            if how_ref.resolve != 0 {
+                // RESOLVE_* on a memfs path is unsupported (memfs has no
+                // symlinks/magic links and no beneath-root re-walk).
+                let _ = engine_call(|| route::vfs_close(fd));
+                set_errno(libc::EINVAL);
+                -1
+            } else {
+                fd
+            }
+        }
+        Ok(Some(PathRoute::Denied(e))) | Err(e) => {
+            set_errno(e);
+            -1
+        }
+        Ok(Some(PathRoute::Host)) | Ok(None) => unsafe {
+            plat::real_openat2()(dirfd, path, how, size)
+        },
+    }
+}
+
+/// Interposed `getdents64` (linux; the glibc ≥ 2.30 wrapper — readdir's
+/// raw substrate for DIRECT callers). A memfs fd is always a regular
+/// file (a memfs directory never opens — EISDIR at open time; listings
+/// are served through DIR streams), so the honest answer is ENOTDIR.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn getdents64(fd: c_int, dirp: *mut c_void, count: usize) -> libc::ssize_t {
+    if fd >= 0 && route::is_memfs_fd(fd) {
+        set_errno(libc::ENOTDIR);
+        return -1;
+    }
+    unsafe { plat::real_getdents64()(fd, dirp, count) }
+}
+
+/// Interposed `__xstat` (linux; the pre-glibc-2.33 versioned entry point
+/// that binaries built against older glibc call for stat). `ver` is the
+/// glibc stat-version — x86-64 knows only _STAT_VER == 1, the modern
+/// `struct stat` layout the shim fills — so it is accepted and ignored
+/// (other architectures never reach this shim: the interposed surface is
+/// 64-bit linux-gnu).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __xstat(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
+    let _ = ver;
+    unsafe { stat_via(c_path(path), st, || plat::real_xstat()(ver, path, st)) }
+}
+
+/// Interposed `__lxstat` (pre-glibc-2.33 lstat; no symlink duality).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __lxstat(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
+    let _ = ver;
+    unsafe { stat_via(c_path(path), st, || plat::real_lxstat()(ver, path, st)) }
+}
+
+/// Interposed `__fxstat` (pre-glibc-2.33 fstat; fd-flag dispatch).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __fxstat(ver: c_int, fd: c_int, st: *mut libc::stat) -> c_int {
+    let _ = ver;
+    if route::is_memfs_fd(fd) {
+        return unsafe { fstat_memfs(fd, st) };
+    }
+    unsafe { plat::real_fxstat()(ver, fd, st) }
 }
 
 /// Interposed `opendir`. Memfs handles are the engine's small-integer ids
@@ -475,6 +750,85 @@ pub unsafe extern "C" fn closedir(dirp: *mut libc::DIR) -> c_int {
         };
     }
     unsafe { plat::real_closedir()(dirp) }
+}
+
+/// Interposed `readdir_r` (the deprecated reentrant readdir; still
+/// exported by glibc and libSystem): fills the CALLER's dirent and
+/// points `*result` at it (NULL at end of directory). Returns 0 on
+/// success, the errno value directly on error.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn readdir_r(
+    dirp: *mut libc::DIR,
+    entry: *mut libc::dirent,
+    result: *mut *mut libc::dirent,
+) -> c_int {
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        if entry.is_null() || result.is_null() {
+            return libc::EINVAL;
+        }
+        return match engine_call(|| route::vfs_readdir(dirp as usize)) {
+            Some(Ok(Some(ent))) => {
+                // SAFETY: entry/result are valid per the call contract.
+                unsafe {
+                    fill_dirent(&mut *entry, &ent);
+                    *result = entry;
+                }
+                0
+            }
+            // SAFETY: result is valid per the call contract.
+            Some(Ok(None)) => {
+                unsafe { *result = std::ptr::null_mut() };
+                0
+            }
+            Some(Err(e)) => e,
+            None => libc::EIO,
+        };
+    }
+    unsafe { plat::real_readdir_r()(dirp, entry, result) }
+}
+
+/// Interposed `telldir` (index-based cookies, exactly the engine's).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn telldir(dirp: *mut libc::DIR) -> c_long {
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        return match engine_call(|| route::vfs_telldir(dirp as usize)) {
+            Some(Ok(pos)) => pos as c_long,
+            Some(Err(e)) => {
+                set_errno(e);
+                -1
+            }
+            None => {
+                set_errno(libc::EIO);
+                -1
+            }
+        };
+    }
+    unsafe { plat::real_telldir()(dirp) }
+}
+
+/// Interposed `seekdir` (void return — an error survives only in errno,
+/// which is what glibc's seekdir does too).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn seekdir(dirp: *mut libc::DIR, pos: c_long) {
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        if let Some(Err(e)) = engine_call(|| route::vfs_seekdir(dirp as usize, pos as i64)) {
+            set_errno(e);
+        }
+        return;
+    }
+    unsafe { plat::real_seekdir()(dirp, pos) }
+}
+
+/// Interposed `rewinddir` (void return, like seekdir).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn rewinddir(dirp: *mut libc::DIR) {
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        if let Some(Err(e)) = engine_call(|| route::vfs_rewinddir(dirp as usize)) {
+            set_errno(e);
+        }
+        return;
+    }
+    unsafe { plat::real_rewinddir()(dirp) }
 }
 
 /// Interposed `read` (fd-flag dispatch).
@@ -651,6 +1005,96 @@ pub unsafe extern "C" fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void
             std::ptr::null_mut()
         }
         Some(PathRoute::Host) | None => unsafe { plat::real_dlopen()(path, mode) },
+    }
+}
+
+/// Shared exec/spawn routing (spec 07 §8, roadmap 39): a memfs target is
+/// materialized through the `dlmap2file` host cache — the same mechanism
+/// as the `tfs exec` ENTRYPOINT path — and the real exec/spawn loads that
+/// copy; the caller's argv/envp pass through verbatim, so the preload
+/// env propagates and the child stays in the VFS. `Some(Err(e))` fails
+/// the call with `e`; `None` passes the ORIGINAL path through.
+fn exec_materialized(p: &str) -> Option<Result<CString, i32>> {
+    match engine_call(|| route::vfs_exec_materialize(p)) {
+        Some(PathRoute::Vfs(host)) => Some(Ok(host)),
+        Some(PathRoute::Denied(e)) => Some(Err(e)),
+        Some(PathRoute::Host) | None => None,
+    }
+}
+
+/// Interposed `execve`. The execl/execv/execvp family are libc wrappers
+/// whose inner exec call binds inside libc (not interposable) — DIRECT
+/// execve callers (shells, supervisors, most tools) are covered, which
+/// also makes `system()` of an in-image helper work (the shell's own
+/// execve is interposed).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn execve(
+    path: *const c_char,
+    argv: *const *const c_char,
+    envp: *const *const c_char,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_execve()(path, argv, envp) };
+    };
+    match exec_materialized(p) {
+        // SAFETY: `host` outlives the call (execve only returns on error).
+        Some(Ok(host)) => unsafe { plat::real_execve()(host.as_ptr(), argv, envp) },
+        Some(Err(e)) => {
+            set_errno(e);
+            -1
+        }
+        None => unsafe { plat::real_execve()(path, argv, envp) },
+    }
+}
+
+/// Interposed `posix_spawn`. NOTE the return convention: 0 on success,
+/// the error NUMBER directly on failure (never -1/errno).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn posix_spawn(
+    pid: *mut libc::pid_t,
+    path: *const c_char,
+    file_actions: *const libc::posix_spawn_file_actions_t,
+    attrp: *const libc::posix_spawnattr_t,
+    argv: *const *mut c_char,
+    envp: *const *mut c_char,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_posix_spawn()(pid, path, file_actions, attrp, argv, envp) };
+    };
+    match exec_materialized(p) {
+        Some(Ok(host)) => unsafe {
+            plat::real_posix_spawn()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
+        },
+        Some(Err(e)) => e,
+        None => unsafe { plat::real_posix_spawn()(pid, path, file_actions, attrp, argv, envp) },
+    }
+}
+
+/// Interposed `posix_spawnp`: a file containing '/' routes exactly like
+/// posix_spawn. A bare name passes through — the PATH search happens
+/// inside libc/against the host PATH, so an in-image PATH entry cannot
+/// be found by it (documented limit; use a full path).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn posix_spawnp(
+    pid: *mut libc::pid_t,
+    file: *const c_char,
+    file_actions: *const libc::posix_spawn_file_actions_t,
+    attrp: *const libc::posix_spawnattr_t,
+    argv: *const *mut c_char,
+    envp: *const *mut c_char,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(file) }) else {
+        return unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) };
+    };
+    if !p.contains('/') {
+        return unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) };
+    }
+    match exec_materialized(p) {
+        Some(Ok(host)) => unsafe {
+            plat::real_posix_spawnp()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
+        },
+        Some(Err(e)) => e,
+        None => unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) },
     }
 }
 

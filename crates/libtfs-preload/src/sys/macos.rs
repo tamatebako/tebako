@@ -10,7 +10,7 @@
 //! implementation — so the originals are read back from the tuples
 //! (volatile: dyld writes them at load time, outside Rust's view).
 
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, c_long, c_void};
 
 /// The dyld interpose tuple layout.
 #[repr(C)]
@@ -184,6 +184,76 @@ interpose!(
     super::dlopen,
     libc::dlopen,
     unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
+);
+interpose!(
+    INTERPOSE_FSTATAT,
+    real_fstatat,
+    super::fstatat,
+    libc::fstatat,
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat, c_int) -> c_int
+);
+interpose!(
+    INTERPOSE_READDIR_R,
+    real_readdir_r,
+    super::readdir_r,
+    libc::readdir_r,
+    unsafe extern "C" fn(*mut libc::DIR, *mut libc::dirent, *mut *mut libc::dirent) -> c_int
+);
+interpose!(
+    INTERPOSE_TELLDIR,
+    real_telldir,
+    super::telldir,
+    libc::telldir,
+    unsafe extern "C" fn(*mut libc::DIR) -> c_long
+);
+interpose!(
+    INTERPOSE_SEEKDIR,
+    real_seekdir,
+    super::seekdir,
+    libc::seekdir,
+    unsafe extern "C" fn(*mut libc::DIR, c_long)
+);
+interpose!(
+    INTERPOSE_REWINDDIR,
+    real_rewinddir,
+    super::rewinddir,
+    libc::rewinddir,
+    unsafe extern "C" fn(*mut libc::DIR)
+);
+interpose!(
+    INTERPOSE_EXECVE,
+    real_execve,
+    super::execve,
+    libc::execve,
+    unsafe extern "C" fn(*const c_char, *const *const c_char, *const *const c_char) -> c_int
+);
+interpose!(
+    INTERPOSE_POSIX_SPAWN,
+    real_posix_spawn,
+    super::posix_spawn,
+    libc::posix_spawn,
+    unsafe extern "C" fn(
+        *mut libc::pid_t,
+        *const c_char,
+        *const libc::posix_spawn_file_actions_t,
+        *const libc::posix_spawnattr_t,
+        *const *mut c_char,
+        *const *mut c_char
+    ) -> c_int
+);
+interpose!(
+    INTERPOSE_POSIX_SPAWNP,
+    real_posix_spawnp,
+    super::posix_spawnp,
+    libc::posix_spawnp,
+    unsafe extern "C" fn(
+        *mut libc::pid_t,
+        *const c_char,
+        *const libc::posix_spawn_file_actions_t,
+        *const libc::posix_spawnattr_t,
+        *const *mut c_char,
+        *const *mut c_char
+    ) -> c_int
 );
 
 /// Library constructor: establish the namespace before the program's main.
