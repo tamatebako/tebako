@@ -152,3 +152,22 @@ The locked model is three tiers — **interposition-first, never FUSE**:
   tebako has never used FUSE; interposition is the tebako way.)
 - ptrace/syscall-tracing (retrace-v1-style tracing for vulnerability
   research) is a debugging tool, not an exec foundation.
+
+## 9. Environment composition (locked 2026-07-27)
+
+Env across the mount stack (runtime + toolkit layers + data layers +
+app) composes by RULE, never by accident:
+
+- **Path-class vars** (`GEM_PATH`, `PATH`-in-image, `TEBAKO_LD_PATH`):
+  app payload first, then toolkit layers in `requires` order, then the
+  runtime — earlier wins. The runtime's own defaults come LAST (it is
+  the fallback, not the override).
+- **Scalar vars**: the app's manifest wins over toolkit, toolkit over
+  runtime; the dispatcher's computed values (TEBAKO_RUNTIME_IMAGE,
+  TEBAKO_TFS_MOUNTS, jail env) always win over every manifest.
+- **Host env scrub**: on handoff the dispatcher removes the variables
+  the press scrubbed (RUBYOPT/RUBYLIB/BUNDLE_* — the M7 scrub list) so
+  the host environment never leaks semantics into the payload; other
+  host vars pass through unless the jail says otherwise.
+- Per-entrypoint overrides (suite entries, spec 03 §6) apply last for
+  that entry only.

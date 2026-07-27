@@ -81,3 +81,28 @@ armored root export; the private key never leaves CI secrets/hardware).
 Production root key ceremony (offline, hardware-held) →
 `EMBEDDED_ROOT_FINGERPRINT` filled → fingerprint published on tebako.org →
 CI secrets wired → revocation drill rehearsed.
+
+## 8. Revocation (locked 2026-07-27)
+
+Rotation (successor statement) moves trust forward; REVOCATION kills a
+key with no successor — for compromise or retirement:
+
+```
+-----BEGIN TEBAKO REVOCATION STATEMENT-----
+format: TEBAKO-ROOT-REVOCATION-V1
+fingerprint: <40-hex revoked root>
+created: <unix seconds>
+reason: compromise | retired | superseded
+-----BEGIN PGP SIGNATURE-----
+<detached signature from the REVOKED key itself (self-revocation)
+ — or from the surviving PREDECESSOR root in a chain>
+```
+
+- A self-revocation is proof of possession; a predecessor-signed
+  revocation covers a lost key (the predecessor authorized the chain).
+- Consumers apply revocations from the successors dir alongside
+  rotation statements: a revoked fingerprint is rejected even if it
+  previously verified (fail-closed, named `RevokedKey` → exit 72).
+- Revocations are additive files (`<fingerprint>.revoke.asc`), never
+  edited history; the audit journal records every application.
+- The ceremony doc (roadmap 36) includes rehearsing this once.

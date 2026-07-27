@@ -133,3 +133,29 @@ model). Shared + static libs, `pkg-config`, embedding guide, per-backend
 license statement (dwarfs-t: GPL-3.0; zip: BSD; squashfs-tools-ng:
 LGPL-3.0 — backend selection changes a consumer's obligations; stated,
 never softened).
+
+## 9. Symlink semantics (locked 2026-07-27)
+
+Images contain symlinks; resolution is rule-bound:
+
+- **Relative targets** resolve within their own mount (never escape
+  the mount's tree).
+- **Absolute targets** resolve through the ROUTER: the longest-prefix
+  mount table — a symlink `/__app__/share/x → /opt/inkscape/share/y`
+  lands in the `/opt/inkscape` mount when present (cross-mount links
+  WORK — that is the point of composition).
+- **Targets outside every mount** are host-passthrough, subject to the
+  SAME host_policy as any host path (spec 08): denied under a deny
+  policy (EPERM), read-only under an ro grant, open otherwise. A
+  symlink can never widen a jail.
+- Backends without symlink notions (zip-era) treat links as regular
+  entries (stat serves the target per the stat-serves-lstat rule).
+
+## 10. Whiteout journal format (v1, locked)
+
+The COW overlay's `.tfs-whiteouts` (spec 11 §4): strict v1 text, one
+record per line — `<op> <path>` where op ∈ {`rm`, `rmd`} (file,
+subtree); paths are %-escaped (space, newline, `%` itself); the journal
+is rewritten atomically (tmp+rename) on every mutation; ANY malformed
+line fails the mount with EINVAL (strict, never lenient). Whiteouts
+mask BASE entries only; an overlay entry of the same name always wins.

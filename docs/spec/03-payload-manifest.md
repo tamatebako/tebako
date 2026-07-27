@@ -210,3 +210,25 @@ sha256 (self-reference has no fixed point). Therefore:
   self-digest. An embedded manifest carrying a `blob_sha256` is read as
   advisory provenance only (e.g. the digest of the source image it was
   built from), never as a verification input (spec 15 §5).
+
+## 8. Executable dependency edges (locked 2026-07-27)
+
+`requires` gains a fourth edge kind for the provides/requires capability
+graph (the inkscape case):
+
+```yaml
+requires:
+  - kind: executable          # an executable another payload PROVIDES
+    name: inkscape
+    constraint: ">= 1.3"
+    mount: /opt/inkscape      # consumer-declared, as always
+```
+
+Resolution: the dispatcher searches installed + available payloads for a
+PROVIDES.executables entry matching `name` + `constraint` (exact name,
+never a prefix/guess). Exactly one candidate → use it. Zero → named
+`DependencyNotFound(executable, constraint)` with a registry hint. More
+than one → named `AmbiguousProvider` listing candidates (payload,
+version, source registry) — the user pins with a payload-kind edge
+instead. The providing payload is mounted at the consumer-declared
+`mount`; its executables run per its own `exec_tier` (spec 07 §8).
