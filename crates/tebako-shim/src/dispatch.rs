@@ -19,7 +19,8 @@
 
 use std::path::PathBuf;
 
-use crate::manifest::Require;
+use tpkg::Requirement;
+
 use crate::resolve::{self, Resolution};
 use crate::runtime::{self, RuntimeResolution};
 use crate::versions;
@@ -72,18 +73,33 @@ fn compose_mounts(res: &Resolution, ctx: &Ctx) -> Result<Vec<MountSpec>, ShimErr
 /// mount point. `kind: language` edges are the runtime axis (resolved via
 /// the entrypoint's `runtime_requirement`) and are never mounted; edges
 /// without a `mount` declare no mount in v1.
-fn dependency_mount(req: &Require, tool: &str, ctx: &Ctx) -> Result<Option<MountSpec>, ShimError> {
-    if req.kind == "language" {
-        return Ok(None);
-    }
-    let (Some(name), Some(mount)) = (&req.name, &req.mount) else {
+fn dependency_mount(
+    req: &Requirement,
+    tool: &str,
+    ctx: &Ctx,
+) -> Result<Option<MountSpec>, ShimError> {
+    let (kind, name, constraint, mount) = match req {
+        Requirement::Language { .. } => return Ok(None),
+        Requirement::Toolkit {
+            name,
+            constraint,
+            mount,
+            ..
+        } => ("toolkit", name, constraint, mount),
+        Requirement::Data {
+            name,
+            constraint,
+            mount,
+        } => ("data", name, constraint, mount),
+    };
+    let Some(mount) = mount else {
         return Ok(None);
     };
     let installed = resolve::installed_versions(&ctx.home, name)?;
-    let constraint = match &req.constraint {
-        Some(c) => versions::parse_constraint(c)?,
-        None => versions::parse_constraint(">= 0")?,
-    };
+    // Every mounted edge carries a constraint in the unified model; the
+    // grammar was validated at mirror parse (tpkg::Constraint), this is
+    // the spec 05 §5 matcher over the same string.
+    let constraint = versions::parse_constraint(constraint.as_str())?;
     let version = installed
         .iter()
         .filter(|v| constraint.matches(v))
@@ -92,8 +108,7 @@ fn dependency_mount(req: &Require, tool: &str, ctx: &Ctx) -> Result<Option<Mount
         return fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "\"{tool}\" requires {} {name} but no satisfying version is installed (installed: {})\n  install the dependency, or run `tebako-shim doctor`",
-                req.kind,
+                "\"{tool}\" requires {kind} {name} but no satisfying version is installed (installed: {})\n  install the dependency, or run `tebako-shim doctor`",
                 if installed.is_empty() {
                     "none".to_string()
                 } else {

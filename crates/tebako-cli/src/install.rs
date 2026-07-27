@@ -110,6 +110,22 @@ pub fn list_registries(home: &Path) -> Result<Vec<String>, TebakoError> {
     Ok(config::load_config(home).map_err(map_shim)?.registries)
 }
 
+/// `tebako update-registries` (spec 04 §3): force-refresh the
+/// dispatch-time registry cache for every registered registry. The
+/// implementation lives in tebako-shim (the dispatcher owns the cache);
+/// this is the CLI driver — same output, same per-registry exit rule.
+/// Returns the report text and the process exit code (1 when any
+/// registry failed to refresh).
+pub fn update_registries(home: &Path) -> Result<(String, i32), TebakoError> {
+    let ctx = tebako_shim::Ctx {
+        home: home.to_path_buf(),
+        cwd: home.to_path_buf(),
+        env: std::env::vars().collect(),
+    };
+    let (text, code) = tebako_shim::registry::refresh(&ctx).map_err(map_shim)?;
+    Ok((text, i32::from(code)))
+}
+
 // ---------------------------------------------------------------------
 // install
 // ---------------------------------------------------------------------
@@ -551,28 +567,9 @@ fn build_mirror(
             }
             notes.push(msg);
         }
-        let entrypoints = match &embedded.provides {
-            tpkg::Provides::App(app) => app
-                .entrypoints
-                .iter()
-                .map(|e| manifest::Entrypoint {
-                    name: e.name.clone(),
-                    path: e.path.clone(),
-                    args_default: e.args_default.clone(),
-                    runtime_requirement: Some(manifest::RuntimeRequirement {
-                        engine: e.runtime_requirement.engine.clone(),
-                        constraint: e.runtime_requirement.constraint.as_str().to_string(),
-                    }),
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        return Ok(Manifest {
-            name: plan.name.clone(),
-            version: plan.version.clone(),
-            entrypoints,
-            requires: Vec::new(),
-        });
+        // The tier-1 → tier-3 mapping lives in the shim's mirror model
+        // (roadmap 40 — one owner of the unified-model projection).
+        return Ok(Manifest::mirror_of(&embedded, &plan.name, &plan.version));
     }
     let names = if plan.entrypoints.is_empty() {
         vec![plan.name.clone()]
@@ -584,6 +581,27 @@ fn build_mirror(
          the mirror is synthesized with the /<command> entry-path convention"
             .to_string(),
     );
+    // The registry's runtime_requirement mirror is a raw string pair; the
+    // unified constraint grammar (tpkg::Constraint) validates it here.
+    let runtime_requirement = plan
+        .runtime_requirement
+        .as_ref()
+        .map(|(engine, constraint)| {
+            tpkg::Constraint::new(constraint)
+                .map(|c| manifest::RuntimeRequirement {
+                    engine: engine.clone(),
+                    constraint: c,
+                })
+                .map_err(|e| {
+                    err(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "the registry's runtime_requirement constraint \"{constraint}\" is malformed: {e}"
+                        ),
+                    )
+                })
+        })
+        .transpose()?;
     Ok(Manifest {
         name: plan.name.clone(),
         version: plan.version.clone(),
@@ -593,12 +611,7 @@ fn build_mirror(
                 path: format!("/{n}"),
                 name: n,
                 args_default: Vec::new(),
-                runtime_requirement: plan.runtime_requirement.as_ref().map(
-                    |(engine, constraint)| manifest::RuntimeRequirement {
-                        engine: engine.clone(),
-                        constraint: constraint.clone(),
-                    },
-                ),
+                runtime_requirement: runtime_requirement.clone(),
             })
             .collect(),
         requires: Vec::new(),

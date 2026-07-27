@@ -594,7 +594,19 @@ impl<T: Transport> Fetcher<T> {
     /// `TEBAKO_OFFLINE=1`: only `file://` mirrors resolve — anything
     /// remote is the named hard error (spec 05 §4).
     pub fn fetch_registry(&self, r: &RegistryRef) -> Result<Vec<u8>, ResolveError> {
-        if r.is_remote() && crate::cache::offline() {
+        self.fetch_registry_gated(r, crate::cache::offline())
+    }
+
+    /// [`fetch_registry`] with the offline decision made by the caller
+    /// instead of the process environment — the seam for consumers that
+    /// carry their own context (the shim's dispatch-time registry cache
+    /// resolves `TEBAKO_OFFLINE` from its injected `Ctx`, not `std::env`).
+    pub fn fetch_registry_gated(
+        &self,
+        r: &RegistryRef,
+        offline: bool,
+    ) -> Result<Vec<u8>, ResolveError> {
+        if r.is_remote() && offline {
             return Err(ResolveError::Offline {
                 what: format!("registry {r}"),
             });

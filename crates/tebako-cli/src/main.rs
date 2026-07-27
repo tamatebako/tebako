@@ -17,6 +17,7 @@ const USAGE: &str = "Usage:
   tebako cache prune [--all] [--older-than Nd]
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
   tebako list-registries               list the registered registries
+  tebako update-registries             refresh the dispatch-time registry cache (TTL 24h)
   tebako install <ref | name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry";
 
@@ -80,6 +81,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "cache" => run_cache(rest),
         "add-registry" => run_add_registry(rest),
         "list-registries" => run_list_registries(rest),
+        "update-registries" => run_update_registries(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
         "clean" | "setup" | "hash" => Err(CliExit::Usage(format!(
@@ -133,6 +135,23 @@ fn run_list_registries(args: &[String]) -> Result<(), CliExit> {
         for r in &registries {
             println!("{r}");
         }
+    }
+    Ok(())
+}
+
+fn run_update_registries(args: &[String]) -> Result<(), CliExit> {
+    if !args.is_empty() {
+        return Err(CliExit::Usage(
+            "usage: tebako update-registries".to_string(),
+        ));
+    }
+    let (text, code) = tebako_cli::install::update_registries(&tebako_home()?)?;
+    print!("{text}");
+    if code != 0 {
+        return Err(CliExit::Error(TebakoError::new(
+            "update-registries: one or more registries failed to refresh (see above)",
+            code,
+        )));
     }
     Ok(())
 }

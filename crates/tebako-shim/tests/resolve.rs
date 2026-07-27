@@ -18,12 +18,14 @@ fn seed_metanorma(home: &std::path::Path) {
     }
 }
 
+/// A registry the dispatch-time layer accepts: the full spec 04 §2 model
+/// (validated by tebako-resolve — the default must name a listed version).
 fn seed_registry(root: &std::path::Path, default: &str) -> std::path::PathBuf {
     let reg = root.join("tpkg-registry.yaml");
     std::fs::write(
         &reg,
         format!(
-            "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: {default}\n    versions: []\n"
+            "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: {default}\n    versions:\n      - version: {default}\n        platforms: universal\n        release: {{ref: file:///mirror/metanorma-{default}.tfs}}\n        entrypoints: [metanorma]\n"
         ),
     )
     .expect("registry");

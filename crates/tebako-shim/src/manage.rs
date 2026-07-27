@@ -22,6 +22,7 @@ invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manag
   tebako-shim disable <tool>[@<ver>]   refuse dispatch of a tool or version
   tebako-shim which <tool>             show the resolved version, runtime, mounts, argv
   tebako-shim doctor                   diagnose the shim layer (missing/corrupt records)
+  tebako-shim update-registries        refresh the dispatch-time registry cache (TTL 24h)
   tebako-shim install-shell [--shell bash|zsh|fish|csh]
                                        prepend ~/.tebako/shims to PATH in the shell startup file
   tebako-shim uninstall-shell [--shell bash|zsh|fish|csh]
@@ -41,6 +42,7 @@ pub fn run_command(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
         "disable" => cmd_enable(rest, ctx, false),
         "which" => cmd_which(rest, ctx),
         "doctor" => cmd_doctor(ctx),
+        "update-registries" => cmd_update_registries(ctx),
         "install-shell" => cmd_shell(rest, ctx, true),
         "uninstall-shell" => cmd_shell(rest, ctx, false),
         "help" | "--help" | "-h" => Ok(Action::Print {
@@ -143,6 +145,16 @@ fn cmd_list(ctx: &Ctx) -> Result<Action, ShimError> {
 
 fn first_line(message: &str) -> &str {
     message.lines().next().unwrap_or(message)
+}
+
+// ---------------------------------------------------------------------
+// update-registries (the dispatch-time registry cache refresh, spec 04
+// §3; the CLI's `tebako update-registries` drives the same cache)
+// ---------------------------------------------------------------------
+
+fn cmd_update_registries(ctx: &Ctx) -> Result<Action, ShimError> {
+    let (text, code) = crate::registry::refresh(ctx)?;
+    Ok(Action::Print { text, code })
 }
 
 // ---------------------------------------------------------------------
@@ -332,21 +344,13 @@ fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
         }
     }
 
-    // authored config + registries parse.
-    match config::load_config(&ctx.home) {
-        Ok(cfg) => {
-            for reg in &cfg.registries {
-                let path = reg.strip_prefix("file://").unwrap_or(reg);
-                if reg.starts_with("file://") || reg.starts_with('/') {
-                    if !std::path::Path::new(path).is_file() {
-                        problems.push(format!("registry {reg}: file not found"));
-                    }
-                } else {
-                    notes.push(format!(
-                        "registry {reg}: remote refs are install-time resolved by the CLI (dispatch-time cache PLANNED; skipped)"
-                    ));
-                }
-            }
+    // authored config parses; registries report dispatch-time cache
+    // freshness (roadmap 33 — remote registries included; cache reads
+    // only, doctor never touches the network).
+    match crate::registry::statuses(ctx) {
+        Ok((reg_notes, reg_problems)) => {
+            notes.extend(reg_notes);
+            problems.extend(reg_problems);
         }
         Err(e) => problems.push(format!("config.yaml: {}", first_line(&e.message))),
     }

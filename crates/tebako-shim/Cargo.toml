@@ -16,6 +16,14 @@ categories = ["command-line-utilities"]
 # (unsafe-libyaml) choice — no native build, no async, no clap.
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
+# The manifest mirror's field types (entrypoints / runtime_requirement /
+# requires, spec 03) come from the unified model (roadmap 40) — tpkg is
+# the single source of truth for the manifest format.
+tpkg = { version = "0.1.0", path = "../tpkg" }
+# Registry resolution (spec 04 §2) + the dispatch-time registry cache
+# (spec 04 §3, spec 07 §2.1 — roadmap 33): the registry-default link of
+# the version chain resolves remote registries through this machinery.
+tebako-resolve = { version = "0.1.0", path = "../tebako-resolve" }
 # In-process HTTP for runtime downloads (spec 00 invariant 1) — the same
 # crate the bootstrap resolves through.
 tebako-http = { version = "0.1.0", path = "../tebako-http" }

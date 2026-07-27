@@ -12,6 +12,13 @@
 //! discipline. Versions are dot-separated components; numeric components
 //! compare numerically, anything else lexicographically, missing
 //! components are zero.
+//!
+//! Roadmap 40 split: the constraint GRAMMAR (parse/validate) is owned by
+//! [`tpkg::Constraint`] — manifest and mirror fields carry it; this
+//! module is the EVALUATOR tpkg deliberately does not provide (tpkg is
+//! parse-only). Its accepted grammar is a superset of tpkg's (no
+//! 4-component limit), so any constraint that reached a matcher call
+//! through a parsed manifest always parses here.
 
 use std::cmp::Ordering;
 

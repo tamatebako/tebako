@@ -222,9 +222,10 @@ pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
             picked = Some((version.clone(), VersionSource::UserDefault));
         }
     }
-    // 4. registry default
+    // 4. registry default (remote registries included, through the
+    //    dispatch-time registry cache — roadmap 33)
     if picked.is_none() {
-        if let Some((version, reg)) = config::registry_default(&cfg, &payload_name)? {
+        if let Some((version, reg)) = crate::registry::registry_default(&cfg, &payload_name, ctx)? {
             picked = Some((version, VersionSource::RegistryDefault(reg)));
         }
     }

@@ -15,6 +15,9 @@
 //! - [`Registry`] / [`RegistryRef`] — the developer-hosted
 //!   `tpkg-registry.yaml` model and its resolution (spec 04 §2): exactly
 //!   one location per form, declarative host-triplet selection.
+//! - [`RegistryCache`] — the dispatch-time registry cache (spec 04 §3,
+//!   spec 07 §2.1): `registries/<sha256-of-ref>.yaml`, 24 h TTL,
+//!   `refresh` for `tebako update-registries`, offline cache-or-error.
 
 pub mod adapters;
 pub mod cache;
@@ -22,6 +25,7 @@ pub mod error;
 pub mod fetch;
 pub mod git;
 pub mod reference;
+pub mod regcache;
 pub mod registry;
 pub mod transport;
 
@@ -29,6 +33,9 @@ pub use cache::{default_cache_root, CacheEntry, InstallStatus, PayloadCache};
 pub use error::{ReferenceError, RegistryError, ResolveError};
 pub use fetch::{sha256_hex, FetchedPayload, Fetcher};
 pub use reference::{Reference, Service};
+pub use regcache::{
+    CachedRegistry, RegistryCache, RegistryCacheStatus, RegistrySource, REGISTRY_CACHE_TTL,
+};
 pub use registry::{
     PlatformSelection, Registry, RegistryPayload, RegistryPlatforms, RegistryRef, RegistryVersion,
 };

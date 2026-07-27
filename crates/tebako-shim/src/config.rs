@@ -12,10 +12,9 @@
 //!   disable). Kept out of the authored config so `tebako-shim disable`
 //!   never rewrites a hand-maintained file.
 //! - `tpkg-registry.yaml` — the developer-hosted registry (spec 04 §2).
-//!   The CLI (`tebako add-registry | install`, roadmap 28.1) resolves
-//!   every registry form through tebako-resolve; the DISPATCH-time
-//!   registry-default link below still reads `file://` refs and plain
-//!   paths only (a dispatch-time registry cache is PLANNED).
+//!   The version chain's registry-default link resolves every registry
+//!   form — remote included — through tebako-resolve's machinery behind
+//!   the dispatch-time registry cache ([`crate::registry`], roadmap 33).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -29,7 +28,8 @@ pub struct UserConfig {
     /// Tool/command name → version (`tebako use <tool>@<version>`).
     #[serde(default)]
     pub defaults: BTreeMap<String, String>,
-    /// Spec 04 registry refs. v1: `file://` refs and plain local paths.
+    /// Spec 04 registry refs (all four forms of spec 04 §2; remote refs
+    /// resolve through the dispatch-time registry cache).
     #[serde(default)]
     pub registries: Vec<String>,
     /// Engine → runtime preference (the download fallback of spec 05 §5:
@@ -149,76 +149,6 @@ pub fn add_registry(home: &Path, reg_ref: &str) -> Result<AddRegistryOutcome, Sh
         )
     })?;
     Ok(AddRegistryOutcome::Added)
-}
-
-// ---------------------------------------------------------------------
-// registry mirror (spec 04 §2) — resolution-relevant fields only
-// ---------------------------------------------------------------------
-
-#[derive(Debug, Deserialize)]
-struct Registry {
-    #[serde(default)]
-    payloads: Vec<RegistryPayload>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RegistryPayload {
-    name: String,
-    #[serde(default)]
-    default: Option<String>,
-}
-
-/// The registry default version for `payload_name`, scanning the user's
-/// registered registries in order (first match wins).
-pub fn registry_default(
-    config: &UserConfig,
-    payload_name: &str,
-) -> Result<Option<(String, String)>, ShimError> {
-    for reg_ref in &config.registries {
-        let path = match local_registry_path(reg_ref) {
-            Some(p) => p,
-            None => {
-                return fail(
-                    EX_TEBAKO_MANIFEST,
-                    format!(
-                        "registry ref \"{reg_ref}\" is not a local file — the dispatch-time registry-default link reads file:// registries only (the CLI resolves remote registries at install; a dispatch-time registry cache is PLANNED)"
-                    ),
-                )
-            }
-        };
-        let text = match std::fs::read_to_string(&path) {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => {
-                return fail(
-                    EX_TEBAKO_IO,
-                    format!("cannot read registry {}: {e}", path.display()),
-                )
-            }
-        };
-        let registry: Registry = serde_yaml::from_str(&text).map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_MANIFEST,
-                format!("cannot parse registry {} ({e})", path.display()),
-            )
-        })?;
-        if let Some(p) = registry.payloads.iter().find(|p| p.name == payload_name) {
-            if let Some(default) = &p.default {
-                return Ok(Some((default.clone(), reg_ref.clone())));
-            }
-        }
-    }
-    Ok(None)
-}
-
-fn local_registry_path(reg_ref: &str) -> Option<PathBuf> {
-    if let Some(rest) = reg_ref.strip_prefix("file://") {
-        Some(PathBuf::from(rest))
-    } else if reg_ref.starts_with('/') || reg_ref.starts_with("./") || reg_ref.starts_with("../") {
-        Some(PathBuf::from(reg_ref))
-    } else {
-        None
-    }
 }
 
 // ---------------------------------------------------------------------

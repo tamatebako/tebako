@@ -177,7 +177,9 @@ pub fn resolve_runtime(
     let Some(req) = requirement else {
         return Ok(RuntimeResolution::Zero);
     };
-    let constraint = versions::parse_constraint(&req.constraint)?;
+    // The constraint string was grammar-validated at mirror parse
+    // (tpkg::Constraint); this parse is the spec 05 §5 matcher.
+    let constraint = versions::parse_constraint(req.constraint.as_str())?;
     let cached = scan_cached(&ctx.home, &req.engine);
     if let Some(hit) = newest_compatible(&cached, &constraint) {
         return Ok(RuntimeResolution::Ready(hit));

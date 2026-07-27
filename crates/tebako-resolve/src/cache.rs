@@ -359,7 +359,8 @@ fn cache_io(op: &'static str, path: &Path, e: std::io::Error) -> ResolveError {
 
 /// flock(2) wrapper; returns true when the operation succeeded (the same
 /// libc call tebako-cli's resolver uses — the only FFI in the crate).
-fn flock(file: &fs::File, op: i32) -> bool {
+/// `pub(crate)` so the registry cache (regcache.rs) locks with it too.
+pub(crate) fn flock(file: &fs::File, op: i32) -> bool {
     use std::os::unix::io::AsRawFd;
     // SAFETY: flock(2) on a live fd; identical to tebako-cli/src/resolve.rs.
     unsafe { libc::flock(file.as_raw_fd(), op) == 0 }

@@ -5,13 +5,13 @@
 mod common;
 
 use common::*;
-use tebako_shim::manifest::RuntimeRequirement;
+use tebako_shim::manifest::{Constraint, RuntimeRequirement};
 use tebako_shim::runtime::{self, RuntimeResolution};
 
 fn req(constraint: &str) -> RuntimeRequirement {
     RuntimeRequirement {
         engine: "ruby".to_string(),
-        constraint: constraint.to_string(),
+        constraint: Constraint::new(constraint).expect("fixture constraint parses"),
     }
 }
 
