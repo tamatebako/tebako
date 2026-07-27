@@ -18,12 +18,8 @@
 #
 # Windows (ucrt64) is a disabled leg, documented at the bottom.
 #
-# librnp today: tebako-signer (via rnp-rs) links the system librnp
-# DYNAMICALLY in every current mode, so the legs provision it per OS
-# (brew rnp / apt librnp-dev / apk rnp-dev) and the shipped tebako-pkg
-# carries that dependency until the signing stack's static-vendored
-# story lands (upstream work; the provisioning is one step per leg so it
-# swaps out cleanly).
+# Crypto: rnp-rs 0.1.6 `vendored` builds librnp+Botan+json-c hermetically
+# and static-links them — no provisioning, no system crypto, anywhere.
 
 name: Release
 
@@ -128,11 +124,6 @@ jobs:
             --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
-
-      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs finds
-      # and links brew's botan/json-c itself on macOS.
-      - name: Provision Botan-3 + json-c (brew)
-        run: brew install botan json-c
 
       - name: Build the four binaries (release)
         working-directory: tebako-rs
@@ -270,16 +261,6 @@ jobs:
             --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
-
-      # rnp 0.18 needs Botan-3 (vendored librnp build); rnp-rs emits
-      # dylib links for the crypto deps, hence the dynamic triplet.
-      - name: Provision Botan-3 + json-c (vcpkg)
-        working-directory: tebako-rs
-        env:
-          TRIPLET: ${{ matrix.dyn_triplet }}
-          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
-        run: bash ci/provision-crypto.sh
 
       - name: Build the four binaries (release)
         working-directory: tebako-rs

@@ -90,24 +90,6 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/$TRIPLET" >> "$GITHUB_ENV"
 
-      # tebako-signer's rnp-rs builds librnp vendored (rnp 0.18 needs
-      # Botan-3; rnp-rs emits dylib links for the crypto deps). On macOS
-      # rnp-rs finds and links brew's botan/json-c itself; on ubuntu
-      # vcpkg provides them (noble ships Botan 2 only) and exports
-      # RUSTFLAGS -L + the test-time library paths.
-      - name: Provision Botan-3 + json-c (brew, macOS)
-        if: runner.os == 'macOS'
-        run: brew install botan json-c
-
-      - name: Provision Botan-3 + json-c (vcpkg, Linux)
-        if: runner.os == 'Linux'
-        working-directory: tebako-rs
-        env:
-          TRIPLET: ${{ matrix.crypto_triplet }}
-          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-          OVERLAY_TRIPLETS_DIR: ${{ github.workspace }}/dwarfs-rs/dwarfs-t/vcpkg_triplets
-        run: bash ci/provision-crypto.sh
-
       # The tebako-pkg golden suite compares against the C++ tebakofs
       # oracle, and tfs-cli's mkimage against mkdwarfs; use the libtfs
       # release binaries for the runner's platform.

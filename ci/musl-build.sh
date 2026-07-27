@@ -59,12 +59,6 @@ mk_triplet() {  # $1 = new name, $2 = arch (x64|arm64), $3 = linkage (static|dyn
 }
 # The musl-dynamic triplets are checked in under dwarfs-t/vcpkg_triplets
 # (with the CRT fix above baked in); only generate on the fly as a fallback.
-[ -f "$DWARFS_TRIPLETS/$DYN_TRIPLET.cmake" ] || {
-  case "$DYN_TRIPLET" in
-    x64-linux-musl-dynamic)   mk_triplet "$DYN_TRIPLET" x64 dynamic ;;
-    arm64-linux-musl-dynamic) mk_triplet "$DYN_TRIPLET" arm64 dynamic ;;
-  esac
-}
 if [ ! -f "$SQFS_TRIPLETS/$TRIPLET.cmake" ]; then
   sed -e "s/VCPKG_TARGET_ARCHITECTURE x64/VCPKG_TARGET_ARCHITECTURE $( [ "$TRIPLET" = "arm64-linux-musl" ] && echo arm64 || echo x64 )/" \
       "$DWARFS_TRIPLETS/x64-linux-musl.cmake" > "$SQFS_TRIPLETS/$TRIPLET.cmake"
@@ -80,38 +74,13 @@ echo "== pre-install squashfs-tools-ng ($TRIPLET) =="
   --overlay-triplets "$SQFS_TRIPLETS" \
   --overlay-ports "$WS/tebako-rs/crates/sqfs-sys/vcpkg_ports"
 
-echo "== pre-install Botan-3 + json-c ($DYN_TRIPLET, for vendored librnp) =="
-crypto_rc=0
-"$WS/.vcpkg-musl/vcpkg" install botan json-c \
-  --vcpkg-root "$WS/.vcpkg-musl" \
-  --x-wait-for-lock \
-  --x-install-root "$WS/.crypto-musl" \
-  --triplet "$DYN_TRIPLET" \
-  --overlay-triplets "$DWARFS_TRIPLETS" || crypto_rc=$?
-if [ "$crypto_rc" -ne 0 ]; then
-  # The workflow log shows only the failing make command; the real
-  # compiler/linker error lives in the container's buildtrees logs, which
-  # are lost when the container exits. Dump them before dying (plus the
-  # resource state — both musl legs of run 30221016817 died in botan's
-  # debug build with the real error never captured).
-  for log in "$WS"/.vcpkg-musl/buildtrees/*/build-*"$DYN_TRIPLET"*-err.log; do
-    [ -f "$log" ] || continue
-    echo "== $log (tail -n 120) =="
-    tail -n 120 "$log"
-  done
-  df -h "$WS" || true
-  free -m || true
-  exit "$crypto_rc"
-fi
-
+# rnp-rs 0.1.6 `vendored` builds librnp+Botan+json-c hermetically — no crypto provisioning.
 echo "== cargo build (release, $TARGET) =="
 cd "$WS/tebako-rs"
 export DWARFS_RS_VCPKG_ROOT="$WS/.vcpkg-musl"
 export DWARFS_RS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_INSTALLED_DIR="$WS/.sqfs-musl/$TRIPLET"
-export RNP_VENDOR_CMAKE_ARGS="CMAKE_PREFIX_PATH=$WS/.crypto-musl/$DYN_TRIPLET"
-export RUSTFLAGS="-L native=$WS/.crypto-musl/$DYN_TRIPLET/lib"
 cargo build --release --target "$TARGET" \
   -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli
 
