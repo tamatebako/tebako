@@ -1,0 +1,72 @@
+# AGENTS.md — Working rules for tebako-rs (and all tamatebako repos)
+
+These rules are owner-locked (2026-07-27). They apply to humans and agents alike.
+
+## Pull requests
+
+- **One PR per repository at a time.** Never queue several open PRs per repo.
+- **Merge immediately when checks pass.** No sitting PRs — a green check
+  means merge now, not later. Work intended for main lands through one
+  branch at a time; rebase, verify, merge.
+- Fix forward on main when instructed ("merge now, fix after") — the
+  follow-up fix is its own immediate item.
+
+## Work decomposition
+
+- **Stack work into big coherent items** — no many little tasks. An item
+  covers a subsystem end-to-end (model + CLI + tests + docs), not a file
+  or a function. If two tasks touch the same crates, they are one item.
+
+## Agent worktree discipline
+
+- Parallel work happens in `git worktree`s, one per agent
+  (`git worktree add <path> -b <branch> origin/main`). **Never share the
+  main checkout** — agents checking out branches in it clobber each
+  other (this caused real bugs: commits landing on the wrong branch).
+- `GIT_EDITOR=true` for every git operation (no interactive editors).
+- Before pushing in a shared repo, check `git branch --show-current` and
+  `git fetch origin`; push the intended ref (`git push origin <sha>:refs/heads/main`
+  when the checkout is elsewhere).
+
+## Hard technical rules (owner-locked)
+
+- **C/C++ exists only in three factory repos**: tamatebako/ruby,
+  tebako-runtime-ruby, dwarfs-t. Everything else is Rust, pure Ruby, or
+  Docker. No CMake anywhere else.
+- **No shell-outs, no system dependencies in shipped artifacts.** In-process
+  HTTP (ureq+rustls+webpki-roots bundled), in-process imaging (dwarfs-t
+  Writer), in-process crypto (rnp-rs vendored). No curl/git/mkdwarfs/PATH
+  lookups at runtime.
+- **YAML for all authored config/manifests**, with versioned JSON Schemas.
+- **MECE reference syntax, no default service**: `tfs:github:/tfs:gitlab:/
+  tfs:bb:` / `tfs+git://` / `tfs+https://` / `file://`, `?sha256=` pins.
+  Unparseable = named error, never a guess.
+- **Signing/encryption opt-in**; verification of signed artifacts always
+  strict; v1 readers never break on v2 packages.
+- **COW/ENC transforms live ONLY in the Rust TFS.** dwarfs-t is read-only
+  + creation-time Writer; no backend learns to write.
+- **Golden parity**: anything ported from a C++/gem predecessor is
+  byte-compared or the deviation is documented in the README.
+
+## Ruby rules (tamatebako/ruby, tebako-runtime-ruby tooling)
+
+Autoload only (defined in the immediate parent namespace file) — no
+`require_relative`/in-library `require`; no `send`; no
+`instance_variable_get/set`; no `respond_to?`; model-driven, MECE,
+open/closed, DRY; specs for public behavior.
+
+## Verification culture
+
+- No item is "done" without its acceptance executed and green — cite run
+  ids, byte counts, nm dumps. Evidence over assertions.
+- Verify the MERGED content, not just the branch (diff merged trees).
+- A failing assertion maps to exactly one CI tier; tiers never repeat
+  each other.
+- Patches in tamatebako/ruby must compile before they release
+  (compile-smoke gate; the v0.2.8 lesson).
+
+## The spec set
+
+Normative behavior lives in `docs/spec/00-INDEX.md` (00–17). Contract
+changes land there FIRST (with wire diagrams and named errors), then
+code. Unshipped behavior is marked PLANNED.
