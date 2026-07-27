@@ -40,6 +40,9 @@ ruzstd = "0.7"
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs", optional = true }
 # libsquashfs (squashfs-tools-ng) via vcpkg for the SquashFS backend.
 sqfs-sys = { version = "0.1.0", path = "../sqfs-sys", optional = true }
+# The tree-hash walker (tree_walk.rs) feeds mounted images to tpkg's
+# merkle construction (spec 03 §7).
+tpkg = { version = "0.1.0", path = "../tpkg" }
 
 [features]
 # `vendored-dwarfs` (default): build the dwarfs backend against the vendored

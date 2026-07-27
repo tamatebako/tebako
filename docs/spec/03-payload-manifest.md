@@ -202,7 +202,12 @@ sha256 (self-reference has no fixed point). Therefore:
 
 - `tree_hash` is computed over the payload tree EXCLUDING
   `/__tpkg__/` (manifest-excluded merkle root — well-defined, and it is
-  what CAS/dedup/signing use).
+  what CAS/dedup/signing use). The construction (SHA-256, 4 KiB chunks,
+  length-prefixed domain-separated serialization) is locked as
+  `tfs-merkle-1` in `crates/tpkg/src/merkle.rs`; `tfs mkimage` and
+  `tebako press` stamp it at image creation, `tfs info --verify`
+  recomputes and compares (roadmap 37, SHIPPED; verification-on-READ
+  inside the VFS is a later milestone).
 - `blob_sha256` is NOT stored inside an embedded manifest: it lives one
   tier out — in the registry mirror (tier 3) and/or the tpkg trailer's
   per-slot digest array (tier 2, spec 02 §4). Producers fill it there;
