@@ -16,7 +16,7 @@ tebako-json = { version = "0.1.0", path = "../tebako-json" }
 tebako-info = { version = "0.1.0", path = "../tebako-info" }
 tfs = { version = "0.1.0", path = "../tfs" }
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
-rnp = { git = "https://github.com/rnpgp/rnp-rs", rev = "9d459ea36398d9f21b920614aba4816501e2e767", features = ["vendored"] }
+rnp = { package = "rnp-rs", version = "0.1.6", features = ["vendored"] }
 libc = "0.2"
 sha2 = "0.10"
 
