@@ -85,7 +85,11 @@ jobs:
           echo "binary: $BIN"
           CRASHES=0
           for i in $(seq 1 12); do
-            "$BIN" > /tmp/run$i.log 2>&1 || { CRASHES=$((CRASHES+1)); echo "crash at iteration $i (exit $?)"; }
+            if ! "$BIN" > /tmp/run$i.log 2>&1; then
+              CRASHES=$((CRASHES+1))
+              echo "=== crash at iteration $i (exit $?) — log tail ==="
+              tail -12 /tmp/run$i.log
+            fi
           done
           echo "native crashes: $CRASHES/12"
           echo "crashes=$CRASHES" >> "$GITHUB_ENV"
@@ -100,17 +104,16 @@ jobs:
           done
           echo "serialized crashes: $CRASHES/12"
 
-      - name: gdb backtrace on a crashing native run
+      - name: gdb loop — backtrace on the first crashing iteration
         working-directory: tebako-rs
         run: |
           BIN=$(ls -t target/debug/deps/tebako_info-* | grep -v '\.d$' | head -1)
           set +e
-          for i in $(seq 1 8); do
+          for i in $(seq 1 10); do
             gdb -batch -ex run -ex "bt 40" "$BIN" > /tmp/gdb$i.log 2>&1
-            RC=$?
-            if [ $RC -ne 0 ] || grep -q "SIGSEGV\|SIGABRT" /tmp/gdb$i.log; then
-              echo "crash captured on attempt $i"
-              tail -60 /tmp/gdb$i.log
+            if grep -qE "SIGSEGV|SIGABRT" /tmp/gdb$i.log && ! grep -q "exited normally" /tmp/gdb$i.log; then
+              echo "=== crash captured on attempt $i ==="
+              grep -B3 -A40 "SIGSEGV\|SIGABRT" /tmp/gdb$i.log | head -60
               break
             fi
             echo "attempt $i clean"
