@@ -33,14 +33,14 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@1.94.1
 
-      - name: Install native build tools + valgrind
+      - name: Install native build tools + valgrind + gdb
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             autoconf automake autoconf-archive libtool \
             curl zip unzip tar ca-certificates \
-            valgrind
+            valgrind gdb
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -115,6 +115,30 @@ jobs:
           echo "valgrind exit: $?"
           echo "=== valgrind.log tail ==="
           tail -80 valgrind.log
+
+      # Valgrind is CLEAN (13/13, 0 errors) — the abort is allocator-
+      # layout dependent (glibc tcache). Run natively to reproduce, then
+      # under gdb for the C backtrace at the abort.
+      - name: Run natively, then gdb backtrace at the abort
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: |
+          BIN=$(ls -t target/debug/deps/info-* | grep -v '\.d$' | head -1)
+          set +e
+          echo "=== native run ==="
+          "$BIN" --test-threads=1
+          NATIVE=$?
+          echo "native exit: $NATIVE"
+          if [ "$NATIVE" -ne 0 ]; then
+            echo "=== gdb run (backtrace at SIGABRT) ==="
+            gdb -batch \
+              -ex "run --test-threads=1" \
+              -ex "bt 40" \
+              -ex "info registers rip" \
+              "$BIN" 2>&1 | tail -70
+          fi
+          exit 0
 
       - name: Upload valgrind log
         if: always()
