@@ -69,13 +69,13 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/x64-linux-static" >> "$GITHUB_ENV"
 
-      # rnp-rs 0.1.7 prebuilt declares botan/bz2 external; provision BOTH
-      # statically in a dir of their own (ld prefers .so over .a in a
-      # shared dir). Absolute paths only — relative ones broke main.
-      - name: Static botan + bzip2 (vcpkg)
+      # feat/encryption's git-rev rnp builds librnp from source: its cmake
+      # needs botan + bzip2 + json-c + zlib discoverable (CMAKE_PREFIX_PATH
+      # / PKG_CONFIG_PATH are exported in the build step).
+      - name: Static crypto deps for the rnp source build (vcpkg)
         run: |
           mkdir -p "$GITHUB_WORKSPACE/.crypto-static"
-          "$GITHUB_WORKSPACE/.vcpkg-root/vcpkg" install botan bzip2 \
+          "$GITHUB_WORKSPACE/.vcpkg-root/vcpkg" install botan bzip2 json-c zlib \
             --vcpkg-root "$GITHUB_WORKSPACE/.vcpkg-root" \
             --x-wait-for-lock \
             --x-install-root "$GITHUB_WORKSPACE/.crypto-vcpkg" \
