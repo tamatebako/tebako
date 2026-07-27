@@ -8,8 +8,8 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.79"
 license = "BSD-2-Clause"
-repository = "https://github.com/tamatebako/tebako-rs"
-homepage = "https://github.com/tamatebako/tebako-rs"
+repository = "https://github.com/tamatebako/tebako"
+homepage = "https://github.com/tamatebako/tebako"
 
 [profile.release]
 # Size discipline for the tebako-bootstrap artifact (item 22's < 2 MB

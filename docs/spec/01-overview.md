@@ -43,7 +43,7 @@ Everywhere else: Rust, pure Ruby, or Docker. Owner-locked.
 | `tebako-runtime-ruby` | Ruby builder + C/CMake | Builds runtime payloads per version × triplet; release = interpreters + `.tfs` images + index. The *runtime factory* (first instance; python/julia factories follow the same shape). |
 | `tamatebako/dwarfs-t` | C++ | The DwarFS-T image format: `libdwarfs_c` reader + creation-time Writer. The only surviving C++ library; read-only at runtime forever. |
 | `tamatebako/dwarfs-rs` | Rust (FFI) | `dwarfs-t` / `dwarfs-t-sys` safe bindings to `libdwarfs_c`. Standalone by design — not tebako-specific. |
-| `tamatebako/tebako-rs` | Rust only | **The product**: packager, loader, VFS, formats, trust. |
+| `tamatebako/tebako` | Rust only | **The product**: packager, loader, VFS, formats, trust. (The repo-swap 2026-07-27: formerly `tebako-rs`; the C++/gem era is archived at `tamatebako/tebako-v1`.) |
 | `tebako-ci-containers` | Dockerfile | Toolchain images for the three factories. |
 | `tebako.org` | AsciiDoc/Astro | Docs, blog, trust-anchor publication. |
 | `tamatebako/tebako` (gem) | Ruby | RETIRED as orchestrator (2026-07-26); maintenance mode. Endgame: a ~100-line pure-Ruby installer shim that fetches the platform binary (no FFI), or full archival. |

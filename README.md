@@ -660,7 +660,7 @@ and publishes the size table; `tebako-bootstrap` is hard-gated at
 
 **Consuming the Rust bootstrap today** (before the repo switch flips):
 ```console
-$ export TEBAKO_BOOTSTRAP_MIRROR=https://github.com/tamatebako/tebako-rs/releases/download
+$ export TEBAKO_BOOTSTRAP_MIRROR=https://github.com/tamatebako/tebako/releases/download
 $ export TEBAKO_BOOTSTRAP_VERSION=<tag-minus-v>
 $ tebako press ...   # the gem (or tebako-cli) resolves our tebako-bootstrap
 ```
