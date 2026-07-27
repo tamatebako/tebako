@@ -50,7 +50,45 @@ the launcher ABI.
   tree is provisioned) and `bundle install --jobs=N --prefer-local`,
   executed inside the runtime's own ruby. `Gemfile.lock` pins the bundler
   version (`BUNDLED WITH`, minimum 2.4.22); the Gemfile `ruby` directive
-  selects the runtime's ruby version.
+  selects the runtime's ruby version. Gems with **native extensions**
+  build inside the deploy driver against the runtime SDK (below) — the
+  built artifacts land at their gem-correct paths inside the app image.
+
+## RuntimeSdk (native-extension deploy)
+
+Prebuilt runtime images are stripped for size (no bin/ruby, no ruby
+headers), so mkmf-driven extension builds cannot run against them
+directly. Like the reference gem, whenever deploy ops run on POSIX (the
+gem has no flag for this and neither does the CLI — the gem/gemspec
+scenarios stay unported), the press provisions the runtime SDK into the
+packaging environment (`<prefix>/deps/sdk/<ruby>-<src>-<platform>/`,
+flock'd, `.sdk-complete` marker — never the runtime cache):
+
+1. the pre-patched ruby src release the runtime was built from
+   (`tfs-ruby-<ver>-src.tar.gz` from `tamatebako/ruby` releases,
+   `TEBAKO_SDK_SRC_RELEASE` default `v0.2.1`,
+   `TEBAKO_SDK_SRC_MIRROR` for mirrors — `file://` works offline) is
+   downloaded in-process and sha256-verified against the release's
+   SHA256SUMS;
+2. the tarball is extracted **in-process** (flate2 + tar — no tar
+   binary) and `./configure` runs with the runtime's own configure
+   arguments, replayed from its rbconfig (read from the **mounted
+   runtime image** via the tfs C ABI for image-era runtimes — no
+   `--tebako-extract`, no cache `layout/`; v1-era runtimes keep the
+   extracted-layout flow) with the build machine's paths and compiler
+   assignments filtered out;
+3. `include/` + the generated `archhdr/ruby/config.h` are installed,
+   and `nm` on the runtime executable yields a `libruby-stub.a`
+   re-declaring every ruby-ABI symbol it exports (mkmf's link probes get
+   true yes/no resolution; shipped extensions never link the stub).
+
+The deploy driver's RbConfig overrides then point
+`rubyhdrdir`/`rubyarchhdrdir`/`LIBRUBYARG` at the SDK (and `bindir` at
+the ruby shim, whose script mode emulates the ruby command line:
+`-r`/`-I`/`-e`/`--`), while the cc_override re-resolves the runtime's
+recorded toolchain against the press host. Failures are named errors:
+135 (missing headers/configure/nm/stub/platform mismatch), 122 (src
+download), 125 (SDK lock timeout).
 
 ## Where the pieces come from
 
@@ -87,16 +125,18 @@ the launcher ABI.
   provisioned mkdwarfs binary; the CLI builds images in-process and the
   golden test filters the two sides' image-build lines when diffing
   press stdout;
-- the **RuntimeSdk / src-release subsystem is not ported** — the gem
-  downloads the ruby source release so native-extension builds (mkmf,
-  cmake) can compile inside the deploy driver. Pure-ruby bundler flows
-  never need it; native-extension deploy is a later milestone. The
-  driver's `build_overrides` therefore carry only the bindir override,
-  which is exactly what the gem emits when no SDK was resolved;
-- the **gem/gemspec scenarios** (which ride the `bundle_exec` op and the
-  SDK), the **classic** press mode, `tebako setup/clean/hash`, and
-  `.tebako.yml` are later milestones (the `runtime` mode is rejected with
-  exit 133 like the gem);
+- the **RuntimeSdk host tag** in the SDK cache key is the tebako
+  platform id (`macos-arm64`); the gem derives it from the press host's
+  ruby RbConfig (`darwin24-arm64`), which a hostless CLI cannot
+  reproduce — both are stable per-platform cache keys. The src tarball
+  is extracted **in-process** (flate2 + tar; the gem shells out to
+  `tar`); `nm`/`cc`/`ar` and the downloaded `./configure` run as
+  processes exactly like the gem (a native build needs a C toolchain —
+  the same reliance the deploy toolchain fallback table carries);
+- the **gem/gemspec scenarios** (which ride the `bundle_exec` op), the
+  **classic** press mode, `tebako setup/clean/hash`, and `.tebako.yml`
+  are later milestones (the `runtime` mode is rejected with exit 133
+  like the gem);
 - the bundler version for a lockfile-less Gemfile that pins bundler is
   taken from rubygems' `latest.json` (the gem's SpecFetcher picks the
   latest released bundler satisfying the requirement — identical unless
@@ -108,7 +148,7 @@ the launcher ABI.
 
 Everything else is byte-level parity: the press stdout, the produced
 package's trailer fields, the packaged binary's output, the cache layout
-(shared with the gem), and the exit codes (106–134 + the packaging error
+(shared with the gem), and the exit codes (106–135 + the packaging error
 table).
 
 ## Tests
@@ -124,4 +164,12 @@ The e2e tests download the prebuilt runtime into the cache (network) and
 skip cleanly when `TEBAKO_CLI_SKIP_E2E` is set. The golden test
 additionally needs a host ruby with the thor gem, a checkout of the
 reference gem at the matching version, and an mkdwarfs binary **for the
-reference gem's own press** (the CLI itself needs none).
+reference gem's own press** (the CLI itself needs none). The
+native-extension e2e (`native_ext_press_builds_and_packages`) builds the
+`native-ext-gem` fixture into `toyext-0.1.0.gem` **with the resolved
+runtime itself** (no host ruby), vendors it into the `native-ext-app`
+fixture's `vendor/cache` (the dependency resolves offline from the
+lockfile), mirrors the ruby src release over `file://`, presses, and
+asserts the built `toyext.{so,bundle}` sits in the app image at its
+gem-correct path before a cold run proves the packaged app loads it from
+the memfs.

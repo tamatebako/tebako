@@ -42,7 +42,15 @@ pub fn build_app_image(
         None
     };
     init(layout_dir.as_deref(), image_path.as_deref(), opts)?;
-    deploy(opts, scenario, runtime_path, ruby_ver)?;
+    // RuntimeSdk provenance (native-extension deploy): the runtime's
+    // rbconfig comes from the mounted image (image-era — no extraction)
+    // or the extracted layout (v1, the gem's flow).
+    let rbconfig_source = match (image_path.as_deref(), layout_dir.as_deref()) {
+        (Some(image), _) => Some(crate::sdk::RbconfigSource::Image(image.to_path_buf())),
+        (None, Some(layout)) => Some(crate::sdk::RbconfigSource::Layout(layout.to_path_buf())),
+        (None, None) => None,
+    };
+    deploy(opts, scenario, runtime_path, ruby_ver, rbconfig_source)?;
     if let Some(layout_dir) = &layout_dir {
         // Image-era seeds come from the runtime's own image, so the arch
         // layout matches by construction (alignment is a no-op).
@@ -124,12 +132,119 @@ fn extract_runtime_image(image: &Path, dest: &Path) -> Result<(), TebakoError> {
     Ok(())
 }
 
+/// Read the runtime's rbconfig.rb from the runtime image (image-era
+/// RuntimeSdk provenance): the image is mounted in-process through the
+/// tfs C ABI, the first `lib/ruby/<ver>/<arch>/rbconfig.rb` is read
+/// straight from the mount, and the image is unmounted — no extraction
+/// anywhere (item 30b; the cache holds the immutable artifact only).
+/// `Ok(None)` when the image carries no rbconfig (the SDK maps that to
+/// the named 135 error).
+pub(crate) fn read_image_rbconfig(image: &Path) -> Result<Option<String>, TebakoError> {
+    use tfs::c_api::*;
+
+    let path = std::ffi::CString::new(image.to_string_lossy().as_bytes())
+        .map_err(|_| plain_error(format!("invalid image path: {}", image.display())))?;
+    let mount = std::ffi::CString::new("/mnt").unwrap();
+    let rc = unsafe { tebako_fs_init_from_file(path.as_ptr(), mount.as_ptr()) };
+    if rc != 0 {
+        return Err(plain_error(format!(
+            "cannot mount the runtime image {}",
+            image.display()
+        )));
+    }
+    struct Unmount;
+    impl Drop for Unmount {
+        fn drop(&mut self) {
+            unsafe { tebako_fs_unmount() };
+        }
+    }
+    let _guard = Unmount;
+
+    // lib/ruby/<ver>/<arch>/rbconfig.rb, first lexical match (the gem's
+    // sorted Dir.glob(...).first).
+    for ver in image_dir_entries("/mnt/lib/ruby") {
+        for arch in image_dir_entries(&format!("/mnt/lib/ruby/{ver}")) {
+            let rel = format!("/mnt/lib/ruby/{ver}/{arch}/rbconfig.rb");
+            if let Some(content) = image_read_file(&rel) {
+                return Ok(Some(content));
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// Sorted subdirectory names of a directory inside the mounted image.
+fn image_dir_entries(path: &str) -> Vec<String> {
+    use tfs::c_api::*;
+    let Ok(c_path) = std::ffi::CString::new(path) else {
+        return Vec::new();
+    };
+    let dir = unsafe { tebako_fs_opendir(c_path.as_ptr()) };
+    if dir.is_null() {
+        return Vec::new();
+    }
+    struct CloseDir(*mut std::ffi::c_void);
+    impl Drop for CloseDir {
+        fn drop(&mut self) {
+            unsafe { tebako_fs_closedir(self.0) };
+        }
+    }
+    let _guard = CloseDir(dir);
+    let mut out = Vec::new();
+    loop {
+        let entry = unsafe { tebako_fs_readdir(dir) };
+        if entry.is_null() {
+            break;
+        }
+        let (name, d_type) = unsafe {
+            let e = &*entry;
+            let name = std::ffi::CStr::from_ptr(e.d_name.as_ptr())
+                .to_string_lossy()
+                .into_owned();
+            (name, e.d_type)
+        };
+        if d_type == tfs::DT_DIR && name != "." && name != ".." {
+            out.push(name);
+        }
+    }
+    out.sort();
+    out
+}
+
+/// Read a whole file from the mounted image (pread-chunked at 1 MiB).
+fn image_read_file(path: &str) -> Option<String> {
+    use tfs::c_api::*;
+    let c_path = std::ffi::CString::new(path).ok()?;
+    let fd = unsafe { tebako_fs_open(c_path.as_ptr(), 0) };
+    if fd < 0 {
+        return None;
+    }
+    struct CloseFd(libc::c_int);
+    impl Drop for CloseFd {
+        fn drop(&mut self) {
+            unsafe { tebako_fs_close(self.0) };
+        }
+    }
+    let _guard = CloseFd(fd);
+    let mut out = Vec::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = unsafe { tebako_fs_read(fd, buf.as_mut_ptr() as *mut _, buf.len()) };
+        if n <= 0 {
+            break;
+        }
+        out.extend_from_slice(&buf[..n as usize]);
+    }
+    String::from_utf8(out).ok()
+}
+
 /// Deploy: stage the app, build and run the deploy ops, check, strip.
 fn deploy(
     opts: &PressOptions,
     scenario: &mut ScenarioManager,
     runtime_path: &Path,
     ruby_ver: &str,
+    rbconfig_source: Option<crate::sdk::RbconfigSource>,
 ) -> Result<(), TebakoError> {
     println!("-- Running deploy script");
     let target = opts.data_src_dir();
@@ -204,6 +319,26 @@ fn deploy(
     }
 
     if !ops.is_empty() {
+        // Native-extension deploy (the gem's semantics): whenever deploy
+        // ops run on POSIX, provision the runtime SDK so mkmf-driven
+        // extension builds inside the driver compile against the
+        // runtime's own header tree. Windows stays on the gem's no-SDK
+        // branch (the ruby shim has no exec path there).
+        let sdk = if cfg!(windows) {
+            None
+        } else {
+            rbconfig_source
+                .as_ref()
+                .map(|source| {
+                    crate::sdk::RuntimeSdk::resolve(
+                        runtime_path,
+                        source.clone(),
+                        &opts.deps(),
+                        ruby_ver,
+                    )
+                })
+                .transpose()?
+        };
         let deployer = RuntimeDeployer {
             runtime_path: runtime_path.to_path_buf(),
             staging_bin_dir: opts.data_bin_dir(),
@@ -211,6 +346,7 @@ fn deploy(
             ruby_version: ruby_ver.to_string(),
             tebako_version: opts.tebako_version.clone(),
             verbose: opts.verbose,
+            sdk,
         };
         deployer.execute(&ops, &deploy_env(&target, &api), &target)?;
     }

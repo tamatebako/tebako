@@ -22,6 +22,11 @@ tfs = { version = "0.1.0", path = "../tfs" }
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 libc = "0.2"
 sha2 = "0.10"
+# RuntimeSdk provisioning extracts the ruby src release in-process (no tar
+# binary): flate2 is already in the tree (miniz_oxide backend, pure Rust);
+# tar is its pure-Rust companion (xattr dropped — a src tarball needs none).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+tar = { version = "0.4", default-features = false }
 
 [[bin]]
 name = "tebako"

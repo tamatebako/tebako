@@ -110,9 +110,13 @@ if (rt_image != nullptr && rt_image[0] != '\0') {
   image IS the runtime's own layout), so the alignment step is skipped.
 - Deploy under the runtime executable (stub driver, bundle ops) is
   unchanged — the interpreter is the same artifact as today. The
-  RuntimeSdk is not ported yet (M7 note); when it lands it reads
-  headers from the mounted image (`--tebako-extract` mounts the env
-  image with the driver patch above) rather than an extracted tree.
+  RuntimeSdk (native-extension deploy, roadmap 25) is ported: it reads
+  the runtime's rbconfig (the configure-args provenance) from the
+  mounted image in-process rather than an extracted cache tree — the
+  headers themselves still come from the `tamatebako/ruby` src release,
+  exactly like the gem (the image carries none: the runtime stripper
+  removes `include/` and `*.a`), and provisions into the packaging
+  environment (`<prefix>/deps/sdk/...`), never the cache.
 
 ## Backward compat
 

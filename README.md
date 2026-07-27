@@ -44,6 +44,47 @@ Rust-consumable surface for it.
 
 ## Status
 
+### SHIPPED (roadmap 25)
+
+- **Native-extension deploy in `crates/tebako-cli`** (the last M7
+  deviation closed): a port of the reference gem's RuntimeSdk +
+  SDK-enabled deploy driver (tebako-chainwt `lib/tebako/runtime_sdk.rb`,
+  `runtime_deployer.rb`). Whenever deploy ops run on POSIX — the gem has
+  no flag and none was added — the press provisions the runtime SDK into
+  the packaging environment (`<prefix>/deps/sdk/...`, never the runtime
+  cache): the pre-patched ruby src release the runtime was built from
+  (`tamatebako/ruby`, sha256-verified against the release's SHA256SUMS,
+  `TEBAKO_SDK_SRC_RELEASE`/`TEBAKO_SDK_SRC_MIRROR` knobs, `file://`
+  mirrors for offline flows) is extracted **in-process** (flate2+tar, no
+  tar binary), the runtime's own configure arguments are replayed from
+  its rbconfig — read from the **mounted runtime image** through the tfs
+  C ABI for image-era runtimes (no `--tebako-extract`, no `layout/` in
+  the cache; v1-era keeps the extracted-layout flow) with build-machine
+  paths filtered out — to generate the matching header tree, and a
+  symbol-stub archive re-declares every ruby-ABI symbol the runtime
+  executable exports (mkmf link probes get true yes/no resolution; the
+  shipped extension never links it). The deploy driver's RbConfig
+  overrides point rubyhdrdir/rubyarchhdrdir/LIBRUBYARG at the SDK and
+  re-resolve the recorded toolchain on the press host (the gem's
+  cc_override); the driver's script mode now emulates the ruby command
+  line (-r/-I/-e/--) for the mkmf spawns. Built extensions land at their
+  gem-correct paths inside the app image; the image carries the runtime's
+  own memfs-relative rbconfig, so they resolve at runtime. Named errors
+  throughout: 135 (missing headers / configure / nm / stub / platform
+  mismatch), 122 (src download), 125 (SDK lock), and a failed build
+  surfaces the driver's full output. e2e: `tests/fixtures/native-ext-app`
+  (a path gem with a one-function C extension) presses against an
+  image-era runtime pair and the packaged binary prints
+  `toyext.answer = 42` from the memfs.
+  **Documented deviations**: the SDK cache key's host tag is the tebako
+  platform id (`macos-arm64`; the gem derives it from the press host's
+  ruby RbConfig — `darwin24-arm64` — which a hostless CLI cannot
+  reproduce); the src tarball is extracted in-process (the gem shells
+  out to `tar`); nm/cc/ar and the downloaded `./configure` run as
+  processes exactly like the gem (a native build is impossible without a
+  C toolchain — the same reliance the deploy toolchain fallback table
+  already carries); the gem/gemspec scenarios stay unported (130).
+
 ### SHIPPED (milestone 9)
 
 - **tfs: tar/tar.gz/tar.zst backend (pure Rust, read-only)** — roadmap 13's
@@ -172,12 +213,12 @@ Rust-consumable surface for it.
   **Documented deviations**: the bootstrap portion defaults to the
   in-workspace Rust tebako-bootstrap (`--bootstrap`/`TEBAKO_BOOTSTRAP`
   override; otherwise the C++ release is resolved like the gem does); the
-  RuntimeSdk/src-release subsystem is not ported (pure-ruby bundler flows
-  never need it — native-extension deploy is a later milestone), and
-  neither are the gem/gemspec scenarios, classic mode, `.tebako.yml`, or
-  the gem's unconditional 5 s press pause (kept only when a warning is
-  actually printed); images stitch densely (tpkg slots carry absolute
-  offsets; the gem's 8-byte padding is cosmetic).
+  gem/gemspec scenarios, classic mode, `.tebako.yml`, and the gem's
+  unconditional 5 s press pause are not ported (the pause is kept only
+  when a warning is actually printed); images stitch densely (tpkg slots
+  carry absolute offsets; the gem's 8-byte padding is cosmetic). (The
+  RuntimeSdk/src-release subsystem this milestone deferred landed in
+  roadmap 25, above.)
 
 ### SHIPPED (milestone 6)
 
