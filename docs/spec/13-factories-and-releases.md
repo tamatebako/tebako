@@ -149,6 +149,10 @@ tebako-packages/index/            # the catalog: a registry-of-registries
   own releases.
 - CI per repo: build matrix per triplet (one mechanical leg each),
   boot-smoke per tool, release per (tool × version) with the payload
-  manifest filled from the recipe. First reference port: inkscape (the
-  metanorma case). Org creation is an owner action; repo/feedstock
+  manifest filled from the recipe.
+- **The proven feedstock line (2026-07-27):** `hello` (native trivial),
+  `fontist` (app, triplet-bound), `inkscape` (toolkit, heavy dynamic),
+  `metanorma` (the flagship app: 260 gems, inkscape DEPENDS wired,
+  full PDF compile through the payload). First reference port: inkscape
+  (the metanorma case). Org creation is an owner action; repo/feedstock
   creation then follows the template in `tebako-packages/index`.
