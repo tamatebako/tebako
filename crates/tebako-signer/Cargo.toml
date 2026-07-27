@@ -9,5 +9,5 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-rnp = { package = "rnp-rs", version = "0.1.6", features = ["vendored"] }
+rnp = { package = "rnp-rs", version = "0.1.7", features = ["vendored"] }
 sha2 = "0.10"

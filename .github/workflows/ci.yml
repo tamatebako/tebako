@@ -90,6 +90,26 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/$TRIPLET" >> "$GITHUB_ENV"
 
+      # rnp-rs 0.1.7's vendored prebuilt covers librnp+json-c statically,
+      # but botan is declared dylib: give it a STATIC botan in a dir of its
+      # own (ld prefers .dylib over .a when both are in the search path, so
+      # the archive must be alone in its dir). z/bz2 are ubiquitous base-OS.
+      - name: Static botan (macOS, brew archive)
+        if: runner.os == 'macOS'
+        run: |
+          brew install botan
+          mkdir -p .crypto-static && cp "$(brew --prefix botan)/lib/libbotan-3.a" .crypto-static/
+          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
+
+      - name: Static botan (Linux, vcpkg static triplet)
+        if: runner.os == 'Linux'
+        working-directory: tebako-rs
+        run: |
+          mkdir -p .crypto-static
+          .vcpkg-root/vcpkg install botan --vcpkg-root .vcpkg-root --x-wait-for-lock --x-install-root .crypto-vcpkg --triplet x64-linux-static
+          cp .crypto-vcpkg/x64-linux-static/lib/libbotan-3.a .crypto-static/
+          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
+
       # The tebako-pkg golden suite compares against the C++ tebakofs
       # oracle, and tfs-cli's mkimage against mkdwarfs; use the libtfs
       # release binaries for the runner's platform.

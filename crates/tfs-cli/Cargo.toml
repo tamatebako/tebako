@@ -30,6 +30,6 @@ path = "src/lib.rs"
 tebako-contract-tests = { version = "0.1.0", path = "../../tests/contract" }
 # The --verify signature tests mint a press-local key and detached .asc.
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
-rnp = { package = "rnp-rs", version = "0.1.6", features = ["vendored"] }
+rnp = { package = "rnp-rs", version = "0.1.7", features = ["vendored"] }
 # Exec-proof image fixtures (zip backend).
 zip = { version = "2", default-features = false, features = ["deflate"] }

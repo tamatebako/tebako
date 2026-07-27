@@ -125,6 +125,20 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
 
+      - name: Static botan (brew archive)
+        run: |
+          brew install botan
+          mkdir -p .crypto-static && cp "$(brew --prefix botan)/lib/libbotan-3.a" .crypto-static/
+          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
+
+      - name: Static botan (vcpkg static triplet)
+        working-directory: tebako-rs
+        run: |
+          mkdir -p .crypto-static
+          .vcpkg-root/vcpkg install botan --vcpkg-root .vcpkg-root --x-wait-for-lock --x-install-root .crypto-vcpkg --triplet ${{ matrix.triplet }}
+          cp .crypto-vcpkg/${{ matrix.triplet }}/lib/libbotan-3.a .crypto-static/
+          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
+
       - name: Build the four binaries (release)
         working-directory: tebako-rs
         env:
