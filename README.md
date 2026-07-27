@@ -26,6 +26,8 @@ tebako-rs/
     tebako-http/       # in-process HTTPS downloads (ureq+rustls,
                        # webpki-roots bundled) shared by the CLI and the
                        # bootstrap
+    tebako-term/       # terminal progress (spec 06 §5): TTY detect,
+                       # hand-rolled ANSI bar/spinner — zero deps
     tebako-bootstrap/  # the Rust bootstrap runner (item 22,
                        # < 3 MB static, size-gated)
   tests/contract/      # the parity oracle: the C++ libtfs c_api suite
@@ -203,10 +205,33 @@ Rust-consumable surface for it.
 
   | platform | Rust bootstrap | C++ v0.2.0 | budget |
   |---|---|---|---|
-  | macOS arm64 | **1,238,384 B (1.18 MB)** | 53,536 B | < 3 MB ✔ (2.5× under) |
+  | macOS arm64 | **1,842,144 B (1.76 MB)** | 53,536 B | < 3 MB ✔ (1.6× under) |
 
   (CI publishes the per-platform artifact sizes on every run and fails
   at ≥ 3 MB.)
+- **Progress UX (spec 06 §5, locked)**: a fetch shows the work and the
+  benefit, on stderr always (stdout stays the payload's). Phases:
+  `resolving <ref>` → `downloading <asset> (<size>)` with the live bar →
+  `verifying sha256` → `installing (locked)` → done — and the done line
+  states the benefit: `installed <name> (<size>) — cached at <path> and
+  shared by every tebako app on this machine`. A cache hit prints one
+  quiet `runtime <ref> (cached)` line. Full rendering only when stderr is
+  a TTY and `TERM != dumb` (opt-outs `NO_COLOR`, `TEBAKO_NO_PROGRESS=1`);
+  otherwise exactly the start + done single lines, CI/log-safe. The bar
+  is hand-rolled ANSI throttled to ≤ 10 redraws/s (unknown content-length
+  → spinner + byte count) in the zero-dependency `crates/tebako-term`
+  micro-crate — the size gate forbids indicatif-class crates — fed
+  transport-accurate byte counts via tebako-http's
+  `on_progress(so_far, content_length)` hook. Size cost in the artifact:
+  **+16.6 KB** (1,825,520 B → 1,842,144 B on macOS arm64).
+
+  ```text
+  downloading tebako-runtime-0.15.9-3.4.2-linux-gnu-x86_64 (23.0 MB)
+  [=====>    ] 62%  14.2/23.0 MB  3.1 MB/s
+  verifying sha256
+  installing (locked)
+  installed ruby-3.4.2-0.15.9-linux-gnu-x86_64 (23.0 MB) — cached at ~/.tebako/runtimes/ruby-3.4.2-0.15.9-linux-gnu-x86_64 and shared by every tebako app on this machine
+  ```
 - **HTTP/TLS choice (owner rule: no curl anywhere)**: all downloads are
   in-process via `crates/tebako-http` — ureq + rustls (ring) with
   webpki-roots **bundled** (the OS trust store is opt-in via

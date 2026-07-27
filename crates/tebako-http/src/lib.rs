@@ -113,6 +113,51 @@ pub fn get(url: &str) -> Result<Vec<u8>, FetchError> {
         .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))
 }
 
+/// [`get`] with a progress hook: `on_progress(bytes_so_far,
+/// content_length)` fires per read chunk on the download path (spec 06
+/// §5 — the bar is transport-accurate, not estimated). `content_length`
+/// is None when the response is chunked/close-delimited. When the hook
+/// is None the behavior is [`get`]'s, unchanged.
+pub fn get_with_progress(
+    url: &str,
+    on_progress: Option<&mut dyn FnMut(u64, Option<u64>)>,
+) -> Result<Vec<u8>, FetchError> {
+    let Some(cb) = on_progress else {
+        return get(url);
+    };
+    if let Some(path) = url.strip_prefix("file://") {
+        let bytes = read_file_url(path)?;
+        cb(bytes.len() as u64, Some(bytes.len() as u64));
+        return Ok(bytes);
+    }
+    if !url.starts_with("https://") {
+        return Err(FetchError::DownloadFailed(format!(
+            "refusing non-HTTPS URL {url} (https:// and file:// are supported)"
+        )));
+    }
+    use std::io::Read as _;
+    let mut response = agent().get(url).call().map_err(map_ureq_error(url))?;
+    let content_length = response.body().content_length();
+    let mut reader = response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY_SIZE)
+        .reader();
+    let mut body: Vec<u8> = Vec::new();
+    let mut chunk = [0u8; 65536];
+    loop {
+        let n = reader
+            .read(&mut chunk)
+            .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))?;
+        if n == 0 {
+            break;
+        }
+        body.extend_from_slice(&chunk[..n]);
+        cb(body.len() as u64, content_length);
+    }
+    Ok(body)
+}
+
 /// GET `url` as text (release indexes, manifests).
 pub fn get_text(url: &str) -> Result<String, FetchError> {
     let body = get(url)?;
@@ -147,5 +192,24 @@ mod tests {
             get("http://example.com/"),
             Err(FetchError::DownloadFailed(_))
         ));
+    }
+
+    #[test]
+    fn progress_hook_fires_once_for_file_urls() {
+        let dir = std::env::temp_dir().join(format!("tebako-http-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("asset.bin");
+        std::fs::write(&file, b"hello progress").unwrap();
+        let url = format!("file://{}", file.display());
+
+        let mut calls: Vec<(u64, Option<u64>)> = Vec::new();
+        let body = get_with_progress(&url, Some(&mut |so_far, total| calls.push((so_far, total))))
+            .unwrap();
+        assert_eq!(body, b"hello progress");
+        assert_eq!(calls, vec![(14, Some(14))]);
+
+        // None is get()'s behavior, unchanged.
+        assert_eq!(get_with_progress(&url, None).unwrap(), get(&url).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
