@@ -135,6 +135,7 @@
 
 mod codec;
 mod crc32;
+mod envelope;
 mod error;
 mod ext;
 mod io;
@@ -149,6 +150,7 @@ pub use codec::{
     v2_signed_region,
 };
 pub use crc32::{crc32, Crc32};
+pub use envelope::{EnvelopeManifest, Grant, Suite, ENVELOPES_PATH, ENVELOPES_SCHEMA_VERSION};
 pub use error::{strerror, TpkgError};
 pub use ext::{ExtBlock, ExtError};
 pub use io::{read_from, write_to};

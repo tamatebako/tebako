@@ -1,8 +1,10 @@
 # Spec 10 — Encryption (confidentiality)
 
 Normative specification of encrypted volumes: selective, in-memory-only
-decryption. Status: PLANNED (roadmap 10; builds on spec 09's key
-infrastructure). Encryption is per-image **opt-in**, never default.
+decryption. Status: v1 SHIPPED (roadmap 37: `EncBackend` +
+`tfs encrypt`/`decrypt`/`mount`, SUITE-1; PQC suites, metadata hiding
+and merkle verify-on-read remain PLANNED). Encryption is per-image
+**opt-in**, never default.
 
 ## 1. Model
 
@@ -97,8 +99,18 @@ out of scope) — documented.
 - Honest risks: access-pattern side channels on serve; key-agent UX is
   the hard part; mlock/zeroize is the baseline, not a panacea.
 
-## 7. CLI surface (PLANNED)
+## 7. CLI surface (SHIPPED v1)
 
-`tfs encrypt / decrypt / sign / mount --recipient / --key` — encryption
+`tfs encrypt / decrypt / mount --recipient / --key` — encryption
 at image-creation time through the same Writer path; mount requires the
 recipient key; wrong key → named `EKEY`-class error, never garbage.
+SHIPPED (roadmap 37): `tfs encrypt` (root grant `--recipient`, subtree
+grants `--subtree <path>=<pubkey>`; `--rewrap --key` rotates grants to a
+new recipient set with the bulk ciphertext byte-identical),
+`tfs decrypt` (plaintext to a tar stream — never a staging tree),
+`tfs mount --key` (the unlock/grant report; FUSE/serve mounts remain
+spec-11 §6 PLANNED). `tfs sign` is spec 09's surface. The v1 crypto
+construction (per-block AES-256-GCM, HKDF-SHA256 subtree keys, PKESK
+DEK envelopes, the `/__tpkg__/envelopes.yaml` grant manifest) is
+documented normatively in `crates/tfs/src/backends_enc.rs` and
+`crates/tpkg/src/envelope.rs`.

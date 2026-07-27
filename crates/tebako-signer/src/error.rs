@@ -15,6 +15,9 @@ pub enum SignerError {
     /// Running a verification failed (a *bad* signature is a VerifyOutcome,
     /// not an error; this is for operational failures).
     Verify(String),
+    /// DEK envelope wrap/unwrap failed (spec 10 §2): the EKEY-class named
+    /// error — a recipient slot that does not open is this, never garbage.
+    Envelope(String),
     /// Trusted-keyring loading/registration failed.
     Trust(String),
     /// Plain i/o failure with path context.
@@ -28,6 +31,7 @@ impl fmt::Display for SignerError {
             SignerError::KeyStore(m) => write!(f, "key store error: {m}"),
             SignerError::Sign(m) => write!(f, "signing failed: {m}"),
             SignerError::Verify(m) => write!(f, "verification failed: {m}"),
+            SignerError::Envelope(m) => write!(f, "key envelope error: {m}"),
             SignerError::Trust(m) => write!(f, "trusted keyring error: {m}"),
             SignerError::Io(m) => write!(f, "i/o error: {m}"),
         }

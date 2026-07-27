@@ -18,12 +18,16 @@
 
 #![forbid(unsafe_code)]
 
+pub mod envelope;
 mod error;
 pub mod keyring;
 mod keys;
 mod root;
 mod sign;
 
+pub use envelope::{
+    envelope_recipients, public_key_from_secret, public_key_keyid, unwrap_dek, wrap_dek,
+};
 pub use error::SignerError;
 pub use keyring::{register_trusted, trusted_keyring_bytes, trusted_keyring_path, RegisterOutcome};
 pub use keys::{
