@@ -19,6 +19,17 @@ rnp = { git = "https://github.com/rnpgp/rnp-rs", rev = "9d459ea36398d9f21b920614
 libc = "0.2"
 sha2 = "0.10"
 
+# The Windows platform layer (LockFileEx / MoveFileExW / SetFileAttributesW
+# / SetConsoleCtrlHandler) — the same 0.61 the rest of the workspace
+# already resolves transitively; all FFI is confined to src/platform.rs.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Console",
+    "Win32_System_IO",
+] }
+
 [[bin]]
 name = "tebako-bootstrap"
 path = "src/main.rs"
