@@ -1,9 +1,11 @@
 //! Manifest model types, mirroring the C `tpkg_manifest`/`tpkg_slot`.
 
 use crate::error::TpkgError;
+use crate::ext::ExtBlock;
 use crate::{
-    TPKG_FLAG_SIGNED_V2, TPKG_FORMAT_RUNTIME, TPKG_KEYID_LEN, TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN,
-    TPKG_RUNTIME_REF_LEN, TPKG_SHA256_LEN, TPKG_SIG_MAX, TPKG_VERSION,
+    TPKG_EXT_TYPE_V2_SIGNING, TPKG_FLAG_SIGNED_V2, TPKG_FORMAT_RUNTIME, TPKG_KEYID_LEN,
+    TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN, TPKG_RUNTIME_REF_LEN, TPKG_SHA256_LEN, TPKG_SIG_MAX,
+    TPKG_VERSION,
 };
 
 /// One payload slot (the in-Rust form of C `tpkg_slot`).
@@ -122,6 +124,12 @@ pub struct Manifest {
     pub runtime_ref: [u8; TPKG_RUNTIME_REF_LEN],
     /// Payload slots (`1..=TPKG_MAX_SLOTS` entries in a valid manifest).
     pub slots: Vec<Slot>,
+    /// Typed extension blocks (spec 02 §5b) between the slot table and the
+    /// v2 extension / trailer header, in wire order. Unknown types are
+    /// carried verbatim (readers skip them; rewrites preserve them);
+    /// [`Manifest::validate_strict`] rejects them. Type 1 (the v2 signing
+    /// extension's reserved slot) never appears here — it is not a block.
+    pub ext_blocks: Vec<ExtBlock>,
     /// Chain-of-trust extension (present iff `package_flags` has
     /// `TPKG_FLAG_SIGNED_V2`).
     pub v2: Option<V2Extension>,
@@ -135,6 +143,7 @@ impl Default for Manifest {
             launcher_abi: 0,
             runtime_ref: [0; TPKG_RUNTIME_REF_LEN],
             slots: Vec::new(),
+            ext_blocks: Vec::new(),
             v2: None,
         }
     }
@@ -165,7 +174,10 @@ impl Manifest {
     /// Magic-independent structural checks, mirroring the C `tpkg_validate()`:
     /// version supported, `1..=TPKG_MAX_SLOTS` slots, `offset+size`
     /// non-overflowing, `format_id <= TPKG_FORMAT_RUNTIME`, `runtime_ref` and
-    /// mount points NUL-terminated within their fixed fields. The v2
+    /// mount points NUL-terminated within their fixed fields. Extension
+    /// blocks (spec 02 §5b) must not use the reserved type 1 and must fit
+    /// the u32 length field; unknown types PASS here (readers skip them —
+    /// [`Manifest::validate_strict`] is the fail-closed gate). The v2
     /// extension requires the `TPKG_FLAG_SIGNED_V2` flag and vice versa,
     /// plus zeroed trailing digests, a non-empty signature (bounded by
     /// `TPKG_SIG_MAX`) and a non-zero signer keyid.
@@ -187,6 +199,17 @@ impl Manifest {
                 return Err(TpkgError::Invalid);
             }
             if strnlen(&slot.mount_point) == TPKG_MOUNT_POINT_LEN {
+                return Err(TpkgError::Invalid);
+            }
+        }
+        for block in &self.ext_blocks {
+            // Type 1 is reserved for the v2 signing extension — it keeps
+            // its historical tail position and is never a block (spec 02
+            // §5b); fail closed so no block collides with a signature.
+            if block.block_type == TPKG_EXT_TYPE_V2_SIGNING {
+                return Err(TpkgError::Invalid);
+            }
+            if block.payload.len() > u32::MAX as usize {
                 return Err(TpkgError::Invalid);
             }
         }
