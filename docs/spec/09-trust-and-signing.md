@@ -5,6 +5,17 @@ part: bootstrap, runtime payloads, data payloads, and release indexes.
 Status: signing machinery SHIPPED (M29 phase 2); key ceremony/ops PARTIAL
 (roadmap 10).
 
+> **Rollout phase — unverified-first (roadmap 72).** The shipped
+> tebako-bootstrap is built WITHOUT OpenPGP verification (the
+> `openpgp-verify` cargo feature is off): signed packages execute with a
+> loud UNVERIFIED warning + audit journal, unsigned packages with the
+> legacy warning; `TEBAKO_REQUIRE_SIGNED=1` fails closed (exit 71)
+> because a strict-mode request must never silently downgrade.
+> OpenPGP verification returns via the crypto toolkit payload
+> (`tebako-crypto`, rnp+botan full+PQC, fetched on demand and
+> Ed25519-verified by the bootstrap) — this spec is the TARGET model;
+> the phase-1 deltas live in spec 06 §3.
+
 ## 1. Threat model
 
 Parts travel over mirrors/CDN and are shared between machines. HTTPS +

@@ -144,11 +144,11 @@ jobs:
       - name: Point the golden test at the reference gem
         run: echo "TEBAKO_REFERENCE_GEM=${{ github.workspace }}/reference-gem" >> "$GITHUB_ENV"
 
-      # item 22's hard gate: the Rust bootstrap must stay under 6 MB
-      # (2 MB -> 3 MB when downloads went in-process; 3 MB -> 6 MB when
-      # full static botan entered via botan-sys(vendored) — owner,
-      # 2026-07-27: self-containment beats size)
-      - name: Bootstrap size gate (< 6 MB)
+      # item 22's hard gate: the Rust bootstrap must stay under 3 MB
+      # (2 MB -> 3 MB when downloads went in-process; rnp/botan is now
+      # feature-gated OUT of the shipped bootstrap — unverified-first,
+      # roadmap 72 — so the 3 MB form holds again)
+      - name: Bootstrap size gate (< 3 MB)
         working-directory: tebako-rs
         run: |
           cargo build -p tebako-bootstrap --release
@@ -156,9 +156,9 @@ jobs:
           CPP_SIZE=$(stat -c %s ../.oracle/tebako-bootstrap 2>/dev/null || stat -f %z ../.oracle/tebako-bootstrap)
           echo "| platform | Rust bootstrap | C++ v0.2.0 | budget |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ${{ runner.os }} | $SIZE B | $CPP_SIZE B | < 6 MB |" >> "$GITHUB_STEP_SUMMARY"
-          echo "tebako-bootstrap: $SIZE bytes (budget 6291456)"
-          test "$SIZE" -lt 6291456
+          echo "| ${{ runner.os }} | $SIZE B | $CPP_SIZE B | < 3 MB |" >> "$GITHUB_STEP_SUMMARY"
+          echo "tebako-bootstrap: $SIZE bytes (budget 3145728)"
+          test "$SIZE" -lt 3145728
 
       # `cargo build` first: it produces the libtfs cdylib the C harness
       # links against (cargo test alone builds deps as rlibs only).

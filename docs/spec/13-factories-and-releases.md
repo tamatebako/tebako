@@ -69,7 +69,7 @@ dwarfs-t (C++ format lib) → releases → dwarfs-rs (FFI crate) → tebako-rs
 
 - Tag → prepare → per-platform NATIVE builds (macOS arm64/x86_64,
   linux-gnu x86_64/arm64, linux-musl x86_64/arm64 via cargo-zigbuild,
-  windows ucrt64) → size-gate table (bootstrap < 6 MB, hard fail) →
+  windows ucrt64) → size-gate table (bootstrap < 3 MB, hard fail) →
   SHA256SUMS + completeness gate (expected asset set; a partial upload
   fails the release) → signed (spec 09) once ceremony lands.
 - Reference shape: parsanol-rs release-binary.yml (native runners,

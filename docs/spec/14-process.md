@@ -52,7 +52,7 @@ rules that apply in every repo.
   service; signing/encryption strictly opt-in.
 - Bootstrap discipline: `opt-level="z"`, `lto="fat"`, `codegen-units=1`,
   `panic="abort"`, `strip="symbols"`; no async runtime, no clap, no
-  logging framework; `cargo bloat` in CI; the 6 MB gate is hard.
+  logging framework; `cargo bloat` in CI; the 3 MB gate is hard.
 - Named errors everywhere on malformed input (no unwraps on
   trailer/exec/network paths).
 

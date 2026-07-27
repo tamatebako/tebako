@@ -89,7 +89,7 @@ cat out/manifest.json
     done
   done
   echo ""
-  echo "tebako-bootstrap is size-gated at < 6 MB (raised 2026-07-27: full static botan via crate deps)."
+  echo "tebako-bootstrap is size-gated at < 3 MB (rnp/botan feature-gated out — unverified-first)."
 } > out/release-notes.md
 
 if [ -n "${UPLOAD:-}" ]; then
