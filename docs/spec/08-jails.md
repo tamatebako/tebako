@@ -103,3 +103,14 @@ NOT covered: statically-linked binaries (direct syscalls, no
 interposition point) and any process that escapes the shim — stated
 honestly in the manifest and docs. OS-level network confinement
 (seatbelt/seccomp/WFP) is a possible later layer, never claimed today.
+
+## 6. Executor-layer trust (locked 2026-07-27)
+
+Tebako is the EXECUTOR of everything it runs — the parent that spawns
+and owns the child. Mediating a child's syscalls (preload interposition
+for dynamic children, seccomp user-notification for static children on
+Linux) is the execution contract, not hijacking: a hostile party would
+have to become the executor or the kernel to hold the same position,
+and both are outside the jail's threat model by definition. Jails bind
+the CHILD downward; they claim nothing about the executor or kernel
+upward.

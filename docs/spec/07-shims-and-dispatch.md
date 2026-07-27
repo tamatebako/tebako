@@ -145,22 +145,31 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    bypass the jail); not interposed in v1: execve/posix_spawn,
    fstatat/statx, getdents64, openat2, readdir_r,
    rewinddir/telldir/seekdir, the pre-glibc-2.33 `__xstat` family.
-2. **Static/self-contained tools**: extract-to-exec-cache
-   (`~/.tebako/exec/<sha256>/…`, 0755, verified at install). A static
-   binary is one monolithic block: no dynamic symbols, no interposition
-   point — it cannot be preload-shimmed, so it must be materialized on
-   the host, and every payload file it needs must travel in the
-   manifest-declared extraction closure (it sees only the host FS: no
-   TFS, no other payloads, no jails — spec 08 §5). Extraction is
-   content-addressed: once per digest per machine, shared across
-   consumers. Nuances: (a) a static binary BUILT against the
-   `tebako_fs_*` ABI carries the VFS inside itself and CAN read other
-   payloads (the "libtfs for everyone" embedding story — a build-time
-   property, not something imposable on an arbitrary binary); (b) the
-   only theoretical interposition for arbitrary static binaries is
-   kernel-level (seccomp user-notification / gVisor-class, Linux-only)
-   — explicitly out of scope. Prefer tier 1 (dynamic builds) whenever
-   VFS access or jails matter.
+2. **Static/self-contained tools**: tebako is the EXECUTOR, not an
+   injector — it spawns and owns every child, so mediating a child's
+   syscalls is the execution contract itself, not hijacking (a
+   side-loader would need to BECOME the executor or the kernel to hold
+   the same position — outside the threat model by definition). As the
+   executor, tebako mediates statics two ways:
+   (a) **Kernel-mediated VFS (Linux, tier 2a)**: `SECCOMP_RET_USER_NOTIF`
+   — the executor installs a seccomp filter at spawn; the kernel
+   forwards the child's file syscalls (openat/statx/…) to the executor,
+   which serves them from the mounted TFS images and enforces the same
+   `host_policy` (spec 08) — full VFS + jails for static binaries, no
+   extraction, child unaware. Cost: per-syscall user/kernel round trips
+   (io-heavy tools notice); platform: Linux only (the API does not
+   exist elsewhere).
+   (b) **Extract-to-exec-cache (everywhere, tier 2b)**:
+   `~/.tebako/exec/<sha256>/…`, 0755, verified at install — the
+   manifest-declared closure, content-addressed, shared. On
+   macOS/Windows (no executor-side syscall mediation API) this is the
+   static path; such binaries see only the host FS (no VFS, no jails —
+   a platform-API statement, not a trust statement).
+   Nuances: a static binary BUILT against the `tebako_fs_*` ABI carries
+   the VFS inside itself (the "libtfs for everyone" embedding story —
+   build-time property, not imposable on an arbitrary binary). Prefer
+   tier 1 (dynamic) for io-heavy tools; tier 2a covers the rest on
+   Linux.
 3. **Interpreted payloads (ruby)**: in-process io-routing patches
    virtualize file IO — the existing mechanism, no exec at all.
 
