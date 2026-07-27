@@ -238,9 +238,9 @@ fn git_blob_form_resolves_through_the_real_git_adapter() {
     // guard writes back on drop).
     {
         let mut config = repo.config_snapshot_mut();
-        config.set_raw_value(&"user.name", "tebako-test").unwrap();
+        config.set_raw_value("user.name", "tebako-test").unwrap();
         config
-            .set_raw_value(&"user.email", "tebako-test@localhost")
+            .set_raw_value("user.email", "tebako-test@localhost")
             .unwrap();
     }
     let blob = repo.write_blob(REGISTRY_YAML.as_bytes()).unwrap();

@@ -144,6 +144,15 @@ jobs:
       - name: Point the golden test at the reference gem
         run: echo "TEBAKO_REFERENCE_GEM=${{ github.workspace }}/reference-gem" >> "$GITHUB_ENV"
 
+      # rnp-rs 0.1.7 declares dylib=bz2: with only a static libbz2 present,
+      # rust-lld on linux resolves the archive partially under fat LTO and
+      # leaves bz_internal_error undefined. Appending a static -lbz2 (after
+      # the dynamic one) resolves the remainder. INTERIM — rnp-rs 0.1.8
+      # declares static=bz2 itself; drop this when we bump.
+      - name: bz2 static link flag (Linux, interim until rnp-rs 0.1.8)
+        if: runner.os == 'Linux'
+        run: echo "RUSTFLAGS=-l static=bz2" >> "$GITHUB_ENV"
+
       # item 22's hard gate: the Rust bootstrap must stay under 3 MB
       # (2 MB -> 3 MB when downloads went in-process; rnp/botan is now
       # feature-gated OUT of the shipped bootstrap — unverified-first,

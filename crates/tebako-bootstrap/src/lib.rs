@@ -1069,13 +1069,9 @@ fn verify_v2_signature(
                 if let Some(pk) = &root.public_key {
                     ring.extend_from_slice(pk);
                 }
-                let outcome = tebako_signer::verify_detached(
-                    &ring,
-                    region,
-                    &v2.signature,
-                    &v2.signer_keyid,
-                )
-                .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+                let outcome =
+                    tebako_signer::verify_detached(&ring, region, &v2.signature, &v2.signer_keyid)
+                        .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
                 if matches!(outcome, tebako_signer::VerifyOutcome::Trusted(_)) {
                     journal(
                         home,
