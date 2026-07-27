@@ -83,6 +83,7 @@ jobs:
             --overlay-triplets tebako-rs/crates/sqfs-sys/vcpkg_triplets
           cp "$GITHUB_WORKSPACE/.crypto-vcpkg/x64-linux-static/lib/libbotan-3.a" \
              "$GITHUB_WORKSPACE/.crypto-vcpkg/x64-linux-static/lib/libbz2.a" \
+             "$GITHUB_WORKSPACE/.crypto-vcpkg/x64-linux-static/lib/libjson-c.a" \
              "$GITHUB_WORKSPACE/.crypto-static/"
           echo "RUSTFLAGS=-L $GITHUB_WORKSPACE/.crypto-static" >> "$GITHUB_ENV"
 
