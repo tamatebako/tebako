@@ -76,7 +76,6 @@ struct Args {
     output: Option<String>,
     runtime_ref: Option<String>,
     package_manifest: Option<String>,
-    full: bool,
     lean: bool,
     launcher_abi: Option<i64>,
     verbose: bool,
