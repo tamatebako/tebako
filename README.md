@@ -268,10 +268,28 @@ Rust-consumable surface for it.
   against the registry) and is synthesized from the registry's tier-3
   fields otherwise (loud note, `/<command>` path convention); shims link
   through tebako-shim's library API (no spawn). `uninstall` removes
-  shims + cache entry and journals the trust anchors. Remaining for 28:
-  `tebako publish`, the brew tap + install.sh channels, and dispatch-time
-  registry caching for the shim's registry-default chain link (which
-  still reads `file://` registries only).
+  shims + cache entry and journals the trust anchors.
+- **The install-UX stack (spec 04 §2, 03 §6, 16 §5; roadmap 33/40/34/41)**:
+  the shim's registry-default chain link resolves **every registry form**
+  at dispatch behind the per-ref cache
+  `~/.tebako/registries/<sha256-of-ref>.yaml` (24 h TTL, `tebako
+  update-registries`, `TEBAKO_OFFLINE` = cache-or-named-error; `tebako
+  add-registry` primes it, `tebako-shim doctor` reports freshness). The
+  dispatch mirror IS the unified `tpkg::PayloadManifest` (40) — per-entry
+  runtime requirements included, which makes **suites** (34) work end to
+  end: `tebako press --suite <suite.yaml>` (per-entry imaging + slots +
+  the type-2 package manifest with per-entry runtime_refs), the
+  bootstrap's argv0 entry selection (exact match, entries[0] fallback),
+  N shims per installed suite each on its own runtime (two commands of
+  one package run different runtime versions simultaneously), and
+  `tebako install` registers every suite shim. **`tebako publish`** (41):
+  accept per-triplet payloads → optional `--sign[=<keyid>]` (per-artifact
+  `<artifact>.asc`) → upload to the referenced GitHub release in-process
+  (no gh CLI; `--upload-mirror` for file:// rehearsal) →
+  `tpkg-registry.yaml` upsert (idempotent re-publish) → `--tap` formula
+  render from the vendored template → built-in clean-cache `tebako
+  install` proof. Remaining: the GitLab/Bitbucket write legs, the brew
+  tap repo + install.sh channels.
 
 ### SHIPPED (milestone 8)
 
