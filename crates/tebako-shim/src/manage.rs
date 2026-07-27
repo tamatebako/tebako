@@ -93,7 +93,7 @@ fn cmd_list(ctx: &Ctx) -> Result<Action, ShimError> {
         if let Some(v) = &newest {
             let record = manifest::payload_record(&ctx.home, name, v);
             if let Ok(m) = manifest::Manifest::load(&record.manifest_mirror) {
-                tools = m.entrypoints.iter().map(|e| e.name.clone()).collect();
+                tools = m.entrypoints().iter().map(|e| e.name.clone()).collect();
             }
         }
         let _ = writeln!(out, "{name}");
@@ -420,10 +420,11 @@ fn check_payload_record(ctx: &Ctx, name: &str, version: &str, problems: &mut Vec
     }
     match manifest::Manifest::load(&record.manifest_mirror) {
         Ok(m) => {
-            if m.name != name || m.version != version {
+            if m.name() != name || m.version() != version {
                 problems.push(format!(
                     "{tag}: manifest mirror declares {} {} — the record is inconsistent",
-                    m.name, m.version
+                    m.name(),
+                    m.version()
                 ));
             }
         }

@@ -206,11 +206,9 @@ fn slot_summary_line(p: &PayloadInspection) -> String {
                 };
                 let runtimes = eps
                     .iter()
-                    .map(|e| {
-                        format!(
-                            "{} {}",
-                            e.runtime_requirement.engine, e.runtime_requirement.constraint
-                        )
+                    .map(|e| match &e.runtime_requirement {
+                        Some(req) => format!("{} {}", req.engine, req.constraint),
+                        None => "native".to_string(),
                     })
                     .collect::<Vec<_>>()
                     .join("; ");

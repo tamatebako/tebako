@@ -33,7 +33,7 @@ fn runtime_entrypoint_composes_the_abi_v1_handoff() {
     let image = seed_tool(
         &home,
         "metanorma",
-        "entrypoints:\n  - name: metanorma\n    path: /app/bin/metanorma\n    args_default: [\"--safe\"]\n    runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n",
+        "  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      args_default: [\"--safe\"]\n      runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n",
         "1.2.3",
     );
     let exe = write_runtime(&home, "4.0.6", "0.16.0", true);
@@ -79,7 +79,7 @@ fn zero_runtime_entrypoint_skips_runtime_resolution() {
     let image = seed_tool(
         &home,
         "inkview",
-        "entrypoints:\n  - name: inkview\n    path: /app/bin/inkview\n",
+        "  entrypoints:\n    - name: inkview\n      path: /app/bin/inkview\n",
         "8.1.0",
     );
     let mut ctx = ctx(&home, tmp.path());
@@ -104,23 +104,28 @@ fn zero_runtime_entrypoint_skips_runtime_resolution() {
 fn declared_dependency_mounts_join_the_mount_set() {
     let tmp = TempDir::new("dep-mounts");
     let home = tmp.path().join("home");
-    let image = seed_tool(
+    let image = write_payload(
         &home,
         "metanorma",
-        "entrypoints:\n  - name: metanorma\n    path: /app/bin/metanorma\n    runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\nrequires:\n  - kind: data\n    name: iso-codes\n    constraint: \">= 2024.1\"\n    mount: /__app__/share/iso-codes\n",
         "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            "  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n",
+            "requires:\n  - kind: data\n    name: iso-codes\n    constraint: \">= 2024.1\"\n    mount: /__app__/share/iso-codes\n",
+        ),
     );
     let dep_old = write_payload(
         &home,
         "iso-codes",
         "2024.1",
-        &app_manifest("iso-codes", "2024.1", ""),
+        &data_manifest("iso-codes", "2024.1"),
     );
     let dep_new = write_payload(
         &home,
         "iso-codes",
         "2025.2",
-        &app_manifest("iso-codes", "2025.2", ""),
+        &data_manifest("iso-codes", "2025.2"),
     );
     let _ = dep_old;
     write_runtime(&home, "4.0.6", "0.16.0", false);
@@ -145,11 +150,16 @@ fn declared_dependency_mounts_join_the_mount_set() {
 fn missing_dependency_is_a_named_error() {
     let tmp = TempDir::new("dep-missing");
     let home = tmp.path().join("home");
-    seed_tool(
+    write_payload(
         &home,
         "metanorma",
-        "entrypoints:\n  - name: metanorma\n    path: /app/bin/metanorma\nrequires:\n  - kind: toolkit\n    name: gtk-layer\n    constraint: \">= 3.24\"\n    mount: /__layers__/gtk\n",
         "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            "  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n",
+            "requires:\n  - kind: toolkit\n    name: gtk-layer\n    constraint: \">= 3.24\"\n    mount: /__layers__/gtk\n",
+        ),
     );
     let mut ctx = ctx(&home, tmp.path());
     pin_env(&mut ctx, "metanorma", "1.2.3");

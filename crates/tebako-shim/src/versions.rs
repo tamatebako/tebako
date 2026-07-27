@@ -12,10 +12,16 @@
 //! discipline. Versions are dot-separated components; numeric components
 //! compare numerically, anything else lexicographically, missing
 //! components are zero.
+//!
+//! Constraint GRAMMAR is not re-implemented here: [`tpkg::Constraint`]
+//! validates at manifest parse (spec 03 — the unified model), and
+//! [`from_validated`] only clause-splits that validated string into the
+//! evaluable form. [`parse_constraint`] (for the few raw-string callers)
+//! is validate-then-split.
 
 use std::cmp::Ordering;
 
-use crate::{fail, ShimError, EX_TEBAKO_MANIFEST};
+use crate::{ShimError, EX_TEBAKO_MANIFEST};
 
 fn components(v: &str) -> Vec<&str> {
     v.split('.').collect()
@@ -70,26 +76,26 @@ pub struct Constraint {
     clauses: Vec<Clause>,
 }
 
-/// Constraint versions must be plain dotted numerics (they are authored
-/// in manifests / registries; anything fancier is a named error, never a
-/// silent fallback).
-fn check_constraint_version(v: &str) -> Result<(), ShimError> {
-    if v.is_empty()
-        || !v
-            .split('.')
-            .all(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()))
-    {
-        return fail(
+/// Validate a raw constraint string and build the evaluable form. The
+/// grammar is tpkg's (the unified manifest model); anything fancier than
+/// the spec 03 grammar is a named error, never a silent fallback.
+pub fn parse_constraint(source: &str) -> Result<Constraint, ShimError> {
+    let validated = tpkg::Constraint::new(source).map_err(|e| {
+        ShimError::new(
             EX_TEBAKO_MANIFEST,
             format!(
-                "malformed version \"{v}\" in a requirement constraint — expected dotted numerics (e.g. \">= 3.3, < 5.0\" or \"~> 3.3.0\")"
+                "malformed requirement constraint \"{source}\" ({e}) — expected e.g. \">= 3.3, < 5.0\" or \"~> 3.3.0\""
             ),
-        );
-    }
-    Ok(())
+        )
+    })?;
+    Ok(from_validated(&validated))
 }
 
-pub fn parse_constraint(source: &str) -> Result<Constraint, ShimError> {
+/// Clause-split an already-validated constraint into the evaluable form.
+/// The grammar was checked when the [`tpkg::Constraint`] was built (at
+/// manifest parse), so this never fails and never re-validates.
+pub fn from_validated(validated: &tpkg::Constraint) -> Constraint {
+    let source = validated.as_str();
     let mut clauses = Vec::new();
     for raw in source.split(',') {
         let part = raw.trim();
@@ -110,20 +116,15 @@ pub fn parse_constraint(source: &str) -> Result<Constraint, ShimError> {
         } else {
             (Op::Eq, part)
         };
-        let version = rest.trim().to_string();
-        check_constraint_version(&version)?;
-        clauses.push(Clause { op, version });
+        clauses.push(Clause {
+            op,
+            version: rest.trim().to_string(),
+        });
     }
-    if clauses.is_empty() {
-        return fail(
-            EX_TEBAKO_MANIFEST,
-            "empty requirement constraint — expected e.g. \">= 3.3, < 5.0\"",
-        );
-    }
-    Ok(Constraint {
+    Constraint {
         source: source.to_string(),
         clauses,
-    })
+    }
 }
 
 /// The pessimistic upper bound: drop the last component, increment the
@@ -229,5 +230,14 @@ mod tests {
         assert!(parse_constraint(">= ").is_err());
         assert!(parse_constraint("~> 3.x").is_err());
         assert!(parse_constraint("").is_err());
+    }
+
+    #[test]
+    fn from_validated_clause_splits_without_revalidating() {
+        let validated = tpkg::Constraint::new(">= 3.3, < 5.0").unwrap();
+        let c = from_validated(&validated);
+        assert_eq!(c.source(), ">= 3.3, < 5.0");
+        assert!(c.matches("4.0.6"));
+        assert!(!c.matches("5.0.0"));
     }
 }

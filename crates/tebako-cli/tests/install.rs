@@ -627,7 +627,7 @@ fn embedded_manifest_drives_the_mirror_when_present() {
     assert_eq!(ep.path, "/app/bin/app");
     let req = ep.runtime_requirement.as_ref().unwrap();
     assert_eq!(req.engine, "ruby");
-    assert_eq!(req.constraint, ">= 3.3, < 5.0");
+    assert_eq!(req.constraint.as_str(), ">= 3.3, < 5.0");
 }
 
 #[test]
@@ -672,7 +672,7 @@ fn plain_bytes_fall_back_to_the_synthesized_mirror_with_a_note() {
     let ep = mirror.entrypoint("app-helper").unwrap();
     assert_eq!(ep.path, "/app-helper");
     assert_eq!(
-        ep.runtime_requirement.as_ref().unwrap().constraint,
+        ep.runtime_requirement.as_ref().unwrap().constraint.as_str(),
         "~> 3.3.0"
     );
 }

@@ -23,7 +23,7 @@ fn seed_registry(root: &std::path::Path, default: &str) -> std::path::PathBuf {
     std::fs::write(
         &reg,
         format!(
-            "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: {default}\n    versions: []\n"
+            "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: {default}\n    versions:\n      - version: {default}\n        platforms: universal\n        release: {{ref: file:///metanorma-{default}.tfs}}\n        entrypoints: [metanorma]\n"
         ),
     )
     .expect("registry");
@@ -206,7 +206,7 @@ fn suite_commands_map_to_their_own_payload() {
     let manifest = app_manifest(
         "metasuite",
         "2.0.0",
-        "entrypoints:\n  - name: alpha\n    path: /app/bin/alpha\n  - name: beta\n    path: /app/bin/beta\n",
+        "  entrypoints:\n    - name: alpha\n      path: /app/bin/alpha\n    - name: beta\n      path: /app/bin/beta\n",
     );
     write_payload(&home, "metasuite", "2.0.0", &manifest);
     let mut ctx = ctx(&home, tmp.path());

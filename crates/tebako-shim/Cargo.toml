@@ -11,9 +11,14 @@ keywords = ["tebako", "shim", "dispatcher", "version-manager"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-# The mirrored payload manifest / config / registry / project pins are all
-# YAML (spec 00 invariant 6). serde_yaml 0.9 is the cached, pure-Rust
-# (unsafe-libyaml) choice — no native build, no async, no clap.
+# The unified payload-manifest model (spec 03 — item 40's manifest
+# unify): the dispatch mirror is a tpkg::PayloadManifest; constraint
+# grammar is tpkg's, the dispatcher only evaluates.
+tpkg = { version = "0.1.0", path = "../tpkg" }
+# The authored config / disabled state / project pins are YAML (spec 00
+# invariant 6). serde_yaml 0.9 is the cached, pure-Rust (unsafe-libyaml)
+# choice — no native build, no async, no clap. (The manifest mirror's
+# YAML is parsed by tpkg itself, on serde_yml.)
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 # In-process HTTP for runtime downloads (spec 00 invariant 1) — the same

@@ -138,6 +138,9 @@ pub struct InstallOutcome {
 struct InstallPlan {
     name: String,
     version: String,
+    /// The payload kind (the registry declares it; the ref form assumes
+    /// app — its mirror falls back to the entrypoint convention).
+    kind: tpkg::PayloadKind,
     reference: Reference,
     /// The registry per-triplet sha256 anchor (the cache's expected
     /// digest; the reference's own pin is verified at the fetch boundary).
@@ -197,6 +200,7 @@ fn plan_from_reference(target: &str) -> Result<InstallPlan, TebakoError> {
     Ok(InstallPlan {
         name,
         version,
+        kind: tpkg::PayloadKind::App,
         reference,
         expected_sha256: None,
         signature: None,
@@ -418,6 +422,7 @@ fn plan_from_registry_entry(
     Ok(InstallPlan {
         name: name.clone(),
         version: entry.version.clone(),
+        kind: payload.kind,
         reference,
         expected_sha256,
         signature: entry.signature.clone(),
@@ -486,7 +491,11 @@ fn finish_install<T: Transport>(
     mirror.save(&record.manifest_mirror).map_err(map_shim)?;
 
     // Register every shim the payload PROVIDES declares (spec 07 §1).
-    let commands: Vec<String> = mirror.entrypoints.iter().map(|e| e.name.clone()).collect();
+    let commands: Vec<String> = mirror
+        .entrypoints()
+        .iter()
+        .map(|e| e.name.clone())
+        .collect();
     let shims = if commands.is_empty() {
         Vec::new()
     } else {
@@ -517,12 +526,13 @@ fn finish_install<T: Transport>(
     })
 }
 
-/// The manifest mirror for the payload record. The embedded manifest is
-/// authoritative; the name form cross-checks it against the registry (the
-/// registry is the trust source — a mismatch means it lied). Without an
-/// embedded manifest the mirror is synthesized from the registry's
-/// tier-3 fields (ref form: the payload name) with the `/<command>`
-/// entry-path convention — LOUD, never silent.
+/// The manifest mirror for the payload record (spec 03 §4 tier 3 — the
+/// unified [`tpkg::PayloadManifest`], item 40). The embedded manifest is
+/// authoritative and mirrored as parsed; the name form cross-checks it
+/// against the registry (the registry is the trust source — a mismatch
+/// means it lied). Without an embedded manifest the mirror is synthesized
+/// from the registry's tier-3 fields (ref form: the payload name) with
+/// the `/<command>` entry-path convention — LOUD, never silent.
 fn build_mirror(
     entry: &tebako_resolve::CacheEntry,
     plan: &InstallPlan,
@@ -551,58 +561,146 @@ fn build_mirror(
             }
             notes.push(msg);
         }
-        let entrypoints = match &embedded.provides {
-            tpkg::Provides::App(app) => app
-                .entrypoints
-                .iter()
-                .map(|e| manifest::Entrypoint {
-                    name: e.name.clone(),
-                    path: e.path.clone(),
-                    args_default: e.args_default.clone(),
-                    runtime_requirement: Some(manifest::RuntimeRequirement {
-                        engine: e.runtime_requirement.engine.clone(),
-                        constraint: e.runtime_requirement.constraint.as_str().to_string(),
-                    }),
-                })
-                .collect(),
-            _ => Vec::new(),
-        };
-        return Ok(Manifest {
-            name: plan.name.clone(),
-            version: plan.version.clone(),
-            entrypoints,
-            requires: Vec::new(),
-        });
+        return Ok(Manifest::from_payload_manifest(embedded));
     }
-    let names = if plan.entrypoints.is_empty() {
-        vec![plan.name.clone()]
-    } else {
-        plan.entrypoints.clone()
-    };
     notes.push(
         "the image carries no embedded manifest (/__tpkg__/manifest.yaml); \
          the mirror is synthesized with the /<command> entry-path convention"
             .to_string(),
     );
-    Ok(Manifest {
-        name: plan.name.clone(),
-        version: plan.version.clone(),
-        entrypoints: names
-            .into_iter()
-            .map(|n| manifest::Entrypoint {
-                path: format!("/{n}"),
-                name: n,
-                args_default: Vec::new(),
-                runtime_requirement: plan.runtime_requirement.as_ref().map(
-                    |(engine, constraint)| manifest::RuntimeRequirement {
-                        engine: engine.clone(),
-                        constraint: constraint.clone(),
-                    },
-                ),
+    Ok(Manifest::from_payload_manifest(synthesize_manifest(
+        entry, plan,
+    )?))
+}
+
+/// The synthesized mirror (no embedded manifest): a minimal valid
+/// [`tpkg::PayloadManifest`] from the plan's tier-3 fields. `created` is
+/// the install time (the model never interprets it); `tree_hash` is a
+/// placeholder — the fixed-point rule (spec 03 §7) keeps real digests one
+/// tier out, and `blob_sha256` carries the payload's verified digest.
+fn synthesize_manifest(
+    entry: &tebako_resolve::CacheEntry,
+    plan: &InstallPlan,
+) -> Result<tpkg::PayloadManifest, TebakoError> {
+    let requirement = match &plan.runtime_requirement {
+        Some((engine, constraint)) => Some(tpkg::RuntimeRequirement {
+            engine: engine.clone(),
+            constraint: tpkg::Constraint::new(constraint).map_err(|e| {
+                err(
+                    EX_TEBAKO_MANIFEST,
+                    format!("the registry's runtime_requirement constraint is invalid: {e}"),
+                )
+            })?,
+        }),
+        None => None,
+    };
+    let provides = match plan.kind {
+        tpkg::PayloadKind::App => {
+            let names = if plan.entrypoints.is_empty() {
+                vec![plan.name.clone()]
+            } else {
+                plan.entrypoints.clone()
+            };
+            tpkg::Provides::App(tpkg::AppProvides {
+                entrypoints: names
+                    .into_iter()
+                    .map(|n| tpkg::Entrypoint {
+                        path: format!("/{n}"),
+                        name: n,
+                        args_default: Vec::new(),
+                        runtime_requirement: requirement.clone(),
+                    })
+                    .collect(),
+                platforms: tpkg::Platforms::Universal,
+                capabilities: tpkg::Capabilities {
+                    exec: true,
+                    read: true,
+                    runtime: None,
+                },
             })
-            .collect(),
+        }
+        // Non-app kinds declare no entrypoints (never a shim); the
+        // consumer declares the mount (MOUNT RULE), the suggested "/" is
+        // the bare-image convention (spec 07 §0).
+        tpkg::PayloadKind::Data => tpkg::Provides::Data(tpkg::DataProvides {
+            mount_semantics: tpkg::MountSemantics {
+                suggested: "/".to_string(),
+            },
+            consumers: Vec::new(),
+            capabilities: tpkg::Capabilities {
+                exec: false,
+                read: true,
+                runtime: None,
+            },
+        }),
+        other => {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "cannot synthesize a manifest mirror for a {other:?} payload without an embedded manifest — press the payload with an embedded /__tpkg__/manifest.yaml"
+                ),
+            ))
+        }
+    };
+    Ok(tpkg::PayloadManifest {
+        identity: tpkg::Identity {
+            schema_version: tpkg::PAYLOAD_SCHEMA_VERSION,
+            kind: plan.kind,
+            name: plan.name.clone(),
+            version: plan.version.clone(),
+            producer: tpkg::Producer {
+                tool: "tebako-cli".to_string(),
+                tool_version: env!("CARGO_PKG_VERSION").to_string(),
+            },
+            created: rfc3339_utc(now_unix()),
+            source: None,
+            sbom: None,
+            digest: tpkg::Digest {
+                tree_hash: format!("sha256:{}", "0".repeat(64)),
+                blob_sha256: entry.sha256.clone(),
+            },
+            signing: tpkg::Signing {
+                state: tpkg::SigningState::Unsigned,
+                keyid: None,
+                mechanism: None,
+            },
+            encryption: tpkg::Encryption {
+                state: tpkg::EncryptionState::None,
+                parts: Vec::new(),
+            },
+            annotations: Default::default(),
+        },
+        provides,
         requires: Vec::new(),
     })
+}
+
+fn now_unix() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Unix seconds → "YYYY-MM-DDTHH:MM:SSZ" (RFC 3339, UTC). The manifest's
+/// `created` is a string the model never interprets; no time crate rides
+/// along for one rendering.
+fn rfc3339_utc(secs: u64) -> String {
+    let days = secs / 86_400;
+    let rem = secs % 86_400;
+    let (hour, min, sec) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    // civil-from-days (Howard Hinnant's algorithm, days-from-civil inverse).
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}T{hour:02}:{min:02}:{sec:02}Z")
 }
 
 /// The dispatcher binary the shims link to: the explicit override >
@@ -807,8 +905,8 @@ pub fn uninstall(home: &Path, name: &str) -> Result<UninstallOutcome, TebakoErro
     for v in &versions {
         let record = manifest::payload_record(home, name, v);
         if let Ok(m) = Manifest::load(&record.manifest_mirror) {
-            for e in m.entrypoints {
-                commands.insert(e.name);
+            for e in m.entrypoints() {
+                commands.insert(e.name.clone());
             }
         }
         if let Ok(text) = std::fs::read_to_string(&record.sha_marker) {

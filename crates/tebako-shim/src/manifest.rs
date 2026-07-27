@@ -1,70 +1,34 @@
-//! The minimal payload-manifest surface the dispatcher resolves against.
+//! The installed payload's manifest mirror (spec 03 §4 tier 3 — the
+//! dispatcher resolves without opening every image):
+//! `~/.tebako/payloads/<name>/<version>.manifest.yaml`.
 //!
-//! TODO(manifest-unify): the normative tpkg manifest model (spec 03,
-//! `schema/tpkg-manifest-v1.schema.json`) is being built concurrently on
-//! `feat/manifest-format`. DO NOT couple to that branch: this module
-//! defines exactly the fields spec 07 dispatch needs —
-//! `{name, version, entrypoints[], requires[]}` — and parses them from
-//! the mirrored manifest copy in the installed payload record
-//! (`~/.tebako/payloads/<name>/<version>.manifest.yaml`). When the shared
-//! model lands, replace this module with it and delete this note.
+//! The mirror IS the unified payload manifest — [`tpkg::PayloadManifest`]
+//! (spec 03, `schema/tpkg-manifest-v1.schema.json`), never a parallel
+//! model: the installer (`tebako install`) writes the image's embedded
+//! manifest verbatim-tier here (or synthesizes one from the registry's
+//! tier-3 fields when the image carries none), and the dispatcher reads
+//! exactly the fields spec 07 dispatch needs — `identity.name` /
+//! `identity.version`, the app PROVIDES `entrypoints[]` (each with its
+//! own `runtime_requirement`; `None` = zero-runtime native entrypoint,
+//! spec 03 §2.2), and the DEPENDS `requires[]` edges. Constraint parsing
+//! is the manifest model's (tpkg's [`tpkg::Constraint`] validates at
+//! parse); the dispatcher only EVALUATES constraints ([`crate::versions`]).
 
-use serde::{Deserialize, Serialize};
+use tpkg::{Entrypoint, PayloadKind, PayloadManifest, Provides, Requirement};
 
 use crate::{fail, ShimError, EX_TEBAKO_MANIFEST};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// The dispatcher-visible half of an installed payload record: the parsed
+/// manifest mirror. Wraps the unified model to keep the shim's named
+/// errors (a missing/corrupt mirror points at `tebako-shim doctor`).
+#[derive(Debug, Clone)]
 pub struct Manifest {
-    pub name: String,
-    pub version: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub entrypoints: Vec<Entrypoint>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub requires: Vec<Require>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Entrypoint {
-    /// The command name; the shim registers and dispatches under it.
-    pub name: String,
-    /// The executable inside the payload image (the `--tebako-entry`).
-    pub path: String,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub args_default: Vec<String>,
-    /// `None` = native / self-contained entrypoint: zero-runtime dispatch
-    /// (spec 03 §2.2 locked); the dispatcher mounts zero runtime payloads.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_requirement: Option<RuntimeRequirement>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RuntimeRequirement {
-    pub engine: String,
-    /// Range form (`>= 3.3, < 5.0`) for pure-language payloads; abi-line
-    /// form (`~> 3.3.0`) for native-extension payloads (spec 05 §5).
-    pub constraint: String,
-}
-
-/// A DEPENDS edge (spec 03 §2.3). Only the resolution fields the
-/// dispatcher needs are modeled; `mount` is consumer-declared (locked
-/// MOUNT RULE). `kind: language` edges are the runtime axis and are
-/// resolved through the entrypoint's `runtime_requirement`, never mounted.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Require {
-    pub kind: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub engine: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub constraint: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mount: Option<String>,
+    inner: PayloadManifest,
 }
 
 impl Manifest {
     pub fn parse(yaml: &str, source: &std::path::Path) -> Result<Manifest, ShimError> {
-        serde_yaml::from_str(yaml).map_err(|e| {
+        let inner = PayloadManifest::from_yaml(yaml).map_err(|e| {
             ShimError::new(
                 EX_TEBAKO_MANIFEST,
                 format!(
@@ -72,11 +36,12 @@ impl Manifest {
                     source.display()
                 ),
             )
-        })
+        })?;
+        Ok(Manifest { inner })
     }
 
     pub fn entrypoint(&self, name: &str) -> Option<&Entrypoint> {
-        self.entrypoints.iter().find(|e| e.name == name)
+        self.entrypoints().iter().find(|e| e.name == name)
     }
 
     pub fn load(path: &std::path::Path) -> Result<Manifest, ShimError> {
@@ -92,10 +57,49 @@ impl Manifest {
         Manifest::parse(&text, path)
     }
 
+    /// Wrap the unified manifest (the installer's half — embedded or
+    /// synthesized).
+    pub fn from_payload_manifest(inner: PayloadManifest) -> Manifest {
+        Manifest { inner }
+    }
+
+    /// The unified manifest itself (the registry/publish surfaces need
+    /// fields beyond the dispatch minimum).
+    pub fn payload_manifest(&self) -> &PayloadManifest {
+        &self.inner
+    }
+
+    pub fn name(&self) -> &str {
+        &self.inner.identity.name
+    }
+
+    pub fn version(&self) -> &str {
+        &self.inner.identity.version
+    }
+
+    pub fn kind(&self) -> PayloadKind {
+        self.inner.identity.kind
+    }
+
+    /// The app PROVIDES entrypoints (empty for non-app kinds — a data
+    /// payload provides no commands).
+    pub fn entrypoints(&self) -> &[Entrypoint] {
+        match &self.inner.provides {
+            Provides::App(app) => &app.entrypoints,
+            _ => &[],
+        }
+    }
+
+    /// The DEPENDS edges (spec 03 §2.3).
+    pub fn requires(&self) -> &[Requirement] {
+        &self.inner.requires
+    }
+
     /// Write the manifest mirror (the installer's half of the payload
-    /// record): tmp + rename, like every cache-managed file.
+    /// record): tmp + rename, like every cache-managed file. The manifest
+    /// is re-validated on the way out (`to_yaml`).
     pub fn save(&self, path: &std::path::Path) -> Result<(), ShimError> {
-        let text = serde_yaml::to_string(self).map_err(|e| {
+        let text = self.inner.to_yaml().map_err(|e| {
             ShimError::new(
                 EX_TEBAKO_MANIFEST,
                 format!("cannot serialize the manifest mirror: {e}"),

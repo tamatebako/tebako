@@ -142,10 +142,12 @@ pub fn derive(m: &PayloadManifest) -> Derived {
     if let Provides::App(app) = &m.provides {
         for ep in &app.entrypoints {
             shims.push(ep.name.clone());
-            let pair = (
-                ep.runtime_requirement.engine.clone(),
-                ep.runtime_requirement.constraint.clone(),
-            );
+            // Native entrypoints (no runtime_requirement, spec 03 §2.2)
+            // declare no runtime compatibility axis.
+            let Some(req) = &ep.runtime_requirement else {
+                continue;
+            };
+            let pair = (req.engine.clone(), req.constraint.clone());
             if !requirements.contains(&pair) {
                 requirements.push(pair);
             }

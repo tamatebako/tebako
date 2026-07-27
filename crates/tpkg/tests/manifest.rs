@@ -151,9 +151,15 @@ fn app_suite_fixture_shape() {
         panic!()
     };
     assert_eq!(e1.name, "metanorma");
-    assert_eq!(e1.runtime_requirement.constraint.as_str(), ">= 3.3, < 5.0");
+    assert_eq!(
+        e1.runtime_requirement.as_ref().unwrap().constraint.as_str(),
+        ">= 3.3, < 5.0"
+    );
     assert_eq!(e2.name, "metanorma-nokogiri");
-    assert_eq!(e2.runtime_requirement.constraint.as_str(), "~> 3.3.0");
+    assert_eq!(
+        e2.runtime_requirement.as_ref().unwrap().constraint.as_str(),
+        "~> 3.3.0"
+    );
     assert_eq!(e1.args_default, vec!["--format", "pretty"]);
     assert_eq!(
         app.platforms,
@@ -185,6 +191,34 @@ fn app_suite_fixture_shape() {
     );
     // the MOUNT RULE: the consumer declares the mount point
     assert_eq!(mount.as_deref(), Some("/__layers__/gtk"));
+}
+
+#[test]
+fn native_entrypoints_omit_runtime_requirement() {
+    // spec 03 §2.2 (locked): an entrypoint whose executable is native (or
+    // self-contained) declares NO runtime_requirement — the dispatcher
+    // mounts zero runtime payloads. The key is omitted on the wire.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: inkview\n  version: \"1.3\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-07-27T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - name: inkview\n      path: /bin/inkview\n\
+        \x20 platforms: [x86_64-linux-gnu]\n  capabilities: {exec: true, read: true}\n";
+    let m = PayloadManifest::from_yaml(text).unwrap();
+    let Provides::App(app) = &m.provides else {
+        panic!("app provides, got {:?}", m.provides);
+    };
+    assert_eq!(app.entrypoints.len(), 1);
+    assert!(app.entrypoints[0].runtime_requirement.is_none());
+    // serialization omits the key (never writes a null)
+    let yaml = m.to_yaml().unwrap();
+    assert!(
+        !yaml.contains("runtime_requirement"),
+        "omitted on the wire: {yaml}"
+    );
+    // …and the schema agrees (MECE cross-check)
+    assert!(schema_validator().is_valid(&yaml_text_to_json(text)));
 }
 
 #[test]

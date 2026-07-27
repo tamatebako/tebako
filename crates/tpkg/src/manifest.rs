@@ -673,7 +673,11 @@ pub struct Entrypoint {
     pub path: String,
     #[serde(default)]
     pub args_default: Vec<String>,
-    pub runtime_requirement: RuntimeRequirement,
+    /// `None` = a native / self-contained entrypoint: zero-runtime
+    /// dispatch (spec 03 §2.2 locked — the dispatcher mounts zero runtime
+    /// payloads). Omit the key entirely on the wire for those.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_requirement: Option<RuntimeRequirement>,
 }
 
 /// PROVIDES of kind `app`.
@@ -785,10 +789,12 @@ impl AppProvides {
                 &ep.path,
                 "provides.entrypoints[].path must be absolute (inside the image)",
             )?;
-            check_non_empty(
-                &ep.runtime_requirement.engine,
-                "provides.entrypoints[].runtime_requirement.engine must not be empty",
-            )?;
+            if let Some(req) = &ep.runtime_requirement {
+                check_non_empty(
+                    &req.engine,
+                    "provides.entrypoints[].runtime_requirement.engine must not be empty",
+                )?;
+            }
         }
         self.platforms.validate()?;
         let caps = &self.capabilities;
@@ -1289,10 +1295,10 @@ mod tests {
                 name: "x".into(),
                 path: "/x".into(),
                 args_default: vec![],
-                runtime_requirement: RuntimeRequirement {
+                runtime_requirement: Some(RuntimeRequirement {
                     engine: "ruby".into(),
                     constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
-                },
+                }),
             }],
             platforms: Platforms::Universal,
             capabilities: c,
