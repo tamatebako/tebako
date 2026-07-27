@@ -119,15 +119,22 @@ fn info_json_dwarfs() {
     let img = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/contract/tests/fixtures/simple.dwarfs");
 
-    // --json on a dwarfs image: backend metadata JSON (item 24).
-    let (rc, out, _) = run(&["info", "--json", img.to_str().unwrap()], &w.0);
+    // --backend-json on a dwarfs image: backend metadata JSON (item 24;
+    // this was `--json` before spec 15 made `--json` the info document).
+    let (rc, out, _) = run(&["info", "--backend-json", img.to_str().unwrap()], &w.0);
     assert_eq!(rc, 0, "{out}");
     assert!(out.contains("\"version\""), "{out}");
     assert!(out.contains("\"block_size\""), "{out}");
 
-    // --json on a zip: ENOTSUP path.
+    // --json is now the spec-15 info document (info_schema 1).
+    let (rc, out, _) = run(&["info", "--json", img.to_str().unwrap()], &w.0);
+    assert_eq!(rc, 0, "{out}");
+    assert!(out.contains("\"info_schema\": 1"), "{out}");
+    assert!(out.contains("\"kind\": \"image\""), "{out}");
+
+    // --backend-json on a zip: ENOTSUP path.
     let z = fixture_zip(&w);
-    let (rc, _, err) = run(&["info", "--json", z.to_str().unwrap()], &w.0);
+    let (rc, _, err) = run(&["info", "--backend-json", z.to_str().unwrap()], &w.0);
     assert_eq!(rc, 1);
     assert!(err.contains("not available"), "{err}");
 }

@@ -2,7 +2,8 @@
 //! sqlite3 : libsqlite3).
 //!
 //! ```text
-//! tfs info [-v] [--json] <image>
+//! tfs info [-v] [--manifest] [--provides] [--requires] [--platforms]
+//!          [--json] [--backend-json] [--verify] [--require-signed] <image>
 //! tfs ls [-r|--recursive] [-l|--long] [-v] [-q|--quiet] <image> [path]
 //! tfs tree [-v] <image> [path]
 //! tfs cat [-v] <image> <file>
@@ -12,15 +13,17 @@
 //! tfs mkimage --format dwarfs <srcdir> -o <img> [-v]
 //! ```
 //!
-//! Exit codes: 0 success, 1 any error. Package (tpkg trailer) operations
-//! live in tebako-pkg, not here.
+//! The flag-less `tfs info` output is the C++ parity summary (unchanged);
+//! every richer view is an explicit spec-15 flag. Exit codes: 0 success,
+//! 1 any error, and the spec-15 §5 codes (65/70/71/72) under --verify.
+//! Package (tpkg trailer) operations live in tebako-pkg, not here.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use tfs_cli::{
-    cmd_cat, cmd_extract, cmd_find, cmd_info, cmd_info_json, cmd_ls, cmd_mkimage, cmd_stat,
-    cmd_tree, ExtractOptions, ListOptions,
+    cmd_cat, cmd_extract, cmd_find, cmd_info, cmd_info_json, cmd_info_rich, cmd_ls, cmd_mkimage,
+    cmd_stat, cmd_tree, ExtractOptions, InfoOptions, ListOptions,
 };
 
 fn main() -> ExitCode {
@@ -68,6 +71,13 @@ struct Args {
     dest: Option<String>,
     output: Option<String>,
     format: Option<String>,
+    manifest: bool,
+    provides: bool,
+    requires: bool,
+    platforms: bool,
+    backend_json: bool,
+    verify: bool,
+    require_signed: bool,
 }
 
 impl Args {
@@ -134,6 +144,13 @@ impl Args {
                 "-v" | "--verbose" => a.verbose = true,
                 "-q" | "--quiet" => a.quiet = true,
                 "--json" => a.json = true,
+                "--manifest" => a.manifest = true,
+                "--provides" => a.provides = true,
+                "--requires" => a.requires = true,
+                "--platforms" => a.platforms = true,
+                "--backend-json" => a.backend_json = true,
+                "--verify" => a.verify = true,
+                "--require-signed" => a.require_signed = true,
                 "-d" | "--dest" => a.dest = Some(take_value(&mut i)?),
                 "-o" | "--output" => a.output = Some(take_value(&mut i)?),
                 "--format" => a.format = Some(take_value(&mut i)?),
@@ -167,19 +184,57 @@ fn cmd_info_main(rest: &[String]) -> ExitCode {
         Ok(a) => a,
         Err(e) => return fail(&format!("Error: {e}")),
     };
-    if let Err(e) = a.positional_count(1, 1, "tfs info [--json] <image>") {
+    if let Err(e) = a.positional_count(
+        1,
+        1,
+        "tfs info [--manifest|--provides|--requires|--platforms|--json|--backend-json|--verify] <image>",
+    ) {
         return fail(&format!("Error: {e}"));
     }
     let image = Path::new(&a.positional[0]);
-    let result = if a.json {
-        cmd_info_json(image)
-    } else {
-        cmd_info(image)
+    let opts = InfoOptions {
+        manifest: a.manifest,
+        provides: a.provides,
+        requires: a.requires,
+        platforms: a.platforms,
+        json: a.json,
+        backend_json: a.backend_json,
+        verify: a.verify,
+        require_signed: a.require_signed,
     };
-    match result {
-        Ok(text) => {
+    if opts.require_signed && !opts.verify {
+        return fail("Error: --require-signed only applies with --verify");
+    }
+    // --backend-json alone is the legacy backend metadata dump (pre-spec-15
+    // `--json`); every richer view goes through the spec-15 surface.
+    if opts.backend_json && !opts.any_rich() {
+        return match cmd_info_json(image) {
+            Ok(text) => {
+                print!("{text}");
+                ExitCode::SUCCESS
+            }
+            Err((msg, rc)) => {
+                eprintln!("{msg}");
+                ExitCode::from(rc as u8)
+            }
+        };
+    }
+    if !opts.any_rich() {
+        return match cmd_info(image) {
+            Ok(text) => {
+                print!("{text}");
+                ExitCode::SUCCESS
+            }
+            Err((msg, rc)) => {
+                eprintln!("{msg}");
+                ExitCode::from(rc as u8)
+            }
+        };
+    }
+    match cmd_info_rich(image, &opts) {
+        Ok((text, code)) => {
             print!("{text}");
-            ExitCode::SUCCESS
+            ExitCode::from(code as u8)
         }
         Err((msg, rc)) => {
             eprintln!("{msg}");
@@ -349,7 +404,9 @@ fn print_help() {
     println!("tfs - generic VFS image tool (tebako)\n");
     println!("Usage: tfs <command> [options]\n");
     println!("Commands:");
-    println!("  info     Show image information (--json for backend metadata JSON)");
+    println!("  info     Show image information (--json for the info document;");
+    println!("           --manifest/--provides/--requires/--platforms for sections,");
+    println!("           --backend-json for backend metadata, --verify to validate)");
     println!("  ls       List directory contents (-r recursive, -l long)");
     println!("  tree     Show directory tree");
     println!("  cat      Display file contents");

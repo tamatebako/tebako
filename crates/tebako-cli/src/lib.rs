@@ -533,6 +533,82 @@ pub fn cache_list() {
     );
 }
 
+/// `tebako cache list --json` (spec 15 §4, additive): the cached runtimes
+/// AND payloads with their trust anchors, origins and sizes, as one
+/// `"info_schema": 1` document. Read-only; the human form is unchanged.
+pub fn cache_list_json() {
+    use tebako_pkg::{json_to_string, JsonValue as J};
+
+    let s = |v: &str| J::String(v.to_string());
+    let n = |v: u64| J::Number(v.to_string());
+
+    let manager = Resolver::new(Flavor::Runtime);
+    let mut total = 0u64;
+
+    let mut runtimes = Vec::new();
+    for entry in manager.entries() {
+        total += entry.size_bytes;
+        let marker = |name: &str| {
+            fs::read_to_string(entry.path.join(name))
+                .ok()
+                .map(|t| t.trim().to_string())
+        };
+        // The trust anchor is the digest; tolerate the sha256sum form
+        // ("<digest>  <file>") by taking the first token.
+        let anchor = marker("sha256").and_then(|t| t.split_whitespace().next().map(str::to_string));
+        let mut obj = vec![
+            ("name".to_string(), s(&entry.name)),
+            ("path".to_string(), s(&entry.path.display().to_string())),
+            ("size_bytes".to_string(), n(entry.size_bytes)),
+            (
+                "installed_at_unix".to_string(),
+                n(entry
+                    .installed_at
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs()),
+            ),
+        ];
+        if let Some(sha) = anchor {
+            obj.push(("trust_anchor_sha256".to_string(), s(&sha)));
+        }
+        if let Some(origin) = marker("origin") {
+            obj.push(("origin".to_string(), s(&origin)));
+        }
+        runtimes.push(J::Object(obj));
+    }
+
+    let mut payloads = Vec::new();
+    let cache = tebako_resolve::PayloadCache::with_root(&manager.cache_root);
+    for entry in cache.list() {
+        let size = fs::metadata(&entry.path).map(|m| m.len()).unwrap_or(0);
+        total += size;
+        let mut obj = vec![
+            ("name".to_string(), s(&entry.name)),
+            ("version".to_string(), s(&entry.version)),
+            ("path".to_string(), s(&entry.path.display().to_string())),
+            ("size_bytes".to_string(), n(size)),
+            ("trust_anchor_sha256".to_string(), s(&entry.sha256)),
+        ];
+        if let Some(origin) = &entry.origin {
+            obj.push(("origin".to_string(), s(origin)));
+        }
+        payloads.push(J::Object(obj));
+    }
+
+    let doc = J::Object(vec![
+        ("info_schema".to_string(), n(1)),
+        (
+            "cache_root".to_string(),
+            s(&manager.cache_root.display().to_string()),
+        ),
+        ("runtimes".to_string(), J::Array(runtimes)),
+        ("payloads".to_string(), J::Array(payloads)),
+        ("total_bytes".to_string(), n(total)),
+    ]);
+    println!("{}", json_to_string(&doc));
+}
+
 pub fn cache_prune(all: bool, older_than: Option<&str>) -> Result<(), TebakoError> {
     let manager = Resolver::new(Flavor::Runtime);
     let removed = if all {

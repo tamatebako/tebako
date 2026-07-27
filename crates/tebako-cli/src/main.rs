@@ -6,14 +6,14 @@ use std::process::ExitCode;
 use tebako_cli::error::TebakoError;
 use tebako_cli::options::{resolve_prefix, PressMode, PressOptions};
 use tebako_cli::runner::verbose_mode;
-use tebako_cli::{cache_list, cache_prune, press, VERSION_BANNER};
+use tebako_cli::{cache_list, cache_list_json, cache_prune, press, VERSION_BANNER};
 
 const USAGE: &str = "Usage:
   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>] [-c <cwd>]
                [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>]
-  tebako cache list
+  tebako cache list [--json]
   tebako cache prune [--all] [--older-than Nd]";
 
 fn main() -> ExitCode {
@@ -56,7 +56,17 @@ fn run(args: &[String]) -> Result<(), CliExit> {
 
     let subcommand = args[0].as_str();
     let rest = &args[1..];
-    println!("{VERSION_BANNER}");
+    // `cache list --json` is a machine contract: the banner moves to
+    // stderr so stdout is the document alone. Every other call keeps the
+    // banner on stdout (unchanged).
+    let json_cache_list = subcommand == "cache"
+        && rest.first().map(|a| a.as_str()) == Some("list")
+        && rest.iter().any(|a| a == "--json");
+    if json_cache_list {
+        eprintln!("{VERSION_BANNER}");
+    } else {
+        println!("{VERSION_BANNER}");
+    }
     match subcommand {
         "press" => {
             let opts = parse_press(rest)?;
@@ -79,7 +89,18 @@ fn run_cache(args: &[String]) -> Result<(), CliExit> {
     };
     match action.as_str() {
         "list" => {
-            cache_list();
+            let mut json = false;
+            for arg in &args[1..] {
+                match arg.as_str() {
+                    "--json" => json = true,
+                    other => return Err(CliExit::Usage(format!("unknown cache option '{other}'"))),
+                }
+            }
+            if json {
+                cache_list_json();
+            } else {
+                cache_list();
+            }
             Ok(())
         }
         "prune" => {

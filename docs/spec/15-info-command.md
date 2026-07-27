@@ -1,7 +1,9 @@
 # Spec 15 — The info surface (payload and package introspection)
 
 Normative specification of how users and tooling inspect payloads (`.tfs`
-images) and packed binaries (tpkg executables). Status: PLANNED.
+images) and packed binaries (tpkg executables). Status: SHIPPED
+(`crates/tebako-info` + the tfs-cli/tebako-pkg/tebako-cli wiring; the
+digest-agreement note in §5).
 
 ## 1. Principle
 
@@ -122,6 +124,18 @@ Rules:
 Checks: tpkg structural validation (spec 02 §6) → per-slot sha256 (v2) →
 signature (v2) → manifest schema validation per slot → digest agreement
 (manifest blob_sha256 vs image bytes when declared).
+
+> **Digest-agreement note (implementation finding).** The agreement check
+> compares the declared `blob_sha256` against the actual image bytes. A
+> manifest embedded in the image it describes cannot name that image's
+> digest (the field would have to hash its own bytes — a fixed point no
+> producer can reach), so for self-embedded manifests the check in
+> practice detects a manifest naming a DIFFERENT blob (tamper or staleness
+> evidence), and a clean `--verify` is reached by plain images and by
+> packages whose slots carry no manifests. A producer-side rule (digest
+> computed over the image with the manifest excluded, or the field made
+> advisory) is a spec-03 follow-up; the info surface implements the check
+> as written and reports it precisely.
 
 ## 6. Machine contract (JSON)
 

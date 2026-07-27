@@ -472,8 +472,10 @@ fn count_recursive(path: &str, files: &mut i64, dirs: &mut i64, total: &mut i64)
     }
 }
 
-/// `tfs info --json` (beyond-C++ flag): image-level metadata JSON from the
-/// backend (dwarfs via item 24's image_info_json; ENOTSUP elsewhere).
+/// `tfs info --backend-json` (beyond-C++ flag): image-level metadata JSON
+/// from the backend (dwarfs via item 24's image_info_json; ENOTSUP
+/// elsewhere). This was `--json` before spec 15 made `--json` the full
+/// info document; the behavior itself is unchanged.
 pub fn cmd_info_json(image: &Path) -> Result<String, (String, i32)> {
     match tfs::image_info_json(&image.to_string_lossy()) {
         Ok(json) => Ok(format!("{json}\n")),
@@ -484,6 +486,149 @@ pub fn cmd_info_json(image: &Path) -> Result<String, (String, i32)> {
             ),
             1,
         )),
+    }
+}
+
+// ---------------------------------------------------------------------
+// info: the spec-15 surface (additive flags, engine in tebako-info)
+// ---------------------------------------------------------------------
+
+/// The spec-15 `tfs info` flags (all additive; with none of them the
+/// output is the legacy parity summary).
+#[derive(Debug, Clone, Default)]
+pub struct InfoOptions {
+    /// `--manifest`: append the parsed manifest re-serialized as YAML.
+    pub manifest: bool,
+    /// `--provides`: the kind-specialized PROVIDES section.
+    pub provides: bool,
+    /// `--requires`: the DEPENDS edges.
+    pub requires: bool,
+    /// `--platforms`: expand the platform axis.
+    pub platforms: bool,
+    /// `--json`: everything as one JSON document (`"info_schema": 1`).
+    pub json: bool,
+    /// `--backend-json`: the backend metadata JSON (standalone, or folded
+    /// into the `--json` document).
+    pub backend_json: bool,
+    /// `--verify`: spec 03 validation with strict exit codes.
+    pub verify: bool,
+    /// `--require-signed`: unsigned fails the signature check (71).
+    pub require_signed: bool,
+}
+
+impl InfoOptions {
+    /// True when any section flag is set.
+    pub fn any_section(&self) -> bool {
+        self.manifest || self.provides || self.requires || self.platforms
+    }
+
+    /// True when the rich (non-legacy) path handles the call.
+    pub fn any_rich(&self) -> bool {
+        self.any_section() || self.json || self.verify
+    }
+}
+
+/// `tfs info <dir>` on a cache entry (spec 15 §4): a cache entry IS
+/// artifacts + markers; the info surface reads the single `.tfs` payload
+/// inside. Named errors when the entry holds none or several.
+fn resolve_cache_entry(dir: &Path) -> Result<std::path::PathBuf, (String, i32)> {
+    let mut images = Vec::new();
+    let children = std::fs::read_dir(dir).map_err(|e| {
+        (
+            format!("Error: cannot read directory {}: {e}", dir.display()),
+            1,
+        )
+    })?;
+    for child in children.flatten() {
+        let path = child.path();
+        if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("tfs") {
+            images.push(path);
+        }
+    }
+    match images.len() {
+        1 => Ok(images.remove(0)),
+        0 => Err((
+            format!(
+                "Error: {}: no .tfs payload in directory (not a cache entry)",
+                dir.display()
+            ),
+            1,
+        )),
+        _ => Err((
+            format!(
+                "Error: {}: several .tfs payloads in directory (name one)",
+                dir.display()
+            ),
+            1,
+        )),
+    }
+}
+
+/// The rich `tfs info` (spec 15 §2). Returns the output and the process
+/// exit code (0 normally; the spec-15 §5 codes under `--verify`).
+pub fn cmd_info_rich(image: &Path, opts: &InfoOptions) -> Result<(String, i32), (String, i32)> {
+    let resolved;
+    let image = if image.is_dir() {
+        resolved = resolve_cache_entry(image)?;
+        resolved.as_path()
+    } else {
+        image
+    };
+
+    if opts.verify {
+        let checks = tebako_info::verify::verify_image(image, opts.require_signed)
+            .map_err(|e| (format!("Error: {e}"), 1))?;
+        let code = tebako_info::verify::exit_code_of(&checks);
+        if opts.json {
+            let p = tebako_info::payload::inspect_image(image)
+                .map_err(|e| (format!("Error: {e}"), 1))?;
+            let mut doc = tebako_info::payload::payload_json(&p, opts.backend_json);
+            if let tebako_json::Value::Object(members) = &mut doc {
+                members.push((
+                    "checks".to_string(),
+                    tebako_info::verify::checks_json(&checks),
+                ));
+            }
+            return Ok((format!("{}\n", tebako_json::to_string(&doc)), code));
+        }
+        let mut out = String::new();
+        if opts.any_section() {
+            let p = tebako_info::payload::inspect_image(image)
+                .map_err(|e| (format!("Error: {e}"), 1))?;
+            out.push_str(&tebako_info::render::manifest_view(&p, sections_of(opts)));
+        }
+        out.push_str(&tebako_info::verify::render_report(
+            &image.display().to_string(),
+            &checks,
+        ));
+        return Ok((out, code));
+    }
+
+    let p = tebako_info::payload::inspect_image(image).map_err(|e| (format!("Error: {e}"), 1))?;
+    if let Some(err) = &p.mount_error {
+        return Err((format!("Error: {}: {err}", image.display()), 1));
+    }
+    if opts.json {
+        let doc = tebako_info::payload::payload_json(&p, opts.backend_json);
+        return Ok((format!("{}\n", tebako_json::to_string(&doc)), 0));
+    }
+    let mut out = tebako_info::render::manifest_view(&p, sections_of(opts));
+    if opts.backend_json {
+        if let Some(f) = &p.format {
+            if let Some(json) = &f.backend_json {
+                out.push_str(&format!("  backend: {json}\n"));
+            }
+        }
+    }
+    Ok((out, 0))
+}
+
+fn sections_of(opts: &InfoOptions) -> tebako_info::render::Sections {
+    tebako_info::render::Sections {
+        manifest: opts.manifest,
+        provides: opts.provides,
+        requires: opts.requires,
+        platforms: opts.platforms,
     }
 }
 
