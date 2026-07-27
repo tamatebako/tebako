@@ -130,6 +130,22 @@ fn resolve_dirfd(dirfd: c_int) -> Option<PathBuf> {
     ))
 }
 
+/// The *at-family dirfd base (roadmap 39): `None` for absolute paths,
+/// AT_FDCWD, memfs dirfds, and unknown negative dirfds — the strict
+/// resolver handles each of those. CRITICAL: the fd branch gates on
+/// `dirfd >= 0` — AT_FDCWD (-100) carries the TEBAKO_FD_FLAG bit, so a
+/// bare bit test misroutes it into the memfs fd table (the bug class that
+/// broke runtime builds; pinned in `route::tests::at_fdcwd_is_not_a_memfs_fd`).
+fn at_base(dirfd: c_int, p: &str) -> Option<PathBuf> {
+    if p.starts_with('/') || dirfd == libc::AT_FDCWD {
+        return None;
+    }
+    if dirfd >= 0 && !route::is_memfs_fd(dirfd) {
+        return resolve_dirfd(dirfd);
+    }
+    None
+}
+
 // ---------------------------------------------------------------------
 // ABI translations (stat + dirent)
 // ---------------------------------------------------------------------
@@ -264,13 +280,11 @@ pub unsafe extern "C" fn openat(
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_openat()(dirfd, path, flags, mode) };
     };
-    let base = if p.starts_with('/') || dirfd == libc::AT_FDCWD || route::is_memfs_fd(dirfd) {
-        None
-    } else {
-        resolve_dirfd(dirfd)
-    };
-    let routed = match route::resolve_at(dirfd, p, base) {
-        Ok(rp) => rp,
+    let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
+        Ok(route::AtRoute::Routed(rp)) => rp,
+        Ok(route::AtRoute::Real) => {
+            return unsafe { plat::real_openat()(dirfd, path, flags, mode) }
+        }
         Err(e) => {
             set_errno(e);
             return -1;
@@ -289,18 +303,19 @@ pub unsafe extern "C" fn openat(
 /// Shared body of stat/lstat.
 ///
 /// # Safety
-/// `orig`/`st` follow the intercepted-call contract.
+/// `orig`/`st` follow the intercepted-call contract; `real` is the
+/// platform's original implementation.
 unsafe fn stat_via(
     p: Option<&str>,
     orig: *const c_char,
     st: *mut libc::stat,
-    real: unsafe extern "C" fn(*const c_char, *mut libc::stat) -> c_int,
+    real: impl FnOnce(*const c_char, *mut libc::stat) -> c_int,
 ) -> c_int {
     let Some(p) = p else {
-        return unsafe { real(orig, st) };
+        return real(orig, st);
     };
     if st.is_null() {
-        return unsafe { real(orig, st) };
+        return real(orig, st);
     }
     match engine_call(|| route::vfs_stat(p)) {
         // SAFETY: st is a valid struct stat pointer per the call contract.
@@ -318,20 +333,20 @@ unsafe fn stat_via(
             set_errno(e);
             -1
         }
-        Some(PathRoute::Host) | None => unsafe { real(orig, st) },
+        Some(PathRoute::Host) | None => real(orig, st),
     }
 }
 
 /// Interposed `stat`.
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn stat(path: *const c_char, st: *mut libc::stat) -> c_int {
-    unsafe { stat_via(c_path(path), path, st, plat::real_stat()) }
+    unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_stat()(o, s)) }
 }
 
 /// Interposed `lstat` (memfs has no symlink duality: lstat == stat).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn lstat(path: *const c_char, st: *mut libc::stat) -> c_int {
-    unsafe { stat_via(c_path(path), path, st, plat::real_lstat()) }
+    unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_lstat()(o, s)) }
 }
 
 /// Interposed `fstat` (fd-flag dispatch, no path).
@@ -396,13 +411,11 @@ pub unsafe extern "C" fn faccessat(
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_faccessat()(dirfd, path, mode, flags) };
     };
-    let base = if p.starts_with('/') || dirfd == libc::AT_FDCWD || route::is_memfs_fd(dirfd) {
-        None
-    } else {
-        resolve_dirfd(dirfd)
-    };
-    let routed = match route::resolve_at(dirfd, p, base) {
-        Ok(rp) => rp,
+    let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
+        Ok(route::AtRoute::Routed(rp)) => rp,
+        Ok(route::AtRoute::Real) => {
+            return unsafe { plat::real_faccessat()(dirfd, path, mode, flags) }
+        }
         Err(e) => {
             set_errno(e);
             return -1;
@@ -443,6 +456,22 @@ pub unsafe extern "C" fn readdir(dirp: *mut libc::DIR) -> *mut libc::dirent {
         return readdir_memfs(dirp as usize);
     }
     unsafe { plat::real_readdir()(dirp) }
+}
+
+/// Interposed `dirfd` (roadmap 39): a memfs stream has NO host fd behind
+/// it — the POSIX-honest answer is -1/ENOTSUP ("the implementation does
+/// not support the association of a file descriptor with a directory").
+/// Consumers that probe the fd degrade gracefully (Rust's read_dir calls
+/// dirfd in its drop path before closedir); the stream itself keeps
+/// working through the interposed readdir family. Host streams pass
+/// through.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn dirfd(dirp: *mut libc::DIR) -> c_int {
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        set_errno(libc::ENOTSUP);
+        return -1;
+    }
+    unsafe { plat::real_dirfd()(dirp) }
 }
 
 /// Linux: `readdir64` (glibc's LFS alias; same layout on 64-bit).
@@ -565,6 +594,80 @@ pub unsafe extern "C" fn lseek(fd: c_int, offset: libc::off_t, whence: c_int) ->
     unsafe { plat::real_lseek()(fd, offset, whence) }
 }
 
+// ---------------------------------------------------------------------
+// The LFS *64 family (linux) — Rust std and _FILE_OFFSET_BITS=64 builds
+// call the 64 variants directly (open64/stat64/fstat64/…), which are
+// DISTINCT exported glibc symbols from the plain names. Same layouts,
+// same routing — each delegates to its plain-name body.
+// ---------------------------------------------------------------------
+
+/// Linux: `open64` (the LFS alias of `open`).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn open64(path: *const c_char, flags: c_int, mode: c_int) -> c_int {
+    unsafe { open(path, flags, mode) }
+}
+
+/// Linux: `stat64` (the LFS alias of `stat`).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn stat64(path: *const c_char, st: *mut libc::stat) -> c_int {
+    unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_stat64()(o, s)) }
+}
+
+/// Linux: `lstat64` (the LFS alias of `lstat`).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn lstat64(path: *const c_char, st: *mut libc::stat) -> c_int {
+    unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_lstat64()(o, s)) }
+}
+
+/// Linux: `fstat64` (the LFS alias of `fstat`).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn fstat64(fd: c_int, st: *mut libc::stat) -> c_int {
+    if route::is_memfs_fd(fd) {
+        if st.is_null() {
+            set_errno(libc::EFAULT);
+            return -1;
+        }
+        return match engine_call(|| route::vfs_fstat(fd)) {
+            // SAFETY: st is valid per the call contract.
+            Some(Ok(raw)) => match unsafe { fill_stat(&raw) } {
+                Ok(s) => {
+                    unsafe { *st = s };
+                    0
+                }
+                Err(e) => {
+                    set_errno(e);
+                    -1
+                }
+            },
+            Some(Err(e)) => {
+                set_errno(e);
+                -1
+            }
+            None => {
+                set_errno(libc::EIO);
+                -1
+            }
+        };
+    }
+    unsafe { plat::real_fstat64()(fd, st) }
+}
+
+/// Linux: `pread64` (the LFS alias of `pread`).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn pread64(
+    fd: c_int,
+    buf: *mut c_void,
+    nbyte: usize,
+    offset: libc::off_t,
+) -> libc::ssize_t {
+    unsafe { pread(fd, buf, nbyte, offset) }
+}
+
 /// Interposed `close` (fd-flag dispatch; a memfs fd never reaches the
 /// real close).
 #[cfg_attr(target_os = "linux", no_mangle)]
@@ -651,6 +754,402 @@ pub unsafe extern "C" fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void
             std::ptr::null_mut()
         }
         Some(PathRoute::Host) | None => unsafe { plat::real_dlopen()(path, mode) },
+    }
+}
+
+/// Shared body of the *at stat family (fstatat / fstatat64 / __fxstatat):
+/// resolve the (dirfd, path) pair through the one-gate strict resolver,
+/// serve memfs from the engine, pass host through with the ORIGINAL
+/// arguments (`flags` only refines the real call — the VFS answer is the
+/// same; no symlink duality).
+///
+/// # Safety
+/// All pointers follow the intercepted-call contract; `real` is the
+/// pass-through invoking the platform's original with its full arguments.
+unsafe fn fstatat_via(
+    dirfd: c_int,
+    path: *const c_char,
+    st: *mut libc::stat,
+    real: impl FnOnce() -> c_int,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return real();
+    };
+    if st.is_null() {
+        return real();
+    }
+    let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
+        Ok(route::AtRoute::Routed(rp)) => rp,
+        Ok(route::AtRoute::Real) => return real(),
+        Err(e) => {
+            set_errno(e);
+            return -1;
+        }
+    };
+    match engine_call(|| route::vfs_stat(&routed)) {
+        // SAFETY: st is a valid struct stat pointer per the call contract.
+        Some(PathRoute::Vfs(raw)) => match unsafe { fill_stat(&raw) } {
+            Ok(s) => {
+                unsafe { *st = s };
+                0
+            }
+            Err(e) => {
+                set_errno(e);
+                -1
+            }
+        },
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(PathRoute::Host) | None => real(),
+    }
+}
+
+/// Interposed `fstatat` (roadmap 39 — the *at family).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn fstatat(
+    dirfd: c_int,
+    path: *const c_char,
+    st: *mut libc::stat,
+    flags: c_int,
+) -> c_int {
+    unsafe {
+        fstatat_via(dirfd, path, st, || {
+            plat::real_fstatat()(dirfd, path, st, flags)
+        })
+    }
+}
+
+/// Linux: `fstatat64` (the LFS alias; same layout on 64-bit).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn fstatat64(
+    dirfd: c_int,
+    path: *const c_char,
+    st: *mut libc::stat,
+    flags: c_int,
+) -> c_int {
+    unsafe {
+        fstatat_via(dirfd, path, st, || {
+            plat::real_fstatat64()(dirfd, path, st, flags)
+        })
+    }
+}
+
+/// Linux: `statx` (roadmap 39). The engine's RawStat fills the statx
+/// answer; stx_mask reports exactly the fields written.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn statx(
+    dirfd: c_int,
+    path: *const c_char,
+    flags: c_int,
+    mask: libc::c_uint,
+    stx: *mut libc::statx,
+) -> c_int {
+    use tfs::backend::EntryType;
+
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_statx()(dirfd, path, flags, mask, stx) };
+    };
+    if stx.is_null() {
+        return unsafe { plat::real_statx()(dirfd, path, flags, mask, stx) };
+    }
+    let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
+        Ok(route::AtRoute::Routed(rp)) => rp,
+        Ok(route::AtRoute::Real) => {
+            return unsafe { plat::real_statx()(dirfd, path, flags, mask, stx) }
+        }
+        Err(e) => {
+            set_errno(e);
+            return -1;
+        }
+    };
+    match engine_call(|| route::vfs_stat(&routed)) {
+        Some(PathRoute::Vfs(raw)) => {
+            let type_bits: u32 = match raw.entry_type {
+                EntryType::File => libc::S_IFREG as u32,
+                EntryType::Directory => libc::S_IFDIR as u32,
+                _ => {
+                    set_errno(libc::EINVAL);
+                    return -1;
+                }
+            };
+            // SAFETY: a zeroed struct statx is valid; stx is valid per the
+            // call contract. Field-by-field assignment: statx_timestamp's
+            // padding is private (libc-version dependent).
+            let mut out: libc::statx = unsafe { std::mem::zeroed() };
+            out.stx_mode = (type_bits | raw.perms) as u16;
+            out.stx_size = raw.size as u64;
+            out.stx_nlink = 1;
+            out.stx_mtime.tv_sec = raw.mtime;
+            out.stx_mtime.tv_nsec = 0;
+            out.stx_mask = libc::STATX_TYPE
+                | libc::STATX_MODE
+                | libc::STATX_NLINK
+                | libc::STATX_SIZE
+                | libc::STATX_MTIME;
+            unsafe { *stx = out };
+            0
+        }
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(PathRoute::Host) | None => unsafe {
+            plat::real_statx()(dirfd, path, flags, mask, stx)
+        },
+    }
+}
+
+/// Linux: `openat2`? — NO: glibc exposes no `openat2` wrapper or symbol
+/// (only `SYS_openat2`), so there is nothing to interpose on linux-gnu; a
+/// raw `syscall(2)` caller bypasses userland interposition by
+/// construction (musl's wrapper is a later consideration).
+
+/// Linux: `getdents64` (roadmap 39). VFS directory enumeration rides
+/// opendir/readdir (a memfs directory can never be fd-opened — open
+/// answers EISDIR), so a memfs fd here is a regular FILE and the honest
+/// answer is ENOTDIR; host fds pass through.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn getdents64(fd: c_int, dirp: *mut c_void, count: usize) -> libc::ssize_t {
+    if route::is_memfs_fd(fd) {
+        set_errno(libc::ENOTDIR);
+        return -1;
+    }
+    unsafe { plat::real_getdents64()(fd, dirp, count) }
+}
+
+/// Linux: `__xstat` (the pre-glibc-2.33 versioned stat entry — binaries
+/// built against older glibc; roadmap 39).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __xstat(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
+    unsafe {
+        stat_via(c_path(path), path, st, |o, s| {
+            plat::real___xstat()(ver, o, s)
+        })
+    }
+}
+
+/// Linux: `__lxstat` (versioned lstat; memfs has no symlink duality).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __lxstat(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
+    unsafe {
+        stat_via(c_path(path), path, st, |o, s| {
+            plat::real___lxstat()(ver, o, s)
+        })
+    }
+}
+
+/// Linux: `__fxstat` (versioned fstat — fd-flag dispatch, no path).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __fxstat(ver: c_int, fd: c_int, st: *mut libc::stat) -> c_int {
+    if route::is_memfs_fd(fd) {
+        if st.is_null() {
+            set_errno(libc::EFAULT);
+            return -1;
+        }
+        return match engine_call(|| route::vfs_fstat(fd)) {
+            // SAFETY: st is valid per the call contract.
+            Some(Ok(raw)) => match unsafe { fill_stat(&raw) } {
+                Ok(s) => {
+                    unsafe { *st = s };
+                    0
+                }
+                Err(e) => {
+                    set_errno(e);
+                    -1
+                }
+            },
+            Some(Err(e)) => {
+                set_errno(e);
+                -1
+            }
+            None => {
+                set_errno(libc::EIO);
+                -1
+            }
+        };
+    }
+    unsafe { plat::real___fxstat()(ver, fd, st) }
+}
+
+/// Linux: `__fxstatat` (versioned fstatat).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __fxstatat(
+    ver: c_int,
+    dirfd: c_int,
+    path: *const c_char,
+    st: *mut libc::stat,
+    flags: c_int,
+) -> c_int {
+    unsafe {
+        fstatat_via(dirfd, path, st, || {
+            plat::real___fxstatat()(ver, dirfd, path, st, flags)
+        })
+    }
+}
+
+/// Interposed `rewinddir` (roadmap 39): reset a memfs stream to its first
+/// entry. Void — an unknown-handle error is surfaced via errno only.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn rewinddir(dirp: *mut libc::DIR) {
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        if let Some(Err(e)) = engine_call(|| route::vfs_rewinddir(dirp as usize)) {
+            set_errno(e);
+        }
+        return;
+    }
+    unsafe { plat::real_rewinddir()(dirp) }
+}
+
+/// Interposed `telldir` (roadmap 39): the stream's position cookie (the
+/// engine's readdir ordinal).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn telldir(dirp: *mut libc::DIR) -> libc::c_long {
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        return match engine_call(|| route::vfs_telldir(dirp as usize)) {
+            // c_long == i64 on every platform the shim targets.
+            Some(Ok(pos)) => pos,
+            Some(Err(e)) => {
+                set_errno(e);
+                -1
+            }
+            None => {
+                set_errno(libc::EIO);
+                -1
+            }
+        };
+    }
+    unsafe { plat::real_telldir()(dirp) }
+}
+
+/// Interposed `seekdir` (roadmap 39): set the stream's position to a
+/// telldir cookie (clamped to end-of-directory).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn seekdir(dirp: *mut libc::DIR, pos: libc::c_long) {
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        // c_long == i64 on every platform the shim targets.
+        if let Some(Err(e)) = engine_call(|| route::vfs_seekdir(dirp as usize, pos)) {
+            set_errno(e);
+        }
+        return;
+    }
+    unsafe { plat::real_seekdir()(dirp, pos) }
+}
+
+/// Interposed `readdir_r` (roadmap 39; the deprecated reentrant form —
+/// the caller's `entry` is filled directly, no per-handle cache needed).
+/// Returns 0 on success, the errno on error (its own contract, never -1).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn readdir_r(
+    dirp: *mut libc::DIR,
+    entry: *mut libc::dirent,
+    result: *mut *mut libc::dirent,
+) -> c_int {
+    if entry.is_null() || result.is_null() {
+        return libc::EINVAL;
+    }
+    // SAFETY: result is valid per the call contract (null-checked above).
+    unsafe { *result = std::ptr::null_mut() };
+    if !dirp.is_null() && engine_call(|| route::dir_is_embedded(dirp as usize)) == Some(true) {
+        return match engine_call(|| route::vfs_readdir(dirp as usize)) {
+            // SAFETY: entry is valid per the call contract.
+            Some(Ok(Some(e))) => {
+                unsafe { fill_dirent(&mut *entry, &e) };
+                unsafe { *result = entry };
+                0
+            }
+            Some(Ok(None)) => 0,
+            Some(Err(e)) => e,
+            None => libc::EIO,
+        };
+    }
+    unsafe { plat::real_readdir_r()(dirp, entry, result) }
+}
+
+/// Interposed `execve` (roadmap 39): a MEMFS path is materialized through
+/// the engine's `dlmap2file` host cache and the REAL execve loads that
+/// copy (execve needs a host path); a host path execs the original
+/// ungated — exec of a host binary is not an IO route in the policy's op
+/// classes, and the child's own IO stays jailed via env propagation.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn execve(
+    path: *const c_char,
+    argv: *const *mut c_char,
+    envp: *const *mut c_char,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_execve()(path, argv, envp) };
+    };
+    match engine_call(|| route::vfs_materialize_exec(p)) {
+        // SAFETY: `host` outlives the call; argv/envp forward verbatim.
+        Some(PathRoute::Vfs(host)) => unsafe { plat::real_execve()(host.as_ptr(), argv, envp) },
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            -1
+        }
+        Some(PathRoute::Host) | None => unsafe { plat::real_execve()(path, argv, envp) },
+    }
+}
+
+/// Interposed `posix_spawn` (roadmap 39): the execve routing with the
+/// spawn contract — the return IS the errno (never -1).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn posix_spawn(
+    pid: *mut libc::pid_t,
+    path: *const c_char,
+    file_actions: *const libc::posix_spawn_file_actions_t,
+    attrp: *const libc::posix_spawnattr_t,
+    argv: *const *mut c_char,
+    envp: *const *mut c_char,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_posix_spawn()(pid, path, file_actions, attrp, argv, envp) };
+    };
+    match engine_call(|| route::vfs_materialize_exec(p)) {
+        Some(PathRoute::Vfs(host)) => unsafe {
+            plat::real_posix_spawn()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
+        },
+        Some(PathRoute::Denied(e)) => e,
+        Some(PathRoute::Host) | None => unsafe {
+            plat::real_posix_spawn()(pid, path, file_actions, attrp, argv, envp)
+        },
+    }
+}
+
+/// Interposed `posix_spawnp` (roadmap 39): an explicit path routes like
+/// posix_spawn; a bare name is a host PATH search (memfs dirs are not in
+/// the host PATH — pass through, stated honestly in the crate docs).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn posix_spawnp(
+    pid: *mut libc::pid_t,
+    file: *const c_char,
+    file_actions: *const libc::posix_spawn_file_actions_t,
+    attrp: *const libc::posix_spawnattr_t,
+    argv: *const *mut c_char,
+    envp: *const *mut c_char,
+) -> c_int {
+    let Some(p) = (unsafe { c_path(file) }) else {
+        return unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) };
+    };
+    if !p.contains('/') {
+        return unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) };
+    }
+    match engine_call(|| route::vfs_materialize_exec(p)) {
+        Some(PathRoute::Vfs(host)) => unsafe {
+            plat::real_posix_spawnp()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
+        },
+        Some(PathRoute::Denied(e)) => e,
+        Some(PathRoute::Host) | None => unsafe {
+            plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp)
+        },
     }
 }
 

@@ -135,7 +135,7 @@ fn build_fixtures() -> Option<Fixtures> {
     let dir = std::fs::canonicalize(&dir).unwrap();
 
     let mut binaries: Vec<(String, PathBuf)> = Vec::new();
-    for name in ["print-data", "spawn-self", "dl-user"] {
+    for name in ["print-data", "spawn-self", "dl-user", "spawn-helper"] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
         let extra: &[&str] = if name == "dl-user" && cfg!(target_os = "linux") {
@@ -348,6 +348,40 @@ fn exec_dlopen_memfs_library() {
     );
     assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
     assert_eq!(r.stdout.trim(), "42", "stdout: {}", r.stdout);
+}
+
+/// Roadmap 39: execve/posix_spawn of a MEMFS path is virtualized through
+/// the dlmap2file host cache — a tool spawns an in-image helper with no
+/// extraction, and the grandchild stays in the VFS.
+#[test]
+fn exec_spawns_in_image_helper() {
+    let Some(f) = fixtures() else { return };
+    // posix_spawn of the in-image helper.
+    let r = tfs_exec(
+        f,
+        &[
+            "--",
+            "/tfs/bin/spawn-helper",
+            "posix_spawn",
+            "/tfs/bin/print-data",
+            "/tfs/data/secret.txt",
+        ],
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, SECRET, "stderr: {}", r.stderr);
+    // execve replaces the tool outright.
+    let r = tfs_exec(
+        f,
+        &[
+            "--",
+            "/tfs/bin/spawn-helper",
+            "execve",
+            "/tfs/bin/print-data",
+            "/tfs/data/secret.txt",
+        ],
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, SECRET, "stderr: {}", r.stderr);
 }
 
 #[test]

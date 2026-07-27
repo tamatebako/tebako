@@ -70,7 +70,11 @@ pub fn journal_deny(file: &std::fs::File, path: &Path, need: HostAccess, source:
         JAIL_DENY_EVENT,
         path.display(),
         op,
-        if source.is_empty() { "unattributed" } else { source }
+        if source.is_empty() {
+            "unattributed"
+        } else {
+            source
+        }
     );
     let _ = (&*file).write_all(line.as_bytes());
 }
@@ -167,7 +171,10 @@ mod tests {
             ts.bytes().all(|b| b.is_ascii_digit()) && !ts.is_empty(),
             "{line}"
         );
-        assert_eq!(rest, "event=jail-deny path=/etc/hosts op=read source=manifest");
+        assert_eq!(
+            rest,
+            "event=jail-deny path=/etc/hosts op=read source=manifest"
+        );
         assert_eq!(
             lines.next().unwrap().split_once(' ').unwrap().1,
             "event=jail-deny path=/x op=write source=user"

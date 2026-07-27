@@ -10,12 +10,15 @@
 //! (macOS cannot use this mechanism — dyld interpose redirects dlsym
 //! results too — so the real-function plumbing is per-platform.)
 //!
-//! Compatibility note (honest scope): binaries built against glibc ≥ 2.33
-//! call `stat`/`lstat`/`fstat` directly and are covered; binaries built
-//! against older glibc use the versioned `__xstat`/`__lxstat`/`__fxstat`
-//! entry points, which v1 does not interpose (documented in the crate
-//! docs). `open64`/`pread64` are aliases of the 64-bit entry points on
-//! linux-gnu 64-bit targets and are not interposed separately.
+//! Coverage note: binaries built against glibc ≥ 2.33 call
+//! `stat`/`lstat`/`fstat`/`fstatat` directly and are covered; binaries
+//! built against older glibc use the versioned `__xstat`/`__lxstat`/
+//! `__fxstat`/`__fxstatat` entry points, which are interposed as well
+//! (roadmap 39). The LFS `open64`/`stat64`/`lstat64`/`fstat64`/`pread64`
+//! family is interposed too — Rust std and `_FILE_OFFSET_BITS=64` builds
+//! call the 64 variants directly, and they are DISTINCT exported symbols
+//! from the plain names; the LFS `__xstat64`/`__lxstat64`/`__fxstat64`/
+//! `__fxstatat64` versioned forms remain a documented gap.
 
 use std::ffi::{c_char, c_int, c_void};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -136,6 +139,129 @@ real_fn!(
     real_dlopen,
     c"dlopen",
     unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
+);
+real_fn!(
+    real_fstatat,
+    c"fstatat",
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat, c_int) -> c_int
+);
+real_fn!(
+    real_fstatat64,
+    c"fstatat64",
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat, c_int) -> c_int
+);
+real_fn!(
+    real_statx,
+    c"statx",
+    unsafe extern "C" fn(c_int, *const c_char, c_int, libc::c_uint, *mut libc::statx) -> c_int
+);
+real_fn!(
+    real_getdents64,
+    c"getdents64",
+    unsafe extern "C" fn(c_int, *mut c_void, usize) -> libc::ssize_t
+);
+#[allow(non_snake_case)] // the libc symbol is `__xstat` (versioned pre-glibc-2.33 entry)
+real_fn!(
+    real___xstat,
+    c"__xstat",
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat) -> c_int
+);
+#[allow(non_snake_case)]
+real_fn!(
+    real___lxstat,
+    c"__lxstat",
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat) -> c_int
+);
+#[allow(non_snake_case)]
+real_fn!(
+    real___fxstat,
+    c"__fxstat",
+    unsafe extern "C" fn(c_int, c_int, *mut libc::stat) -> c_int
+);
+#[allow(non_snake_case)]
+real_fn!(
+    real___fxstatat,
+    c"__fxstatat",
+    unsafe extern "C" fn(c_int, c_int, *const c_char, *mut libc::stat, c_int) -> c_int
+);
+real_fn!(
+    real_rewinddir,
+    c"rewinddir",
+    unsafe extern "C" fn(*mut libc::DIR)
+);
+real_fn!(
+    real_open64,
+    c"open64",
+    unsafe extern "C" fn(*const c_char, c_int, ...) -> c_int
+);
+real_fn!(
+    real_stat64,
+    c"stat64",
+    unsafe extern "C" fn(*const c_char, *mut libc::stat) -> c_int
+);
+real_fn!(
+    real_lstat64,
+    c"lstat64",
+    unsafe extern "C" fn(*const c_char, *mut libc::stat) -> c_int
+);
+real_fn!(
+    real_fstat64,
+    c"fstat64",
+    unsafe extern "C" fn(c_int, *mut libc::stat) -> c_int
+);
+real_fn!(
+    real_pread64,
+    c"pread64",
+    unsafe extern "C" fn(c_int, *mut c_void, usize, libc::off_t) -> libc::ssize_t
+);
+real_fn!(
+    real_dirfd,
+    c"dirfd",
+    unsafe extern "C" fn(*mut libc::DIR) -> c_int
+);
+real_fn!(
+    real_telldir,
+    c"telldir",
+    unsafe extern "C" fn(*mut libc::DIR) -> libc::c_long
+);
+real_fn!(
+    real_seekdir,
+    c"seekdir",
+    unsafe extern "C" fn(*mut libc::DIR, libc::c_long)
+);
+real_fn!(
+    real_readdir_r,
+    c"readdir_r",
+    unsafe extern "C" fn(*mut libc::DIR, *mut libc::dirent, *mut *mut libc::dirent) -> c_int
+);
+real_fn!(
+    real_execve,
+    c"execve",
+    unsafe extern "C" fn(*const c_char, *const *mut c_char, *const *mut c_char) -> c_int
+);
+real_fn!(
+    real_posix_spawn,
+    c"posix_spawn",
+    unsafe extern "C" fn(
+        *mut libc::pid_t,
+        *const c_char,
+        *const libc::posix_spawn_file_actions_t,
+        *const libc::posix_spawnattr_t,
+        *const *mut c_char,
+        *const *mut c_char,
+    ) -> c_int
+);
+real_fn!(
+    real_posix_spawnp,
+    c"posix_spawnp",
+    unsafe extern "C" fn(
+        *mut libc::pid_t,
+        *const c_char,
+        *const libc::posix_spawn_file_actions_t,
+        *const libc::posix_spawnattr_t,
+        *const *mut c_char,
+        *const *mut c_char,
+    ) -> c_int
 );
 
 /// Library constructor: establish the namespace before the program's main.

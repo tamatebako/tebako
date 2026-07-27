@@ -134,20 +134,35 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    (spec 08). Limit: dynamic binaries only; the shim is a TFS consumer,
    never a format. **SHIPPED (roadmap 30): `crates/libtfs-preload` +
    `tfs exec <image>[:mount] [--image …] [--jail <spec>] -- <cmd>` in
-   tfs-cli — macOS and linux-gnu first-class, windows later. v1 concrete
-   choices:** interposed surface open/openat/stat/lstat/fstat/access/
-   faccessat/opendir/readdir(+readdir64)/closedir/pread/read/lseek/
-   close/mkdir/unlink/rename + dlopen; `TEBAKO_JAIL` carries the spec 08
-   §1 env form (`open|deny` + `host:mount:ro|rw` grants + `@` argument
-   files); the ENTRYPOINT (when in-image) is materialized through
-   `dlmap2file` (execve needs a host path — one copy per exec, gc
-   later); execve/posix_spawn of memfs paths is NOT virtualized in v1
-   (children re-spawn via `argv[0]`; the process tree stays in the VFS
-   by env propagation; SIP platform binaries strip `DYLD_*` and leave
-   it); a mount at `/` is refused (it would claim every host path and
-   bypass the jail); not interposed in v1: execve/posix_spawn,
-   fstatat/statx, getdents64, openat2, readdir_r,
-   rewinddir/telldir/seekdir, the pre-glibc-2.33 `__xstat` family.
+   tfs-cli — macOS and linux-gnu first-class, windows later. Coverage
+   (roadmap 39):** interposed surface open/openat/stat/
+   lstat/fstat/fstatat(+fstatat64/statx/__xstat/__lxstat/__fxstat/
+   __fxstatat and the LFS open64/stat64/lstat64/fstat64/pread64 family
+   on linux)/access/faccessat/opendir/readdir(+readdir64)/
+   readdir_r/rewinddir/telldir/seekdir/dirfd/closedir/pread/read/lseek/
+   close/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp;
+   `TEBAKO_JAIL` carries the spec 08 §1 env form (`open|deny` +
+   `host:mount:ro|rw` grants + `@` argument files); the ENTRYPOINT (when
+   in-image) is materialized through `dlmap2file` (execve needs a host
+   path — one copy per exec, gc later), and execve/posix_spawn of MEMFS
+   paths materialize the same way (a tool spawning an in-image helper
+   needs no extraction; environ propagates, so grandchildren stay in the
+   VFS); every *at shim gates its fd branch on `dirfd >= 0` (AT_FDCWD
+   carries the fd-flag bit — the runtime-builds regression class, pinned
+   by tests); exec of a HOST binary is not policy-gated (not an IO route
+   in the policy's op classes — the child's own IO stays jailed via env
+   propagation); SIP platform binaries strip `DYLD_*` and leave it; a
+   mount at `/` is refused (it would claim every host path and bypass
+   the jail); not interposed: fork, `openat2` (glibc exposes no wrapper
+   or symbol on linux-gnu — nothing to interpose; a raw `syscall(2)`
+   caller bypasses userland interposition by construction), fstatat64 on
+   macOS (the legacy
+   32-bit-inode layout), the LFS `__xstat64` versioned forms on linux,
+   fdopendir (memfs directories are never fd-opened), and
+   syscall()-direct IO (raw syscalls bypass userland interposition by
+   construction); `dirfd` of a memfs stream answers -1/ENOTSUP;
+   `getdents64` on a memfs fd answers ENOTDIR (VFS directories enumerate
+   via opendir, never fds).
 2. **Static/self-contained tools**: tebako is the EXECUTOR, not an
    injector — it spawns and owns every child, so mediating a child's
    syscalls is the execution contract itself, not hijacking (a

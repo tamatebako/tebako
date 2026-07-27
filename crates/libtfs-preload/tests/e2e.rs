@@ -39,6 +39,8 @@ struct Fixtures {
     shim: PathBuf,
     /// A host directory with one readable file (jail grant fixture).
     work: PathBuf,
+    /// The Rust dynamic tool (roadmap 39), when rustc is available.
+    rust_tool: Option<PathBuf>,
 }
 
 fn target_dir() -> PathBuf {
@@ -122,8 +124,16 @@ fn build_fixtures() -> Option<Fixtures> {
 
     // Compile the tools (dynamic linking is the default; that is the whole
     // point — the shim interposes the libc they link against).
-    let mut tools: Vec<(String, PathBuf)> = Vec::new();
-    for name in ["print-data", "list-dir", "dl-user", "spawn-self", "mk-dir"] {
+    for name in [
+        "print-data",
+        "list-dir",
+        "dl-user",
+        "spawn-self",
+        "mk-dir",
+        "at-probe",
+        "spawn-helper",
+        "dir-stream",
+    ] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
         std::fs::create_dir_all(out.parent().unwrap()).unwrap();
@@ -133,8 +143,34 @@ fn build_fixtures() -> Option<Fixtures> {
             &[]
         };
         compile("cc", &src, &out, extra);
-        tools.push((name.to_string(), out));
     }
+    // The Rust dynamic tool (roadmap 39's std::fs proof): skipped with a
+    // note when no rustc is on PATH; a rustc that EXISTS but fails is a
+    // hard failure (the documented skip policy).
+    let rust_tool = dir.join("bin").join("rust-tool");
+    let rust_built = Command::new("rustc")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+    let rust_tool = if rust_built {
+        let o = Command::new("rustc")
+            .arg("-O")
+            .arg("-o")
+            .arg(&rust_tool)
+            .arg(src_dir.join("rust-tool.rs"))
+            .output()
+            .unwrap();
+        assert!(
+            o.status.success(),
+            "rustc failed: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        Some(rust_tool)
+    } else {
+        eprintln!("skip: no rustc on PATH (the rust-tool proofs are skipped)");
+        None
+    };
     // The plugin (shared library) for the dlopen proof.
     let libname = if cfg!(target_os = "macos") {
         "libplug.dylib"
@@ -155,7 +191,9 @@ fn build_fixtures() -> Option<Fixtures> {
     std::fs::create_dir_all(&work).unwrap();
     std::fs::write(work.join("hostfile.txt"), b"HOST-FILE\n").unwrap();
 
-    // The test image (zip backend): data, a directory, the plugin.
+    // The test image (zip backend): data, a directory, the plugin, and an
+    // in-image helper binary (print-data — the spawn-helper proofs exec it
+    // straight from the image, roadmap 39).
     let zip_path = dir.join("img.zip");
     {
         let file = std::fs::File::create(&zip_path).unwrap();
@@ -172,6 +210,7 @@ fn build_fixtures() -> Option<Fixtures> {
         zw.add_directory("data/", rx).unwrap();
         zw.add_directory("dir/", rx).unwrap();
         zw.add_directory("lib/", rx).unwrap();
+        zw.add_directory("bin/", rx).unwrap();
         zw.start_file("data/secret.txt", ro).unwrap();
         zw.write_all(SECRET.as_bytes()).unwrap();
         zw.start_file("dir/a.txt", ro).unwrap();
@@ -180,6 +219,9 @@ fn build_fixtures() -> Option<Fixtures> {
         zw.write_all(b"b\n").unwrap();
         zw.start_file(format!("lib/{libname}"), rx).unwrap();
         zw.write_all(&std::fs::read(&plug_out).unwrap()).unwrap();
+        let print_data = dir.join("bin").join("print-data");
+        zw.start_file("bin/print-data", rx).unwrap();
+        zw.write_all(&std::fs::read(&print_data).unwrap()).unwrap();
         zw.finish().unwrap();
     }
 
@@ -188,6 +230,7 @@ fn build_fixtures() -> Option<Fixtures> {
         zip: zip_path,
         shim,
         work,
+        rust_tool,
     })
 }
 
@@ -411,4 +454,207 @@ fn misformatted_env_is_a_named_error() {
     assert_eq!(out.status.code(), Some(tfs_preload::spec::EX_CONFIG));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("cannot mount"), "stderr: {stderr}");
+}
+
+// ---------------------------------------------------------------------
+// Roadmap 39: the *at family, execve/posix_spawn of memfs paths, dir
+// streams, and the Rust dynamic tool
+// ---------------------------------------------------------------------
+
+/// Run a fixture tool with an explicit cwd (the AT_FDCWD proofs).
+fn run_in_dir(f: &Fixtures, cwd: &Path, tool: &str, args: &[&str], jail: Option<&str>) -> Run {
+    let mut cmd = Command::new(f.dir.join("bin").join(tool));
+    cmd.args(args)
+        .current_dir(cwd)
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", format!("{}:{MOUNT}", f.zip.display()))
+        .env_remove("DYLD_PRINT_LIBRARIES");
+    match jail {
+        Some(j) => {
+            cmd.env("TEBAKO_JAIL", j);
+        }
+        None => {
+            cmd.env_remove("TEBAKO_JAIL");
+        }
+    }
+    let out = cmd.output().unwrap();
+    Run {
+        rc: out.status.code().unwrap_or(-1),
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+#[test]
+fn at_family_serves_memfs_and_gates_at_fdcwd() {
+    let Some(f) = fixtures() else { return };
+    // fstatat on a memfs path: the engine answers (no extraction).
+    let r = run(
+        f,
+        "at-probe",
+        &["fstatat", &format!("{MOUNT}/data/secret.txt")],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), format!("SIZE:{}", SECRET.len()));
+
+    // dirfd-relative through a HOST dirfd: passes through to the host.
+    let r = run(
+        f,
+        "at-probe",
+        &["fstatat-rel", "hostfile.txt", f.work.to_str().unwrap()],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), "SIZE:10");
+    let r = run(
+        f,
+        "at-probe",
+        &["openat", "hostfile.txt", f.work.to_str().unwrap()],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, "HOST-FILE\n");
+
+    // The AT_FDCWD regression pin, e2e form: a cwd-relative fstatat must
+    // resolve against the cwd — never ENOTDIR (the fd-branch bug class
+    // that broke runtime builds).
+    let r = run_in_dir(f, &f.work, "at-probe", &["fstatat", "hostfile.txt"], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), "SIZE:10");
+    // …and the jail gates the same call (cwd outside the grant → EPERM).
+    let r = run_in_dir(
+        f,
+        &f.work,
+        "at-probe",
+        &["fstatat", "hostfile.txt"],
+        Some("deny"),
+    );
+    assert_eq!(r.rc, libc::EPERM, "stderr: {}", r.stderr);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn at_family_linux_extensions() {
+    let Some(f) = fixtures() else { return };
+    let secret = format!("{MOUNT}/data/secret.txt");
+
+    // statx: the engine's answer in statx form, with the mask reported.
+    let r = run(f, "at-probe", &["statx", &secret], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(
+        r.stdout
+            .starts_with(&format!("SIZE:{} MASK:", SECRET.len())),
+        "stdout: {}",
+        r.stdout
+    );
+
+    // fstatat64 (the LFS alias).
+    let r = run(f, "at-probe", &["fstatat64", &secret], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), format!("SIZE:{}", SECRET.len()));
+
+    // The versioned pre-glibc-2.33 entry points.
+    let r = run(f, "at-probe", &["__xstat", &secret], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), format!("SIZE:{}", SECRET.len()));
+    let r = run(f, "at-probe", &["__fxstatat", &secret], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), format!("SIZE:{}", SECRET.len()));
+
+    // getdents64 on a host directory passes through…
+    let r = run(
+        f,
+        "at-probe",
+        &["getdents64", f.work.to_str().unwrap()],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert!(r.stdout.starts_with("BYTES:"), "stdout: {}", r.stdout);
+    let bytes: i64 = r
+        .stdout
+        .trim_start_matches("BYTES:")
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(bytes > 0, "stdout: {}", r.stdout);
+    // …and on a memfs REGULAR file fd the honest answer is ENOTDIR (20).
+    let r = run(f, "at-probe", &["getdents64-file", &secret], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), format!("ERRNO:{}", libc::ENOTDIR));
+}
+
+#[test]
+fn dir_stream_rewind_tell_seek_and_readdir_r() {
+    let Some(f) = fixtures() else { return };
+    let r = run(f, "dir-stream", &[&format!("{MOUNT}/dir")], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    let expected = "r1:a.txt\ntell:1\nr2:b.txt\nr3:<end>\nafter-rewind:a.txt\nreaddir_r:0:b.txt\nreaddir_r:0:<end>\n";
+    assert_eq!(r.stdout, expected, "stdout:\n{}", r.stdout);
+}
+
+#[test]
+fn execve_of_memfs_helper_runs_without_extraction() {
+    let Some(f) = fixtures() else { return };
+    let helper = format!("{MOUNT}/bin/print-data");
+    let data = format!("{MOUNT}/data/secret.txt");
+    // execve replaces the process: the helper (materialized through the
+    // dlmap2file host cache) prints the memfs data — proof the copy ran
+    // AND the preload env reached it (it re-mounts the same image).
+    let r = run(f, "spawn-helper", &["execve", &helper, &data], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, SECRET, "stderr: {}", r.stderr);
+}
+
+#[test]
+fn posix_spawn_of_memfs_helper_and_deny_jail_child_io() {
+    let Some(f) = fixtures() else { return };
+    let helper = format!("{MOUNT}/bin/print-data");
+    let data = format!("{MOUNT}/data/secret.txt");
+    let r = run(f, "spawn-helper", &["posix_spawn", &helper, &data], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, SECRET, "stderr: {}", r.stderr);
+
+    // Under a deny jail the memfs helper still spawns (memfs is
+    // unaffected); the child's HOST read is what fails EPERM.
+    let r = run(
+        f,
+        "spawn-helper",
+        &["posix_spawn", &helper, "/etc/hosts"],
+        Some("deny"),
+    );
+    assert_eq!(r.rc, libc::EPERM, "stderr: {}", r.stderr);
+}
+
+#[test]
+fn rust_tool_reads_in_image_data() {
+    let Some(f) = fixtures() else { return };
+    if f.rust_tool.is_none() {
+        return; // documented skip: no rustc on PATH
+    }
+    // std::fs::read_to_string (open/read/close through the shim).
+    let r = run(
+        f,
+        "rust-tool",
+        &["read", &format!("{MOUNT}/data/secret.txt")],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, SECRET);
+    // std::fs::metadata (the glibc stat family internally).
+    let r = run(
+        f,
+        "rust-tool",
+        &["metadata", &format!("{MOUNT}/data/secret.txt")],
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), format!("SIZE:{}", SECRET.len()));
+    // std::fs::read_dir (opendir/readdir through the shim).
+    let r = run(f, "rust-tool", &["read_dir", &format!("{MOUNT}/dir")], None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.trim(), "a.txt b.txt");
+    // …and the deny jail gates the Rust binary identically.
+    let r = run(f, "rust-tool", &["read", "/etc/hosts"], Some("deny"));
+    assert_eq!(r.rc, libc::EPERM, "stderr: {}", r.stderr);
 }

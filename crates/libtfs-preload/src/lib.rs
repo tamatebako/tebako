@@ -24,13 +24,21 @@
 //! the offending token, exit [`spec::EX_CONFIG`] (78).
 //!
 //! Interposed surface: `open`, `openat`, `stat`, `lstat`, `fstat`,
-//! `access`, `faccessat`, `opendir`, `readdir` (+`readdir64` on Linux),
-//! `closedir`, `pread`, `read`, `lseek` (additive — stdio fseek on a
-//! memfs fd must stay on the VFS), `close`, `mkdir`, `unlink`, `rename`,
-//! `dlopen`. Memfs paths are served by the engine; host paths pass
-//! through, gated by the SAME `host_policy` (spec 08 §3 — denied paths
-//! fail `EPERM`, writes against an ro grant `EROFS`). `dlopen` of a memfs
-//! library rides the engine's `dlmap2file` host cache.
+//! `fstatat` (+`fstatat64`/`__xstat`/`__lxstat`/`__fxstat`/`__fxstatat`/
+//! `statx`/`getdents64` and the LFS `open64`/`stat64`/`lstat64`/`fstat64`/
+//! `pread64` family on Linux — roadmap 39), `access`,
+//! `faccessat`, `opendir`, `readdir` (+`readdir64` on Linux),
+//! `readdir_r`, `rewinddir`/`telldir`/`seekdir`, `dirfd`, `closedir`,
+//! `pread`, `read`, `lseek` (additive — stdio fseek on a memfs fd must
+//! stay on the VFS), `close`, `mkdir`, `unlink`, `rename`, `dlopen`, and
+//! `execve`/`posix_spawn`/`posix_spawnp` (memfs paths materialize through
+//! the `dlmap2file` host cache; roadmap 39). Memfs paths are served by
+//! the engine; host paths pass through, gated by the SAME `host_policy`
+//! (spec 08 §3 — denied paths fail `EPERM`, writes against an ro grant
+//! `EROFS`). `dlopen` of a memfs library rides the engine's `dlmap2file`
+//! host cache. Every *at shim gates its fd branch on `dirfd >= 0` —
+//! AT_FDCWD (-100) carries the TEBAKO_FD_FLAG bit, so a bare bit test
+//! would misroute it (pinned by `route::tests::at_fdcwd_is_not_a_memfs_fd`).
 //!
 //! ## Honest scope (v1)
 //!
@@ -39,19 +47,35 @@
 //!   first-class; Windows is roadmap 30 phase 2.
 //! - The process tree stays in the VFS by env propagation: a child
 //!   process inherits the preload variables, so its own IO is interposed
-//!   too. Spawning works with HOST paths (a memfs path is not exec'able —
-//!   `execve` is not virtualized in v1; the `tfs exec` launcher
-//!   materializes the ENTRYPOINT through `dlmap2file`, and children
-//!   re-spawn via `argv[0]`). Platform binaries under SIP (macOS) strip
-//!   `DYLD_*` — they leave the VFS, as does any statically linked child.
+//!   too. Spawning works with HOST paths and — since roadmap 39 — with
+//!   MEMFS paths: execve/posix_spawn of an in-image binary materializes
+//!   it through `dlmap2file` (one copy per exec, gc later); a bare name
+//!   is a host PATH search (memfs dirs are not in it). `exec` of a host
+//!   binary is NOT policy-gated (it is not an IO route in the policy's op
+//!   classes — the child's own IO stays jailed via env propagation).
+//!   Platform binaries under SIP (macOS) strip `DYLD_*` — they leave the
+//!   VFS, as does any statically linked child.
 //! - A mount at `/` is rejected (it would claim every host path and
 //!   bypass the jail). Non-UTF-8 paths always pass to the host (the
 //!   engine itself is UTF-8-only). `dlopen` jail-denials return NULL with
 //!   the cause in errno — `dlerror()` text is not settable portably.
-//! - Not interposed in v1: `execve`/`posix_spawn`, `fstatat`/`statx`,
-//!   `getdents64`, `openat2`, `readdir_r`, `rewinddir`/`telldir`/`seekdir`
-//!   (memfs dir streams support readdir/closedir only), and the
-//!   pre-glibc-2.33 `__xstat` family.
+//! - `dirfd` of a memfs stream answers -1/ENOTSUP (there is no host fd
+//!   behind it; the stream itself works through the readdir family).
+//!   `getdents64` on a memfs fd answers ENOTDIR (memfs fds are regular
+//!   files only — VFS directories enumerate via opendir, never fds).
+//!   glibc exposes NO `openat2` wrapper/symbol, so there is nothing to
+//!   interpose on linux-gnu (a raw `syscall(2)` caller bypasses userland
+//!   interposition by construction).
+//! - Not interposed in v1: `fork`, `openat2` (glibc has no wrapper at
+//!   all — see above), `fstatat64` on macOS (the legacy 32-bit-inode
+//!   layout), the LFS `__xstat64`/`__lxstat64`/
+//!   `__fxstat64`/`__fxstatat64` versioned forms on Linux, `fdopendir`
+//!   (a host fdopendir passes through whole; a memfs directory can never
+//!   be fd-opened, so it never arises), and syscall()-direct IO (raw
+//!   `syscall(2)` calls bypass userland interposition by construction —
+//!   musl/rust-std-on-gnu ride the libc wrappers, which ARE covered).
+//!   Memfs exec materialization leaks one dl-cache copy per exec (gc is
+//!   a later milestone, stated honestly in the spec).
 //!
 //! ## Layout
 //!

@@ -123,6 +123,12 @@ Layers:
   --no-host`, the same flags on `tebako-shim`) — user policy always wins,
   never loosens. Violations journal to the tebako audit journal
   (`docs/spec/08`).
+- **Native exec** — the preload interposition shim (libtfs-preload)
+  maps the libc file-IO family onto TFS for dynamic native binaries
+  (the `*at` family, dir streams, dlopen, execve/posix_spawn of memfs
+  paths materialized through the dlmap2file host cache; grandchildren
+  stay in the VFS by env propagation, and their IO rides the same jail)
+  (`docs/spec/07` §8).
 
 Repos are few and purpose-split: this one (`tamatebako/tebako`, the
 Rust stack) plus three C/C++ **factories** that only build their own
