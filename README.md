@@ -67,7 +67,7 @@ A tebako package is **three parts** stitched into one executable:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ 1. BOOTSTRAP (Rust, < 3 MB) — the process entry point.       │
+│ 1. BOOTSTRAP (Rust, < 6 MB) — the process entry point.       │
 │    Parses the tpkg trailer, verifies signatures/digests,     │
 │    resolves the runtime (cache / payload / download), and    │
 │    hands off to it.                                          │

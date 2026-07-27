@@ -54,7 +54,7 @@ spec 02 §5).
 ## Locked invariants (all specs subordinate to these)
 
 1. No shell-outs, no system dependencies, in any shipped artifact.
-2. Loader size gate < 3 MB per platform, enforced in CI.
+2. Loader size gate < 6 MB per platform, enforced in CI.
 3. C/C++ only in three factory repos: `tamatebako/ruby`,
    `tebako-runtime-ruby`, `dwarfs-t`. Everything else Rust / pure Ruby /
    Docker.

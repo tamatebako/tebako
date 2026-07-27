@@ -90,25 +90,11 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/$TRIPLET" >> "$GITHUB_ENV"
 
-      # rnp-rs 0.1.7's vendored prebuilt covers librnp+json-c statically,
-      # but botan is declared dylib: give it a STATIC botan in a dir of its
-      # own (ld prefers .dylib over .a when both are in the search path, so
-      # the archive must be alone in its dir). z/bz2 are ubiquitous base-OS.
-      - name: Static botan (macOS, brew archive)
-        if: runner.os == 'macOS'
-        run: |
-          brew install botan
-          mkdir -p .crypto-static && cp "$(brew --prefix botan)/lib/libbotan-3.a" .crypto-static/
-          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
-
-      - name: Static botan (Linux, vcpkg static triplet)
-        if: runner.os == 'Linux'
-        working-directory: tebako-rs
-        run: |
-          mkdir -p .crypto-static
-          .vcpkg-root/vcpkg install botan --vcpkg-root .vcpkg-root --x-wait-for-lock --x-install-root .crypto-vcpkg --triplet x64-linux-static
-          cp .crypto-vcpkg/x64-linux-static/lib/libbotan-3.a .crypto-static/
-          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
+      # rnp-rs 0.1.7 prebuilt ships librnp+json-c statically; botan and
+      # bz2 come from crate dependencies (botan-sys vendored → botan-src,
+      # bzip2-sys) declared in tebako-signer — no crypto provisioning
+      # anywhere. (Full static botan adds ~3 MB per binary; the bootstrap
+      # size gate was raised to 6 MB accordingly — owner, 2026-07-27.)
 
       # The tebako-pkg golden suite compares against the C++ tebakofs
       # oracle, and tfs-cli's mkimage against mkdwarfs; use the libtfs
@@ -158,10 +144,11 @@ jobs:
       - name: Point the golden test at the reference gem
         run: echo "TEBAKO_REFERENCE_GEM=${{ github.workspace }}/reference-gem" >> "$GITHUB_ENV"
 
-      # item 22's hard gate: the Rust bootstrap must stay under 3 MB
-      # (budget raised 2 MB -> 3 MB when downloads went in-process)
-      # absolute. Publishes the table and fails the job when over.
-      - name: Bootstrap size gate (< 3 MB)
+      # item 22's hard gate: the Rust bootstrap must stay under 6 MB
+      # (2 MB -> 3 MB when downloads went in-process; 3 MB -> 6 MB when
+      # full static botan entered via botan-sys(vendored) — owner,
+      # 2026-07-27: self-containment beats size)
+      - name: Bootstrap size gate (< 6 MB)
         working-directory: tebako-rs
         run: |
           cargo build -p tebako-bootstrap --release
@@ -169,9 +156,9 @@ jobs:
           CPP_SIZE=$(stat -c %s ../.oracle/tebako-bootstrap 2>/dev/null || stat -f %z ../.oracle/tebako-bootstrap)
           echo "| platform | Rust bootstrap | C++ v0.2.0 | budget |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| ${{ runner.os }} | $SIZE B | $CPP_SIZE B | < 3 MB |" >> "$GITHUB_STEP_SUMMARY"
-          echo "tebako-bootstrap: $SIZE bytes (budget 3145728)"
-          test "$SIZE" -lt 3145728
+          echo "| ${{ runner.os }} | $SIZE B | $CPP_SIZE B | < 6 MB |" >> "$GITHUB_STEP_SUMMARY"
+          echo "tebako-bootstrap: $SIZE bytes (budget 6291456)"
+          test "$SIZE" -lt 6291456
 
       # `cargo build` first: it produces the libtfs cdylib the C harness
       # links against (cargo test alone builds deps as rlibs only).

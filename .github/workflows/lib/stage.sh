@@ -6,10 +6,10 @@
 #
 # Required env: VERSION (release version, tag minus v), PLATFORM (the
 # tebako platform id, e.g. macos-arm64). Optional: TARGET (defaults to
-# host), BOOTSTRAP_SIZE_BUDGET (default 3145728), EXE_SUFFIX.
+# host), BOOTSTRAP_SIZE_BUDGET (default 6291456), EXE_SUFFIX.
 set -euo pipefail
 
-BUDGET="${BOOTSTRAP_SIZE_BUDGET:-3145728}"
+BUDGET="${BOOTSTRAP_SIZE_BUDGET:-6291456}"
 TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 EXE="${EXE_SUFFIX:-}"
 

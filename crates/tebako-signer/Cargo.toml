@@ -10,4 +10,15 @@ homepage.workspace = true
 
 [dependencies]
 rnp = { package = "rnp-rs", version = "0.1.7", features = ["vendored"] }
+# rnp-rs 0.1.7's prebuilt ships librnp+json-c(+sexpp) statically but
+# declares botan-3 and bz2 as EXTERNAL link libs. We satisfy them as
+# crate dependencies — cargo builds both from source, static:
+#   botan-sys vendored → botan-src (Botan 3, libbotan-3.a)
+#   bzip2-sys          → bundled bzip2 source (libbz2.a)
+# json-c already ships inside the rnp-rs prebuilt; zlib stays system
+# (base-OS everywhere). Every rnp consumer depends on tebako-signer, so
+# these two live here only and their link paths propagate to all final
+# binaries.
+botan-sys = { version = "1", features = ["vendored"] }
+bzip2-sys = "0.1"
 sha2 = "0.10"
