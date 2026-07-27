@@ -5,10 +5,14 @@
 //!                [--cwd <dir>] [-R <ruby>] [-m lean|fat]
 //!                [--image <path>:<mount>]... [--bootstrap <path>]
 //!                [--tebako-version <v>]
+//!   tebako press --suite <suite.yaml>   (one package, N commands —
+//!                per-entry imaging + slots + the type-2 package manifest,
+//!                spec 03 §6)
 //!   tebako cache list
 //!   tebako cache prune [--all] [--older-than Nd]
 //!   tebako add-registry <ref>
 //!   tebako list-registries
+//!   tebako update-registries
 //!   tebako install <ref | name[@version]>
 //!   tebako uninstall <name>
 //!
@@ -56,11 +60,13 @@ pub mod image_manifest;
 pub mod install;
 pub mod options;
 pub mod packager;
+pub mod publish;
 pub mod resolve;
 pub mod runner;
 pub mod scenario;
 pub mod sdk;
 pub mod strip;
+pub mod suite;
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -80,7 +86,7 @@ pub const DEFAULT_TEBAKO_VERSION: &str = "0.15.9";
 
 pub const VERSION_BANNER: &str = "Tebako executable packager version 0.15.9";
 
-const WARN: &str = "
+pub(crate) const WARN: &str = "
 ******************************************************************************************************************
 *                                                                                                                *
 *  WARNING: You are packaging in-place, i.e.: tebako package will be placed inside application root.             *
@@ -110,7 +116,7 @@ const WARN2: &str = "
 // ---------------------------------------------------------------------
 
 /// Where the package's bootstrap portion comes from.
-enum BootstrapSource {
+pub(crate) enum BootstrapSource {
     /// An explicit local binary (--bootstrap, $TEBAKO_BOOTSTRAP, or the
     /// Rust tebako-bootstrap sitting next to the tebako binary).
     Path(PathBuf),
@@ -119,6 +125,21 @@ enum BootstrapSource {
 }
 
 pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
+    // --suite: one package, N entries (spec 03 §6 — src/suite.rs).
+    if let Some(suite_path) = &opts.suite {
+        let yaml = fs::read_to_string(suite_path).map_err(|e| {
+            plain_error(format!(
+                "cannot read the suite file {}: {e}",
+                suite_path.display()
+            ))
+        })?;
+        let spec = suite::parse_suite(&yaml, suite_path)?;
+        let dir = suite_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        return suite::press_suite(opts, &spec, &dir);
+    }
     if opts.mode == PressMode::Runtime {
         return Err(packaging_error(133, None));
     }
@@ -206,16 +227,18 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         None
     };
 
+    let mut runtime_ref = format!("ruby@{ruby_ver};tebako={}", opts.tebako_version);
+    if resolved.image.is_some() {
+        // item 30b: the runtime is image-era — the bootstrap resolves
+        // the .tfs alongside the interpreter at first run.
+        runtime_ref.push_str(";image");
+    }
+    if let Some(sha) = &payload_sha256 {
+        runtime_ref.push_str(&format!(";sha256={sha}"));
+    }
+
     let package = format!("{}{}", opts.package(), scenario.exe_suffix);
-    stitch(
-        &bootstrap_path,
-        &images,
-        &package,
-        &ruby_ver,
-        &opts.tebako_version,
-        payload_sha256.as_deref(),
-        resolved.image.is_some(),
-    )?;
+    stitch(&bootstrap_path, &images, &package, &runtime_ref, None)?;
     println!("Created tebako package at \"{package}\"");
     ensure_version_file(opts);
     Ok(PathBuf::from(package))
@@ -238,7 +261,7 @@ fn check_warnings(opts: &PressOptions) {
 
 /// Bootstrap lookup: --bootstrap > $TEBAKO_BOOTSTRAP > the Rust
 /// tebako-bootstrap next to the tebako binary > the C++ release download.
-fn decide_bootstrap(opts: &PressOptions) -> BootstrapSource {
+pub(crate) fn decide_bootstrap(opts: &PressOptions) -> BootstrapSource {
     if let Some(path) = &opts.bootstrap {
         return BootstrapSource::Path(path.clone());
     }
@@ -285,15 +308,16 @@ fn check_bootstrap_version() -> Result<(), TebakoError> {
 /// then assemble with tebako-pkg (dense image layout — tpkg slots carry
 /// absolute offsets, so the gem's 8-byte padding is not required), chmod,
 /// and re-sign ad-hoc on macOS when the binary was signed.
-/// `image_era`: the runtime_ref carries the `;image` flag (item 30b).
-fn stitch(
+/// `runtime_ref` is the trailer's 128-byte field as built by the caller
+/// (suites: entries[0]'s ref — the type-2 manifest carries the per-entry
+/// refs, spec 02 §5b / spec 03 §6). `package_manifest`, when present, is
+/// embedded as extension block type 2.
+pub(crate) fn stitch(
     bootstrap_path: &Path,
     images: &[(PathBuf, String, u32)],
     package: &str,
-    ruby_version: &str,
-    tebako_version: &str,
-    runtime_sha256: Option<&str>,
-    image_era: bool,
+    runtime_ref: &str,
+    package_manifest: Option<&tpkg::PackageManifest>,
 ) -> Result<(), TebakoError> {
     if images.is_empty() {
         return Err(packaging_error(126, Some("at least one image is required")));
@@ -343,34 +367,19 @@ fn stitch(
         if *format_id == tpkg::TPKG_FORMAT_RUNTIME {
             continue; // payload slots are never mounted
         }
+        // Suite members share one mount point by construction (the
+        // bootstrap's argv0 selection mounts only the selected entry's
+        // slot — spec 03 §6); without a package manifest a duplicate
+        // mount stays the error it always was.
+        if package_manifest.is_some() {
+            continue;
+        }
         if !seen.insert(mount) {
             return Err(packaging_error(
                 126,
                 Some(&format!("duplicate mount point '{mount}'")),
             ));
         }
-    }
-    if let Some(sha) = runtime_sha256 {
-        let valid = sha.len() == 64
-            && sha
-                .bytes()
-                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase());
-        if !valid {
-            return Err(packaging_error(
-                126,
-                Some("runtime_sha256 must be 64 lowercase hex characters"),
-            ));
-        }
-    }
-
-    let mut runtime_ref = format!("ruby@{ruby_version};tebako={tebako_version}");
-    if image_era {
-        // item 30b: the runtime is image-era — the bootstrap resolves
-        // the .tfs alongside the interpreter at first run.
-        runtime_ref.push_str(";image");
-    }
-    if let Some(sha) = runtime_sha256 {
-        runtime_ref.push_str(&format!(";sha256={sha}"));
     }
     if runtime_ref.len() >= tpkg::TPKG_RUNTIME_REF_LEN {
         return Err(packaging_error(
@@ -395,9 +404,10 @@ fn stitch(
         })
         .collect();
     let pkg_options = tebako_pkg::PackageOptions {
-        runtime_ref,
+        runtime_ref: runtime_ref.to_string(),
         package_flags: tpkg::TPKG_FLAG_LEAN,
         launcher_abi: LAUNCHER_ABI,
+        package_manifest: package_manifest.cloned(),
         ..Default::default()
     };
     tebako_pkg::bundle_exact(bootstrap_path, &pkg_images, output, &pkg_options)
@@ -459,7 +469,7 @@ fn resign_if_needed(output: &Path) {
 }
 
 /// CacheManager#ensure_version_file (best effort).
-fn ensure_version_file(opts: &PressOptions) {
+pub(crate) fn ensure_version_file(opts: &PressOptions) {
     let deps = opts.deps();
     let _ = fs::create_dir_all(&deps);
     let version_file = deps.join(".environment.version");
@@ -482,7 +492,7 @@ fn version_key(opts: &PressOptions) -> String {
 /// → "not recognized" + clean_cache; version mismatch → "created by a
 /// gem version" + clean_cache; source mismatch → "created for a
 /// different source directory" + clean_output.
-fn version_cache_check(opts: &PressOptions) {
+pub(crate) fn version_cache_check(opts: &PressOptions) {
     let version_file = opts.deps().join(".environment.version");
     let parsed = fs::read_to_string(&version_file).ok().and_then(|content| {
         let line = content.lines().next()?.to_string();

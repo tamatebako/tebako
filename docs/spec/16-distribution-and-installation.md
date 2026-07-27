@@ -128,8 +128,19 @@ tebako use metanorma@1.2.2                # instant rollback
   tebako-cli (ref + nickname forms, declarative triplet selection,
   registry sha256 pins, OpenPGP verification of signed entries, the
   v1-legacy unsigned warn, audit journal).
-- `tamatebako/homebrew-tap` formula + the app-tap template.
+- ~~the dispatch-time registry cache~~ — SHIPPED (33): the shim resolves
+  every registry form at dispatch behind
+  `~/.tebako/registries/<sha>.yaml` (24 h TTL), `tebako
+  update-registries`, `TEBAKO_OFFLINE` = cache-or-named-error.
+- ~~`tebako publish` helper~~ — SHIPPED (41): press-output payloads →
+  optional sign (per-artifact `<artifact>.asc`, the `<keyid, asc>`
+  registry pin) → upload to the referenced GitHub release (in-process
+  HTTP; file:// mirrors for rehearsal/tests) → `tpkg-registry.yaml`
+  upsert → tap formula render from the vendored template → built-in
+  clean-cache `tebako install` proof. The GitLab/Bitbucket write legs
+  are their adapters' milestone.
+- `tamatebako/homebrew-tap` formula + the app-tap template (the template
+  is vendored and rendered by `tebako publish --tap`; the tap repos
+  themselves stay manual).
 - `install.sh` + its own CI verification.
-- `tebako publish` helper (press → sign → upload → registry commit →
-  tap bump) for persona C.
 - Docs pages (tebako.org, post-gate) mirroring §5 per audience.

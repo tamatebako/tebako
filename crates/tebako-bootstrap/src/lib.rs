@@ -8,11 +8,12 @@
 //! 3. check the trailer's launcher_abi against TEBAKO_BOOTSTRAP_LAUNCHER_ABI;
 //! 4. parse runtime_ref "type@version;tebako=<abi>[;image][;sha256=<hex>]"
 //!    — when the package carries the L2 package manifest (extension block
-//!    type 2, spec 02 §5b / spec 03 §6), its entries[0].runtime_ref is
-//!    used instead of the trailer's 128-byte field (per-entry refs for
-//!    suites and multi-runtime packages; the trailer field stays for
-//!    v1-era loaders and block-less packages behave byte-identically).
-//!    Resolution only — the handoff argv is unchanged (ABI stays 1);
+//!    type 2, spec 02 §5b / spec 03 §6), argv0 selects the entry whose
+//!    runtime_ref is used (exact name match, entries[0] fallback —
+//!    per-entry refs for suites and multi-runtime packages; the trailer
+//!    field stays for v1-era loaders and block-less packages behave
+//!    byte-identically). Resolution only — the handoff argv shape is
+//!    unchanged (ABI stays 1);
 //! 5. resolve the language runtime — shared cache hit, else a fat-package
 //!    payload extraction (SHA256-verified against the ;sha256= parameter of
 //!    runtime_ref), else a download from the tebako-runtime-ruby releases
@@ -196,24 +197,69 @@ pub fn runtime_ref_wants_image(ref_: &str) -> bool {
     ref_.split(';').any(|segment| segment == "image")
 }
 
-/// Which runtime_ref this package resolves against (spec 02 §5b / spec 03
-/// §6): when the package carries the L2 package manifest (extension block
-/// type 2), its `entries[0].runtime_ref` wins — per-entry refs kill the
-/// trailer's 128-byte single-field limit (suites, multi-runtime
-/// packages). A block-less package reads the trailer field exactly as
-/// before (byte-identical behavior). Resolution only — the handoff argv
-/// is unchanged (launcher ABI stays 1).
-pub fn resolution_runtime_ref(m: &tpkg::Manifest) -> Result<String, BootError> {
+/// Which entry of the package manifest `argv0` selects (spec 07 §2.0:
+/// argv0 is the selector). The selector is argv0's file name (both
+/// separators honored on every platform, any `.exe` suffix stripped); an
+/// exact entry-name match wins, otherwise the package's primary entry
+/// (`entries[0]`) — the standalone-download case, where the binary's
+/// file name is arbitrary (version/platform suffixes), always runs the
+/// primary command.
+pub fn select_entry<'a>(pm: &'a tpkg::PackageManifest, argv0: &str) -> &'a tpkg::PackageEntry {
+    let name = argv0.rsplit(['/', '\\']).next().unwrap_or(argv0);
+    let name = name.strip_suffix(".exe").unwrap_or(name);
+    pm.entries
+        .iter()
+        .find(|e| e.name == name)
+        .unwrap_or(&pm.entries[0])
+}
+
+/// The package-manifest selection for this invocation: `None` when the
+/// package carries no type-2 block (v1 behavior, byte-identical), else
+/// the parsed manifest and the entry `argv0` selects. A corrupt block is
+/// a named error; an entry naming a slot the container does not carry is
+/// a named error (the package is internally inconsistent).
+pub fn package_selection(
+    m: &tpkg::Manifest,
+    argv0: &str,
+) -> Result<Option<(tpkg::PackageManifest, tpkg::PackageEntry)>, BootError> {
     match m.package_manifest() {
-        // from_yaml validates: entries is non-empty (N >= 1).
-        Ok(Some(pm)) => Ok(pm.entries[0].runtime_ref.clone()),
-        Ok(None) => Ok(m.runtime_ref_str().unwrap_or_default().to_string()),
+        Ok(Some(pm)) => {
+            let entry = select_entry(&pm, argv0).clone();
+            if entry.slot as usize >= m.slots.len() {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "package manifest entry \"{}\" names slot {} but the package carries {} slot(s) — the package is internally inconsistent, re-stitch it",
+                        entry.name,
+                        entry.slot,
+                        m.slots.len()
+                    ),
+                );
+            }
+            Ok(Some((pm, entry.clone())))
+        }
+        Ok(None) => Ok(None),
         Err(e) => fail(
             EX_TEBAKO_MANIFEST,
             format!(
                 "invalid package manifest (extension block type 2): {e} — re-stitch the package"
             ),
         ),
+    }
+}
+
+/// Which runtime_ref this package resolves against (spec 02 §5b / spec 03
+/// §6): when the package carries the L2 package manifest (extension block
+/// type 2), the SELECTED entry's `runtime_ref` wins — per-entry refs kill
+/// the trailer's 128-byte single-field limit (suites, multi-runtime
+/// packages); argv0 selects the entry (exact name match, `entries[0]`
+/// fallback — [`select_entry`]). A block-less package reads the trailer
+/// field exactly as before (byte-identical behavior). Resolution only —
+/// the handoff argv is unchanged in shape (launcher ABI stays 1).
+pub fn resolution_runtime_ref(m: &tpkg::Manifest, argv0: &str) -> Result<String, BootError> {
+    match package_selection(m, argv0)? {
+        Some((_, entry)) => Ok(entry.runtime_ref),
+        None => Ok(m.runtime_ref_str().unwrap_or_default().to_string()),
     }
 }
 
@@ -1623,17 +1669,31 @@ fn resolve_image(
 
 /// The launcher ABI v1 handoff argv — byte-identical on every platform:
 /// nargv[0] is the runtime, then one `--tebako-image <self>:<slot>:<mount>`
-/// pair per non-runtime slot, then `--tebako-entry <argv0> <user args...>`.
-fn handoff_argv(
+/// pair per mounted slot, then `--tebako-entry <entry> <user args...>`.
+///
+/// Suite mount rule (spec 03 §6): the SELECTED entry's slot mounts, slots
+/// referenced by OTHER package-manifest entries do not (suite member
+/// images are mutually exclusive — they share one mount point by
+/// construction), and slots no entry references (extra `--image` payloads)
+/// mount as always. Without a package manifest every non-runtime slot
+/// mounts and `--tebako-entry` is argv0 verbatim — the v1 behavior.
+/// Public for the integration tests; the flow uses it once per run.
+pub fn handoff_argv(
     runtime: &Path,
     self_path: &Path,
     m: &tpkg::Manifest,
+    selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
     argv: &[String],
 ) -> Vec<String> {
     let mut nargv: Vec<String> = vec![runtime.to_string_lossy().into_owned()];
     for (s, slot) in m.slots.iter().enumerate() {
         if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
             continue; // runtime payload: installed into the cache, never mounted
+        }
+        if let Some((pm, selected)) = selection {
+            if s != selected.slot as usize && pm.entries.iter().any(|e| e.slot as usize == s) {
+                continue; // another suite member's image — not mounted
+            }
         }
         nargv.push("--tebako-image".to_string());
         nargv.push(format!(
@@ -1643,11 +1703,13 @@ fn handoff_argv(
         ));
     }
     nargv.push("--tebako-entry".to_string());
-    nargv.push(
-        argv.first()
+    nargv.push(match selection {
+        Some((_, entry)) => entry.entrypoint.clone(),
+        None => argv
+            .first()
             .cloned()
             .unwrap_or_else(|| self_path.to_string_lossy().into_owned()),
-    );
+    });
     nargv.extend(argv.iter().skip(1).cloned());
     nargv
 }
@@ -1659,11 +1721,12 @@ fn exec_runtime(
     image: Option<&Path>,
     self_path: &Path,
     m: &tpkg::Manifest,
+    selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
     argv: &[String],
 ) -> BootError {
     use std::os::unix::process::CommandExt;
 
-    let nargv = handoff_argv(runtime, self_path, m, argv);
+    let nargv = handoff_argv(runtime, self_path, m, selection, argv);
     let mut cmd = std::process::Command::new(runtime);
     cmd.args(&nargv[1..]);
     if let Some(image) = image {
@@ -1692,9 +1755,10 @@ fn exec_runtime(
     image: Option<&Path>,
     self_path: &Path,
     m: &tpkg::Manifest,
+    selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
     argv: &[String],
 ) -> BootError {
-    let nargv = handoff_argv(runtime, self_path, m, argv);
+    let nargv = handoff_argv(runtime, self_path, m, selection, argv);
     let err = platform::spawn_handoff(runtime, &nargv[1..], image);
     BootError::new(
         EX_TEBAKO_IO,
@@ -1758,7 +1822,16 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         );
     }
 
-    let runtime_ref = resolution_runtime_ref(&m)?;
+    // argv0 entry selection (spec 03 §6 / spec 07 §2.0): the type-2
+    // package manifest's entries map command names to per-entry runtime
+    // refs; argv0 picks one (entries[0] fallback), v1 packages see no
+    // selection at all.
+    let argv0 = argv.first().map(String::as_str).unwrap_or("");
+    let selection = package_selection(&m, argv0)?;
+    let runtime_ref = match &selection {
+        Some((_, entry)) => entry.runtime_ref.clone(),
+        None => m.runtime_ref_str().unwrap_or_default().to_string(),
+    };
     if runtime_ref.is_empty() {
         return fail(
             EX_TEBAKO_RUNTIME_REF,
@@ -1774,6 +1847,7 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         image.as_deref(),
         &self_path,
         &m,
+        selection.as_ref(),
         argv,
     ))
 }

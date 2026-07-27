@@ -30,7 +30,8 @@ pub use error::{ReferenceError, RegistryError, ResolveError};
 pub use fetch::{sha256_hex, FetchedPayload, Fetcher};
 pub use reference::{Reference, Service};
 pub use registry::{
-    PlatformSelection, Registry, RegistryPayload, RegistryPlatforms, RegistryRef, RegistryVersion,
+    PlatformSelection, Registry, RegistryPayload, RegistryPlatforms, RegistryRef,
+    RegistryRuntimeRequirement, RegistryVersion, ReleaseRef,
 };
 pub use transport::{HttpTransport, Transport};
 

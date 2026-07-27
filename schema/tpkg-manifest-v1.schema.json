@@ -228,7 +228,7 @@
           "minItems": 1,
           "items": {
             "type": "object",
-            "required": ["name", "path", "runtime_requirement"],
+            "required": ["name", "path"],
             "properties": {
               "name": { "type": "string", "minLength": 1, "description": "The command name (the shim registers under this)." },
               "path": { "$ref": "#/$defs/absPath" },

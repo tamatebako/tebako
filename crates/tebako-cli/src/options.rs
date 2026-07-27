@@ -37,7 +37,7 @@ impl PressMode {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PressOptions {
     /// Root folder as given on the command line, made absolute
     /// (gem keeps the trailing slash for absolute roots).
@@ -68,6 +68,11 @@ pub struct PressOptions {
     pub devmode: bool,
     /// Press-time current directory.
     pub fs_current: String,
+    /// --suite <suite.yaml>: one package, N entries (spec 03 §6) —
+    /// per-entry imaging + slots + the type-2 package manifest. Roots and
+    /// entry points come from the suite file; -r/-e are not accepted with
+    /// it.
+    pub suite: Option<PathBuf>,
 }
 
 impl PressOptions {

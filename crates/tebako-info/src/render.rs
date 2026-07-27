@@ -127,10 +127,13 @@ fn provides_section(m: &PayloadManifest, out: &mut String) {
                 if !ep.args_default.is_empty() {
                     line.push_str(&format!("  args: {}", ep.args_default.join(" ")));
                 }
-                line.push_str(&format!(
-                    "  runtime: {} {}",
-                    ep.runtime_requirement.engine, ep.runtime_requirement.constraint
-                ));
+                match &ep.runtime_requirement {
+                    Some(req) => {
+                        line.push_str(&format!("  runtime: {} {}", req.engine, req.constraint))
+                    }
+                    // spec 03 §2.2: native entrypoint — zero-runtime dispatch
+                    None => line.push_str("  runtime: none (native)"),
+                }
                 out.push_str(&line);
                 out.push('\n');
             }

@@ -240,24 +240,26 @@ fn provides_json(p: &Provides) -> Json {
                     app.entrypoints
                         .iter()
                         .map(|e| {
-                            Json::Object(vec![
+                            let mut obj = vec![
                                 ("name".to_string(), s(&e.name)),
                                 ("path".to_string(), s(&e.path)),
                                 (
                                     "args_default".to_string(),
                                     Json::Array(e.args_default.iter().map(|a| s(a)).collect()),
                                 ),
-                                (
+                            ];
+                            // omitted for native entrypoints (the YAML key
+                            // is omitted too — spec 03 §2.2)
+                            if let Some(req) = &e.runtime_requirement {
+                                obj.push((
                                     "runtime_requirement".to_string(),
                                     Json::Object(vec![
-                                        ("engine".to_string(), s(&e.runtime_requirement.engine)),
-                                        (
-                                            "constraint".to_string(),
-                                            s(e.runtime_requirement.constraint.as_str()),
-                                        ),
+                                        ("engine".to_string(), s(&req.engine)),
+                                        ("constraint".to_string(), s(req.constraint.as_str())),
                                     ]),
-                                ),
-                            ])
+                                ));
+                            }
+                            Json::Object(obj)
                         })
                         .collect(),
                 ),

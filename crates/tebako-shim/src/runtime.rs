@@ -15,8 +15,9 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
+use tpkg::RuntimeRequirement;
+
 use crate::config::{self, RuntimePref};
-use crate::manifest::RuntimeRequirement;
 use crate::versions::{self, Constraint};
 use crate::{fail, Ctx, ShimError, EX_TEBAKO_IO, EX_TEBAKO_SHA, EX_TEBAKO_UNAVAILABLE};
 
@@ -177,7 +178,9 @@ pub fn resolve_runtime(
     let Some(req) = requirement else {
         return Ok(RuntimeResolution::Zero);
     };
-    let constraint = versions::parse_constraint(&req.constraint)?;
+    // The constraint was validated at manifest parse (tpkg::Constraint) —
+    // the dispatcher only evaluates it against cached/offered versions.
+    let constraint = versions::from_validated(&req.constraint);
     let cached = scan_cached(&ctx.home, &req.engine);
     if let Some(hit) = newest_compatible(&cached, &constraint) {
         return Ok(RuntimeResolution::Ready(hit));

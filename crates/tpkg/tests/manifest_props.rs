@@ -153,10 +153,10 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
             name,
             path,
             args_default: Vec::new(),
-            runtime_requirement: RuntimeRequirement {
+            runtime_requirement: Some(RuntimeRequirement {
                 engine: "ruby".to_string(),
                 constraint: c,
-            },
+            }),
         });
     let app = (prop::collection::vec(entrypoint, 1..=3), arb_platforms()).prop_map(
         |(entrypoints, platforms)| {

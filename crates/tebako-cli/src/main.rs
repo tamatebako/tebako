@@ -13,12 +13,20 @@ const USAGE: &str = "Usage:
                [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local]
+  tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
+               one package, N commands (spec 03 §6: per-entry slots + type-2 manifest)
   tebako cache list [--json]
   tebako cache prune [--all] [--older-than Nd]
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
   tebako list-registries               list the registered registries
+  tebako update-registries             refresh the dispatch-time registry cache
   tebako install <ref | name[@ver]>    install a payload + register its shims
-  tebako uninstall <name>              remove a payload's shims and cache entry";
+  tebako uninstall <name>              remove a payload's shims and cache entry
+  tebako publish --name <app> [--version <v>] --release tfs:github:<owner>/<repo>[:<tag>]
+               (--payload <path> | --payload <triplet>=<path>)...
+               [--standalone <triplet>=<path>]... [--sign[=<keyid>]]
+               [--upload-mirror <dir>] [--tap <org/homebrew-tap> [--tap-dir <dir>]]
+               [--registry-out <path>] [--skip-verify]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -80,8 +88,10 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "cache" => run_cache(rest),
         "add-registry" => run_add_registry(rest),
         "list-registries" => run_list_registries(rest),
+        "update-registries" => run_update_registries(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
+        "publish" => run_publish(rest),
         "clean" | "setup" | "hash" => Err(CliExit::Usage(format!(
             "'tebako {subcommand}' is a later tebako-rs milestone"
         ))),
@@ -137,6 +147,42 @@ fn run_list_registries(args: &[String]) -> Result<(), CliExit> {
     Ok(())
 }
 
+fn run_update_registries(args: &[String]) -> Result<(), CliExit> {
+    if !args.is_empty() {
+        return Err(CliExit::Usage(
+            "usage: tebako update-registries".to_string(),
+        ));
+    }
+    let outcome = tebako_cli::install::update_registries(&tebako_home()?)?;
+    for r in &outcome.refreshed {
+        println!("refreshed {r}");
+    }
+    for r in &outcome.local {
+        println!("{r}: file:// registry — read directly at dispatch, nothing to cache");
+    }
+    for (r, e) in &outcome.failed {
+        eprintln!("tebako: {r}: {e}");
+    }
+    if outcome.refreshed.is_empty() && outcome.local.is_empty() && outcome.failed.is_empty() {
+        println!("no registries registered — tebako add-registry <ref> registers one");
+    }
+    if !outcome.failed.is_empty() {
+        return Err(CliExit::Error(tebako_cli::error::TebakoError::new(
+            format!(
+                "{} registr{} failed to refresh",
+                outcome.failed.len(),
+                if outcome.failed.len() == 1 {
+                    "y"
+                } else {
+                    "ies"
+                }
+            ),
+            69,
+        )));
+    }
+    Ok(())
+}
+
 fn run_install(args: &[String]) -> Result<(), CliExit> {
     let [target] = args else {
         return Err(CliExit::Usage(
@@ -178,6 +224,149 @@ fn run_uninstall(args: &[String]) -> Result<(), CliExit> {
     println!("removed {} ({})", outcome.name, outcome.versions.join(", "));
     for shim in &outcome.shims_removed {
         println!("  unlinked {}", shim.display());
+    }
+    Ok(())
+}
+
+/// `<triplet>=<path>` when the left side is a platform triplet, else the
+/// universal `<path>` (a path carrying '=' keeps it — the left side must
+/// be a triplet for the bound form).
+fn parse_payload_arg(value: &str) -> Result<(Option<tpkg::Platform>, PathBuf), CliExit> {
+    if let Some((lhs, rhs)) = value.split_once('=') {
+        if let Some(platform) = tpkg::Platform::from_triplet(lhs) {
+            if rhs.is_empty() {
+                return Err(CliExit::Usage(format!(
+                    "invalid payload argument '{value}' (<triplet>=<path>)"
+                )));
+            }
+            return Ok((Some(platform), PathBuf::from(rhs)));
+        }
+    }
+    Ok((None, PathBuf::from(value)))
+}
+
+fn parse_publish(args: &[String]) -> Result<tebako_cli::publish::PublishOptions, CliExit> {
+    let mut name: Option<String> = None;
+    let mut version: Option<String> = None;
+    let mut release: Option<String> = None;
+    let mut payloads = Vec::new();
+    let mut standalones = Vec::new();
+    let mut sign: Option<Option<String>> = None;
+    let mut upload_mirror: Option<PathBuf> = None;
+    let mut tap: Option<String> = None;
+    let mut tap_dir: Option<PathBuf> = None;
+    let mut license: Option<String> = None;
+    let mut desc: Option<String> = None;
+    let mut homepage: Option<String> = None;
+    let mut registry_out: Option<String> = None;
+    let mut skip_verify = false;
+
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        let (flag, inline_value) = match arg.split_once('=') {
+            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+            _ => (arg.as_str(), None),
+        };
+        let take_value = |i: &mut usize| -> Result<String, CliExit> {
+            if let Some(v) = inline_value.clone() {
+                return Ok(v);
+            }
+            *i += 1;
+            args.get(*i)
+                .cloned()
+                .ok_or_else(|| CliExit::Usage(format!("option '{flag}' requires a value")))
+        };
+        match flag {
+            "--name" => name = Some(take_value(&mut i)?),
+            "--version" => version = Some(take_value(&mut i)?),
+            "--release" => release = Some(take_value(&mut i)?),
+            "--payload" => {
+                let (triplet, path) = parse_payload_arg(&take_value(&mut i)?)?;
+                payloads.push(tebako_cli::publish::PayloadInput { triplet, path });
+            }
+            "--standalone" => {
+                let value = take_value(&mut i)?;
+                match parse_payload_arg(&value)? {
+                    (Some(triplet), path) => standalones.push((triplet, path)),
+                    (None, _) => {
+                        return Err(CliExit::Usage(format!(
+                            "--standalone expects <triplet>=<path>, got '{value}'"
+                        )))
+                    }
+                }
+            }
+            "--sign" => sign = Some(inline_value.clone()),
+            "--upload-mirror" => upload_mirror = Some(PathBuf::from(take_value(&mut i)?)),
+            "--tap" => tap = Some(take_value(&mut i)?),
+            "--tap-dir" => tap_dir = Some(PathBuf::from(take_value(&mut i)?)),
+            "--license" => license = Some(take_value(&mut i)?),
+            "--desc" => desc = Some(take_value(&mut i)?),
+            "--homepage" => homepage = Some(take_value(&mut i)?),
+            "--registry-out" => registry_out = Some(take_value(&mut i)?),
+            "--skip-verify" => skip_verify = true,
+            other => return Err(CliExit::Usage(format!("unknown publish option '{other}'"))),
+        }
+        i += 1;
+    }
+
+    let name = name.ok_or_else(|| CliExit::Usage("publish requires --name <app>".to_string()))?;
+    let release =
+        release.ok_or_else(|| CliExit::Usage("publish requires --release <ref>".to_string()))?;
+    if payloads.is_empty() {
+        return Err(CliExit::Usage(
+            "publish requires at least one --payload".to_string(),
+        ));
+    }
+    if tap_dir.is_some() && tap.is_none() {
+        return Err(CliExit::Usage("--tap-dir needs --tap".to_string()));
+    }
+
+    Ok(tebako_cli::publish::PublishOptions {
+        name,
+        version,
+        release,
+        payloads,
+        standalones,
+        sign,
+        upload_mirror,
+        tap,
+        tap_dir,
+        license,
+        desc,
+        homepage,
+        registry_out,
+        skip_verify,
+    })
+}
+
+fn run_publish(args: &[String]) -> Result<(), CliExit> {
+    let opts = parse_publish(args)?;
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let outcome = tebako_cli::publish::publish(&opts, &tebako_home()?, &cwd)?;
+    for note in &outcome.notes {
+        eprintln!("tebako: note: {note}");
+    }
+    println!(
+        "published {} {} to tfs:github release tag {}",
+        outcome.name, outcome.version, outcome.tag
+    );
+    for (artifact, sha) in &outcome.artifacts {
+        println!("  {artifact}  sha256:{sha}");
+    }
+    if let Some(signer) = &outcome.signer {
+        println!("  signed (keyid {signer}): {} .asc", outcome.ascs.len());
+    }
+    if let Some(path) = &outcome.registry_path {
+        println!("  registry {}", path.display());
+    }
+    if let Some(path) = &outcome.formula_path {
+        println!("  tap formula {}", path.display());
+    } else if let Some(formula) = &outcome.formula {
+        println!("{formula}");
+    }
+    if let Some(verified) = &outcome.verified {
+        println!("  {verified}");
     }
     Ok(())
 }
@@ -247,6 +436,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut tebako_version = tebako_cli::DEFAULT_TEBAKO_VERSION.to_string();
     let mut prefer_local = false;
     let mut devmode = false;
+    let mut suite: Option<PathBuf> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -280,6 +470,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--bootstrap" => bootstrap = Some(PathBuf::from(take_value(&mut i)?)),
             "--tebako-version" => tebako_version = take_value(&mut i)?,
             "--prefer-local" => prefer_local = true,
+            "--suite" => suite = Some(PathBuf::from(take_value(&mut i)?)),
             "-D" | "--devmode" => devmode = true,
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
@@ -293,21 +484,32 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         i += 1;
     }
 
-    // Thor's required-options check, message shape included.
-    let mut missing = String::new();
-    if root.is_none() {
-        missing += " '--root'";
-    }
-    if entrance.is_none() {
-        if !missing.is_empty() {
-            missing += ", ";
+    // Thor's required-options check, message shape included. A suite
+    // carries its own roots/entries, so -r/-e are neither required nor
+    // accepted with --suite.
+    if suite.is_some() {
+        if root.is_some() || entrance.is_some() {
+            return Err(CliExit::Usage(
+                "--root/--entry-point come from the suite file with --suite (do not pass them)"
+                    .to_string(),
+            ));
         }
-        missing += " '--entry-point'";
-    }
-    if !missing.is_empty() {
-        return Err(CliExit::Usage(format!(
-            "No value provided for required options {missing}"
-        )));
+    } else {
+        let mut missing = String::new();
+        if root.is_none() {
+            missing += " '--root'";
+        }
+        if entrance.is_none() {
+            if !missing.is_empty() {
+                missing += ", ";
+            }
+            missing += " '--entry-point'";
+        }
+        if !missing.is_empty() {
+            return Err(CliExit::Usage(format!(
+                "No value provided for required options {missing}"
+            )));
+        }
     }
 
     let fs_current = std::env::current_dir()
@@ -316,8 +518,8 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         .replace('\\', "/");
 
     Ok(PressOptions {
-        root_arg: root.unwrap().replace('\\', "/"),
-        entrance: entrance.unwrap().replace('\\', "/"),
+        root_arg: root.unwrap_or_default().replace('\\', "/"),
+        entrance: entrance.unwrap_or_default().replace('\\', "/"),
         output,
         prefix: resolve_prefix(prefix.as_deref()),
         cwd: cwd.map(|c| c.replace('\\', "/")),
@@ -331,5 +533,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         verbose: verbose_mode(),
         devmode,
         fs_current,
+        suite,
     })
 }

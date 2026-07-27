@@ -1,0 +1,45 @@
+# frozen_string_literal: true
+
+# Tebako-packaged app formula template (spec 16, persona C).
+# Replace the @@PLACEHOLDER@@ slots. Class name must be the CamelCase of
+# the formula filename (e.g. metanorma.rb -> class Metanorma).
+class @@CAMELAPP@@ < Formula
+  desc "@@APP_DESC@@"
+  homepage "@@APP_HOMEPAGE@@"
+  version "@@APP_VERSION@@"
+  license "@@APP_LICENSE_SPDX@@"
+
+  # Standalone tebako binaries (slim primary): bootstrap + app payload;
+  # the runtime resolves once per machine into ~/.tebako on first run.
+  base = "@@RELEASE_BASE_URL@@/v#{version}"
+
+  on_macos do
+    on_arm do
+      url "#{base}/@@APP@@-#{version}-macos-arm64"
+      sha256 "@@SHA256_MACOS_ARM64@@"
+    end
+    on_intel do
+      url "#{base}/@@APP@@-#{version}-macos-x86_64"
+      sha256 "@@SHA256_MACOS_X86_64@@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "#{base}/@@APP@@-#{version}-linux-gnu-arm64"
+      sha256 "@@SHA256_LINUX_GNU_ARM64@@"
+    end
+    on_intel do
+      url "#{base}/@@APP@@-#{version}-linux-gnu-x86_64"
+      sha256 "@@SHA256_LINUX_GNU_X86_64@@"
+    end
+  end
+
+  def install
+    bin.install Dir["@@APP@@-*"].first => "@@APP@@"
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/@@APP@@ --version")
+  end
+end

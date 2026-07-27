@@ -70,13 +70,50 @@ pub fn write_payload(home: &Path, name: &str, version: &str, manifest_yaml: &str
     image
 }
 
-pub fn app_manifest(name: &str, version: &str, entrypoints: &str) -> String {
-    format!("schema_version: 1\nkind: app\nname: {name}\nversion: {version}\n{entrypoints}")
+/// The unified payload manifest (spec 03 — the mirror's shape after the
+/// item 40 manifest unify): kind app, with `entrypoints_block` as the
+/// provides.entrypoints body ("  entrypoints:\n    - name: …" at the
+/// provides-level indent).
+pub fn app_manifest(name: &str, version: &str, entrypoints_block: &str) -> String {
+    app_manifest_full(name, version, entrypoints_block, "")
 }
 
-pub const RUBY_ENTRY: &str = "entrypoints:\n  - name: TOOL\n    path: /app/bin/TOOL\n    runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n";
+/// An app manifest carrying DEPENDS edges (`requires_block` at the
+/// top-level indent, "requires:\n  - kind: …").
+pub fn app_manifest_requires(
+    name: &str,
+    version: &str,
+    entrypoints_block: &str,
+    requires_block: &str,
+) -> String {
+    app_manifest_full(name, version, entrypoints_block, requires_block)
+}
 
-pub const NATIVE_ENTRY: &str = "entrypoints:\n  - name: TOOL\n    path: /app/bin/TOOL\n";
+fn app_manifest_full(
+    name: &str,
+    version: &str,
+    entrypoints_block: &str,
+    requires_block: &str,
+) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako-shim-tests, tool_version: \"1\"}}\n  created: \"2026-07-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{tree}\"\n    blob_sha256: {blob}\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n{entrypoints_block}  platforms: universal\n  capabilities: {{exec: true, read: true}}\n{requires_block}",
+        tree = "a".repeat(64),
+        blob = "b".repeat(64),
+    )
+}
+
+/// A data payload's manifest (dependency fixtures): no entrypoints.
+pub fn data_manifest(name: &str, version: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako-shim-tests, tool_version: \"1\"}}\n  created: \"2026-07-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{tree}\"\n    blob_sha256: {blob}\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  mount_semantics: {{suggested: /usr/share/{name}}}\n  capabilities: {{exec: false, read: true}}\n",
+        tree = "a".repeat(64),
+        blob = "b".repeat(64),
+    )
+}
+
+pub const RUBY_ENTRY: &str = "  entrypoints:\n    - name: TOOL\n      path: /app/bin/TOOL\n      runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n";
+
+pub const NATIVE_ENTRY: &str = "  entrypoints:\n    - name: TOOL\n      path: /app/bin/TOOL\n";
 
 pub fn entrypoint_yaml(template: &str, tool: &str) -> String {
     template.replace("TOOL", tool)

@@ -12,17 +12,18 @@
 //!   disable). Kept out of the authored config so `tebako-shim disable`
 //!   never rewrites a hand-maintained file.
 //! - `tpkg-registry.yaml` — the developer-hosted registry (spec 04 §2).
-//!   The CLI (`tebako add-registry | install`, roadmap 28.1) resolves
-//!   every registry form through tebako-resolve; the DISPATCH-time
-//!   registry-default link below still reads `file://` refs and plain
-//!   paths only (a dispatch-time registry cache is PLANNED).
+//!   The registry-default chain link resolves every registry form through
+//!   tebako-resolve behind the dispatch-time cache ([`crate::regcache`]:
+//!   24 h TTL, `tebako update-registries`, `TEBAKO_OFFLINE` = cache-or-
+//!   named-error); the registry model is tebako-resolve's (one model,
+//!   parse + validate).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use crate::{fail, ShimError, EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
+use crate::{fail, Ctx, ShimError, EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 
 #[derive(Debug, Default, Deserialize)]
 pub struct UserConfig {
@@ -152,73 +153,28 @@ pub fn add_registry(home: &Path, reg_ref: &str) -> Result<AddRegistryOutcome, Sh
 }
 
 // ---------------------------------------------------------------------
-// registry mirror (spec 04 §2) — resolution-relevant fields only
+// the registry-default chain link (spec 07 §2.1, last resort)
 // ---------------------------------------------------------------------
 
-#[derive(Debug, Deserialize)]
-struct Registry {
-    #[serde(default)]
-    payloads: Vec<RegistryPayload>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RegistryPayload {
-    name: String,
-    #[serde(default)]
-    default: Option<String>,
-}
-
 /// The registry default version for `payload_name`, scanning the user's
-/// registered registries in order (first match wins).
+/// registered registries in order (first match wins). Every registry form
+/// of spec 04 §2 resolves through the dispatch-time cache
+/// ([`crate::regcache`]); the registry model is tebako-resolve's.
 pub fn registry_default(
+    home: &Path,
     config: &UserConfig,
     payload_name: &str,
+    ctx: &Ctx,
 ) -> Result<Option<(String, String)>, ShimError> {
     for reg_ref in &config.registries {
-        let path = match local_registry_path(reg_ref) {
-            Some(p) => p,
-            None => {
-                return fail(
-                    EX_TEBAKO_MANIFEST,
-                    format!(
-                        "registry ref \"{reg_ref}\" is not a local file — the dispatch-time registry-default link reads file:// registries only (the CLI resolves remote registries at install; a dispatch-time registry cache is PLANNED)"
-                    ),
-                )
-            }
-        };
-        let text = match std::fs::read_to_string(&path) {
-            Ok(t) => t,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => {
-                return fail(
-                    EX_TEBAKO_IO,
-                    format!("cannot read registry {}: {e}", path.display()),
-                )
-            }
-        };
-        let registry: Registry = serde_yaml::from_str(&text).map_err(|e| {
-            ShimError::new(
-                EX_TEBAKO_MANIFEST,
-                format!("cannot parse registry {} ({e})", path.display()),
-            )
-        })?;
-        if let Some(p) = registry.payloads.iter().find(|p| p.name == payload_name) {
+        let registry = crate::regcache::registry_for(home, reg_ref, ctx)?;
+        if let Some(p) = registry.payload(payload_name) {
             if let Some(default) = &p.default {
                 return Ok(Some((default.clone(), reg_ref.clone())));
             }
         }
     }
     Ok(None)
-}
-
-fn local_registry_path(reg_ref: &str) -> Option<PathBuf> {
-    if let Some(rest) = reg_ref.strip_prefix("file://") {
-        Some(PathBuf::from(rest))
-    } else if reg_ref.starts_with('/') || reg_ref.starts_with("./") || reg_ref.starts_with("../") {
-        Some(PathBuf::from(reg_ref))
-    } else {
-        None
-    }
 }
 
 // ---------------------------------------------------------------------

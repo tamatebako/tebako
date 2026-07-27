@@ -58,6 +58,12 @@ fn registry_install_uninstall_smoke() {
     assert_eq!(code, 0, "{text}");
     assert!(text.contains(&reg_ref), "{text}");
 
+    // update-registries: a file:// registry is reported as local (nothing
+    // to cache), exit 0
+    let (code, text) = run(&home, &shim, &["update-registries"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("nothing to cache"), "{text}");
+
     let (code, text) = run(&home, &shim, &["install", "app"]);
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("installed app 1.0"), "{text}");
