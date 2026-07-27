@@ -861,3 +861,328 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
         .map_err(|e| (format!("dwarfs writer: {}: {e}", output.display()), 1))?;
     Ok(())
 }
+
+// ---------------------------------------------------------------------
+// exec (spec 07 §8 tier 1: the preload interposition shim launcher)
+// ---------------------------------------------------------------------
+
+/// Options for `tfs exec`.
+pub struct ExecOptions {
+    /// `image[:mount]` tokens (the leading positional + `--image` repeats;
+    /// default mount `/mnt`).
+    pub images: Vec<String>,
+    /// The `--jail` spec (the spec 08 env form shared with the shim), if
+    /// given.
+    pub jail: Option<String>,
+    /// Command + args, verbatim (everything after `--`).
+    pub cmd: Vec<String>,
+}
+
+/// The preload env var for this platform.
+#[cfg(target_os = "macos")]
+pub fn preload_var() -> &'static str {
+    "DYLD_INSERT_LIBRARIES"
+}
+
+/// The preload env var for this platform.
+#[cfg(target_os = "linux")]
+pub fn preload_var() -> &'static str {
+    "LD_PRELOAD"
+}
+
+/// The shim's library file name for this platform.
+#[cfg(target_os = "macos")]
+fn preload_lib_name() -> &'static str {
+    "libtfs_preload.dylib"
+}
+
+/// The shim's library file name for this platform.
+#[cfg(target_os = "linux")]
+fn preload_lib_name() -> &'static str {
+    "libtfs_preload.so"
+}
+
+/// Engine errno text for messages.
+fn errno_text(e: i32) -> String {
+    String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+}
+
+/// Locate the preload shim: `TEBAKO_TFS_PRELOAD` wins, else the sibling
+/// of this binary (`libtfs_preload.{dylib,so}` — same artifact directory).
+#[cfg(unix)]
+fn exec_shim_path() -> Result<PathBuf, (String, i32)> {
+    if let Ok(p) = std::env::var("TEBAKO_TFS_PRELOAD") {
+        if !p.is_empty() {
+            let path = PathBuf::from(&p);
+            if path.is_file() {
+                return Ok(path);
+            }
+            return Err((
+                format!("Error: TEBAKO_TFS_PRELOAD points at a missing file: {p}"),
+                1,
+            ));
+        }
+    }
+    let exe = std::env::current_exe()
+        .map_err(|e| (format!("Error: cannot locate the tfs binary: {e}"), 1))?;
+    let cand = exe
+        .parent()
+        .map(|d| d.join(preload_lib_name()))
+        .unwrap_or_else(|| PathBuf::from(preload_lib_name()));
+    if cand.is_file() {
+        return Ok(cand);
+    }
+    Err((
+        format!(
+            "Error: the preload shim is not available at {} \
+             (build it with `cargo build -p libtfs-preload`, or set TEBAKO_TFS_PRELOAD)",
+            cand.display()
+        ),
+        1,
+    ))
+}
+
+/// `tfs exec` — launch a dynamic native command with the VFS injected
+/// through the preload interposition shim (spec 07 §8 tier 1; spec 11 §6
+/// access #5). On success this never returns (the process is replaced).
+#[cfg(unix)]
+pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
+    use tfs::policy::{HostPolicy, JailSpec};
+
+    if opts.images.is_empty() || opts.cmd.is_empty() {
+        return Err((
+            "Error: wrong number of arguments\nusage: tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] -- <cmd> [args...]"
+                .to_string(),
+            1,
+        ));
+    }
+    // Parse + canonicalize the mounts: the exec'd child's cwd is not
+    // necessarily ours, so image paths must be absolute in the env.
+    let mut decls: Vec<tfs::mount_spec::MountDecl> = Vec::with_capacity(opts.images.len());
+    for token in &opts.images {
+        let d = tfs::mount_spec::parse_cli_image_mount(token)
+            .map_err(|e| (format!("Error: {e}"), 1))?;
+        let canon = std::fs::canonicalize(&d.image)
+            .map_err(|_| (format!("Error: Image not found: {}", d.image), 1))?;
+        if decls.iter().any(|m| m.mount == d.mount) {
+            return Err((format!("Error: duplicate mount point: {}", d.mount), 1));
+        }
+        decls.push(tfs::mount_spec::MountDecl {
+            image: canon.to_string_lossy().into_owned(),
+            mount: d.mount,
+        });
+    }
+    // Validate the jail NOW (grant paths must exist at bind time —
+    // failing here beats dying in the child's constructor) and carry the
+    // canonical form into the child. The policy is NOT installed in this
+    // process.
+    let jail_env = match &opts.jail {
+        Some(spec) => {
+            let parsed = JailSpec::parse(spec).map_err(|e| (format!("Error: {e}"), 1))?;
+            let policy = HostPolicy::bind(parsed.default_open, parsed.mounts, parsed.arg_files)
+                .map_err(|e| {
+                    (
+                        format!("Error: --jail: cannot bind policy: {}", errno_text(e)),
+                        1,
+                    )
+                })?;
+            Some(policy.to_env_spec())
+        }
+        None => None,
+    };
+    let shim = exec_shim_path()?;
+    let cmd0 = materialize_entrypoint(&decls, &opts.cmd[0])?;
+    let mounts_env = tfs::mount_spec::to_env_spec(&decls);
+    exec_child(
+        &shim,
+        &mounts_env,
+        jail_env.as_deref(),
+        &cmd0,
+        &opts.cmd[1..],
+    )
+}
+
+/// `tfs exec` is macOS/linux first (spec 07 §8 tier 1); windows is
+/// roadmap 30 phase 2 (DLL injection).
+#[cfg(not(unix))]
+pub fn cmd_exec(_opts: &ExecOptions) -> Result<(), (String, i32)> {
+    Err((
+        "Error: tfs exec is not supported on this platform yet \
+         (the preload shim targets macOS and linux-gnu first; windows is roadmap 30 phase 2)"
+            .to_string(),
+        1,
+    ))
+}
+
+/// Mount the declared images TRANSIENTLY to check whether the command is
+/// an in-image path; when it is, materialize it through the engine's
+/// dlmap2file host cache (execve needs a host path — this is the spec 07
+/// §8 tier-1 entrypoint mechanism; only the ENTRYPOINT is materialized,
+/// everything the tool reads stays in the image) and hand that path back.
+/// Unmounts before returning — the child's shim re-mounts from the env.
+///
+/// Note: the entrypoint copy lives in the per-process dl tmpdir, whose
+/// removal is registered with atexit — exec bypasses atexit, so one small
+/// copy leaks per in-image exec (gc is a later milestone; stated honestly
+/// in the spec).
+#[cfg(unix)]
+fn materialize_entrypoint(
+    decls: &[tfs::mount_spec::MountDecl],
+    cmd: &str,
+) -> Result<String, (String, i32)> {
+    use tfs::context::context;
+
+    // A command that is not an absolute path (bare name → PATH search, or
+    // relative) is a host command by construction.
+    if !cmd.starts_with('/') {
+        return Ok(cmd.to_string());
+    }
+    for d in decls {
+        let mount = tfs::mount::build_from_file(&d.image, &d.mount).map_err(|e| {
+            (
+                format!(
+                    "Error: Failed to open archive: {}\n       {}",
+                    d.image,
+                    errno_text(e)
+                ),
+                1,
+            )
+        })?;
+        context()
+            .write()
+            .unwrap()
+            .mount_checked(mount)
+            .map_err(|e| {
+                (
+                    format!(
+                        "Error: cannot mount {} at {}: {}",
+                        d.image,
+                        d.mount,
+                        errno_text(e)
+                    ),
+                    1,
+                )
+            })?;
+    }
+    let materialized = {
+        let mut ctx = context().write().unwrap();
+        if ctx.path_is_embedded(cmd) {
+            Some(ctx.dlmap2file(cmd).map_err(|e| {
+                (
+                    format!("Error: cannot materialize {cmd}: {}", errno_text(e)),
+                    1,
+                )
+            })?)
+        } else {
+            None
+        }
+    };
+    context().write().unwrap().unmount();
+    match materialized {
+        Some(host) => {
+            let path = host.to_string_lossy().into_owned();
+            // The kernel needs the exec bit; zip-family backends honestly
+            // report 0644, so OR 0111 in explicitly (dlmap2file preserves
+            // the image's perms, which may already be fine).
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(&path)
+                .map_err(|e| (format!("Error: cannot stat materialized {path}: {e}"), 1))?
+                .permissions()
+                .mode();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode | 0o111))
+                .map_err(|e| (format!("Error: cannot chmod materialized {path}: {e}"), 1))?;
+            Ok(path)
+        }
+        None => Ok(cmd.to_string()),
+    }
+}
+
+/// Set the preload env on the CHILD ONLY (scrub any inherited values
+/// first, then set exactly the shim contract) and exec with stdio
+/// inherited. Grandchildren inherit the env naturally — the process tree
+/// stays in the VFS (modulo SIP platform binaries stripping DYLD_*).
+#[cfg(unix)]
+fn exec_child(
+    shim: &Path,
+    mounts_env: &str,
+    jail_env: Option<&str>,
+    cmd: &str,
+    args: &[String],
+) -> Result<(), (String, i32)> {
+    use std::os::unix::process::CommandExt as _;
+
+    let mut command = std::process::Command::new(cmd);
+    command
+        .args(args)
+        .env_remove(preload_var())
+        .env_remove("TEBAKO_TFS_MOUNTS")
+        .env_remove("TEBAKO_JAIL")
+        .env(preload_var(), shim)
+        .env("TEBAKO_TFS_MOUNTS", mounts_env);
+    if let Some(j) = jail_env {
+        command.env("TEBAKO_JAIL", j);
+    }
+    let err = command.exec(); // returns only on failure
+    Err((format!("Error: cannot exec {cmd}: {err}"), 1))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opts(images: &[&str], jail: Option<&str>, cmd: &[&str]) -> ExecOptions {
+        ExecOptions {
+            images: images.iter().map(|s| s.to_string()).collect(),
+            jail: jail.map(|s| s.to_string()),
+            cmd: cmd.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn exec_rejects_bad_arguments_before_exec() {
+        // Missing image / command.
+        assert!(cmd_exec(&opts(&[], None, &["true"])).is_err());
+        assert!(cmd_exec(&opts(&["/x.zip"], None, &[])).is_err());
+        // Relative image path (the CLI form defaults the mount to /mnt).
+        let (msg, _) = cmd_exec(&opts(&["rel.zip"], None, &["true"])).unwrap_err();
+        assert!(msg.contains("not absolute"), "{msg}");
+        // A mount at "/" is rejected (jail bypass).
+        let (msg, _) = cmd_exec(&opts(&["/x.zip:/"], None, &["true"])).unwrap_err();
+        assert!(msg.contains("'/'"), "{msg}");
+        // A missing image.
+        let (msg, _) = cmd_exec(&opts(&["/no/such/image.zip"], None, &["true"])).unwrap_err();
+        assert!(msg.contains("Image not found"), "{msg}");
+        // Duplicate mount points (images must exist to reach the check).
+        let (msg, _) = cmd_exec(&opts(
+            &["/etc/hosts:/tfs", "/etc/hosts:/tfs"],
+            None,
+            &["true"],
+        ))
+        .unwrap_err();
+        assert!(msg.contains("duplicate mount point"), "{msg}");
+        // A malformed jail spec (validated after the image resolves).
+        let (msg, _) = cmd_exec(&opts(&["/etc/hosts"], Some("frob"), &["true"])).unwrap_err();
+        assert!(msg.contains("invalid jail spec"), "{msg}");
+        // A jail grant whose host path does not exist (bind-time check).
+        let (msg, _) = cmd_exec(&opts(
+            &["/etc/hosts"],
+            Some("deny;/no/such/dir:/w:ro"),
+            &["true"],
+        ))
+        .unwrap_err();
+        assert!(msg.contains("cannot bind policy"), "{msg}");
+    }
+
+    #[test]
+    #[cfg(all(unix, any(target_os = "macos", target_os = "linux")))]
+    fn preload_var_matches_platform() {
+        if cfg!(target_os = "macos") {
+            assert_eq!(preload_var(), "DYLD_INSERT_LIBRARIES");
+            assert_eq!(preload_lib_name(), "libtfs_preload.dylib");
+        } else {
+            assert_eq!(preload_var(), "LD_PRELOAD");
+            assert_eq!(preload_lib_name(), "libtfs_preload.so");
+        }
+    }
+}

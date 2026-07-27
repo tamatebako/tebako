@@ -4,10 +4,12 @@ Normative specification of host-filesystem access control for running
 payloads. Status: PARTIAL (roadmap 09) — the TFS enforcement point (§1–§3)
 is SHIPPED in `crates/tfs` (policy model, `tebako_fs_host_policy`,
 per-route EPERM/EROFS gating, symlink re-validation, jail acceptance
-suite); manifest integration (§4), the dispatch-surface flags and the
-audit-journal logging of violations remain PLANNED. Enforcement exists
-because every file access already flows through the TFS layer — one choke
-point covers every consumer.
+suite); the `TEBAKO_JAIL` env form of the policy (§1) is SHIPPED with
+roadmap 30's preload shim (`tfs exec --jail` carries it to native
+binaries); manifest integration (§4), the remaining dispatch-surface
+flags and the audit-journal logging of violations remain PLANNED.
+Enforcement exists because every file access already flows through the
+TFS layer — one choke point covers every consumer.
 
 ## 1. Policy model (docker `-v` semantics)
 

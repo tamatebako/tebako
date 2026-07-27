@@ -1,0 +1,31 @@
+[package]
+name = "libtfs-preload"
+description = "libtfs-preload: the preload interposition shim (spec 07 §8 tier 1) — DYLD_INSERT_LIBRARIES / LD_PRELOAD VFS injection for dynamic native binaries"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "tfs", "vfs", "preload", "interposition"]
+categories = ["filesystem"]
+
+[lib]
+# libtfs_preload.{dylib,so} is the artifact injected into exec'd processes;
+# the rlib carries the safe spec/route surface for unit tests and for
+# tfs-cli (which reuses the TEBAKO_TFS_MOUNTS parser — one grammar, one
+# parser).
+name = "tfs_preload"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# The engine, embedded in-process: the shim is a TFS consumer, never a
+# format. The pure-cargo backends (zip/tar) keep the shim lean and
+# vcpkg-free; the vendored native backends stay opt-in via the tfs crate's
+# own features.
+tfs = { version = "0.1.0", path = "../tfs", default-features = false }
+libc = "0.2"
+
+[dev-dependencies]
+# Test-image fixtures (exec proofs mount a zip through the shim).
+zip = { version = "2", default-features = false, features = ["deflate"] }

@@ -129,7 +129,22 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    interception) is the reference technique. Bonus: interposed IO flows
    through the same `host_policy` — **jails extend to these binaries**
    (spec 08). Limit: dynamic binaries only; the shim is a TFS consumer,
-   never a format.
+   never a format. **SHIPPED (roadmap 30): `crates/libtfs-preload` +
+   `tfs exec <image>[:mount] [--image …] [--jail <spec>] -- <cmd>` in
+   tfs-cli — macOS and linux-gnu first-class, windows later. v1 concrete
+   choices:** interposed surface open/openat/stat/lstat/fstat/access/
+   faccessat/opendir/readdir(+readdir64)/closedir/pread/read/lseek/
+   close/mkdir/unlink/rename + dlopen; `TEBAKO_JAIL` carries the spec 08
+   §1 env form (`open|deny` + `host:mount:ro|rw` grants + `@` argument
+   files); the ENTRYPOINT (when in-image) is materialized through
+   `dlmap2file` (execve needs a host path — one copy per exec, gc
+   later); execve/posix_spawn of memfs paths is NOT virtualized in v1
+   (children re-spawn via `argv[0]`; the process tree stays in the VFS
+   by env propagation; SIP platform binaries strip `DYLD_*` and leave
+   it); a mount at `/` is refused (it would claim every host path and
+   bypass the jail); not interposed in v1: execve/posix_spawn,
+   fstatat/statx, getdents64, openat2, readdir_r,
+   rewinddir/telldir/seekdir, the pre-glibc-2.33 `__xstat` family.
 2. **Static/self-contained tools**: extract-to-exec-cache
    (`~/.tebako/exec/<sha256>/…`, 0755, verified at install). A static
    binary is one monolithic block: no dynamic symbols, no interposition

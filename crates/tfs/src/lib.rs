@@ -77,12 +77,13 @@ pub mod c_api;
 pub mod context;
 pub mod errno;
 pub mod mount;
+pub mod mount_spec;
 pub mod policy;
 
 pub use backend::{Backend, EntryType, RawDirEntry, RawStat, WritableBackend};
 pub use context::{TebakoCDirent, DT_DIR, DT_REG, TEBAKO_FD_FLAG, TEBAKO_FD_MAX};
 pub use mount::{MountMode, TEBAKO_MOUNT_COW, TEBAKO_MOUNT_RO, TEBAKO_MOUNT_RW};
-pub use policy::{HostAccess, HostMount, HostMountSpec, HostPolicy};
+pub use policy::{HostAccess, HostMount, HostMountSpec, HostPolicy, JailSpec, JailSpecError};
 
 /// Image-level metadata as JSON for an image file (item 24's
 /// `image_info_json`), built straight from the backend — outside the

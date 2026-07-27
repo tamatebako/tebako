@@ -26,6 +26,7 @@
 //!
 //! Pure safe Rust; errno values are the crate's error convention.
 
+use std::fmt;
 use std::path::{Component, Path, PathBuf};
 
 /// Access mode: a mount's grant bit, and the level an IO route requests.
@@ -55,7 +56,7 @@ pub struct HostMount {
 }
 
 /// Bind-time form of a [`HostMount`] (host side not yet canonicalized).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostMountSpec {
     /// Host directory as handed in (may contain `.`/`..`/symlinks).
     pub host: PathBuf,
@@ -175,6 +176,147 @@ impl HostPolicy {
             return Ok(());
         }
         Err(libc::EPERM)
+    }
+
+    /// Serialize the policy to the canonical `TEBAKO_JAIL` env form (the
+    /// inverse of [`JailSpec::parse`]). Because the policy is bound, every
+    /// host path is already canonical — a consumer that re-parses and
+    /// re-binds the string gets an identical policy.
+    pub fn to_env_spec(&self) -> String {
+        let mut out = String::from(if self.default_open { "open" } else { "deny" });
+        for m in &self.mounts {
+            out.push(';');
+            out.push_str(&m.host.to_string_lossy());
+            out.push(':');
+            out.push_str(&m.mount);
+            out.push(':');
+            out.push_str(match m.access {
+                HostAccess::Ro => "ro",
+                HostAccess::Rw => "rw",
+            });
+        }
+        for f in &self.arg_files {
+            out.push(';');
+            out.push('@');
+            out.push_str(&f.to_string_lossy());
+        }
+        out
+    }
+}
+
+/// The parsed form of a `TEBAKO_JAIL` / `--jail` spec string (spec 08 §1,
+/// env encoding shared by the preload shim and the dispatch surfaces).
+///
+/// Grammar (`;`-separated directives, order-free):
+///
+/// ```text
+/// jail      = directive *( ";" directive )
+/// directive = "open" | "deny"          # namespace default (default: open)
+///           | host ":" mount ":" mode  # docker -v grant; mount absolute
+///           | "@" path                 # argument file (read-only grant)
+/// mode      = "ro" | "rw"
+/// ```
+///
+/// Example: `deny;/home/u/src:/work:rw;@/home/u/input.csv`.
+///
+/// Bind with [`HostPolicy::bind`]; serialize a bound policy back with
+/// [`HostPolicy::to_env_spec`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JailSpec {
+    /// Namespace default: `true` = open (today's behavior), `false` = deny.
+    pub default_open: bool,
+    /// Host-mount grants (docker `-v` semantics).
+    pub mounts: Vec<HostMountSpec>,
+    /// Argument files: read-only grants, honored even under deny.
+    pub arg_files: Vec<PathBuf>,
+}
+
+/// A named, human-readable jail-spec parse error (the offending token is
+/// always quoted; spec 14 §3's "named errors on malformed input").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JailSpecError(pub String);
+
+impl fmt::Display for JailSpecError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid jail spec: {}", self.0)
+    }
+}
+
+impl std::error::Error for JailSpecError {}
+
+impl JailSpec {
+    /// Parse a `TEBAKO_JAIL` / `--jail` spec. Errors on: empty spec,
+    /// conflicting or duplicated `open`/`deny`, unknown access modes,
+    /// non-absolute mount points, empty hosts/mounts/argument files, and
+    /// unrecognised directive shapes.
+    pub fn parse(spec: &str) -> Result<Self, JailSpecError> {
+        let err = |msg: String| JailSpecError(format!("{msg} in {spec:?}"));
+        if spec.trim().is_empty() {
+            return Err(JailSpecError("empty spec".to_string()));
+        }
+        let mut default_open: Option<bool> = None;
+        let mut mounts = Vec::new();
+        let mut arg_files = Vec::new();
+        for token in spec.split(';') {
+            if token.is_empty() {
+                return Err(err("empty directive (stray ';')".to_string()));
+            }
+            match token {
+                "open" | "deny" => {
+                    let value = token == "open";
+                    if default_open.is_some() {
+                        return Err(err(format!(
+                            "duplicate/conflicting default directive {token:?}"
+                        )));
+                    }
+                    default_open = Some(value);
+                }
+                _ if token.starts_with('@') => {
+                    let path = &token[1..];
+                    if path.is_empty() {
+                        return Err(err("empty argument file".to_string()));
+                    }
+                    arg_files.push(PathBuf::from(path));
+                }
+                _ => {
+                    // host:mount:access — split from the RIGHT so host paths
+                    // containing ':' survive; mount must be absolute.
+                    let Some((head, access)) = token.rsplit_once(':') else {
+                        return Err(err(format!(
+                            "directive {token:?} is not open|deny, @file, or host:mount:ro|rw"
+                        )));
+                    };
+                    let access = match access {
+                        "ro" => HostAccess::Ro,
+                        "rw" => HostAccess::Rw,
+                        other => {
+                            return Err(err(format!("unknown access mode {other:?} (want ro|rw)")))
+                        }
+                    };
+                    let Some((host, mount)) = head.rsplit_once(':') else {
+                        return Err(err(format!(
+                            "grant {token:?} needs the host:mount:ro|rw shape"
+                        )));
+                    };
+                    if host.is_empty() {
+                        return Err(err(format!("empty host in grant {token:?}")));
+                    }
+                    if !mount.starts_with('/') {
+                        return Err(err(format!("mount point {mount:?} is not absolute")));
+                    }
+                    mounts.push(HostMountSpec {
+                        host: PathBuf::from(host),
+                        mount: mount.to_string(),
+                        access,
+                    });
+                }
+            }
+        }
+        Ok(JailSpec {
+            default_open: default_open.unwrap_or(true),
+            mounts,
+            arg_files,
+        })
     }
 }
 
@@ -581,5 +723,99 @@ mod tests {
         assert_eq!(err, libc::ENOENT);
         let err = HostPolicy::bind(false, vec![], vec![missing.clone()]).unwrap_err();
         assert_eq!(err, libc::ENOENT);
+    }
+
+    // ---------------------------------------------------------------
+    // JailSpec (TEBAKO_JAIL / --jail env form) + to_env_spec
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn jail_spec_parses_all_directive_kinds() {
+        let s =
+            JailSpec::parse("deny;/home/u/src:/work:rw;@/home/u/in.csv;/data:/data:ro").unwrap();
+        assert!(!s.default_open);
+        assert_eq!(
+            s.mounts,
+            vec![
+                HostMountSpec {
+                    host: PathBuf::from("/home/u/src"),
+                    mount: "/work".to_string(),
+                    access: HostAccess::Rw,
+                },
+                HostMountSpec {
+                    host: PathBuf::from("/data"),
+                    mount: "/data".to_string(),
+                    access: HostAccess::Ro,
+                },
+            ]
+        );
+        assert_eq!(s.arg_files, vec![PathBuf::from("/home/u/in.csv")]);
+    }
+
+    #[test]
+    fn jail_spec_defaults_to_open_without_a_default_directive() {
+        let s = JailSpec::parse("/h:/w:ro").unwrap();
+        assert!(s.default_open);
+        assert_eq!(s.mounts.len(), 1);
+    }
+
+    #[test]
+    fn jail_spec_host_may_contain_colons() {
+        // Split from the right: only the last two ':' delimit mount+access.
+        let s = JailSpec::parse("/Volumes/a:b/work:/w:rw").unwrap();
+        assert_eq!(s.mounts[0].host, PathBuf::from("/Volumes/a:b/work"));
+        assert_eq!(s.mounts[0].mount, "/w");
+        assert_eq!(s.mounts[0].access, HostAccess::Rw);
+    }
+
+    #[test]
+    fn jail_spec_rejects_malformed_input_with_named_errors() {
+        for (spec, frag) in [
+            ("", "empty spec"),
+            ("   ", "empty spec"),
+            ("open;deny", "duplicate/conflicting"),
+            ("deny;deny", "duplicate/conflicting"),
+            ("deny;;/h:/w:ro", "empty directive"),
+            ("/h:/w:xx", "unknown access mode"),
+            ("/h:w:ro", "not absolute"),
+            ("/h:/w", "unknown access mode"),
+            ("frob", "host:mount:ro|rw"),
+            (":/w:ro", "empty host"),
+            ("@", "empty argument file"),
+        ] {
+            let e = JailSpec::parse(spec).unwrap_err();
+            assert!(
+                e.0.contains(frag),
+                "spec {spec:?}: error {e:?} should mention {frag:?}"
+            );
+        }
+        // The offending spec is always quoted for the user.
+        assert!(JailSpec::parse("frob").unwrap_err().0.contains("\"frob\""));
+    }
+
+    #[test]
+    fn jail_spec_bind_env_round_trip() {
+        let tree = Tree::new("jailrt");
+        let spec = JailSpec::parse(&format!(
+            "deny;{}:/work:rw;{}:/ro:ro;@{}",
+            tree.work.display(),
+            tree.rodir.display(),
+            tree.input.display()
+        ))
+        .unwrap();
+        let policy = HostPolicy::bind(spec.default_open, spec.mounts, spec.arg_files).unwrap();
+        let env = policy.to_env_spec();
+        let spec2 = JailSpec::parse(&env).unwrap();
+        let policy2 = HostPolicy::bind(spec2.default_open, spec2.mounts, spec2.arg_files).unwrap();
+        assert_eq!(policy, policy2, "env round trip: {env}");
+        assert!(env.starts_with("deny;"), "{env}");
+        assert!(env.contains(":/work:rw"), "{env}");
+        assert!(env.contains(":/ro:ro"), "{env}");
+        assert!(env.contains(";@"), "{env}");
+    }
+
+    #[test]
+    fn open_policy_serializes_to_open() {
+        assert_eq!(HostPolicy::open().to_env_spec(), "open");
     }
 }

@@ -435,6 +435,13 @@ impl FsContext {
             .unwrap_or(std::ptr::null())
     }
 
+    /// Owned copy of the handle's current entry (additive; the preload
+    /// shim's readdir fills a native `struct dirent` from it without
+    /// touching raw pointers).
+    pub fn dir_current(&self, dir: usize) -> Option<TebakoCDirent> {
+        self.dir_table.get(&dir).map(|s| s.current.as_ref().clone())
+    }
+
     /// tebako_fs_closedir.
     pub fn closedir(&mut self, dir: usize) -> Result<(), i32> {
         match self.dir_table.remove(&dir) {

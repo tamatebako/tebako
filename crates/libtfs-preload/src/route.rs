@@ -1,0 +1,455 @@
+//! The routing layer: memfs or host-or-denied, decided against the tfs
+//! engine's own answers so the shim's behavior is byte-for-byte the
+//! engine's (longest-prefix dispatch, spec 08 host-policy gating).
+//!
+//! For every intercepted path call the rule is:
+//!
+//! 1. The engine answers (`Ok`) → the path is memfs; the caller is served
+//!    from the VFS and never touches the host.
+//! 2. `Err(ENOENT)` → "not ours, pass through" — the host-passthrough
+//!    decision, already gated by the installed `host_policy` inside the
+//!    engine (spec 08: allowed paths keep the historic ENOENT; denied
+//!    paths answered EPERM/EROFS instead). The real libc call runs.
+//! 3. `Err(ENODEV)` → nothing is mounted at all: the engine never
+//!    consulted the policy, so the route layer runs `host_check`
+//!    explicitly (jail-only mode: `TEBAKO_JAIL` without mounts).
+//! 4. Any other `Err(e)` → the engine's answer for a memfs path
+//!    (EROFS/EISDIR/ENOTDIR/…) or the jail's answer (EPERM/EROFS): the
+//!    call fails with `e` and the host is never touched.
+//!
+//! Pure safe Rust over `tfs::context`; all `unsafe` lives in `crate::sys`.
+
+#![forbid(unsafe_code)]
+
+use std::path::PathBuf;
+
+use tfs::backend::RawStat;
+use tfs::context::{context, TebakoCDirent, TEBAKO_FD_FLAG};
+use tfs::policy::{HostAccess, HostPolicy, JailSpec};
+
+use crate::spec;
+
+/// The route decision for a read-class path call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathRoute<T> {
+    /// Answered by the VFS (the engine's value).
+    Vfs(T),
+    /// "Not ours, pass through" — the policy allows the host fall-through.
+    Host,
+    /// Fail with this errno (the jail's answer, or the engine's answer for
+    /// a memfs path); the real libc call must NOT run.
+    Denied(i32),
+}
+
+/// Map an engine path answer to a route decision (rules 1–4 above).
+/// `need` is consulted only in the ENODEV (no-mounts) case, where the
+/// engine never ran the policy check itself.
+fn route_answer<T>(answer: Result<T, i32>, path: &str, need: HostAccess) -> PathRoute<T> {
+    match answer {
+        Ok(v) => PathRoute::Vfs(v),
+        Err(e) if e == libc::ENOENT => PathRoute::Host,
+        Err(e) if e == libc::ENODEV => match context().read().unwrap().host_check(path, need) {
+            Ok(()) => PathRoute::Host,
+            Err(e) => PathRoute::Denied(e),
+        },
+        Err(e) => PathRoute::Denied(e),
+    }
+}
+
+/// open/openat routing: the engine dispatches, allocates the
+/// `TEBAKO_FD_FLAG` fd, and gates the host fall-through (read vs write
+/// need derived from the flags, exactly like the C ABI).
+pub fn vfs_open(path: &str, flags: i32) -> PathRoute<i32> {
+    let need = if (flags & libc::O_ACCMODE) == libc::O_RDONLY {
+        HostAccess::Ro
+    } else {
+        HostAccess::Rw
+    };
+    // The guard must drop BEFORE route_answer (its ENODEV branch
+    // re-acquires the context): bind the answer in its own block.
+    let answer = { context().write().unwrap().open(path, flags) };
+    route_answer(answer, path, need)
+}
+
+/// stat/lstat routing. The engine has no symlink duality (memfs entries
+/// are files or dirs), so lstat == stat.
+pub fn vfs_stat(path: &str) -> PathRoute<RawStat> {
+    let answer = { context().read().unwrap().stat(path) };
+    route_answer(answer, path, HostAccess::Ro)
+}
+
+/// fstat on a memfs fd (re-dispatched by the fd's path, like the C ABI).
+pub fn vfs_fstat(fd: i32) -> Result<RawStat, i32> {
+    context().read().unwrap().fstat(fd)
+}
+
+/// opendir routing; the VFS answer is the raw dir-handle id the shim
+/// returns as an opaque `DIR *`.
+pub fn vfs_opendir(path: &str) -> PathRoute<usize> {
+    let answer = { context().write().unwrap().opendir(path) };
+    route_answer(answer, path, HostAccess::Ro)
+}
+
+/// access/faccessat routing. Read-class: existence/mode answered from the
+/// memfs stat. W_OK against a memfs entry is EROFS (payload images are
+/// always ro, spec 11); X_OK honors the entry's permission bits.
+pub fn vfs_access(path: &str, mode: i32) -> PathRoute<()> {
+    let st = context().read().unwrap().stat(path);
+    match st {
+        Ok(raw) => {
+            if mode == libc::F_OK {
+                return PathRoute::Vfs(());
+            }
+            if mode & libc::W_OK != 0 {
+                return PathRoute::Denied(libc::EROFS);
+            }
+            if mode & libc::X_OK != 0 && raw.perms & 0o111 == 0 {
+                return PathRoute::Denied(libc::EACCES);
+            }
+            PathRoute::Vfs(())
+        }
+        Err(e) => match route_answer::<()>(Err(e), path, HostAccess::Ro) {
+            PathRoute::Vfs(()) => unreachable!("an Err never routes to Vfs"),
+            other => other,
+        },
+    }
+}
+
+/// dlopen routing: a memfs library is materialized to the per-process host
+/// cache via the engine's `dlmap2file` (the spec 07 §8 mechanism) and the
+/// host path handed to the real dlopen; a host library passes through,
+/// policy-gated like any read.
+pub fn vfs_dlmap(path: &str) -> PathRoute<std::ffi::CString> {
+    let answer = { context().write().unwrap().dlmap2file(path) };
+    route_answer(answer, path, HostAccess::Ro)
+}
+
+/// Write-class routing (mkdir/unlink/rename). A memfs path is EROFS
+/// (payload images are always ro; path-level writes would route through a
+/// COW overlay, which the shim never mounts). A host path is gated with a
+/// write need: Ok(()) means "pass through to the real call".
+pub fn vfs_write_path(path: &str) -> Result<(), i32> {
+    let ctx = context().read().unwrap();
+    if ctx.path_is_embedded(path) {
+        return Err(libc::EROFS);
+    }
+    ctx.host_check(path, HostAccess::Rw)
+}
+
+/// rename routing: both paths gated, both write-class.
+pub fn vfs_rename(old: &str, new: &str) -> Result<(), i32> {
+    vfs_write_path(old)?;
+    vfs_write_path(new)
+}
+
+/// True when `fd` is a memfs descriptor (the `TEBAKO_FD_FLAG` bit; a pure
+/// bit test, no engine state — host fds never carry bit 30).
+pub fn is_memfs_fd(fd: i32) -> bool {
+    (fd & TEBAKO_FD_FLAG) != 0
+}
+
+/// True when `id` is a live memfs dir handle (the registry-membership
+/// test, same as `tebako_fs_dir_is_embedded`).
+pub fn dir_is_embedded(id: usize) -> bool {
+    context().read().unwrap().dir_is_embedded(id)
+}
+
+pub fn vfs_read(fd: i32, buf: &mut [u8]) -> Result<usize, i32> {
+    context().write().unwrap().read(fd, buf)
+}
+
+pub fn vfs_pread(fd: i32, buf: &mut [u8], offset: i64) -> Result<usize, i32> {
+    context().read().unwrap().pread(fd, buf, offset)
+}
+
+pub fn vfs_lseek(fd: i32, offset: i64, whence: i32) -> Result<i64, i32> {
+    context().write().unwrap().lseek(fd, offset, whence)
+}
+
+pub fn vfs_close(fd: i32) -> Result<(), i32> {
+    context().write().unwrap().close(fd)
+}
+
+pub fn vfs_closedir(id: usize) -> Result<(), i32> {
+    context().write().unwrap().closedir(id)
+}
+
+/// readdir on a memfs handle: Ok(Some(entry)) / Ok(None) at end / Err.
+/// The entry is an owned copy (the engine's `current` buffer is reused by
+/// the next readdir).
+pub fn vfs_readdir(id: usize) -> Result<Option<TebakoCDirent>, i32> {
+    let mut ctx = context().write().unwrap();
+    match ctx.readdir_abi(id) {
+        Ok(true) => Ok(ctx.dir_current(id)),
+        Ok(false) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// Resolve an openat/faccessat path for ROUTING: absolute paths and
+/// AT_FDCWD-relative paths route as given (a relative path can never be
+/// memfs — mount points are absolute — and the policy canonicalizes it
+/// against the cwd); a dirfd-relative path joins the dirfd's own path
+/// (`base`, resolved by the sys layer) so a mount point under it is found.
+/// The real libc call always receives the ORIGINAL (dirfd, path) pair.
+///
+/// A memfs dirfd is ENOTDIR (memfs fds are regular files only — opening a
+/// memfs directory fails EISDIR at open time). An unresolvable dirfd keeps
+/// the relative path: under a deny policy the cwd-relative check then
+/// fails closed (EPERM) for anything outside the grants.
+pub fn resolve_at(dirfd: i32, path: &str, base: Option<PathBuf>) -> Result<String, i32> {
+    if path.starts_with('/') || dirfd == libc::AT_FDCWD {
+        return Ok(path.to_string());
+    }
+    if is_memfs_fd(dirfd) {
+        return Err(libc::ENOTDIR);
+    }
+    match base {
+        Some(b) => Ok(b.join(path).to_string_lossy().into_owned()),
+        None => Ok(path.to_string()),
+    }
+}
+
+// ---------------------------------------------------------------------
+// Shim initialization (the library constructor's payload)
+// ---------------------------------------------------------------------
+
+/// Read `TEBAKO_TFS_MOUNTS` + `TEBAKO_JAIL` and establish the namespace:
+/// mount each declared image through the engine (in-process), then install
+/// the host policy. Mounts come FIRST — the mount family's image read is
+/// itself policy-gated once a policy is active (spec 08 §3).
+///
+/// Both vars absent/empty → the shim is fully inert (every intercepted
+/// call passes through). Idempotent: later calls return the first result.
+pub fn initialize() -> Result<(), String> {
+    static RESULT: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+    RESULT.get_or_init(init_inner).clone()
+}
+
+fn init_inner() -> Result<(), String> {
+    let mounts_spec = std::env::var("TEBAKO_TFS_MOUNTS").unwrap_or_default();
+    if !mounts_spec.trim().is_empty() {
+        let decls =
+            spec::parse_mounts(&mounts_spec).map_err(|e| format!("TEBAKO_TFS_MOUNTS: {e}"))?;
+        for d in &decls {
+            let mount = tfs::mount::build_from_file(&d.image, &d.mount).map_err(|e| {
+                format!(
+                    "TEBAKO_TFS_MOUNTS: cannot mount {} at {}: {}",
+                    d.image,
+                    d.mount,
+                    errno_text(e)
+                )
+            })?;
+            context()
+                .write()
+                .unwrap()
+                .mount_checked(mount)
+                .map_err(|e| {
+                    format!(
+                        "TEBAKO_TFS_MOUNTS: cannot mount {} at {}: {}",
+                        d.image,
+                        d.mount,
+                        errno_text(e)
+                    )
+                })?;
+        }
+    }
+    let jail_spec = std::env::var("TEBAKO_JAIL").unwrap_or_default();
+    if !jail_spec.trim().is_empty() {
+        let spec = JailSpec::parse(&jail_spec).map_err(|e| format!("TEBAKO_JAIL: {e}"))?;
+        let policy = HostPolicy::bind(spec.default_open, spec.mounts, spec.arg_files)
+            .map_err(|e| format!("TEBAKO_JAIL: cannot bind policy: {}", errno_text(e)))?;
+        context().write().unwrap().set_host_policy(policy);
+    }
+    Ok(())
+}
+
+/// Borrowed engine error text, lossy (for init messages).
+pub fn errno_text(e: i32) -> String {
+    String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The whole route matrix in ONE test function: the engine context
+    /// (mounts, policy) is process-global, so context-touching assertions
+    /// must not race parallel tests.
+    #[test]
+    fn route_matrix() {
+        // ---- fixture: a zip image in a private temp dir ----
+        let dir = std::env::temp_dir().join(format!("libtfs-preload-route-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("img.zip");
+        {
+            let file = std::fs::File::create(&zip_path).unwrap();
+            let mut zw = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated)
+                .unix_permissions(0o755);
+            // Explicit directory entries: the zip backend addresses only
+            // explicit "path/" dirs (C++ semantics).
+            zw.add_directory("bin/", opts).unwrap();
+            zw.add_directory("data/", opts).unwrap();
+            zw.add_directory("dir/", opts).unwrap();
+            zw.start_file("bin/tool", opts).unwrap();
+            use std::io::Write as _;
+            zw.write_all(b"#!/bin/false\n").unwrap();
+            zw.start_file("data/secret.txt", opts.unix_permissions(0o644))
+                .unwrap();
+            zw.write_all(b"hello-vfs").unwrap();
+            zw.start_file("dir/a.txt", opts.unix_permissions(0o644))
+                .unwrap();
+            zw.write_all(b"a").unwrap();
+            zw.start_file("dir/b.txt", opts.unix_permissions(0o644))
+                .unwrap();
+            zw.write_all(b"b").unwrap();
+            zw.finish().unwrap();
+        }
+        let mp = format!("/tfsroute{}", std::process::id());
+        let m = tfs::mount::build_from_file(zip_path.to_str().unwrap(), &mp).unwrap();
+        let handle = context().write().unwrap().mount_checked(m).unwrap();
+
+        let secret = format!("{mp}/data/secret.txt");
+
+        // ---- memfs read family ----
+        let PathRoute::Vfs(fd) = vfs_open(&secret, libc::O_RDONLY) else {
+            panic!("memfs open should route Vfs");
+        };
+        assert!(is_memfs_fd(fd));
+        let mut buf = [0u8; 64];
+        let n = vfs_read(fd, &mut buf).unwrap();
+        assert_eq!(&buf[..n], b"hello-vfs");
+        assert_eq!(vfs_read(fd, &mut buf).unwrap(), 0);
+        assert_eq!(vfs_lseek(fd, 0, libc::SEEK_SET).unwrap(), 0);
+        let n = vfs_pread(fd, &mut buf[..4], 1).unwrap();
+        assert_eq!(&buf[..n], b"ello");
+        let st = vfs_fstat(fd).unwrap();
+        assert_eq!(st.size, 9);
+        vfs_close(fd).unwrap();
+        assert_eq!(vfs_close(fd), Err(libc::EBADF));
+
+        // ---- stat / access / opendir ----
+        let PathRoute::Vfs(st) = vfs_stat(&secret) else {
+            panic!("memfs stat should route Vfs");
+        };
+        assert_eq!(st.size, 9);
+        assert_eq!(vfs_access(&secret, libc::F_OK), PathRoute::Vfs(()));
+        assert_eq!(vfs_access(&secret, libc::R_OK), PathRoute::Vfs(()));
+        assert_eq!(
+            vfs_access(&secret, libc::W_OK),
+            PathRoute::Denied(libc::EROFS)
+        );
+        let tool = format!("{mp}/bin/tool");
+        // The zip backend honestly hardcodes perms (0o644 files / 0o755
+        // dirs — ZIP does not reliably store POSIX permissions), so a
+        // FILE is never X_OK but a directory (the mount root) is. (Only
+        // explicit dir entries are addressable in a zip — C++ semantics —
+        // so this checks the root rather than "bin".)
+        assert_eq!(
+            vfs_access(&tool, libc::X_OK),
+            PathRoute::Denied(libc::EACCES)
+        );
+        assert_eq!(vfs_access(&mp, libc::X_OK), PathRoute::Vfs(()));
+        assert_eq!(
+            vfs_access(&secret, libc::X_OK),
+            PathRoute::Denied(libc::EACCES)
+        );
+        let PathRoute::Vfs(dir_id) = vfs_opendir(&format!("{mp}/dir")) else {
+            panic!("memfs opendir should route Vfs");
+        };
+        assert!(dir_is_embedded(dir_id));
+        let mut names = Vec::new();
+        while let Some(e) = vfs_readdir(dir_id).unwrap() {
+            let end = e
+                .d_name
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(e.d_name.len());
+            names.push(
+                e.d_name[..end]
+                    .iter()
+                    .map(|&c| c as u8 as char)
+                    .collect::<String>(),
+            );
+        }
+        assert_eq!(names, ["a.txt", "b.txt"]);
+        vfs_closedir(dir_id).unwrap();
+        assert!(!dir_is_embedded(dir_id));
+
+        // ---- host passthrough (open policy), incl. mount-claimed-missing ----
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_RDONLY),
+            PathRoute::Host
+        );
+        assert_eq!(vfs_stat("/etc/definitely-host"), PathRoute::Host);
+        assert_eq!(
+            vfs_open(&format!("{mp}/missing"), libc::O_RDONLY),
+            PathRoute::Host,
+            "a mount-claimed path absent from the image keeps the ENOENT pass-through"
+        );
+        assert_eq!(vfs_write_path("/tmp/libtfs-preload-route-write"), Ok(()));
+
+        // ---- write-class gating: memfs is EROFS ----
+        assert_eq!(vfs_write_path(&secret), Err(libc::EROFS));
+        assert_eq!(vfs_rename("/tmp/a-x", &secret), Err(libc::EROFS));
+
+        // ---- deny policy: host denied, memfs unaffected ----
+        context()
+            .write()
+            .unwrap()
+            .set_host_policy(HostPolicy::bind(false, vec![], vec![]).unwrap());
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_RDONLY),
+            PathRoute::Denied(libc::EPERM)
+        );
+        assert_eq!(
+            vfs_stat("/etc/definitely-host"),
+            PathRoute::Denied(libc::EPERM)
+        );
+        assert_eq!(
+            vfs_opendir("/etc/definitely-host"),
+            PathRoute::Denied(libc::EPERM)
+        );
+        assert_eq!(
+            vfs_write_path("/tmp/libtfs-preload-route-write"),
+            Err(libc::EPERM)
+        );
+        assert_eq!(
+            vfs_dlmap("/etc/definitely-host"),
+            PathRoute::Denied(libc::EPERM)
+        );
+        let PathRoute::Vfs(fd) = vfs_open(&secret, libc::O_RDONLY) else {
+            panic!("memfs is unaffected by a deny jail (spec 08 §3)");
+        };
+        vfs_close(fd).unwrap();
+
+        // ---- jail-only mode: no mounts, ENODEV routes through host_check ----
+        context().write().unwrap().unmount_handle(handle).unwrap();
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_RDONLY),
+            PathRoute::Denied(libc::EPERM)
+        );
+        context()
+            .write()
+            .unwrap()
+            .set_host_policy(HostPolicy::open());
+        assert_eq!(
+            vfs_open("/etc/definitely-host", libc::O_RDONLY),
+            PathRoute::Host
+        );
+
+        // ---- resolve_at ----
+        assert_eq!(resolve_at(99, "/abs/p", None).unwrap(), "/abs/p");
+        assert_eq!(resolve_at(libc::AT_FDCWD, "rel/p", None).unwrap(), "rel/p");
+        assert_eq!(
+            resolve_at(5, "rel/p", Some(PathBuf::from(&mp))).unwrap(),
+            format!("{mp}/rel/p")
+        );
+        let flagged = 7 | TEBAKO_FD_FLAG;
+        assert_eq!(resolve_at(flagged, "rel/p", None), Err(libc::ENOTDIR));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

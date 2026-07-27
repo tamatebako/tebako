@@ -1,0 +1,197 @@
+//! macOS delivery: dyld interpose tuples in `__DATA,__interpose`
+//! (activated by `DYLD_INSERT_LIBRARIES`) + the library constructor.
+//!
+//! Each tuple is `(replacement, replacee)`; dyld rebinds EVERY reference
+//! to the replacee process-wide to the replacement — including references
+//! inside this library and, notably, the RESULT of `dlsym(RTLD_NEXT)`
+//! lookups for the interposed symbol (verified on macOS 14: RTLD_NEXT
+//! recurses into the replacement). The one channel dyld preserves is the
+//! tuple's own replacee field, which keeps pointing at the original
+//! implementation — so the originals are read back from the tuples
+//! (volatile: dyld writes them at load time, outside Rust's view).
+
+use std::ffi::{c_char, c_int, c_void};
+
+/// The dyld interpose tuple layout.
+#[repr(C)]
+struct InterposeTuple {
+    replacement: *const c_void,
+    replacee: *const c_void,
+}
+
+// The tuples are written once by dyld at load time and only ever READ by
+// dyld and the volatile readback below.
+unsafe impl Sync for InterposeTuple {}
+
+// The libc crate does not declare `faccessat` for apple targets; the
+// SDK has it since macOS 10.10 (4-arg).
+extern "C" {
+    fn faccessat(dirfd: c_int, path: *const c_char, mode: c_int, flags: c_int) -> c_int;
+}
+
+macro_rules! interpose {
+    ($name:ident, $real:ident, $replacement:expr, $replacee:expr, $ty:ty) => {
+        #[used]
+        #[link_section = "__DATA,__interpose"]
+        static $name: InterposeTuple = InterposeTuple {
+            replacement: $replacement as *const c_void,
+            replacee: $replacee as *const c_void,
+        };
+        /// The original implementation, read back from the tuple (see the
+        /// module docs for why dlsym(RTLD_NEXT) cannot be used on macOS).
+        pub(super) fn $real() -> $ty {
+            // SAFETY: the tuple is initialized statically and written by
+            // dyld before any user code runs; volatile because dyld's
+            // write is invisible to the compiler.
+            let p = unsafe { std::ptr::read_volatile(std::ptr::addr_of!($name.replacee)) };
+            assert!(
+                !p.is_null(),
+                concat!(
+                    "libtfs-preload: interpose tuple ",
+                    stringify!($name),
+                    " has no original"
+                )
+            );
+            // SAFETY: the tuple's replacee is the original implementation
+            // of the interposed function, of type $ty.
+            unsafe { std::mem::transmute::<*const c_void, $ty>(p) }
+        }
+    };
+}
+
+interpose!(
+    INTERPOSE_OPEN,
+    real_open,
+    super::open,
+    libc::open,
+    unsafe extern "C" fn(*const c_char, c_int, ...) -> c_int
+);
+interpose!(
+    INTERPOSE_OPENAT,
+    real_openat,
+    super::openat,
+    libc::openat,
+    unsafe extern "C" fn(c_int, *const c_char, c_int, ...) -> c_int
+);
+interpose!(
+    INTERPOSE_STAT,
+    real_stat,
+    super::stat,
+    libc::stat,
+    unsafe extern "C" fn(*const c_char, *mut libc::stat) -> c_int
+);
+interpose!(
+    INTERPOSE_LSTAT,
+    real_lstat,
+    super::lstat,
+    libc::lstat,
+    unsafe extern "C" fn(*const c_char, *mut libc::stat) -> c_int
+);
+interpose!(
+    INTERPOSE_FSTAT,
+    real_fstat,
+    super::fstat,
+    libc::fstat,
+    unsafe extern "C" fn(c_int, *mut libc::stat) -> c_int
+);
+interpose!(
+    INTERPOSE_ACCESS,
+    real_access,
+    super::access,
+    libc::access,
+    unsafe extern "C" fn(*const c_char, c_int) -> c_int
+);
+interpose!(
+    INTERPOSE_FACCESSAT,
+    real_faccessat,
+    super::faccessat,
+    faccessat,
+    unsafe extern "C" fn(c_int, *const c_char, c_int, c_int) -> c_int
+);
+interpose!(
+    INTERPOSE_OPENDIR,
+    real_opendir,
+    super::opendir,
+    libc::opendir,
+    unsafe extern "C" fn(*const c_char) -> *mut libc::DIR
+);
+interpose!(
+    INTERPOSE_READDIR,
+    real_readdir,
+    super::readdir,
+    libc::readdir,
+    unsafe extern "C" fn(*mut libc::DIR) -> *mut libc::dirent
+);
+interpose!(
+    INTERPOSE_CLOSEDIR,
+    real_closedir,
+    super::closedir,
+    libc::closedir,
+    unsafe extern "C" fn(*mut libc::DIR) -> c_int
+);
+interpose!(
+    INTERPOSE_PREAD,
+    real_pread,
+    super::pread,
+    libc::pread,
+    unsafe extern "C" fn(c_int, *mut c_void, usize, libc::off_t) -> libc::ssize_t
+);
+interpose!(
+    INTERPOSE_READ,
+    real_read,
+    super::read,
+    libc::read,
+    unsafe extern "C" fn(c_int, *mut c_void, usize) -> libc::ssize_t
+);
+interpose!(
+    INTERPOSE_LSEEK,
+    real_lseek,
+    super::lseek,
+    libc::lseek,
+    unsafe extern "C" fn(c_int, libc::off_t, c_int) -> libc::off_t
+);
+interpose!(
+    INTERPOSE_CLOSE,
+    real_close,
+    super::close,
+    libc::close,
+    unsafe extern "C" fn(c_int) -> c_int
+);
+interpose!(
+    INTERPOSE_MKDIR,
+    real_mkdir,
+    super::mkdir,
+    libc::mkdir,
+    unsafe extern "C" fn(*const c_char, libc::mode_t) -> c_int
+);
+interpose!(
+    INTERPOSE_UNLINK,
+    real_unlink,
+    super::unlink,
+    libc::unlink,
+    unsafe extern "C" fn(*const c_char) -> c_int
+);
+interpose!(
+    INTERPOSE_RENAME,
+    real_rename,
+    super::rename,
+    libc::rename,
+    unsafe extern "C" fn(*const c_char, *const c_char) -> c_int
+);
+interpose!(
+    INTERPOSE_DLOPEN,
+    real_dlopen,
+    super::dlopen,
+    libc::dlopen,
+    unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
+);
+
+/// Library constructor: establish the namespace before the program's main.
+#[used]
+#[link_section = "__DATA,__mod_init_func"]
+static INIT: extern "C" fn() = {
+    extern "C" fn init() {
+        super::init();
+    }
+    init
+};
