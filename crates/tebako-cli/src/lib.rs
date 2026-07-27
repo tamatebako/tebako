@@ -35,6 +35,15 @@
 //! - the gem/gemspec scenarios are not ported (the RuntimeSdk — native
 //!   extension deploy, src/sdk.rs — is: the deploy driver builds gems'
 //!   native extensions against the runtime's provisioned header tree);
+//! - bundler deploy ops follow the modern rubygems behavior: the gem's
+//!   unconditional `bundle install --prefer-local` degrades remote
+//!   (re)resolution to dependency-free gems (fontist 3.0.10 → 0.1.0),
+//!   so it is opt-in (--prefer-local; a no-op with a complete lockfile),
+//!   and the gem's `force_ruby_platform=true` bundle config is not
+//!   emitted — precompiled platform gems are the default, with
+//!   bundler's own ruby-platform fallback for gems without one (the
+//!   ported SDK's source-build path). The deploy's strip re-signs
+//!   ad-hoc on macOS so precompiled .so/.bundle stay loadable;
 //! - images are stitched densely (tpkg slots carry absolute offsets; the
 //!   gem's 8-byte padding is cosmetic);
 //! - .tebako.yml is not read.

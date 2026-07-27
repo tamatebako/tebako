@@ -12,7 +12,7 @@ const USAGE: &str = "Usage:
   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>] [-c <cwd>]
                [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
-               [--tebako-version <v>]
+               [--tebako-version <v>] [--prefer-local]
   tebako cache list [--json]
   tebako cache prune [--all] [--older-than Nd]
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
@@ -245,6 +245,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut image_specs: Vec<String> = Vec::new();
     let mut bootstrap: Option<PathBuf> = None;
     let mut tebako_version = tebako_cli::DEFAULT_TEBAKO_VERSION.to_string();
+    let mut prefer_local = false;
     let mut devmode = false;
 
     let mut i = 0;
@@ -278,6 +279,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--image" => image_specs.push(take_value(&mut i)?),
             "--bootstrap" => bootstrap = Some(PathBuf::from(take_value(&mut i)?)),
             "--tebako-version" => tebako_version = take_value(&mut i)?,
+            "--prefer-local" => prefer_local = true,
             "-D" | "--devmode" => devmode = true,
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
@@ -325,6 +327,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         image_specs,
         bootstrap,
         tebako_version,
+        prefer_local,
         verbose: verbose_mode(),
         devmode,
         fs_current,

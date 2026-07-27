@@ -217,6 +217,133 @@ fn press_gemfile_runs() {
     );
 }
 
+// ---------------------------------------------------------------------
+// Roadmap 25 items 4-5 (the fontist feedstock): bundler resolution and
+// platform gems in the Gemfile deploy
+// ---------------------------------------------------------------------
+
+/// The bundler platform tag whose precompiled gem variant the press must
+/// select; None where the native-gem tests do not apply (Windows).
+fn bundler_platform_tag() -> Option<String> {
+    let tag = match tebako_cli::options::host_platform().ok()?.as_str() {
+        "macos-arm64" => "arm64-darwin",
+        "macos-x86_64" => "x86_64-darwin",
+        "linux-gnu-arm64" => "aarch64-linux-gnu",
+        "linux-gnu-x86_64" => "x86_64-linux-gnu",
+        "linux-musl-arm64" => "aarch64-linux-musl",
+        "linux-musl-x86_64" => "x86_64-linux-musl",
+        _ => return None,
+    };
+    Some(tag.to_string())
+}
+
+/// Item 4: a Gemfile app with real dependencies resolves through the
+/// modern compact index, and native gems with a precompiled variant land
+/// as platform gems. The gem-era deploy (`bundle install
+/// --prefer-local` + `force_ruby_platform=true`) resolved fontist 3.0.10
+/// as the dependency-free 0.1.0 and forced every native gem into a
+/// source build. The remaining failure is the RuntimeSdk gap (item 1):
+/// gems published only as ruby-platform sources (json/bigdecimal/
+/// racc/brotli in this tree) cannot build without headers.
+#[test]
+fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
+    let _guard = press_lock().lock().unwrap();
+    let Some(tag) = bundler_platform_tag() else {
+        eprintln!("skipping fontist press: no platform tag for this host");
+        return;
+    };
+    let Some(env) = press_env("fontist", "fontist-app") else {
+        return;
+    };
+    let package = env.work.join("fontist-app");
+    let mut cmd = press_command(&env, "main.rb", &package);
+    cmd.env("VERBOSE", "yes"); // surface the deploy driver's bundle output
+    let (code, log) = run(&mut cmd);
+
+    // The fixture's lockfile pins the modern resolution: fontist 3.0.10
+    // with its full dependency tree (the --prefer-local era yielded the
+    // dependency-free 0.1.0).
+    let lock = fs::read_to_string(env.root.join("Gemfile.lock")).unwrap();
+    assert!(lock.contains("fontist (3.0.10)"), "{lock}");
+
+    // The RuntimeSdk gap: the ruby-platform-only natives cannot build
+    // without headers, so the press stops at one of them.
+    assert!(
+        code != 0,
+        "press unexpectedly succeeded — the RuntimeSdk landed? \
+         this app then belongs to the green native-gem suite:\n{log}"
+    );
+    assert!(
+        ["json", "bigdecimal", "racc", "brotli"]
+            .iter()
+            .any(|g| { log.contains(&format!("An error occurred while installing {g}")) }),
+        "the failure must be a ruby-platform-only native gem's source build:\n{log}"
+    );
+
+    // ffi (fontist → canon → table_tennis) has a precompiled variant: it
+    // must land as the platform gem — the forced-ruby-platform era
+    // attempted a source build instead.
+    let ffi = format!("ffi 1.17.4 ({tag})");
+    let ffi_cached = env
+        .prefix
+        .join("o/s/lib/ruby/gems/3.3.0/cache")
+        .join(format!("ffi-1.17.4-{tag}.gem"))
+        .is_file();
+    assert!(
+        log.contains(&ffi) || ffi_cached,
+        "ffi must land as the precompiled {tag} gem:\n{log}"
+    );
+
+    // force_ruby_platform is gone from the deploy (the SDK build hints
+    // stay for the day it is ported). Bundler's local config keys are
+    // the env-style spellings (BUNDLE_BUILD__NOKOGIRI & co.).
+    assert!(!log.contains("force_ruby_platform"), "{log}");
+    let config =
+        fs::read_to_string(env.prefix.join("o/s/local/.bundle/config")).unwrap_or_default();
+    assert!(config.contains("BUNDLE_BUILD__NOKOGIRI"), "{config}");
+    assert!(!config.contains("FORCE_RUBY_PLATFORM"), "{config}");
+}
+
+/// Item 5's green path: with --prefer-local the resolution prefers the
+/// runtime's own gems (racc stays at the bundled 1.7.3 and is used in
+/// place) and nokogiri installs as the precompiled platform gem — no
+/// source build, and the packaged app loads it and runs. (The modern
+/// default resolves racc to the newest ruby-platform release, whose
+/// build needs the RuntimeSdk — the documented trade-off of the flag.)
+#[test]
+fn press_gemfile_nokogiri_precompiled_runs() {
+    let _guard = press_lock().lock().unwrap();
+    let Some(tag) = bundler_platform_tag() else {
+        eprintln!("skipping nokogiri press: no platform tag for this host");
+        return;
+    };
+    let Some(env) = press_env("nokogiri", "nokogiri-app") else {
+        return;
+    };
+    let package = env.work.join("nokogiri-app");
+    let mut cmd = press_command(&env, "main.rb", &package);
+    cmd.arg("--prefer-local").env("VERBOSE", "yes");
+    let (code, log) = run(&mut cmd);
+    assert!(code == 0, "press failed:\n{log}");
+    assert!(
+        log.contains(&format!("Installing nokogiri 1.19.4 ({tag})")),
+        "nokogiri must install as the precompiled {tag} gem:\n{log}"
+    );
+    assert!(
+        !log.contains("error occurred while installing"),
+        "no gem may attempt a source build:\n{log}"
+    );
+    assert!(
+        log.contains("bundle install") && log.contains("--prefer-local"),
+        "the flag must reach the bundle install op:\n{log}"
+    );
+    assert!(!log.contains("force_ruby_platform"), "{log}");
+
+    let (code, out) = run(&mut Command::new(&package));
+    assert_eq!(code, 0, "packaged binary failed:\n{out}");
+    assert_eq!(out, "Hello from nokogiri app with nokogiri 1.19.4\n");
+}
+
 #[test]
 fn press_missing_entry_point_is_106() {
     let _guard = press_lock().lock().unwrap();
@@ -533,7 +660,14 @@ fn gem_press_command(gem: &GoldenGem, env: &PressEnv, entry: &str, output: &Path
 /// - the image build lines: the gem shells out to mkdwarfs ("-- Running
 ///   mkdwarfs script" + the "   ... @ <mkdwarfs> ..." echo) while the CLI
 ///   builds in-process ("-- Building DwarFS image ...") — the owner rule
-///   is no mkdwarfs anywhere on the Rust side.
+///   is no mkdwarfs anywhere on the Rust side;
+/// - the bundler deploy ops the gem still emits but the CLI dropped
+///   (roadmap 25 items 4–5): the `force_ruby_platform` config op and the
+///   install op's `--prefer-local` (the retired dependency API / the
+///   unported RuntimeSdk — see the README's deviation entry);
+/// - the `/private` prefix macOS adds when a path is canonicalized: the
+///   CLI's ScenarioManager canonicalizes the root, the gem prints it as
+///   passed (a path spelling difference, not a behavioral one).
 fn normalize_press_log(log: &str) -> String {
     log.lines()
         .filter(|line| {
@@ -543,7 +677,12 @@ fn normalize_press_log(log: &str) -> String {
                 && !line.starts_with("   ... tfs-ruby-")
                 && !line.contains(" --tebako-extract ")
                 && !line.starts_with("-- Building DwarFS image")
+                && !line.contains("bundle config set --local force_ruby_platform")
                 && !gem_image_build
+        })
+        .map(|line| {
+            line.replace(" --prefer-local", "")
+                .replace("/private/var/", "/var/")
         })
         .collect::<Vec<_>>()
         .join("\n")

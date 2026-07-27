@@ -299,14 +299,7 @@ fn deploy(
             println!(
                 "   *** It may take a long time for a big project. It takes REALLY long time on Windows ***"
             );
-            ops.push(Op::Bundle(
-                activation,
-                vec![
-                    "install".to_string(),
-                    format!("--jobs={}", ncores()),
-                    "--prefer-local".to_string(),
-                ],
-            ));
+            ops.push(Op::Bundle(activation, bundle_install_argv(opts)));
         }
         // gem/gemspec scenarios need the bundle_exec op and the RuntimeSdk
         // (native builds) — a later milestone.
@@ -416,8 +409,40 @@ fn bundler_activation(scenario: &ScenarioManager) -> Option<String> {
     }
 }
 
-/// DeployHelper#bundle_config_ops: ffi/nokogiri/force_ruby_platform, plus
-/// the openssl build config when a libtfs-deps vcpkg tree is provisioned.
+/// DeployHelper#bundle_install_op. The gem passes --prefer-local
+/// unconditionally (resolution then prefers the runtime's own gems: the
+/// statically linked default extensions own their namespaces, and gems
+/// the image already carries are used in place). Under --prefer-local a
+/// remote (re)resolution restricts candidates to runtime-local gems and
+/// backtracks to dependency-free versions — fontist 3.0.10 came out as
+/// 0.1.0 — and the fetch layer can additionally fall back to the retired
+/// rubygems dependency API (404 "The dependency API has gone away").
+/// The default is therefore the modern compact-index resolution;
+/// --prefer-local stays available as a press flag for apps whose native
+/// dependencies are the runtime's bundled/default gems (used in place —
+/// the only way those install without the RuntimeSdk). With a complete
+/// lockfile the flag is a no-op: locked specs are installed as resolved.
+fn bundle_install_argv(opts: &PressOptions) -> Vec<String> {
+    let mut argv = vec!["install".to_string(), format!("--jobs={}", ncores())];
+    if opts.prefer_local {
+        argv.push("--prefer-local".to_string());
+    }
+    argv
+}
+
+/// DeployHelper#bundle_config_ops: ffi/nokogiri build hints (applied
+/// when a gem without a precompiled platform variant is built from
+/// source — the RuntimeSdk path), plus the openssl build config when a
+/// libtfs-deps vcpkg tree is provisioned.
+///
+/// The gem additionally forces `force_ruby_platform true` on every
+/// platform (tebako#343: precompiled variants can link against shared
+/// system libraries the memfs does not carry). In the gem that is
+/// viable because the RuntimeSdk ships the headers those source builds
+/// need; the SDK is not ported here, so the forced setting only broke
+/// precompiled platform gems (nokogiri attempted a source build with no
+/// headers). Precompiled variants are the default again; bundler falls
+/// back to the ruby (source) platform on its own for gems without one.
 fn bundle_config_options(opts: &PressOptions) -> Vec<Vec<String>> {
     let nokogiri = if cfg!(windows) {
         "--use-system-libraries"
@@ -430,7 +455,6 @@ fn bundle_config_options(opts: &PressOptions) -> Vec<Vec<String>> {
             "--disable-system-libffi".to_string(),
         ],
         vec!["build.nokogiri".to_string(), nokogiri.to_string()],
-        vec!["force_ruby_platform".to_string(), "true".to_string()],
     ];
     if let Some(dir) = openssl_dir(&opts.deps()) {
         out.push(vec![
@@ -732,4 +756,64 @@ fn ncores() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::options::PressMode;
+
+    fn test_opts(prefer_local: bool) -> PressOptions {
+        PressOptions {
+            root_arg: "/tmp/root".to_string(),
+            entrance: "main.rb".to_string(),
+            output: None,
+            prefix: PathBuf::from("/tmp/prefix"),
+            cwd: None,
+            ruby_requested: None,
+            mode: PressMode::Lean,
+            log_level: "error".to_string(),
+            image_specs: Vec::new(),
+            bootstrap: None,
+            tebako_version: crate::DEFAULT_TEBAKO_VERSION.to_string(),
+            prefer_local,
+            verbose: false,
+            devmode: false,
+            fs_current: "/tmp".to_string(),
+        }
+    }
+
+    #[test]
+    fn bundle_install_uses_the_compact_index_by_default() {
+        // The retired rubygems dependency API is only reachable through
+        // --prefer-local; the default resolution must not pass it
+        // (fontist resolved to the dependency-free 0.1.0 otherwise).
+        let argv = bundle_install_argv(&test_opts(false));
+        assert_eq!(argv[0], "install");
+        assert!(argv[1].starts_with("--jobs="), "{argv:?}");
+        assert!(!argv.iter().any(|a| a == "--prefer-local"), "{argv:?}");
+    }
+
+    #[test]
+    fn bundle_install_prefer_local_is_opt_in() {
+        // The gem-era behavior stays available behind the press flag
+        // (the runtime's default gems own their namespaces).
+        let argv = bundle_install_argv(&test_opts(true));
+        assert!(argv.iter().any(|a| a == "--prefer-local"), "{argv:?}");
+    }
+
+    #[test]
+    fn bundle_config_does_not_force_the_ruby_platform() {
+        // force_ruby_platform=true made every native gem attempt a
+        // source build; the RuntimeSdk that supplied the headers is not
+        // ported, so precompiled platform gems must be the default.
+        let opts = bundle_config_options(&test_opts(false));
+        assert!(
+            !opts.iter().any(|kv| kv[0] == "force_ruby_platform"),
+            "{opts:?}"
+        );
+        // The build hints for the SDK source-build path stay.
+        assert!(opts.iter().any(|kv| kv[0] == "build.ffi"));
+        assert!(opts.iter().any(|kv| kv[0] == "build.nokogiri"));
+    }
 }
