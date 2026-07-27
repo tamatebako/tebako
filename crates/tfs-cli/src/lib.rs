@@ -1200,6 +1200,8 @@ mod tests {
             assert_eq!(preload_lib_name(), "libtfs_preload.so");
         }
     }
+}
+
 /// When `source_dir` carries `__tpkg__/manifest.yaml`: compute the
 /// payload tree hash, fill `identity.digest.tree_hash`, and stage a
 /// hardlink mirror with the stamped manifest substituted in. Returns

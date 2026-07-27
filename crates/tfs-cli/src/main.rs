@@ -490,6 +490,11 @@ fn cmd_exec_main(rest: &[String]) -> ExitCode {
         Ok(()) => ExitCode::SUCCESS,
         Err((msg, rc)) => {
             eprintln!("{msg}");
+            ExitCode::from(rc as u8)
+        }
+    }
+}
+
 fn cmd_encrypt_main(rest: &[String]) -> ExitCode {
     let a = match Args::parse(rest) {
         Ok(a) => a,
