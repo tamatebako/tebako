@@ -288,6 +288,47 @@ fn exec_deny_jail_eperm_and_plain_ok() {
     assert!(!r.stdout.is_empty());
 }
 
+/// The native-tool path end to end (spec 08 §2/§5): a dynamic tool inside
+/// the payload image runs under the preload shim, the `--jail` policy
+/// confines its host reads, and the violation lands in the audit journal
+/// with the surface's source label.
+#[test]
+fn exec_deny_jail_journals_the_violation() {
+    let Some(f) = fixtures() else { return };
+    let log = f.dir.join("audit").join("journal.log");
+    let mut cmd = Command::new(bin().unwrap());
+    cmd.args([
+        "exec",
+        &format!("{}:{MOUNT}", f.zip.display()),
+        "--jail",
+        "deny",
+        "--",
+        "/tfs/bin/print-data",
+        "/etc/hosts",
+    ])
+    .env_remove("DYLD_INSERT_LIBRARIES")
+    .env_remove("LD_PRELOAD")
+    .env_remove("TEBAKO_TFS_MOUNTS")
+    .env_remove("TEBAKO_JAIL")
+    .env("TEBAKO_TFS_PRELOAD", &f.shim)
+    .env("TEBAKO_JAIL_JOURNAL", &log);
+    let out = cmd.output().unwrap();
+    assert_eq!(out.status.code(), Some(libc::EPERM));
+
+    let text = std::fs::read_to_string(&log).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines.len(), 1, "journal: {lines:?}");
+    let (ts, rest) = lines[0].split_once(' ').unwrap();
+    assert!(
+        !ts.is_empty() && ts.bytes().all(|b| b.is_ascii_digit()),
+        "{lines:?}"
+    );
+    assert_eq!(
+        rest,
+        "event=jail-deny path=/etc/hosts op=read source=tfs exec --jail"
+    );
+}
+
 #[test]
 fn exec_grandchild_stays_in_vfs() {
     let Some(f) = fixtures() else { return };

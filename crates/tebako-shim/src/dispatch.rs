@@ -127,7 +127,9 @@ fn dependency_mount(
 /// runtime → compose the mount set → the ABI v1 exec plan.
 pub fn dispatch(tool: &str, user_args: &[String], ctx: &Ctx) -> Result<ExecPlan, ShimError> {
     let res = resolve::resolve(tool, ctx)?;
-    plan(&res, user_args, ctx, true)
+    let (flags, args) = parse_jail_flags(user_args)?;
+    let jail_env = compose_jail_env(&res, &flags, &args, ctx)?;
+    plan(&res, &args, ctx, true, jail_env)
 }
 
 /// The plan behind [`dispatch`], parameterized so `which` can resolve
@@ -137,6 +139,7 @@ pub fn plan(
     user_args: &[String],
     ctx: &Ctx,
     allow_download: bool,
+    jail_env: Vec<(String, String)>,
 ) -> Result<ExecPlan, ShimError> {
     let entry = res
         .manifest
@@ -194,6 +197,10 @@ pub fn plan(
     argv.extend(entry.args_default.iter().cloned());
     argv.extend(user_args.iter().cloned());
 
+    // spec 08: the dispatcher's computed jail env always wins over every
+    // manifest/host value (spec 07 §9 env composition).
+    env.extend(jail_env);
+
     Ok(ExecPlan {
         program,
         argv,
@@ -201,6 +208,113 @@ pub fn plan(
         mounts,
         runtime,
     })
+}
+
+// ---------------------------------------------------------------------
+// Jail flags (spec 08 §2 — the dispatcher's tightening surface)
+// ---------------------------------------------------------------------
+
+/// The dispatcher's jail flags: `--jail <spec>` (`open` | `deny` |
+/// `deny:arg` | a YAML file | the TEBAKO_JAIL env grammar), `--mount
+/// <host:mount:ro|rw>` (repeatable), `--no-host`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct JailFlags {
+    pub jail: Option<String>,
+    pub mounts: Vec<String>,
+    pub no_host: bool,
+}
+
+/// Split the dispatcher's flags from the payload's argv. Only the exact
+/// known tokens are consumed; anything else — unknown flags included —
+/// stops the scan and rides to the payload verbatim (a shim's whole job
+/// is forwarding argv). `--` ends the scan; everything after it is the
+/// payload's (the escape hatch for payload args literally named
+/// `--jail`/`--mount`/`--no-host`).
+pub fn parse_jail_flags(args: &[String]) -> Result<(JailFlags, Vec<String>), ShimError> {
+    let mut flags = JailFlags::default();
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        let (flag, inline) = match arg.split_once('=') {
+            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+            _ => (arg.as_str(), None),
+        };
+        match flag {
+            "--" => return Ok((flags, args[i + 1..].to_vec())),
+            "--jail" | "--mount" => {
+                let value = match inline {
+                    Some(v) => v,
+                    None => {
+                        i += 1;
+                        args.get(i).cloned().ok_or_else(|| {
+                            ShimError::new(
+                                crate::EX_USAGE,
+                                format!("option '{flag}' requires a value"),
+                            )
+                        })?
+                    }
+                };
+                if flag == "--jail" {
+                    flags.jail = Some(value);
+                } else {
+                    flags.mounts.push(value);
+                }
+            }
+            "--no-host" => {
+                if inline.is_some() {
+                    return fail(crate::EX_USAGE, "option '--no-host' takes no value");
+                }
+                flags.no_host = true;
+            }
+            _ => {
+                // A non-flag token or an unknown flag: the payload's,
+                // verbatim (a shim's whole job is forwarding argv; unknown
+                // flags belong to payload CLIs).
+                return Ok((flags, args[i..].to_vec()));
+            }
+        }
+        i += 1;
+    }
+    Ok((flags, Vec::new()))
+}
+
+/// Compose the dispatch-time jail env (spec 08 §2/§4): the payload
+/// mirror's `capabilities.host` REQUEST ∩ the user's tightening flags =
+/// the effective jail, exported as TEBAKO_JAIL with the audit source
+/// (TEBAKO_JAIL_SOURCE) and the journal pointer (TEBAKO_JAIL_JOURNAL →
+/// this home's journal.log, the bootstrap's convention). With
+/// `argument_files: auto-allowed` the payload args naming existing files
+/// become read-only grants. Empty when no policy applies (byte-identical
+/// legacy dispatch).
+pub fn compose_jail_env(
+    res: &Resolution,
+    flags: &JailFlags,
+    args: &[String],
+    ctx: &Ctx,
+) -> Result<Vec<(String, String)>, ShimError> {
+    let request = res.manifest.host_jail();
+    let user =
+        tpkg::HostJail::from_dispatch_flags(flags.jail.as_deref(), &flags.mounts, flags.no_host)
+            .map_err(|e| ShimError::new(crate::EX_USAGE, format!("{e}")))?;
+    let Some((jail, source)) = tpkg::jail::effective(request, user.as_ref()) else {
+        return Ok(Vec::new());
+    };
+    if jail.is_trivially_open() {
+        return Ok(Vec::new());
+    }
+    let arg_files = if jail.argument_files.auto {
+        tpkg::jail::resolve_argument_files(args)
+    } else {
+        Vec::new()
+    };
+    Ok(vec![
+        ("TEBAKO_JAIL".to_string(), jail.to_env_spec(&arg_files)),
+        ("TEBAKO_JAIL_SOURCE".to_string(), source.to_string()),
+        (
+            "TEBAKO_JAIL_JOURNAL".to_string(),
+            ctx.home.join("journal.log").to_string_lossy().into_owned(),
+        ),
+    ])
 }
 
 /// Exec the plan, replacing the process (unix). Never returns on success.

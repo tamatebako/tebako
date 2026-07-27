@@ -506,3 +506,115 @@ fn policy_survives_unmount_fail_closed() {
     assert!(opendir_str("/").is_null());
     assert_eq!(errno(), libc::EPERM);
 }
+
+// --- the audit journal (spec 08 §2) -------------------------------------
+
+/// Read the journal file's lines, asserting the shared shape: `<unix
+/// seconds> event=jail-deny path=<p> op=<read|write> source=<s>`.
+fn journal_lines(log: &Path) -> Vec<String> {
+    let text = std::fs::read_to_string(log).unwrap();
+    text.lines().map(|l| l.to_string()).collect()
+}
+
+fn assert_line_shape(line: &str, path: &Path, op: &str, source: &str) {
+    let (ts, rest) = line.split_once(' ').unwrap();
+    assert!(
+        !ts.is_empty() && ts.bytes().all(|b| b.is_ascii_digit()),
+        "line must start with the unix seconds: {line}"
+    );
+    assert_eq!(
+        rest,
+        format!(
+            "event=jail-deny path={} op={} source={}",
+            path.display(),
+            op,
+            source
+        )
+    );
+}
+
+#[test]
+fn violations_are_journaled_with_path_op_and_source() {
+    let f = setup("journal");
+    let log = f.input.parent().unwrap().join("audit").join("journal.log");
+    std::env::set_var("TEBAKO_JAIL_JOURNAL", &log);
+    std::env::set_var("TEBAKO_JAIL_SOURCE", "manifest+user");
+    let cleanup = || {
+        std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+        std::env::remove_var("TEBAKO_JAIL_SOURCE");
+    };
+
+    // deny: a read, a stat and a write are three denials, three lines.
+    assert_eq!(install_policy(0, &[], &[]), 0);
+    assert_eq!(open(&f.sibling.join("secret.txt"), libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::EPERM);
+    assert_eq!(stat(&f.sibling.join("secret.txt")), -1);
+    assert_eq!(errno(), libc::EPERM);
+    assert_eq!(
+        open(&f.work.join("new.txt"), libc::O_WRONLY | libc::O_CREAT),
+        -1
+    );
+    assert_eq!(errno(), libc::EPERM);
+
+    let lines = journal_lines(&log);
+    assert_eq!(lines.len(), 3, "journal: {lines:?}");
+    assert_line_shape(
+        &lines[0],
+        &f.sibling.join("secret.txt"),
+        "read",
+        "manifest+user",
+    );
+    assert_line_shape(
+        &lines[1],
+        &f.sibling.join("secret.txt"),
+        "read",
+        "manifest+user",
+    );
+    assert_line_shape(&lines[2], &f.work.join("new.txt"), "write", "manifest+user");
+
+    // An ro-write refusal (EROFS) is a violation too — journaled with the
+    // same shape; allowed passes never journal.
+    assert_eq!(install_policy(1, &[(&f.rodir, "/ro", 0)], &[]), 0);
+    assert_eq!(open(&f.rodir.join("ro.txt"), libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::ENOENT, "allowed read keeps the pass-through");
+    assert_eq!(
+        open(&f.rodir.join("new.txt"), libc::O_WRONLY | libc::O_CREAT),
+        -1
+    );
+    assert_eq!(errno(), libc::EROFS);
+
+    let lines = journal_lines(&log);
+    assert_eq!(lines.len(), 4, "journal: {lines:?}");
+    assert_line_shape(
+        &lines[3],
+        &f.rodir.join("new.txt"),
+        "write",
+        "manifest+user",
+    );
+
+    cleanup();
+}
+
+#[test]
+fn no_policy_no_journal_and_the_journal_never_fails_the_op() {
+    let f = setup("journal-quiet");
+    let log = f.input.parent().unwrap().join("audit2").join("journal.log");
+    std::env::set_var("TEBAKO_JAIL_JOURNAL", &log);
+
+    // The open policy never denies — and never journals.
+    let host_file = f.sibling.join("secret.txt");
+    assert_eq!(open(&host_file, libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::ENOENT);
+    assert!(!log.exists(), "no policy, no journal file");
+
+    // An UNWRITABLE journal target (a directory) does not change the
+    // denial's answer: EPERM stands, best-effort journaling is swallowed.
+    std::env::set_var("TEBAKO_JAIL_JOURNAL", f.rodir.as_path());
+    std::env::set_var("TEBAKO_JAIL_SOURCE", "TEBAKO_JAIL");
+    assert_eq!(install_policy(0, &[], &[]), 0);
+    assert_eq!(open(&host_file, libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::EPERM);
+
+    std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+    std::env::remove_var("TEBAKO_JAIL_SOURCE");
+}

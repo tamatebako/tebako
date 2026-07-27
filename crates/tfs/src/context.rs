@@ -121,6 +121,13 @@ pub struct FsContext {
     /// `unmount()` deliberately does NOT reset it (fail-closed); only the
     /// `tebako_fs_host_policy` C entry replaces it.
     host_policy: HostPolicy,
+    /// The open audit-journal file for policy denials (spec 08 §2),
+    /// resolved and opened by the policy installer BEFORE the context
+    /// guard was taken — a denial is then a bare write(2), never a path
+    /// operation under the lock (see `crate::journal` for the deadlock
+    /// rationale). Follows the policy: replaced alongside it, left alone
+    /// by `unmount()`.
+    journal: Option<std::fs::File>,
 }
 
 impl FsContext {
@@ -136,6 +143,7 @@ impl FsContext {
             dl_tmpdir: None,
             dl_cache: BTreeMap::new(),
             host_policy: HostPolicy::open(),
+            journal: None,
         }
     }
 
@@ -143,20 +151,37 @@ impl FsContext {
     // Host-access policy (spec 08)
     // ---------------------------------------------------------------
 
-    /// Install the host-access policy, replacing the current one.
-    pub fn set_host_policy(&mut self, policy: HostPolicy) {
+    /// Install the host-access policy, replacing the current one. The
+    /// audit-journal file for denials (spec 08 §2) rides alongside —
+    /// resolved and opened by the CALLER before the context guard was
+    /// taken (`crate::journal::open_journal`), so a denial under the lock
+    /// is a bare write(2), never a re-entrant path operation.
+    pub fn set_host_policy(&mut self, policy: HostPolicy, journal: Option<std::fs::File>) {
         self.host_policy = policy;
+        self.journal = journal;
     }
 
     /// Gate one host-passthrough path decision against the policy.
     /// Ok(()) = allowed (answer ENOENT, the consumer passes through to the
     /// host fs as today); Err(EPERM)/Err(EROFS) = the jail's answer.
+    /// Denials are journaled (spec 08 §2 — the audit journal records the
+    /// path, the op class and the policy's source label) via the cached,
+    /// pre-opened file: a bare write(2), no path operation under the lock.
     pub fn host_check<P: AsRef<std::path::Path>>(
         &self,
         path: P,
         need: HostAccess,
     ) -> Result<(), i32> {
-        self.host_policy.check(path.as_ref(), need)
+        let path = path.as_ref();
+        match self.host_policy.check(path, need) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                if let Some(journal) = &self.journal {
+                    crate::journal::journal_deny(journal, path, need, self.host_policy.source());
+                }
+                Err(e)
+            }
+        }
     }
 
     // ---------------------------------------------------------------

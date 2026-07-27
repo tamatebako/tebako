@@ -781,6 +781,7 @@ mod tests {
             devmode: false,
             fs_current: "/tmp".to_string(),
             suite: None,
+            jail: None,
         }
     }
 

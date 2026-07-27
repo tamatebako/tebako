@@ -259,7 +259,23 @@ fn init_inner() -> Result<(), String> {
         let spec = JailSpec::parse(&jail_spec).map_err(|e| format!("TEBAKO_JAIL: {e}"))?;
         let policy = HostPolicy::bind(spec.default_open, spec.mounts, spec.arg_files)
             .map_err(|e| format!("TEBAKO_JAIL: cannot bind policy: {}", errno_text(e)))?;
-        context().write().unwrap().set_host_policy(policy);
+        // The audit-journal source label: whoever exported TEBAKO_JAIL
+        // names the composition (TEBAKO_JAIL_SOURCE); a direct env install
+        // is attributed to the variable itself. The journal file opens
+        // HERE, before the context guard (see `tfs::journal`).
+        let source = std::env::var("TEBAKO_JAIL_SOURCE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "TEBAKO_JAIL".to_string());
+        let journal = if policy.never_denies() {
+            None
+        } else {
+            tfs::journal::open_journal()
+        };
+        context()
+            .write()
+            .unwrap()
+            .set_host_policy(policy.with_source(source), journal);
     }
     Ok(())
 }
@@ -399,7 +415,7 @@ mod tests {
         context()
             .write()
             .unwrap()
-            .set_host_policy(HostPolicy::bind(false, vec![], vec![]).unwrap());
+            .set_host_policy(HostPolicy::bind(false, vec![], vec![]).unwrap(), None);
         assert_eq!(
             vfs_open("/etc/definitely-host", libc::O_RDONLY),
             PathRoute::Denied(libc::EPERM)
@@ -434,7 +450,7 @@ mod tests {
         context()
             .write()
             .unwrap()
-            .set_host_policy(HostPolicy::open());
+            .set_host_policy(HostPolicy::open(), None);
         assert_eq!(
             vfs_open("/etc/definitely-host", libc::O_RDONLY),
             PathRoute::Host

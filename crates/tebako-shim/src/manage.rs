@@ -235,7 +235,7 @@ fn cmd_which(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
         return fail(EX_USAGE, "usage: tebako-shim which <tool>");
     };
     let res: Resolution = resolve::resolve(tool, ctx)?;
-    let plan: ExecPlan = dispatch::plan(&res, &[], ctx, false)?;
+    let plan: ExecPlan = dispatch::plan(&res, &[], ctx, false, Vec::new())?;
     let entry = res
         .manifest
         .entrypoint(tool)

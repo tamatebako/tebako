@@ -28,6 +28,8 @@ exact contract (roadmap 22's "add a language" playbook).
 | `TEBAKO_RUNTIME_IMAGE` | image-era: absolute path of the runtime's own `.tfs` (driver mounts it instead of any embedded image) |
 | `TEBAKO_TFS_MOUNTS` | `image:mount,…` — mounts to establish (preload-shim path) |
 | `TEBAKO_JAIL` | jail policy env form (spec 08) — the driver/preload enforces it |
+| `TEBAKO_JAIL_SOURCE` | audit label of the policy's origin (`manifest` / `user` / `manifest+user`, or the exporting surface) — journaled with every denial (spec 08 §2) |
+| `TEBAKO_JAIL_JOURNAL` | explicit audit-journal path (default: `$TEBAKO_HOME/journal.log`) |
 
 ## 3. File IO semantics
 

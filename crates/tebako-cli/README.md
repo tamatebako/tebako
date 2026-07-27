@@ -8,10 +8,31 @@ design): a port of the reference Ruby gem's lean/fat press
 $ tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>]
                [-c <cwd>] [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
-               [--tebako-version <v>] [--prefer-local]
+               [--tebako-version <v>] [--prefer-local] [--jail <spec>]
+$ tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
+               [--] [<args>...]
 $ tebako cache list
 $ tebako cache prune [--all] [--older-than Nd]
 ```
+
+## Jails (spec 08)
+
+`tebako press --jail <spec>` presses a host-access REQUEST into the
+package: `<spec>` is `open` (today's behavior), `deny` (every host path
+outside the grants fails EPERM), `deny:arg` (deny, but the input files
+the command is handed are allowed), a YAML file with the spec 08 §1 block
+(`default` / `mounts` / `argument_files`), or the `TEBAKO_JAIL` env
+grammar itself. The policy lands in the type-2 package manifest's `jail:`
+block; packages pressed without `--jail` are byte-identical to before.
+
+`tebako run <pkg>` dispatches a pressed package with the user's
+TIGHTENING — `--jail`, `--mount <host:mount:ro|rw>` (repeatable),
+`--no-host` — composed against the package's request: manifest request ∩
+user policy = effective jail, the user always wins, and the composition
+never loosens (a `--no-host` drops request grants; asking for `open`
+against a `deny` request stays denied). The effective policy rides
+TEBAKO_JAIL to the package's bootstrap; violations journal to the tebako
+audit journal (`$TEBAKO_HOME/journal.log`, spec 08 §2).
 
 ## Lean press flow
 

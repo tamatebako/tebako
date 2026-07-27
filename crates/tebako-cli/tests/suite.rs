@@ -30,6 +30,7 @@ fn opts() -> PressOptions {
         devmode: true,
         fs_current: "/tmp".to_string(),
         suite: None,
+        jail: None,
     }
 }
 

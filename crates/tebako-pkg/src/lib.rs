@@ -40,8 +40,8 @@ pub enum SignRequest {
 
 /// Package-level options (trailer fields besides the slots).
 ///
-/// `Eq` is deliberately not derived: `package_manifest` carries YAML
-/// values (spec 08's `jail` block) which are `PartialEq` only.
+/// `Eq` is deliberately not derived: `package_manifest`'s semantic equality
+/// is a YAML-level question; structural equality is all bundling needs.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct PackageOptions {
     pub runtime_ref: String,

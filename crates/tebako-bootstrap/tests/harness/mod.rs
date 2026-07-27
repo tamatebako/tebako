@@ -323,7 +323,13 @@ impl Harness {
             // Deterministic env: no ambient knobs leaking in.
             .env_remove("TEBAKO_OFFLINE")
             .env_remove("TEBAKO_NO_PROGRESS")
-            .env_remove("NO_COLOR");
+            .env_remove("NO_COLOR")
+            // Jail knobs (roadmap 35): an ambient TEBAKO_JAIL would
+            // otherwise reach the handoff and change every fixture's
+            // behavior.
+            .env_remove("TEBAKO_JAIL")
+            .env_remove("TEBAKO_JAIL_SOURCE")
+            .env_remove("TEBAKO_JAIL_JOURNAL");
         for (k, v) in extra_env {
             cmd.env(k, v);
         }

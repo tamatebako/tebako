@@ -12,9 +12,11 @@ const USAGE: &str = "Usage:
   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>] [-c <cwd>]
                [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
-               [--tebako-version <v>] [--prefer-local]
+               [--tebako-version <v>] [--prefer-local] [--jail <spec>]
   tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
                one package, N commands (spec 03 §6: per-entry slots + type-2 manifest)
+  tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
+               [--] [<args>...]
   tebako cache list [--json]
   tebako cache prune [--all] [--older-than Nd]
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
@@ -85,6 +87,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
             press(&opts)?;
             Ok(())
         }
+        "run" => run_package(rest),
         "cache" => run_cache(rest),
         "add-registry" => run_add_registry(rest),
         "list-registries" => run_list_registries(rest),
@@ -371,6 +374,19 @@ fn run_publish(args: &[String]) -> Result<(), CliExit> {
     Ok(())
 }
 
+/// `tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]...
+/// [--no-host] [--] [<args>...]` — the dispatch surface for a pressed
+/// package (spec 08 §2): the flags are the USER tightening; the package's
+/// own `jail:` request is composed in (manifest request ∩ user policy)
+/// and the effective jail rides TEBAKO_JAIL to the package's bootstrap.
+/// Never returns on success on unix (the process is replaced).
+fn run_package(args: &[String]) -> Result<(), CliExit> {
+    let parsed = tebako_cli::run::parse_run_args(args).map_err(CliExit::Usage)?;
+    let plan = tebako_cli::run::plan_run(&parsed).map_err(CliExit::Error)?;
+    let err = tebako_cli::run::exec_plan(&plan);
+    Err(CliExit::Error(err))
+}
+
 fn run_cache(args: &[String]) -> Result<(), CliExit> {
     let Some(action) = args.first() else {
         return Err(CliExit::Usage(
@@ -437,6 +453,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut prefer_local = false;
     let mut devmode = false;
     let mut suite: Option<PathBuf> = None;
+    let mut jail: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -471,6 +488,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--tebako-version" => tebako_version = take_value(&mut i)?,
             "--prefer-local" => prefer_local = true,
             "--suite" => suite = Some(PathBuf::from(take_value(&mut i)?)),
+            "--jail" => jail = Some(take_value(&mut i)?),
             "-D" | "--devmode" => devmode = true,
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
@@ -534,5 +552,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         devmode,
         fs_current,
         suite,
+        jail,
     })
 }

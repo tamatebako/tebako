@@ -56,7 +56,8 @@
 //! installs the host-access policy gating every host-passthrough path
 //! decision (`crates/tfs/src/policy.rs`); denied paths fail EPERM, writes
 //! against an ro grant EROFS, allowed paths keep today's ENOENT
-//! pass-through.
+//! pass-through, and every denial is journaled to the tebako audit
+//! journal (`crates/tfs/src/journal.rs` — path, op class, policy source).
 //!
 //! ## PLANNED (next milestones)
 //!
@@ -77,6 +78,7 @@ pub mod backends_zip;
 pub mod c_api;
 pub mod context;
 pub mod errno;
+pub mod journal;
 pub mod mount;
 pub mod mount_spec;
 pub mod policy;
