@@ -60,6 +60,7 @@ pub mod image_manifest;
 pub mod install;
 pub mod options;
 pub mod packager;
+pub mod publish;
 pub mod resolve;
 pub mod runner;
 pub mod scenario;

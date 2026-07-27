@@ -164,6 +164,61 @@ pub fn get_text(url: &str) -> Result<String, FetchError> {
     String::from_utf8(body).map_err(|e| FetchError::DownloadFailed(format!("{e} decoding {url}")))
 }
 
+fn require_https(url: &str) -> Result<(), FetchError> {
+    if !url.starts_with("https://") {
+        return Err(FetchError::DownloadFailed(format!(
+            "refusing non-HTTPS URL {url} (https:// and file:// are supported)"
+        )));
+    }
+    Ok(())
+}
+
+/// POST `body` to `url` with an optional bearer token (the release-upload
+/// half of the publish channel, spec 16). HTTPS-only — uploads never ride
+/// `file://`. Returns the response body; HTTP errors map like [`get`]'s.
+pub fn post(
+    url: &str,
+    body: &[u8],
+    content_type: &str,
+    bearer: Option<&str>,
+) -> Result<Vec<u8>, FetchError> {
+    require_https(url)?;
+    let mut req = agent()
+        .post(url)
+        .header("Content-Type", content_type)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "tebako");
+    if let Some(token) = bearer {
+        req = req.header("Authorization", &format!("Bearer {token}"));
+    }
+    let mut response = req.send(body).map_err(map_ureq_error(url))?;
+    response
+        .body_mut()
+        .with_config()
+        .limit(MAX_BODY_SIZE)
+        .read_to_vec()
+        .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))
+}
+
+/// DELETE `url` with an optional bearer token (asset replacement on
+/// idempotent re-publish). HTTPS-only; 404 is success (the asset is
+/// already gone — replacement stays idempotent).
+pub fn delete(url: &str, bearer: Option<&str>) -> Result<(), FetchError> {
+    require_https(url)?;
+    let mut req = agent()
+        .delete(url)
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "tebako");
+    if let Some(token) = bearer {
+        req = req.header("Authorization", &format!("Bearer {token}"));
+    }
+    match req.call() {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::StatusCode(404)) => Ok(()),
+        Err(e) => Err(map_ureq_error(url)(e)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -881,6 +881,14 @@ fn verify_signature<T: Transport>(
 /// The `.asc` of a signature pin: a full reference, or an asset name
 /// within the same release (the common case — the `.asc` rides the
 /// release next to the artifact it signs).
+///
+/// One detached signature covers exactly ONE artifact's bytes, so a
+/// release carrying N artifacts carries N ascs by convention:
+/// `<artifact>.asc`. When the install already selected an artifact
+/// (per-triplet registry entries, explicit `#artifact` forms), the asc
+/// follows the SELECTED artifact — `sig.asc` is read as the exact name
+/// only when no selection happened (universal payloads), which is also
+/// the shape the registry's spec example documents.
 fn signature_reference(sig: &SignaturePin, release: &Reference) -> Result<Reference, TebakoError> {
     if looks_like_reference(&sig.asc) {
         return Reference::parse(&sig.asc).map_err(|e| {
@@ -896,8 +904,11 @@ fn signature_reference(sig: &SignaturePin, release: &Reference) -> Result<Refere
             artifact, sha256, ..
         } => {
             // The payload's own pin must not leak onto the signature asset.
-            *artifact = Some(sig.asc.clone());
             *sha256 = None;
+            *artifact = Some(match artifact {
+                Some(selected) => format!("{selected}.asc"),
+                None => sig.asc.clone(),
+            });
             Ok(reference)
         }
         _ => Err(err(

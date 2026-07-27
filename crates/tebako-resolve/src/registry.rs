@@ -70,7 +70,11 @@ pub struct RegistryVersion {
     pub release: ReleaseRef,
     /// Opt-in OpenPGP signature of the artifact (spec 09): the signer
     /// keyid (16 lowercase hex) and the detached `.asc` — an asset name
-    /// within the same release, or a full reference.
+    /// within the same release, or a full reference. One signature covers
+    /// exactly one artifact, so per-triplet releases carry one asc per
+    /// artifact by convention (`<artifact>.asc`) and the installer
+    /// verifies the SELECTED artifact against its own asc; `asc` names
+    /// the exact asset only for universal payloads.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<SignaturePin>,
     /// The runtime the payload's entrypoints need (spec 03 §2.2);

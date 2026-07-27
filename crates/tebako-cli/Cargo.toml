@@ -16,6 +16,8 @@ tebako-pkg = { version = "0.1.0", path = "../tebako-pkg" }
 tebako-http = { version = "0.1.0", path = "../tebako-http" }
 # Registry/payload resolution for `tebako add-registry | install` (spec 04).
 tebako-resolve = { version = "0.1.0", path = "../tebako-resolve" }
+# Release-API JSON for the publish upload leg (GitHub release documents).
+tebako-json = { version = "0.1.0", path = "../tebako-json" }
 # Config writes (registries:), the manifest mirror and the shim link/unlink
 # — called as a library, never spawned (spec 14 §3: no shell-outs).
 tebako-shim = { version = "0.1.0", path = "../tebako-shim" }

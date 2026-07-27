@@ -3,8 +3,9 @@
 Normative specification of how payloads are named, located, and listed.
 Status: syntax LOCKED (multi-artifact + repo/release-class rules locked
 2026-07-26); resolver + registry listing + `tebako install` SHIPPED
-(roadmap 07/28.1; `tebako publish` and the brew/install.sh channels
-remain PLANNED).
+(roadmap 07/28.1); `tebako publish` SHIPPED (roadmap 41 — GitHub
+releases + file:// mirrors; the GitLab/Bitbucket write legs and the
+brew/install.sh channels remain PLANNED).
 
 ## 1. The reference syntax (MECE, no default service)
 
