@@ -748,6 +748,45 @@ fn plain_bytes_fall_back_to_the_synthesized_mirror_with_a_note() {
     );
 }
 
+#[test]
+fn suite_install_registers_every_entry_shim() {
+    // one suite payload (spec 07 §2.0): TWO entrypoints with DIFFERENT
+    // runtime requirements — tebako install registers all suite shims and
+    // the mirror carries each entry's own requirement (spec 03 §6).
+    let fx = Fixture::new("suiteinstall");
+    let suite_yaml = "identity:\n  schema_version: 1\n  kind: app\n  name: metasuite\n  version: 2.0.0\n  producer: {tool: tebako, tool_version: 0.15.9}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n    blob_sha256: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\n  signing: {state: unsigned}\n  encryption: {state: none}\nprovides:\n  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\"}\n    - name: mn2pdf\n      path: /app/bin/mn2pdf\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.4.0\"}\n  platforms: universal\n  capabilities: {exec: true, read: true}\n";
+    let image = zip_image_with_manifest(suite_yaml);
+    let payload_ref = fx.payload("metasuite-2.0.0.tfs", &image);
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: metasuite\n    kind: app\n    versions:\n      - version: 2.0.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        entrypoints: [metanorma, mn2pdf]\n    default: 2.0.0\n"
+    );
+    install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
+
+    let out = install::install(&fx.home, "metasuite", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["metanorma", "mn2pdf"]);
+    assert_eq!(out.shims.len(), 2);
+    assert!(fx.home.join("shims/metanorma").exists());
+    assert!(fx.home.join("shims/mn2pdf").exists());
+
+    // the mirror carries each entry's own runtime requirement
+    let mirror = tebako_shim::manifest::Manifest::load(
+        &fx.payloads_dir().join("metasuite/2.0.0.manifest.yaml"),
+    )
+    .unwrap();
+    let a = mirror.entrypoint("metanorma").unwrap();
+    let b = mirror.entrypoint("mn2pdf").unwrap();
+    assert_eq!(
+        a.runtime_requirement.as_ref().unwrap().constraint.as_str(),
+        "~> 3.3.0"
+    );
+    assert_eq!(
+        b.runtime_requirement.as_ref().unwrap().constraint.as_str(),
+        "~> 3.4.0"
+    );
+    assert_eq!(a.path, "/app/bin/metanorma");
+    assert_eq!(b.path, "/app/bin/mn2pdf");
+}
+
 // ---------------------------------------------------------------------
 // uninstall
 // ---------------------------------------------------------------------

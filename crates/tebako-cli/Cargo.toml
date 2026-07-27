@@ -26,6 +26,10 @@ tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
 # (item 30b layout seeding); install reads the embedded payload manifest
 # (spec 03 §1) through the same ABI.
 tfs = { version = "0.1.0", path = "../tfs" }
+# The suite file (--suite) is authored YAML (spec 00 invariant 6) — the
+# tpkg manifest convention (serde_yml), not serde_yaml.
+serde = { version = "1", features = ["derive"] }
+serde_yml = "0.0.12"
 # The in-process DwarFS writer (dwarfs-t-rs): the application and deploy
 # driver images are built without any mkdwarfs binary.
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }

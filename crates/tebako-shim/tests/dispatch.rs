@@ -189,3 +189,47 @@ fn which_mode_never_downloads() {
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("would download"), "{}", err.message);
 }
+
+/// THE suite proof (spec 07 §2.0 multi-command suites): ONE installed
+/// suite payload, TWO shim commands, EACH resolving its OWN runtime
+/// requirement — two commands of one package run DIFFERENT runtime
+/// versions simultaneously (both dispatch plans are composed and usable
+/// at once; the runtime swap never touches the payload).
+#[test]
+fn suite_commands_run_different_runtime_versions_simultaneously() {
+    let tmp = TempDir::new("suite-two-runtimes");
+    let home = tmp.path().join("home");
+    // one suite payload, two entrypoints with DIFFERENT runtime
+    // requirements (the metanorma/mn2pdf shape, spec 03 §6)
+    write_payload(
+        &home,
+        "metasuite",
+        "2.0.0",
+        &app_manifest(
+            "metasuite",
+            "2.0.0",
+            "  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\"}\n    - name: mn2pdf\n      path: /app/bin/mn2pdf\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.4.0\"}\n",
+        ),
+    );
+    // two cached runtimes, one per abi line
+    let exe_33 = write_runtime(&home, "3.3.9", "0.16.0", false);
+    let exe_34 = write_runtime(&home, "3.4.2", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "2.0.0");
+    pin_env(&mut ctx, "mn2pdf", "2.0.0");
+
+    // both dispatch plans coexist — the simultaneous case
+    let plan_a = dispatch::dispatch("metanorma", &[], &ctx).unwrap();
+    let plan_b = dispatch::dispatch("mn2pdf", &[], &ctx).unwrap();
+
+    // each resolved its OWN abi line's newest cached runtime
+    assert_eq!(plan_a.program, exe_33);
+    assert_eq!(plan_b.program, exe_34);
+    assert_ne!(plan_a.program, plan_b.program);
+    // …and each hands off its own entrypoint of the SAME payload image
+    let image = home.join("payloads/metasuite/2.0.0.tfs");
+    assert_eq!(plan_a.mounts[0].image, image);
+    assert_eq!(plan_b.mounts[0].image, image);
+    assert!(plan_a.argv.iter().any(|a| a == "/app/bin/metanorma"));
+    assert!(plan_b.argv.iter().any(|a| a == "/app/bin/mn2pdf"));
+}

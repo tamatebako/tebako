@@ -780,6 +780,7 @@ mod tests {
             verbose: false,
             devmode: false,
             fs_current: "/tmp".to_string(),
+            suite: None,
         }
     }
 

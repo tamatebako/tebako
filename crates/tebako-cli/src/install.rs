@@ -750,7 +750,7 @@ fn now_unix() -> u64 {
 /// Unix seconds → "YYYY-MM-DDTHH:MM:SSZ" (RFC 3339, UTC). The manifest's
 /// `created` is a string the model never interprets; no time crate rides
 /// along for one rendering.
-fn rfc3339_utc(secs: u64) -> String {
+pub(crate) fn rfc3339_utc(secs: u64) -> String {
     let days = secs / 86_400;
     let rem = secs % 86_400;
     let (hour, min, sec) = (rem / 3600, (rem % 3600) / 60, rem % 60);

@@ -13,6 +13,8 @@ const USAGE: &str = "Usage:
                [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local]
+  tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
+               one package, N commands (spec 03 §6: per-entry slots + type-2 manifest)
   tebako cache list [--json]
   tebako cache prune [--all] [--older-than Nd]
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
@@ -285,6 +287,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut tebako_version = tebako_cli::DEFAULT_TEBAKO_VERSION.to_string();
     let mut prefer_local = false;
     let mut devmode = false;
+    let mut suite: Option<PathBuf> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -318,6 +321,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--bootstrap" => bootstrap = Some(PathBuf::from(take_value(&mut i)?)),
             "--tebako-version" => tebako_version = take_value(&mut i)?,
             "--prefer-local" => prefer_local = true,
+            "--suite" => suite = Some(PathBuf::from(take_value(&mut i)?)),
             "-D" | "--devmode" => devmode = true,
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
@@ -331,21 +335,32 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         i += 1;
     }
 
-    // Thor's required-options check, message shape included.
-    let mut missing = String::new();
-    if root.is_none() {
-        missing += " '--root'";
-    }
-    if entrance.is_none() {
-        if !missing.is_empty() {
-            missing += ", ";
+    // Thor's required-options check, message shape included. A suite
+    // carries its own roots/entries, so -r/-e are neither required nor
+    // accepted with --suite.
+    if suite.is_some() {
+        if root.is_some() || entrance.is_some() {
+            return Err(CliExit::Usage(
+                "--root/--entry-point come from the suite file with --suite (do not pass them)"
+                    .to_string(),
+            ));
         }
-        missing += " '--entry-point'";
-    }
-    if !missing.is_empty() {
-        return Err(CliExit::Usage(format!(
-            "No value provided for required options {missing}"
-        )));
+    } else {
+        let mut missing = String::new();
+        if root.is_none() {
+            missing += " '--root'";
+        }
+        if entrance.is_none() {
+            if !missing.is_empty() {
+                missing += ", ";
+            }
+            missing += " '--entry-point'";
+        }
+        if !missing.is_empty() {
+            return Err(CliExit::Usage(format!(
+                "No value provided for required options {missing}"
+            )));
+        }
     }
 
     let fs_current = std::env::current_dir()
@@ -354,8 +369,8 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         .replace('\\', "/");
 
     Ok(PressOptions {
-        root_arg: root.unwrap().replace('\\', "/"),
-        entrance: entrance.unwrap().replace('\\', "/"),
+        root_arg: root.unwrap_or_default().replace('\\', "/"),
+        entrance: entrance.unwrap_or_default().replace('\\', "/"),
         output,
         prefix: resolve_prefix(prefix.as_deref()),
         cwd: cwd.map(|c| c.replace('\\', "/")),
@@ -369,5 +384,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         verbose: verbose_mode(),
         devmode,
         fs_current,
+        suite,
     })
 }
