@@ -49,6 +49,7 @@ spec 02 §5).
 14. [14 — Engineering process](14-process.md) — design → implementation → validation order, coding rules
 15. [15 — The info surface](15-info-command.md) — payload and package introspection (`tfs info` / `tebako-pkg info`), verification exit codes, JSON contract
 16. [16 — Distribution and installation](16-distribution-and-installation.md) — personas, channels (brew/curl|sh/tebako install), slim/fat, trust per channel
+17. [17 — Runtime driver contract](17-runtime-driver-contract.md) — the language-agnostic loader↔runtime surface (argv, env, IO, exit codes)
 
 ## Locked invariants (all specs subordinate to these)
 
