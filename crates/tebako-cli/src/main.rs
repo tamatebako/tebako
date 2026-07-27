@@ -14,7 +14,11 @@ const USAGE: &str = "Usage:
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>]
   tebako cache list [--json]
-  tebako cache prune [--all] [--older-than Nd]";
+  tebako cache prune [--all] [--older-than Nd]
+  tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
+  tebako list-registries               list the registered registries
+  tebako install <ref | name[@ver]>    install a payload + register its shims
+  tebako uninstall <name>              remove a payload's shims and cache entry";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -74,11 +78,108 @@ fn run(args: &[String]) -> Result<(), CliExit> {
             Ok(())
         }
         "cache" => run_cache(rest),
+        "add-registry" => run_add_registry(rest),
+        "list-registries" => run_list_registries(rest),
+        "install" => run_install(rest),
+        "uninstall" => run_uninstall(rest),
         "clean" | "setup" | "hash" => Err(CliExit::Usage(format!(
             "'tebako {subcommand}' is a later tebako-rs milestone"
         ))),
         other => Err(CliExit::Usage(format!("unknown command '{other}'"))),
     }
+}
+
+/// The tebako home the registry/install surface works against
+/// ($TEBAKO_HOME > platform default — tebako-shim's rule).
+fn tebako_home() -> Result<PathBuf, CliExit> {
+    let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    tebako_shim::tebako_home(&env).map_err(|e| {
+        CliExit::Error(tebako_cli::error::TebakoError::new(
+            e.message,
+            i32::from(e.code),
+        ))
+    })
+}
+
+fn run_add_registry(args: &[String]) -> Result<(), CliExit> {
+    let [registry_ref] = args else {
+        return Err(CliExit::Usage(
+            "usage: tebako add-registry <ref>".to_string(),
+        ));
+    };
+    let (outcome, registry) = tebako_cli::install::add_registry(&tebako_home()?, registry_ref)?;
+    let names: Vec<&str> = registry.payloads.iter().map(|p| p.name.as_str()).collect();
+    match outcome {
+        tebako_shim::config::AddRegistryOutcome::Added => println!(
+            "registered registry {registry_ref} ({} payload(s): {})",
+            names.len(),
+            names.join(", ")
+        ),
+        tebako_shim::config::AddRegistryOutcome::AlreadyPresent => {
+            println!("registry {registry_ref} was already registered")
+        }
+    }
+    Ok(())
+}
+
+fn run_list_registries(args: &[String]) -> Result<(), CliExit> {
+    if !args.is_empty() {
+        return Err(CliExit::Usage("usage: tebako list-registries".to_string()));
+    }
+    let registries = tebako_cli::install::list_registries(&tebako_home()?)?;
+    if registries.is_empty() {
+        println!("no registries registered — tebako add-registry <ref> registers one");
+    } else {
+        for r in &registries {
+            println!("{r}");
+        }
+    }
+    Ok(())
+}
+
+fn run_install(args: &[String]) -> Result<(), CliExit> {
+    let [target] = args else {
+        return Err(CliExit::Usage(
+            "usage: tebako install <ref | name[@version]>".to_string(),
+        ));
+    };
+    let outcome = tebako_cli::install::install(&tebako_home()?, target, None, None)?;
+    for note in &outcome.notes {
+        eprintln!("tebako: note: {note}");
+    }
+    match outcome.status {
+        tebako_resolve::InstallStatus::Hit => println!(
+            "{} {} is already installed ({})",
+            outcome.name,
+            outcome.version,
+            outcome.path.display()
+        ),
+        tebako_resolve::InstallStatus::Installed => println!(
+            "installed {} {} -> {}",
+            outcome.name,
+            outcome.version,
+            outcome.path.display()
+        ),
+    }
+    if let Some(signer) = &outcome.signer {
+        println!("  signature verified (signer {signer})");
+    }
+    for shim in &outcome.shims {
+        println!("  shim {}", shim.display());
+    }
+    Ok(())
+}
+
+fn run_uninstall(args: &[String]) -> Result<(), CliExit> {
+    let [name] = args else {
+        return Err(CliExit::Usage("usage: tebako uninstall <name>".to_string()));
+    };
+    let outcome = tebako_cli::install::uninstall(&tebako_home()?, name)?;
+    println!("removed {} ({})", outcome.name, outcome.versions.join(", "));
+    for shim in &outcome.shims_removed {
+        println!("  unlinked {}", shim.display());
+    }
+    Ok(())
 }
 
 fn run_cache(args: &[String]) -> Result<(), CliExit> {

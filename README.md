@@ -159,21 +159,50 @@ Rust-consumable surface for it.
 
 ### PARTIAL (roadmap 07)
 
-- **`crates/tebako-resolve` — references, fetch, payload cache** (spec
-  04/05): the MECE reference parser (`tfs:github:` / `tfs:gitlab:` /
-  `tfs:bb:` / `tfs+git://` / `tfs+https://` / bare `https://` /
-  `file://`, `?sha256=<hex>` pin on any class — no default service,
-  unknown forms are a named error listing the classes; proptest
-  round-trip + never-panic), a fetcher over an injected `Transport`
-  (tebako-http in production, mocks in tests; `tfs+git:` via gitoxide —
-  never the git CLI — with GitHub/GitLab/Bitbucket release-API adapters
-  behind one trait), and the shared `~/.tebako/payloads/<name>/<version>.tfs`
-  cache (per-entry flock 120 s, tmp+rename, 0444 + `.sha256` trust
-  anchor + `.origin` markers, `TEBAKO_OFFLINE` hard error, digest
-  mismatch caches nothing). Pure-cargo. Remaining: `tpkg-registry.yaml`
-  listing/resolution (spec 04 §2) and CLI wiring. The workspace JSON
-  parser moved to **`crates/tebako-json`** (re-exported by tebako-pkg —
-  API unchanged) so the release adapters stay free of native deps.
+- **`crates/tebako-resolve` — references, fetch, payload cache,
+  registries** (spec 04/05): the MECE reference parser (`tfs:github:` /
+  `tfs:gitlab:` / `tfs:bb:` / `tfs+git://` / `tfs+https://` / bare
+  `https://` / `file://`, `?sha256=<hex>` pin on any class, `#artifact`
+  on service releases — the locked multi-artifact rule: with `#` exactly
+  that asset, without it one/zero/many `.tfs` candidates → used /
+  `AssetNotFound` / `AmbiguousAssets`, never host-triplet guessing; no
+  default service, unknown forms are a named error listing the classes;
+  proptest round-trip + never-panic), a fetcher over an injected
+  `Transport` (tebako-http in production, mocks in tests; `tfs+git:` via
+  gitoxide — never the git CLI — with GitHub/GitLab/Bitbucket release-API
+  adapters behind one trait), the shared
+  `~/.tebako/payloads/<name>/<version>.tfs` cache (per-entry flock 120 s,
+  tmp+rename, 0444 + `.sha256` trust anchor + `.origin` markers,
+  `TEBAKO_OFFLINE` hard error, digest mismatch caches nothing), and the
+  **`tpkg-registry.yaml` model + resolution** (spec 04 §2: default-branch
+  contents API, pinned release-artifact, git-blob and `file://` forms —
+  exactly one location per form; serde model with parse-then-validate;
+  declarative `universal` / `platforms[triplet]` host selection via
+  tpkg's `Platform`). The workspace JSON parser moved to
+  **`crates/tebako-json`** (re-exported by tebako-pkg — API unchanged) so
+  the release adapters stay free of native deps.
+- **`tebako add-registry | list-registries | install | uninstall`**
+  (spec 04 §2, spec 16 §3.3, roadmap 28 item 1): `add-registry` validates
+  + fetches the registry once and records it in `~/.tebako/config.yaml`
+  `registries:` (other keys preserved); `install` takes a direct ref
+  (resolve → fetch → verify → cache → register shims) or a nickname
+  searched across the REGISTERED registries only (zero hits → a named
+  error listing them plus the hint; several → `AmbiguousRegistries`;
+  version omitted → registry default; `@ver` → exactly that) with
+  declarative host-triplet selection from the registry entry. Registry
+  sha256 pins are enforced at install; entries carrying
+  `signature: {keyid, asc}` are OpenPGP-verified before anything enters
+  the cache (strict; untrusted → exit 72, invalid → 71), unsigned
+  entries take the spec 09 v1-legacy warn + audit-journal line
+  (`TEBAKO_REQUIRE_SIGNED=1` hard-fails). The manifest mirror comes from
+  the image's embedded manifest when present (tier 1, cross-checked
+  against the registry) and is synthesized from the registry's tier-3
+  fields otherwise (loud note, `/<command>` path convention); shims link
+  through tebako-shim's library API (no spawn). `uninstall` removes
+  shims + cache entry and journals the trust anchors. Remaining for 28:
+  `tebako publish`, the brew tap + install.sh channels, and dispatch-time
+  registry caching for the shim's registry-default chain link (which
+  still reads `file://` registries only).
 
 ### SHIPPED (milestone 8)
 

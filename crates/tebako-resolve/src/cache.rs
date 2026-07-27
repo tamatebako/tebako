@@ -46,7 +46,7 @@ pub fn default_cache_root() -> PathBuf {
 }
 
 /// TEBAKO_OFFLINE truthiness, identical to tebako-cli (`1|true|yes`).
-fn offline() -> bool {
+pub fn offline() -> bool {
     std::env::var("TEBAKO_OFFLINE")
         .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
         .unwrap_or(false)

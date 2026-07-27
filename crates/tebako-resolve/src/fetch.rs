@@ -41,7 +41,7 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
 
 /// A reference fetcher over an injected transport.
 pub struct Fetcher<T: Transport> {
-    transport: T,
+    pub(crate) transport: T,
 }
 
 impl Fetcher<HttpTransport> {
@@ -77,8 +77,9 @@ impl<T: Transport> Fetcher<T> {
                 owner,
                 repo,
                 version,
+                artifact,
                 ..
-            } => self.fetch_service(*service, owner, repo, version)?,
+            } => self.fetch_service(*service, owner, repo, version, artifact.as_deref())?,
             Reference::Git {
                 url, git_ref, path, ..
             } => {
@@ -118,36 +119,33 @@ impl<T: Transport> Fetcher<T> {
         })
     }
 
-    /// Pick the release's single `.tfs` asset and download it; zero
-    /// candidates and ambiguous multi-candidates are named errors, never
-    /// guesses (spec 00 invariant 9).
+    /// Apply the multi-artifact selection rule (spec 04 §1, locked):
+    /// `#artifact` → [`ServiceAdapter::asset_named`] (missing is
+    /// `AssetNotFound` naming it); no `#` →
+    /// [`adapters::select_candidate`] over the release's `.tfs` assets.
+    /// Never a guess (spec 00 invariant 9).
     fn fetch_service(
         &self,
         service: Service,
         owner: &str,
         repo: &str,
         version: &str,
+        artifact: Option<&str>,
     ) -> Result<(Vec<u8>, String), ResolveError> {
         let adapter = adapter_for(service);
-        let assets = adapter.assets(&self.transport, owner, repo, version)?;
-        let url = match assets.as_slice() {
-            [] => {
-                return Err(ResolveError::AssetNotFound {
+        let (_, url) = match artifact {
+            Some(name) => adapter
+                .asset_named(&self.transport, owner, repo, version, name)?
+                .ok_or_else(|| ResolveError::AssetNotFound {
                     service,
                     owner: owner.to_string(),
                     repo: repo.to_string(),
                     version: version.to_string(),
-                })
-            }
-            [(_, url)] => url.clone(),
-            many => {
-                return Err(ResolveError::AmbiguousAssets {
-                    service,
-                    owner: owner.to_string(),
-                    repo: repo.to_string(),
-                    version: version.to_string(),
-                    assets: many.iter().map(|(n, _)| n.clone()).collect(),
-                })
+                    artifact: Some(name.to_string()),
+                })?,
+            None => {
+                let assets = adapter.assets(&self.transport, owner, repo, version)?;
+                crate::adapters::select_candidate(service, owner, repo, version, assets)?
             }
         };
         let bytes = self.get(&url)?;
@@ -223,6 +221,7 @@ mod tests {
             owner: "o".into(),
             repo: "r".into(),
             version: "v1".into(),
+            artifact: None,
             sha256: None,
         };
         let got = f.fetch(&r).unwrap();
@@ -231,7 +230,34 @@ mod tests {
     }
 
     #[test]
-    fn ambiguous_assets_are_a_named_error() {
+    fn service_fetch_with_artifact_takes_exactly_that_asset() {
+        let api = "https://api.github.com/repos/o/r/releases/tags/v1";
+        let body = r#"{"assets":[
+            {"name":"r-linux-v1.tfs","browser_download_url":"https://dl/linux.tfs"},
+            {"name":"r-macos-v1.tfs","browser_download_url":"https://dl/macos.tfs"}]}"#;
+        let t =
+            MockTransport::with(&[(api, body.as_bytes()), ("https://dl/macos.tfs", b"mac-img")]);
+        let f = Fetcher::with_transport(t);
+        let r = Reference::parse("tfs:github:o/r:v1#r-macos-v1.tfs").unwrap();
+        let got = f.fetch(&r).unwrap();
+        assert_eq!(got.bytes, b"mac-img");
+        assert_eq!(got.origin, "https://dl/macos.tfs");
+
+        // a missing #artifact is the named AssetNotFound
+        let r = Reference::parse("tfs:github:o/r:v1#r-windows-v1.tfs").unwrap();
+        let err = f.fetch(&r).unwrap_err();
+        assert!(matches!(
+            err,
+            ResolveError::AssetNotFound {
+                artifact: Some(_),
+                ..
+            }
+        ));
+        assert!(err.to_string().contains("'r-windows-v1.tfs'"));
+    }
+
+    #[test]
+    fn ambiguous_assets_are_a_named_error_listing_every_candidate() {
         let api = "https://api.github.com/repos/o/r/releases/tags/v1";
         let body = r#"{"assets":[
             {"name":"r-macos-v1.tfs","browser_download_url":"https://dl/a.tfs"},
@@ -243,10 +269,14 @@ mod tests {
             owner: "o".into(),
             repo: "r".into(),
             version: "v1".into(),
+            artifact: None,
             sha256: None,
         };
         let err = f.fetch(&r).unwrap_err();
-        assert!(matches!(err, ResolveError::AmbiguousAssets { .. }));
+        let ResolveError::AmbiguousAssets { assets, .. } = &err else {
+            panic!("expected AmbiguousAssets, got {err:?}")
+        };
+        assert_eq!(assets, &["r-macos-v1.tfs", "r-linux-v1.tfs"]);
         assert!(err.to_string().contains("r-macos-v1.tfs"));
     }
 

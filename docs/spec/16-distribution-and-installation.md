@@ -122,8 +122,12 @@ tebako use metanorma@1.2.2                # instant rollback
 
 ## 6. Implementation gaps (roadmap 28)
 
-- `tpkg-registry.yaml` fetch/listing (the resolver tail of item 07) —
-  required for `tebako install <ref>` and nicknames.
+- ~~`tpkg-registry.yaml` fetch/listing (the resolver tail of item 07)~~ —
+  SHIPPED (28.1): the registry model + resolution in tebako-resolve and
+  `tebako add-registry | list-registries | install | uninstall` in
+  tebako-cli (ref + nickname forms, declarative triplet selection,
+  registry sha256 pins, OpenPGP verification of signed entries, the
+  v1-legacy unsigned warn, audit journal).
 - `tamatebako/homebrew-tap` formula + the app-tap template.
 - `install.sh` + its own CI verification.
 - `tebako publish` helper (press → sign → upload → registry commit →

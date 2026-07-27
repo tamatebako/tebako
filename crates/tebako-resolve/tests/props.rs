@@ -25,14 +25,16 @@ fn arb_reference() -> impl Strategy<Value = Reference> {
         arb_owner(),
         arb_segment(),
         "[a-zA-Z0-9][a-zA-Z0-9._-]{0,10}",
+        prop::option::of("[a-zA-Z0-9][a-zA-Z0-9._-]{0,15}\\.tfs"),
         arb_sha256(),
     )
         .prop_map(
-            |(service, owner, repo, version, sha256)| Reference::Service {
+            |(service, owner, repo, version, artifact, sha256)| Reference::Service {
                 service,
                 owner,
                 repo,
                 version,
+                artifact,
                 sha256,
             },
         );

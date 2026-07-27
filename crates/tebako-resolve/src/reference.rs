@@ -5,15 +5,22 @@
 //! shorthand are rejected, never guessed.
 //!
 //! ```text
-//! tfs:github:owner/repo:version          service adapter (GitHub releases)
-//! tfs:gitlab:owner/repo:version          service adapter (GitLab releases)
-//! tfs:bb:owner/repo:version              service adapter (Bitbucket downloads)
+//! tfs:github:owner/repo:version[#artifact]   service adapter (GitHub releases)
+//! tfs:gitlab:owner/repo:version[#artifact]   service adapter (GitLab releases)
+//! tfs:bb:owner/repo:version[#artifact]       service adapter (Bitbucket downloads)
 //! tfs+git://host/owner/repo.git[@ref][#path]   git protocol adapter
 //! tfs+https://cdn.example.com/tool.tfs   verbatim HTTPS fetch
 //! https://cdn.example.com/tool.tfs       (same class, bare form)
 //! file:///opt/images/tool.tfs            local file
 //! …?sha256=<64 hex>                      digest pin, query form, any class
 //! ```
+//!
+//! `#artifact` selects one asset within a multi-artifact release (spec 04
+//! §1, locked): with it the fetcher takes exactly that asset; without it
+//! the candidate class is `.tfs` images — exactly one is used, zero is
+//! `AssetNotFound`, more than one is `AmbiguousAssets`. The adapter NEVER
+//! auto-picks by host triplet; platform selection is the registry's
+//! declarative job (spec 04 §2).
 
 use std::fmt;
 
@@ -51,13 +58,16 @@ impl Service {
 /// (`?sha256=<hex>`, normalized to lowercase) on any class.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Reference {
-    /// `tfs:github:owner/repo:version` (gitlab, bb). `owner` keeps any
-    /// nested groups (`group/sub`) for hosts that support them.
+    /// `tfs:github:owner/repo:version[#artifact]` (gitlab, bb). `owner`
+    /// keeps any nested groups (`group/sub`) for hosts that support them.
+    /// `artifact` is the `#name` asset selector of a multi-artifact
+    /// release (spec 04 §1); None means the single-`.tfs` rule.
     Service {
         service: Service,
         owner: String,
         repo: String,
         version: String,
+        artifact: Option<String>,
         sha256: Option<String>,
     },
     /// `tfs+git://host/owner/repo.git[@ref][#path]` — `url` is `host/path`
@@ -150,10 +160,15 @@ impl fmt::Display for Reference {
                 owner,
                 repo,
                 version,
+                artifact,
                 sha256,
             } => {
                 write!(f, "tfs:{}:{owner}/{repo}:{version}", service.scheme())?;
-                pin(f, sha256, "?")
+                pin(f, sha256, "?")?;
+                if let Some(a) = artifact {
+                    write!(f, "#{a}")?;
+                }
+                Ok(())
             }
             Reference::Git {
                 url,
@@ -194,7 +209,7 @@ impl std::str::FromStr for Reference {
 
 // ---- parsing helpers -------------------------------------------------------
 
-fn invalid(input: &str, reason: impl Into<String>) -> ReferenceError {
+pub(crate) fn invalid(input: &str, reason: impl Into<String>) -> ReferenceError {
     ReferenceError::Invalid {
         input: input.to_string(),
         reason: reason.into(),
@@ -203,7 +218,10 @@ fn invalid(input: &str, reason: impl Into<String>) -> ReferenceError {
 
 /// `?sha256=<64 hex>` (lowercase-normalized). `query` is the text after a
 /// `?`; classes without other legal parameters must match exactly.
-fn parse_exact_pin(input: &str, query: Option<&str>) -> Result<Option<String>, ReferenceError> {
+pub(crate) fn parse_exact_pin(
+    input: &str,
+    query: Option<&str>,
+) -> Result<Option<String>, ReferenceError> {
     match query {
         None => Ok(None),
         Some(q) => {
@@ -232,7 +250,7 @@ fn validate_hex(input: &str, hex: &str) -> Result<String, ReferenceError> {
 
 /// Reject components that are empty or carry control/whitespace/forbidden
 /// characters; everything else (dots, dashes, unicode) is fair game.
-fn check_component(
+pub(crate) fn check_component(
     input: &str,
     what: &str,
     value: &str,
@@ -253,12 +271,24 @@ fn check_component(
     Ok(())
 }
 
-/// `tfs:<svc>:<owner>/<repo>:<version>[?sha256=…]` — split at the LAST ':'
-/// so owner paths keep nested groups (gitlab `group/sub/repo`).
+/// `tfs:<svc>:<owner>/<repo>:<version>[?sha256=…][#artifact]` — split at
+/// the LAST ':' so owner paths keep nested groups (gitlab `group/sub/repo`).
+/// The `#artifact` fragment (spec 04 §1 multi-artifact rule) selects one
+/// release asset by exact name; the pin stays in query form and never
+/// clashes with the fragment.
 fn parse_service(input: &str, rest: &str, service: Service) -> Result<Reference, ReferenceError> {
-    let (body, query) = match rest.split_once('?') {
-        Some((b, q)) => (b, Some(q)),
+    let (before_frag, artifact) = match rest.split_once('#') {
+        Some((b, f)) => {
+            if f.is_empty() {
+                return Err(invalid(input, "empty #artifact fragment"));
+            }
+            (b, Some(f))
+        }
         None => (rest, None),
+    };
+    let (body, query) = match before_frag.split_once('?') {
+        Some((b, q)) => (b, Some(q)),
+        None => (before_frag, None),
     };
     let sha256 = parse_exact_pin(input, query)?;
     let Some((path, version)) = body.rsplit_once(':') else {
@@ -273,11 +303,15 @@ fn parse_service(input: &str, rest: &str, service: Service) -> Result<Reference,
     check_component(input, "owner", owner, &['?', '#', ':', '@'])?;
     check_component(input, "repo", repo, &['?', '#', ':', '@'])?;
     check_component(input, "version", version, &['?', '#', ':'])?;
+    if let Some(a) = artifact {
+        check_component(input, "artifact", a, &['?', '#', '/'])?;
+    }
     Ok(Reference::Service {
         service,
         owner: owner.to_string(),
         repo: repo.to_string(),
         version: version.to_string(),
+        artifact: artifact.map(str::to_string),
         sha256,
     })
 }
@@ -405,6 +439,7 @@ mod tests {
                 owner: "metanorma".into(),
                 repo: "metanorma".into(),
                 version: "1.2.3".into(),
+                artifact: None,
                 sha256: None,
             }
         );
@@ -419,6 +454,7 @@ mod tests {
                 owner: "group/sub".into(),
                 repo: "tool".into(),
                 version: "v2".into(),
+                artifact: None,
                 sha256: None,
             }
         );
@@ -430,6 +466,59 @@ mod tests {
             r.to_string(),
             format!("tfs:bb:o/r:1.0?sha256={}", sha.to_ascii_lowercase())
         );
+    }
+
+    #[test]
+    fn service_references_with_artifact() {
+        let r = Reference::parse(
+            "tfs:github:metanorma/metanorma:1.2.3#metanorma-1.2.3-macos-arm64.tfs",
+        )
+        .unwrap();
+        assert_eq!(
+            r,
+            Reference::Service {
+                service: Service::Github,
+                owner: "metanorma".into(),
+                repo: "metanorma".into(),
+                version: "1.2.3".into(),
+                artifact: Some("metanorma-1.2.3-macos-arm64.tfs".into()),
+                sha256: None,
+            }
+        );
+        assert_eq!(
+            r.to_string(),
+            "tfs:github:metanorma/metanorma:1.2.3#metanorma-1.2.3-macos-arm64.tfs"
+        );
+        assert_eq!(Reference::parse(&r.to_string()).unwrap(), r);
+
+        // pin (query form) and artifact (fragment) never clash — pin first.
+        let sha = "e".repeat(64);
+        let r = Reference::parse(&format!("tfs:gitlab:o/r:1.0?sha256={sha}#tool.tfs")).unwrap();
+        assert!(
+            matches!(&r, Reference::Service { artifact: Some(a), sha256: Some(s), .. } if a == "tool.tfs" && s == &sha)
+        );
+        assert_eq!(
+            r.to_string(),
+            format!("tfs:gitlab:o/r:1.0?sha256={sha}#tool.tfs")
+        );
+
+        // the registry's pinned-immutable form (spec 04 §2) parses too
+        let r = Reference::parse("tfs:github:o/r:v1#tpkg-registry.yaml").unwrap();
+        assert!(
+            matches!(&r, Reference::Service { artifact: Some(a), .. } if a == "tpkg-registry.yaml")
+        );
+
+        for bad in [
+            "tfs:github:o/r:1.0#",        // empty fragment
+            "tfs:github:o/r:1.0#a/b.tfs", // artifacts are file names, no '/'
+            "tfs:github:o/r:1.0#a.tfs#b", // one fragment only
+            "tfs:github:o/r:1.0#a t.tfs", // no whitespace
+        ] {
+            assert!(
+                matches!(Reference::parse(bad), Err(ReferenceError::Invalid { .. })),
+                "{bad} must be a named error"
+            );
+        }
     }
 
     #[test]
