@@ -17,8 +17,13 @@
 //! Discipline: no async, no clap, no logging framework; hand-rolled argv;
 //! named errors and exit codes (spec 06 §4 reused); cache-install mirrors
 //! the bootstrap's flock / tmp+rename / trust-marker discipline (spec 05
-//! §4) without linking the bootstrap crate (which drags in rnp — the shim
-//! stays pure-Rust + tebako-http).
+//! §4) without linking the bootstrap crate (which drags in rnp).
+//!
+//! The dispatch-time registry-default link resolves EVERY registry form
+//! of spec 04 §2 through tebako-resolve (service contents API, pinned
+//! release artifact, git blob, `file://`) behind the per-ref dispatch
+//! cache in [`regcache`] (24 h TTL, `tebako update-registries`,
+//! `TEBAKO_OFFLINE` = cache-or-named-error) — never tebako-cli.
 //!
 //! The installed payload record (the dispatcher-visible mirror, spec 03
 //! §4 tier 3 rationale — resolve without opening every image):
@@ -38,6 +43,7 @@ pub mod config;
 pub mod dispatch;
 pub mod manage;
 pub mod manifest;
+pub mod regcache;
 pub mod resolve;
 pub mod runtime;
 pub mod shell;

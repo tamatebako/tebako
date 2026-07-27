@@ -15,6 +15,11 @@ categories = ["command-line-utilities"]
 # unify): the dispatch mirror is a tpkg::PayloadManifest; constraint
 # grammar is tpkg's, the dispatcher only evaluates.
 tpkg = { version = "0.1.0", path = "../tpkg" }
+# Remote registry resolution at dispatch time (spec 04 §2 — item 33):
+# every registry form (service contents API, pinned release artifact, git
+# blob, file) behind the per-ref dispatch cache in src/regcache.rs. The
+# shim links tebako-resolve, never tebako-cli.
+tebako-resolve = { version = "0.1.0", path = "../tebako-resolve" }
 # The authored config / disabled state / project pins are YAML (spec 00
 # invariant 6). serde_yaml 0.9 is the cached, pure-Rust (unsafe-libyaml)
 # choice — no native build, no async, no clap. (The manifest mirror's

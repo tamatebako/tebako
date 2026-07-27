@@ -100,14 +100,79 @@ pub fn add_registry_with<T: Transport>(
     fetcher: &Fetcher<T>,
 ) -> Result<(AddRegistryOutcome, tebako_resolve::Registry), TebakoError> {
     let r = RegistryRef::parse(registry_ref).map_err(|e| err(EX_USAGE, e.to_string()))?;
-    let registry = fetcher.resolve_registry(&r).map_err(map_resolve)?;
+    let bytes = fetcher.fetch_registry(&r).map_err(map_resolve)?;
+    let text = String::from_utf8(bytes.clone()).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!("the registry file is not UTF-8: {e}"),
+        )
+    })?;
+    let registry = tebako_resolve::Registry::from_yaml(&text).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!("cannot parse the registry: {e}"),
+        )
+    })?;
     let outcome = config::add_registry(home, &r.as_canonical_string()).map_err(map_shim)?;
+    // Prime the dispatch-time registry cache with the bytes just fetched
+    // (roadmap 33): the shim's registry-default link then resolves this
+    // remote registry without a second fetch. A prime failure never fails
+    // the add — dispatch refreshes on demand; noted, not silent.
+    if r.is_remote() {
+        if let Err(e) = tebako_shim::regcache::prime(home, &r.as_canonical_string(), &bytes) {
+            eprintln!(
+                "tebako: note: could not prime the dispatch registry cache: {}",
+                e.message
+            );
+        }
+    }
     Ok((outcome, registry))
 }
 
 /// `tebako list-registries`: the registered refs, in config order.
 pub fn list_registries(home: &Path) -> Result<Vec<String>, TebakoError> {
     Ok(config::load_config(home).map_err(map_shim)?.registries)
+}
+
+/// What `tebako update-registries` did (roadmap 33): per-registry outcome
+/// of the force-renew of the dispatch-time cache.
+#[derive(Debug, Default)]
+pub struct UpdateRegistriesOutcome {
+    /// Remote registries fetched and (re-)published into the cache.
+    pub refreshed: Vec<String>,
+    /// `file://` registries (read directly at dispatch — nothing to cache).
+    pub local: Vec<String>,
+    /// `(ref, error)` pairs that failed to refresh.
+    pub failed: Vec<(String, String)>,
+}
+
+/// `tebako update-registries`: force-renew every registered registry's
+/// dispatch cache. Every ref is attempted; failures are collected, not
+/// fatal to the other refs (the CLI maps a non-empty `failed` to a
+/// non-zero exit).
+pub fn update_registries(home: &Path) -> Result<UpdateRegistriesOutcome, TebakoError> {
+    update_registries_with(home, &Fetcher::new())
+}
+
+/// The transport-injected half of [`update_registries`] (tests).
+pub fn update_registries_with<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+) -> Result<UpdateRegistriesOutcome, TebakoError> {
+    let cfg = config::load_config(home).map_err(map_shim)?;
+    let mut out = UpdateRegistriesOutcome::default();
+    for reg_ref in &cfg.registries {
+        match tebako_shim::regcache::refresh_with(home, reg_ref, fetcher) {
+            Ok(tebako_shim::regcache::RefreshOutcome::Refreshed) => {
+                out.refreshed.push(reg_ref.clone())
+            }
+            Ok(tebako_shim::regcache::RefreshOutcome::LocalSkipped) => {
+                out.local.push(reg_ref.clone())
+            }
+            Err(e) => out.failed.push((reg_ref.clone(), e.message)),
+        }
+    }
+    Ok(out)
 }
 
 // ---------------------------------------------------------------------

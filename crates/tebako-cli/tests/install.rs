@@ -141,6 +141,77 @@ fn add_registry_rejects_bad_refs_and_unparsable_registries() {
     assert!(install::list_registries(&fx.home).unwrap().is_empty());
 }
 
+#[test]
+fn add_registry_primes_the_dispatch_cache_for_remote_refs() {
+    let fx = Fixture::new("addregprime");
+    // a GitHub default-branch registry ref, answered by the mock
+    // transport (contents API → raw download URL)
+    let registry_yaml = "schema_version: 1\npayloads: []\n";
+    let contents = r#"{"name":"tpkg-registry.yaml","download_url":"https://raw.example/o/r/HEAD/tpkg-registry.yaml"}"#;
+    let t = MockTransport::new()
+        .with(
+            "https://api.github.com/repos/o/r/contents/tpkg-registry.yaml",
+            contents.as_bytes(),
+        )
+        .with(
+            "https://raw.example/o/r/HEAD/tpkg-registry.yaml",
+            registry_yaml.as_bytes(),
+        );
+    let fetcher = Fetcher::with_transport(t);
+
+    let (outcome, _) = install::add_registry_with(&fx.home, "tfs:github:o/r", &fetcher).unwrap();
+    assert_eq!(outcome, tebako_shim::config::AddRegistryOutcome::Added);
+
+    // the dispatch cache holds exactly the fetched bytes (roadmap 33):
+    // the shim resolves this remote registry without a second fetch
+    let cached = fx
+        .home
+        .join("registries")
+        .join(format!("{}.yaml", sha256_hex(b"tfs:github:o/r")));
+    assert_eq!(fs::read_to_string(&cached).unwrap(), registry_yaml);
+    let fetched_at = fx
+        .home
+        .join("registries")
+        .join(format!("{}.fetched-at", sha256_hex(b"tfs:github:o/r")));
+    assert!(fetched_at.is_file());
+
+    // doctor-side freshness: the cache is fresh
+    assert!(matches!(
+        tebako_shim::regcache::freshness(&fx.home, "tfs:github:o/r"),
+        tebako_shim::regcache::RegistryFreshness::Fresh(_)
+    ));
+}
+
+#[test]
+fn update_registries_refreshes_and_reports() {
+    let fx = Fixture::new("updateregs");
+    // a file:// registry: reported as local, nothing to cache
+    let payload_ref = fx.payload("app-1.0.tfs", b"app-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &registry_yaml("app", "1.0", &payload_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    let out = install::update_registries(&fx.home).unwrap();
+    assert_eq!(out.local, vec![reg_ref.clone()]);
+    assert!(out.refreshed.is_empty());
+    assert!(out.failed.is_empty());
+
+    // a remote registry whose fetch fails lands in `failed`, not a hard
+    // error of the whole run (mock transport: no answers, every GET 404s)
+    fs::write(
+        fx.home.join("config.yaml"),
+        format!("registries:\n  - {reg_ref}\n  - tfs:github:o/unreachable\n"),
+    )
+    .unwrap();
+    let fetcher = Fetcher::with_transport(MockTransport::new());
+    let out = install::update_registries_with(&fx.home, &fetcher).unwrap();
+    assert_eq!(out.local, vec![reg_ref.clone()]);
+    assert_eq!(out.failed.len(), 1);
+    assert_eq!(out.failed[0].0, "tfs:github:o/unreachable");
+}
+
 // ---------------------------------------------------------------------
 // the nickname resolution matrix (spec 16 §3.3)
 // ---------------------------------------------------------------------

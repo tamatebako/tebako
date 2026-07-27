@@ -224,7 +224,8 @@ pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
     }
     // 4. registry default
     if picked.is_none() {
-        if let Some((version, reg)) = config::registry_default(&cfg, &payload_name)? {
+        if let Some((version, reg)) = config::registry_default(&ctx.home, &cfg, &payload_name, ctx)?
+        {
             picked = Some((version, VersionSource::RegistryDefault(reg)));
         }
     }

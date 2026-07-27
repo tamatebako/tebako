@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use crate::config;
 use crate::dispatch::{self, ExecPlan};
 use crate::manifest;
+use crate::regcache;
 use crate::resolve::{self, Resolution};
 use crate::runtime::RuntimeResolution;
 use crate::shell::{self, Shell};
@@ -143,6 +144,17 @@ fn cmd_list(ctx: &Ctx) -> Result<Action, ShimError> {
 
 fn first_line(message: &str) -> &str {
     message.lines().next().unwrap_or(message)
+}
+
+/// "<N>m/h/d old" for doctor's registry freshness lines.
+fn human_age(secs: u64) -> String {
+    if secs < 3600 {
+        format!("{}m old", secs / 60)
+    } else if secs < 86_400 {
+        format!("{}h old", secs / 3600)
+    } else {
+        format!("{}d old", secs / 86_400)
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -332,19 +344,32 @@ fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
         }
     }
 
-    // authored config + registries parse.
+    // authored config + registries: parse, local existence, and the
+    // dispatch-cache freshness of remote refs (spec 04 §2 + roadmap 33).
     match config::load_config(&ctx.home) {
         Ok(cfg) => {
             for reg in &cfg.registries {
-                let path = reg.strip_prefix("file://").unwrap_or(reg);
-                if reg.starts_with("file://") || reg.starts_with('/') {
-                    if !std::path::Path::new(path).is_file() {
-                        problems.push(format!("registry {reg}: file not found"));
+                match regcache::freshness(&ctx.home, reg) {
+                    regcache::RegistryFreshness::Local => {
+                        let path = reg.strip_prefix("file://").unwrap_or(reg);
+                        if !std::path::Path::new(path).is_file() {
+                            problems.push(format!("registry {reg}: file not found"));
+                        }
                     }
-                } else {
-                    notes.push(format!(
-                        "registry {reg}: remote refs are install-time resolved by the CLI (dispatch-time cache PLANNED; skipped)"
-                    ));
+                    regcache::RegistryFreshness::Fresh(age) => notes.push(format!(
+                        "registry {reg}: dispatch cache fresh ({})",
+                        human_age(age)
+                    )),
+                    regcache::RegistryFreshness::Stale(age) => notes.push(format!(
+                        "registry {reg}: dispatch cache is stale ({}) — the next dispatch refreshes it, or run `tebako update-registries`",
+                        human_age(age)
+                    )),
+                    regcache::RegistryFreshness::Missing => problems.push(format!(
+                        "registry {reg}: not in the dispatch cache — run `tebako update-registries` (online dispatch fetches on demand; TEBAKO_OFFLINE dispatch would fail)"
+                    )),
+                    regcache::RegistryFreshness::BadRef(_) => problems.push(format!(
+                        "registry {reg}: does not parse as a spec 04 §2 registry reference"
+                    )),
                 }
             }
         }

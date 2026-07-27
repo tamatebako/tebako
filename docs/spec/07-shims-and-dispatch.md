@@ -5,12 +5,15 @@ management. Status: PARTIAL — the dispatcher and version manager
 (§2–§4) ship as `crates/tebako-shim` in tebako-rs (roadmap 08; retires
 `mnenv`). Remote registry fetch ships with `tebako add-registry |
 install` (roadmap 28.1 — the CLI resolves every registry form of
-spec 04 §2); still PLANNED: the dispatch-time registry cache (v1: the
-registry-default chain link reads `file://` registry refs only), `tebako
-use` writing the user default (v1: author `~/.tebako/config.yaml`
-directly), jail application (spec 08), and a runtime registry (v1
-downloads resolve through the `runtimes:` preference in `config.yaml`
-as the exact ref).
+spec 04 §2), and the dispatch-time registry cache ships with roadmap 33
+(the registry-default chain link resolves every registry form through
+tebako-resolve behind `~/.tebako/registries/<sha>.yaml` — 24 h TTL,
+`tebako update-registries`, `TEBAKO_OFFLINE` = cache-or-named-error;
+`tebako add-registry` primes the cache with the bytes it fetched).
+Still PLANNED: `tebako use` writing the user default (v1: author
+`~/.tebako/config.yaml` directly), jail application (spec 08), and a
+runtime registry (v1 downloads resolve through the `runtimes:` preference
+in `config.yaml` as the exact ref).
 
 ## 0. v1 concrete choices (normative where the sections above were open)
 
