@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use tebako_bootstrap::{
-    verify_chain_with_home, EX_TEBAKO_SHA, EX_TEBAKO_SIGNATURE, EX_TEBAKO_TRUST,
-};
+use tebako_bootstrap::{verify_chain_with_home, EX_TEBAKO_SHA, EX_TEBAKO_SIGNATURE};
+#[cfg(feature = "openpgp-verify")]
+use tebako_bootstrap::EX_TEBAKO_TRUST;
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -98,6 +98,7 @@ fn make_package_with(
 }
 
 /// Generate an OpenPGP signing key directly (for the root/rotation tests).
+#[cfg(feature = "openpgp-verify")]
 fn make_key(userid: &str) -> (Vec<u8>, Vec<u8>, String, [u8; 8]) {
     let ctx = rnp::Context::new().unwrap();
     let key = rnp::KeyBuilder::new(rnp::Algorithm::Eddsa)
