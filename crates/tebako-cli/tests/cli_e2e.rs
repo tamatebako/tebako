@@ -244,9 +244,9 @@ fn bundler_platform_tag() -> Option<String> {
 /// versions, and ffi landing as the precompiled platform gem (the
 /// forced-ruby-platform era attempted a source build instead).
 ///
-/// History: this test used to assert the RuntimeSdk gap (roadmap 25 item
-/// 1) — that a ruby-platform-only native (json/bigdecimal/racc/brotli)
-/// stops the press for lack of headers. The ecosystem drifted:
+/// History: this test used to assert the RuntimeSdk gap (roadmap 25,
+/// item 1) — that a ruby-platform-only native (json/bigdecimal/racc/
+/// brotli) stops the press for lack of headers. The ecosystem drifted:
 /// precompiled variants of the remaining natives shipped to rubygems,
 /// and the press now succeeds. That success IS the intended product
 /// behavior (the fontist feedstock presses in tebako-packages CI), so
