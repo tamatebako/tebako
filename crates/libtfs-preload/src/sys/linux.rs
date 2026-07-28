@@ -187,11 +187,6 @@ real_fn!(
     unsafe extern "C" fn(*mut libc::DIR)
 );
 real_fn!(
-    real_open64,
-    c"open64",
-    unsafe extern "C" fn(*const c_char, c_int, ...) -> c_int
-);
-real_fn!(
     real_stat64,
     c"stat64",
     unsafe extern "C" fn(*const c_char, *mut libc::stat) -> c_int
@@ -205,11 +200,6 @@ real_fn!(
     real_fstat64,
     c"fstat64",
     unsafe extern "C" fn(c_int, *mut libc::stat) -> c_int
-);
-real_fn!(
-    real_pread64,
-    c"pread64",
-    unsafe extern "C" fn(c_int, *mut c_void, usize, libc::off_t) -> libc::ssize_t
 );
 real_fn!(
     real_dirfd,

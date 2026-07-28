@@ -868,6 +868,7 @@ pub unsafe extern "C" fn statx(
     };
     match engine_call(|| route::vfs_stat(&routed)) {
         Some(PathRoute::Vfs(raw)) => {
+            #[allow(clippy::unnecessary_cast)] // identity on linux, required on macOS
             let type_bits: u32 = match raw.entry_type {
                 EntryType::File => libc::S_IFREG as u32,
                 EntryType::Directory => libc::S_IFDIR as u32,
@@ -903,10 +904,10 @@ pub unsafe extern "C" fn statx(
     }
 }
 
-/// Linux: `openat2`? — NO: glibc exposes no `openat2` wrapper or symbol
-/// (only `SYS_openat2`), so there is nothing to interpose on linux-gnu; a
-/// raw `syscall(2)` caller bypasses userland interposition by
-/// construction (musl's wrapper is a later consideration).
+// Linux: `openat2`? — NO: glibc exposes no `openat2` wrapper or symbol
+// (only `SYS_openat2`), so there is nothing to interpose on linux-gnu; a
+// raw `syscall(2)` caller bypasses userland interposition by
+// construction (musl's wrapper is a later consideration).
 
 /// Linux: `getdents64` (roadmap 39). VFS directory enumeration rides
 /// opendir/readdir (a memfs directory can never be fd-opened — open
