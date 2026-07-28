@@ -16,9 +16,13 @@
 //!   [`VerifyOutcome::Invalid`] — the named trust errors of item 29 map
 //!   onto these.
 
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
+// (was forbid: forbid forbids scoped overrides, and bz_shim is the one
+// documented exception — a Rust-2024 unsafe-attribute extern "C" export.
+// deny keeps unsafe a hard error everywhere else in the crate.)
 
 pub mod envelope;
+pub mod bz_shim;
 mod error;
 pub mod keyring;
 mod keys;
