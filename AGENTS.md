@@ -55,6 +55,17 @@ Autoload only (defined in the immediate parent namespace file) — no
 `instance_variable_get/set`; no `respond_to?`; model-driven, MECE,
 open/closed, DRY; specs for public behavior.
 
+## Build/test invocation rule (the libtfs.rlib collision)
+
+- **Never run `cargo test --release` locally.** The workspace release
+  profile sets `panic = "abort"`; cargo builds test-harness units with
+  `panic=unwind`, so every lib reachable from a test target compiles
+  TWICE, and both tfs units stamp the shared unhashed `libtfs.rlib`
+  (crate-type `["cdylib","staticlib","rlib"]` + cargo issue 6313). The
+  result is a rotating cast of E0308/E0460/E0463 that looks like a code
+  bug and is not. Test in debug (CI's shape) — the durable fix is
+  roadmap 71 (tfs-capi split).
+
 ## Verification culture
 
 - No item is "done" without its acceptance executed and green — cite run

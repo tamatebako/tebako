@@ -12,12 +12,23 @@ categories = ["filesystem", "no-std"]
 
 [dependencies]
 tpkg = { version = "0.1.0", path = "../tpkg" }
-tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+tebako-signer = { version = "0.1.0", path = "../tebako-signer", optional = true }
 tebako-http = { version = "0.1.0", path = "../tebako-http" }
 tebako-term = { version = "0.1.0", path = "../tebako-term" }
-rnp = { package = "rnp-rs", version = "0.1.7", features = ["vendored"] }
+# OpenPGP trailer verification is OPTIONAL (feature `openpgp-verify`,
+# default OFF): the shipped bootstrap runs unverified-first — every
+# package loads with a loud warning, and TEBAKO_REQUIRE_SIGNED=1 fails
+# closed naming the missing capability. Roadmap 72 moves OpenPGP into
+# the crypto toolkit payload; until then this feature keeps the full
+# verification path available for dev builds (--features openpgp-verify).
+# With the feature off the bootstrap carries ZERO rnp/botan/json-c/bz2.
+rnp = { package = "rnp-rs", version = "=0.1.7", features = ["vendored"], optional = true }
 libc = "0.2"
 sha2 = "0.10"
+
+[features]
+default = []
+openpgp-verify = ["dep:tebako-signer", "dep:rnp"]
 
 # The Windows platform layer (LockFileEx / MoveFileExW / SetFileAttributesW
 # / SetConsoleCtrlHandler) — the same 0.61 the rest of the workspace
@@ -40,4 +51,4 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
-rnp = { package = "rnp-rs", version = "0.1.7", features = ["vendored"] }
+rnp = { package = "rnp-rs", version = "=0.1.7", features = ["vendored"] }

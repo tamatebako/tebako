@@ -5,13 +5,26 @@ part: bootstrap, runtime payloads, data payloads, and release indexes.
 Status: signing machinery SHIPPED (M29 phase 2); key ceremony/ops PARTIAL
 (roadmap 10).
 
+> **Rollout phase — unverified-first (roadmap 72).** The shipped
+> tebako-bootstrap is built WITHOUT OpenPGP verification (the
+> `openpgp-verify` cargo feature is off): signed packages execute with a
+> loud UNVERIFIED warning + audit journal, unsigned packages with the
+> legacy warning; `TEBAKO_REQUIRE_SIGNED=1` fails closed (exit 71)
+> because a strict-mode request must never silently downgrade.
+> OpenPGP verification returns via the crypto toolkit payload
+> (`tebako-crypto`, rnp+botan full+PQC, fetched on demand and
+> Ed25519-verified by the bootstrap) — this spec is the TARGET model;
+> the phase-1 deltas live in spec 06 §3.
+
 ## 1. Threat model
 
 Parts travel over mirrors/CDN and are shared between machines. HTTPS +
 sha256 against a same-channel manifest protects the TRANSPORT, not the
 OBJECT: whoever swaps the artifact swaps the manifest too. The tpkg
 crc32 is integrity-vs-accident only — documented as non-authentic
-(spec 02 §2).
+(spec 02 §2). For the relationship to the OS-level trust gates
+(Gatekeeper, Authenticode) — who validates the bootstrap versus what
+tebako validates below it — see spec 12 §5.
 
 ## 2. The chain of trust
 
@@ -106,3 +119,71 @@ reason: compromise | retired | superseded
 - Revocations are additive files (`<fingerprint>.revoke.asc`), never
   edited history; the audit journal records every application.
 - The ceremony doc (roadmap 36) includes rehearsing this once.
+
+## 9. Third-party identity and key distribution
+
+First-party slices verify against the embedded tamatebako root (§2).
+Third-party authors are not tamatebako; their slices and fat/slim
+binaries verify against THEIR OWN keys, and the question that decides
+everything is how a user's machine learns the right fingerprint. The
+method is the three-channel pattern — no channel alone is trusted, two
+channels agreeing are the trust event:
+
+1. **The registry (location-as-identity, primary channel).** A registry
+   ref pins an authenticated location (`tfs:github:metanorma/metanorma`
+   is GitHub's guarantee that this is the metanorma org). The registry
+   index carries a `signing:` block at its head: armored public key,
+   fingerprint, and an optional canonical key URL. `tebako add-registry`
+   fetches the index, displays the fingerprint and the cross-check URLs,
+   and asks for confirmation (TOFU). On confirmation the key is pinned
+   to `$TEBAKO_HOME/trust/<fingerprint>.pub`, keyed by the registry ref.
+   `--yes` non-interactive flows must supply the expected fingerprint out
+   of band (env/config) — never a blind yes.
+2. **Out-of-band confirmation (second channel, never auto-trusted).**
+   Authors publish the same fingerprint where their audience already
+   trusts them: `https://<author-domain>/.well-known/tebako-key.asc`
+   (the well-known convention), their docs/README, and for GitHub-hosted
+   projects the org's `.github` repository (zero new infrastructure).
+   The CLI prints these URLs for the user to compare; it never upgrades
+   trust from the second channel silently.
+3. **Fingerprint-addressed directories (no trust needed).** OpenPGP
+   keyservers are used as directories: fetch BY fingerprint, authenticate
+   the fetched key against the channels above. A swapped key has the
+   wrong fingerprint by construction, so the directory itself needs no
+   trust.
+
+**Continuity is the security property.** After the first confirmation,
+every artifact from that identity must verify against the pinned key.
+A key mismatch fails closed (`SignerKeyChanged`, exit 72) and displays
+both fingerprints; a valid successor chain (§8 rotation) forwards
+automatically after displaying the chain proof, re-pinning the new key.
+
+**Per artifact class:**
+
+- Registry index: verified against the pinned registry key on every
+  refresh.
+- Payload slices: signed trailer verified against the author's pinned
+  key; per-slot digests chain off it (§4).
+- Runtime slices (tamatebako): the embedded root — nothing to register.
+- Third-party fat/slim binaries: verified at install/import against the
+  pinned author key (the same verify path); the author may ALSO
+  OS-codesign with their own Developer ID — Apple/Microsoft gates then
+  vouch at execution time, orthogonally and complementarily (spec 12 §5).
+
+**Developer ergonomics (target UX; status in braces).** `tebako keygen`
+creates a keypair in `$TEBAKO_HOME/keys/` and prints the fingerprint
+with the exact text to paste into docs + the well-known location
+[partial: key creation exists]; `tebako press` signs automatically when
+a default key exists, `--no-sign` to opt out [partial]; `tebako publish`
+signs every artifact + the index and writes the `signing:` block into
+the registry index automatically [shipped in install-UX]; `tebako key
+rotate` creates + signs + publishes a successor statement in one command
+[planned]; revocation follows §8 [format locked].
+
+**User ergonomics.** First-party: zero interaction, ever (embedded
+root). Third-party: one informed consent per author (the TOFU prompt),
+then silent verification forever. `tebako trust list|show|remove`
+manage the trust store [planned]; `tebako doctor` re-verifies installed
+artifacts against pinned keys [roadmap 50]. Unverified artifacts always
+produce the loud warning + journal (§3); `TEBAKO_REQUIRE_SIGNED=1`
+refuses them outright.

@@ -806,6 +806,7 @@ pub const EMBEDDED_ROOT_FINGERPRINT: &str = "";
 
 /// A trusted root: fingerprint plus optionally-bundled public key bytes
 /// (an env override may point at an armored public key file).
+#[cfg(feature = "openpgp-verify")]
 struct TrustedRoot {
     fingerprint: String,
     public_key: Option<Vec<u8>>,
@@ -817,6 +818,7 @@ struct TrustedRoot {
 /// expected in the trusted keyring) or a path to an armored public key
 /// file. A fingerprint never suffices on its own: the trailer signature
 /// is always cryptographically verified against the root's public key.
+#[cfg(feature = "openpgp-verify")]
 fn trusted_roots() -> Vec<TrustedRoot> {
     let mut roots = Vec::new();
     if !EMBEDDED_ROOT_FINGERPRINT.is_empty() {
@@ -863,6 +865,7 @@ fn trusted_roots() -> Vec<TrustedRoot> {
 /// `signer_fp`, the signer's public key is registered in the trusted
 /// keyring and the trailer signature is re-verified against it.
 /// Returns Ok(true) only when the final signature verification is Trusted.
+#[cfg(feature = "openpgp-verify")]
 fn forward_trust_from_successors(
     home: &Path,
     roots: &[TrustedRoot],
@@ -1019,72 +1022,23 @@ pub fn verify_chain(self_path: &Path, m: &tpkg::Manifest) -> Result<(), BootErro
     verify_chain_with_home(self_path, m, &home)
 }
 
-/// The home-parameterized core of [`verify_chain`] (tests inject a temp
-/// home; production resolves it through `cache_root()`).
-pub fn verify_chain_with_home(
+/// OpenPGP verification of the v2 signed trailer (feature
+/// `openpgp-verify`): trusted keyring → embedded/dev roots → successor
+/// rotation chain. Failures are named exits (EX_TEBAKO_SIGNATURE /
+/// EX_TEBAKO_TRUST); every success path is journaled.
+#[cfg(feature = "openpgp-verify")]
+fn verify_v2_signature(
     self_path: &Path,
     m: &tpkg::Manifest,
     home: &Path,
+    region: &[u8],
+    keyid_hex: &str,
 ) -> Result<(), BootError> {
-    let Some(v2) = &m.v2 else {
-        // v1 legacy rule (item 29 point 8)
-        if require_signed_mode() {
-            return fail(
-                EX_TEBAKO_SIGNATURE,
-                format!(
-                    "{} carries an unsigned v1 (legacy) tpkg trailer and TEBAKO_REQUIRE_SIGNED=1 is set — refusing to execute\n  re-bundle the package to sign it, or unset TEBAKO_REQUIRE_SIGNED",
-                    self_path.display()
-                ),
-            );
-        }
-        eprintln!(
-            "tebako-bootstrap: WARNING: {} carries an unsigned v1 (legacy) tpkg trailer\n  — accepted for compatibility; re-bundle the package for integrity protection",
-            self_path.display()
-        );
-        journal(
-            home,
-            &format!("event=legacy-v1-accepted package={}", self_path.display()),
-        );
-        return Ok(());
-    };
-
-    // -- signature verification -----------------------------------------
+    let v2 = m.v2.as_ref().expect("v2 presence checked by caller");
     let keyring = tebako_signer::trusted_keyring_bytes(home)
         .map_err(|e| BootError::new(EX_TEBAKO_IO, e.to_string()))?;
-
-    let trailer = {
-        let mut f = std::fs::File::open(self_path).map_err(|e| BootError {
-            code: EX_TEBAKO_IO,
-            message: format!(
-                "cannot open {} for signature verification: {e}",
-                self_path.display()
-            ),
-        })?;
-        let tlen = tpkg::trailer_len(m);
-        f.seek(SeekFrom::End(-(tlen as i64)))
-            .map_err(|e| BootError {
-                code: EX_TEBAKO_IO,
-                message: format!("cannot seek trailer of {}: {e}", self_path.display()),
-            })?;
-        let mut buf = vec![0u8; tlen as usize];
-        f.read_exact(&mut buf).map_err(|e| BootError {
-            code: EX_TEBAKO_IO,
-            message: format!("cannot read trailer of {}: {e}", self_path.display()),
-        })?;
-        buf
-    };
-    let region = tpkg::v2_signed_region(&trailer).map_err(|_| BootError {
-        code: EX_TEBAKO_MANIFEST,
-        message: format!(
-            "corrupt tebako manifest trailer in {} (bad v2 extension bounds) — re-stitch the package",
-            self_path.display()
-        ),
-    })?;
-
-    let keyid_hex = v2.signer_keyid_hex();
-    let outcome =
-        tebako_signer::verify_detached(&keyring, &region, &v2.signature, &v2.signer_keyid)
-            .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+    let outcome = tebako_signer::verify_detached(&keyring, region, &v2.signature, &v2.signer_keyid)
+        .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
     match outcome {
         tebako_signer::VerifyOutcome::Trusted(_) => {
             journal(
@@ -1116,7 +1070,7 @@ pub fn verify_chain_with_home(
                     ring.extend_from_slice(pk);
                 }
                 let outcome =
-                    tebako_signer::verify_detached(&ring, &region, &v2.signature, &v2.signer_keyid)
+                    tebako_signer::verify_detached(&ring, region, &v2.signature, &v2.signer_keyid)
                         .map_err(|e| BootError::new(EX_TEBAKO_SIGNATURE, e.to_string()))?;
                 if matches!(outcome, tebako_signer::VerifyOutcome::Trusted(_)) {
                     journal(
@@ -1135,7 +1089,7 @@ pub fn verify_chain_with_home(
                     home,
                     &roots,
                     &signer_fp,
-                    &region,
+                    region,
                     &v2.signature,
                     &v2.signer_keyid,
                 )?
@@ -1170,8 +1124,99 @@ pub fn verify_chain_with_home(
             );
         }
     }
+    Ok(())
+}
 
-    // -- per-slot sha256 (trusted-cache marker) --------------------------
+/// The home-parameterized core of [`verify_chain`] (tests inject a temp
+/// home; production resolves it through `cache_root()`).
+pub fn verify_chain_with_home(
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    home: &Path,
+) -> Result<(), BootError> {
+    let Some(v2) = &m.v2 else {
+        // v1 legacy rule (item 29 point 8)
+        if require_signed_mode() {
+            return fail(
+                EX_TEBAKO_SIGNATURE,
+                format!(
+                    "{} carries an unsigned v1 (legacy) tpkg trailer and TEBAKO_REQUIRE_SIGNED=1 is set — refusing to execute\n  re-bundle the package to sign it, or unset TEBAKO_REQUIRE_SIGNED",
+                    self_path.display()
+                ),
+            );
+        }
+        eprintln!(
+            "tebako-bootstrap: WARNING: {} carries an unsigned v1 (legacy) tpkg trailer\n  — accepted for compatibility; re-bundle the package for integrity protection",
+            self_path.display()
+        );
+        journal(
+            home,
+            &format!("event=legacy-v1-accepted package={}", self_path.display()),
+        );
+        return Ok(());
+    };
+
+    // -- trailer region (shared by both trust modes) ---------------------
+    let keyid_hex = v2.signer_keyid_hex();
+    let trailer = {
+        let mut f = std::fs::File::open(self_path).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!(
+                "cannot open {} for signature verification: {e}",
+                self_path.display()
+            ),
+        })?;
+        let tlen = tpkg::trailer_len(m);
+        f.seek(SeekFrom::End(-(tlen as i64)))
+            .map_err(|e| BootError {
+                code: EX_TEBAKO_IO,
+                message: format!("cannot seek trailer of {}: {e}", self_path.display()),
+            })?;
+        let mut buf = vec![0u8; tlen as usize];
+        f.read_exact(&mut buf).map_err(|e| BootError {
+            code: EX_TEBAKO_IO,
+            message: format!("cannot read trailer of {}: {e}", self_path.display()),
+        })?;
+        buf
+    };
+    let region = tpkg::v2_signed_region(&trailer).map_err(|_| BootError {
+        code: EX_TEBAKO_MANIFEST,
+        message: format!(
+            "corrupt tebako manifest trailer in {} (bad v2 extension bounds) — re-stitch the package",
+            self_path.display()
+        ),
+    })?;
+
+    #[cfg(feature = "openpgp-verify")]
+    verify_v2_signature(self_path, m, home, &region, &keyid_hex)?;
+
+    // -- unverified-first (openpgp-verify disabled) ----------------------
+    #[cfg(not(feature = "openpgp-verify"))]
+    {
+        if require_signed_mode() {
+            return fail(
+                EX_TEBAKO_SIGNATURE,
+                format!(
+                    "{} is a signed package, but this tebako-bootstrap was built WITHOUT OpenPGP verification (unverified-first) and cannot honor TEBAKO_REQUIRE_SIGNED=1\n  signer keyid: {keyid_hex}\n  run a verification-enabled bootstrap (roadmap 72 crypto toolkit), or unset TEBAKO_REQUIRE_SIGNED to proceed unverified",
+                    self_path.display()
+                ),
+            );
+        }
+        eprintln!(
+            "tebako-bootstrap: WARNING: {} is a signed package executed UNVERIFIED — this bootstrap was built without OpenPGP verification\n  signer keyid: {keyid_hex}\n  — only run packages from sources you trust",
+            self_path.display()
+        );
+        journal(
+            home,
+            &format!(
+                "event=v2-unverified-accepted package={} signer={keyid_hex}",
+                self_path.display()
+            ),
+        );
+    }
+
+    // -- per-slot sha256 (integrity anchor; verified when the feature is
+    // enabled, unverified-but-corruption-evident when it is not) ---------
     let marker_key = {
         use sha2::Digest;
         sha256_hex(&sha2::Sha256::digest(region))

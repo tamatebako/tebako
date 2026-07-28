@@ -231,7 +231,18 @@ fn release_artifact_form_uses_the_artifact_selector() {
 fn git_blob_form_resolves_through_the_real_git_adapter() {
     let dir = scratch("reggit");
     let fixture = dir.join("registry.git");
-    let repo = gix::init_bare(&fixture).unwrap();
+    let mut repo = gix::init_bare(&fixture).unwrap();
+    // The commit needs an author/committer; never rely on ambient git
+    // config (CI runners have none, and gix's defaults have drifted —
+    // AuthorMissing). Pin the identity in the fixture repo itself (the
+    // guard writes back on drop).
+    {
+        let mut config = repo.config_snapshot_mut();
+        config.set_raw_value("user.name", "tebako-test").unwrap();
+        config
+            .set_raw_value("user.email", "tebako-test@localhost")
+            .unwrap();
+    }
     let blob = repo.write_blob(REGISTRY_YAML.as_bytes()).unwrap();
     let empty = gix::hash::ObjectId::empty_tree(repo.object_hash());
     let tree = {

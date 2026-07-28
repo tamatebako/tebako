@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use tebako_bootstrap::{
-    verify_chain_with_home, EX_TEBAKO_SHA, EX_TEBAKO_SIGNATURE, EX_TEBAKO_TRUST,
-};
+#[cfg(feature = "openpgp-verify")]
+use tebako_bootstrap::EX_TEBAKO_TRUST;
+use tebako_bootstrap::{verify_chain_with_home, EX_TEBAKO_SHA, EX_TEBAKO_SIGNATURE};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -98,6 +98,7 @@ fn make_package_with(
 }
 
 /// Generate an OpenPGP signing key directly (for the root/rotation tests).
+#[cfg(feature = "openpgp-verify")]
 fn make_key(userid: &str) -> (Vec<u8>, Vec<u8>, String, [u8; 8]) {
     let ctx = rnp::Context::new().unwrap();
     let key = rnp::KeyBuilder::new(rnp::Algorithm::Eddsa)
@@ -121,6 +122,7 @@ fn journal(home: &Path) -> String {
     std::fs::read_to_string(home.join("journal.log")).unwrap_or_default()
 }
 
+#[cfg(feature = "openpgp-verify")]
 #[test]
 fn signed_and_registered_verifies_ok() {
     let dir = scratch("ok");
@@ -135,6 +137,7 @@ fn signed_and_registered_verifies_ok() {
 
 #[test]
 fn tampered_slot_is_sha_mismatch_named() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("sha");
     let home = dir.join("home");
     let (pkg, m) = make_package(&dir, &home, b"the app image payload", false);
@@ -155,6 +158,7 @@ fn tampered_slot_is_sha_mismatch_named() {
     );
 }
 
+#[cfg(feature = "openpgp-verify")]
 #[test]
 fn unknown_signer_is_trust_error_named() {
     let dir = scratch("trust");
@@ -171,6 +175,7 @@ fn unknown_signer_is_trust_error_named() {
     );
 }
 
+#[cfg(feature = "openpgp-verify")]
 #[test]
 fn tampered_trailer_region_is_invalid_signature_named() {
     let dir = scratch("invalid");
@@ -193,6 +198,7 @@ fn tampered_trailer_region_is_invalid_signature_named() {
 
 #[test]
 fn v1_legacy_accepted_with_journal_record() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("legacy");
     let home = dir.join("home");
     let (pkg, m) = make_package(&dir, &home, b"the app image payload", true);
@@ -222,6 +228,7 @@ fn v1_require_signed_is_hard_fail() {
 
 #[test]
 fn trusted_cache_second_run_hits_marker() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("cache");
     let home = dir.join("home");
     let (pkg, m) = make_package(&dir, &home, b"the app image payload", false);
@@ -239,6 +246,7 @@ fn trusted_cache_second_run_hits_marker() {
 // embedded-root path + rotation forwarding (item 29 phase 2)
 // ---------------------------------------------------------------------
 
+#[cfg(feature = "openpgp-verify")]
 #[test]
 fn trusted_root_env_verifies_root_signed_package() {
     let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
@@ -267,6 +275,7 @@ fn trusted_root_env_verifies_root_signed_package() {
     assert!(journal(&home).contains("event=v2-trusted-root"));
 }
 
+#[cfg(feature = "openpgp-verify")]
 #[test]
 fn successor_chain_forwards_trust() {
     let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
@@ -309,6 +318,7 @@ fn successor_chain_forwards_trust() {
     std::env::remove_var("TEBAKO_TRUSTED_ROOT");
 }
 
+#[cfg(feature = "openpgp-verify")]
 #[test]
 fn broken_successor_chain_keeps_trust_error() {
     let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
@@ -348,4 +358,36 @@ fn broken_successor_chain_keeps_trust_error() {
     let err = verify_chain_with_home(&pkg, &m, &home).unwrap_err();
     std::env::remove_var("TEBAKO_TRUSTED_ROOT");
     assert_eq!(err.code, EX_TEBAKO_TRUST);
+}
+
+#[cfg(not(feature = "openpgp-verify"))]
+#[test]
+fn signed_package_accepted_unverified_with_warning() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let dir = scratch("unverified");
+    let home = dir.join("home");
+    let (pkg, m) = make_package(&dir, &home, b"the app image payload", false);
+
+    verify_chain_with_home(&pkg, &m, &home).expect("unverified accepted");
+    assert!(journal(&home).contains("event=v2-unverified-accepted"));
+}
+
+#[cfg(not(feature = "openpgp-verify"))]
+#[test]
+fn signed_require_signed_fails_closed_when_verification_disabled() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let dir = scratch("require-unverified");
+    let home = dir.join("home");
+    let (pkg, m) = make_package(&dir, &home, b"the app image payload", false);
+
+    std::env::set_var("TEBAKO_REQUIRE_SIGNED", "1");
+    let err = verify_chain_with_home(&pkg, &m, &home).unwrap_err();
+    std::env::remove_var("TEBAKO_REQUIRE_SIGNED");
+
+    assert_eq!(err.code, EX_TEBAKO_SIGNATURE);
+    assert!(
+        err.message.contains("WITHOUT OpenPGP verification"),
+        "{}",
+        err.message
+    );
 }

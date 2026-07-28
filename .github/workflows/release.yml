@@ -8,7 +8,8 @@
 # (baseline pin + archive cache, mirrored from ci.yml), the musl legs in
 # Alpine containers (docker run from the host; the proven native-musl
 # path — see ci/musl-build.sh; node actions cannot run on musl), the
-# bootstrap size gate (item 22's 3 MB budget), and the item-11
+# bootstrap size gate (back to 3 MB: rnp/botan is feature-gated out of
+# the shipped bootstrap — unverified-first, roadmap 72), and the item-11
 # completeness gate (the finalize job fails unless every expected asset
 # landed).
 #
@@ -18,8 +19,9 @@
 #
 # Windows (ucrt64) is a disabled leg, documented at the bottom.
 #
-# Crypto: rnp-rs 0.1.6 `vendored` builds librnp+Botan+json-c hermetically
-# and static-links them — no provisioning, no system crypto, anywhere.
+# Crypto: rnp-rs 0.1.8 prebuilt is self-contained — librnp + json-c +
+# MINIMIZED botan + libbz2 static archives ship inside the crate; no
+# provisioning, no system crypto, anywhere (musl included).
 
 name: Release
 
@@ -124,20 +126,6 @@ jobs:
             --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
-
-      - name: Static botan (brew archive)
-        run: |
-          brew install botan
-          mkdir -p .crypto-static && cp "$(brew --prefix botan)/lib/libbotan-3.a" .crypto-static/
-          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
-
-      - name: Static botan (vcpkg static triplet)
-        working-directory: tebako-rs
-        run: |
-          mkdir -p .crypto-static
-          .vcpkg-root/vcpkg install botan --vcpkg-root .vcpkg-root --x-wait-for-lock --x-install-root .crypto-vcpkg --triplet ${{ matrix.triplet }}
-          cp .crypto-vcpkg/${{ matrix.triplet }}/lib/libbotan-3.a .crypto-static/
-          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
 
       - name: Build the four binaries (release)
         working-directory: tebako-rs
@@ -246,7 +234,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             autoconf automake autoconf-archive libtool \
-            curl zip unzip tar ca-certificates
+            curl zip unzip tar ca-certificates \
+            libbz2-dev
 
 
       - name: Set up vcpkg

@@ -36,10 +36,20 @@ republish of v1-era runtimes needed.
 
 1. Read own trailer (spec 02; absent → classic-bundle error path).
 2. Require `launcher_abi == 1` (else exit 66).
-3. If `TPKG_FLAG_SIGNED_V2`: verify the OpenPGP signature against the
-   trusted keyring and each slot's SHA-256 — always strict. Unsigned:
-   loud warning + audit journal (or exit 71 under
-   `TEBAKO_REQUIRE_SIGNED=1`).
+3. Trust handling, by build and trailer flag:
+   - **`TPKG_FLAG_SIGNED_V2`, verification ENABLED** (`openpgp-verify`
+     feature): verify the OpenPGP signature against the trusted keyring
+     and each slot's SHA-256 — always strict (spec 09).
+   - **`TPKG_FLAG_SIGNED_V2`, verification DISABLED** (unverified-first,
+     the shipped default until roadmap 72's crypto toolkit): loud
+     UNVERIFIED warning + audit journal, then enforce each slot's
+     SHA-256 as integrity-vs-corruption (the anchor is unverified —
+     documented, spec 09 §7). `TEBAKO_REQUIRE_SIGNED=1` here fails
+     CLOSED with exit 71 naming the missing capability ("built without
+     OpenPGP verification") — a strict-mode request is never silently
+     downgraded to unverified.
+   - **Unsigned (v1)**: loud warning + audit journal (or exit 71 under
+     `TEBAKO_REQUIRE_SIGNED=1`).
 4. Resolve the runtime per spec 05 §5.
 5. Image-era: ensure `<asset>.tfs` + trust markers in the cache entry
    (fetch + verify on miss), install read-only.

@@ -46,12 +46,16 @@ jobs:
 
       - name: Install native build tools (ubuntu)
         if: runner.os == 'Linux'
+        # libbz2-dev: rnp-rs 0.1.7 declares dylib=bz2 — give the linker a
+        # REAL shared library (base-OS dep, same class as libz; macOS links
+        # the system libbz2.dylib identically). Until rnp-rs ≥ 0.1.10.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             autoconf automake autoconf-archive libtool \
-            curl zip unzip tar ca-certificates
+            curl zip unzip tar ca-certificates \
+            libbz2-dev
 
       - name: Install native build tools (macos)
         if: runner.os == 'macOS'
@@ -90,25 +94,11 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/$TRIPLET" >> "$GITHUB_ENV"
 
-      # rnp-rs 0.1.7's vendored prebuilt covers librnp+json-c statically,
-      # but botan is declared dylib: give it a STATIC botan in a dir of its
-      # own (ld prefers .dylib over .a when both are in the search path, so
-      # the archive must be alone in its dir). z/bz2 are ubiquitous base-OS.
-      - name: Static botan (macOS, brew archive)
-        if: runner.os == 'macOS'
-        run: |
-          brew install botan
-          mkdir -p .crypto-static && cp "$(brew --prefix botan)/lib/libbotan-3.a" .crypto-static/
-          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
-
-      - name: Static botan (Linux, vcpkg static triplet)
-        if: runner.os == 'Linux'
-        working-directory: tebako-rs
-        run: |
-          mkdir -p .crypto-static
-          .vcpkg-root/vcpkg install botan --vcpkg-root .vcpkg-root --x-wait-for-lock --x-install-root .crypto-vcpkg --triplet x64-linux-static
-          cp .crypto-vcpkg/x64-linux-static/lib/libbotan-3.a .crypto-static/
-          echo "RUSTFLAGS=-L ${GITHUB_WORKSPACE}/.crypto-static" >> "$GITHUB_ENV"
+      # rnp-rs 0.1.7 prebuilt ships librnp+json-c statically; botan and
+      # bz2 come from crate dependencies (botan-sys vendored → botan-src,
+      # bzip2-sys) declared in tebako-signer — no crypto provisioning
+      # anywhere. (Full static botan adds ~3 MB per binary; the bootstrap
+      # size gate was raised to 6 MB accordingly — owner, 2026-07-27.)
 
       # The tebako-pkg golden suite compares against the C++ tebakofs
       # oracle, and tfs-cli's mkimage against mkdwarfs; use the libtfs
@@ -159,8 +149,9 @@ jobs:
         run: echo "TEBAKO_REFERENCE_GEM=${{ github.workspace }}/reference-gem" >> "$GITHUB_ENV"
 
       # item 22's hard gate: the Rust bootstrap must stay under 3 MB
-      # (budget raised 2 MB -> 3 MB when downloads went in-process)
-      # absolute. Publishes the table and fails the job when over.
+      # (2 MB -> 3 MB when downloads went in-process; rnp/botan is now
+      # feature-gated OUT of the shipped bootstrap — unverified-first,
+      # roadmap 72 — so the 3 MB form holds again)
       - name: Bootstrap size gate (< 3 MB)
         working-directory: tebako-rs
         run: |

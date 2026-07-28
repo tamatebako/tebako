@@ -59,7 +59,7 @@ Everywhere else: Rust, pure Ruby, or Docker. Owner-locked.
 | `tebako-pkg` | bin | Container surgery: `info/bundle/unbundle/reassemble/insert-image/remove-image/set-runtime/sign/verify`. |
 | `tfs-cli` | bin | The `tfs` image tool: `info/ls/tree/cat/stat/extract/find/mkimage` (in-process Writer). |
 | `tebako-cli` | bin | The packager: `press` (lean/fat), `cache list/prune`. |
-| `tebako-bootstrap` | bin | The loader (spec 06): trailer parse, resolution, verification, ABI-v1 handoff. < 3 MB static, size-gated (1.18 MB macOS arm64 today). |
+| `tebako-bootstrap` | bin | The loader (spec 06): trailer parse, resolution, verification, ABI-v1 handoff. < 3 MB static, size-gated (unverified-first: rnp/botan feature-gated out; OpenPGP moves to the roadmap-72 crypto toolkit). |
 | `tebako-http` | lib | In-process HTTPS (ureq+rustls, webpki-roots bundled; OS roots opt-in). |
 | `tebako-signer` | lib | OpenPGP via `rnp-rs` (crates.io, `vendored`); successor-key rotation. |
 | `tests/contract` | tests | The parity oracle: the C++ c_api suite through the Rust ABI (164 tests). |

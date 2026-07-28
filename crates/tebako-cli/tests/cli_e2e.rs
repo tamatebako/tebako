@@ -237,14 +237,20 @@ fn bundler_platform_tag() -> Option<String> {
     Some(tag.to_string())
 }
 
-/// Item 4: a Gemfile app with real dependencies resolves through the
-/// modern compact index, and native gems with a precompiled variant land
-/// as platform gems. The gem-era deploy (`bundle install
-/// --prefer-local` + `force_ruby_platform=true`) resolved fontist 3.0.10
-/// as the dependency-free 0.1.0 and forced every native gem into a
-/// source build. The remaining failure is the RuntimeSdk gap (item 1):
-/// gems published only as ruby-platform sources (json/bigdecimal/
-/// racc/brotli in this tree) cannot build without headers.
+/// Item 4 (GREEN): a Gemfile app with real dependencies resolves through
+/// the modern compact index and presses END-TO-END — fontist 3.0.10 with
+/// its full dependency tree (the --prefer-local era yielded the
+/// dependency-free 0.1.0), natives pinned to the runtime-carried
+/// versions, and ffi landing as the precompiled platform gem (the
+/// forced-ruby-platform era attempted a source build instead).
+///
+/// History: this test used to assert the RuntimeSdk gap (roadmap 25,
+/// item 1) — that a ruby-platform-only native (json/bigdecimal/racc/
+/// brotli) stops the press for lack of headers. The ecosystem drifted:
+/// precompiled variants of the remaining natives shipped to rubygems,
+/// and the press now succeeds. That success IS the intended product
+/// behavior (the fontist feedstock presses in tebako-packages CI), so
+/// the test asserts the green path and runs the packaged binary.
 #[test]
 fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
     let _guard = press_lock().lock().unwrap();
@@ -266,19 +272,7 @@ fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
     let lock = fs::read_to_string(env.root.join("Gemfile.lock")).unwrap();
     assert!(lock.contains("fontist (3.0.10)"), "{lock}");
 
-    // The RuntimeSdk gap: the ruby-platform-only natives cannot build
-    // without headers, so the press stops at one of them.
-    assert!(
-        code != 0,
-        "press unexpectedly succeeded — the RuntimeSdk landed? \
-         this app then belongs to the green native-gem suite:\n{log}"
-    );
-    assert!(
-        ["json", "bigdecimal", "racc", "brotli"]
-            .iter()
-            .any(|g| { log.contains(&format!("An error occurred while installing {g}")) }),
-        "the failure must be a ruby-platform-only native gem's source build:\n{log}"
-    );
+    assert!(code == 0, "press failed:\n{log}");
 
     // ffi (fontist → canon → table_tennis) has a precompiled variant: it
     // must land as the platform gem — the forced-ruby-platform era
@@ -302,6 +296,12 @@ fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
         fs::read_to_string(env.prefix.join("o/s/local/.bundle/config")).unwrap_or_default();
     assert!(config.contains("BUNDLE_BUILD__NOKOGIRI"), "{config}");
     assert!(!config.contains("FORCE_RUBY_PLATFORM"), "{config}");
+
+    // The packaged binary runs: fontist and its native deps load from
+    // the image.
+    let (code, out) = run(&mut Command::new(&package));
+    assert_eq!(code, 0, "packaged binary failed:\n{out}");
+    assert_eq!(out, "fontist 3.0.10\n");
 }
 
 /// Item 5's green path: with --prefer-local the resolution prefers the

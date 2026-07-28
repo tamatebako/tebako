@@ -42,9 +42,12 @@ Or download a binary for your platform from the
 Package your app:
 
 ```console
-$ tebako press -r ./myapp -e bin/myapp -o myapp
-$ ./myapp                        # lean: runtime fetches once, then cached
+$ tebako press -r ./myapp -e bin/myapp -o out/myapp
+$ ./out/myapp                    # lean: runtime fetches once, then cached
 ```
+
+(the output path must not collide with the project root — `-o out/myapp`,
+not `-o myapp` when `-r ./myapp`)
 
 Install an app someone else published (a `.tfs` payload in a registry):
 
@@ -104,8 +107,12 @@ Layers:
 - **Dispatch** — shims for every provided executable; version selection
   per env > project file > user default > registry default; runtime
   compatibility by manifest constraint (`docs/spec/07`).
-- **Trust** — opt-in signing (OpenPGP chain of trust with rotation),
-  per-slot digests, strict verification; opt-in encryption (stacking
+- **Trust** — first-party slices verify offline against the embedded
+  tamatebako root key; third-party authors verify against their own keys
+  via the three-channel method (registry-carried `signing:` block +
+  well-known URL confirmation + keyserver directory, TOFU-pin with
+  continuity and successor-chain rotation) (`docs/spec/09` §9).
+  Plus opt-in encryption (stacking
   EncBackend, DEK envelopes, HKDF subtree keys) (`docs/spec/09`,
   `docs/spec/10`).
 

@@ -74,24 +74,14 @@ echo "== pre-install squashfs-tools-ng ($TRIPLET) =="
   --overlay-triplets "$SQFS_TRIPLETS" \
   --overlay-ports "$WS/tebako-rs/crates/sqfs-sys/vcpkg_ports"
 
-# rnp-rs 0.1.6 `vendored` builds librnp+Botan+json-c hermetically — no crypto provisioning.
-echo "== static botan ($TRIPLET) =="
-mkdir -p "$WS/.crypto-static"
-"$WS/.vcpkg-musl/vcpkg" install botan \
-  --vcpkg-root "$WS/.vcpkg-musl" \
-  --x-wait-for-lock \
-  --x-install-root "$WS/.crypto-vcpkg" \
-  --triplet "$TRIPLET" \
-  --overlay-triplets "$DWARFS_TRIPLETS"
-cp "$WS/.crypto-vcpkg/$TRIPLET/lib/libbotan-3.a" "$WS/.crypto-static/"
-
+# rnp-rs 0.1.7 prebuilt + botan-sys(vendored)/bzip2-sys crate deps in the
+# workspace carry all crypto statically — no provisioning anywhere.
 echo "== cargo build (release, $TARGET) =="
 cd "$WS/tebako-rs"
 export DWARFS_RS_VCPKG_ROOT="$WS/.vcpkg-musl"
 export DWARFS_RS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_INSTALLED_DIR="$WS/.sqfs-musl/$TRIPLET"
-export RUSTFLAGS="-L $WS/.crypto-static"
 cargo build --release --target "$TARGET" \
   -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli
 
