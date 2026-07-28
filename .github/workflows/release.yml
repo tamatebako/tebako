@@ -505,7 +505,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          EXPECTED=$(( 4 * 6 + 2 ))   # 4 tools x 6 platforms + SHA256SUMS + manifest.json
+          EXPECTED=$(( 4 * 4 + 2 ))   # 4 tools x 4 platforms (musl gated) + SHA256SUMS + manifest.json; becomes 4 x 6 + 2 when musl returns
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort
