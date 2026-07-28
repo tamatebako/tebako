@@ -337,6 +337,11 @@ jobs:
   # ==========================================================================
   linux-musl:
     name: Linux musl (${{ matrix.platform }})
+    # DISABLED for v0.1.0: rnp-rs 0.1.7 has no musl prebuilt and its
+    # build.rs panics on musl targets. Re-enable when rnpgp's rnp-src
+    # source-built release lands (it compiles under musl). The release
+    # ships macos ×2 + linux-gnu ×2 until then; finalize needs match.
+    if: false
     permissions:
       contents: write
     runs-on: ${{ matrix.os }}
@@ -344,24 +349,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include: []
-        # MUSL LEGS DISABLED for v0.1.0 (re-enable when rnp ships a musl
-        # build): rnp-rs 0.1.7 has no musl prebuilt and its build.rs
-        # panics on musl targets. The musl path returns when rnpgp's
-        # rnp-src/rnp-rs release (source-built, musl-capable) lands, or
-        # when the rnp-src monitor resolves; until then the release ships
-        # macos ×2 + linux-gnu ×2, and the finalize gate counts only
-        # those. The matrix entries kept here for re-enable:
-        #   - os: ubuntu-24.04
-        #     target: x86_64-unknown-linux-musl
-        #     platform: linux-musl-x86_64
-        #     triplet: x64-linux-musl
-        #     dyn_triplet: x64-linux-musl-dynamic
-        #   - os: ubuntu-24.04-arm
-        #     target: aarch64-unknown-linux-musl
-        #     platform: linux-musl-arm64
-        #     triplet: arm64-linux-musl
-        #     dyn_triplet: arm64-linux-musl-dynamic
+        include:
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+            platform: linux-musl-x86_64
+            triplet: x64-linux-musl
+            dyn_triplet: x64-linux-musl-dynamic
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            platform: linux-musl-arm64
+            triplet: arm64-linux-musl
+            dyn_triplet: arm64-linux-musl-dynamic
     steps:
       - uses: actions/checkout@v4
         with:
