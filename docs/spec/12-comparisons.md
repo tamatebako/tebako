@@ -160,7 +160,61 @@ the *object*:
   OS package manager (apt/dnf's home). The claims above are about
   *application distribution and execution*, and there they are unique.
 
-## 5. The matrix
+## 5. Gatekeeper and Authenticode: the OS trust gates vs tebako
+
+Gatekeeper (macOS) and Authenticode (Windows) are the two OS-level trust
+systems users actually rely on. They answer one question — *"may this
+binary run?"* — and tebako answers a different one — *"is every part of
+what runs what it claims to be?"* The systems are complementary layers,
+not competitors; this section shows where tebako defers to them, and where
+it strictly exceeds them.
+
+| axis | Gatekeeper (macOS) | Authenticode (Windows) | tebako |
+|------|--------------------|------------------------|--------|
+| object verified | the app bundle / binary | the binary / driver | every slice + every manifest + every runtime + every payload + registry items + the sums manifest — and partial re-stacking stays verifiable (per-slot digests) |
+| when verified | at **every execution**, by the OS | at install/UAC + SmartScreen heuristics | at fetch, at install, **at mount** (per-slot digest before attach), at publish (author side) |
+| anchor of trust | Apple-issued Developer ID cert (vendor CA) | CA-issued cert (EV for reputation) | embedded tamatebako root key (self-sovereign) + user trust store + successor-chain rotation |
+| unsigned path | block or warn (policy) | warn via SmartScreen reputation | unverified-first with loud warning + audit journal; strict mode `TEBAKO_REQUIRE_SIGNED=1` fails closed |
+| revocation | CRL/OCSP (online, coarse) | CRL/OCSP (online, coarse) | signed successor statements (offline, forward-verifiable) + per-key registration/removal + policy |
+| offline / air-gap | verifies offline; notarizing needs online at build time | mostly offline; timestamping needs online at sign time | **full offline first-class**: embedded root + pinned keys + signed sums + air-gap bundles |
+| scope beyond executables | none (binaries only) | none (binaries only) | runtimes, data slices, toolkits, suites, registries, manifests, indexes — the whole object graph |
+| cross-platform | macOS only | Windows only | one model, four OS families + musl |
+| provenance | developer identity only | publisher identity only | identity + builder + source ref + payload tree hash + `contract_version` + reproducibility path (roadmap 56) |
+| key rotation | cert renewal via the CA | cert renewal via the CA | self-describing: old root signs its successor; clients forward-verify **offline** |
+| enforcement level | OS syscall gate (the app cannot bypass it) | OS gate + kernel driver signing | loader-level — honestly: a patched loader is beyond us, which is exactly where the OS gates protect *us* (below) |
+| ubiquity | every Mac, nothing to install | every Windows box, nothing to install | anywhere our single binary lands — zero host prerequisites |
+
+### Where tebako defers (and integrates)
+
+- **Continuous execution-time enforcement.** Gatekeeper's syscall-level
+  gate and SmartScreen's reputation network cannot be replicated by an
+  application-level loader, and a patched loader is outside any loader's
+  reach. The tebako answer is the D08 tooling: sign tebako-produced
+  binaries so the OS gates protect *our* root anchor continuously — their
+  enforcement guards our bootstrap, our verification guards everything
+  below it.
+- **Ubiquity and notarization review.** Apple/Microsoft are already on
+  the machine, and Apple's notarization includes actual scanning. We do
+  not imitate this; we slot into it.
+
+### Where tebako strictly exceeds them
+
+- **Granularity.** They see a binary; tebako sees every slice inside it.
+  Swap one slice and only its slot needs re-verifying — a whole-app
+  signature cannot express that.
+- **Scope.** Runtimes, data slices, toolkits, suites, registries and
+  their indexes all ride the same signed-image algebra. The OS gates
+  have no concept of any of these.
+- **Sovereignty.** No corporate CA in the loop: tamatebako's root is
+  embedded, third parties register in the user's trust store, and root
+  rotation is a self-describing signed chain verifiable offline.
+- **Offline/air-gap.** Verification never touches the network — not at
+  fetch, not at mount, not at rotation.
+- **Provenance.** Builder, source ref, payload tree hash, contract
+  version, and a reproducibility path — compared to "Developer ID:
+  Company X".
+
+## 6. The matrix
 
 | axis | tebako | rubygems | rbenv/rvm | Homebrew | apt/dnf | snap/flatpak | AppImage | Docker/OCI | VMs |
 |------|--------|----------|-----------|----------|---------|--------------|----------|------------|-----|
@@ -179,7 +233,7 @@ the *object*:
 | system mutation | ~/.tebako + one PATH entry | gem home | ~/.rbenv | /usr/local | full system | snapd + mounts | none | daemon + groups | hypervisor |
 | distribution sovereignty | developer's own git releases = the registry | rubygems.org (central) | n/a | tap repos (central-ish) | distro-controlled | store-controlled | self-host yes | registry (self-hostable) | n/a |
 
-## 6. Where each alternative genuinely wins
+## 7. Where each alternative genuinely wins
 
 - **rubygems**: dev-library sharing. Tebako packages *applications*; gems
   remain how developers share *code*.
@@ -194,7 +248,7 @@ the *object*:
   platform.
 - **VMs**: hard security boundaries for hostile native code.
 
-## 7. Capabilities that exist nowhere else
+## 8. Capabilities that exist nowhere else
 
 1. A single file that is simultaneously the app, its own verifier, and
    its own runtime resolver — authenticating itself offline over any

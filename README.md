@@ -104,8 +104,12 @@ Layers:
 - **Dispatch** — shims for every provided executable; version selection
   per env > project file > user default > registry default; runtime
   compatibility by manifest constraint (`docs/spec/07`).
-- **Trust** — opt-in signing (OpenPGP chain of trust with rotation),
-  per-slot digests, strict verification; opt-in encryption (stacking
+- **Trust** — first-party slices verify offline against the embedded
+  tamatebako root key; third-party authors verify against their own keys
+  via the three-channel method (registry-carried `signing:` block +
+  well-known URL confirmation + keyserver directory, TOFU-pin with
+  continuity and successor-chain rotation) (`docs/spec/09` §9).
+  Plus opt-in encryption (stacking
   EncBackend, DEK envelopes, HKDF subtree keys) (`docs/spec/09`,
   `docs/spec/10`).
 
