@@ -86,9 +86,15 @@ jobs:
           echo "binary: $BIN"
           CRASHES=0
           for i in $(seq 1 12); do
-            if ! "$BIN" > /tmp/run$i.log 2>&1 & BPID=$!; ( sleep 180 && kill -9 $BPID 2>/dev/null ) & WPID=$!; wait $BPID; RC=$?; kill $WPID 2>/dev/null; if [ $RC -eq 137 ]; then echo "iteration $i HUNG (killed after 180s) — deadlock variant"; fi; [ $RC -eq 137 ] && CRASHES=$((CRASHES+1)) && continue; [ $RC -ne 0 ]; then
+            timeout 180 "$BIN" > /tmp/run$i.log 2>&1
+            RC=$?
+            if [ $RC -eq 124 ]; then
               CRASHES=$((CRASHES+1))
-              echo "=== crash at iteration $i (exit $?) — log tail ==="
+              echo "=== iteration $i HUNG (timeout) — deadlock variant ==="
+              tail -6 /tmp/run$i.log
+            elif [ $RC -ne 0 ]; then
+              CRASHES=$((CRASHES+1))
+              echo "=== crash at iteration $i (exit $RC) — log tail ==="
               tail -12 /tmp/run$i.log
             fi
           done
