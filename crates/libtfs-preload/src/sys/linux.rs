@@ -160,25 +160,22 @@ real_fn!(
     c"getdents64",
     unsafe extern "C" fn(c_int, *mut c_void, usize) -> libc::ssize_t
 );
-#[allow(non_snake_case)] // the libc symbol is `__xstat` (versioned pre-glibc-2.33 entry)
+// the libc symbol is `__xstat` (versioned pre-glibc-2.33 entry)
 real_fn!(
     real___xstat,
     c"__xstat",
     unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat) -> c_int
 );
-#[allow(non_snake_case)]
 real_fn!(
     real___lxstat,
     c"__lxstat",
     unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat) -> c_int
 );
-#[allow(non_snake_case)]
 real_fn!(
     real___fxstat,
     c"__fxstat",
     unsafe extern "C" fn(c_int, c_int, *mut libc::stat) -> c_int
 );
-#[allow(non_snake_case)]
 real_fn!(
     real___fxstatat,
     c"__fxstatat",
