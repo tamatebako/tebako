@@ -20,6 +20,13 @@
 //! from the plain names; the LFS `__xstat64`/`__lxstat64`/`__fxstat64`/
 //! `__fxstatat64` versioned forms remain a documented gap.
 
+// The real_* helpers mirror libc symbol names; the versioned ones carry
+// double underscores (`__xstat` & co.), which are intentionally NOT
+// snake_case. Allow that at the module level: per-item attributes on the
+// macro invocations are flagged `unused_attributes` by rustc (attributes
+// on macro calls do not propagate into the expansion).
+#![allow(non_snake_case)]
+
 use std::ffi::{c_char, c_int, c_void};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
