@@ -9,7 +9,7 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-rnp = { package = "rnp-rs", version = "0.1.7", features = ["vendored"] }
+rnp = { package = "rnp-rs", version = "=0.1.7", features = ["vendored"] }
 # rnp-rs 0.1.7's prebuilt ships librnp+json-c(+sexpp) statically but
 # declares botan-3 and bz2 as EXTERNAL link libs. We satisfy them as
 # crate dependencies — cargo builds both from source, static:
