@@ -332,14 +332,19 @@ fn pressed_jail_package_runs_confined_and_journals() {
 
     // …and the violation is in the tebako audit journal of the run's home
     // (the bootstrap exported TEBAKO_JAIL_JOURNAL; the shim's tfs layer
-    // journaled the denial with the manifest source).
+    // journaled the denial with the manifest source). Assert the SPECIFIC
+    // probe, not the global count: under a deny-all jail the runtime may
+    // legitimately trip extra denials from environment lookups (e.g.
+    // /etc/localtime on hosts without TZ set — seen on CI runners).
     let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
-    let deny: Vec<&str> = journal
+    let deny_hosts: Vec<&str> = journal
         .lines()
-        .filter(|l| l.contains("event=jail-deny"))
+        .filter(|l| {
+            l.contains("event=jail-deny") && l.contains("path=/etc/hosts op=read source=manifest")
+        })
         .collect();
-    assert_eq!(deny.len(), 1, "journal:\n{journal}");
-    let (ts, rest) = deny[0].split_once(' ').unwrap();
+    assert_eq!(deny_hosts.len(), 1, "journal:\n{journal}");
+    let (ts, rest) = deny_hosts[0].split_once(' ').unwrap();
     assert!(!ts.is_empty() && ts.bytes().all(|b| b.is_ascii_digit()));
     assert_eq!(
         rest,
