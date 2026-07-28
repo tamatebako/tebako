@@ -463,7 +463,9 @@ jobs:
         with:
           pattern: frag-*
           path: fragments
-          merge-multiple: true
+          # No merge-multiple: each frag-<platform> artifact must land in
+          # its OWN directory (fragments/frag-<platform>/) — finalize.sh
+          # globs per-platform. merge-multiple: true flattens them.
 
       - name: SHA256SUMS + manifest.json + size table
         env:
