@@ -82,9 +82,11 @@ jobs:
       - name: Native loop (default threads) — crash rate
         working-directory: tebako-rs
         run: |
+          set +e
           BIN=$(ls -t target/debug/deps/tebako_info-* | grep -v '\.d$' | head -1)
           echo "binary: $BIN"
           CRASHES=0
+          set +e
           for i in $(seq 1 12); do
             timeout 180 "$BIN" > /tmp/run$i.log 2>&1
             RC=$?
@@ -106,6 +108,7 @@ jobs:
         run: |
           BIN=$(ls -t target/debug/deps/tebako_info-* | grep -v '\.d$' | head -1)
           CRASHES=0
+          set +e
           for i in $(seq 1 12); do
             timeout 180 "$BIN" --test-threads=1 > /tmp/ser$i.log 2>&1 || { RC=$?; CRASHES=$((CRASHES+1)); echo "crash/hang at iteration $i (exit $RC)"; }
           done
