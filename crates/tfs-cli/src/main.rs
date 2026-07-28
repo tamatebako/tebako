@@ -12,16 +12,25 @@
 //! tfs find [-v] <image> <pattern>
 //! tfs mkimage --format dwarfs <srcdir> -o <img> [-v]
 //! tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] -- <cmd> [args...]
+//! tfs encrypt <image> -o <img> --recipient <pubkey>... [--subtree <path>=<pubkey>]...
+//! tfs encrypt <image> -o <img> --rewrap --key <secret> --recipient <pubkey>...
+//! tfs decrypt <image> -o <out.tar> --key <secret>
+//! tfs mount <image> --key <secret>
 //! ```
 //!
 //! The flag-less `tfs info` output is the C++ parity summary (unchanged);
 //! every richer view is an explicit spec-15 flag. Exit codes: 0 success,
 //! 1 any error, and the spec-15 §5 codes (65/70/71/72) under --verify.
 //! Package (tpkg trailer) operations live in tebako-pkg, not here.
+//! Encryption (spec 10) is opt-in: it happens only through the explicit
+//! encrypt/decrypt/mount verbs.
 
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use tfs_cli::enc::{
+    cmd_decrypt, cmd_encrypt, cmd_mount_enc, cmd_rewrap, EncryptOptions, SubtreeGrant,
+};
 use tfs_cli::{
     cmd_cat, cmd_exec, cmd_extract, cmd_find, cmd_info, cmd_info_json, cmd_info_rich, cmd_ls,
     cmd_mkimage, cmd_stat, cmd_tree, ExecOptions, ExtractOptions, InfoOptions, ListOptions,
@@ -50,6 +59,9 @@ fn main() -> ExitCode {
         "find" => cmd_find_main(rest),
         "mkimage" => cmd_mkimage_main(rest),
         "exec" => cmd_exec_main(rest),
+        "encrypt" => cmd_encrypt_main(rest),
+        "decrypt" => cmd_decrypt_main(rest),
+        "mount" => cmd_mount_main(rest),
         other => {
             eprintln!("Error: Unknown command: {other}");
             eprintln!("Use 'tfs help' for usage information");
@@ -80,6 +92,10 @@ struct Args {
     backend_json: bool,
     verify: bool,
     require_signed: bool,
+    recipients: Vec<String>,
+    key: Option<String>,
+    subtrees: Vec<String>,
+    rewrap: bool,
 }
 
 impl Args {
@@ -153,6 +169,10 @@ impl Args {
                 "--backend-json" => a.backend_json = true,
                 "--verify" => a.verify = true,
                 "--require-signed" => a.require_signed = true,
+                "--rewrap" => a.rewrap = true,
+                "--recipient" => a.recipients.push(take_value(&mut i)?),
+                "--key" => a.key = Some(take_value(&mut i)?),
+                "--subtree" => a.subtrees.push(take_value(&mut i)?),
                 "-d" | "--dest" => a.dest = Some(take_value(&mut i)?),
                 "-o" | "--output" => a.output = Some(take_value(&mut i)?),
                 "--format" => a.format = Some(take_value(&mut i)?),
@@ -475,6 +495,124 @@ fn cmd_exec_main(rest: &[String]) -> ExitCode {
     }
 }
 
+fn cmd_encrypt_main(rest: &[String]) -> ExitCode {
+    let a = match Args::parse(rest) {
+        Ok(a) => a,
+        Err(e) => return fail(&format!("Error: {e}")),
+    };
+    if let Err(e) = a.positional_count(
+        1,
+        1,
+        "tfs encrypt <image> -o <img> --recipient <pubkey>... [--subtree <path>=<pubkey>]...\n       tfs encrypt <image> -o <img> --rewrap --key <secret> --recipient <pubkey>...",
+    ) {
+        return fail(&format!("Error: {e}"));
+    }
+    let Some(output) = a.output else {
+        return fail("Error: missing required option --output");
+    };
+    let src = Path::new(&a.positional[0]);
+    let out = Path::new(&output);
+    let recipients: Vec<PathBuf> = a.recipients.iter().map(PathBuf::from).collect();
+    let result = if a.rewrap {
+        if !a.subtrees.is_empty() {
+            return fail("Error: --subtree does not apply to --rewrap");
+        }
+        let Some(key) = a.key else {
+            return fail("Error: --rewrap requires --key <secret-key-file>");
+        };
+        cmd_rewrap(src, out, Path::new(&key), &recipients)
+    } else {
+        if a.key.is_some() {
+            return fail("Error: --key only applies to --rewrap / decrypt / mount");
+        }
+        let mut subtrees = Vec::new();
+        for s in &a.subtrees {
+            let Some((path, pubkey)) = s.split_once('=') else {
+                return fail("Error: --subtree expects <absolute-path>=<pubkey-file>");
+            };
+            subtrees.push(SubtreeGrant {
+                path: path.to_string(),
+                public_key: PathBuf::from(pubkey),
+            });
+        }
+        cmd_encrypt(
+            src,
+            out,
+            &EncryptOptions {
+                recipients,
+                subtrees,
+            },
+        )
+    };
+    match result {
+        Ok(()) => {
+            if a.verbose {
+                println!("Wrote encrypted image: {output}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err((msg, rc)) => {
+            eprintln!("Error: {msg}");
+            ExitCode::from(rc as u8)
+        }
+    }
+}
+
+fn cmd_decrypt_main(rest: &[String]) -> ExitCode {
+    let a = match Args::parse(rest) {
+        Ok(a) => a,
+        Err(e) => return fail(&format!("Error: {e}")),
+    };
+    if let Err(e) = a.positional_count(1, 1, "tfs decrypt <image> -o <out.tar> --key <secret>") {
+        return fail(&format!("Error: {e}"));
+    }
+    let Some(output) = a.output else {
+        return fail("Error: missing required option --output");
+    };
+    let Some(key) = a.key else {
+        return fail("Error: decrypt requires --key <secret-key-file>");
+    };
+    match cmd_decrypt(
+        Path::new(&a.positional[0]),
+        Path::new(&output),
+        Path::new(&key),
+    ) {
+        Ok(()) => {
+            if a.verbose {
+                println!("Wrote plaintext tar: {output}");
+            }
+            ExitCode::SUCCESS
+        }
+        Err((msg, rc)) => {
+            eprintln!("Error: {msg}");
+            ExitCode::from(rc as u8)
+        }
+    }
+}
+
+fn cmd_mount_main(rest: &[String]) -> ExitCode {
+    let a = match Args::parse(rest) {
+        Ok(a) => a,
+        Err(e) => return fail(&format!("Error: {e}")),
+    };
+    if let Err(e) = a.positional_count(1, 1, "tfs mount <image> --key <secret>") {
+        return fail(&format!("Error: {e}"));
+    }
+    let Some(key) = a.key else {
+        return fail("Error: mount requires --key <secret-key-file> (encrypted images open only with a recipient key)");
+    };
+    match cmd_mount_enc(Path::new(&a.positional[0]), Path::new(&key)) {
+        Ok(report) => {
+            print!("{report}");
+            ExitCode::SUCCESS
+        }
+        Err((msg, rc)) => {
+            eprintln!("Error: {msg}");
+            ExitCode::from(rc as u8)
+        }
+    }
+}
+
 fn print_help() {
     println!("tfs - generic VFS image tool (tebako)\n");
     println!("Usage: tfs <command> [options]\n");
@@ -490,6 +628,10 @@ fn print_help() {
     println!("  find     Search for files by name glob");
     println!("  mkimage  Create a dwarfs (.tfs) image from a directory (in-process writer)");
     println!("  exec     Run a dynamic native command with the VFS injected (preload shim)");
+    println!("  encrypt  Encrypt an image to recipients (-o, --recipient, --subtree;");
+    println!("           --rewrap --key rotates grants without touching the bulk)");
+    println!("  decrypt  Decrypt an image to a plaintext tar (-o, --key)");
+    println!("  mount    Unlock an encrypted image with the recipient key (--key)");
     println!("  help     Show help\n");
     println!("Package (tpkg trailer) operations live in tebako-pkg.");
 }

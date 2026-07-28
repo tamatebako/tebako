@@ -3,7 +3,8 @@
 Normative specification of the userland VFS. Status: core SHIPPED
 (`crates/tfs`, contract suite 164 tests); tar adapter and the COW
 composite (HostDir overlay + whiteout journal, mount-mode flags)
-SHIPPED (roadmap 12/13); ENC/write-family (fd-based) PLANNED.
+SHIPPED (roadmap 12/13); the ENC transform (spec 10, `EncBackend`)
+SHIPPED (roadmap 37); the fd-based write family PLANNED.
 
 ## 1. The model
 

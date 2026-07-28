@@ -135,10 +135,13 @@
 
 mod codec;
 mod crc32;
+mod envelope;
 mod error;
 mod ext;
 mod io;
 mod manifest;
+pub mod merkle;
+pub mod merkle_host;
 mod model;
 mod package;
 
@@ -147,6 +150,7 @@ pub use codec::{
     v2_signed_region,
 };
 pub use crc32::{crc32, Crc32};
+pub use envelope::{EnvelopeManifest, Grant, Suite, ENVELOPES_PATH, ENVELOPES_SCHEMA_VERSION};
 pub use error::{strerror, TpkgError};
 pub use ext::{ExtBlock, ExtError};
 pub use io::{read_from, write_to};
@@ -157,6 +161,7 @@ pub use manifest::{
     Requirement, RuntimeProvides, RuntimeRequirement, Sbom, Signing, SigningMechanism,
     SigningState, Source, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
+pub use merkle::{render_tree_hash, tree_digest, Child, MerkleDigest, NodeKind, TreeWalk};
 pub use model::{Manifest, Slot, V2Extension};
 pub use package::{
     PackageEntry, PackageIdentity, PackageManifest, PackageManifestError, PACKAGE_SCHEMA_VERSION,

@@ -169,7 +169,8 @@ fn manifest_view_full_shape() {
         "{out}"
     );
     assert!(
-        out.contains("  digests: blob_sha256 7a5eb444…  tree_hash sha256:650f8ad9…\n"),
+        // mkimage stamps the REAL tree hash (spec 03 §7) — of {hello.txt}.
+        out.contains("  digests: blob_sha256 7a5eb444…  tree_hash sha256:fab4508b…\n"),
         "{out}"
     );
     assert!(out.contains("  signing: unsigned\n"), "{out}");

@@ -12,6 +12,18 @@ categories = ["filesystem", "command-line-utilities"]
 
 [dependencies]
 tfs = { version = "0.1.0", path = "../tfs" }
+# mkimage stamps identity.digest.tree_hash into a source tree's payload
+# manifest (spec 03 §7) via tpkg's merkle construction.
+tpkg = { version = "0.1.0", path = "../tpkg" }
+# Hardlink staging area for the stamped tree (the author's source is
+# never mutated).
+tempfile = "3"
+# The encryption verbs (spec 10, enc.rs): DEK grant envelopes via
+# tebako-signer's rnp PKESK; plaintext blocks zeroized in the staging
+# loop; `tfs decrypt` streams through the pure-Rust tar writer.
+tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+zeroize = "1"
+tar = { version = "0.4", default-features = false }
 tebako-info = { version = "0.1.0", path = "../tebako-info" }
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
 # The in-process DwarFS writer for mkimage (dwarfs-t-rs).
