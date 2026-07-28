@@ -87,6 +87,16 @@ pub const EX_TEBAKO_TRUST: u8 = 72;
 /// policy is fail-closed: an unparseable policy never silently runs open).
 pub const EX_TEBAKO_JAIL: u8 = 73;
 pub const EX_TEBAKO_IO: u8 = 74;
+/// The runtime declares a bootstrap↔runtime contract this bootstrap does
+/// not speak (roadmap 45): contract_version in the release manifest is
+/// outside this bootstrap's supported range — fail CLOSED, never a guess.
+pub const EX_TEBAKO_CONTRACT: u8 = 75;
+
+/// The bootstrap↔runtime contract this bootstrap speaks (roadmap 45):
+/// today's env/argv/image-handoff semantics. Min and max are the same
+/// until a second contract version exists (the bump rule: any change to
+/// env/argv/handoff semantics = +1).
+pub const SUPPORTED_CONTRACT: u32 = 1;
 
 const DEFAULT_RELEASES_BASE: &str =
     "https://github.com/tamatebako/tebako-runtime-ruby/releases/download";
@@ -710,6 +720,55 @@ pub fn sha_from_manifest_json(text: &str, asset: &str) -> Result<String, ()> {
     } else {
         Err(())
     }
+}
+
+/// The `contract_version` of the release-manifest entry for `asset`
+/// (roadmap 45): the same bounding as [`sha_from_manifest_json`], reading
+/// the object's integer "contract_version" when present. `None` when the
+/// field is absent (pre-contract releases, which are contract 1 by
+/// definition) or unparseable.
+pub fn contract_from_manifest_json(text: &str, asset: &str) -> Option<u32> {
+    let needle = format!("\"{asset}\"");
+    let p = text.find(&needle)?;
+    let obj = text[..p].rfind('{')?;
+    let end = text[p..].find('}').map(|e| p + e)?;
+    let body = &text[obj..end];
+    let k = body.find("\"contract_version\"")?;
+    let after = &body[k + 18..];
+    let after = after.trim_start_matches([':', ' ', '\t', '\n', '\r']);
+    let digits: String = after
+        .bytes()
+        .take_while(|b| b.is_ascii_digit())
+        .map(char::from)
+        .collect();
+    if digits.is_empty() {
+        return None;
+    }
+    digits.parse().ok()
+}
+
+/// roadmap 45 negotiation failure (exe and image paths share the message).
+fn contract_mismatch_error(runtime_ref: &str, declared: u32) -> BootError {
+    BootError::new(
+        EX_TEBAKO_CONTRACT,
+        format!(
+            "runtime \"{runtime_ref}\" declares contract_version {declared}, but this tebako-bootstrap speaks contract {SUPPORTED_CONTRACT} — refusing to install or execute\n  the runtime and this bootstrap are from different contract generations; upgrade tebako (or pin an older runtime) and retry"
+        ),
+    )
+}
+
+/// Fail-closed contract gate (roadmap 45): the release manifest's declared
+/// `contract_version` for `asset` must equal [`SUPPORTED_CONTRACT`]. An
+/// absent field means a pre-contract release, which is contract 1 by
+/// definition (accepted while 1 is the supported contract). Returns the
+/// negotiation error to propagate, or `None` when the manifest is
+/// acceptable (matching, or legacy).
+fn contract_gate(runtime_ref: &str, manifest_text: &str, asset: &str) -> Option<BootError> {
+    let declared = contract_from_manifest_json(manifest_text, asset)?;
+    if declared == SUPPORTED_CONTRACT {
+        return None;
+    }
+    Some(contract_mismatch_error(runtime_ref, declared))
 }
 
 /// SHA256SUMS.txt fallback: "<64hex><spaces>[*]<filename>" per line.
@@ -1512,6 +1571,13 @@ fn download_executable(
     if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
         diag_manifest = 2;
         if let Ok(text) = std::fs::read_to_string(&manifest_tmp) {
+            // roadmap 45: the runtime's declared contract must be one we
+            // speak — fail CLOSED before any checksum acceptance.
+            if let Some(e) = contract_gate(runtime_ref, &text, asset) {
+                cleanup_tmp_entry(&ins.tmp_dir, asset);
+                lock_release(ins.lock);
+                return Err(e);
+            }
             diag_manifest = 3;
             if let Ok(sha) = sha_from_manifest_json(&text, asset) {
                 diag_manifest = 4;
@@ -1709,6 +1775,13 @@ fn resolve_image(
     if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
         diag_manifest = 2;
         if let Ok(text) = std::fs::read_to_string(&manifest_tmp) {
+            // roadmap 45: the image is additive metadata of the same
+            // package entry — the entry's contract_version (anchored by
+            // the executable's filename) governs it. Same fail-closed
+            // gate as the executable path.
+            if let Some(e) = contract_gate(runtime_ref, &text, &layout.asset) {
+                return Err(fail_image(lock, e));
+            }
             diag_manifest = 3;
             if let Ok(sha) = sha_from_manifest_image(&text, &image_asset) {
                 diag_manifest = 4;
