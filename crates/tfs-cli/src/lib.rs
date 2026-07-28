@@ -1141,6 +1141,41 @@ fn exec_child(
     Err((format!("Error: cannot exec {cmd}: {err}"), 1))
 }
 
+/// When `source_dir` carries `__tpkg__/manifest.yaml`: compute the
+/// payload tree hash, fill `identity.digest.tree_hash`, and stage a
+/// hardlink mirror with the stamped manifest substituted in. Returns
+/// the staging tempdir (its `tree` subdirectory is the image source)
+/// and the rendered tree hash. `Ok(None)` for a manifest-less source —
+/// plain images stay plain (spec 10's opt-in rule covers the whole
+/// trust surface: nothing is ever stamped into existence).
+///
+/// Stamping is deliberately lenient: a manifest that does not parse or
+/// validate goes into the image UNSTAMPED (no staging, the authored
+/// bytes verbatim) — mkimage is the stamper, not the validator;
+/// `tfs info --verify` grades malformed manifests (exit 65).
+fn stamp_tree_hash(
+    source_dir: &Path,
+) -> Result<Option<(tempfile::TempDir, String)>, (String, i32)> {
+    let manifest_path = source_dir
+        .join(tpkg::merkle::MANIFEST_DIR)
+        .join("manifest.yaml");
+    if !manifest_path.is_file() {
+        return Ok(None);
+    }
+    let digest = tpkg::tree_digest(&tpkg::merkle_host::HostTree::new(source_dir))
+        .map_err(|e| (format!("cannot hash the source tree: {e}"), 1))?;
+    let authored = std::fs::read_to_string(&manifest_path)
+        .map_err(|e| (format!("cannot read {}: {e}", manifest_path.display()), 1))?;
+    let Ok(filled) = tpkg::merkle_host::fill_tree_hash(&authored, &digest) else {
+        return Ok(None); // malformed authored manifest: unstamped, verify grades it
+    };
+    let tmp = tempfile::tempdir().map_err(|e| (format!("cannot create a staging dir: {e}"), 1))?;
+    let tree = tmp.path().join("tree");
+    tpkg::merkle_host::stage_tree(source_dir, &tree, &filled)
+        .map_err(|e| (format!("cannot stage the source tree: {e}"), 1))?;
+    Ok(Some((tmp, tpkg::render_tree_hash(&digest))))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1200,39 +1235,4 @@ mod tests {
             assert_eq!(preload_lib_name(), "libtfs_preload.so");
         }
     }
-}
-
-/// When `source_dir` carries `__tpkg__/manifest.yaml`: compute the
-/// payload tree hash, fill `identity.digest.tree_hash`, and stage a
-/// hardlink mirror with the stamped manifest substituted in. Returns
-/// the staging tempdir (its `tree` subdirectory is the image source)
-/// and the rendered tree hash. `Ok(None)` for a manifest-less source —
-/// plain images stay plain (spec 10's opt-in rule covers the whole
-/// trust surface: nothing is ever stamped into existence).
-///
-/// Stamping is deliberately lenient: a manifest that does not parse or
-/// validate goes into the image UNSTAMPED (no staging, the authored
-/// bytes verbatim) — mkimage is the stamper, not the validator;
-/// `tfs info --verify` grades malformed manifests (exit 65).
-fn stamp_tree_hash(
-    source_dir: &Path,
-) -> Result<Option<(tempfile::TempDir, String)>, (String, i32)> {
-    let manifest_path = source_dir
-        .join(tpkg::merkle::MANIFEST_DIR)
-        .join("manifest.yaml");
-    if !manifest_path.is_file() {
-        return Ok(None);
-    }
-    let digest = tpkg::tree_digest(&tpkg::merkle_host::HostTree::new(source_dir))
-        .map_err(|e| (format!("cannot hash the source tree: {e}"), 1))?;
-    let authored = std::fs::read_to_string(&manifest_path)
-        .map_err(|e| (format!("cannot read {}: {e}", manifest_path.display()), 1))?;
-    let Ok(filled) = tpkg::merkle_host::fill_tree_hash(&authored, &digest) else {
-        return Ok(None); // malformed authored manifest: unstamped, verify grades it
-    };
-    let tmp = tempfile::tempdir().map_err(|e| (format!("cannot create a staging dir: {e}"), 1))?;
-    let tree = tmp.path().join("tree");
-    tpkg::merkle_host::stage_tree(source_dir, &tree, &filled)
-        .map_err(|e| (format!("cannot stage the source tree: {e}"), 1))?;
-    Ok(Some((tmp, tpkg::render_tree_hash(&digest))))
 }
