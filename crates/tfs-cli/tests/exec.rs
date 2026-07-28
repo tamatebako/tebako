@@ -316,7 +316,17 @@ fn exec_deny_jail_journals_the_violation() {
     assert_eq!(out.status.code(), Some(libc::EPERM));
 
     let text = std::fs::read_to_string(&log).unwrap();
-    let lines: Vec<&str> = text.lines().collect();
+    // Assert the SPECIFIC probe, not the global count: under a deny-all
+    // jail the child may legitimately trip extra denials from environment
+    // lookups (e.g. /etc/localtime on hosts without TZ set — seen on CI
+    // runners; the same class fixed in tebako-bootstrap's jail e2e).
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|l| {
+            l.contains("event=jail-deny")
+                && l.contains("path=/etc/hosts op=read source=tfs exec --jail")
+        })
+        .collect();
     assert_eq!(lines.len(), 1, "journal: {lines:?}");
     let (ts, rest) = lines[0].split_once(' ').unwrap();
     assert!(
