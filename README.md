@@ -42,9 +42,12 @@ Or download a binary for your platform from the
 Package your app:
 
 ```console
-$ tebako press -r ./myapp -e bin/myapp -o myapp
-$ ./myapp                        # lean: runtime fetches once, then cached
+$ tebako press -r ./myapp -e bin/myapp -o out/myapp
+$ ./out/myapp                    # lean: runtime fetches once, then cached
 ```
+
+(the output path must not collide with the project root — `-o out/myapp`,
+not `-o myapp` when `-r ./myapp`)
 
 Install an app someone else published (a `.tfs` payload in a registry):
 
