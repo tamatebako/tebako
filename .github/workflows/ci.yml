@@ -48,8 +48,7 @@ jobs:
         if: runner.os == 'Linux'
         # libbz2-dev: rnp-rs 0.1.7 declares dylib=bz2 — give the linker a
         # REAL shared library (base-OS dep, same class as libz; macOS links
-        # the system libbz2.dylib identically). Until rnp-rs 0.1.8, whose
-        # prebuilt carries a static libbz2.
+        # the system libbz2.dylib identically). Until rnp-rs ≥ 0.1.10.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
