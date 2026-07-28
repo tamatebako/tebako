@@ -333,7 +333,12 @@ pub fn lock_release(lock: EntryLock) {
 /// the caller onto EX_TEBAKO_IO with the same message body as the unix
 /// exec failure ("cannot execute runtime …").
 #[cfg(windows)]
-pub fn spawn_handoff(runtime: &Path, args: &[String], image: Option<&Path>) -> io::Error {
+pub fn spawn_handoff(
+    runtime: &Path,
+    args: &[String],
+    image: Option<&Path>,
+    jail: Option<&crate::JailEnv>,
+) -> io::Error {
     install_ctrl_swallow();
     let mut cmd = std::process::Command::new(runtime);
     cmd.args(args);
@@ -342,6 +347,13 @@ pub fn spawn_handoff(runtime: &Path, args: &[String], image: Option<&Path>) -> i
         // drivers mount it instead of an embedded image, v1 drivers
         // ignore it. The handoff options themselves are unchanged.
         cmd.env("TEBAKO_RUNTIME_IMAGE", image);
+    }
+    if let Some(jail) = jail {
+        // spec 08: the effective jail rides the environment (the unix
+        // exec path exports the same triple).
+        cmd.env("TEBAKO_JAIL", &jail.spec);
+        cmd.env("TEBAKO_JAIL_SOURCE", jail.source);
+        cmd.env("TEBAKO_JAIL_JOURNAL", &jail.journal);
     }
     let status = match cmd.spawn().and_then(|mut child| child.wait()) {
         Ok(status) => status,

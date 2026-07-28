@@ -95,6 +95,16 @@ impl Manifest {
         &self.inner.requires
     }
 
+    /// The payload's declared host-access request (spec 08 §4 — the app
+    /// PROVIDES `capabilities.host`; the dispatcher composes it with the
+    /// user's tightening flags, spec 08 §2).
+    pub fn host_jail(&self) -> Option<&tpkg::HostJail> {
+        match &self.inner.provides {
+            Provides::App(app) => app.capabilities.host.as_ref(),
+            _ => None,
+        }
+    }
+
     /// Write the manifest mirror (the installer's half of the payload
     /// record): tmp + rename, like every cache-managed file. The manifest
     /// is re-validated on the way out (`to_yaml`).

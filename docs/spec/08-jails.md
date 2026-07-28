@@ -1,15 +1,19 @@
 # Spec 08 — Jails: host-access policy
 
 Normative specification of host-filesystem access control for running
-payloads. Status: PARTIAL (roadmap 09) — the TFS enforcement point (§1–§3)
-is SHIPPED in `crates/tfs` (policy model, `tebako_fs_host_policy`,
-per-route EPERM/EROFS gating, symlink re-validation, jail acceptance
-suite); the `TEBAKO_JAIL` env form of the policy (§1) is SHIPPED with
-roadmap 30's preload shim (`tfs exec --jail` carries it to native
-binaries); manifest integration (§4), the remaining dispatch-surface
-flags and the audit-journal logging of violations remain PLANNED.
-Enforcement exists because every file access already flows through the
-TFS layer — one choke point covers every consumer.
+payloads. Status: SHIPPED (roadmaps 09 + 30 + 35) — the TFS enforcement
+point (§1–§3) is SHIPPED in `crates/tfs` (policy model,
+`tebako_fs_host_policy`, per-route EPERM/EROFS gating, symlink
+re-validation, jail acceptance suite); the `TEBAKO_JAIL` env form of the
+policy (§1) is SHIPPED with roadmap 30's preload shim (`tfs exec --jail`
+carries it to native binaries); manifest integration (§4 —
+`capabilities.host` in `crates/tpkg`), the press/dispatch surfaces
+(`tebako press --jail` writing the package manifest's `jail:` block,
+`tebako run`/`tebako-shim` `--jail|--mount|--no-host`), the bootstrap's
+manifest∩user composition at handoff, and the audit-journal logging of
+violations (`event=jail-deny`) are SHIPPED with roadmap 35. Enforcement
+exists because every file access already flows through the TFS layer —
+one choke point covers every consumer.
 
 ## 1. Policy model (docker `-v` semantics)
 
@@ -91,6 +95,35 @@ The payload manifest (spec 03) gains `capabilities.host` — the access the
 payload was built to need (e.g. metanorma: read the input file's
 directory, write the output directory). Dispatch surfaces (spec 07)
 compose: manifest request ∩ user policy = effective jail.
+
+### Shipped surfaces (roadmap 35)
+
+- **Model:** `crates/tpkg/src/jail.rs` owns the authored shape (YAML
+  block ↔ `TEBAKO_JAIL` env form ↔ `--jail` cli spec: `open` | `deny` |
+  `deny:arg` | a YAML file | the env grammar) and the locked precedence
+  algebra (`intersect` / `effective`): deny defaults win; each side's
+  grants are capped by the other side's allowance at the same prefix (ro
+  is sticky, a user `--no-host` drops request grants); argument files
+  union and `auto-allowed` resolves argv files into read-only grants at
+  dispatch. The payload manifest's `capabilities.host` and the package
+  manifest's `jail:` block are both this type.
+- **Press:** `tebako press --jail <spec>` writes the policy into the
+  type-2 package manifest's `jail:` block (spec 02 §5b / spec 03 §6);
+  block-less packages are byte-identical to before.
+- **Bootstrap:** composes package `jail:` ∩ `TEBAKO_JAIL` at handoff and
+  exports the effective policy as `TEBAKO_JAIL` (+ `TEBAKO_JAIL_SOURCE`
+  = `manifest` | `user` | `manifest+user`, + `TEBAKO_JAIL_JOURNAL` →
+  `$TEBAKO_HOME/journal.log`). Malformed policy fails closed, exit 73
+  (`EX_TEBAKO_JAIL`). No policy: nothing exported (legacy byte-identical).
+- **Dispatch:** `tebako run <pkg> [--jail <spec>] [--mount
+  <host:mount:ro|rw>]... [--no-host] [--] [args...]` and the same flags on
+  `tebako-shim` (consumed before `--`; the payload mirror carries
+  `capabilities.host` from install time).
+- **Audit journal (§2):** every denial in the TFS layer appends `<ts>
+  event=jail-deny path=<p> op=read|write source=<s>` to the tebako
+  journal (`TEBAKO_JAIL_JOURNAL` > `$TEBAKO_HOME/journal.log` >
+  `~/.tebako/journal.log`), best-effort — journaling never fails the
+  operation it audits.
 
 ## 5. Scope (honest, locked 2026-07-26)
 

@@ -54,6 +54,11 @@ entrypoints:                          # ARRAY — multi-entry suites; N=1 for si
                                                 # universal only for pure-language
 capabilities: {exec: true, read: true}
 ```
+`capabilities` may also carry **`host`** (any kind): the host-access jail
+the payload was built to need — a REQUEST the dispatch surfaces compose
+with the user's tightening, never a grant to itself. spec 08 §4 is
+normative for its shape (`default`, `mounts`, `argument_files`).
+
 **Zero-runtime entrypoints (locked):** an entrypoint whose executable is
 native (or self-contained) needs NO interpreter payload — inkscape-class
 slices, static binaries, shell-free tools. Such apps declare no

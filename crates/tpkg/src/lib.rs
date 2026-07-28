@@ -139,6 +139,7 @@ mod envelope;
 mod error;
 mod ext;
 mod io;
+pub mod jail;
 mod manifest;
 pub mod merkle;
 pub mod merkle_host;
@@ -154,6 +155,7 @@ pub use envelope::{EnvelopeManifest, Grant, Suite, ENVELOPES_PATH, ENVELOPES_SCH
 pub use error::{strerror, TpkgError};
 pub use ext::{ExtBlock, ExtError};
 pub use io::{read_from, write_to};
+pub use jail::{ArgumentFiles, HostJail, JailAccess, JailError, JailMount};
 pub use manifest::{
     AppProvides, BuiltFrom, Capabilities, Constraint, DataProvides, Digest, Encryption,
     EncryptionPart, EncryptionState, EngineProvides, Entrypoint, Identity, ManifestError,

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tebako.org/schemas/tpkg-package-manifest-v1.schema.json",
   "title": "tpkg package manifest v1",
-  "description": "The L2 package manifest (spec 03 §6), carried as tpkg extension block type 2 (spec 02 §5b) — YAML in the container, OUTSIDE every payload image, readable without backend knowledge. It owns composition (identity, entrypoint/suite entries, package-level jail + env, per-entry runtime refs); payload manifests stay inside images and own self-description. This schema is the STRUCTURAL contract; the tpkg crate's PackageManifest::validate() is the semantic gate (unique entry names, slot-capacity bound, non-empty fields). Unknown keys are tolerated at every level for forward compatibility; only jail is guaranteed lossless (its shape is spec 08's).",
+  "description": "The L2 package manifest (spec 03 §6), carried as tpkg extension block type 2 (spec 02 §5b) — YAML in the container, OUTSIDE every payload image, readable without backend knowledge. It owns composition (identity, entrypoint/suite entries, package-level jail + env, per-entry runtime refs); payload manifests stay inside images and own self-description. This schema is the STRUCTURAL contract; the tpkg crate's PackageManifest::validate() is the semantic gate (unique entry names, slot-capacity bound, non-empty fields, the spec 08 jail block's own validation). Unknown keys are tolerated at every level for forward compatibility.",
   "type": "object",
   "required": ["schema_version", "package", "entries"],
   "properties": {
@@ -15,8 +15,7 @@
       "description": "One entry per invocable command (N=1 for simple apps; N entries for suites). Entry names are unique (enforced by the crate's validate())."
     },
     "jail": {
-      "type": "object",
-      "description": "Package-level jail request. Opaque here: spec 08 owns the shape; the block is preserved verbatim."
+      "$ref": "#/$defs/hostJail"
     },
     "env": {
       "type": "object",
@@ -25,6 +24,32 @@
     }
   },
   "$defs": {
+    "hostJail": {
+      "type": "object",
+      "description": "Package-level jail request (spec 08 §1 owns the shape; spec 03 §6 seats it here): the access the package was pressed with (`tebako press --jail`). The bootstrap composes it with the user's tightening at handoff — manifest request ∩ user policy = effective jail (spec 08 §2). Unknown keys are tolerated (forward-compat).",
+      "properties": {
+        "default": { "enum": ["open", "deny"] },
+        "mounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["host", "mount", "access"],
+            "properties": {
+              "host": { "type": "string", "minLength": 1 },
+              "mount": { "type": "string", "pattern": "^/" },
+              "access": { "enum": ["ro", "rw"] }
+            }
+          }
+        },
+        "argument_files": {
+          "description": "EITHER the scalar \"auto-allowed\" (the input files the command is handed are allowed even under deny) OR an explicit path list (read-only grants).",
+          "anyOf": [
+            { "const": "auto-allowed" },
+            { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          ]
+        }
+      }
+    },
     "packageIdentity": {
       "type": "object",
       "required": ["name", "version", "producer", "created"],

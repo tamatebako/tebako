@@ -76,6 +76,10 @@ pub struct HostPolicy {
     default_open: bool,
     mounts: Vec<HostMount>,
     arg_files: Vec<PathBuf>,
+    /// Who installed the policy (`manifest`, `user`, `manifest+user`,
+    /// `TEBAKO_JAIL`, …), recorded in the audit journal on every denial
+    /// (spec 08 §2: violations are logged with path + syscall class).
+    source: String,
 }
 
 impl Default for HostPolicy {
@@ -92,7 +96,29 @@ impl HostPolicy {
             default_open: true,
             mounts: Vec::new(),
             arg_files: Vec::new(),
+            source: String::new(),
         }
+    }
+
+    /// Record who installed the policy (the audit-journal `source=` field,
+    /// spec 08 §2): the bootstrap/dispatch surfaces label the composition
+    /// (`manifest`, `user`, `manifest+user`), direct installers name their
+    /// channel (`TEBAKO_JAIL`, `tebako_fs_host_policy`, …).
+    pub fn with_source(mut self, source: impl Into<String>) -> Self {
+        self.source = source.into();
+        self
+    }
+
+    /// The installer's label (empty when never attributed).
+    pub fn source(&self) -> &str {
+        &self.source
+    }
+
+    /// True when this policy can never deny anything (open default with no
+    /// mounts — argument files only ever ALLOW). Installers skip opening
+    /// the audit journal for it: there would never be a violation to log.
+    pub fn never_denies(&self) -> bool {
+        self.default_open && self.mounts.is_empty()
     }
 
     /// Bind a policy: canonicalize every host path (mount sources and
@@ -126,6 +152,7 @@ impl HostPolicy {
             default_open,
             mounts: bound_mounts,
             arg_files: bound_files,
+            source: String::new(),
         })
     }
 

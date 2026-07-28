@@ -62,6 +62,7 @@ pub mod options;
 pub mod packager;
 pub mod publish;
 pub mod resolve;
+pub mod run;
 pub mod runner;
 pub mod scenario;
 pub mod sdk;
@@ -155,6 +156,21 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         check_ruby_version(requested)?;
     }
 
+    // spec 08: --jail is validated before any heavy work (a bad spec must
+    // not cost a runtime download). The parsed policy becomes the type-2
+    // package manifest's `jail:` block at stitch time — the package's
+    // host-access REQUEST (the user can tighten it at run time, never
+    // loosen it).
+    let jail = match &opts.jail {
+        Some(spec) => Some(tpkg::HostJail::from_cli_spec(spec).map_err(|e| {
+            packaging_error(
+                130,
+                Some(&format!("invalid --jail specification '{spec}': {e}")),
+            )
+        })?),
+        None => None,
+    };
+
     // Cli#bootstrap: the cache version guard runs before the press
     // (skipped in devmode, like the gem).
     if !opts.devmode {
@@ -238,7 +254,19 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     }
 
     let package = format!("{}{}", opts.package(), scenario.exe_suffix);
-    stitch(&bootstrap_path, &images, &package, &runtime_ref, None)?;
+    // spec 08: a --jail press embeds the policy as the type-2 package
+    // manifest's `jail:` block — the package's host-access REQUEST (the
+    // user tightens it at run time, never loosens it; block-less packages
+    // keep the exact v1 shape).
+    let package_manifest =
+        jail.map(|j| press_package_manifest(&package, &runtime_ref, &opts.tebako_version, j));
+    stitch(
+        &bootstrap_path,
+        &images,
+        &package,
+        &runtime_ref,
+        package_manifest.as_ref(),
+    )?;
     println!("Created tebako package at \"{package}\"");
     ensure_version_file(opts);
     Ok(PathBuf::from(package))
@@ -311,7 +339,9 @@ fn check_bootstrap_version() -> Result<(), TebakoError> {
 /// `runtime_ref` is the trailer's 128-byte field as built by the caller
 /// (suites: entries[0]'s ref — the type-2 manifest carries the per-entry
 /// refs, spec 02 §5b / spec 03 §6). `package_manifest`, when present, is
-/// embedded as extension block type 2.
+/// embedded as extension block type 2 (a `--jail` press embeds the policy
+/// this way, spec 08 §4); `None` keeps the package block-less
+/// (byte-identical pre-jails shape).
 pub(crate) fn stitch(
     bootstrap_path: &Path,
     images: &[(PathBuf, String, u32)],
@@ -407,6 +437,10 @@ pub(crate) fn stitch(
         runtime_ref: runtime_ref.to_string(),
         package_flags: tpkg::TPKG_FLAG_LEAN,
         launcher_abi: LAUNCHER_ABI,
+        // The L2 package manifest rides along only when the press declares
+        // one (today: a --jail policy); block-less packages keep the exact
+        // v1 shape. The entry's runtime_ref mirrors the trailer's, so old
+        // and new loaders resolve identically (spec 02 §5b).
         package_manifest: package_manifest.cloned(),
         ..Default::default()
     };
@@ -415,6 +449,72 @@ pub(crate) fn stitch(
     chmod_755(output);
     resign_if_needed(output);
     Ok(())
+}
+
+/// The L2 package manifest a `tebako press --jail` writes (spec 03 §6 /
+/// spec 02 §5b): minimal identity (press has no package-version input —
+/// a --package-version flag is a later milestone), one entry naming the
+/// package, `runtime_ref` mirroring the trailer field, and the jail
+/// request. The bootstrap reads this block and composes the jail with the
+/// user's tightening at handoff (spec 08 §2).
+fn press_package_manifest(
+    package: &str,
+    runtime_ref: &str,
+    tebako_version: &str,
+    jail: tpkg::HostJail,
+) -> tpkg::PackageManifest {
+    let stem = Path::new(package)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| package.to_string());
+    tpkg::PackageManifest {
+        schema_version: tpkg::PACKAGE_SCHEMA_VERSION,
+        package: tpkg::PackageIdentity {
+            name: stem.clone(),
+            version: "0.0.0".to_string(),
+            producer: tpkg::Producer {
+                tool: "tebako-cli".to_string(),
+                tool_version: tebako_version.to_string(),
+            },
+            created: rfc3339_now(),
+        },
+        entries: vec![tpkg::PackageEntry {
+            name: stem.clone(),
+            slot: 0,
+            entrypoint: stem,
+            runtime_ref: runtime_ref.to_string(),
+        }],
+        jail: Some(jail),
+        env: Default::default(),
+    }
+}
+
+/// RFC 3339 UTC rendering of now (the manifest `created` convention; no
+/// chrono in the tree — the civil-from-days algorithm is Howard
+/// Hinnant's).
+fn rfc3339_now() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    rfc3339_utc(secs)
+}
+
+fn rfc3339_utc(secs: u64) -> String {
+    let days = (secs / 86_400) as i64;
+    let rem = secs % 86_400;
+    let (h, mi, s) = (rem / 3600, (rem % 3600) / 60, rem % 60);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z")
 }
 
 fn chmod_755(path: &Path) {
@@ -679,5 +779,44 @@ fn human_age(installed_at: std::time::SystemTime) -> String {
         format!("{}h ago", age / 3600)
     } else {
         format!("{}d ago", age / 86_400)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rfc3339_utc_known_dates() {
+        assert_eq!(rfc3339_utc(0), "1970-01-01T00:00:00Z");
+        assert_eq!(rfc3339_utc(951_782_400), "2000-02-29T00:00:00Z"); // leap day
+        assert_eq!(rfc3339_utc(1_704_067_200), "2024-01-01T00:00:00Z");
+        assert_eq!(rfc3339_utc(1_767_225_600), "2026-01-01T00:00:00Z");
+        assert_eq!(rfc3339_utc(86_399), "1970-01-01T23:59:59Z");
+    }
+
+    #[test]
+    fn press_package_manifest_carries_the_jail_and_mirrors_the_trailer() {
+        let jail = tpkg::HostJail::from_cli_spec("deny:arg").unwrap();
+        let m = press_package_manifest(
+            "/tmp/out/hello",
+            "ruby@3.4.2;tebako=0.15.9;image",
+            "0.15.9",
+            jail,
+        );
+        // Valid per the tpkg discipline (schema version, N>=1 entries, the
+        // jail block's own validation).
+        m.validate().unwrap();
+        assert_eq!(m.package.name, "hello");
+        assert_eq!(m.package.producer.tool, "tebako-cli");
+        assert_eq!(m.entries.len(), 1);
+        assert_eq!(m.entries[0].slot, 0);
+        assert_eq!(m.entries[0].runtime_ref, "ruby@3.4.2;tebako=0.15.9;image");
+        let jail = m.jail.as_ref().unwrap();
+        assert!(!jail.default_open);
+        assert!(jail.argument_files.auto);
+        // The YAML form survives a round trip (the block embeds as YAML).
+        let back = tpkg::PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, m);
     }
 }

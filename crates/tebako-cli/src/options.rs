@@ -73,6 +73,10 @@ pub struct PressOptions {
     /// entry points come from the suite file; -r/-e are not accepted with
     /// it.
     pub suite: Option<PathBuf>,
+    /// --jail <spec> (spec 08): `open` | `deny` | `deny:arg` | a YAML file
+    /// | the TEBAKO_JAIL env grammar. Written into the type-2 package
+    /// manifest's `jail:` block — the package's host-access REQUEST.
+    pub jail: Option<String>,
 }
 
 impl PressOptions {

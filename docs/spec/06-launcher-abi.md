@@ -66,6 +66,7 @@ republish of v1-era runtimes needed.
 | 70 | `EX_TEBAKO_SHA` | sha256 mismatch (runtime or image) |
 | 71 | `EX_TEBAKO_SIGNATURE` | invalid signature; or unsigned under `TEBAKO_REQUIRE_SIGNED=1` |
 | 72 | `EX_TEBAKO_TRUST` | signer key not in the trusted keyring |
+| 73 | `EX_TEBAKO_JAIL` | jail policy could not be applied (malformed `TEBAKO_JAIL`; fail-closed — spec 08) |
 | 74 | `EX_TEBAKO_IO` | filesystem/lock/install failure |
 
 stderr body: `tebako-bootstrap: <message>\n` — message bodies match the

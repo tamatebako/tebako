@@ -135,7 +135,7 @@ fn build_fixtures() -> Option<Fixtures> {
     let dir = std::fs::canonicalize(&dir).unwrap();
 
     let mut binaries: Vec<(String, PathBuf)> = Vec::new();
-    for name in ["print-data", "spawn-self", "dl-user"] {
+    for name in ["print-data", "spawn-self", "dl-user", "spawn-helper"] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
         let extra: &[&str] = if name == "dl-user" && cfg!(target_os = "linux") {
@@ -288,6 +288,57 @@ fn exec_deny_jail_eperm_and_plain_ok() {
     assert!(!r.stdout.is_empty());
 }
 
+/// The native-tool path end to end (spec 08 §2/§5): a dynamic tool inside
+/// the payload image runs under the preload shim, the `--jail` policy
+/// confines its host reads, and the violation lands in the audit journal
+/// with the surface's source label.
+#[test]
+fn exec_deny_jail_journals_the_violation() {
+    let Some(f) = fixtures() else { return };
+    let log = f.dir.join("audit").join("journal.log");
+    let mut cmd = Command::new(bin().unwrap());
+    cmd.args([
+        "exec",
+        &format!("{}:{MOUNT}", f.zip.display()),
+        "--jail",
+        "deny",
+        "--",
+        "/tfs/bin/print-data",
+        "/etc/hosts",
+    ])
+    .env_remove("DYLD_INSERT_LIBRARIES")
+    .env_remove("LD_PRELOAD")
+    .env_remove("TEBAKO_TFS_MOUNTS")
+    .env_remove("TEBAKO_JAIL")
+    .env("TEBAKO_TFS_PRELOAD", &f.shim)
+    .env("TEBAKO_JAIL_JOURNAL", &log);
+    let out = cmd.output().unwrap();
+    assert_eq!(out.status.code(), Some(libc::EPERM));
+
+    let text = std::fs::read_to_string(&log).unwrap();
+    // Assert the SPECIFIC probe, not the global count: under a deny-all
+    // jail the child may legitimately trip extra denials from environment
+    // lookups (e.g. /etc/localtime on hosts without TZ set — seen on CI
+    // runners; the same class fixed in tebako-bootstrap's jail e2e).
+    let lines: Vec<&str> = text
+        .lines()
+        .filter(|l| {
+            l.contains("event=jail-deny")
+                && l.contains("path=/etc/hosts op=read source=tfs exec --jail")
+        })
+        .collect();
+    assert_eq!(lines.len(), 1, "journal: {lines:?}");
+    let (ts, rest) = lines[0].split_once(' ').unwrap();
+    assert!(
+        !ts.is_empty() && ts.bytes().all(|b| b.is_ascii_digit()),
+        "{lines:?}"
+    );
+    assert_eq!(
+        rest,
+        "event=jail-deny path=/etc/hosts op=read source=tfs exec --jail"
+    );
+}
+
 #[test]
 fn exec_grandchild_stays_in_vfs() {
     let Some(f) = fixtures() else { return };
@@ -307,6 +358,40 @@ fn exec_dlopen_memfs_library() {
     );
     assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
     assert_eq!(r.stdout.trim(), "42", "stdout: {}", r.stdout);
+}
+
+/// Roadmap 39: execve/posix_spawn of a MEMFS path is virtualized through
+/// the dlmap2file host cache — a tool spawns an in-image helper with no
+/// extraction, and the grandchild stays in the VFS.
+#[test]
+fn exec_spawns_in_image_helper() {
+    let Some(f) = fixtures() else { return };
+    // posix_spawn of the in-image helper.
+    let r = tfs_exec(
+        f,
+        &[
+            "--",
+            "/tfs/bin/spawn-helper",
+            "posix_spawn",
+            "/tfs/bin/print-data",
+            "/tfs/data/secret.txt",
+        ],
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, SECRET, "stderr: {}", r.stderr);
+    // execve replaces the tool outright.
+    let r = tfs_exec(
+        f,
+        &[
+            "--",
+            "/tfs/bin/spawn-helper",
+            "execve",
+            "/tfs/bin/print-data",
+            "/tfs/data/secret.txt",
+        ],
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, SECRET, "stderr: {}", r.stderr);
 }
 
 #[test]

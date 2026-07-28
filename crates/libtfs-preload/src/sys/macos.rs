@@ -23,10 +23,11 @@ struct InterposeTuple {
 // dyld and the volatile readback below.
 unsafe impl Sync for InterposeTuple {}
 
-// The libc crate does not declare `faccessat` for apple targets; the
-// SDK has it since macOS 10.10 (4-arg).
+// The libc crate does not declare `faccessat`/`fstatat` for apple
+// targets; the SDK has them since macOS 10.10.
 extern "C" {
     fn faccessat(dirfd: c_int, path: *const c_char, mode: c_int, flags: c_int) -> c_int;
+    fn fstatat(dirfd: c_int, path: *const c_char, st: *mut libc::stat, flags: c_int) -> c_int;
 }
 
 macro_rules! interpose {
@@ -184,6 +185,83 @@ interpose!(
     super::dlopen,
     libc::dlopen,
     unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
+);
+interpose!(
+    INTERPOSE_FSTATAT,
+    real_fstatat,
+    super::fstatat,
+    fstatat,
+    unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat, c_int) -> c_int
+);
+interpose!(
+    INTERPOSE_REWINDDIR,
+    real_rewinddir,
+    super::rewinddir,
+    libc::rewinddir,
+    unsafe extern "C" fn(*mut libc::DIR)
+);
+interpose!(
+    INTERPOSE_DIRFD,
+    real_dirfd,
+    super::dirfd,
+    libc::dirfd,
+    unsafe extern "C" fn(*mut libc::DIR) -> c_int
+);
+interpose!(
+    INTERPOSE_TELLDIR,
+    real_telldir,
+    super::telldir,
+    libc::telldir,
+    unsafe extern "C" fn(*mut libc::DIR) -> libc::c_long
+);
+interpose!(
+    INTERPOSE_SEEKDIR,
+    real_seekdir,
+    super::seekdir,
+    libc::seekdir,
+    unsafe extern "C" fn(*mut libc::DIR, libc::c_long)
+);
+interpose!(
+    INTERPOSE_READDIR_R,
+    real_readdir_r,
+    super::readdir_r,
+    libc::readdir_r,
+    unsafe extern "C" fn(*mut libc::DIR, *mut libc::dirent, *mut *mut libc::dirent) -> c_int
+);
+interpose!(
+    INTERPOSE_EXECVE,
+    real_execve,
+    super::execve,
+    libc::execve,
+    unsafe extern "C" fn(*const c_char, *const *mut c_char, *const *mut c_char) -> c_int
+);
+interpose!(
+    INTERPOSE_POSIX_SPAWN,
+    real_posix_spawn,
+    super::posix_spawn,
+    libc::posix_spawn,
+    unsafe extern "C" fn(
+        *mut libc::pid_t,
+        *const c_char,
+        *const libc::posix_spawn_file_actions_t,
+        *const libc::posix_spawnattr_t,
+        *const *mut c_char,
+        *const *mut c_char,
+    ) -> c_int
+);
+interpose!(
+    INTERPOSE_POSIX_SPAWNP,
+    real_posix_spawnp,
+    super::posix_spawnp,
+    libc::posix_spawnp,
+    unsafe extern "C" fn(
+        *mut libc::pid_t,
+        *const c_char,
+        *const libc::posix_spawn_file_actions_t,
+        *const libc::posix_spawnattr_t,
+        *const *mut c_char,
+        *const *mut c_char,
+    ) -> c_int
 );
 
 /// Library constructor: establish the namespace before the program's main.

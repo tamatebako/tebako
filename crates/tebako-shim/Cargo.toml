@@ -13,7 +13,10 @@ categories = ["command-line-utilities"]
 [dependencies]
 # The unified payload-manifest model (spec 03 — item 40's manifest
 # unify): the dispatch mirror is a tpkg::PayloadManifest; constraint
-# grammar is tpkg's, the dispatcher only evaluates.
+# grammar is tpkg's, the dispatcher only evaluates. tpkg::jail is the
+# spec 08 jail model (the mirror's capabilities.host, composed with the
+# dispatch flags into TEBAKO_JAIL — the engine stays out of the
+# dispatcher).
 tpkg = { version = "0.1.0", path = "../tpkg" }
 # Remote registry resolution at dispatch time (spec 04 §2 — item 33):
 # every registry form (service contents API, pinned release artifact, git

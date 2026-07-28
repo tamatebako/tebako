@@ -189,7 +189,8 @@
       "required": ["exec", "read"],
       "properties": {
         "exec": { "const": true },
-        "read": { "const": true }
+        "read": { "const": true },
+        "host": { "$ref": "#/$defs/hostJail" }
       },
       "not": { "required": ["runtime"] }
     },
@@ -199,7 +200,8 @@
       "properties": {
         "exec": { "const": true },
         "read": { "const": true },
-        "runtime": { "const": true }
+        "runtime": { "const": true },
+        "host": { "$ref": "#/$defs/hostJail" }
       }
     },
     "capabilitiesData": {
@@ -207,9 +209,37 @@
       "required": ["exec", "read"],
       "properties": {
         "exec": { "const": false },
-        "read": { "const": true }
+        "read": { "const": true },
+        "host": { "$ref": "#/$defs/hostJail" }
       },
       "not": { "required": ["runtime"] }
+    },
+    "hostJail": {
+      "type": "object",
+      "description": "capabilities.host (spec 08 §4): the host access the payload was BUILT TO NEED — a REQUEST the dispatch surfaces compose with the user's tightening (manifest request ∩ user policy = effective jail, spec 08 §2). Absent = open (today's behavior).",
+      "properties": {
+        "default": { "enum": ["open", "deny"] },
+        "mounts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/hostJailMount" }
+        },
+        "argument_files": {
+          "description": "EITHER the scalar \"auto-allowed\" (dispatch resolves argv files into read-only grants) OR an explicit path list (read-only grants, honored even under deny).",
+          "anyOf": [
+            { "const": "auto-allowed" },
+            { "type": "array", "items": { "type": "string", "minLength": 1 } }
+          ]
+        }
+      }
+    },
+    "hostJailMount": {
+      "type": "object",
+      "required": ["host", "mount", "access"],
+      "properties": {
+        "host": { "type": "string", "minLength": 1 },
+        "mount": { "$ref": "#/$defs/absPath" },
+        "access": { "enum": ["ro", "rw"] }
+      }
     },
     "runtimeRequirement": {
       "type": "object",

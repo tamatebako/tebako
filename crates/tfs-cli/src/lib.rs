@@ -1132,10 +1132,14 @@ fn exec_child(
         .env_remove(preload_var())
         .env_remove("TEBAKO_TFS_MOUNTS")
         .env_remove("TEBAKO_JAIL")
+        .env_remove("TEBAKO_JAIL_SOURCE")
         .env(preload_var(), shim)
         .env("TEBAKO_TFS_MOUNTS", mounts_env);
     if let Some(j) = jail_env {
         command.env("TEBAKO_JAIL", j);
+        // The audit-journal source label (spec 08 §2): this policy came
+        // from the exec surface's --jail flag.
+        command.env("TEBAKO_JAIL_SOURCE", "tfs exec --jail");
     }
     let err = command.exec(); // returns only on failure
     Err((format!("Error: cannot exec {cmd}: {err}"), 1))

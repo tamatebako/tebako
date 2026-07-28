@@ -681,6 +681,7 @@ fn synthesize_manifest(
                     exec: true,
                     read: true,
                     runtime: None,
+                    host: None,
                 },
             })
         }
@@ -696,6 +697,7 @@ fn synthesize_manifest(
                 exec: false,
                 read: true,
                 runtime: None,
+                host: None,
             },
         }),
         other => {

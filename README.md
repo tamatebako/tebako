@@ -115,6 +115,20 @@ Layers:
   Plus opt-in encryption (stacking
   EncBackend, DEK envelopes, HKDF subtree keys) (`docs/spec/09`,
   `docs/spec/10`).
+- **Jails** — host-access policy at the TFS choke point (docker `-v`
+  semantics: `open`/`deny` default, ro/rw mount grants, argument files):
+  payloads declare `capabilities.host`, `tebako press --jail` presses the
+  request into the package manifest, and the bootstrap/dispatch surfaces
+  compose it with the user's tightening (`tebako run --jail/--mount/
+  --no-host`, the same flags on `tebako-shim`) — user policy always wins,
+  never loosens. Violations journal to the tebako audit journal
+  (`docs/spec/08`).
+- **Native exec** — the preload interposition shim (libtfs-preload)
+  maps the libc file-IO family onto TFS for dynamic native binaries
+  (the `*at` family, dir streams, dlopen, execve/posix_spawn of memfs
+  paths materialized through the dlmap2file host cache; grandchildren
+  stay in the VFS by env propagation, and their IO rides the same jail)
+  (`docs/spec/07` §8).
 
 Repos are few and purpose-split: this one (`tamatebako/tebako`, the
 Rust stack) plus three C/C++ **factories** that only build their own
@@ -128,7 +142,8 @@ payloads (inkscape & co.) are feedstocks in the
 
 | command | what it does |
 |---------|--------------|
-| `tebako press` | package an app (lean/fat; `--suite` for multi-command packages) |
+| `tebako press` | package an app (lean/fat; `--suite` for multi-command packages; `--jail` presses a host-access policy) |
+| `tebako run <pkg>` | run a pressed package with a user jail tightening (`--jail`/`--mount`/`--no-host`) |
 | `tebako install <ref\|name@ver>` | install a payload from a registry + register its shims |
 | `tebako use / list / doctor` | manage shims, versions, and health |
 | `tebako publish` | press → sign → upload → registry → tap formula (developer flow) |

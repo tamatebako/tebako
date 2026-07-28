@@ -16,15 +16,17 @@
 //! Same authored-YAML discipline as the payload manifest
 //! ([`crate::manifest`]): reading is two-step ([`PackageManifest::from_yaml`]
 //! does serde structure, then [`PackageManifest::validate`] semantics),
-//! unknown keys are tolerated for forward compatibility (only `jail` is
-//! preserved verbatim — its shape is spec 08's, not this schema's), and
-//! the versioned JSON Schema `schema/tpkg-package-manifest-v1.schema.json`
-//! pins the structure.
+//! unknown keys are tolerated for forward compatibility, and the versioned
+//! JSON Schema `schema/tpkg-package-manifest-v1.schema.json` pins the
+//! structure. The `jail` block is typed ([`crate::jail::HostJail`]) — spec
+//! 08 §1 owns its shape, and the bootstrap composes it with the user's
+//! tightening at handoff (spec 08 §2).
 
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt;
 
+use crate::jail::HostJail;
 use crate::manifest::Producer;
 use crate::TPKG_MAX_SLOTS;
 
@@ -44,6 +46,9 @@ pub enum PackageManifestError {
     Yaml(serde_yml::Error),
     /// Semantic validation failure (`validate()`).
     Invalid(&'static str),
+    /// The `jail:` block failed the spec 08 validation (the reason travels
+    /// with the jail error).
+    Jail(crate::jail::JailError),
 }
 
 impl fmt::Display for PackageManifestError {
@@ -51,6 +56,7 @@ impl fmt::Display for PackageManifestError {
         match self {
             PackageManifestError::Yaml(e) => write!(f, "package manifest yaml error: {e}"),
             PackageManifestError::Invalid(m) => write!(f, "invalid package manifest: {m}"),
+            PackageManifestError::Jail(e) => write!(f, "invalid package manifest jail: {e}"),
         }
     }
 }
@@ -60,6 +66,7 @@ impl std::error::Error for PackageManifestError {
         match self {
             PackageManifestError::Yaml(e) => Some(e),
             PackageManifestError::Invalid(_) => None,
+            PackageManifestError::Jail(e) => Some(e),
         }
     }
 }
@@ -114,10 +121,12 @@ pub struct PackageManifest {
     pub package: PackageIdentity,
     /// One entry per invocable command (N >= 1).
     pub entries: Vec<PackageEntry>,
-    /// Package-level jail request (spec 08 owns the shape — preserved
-    /// verbatim, not interpreted here).
+    /// Package-level jail request (spec 08 §1 owns the shape): the access
+    /// the package was pressed with (`tebako press --jail`). The bootstrap
+    /// composes it with the user's tightening at handoff — manifest
+    /// request ∩ user policy = effective jail (spec 08 §2).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub jail: Option<BTreeMap<String, serde_yml::Value>>,
+    pub jail: Option<HostJail>,
     /// Package-level env (composition rules: spec 07).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
@@ -140,7 +149,8 @@ impl PackageManifest {
     /// Semantic checks beyond the serde structure: schema version,
     /// non-empty identity/entry fields, N >= 1 entries, slot indexes
     /// inside the container's slot capacity, unique entry names, non-empty
-    /// env keys. Unknown keys are tolerated (only `jail` is lossless).
+    /// env keys, and the spec 08 jail block's own validation. Unknown keys
+    /// are tolerated at every level.
     pub fn validate(&self) -> Result<(), PackageManifestError> {
         if self.schema_version != PACKAGE_SCHEMA_VERSION {
             return Err(PackageManifestError::Invalid(
@@ -185,6 +195,9 @@ impl PackageManifest {
         }
         if self.env.keys().any(|k| k.is_empty()) {
             return Err(PackageManifestError::Invalid("env keys must not be empty"));
+        }
+        if let Some(jail) = &self.jail {
+            jail.validate().map_err(PackageManifestError::Jail)?;
         }
         Ok(())
     }
@@ -288,16 +301,45 @@ mod tests {
     }
 
     #[test]
-    fn jail_is_preserved_verbatim() {
+    fn jail_block_is_typed_and_round_trips() {
         let text = "schema_version: 1\n\
                     package: {name: x, version: 1.0.0, producer: {tool: t, tool_version: 1}, created: now}\n\
                     entries:\n  - {name: x, slot: 0, entrypoint: x, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n\
-                    jail: {profile: strict, allow: [read, write]}\n";
+                    jail:\n\
+                    \x20 default: deny\n\
+                    \x20 mounts:\n\
+                    \x20   - {host: /home/u/src, mount: /work, access: rw}\n\
+                    \x20 argument_files: auto-allowed\n";
         let m = PackageManifest::from_yaml(text).unwrap();
         let jail = m.jail.as_ref().unwrap();
-        assert!(jail.contains_key("profile"));
+        assert!(!jail.default_open);
+        assert_eq!(jail.mounts.len(), 1);
+        assert_eq!(jail.mounts[0].access, crate::jail::JailAccess::Rw);
+        assert!(jail.argument_files.auto);
         let rendered = m.to_yaml().unwrap();
         let back = PackageManifest::from_yaml(&rendered).unwrap();
         assert_eq!(back, m);
+    }
+
+    #[test]
+    fn jail_block_validates() {
+        let mut m = minimal();
+        m.jail = Some(HostJail {
+            mounts: vec![crate::jail::JailMount {
+                host: "/h".to_string(),
+                mount: "relative".to_string(),
+                access: crate::jail::JailAccess::Ro,
+            }],
+            ..HostJail::deny()
+        });
+        assert!(matches!(m.validate(), Err(PackageManifestError::Jail(_))));
+        // Unknown keys inside the block are tolerated (forward-compat);
+        // the block's declared shape still parses.
+        let text = "schema_version: 1\n\
+                    package: {name: x, version: 1.0.0, producer: {tool: t, tool_version: 1}, created: now}\n\
+                    entries:\n  - {name: x, slot: 0, entrypoint: x, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n\
+                    jail: {default: deny, future: yes}\n";
+        let m = PackageManifest::from_yaml(text).unwrap();
+        assert!(!m.jail.as_ref().unwrap().default_open);
     }
 }

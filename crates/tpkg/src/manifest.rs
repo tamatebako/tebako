@@ -40,6 +40,9 @@ pub enum ManifestError {
     Yaml(serde_yml::Error),
     /// Semantic validation failure (`validate()`).
     Invalid(&'static str),
+    /// The `capabilities.host` jail block failed its own validation
+    /// (spec 08 §4 — the reason travels with the jail error).
+    Jail(crate::jail::JailError),
 }
 
 impl fmt::Display for ManifestError {
@@ -47,6 +50,7 @@ impl fmt::Display for ManifestError {
         match self {
             ManifestError::Yaml(e) => write!(f, "payload manifest yaml error: {e}"),
             ManifestError::Invalid(m) => write!(f, "invalid payload manifest: {m}"),
+            ManifestError::Jail(e) => write!(f, "invalid payload manifest capabilities.host: {e}"),
         }
     }
 }
@@ -56,6 +60,7 @@ impl std::error::Error for ManifestError {
         match self {
             ManifestError::Yaml(e) => Some(e),
             ManifestError::Invalid(_) => None,
+            ManifestError::Jail(e) => Some(e),
         }
     }
 }
@@ -646,12 +651,31 @@ fn check_tree_hash(s: &str) -> Result<(), ManifestError> {
 /// §2.2) and enforced by [`PayloadManifest::validate`]:
 /// app `{exec: true, read: true}`, runtime `{exec: true, read: true,
 /// runtime: true}`, data `{exec: false, read: true}`.
+///
+/// `host` (spec 08 §4) is orthogonal to the truth table and may ride any
+/// kind: the host access the payload was BUILT TO NEED (e.g. metanorma:
+/// read the input file's directory, write the output directory). It is a
+/// REQUEST, never a grant to itself — dispatch surfaces compose it with
+/// the user's tightening (`manifest request ∩ user policy = effective
+/// jail`, spec 08 §2). Absent = the open default (today's behavior).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Capabilities {
     pub exec: bool,
     pub read: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<crate::jail::HostJail>,
+}
+
+impl Capabilities {
+    /// The spec 08 §4 block validates itself (mount-point shape etc.).
+    fn validate_host(&self) -> Result<(), ManifestError> {
+        if let Some(host) = &self.host {
+            host.validate().map_err(ManifestError::Jail)?;
+        }
+        Ok(())
+    }
 }
 
 /// An entrypoint's runtime requirement (`{engine, constraint}`): a range
@@ -803,6 +827,7 @@ impl AppProvides {
                 "provides.capabilities for kind app is exactly {exec: true, read: true}",
             ));
         }
+        caps.validate_host()?;
         Ok(())
     }
 }
@@ -846,6 +871,7 @@ impl RuntimeProvides {
                 "provides.capabilities for kind runtime is exactly {exec: true, read: true, runtime: true}",
             ));
         }
+        caps.validate_host()?;
         Ok(())
     }
 }
@@ -867,6 +893,7 @@ impl DataProvides {
                 "provides.capabilities for kind data is exactly {exec: false, read: true}",
             ));
         }
+        caps.validate_host()?;
         Ok(())
     }
 }
@@ -1289,6 +1316,7 @@ mod tests {
             exec,
             read,
             runtime,
+            host: None,
         };
         let base = |c: Capabilities| AppProvides {
             entrypoints: vec![Entrypoint {
@@ -1306,6 +1334,48 @@ mod tests {
         assert!(base(caps(true, true, None)).validate().is_ok());
         assert!(base(caps(false, true, None)).validate().is_err());
         assert!(base(caps(true, true, Some(true))).validate().is_err());
+    }
+
+    #[test]
+    fn capabilities_host_block_round_trips_and_validates() {
+        // spec 08 §4: capabilities.host rides the truth-table kinds as the
+        // payload's declared host-access REQUEST.
+        let mut app = AppProvides {
+            entrypoints: vec![Entrypoint {
+                name: "x".into(),
+                path: "/x".into(),
+                args_default: vec![],
+                runtime_requirement: Some(RuntimeRequirement {
+                    engine: "ruby".into(),
+                    constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
+                }),
+            }],
+            platforms: Platforms::Universal,
+            capabilities: Capabilities {
+                exec: true,
+                read: true,
+                runtime: None,
+                host: Some(crate::jail::HostJail::from_yaml(
+                    "default: deny\nmounts: [{host: /work, mount: /work, access: rw}]\nargument_files: auto-allowed\n",
+                ).unwrap()),
+            },
+        };
+        app.validate().unwrap();
+        let y = serde_yml::to_string(&app).unwrap();
+        assert!(y.contains("host:"), "{y}");
+        assert!(y.contains("default: deny"), "{y}");
+        let back: AppProvides = serde_yml::from_str(&y).unwrap();
+        assert_eq!(back, app);
+        // A bad jail block surfaces as the Jail error kind.
+        app.capabilities.host = Some(crate::jail::HostJail {
+            mounts: vec![crate::jail::JailMount {
+                host: "/h".into(),
+                mount: "relative".into(),
+                access: crate::jail::JailAccess::Ro,
+            }],
+            ..crate::jail::HostJail::deny()
+        });
+        assert!(matches!(app.validate(), Err(ManifestError::Jail(_))));
     }
 
     #[test]

@@ -27,7 +27,16 @@
 //!    SHA256SUMS line fallback), installed READ-ONLY with
 //!    `<image>.sha256`/`<image>.origin` trusted markers, never extracted;
 //!
-//! 6. exec the runtime, launcher ABI v1 (byte-identical handoff; an
+//! 6. apply the package's jail (spec 08 §2/§4): the `jail:` block of the
+//!    type-2 package manifest REQUESTS host access; the user's TEBAKO_JAIL
+//!    env TIGHTENS it — the effective policy (manifest request ∩ user
+//!    tightening, user wins, never loosens) is exported to the driver as
+//!    TEBAKO_JAIL (+ TEBAKO_JAIL_SOURCE for the audit source, and
+//!    TEBAKO_JAIL_JOURNAL pointing at this home's journal.log so the
+//!    driver's violations land in the same audit journal). A malformed
+//!    policy fails closed (exit 73); no policy = byte-identical legacy
+//!    behavior (nothing exported);
+//! 7. exec the runtime, launcher ABI v1 (byte-identical handoff; an
 //!    image-era run additionally exports TEBAKO_RUNTIME_IMAGE):
 //! ```text
 //! <runtime> --tebako-image <self>:<slot>:<mount> ...
@@ -73,6 +82,10 @@ pub const EX_TEBAKO_SHA: u8 = 70;
 pub const EX_TEBAKO_SIGNATURE: u8 = 71;
 /// The signer key of a v2-signed package is not in the trusted keyring.
 pub const EX_TEBAKO_TRUST: u8 = 72;
+/// The jail policy could not be applied: a malformed TEBAKO_JAIL env spec,
+/// or an unusable `jail:` block in the package manifest (spec 08 — the
+/// policy is fail-closed: an unparseable policy never silently runs open).
+pub const EX_TEBAKO_JAIL: u8 = 73;
 pub const EX_TEBAKO_IO: u8 = 74;
 
 const DEFAULT_RELEASES_BASE: &str =
@@ -261,6 +274,83 @@ pub fn resolution_runtime_ref(m: &tpkg::Manifest, argv0: &str) -> Result<String,
         Some((_, entry)) => Ok(entry.runtime_ref),
         None => Ok(m.runtime_ref_str().unwrap_or_default().to_string()),
     }
+}
+
+// ---------------------------------------------------------------------
+// jails (spec 08 §2/§4): manifest request ∩ user tightening = effective
+// ---------------------------------------------------------------------
+
+/// The jail the package REQUESTS (spec 08 §4): the `jail:` block of the
+/// L2 package manifest (ext block type 2, written by `tebako press
+/// --jail`). A block-less package requests nothing — the effective policy
+/// is then the user's tightening alone (or nothing: byte-identical legacy
+/// behavior).
+pub fn package_jail(m: &tpkg::Manifest) -> Result<Option<tpkg::HostJail>, BootError> {
+    match m.package_manifest() {
+        Ok(Some(pm)) => Ok(pm.jail),
+        Ok(None) => Ok(None),
+        Err(e) => fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "invalid package manifest (extension block type 2): {e} — re-stitch the package"
+            ),
+        ),
+    }
+}
+
+/// The user's tightening from the environment: `TEBAKO_JAIL` in the spec
+/// 08 §1 env form. Absent/empty = no tightening. A MALFORMED spec is a
+/// named error (EX_TEBAKO_JAIL) — a security policy that cannot be parsed
+/// must never silently run open (fail-closed).
+pub fn user_jail_from_env() -> Result<Option<tpkg::HostJail>, BootError> {
+    let spec = std::env::var("TEBAKO_JAIL").unwrap_or_default();
+    if spec.trim().is_empty() {
+        return Ok(None);
+    }
+    tpkg::HostJail::parse_env_spec(&spec)
+        .map(Some)
+        .map_err(|e| BootError::new(EX_TEBAKO_JAIL, format!("cannot apply the jail policy: {e}")))
+}
+
+/// The effective jail exported to the runtime driver: spec, source label
+/// (for TEBAKO_JAIL_SOURCE and the audit journal), and the journal file
+/// the driver's violations land in (TEBAKO_JAIL_JOURNAL).
+pub struct JailEnv {
+    pub spec: String,
+    pub source: &'static str,
+    pub journal: PathBuf,
+}
+
+/// Compose the effective jail (spec 08 §2, locked: the package's request ∩
+/// the user's tightening — the user TIGHTENS, never loosens) and render it
+/// for the handoff. `argv` includes argv[0]; with `argument_files:
+/// auto-allowed` the user args naming existing files become read-only
+/// grants ("the input file you hand the command is allowed even under
+/// deny"). `Ok(None)` when no policy applies — nothing is exported and the
+/// run is byte-identical to the pre-jails behavior.
+pub fn prepare_jail(
+    m: &tpkg::Manifest,
+    user: Option<&tpkg::HostJail>,
+    argv: &[String],
+    home: &Path,
+) -> Result<Option<JailEnv>, BootError> {
+    let package = package_jail(m)?;
+    let Some((jail, source)) = tpkg::jail::effective(package.as_ref(), user) else {
+        return Ok(None);
+    };
+    if jail.is_trivially_open() {
+        return Ok(None);
+    }
+    let arg_files = if jail.argument_files.auto {
+        tpkg::jail::resolve_argument_files(&argv[1..])
+    } else {
+        Vec::new()
+    };
+    Ok(Some(JailEnv {
+        spec: jail.to_env_spec(&arg_files),
+        source,
+        journal: home.join("journal.log"),
+    }))
 }
 
 // ---------------------------------------------------------------------
@@ -1768,6 +1858,7 @@ fn exec_runtime(
     m: &tpkg::Manifest,
     selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
     argv: &[String],
+    jail: Option<&JailEnv>,
 ) -> BootError {
     use std::os::unix::process::CommandExt;
 
@@ -1779,6 +1870,14 @@ fn exec_runtime(
         // drivers mount it instead of an embedded image, v1 drivers
         // ignore it. The handoff options themselves are unchanged.
         cmd.env("TEBAKO_RUNTIME_IMAGE", image);
+    }
+    if let Some(jail) = jail {
+        // spec 08: the effective jail (manifest request ∩ user
+        // tightening) reaches the driver through its policy env; the
+        // driver's violations journal into this home's journal.log.
+        cmd.env("TEBAKO_JAIL", &jail.spec);
+        cmd.env("TEBAKO_JAIL_SOURCE", jail.source);
+        cmd.env("TEBAKO_JAIL_JOURNAL", &jail.journal);
     }
     let err = cmd.exec();
     BootError::new(
@@ -1802,9 +1901,10 @@ fn exec_runtime(
     m: &tpkg::Manifest,
     selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
     argv: &[String],
+    jail: Option<&JailEnv>,
 ) -> BootError {
     let nargv = handoff_argv(runtime, self_path, m, selection, argv);
-    let err = platform::spawn_handoff(runtime, &nargv[1..], image);
+    let err = platform::spawn_handoff(runtime, &nargv[1..], image, jail);
     BootError::new(
         EX_TEBAKO_IO,
         format!("cannot execute runtime {}: {err}", runtime.display()),
@@ -1886,6 +1986,16 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
     }
     let rr = parse_runtime_ref(&runtime_ref)?;
 
+    // Jails (spec 08 §2/§4): the package's `jail:` request ∩ the user's
+    // TEBAKO_JAIL tightening = the effective policy, exported to the
+    // driver as TEBAKO_JAIL (+ TEBAKO_JAIL_SOURCE / TEBAKO_JAIL_JOURNAL)
+    // at handoff. Fail-closed: a malformed policy never runs open.
+    let jail = {
+        let user = user_jail_from_env()?;
+        let home = cache_root()?;
+        prepare_jail(&m, user.as_ref(), argv, &home)?
+    };
+
     let (runtime, image) = resolve_runtime(&runtime_ref, &rr, &self_path, &m)?;
     Err(exec_runtime(
         &runtime,
@@ -1894,5 +2004,6 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         &m,
         selection.as_ref(),
         argv,
+        jail.as_ref(),
     ))
 }

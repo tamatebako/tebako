@@ -185,7 +185,7 @@ fn which_mode_never_downloads() {
     let mut ctx = ctx(&home, tmp.path());
     pin_env(&mut ctx, "metanorma", "1.2.3");
     let res = tebako_shim::resolve::resolve("metanorma", &ctx).unwrap();
-    let err = dispatch::plan(&res, &[], &ctx, false).unwrap_err();
+    let err = dispatch::plan(&res, &[], &ctx, false, Vec::new()).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(err.message.contains("would download"), "{}", err.message);
 }
@@ -232,4 +232,213 @@ fn suite_commands_run_different_runtime_versions_simultaneously() {
     assert_eq!(plan_b.mounts[0].image, image);
     assert!(plan_a.argv.iter().any(|a| a == "/app/bin/metanorma"));
     assert!(plan_b.argv.iter().any(|a| a == "/app/bin/mn2pdf"));
+}
+
+// ---------------------------------------------------------------------
+// Jail flags (spec 08 §2/§4 — the dispatcher's tightening surface)
+// ---------------------------------------------------------------------
+
+fn env_get<'a>(plan: &'a dispatch::ExecPlan, key: &str) -> Option<&'a str> {
+    plan.env
+        .iter()
+        .find(|(k, _)| k == key)
+        .map(|(_, v)| v.as_str())
+}
+
+/// An app manifest mirror whose `capabilities.host` declares the jail
+/// request (spec 08 §4) in the unified payload-manifest shape.
+fn jailed_manifest(tool: &str, version: &str, host_yaml: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {tool}\n  version: \"{version}\"\n  producer: {{tool: tebako-shim-tests, tool_version: \"1\"}}\n  created: \"2026-07-27T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: {}\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {tool}\n      path: /app/bin/{tool}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true, host: {host_yaml}}}\n",
+        "a".repeat(64),
+        "b".repeat(64),
+    )
+}
+
+fn seed_jailed_tool(
+    home: &std::path::Path,
+    tool: &str,
+    host_yaml: &str,
+    version: &str,
+) -> std::path::PathBuf {
+    write_payload(
+        home,
+        tool,
+        version,
+        &jailed_manifest(tool, version, host_yaml),
+    )
+}
+
+#[test]
+fn jail_flags_split_from_payload_args() {
+    let args: Vec<String> = [
+        "--no-host",
+        "--jail=deny",
+        "--mount",
+        "/a:/a:ro",
+        "in.csv",
+        "--verbose",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
+    let (flags, rest) = dispatch::parse_jail_flags(&args).unwrap();
+    assert!(flags.no_host);
+    assert_eq!(flags.jail.as_deref(), Some("deny"));
+    assert_eq!(flags.mounts, vec!["/a:/a:ro".to_string()]);
+    assert_eq!(rest, vec!["in.csv".to_string(), "--verbose".to_string()]);
+
+    // `--` ends the scan; a payload arg literally named --jail survives.
+    let args: Vec<String> = ["--no-host", "--", "--jail", "x"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let (flags, rest) = dispatch::parse_jail_flags(&args).unwrap();
+    assert!(flags.no_host);
+    assert_eq!(rest, vec!["--jail".to_string(), "x".to_string()]);
+
+    // Unknown flags are the payload's (a shim forwards argv).
+    let args: Vec<String> = ["--verbose", "--no-host"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let (flags, rest) = dispatch::parse_jail_flags(&args).unwrap();
+    assert!(!flags.no_host);
+    assert_eq!(rest.len(), 2);
+
+    // A missing value is a named usage error.
+    let args: Vec<String> = vec!["--jail".to_string()];
+    let err = dispatch::parse_jail_flags(&args).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_USAGE);
+}
+
+#[test]
+fn dispatch_no_jail_anywhere_exports_no_jail_env() {
+    let tmp = TempDir::new("jail-none");
+    let home = tmp.path().join("home");
+    seed_tool(
+        &home,
+        "metanorma",
+        &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+        "1.2.3",
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &["doc.xml".into()], &ctx).unwrap();
+    assert_eq!(env_get(&plan, "TEBAKO_JAIL"), None);
+    assert_eq!(env_get(&plan, "TEBAKO_JAIL_SOURCE"), None);
+    assert_eq!(env_get(&plan, "TEBAKO_JAIL_JOURNAL"), None);
+}
+
+#[test]
+fn dispatch_manifest_request_alone_maps_to_tebako_jail() {
+    let tmp = TempDir::new("jail-manifest");
+    let home = tmp.path().join("home");
+    seed_jailed_tool(
+        &home,
+        "metanorma",
+        "{default: deny, argument_files: auto-allowed}",
+        "1.2.3",
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    // An existing payload arg becomes the argument-file grant.
+    let input = tmp.path().join("doc.xml");
+    std::fs::write(&input, b"<doc/>").unwrap();
+    let plan = dispatch::dispatch(
+        "metanorma",
+        &["compile".into(), input.to_string_lossy().into_owned()],
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(
+        env_get(&plan, "TEBAKO_JAIL"),
+        Some(format!("deny;@{}", input.display()).as_str())
+    );
+    assert_eq!(env_get(&plan, "TEBAKO_JAIL_SOURCE"), Some("manifest"));
+    assert_eq!(
+        env_get(&plan, "TEBAKO_JAIL_JOURNAL"),
+        Some(home.join("journal.log").to_string_lossy().as_ref())
+    );
+    // The payload args pass through untouched.
+    assert_eq!(
+        plan.argv.last().unwrap(),
+        &input.to_string_lossy().into_owned()
+    );
+}
+
+#[test]
+fn dispatch_user_tightening_intersects_never_loosens() {
+    let tmp = TempDir::new("jail-precedence");
+    let home = tmp.path().join("home");
+    // The manifest requests /data ro under deny; --no-host caps it.
+    seed_jailed_tool(
+        &home,
+        "metanorma",
+        "{default: deny, mounts: [{host: /data, mount: /data, access: ro}]}",
+        "1.2.3",
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &["--no-host".into()], &ctx).unwrap();
+    assert_eq!(env_get(&plan, "TEBAKO_JAIL"), Some("deny"));
+    assert_eq!(env_get(&plan, "TEBAKO_JAIL_SOURCE"), Some("manifest+user"));
+    // And --no-host survives as a dispatcher flag, never reaching argv.
+    assert!(!plan.argv.iter().any(|a| a == "--no-host"));
+}
+
+#[test]
+fn dispatch_user_flags_alone_apply_when_the_manifest_is_silent() {
+    let tmp = TempDir::new("jail-user");
+    let home = tmp.path().join("home");
+    seed_tool(
+        &home,
+        "metanorma",
+        &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+        "1.2.3",
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let work = tmp.path().join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let spec = format!("--mount={}:/work:rw", work.display());
+    let plan = dispatch::dispatch(
+        "metanorma",
+        &["--jail".into(), "deny".into(), spec, "compile".into()],
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(
+        env_get(&plan, "TEBAKO_JAIL"),
+        Some(format!("deny;{}:/work:rw", work.display()).as_str())
+    );
+    assert_eq!(env_get(&plan, "TEBAKO_JAIL_SOURCE"), Some("user"));
+    assert_eq!(plan.argv.last().unwrap(), "compile");
+}
+
+#[test]
+fn dispatch_malformed_jail_flag_is_a_usage_error() {
+    let tmp = TempDir::new("jail-bad");
+    let home = tmp.path().join("home");
+    seed_tool(
+        &home,
+        "metanorma",
+        &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+        "1.2.3",
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &["--jail".into(), "frob".into()], &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_USAGE);
+    assert!(err.message.contains("invalid jail spec"), "{}", err.message);
 }

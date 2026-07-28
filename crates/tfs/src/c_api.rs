@@ -1019,7 +1019,26 @@ pub unsafe extern "C" fn tebako_fs_host_policy(
         Ok(p) => p,
         Err(e) => return fail(e),
     };
-    context().write().unwrap().set_host_policy(policy);
+    // The audit-journal source label: the installer names itself via
+    // TEBAKO_JAIL_SOURCE (the bootstrap/dispatch surfaces label the
+    // composition `manifest` / `user` / `manifest+user`); a bare C-ABI
+    // install is attributed to the entry point itself. The journal file is
+    // resolved and opened HERE, before the context guard — a denial under
+    // the lock is then a bare write(2) (see `crate::journal`; a policy
+    // that can never deny gets no file).
+    let source = std::env::var("TEBAKO_JAIL_SOURCE")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "tebako_fs_host_policy".to_string());
+    let journal = if policy.never_denies() {
+        None
+    } else {
+        crate::journal::open_journal()
+    };
+    context()
+        .write()
+        .unwrap()
+        .set_host_policy(policy.with_source(source), journal);
     set_errno(0);
     0
 }

@@ -167,6 +167,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
                     exec: true,
                     read: true,
                     runtime: None,
+                    host: None,
                 },
             })
         },
@@ -194,6 +195,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
                     exec: true,
                     read: true,
                     runtime: Some(true),
+                    host: None,
                 },
             })
         });
@@ -205,6 +207,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
                 exec: false,
                 read: true,
                 runtime: None,
+                host: None,
             },
         })
     });

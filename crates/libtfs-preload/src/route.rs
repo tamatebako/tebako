@@ -198,16 +198,95 @@ pub fn vfs_readdir(id: usize) -> Result<Option<TebakoCDirent>, i32> {
 /// the relative path: under a deny policy the cwd-relative check then
 /// fails closed (EPERM) for anything outside the grants.
 pub fn resolve_at(dirfd: i32, path: &str, base: Option<PathBuf>) -> Result<String, i32> {
+    match resolve_at_strict(dirfd, path, base)? {
+        AtRoute::Routed(p) => Ok(p),
+        // Unknown negative dirfd: keep the relative path (the real call
+        // answers EBADF); the pre-strict behavior is preserved.
+        AtRoute::Real => Ok(path.to_string()),
+    }
+}
+
+/// The *at-family route resolution (roadmap 39). CRITICAL discipline:
+/// `AT_FDCWD` (-100) has the `TEBAKO_FD_FLAG` bit set, so the fd branch of
+/// every *at shim MUST gate on `dirfd >= 0` — a bare
+/// `tebako_fd_is_embedded`-style bit test misroutes AT_FDCWD-relative
+/// paths into the memfs fd table (the exact bug class that broke runtime
+/// builds; pinned by `at_fdcwd_is_not_a_memfs_fd` below).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AtRoute {
+    /// Route this resolved path through the engine/policy.
+    Routed(String),
+    /// Pass the original (dirfd, path) pair to the real libc call
+    /// verbatim (unknown negative dirfd — the kernel answers EBADF).
+    Real,
+}
+
+/// Resolve an *at-family path. Absolute and AT_FDCWD-relative paths route
+/// as given; a memfs dirfd is ENOTDIR; a valid host dirfd joins `base`
+/// (its own path, resolved by the sys layer); any other negative dirfd
+/// passes through untouched.
+pub fn resolve_at_strict(dirfd: i32, path: &str, base: Option<PathBuf>) -> Result<AtRoute, i32> {
     if path.starts_with('/') || dirfd == libc::AT_FDCWD {
-        return Ok(path.to_string());
+        return Ok(AtRoute::Routed(path.to_string()));
+    }
+    if dirfd < 0 {
+        return Ok(AtRoute::Real);
     }
     if is_memfs_fd(dirfd) {
         return Err(libc::ENOTDIR);
     }
-    match base {
-        Some(b) => Ok(b.join(path).to_string_lossy().into_owned()),
-        None => Ok(path.to_string()),
+    Ok(AtRoute::Routed(match base {
+        Some(b) => b.join(path).to_string_lossy().into_owned(),
+        None => path.to_string(),
+    }))
+}
+
+/// telldir on a memfs handle: ordinal of the entry the next readdir
+/// returns (index-based cookies, the engine's contract).
+pub fn vfs_telldir(id: usize) -> Result<i64, i32> {
+    context().read().unwrap().telldir(id)
+}
+
+/// seekdir on a memfs handle (cookies are telldir ordinals; past-the-end
+/// clamps to end-of-directory).
+pub fn vfs_seekdir(id: usize, pos: i64) -> Result<(), i32> {
+    context().write().unwrap().seekdir(id, pos)
+}
+
+/// rewinddir on a memfs handle: back to the first entry.
+pub fn vfs_rewinddir(id: usize) -> Result<(), i32> {
+    context().write().unwrap().rewinddir(id)
+}
+
+/// execve/posix_spawn of a MEMFS path (roadmap 39): materialize the file
+/// through the engine's `dlmap2file` host cache (execve needs a host path
+/// — one copy per exec, gc later, stated honestly in the spec) and force
+/// the exec bit (zip-family backends honestly report 0644). The routing
+/// is the dlopen rule: memfs → the host copy; host-or-denied → the
+/// route's answer (an allowed host path execs the original, a denied one
+/// fails EPERM/EROFS).
+pub fn vfs_materialize_exec(path: &str) -> PathRoute<std::ffi::CString> {
+    let answer = { context().write().unwrap().dlmap2file(path) };
+    match answer {
+        Ok(host) => match ensure_exec_bit(&host) {
+            Ok(()) => PathRoute::Vfs(host),
+            Err(e) => PathRoute::Denied(e),
+        },
+        Err(e) => route_answer::<std::ffi::CString>(Err(e), path, HostAccess::Ro),
     }
+}
+
+/// OR 0111 into the materialized copy's mode (dlmap2file preserves the
+/// image's perms, which may be 0644 — the kernel refuses those for exec).
+fn ensure_exec_bit(host: &std::ffi::CString) -> Result<(), i32> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let path = PathBuf::from(host.to_string_lossy().into_owned());
+    let mode = std::fs::metadata(&path)
+        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))?
+        .permissions()
+        .mode();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(mode | 0o111))
+        .map_err(|e| e.raw_os_error().unwrap_or(libc::EIO))
 }
 
 // ---------------------------------------------------------------------
@@ -259,7 +338,23 @@ fn init_inner() -> Result<(), String> {
         let spec = JailSpec::parse(&jail_spec).map_err(|e| format!("TEBAKO_JAIL: {e}"))?;
         let policy = HostPolicy::bind(spec.default_open, spec.mounts, spec.arg_files)
             .map_err(|e| format!("TEBAKO_JAIL: cannot bind policy: {}", errno_text(e)))?;
-        context().write().unwrap().set_host_policy(policy);
+        // The audit-journal source label: whoever exported TEBAKO_JAIL
+        // names the composition (TEBAKO_JAIL_SOURCE); a direct env install
+        // is attributed to the variable itself. The journal file opens
+        // HERE, before the context guard (see `tfs::journal`).
+        let source = std::env::var("TEBAKO_JAIL_SOURCE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "TEBAKO_JAIL".to_string());
+        let journal = if policy.never_denies() {
+            None
+        } else {
+            tfs::journal::open_journal()
+        };
+        context()
+            .write()
+            .unwrap()
+            .set_host_policy(policy.with_source(source), journal);
     }
     Ok(())
 }
@@ -395,11 +490,29 @@ mod tests {
         assert_eq!(vfs_write_path(&secret), Err(libc::EROFS));
         assert_eq!(vfs_rename("/tmp/a-x", &secret), Err(libc::EROFS));
 
+        // ---- dir streams: rewind/tell/seek (roadmap 39) ----
+        let PathRoute::Vfs(dir_id) = vfs_opendir(&format!("{mp}/dir")) else {
+            panic!("memfs opendir should route Vfs");
+        };
+        assert!(vfs_readdir(dir_id).unwrap().is_some());
+        assert_eq!(vfs_telldir(dir_id), Ok(1));
+        assert!(vfs_readdir(dir_id).unwrap().is_some());
+        assert_eq!(vfs_telldir(dir_id), Ok(2));
+        assert!(vfs_readdir(dir_id).unwrap().is_none()); // end of stream
+        vfs_rewinddir(dir_id).unwrap();
+        assert_eq!(vfs_telldir(dir_id), Ok(0));
+        assert!(vfs_readdir(dir_id).unwrap().is_some());
+        vfs_seekdir(dir_id, 2).unwrap();
+        assert!(vfs_readdir(dir_id).unwrap().is_none());
+        assert_eq!(vfs_seekdir(dir_id, -1), Err(libc::EINVAL));
+        vfs_closedir(dir_id).unwrap();
+        assert_eq!(vfs_telldir(dir_id), Err(libc::EBADF));
+
         // ---- deny policy: host denied, memfs unaffected ----
         context()
             .write()
             .unwrap()
-            .set_host_policy(HostPolicy::bind(false, vec![], vec![]).unwrap());
+            .set_host_policy(HostPolicy::bind(false, vec![], vec![]).unwrap(), None);
         assert_eq!(
             vfs_open("/etc/definitely-host", libc::O_RDONLY),
             PathRoute::Denied(libc::EPERM)
@@ -434,7 +547,7 @@ mod tests {
         context()
             .write()
             .unwrap()
-            .set_host_policy(HostPolicy::open());
+            .set_host_policy(HostPolicy::open(), None);
         assert_eq!(
             vfs_open("/etc/definitely-host", libc::O_RDONLY),
             PathRoute::Host
@@ -451,5 +564,39 @@ mod tests {
         assert_eq!(resolve_at(flagged, "rel/p", None), Err(libc::ENOTDIR));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The AT_FDCWD regression pin (roadmap 39): `AT_FDCWD` is -100, whose
+    /// two's-complement form has the `TEBAKO_FD_FLAG` bit set — a bare
+    /// `is_memfs_fd` bit test therefore lies for every *at shim. The fd
+    /// branch gates on `dirfd >= 0` instead: AT_FDCWD paths route
+    /// cwd-relative, never into the memfs fd table.
+    #[test]
+    fn at_fdcwd_is_not_a_memfs_fd() {
+        // The trap itself: the bit IS set (this is exactly what made a
+        // naive `tebako_fd_is_embedded(dirfd)` branch misroute).
+        assert_eq!(libc::AT_FDCWD & TEBAKO_FD_FLAG, TEBAKO_FD_FLAG);
+        assert!(is_memfs_fd(libc::AT_FDCWD), "the bit test alone lies");
+        // …so the *at resolution special-cases AT_FDCWD BEFORE any bit
+        // test: cwd-relative routing, never ENOTDIR.
+        assert_eq!(
+            resolve_at_strict(libc::AT_FDCWD, "rel/x", None).unwrap(),
+            AtRoute::Routed("rel/x".to_string())
+        );
+        // Other negative dirfds pass through to the real call (the kernel
+        // answers EBADF) — never near the fd table either.
+        assert_eq!(resolve_at_strict(-5, "rel/x", None).unwrap(), AtRoute::Real);
+        // A genuine memfs fd is still ENOTDIR (memfs fds are regular
+        // files; a memfs directory can never be fd-opened).
+        let flagged = 7 | TEBAKO_FD_FLAG;
+        assert_eq!(
+            resolve_at_strict(flagged, "rel/x", None),
+            Err(libc::ENOTDIR)
+        );
+        // Absolute paths ignore the dirfd entirely.
+        assert_eq!(
+            resolve_at_strict(libc::AT_FDCWD, "/abs/x", None).unwrap(),
+            AtRoute::Routed("/abs/x".to_string())
+        );
     }
 }
