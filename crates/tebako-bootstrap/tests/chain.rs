@@ -7,9 +7,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-use tebako_bootstrap::{verify_chain_with_home, EX_TEBAKO_SHA, EX_TEBAKO_SIGNATURE};
 #[cfg(feature = "openpgp-verify")]
 use tebako_bootstrap::EX_TEBAKO_TRUST;
+use tebako_bootstrap::{verify_chain_with_home, EX_TEBAKO_SHA, EX_TEBAKO_SIGNATURE};
 
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 static ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -137,6 +137,7 @@ fn signed_and_registered_verifies_ok() {
 
 #[test]
 fn tampered_slot_is_sha_mismatch_named() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("sha");
     let home = dir.join("home");
     let (pkg, m) = make_package(&dir, &home, b"the app image payload", false);
@@ -197,6 +198,7 @@ fn tampered_trailer_region_is_invalid_signature_named() {
 
 #[test]
 fn v1_legacy_accepted_with_journal_record() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("legacy");
     let home = dir.join("home");
     let (pkg, m) = make_package(&dir, &home, b"the app image payload", true);
@@ -226,6 +228,7 @@ fn v1_require_signed_is_hard_fail() {
 
 #[test]
 fn trusted_cache_second_run_hits_marker() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("cache");
     let home = dir.join("home");
     let (pkg, m) = make_package(&dir, &home, b"the app image payload", false);
@@ -360,6 +363,7 @@ fn broken_successor_chain_keeps_trust_error() {
 #[cfg(not(feature = "openpgp-verify"))]
 #[test]
 fn signed_package_accepted_unverified_with_warning() {
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("unverified");
     let home = dir.join("home");
     let (pkg, m) = make_package(&dir, &home, b"the app image payload", false);
