@@ -225,7 +225,8 @@ mod tests {
 
     #[test]
     fn file_url_reads_from_disk() {
-        let dir = std::env::temp_dir().join(format!("tebako-http-test-file-url-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("tebako-http-test-file-url-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("index.txt");
         std::fs::write(&file, b"hello").unwrap();
@@ -251,7 +252,8 @@ mod tests {
 
     #[test]
     fn progress_hook_fires_once_for_file_urls() {
-        let dir = std::env::temp_dir().join(format!("tebako-http-test-progress-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("tebako-http-test-progress-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("asset.bin");
         std::fs::write(&file, b"hello progress").unwrap();
