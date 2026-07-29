@@ -942,7 +942,9 @@ pub fn publish_full(
     if !opts.skip_verify {
         let verify_registry_text;
         let registry_ref = match &registry_path {
-            Some(path) => format!("file://{}", path.display()),
+            // tebako_http::file_url spells the canonical form on every
+            // platform (a bare `file://{}` breaks on Windows paths).
+            Some(path) => tebako_http::file_url(path),
             None => {
                 // the registry went to stdout — the verify reads a temp copy
                 let tmp = std::env::temp_dir().join(format!(
@@ -953,7 +955,7 @@ pub fn publish_full(
                     err(EX_TEBAKO_IO, format!("cannot write {}: {e}", tmp.display()))
                 })?;
                 verify_registry_text = tmp;
-                format!("file://{}", verify_registry_text.display())
+                tebako_http::file_url(&verify_registry_text)
             }
         };
         let line = verify_install(

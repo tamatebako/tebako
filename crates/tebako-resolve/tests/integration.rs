@@ -15,17 +15,12 @@ fn scratch(tag: &str) -> PathBuf {
     dir
 }
 
-/// A canonical file:// URL for a local path: forward slashes, with the
-/// third slash before an absolute unix path or the drive path on
-/// Windows (`file:///tmp/x` / `file:///C:/x`). `format!("file://{}")`
-/// over a Display path only looks right on unix.
+/// A canonical file:// URL for a local path — the constructor lives in
+/// tebako-http (the crate that reads these URLs); re-exported here so the
+/// fixtures stop hand-rolling `format!("file://{}")`, which is only
+/// accidentally right on unix.
 fn file_url(path: &std::path::Path) -> String {
-    let s = path.to_string_lossy().replace('\\', "/");
-    if s.starts_with('/') {
-        format!("file://{s}")
-    } else {
-        format!("file:///{s}")
-    }
+    tebako_http::file_url(path)
 }
 
 #[test]
