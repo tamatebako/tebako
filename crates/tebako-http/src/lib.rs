@@ -111,7 +111,7 @@ pub fn file_url(path: &std::path::Path) -> String {
 /// slash separates the (empty) authority from the path — so on Windows
 /// `/C:/x` is not a path at all; the drive path is `C:/x`. Unix
 /// remainders begin at that slash and pass through unchanged.
-fn file_path_from_url(remainder: &str) -> &str {
+pub fn file_path_from_url(remainder: &str) -> &str {
     #[cfg(windows)]
     {
         let b = remainder.as_bytes();
