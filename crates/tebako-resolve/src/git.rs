@@ -122,6 +122,12 @@ mod tests {
             let _ = std::fs::remove_dir_all(&dir);
             let repo = gix::init_bare(&dir).unwrap();
             drop(repo);
+            // init_bare's HEAD follows the AMBIENT init.defaultBranch —
+            // "main" on these dev machines, "master" on git-for-windows
+            // runners — but every commit below lands on refs/heads/main.
+            // Pin HEAD deterministically or ref-less environments resolve
+            // HEAD nowhere ("rev-spec is malformed and misses a ref name").
+            std::fs::write(dir.join("HEAD"), b"ref: refs/heads/main\n").unwrap();
             // gix commit needs an identity; CI runners have no ambient
             // git config (user.name/user.email). Pin it in-repo (append —
             // init already wrote [core]) and re-open so the config is
