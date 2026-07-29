@@ -288,13 +288,14 @@ fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
     let mut problems: Vec<String> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
 
-    // PATH carries the shim dir?
+    // PATH carries the shim dir? (std::env::split_paths — the separator
+    // is ':' on unix and ';' on Windows; a hand-rolled ':' split would
+    // never match on Windows.)
     let shims_dir = ctx.home.join("shims");
     let on_path = ctx
         .env_get("PATH")
-        .unwrap_or("")
-        .split(':')
-        .any(|p| p == shims_dir.to_string_lossy());
+        .map(|p| std::env::split_paths(&p).any(|dir| dir == shims_dir))
+        .unwrap_or(false);
     if !on_path {
         problems.push(format!(
             "{} is not on PATH — run `tebako-shim install-shell`",
@@ -309,6 +310,7 @@ fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
             if name.starts_with('.') {
                 continue; // shim-managed state files
             }
+            let name = crate::command_from_shim_name(&name).to_string();
             match resolve::resolve(&name, ctx) {
                 Ok(_) => notes.push(format!("shim {name}: ok")),
                 Err(e) => problems.push(format!("shim {name}: {}", first_line(&e.message))),
@@ -512,7 +514,7 @@ pub fn link_shims(
     let mut linked = Vec::new();
     for command in commands {
         manifest::check_path_component("command name", command)?;
-        let link = dir.join(command);
+        let link = dir.join(shim_file_name(command));
         if link.symlink_metadata().is_ok() {
             std::fs::remove_file(&link).map_err(|e| {
                 ShimError::new(
@@ -525,6 +527,18 @@ pub fn link_shims(
         linked.push(link);
     }
     Ok(linked)
+}
+
+/// The shim's on-disk filename for a command: `<command>` on unix
+/// (executability is permission bits), `<command>.exe` on Windows —
+/// CreateProcess/PATH resolution goes through PATHEXT, so the copied
+/// dispatcher needs the suffix. The dispatcher strips it from argv[0]
+/// (lib.rs `run`), so registration and lookup stay suffix-free.
+fn shim_file_name(command: &str) -> String {
+    #[cfg(windows)]
+    return format!("{command}.exe");
+    #[cfg(not(windows))]
+    return command.to_string();
 }
 
 #[cfg(unix)]
@@ -565,7 +579,7 @@ pub fn unlink_shims(
     let mut removed = Vec::new();
     for command in commands {
         manifest::check_path_component("command name", command)?;
-        let link = dir.join(command);
+        let link = dir.join(shim_file_name(command));
         match std::fs::remove_file(&link) {
             Ok(()) => removed.push(link),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

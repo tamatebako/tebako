@@ -105,24 +105,19 @@ pub fn sha256_of(path: &Path) -> String {
     tebako_bootstrap::sha::sha256_file_hex(path).unwrap()
 }
 
-pub fn write_fake_runtime(path: &Path) {
-    std::fs::write(
-        path,
-        "#!/bin/sh\necho FAKE-RUNTIME\necho \"TEBAKO_RUNTIME_IMAGE=$TEBAKO_RUNTIME_IMAGE\"\ni=0\nfor a in \"$@\"; do\n  echo \"argv[$i]=$a\"\n  i=$((i+1))\ndone\n",
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+/// The fake runtime the selftests exec: the package's own stub binary
+/// (`src/bin/tebako-fake-runtime.rs`, built by cargo for the test
+/// targets). A compiled stub is what CreateProcess can run on Windows —
+/// and it is closer to a real runtime binary everywhere (the bootstrap
+/// never execs a script through a shell in production either).
+pub fn fake_runtime_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_tebako-fake-runtime"))
 }
 
 impl Harness {
     pub fn new(bootstrap: PathBuf) -> Harness {
         let tmp = TempDir::new("boot");
-        let fake_runtime = tmp.0.join("fake-runtime");
-        write_fake_runtime(&fake_runtime);
+        let fake_runtime = fake_runtime_path();
 
         let plat = platform();
         let exe = tebako_bootstrap::platform::exe_suffix();
