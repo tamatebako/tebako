@@ -29,7 +29,7 @@ partial coverage **PARTIAL**; shipped and tested **SHIPPED**.
 orthogonal to the image format. `format_id` answers only "how do I read
 these bytes". Roles are L2, declared by manifests — never encoded in the
 format axis (the v1 `TPKG_FORMAT_RUNTIME` slot type is a legacy role wart,
-spec 02 §5).
+spec 02 §6).
 
 ## Reading order
 

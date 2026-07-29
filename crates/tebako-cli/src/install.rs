@@ -255,6 +255,302 @@ fn looks_like_reference(target: &str) -> bool {
     target.contains("://") || target.starts_with("tfs:")
 }
 
+// ---- the local-package form (TODO.v2-1/12) ----------------------------
+
+/// The exit code for a refused or impossible package install (spec 06 §4).
+const EX_TEBAKO_INSTALL: i32 = 76;
+
+/// True when `path` is a pressed tebako package (a readable tpkg
+/// trailer) — the local-install discriminator (sniff the trailer, never
+/// guess by extension).
+pub fn is_tpkg_package(path: &Path) -> bool {
+    std::fs::File::open(path)
+        .map(|mut f| tpkg::read_from(&mut f).is_ok())
+        .unwrap_or(false)
+}
+
+/// One installed slice of a local package.
+#[derive(Debug)]
+pub struct LocalInstalled {
+    pub name: String,
+    pub version: String,
+    pub status: InstallStatus,
+    pub path: PathBuf,
+    pub sha256: String,
+    pub commands: Vec<String>,
+}
+
+/// The local-package install report (a package may carry several payload
+/// slices).
+#[derive(Debug)]
+pub struct LocalInstallOutcome {
+    pub installed: Vec<LocalInstalled>,
+    pub shims: Vec<PathBuf>,
+    pub notes: Vec<String>,
+}
+
+/// `tebako install <path>` (TODO.v2-1/12): install every payload slice
+/// of a local pressed package (fat or lean) into the store. Trust
+/// anchors: the signed trailer's per-slot digest for v2 packages, the
+/// computed digest for unsigned ones — exactly the run's own
+/// enforcement strength, never upgraded (spec 06 §3's honesty).
+/// Shims link only when explicitly asked (`--shims`) — a one-off
+/// install never claims PATH names (the owner rule).
+pub fn install_local(
+    home: &Path,
+    path: &Path,
+    link_shims: bool,
+    shim_binary: Option<&Path>,
+) -> Result<LocalInstallOutcome, TebakoError> {
+    let mut f = std::fs::File::open(path)
+        .map_err(|e| err(EX_TEBAKO_IO, format!("cannot open {}: {e}", path.display())))?;
+    let m = tpkg::read_from(&mut f).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "corrupt tebako manifest trailer in {} ({})",
+                path.display(),
+                tpkg::strerror(e.code())
+            ),
+        )
+    })?;
+    if m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL != 0 {
+        return Err(err(
+            EX_TEBAKO_INSTALL,
+            format!(
+                "{} was built non-installable (TPKG_FLAG_NO_INSTALL — the publisher froze it); it runs standalone",
+                path.display()
+            ),
+        ));
+    }
+    let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    let cache = PayloadCache::with_root(home);
+    let mut outcome = LocalInstallOutcome {
+        installed: Vec::new(),
+        shims: Vec::new(),
+        notes: Vec::new(),
+    };
+    let tmp_root = std::env::temp_dir().join(format!(
+        "tebako-install-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    let _ = std::fs::remove_dir_all(&tmp_root);
+    std::fs::create_dir_all(&tmp_root).map_err(|e| {
+        err(
+            EX_TEBAKO_IO,
+            format!("cannot create {}: {e}", tmp_root.display()),
+        )
+    })?;
+    let result = (|| {
+        for (i, slot) in m.slots.iter().enumerate() {
+            if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
+                outcome.notes.push(
+                    "the runtime slot is not store-installed; it resolves into the runtime cache on first run (unchanged)"
+                        .to_string(),
+                );
+                continue;
+            }
+            let slice = install_local_slot(
+                home,
+                &cache,
+                &abs,
+                &m,
+                i,
+                slot,
+                &tmp_root,
+                &mut outcome.notes,
+            )?;
+            outcome.installed.push(slice);
+        }
+        Ok::<(), TebakoError>(())
+    })();
+    let _ = std::fs::remove_dir_all(&tmp_root);
+    result?;
+
+    // Shims: an explicit ask only.
+    if link_shims {
+        let commands: Vec<String> = outcome
+            .installed
+            .iter()
+            .flat_map(|s| s.commands.clone())
+            .collect();
+        if !commands.is_empty() {
+            let binary = resolve_shim_binary(shim_binary)?;
+            outcome.shims = manage::link_shims(home, &binary, &commands).map_err(map_shim)?;
+        }
+    }
+    Ok(outcome)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn install_local_slot(
+    home: &Path,
+    cache: &PayloadCache,
+    abs_pkg: &Path,
+    m: &tpkg::Manifest,
+    index: usize,
+    slot: &tpkg::Slot,
+    tmp_root: &Path,
+    notes: &mut Vec<String>,
+) -> Result<LocalInstalled, TebakoError> {
+    // 1. the slot bytes, out of the package
+    let tmp = tmp_root.join(format!("slot-{index}.tfs"));
+    extract_file_region(abs_pkg, slot.offset, slot.size, &tmp)?;
+
+    // 2. identity from the embedded manifest (authoritative, spec 03 §1)
+    let text = image_manifest::read_embedded_manifest(&tmp)?.ok_or_else(|| {
+        err(
+            EX_TEBAKO_INSTALL,
+            format!(
+                "slot {index} of {} carries no embedded manifest (/__tpkg__/manifest.yaml) — cannot derive the payload identity; press the payload with a manifest",
+                abs_pkg.display()
+            ),
+        )
+    })?;
+    let embedded = tpkg::PayloadManifest::from_yaml(&text).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the embedded manifest of slot {index} in {} does not parse: {e}",
+                abs_pkg.display()
+            ),
+        )
+    })?;
+    let name = embedded.identity.name.clone();
+    let version = embedded.identity.version.clone();
+    manifest::check_path_component("payload name", &name).map_err(map_shim)?;
+    manifest::check_path_component("payload version", &version).map_err(map_shim)?;
+
+    // 3. the trust anchor
+    let computed = sha256_file(&tmp)?;
+    let (expected, signed_by) = match &m.v2 {
+        Some(v2) => (
+            v2.slot_digest(index).map(|d| hex_lower(d)),
+            Some(v2.signer_keyid_hex()),
+        ),
+        None => (None, None),
+    };
+
+    // 4. the drift rule: same name+version → same content skips
+    // silently; DIFFERENT content never overwrites (loud note, doctor
+    // surfaces it). The Hit still reports the mirror's commands — an
+    // explicit --shims after a plain install must link, not no-op.
+    if let Some(entry) = cache.get(&name, &version).map_err(map_resolve)? {
+        if entry.sha256.eq_ignore_ascii_case(&computed) {
+            notes.push(format!(
+                "{name} {version} is already installed ({}); skipping",
+                entry.path.display()
+            ));
+        } else {
+            notes.push(format!(
+                "WARNING: {name} {version} is already installed with DIFFERENT content\n  installed: {}\n  this package: {}\n  keeping the installed one — inspect with `tebako doctor`",
+                entry.sha256, computed
+            ));
+        }
+        let record: PayloadRecord = manifest::payload_record(home, &name, &version);
+        let commands = Manifest::load(&record.manifest_mirror)
+            .map(|m| m.entrypoints().iter().map(|e| e.name.clone()).collect())
+            .unwrap_or_default();
+        return Ok(LocalInstalled {
+            name,
+            version,
+            status: InstallStatus::Hit,
+            path: entry.path,
+            sha256: entry.sha256,
+            commands,
+        });
+    }
+
+    // 5. install into the store (provenance rides the origin marker)
+    let origin = match &signed_by {
+        Some(keyid) => format!(
+            "payload={} slot={index} signed_by={keyid}",
+            abs_pkg.display()
+        ),
+        None => format!("payload={} slot={index}", abs_pkg.display()),
+    };
+    let bytes = std::fs::read(&tmp)
+        .map_err(|e| err(EX_TEBAKO_IO, format!("cannot read {}: {e}", tmp.display())))?;
+    let sha_for_closure = computed.clone();
+    let (entry, status) = cache
+        .install(&name, &version, expected.as_deref(), || {
+            Ok(FetchedPayload {
+                bytes,
+                origin: origin.clone(),
+                sha256: sha_for_closure,
+            })
+        })
+        .map_err(map_resolve)?;
+
+    // 6. the manifest mirror (the embedded manifest IS the authoritative
+    // record — spec 03 §4 tier 1)
+    let mirror = Manifest::from_payload_manifest(embedded);
+    let record: PayloadRecord = manifest::payload_record(home, &name, &version);
+    mirror.save(&record.manifest_mirror).map_err(map_shim)?;
+    let commands: Vec<String> = mirror
+        .entrypoints()
+        .iter()
+        .map(|e| e.name.clone())
+        .collect();
+
+    journal(
+        home,
+        &format!(
+            "event=payload-installed name={name} version={version} sha256={} origin={origin}",
+            entry.sha256
+        ),
+    );
+    Ok(LocalInstalled {
+        name,
+        version,
+        status,
+        path: entry.path,
+        sha256: entry.sha256,
+        commands,
+    })
+}
+
+fn extract_file_region(src: &Path, offset: u64, size: u64, dst: &Path) -> Result<(), TebakoError> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    let mut f = std::fs::File::open(src)
+        .map_err(|e| err(EX_TEBAKO_IO, format!("cannot open {}: {e}", src.display())))?;
+    f.seek(SeekFrom::Start(offset))
+        .map_err(|e| err(EX_TEBAKO_IO, format!("cannot seek {}: {e}", src.display())))?;
+    let mut limited = f.take(size);
+    let mut out = std::fs::File::create(dst).map_err(|e| {
+        err(
+            EX_TEBAKO_IO,
+            format!("cannot create {}: {e}", dst.display()),
+        )
+    })?;
+    std::io::copy(&mut limited, &mut out).map_err(|e| {
+        err(
+            EX_TEBAKO_IO,
+            format!("cannot extract to {}: {e}", dst.display()),
+        )
+    })?;
+    out.flush()
+        .map_err(|e| err(EX_TEBAKO_IO, format!("cannot write {}: {e}", dst.display())))
+}
+
+fn sha256_file(path: &Path) -> Result<String, TebakoError> {
+    use sha2::Digest as _;
+    let mut f = std::fs::File::open(path)
+        .map_err(|e| err(EX_TEBAKO_IO, format!("cannot open {}: {e}", path.display())))?;
+    let mut h = sha2::Sha256::new();
+    std::io::copy(&mut f, &mut h)
+        .map_err(|e| err(EX_TEBAKO_IO, format!("cannot hash {}: {e}", path.display())))?;
+    Ok(hex_lower(&h.finalize()))
+}
+
+fn hex_lower(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 // ---- the ref form -----------------------------------------------------
 
 fn plan_from_reference(target: &str) -> Result<InstallPlan, TebakoError> {

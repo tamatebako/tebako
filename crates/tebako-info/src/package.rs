@@ -144,7 +144,7 @@ pub fn inspect_package(
     for (i, s) in trailer.slots.iter().enumerate() {
         let mount = s.mount_point_str().unwrap_or_default().to_string();
         // Runtime payload slots (the v1 legacy role) are never mounted —
-        // they are launchers, not image payloads (spec 02 §5, spec 15 §3).
+        // they are launchers, not image payloads (spec 02 §6, spec 15 §3).
         let payload = if depth >= Depth::Manifests
             && s.format_id != tpkg::TPKG_FORMAT_RUNTIME
             && only_slot.map_or(true, |n| n == i)
@@ -258,11 +258,17 @@ fn slot_summary_line(p: &PayloadInspection) -> String {
 pub fn render_full(p: &PackageInspection, depth: Depth, trust_outcome: Option<&str>) -> String {
     let mut out = String::new();
     let lean = if p.trailer.is_lean() { ", lean" } else { "" };
+    let frozen = if p.trailer.package_flags & tpkg::TPKG_FLAG_NO_INSTALL != 0 {
+        ", no-install"
+    } else {
+        ""
+    };
     out.push_str(&format!(
-        "package: {} (tpkg v{}{}, launcher_abi {})\n",
+        "package: {} (tpkg v{}{}{}, launcher_abi {})\n",
         p.package_name(),
         p.trailer.version,
         lean,
+        frozen,
         p.trailer.launcher_abi
     ));
     let n_slots = p.trailer.slots.len();
@@ -452,6 +458,9 @@ pub fn package_json(p: &PackageInspection, depth: Depth, trust_outcome: Option<&
     }
     if p.trailer.v2.is_some() {
         flags.push(Json::String("signed-v2".to_string()));
+    }
+    if p.trailer.package_flags & tpkg::TPKG_FLAG_NO_INSTALL != 0 {
+        flags.push(Json::String("no-install".to_string()));
     }
     let (state, keyid) = p.trust();
     let mut trust = vec![

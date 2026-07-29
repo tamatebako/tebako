@@ -36,6 +36,12 @@ republish of v1-era runtimes needed.
 
 1. Read own trailer (spec 02; absent → classic-bundle error path).
 2. Require `launcher_abi == 1` (else exit 66).
+2a. **`--tebako-install` verb (TODO.v2-1/12):** after the chain + ABI
+   gates — the package's `TPKG_FLAG_NO_INSTALL` refuses (exit 76); any
+   other package answers with the named guidance to
+   `tebako install <path>` (exit 76 — the manifest read needs the TFS
+   engine the size-capped bootstrap deliberately does not carry). A run
+   is a run: the verb is the ONLY way slices reach the store.
 3. Trust handling, by build and trailer flag:
    - **`TPKG_FLAG_SIGNED_V2`, verification ENABLED** (`openpgp-verify`
      feature): verify the OpenPGP signature against the trusted keyring
@@ -70,6 +76,7 @@ republish of v1-era runtimes needed.
 | 73 | `EX_TEBAKO_JAIL` | jail policy could not be applied (malformed `TEBAKO_JAIL`; fail-closed — spec 08) |
 | 74 | `EX_TEBAKO_IO` | filesystem/lock/install failure |
 | 75 | `EX_TEBAKO_CONTRACT` | runtime declares an unsupported `contract_version` (§6) |
+| 76 | `EX_TEBAKO_INSTALL` | `--tebako-install` refused (`TPKG_FLAG_NO_INSTALL`) or needs the CLI |
 
 stderr body: `tebako-bootstrap: <message>\n` — message bodies match the
 C++ reference bootstrap 1:1 (golden parity).

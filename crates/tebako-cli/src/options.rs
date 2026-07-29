@@ -77,6 +77,11 @@ pub struct PressOptions {
     /// | the TEBAKO_JAIL env grammar. Written into the type-2 package
     /// manifest's `jail:` block — the package's host-access REQUEST.
     pub jail: Option<String>,
+    /// --no-install (TODO.v2-1/12): bake TPKG_FLAG_NO_INSTALL — the package
+    /// RUNS standalone but every install attempt (`--tebako-install`,
+    /// `tebako install <path>`) is refused with a named error. Off by
+    /// default (installable on explicit request).
+    pub no_install: bool,
 }
 
 impl PressOptions {

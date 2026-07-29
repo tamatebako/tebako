@@ -266,6 +266,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         &package,
         &runtime_ref,
         package_manifest.as_ref(),
+        opts.no_install,
     )?;
     println!("Created tebako package at \"{package}\"");
     ensure_version_file(opts);
@@ -348,6 +349,7 @@ pub(crate) fn stitch(
     package: &str,
     runtime_ref: &str,
     package_manifest: Option<&tpkg::PackageManifest>,
+    no_install: bool,
 ) -> Result<(), TebakoError> {
     if images.is_empty() {
         return Err(packaging_error(126, Some("at least one image is required")));
@@ -435,7 +437,13 @@ pub(crate) fn stitch(
         .collect();
     let pkg_options = tebako_pkg::PackageOptions {
         runtime_ref: runtime_ref.to_string(),
-        package_flags: tpkg::TPKG_FLAG_LEAN,
+        // TPKG_FLAG_LEAN always; TPKG_FLAG_NO_INSTALL when the press
+        // froze the package (--no-install, TODO.v2-1/12).
+        package_flags: if no_install {
+            tpkg::TPKG_FLAG_LEAN | tpkg::TPKG_FLAG_NO_INSTALL
+        } else {
+            tpkg::TPKG_FLAG_LEAN
+        },
         launcher_abi: LAUNCHER_ABI,
         // The L2 package manifest rides along only when the press declares
         // one (today: a --jail policy); block-less packages keep the exact
@@ -818,5 +826,48 @@ mod tests {
         // The YAML form survives a round trip (the block embeds as YAML).
         let back = tpkg::PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
         assert_eq!(back, m);
+    }
+
+    #[test]
+    fn stitch_bakes_the_no_install_flag_only_when_asked() {
+        // TODO.v2-1/12: --no-install freezes the package in the trailer
+        // (TPKG_FLAG_NO_INSTALL); the default press leaves the bit clear
+        // (installable-on-request, pre-era shape).
+        let dir = std::env::temp_dir().join(format!("tebako-cli-stitch-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let base = dir.join("bootstrap");
+        std::fs::write(&base, b"BASE").unwrap();
+        let img = dir.join("img.tfs");
+        std::fs::write(&img, b"IMG").unwrap();
+
+        let frozen = dir.join("frozen");
+        stitch(
+            &base,
+            &[(img.clone(), "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            frozen.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            true,
+        )
+        .unwrap();
+        let mut f = std::fs::File::open(&frozen).unwrap();
+        let m = tpkg::read_from(&mut f).unwrap();
+        assert!(m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL != 0);
+        assert!(m.package_flags & tpkg::TPKG_FLAG_LEAN != 0);
+
+        let plain = dir.join("plain");
+        stitch(
+            &base,
+            &[(img, "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            plain.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            false,
+        )
+        .unwrap();
+        let mut f = std::fs::File::open(&plain).unwrap();
+        let m = tpkg::read_from(&mut f).unwrap();
+        assert_eq!(m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL, 0);
     }
 }

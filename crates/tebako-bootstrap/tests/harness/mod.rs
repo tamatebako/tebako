@@ -165,8 +165,22 @@ impl Harness {
         launcher_abi: u32,
         out: &Path,
     ) {
+        self.stitch_flags(base, parts, runtime_ref, launcher_abi, 0, out);
+    }
+
+    /// [`stitch`] with explicit `package_flags` (TPKG_FLAG_NO_INSTALL
+    /// fixtures — every other caller keeps the default 0).
+    pub fn stitch_flags(
+        &self,
+        base: &Path,
+        parts: &[(PathBuf, u32, &str)],
+        runtime_ref: &str,
+        launcher_abi: u32,
+        package_flags: u32,
+        out: &Path,
+    ) {
         let mut m = tpkg::Manifest {
-            package_flags: 0,
+            package_flags,
             launcher_abi,
             ..Default::default()
         };

@@ -103,7 +103,7 @@ fn dwarfs_flavor(backend_json: Option<&str>) -> DwarfsFlavor {
     DwarfsFlavor::FlatBuffers
 }
 
-/// The `format_id` hint rendered for humans (spec 02 §5: 4 is a legacy
+/// The `format_id` hint rendered for humans (spec 02 §6: 4 is a legacy
 /// ROLE riding in the format field, reported as such).
 pub fn hint_name(format_id: u32) -> &'static str {
     match format_id {

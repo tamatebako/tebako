@@ -709,3 +709,57 @@ fn s16_image_contract_mismatch_refused() {
         "a refused-contract image entered the cache"
     );
 }
+
+// ---------------------------------------------------------------------
+// TODO.v2-1/12: the explicit install verb + run-never-seeds
+// ---------------------------------------------------------------------
+
+#[test]
+fn s17_install_verb_guides_and_the_flag_refuses() {
+    // A normal package: the verb guides to the CLI (exit 76, actionable).
+    let h1 = h();
+    let pkg = h1.lean_pkg("myapp");
+    let (rc, _, err) = h1.run(&pkg, &h1.home("h-inst"), &[], &["--tebako-install"]);
+    assert_eq!(rc, 76, "{err}");
+    assert!(err.contains("tebako install"), "{err}");
+    assert!(
+        !h1.home("h-inst").join("payloads").exists(),
+        "the verb wrote into the payloads store"
+    );
+
+    // A frozen package (TPKG_FLAG_NO_INSTALL): the named refusal.
+    let h2 = h();
+    let img = h2.fake_image();
+    let frozen = h2.tmp.0.join("frozen");
+    h2.stitch_flags(
+        &h2.bootstrap,
+        &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__")],
+        &h2.runtime_ref,
+        0,
+        tpkg::TPKG_FLAG_NO_INSTALL,
+        &frozen,
+    );
+    let (rc, _, err) = h2.run(&frozen, &h2.home("h-frozen"), &[], &["--tebako-install"]);
+    assert_eq!(rc, 76, "{err}");
+    assert!(err.contains("non-installable"), "{err}");
+}
+
+#[test]
+fn s18_a_run_never_seeds_the_store() {
+    // TODO.v2-1/12's core law: a run is a run — the runtime cache fills
+    // (intrinsic to executing) but NO payload slice touches the store.
+    let h = h();
+    let pkg = h.lean_pkg("myapp");
+    let home = h.home("home-run");
+    let (rc, out, err) = h.run(&pkg, &home, &[], &["hello"]);
+    assert_eq!((rc, err.as_str()), (0, ""), "{err}");
+    assert!(out.contains("FAKE-RUNTIME"), "{out}");
+    assert!(
+        h.cache_exe(&home).is_file(),
+        "the runtime cache is intrinsic"
+    );
+    assert!(
+        !home.join("payloads").exists(),
+        "a plain run seeded the payloads store"
+    );
+}

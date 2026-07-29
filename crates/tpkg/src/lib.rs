@@ -15,7 +15,7 @@
 //!   offset  size  field
 //!      0    10    magic "TEBAKOTFS\0" (10 bytes, NUL-terminated)
 //!     10     4    u32 version (TPKG_VERSION = 1)
-//!     14     4    u32 package_flags (bit 0: TPKG_FLAG_LEAN)
+//!     14     4    u32 package_flags (bit 0: TPKG_FLAG_LEAN, bit 1: TPKG_FLAG_SIGNED_V2, bit 2: TPKG_FLAG_NO_INSTALL)
 //!     18     4    u32 slot_count (1..TPKG_MAX_SLOTS)
 //!     22     8    u64 slot_table_offset (absolute file offset of slot 0 record)
 //!     30   128    char runtime_ref[128] (UTF-8, NUL-padded; empty = classic bundle)
@@ -198,6 +198,12 @@ pub const TPKG_FLAG_LEAN: u32 = 0x1;
 /// Old readers pass the bit through untouched — that is what keeps v2
 /// packages readable by v1-era runtimes.
 pub const TPKG_FLAG_SIGNED_V2: u32 = 0x2;
+/// `package_flags` bit 2: the publisher froze this package — it RUNS
+/// standalone but every install attempt (`--tebako-install`,
+/// `tebako install <path>`) is refused with a named error (TODO.v2-1/12).
+/// Absence means installable-on-request, including packages written
+/// before the install verb existed — pass-through like every flag.
+pub const TPKG_FLAG_NO_INSTALL: u32 = 0x4;
 
 /// `format_id`: auto-detect from image magic.
 pub const TPKG_FORMAT_AUTO: u32 = 0;
