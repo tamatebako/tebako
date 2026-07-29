@@ -61,6 +61,16 @@ keys/                                         # press-local signing keys (spec 0
 - `TEBAKO_OFFLINE=1` — cache hit or hard error.
 - `tebako cache list` / `cache prune [--all] [--older-than Nd]` manage
   the cache.
+- **A run is a run** (TODO.v2-1/12): executing a package NEVER installs
+  its payload slices. `tebako install <path>` installs a local package's
+  payload slices explicitly — trailer slot digests are the anchors for
+  signed (v2) packages, the computed digest for unsigned ones (the run's
+  own enforcement strength, never upgraded); the runtime slot is NOT
+  store-installed (it resolves into the runtime cache on first run, as
+  always). Idempotent same-sha skip; same name+version with different
+  content is never overwritten (loud warning + journal). Shims link only
+  via the explicit `--shims` (spec 07). `TPKG_FLAG_NO_INSTALL` packages
+  refuse (spec 02 §5).
 
 ## 5. Resolution chains
 

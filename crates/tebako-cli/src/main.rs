@@ -187,11 +187,63 @@ fn run_update_registries(args: &[String]) -> Result<(), CliExit> {
 }
 
 fn run_install(args: &[String]) -> Result<(), CliExit> {
-    let [target] = args else {
+    let mut target: Option<&String> = None;
+    let mut link_shims = false;
+    for arg in args {
+        match arg.as_str() {
+            "--shims" => link_shims = true,
+            _ if target.is_none() => target = Some(arg),
+            _ => {
+                return Err(CliExit::Usage(
+                    "usage: tebako install <ref | name[@version] | ./package> [--shims]"
+                        .to_string(),
+                ))
+            }
+        }
+    }
+    let Some(target) = target else {
         return Err(CliExit::Usage(
-            "usage: tebako install <ref | name[@version]>".to_string(),
+            "usage: tebako install <ref | name[@version] | ./package> [--shims]".to_string(),
         ));
     };
+    // A local pressed package (fat or lean): slot-wise install from its
+    // own bytes (TODO.v2-1/12) — never a registry flow. Shims link only
+    // via the explicit --shims.
+    let path = std::path::Path::new(target);
+    if path.is_file() && tebako_cli::install::is_tpkg_package(path) {
+        let outcome = tebako_cli::install::install_local(&tebako_home()?, path, link_shims, None)?;
+        for note in &outcome.notes {
+            eprintln!("tebako: note: {note}");
+        }
+        for slice in &outcome.installed {
+            match slice.status {
+                tebako_resolve::InstallStatus::Hit => {
+                    println!(
+                        "{} {} already present ({})",
+                        slice.name,
+                        slice.version,
+                        slice.path.display()
+                    )
+                }
+                tebako_resolve::InstallStatus::Installed => println!(
+                    "installed {} {} -> {}",
+                    slice.name,
+                    slice.version,
+                    slice.path.display()
+                ),
+            }
+        }
+        for shim in &outcome.shims {
+            println!("  shim {}", shim.display());
+        }
+        return Ok(());
+    }
+    if link_shims {
+        return Err(CliExit::Usage(
+            "--shims only applies to a local package install (registry installs always register shims)"
+                .to_string(),
+        ));
+    }
     let outcome = tebako_cli::install::install(&tebako_home()?, target, None, None)?;
     for note in &outcome.notes {
         eprintln!("tebako: note: {note}");
@@ -454,6 +506,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut devmode = false;
     let mut suite: Option<PathBuf> = None;
     let mut jail: Option<String> = None;
+    let mut no_install = false;
 
     let mut i = 0;
     while i < args.len() {
@@ -489,6 +542,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--prefer-local" => prefer_local = true,
             "--suite" => suite = Some(PathBuf::from(take_value(&mut i)?)),
             "--jail" => jail = Some(take_value(&mut i)?),
+            "--no-install" => no_install = true,
             "-D" | "--devmode" => devmode = true,
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
@@ -553,5 +607,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         fs_current,
         suite,
         jail,
+        no_install,
     })
 }

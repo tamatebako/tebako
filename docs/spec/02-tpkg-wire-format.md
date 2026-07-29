@@ -22,7 +22,7 @@ container itself stays byte-identical either way.
 |-------:|-----:|-------|
 | 0   | 10  | magic `"TEBAKOTFS\0"` |
 | 10  | 4   | u32 version = **1** (extensions ride flags, not version bumps) |
-| 14  | 4   | u32 package_flags (bit0 LEAN, bit1 SIGNED_V2) |
+| 14  | 4   | u32 package_flags (bit0 LEAN, bit1 SIGNED_V2, bit2 NO_INSTALL) |
 | 18  | 4   | u32 slot_count (1..=8) |
 | 22  | 8   | u64 slot_table_offset (absolute file offset of slot 0) |
 | 30  | 128 | char runtime_ref[128] — resolution hint (spec 05 §1); empty = classic |
@@ -57,7 +57,17 @@ trust enforcement is a reader capability, not a format barrier.
 Canonical signed bytes: `slot table ‖ digests ‖ keyid ‖ header` —
 everything except the signature and its length field.
 
-## 5. Orthogonality note (normative)
+## 5. The installability flag (bit2 `NO_INSTALL`; TODO.v2-1/12)
+
+A run is a run — a plain execution never writes payload slices into the
+local store. Installation is the EXPLICIT verb (`tebako install <path>`;
+the bootstrap's `--tebako-install` refuses or guides, spec 06 §4 exit
+76). `NO_INSTALL` marks a publisher-frozen package: it RUNS standalone
+but every install attempt is refused with a named error. Absence means
+installable-on-request, including packages pressed before the verb
+existed — pass-through like every flag.
+
+## 6. Orthogonality note (normative)
 
 `format_id` answers exactly one question: how to read the slot's bytes.
 Whether a slot is a runtime, and which payload carries the entrypoint, are

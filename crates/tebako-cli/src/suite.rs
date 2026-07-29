@@ -408,6 +408,7 @@ pub fn press_suite(
         &package,
         &runtime_refs[0],
         Some(&package_manifest),
+        opts.no_install,
     )?;
     println!("Created tebako suite package at \"{package}\"");
     crate::ensure_version_file(opts);

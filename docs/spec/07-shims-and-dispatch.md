@@ -78,6 +78,11 @@ jobs:
   managed BEGIN/END block into the right startup file
   (`.profile`/`.bash_profile`/`.bashrc`/`.zshrc`/`.cshrc`) prepending the
   shim dir; idempotent; `uninstall-shell` removes exactly its block.
+- **Shim links are always an explicit act** (TODO.v2-1/12): registry
+  installs register the payload's `provides` (that IS the install's
+  point); a local-package install (`tebako install <path>`) links only
+  with the explicit `--shims`; a run — of any package, ever — links
+  nothing. A one-off act never claims PATH names.
 - NO eval-init hook for switching: the dispatcher reads the project file
   itself (the mise model, not the rbenv `eval "$(… init -)"` model).
 - `tebako use / disable / list / doctor` manage shims

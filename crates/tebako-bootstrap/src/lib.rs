@@ -91,6 +91,11 @@ pub const EX_TEBAKO_IO: u8 = 74;
 /// not speak (roadmap 45): contract_version in the release manifest is
 /// outside this bootstrap's supported range — fail CLOSED, never a guess.
 pub const EX_TEBAKO_CONTRACT: u8 = 75;
+/// The explicit install verb (TODO.v2-1/12) was refused
+/// (`TPKG_FLAG_NO_INSTALL` — the publisher froze the package) or needs
+/// the tebako CLI (the manifest read wants the TFS engine the
+/// size-capped bootstrap deliberately does not carry).
+pub const EX_TEBAKO_INSTALL: u8 = 76;
 
 /// The bootstrap↔runtime contract this bootstrap speaks (roadmap 45):
 /// today's env/argv/image-handoff semantics. Min and max are the same
@@ -2036,6 +2041,31 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
             format!(
                 "package requires launcher ABI {} but this tebako-bootstrap {VERSION} supports ABI {LAUNCHER_ABI} —\n  refresh the runtime via tebako cache, or re-bundle with a current tebako-bootstrap",
                 m.launcher_abi
+            ),
+        );
+    }
+
+    // The explicit install verb (TODO.v2-1/12): a run is a run — payload
+    // slices land in the local store only when asked. The manifest read
+    // needs the TFS engine the size-capped bootstrap deliberately does
+    // not carry, so the verb refuses (frozen package) or guides to the
+    // CLI. Placed after the chain + ABI gates: an install attempt is
+    // verified exactly like a run.
+    if argv.get(1).map(String::as_str) == Some("--tebako-install") {
+        if m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL != 0 {
+            return fail(
+                EX_TEBAKO_INSTALL,
+                format!(
+                    "{} was built non-installable (TPKG_FLAG_NO_INSTALL — the publisher froze it); it runs standalone",
+                    self_path.display()
+                ),
+            );
+        }
+        return fail(
+            EX_TEBAKO_INSTALL,
+            format!(
+                "to install this package's slices into the local store, run:\n  tebako install {}\n(the manifest read needs the TFS engine the bootstrap deliberately does not carry — the CLI does it for you)",
+                self_path.display()
             ),
         );
     }

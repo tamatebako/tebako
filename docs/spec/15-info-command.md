@@ -95,7 +95,11 @@ Rules:
   zip, tar) — never trust `format_id` alone (it is a hint; `auto` means
   detect).
 - The v1 `format_id = 4` slot is reported as `runtime (legacy role)`
-  per spec 02 §5 — role, not format.
+  per spec 02 §6 — role, not format.
+- Flags render named: the header shows `, lean` and `, no-install` after
+  the tpkg version, and the JSON `package.flags` array carries
+  `"lean" | "signed-v2" | "no-install"` (spec 02 §5 — a frozen package
+  is introspectable before you try to install it).
 - Trust section: signature state (v2 / v1-unsigned), signer keyid, and
   WITH `--verify` the actual verification outcome; without it, state is
   reported as stored, labeled `unverified`.
