@@ -35,6 +35,17 @@ tebako-http = { version = "0.1.0", path = "../tebako-http" }
 libc = "0.2"
 sha2 = "0.10"
 
+# The Windows shell integration (shell_windows.rs): registry PATH +
+# WM_SETTINGCHANGE. All FFI is quarantined in that one module.
+# (Win32_Security: RegCreateKeyExW's SECURITY_ATTRIBUTES parameter.)
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Registry",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
 [[bin]]
 name = "tebako-shim"
 path = "src/main.rs"

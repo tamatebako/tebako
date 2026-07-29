@@ -11,9 +11,12 @@ use crate::manifest;
 use crate::regcache;
 use crate::resolve::{self, Resolution};
 use crate::runtime::RuntimeResolution;
-use crate::shell::{self, Shell};
+use crate::shell;
+#[cfg(not(windows))]
+use crate::shell::Shell;
 use crate::{fail, Action, Ctx, ShimError, EX_TEBAKO_IO, EX_USAGE};
 
+#[cfg(not(windows))]
 const USAGE: &str = "tebako-shim — the tebako dispatcher and version manager (spec 07)
 
 invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manages:
@@ -27,6 +30,19 @@ invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manag
                                        prepend ~/.tebako/shims to PATH in the shell startup file
   tebako-shim uninstall-shell [--shell bash|zsh|fish|csh]
                                        remove exactly the managed block";
+
+#[cfg(windows)]
+const USAGE: &str = "tebako-shim — the tebako dispatcher and version manager (spec 07)
+
+invoked as <TEBAKO_HOME>\\shims\\<tool>.exe it dispatches; invoked as tebako-shim it manages:
+
+  tebako-shim list                     installed payloads, versions, defaults, shim links
+  tebako-shim enable <tool>[@<ver>]    re-enable a disabled tool or version
+  tebako-shim disable <tool>[@<ver>]   refuse dispatch of a tool or version
+  tebako-shim which <tool>             show the resolved version, runtime, mounts, argv
+  tebako-shim doctor                   diagnose the shim layer (missing/corrupt records)
+  tebako-shim install-shell            prepend the shim dir to the user PATH (registry)
+  tebako-shim uninstall-shell          remove exactly our PATH entry";
 
 pub fn run_command(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
     let Some(cmd) = args.first() else {
@@ -598,6 +614,7 @@ pub fn unlink_shims(
 // install-shell / uninstall-shell
 // ---------------------------------------------------------------------
 
+#[cfg(not(windows))]
 fn parse_shell_flag(args: &[String], ctx: &Ctx) -> Result<Shell, ShimError> {
     let mut i = 0;
     let mut shell: Option<String> = None;
@@ -625,6 +642,7 @@ fn parse_shell_flag(args: &[String], ctx: &Ctx) -> Result<Shell, ShimError> {
     }
 }
 
+#[cfg(not(windows))]
 fn user_home(ctx: &Ctx) -> Result<PathBuf, ShimError> {
     ctx.env_get("HOME")
         .filter(|v| !v.is_empty())
@@ -637,6 +655,7 @@ fn user_home(ctx: &Ctx) -> Result<PathBuf, ShimError> {
         })
 }
 
+#[cfg(not(windows))]
 fn cmd_shell(args: &[String], ctx: &Ctx, install: bool) -> Result<Action, ShimError> {
     let sh = parse_shell_flag(args, ctx)?;
     let file = shell::startup_file(sh, &user_home(ctx)?);
@@ -660,6 +679,48 @@ fn cmd_shell(args: &[String], ctx: &Ctx, install: bool) -> Result<Action, ShimEr
             }
             shell::Change::NotPresent => {
                 format!("no tebako shim block in {} — nothing to do", file.display())
+            }
+            _ => unreachable!("uninstall only yields Removed/NotPresent"),
+        }
+    };
+    Ok(Action::Print {
+        text: format!("{text}\n"),
+        code: 0,
+    })
+}
+
+/// Windows: no rc files — the shim dir goes onto the user PATH in the
+/// registry (shell_windows.rs). `--shell` is a unix-only option and says
+/// so, never a silent ignore.
+#[cfg(windows)]
+fn cmd_shell(args: &[String], ctx: &Ctx, install: bool) -> Result<Action, ShimError> {
+    if !args.is_empty() {
+        return fail(
+            EX_USAGE,
+            format!(
+                "unexpected argument \"{}\" — on Windows install-shell edits the user PATH in the registry (HKCU\\Environment) and takes no --shell",
+                args.join(" ")
+            ),
+        );
+    }
+    let dir = shims_dir(&ctx.home);
+    let text = if install {
+        match crate::shell_windows::install(&dir)? {
+            shell::Change::Installed => format!(
+                "added {} to the user PATH (HKCU\\Environment)\nopen a NEW terminal — running consoles keep the old PATH",
+                dir.display()
+            ),
+            shell::Change::AlreadyPresent => format!(
+                "{} is already on the user PATH — nothing to do",
+                dir.display()
+            ),
+            _ => unreachable!("install only yields Installed/AlreadyPresent"),
+        }
+    } else {
+        match crate::shell_windows::uninstall(&dir)? {
+            shell::Change::Removed => format!("removed {} from the user PATH", dir.display()),
+            shell::Change::NotPresent => {
+                format!("{} was not on the user PATH — nothing to do", dir.display())
             }
             _ => unreachable!("uninstall only yields Removed/NotPresent"),
         }
