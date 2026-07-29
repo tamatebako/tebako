@@ -172,13 +172,12 @@ pub fn write_mirror(root: &Path, lv: &str, ver: &str, tamper: bool) -> PathBuf {
     let platform = platform();
     let dir = root.join(format!("v{ver}"));
     std::fs::create_dir_all(&dir).expect("mirror dir");
-    // The release asset name the resolver derives: platform suffix
-    // included (.exe on Windows) — the same name write_runtime uses.
-    let exe_name = format!(
-        "tebako-runtime-{ver}-{lv}-{platform}{}",
-        tebako_shim::runtime::exe_suffix()
-    );
-    let image_name = format!("{exe_name}.tfs");
+    // The release asset names the resolver derives: the exe carries the
+    // platform suffix (.exe on Windows); the IMAGE is named off the
+    // suffix-free asset base (<base>.tfs — never <base>.exe.tfs).
+    let asset_base = format!("tebako-runtime-{ver}-{lv}-{platform}");
+    let exe_name = format!("{asset_base}{}", tebako_shim::runtime::exe_suffix());
+    let image_name = format!("{asset_base}.tfs");
     let exe_bytes = b"mirrored runtime exe\n";
     let image_bytes = b"mirrored runtime image\n";
     std::fs::write(dir.join(&exe_name), exe_bytes).expect("exe");
