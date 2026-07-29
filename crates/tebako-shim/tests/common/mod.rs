@@ -124,14 +124,17 @@ pub fn platform() -> &'static str {
 }
 
 /// A cached runtime entry
-/// `runtimes/ruby-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>`.
+/// `runtimes/ruby-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>[.exe]`
+/// — the resolver looks the asset up by its platform name, suffix
+/// included (spec: `exe_suffix()` on Windows).
 pub fn write_runtime(home: &Path, lv: &str, ver: &str, with_image: bool) -> PathBuf {
     let platform = platform();
+    let suffix = tebako_shim::runtime::exe_suffix();
     let dir = home
         .join("runtimes")
         .join(format!("ruby-{lv}-{ver}-{platform}"));
     std::fs::create_dir_all(&dir).expect("runtime dir");
-    let exe = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}"));
+    let exe = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}{suffix}"));
     let exe_bytes = b"fake runtime exe\n";
     std::fs::write(&exe, exe_bytes).expect("exe");
     #[cfg(unix)]
@@ -142,7 +145,7 @@ pub fn write_runtime(home: &Path, lv: &str, ver: &str, with_image: bool) -> Path
     std::fs::write(
         dir.join("sha256"),
         format!(
-            "{}  tebako-runtime-{ver}-{lv}-{platform}\n",
+            "{}  tebako-runtime-{ver}-{lv}-{platform}{suffix}\n",
             sha256_hex(exe_bytes)
         ),
     )
