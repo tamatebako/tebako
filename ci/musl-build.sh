@@ -80,8 +80,8 @@ echo "== pre-install squashfs-tools-ng ($TRIPLET) =="
   --overlay-ports "$WS/tebako-rs/crates/sqfs-sys/vcpkg_ports"
 
 # Crypto comes from crates: rnp-rs 0.1.10's vendored mode builds librnp +
-# Botan + json-c + zlib + bzip2 from source via rnp-src (git-pinned at the
-# workspace root until rnpgp/rnp-rs#63 ships a fixed crates.io release).
+# Botan + json-c + zlib + bzip2 from source via rnp-src (crates.io 0.1.2,
+# the rnpgp/rnp-rs#63 fix).
 #
 # musl targets default to +crt-static, and a statically linked build
 # script cannot dlopen — but rnp-rs's build.rs runs bindgen, which

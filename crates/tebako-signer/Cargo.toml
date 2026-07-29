@@ -13,6 +13,5 @@ rnp = { package = "rnp-rs", version = "=0.1.10", features = ["vendored"] }
 # rnp-rs 0.1.10's vendored mode delegates to rnp-src, which builds
 # librnp + Botan + json-c + zlib + bzip2 from source — nothing external
 # to link. (Until 0.1.7's prebuilt the two deps below were INTERIM:
-# rnp-src is currently git-pinned at the workspace root for
-# rnpgp/rnp-rs#63 — remove the patch with the fixed release.)
+# rnp-src resolves from crates.io 0.1.2 (the rnpgp/rnp-rs#63 fix).)
 sha2 = "0.10"

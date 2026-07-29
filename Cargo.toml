@@ -21,12 +21,3 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 
-
-# WORKAROUND (upstream rnpgp/rnp-rs#63): rnp-src 0.1.1's is_packaging()
-# heuristic misfires for every crates.io consumer — the registry
-# extraction always contains Cargo.toml.orig, so `vendored` emits empty
-# lib/include dirs. A git checkout has no Cargo.toml.orig and builds for
-# real. Pin rnp-src to the identical git tag until a fixed 0.1.x ships,
-# then DELETE this section.
-[patch.crates-io]
-rnp-src = { git = "https://github.com/rnpgp/rnp-rs.git", tag = "rnp-src-v0.1.1" }

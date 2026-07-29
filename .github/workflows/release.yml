@@ -339,8 +339,8 @@ jobs:
     name: Linux musl (${{ matrix.platform }})
     # Enabled since rnp-rs 0.1.10: the rnp-src model builds librnp+botan
     # from source (musl-capable; the container has cmake/ninja/python3).
-    # rnp-src is git-pinned (workspace [patch.crates-io]) until
-    # rnpgp/rnp-rs#63 ships a fixed crates.io release.
+    # rnp-src resolves from crates.io 0.1.2 (the rnpgp/rnp-rs#63 fix —
+    # the is_packaging() misfire that broke 0.1.1's vendored mode).
     permissions:
       contents: write
     runs-on: ${{ matrix.os }}
