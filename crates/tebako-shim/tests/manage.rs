@@ -202,6 +202,7 @@ fn doctor_reports_a_clean_setup_and_corruption() {
     assert!(text.contains("sha256 mismatch"), "{text}");
 }
 
+#[cfg(not(windows))] // the unix rc-file flow; the Windows registry form is covered in shell_windows.rs
 #[test]
 fn install_shell_roundtrip_through_run() {
     let tmp = TempDir::new("install-shell");
