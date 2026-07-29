@@ -420,9 +420,26 @@ fn parse_file(input: &str, rest: &str) -> Result<Reference, ReferenceError> {
         return Err(invalid(input, "path contains a NUL byte"));
     }
     Ok(Reference::File {
-        path: path.to_string(),
+        path: normalize_file_path(path).to_string(),
         sha256,
     })
+}
+
+/// RFC 8089 path recovery: `file:///C:/x` names the Windows path `C:/x` —
+/// the third slash separates the (empty) authority from the drive path,
+/// while on unix the path begins AT that slash. Windows must drop the
+/// leading slash before a drive letter or the result (`/C:/x`) is not a
+/// valid filesystem path (os error 123).
+fn normalize_file_path(path: &str) -> &str {
+    #[cfg(windows)]
+    {
+        let b = path.as_bytes();
+        if b.len() > 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' && b[3] == b'/'
+        {
+            return &path[1..];
+        }
+    }
+    path
 }
 
 #[cfg(test)]
