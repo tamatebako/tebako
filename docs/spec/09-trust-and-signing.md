@@ -93,7 +93,10 @@ armored root export; the private key never leaves CI secrets/hardware).
 
 Production root key ceremony (offline, hardware-held) →
 `EMBEDDED_ROOT_FINGERPRINT` filled → fingerprint published on tebako.org →
-CI secrets wired → revocation drill rehearsed.
+CI secrets wired → revocation drill rehearsed. The operational runbook —
+dual-root (Ed25519 classical + ML-DSA-65 PQC), pre-made successor and
+revocation statements, day-one ML-KEM encryption subkey, hardware
+storage, and the rehearsal — is `docs/root-ceremony.md` (roadmap 36).
 
 ## 8. Revocation (locked 2026-07-27)
 
