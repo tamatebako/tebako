@@ -308,7 +308,7 @@ impl PayloadCache {
             .map_err(|e| cache_io("opening", lock_path, e))?;
         let deadline = std::time::Instant::now() + self.lock_timeout;
         loop {
-            if flock(&lock, libc::LOCK_EX | libc::LOCK_NB) {
+            if flock_exclusive_nb(&lock) {
                 break;
             }
             if std::time::Instant::now() >= deadline {
@@ -320,7 +320,7 @@ impl PayloadCache {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         let result = f();
-        flock(&lock, libc::LOCK_UN);
+        flock_unlock(&lock);
         result
     }
 }
@@ -357,12 +357,55 @@ fn cache_io(op: &'static str, path: &Path, e: std::io::Error) -> ResolveError {
     }
 }
 
-/// flock(2) wrapper; returns true when the operation succeeded (the same
-/// libc call tebako-cli's resolver uses — the only FFI in the crate).
-fn flock(file: &fs::File, op: i32) -> bool {
+/// The per-entry lock pair, one shape on each platform (no op-value
+/// passing — named operations only):
+///
+/// Unix: flock(2) LOCK_EX|LOCK_NB / LOCK_UN on a live fd (the same libc
+/// call tebako-cli's resolver uses). Windows: LockFileEx on one byte at
+/// offset 0 — exclusive, non-blocking, released by the kernel when the
+/// handle dies, exactly like flock (the shape tebako-bootstrap's
+/// platform.rs uses).
+#[cfg(unix)]
+fn flock_exclusive_nb(file: &fs::File) -> bool {
     use std::os::unix::io::AsRawFd;
     // SAFETY: flock(2) on a live fd; identical to tebako-cli/src/resolve.rs.
-    unsafe { libc::flock(file.as_raw_fd(), op) == 0 }
+    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 }
+}
+
+#[cfg(unix)]
+fn flock_unlock(file: &fs::File) -> bool {
+    use std::os::unix::io::AsRawFd;
+    // SAFETY: flock(2) on a live fd.
+    unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) == 0 }
+}
+
+#[cfg(windows)]
+fn flock_exclusive_nb(file: &fs::File) -> bool {
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+    };
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+    let mut ov = OVERLAPPED::default();
+    unsafe {
+        LockFileEx(
+            file.as_raw_handle(),
+            LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+            0,
+            1,
+            0,
+            &mut ov,
+        ) != 0
+    }
+}
+
+#[cfg(windows)]
+fn flock_unlock(file: &fs::File) -> bool {
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Storage::FileSystem::UnlockFileEx;
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+    let mut ov = OVERLAPPED::default();
+    unsafe { UnlockFileEx(file.as_raw_handle(), 0, 1, 0, &mut ov) != 0 }
 }
 
 #[cfg(test)]
@@ -542,11 +585,11 @@ mod tests {
             .truncate(false)
             .open(&lock_path)
             .unwrap();
-        assert!(flock(&held, libc::LOCK_EX | libc::LOCK_NB));
+        assert!(flock_exclusive_nb(&held));
         let err = cache
             .install("tool", "1.0", None, || Ok(fetched(b"x")))
             .unwrap_err();
-        flock(&held, libc::LOCK_UN);
+        flock_unlock(&held);
         assert!(matches!(err, ResolveError::LockTimeout { .. }));
         let msg = err.to_string();
         assert!(msg.contains("lockfile") && msg.contains("remove it if the holder crashed"));

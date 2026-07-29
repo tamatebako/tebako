@@ -48,3 +48,13 @@ proptest = "1"
 # The git fixtures are built with gix itself — no git CLI anywhere, tests
 # included (spec 14 §3).
 gix = { version = "0.86", default-features = false, features = ["sha1", "tree-editor"] }
+
+# The per-entry cache flock on Windows (cache.rs — LockFileEx on one byte
+# at offset 0, the tebako-bootstrap platform.rs shape). Unix uses libc's
+# flock(2); all Win32 FFI is confined to cache.rs.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+] }
