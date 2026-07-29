@@ -360,7 +360,7 @@ pub fn exec(plan: &ExecPlan) -> ShimError {
 /// SIGINT); the shim must outlive the child to propagate its exit code,
 /// so its own copy of those events is swallowed.
 #[cfg(windows)]
-unsafe extern "system" fn ctrl_swallow(ctrl_type: u32) -> windows_sys::Win32::Foundation::BOOL {
+unsafe extern "system" fn ctrl_swallow(ctrl_type: u32) -> windows_sys::core::BOOL {
     use windows_sys::Win32::Foundation::{FALSE, TRUE};
     use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT};
     match ctrl_type {

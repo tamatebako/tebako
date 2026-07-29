@@ -36,12 +36,14 @@ libc = "0.2"
 sha2 = "0.10"
 
 # The Windows shell integration (shell_windows.rs): registry PATH +
-# WM_SETTINGCHANGE. All FFI is quarantined in that one module.
+# WM_SETTINGCHANGE; the dispatch exec port (dispatch.rs): console Ctrl
+# handling. All FFI is quarantined in those two modules.
 # (Win32_Security: RegCreateKeyExW's SECURITY_ATTRIBUTES parameter.)
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
+    "Win32_System_Console",
     "Win32_System_Registry",
     "Win32_UI_WindowsAndMessaging",
 ] }
