@@ -24,10 +24,7 @@ tebako-shim = { version = "0.1.0", path = "../tebako-shim" }
 # OpenPGP verification of signed registry entries (spec 09; strict when the
 # entry carries a signature, the v1-legacy warn when it does not).
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
-# The runtime image is extracted in-process through the tfs C ABI
-# (item 30b layout seeding); install reads the embedded payload manifest
-# (spec 03 §1) through the same ABI.
-tfs = { version = "0.1.0", path = "../tfs" }
+# (the tfs dependency is per-target, below — squashfs is POSIX-only)
 # The suite file (--suite) is authored YAML (spec 00 invariant 6) — the
 # tpkg manifest convention (serde_yml), not serde_yaml.
 serde = { version = "1", features = ["derive"] }
@@ -44,6 +41,19 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 tar = { version = "0.4", default-features = false }
 # Hardlink staging area for manifest tree_hash stamping (spec 03 §7).
 tempfile = "3"
+
+# The runtime image is extracted in-process through the tfs C ABI
+# (item 30b layout seeding); install reads the embedded payload manifest
+# (spec 03 §1) through the same ABI. The SquashFS backend
+# (squashfs-tools-ng) is POSIX/autotools-only, so Windows gets a
+# dwarfs-only tfs — the squashfs backend degrades to a named ENOTSUP
+# there (TODO.v2-1/02). The per-target split lives in the consumer (cargo
+# features cannot be target-conditional from inside tfs).
+[target.'cfg(not(windows))'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs" }
+
+[target.'cfg(windows)'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 
 [[bin]]
 name = "tebako"

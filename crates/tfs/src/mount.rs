@@ -280,3 +280,37 @@ pub fn build_from_memory_with_mode(
     let backend = apply_mode(backend, mode, overlay_dir)?;
     Ok(make_mount(mount_point, None, backend, mode))
 }
+
+// ---------------------------------------------------------------------
+// tests
+// ---------------------------------------------------------------------
+
+/// A gated-off backend degrades to the NAMED error, never a crash or
+/// a silent re-route (the Windows build ships dwarfs-only —
+/// TODO.v2-1/02). Runs in the `--no-default-features` CI job; with
+/// the feature on, the same magic would attempt a real SquashFS
+/// mount instead. The whole module compiles out with the feature on
+/// (an empty tests module would only borrow trouble).
+#[cfg(all(test, not(feature = "vendored-squashfs")))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn squashfs_without_the_backend_is_a_named_enotsup() {
+        let mut magic = Vec::with_capacity(SNIFF_LEN);
+        magic.extend_from_slice(b"hsqs");
+        magic.resize(SNIFF_LEN, 0);
+        let path = std::env::temp_dir().join(format!(
+            "tfs-enotsup-{}-{}.sqfs",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, &magic).unwrap();
+        let result = build_from_file(&path.to_string_lossy(), "/x");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result.err(), Some(libc::ENOTSUP));
+    }
+}

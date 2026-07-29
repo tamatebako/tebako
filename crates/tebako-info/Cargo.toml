@@ -12,7 +12,6 @@ categories = ["filesystem", "parser-implementations"]
 
 [dependencies]
 tpkg = { version = "0.1.0", path = "../tpkg" }
-tfs = { version = "0.1.0", path = "../tfs" }
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
 sha2 = "0.10"
@@ -21,6 +20,15 @@ libc = "0.2"
 # Lenient manifest reads (structure without validate()) for the display
 # paths; same pin as tpkg.
 serde_yml = "0.0.12"
+
+# tfs per-target: the SquashFS backend (squashfs-tools-ng) is
+# POSIX/autotools-only — Windows gets a dwarfs-only tfs, the backend
+# degrading to a named ENOTSUP (TODO.v2-1/02).
+[target.'cfg(not(windows))'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs" }
+
+[target.'cfg(windows)'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 
 [dev-dependencies]
 # In-process dwarfs-t writer for manifest-carrying image fixtures.
