@@ -265,15 +265,7 @@ impl PayloadCache {
         let tmp = tmp_dir.join(format!("{file_name}.{}.part", std::process::id()));
         let result = (|| {
             fs::write(&tmp, &fetched.bytes).map_err(|e| cache_io("writing", &tmp, e))?;
-            let mut perms = fs::metadata(&tmp)
-                .map_err(|e| cache_io("stat", &tmp, e))?
-                .permissions();
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                perms.set_mode(0o444);
-            }
-            fs::set_permissions(&tmp, perms).map_err(|e| cache_io("chmod", &tmp, e))?;
+            make_readonly(&tmp).map_err(|e| cache_io("chmod", &tmp, e))?;
             fs::rename(&tmp, file).map_err(|e| cache_io("installing", file, e))?;
             fs::write(
                 sha_marker(file),
@@ -355,6 +347,41 @@ fn cache_io(op: &'static str, path: &Path, e: std::io::Error) -> ResolveError {
         path: path.to_path_buf(),
         reason: e.to_string(),
     }
+}
+
+/// The cached image is an immutable artifact (item 30b): 0444 on unix;
+/// on Windows the FILE_ATTRIBUTE_READONLY bit with every other attribute
+/// preserved (tebako-bootstrap's platform.rs shape). Best-effort errors
+/// surface through the caller, never silently.
+#[cfg(unix)]
+fn make_readonly(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o444);
+    std::fs::set_permissions(path, perms)
+}
+
+#[cfg(windows)]
+fn make_readonly(path: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileAttributesW, SetFileAttributesW, FILE_ATTRIBUTE_READONLY, INVALID_FILE_ATTRIBUTES,
+    };
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        let attrs = GetFileAttributesW(wide.as_ptr());
+        if attrs == INVALID_FILE_ATTRIBUTES {
+            return Err(std::io::Error::last_os_error());
+        }
+        if SetFileAttributesW(wide.as_ptr(), attrs | FILE_ATTRIBUTE_READONLY) == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(())
 }
 
 /// The per-entry lock pair, one shape on each platform (no op-value
