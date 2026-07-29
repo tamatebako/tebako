@@ -172,7 +172,12 @@ pub fn write_mirror(root: &Path, lv: &str, ver: &str, tamper: bool) -> PathBuf {
     let platform = platform();
     let dir = root.join(format!("v{ver}"));
     std::fs::create_dir_all(&dir).expect("mirror dir");
-    let exe_name = format!("tebako-runtime-{ver}-{lv}-{platform}");
+    // The release asset name the resolver derives: platform suffix
+    // included (.exe on Windows) — the same name write_runtime uses.
+    let exe_name = format!(
+        "tebako-runtime-{ver}-{lv}-{platform}{}",
+        tebako_shim::runtime::exe_suffix()
+    );
     let image_name = format!("{exe_name}.tfs");
     let exe_bytes = b"mirrored runtime exe\n";
     let image_bytes = b"mirrored runtime image\n";
