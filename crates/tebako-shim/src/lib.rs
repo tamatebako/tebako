@@ -120,10 +120,10 @@ pub fn tebako_home(env: &BTreeMap<String, String>) -> Result<PathBuf, ShimError>
         if let Some(home) = env.get("USERPROFILE").filter(|v| !v.is_empty()) {
             return Ok(PathBuf::from(home).join(".tebako"));
         }
-        return fail(
+        fail(
             EX_TEBAKO_IO,
             "cannot determine tebako home (set TEBAKO_HOME)",
-        );
+        )
     }
     #[cfg(not(windows))]
     {
