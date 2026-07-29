@@ -499,23 +499,19 @@ fn sha_from_sums(text: &str, asset: &str) -> Result<String, ()> {
 }
 
 /// The expected checksum for an asset: manifest.json primary,
-/// SHA256SUMS.txt fallback (the bootstrap's exact order).
+/// SHA256SUMS.txt fallback (the bootstrap's exact order). Returns the
+/// optional sha plus the two diagnostic indices so the caller names the
+/// failure itself — an absent entry is data, not an error (the v1-era
+/// image rule needs it).
 fn expected_checksum(
     base: &str,
     local: bool,
     abi: &str,
     asset: &str,
     tmp_dir: &Path,
-) -> Result<String, ShimError> {
+) -> Result<(Option<String>, (usize, usize)), ShimError> {
     let manifest_url = format!("{base}/v{abi}/manifest.json");
     let sums_url = format!("{base}/v{abi}/SHA256SUMS.txt");
-    const DIAG: [&str; 5] = [
-        "not tried",
-        "download failed",
-        "read failed",
-        "no matching entry",
-        "ok",
-    ];
     let mut expected = None;
     let mut diag_manifest = 1;
     let manifest_tmp = tmp_dir.join("manifest.json");
@@ -544,15 +540,7 @@ fn expected_checksum(
             }
         }
     }
-    expected.ok_or_else(|| {
-        ShimError::new(
-            EX_TEBAKO_UNAVAILABLE,
-            format!(
-                "no checksum for {asset} in the release\n  tried: {manifest_url} ({})\n         {sums_url} ({})",
-                DIAG[diag_manifest], DIAG[diag_sums]
-            ),
-        )
-    })
+    Ok((expected, (diag_manifest, diag_sums)))
 }
 
 /// Download + verify + atomically install one asset into an entry staging
@@ -702,34 +690,59 @@ fn download_runtime(
     let result = result.and_then(|()| {
         // executable
         let exe_url = format!("{base}/v{}/{asset}", pref.tebako);
-        let expected = expected_checksum(&base, local, &pref.tebako, &asset, &tmp_dir)?;
+        let (exe_sha, (diag_m, diag_s)) =
+            expected_checksum(&base, local, &pref.tebako, &asset, &tmp_dir)?;
+        const DIAG: [&str; 5] = [
+            "not tried",
+            "download failed",
+            "read failed",
+            "no matching entry",
+            "ok",
+        ];
+        let expected = exe_sha.ok_or_else(|| {
+            ShimError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "no checksum for {asset} in the release\n  tried: {base}/v{abi}/manifest.json ({})\n         {base}/v{abi}/SHA256SUMS.txt ({})",
+                    DIAG[diag_m], DIAG[diag_s], abi = pref.tebako
+                ),
+            )
+        })?;
         let actual = install_asset(&exe_url, local, &asset, &tmp_dir, &expected)?;
         make_executable(&tmp_dir.join(&asset));
-        // image-era runtime image: same mirror/offline/verify rules,
-        // installed read-only with trusted markers, never extracted.
-        let image_url = format!("{base}/v{}/{image_asset}", pref.tebako);
-        let image_expected = expected_checksum(&base, local, &pref.tebako, &image_asset, &tmp_dir)?;
-        let image_actual =
-            install_asset(&image_url, local, &image_asset, &tmp_dir, &image_expected)?;
-        make_readonly(&tmp_dir.join(&image_asset));
-        let _ = std::fs::write(
-            tmp_dir.join(format!("{image_asset}.sha256")),
-            format!("{image_actual}  {image_asset}\n"),
-        );
-        let _ = std::fs::write(
-            tmp_dir.join(format!("{image_asset}.origin")),
-            format!("runtime_ref={runtime_ref}\nurl={image_url}\nsha256={image_actual}\n"),
-        );
+        // image-era runtime image: same mirror/offline/verify rules —
+        // when the release index carries it. A pre-image (v1-era) release
+        // has no image entry: the runtime's embedded image serves (the
+        // bootstrap's graceful-degradation rule), and the exe installs
+        // alone rather than hard-failing.
+        let (image_sha, _) = expected_checksum(&base, local, &pref.tebako, &image_asset, &tmp_dir)?;
+        let has_image = if let Some(image_expected) = image_sha {
+            let image_url = format!("{base}/v{}/{image_asset}", pref.tebako);
+            let image_actual =
+                install_asset(&image_url, local, &image_asset, &tmp_dir, &image_expected)?;
+            make_readonly(&tmp_dir.join(&image_asset));
+            let _ = std::fs::write(
+                tmp_dir.join(format!("{image_asset}.sha256")),
+                format!("{image_actual}  {image_asset}\n"),
+            );
+            let _ = std::fs::write(
+                tmp_dir.join(format!("{image_asset}.origin")),
+                format!("runtime_ref={runtime_ref}\nurl={image_url}\nsha256={image_actual}\n"),
+            );
+            true
+        } else {
+            false
+        };
         let _ = std::fs::write(tmp_dir.join("sha256"), format!("{actual}  {asset}\n"));
         let _ = std::fs::write(
             tmp_dir.join("origin"),
             format!("runtime_ref={runtime_ref}\nurl={exe_url}\nsha256={actual}\n"),
         );
-        Ok(actual)
+        Ok((actual, has_image))
     });
 
     match result {
-        Ok(_) => {
+        Ok((_, has_image)) => {
             if file_exists(&entry_dir) {
                 cleanup_tmp_entry(&tmp_dir, &asset);
                 lock_release(lock);
@@ -759,7 +772,7 @@ fn download_runtime(
                 lang_version: pref.version.clone(),
                 tebako_version: pref.tebako.clone(),
                 exe: exe_path,
-                image: Some(entry_dir.join(&image_asset)),
+                image: has_image.then(|| entry_dir.join(&image_asset)),
                 dir: entry_dir,
             })
         }

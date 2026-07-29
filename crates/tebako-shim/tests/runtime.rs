@@ -169,6 +169,48 @@ fn sha_mismatch_is_exit_70_and_nothing_enters_the_cache() {
 }
 
 #[test]
+fn v1_era_release_without_an_image_entry_installs_exe_only() {
+    let tmp = TempDir::new("v1-era");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    // A pre-image (v1-era) release: the exe alone, a manifest carrying
+    // only the exe entry — no .tfs anywhere in the release index.
+    let platform = platform();
+    let dir = mirror.join("v9.9.9");
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    let exe_name = format!(
+        "tebako-runtime-9.9.9-3.3.7-{platform}{}",
+        tebako_shim::runtime::exe_suffix()
+    );
+    let exe_bytes = b"v1-era runtime exe\n";
+    std::fs::write(dir.join(&exe_name), exe_bytes).expect("exe");
+    std::fs::write(
+        dir.join("manifest.json"),
+        format!(
+            "[{{\"filename\": \"{exe_name}\", \"sha256\": \"{}\"}}]\n",
+            sha256_hex(exe_bytes)
+        ),
+    )
+    .expect("manifest.json");
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.7\n    tebako: 9.9.9\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        format!("file://{}", mirror.display()),
+    );
+
+    // The v1 rule: the exe installs alone (its embedded image serves) —
+    // the absent image entry degrades instead of hard-failing.
+    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "3.3.7");
+    assert!(rt.exe.is_file());
+    assert!(rt.image.is_none());
+}
+
+#[test]
 fn zero_requirement_skips_resolution_entirely() {
     let tmp = TempDir::new("zero-req");
     let home = tmp.path().join("home");
