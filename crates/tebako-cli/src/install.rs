@@ -330,21 +330,14 @@ pub fn install_local(
         shims: Vec::new(),
         notes: Vec::new(),
     };
-    let tmp_root = std::env::temp_dir().join(format!(
-        "tebako-install-{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0)
-    ));
-    let _ = std::fs::remove_dir_all(&tmp_root);
-    std::fs::create_dir_all(&tmp_root).map_err(|e| {
-        err(
-            EX_TEBAKO_IO,
-            format!("cannot create {}: {e}", tmp_root.display()),
-        )
-    })?;
+    // The staging dir must be unique per CALL, not per clock tick: macOS's
+    // SystemTime granularity is coarse enough that two parallel callers
+    // land on the same nanosecond, and a shared slot-0.tfs let one
+    // package's bytes masquerade as another's (the identity came from the
+    // embedded manifest of whichever extract wrote last). tempfile gives
+    // a guaranteed-unique dir and removes it on drop.
+    let tmp_root = tempfile::tempdir()
+        .map_err(|e| err(EX_TEBAKO_IO, format!("cannot create a staging dir: {e}")))?;
     let result = (|| {
         for (i, slot) in m.slots.iter().enumerate() {
             if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
@@ -361,14 +354,13 @@ pub fn install_local(
                 &m,
                 i,
                 slot,
-                &tmp_root,
+                tmp_root.path(),
                 &mut outcome.notes,
             )?;
             outcome.installed.push(slice);
         }
         Ok::<(), TebakoError>(())
     })();
-    let _ = std::fs::remove_dir_all(&tmp_root);
     result?;
 
     // Shims: an explicit ask only.
