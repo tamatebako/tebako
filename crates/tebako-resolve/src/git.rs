@@ -21,7 +21,20 @@ fn transport_url(url: &str) -> Result<String, ResolveError> {
                 .to_string(),
         });
     }
-    if url.starts_with("https://") || url.starts_with("file://") || Path::new(url).is_absolute() {
+    if url.starts_with("https://") || url.starts_with("file://") {
+        return Ok(url.to_string());
+    }
+    // A Windows absolute path (`C:\…`, `\\server\…`) reads as scp-syntax
+    // to gix's URL parser (host "C"): canonicalize to the file:/// form
+    // with forward slashes. unix absolutes pass through as-is.
+    #[cfg(windows)]
+    if Path::new(url).is_absolute() {
+        return Ok(format!("file:///{}", url.replace('\\', "/")));
+    }
+    // A leading `/` is a local path on every platform (unix absolute;
+    // root-relative on Windows — Rust's is_absolute is false for the
+    // latter, which is exactly why this check exists).
+    if url.starts_with('/') || Path::new(url).is_absolute() {
         Ok(url.to_string())
     } else {
         Ok(format!("https://{url}"))
