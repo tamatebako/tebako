@@ -11,7 +11,6 @@ keywords = ["tebako", "tfs", "vfs", "cli", "archive"]
 categories = ["filesystem", "command-line-utilities"]
 
 [dependencies]
-tfs = { version = "0.1.0", path = "../tfs" }
 # mkimage stamps identity.digest.tree_hash into a source tree's payload
 # manifest (spec 03 §7) via tpkg's merkle construction.
 tpkg = { version = "0.1.0", path = "../tpkg" }
@@ -29,6 +28,15 @@ tebako-json = { version = "0.1.0", path = "../tebako-json" }
 # The in-process DwarFS writer for mkimage (dwarfs-t-rs).
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 libc = "0.2"
+
+# tfs per-target: the SquashFS backend (squashfs-tools-ng) is
+# POSIX/autotools-only — Windows gets a dwarfs-only tfs, the backend
+# degrading to a named ENOTSUP (TODO.v2-1/02).
+[target.'cfg(not(windows))'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs" }
+
+[target.'cfg(windows)'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 
 [[bin]]
 name = "tfs"

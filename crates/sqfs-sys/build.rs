@@ -75,7 +75,9 @@ fn main() {
     if target.contains("windows") && env::var("SQFS_SYS_VCPKG_TRIPLET").is_err() {
         panic!(
             "squashfs-tools-ng is a POSIX/autotools-only library and cannot be \
-             built for Windows (same restriction as the C++ libtfs backend)."
+             built for Windows (same restriction as the C++ libtfs backend). \
+             The tfs consumers gate this feature off per-target on Windows \
+             (TODO.v2-1/02) — reaching this panic means it was enabled by hand."
         );
     }
 

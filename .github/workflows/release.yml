@@ -517,8 +517,11 @@ jobs:
   #    use /MT, Rust defaults to /MD → link errors likely); no
   #    windows-gnu/ucrt64/gnullvm triplet selection exists in
   #    dwarfs-t-sys/build.rs's default_triplet at all.
-  #  - sqfs (squashfs-tools-ng) is POSIX/autotools only — same restriction
-  #    as the C++ side.
+  #  - sqfs (squashfs-tools-ng) is POSIX/autotools only — GATED per-target
+  #    in the tfs consumers (TODO.v2-1/02): Windows builds ship dwarfs-only,
+  #    a squashfs mount fails with named ENOTSUP. No longer a blocker.
+  #  - OpenPGP (rnp-rs 0.1.7 vendored) has no Windows prebuilt — gating
+  #    planned in TODO.v2-1/08.
   #  - tebako-bootstrap: the Windows exec/lock ports are not implemented
   #    (M6 v1 ships macOS/Linux).
   #  - tebako-cli's runtime-spawn/scrub paths are POSIX-oriented.

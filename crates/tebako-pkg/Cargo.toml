@@ -14,11 +14,19 @@ categories = ["filesystem", "command-line-utilities"]
 tpkg = { version = "0.1.0", path = "../tpkg" }
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
 tebako-info = { version = "0.1.0", path = "../tebako-info" }
-tfs = { version = "0.1.0", path = "../tfs" }
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
 rnp = { package = "rnp-rs", version = "=0.1.7", features = ["vendored"] }
 libc = "0.2"
 sha2 = "0.10"
+
+# tfs per-target: the SquashFS backend (squashfs-tools-ng) is
+# POSIX/autotools-only — Windows gets a dwarfs-only tfs, the backend
+# degrading to a named ENOTSUP (TODO.v2-1/02).
+[target.'cfg(not(windows))'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs" }
+
+[target.'cfg(windows)'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 
 [dev-dependencies]
 tebako-contract-tests = { version = "0.1.0", path = "../../tests/contract" }

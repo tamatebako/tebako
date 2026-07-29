@@ -21,8 +21,8 @@
 // documented exception — a Rust-2024 unsafe-attribute extern "C" export.
 // deny keeps unsafe a hard error everywhere else in the crate.)
 
-pub mod envelope;
 pub mod bz_shim;
+pub mod envelope;
 mod error;
 pub mod keyring;
 mod keys;

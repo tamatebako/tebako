@@ -49,6 +49,13 @@ model is honest per format — no uniform-RW pretense:
 | extN | ✓ (PLANNED) | ✓ (PLANNED) | mkfs |
 | FAT | ✓ (PLANNED) | ✓ (PLANNED) | mkfs |
 
+**Per-platform backend availability** (build-time, gated per-target in
+the consumers — TODO.v2-1/02): dwarfs-t, zip, and the tar family build
+EVERYWHERE; squashfs is POSIX-only (squashfs-tools-ng is
+autotools/vcpkg-`!windows`), so Windows builds ship without it. A mount
+attempt against a gated-off backend fails with the NAMED `ENOTSUP` —
+never a silent re-route, never a crash.
+
 - Detection chain: strong magic first (zip EOCD, dwarfs, squashfs,
   iso9660 `CD001`@0x8001, ext `0xEF53`@0x438, FAT BPB), weak heuristics
   (tar) last, with per-candidate confidence; the claimed backend is
