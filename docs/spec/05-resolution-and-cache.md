@@ -22,7 +22,8 @@ machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL
 ## 2. Release index (runtime factory releases)
 
 - `manifest.json` — machine index; per-asset entries plus the additive
-  image-era key `image: {filename, sha256, size_bytes}`.
+  image-era key `image: {filename, sha256, size_bytes}` and the additive
+  `contract_version` key (bootstrap↔runtime contract, spec 06 §6).
 - `SHA256SUMS.txt` — line-index fallback (`<sha>  <file>`), carries the
   `<asset>.tfs` lines in the image era.
 - Base URL:

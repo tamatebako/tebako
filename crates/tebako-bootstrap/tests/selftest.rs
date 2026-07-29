@@ -595,3 +595,117 @@ fn manifest_image_sha_parsing() {
     );
     assert!(tebako_bootstrap::sha_from_manifest_image(text, "nope.tfs").is_err());
 }
+
+// ---------------------------------------------------------------------
+// roadmap 45: bootstrap↔runtime contract negotiation
+// ---------------------------------------------------------------------
+
+#[test]
+fn contract_version_parsing() {
+    use tebako_bootstrap::contract_from_manifest_json as contract;
+    // Realistic post-45 entry: contract_version precedes filename; the
+    // additive image object follows size_bytes.
+    let text = r#"[
+  {
+    "tebako_version": "0.15.9",
+    "contract_version": 1,
+    "ruby_version": "3.3.7",
+    "platform": "macos-arm64",
+    "filename": "tebako-runtime-0.15.9-3.3.7-macos-arm64",
+    "sha256": "604e87a1b1d74a6868b35ecdbb11c4e3db01b23286cea9f078636fdf246172b8",
+    "size_bytes": 24191976,
+    "image": {"filename": "tebako-runtime-0.15.9-3.3.7-macos-arm64.tfs", "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size_bytes": 20410208}
+  }
+]"#;
+    let exe = "tebako-runtime-0.15.9-3.3.7-macos-arm64";
+    assert_eq!(contract(text, exe), Some(1));
+
+    // A declared 2 is reported (the gate, not the parser, refuses it).
+    let text2 = text.replace("\"contract_version\": 1", "\"contract_version\": 2");
+    assert_eq!(contract(&text2, exe), Some(2));
+
+    // Absent field = pre-contract release = None (legacy contract 1).
+    let legacy = text.replace("    \"contract_version\": 1,\n", "");
+    assert!(!legacy.contains("contract_version"));
+    assert_eq!(contract(&legacy, exe), None);
+
+    // A non-integer value parses as absent.
+    let bad = text.replace("\"contract_version\": 1", "\"contract_version\": \"1\"");
+    assert_eq!(contract(&bad, exe), None);
+
+    // Unknown asset.
+    assert_eq!(contract(text, "nope"), None);
+}
+
+#[test]
+fn s15_contract_negotiation_accept_then_refuse() {
+    // Declared contract 1 (this bootstrap's generation): accepted.
+    let h1 = h();
+    let manifest = h1
+        .mirror_root
+        .join(format!("v{TEBAKO_VER}"))
+        .join("manifest.json");
+    let declared1 = std::fs::read_to_string(&manifest).unwrap().replace(
+        "\"tebako_version\":",
+        "\"contract_version\": 1,\n    \"tebako_version\":",
+    );
+    std::fs::write(&manifest, declared1).unwrap();
+    let pkg = h1.lean_pkg("myapp");
+    let home = h1.home("home-c1");
+    let (rc, out, err) = h1.run(&pkg, &home, &[], &["hello"]);
+    assert_eq!((rc, err.as_str()), (0, ""), "{err}");
+    assert!(out.contains("FAKE-RUNTIME"), "{out}");
+
+    // Declared contract 2 (a future generation): fail CLOSED, exit 75,
+    // nothing enters the cache.
+    let h2 = h();
+    let manifest2 = h2
+        .mirror_root
+        .join(format!("v{TEBAKO_VER}"))
+        .join("manifest.json");
+    let declared2 = std::fs::read_to_string(&manifest2).unwrap().replace(
+        "\"tebako_version\":",
+        "\"contract_version\": 2,\n    \"tebako_version\":",
+    );
+    std::fs::write(&manifest2, declared2).unwrap();
+    let pkg2 = h2.lean_pkg("myapp");
+    let home2 = h2.home("home-c2");
+    let (rc, _, err) = h2.run(&pkg2, &home2, &[], &[]);
+    assert_eq!(rc, 75, "{err}");
+    assert!(err.contains("contract_version 2"), "{err}");
+    assert!(err.contains("speaks contract 1"), "{err}");
+    assert!(
+        !home2.join("runtimes").join(&h2.entry).exists(),
+        "a refused-contract runtime entered the cache"
+    );
+}
+
+#[test]
+fn s16_image_contract_mismatch_refused() {
+    // The image path applies the same gate (the package entry's
+    // contract_version governs its additive image too). Warm the
+    // executable cache first so the image path is the one negotiating.
+    let h = h();
+    let home = h.home("home-ci");
+    let warm = h.lean_pkg("warmapp");
+    assert_eq!(h.run(&warm, &home, &[], &[]).0, 0, "warm-up install");
+
+    let manifest = h
+        .mirror_root
+        .join(format!("v{TEBAKO_VER}"))
+        .join("manifest.json");
+    let declared2 = std::fs::read_to_string(&manifest).unwrap().replace(
+        "\"tebako_version\":",
+        "\"contract_version\": 2,\n    \"tebako_version\":",
+    );
+    std::fs::write(&manifest, declared2).unwrap();
+
+    let pkg = h.lean_pkg_image("imgapp");
+    let (rc, _, err) = h.run(&pkg, &home, &[], &[]);
+    assert_eq!(rc, 75, "{err}");
+    assert!(err.contains("contract_version 2"), "{err}");
+    assert!(
+        !h.cache_image(&home).exists(),
+        "a refused-contract image entered the cache"
+    );
+}

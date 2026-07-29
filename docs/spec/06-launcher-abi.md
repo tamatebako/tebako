@@ -50,7 +50,8 @@ republish of v1-era runtimes needed.
      downgraded to unverified.
    - **Unsigned (v1)**: loud warning + audit journal (or exit 71 under
      `TEBAKO_REQUIRE_SIGNED=1`).
-4. Resolve the runtime per spec 05 §5.
+4. Resolve the runtime per spec 05 §5 — negotiating the contract version
+   (§6) fail-closed before any checksum acceptance.
 5. Image-era: ensure `<asset>.tfs` + trust markers in the cache entry
    (fetch + verify on miss), install read-only.
 6. Exec the handoff. Never returns on success.
@@ -68,6 +69,7 @@ republish of v1-era runtimes needed.
 | 72 | `EX_TEBAKO_TRUST` | signer key not in the trusted keyring |
 | 73 | `EX_TEBAKO_JAIL` | jail policy could not be applied (malformed `TEBAKO_JAIL`; fail-closed — spec 08) |
 | 74 | `EX_TEBAKO_IO` | filesystem/lock/install failure |
+| 75 | `EX_TEBAKO_CONTRACT` | runtime declares an unsupported `contract_version` (§6) |
 
 stderr body: `tebako-bootstrap: <message>\n` — message bodies match the
 C++ reference bootstrap 1:1 (golden parity).
@@ -98,3 +100,42 @@ the benefit. Rules:
   tebako-cli reuse it (no third copy). tebako-http gains an
   `on_progress(bytes_so_far, content_length)` callback hooking the
   stream — the bar is transport-accurate, not estimated.
+
+## 6. Bootstrap↔runtime contract negotiation (roadmap 45)
+
+The launcher ABI (§1–§2) is the wire format; the **contract version** is
+its semantics version, declared by the runtime and enforced by the
+bootstrap. It exists so a future handoff change (env names, argv shape,
+image-handoff semantics) can be introduced without old bootstraps
+silently mis-executing new runtimes.
+
+| contract | semantics |
+|---------:|-----------|
+| 1 | this document, §1–§5: `--tebako-image`/`--tebako-entry` argv, `TEBAKO_RUNTIME_IMAGE` env handoff, trailer/ABI gating as in §3 |
+
+**Bump rule.** Any change to env/argv/handoff semantics — a renamed or
+repurposed variable, a new loader-consumed flag, a change in image
+precedence — increments the contract version by exactly 1. Additive
+payload-side changes that v1 runtimes may ignore (like §2's env image
+for v1 runtimes) do NOT bump the contract.
+
+**Declaration.** The runtime release manifest's per-package entry carries
+`"contract_version": <uint>` (spec 05 §5's manifest.json; additive —
+older consumers ignore it). The runtime driver has the same value
+compiled in (`TEBAKO_CONTRACT_VERSION`); the runtime repo's CI fails any
+release where the manifest and the driver disagree.
+
+**Negotiation rule (bootstrap, fail-closed).** During runtime/image
+resolution, before any checksum acceptance:
+
+1. Manifest entry declares `contract_version == SUPPORTED_CONTRACT`
+   (currently 1) → proceed.
+2. Field absent or unparseable → a pre-contract release, which is
+   contract 1 by definition → proceed while 1 is the supported contract.
+3. Any other declared value → refuse: nothing is installed, the cache is
+   untouched, exit 75 (`EX_TEBAKO_CONTRACT`) naming both generations and
+   the remedy (upgrade tebako, or pin an older runtime).
+
+A negotiation failure is never a crash and never a silent accept: it is
+a clean, explained refusal. When contract 2 exists, `SUPPORTED_CONTRACT`
+becomes a range and rule 1 accepts any value in it.
