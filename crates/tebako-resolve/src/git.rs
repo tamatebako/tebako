@@ -21,7 +21,20 @@ fn transport_url(url: &str) -> Result<String, ResolveError> {
                 .to_string(),
         });
     }
-    if url.starts_with("https://") || url.starts_with("file://") || Path::new(url).is_absolute() {
+    if url.starts_with("https://") || url.starts_with("file://") {
+        return Ok(url.to_string());
+    }
+    // A Windows absolute path (`C:\…`, `\\server\…`) reads as scp-syntax
+    // to gix's URL parser (host "C"): canonicalize to the file:/// form
+    // with forward slashes. unix absolutes pass through as-is.
+    #[cfg(windows)]
+    if Path::new(url).is_absolute() {
+        return Ok(format!("file:///{}", url.replace('\\', "/")));
+    }
+    // A leading `/` is a local path on every platform (unix absolute;
+    // root-relative on Windows — Rust's is_absolute is false for the
+    // latter, which is exactly why this check exists).
+    if url.starts_with('/') || Path::new(url).is_absolute() {
         Ok(url.to_string())
     } else {
         Ok(format!("https://{url}"))
@@ -109,6 +122,12 @@ mod tests {
             let _ = std::fs::remove_dir_all(&dir);
             let repo = gix::init_bare(&dir).unwrap();
             drop(repo);
+            // init_bare's HEAD follows the AMBIENT init.defaultBranch —
+            // "main" on these dev machines, "master" on git-for-windows
+            // runners — but every commit below lands on refs/heads/main.
+            // Pin HEAD deterministically or ref-less environments resolve
+            // HEAD nowhere ("rev-spec is malformed and misses a ref name").
+            std::fs::write(dir.join("HEAD"), b"ref: refs/heads/main\n").unwrap();
             // gix commit needs an identity; CI runners have no ambient
             // git config (user.name/user.email). Pin it in-repo (append —
             // init already wrote [core]) and re-open so the config is

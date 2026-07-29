@@ -161,8 +161,13 @@ fn doctor_reports_a_clean_setup_and_corruption() {
 
     // clean: shim on PATH, all records consistent
     let mut ctx = pinned_ctx(&home, tmp.path());
-    ctx.env
-        .insert("PATH".into(), format!("{}:/usr/bin:/bin", shims.display()));
+    ctx.env.insert(
+        "PATH".into(),
+        std::env::join_paths([&shims, std::path::Path::new("/usr/bin")])
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+    );
     let (text, code) = printed(run_ok(&["tebako-shim".into(), "doctor".into()], &ctx));
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("no problems found"), "{text}");
@@ -178,8 +183,13 @@ fn doctor_reports_a_clean_setup_and_corruption() {
     // corrupt the payload image → the trust anchor catches it
     let ctx = {
         let mut c = pinned_ctx(&home, tmp.path());
-        c.env
-            .insert("PATH".into(), format!("{}:/usr/bin:/bin", shims.display()));
+        c.env.insert(
+            "PATH".into(),
+            std::env::join_paths([&shims, std::path::Path::new("/usr/bin")])
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+        );
         c
     };
     std::fs::write(
@@ -192,6 +202,7 @@ fn doctor_reports_a_clean_setup_and_corruption() {
     assert!(text.contains("sha256 mismatch"), "{text}");
 }
 
+#[cfg(not(windows))] // the unix rc-file flow; the Windows registry form is covered in shell_windows.rs
 #[test]
 fn install_shell_roundtrip_through_run() {
     let tmp = TempDir::new("install-shell");
@@ -230,4 +241,30 @@ fn install_shell_roundtrip_through_run() {
     assert_eq!(code, 0);
     assert!(text.contains("removed"), "{text}");
     assert_eq!(std::fs::read_to_string(&rc).unwrap(), "");
+}
+
+#[test]
+fn link_and_unlink_use_the_platform_shim_name() {
+    // spec 07 §3 + TODO.v2-1/05: the shim file is `<command>` on unix
+    // (permission-bit executability) and `<command>.exe` on Windows
+    // (PATHEXT resolution); unlink removes exactly the same name.
+    let tmp = TempDir::new("link-name");
+    let home = tmp.path().join("home");
+    let dispatcher = tmp.path().join("dispatcher-bin");
+    std::fs::write(&dispatcher, b"dispatcher\n").unwrap();
+
+    #[cfg(windows)]
+    let want = "metanorma.exe";
+    #[cfg(not(windows))]
+    let want = "metanorma";
+
+    let linked = tebako_shim::manage::link_shims(&home, &dispatcher, &["metanorma".to_string()])
+        .expect("link");
+    assert_eq!(linked, vec![home.join("shims").join(want)]);
+    assert!(home.join("shims").join(want).exists());
+
+    let removed =
+        tebako_shim::manage::unlink_shims(&home, &["metanorma".to_string()]).expect("unlink");
+    assert_eq!(removed, vec![home.join("shims").join(want)]);
+    assert!(!home.join("shims").join(want).exists());
 }

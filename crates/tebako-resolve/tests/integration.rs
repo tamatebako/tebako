@@ -15,6 +15,14 @@ fn scratch(tag: &str) -> PathBuf {
     dir
 }
 
+/// A canonical file:// URL for a local path — the constructor lives in
+/// tebako-http (the crate that reads these URLs); re-exported here so the
+/// fixtures stop hand-rolling `format!("file://{}")`, which is only
+/// accidentally right on unix.
+fn file_url(path: &std::path::Path) -> String {
+    tebako_http::file_url(path)
+}
+
 #[test]
 fn file_mirror_fetch_and_cache() {
     let dir = scratch("file");
@@ -23,7 +31,7 @@ fn file_mirror_fetch_and_cache() {
     fs::write(mirror.join("tool.tfs"), b"payload-bytes").unwrap();
     let cache = PayloadCache::with_root(dir.join("cache"));
 
-    let reference = Reference::parse(&format!("file://{}/tool.tfs", mirror.display())).unwrap();
+    let reference = Reference::parse(&format!("{}/tool.tfs", file_url(&mirror))).unwrap();
     let (entry, status) = fetch_and_cache(&cache, &reference, "tool", "1.2.3", None).unwrap();
     assert_eq!(status, InstallStatus::Installed);
     assert_eq!(fs::read(&entry.path).unwrap(), b"payload-bytes");
@@ -55,8 +63,8 @@ fn pinned_mirror_mismatch_caches_nothing() {
     let cache = PayloadCache::with_root(dir.join("cache"));
 
     let reference = Reference::parse(&format!(
-        "file://{}/tool.tfs?sha256={}",
-        mirror.display(),
+        "{}/tool.tfs?sha256={}",
+        file_url(&mirror),
         "0".repeat(64)
     ))
     .unwrap();
@@ -154,7 +162,7 @@ fn file_mirror_registry_resolves_and_parses() {
     fs::create_dir_all(&mirror).unwrap();
     fs::write(mirror.join("tpkg-registry.yaml"), REGISTRY_YAML).unwrap();
 
-    let r = RegistryRef::parse(&format!("file://{}/tpkg-registry.yaml", mirror.display())).unwrap();
+    let r = RegistryRef::parse(&format!("{}/tpkg-registry.yaml", file_url(&mirror))).unwrap();
     let registry = Fetcher::new().resolve_registry(&r).unwrap();
     assert_eq!(registry.payloads.len(), 1);
     assert_eq!(registry.payloads[0].name, "tool");
@@ -277,7 +285,7 @@ fn unparsable_registry_is_a_named_error() {
     let mirror = dir.join("mirror");
     fs::create_dir_all(&mirror).unwrap();
     fs::write(mirror.join("tpkg-registry.yaml"), "schema_version: 99\n").unwrap();
-    let r = RegistryRef::parse(&format!("file://{}/tpkg-registry.yaml", mirror.display())).unwrap();
+    let r = RegistryRef::parse(&format!("{}/tpkg-registry.yaml", file_url(&mirror))).unwrap();
     let err = Fetcher::new().resolve_registry(&r).unwrap_err();
     assert!(matches!(err, ResolveError::Registry(_)));
     assert!(err.to_string().contains("schema_version 99"));

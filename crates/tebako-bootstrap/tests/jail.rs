@@ -15,23 +15,14 @@ use std::path::{Path, PathBuf};
 
 use harness::{rust_bootstrap, Harness};
 
-/// A fake runtime that reports the jail env the bootstrap exported.
+/// A fake runtime that reports the jail env the bootstrap exported:
+/// the package's own stub binary (it prints JAIL= JAIL-SOURCE=
+/// JAIL-JOURNAL= among its probe lines). A compiled stub is what
+/// CreateProcess can run on Windows — a /bin/sh script is not.
 fn write_probe_runtime(h: &Harness, home: &Path) {
     let exe = h.cache_exe(home);
     std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
-    std::fs::write(
-        &exe,
-        "#!/bin/sh\n\
-         echo \"JAIL=${TEBAKO_JAIL-UNSET}\"\n\
-         echo \"JAIL-SOURCE=${TEBAKO_JAIL_SOURCE-UNSET}\"\n\
-         echo \"JAIL-JOURNAL=${TEBAKO_JAIL_JOURNAL-UNSET}\"\n",
-    )
-    .unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
+    std::fs::copy(harness::fake_runtime_path(), &exe).unwrap();
 }
 
 fn package_manifest(runtime_ref: &str, jail: tpkg::HostJail) -> tpkg::PackageManifest {

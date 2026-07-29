@@ -93,11 +93,41 @@ fn read_file_url(path: &str) -> Result<Vec<u8>, FetchError> {
     })
 }
 
+/// The canonical file:// URL for a local path (forward slashes, the
+/// third slash before an absolute unix path or a Windows drive path:
+/// `file:///tmp/x`, `file:///C:/x`). `format!("file://{path}")` is only
+/// accidentally right on unix; this is the one constructor, so nobody
+/// hand-rolls it again.
+pub fn file_url(path: &std::path::Path) -> String {
+    let s = path.to_string_lossy().replace('\\', "/");
+    if s.starts_with('/') {
+        format!("file://{s}")
+    } else {
+        format!("file:///{s}")
+    }
+}
+
+/// The filesystem path a `file://` remainder names. RFC 8089: the third
+/// slash separates the (empty) authority from the path — so on Windows
+/// `/C:/x` is not a path at all; the drive path is `C:/x`. Unix
+/// remainders begin at that slash and pass through unchanged.
+pub fn file_path_from_url(remainder: &str) -> &str {
+    #[cfg(windows)]
+    {
+        let b = remainder.as_bytes();
+        if b.len() > 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' && b[3] == b'/'
+        {
+            return &remainder[1..];
+        }
+    }
+    remainder
+}
+
 /// GET `url` and return the response body. `https://` (redirects
 /// followed, HTTPS-only) or `file://`.
 pub fn get(url: &str) -> Result<Vec<u8>, FetchError> {
     if let Some(path) = url.strip_prefix("file://") {
-        return read_file_url(path);
+        return read_file_url(file_path_from_url(path));
     }
     if !url.starts_with("https://") {
         return Err(FetchError::DownloadFailed(format!(
@@ -126,7 +156,7 @@ pub fn get_with_progress(
         return get(url);
     };
     if let Some(path) = url.strip_prefix("file://") {
-        let bytes = read_file_url(path)?;
+        let bytes = read_file_url(file_path_from_url(path))?;
         cb(bytes.len() as u64, Some(bytes.len() as u64));
         return Ok(bytes);
     }
@@ -222,6 +252,28 @@ pub fn delete(url: &str, bearer: Option<&str>) -> Result<(), FetchError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn file_url_constructor_is_canonical_on_both_platforms() {
+        // unix absolute: the third slash comes from the path itself
+        assert_eq!(file_url(std::path::Path::new("/tmp/x")), "file:///tmp/x");
+        // a drive path (or any non-/ path) gets the slash spelled
+        #[cfg(windows)]
+        assert_eq!(
+            file_url(std::path::Path::new(r"C:/Users/x")),
+            "file:///C:/Users/x"
+        );
+    }
+
+    #[test]
+    fn the_constructor_round_trips_through_get() {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-http-test-roundtrip-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("index.txt");
+        std::fs::write(&file, b"hello").unwrap();
+        assert_eq!(get(&file_url(&file)).unwrap(), b"hello");
+    }
 
     #[test]
     fn file_url_reads_from_disk() {

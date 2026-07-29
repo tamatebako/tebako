@@ -322,7 +322,7 @@ fn sha256_file_hex(path: &Path) -> std::io::Result<String> {
 
 // -- per-entry install lock (mirrors the bootstrap's flock discipline) --
 
-struct EntryLock(#[cfg(unix)] std::fs::File);
+struct EntryLock(std::fs::File);
 
 #[cfg(unix)]
 fn flock_acquire(path: &Path, timeout_ms: u64) -> std::io::Result<EntryLock> {
@@ -355,12 +355,55 @@ fn flock_acquire(path: &Path, timeout_ms: u64) -> std::io::Result<EntryLock> {
     }
 }
 
+/// Windows: LockFileEx on one byte at offset 0 of the lock file — the
+/// same semantics as the unix flock (exclusive, non-blocking attempts on
+/// a poll until the timeout; the kernel releases a crashed holder's lock
+/// when the handle dies). The shape the bootstrap's platform.rs and
+/// tebako-resolve's cache.rs already use.
 #[cfg(windows)]
-fn flock_acquire(_path: &Path, _timeout_ms: u64) -> std::io::Result<EntryLock> {
-    Err(std::io::Error::new(
-        std::io::ErrorKind::Unsupported,
-        "install lock is not implemented on this platform in v1",
-    ))
+fn flock_acquire(path: &Path, timeout_ms: u64) -> std::io::Result<EntryLock> {
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Foundation::{ERROR_IO_PENDING, ERROR_LOCK_VIOLATION};
+    use windows_sys::Win32::Storage::FileSystem::{
+        LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+    };
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+
+    let f = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(path)?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    loop {
+        let mut ov = OVERLAPPED::default();
+        let ok = unsafe {
+            LockFileEx(
+                f.as_raw_handle(),
+                LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
+                0,
+                1,
+                0,
+                &mut ov,
+            )
+        };
+        if ok != 0 {
+            return Ok(EntryLock(f));
+        }
+        let err = std::io::Error::last_os_error();
+        let raw = err.raw_os_error().unwrap_or(0);
+        if raw != ERROR_LOCK_VIOLATION as i32 && raw != ERROR_IO_PENDING as i32 {
+            return Err(err);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "lock timeout",
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(LOCK_POLL_MS));
+    }
 }
 
 fn lock_release(lock: EntryLock) {
@@ -370,6 +413,17 @@ fn lock_release(lock: EntryLock) {
         unsafe {
             libc::flock(fd, libc::LOCK_UN);
         }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle as _;
+        use windows_sys::Win32::Storage::FileSystem::UnlockFileEx;
+        use windows_sys::Win32::System::IO::OVERLAPPED;
+        let mut ov = OVERLAPPED::default();
+        unsafe {
+            UnlockFileEx(lock.0.as_raw_handle(), 0, 1, 0, &mut ov);
+        }
+        // dropping the file closes the handle, releasing the lock regardless
     }
 }
 

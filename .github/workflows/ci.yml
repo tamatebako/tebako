@@ -5,6 +5,13 @@ on:
     branches: [main, feat/*]
   pull_request:
 
+# One run per branch/PR-head at a time: pushing to a branch with an open
+# PR would otherwise run every job twice (push + pull_request events);
+# a new run cancels the stale one.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   # Must match the builtin-baseline in dwarfs-t/vcpkg.json (mirrors
@@ -209,6 +216,38 @@ jobs:
       - name: cargo test (no default features)
         working-directory: tebako-rs
         run: cargo test -p tfs --no-default-features
+
+  # The pure-Rust crates compile and test on the real platform (TODO.v2-1/03):
+  # no vcpkg anywhere in this job — tfs/sqfs/rnp are all out of the graph.
+  # This is where the Windows ports (bootstrap platform.rs, shim link
+  # layer) are proven; the vendored-dwarfs Windows build (TODO.v2-1/04)
+  # is the release leg's story, not this job's.
+  test-windows:
+    name: test (windows-latest)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      # tpkg/tfs path deps resolve at manifest level (no submodules needed).
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          components: clippy
+
+      - name: cargo test (pure-Rust crates)
+        working-directory: tebako-rs
+        run: cargo test -p tebako-bootstrap -p tebako-shim -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg
+
+      - name: clippy (pure-Rust crates)
+        working-directory: tebako-rs
+        run: cargo clippy -p tebako-bootstrap -p tebako-shim -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg --all-targets -- -D warnings
 
   fmt:
     name: fmt

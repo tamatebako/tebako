@@ -17,8 +17,11 @@ fn offline_resolves_file_mirrors_only() {
     fs::write(mirror.join("tpkg-registry.yaml"), REGISTRY_YAML).unwrap();
 
     std::env::set_var("TEBAKO_OFFLINE", "1");
-    let local =
-        RegistryRef::parse(&format!("file://{}/tpkg-registry.yaml", mirror.display())).unwrap();
+    let local = RegistryRef::parse(&format!(
+        "{}/tpkg-registry.yaml",
+        tebako_http::file_url(&mirror)
+    ))
+    .unwrap();
     assert!(Fetcher::new().resolve_registry(&local).is_ok());
 
     let remote = RegistryRef::parse("tfs:github:o/r").unwrap();

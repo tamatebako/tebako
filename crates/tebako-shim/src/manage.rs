@@ -11,9 +11,12 @@ use crate::manifest;
 use crate::regcache;
 use crate::resolve::{self, Resolution};
 use crate::runtime::RuntimeResolution;
-use crate::shell::{self, Shell};
+use crate::shell;
+#[cfg(not(windows))]
+use crate::shell::Shell;
 use crate::{fail, Action, Ctx, ShimError, EX_TEBAKO_IO, EX_USAGE};
 
+#[cfg(not(windows))]
 const USAGE: &str = "tebako-shim — the tebako dispatcher and version manager (spec 07)
 
 invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manages:
@@ -27,6 +30,19 @@ invoked as ~/.tebako/shims/<tool> it dispatches; invoked as tebako-shim it manag
                                        prepend ~/.tebako/shims to PATH in the shell startup file
   tebako-shim uninstall-shell [--shell bash|zsh|fish|csh]
                                        remove exactly the managed block";
+
+#[cfg(windows)]
+const USAGE: &str = "tebako-shim — the tebako dispatcher and version manager (spec 07)
+
+invoked as <TEBAKO_HOME>\\shims\\<tool>.exe it dispatches; invoked as tebako-shim it manages:
+
+  tebako-shim list                     installed payloads, versions, defaults, shim links
+  tebako-shim enable <tool>[@<ver>]    re-enable a disabled tool or version
+  tebako-shim disable <tool>[@<ver>]   refuse dispatch of a tool or version
+  tebako-shim which <tool>             show the resolved version, runtime, mounts, argv
+  tebako-shim doctor                   diagnose the shim layer (missing/corrupt records)
+  tebako-shim install-shell            prepend the shim dir to the user PATH (registry)
+  tebako-shim uninstall-shell          remove exactly our PATH entry";
 
 pub fn run_command(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
     let Some(cmd) = args.first() else {
@@ -288,13 +304,14 @@ fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
     let mut problems: Vec<String> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
 
-    // PATH carries the shim dir?
+    // PATH carries the shim dir? (std::env::split_paths — the separator
+    // is ':' on unix and ';' on Windows; a hand-rolled ':' split would
+    // never match on Windows.)
     let shims_dir = ctx.home.join("shims");
     let on_path = ctx
         .env_get("PATH")
-        .unwrap_or("")
-        .split(':')
-        .any(|p| p == shims_dir.to_string_lossy());
+        .map(|p| std::env::split_paths(&p).any(|dir| dir == shims_dir))
+        .unwrap_or(false);
     if !on_path {
         problems.push(format!(
             "{} is not on PATH — run `tebako-shim install-shell`",
@@ -309,6 +326,7 @@ fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
             if name.starts_with('.') {
                 continue; // shim-managed state files
             }
+            let name = crate::command_from_shim_name(&name).to_string();
             match resolve::resolve(&name, ctx) {
                 Ok(_) => notes.push(format!("shim {name}: ok")),
                 Err(e) => problems.push(format!("shim {name}: {}", first_line(&e.message))),
@@ -512,7 +530,7 @@ pub fn link_shims(
     let mut linked = Vec::new();
     for command in commands {
         manifest::check_path_component("command name", command)?;
-        let link = dir.join(command);
+        let link = dir.join(shim_file_name(command));
         if link.symlink_metadata().is_ok() {
             std::fs::remove_file(&link).map_err(|e| {
                 ShimError::new(
@@ -525,6 +543,18 @@ pub fn link_shims(
         linked.push(link);
     }
     Ok(linked)
+}
+
+/// The shim's on-disk filename for a command: `<command>` on unix
+/// (executability is permission bits), `<command>.exe` on Windows —
+/// CreateProcess/PATH resolution goes through PATHEXT, so the copied
+/// dispatcher needs the suffix. The dispatcher strips it from argv[0]
+/// (lib.rs `run`), so registration and lookup stay suffix-free.
+fn shim_file_name(command: &str) -> String {
+    #[cfg(windows)]
+    return format!("{command}.exe");
+    #[cfg(not(windows))]
+    return command.to_string();
 }
 
 #[cfg(unix)]
@@ -565,7 +595,7 @@ pub fn unlink_shims(
     let mut removed = Vec::new();
     for command in commands {
         manifest::check_path_component("command name", command)?;
-        let link = dir.join(command);
+        let link = dir.join(shim_file_name(command));
         match std::fs::remove_file(&link) {
             Ok(()) => removed.push(link),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -584,6 +614,7 @@ pub fn unlink_shims(
 // install-shell / uninstall-shell
 // ---------------------------------------------------------------------
 
+#[cfg(not(windows))]
 fn parse_shell_flag(args: &[String], ctx: &Ctx) -> Result<Shell, ShimError> {
     let mut i = 0;
     let mut shell: Option<String> = None;
@@ -611,6 +642,7 @@ fn parse_shell_flag(args: &[String], ctx: &Ctx) -> Result<Shell, ShimError> {
     }
 }
 
+#[cfg(not(windows))]
 fn user_home(ctx: &Ctx) -> Result<PathBuf, ShimError> {
     ctx.env_get("HOME")
         .filter(|v| !v.is_empty())
@@ -623,6 +655,7 @@ fn user_home(ctx: &Ctx) -> Result<PathBuf, ShimError> {
         })
 }
 
+#[cfg(not(windows))]
 fn cmd_shell(args: &[String], ctx: &Ctx, install: bool) -> Result<Action, ShimError> {
     let sh = parse_shell_flag(args, ctx)?;
     let file = shell::startup_file(sh, &user_home(ctx)?);
@@ -646,6 +679,48 @@ fn cmd_shell(args: &[String], ctx: &Ctx, install: bool) -> Result<Action, ShimEr
             }
             shell::Change::NotPresent => {
                 format!("no tebako shim block in {} — nothing to do", file.display())
+            }
+            _ => unreachable!("uninstall only yields Removed/NotPresent"),
+        }
+    };
+    Ok(Action::Print {
+        text: format!("{text}\n"),
+        code: 0,
+    })
+}
+
+/// Windows: no rc files — the shim dir goes onto the user PATH in the
+/// registry (shell_windows.rs). `--shell` is a unix-only option and says
+/// so, never a silent ignore.
+#[cfg(windows)]
+fn cmd_shell(args: &[String], ctx: &Ctx, install: bool) -> Result<Action, ShimError> {
+    if !args.is_empty() {
+        return fail(
+            EX_USAGE,
+            format!(
+                "unexpected argument \"{}\" — on Windows install-shell edits the user PATH in the registry (HKCU\\Environment) and takes no --shell",
+                args.join(" ")
+            ),
+        );
+    }
+    let dir = shims_dir(&ctx.home);
+    let text = if install {
+        match crate::shell_windows::install(&dir)? {
+            shell::Change::Installed => format!(
+                "added {} to the user PATH (HKCU\\Environment)\nopen a NEW terminal — running consoles keep the old PATH",
+                dir.display()
+            ),
+            shell::Change::AlreadyPresent => format!(
+                "{} is already on the user PATH — nothing to do",
+                dir.display()
+            ),
+            _ => unreachable!("install only yields Installed/AlreadyPresent"),
+        }
+    } else {
+        match crate::shell_windows::uninstall(&dir)? {
+            shell::Change::Removed => format!("removed {} from the user PATH", dir.display()),
+            shell::Change::NotPresent => {
+                format!("{} was not on the user PATH — nothing to do", dir.display())
             }
             _ => unreachable!("uninstall only yields Removed/NotPresent"),
         }

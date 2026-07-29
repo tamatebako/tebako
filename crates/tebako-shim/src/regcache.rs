@@ -53,8 +53,18 @@ fn offline(ctx: &Ctx) -> bool {
 /// refs, but a hand-maintained config.yaml may carry a path).
 fn local_registry_path(reg_ref: &str) -> Option<PathBuf> {
     if let Some(rest) = reg_ref.strip_prefix("file://") {
-        Some(PathBuf::from(rest))
-    } else if reg_ref.starts_with('/') || reg_ref.starts_with("./") || reg_ref.starts_with("../") {
+        // RFC 8089 drive-path recovery (file:///C:/x → C:/x on Windows),
+        // the same rule tebako-http's reader applies.
+        return Some(PathBuf::from(tebako_http::file_path_from_url(rest)));
+    }
+    // A plain absolute path (`/x`, `C:\x`) or an explicit relative one —
+    // never a bare name (that is a registry ref's grammar, not a path).
+    if Path::new(reg_ref).is_absolute()
+        || reg_ref.starts_with("./")
+        || reg_ref.starts_with("../")
+        || reg_ref.starts_with(".\\")
+        || reg_ref.starts_with("..\\")
+    {
         Some(PathBuf::from(reg_ref))
     } else {
         None

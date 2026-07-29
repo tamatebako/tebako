@@ -124,14 +124,17 @@ pub fn platform() -> &'static str {
 }
 
 /// A cached runtime entry
-/// `runtimes/ruby-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>`.
+/// `runtimes/ruby-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>[.exe]`
+/// — the resolver looks the asset up by its platform name, suffix
+/// included (spec: `exe_suffix()` on Windows).
 pub fn write_runtime(home: &Path, lv: &str, ver: &str, with_image: bool) -> PathBuf {
     let platform = platform();
+    let suffix = tebako_shim::runtime::exe_suffix();
     let dir = home
         .join("runtimes")
         .join(format!("ruby-{lv}-{ver}-{platform}"));
     std::fs::create_dir_all(&dir).expect("runtime dir");
-    let exe = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}"));
+    let exe = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}{suffix}"));
     let exe_bytes = b"fake runtime exe\n";
     std::fs::write(&exe, exe_bytes).expect("exe");
     #[cfg(unix)]
@@ -142,7 +145,7 @@ pub fn write_runtime(home: &Path, lv: &str, ver: &str, with_image: bool) -> Path
     std::fs::write(
         dir.join("sha256"),
         format!(
-            "{}  tebako-runtime-{ver}-{lv}-{platform}\n",
+            "{}  tebako-runtime-{ver}-{lv}-{platform}{suffix}\n",
             sha256_hex(exe_bytes)
         ),
     )
@@ -169,8 +172,12 @@ pub fn write_mirror(root: &Path, lv: &str, ver: &str, tamper: bool) -> PathBuf {
     let platform = platform();
     let dir = root.join(format!("v{ver}"));
     std::fs::create_dir_all(&dir).expect("mirror dir");
-    let exe_name = format!("tebako-runtime-{ver}-{lv}-{platform}");
-    let image_name = format!("{exe_name}.tfs");
+    // The release asset names the resolver derives: the exe carries the
+    // platform suffix (.exe on Windows); the IMAGE is named off the
+    // suffix-free asset base (<base>.tfs — never <base>.exe.tfs).
+    let asset_base = format!("tebako-runtime-{ver}-{lv}-{platform}");
+    let exe_name = format!("{asset_base}{}", tebako_shim::runtime::exe_suffix());
+    let image_name = format!("{asset_base}.tfs");
     let exe_bytes = b"mirrored runtime exe\n";
     let image_bytes = b"mirrored runtime image\n";
     std::fs::write(dir.join(&exe_name), exe_bytes).expect("exe");

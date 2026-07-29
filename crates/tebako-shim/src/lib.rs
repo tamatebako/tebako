@@ -47,6 +47,7 @@ pub mod regcache;
 pub mod resolve;
 pub mod runtime;
 pub mod shell;
+pub mod shell_windows;
 pub mod versions;
 
 use std::collections::BTreeMap;
@@ -119,10 +120,10 @@ pub fn tebako_home(env: &BTreeMap<String, String>) -> Result<PathBuf, ShimError>
         if let Some(home) = env.get("USERPROFILE").filter(|v| !v.is_empty()) {
             return Ok(PathBuf::from(home).join(".tebako"));
         }
-        return fail(
+        fail(
             EX_TEBAKO_IO,
             "cannot determine tebako home (set TEBAKO_HOME)",
-        );
+        )
     }
     #[cfg(not(windows))]
     {
@@ -144,6 +145,14 @@ pub enum Action {
     Print { text: String, code: u8 },
 }
 
+/// The command a shim FILE name refers to: the dispatcher is linked as
+/// `<command>` (unix) or `<command>.exe` (Windows — PATHEXT needs the
+/// suffix, manage.rs `shim_file_name`), so the suffix is stripped here.
+/// Registration and lookup keys are always suffix-free.
+pub(crate) fn command_from_shim_name(file_name: &str) -> &str {
+    file_name.strip_suffix(".exe").unwrap_or(file_name)
+}
+
 /// The binary's two faces (spec 07 §2.0): linked as `<tool>` → dispatch;
 /// invoked as `tebako-shim` → management commands.
 pub fn run(argv: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
@@ -153,7 +162,7 @@ pub fn run(argv: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
         .unwrap_or_default()
         .to_string_lossy()
         .into_owned();
-    let tool = tool.strip_suffix(".exe").unwrap_or(&tool).to_string();
+    let tool = command_from_shim_name(&tool).to_string();
     if tool == "tebako-shim" {
         manage::run_command(&argv[1..], ctx)
     } else {

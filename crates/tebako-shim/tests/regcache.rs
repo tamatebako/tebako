@@ -93,14 +93,9 @@ fn file_refs_read_directly_and_never_touch_the_cache() {
     std::fs::write(&reg, REGISTRY_YAML).unwrap();
 
     let (fetcher, _) = github_fetcher("unused");
-    let registry = regcache::registry_for_with(
-        &home,
-        &format!("file://{}", reg.display()),
-        &fetcher,
-        false,
-        now(),
-    )
-    .unwrap();
+    let registry =
+        regcache::registry_for_with(&home, &tebako_http::file_url(&reg), &fetcher, false, now())
+            .unwrap();
     assert_eq!(registry.payloads.len(), 1);
     // no cache directory was created and nothing was fetched
     assert!(!regcache::registries_dir(&home).exists());
@@ -202,8 +197,7 @@ fn refresh_force_renews_and_reports_outcomes() {
     // file:// refs skip with a distinct outcome
     let reg = tmp.path().join("tpkg-registry.yaml");
     std::fs::write(&reg, REGISTRY_YAML).unwrap();
-    let outcome =
-        regcache::refresh_with(&home, &format!("file://{}", reg.display()), &fetcher).unwrap();
+    let outcome = regcache::refresh_with(&home, &tebako_http::file_url(&reg), &fetcher).unwrap();
     assert_eq!(outcome, RefreshOutcome::LocalSkipped);
 
     // a fetched registry that no longer parses is a named error and the

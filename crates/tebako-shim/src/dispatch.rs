@@ -333,15 +333,50 @@ pub fn exec(plan: &ExecPlan) -> ShimError {
     )
 }
 
-#[cfg(not(unix))]
+/// Windows has no execve(2): spawn the child, wait, and exit with its
+/// code (the same contract the bootstrap's spawn_handoff implements for
+/// the runtime handoff — the user sees the program's own exit code).
+/// Never returns on success.
+#[cfg(windows)]
 pub fn exec(plan: &ExecPlan) -> ShimError {
-    // The Windows exec port lands with the windows CI leg (spec 06 §3
-    // status); fail cleanly rather than misbehave.
-    ShimError::new(
-        crate::EX_TEBAKO_IO,
-        format!(
-            "cannot execute {}: exec is not implemented on this platform in v1",
-            plan.program.display()
+    install_ctrl_swallow();
+    let mut cmd = std::process::Command::new(&plan.program);
+    cmd.args(&plan.argv[1..]);
+    for (k, v) in &plan.env {
+        cmd.env(k, v);
+    }
+    match cmd.spawn().and_then(|mut child| child.wait()) {
+        Ok(status) => std::process::exit(status.code().unwrap_or(1)),
+        Err(e) => ShimError::new(
+            crate::EX_TEBAKO_IO,
+            format!("cannot execute {}: {e}", plan.program.display()),
         ),
-    )
+    }
+}
+
+/// Console Ctrl handling for the spawn handoff (the bootstrap's rule,
+/// same reasoning): the child shares our console process group, so
+/// CTRL_C/CTRL_BREAK reach it directly (the payload sees its normal
+/// SIGINT); the shim must outlive the child to propagate its exit code,
+/// so its own copy of those events is swallowed.
+#[cfg(windows)]
+unsafe extern "system" fn ctrl_swallow(ctrl_type: u32) -> windows_sys::core::BOOL {
+    use windows_sys::Win32::Foundation::{FALSE, TRUE};
+    use windows_sys::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_C_EVENT};
+    match ctrl_type {
+        CTRL_C_EVENT | CTRL_BREAK_EVENT => TRUE,
+        // CLOSE/LOGOFF/SHUTDOWN keep the default processing (terminate).
+        _ => FALSE,
+    }
+}
+
+#[cfg(windows)]
+fn install_ctrl_swallow() {
+    // Best-effort: without the handler a console Ctrl event kills the
+    // shim before the child is reaped, but the handoff itself still
+    // works — never fail an exec over it.
+    use windows_sys::Win32::System::Console::SetConsoleCtrlHandler;
+    unsafe {
+        SetConsoleCtrlHandler(Some(ctrl_swallow), 1);
+    }
 }
