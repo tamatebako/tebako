@@ -60,22 +60,11 @@ pub fn platform() -> &'static str {
     tebako_bootstrap::platform::platform_string()
 }
 
+/// The Rust bootstrap binary under test: cargo's own bin path for this
+/// package's integration tests (platform-true — carries the `.exe` on
+/// Windows, and always points into the real target dir).
 pub fn rust_bootstrap() -> PathBuf {
-    let target = std::env::var("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target")
-                .canonicalize()
-                .unwrap()
-        });
-    for profile in ["debug", "release"] {
-        let cand = target.join(profile).join("tebako-bootstrap");
-        if cand.is_file() {
-            return cand;
-        }
-    }
-    panic!("tebako-bootstrap binary not built (run `cargo build -p tebako-bootstrap`)")
+    PathBuf::from(env!("CARGO_BIN_EXE_tebako-bootstrap"))
 }
 
 pub fn cpp_bootstrap() -> Option<PathBuf> {
