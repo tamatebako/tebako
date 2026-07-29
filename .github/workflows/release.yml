@@ -337,11 +337,10 @@ jobs:
   # ==========================================================================
   linux-musl:
     name: Linux musl (${{ matrix.platform }})
-    # DISABLED for v0.1.0: rnp-rs 0.1.7 has no musl prebuilt and its
-    # build.rs panics on musl targets. Re-enable when rnpgp's rnp-src
-    # source-built release lands (it compiles under musl). The release
-    # ships macos ×2 + linux-gnu ×2 until then; finalize needs match.
-    if: false
+    # Enabled since rnp-rs 0.1.10: the rnp-src model builds librnp+botan
+    # from source (musl-capable; the container has cmake/ninja/python3).
+    # rnp-src resolves from crates.io 0.1.2 (the rnpgp/rnp-rs#63 fix —
+    # the is_packaging() misfire that broke 0.1.1's vendored mode).
     permissions:
       contents: write
     runs-on: ${{ matrix.os }}
@@ -456,7 +455,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
-    needs: [prepare, macos, linux-gnu]
+    needs: [prepare, macos, linux-gnu, linux-musl]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -505,7 +504,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          EXPECTED=$(( 4 * 4 + 2 ))   # 4 tools x 4 platforms (musl gated) + SHA256SUMS + manifest.json; becomes 4 x 6 + 2 when musl returns
+          EXPECTED=$(( 4 * 6 + 2 ))   # 4 tools x 6 platforms (macos x2, gnu x2, musl x2) + SHA256SUMS + manifest.json
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort

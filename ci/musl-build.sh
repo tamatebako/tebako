@@ -18,7 +18,12 @@ echo "== apk toolchain =="
 apk --no-cache add \
   build-base cmake ninja git bash sudo \
   autoconf automake libtool make pkgconfig perl python3 \
-  curl zip unzip tar ca-certificates linux-headers
+  curl zip unzip tar ca-certificates linux-headers \
+  clang19-libclang
+
+# clang19-libclang: rnp-rs 0.1.10's build.rs runs bindgen (the rnp-src
+# source-built model) — bindgen dlopens libclang.so at runtime, which
+# only the versioned libclang package ships on alpine.
 
 # vcpkg's bootstrap downloads glibc-linked cmake/ninja by default — they
 # cannot run on musl (exit 127). Use the apk-provided tools everywhere.
@@ -74,8 +79,17 @@ echo "== pre-install squashfs-tools-ng ($TRIPLET) =="
   --overlay-triplets "$SQFS_TRIPLETS" \
   --overlay-ports "$WS/tebako-rs/crates/sqfs-sys/vcpkg_ports"
 
-# rnp-rs 0.1.7 prebuilt + botan-sys(vendored)/bzip2-sys crate deps in the
-# workspace carry all crypto statically — no provisioning anywhere.
+# Crypto comes from crates: rnp-rs 0.1.10's vendored mode builds librnp +
+# Botan + json-c + zlib + bzip2 from source via rnp-src (crates.io 0.1.2,
+# the rnpgp/rnp-rs#63 fix).
+#
+# musl targets default to +crt-static, and a statically linked build
+# script cannot dlopen — but rnp-rs's build.rs runs bindgen, which
+# dlopens libclang. Build the musl legs with -crt-static OFF: the
+# artifacts are dynamic-musl, same shape as the runtime factory's musl
+# runtimes (musl libc is present on every musl system by definition;
+# the symbol floor is documented alongside them).
+export RUSTFLAGS="-C target-feature=-crt-static"
 echo "== cargo build (release, $TARGET) =="
 cd "$WS/tebako-rs"
 export DWARFS_RS_VCPKG_ROOT="$WS/.vcpkg-musl"

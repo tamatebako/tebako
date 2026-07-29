@@ -15,7 +15,7 @@ tpkg = { version = "0.1.0", path = "../tpkg" }
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
 tebako-info = { version = "0.1.0", path = "../tebako-info" }
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
-rnp = { package = "rnp-rs", version = "=0.1.7", features = ["vendored"] }
+rnp = { package = "rnp-rs", version = "=0.1.10", features = ["vendored"] }
 libc = "0.2"
 sha2 = "0.10"
 

@@ -9,17 +9,9 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-rnp = { package = "rnp-rs", version = "=0.1.7", features = ["vendored"] }
-# rnp-rs 0.1.7's prebuilt ships librnp+json-c(+sexpp) statically but
-# declares botan-3 and bz2 as EXTERNAL link libs. We satisfy them as
-# crate dependencies — cargo builds both from source, static:
-#   botan-sys vendored → botan-src (Botan 3, libbotan-3.a)
-#   bzip2-sys          → bundled bzip2 source (libbz2.a)
-# json-c already ships inside the rnp-rs prebuilt; zlib stays system
-# (base-OS everywhere). Every rnp consumer depends on tebako-signer, so
-# these two live here only and their link paths propagate to all final
-# binaries. INTERIM until rnp-rs ≥ 0.1.10 (0.1.9's build.rs botan make
-# step lacks .current_dir — broken upstream).
-botan-sys = { version = "1", features = ["vendored"] }
-bzip2-sys = "0.1"
+rnp = { package = "rnp-rs", version = "=0.1.10", features = ["vendored"] }
+# rnp-rs 0.1.10's vendored mode delegates to rnp-src, which builds
+# librnp + Botan + json-c + zlib + bzip2 from source — nothing external
+# to link. (Until 0.1.7's prebuilt the two deps below were INTERIM:
+# rnp-src resolves from crates.io 0.1.2 (the rnpgp/rnp-rs#63 fix).)
 sha2 = "0.10"

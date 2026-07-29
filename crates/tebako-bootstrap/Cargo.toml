@@ -22,7 +22,7 @@ tebako-term = { version = "0.1.0", path = "../tebako-term" }
 # the crypto toolkit payload; until then this feature keeps the full
 # verification path available for dev builds (--features openpgp-verify).
 # With the feature off the bootstrap carries ZERO rnp/botan/json-c/bz2.
-rnp = { package = "rnp-rs", version = "=0.1.7", features = ["vendored"], optional = true }
+rnp = { package = "rnp-rs", version = "=0.1.10", features = ["vendored"], optional = true }
 libc = "0.2"
 sha2 = "0.10"
 
@@ -56,4 +56,4 @@ path = "src/lib.rs"
 # every platform (the feature above is unaffected).
 [target.'cfg(not(windows))'.dev-dependencies]
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
-rnp = { package = "rnp-rs", version = "=0.1.7", features = ["vendored"] }
+rnp = { package = "rnp-rs", version = "=0.1.10", features = ["vendored"] }
