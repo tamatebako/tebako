@@ -1,0 +1,21 @@
+[package]
+name = "tebako-arscope"
+description = "Scope Rust staticlibs for single-link embedding: rename every defined non-tebako_* symbol in each archive member to an internal name — the yjit-collision seal, pure Rust (no cc/ld/objcopy, no shell-outs)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "staticlib", "symbols", "archive", "link"]
+categories = ["development-tools"]
+
+[dependencies]
+# Object read+write (Mach-O/ELF/COFF) — the whole job is a symbol-table
+# rewrite; archives are bytes, and bytes are ours.
+object = { version = "0.37", features = ["write"] }
+# Archive read+write (GNU/BSD long-name forms).
+ar = "0.9"
+
+[dev-dependencies]
+tempfile = "3"
