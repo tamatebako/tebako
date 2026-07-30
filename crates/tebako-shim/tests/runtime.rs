@@ -50,6 +50,22 @@ fn abi_line_constraint_locks_to_the_line() {
 }
 
 #[test]
+fn same_language_version_picks_the_newer_tebako_build() {
+    let tmp = TempDir::new("tie-break");
+    let home = tmp.path().join("home");
+    write_runtime(&home, "3.3.7", "0.15.9", false);
+    write_runtime(&home, "3.3.7", "0.16.0", false);
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx(&home, tmp.path())).unwrap(),
+    );
+    assert_eq!(rt.lang_version, "3.3.7");
+    assert_eq!(
+        rt.tebako_version, "0.16.0",
+        "a stale runtime must not shadow a fresh build of the same ruby"
+    );
+}
+
+#[test]
 fn no_compatible_cached_offline_is_the_named_compat_error() {
     let tmp = TempDir::new("offline-miss");
     let home = tmp.path().join("home");

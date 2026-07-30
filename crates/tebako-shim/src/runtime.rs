@@ -147,6 +147,9 @@ pub fn scan_cached(home: &Path, engine: &str) -> Vec<CachedRuntime> {
 
 /// The newest cached runtime satisfying `constraint` (spec 05 §5:
 /// range → any newer within range; abi-line `~>` → the locked line).
+/// Two cache entries may share the language version (different tebako
+/// builds): the tie breaks on the tebako version, newer first — an
+/// arbitrary pick would let a stale runtime shadow a fresh one.
 pub fn newest_compatible(
     cached: &[CachedRuntime],
     constraint: &Constraint,
@@ -154,7 +157,10 @@ pub fn newest_compatible(
     cached
         .iter()
         .filter(|c| constraint.matches(&c.lang_version))
-        .max_by(|a, b| versions::compare(&a.lang_version, &b.lang_version))
+        .max_by(|a, b| {
+            versions::compare(&a.lang_version, &b.lang_version)
+                .then_with(|| versions::compare(&a.tebako_version, &b.tebako_version))
+        })
         .cloned()
 }
 
