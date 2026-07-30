@@ -1,4 +1,4 @@
-# tebako-rs release pipeline (item 31): build and upload the four
+# tebako-rs release pipeline (item 31): build and upload the five
 # binaries (tebako-bootstrap, tfs, tebako-pkg, tebako) per release
 # platform, with the size-gate table, SHA256SUMS and manifest.json.
 #
@@ -127,13 +127,13 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
 
-      - name: Build the four binaries (release)
+      - name: Build the five binaries (release)
         working-directory: tebako-rs
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: |
           cargo build --release --target ${{ matrix.target }} \
-            -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli
+            -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
 
       - name: Stage, strip, size-gate
         working-directory: tebako-rs
@@ -189,6 +189,17 @@ jobs:
         with:
           asset_name: tebako-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
           asset_path: tebako-rs/out/tebako-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload tebako-shim
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          asset_name: tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          asset_path: tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
           upload_url: ${{ needs.prepare.outputs.upload_url }}
           asset_content_type: application/octet-stream
 
@@ -265,13 +276,13 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
 
-      - name: Build the four binaries (release)
+      - name: Build the five binaries (release)
         working-directory: tebako-rs
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: |
           cargo build --release --target ${{ matrix.target }} \
-            -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli
+            -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
 
       - name: Stage, strip, size-gate
         working-directory: tebako-rs
@@ -327,6 +338,17 @@ jobs:
         with:
           asset_name: tebako-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
           asset_path: tebako-rs/out/tebako-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_content_type: application/octet-stream
+
+      - name: Upload tebako-shim
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          asset_name: tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          asset_path: tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
           upload_url: ${{ needs.prepare.outputs.upload_url }}
           asset_content_type: application/octet-stream
 
@@ -447,6 +469,17 @@ jobs:
           upload_url: ${{ needs.prepare.outputs.upload_url }}
           asset_content_type: application/octet-stream
 
+      - name: Upload tebako-shim
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          asset_name: tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          asset_path: tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_content_type: application/octet-stream
+
   # ==========================================================================
   # finalize: SHA256SUMS + manifest.json + the item-11 completeness gate
   # ==========================================================================
@@ -504,7 +537,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          EXPECTED=$(( 4 * 6 + 2 ))   # 4 tools x 6 platforms (macos x2, gnu x2, musl x2) + SHA256SUMS + manifest.json
+          EXPECTED=$(( 5 * 6 + 2 ))   # 5 tools x 6 platforms (macos x2, gnu x2, musl x2) + SHA256SUMS + manifest.json
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort

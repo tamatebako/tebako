@@ -1,5 +1,5 @@
 #!/bin/bash
-# stage.sh — stage the four release binaries for one platform, strip
+# stage.sh — stage the five release binaries for one platform, strip
 # them, publish the size table, gate the bootstrap size, and write the
 # sha/size fragments the finalize job merges into SHA256SUMS +
 # manifest.json.
@@ -15,8 +15,8 @@ EXE="${EXE_SUFFIX:-}"
 
 # Tool list: binary names equal the artifact tool names (no mapping
 # table — this script must also run under bash 3.2 / POSIX sh, which
-# have no `declare -A`).
-TOOLS="tebako-bootstrap tfs tebako-pkg tebako"
+# have no `declare -A`). tebako-shim is the dispatcher (TODO.testing/07).
+TOOLS="tebako-bootstrap tfs tebako-pkg tebako tebako-shim"
 
 mkdir -p out "fragments/frag-$PLATFORM"
 
