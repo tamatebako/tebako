@@ -1,7 +1,0 @@
-# Seeds for failure cases proptest has generated in the past. It is
-# automatically read and these particular cases re-run before any
-# novel cases are generated.
-#
-# It is recommended to check this file in to source control so that
-# everyone who runs the test benefits from these saved cases.
-cc bb5b2def9f5fc9586edfc1dfb8b8042a481a8ab3d66bf5f07f021f91d619ff11 # shrinks to m = PayloadManifest { identity: Identity { schema_version: 1, kind: Toolkit, name: "b53d6-h--u0d", version: "1.0.0", producer: Producer { tool: "mt", tool_version: "0.16.0" }, created: "2026-07-26T00:00:00Z", source: None, sbom: None, digest: Digest { tree_hash: "sha256:3437f418beb7c147d3a6adc2b7b8c287842c521dbf29f07763cce3c0a2ffe49e", blob_sha256: "941f23fd88a12b5568122d76ac7b743f9246b755ed09b76693b1e1255c223eb3" }, signing: Signing { state: Unsigned, keyid: None, mechanism: None }, encryption: Encryption { state: None, parts: [] }, annotations: {"b88h5--": String("lfs0811k"), "n-3y0j": Bool(false)} }, provides: Other({"k": Number(-2662186393192467430)}), requires: [Language { engine: "jhmtf-t3", constraint: Constraint("> 73, ~> 63.18.56") }, Language { engine: "hq--47u-", constraint: Constraint("< 88.57.2") }, Language { engine: "k4e5-73n--x2", constraint: Constraint("= 79.93.10, 30") }] }
