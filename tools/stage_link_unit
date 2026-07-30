@@ -118,6 +118,13 @@ harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
   harvest(out, File.join(rnp, "install", rel), note)
 end
 
+# The canonical C ABI header (tebako-rs is the shipping implementation):
+# consumers of the link unit compile against this, never an older copy.
+header_src = File.join(root, "include", "tebako", "fs", "c_api.h")
+die "missing canonical header #{header_src}" unless File.file?(header_src)
+FileUtils.mkdir_p(File.join(out, "include", "tebako", "fs"))
+FileUtils.cp(header_src, File.join(out, "include", "tebako", "fs", "c_api.h"))
+
 count = Dir.glob(File.join(out, "closure", "*.a")).size
 die "closure incomplete: #{count} archives (expected 35)" unless count == 35
 
