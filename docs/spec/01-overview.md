@@ -34,7 +34,10 @@ the first runtime instance. The system is generic across four axes:
 
 ## Repositories and languages
 
-C/C++ exists in **exactly three** repositories — the factories.
+Tebako-owned C/C++ exists in exactly **one** repository: `dwarfs-t`.
+(The `tamatebako/ruby` fork carries upstream ruby's own C source plus
+patches — vendored upstream, not ours; `tebako-runtime-ruby` is build
+orchestration that links the Rust staticlibs `tfs` + `tebako-driver`.)
 Everywhere else: Rust, pure Ruby, or Docker. Owner-locked.
 
 | Repo | Language | Role |
@@ -60,6 +63,7 @@ Everywhere else: Rust, pure Ruby, or Docker. Owner-locked.
 | `tfs-cli` | bin | The `tfs` image tool: `info/ls/tree/cat/stat/extract/find/mkimage` (in-process Writer). |
 | `tebako-cli` | bin | The packager: `press` (lean/fat), `cache list/prune`. |
 | `tebako-bootstrap` | bin | The loader (spec 06): trailer parse, resolution, verification, ABI-v1 handoff. < 3 MB static, size-gated (unverified-first: rnp/botan feature-gated out; OpenPGP moves to the roadmap-72 crypto toolkit). |
+| `tebako-driver` | lib (staticlib+rlib) | The spec-17 runtime driver: mounts the env image + payload images into the process-global TFS context, applies `TEBAKO_JAIL`, rewrites argv to the entrypoint. Linked into every runtime executable. The Rust successor of the v1 C++ `tebako-main`. |
 | `tebako-http` | lib | In-process HTTPS (ureq+rustls, webpki-roots bundled; OS roots opt-in). |
 | `tebako-signer` | lib | OpenPGP via `rnp-rs` (crates.io, `vendored`); successor-key rotation. |
 | `tests/contract` | tests | The parity oracle: the C++ c_api suite through the Rust ABI (164 tests). |

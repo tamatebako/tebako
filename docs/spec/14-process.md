@@ -56,14 +56,16 @@ rules that apply in every repo.
 - Named errors everywhere on malformed input (no unwraps on
   trailer/exec/network paths).
 
-## 4. Factory C/C++ rules (the three repos only)
+## 4. Factory C/C++ rules (dwarfs-t and the ruby fork only)
 
 - Modern `tebako_fs_*` API only at consumption seams (nm gates; no legacy
   symbols).
 - dwarfs-t: reader + Writer behind the stable `dwarfs_c_*` C ABI; no C++
   headers/templates leak to consumers; read-only at runtime forever.
-- The runtime driver and the ruby io-routing patches are the ONLY
-  tebako-specific C/C++ consumers.
+- The ruby io-routing patches (in `tamatebako/ruby`) are the ONLY
+  tebako-specific C consumers — the runtime driver is Rust
+  (`crates/tebako-driver`), and every other component is Rust, pure Ruby
+  tooling, or Docker.
 
 ## 5. Verification culture
 

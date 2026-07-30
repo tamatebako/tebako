@@ -119,6 +119,7 @@ silently mis-executing new runtimes.
 | contract | semantics |
 |---------:|-----------|
 | 1 | this document, §1–§5: `--tebako-image`/`--tebako-entry` argv, `TEBAKO_RUNTIME_IMAGE` env handoff, trailer/ABI gating as in §3 |
+| 2 | spec 17: image-path triples, bare-file slot tokens (`0` ≡ `-`), env-image-first multi-mount, direct `--tebako-entry` execution (no `/local/stub.rb` convention) |
 
 **Bump rule.** Any change to env/argv/handoff semantics — a renamed or
 repurposed variable, a new loader-consumed flag, a change in image

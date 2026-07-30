@@ -1,0 +1,159 @@
+//! The C entry surface (spec 17 §1): `tebako_driver_boot` rewrites argv
+//! in place on success and returns a named exit code on failure;
+//! `tebako_driver_contract_version` reports the compiled-in contract.
+//! Serialized on LOCK — the boot mounts into the process-global context.
+
+#![allow(unsafe_code)]
+
+use std::ffi::{CStr, CString};
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, MutexGuard};
+
+use libc::{c_char, c_int};
+use tfs::context::context;
+
+static LOCK: Mutex<()> = Mutex::new(());
+
+struct Guard {
+    _guard: MutexGuard<'static, ()>,
+    tmp: TempDir,
+}
+
+impl Guard {
+    fn path(&self) -> &Path {
+        self.tmp.path()
+    }
+}
+
+fn guard(tag: &str) -> Guard {
+    let g = LOCK.lock().unwrap();
+    let tmp = TempDir::new(tag);
+    context().write().unwrap().unmount();
+    context()
+        .write()
+        .unwrap()
+        .set_host_policy(tfs::policy::HostPolicy::open(), None);
+    Guard { _guard: g, tmp }
+}
+
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn new(tag: &str) -> TempDir {
+        let uniq = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "tebako-driver-ffi-{tag}-{}-{uniq}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        TempDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+fn write_payload_image(dir: &Path) -> PathBuf {
+    let p = dir.join("payload.tfs");
+    let file = std::fs::File::create(&p).expect("create zip");
+    let mut w = zip::ZipWriter::new(file);
+    let opts = zip::write::SimpleFileOptions::default();
+    w.add_directory("bin/", opts).unwrap();
+    w.start_file("bin/app", opts).unwrap();
+    w.write_all(b"#!/usr/bin/env ruby\nputs 'hi'\n").unwrap();
+    w.finish().unwrap();
+    p
+}
+
+struct CArgv {
+    _strings: Vec<CString>,
+    ptrs: Vec<*mut c_char>,
+}
+
+impl CArgv {
+    fn new(args: &[&str]) -> CArgv {
+        let strings: Vec<CString> = args.iter().map(|s| CString::new(*s).unwrap()).collect();
+        let mut ptrs: Vec<*mut c_char> =
+            strings.iter().map(|c| c.as_ptr() as *mut c_char).collect();
+        ptrs.push(std::ptr::null_mut());
+        CArgv {
+            _strings: strings,
+            ptrs,
+        }
+    }
+}
+
+#[test]
+fn contract_version_is_2() {
+    assert_eq!(
+        unsafe { tebako_driver::ffi::tebako_driver_contract_version() },
+        2
+    );
+}
+
+#[test]
+fn boot_rewrites_argv_in_place() {
+    let g = guard("rewrite");
+    let payload = write_payload_image(g.path());
+    let triple = format!("{}:0:/", payload.display());
+    let mut cargv = CArgv::new(&[
+        "ruby",
+        "--tebako-image",
+        &triple,
+        "--tebako-entry",
+        "/bin/app",
+        "--version",
+    ]);
+    let root = CString::new("/__tebako_memfs__").unwrap();
+    let mut argc: c_int = 6;
+    let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
+
+    let rc =
+        unsafe { tebako_driver::ffi::tebako_driver_boot(&mut argc, &mut argvp, root.as_ptr()) };
+    assert_eq!(rc, 0);
+    assert_eq!(argc, 2);
+    let rewritten: Vec<String> = (0..argc as isize)
+        .map(|i| {
+            unsafe { CStr::from_ptr(*argvp.offset(i)) }
+                .to_string_lossy()
+                .into_owned()
+        })
+        .collect();
+    assert_eq!(rewritten, vec!["/bin/app", "--version"]);
+    // The mount happened (the entry resolved inside it).
+    assert!(context().read().unwrap().is_mounted());
+}
+
+#[test]
+fn boot_failure_returns_the_named_code_and_leaves_argv_alone() {
+    let g = guard("fail");
+    let triple = format!("{}:0:/", g.path().join("nope.tfs").display());
+    let mut cargv = CArgv::new(&[
+        "ruby",
+        "--tebako-image",
+        &triple,
+        "--tebako-entry",
+        "/bin/app",
+    ]);
+    let root = CString::new("/__tebako_memfs__").unwrap();
+    let mut argc: c_int = 5;
+    let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
+
+    let rc =
+        unsafe { tebako_driver::ffi::tebako_driver_boot(&mut argc, &mut argvp, root.as_ptr()) };
+    assert_eq!(rc, 69);
+    assert_eq!(argc, 5, "argc untouched on failure");
+    assert!(!context().read().unwrap().is_mounted());
+}

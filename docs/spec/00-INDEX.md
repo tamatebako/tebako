@@ -55,9 +55,8 @@ spec 02 §6).
 
 1. No shell-outs, no system dependencies, in any shipped artifact.
 2. Loader size gate < 3 MB per platform, enforced in CI.
-3. C/C++ only in three factory repos: `tamatebako/ruby`,
-   `tebako-runtime-ruby`, `dwarfs-t`. Everything else Rust / pure Ruby /
-   Docker.
+3. Tebako-owned C/C++ only in `dwarfs-t` (upstream ruby's own C source
+   is vendored, not ours). Everything else Rust / pure Ruby / Docker.
 4. Orthogonality law (above).
 5. Transforms law: write (COW) and encryption (ENC) overlays exist ONLY in
    the Rust TFS. dwarfs-t is read-only + creation-time Writer; no backend

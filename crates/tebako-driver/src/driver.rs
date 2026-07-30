@@ -1,0 +1,336 @@
+//! The boot orchestration (the safe core; [`crate::ffi`] is the thin C
+//! entry over it).
+//!
+//! Order of operations (spec 17): parse the handoff → mount the env
+//! image (whole-file at the runtime root) → mount each payload triple in
+//! order (bare files whole; package files by trailer region) → install
+//! the jail policy (after the mounts — spec 08 §3) → resolve and verify
+//! the entry → rewrite argv. Any failure unmounts everything: never a
+//! partial mount.
+
+use std::path::Path;
+
+use tfs::context::context;
+
+use crate::handoff::{Handoff, ImageSource, SlotRef};
+use crate::{EX_TEBAKO_IO, EX_TEBAKO_JAIL, EX_TEBAKO_MANIFEST, EX_TEBAKO_UNAVAILABLE};
+
+/// A named driver failure carrying the loader's exit code (spec 06 §4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DriverError {
+    pub code: i32,
+    pub message: String,
+}
+
+impl DriverError {
+    pub fn new(code: i32, message: String) -> DriverError {
+        DriverError { code, message }
+    }
+}
+
+fn manifest(message: impl Into<String>) -> DriverError {
+    DriverError::new(EX_TEBAKO_MANIFEST, message.into())
+}
+
+fn unavailable(message: impl Into<String>) -> DriverError {
+    DriverError::new(EX_TEBAKO_UNAVAILABLE, message.into())
+}
+
+fn io(message: impl Into<String>) -> DriverError {
+    DriverError::new(EX_TEBAKO_IO, message.into())
+}
+
+fn jail(message: impl Into<String>) -> DriverError {
+    DriverError::new(EX_TEBAKO_JAIL, message.into())
+}
+
+fn errno_text(e: i32) -> String {
+    String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+}
+
+/// Environment access, abstracted for tests (`TEBAKO_RUNTIME_IMAGE`,
+/// `TEBAKO_JAIL`, `TEBAKO_JAIL_SOURCE`).
+pub trait Env {
+    fn var(&self, key: &str) -> Option<String>;
+}
+
+/// The process environment (the shipped path).
+pub struct ProcessEnv;
+
+impl Env for ProcessEnv {
+    fn var(&self, key: &str) -> Option<String> {
+        std::env::var(key).ok()
+    }
+}
+
+fn env_var(env: &dyn Env, key: &str) -> Option<String> {
+    env.var(key).filter(|s| !s.is_empty())
+}
+
+/// What [`boot`] hands back: the rewritten argv
+/// (`[<entry resolved in the VFS>, <user args…>]`, or the input argv
+/// unchanged for a plain boot).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BootOutcome {
+    pub argv: Vec<String>,
+}
+
+/// Where an image's bytes come from after trailer probing.
+enum ResolvedImage {
+    /// A bare file, mounted whole (slot `0` ≡ `-`).
+    Whole,
+    /// A package file's slot region (offset, size).
+    Region(u64, u64),
+}
+
+/// Probe a file's tpkg trailer and resolve the slot reference.
+fn resolve_image(path: &Path, slot: SlotRef, display: &str) -> Result<ResolvedImage, DriverError> {
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| unavailable(format!("cannot open image file '{display}': {e}")))?;
+    match tpkg::read_from(&mut file) {
+        Err(tpkg::TpkgError::NoTrailer) => match slot {
+            SlotRef::Whole | SlotRef::Slot(0) => Ok(ResolvedImage::Whole),
+            SlotRef::Slot(n) => Err(manifest(format!(
+                "--tebako-image slot {n} is out of range for '{display}' (a bare image file — no slot table; use slot 0 or -)"
+            ))),
+        },
+        Err(e) => Err(manifest(format!(
+            "corrupt tpkg manifest trailer in '{display}' ({e}) — re-stitch the package"
+        ))),
+        Ok(m) => match slot {
+            SlotRef::Whole => Err(manifest(format!(
+                "--tebako-image slot - names a whole bare image, but '{display}' is a package ({} slot(s)) — use a numeric slot",
+                m.slots.len()
+            ))),
+            SlotRef::Slot(n) => {
+                let Some(s) = m.slots.get(n as usize) else {
+                    return Err(manifest(format!(
+                        "--tebako-image slot {n} is out of range for '{display}' ({} slot(s) in its manifest)",
+                        m.slots.len()
+                    )));
+                };
+                if s.format_id == tpkg::TPKG_FORMAT_RUNTIME {
+                    return Err(manifest(format!(
+                        "--tebako-image slot {n} of '{display}' is a runtime payload slot — payload slots are never mounted"
+                    )));
+                }
+                Ok(ResolvedImage::Region(s.offset, s.size))
+            }
+        },
+    }
+}
+
+fn mount_built(built: Result<tfs::context::Mount, i32>, what: &str) -> Result<(), DriverError> {
+    let mount = built.map_err(|e| {
+        if e == libc::ENOENT {
+            unavailable(format!("{what}: {}", errno_text(e)))
+        } else {
+            io(format!("{what}: {}", errno_text(e)))
+        }
+    })?;
+    context()
+        .write()
+        .unwrap()
+        .mount_checked(mount)
+        .map_err(|e| {
+            if e == libc::EEXIST {
+                manifest(format!("{what}: duplicate mount point"))
+            } else {
+                io(format!("{what}: {}", errno_text(e)))
+            }
+        })?;
+    Ok(())
+}
+
+/// The env image (`TEBAKO_RUNTIME_IMAGE`): a bare `.tfs`, mounted whole
+/// at the runtime root. Records `runtime_root` in `mounted`.
+fn mount_env_image(
+    env: &dyn Env,
+    runtime_root: &str,
+    mounted: &mut Vec<String>,
+) -> Result<(), DriverError> {
+    let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") else {
+        return Ok(());
+    };
+    mount_built(
+        tfs::mount::build_from_file(&image, runtime_root),
+        &format!("failed to mount the runtime filesystem image from '{image}'"),
+    )?;
+    mounted.push(runtime_root.to_string());
+    Ok(())
+}
+
+fn mount_image(
+    spec: &crate::handoff::ImageSpec,
+    mounted: &mut Vec<String>,
+) -> Result<(), DriverError> {
+    match &spec.source {
+        ImageSource::OwnSlot(n) => {
+            let exe = std::env::current_exe()
+                .map_err(|e| io(format!("cannot determine own executable path: {e}")))?;
+            let display = exe.display().to_string();
+            match resolve_image(&exe, SlotRef::Slot(*n), &display)? {
+                ResolvedImage::Whole => Err(manifest(
+                    "the running executable carries no tpkg trailer — <self> slots require a stitched package",
+                )),
+                ResolvedImage::Region(offset, size) => {
+                    mount_built(
+                        tfs::mount::build_from_file_at(&display, offset, size, &spec.mount),
+                        &format!("failed to mount own slot {n} at '{}'", spec.mount),
+                    )?;
+                    mounted.push(spec.mount.clone());
+                    Ok(())
+                }
+            }
+        }
+        ImageSource::File(path, slot) => {
+            let display = path.display().to_string();
+            match resolve_image(path, *slot, &display)? {
+                ResolvedImage::Whole => {
+                    mount_built(
+                        tfs::mount::build_from_file(&display, &spec.mount),
+                        &format!("failed to mount image '{display}' at '{}'", spec.mount),
+                    )?;
+                }
+                ResolvedImage::Region(offset, size) => {
+                    mount_built(
+                        tfs::mount::build_from_file_at(&display, offset, size, &spec.mount),
+                        &format!("failed to mount image '{display}' at '{}'", spec.mount),
+                    )?;
+                }
+            }
+            mounted.push(spec.mount.clone());
+            Ok(())
+        }
+    }
+}
+
+/// `TEBAKO_JAIL` → the host policy, installed AFTER the mounts (spec 08
+/// §3: the mount family's image read is itself policy-gated once a
+/// policy is active). Malformed policy fails closed (exit 73).
+fn apply_jail(env: &dyn Env) -> Result<(), DriverError> {
+    let Some(spec_str) = env_var(env, "TEBAKO_JAIL") else {
+        return Ok(());
+    };
+    let spec =
+        tfs::policy::JailSpec::parse(&spec_str).map_err(|e| jail(format!("TEBAKO_JAIL: {e}")))?;
+    let policy = tfs::policy::HostPolicy::bind(spec.default_open, spec.mounts, spec.arg_files)
+        .map_err(|e| {
+            jail(format!(
+                "TEBAKO_JAIL: cannot bind policy: {}",
+                errno_text(e)
+            ))
+        })?;
+    let source = env_var(env, "TEBAKO_JAIL_SOURCE").unwrap_or_else(|| "TEBAKO_JAIL".to_string());
+    let journal = if policy.never_denies() {
+        None
+    } else {
+        tfs::journal::open_journal()
+    };
+    context()
+        .write()
+        .unwrap()
+        .set_host_policy(policy.with_source(source), journal);
+    Ok(())
+}
+
+fn in_mount(path: &str, mount_point: &str) -> bool {
+    let mp = mount_point.trim_end_matches('/');
+    mp.is_empty() || path == mp || path.starts_with(&format!("{mp}/"))
+}
+
+/// Join the entry onto its mount: mount `/` + `/bin/app` → `/bin/app`;
+/// mount `/opt` + `bin/app` → `/opt/bin/app`.
+fn join_mount(mount_point: &str, entry: &str) -> String {
+    format!(
+        "{}/{}",
+        mount_point.trim_end_matches('/'),
+        entry.trim_start_matches('/')
+    )
+}
+
+/// Resolve the entry against the first image's mount (the app payload —
+/// spec 17 §1) and verify it exists in the mounted tree — but only
+/// against mounts THIS boot established (an entry outside them belongs
+/// to the interpreter's own startup, not to the handoff).
+fn resolve_entry(
+    h: &Handoff,
+    runtime_root: &str,
+    mounted: &[String],
+) -> Result<String, DriverError> {
+    let entry = h
+        .entry
+        .as_deref()
+        .ok_or_else(|| manifest("--tebako-entry is required when --tebako-image is given"))?;
+    let base = h
+        .images
+        .first()
+        .map(|i| i.mount.as_str())
+        .unwrap_or(runtime_root);
+    let resolved = join_mount(base, entry);
+    if mounted.iter().any(|mp| in_mount(&resolved, mp)) {
+        let mut ctx = context().write().unwrap();
+        match ctx.open(&resolved, libc::O_RDONLY) {
+            Ok(fd) => {
+                let _ = ctx.close(fd);
+            }
+            Err(_) => {
+                return Err(manifest(format!(
+                    "entrypoint '{entry}' not found at '{resolved}' in the mounted tree"
+                )));
+            }
+        }
+    }
+    Ok(resolved)
+}
+
+/// The boot (spec 17 §1–§3). `argv` is the process argv WITHOUT argv[0]
+/// semantics preserved: the parser scans from index 0 (callers pass the
+/// full argv; non-loader leading args end the scan — the plain-boot
+/// case). `runtime_root` is the mount point the interpreter was compiled
+/// against (ruby: `/__tebako_memfs__`).
+pub fn boot(
+    argv: &[String],
+    runtime_root: &str,
+    env: &dyn Env,
+) -> Result<BootOutcome, DriverError> {
+    let h = Handoff::parse(argv)?;
+
+    // Plain boot: no loader args at all. The interpreter runs its own
+    // argv; the env image still mounts when handed (image-era standalone
+    // mode), and the jail still applies.
+    if h.images.is_empty() && h.entry.is_none() {
+        let result = (|| {
+            let mut mounted = Vec::new();
+            mount_env_image(env, runtime_root, &mut mounted)?;
+            apply_jail(env)?;
+            Ok(BootOutcome {
+                argv: argv.to_vec(),
+            })
+        })();
+        if result.is_err() {
+            context().write().unwrap().unmount();
+        }
+        return result;
+    }
+
+    let result = (|| {
+        let mut mounted: Vec<String> = Vec::new();
+        mount_env_image(env, runtime_root, &mut mounted)?;
+        for spec in &h.images {
+            mount_image(spec, &mut mounted)?;
+        }
+        apply_jail(env)?;
+        let resolved = resolve_entry(&h, runtime_root, &mounted)?;
+        let mut argv = Vec::with_capacity(h.user_args.len() + 1);
+        argv.push(resolved);
+        argv.extend(h.user_args.iter().cloned());
+        Ok(BootOutcome { argv })
+    })();
+    if result.is_err() {
+        // Never a partial mount (spec 17 §1): one bad slot aborts the
+        // whole namespace.
+        context().write().unwrap().unmount();
+    }
+    result
+}

@@ -2,8 +2,9 @@
 
 Normative specification of the production pipeline: how sources, runtimes,
 and the product are built and published. Each repo builds its own
-platforms and publishes its own releases — nothing builds C/C++ outside
-the three factories.
+platforms and publishes its own releases — tebako-owned C/C++ is built
+only in `dwarfs-t` (upstream ruby's own C builds in the two ruby
+factories, as vendored upstream source).
 
 ## 1. The chain
 

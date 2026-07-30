@@ -14,10 +14,27 @@ exact contract (roadmap 22's "add a language" playbook).
 
 - `--tebako-image` triples mount payloads BEFORE the interpreter
   starts: `<self>` = read the image from the running executable's own
-  tpkg slot `<slot>`; `<image-path>` = read from a file (the image-era
-  `TEBAKO_RUNTIME_IMAGE` case uses slot `-` with a path).
+  tpkg slot `<slot>`; `<image-path>` = read from a file. **Slot tokens:**
+  a bare file (no trailer) mounts whole — slot `0` ≡ `-`; a packaged
+  file mounts the numeric slot's trailer-described region, and `-` on a
+  packaged file is a named error. A runtime-role slot
+  (`format_id = TPKG_FORMAT_RUNTIME`) is never mounted. (The image-era
+  `TEBAKO_RUNTIME_IMAGE` case is a bare path mounted whole — the `-`
+  semantics without a triple.)
+- **Mount order:** the env image first, then payload triples in argv
+  order; the table is longest-prefix and nested mounts are legal; a
+  duplicate mount point is a named error; any failure unmounts
+  everything — never a partial mount.
 - `--tebako-entry` separates loader args from user args; `argv0` is the
-  entrypoint inside the mounted tree.
+  entrypoint inside the mounted tree, resolved against the FIRST
+  `--tebako-image` mount (the app payload) — or against the runtime root
+  when no image spec is given. The driver verifies the entry's presence
+  against the mounts the boot itself established (named error 65 when
+  absent); an entry outside them belongs to the interpreter's own
+  startup.
+- The interpreter's own args are skipped (and `--tebako-extract` stays
+  theirs); an unknown `--tebako-*` flag is a named error, never silently
+  ignored.
 - Everything before the first `--tebako-*` is the loader's; everything
   after `--tebako-entry` is the user's, verbatim.
 
@@ -52,3 +69,13 @@ passthrough: dump mounted images to disk and exit 0.
 A runtime payload's manifest (spec 03) declares `provides` {engine,
 version, abi_line, platform} + `built_from` — the dispatcher's
 compatibility check consumes exactly these fields.
+
+## 6. Implementation and contract version
+
+The reference implementation is `crates/tebako-driver` (Rust, staticlib
++ rlib) — the v1 C++ `tebako-main` driver is retired. Runtimes whose
+driver implements this document's widened grammar (image-path triples,
+bare-file slot tokens, env-image-first multi-mount, direct
+`--tebako-entry` execution) declare **`contract_version` 2** in their
+release manifest (spec 06 §6); the compiled-in constant
+(`tebako_driver_contract_version()`) and the manifest must agree.

@@ -1,0 +1,28 @@
+[package]
+name = "tebako-driver"
+description = "The spec-17 runtime driver: mounts the env image + payload images for a tebako runtime and rewrites argv to the entrypoint (the Rust successor of the v1 C++ tebako-main)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "runtime", "driver", "vfs", "tfs"]
+categories = ["filesystem"]
+
+[lib]
+# libtebako_driver.a for the runtime factories (linked into interpreter
+# executables); rlib for in-workspace consumers and tests.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+# The mounts land in the same process-global context the C ABI serves —
+# the libtfs-preload pattern (a native Rust consumer of the engine).
+tfs = { version = "0.1.0", path = "../tfs" }
+# Trailer probing for `<self|package>:<slot>` resolution (spec 02).
+tpkg = { version = "0.1.0", path = "../tpkg" }
+libc = "0.2"
+
+[dev-dependencies]
+# Zip fixtures built in-code (the tests/contract pattern).
+zip = { version = "2", default-features = false, features = ["deflate"] }
