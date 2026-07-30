@@ -316,6 +316,11 @@ fn covered_but_not_held_paths_fall_through_to_the_host_decision() {
     assert!(opendir(&f.sibling).is_null());
     assert_eq!(errno(), libc::ENOENT);
     assert_eq!(c_errno(), libc::ENOENT);
+    // dlmap2file: the extension-loading path takes the same decision —
+    // the consumer falls back to the host dlopen.
+    let mapped = unsafe { c_api::tebako_fs_dlmap2file(c(&host_file).as_ptr()) };
+    assert!(mapped.is_null());
+    assert_eq!(errno(), libc::ENOENT);
     assert_eq!(open(&host_file, libc::O_WRONLY | libc::O_CREAT), -1);
     assert_eq!(
         errno(),

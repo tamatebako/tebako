@@ -679,7 +679,16 @@ impl FsContext {
         if rel_owned.is_empty() {
             return Err(libc::EISDIR);
         }
-        let st = mount.backend.stat(&rel_owned)?;
+        let st = match mount.backend.stat(&rel_owned) {
+            Ok(st) => st,
+            // Covered but not held: a host path (see open()) — the
+            // dlmap consumer falls back to the host dlopen.
+            Err(e) if e == libc::ENOENT => {
+                self.host_check(path, HostAccess::Ro)?;
+                return Err(libc::ENOENT);
+            }
+            Err(e) => return Err(e),
+        };
         if st.entry_type != EntryType::File {
             return Err(libc::EISDIR);
         }
