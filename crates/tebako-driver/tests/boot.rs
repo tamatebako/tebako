@@ -205,7 +205,7 @@ fn bare_payload_mounts_whole_with_slot_0() {
         &env,
     )
     .unwrap();
-    assert_eq!(out.argv, argv(&["/bin/app", "--version"]));
+    assert_eq!(out.argv, argv(&["ruby", "/bin/app", "--version"]));
     let bytes = read_file("/bin/app");
     assert_eq!(bytes, b"#!/usr/bin/env ruby\nputs 'hi'\n");
 }
@@ -228,7 +228,7 @@ fn bare_payload_mounts_whole_with_dash() {
         &env,
     )
     .unwrap();
-    assert_eq!(out.argv, argv(&["/opt/app/bin/app"]));
+    assert_eq!(out.argv, argv(&["ruby", "/opt/app/bin/app"]));
     assert_eq!(read_file("/opt/app/lib/app.rb"), b"# app\n");
 }
 
@@ -252,7 +252,7 @@ fn env_image_plus_payload_coexist_at_nested_points() {
         &env,
     )
     .unwrap();
-    assert_eq!(out.argv, argv(&["/bin/app"]));
+    assert_eq!(out.argv, argv(&["ruby", "/bin/app"]));
     // Both mounts live: the env image at its root, the payload at /.
     assert_eq!(
         read_file("/__tebako_memfs__/lib/ruby/rubygems.rb"),
@@ -306,7 +306,7 @@ fn packaged_file_mounts_the_slot_region() {
         &env,
     )
     .unwrap();
-    assert_eq!(out.argv, argv(&["/bin/app"]));
+    assert_eq!(out.argv, argv(&["ruby", "/bin/app"]));
     assert_eq!(read_file("/bin/app"), b"#!/usr/bin/env ruby\nputs 'hi'\n");
 }
 
@@ -473,7 +473,7 @@ fn jail_deny_blocks_host_reads_but_not_the_payload() {
         &env,
     )
     .unwrap();
-    assert_eq!(out.argv, argv(&["/opt/app/bin/app"]));
+    assert_eq!(out.argv, argv(&["ruby", "/opt/app/bin/app"]));
     // The payload reads fine…
     assert_eq!(
         read_file("/opt/app/bin/app"),

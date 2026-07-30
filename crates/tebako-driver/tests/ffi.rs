@@ -144,8 +144,10 @@ fn tebako_main_boots_with_the_ruby_root_and_exports_the_contract() {
     let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
     let rc = unsafe { tebako_driver::ffi::tebako_main(&mut argc, &mut argvp) };
     assert_eq!(rc, 0);
-    assert_eq!(argc, 1);
-    let entry = unsafe { CStr::from_ptr(*argvp) }.to_string_lossy();
+    assert_eq!(argc, 2, "argv0 (the program name) + the resolved entry");
+    let program = unsafe { CStr::from_ptr(*argvp) }.to_string_lossy();
+    assert_eq!(program, "ruby", "argv0 stays the interpreter's name");
+    let entry = unsafe { CStr::from_ptr(*argvp.offset(1)) }.to_string_lossy();
     assert_eq!(entry, "/bin/app");
     assert_eq!(
         std::env::var("TEBAKO_CONTRACT_VERSION").as_deref(),
@@ -195,7 +197,7 @@ fn boot_rewrites_argv_in_place() {
     let rc =
         unsafe { tebako_driver::ffi::tebako_driver_boot(&mut argc, &mut argvp, root.as_ptr()) };
     assert_eq!(rc, 0);
-    assert_eq!(argc, 2);
+    assert_eq!(argc, 3);
     let rewritten: Vec<String> = (0..argc as isize)
         .map(|i| {
             unsafe { CStr::from_ptr(*argvp.offset(i)) }
@@ -203,7 +205,7 @@ fn boot_rewrites_argv_in_place() {
                 .into_owned()
         })
         .collect();
-    assert_eq!(rewritten, vec!["/bin/app", "--version"]);
+    assert_eq!(rewritten, vec!["ruby", "/bin/app", "--version"]);
     // The mount happened (the entry resolved inside it).
     assert!(context().read().unwrap().is_mounted());
 }

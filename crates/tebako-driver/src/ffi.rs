@@ -140,6 +140,10 @@ pub unsafe extern "C" fn tebako_main(argc: *mut c_int, argv: *mut *mut *mut c_ch
         return EX_TEBAKO_IO;
     }
     let argv0 = unsafe { CStr::from_ptr(*argvp) }.to_string_lossy();
+    // Re-decide on every call: the flag is process-global, and a fresh
+    // boot must not inherit a previous boot's verdict (test processes
+    // boot repeatedly).
+    RUNNING_MINIRUBY.store(0, Ordering::SeqCst);
     if argv0.contains("miniruby") {
         RUNNING_MINIRUBY.store(-1, Ordering::SeqCst);
         return 0;

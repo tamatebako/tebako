@@ -68,8 +68,10 @@ fn env_var(env: &dyn Env, key: &str) -> Option<String> {
 }
 
 /// What [`boot`] hands back: the rewritten argv
-/// (`[<entry resolved in the VFS>, <user args…>]`, or the input argv
-/// unchanged for a plain boot).
+/// (`[<original argv0>, <entry resolved in the VFS>, <user args…>]`,
+/// or the input argv unchanged for a plain boot). The program name
+/// stays at index 0: the interpreter parses its argv conventionally
+/// and takes the entry as the script.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BootOutcome {
     pub argv: Vec<String>,
@@ -322,10 +324,18 @@ pub fn boot(
         }
         apply_jail(env)?;
         let resolved = resolve_entry(&h, runtime_root, &mounted)?;
-        let mut argv = Vec::with_capacity(h.user_args.len() + 1);
-        argv.push(resolved);
-        argv.extend(h.user_args.iter().cloned());
-        Ok(BootOutcome { argv })
+        // The rewritten argv keeps the interpreter's convention:
+        // argv[0] (the program name) first, then the resolved entry as
+        // the script, then the user's args verbatim. Dropping argv[0]
+        // makes the interpreter treat the entry as its own name and
+        // the first user arg as the script.
+        let mut rewritten = Vec::with_capacity(h.user_args.len() + 2);
+        if let Some(program) = argv.first() {
+            rewritten.push(program.clone());
+        }
+        rewritten.push(resolved);
+        rewritten.extend(h.user_args.iter().cloned());
+        Ok(BootOutcome { argv: rewritten })
     })();
     if result.is_err() {
         // Never a partial mount (spec 17 §1): one bad slot aborts the

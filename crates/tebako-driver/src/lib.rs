@@ -14,7 +14,9 @@
 //!   ≡ `-`), or a package file's trailer-described slot region;
 //! - `TEBAKO_JAIL` is parsed and installed (after the mounts — the mount
 //!   family's image read is itself policy-gated once a policy is active);
-//! - argv is rewritten to `[<entry resolved in the VFS>, <user args…>]`.
+//! - argv is rewritten to `[<original argv0>, <entry resolved in the VFS>,
+//!   <user args…>]` — the program name stays at index 0 so the
+//!   interpreter takes the entry as its script.
 //!
 //! Any failure unmounts everything and returns a named error carrying the
 //! loader's exit codes (spec 06 §4): never a partial mount, never a

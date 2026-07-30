@@ -36,7 +36,11 @@ exact contract (roadmap 22's "add a language" playbook).
   theirs); an unknown `--tebako-*` flag is a named error, never silently
   ignored.
 - Everything before the first `--tebako-*` is the loader's; everything
-  after `--tebako-entry` is the user's, verbatim.
+  after `--tebako-entry` is the user's, verbatim. On success the driver
+  replaces the process argv with
+  `[<original argv0>, <entry resolved in the VFS>, <user args…>]` — the
+  program name stays at index 0 so the interpreter parses its argv
+  conventionally and takes the entry as its script.
 
 ## 2. Environment
 
