@@ -147,6 +147,12 @@ impl Handoff {
                     // interpreter handles it; the driver never does.
                     i += 1;
                 }
+                "--tebako-run" => {
+                    return Err(DriverError::new(
+                        EX_TEBAKO_MANIFEST,
+                        "--tebako-run is the v1 form — the v2 handoff is --tebako-image <image>:<slot>:<mount> --tebako-entry <entry> (spec 17 §1)".to_string(),
+                    ));
+                }
                 _ if flag.starts_with("--tebako-") => {
                     return Err(DriverError::new(
                         EX_TEBAKO_MANIFEST,

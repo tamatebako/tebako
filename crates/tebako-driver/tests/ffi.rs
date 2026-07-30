@@ -104,6 +104,78 @@ fn contract_version_is_2() {
 }
 
 #[test]
+fn tebako_main_miniruby_passes_through_and_flags_it() {
+    let _g = guard("miniruby");
+    std::env::remove_var("TEBAKO_CONTRACT_VERSION");
+    let mut cargv = CArgv::new(&["/build/ruby/miniruby", "-v"]);
+    let mut argc: c_int = 2;
+    let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
+    let rc = unsafe { tebako_driver::ffi::tebako_main(&mut argc, &mut argvp) };
+    assert_eq!(rc, 0);
+    assert_eq!(argc, 2, "argv untouched for miniruby");
+    assert_eq!(
+        unsafe { tebako_driver::ffi::tebako_is_running_miniruby() },
+        -1
+    );
+    assert!(
+        std::env::var("TEBAKO_CONTRACT_VERSION").is_err(),
+        "miniruby exports nothing"
+    );
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "miniruby mounts nothing"
+    );
+}
+
+#[test]
+fn tebako_main_boots_with_the_ruby_root_and_exports_the_contract() {
+    let g = guard("tebako-main");
+    std::env::remove_var("TEBAKO_CONTRACT_VERSION");
+    let payload = write_payload_image(g.path());
+    let triple = format!("{}:0:/", payload.display());
+    let mut cargv = CArgv::new(&[
+        "ruby",
+        "--tebako-image",
+        &triple,
+        "--tebako-entry",
+        "/bin/app",
+    ]);
+    let mut argc: c_int = 5;
+    let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
+    let rc = unsafe { tebako_driver::ffi::tebako_main(&mut argc, &mut argvp) };
+    assert_eq!(rc, 0);
+    assert_eq!(argc, 1);
+    let entry = unsafe { CStr::from_ptr(*argvp) }.to_string_lossy();
+    assert_eq!(entry, "/bin/app");
+    assert_eq!(
+        std::env::var("TEBAKO_CONTRACT_VERSION").as_deref(),
+        Ok("2"),
+        "the runtime exports its contract (roadmap 45)"
+    );
+    assert_eq!(
+        unsafe { tebako_driver::ffi::tebako_is_running_miniruby() },
+        0
+    );
+    let mp = unsafe { CStr::from_ptr(tebako_driver::ffi::tebako_mount_point()) }.to_string_lossy();
+    assert_eq!(mp, "/__tebako_memfs__");
+    let pwd =
+        unsafe { CStr::from_ptr(tebako_driver::ffi::tebako_original_pwd()) }.to_string_lossy();
+    assert!(!pwd.is_empty(), "the original cwd is recorded");
+    assert!(context().read().unwrap().is_mounted());
+}
+
+#[test]
+fn tebako_run_is_a_named_v1_migration_error() {
+    let _g = guard("tebako-run");
+    let mut cargv = CArgv::new(&["ruby", "--tebako-run", "app.tfs"]);
+    let mut argc: c_int = 3;
+    let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
+    let rc = unsafe { tebako_driver::ffi::tebako_main(&mut argc, &mut argvp) };
+    assert_eq!(rc, 65);
+    assert!(!context().read().unwrap().is_mounted());
+}
+
+#[test]
 fn boot_rewrites_argv_in_place() {
     let g = guard("rewrite");
     let payload = write_payload_image(g.path());
