@@ -1,0 +1,41 @@
+# The tebako_fs_* C ABI export surface (spec 11 §7): the only symbols
+# libtfs.a leaks (nm-gated in CI). Consumed by the runtime factories for
+# the link seal (ld -r with only these exported). Checked in — never
+# derived at build time with a system nm.
+tebako_fd_is_embedded
+tebako_fs_abi_version
+tebako_fs_close
+tebako_fs_closedir
+tebako_fs_dir_is_embedded
+tebako_fs_dlmap2file
+tebako_fs_extract_all
+tebako_fs_fstat
+tebako_fs_host_policy
+tebako_fs_init
+tebako_fs_init_from_file
+tebako_fs_init_from_file_at
+tebako_fs_lseek
+tebako_fs_mount_from_file
+tebako_fs_mount_from_file_at
+tebako_fs_mount_from_file_at_with_mode
+tebako_fs_mount_from_file_with_mode
+tebako_fs_mount_from_memory
+tebako_fs_mount_from_memory_with_mode
+tebako_fs_open
+tebako_fs_opendir
+tebako_fs_pread
+tebako_fs_read
+tebako_fs_readdir
+tebako_fs_rewinddir
+tebako_fs_seekdir
+tebako_fs_stat
+tebako_fs_telldir
+tebako_fs_unmount
+tebako_fs_unmount_handle
+tebako_get_archive_path
+tebako_get_backend_name
+tebako_get_errno
+tebako_get_mount_point
+tebako_is_initialized
+tebako_path_is_embedded
+tebako_strerror
