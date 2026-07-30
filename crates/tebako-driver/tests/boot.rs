@@ -311,6 +311,57 @@ fn packaged_file_mounts_the_slot_region() {
 }
 
 #[test]
+fn no_entry_starts_the_interpreter_with_its_own_args() {
+    let g = guard("no-entry");
+    let payload = write_payload_image(g.path());
+    let env = MapEnv::new();
+
+    let out = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--version",
+        ]),
+        "/__tebako_memfs__",
+        &env,
+    )
+    .unwrap();
+    // The bare `--tebako-image` invocation (the deploy-driver smoke):
+    // the interpreter starts with its own args; the mount is live.
+    assert_eq!(out.argv, argv(&["ruby", "--version"]));
+    let bytes = read_file("/bin/app");
+    assert_eq!(bytes, b"#!/usr/bin/env ruby\nputs 'hi'\n");
+}
+
+#[test]
+fn the_interpreter_keyword_is_dropped() {
+    let g = guard("keyword");
+    let payload = write_payload_image(g.path());
+    let env = MapEnv::new();
+
+    let out = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "ruby",
+            "-e",
+            "puts 1",
+        ]),
+        "/__tebako_memfs__",
+        &env,
+    )
+    .unwrap();
+    // `--tebako-entry ruby` (the CLI's deploy shims): the keyword is
+    // dropped; the interpreter starts with the user's args.
+    assert_eq!(out.argv, argv(&["ruby", "-e", "puts 1"]));
+    let bytes = read_file("/bin/app");
+    assert_eq!(bytes, b"#!/usr/bin/env ruby\nputs 'hi'\n");
+}
+
+#[test]
 fn dash_on_a_packaged_file_is_a_named_error() {
     let g = guard("pkg-dash");
     let payload = write_payload_image(g.path());
@@ -363,12 +414,12 @@ fn runtime_role_slot_is_never_mounted() {
 }
 
 #[test]
-fn images_without_entry_is_a_named_error() {
-    let g = guard("no-entry");
+fn images_without_entry_starts_the_interpreter_bare() {
+    let g = guard("no-entry-bare");
     let payload = write_payload_image(g.path());
     let env = MapEnv::new();
 
-    let err = boot(
+    let out = boot(
         &argv(&[
             "ruby",
             "--tebako-image",
@@ -377,9 +428,10 @@ fn images_without_entry_is_a_named_error() {
         "/__tebako_memfs__",
         &env,
     )
-    .unwrap_err();
-    assert_eq!(err.code, 65, "{}", err.message);
-    assert!(!context().read().unwrap().is_mounted());
+    .unwrap();
+    // The smoke form: mounts established, the interpreter starts bare.
+    assert_eq!(out.argv, argv(&["ruby"]));
+    assert!(context().read().unwrap().is_mounted());
 }
 
 #[test]

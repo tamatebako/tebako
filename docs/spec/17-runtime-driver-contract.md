@@ -31,7 +31,11 @@ exact contract (roadmap 22's "add a language" playbook).
   when no image spec is given. The driver verifies the entry's presence
   against the mounts the boot itself established (named error 65 when
   absent); an entry outside them belongs to the interpreter's own
-  startup.
+  startup. A bare NAME (no `/` — e.g. `ruby`) is the interpreter
+  keyword: the boot starts the interpreter itself with the user's args
+  and drops the keyword (the deploy shims' re-entry form). With images
+  but NO `--tebako-entry` at all, the boot mounts and starts the
+  interpreter with its own args (the smoke form).
 - The interpreter's own args are skipped (and `--tebako-extract` stays
   theirs); an unknown `--tebako-*` flag is a named error, never silently
   ignored.

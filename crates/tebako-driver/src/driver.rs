@@ -323,18 +323,45 @@ pub fn boot(
             mount_image(spec, &mut mounted)?;
         }
         apply_jail(env)?;
-        let resolved = resolve_entry(&h, runtime_root, &mounted)?;
-        // The rewritten argv keeps the interpreter's convention:
-        // argv[0] (the program name) first, then the resolved entry as
-        // the script, then the user's args verbatim. Dropping argv[0]
-        // makes the interpreter treat the entry as its own name and
-        // the first user arg as the script.
-        let mut rewritten = Vec::with_capacity(h.user_args.len() + 2);
-        if let Some(program) = argv.first() {
-            rewritten.push(program.clone());
-        }
-        rewritten.push(resolved);
-        rewritten.extend(h.user_args.iter().cloned());
+        let mut rewritten = match h.entry.as_deref() {
+            // No entry: the interpreter starts with its own args (the
+            // bare `--tebako-image` invocation — the deploy-driver
+            // smoke; v1 behavior).
+            None => {
+                let mut v = Vec::with_capacity(h.interpreter_args.len() + 1);
+                if let Some(program) = argv.first() {
+                    v.push(program.clone());
+                }
+                v.extend(h.interpreter_args.iter().cloned());
+                v
+            }
+            // The interpreter keyword (a bare name, never a path): the
+            // CLI's deploy shims re-enter the interpreter itself
+            // (`--tebako-entry ruby`); the keyword is dropped.
+            Some(keyword) if !keyword.contains('/') => {
+                let mut v = Vec::with_capacity(h.user_args.len() + 1);
+                if let Some(program) = argv.first() {
+                    v.push(program.clone());
+                }
+                v.extend(h.user_args.iter().cloned());
+                v
+            }
+            Some(_) => {
+                let resolved = resolve_entry(&h, runtime_root, &mounted)?;
+                // The rewritten argv keeps the interpreter's convention:
+                // argv[0] (the program name) first, then the resolved
+                // entry as the script, then the user's args verbatim.
+                // Dropping argv[0] makes the interpreter treat the entry
+                // as its own name and the first user arg as the script.
+                let mut v = Vec::with_capacity(h.user_args.len() + 2);
+                if let Some(program) = argv.first() {
+                    v.push(program.clone());
+                }
+                v.push(resolved);
+                v.extend(h.user_args.iter().cloned());
+                v
+            }
+        };
         Ok(BootOutcome { argv: rewritten })
     })();
     if result.is_err() {

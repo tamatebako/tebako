@@ -57,6 +57,10 @@ pub struct Handoff {
     pub entry: Option<String>,
     /// Everything after `--tebako-entry`, verbatim.
     pub user_args: Vec<String>,
+    /// Non-loader args seen before `--tebako-entry` (the interpreter's
+    /// own args) — the bare `--tebako-image` invocation (no entry)
+    /// starts the interpreter with exactly these.
+    pub interpreter_args: Vec<String>,
 }
 
 fn malformed(value: &str) -> DriverError {
@@ -144,7 +148,10 @@ impl Handoff {
                 }
                 "--tebako-extract" => {
                     // The runtime-side option (spec 06 §1): the
-                    // interpreter handles it; the driver never does.
+                    // interpreter handles it; the driver never does. It
+                    // rides the interpreter's own args for the no-entry
+                    // boot.
+                    h.interpreter_args.push(arg.clone());
                     i += 1;
                 }
                 "--tebako-run" => {
@@ -160,7 +167,10 @@ impl Handoff {
                     ));
                 }
                 _ => {
-                    // The interpreter's own args — not the loader's.
+                    // The interpreter's own args — not the loader's. They
+                    // matter for the bare `--tebako-image` invocation
+                    // (no entry): the interpreter starts with them.
+                    h.interpreter_args.push(arg.clone());
                     i += 1;
                 }
             }
@@ -198,9 +208,12 @@ mod tests {
     }
 
     #[test]
-    fn plain_argv_is_an_empty_handoff() {
+    fn plain_argv_collects_the_interpreters_args() {
         let h = Handoff::parse(&argv(&["ruby", "--version"])).unwrap();
-        assert_eq!(h, Handoff::default());
+        assert_eq!(h.images, Vec::new());
+        assert_eq!(h.entry, None);
+        assert_eq!(h.user_args, Vec::<String>::new());
+        assert_eq!(h.interpreter_args, argv(&["--version"]));
     }
 
     #[test]
@@ -260,7 +273,9 @@ mod tests {
     #[test]
     fn tebako_extract_is_the_interpreters_not_the_drivers() {
         let h = Handoff::parse(&argv(&["ruby", "--tebako-extract", "dest"])).unwrap();
-        assert_eq!(h, Handoff::default());
+        assert_eq!(h.images, Vec::new());
+        assert_eq!(h.entry, None);
+        assert_eq!(h.interpreter_args, argv(&["--tebako-extract", "dest"]));
     }
 
     #[test]
