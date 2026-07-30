@@ -323,7 +323,7 @@ pub fn boot(
             mount_image(spec, &mut mounted)?;
         }
         apply_jail(env)?;
-        let mut rewritten = match h.entry.as_deref() {
+        let rewritten = match h.entry.as_deref() {
             // No entry: the interpreter starts with its own args (the
             // bare `--tebako-image` invocation — the deploy-driver
             // smoke; v1 behavior).
