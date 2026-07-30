@@ -72,3 +72,37 @@ pub fn read_embedded_manifest(path: &Path) -> Result<Option<String>, TebakoError
         ))
     })
 }
+
+/// Mount the image at `path` whole at `/` (covered-but-not-held paths
+/// still pass through to the host), run `f`, and unmount — the
+/// process-global VFS serialized behind the same lock as the manifest
+/// read. The zero-runtime materialization's mount seam: the in-image
+/// paths `f` sees are the payload's own (`/bin/hello`), so the
+/// extracted store tree mirrors the payload layout exactly.
+pub fn with_image_mounted<T>(
+    path: &Path,
+    f: impl FnOnce() -> Result<T, TebakoError>,
+) -> Result<T, TebakoError> {
+    use tfs::c_api::*;
+
+    let _guard = MOUNT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+    let c_path = std::ffi::CString::new(path.to_string_lossy().as_bytes())
+        .map_err(|_| plain_error(format!("invalid image path: {}", path.display())))?;
+    let c_mount = std::ffi::CString::new("/").unwrap();
+    let rc = unsafe { tebako_fs_init_from_file(c_path.as_ptr(), c_mount.as_ptr()) };
+    if rc != 0 {
+        return Err(plain_error(format!(
+            "cannot mount the payload image {}",
+            path.display()
+        )));
+    }
+    struct Unmount;
+    impl Drop for Unmount {
+        fn drop(&mut self) {
+            unsafe { tebako_fs_unmount() };
+        }
+    }
+    let _unmount = Unmount;
+    f()
+}

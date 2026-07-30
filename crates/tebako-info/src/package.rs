@@ -231,6 +231,15 @@ fn slot_summary_line(p: &PayloadInspection) -> String {
                     .join("; ");
                 format!("  ({engines})")
             }
+            tpkg::Provides::Toolkit(tk) => {
+                let exes = &tk.executables;
+                let plural = if exes.len() == 1 {
+                    "executable"
+                } else {
+                    "executables"
+                };
+                format!("  ({} {plural}, native)", exes.len())
+            }
             tpkg::Provides::Data(data) => {
                 format!("  (suggested mount {})", data.mount_semantics.suggested)
             }

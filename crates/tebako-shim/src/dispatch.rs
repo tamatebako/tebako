@@ -24,7 +24,7 @@ use tpkg::Requirement;
 use crate::resolve::{self, Resolution};
 use crate::runtime::{self, RuntimeResolution};
 use crate::versions;
-use crate::{fail, Ctx, ShimError, EX_TEBAKO_MANIFEST};
+use crate::{fail, Ctx, ShimError, EX_TEBAKO_MANIFEST, EX_TEBAKO_UNAVAILABLE};
 
 /// One `--tebako-image` triple (spec 06 §1).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -152,8 +152,7 @@ pub fn plan(
                     res.payload_name, res.version, res.tool
                 ),
             )
-        })?
-        .clone();
+        })?;
     let mounts = compose_mounts(res, ctx)?;
     let runtime =
         runtime::resolve_runtime(entry.runtime_requirement.as_ref(), allow_download, ctx)?;
@@ -180,18 +179,34 @@ pub fn plan(
             rt.exe.clone()
         }
         RuntimeResolution::Zero => {
-            // Zero-runtime: the payload image is the program. Dependency
-            // mounts still ride the ABI shape (a self-launching image
-            // consumes them); with no dependencies the argv is just
-            // entry + user args.
-            argv.push(res.record.image.to_string_lossy().into_owned());
-            for m in mounts.iter().skip(1) {
-                argv.push("--tebako-image".to_string());
-                argv.push(m.triple());
+            // Zero-runtime: the install-time materialization is the
+            // program (a run never materializes — install is the
+            // explicit verb). The child's own VFS access rides the
+            // mounts grammar; the release-channel preload joins when
+            // it ships (native payloads that read their own image
+            // answer honestly without it until then).
+            let entry_host = res.record.tree.join(entry.path.trim_start_matches('/'));
+            if !entry_host.is_file() {
+                return fail(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "zero-runtime entrypoint \"{}\" of \"{}\" {} is not materialized at {}\n  materialize it with `tebako install {}`",
+                        res.tool,
+                        res.payload_name,
+                        res.version,
+                        entry_host.display(),
+                        res.payload_name,
+                    ),
+                );
             }
-            argv.push("--tebako-entry".to_string());
-            argv.push(entry.path.clone());
-            res.record.image.clone()
+            argv.push(entry_host.to_string_lossy().into_owned());
+            let mounts_env = mounts
+                .iter()
+                .map(|m| format!("{}:{}", m.image.display(), m.mount))
+                .collect::<Vec<_>>()
+                .join(",");
+            env.push(("TEBAKO_TFS_MOUNTS".to_string(), mounts_env));
+            entry_host
         }
     };
     argv.extend(entry.args_default.iter().cloned());

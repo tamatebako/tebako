@@ -747,6 +747,41 @@ pub struct RuntimeProvides {
     pub capabilities: Capabilities,
 }
 
+/// One executable a toolkit provides (`{name, path, version?}`) — a
+/// native, zero-runtime program (spec 03 §2.2: toolkit executables
+/// never carry a runtime_requirement; the dispatcher materializes and
+/// execs them directly).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolkitExecutable {
+    pub name: String,
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+}
+
+/// One library a toolkit provides (`{name, path}`) — linkable content
+/// other payloads consume (informational in v1; the DEPENDS edges carry
+/// the consumption).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ToolkitLibrary {
+    pub name: String,
+    pub path: String,
+}
+
+/// PROVIDES of kind `toolkit`: native executables (zero-runtime
+/// dispatch) plus the libraries the toolkit carries.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ToolkitProvides {
+    /// The shim-registered commands (N>=0 — a pure-library toolkit
+    /// registers none).
+    #[serde(default)]
+    pub executables: Vec<ToolkitExecutable>,
+    #[serde(default)]
+    pub libraries: Vec<ToolkitLibrary>,
+    pub platforms: Platforms,
+    pub capabilities: Capabilities,
+}
+
 /// Suggested mount semantics of a data payload (`{suggested: …}`).
 /// SUGGESTED only — the MOUNT RULE (spec 03 §2.3) gives the mount
 /// decision to the consumer's manifest.
@@ -767,14 +802,15 @@ pub struct DataProvides {
 
 /// The kind-specialized PROVIDES block. The variant is selected by
 /// `identity.kind` at parse time (see `PayloadManifest`'s `Deserialize`
-/// impl); kinds without a locked v1 shape (`toolkit`, `language` — spec
-/// 03 §2.2 sketches toolkit only) round-trip verbatim as [`Provides::Other`].
+/// impl); `language` has no locked v1 shape and round-trips verbatim as
+/// [`Provides::Other`].
 #[derive(Debug, Clone, PartialEq)]
 pub enum Provides {
     App(AppProvides),
     Runtime(RuntimeProvides),
     Data(DataProvides),
-    /// `toolkit` / `language`: no locked v1 shape — preserved losslessly.
+    Toolkit(ToolkitProvides),
+    /// `language`: no locked v1 shape — preserved losslessly.
     Other(BTreeMap<String, serde_yml::Value>),
 }
 
@@ -784,6 +820,7 @@ impl Provides {
             Provides::App(p) => p.validate(),
             Provides::Runtime(p) => p.validate(),
             Provides::Data(p) => p.validate(),
+            Provides::Toolkit(p) => p.validate(),
             Provides::Other(_) => Ok(()),
         }
     }
@@ -795,6 +832,7 @@ impl Serialize for Provides {
             Provides::App(p) => p.serialize(s),
             Provides::Runtime(p) => p.serialize(s),
             Provides::Data(p) => p.serialize(s),
+            Provides::Toolkit(p) => p.serialize(s),
             Provides::Other(m) => m.serialize(s),
         }
     }
@@ -825,6 +863,34 @@ impl AppProvides {
         if !caps.exec || !caps.read || caps.runtime.is_some() {
             return Err(ManifestError::Invalid(
                 "provides.capabilities for kind app is exactly {exec: true, read: true}",
+            ));
+        }
+        caps.validate_host()?;
+        Ok(())
+    }
+}
+
+impl ToolkitProvides {
+    fn validate(&self) -> Result<(), ManifestError> {
+        for exe in &self.executables {
+            check_non_empty(&exe.name, "provides.executables[].name must not be empty")?;
+            check_abs_path(
+                &exe.path,
+                "provides.executables[].path must be absolute (inside the image)",
+            )?;
+        }
+        for lib in &self.libraries {
+            check_non_empty(&lib.name, "provides.libraries[].name must not be empty")?;
+            check_abs_path(
+                &lib.path,
+                "provides.libraries[].path must be absolute (inside the image)",
+            )?;
+        }
+        self.platforms.validate()?;
+        let caps = &self.capabilities;
+        if !caps.read {
+            return Err(ManifestError::Invalid(
+                "provides.capabilities for kind toolkit must carry read: true",
             ));
         }
         caps.validate_host()?;
@@ -1036,7 +1102,10 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             PayloadKind::Data => Provides::Data(
                 DataProvides::deserialize(raw.provides).map_err(serde::de::Error::custom)?,
             ),
-            PayloadKind::Toolkit | PayloadKind::Language => Provides::Other(
+            PayloadKind::Toolkit => Provides::Toolkit(
+                ToolkitProvides::deserialize(raw.provides).map_err(serde::de::Error::custom)?,
+            ),
+            PayloadKind::Language => Provides::Other(
                 BTreeMap::<String, serde_yml::Value>::deserialize(raw.provides)
                     .map_err(serde::de::Error::custom)?,
             ),
@@ -1075,7 +1144,7 @@ impl PayloadManifest {
             (PayloadKind::App, Provides::App(_))
                 | (PayloadKind::Runtime, Provides::Runtime(_))
                 | (PayloadKind::Data, Provides::Data(_))
-                | (PayloadKind::Toolkit, Provides::Other(_))
+                | (PayloadKind::Toolkit, Provides::Toolkit(_))
                 | (PayloadKind::Language, Provides::Other(_))
         );
         if !bound {

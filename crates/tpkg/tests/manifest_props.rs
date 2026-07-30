@@ -211,13 +211,36 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
             },
         })
     });
+    let executable = (arb_name(), arb_path()).prop_map(|(name, path)| ToolkitExecutable {
+        name,
+        path,
+        version: None,
+    });
+    let toolkit = (
+        prop::collection::vec(executable, 0..=3),
+        arb_platforms(),
+    )
+        .prop_map(|(executables, platforms)| {
+            Provides::Toolkit(ToolkitProvides {
+                executables,
+                libraries: Vec::new(),
+                platforms,
+                capabilities: Capabilities {
+                    exec: true,
+                    read: true,
+                    runtime: None,
+                    host: None,
+                },
+            })
+        });
     let other = prop::collection::btree_map(arb_name(), arb_annotation_value(), 0..2)
         .prop_map(Provides::Other);
     match kind {
         PayloadKind::App => app.boxed(),
         PayloadKind::Runtime => runtime.boxed(),
         PayloadKind::Data => data.boxed(),
-        PayloadKind::Toolkit | PayloadKind::Language => other.boxed(),
+        PayloadKind::Toolkit => toolkit.boxed(),
+        PayloadKind::Language => other.boxed(),
     }
 }
 

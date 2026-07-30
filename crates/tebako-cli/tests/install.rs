@@ -72,10 +72,14 @@ fn sha(byte: u8) -> String {
     String::from(char::from(byte)).repeat(64)
 }
 
-/// The spec example registry, pointed at file:// mirrors.
+/// The spec example registry, pointed at file:// mirrors. The version
+/// carries a runtime_requirement: a registry entry without one is a
+/// ZERO-RUNTIME payload and install materializes its entrypoints from
+/// the image — the fake-byte fixtures below are not images. Tests that
+/// exercise zero-runtime materialization build real zip images.
 fn registry_yaml(name: &str, version: &str, payload_ref: &str, default: Option<&str>) -> String {
     let mut yaml = format!(
-        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        entrypoints: [{name}]\n"
+        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{name}]\n"
     );
     if let Some(d) = default {
         yaml.push_str(&format!("    default: {d}\n"));
@@ -277,7 +281,7 @@ fn install_nickname_resolves_default_and_explicit_versions() {
     let p10 = fx.payload("app-1.0.tfs", b"v1.0-bytes");
     let p11 = fx.payload("app-1.1.tfs", b"v1.1-bytes");
     let yaml = format!(
-        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {p10}}}\n        entrypoints: [app]\n      - version: 1.1\n        platforms: universal\n        release: {{ref: {p11}}}\n        entrypoints: [app]\n    default: 1.1\n"
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {p10}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n      - version: 1.1\n        platforms: universal\n        release: {{ref: {p11}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.1\n"
     );
     install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
 
@@ -375,7 +379,7 @@ fn per_triplet_selection_fetches_the_host_artifact_with_the_registry_pin() {
     fs::write(
         &registry_path,
         format!(
-            "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos:\n            artifact: app-1.0-macos.tfs\n            sha256: {}\n          x86_64-linux-gnu:\n            artifact: app-1.0-linux.tfs\n            sha256: {}\n        release: {{ref: tfs:github:acme/app:1.0}}\n        entrypoints: [app]\n    default: 1.0\n",
+            "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms:\n          aarch64-macos:\n            artifact: app-1.0-macos.tfs\n            sha256: {}\n          x86_64-linux-gnu:\n            artifact: app-1.0-linux.tfs\n            sha256: {}\n        release: {{ref: tfs:github:acme/app:1.0}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
             sha256_hex(mac_bytes),
             sha(b'0')
         ),
@@ -445,7 +449,7 @@ fn universal_selection_uses_the_single_tfs_rule() {
     let registry_path = fx.mirror.join("tpkg-registry.yaml");
     fs::write(
         &registry_path,
-        "schema_version: 1\npayloads:\n  - name: tool\n    kind: app\n    versions:\n      - version: 2.0\n        platforms: universal\n        release: {ref: tfs:github:acme/tool:2.0}\n        entrypoints: [tool]\n    default: 2.0\n",
+        "schema_version: 1\npayloads:\n  - name: tool\n    kind: app\n    versions:\n      - version: 2.0\n        platforms: universal\n        release: {ref: tfs:github:acme/tool:2.0}\n        runtime_requirement: {engine: ruby, constraint: \">= 3.1\"}\n        entrypoints: [tool]\n    default: 2.0\n",
     )
     .unwrap();
     let api = "https://api.github.com/repos/acme/tool/releases/tags/2.0";
@@ -479,11 +483,23 @@ fn universal_selection_uses_the_single_tfs_rule() {
 // the ref form
 // ---------------------------------------------------------------------
 
+/// A mountable payload image (zip) holding the zero-runtime entry the
+/// synthesized mirror guesses (`/<name>`) — ref/service-form installs
+/// carry no runtime_requirement, so install materializes the entry.
+fn zip_image_with_entry(name: &str) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    writer.start_file(name, options).unwrap();
+    writer.write_all(b"#!/bin/sh\n").unwrap();
+    writer.finish().unwrap().into_inner()
+}
+
 #[test]
 fn install_pinned_file_reference_is_content_addressed() {
     let fx = Fixture::new("reffile");
-    let payload_ref = fx.payload("app.tfs", b"app-bytes");
-    let pin = sha256_hex(b"app-bytes");
+    let image = zip_image_with_entry("app");
+    let payload_ref = fx.payload("app.tfs", &image);
+    let pin = sha256_hex(&image);
     let out = install::install(
         &fx.home,
         &format!("{payload_ref}?sha256={pin}"),
@@ -496,6 +512,13 @@ fn install_pinned_file_reference_is_content_addressed() {
     assert!(out.path.ends_with(format!("payloads/app/{pin}.tfs")));
     // the fallback synthesized a single shim named after the payload
     assert_eq!(out.commands, vec!["app"]);
+    // …and materialized the zero-runtime entry into the store tree
+    assert!(
+        fx.payloads_dir()
+            .join(format!("app/{pin}.tree/app"))
+            .is_file(),
+        "the zero-runtime entry lands in the store tree"
+    );
 
     // a wrong pin → the named sha error, nothing cached
     let err = install::install(
@@ -519,9 +542,10 @@ fn install_service_reference_via_the_release_api() {
     let release = r#"{"assets":[
         {"name":"tool-1.0-linux.tfs","browser_download_url":"https://dl/linux.tfs"},
         {"name":"tool-1.0-macos.tfs","browser_download_url":"https://dl/macos.tfs"}]}"#;
+    let mac_img = zip_image_with_entry("tool");
     let t = MockTransport::new()
         .with(api, release.as_bytes())
-        .with("https://dl/macos.tfs", b"mac-img");
+        .with("https://dl/macos.tfs", &mac_img);
     let fetcher = Fetcher::with_transport(t);
 
     // multi-artifact without # → AmbiguousAssets naming every candidate
@@ -549,7 +573,7 @@ fn install_service_reference_via_the_release_api() {
     .unwrap();
     assert_eq!(out.name, "tool");
     assert_eq!(out.version, "1.0");
-    assert_eq!(fs::read(&out.path).unwrap(), b"mac-img");
+    assert_eq!(fs::read(&out.path).unwrap(), mac_img);
 }
 
 // ---------------------------------------------------------------------
@@ -569,7 +593,7 @@ fn signed_fixture(tag: &str) -> (Fixture, String, String, Vec<u8>, String) {
 
 fn signed_registry(payload_ref: &str, asc_ref: &str, keyid: &str) -> String {
     format!(
-        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        signature: {{keyid: \"{keyid}\", asc: \"{asc_ref}\"}}\n        entrypoints: [app]\n    default: 1.0\n"
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        signature: {{keyid: \"{keyid}\", asc: \"{asc_ref}\"}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n"
     )
 }
 
@@ -797,7 +821,7 @@ fn uninstall_removes_shims_and_cache_and_journals_the_anchors() {
     let p10 = fx.payload("app-1.0.tfs", b"v1.0-bytes");
     let p11 = fx.payload("app-1.1.tfs", b"v1.1-bytes");
     let yaml = format!(
-        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {p10}}}\n        entrypoints: [app]\n      - version: 1.1\n        platforms: universal\n        release: {{ref: {p11}}}\n        entrypoints: [app]\n    default: 1.1\n"
+        "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {p10}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n      - version: 1.1\n        platforms: universal\n        release: {{ref: {p11}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.1\n"
     );
     install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
     install::install(&fx.home, "app@1.0", None, Some(&fx.shim_binary)).unwrap();

@@ -843,9 +843,15 @@ fn finish_install<T: Transport>(
     let record: PayloadRecord = manifest::payload_record(home, &plan.name, &plan.version);
     mirror.save(&record.manifest_mirror).map_err(map_shim)?;
 
-    // Register every shim the payload PROVIDES declares (spec 07 §1).
+    // Zero-runtime entrypoints: materialize the native program + its
+    // exec closure into the store tree NOW (a run never materializes —
+    // install is the explicit verb, spec 07 §2).
+    materialize_zero_runtime(home, &entry, &mirror)?;
+
+    // Register every shim the payload PROVIDES declares (spec 07 §1):
+    // app entrypoints ∪ toolkit executables, one dispatchable view.
     let commands: Vec<String> = mirror
-        .entrypoints()
+        .dispatchables()
         .iter()
         .map(|e| e.name.clone())
         .collect();
@@ -876,6 +882,47 @@ fn finish_install<T: Transport>(
         shims,
         signer,
         notes,
+    })
+}
+
+/// Materialize every zero-runtime entrypoint (no `runtime_requirement`)
+/// into the payload's store tree (`<version>.tree/<in-image path>`):
+/// the native program plus its Mach-O/ELF dependency closure, so the
+/// dispatcher execs it without linking tfs (spec 07 §2 — install is
+/// the materialization verb; a run never extracts).
+fn materialize_zero_runtime(
+    home: &Path,
+    entry: &tebako_resolve::CacheEntry,
+    mirror: &Manifest,
+) -> Result<(), TebakoError> {
+    let zero: Vec<String> = mirror
+        .dispatchables()
+        .iter()
+        .filter(|e| e.runtime_requirement.is_none())
+        .map(|e| e.path.clone())
+        .collect();
+    if zero.is_empty() {
+        return Ok(());
+    }
+    let record: PayloadRecord = manifest::payload_record(home, mirror.name(), mirror.version());
+    image_manifest::with_image_mounted(&entry.path, || {
+        for path in &zero {
+            tfs::context::context()
+                .write()
+                .unwrap()
+                .extract_exec_closure(path, &record.tree)
+                .map_err(|e| {
+                    err(
+                        EX_TEBAKO_UNAVAILABLE,
+                        format!(
+                            "cannot materialize the zero-runtime entrypoint {path} of {}: {}",
+                            entry.path.display(),
+                            String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+                        ),
+                    )
+                })?;
+        }
+        Ok(())
     })
 }
 
@@ -1271,7 +1318,7 @@ pub fn uninstall(home: &Path, name: &str) -> Result<UninstallOutcome, TebakoErro
     for v in &versions {
         let record = manifest::payload_record(home, name, v);
         if let Ok(m) = Manifest::load(&record.manifest_mirror) {
-            for e in m.entrypoints() {
+            for e in m.dispatchables() {
                 commands.insert(e.name.clone());
             }
         }

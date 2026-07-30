@@ -161,7 +161,8 @@ pub use manifest::{
     EncryptionPart, EncryptionState, EngineProvides, Entrypoint, Identity, ManifestError,
     MountSemantics, PayloadKind, PayloadManifest, Platform, Platforms, Producer, Provides,
     Requirement, RuntimeProvides, RuntimeRequirement, Sbom, Signing, SigningMechanism,
-    SigningState, Source, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
+    SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides,
+    PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
 pub use merkle::{render_tree_hash, tree_digest, Child, MerkleDigest, NodeKind, TreeWalk};
 pub use model::{Manifest, Slot, V2Extension};

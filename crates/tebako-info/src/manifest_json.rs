@@ -271,6 +271,45 @@ fn provides_json(p: &Provides) -> Json {
             ),
         ]),
         Provides::Runtime(rt) => runtime_provides_json(rt),
+        Provides::Toolkit(tk) => Json::Object(vec![
+            (
+                "executables".to_string(),
+                Json::Array(
+                    tk.executables
+                        .iter()
+                        .map(|e| {
+                            let mut obj = vec![
+                                ("name".to_string(), s(&e.name)),
+                                ("path".to_string(), s(&e.path)),
+                            ];
+                            if let Some(v) = &e.version {
+                                obj.push(("version".to_string(), s(v)));
+                            }
+                            Json::Object(obj)
+                        })
+                        .collect(),
+                ),
+            ),
+            (
+                "libraries".to_string(),
+                Json::Array(
+                    tk.libraries
+                        .iter()
+                        .map(|l| {
+                            Json::Object(vec![
+                                ("name".to_string(), s(&l.name)),
+                                ("path".to_string(), s(&l.path)),
+                            ])
+                        })
+                        .collect(),
+                ),
+            ),
+            ("platforms".to_string(), platforms_json(&tk.platforms)),
+            (
+                "capabilities".to_string(),
+                capabilities_json(&tk.capabilities),
+            ),
+        ]),
         Provides::Data(data) => {
             let mut out = vec![
                 (

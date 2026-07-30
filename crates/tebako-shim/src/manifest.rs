@@ -18,6 +18,17 @@ use tpkg::{Entrypoint, PayloadKind, PayloadManifest, Provides, Requirement};
 
 use crate::{fail, ShimError, EX_TEBAKO_MANIFEST};
 
+/// A dispatchable command: the app entrypoint / toolkit executable
+/// view the dispatcher and installer consume (owned — the two source
+/// shapes unify here).
+#[derive(Debug, Clone)]
+pub struct Dispatchable {
+    pub name: String,
+    pub path: String,
+    pub args_default: Vec<String>,
+    pub runtime_requirement: Option<tpkg::RuntimeRequirement>,
+}
+
 /// The dispatcher-visible half of an installed payload record: the parsed
 /// manifest mirror. Wraps the unified model to keep the shim's named
 /// errors (a missing/corrupt mirror points at `tebako-shim doctor`).
@@ -40,8 +51,38 @@ impl Manifest {
         Ok(Manifest { inner })
     }
 
-    pub fn entrypoint(&self, name: &str) -> Option<&Entrypoint> {
-        self.entrypoints().iter().find(|e| e.name == name)
+    pub fn entrypoint(&self, name: &str) -> Option<Dispatchable> {
+        self.dispatchables().into_iter().find(|d| d.name == name)
+    }
+
+    /// The dispatchable commands of this payload: app PROVIDES
+    /// entrypoints ∪ toolkit PROVIDES executables (a toolkit executable
+    /// is a native, zero-runtime command — never a runtime_requirement).
+    /// Data/runtime kinds provide no commands.
+    pub fn dispatchables(&self) -> Vec<Dispatchable> {
+        match &self.inner.provides {
+            Provides::App(app) => app
+                .entrypoints
+                .iter()
+                .map(|e| Dispatchable {
+                    name: e.name.clone(),
+                    path: e.path.clone(),
+                    args_default: e.args_default.clone(),
+                    runtime_requirement: e.runtime_requirement.clone(),
+                })
+                .collect(),
+            Provides::Toolkit(tk) => tk
+                .executables
+                .iter()
+                .map(|e| Dispatchable {
+                    name: e.name.clone(),
+                    path: e.path.clone(),
+                    args_default: Vec::new(),
+                    runtime_requirement: None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
     }
 
     pub fn load(path: &std::path::Path) -> Result<Manifest, ShimError> {
@@ -81,8 +122,8 @@ impl Manifest {
         self.inner.identity.kind
     }
 
-    /// The app PROVIDES entrypoints (empty for non-app kinds — a data
-    /// payload provides no commands).
+    /// The app PROVIDES entrypoints (empty for non-app kinds — the
+    /// unified command view is [`Manifest::dispatchables`]).
     pub fn entrypoints(&self) -> &[Entrypoint] {
         match &self.inner.provides {
             Provides::App(app) => &app.entrypoints,
@@ -156,6 +197,10 @@ pub struct PayloadRecord {
     pub image: std::path::PathBuf,
     pub sha_marker: std::path::PathBuf,
     pub manifest_mirror: std::path::PathBuf,
+    /// The zero-runtime materialization tree (`<version>.tree/`):
+    /// install-time extraction of native entrypoints + their exec
+    /// closure (spec 07 §2 — a run never materializes).
+    pub tree: std::path::PathBuf,
 }
 
 pub fn payload_record(home: &std::path::Path, name: &str, version: &str) -> PayloadRecord {
@@ -164,6 +209,7 @@ pub fn payload_record(home: &std::path::Path, name: &str, version: &str) -> Payl
         image: dir.join(format!("{version}.tfs")),
         sha_marker: dir.join(format!("{version}.tfs.sha256")),
         manifest_mirror: dir.join(format!("{version}.manifest.yaml")),
+        tree: dir.join(format!("{version}.tree")),
     }
 }
 

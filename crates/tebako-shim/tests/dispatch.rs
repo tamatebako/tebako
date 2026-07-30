@@ -82,22 +82,56 @@ fn zero_runtime_entrypoint_skips_runtime_resolution() {
         "  entrypoints:\n    - name: inkview\n      path: /app/bin/inkview\n",
         "8.1.0",
     );
+    // The install-time materialization: <version>.tree/<in-image path>
+    // (dispatch never materializes — install is the explicit verb).
+    let entry_host = home
+        .join("payloads")
+        .join("inkview")
+        .join("8.1.0.tree")
+        .join("app/bin/inkview");
+    std::fs::create_dir_all(entry_host.parent().unwrap()).unwrap();
+    std::fs::write(&entry_host, b"#!/bin/sh\n").unwrap();
     let mut ctx = ctx(&home, tmp.path());
     pin_env(&mut ctx, "inkview", "8.1.0");
 
     let plan = dispatch::dispatch("inkview", &["file.svg".into()], &ctx).unwrap();
 
     assert!(matches!(plan.runtime, RuntimeResolution::Zero));
-    assert_eq!(plan.program, image);
+    assert_eq!(plan.program, entry_host);
     let expected: Vec<String> = vec![
-        image.to_string_lossy().into_owned(),
-        "--tebako-entry".into(),
-        "/app/bin/inkview".into(),
+        entry_host.to_string_lossy().into_owned(),
         "file.svg".into(),
     ];
     assert_eq!(plan.argv, expected);
-    assert!(plan.env.is_empty());
+    // the mounts grammar rides the child's env (the preload re-mounts)
+    let mounts_env = plan
+        .env
+        .iter()
+        .find(|(k, _)| k == "TEBAKO_TFS_MOUNTS")
+        .map(|(_, v)| v.clone())
+        .expect("TEBAKO_TFS_MOUNTS must be exported");
+    assert_eq!(mounts_env, format!("{}:/", image.display()));
     assert_eq!(plan.mounts.len(), 1);
+}
+
+#[test]
+fn zero_runtime_entrypoint_without_materialization_is_a_named_error() {
+    let tmp = TempDir::new("zero-runtime-unmat");
+    let home = tmp.path().join("home");
+    seed_tool(
+        &home,
+        "inkview",
+        "  entrypoints:\n    - name: inkview\n      path: /app/bin/inkview\n",
+        "8.1.0",
+    );
+    // NO 8.1.0.tree/ — install's materialization never ran.
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "inkview", "8.1.0");
+
+    let err = dispatch::dispatch("inkview", &["file.svg".into()], &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE, "{err:?}");
+    assert!(err.message.contains("not materialized"), "{}", err.message);
+    assert!(err.message.contains("tebako install"), "{}", err.message);
 }
 
 #[test]

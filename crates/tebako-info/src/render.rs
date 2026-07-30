@@ -167,6 +167,19 @@ fn provides_section(m: &PayloadManifest, out: &mut String) {
                 out.push_str(&format!("    consumers: {}\n", data.consumers.join(", ")));
             }
         }
+        Provides::Toolkit(tk) => {
+            for exe in &tk.executables {
+                let mut line = format!("    executable {} → {}", exe.name, exe.path);
+                if let Some(v) = &exe.version {
+                    line.push_str(&format!("  version: {v}"));
+                }
+                out.push_str(&line);
+                out.push('\n');
+            }
+            for lib in &tk.libraries {
+                out.push_str(&format!("    library {} → {}\n", lib.name, lib.path));
+            }
+        }
         Provides::Other(map) => {
             for (k, v) in map {
                 let rendered = serde_yml::to_string(v)
