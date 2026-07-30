@@ -44,13 +44,19 @@ unless skip_build
     "CARGO_NET_GIT_FETCH_WITH_CLI" => "true",
   }
   env["VCPKG_ROOT"] = ENV["VCPKG_ROOT"].to_s
-  system(env, "cargo", "build", "--release", "-p", "tfs", "-p", "tebako-driver", chdir: root, exception: true)
+  system(env, "cargo", "build", "--release", "-p", "tfs", "-p", "tebako-driver", "-p", "libtfs-preload", chdir: root, exception: true)
 end
 
 %w[libtebako_driver.a libtfs.a].each do |name|
   src = File.join(build_dir, name)
   die "missing staticlib #{src} (drop --skip-build or build first)" unless File.file?(src)
 end
+
+# The preload shim (the spawned child's VFS re-entry, spec 07 §8): the
+# runtime's env image carries it at /lib/tebako/.
+preload = %w[libtfs_preload.dylib libtfs_preload.so].map { |n| File.join(build_dir, n) }.find { |p| File.file?(p) }
+die "missing the preload cdylib under #{build_dir}" unless preload
+FileUtils.cp(preload, File.join(out, File.basename(preload)))
 
 # --- 2. scope them ---------------------------------------------------------
 system({ "CARGO_NET_GIT_FETCH_WITH_CLI" => "true", "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"].to_s,
