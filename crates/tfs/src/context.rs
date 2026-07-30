@@ -269,6 +269,31 @@ impl FsContext {
         rest.trim_start_matches('/')
     }
 
+    /// Lexical normalization of a VFS path: `.` components dropped,
+    /// `a/../` resolved (no symlink semantics — an image backend keys
+    /// its entries by clean path), `..` at the root clamped. The host
+    /// resolves `..` at the syscall layer; the mounts must see the same
+    /// answer (ruby passes literal `lib/../x.yaml` paths through).
+    fn normalize(path: &str) -> String {
+        let absolute = path.starts_with('/');
+        let mut out: Vec<&str> = Vec::new();
+        for component in path.split('/') {
+            match component {
+                "" | "." => {}
+                ".." => {
+                    out.pop();
+                }
+                c => out.push(c),
+            }
+        }
+        let joined = out.join("/");
+        if absolute {
+            format!("/{joined}")
+        } else {
+            joined
+        }
+    }
+
     // ---------------------------------------------------------------
     // File operations
     // ---------------------------------------------------------------
@@ -276,6 +301,7 @@ impl FsContext {
     /// tebako_fs_open: dispatch + fd allocation. Returns the public fd
     /// (with TEBAKO_FD_FLAG).
     pub fn open(&mut self, path: &str, flags: i32) -> Result<i32, i32> {
+        let path = &Self::normalize(path);
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
@@ -432,6 +458,7 @@ impl FsContext {
 
     /// tebako_fs_opendir. Returns the raw dir-handle id.
     pub fn opendir(&mut self, path: &str) -> Result<usize, i32> {
+        let path = &Self::normalize(path);
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
@@ -536,6 +563,7 @@ impl FsContext {
 
     /// tebako_fs_stat.
     pub fn stat(&self, path: &str) -> Result<RawStat, i32> {
+        let path = &Self::normalize(path);
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
@@ -573,6 +601,7 @@ impl FsContext {
 
     /// The writable backend owning `path`, with the in-image path.
     fn writable_for(&self, path: &str) -> Result<(&dyn WritableBackend, String), i32> {
+        let path = &Self::normalize(path);
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
@@ -659,6 +688,7 @@ impl FsContext {
     /// tebako_fs_dlmap2file: extract a memfs file to a host path for
     /// dlopen, with per-process cache and tmpdir (legacy semantics).
     pub fn dlmap2file(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        let path = &Self::normalize(path);
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08), see open(). The tmpdir
             // writes dlmap2file itself performs are process-internal and

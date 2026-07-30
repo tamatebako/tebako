@@ -215,6 +215,23 @@ fn memfs_open_hello() -> i32 {
     }
 }
 
+/// Ruby passes literal `lib/../x.yaml` paths through: the mounts must
+/// answer the lexical normalization exactly like the host does.
+#[test]
+fn dot_dot_paths_normalize_lexically() {
+    let f = setup("dotdot");
+    let _ = &f;
+    for path in [
+        format!("{MOUNT_POINT}/content/sub/../hello.txt"),
+        format!("{MOUNT_POINT}/content/./hello.txt"),
+        format!("{MOUNT_POINT}/content/deep/sub/../../hello.txt"),
+    ] {
+        let fd = unsafe { c_api::tebako_fs_open(c_str(&path).as_ptr(), libc::O_RDONLY) };
+        assert!(fd >= 0, "open of {path} must serve the normalized entry");
+        assert_eq!(unsafe { c_api::tebako_fs_close(fd) }, 0);
+    }
+}
+
 // --- the profiles ---------------------------------------------------------
 
 #[test]
