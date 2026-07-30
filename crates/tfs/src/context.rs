@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 use std::sync::RwLock;
 
 use crate::backend::{Backend, EntryType, RawDirEntry, RawStat, WritableBackend};
+use crate::exec_closure;
 use crate::mount::MountMode;
 use crate::policy::{HostAccess, HostPolicy};
 
@@ -294,6 +295,27 @@ impl FsContext {
         }
     }
 
+    /// The memfs tail of a dlmap-cache path. `dlmap2file` materializes a
+    /// memfs file at `<tmp>/tebako-dl-<hex>/<full memfs path>`; a
+    /// consumer that computes paths relative to a materialized binary
+    /// (dyld's @rpath probes, a dlopen'd library's own dependencies)
+    /// presents paths under the marker directory. Strip it: the
+    /// remainder, normalized, is the memfs original. None when no
+    /// marker component is present or nothing follows it.
+    fn dlmap_tail(path: &str) -> Option<String> {
+        let mut components = path.split('/');
+        while let Some(component) = components.next() {
+            if is_dlmap_marker(component) {
+                let tail: Vec<&str> = components.collect();
+                if tail.is_empty() {
+                    return None;
+                }
+                return Some(Self::normalize(&format!("/{}", tail.join("/"))));
+            }
+        }
+        None
+    }
+
     // ---------------------------------------------------------------
     // File operations
     // ---------------------------------------------------------------
@@ -302,8 +324,28 @@ impl FsContext {
     /// (with TEBAKO_FD_FLAG).
     pub fn open(&mut self, path: &str, flags: i32) -> Result<i32, i32> {
         let path = &Self::normalize(path);
+        if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+            eprintln!("[tfs] open: {path}");
+        }
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
+        }
+        // dlmap-prefix redirect: a path under the dlmap cache
+        // (<tmp>/tebako-dl-<hex>/<memfs path>) names the materialized
+        // form of a memfs path. Consumers that compute paths relative to
+        // a materialized binary — dyld's @rpath probes, a dlopen'd
+        // library's own dependencies — land here. Materialize the
+        // original and answer with a REAL host fd: mmap-capable, unlike
+        // a token fd (dyld maps what it opens). A tail the mounts do
+        // not hold falls through to the literal path's normal routing.
+        if let Some(tail) = Self::dlmap_tail(path) {
+            if self.find_mount(&tail).is_some() {
+                if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+                    eprintln!("[tfs] dlmap redirect: {path} -> {tail}");
+                }
+                let host = self.dlmap2file(&tail)?;
+                return real_open(&host, flags);
+            }
         }
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08): the policy gates the
@@ -567,6 +609,17 @@ impl FsContext {
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
+        // dlmap-prefix redirect (see open()): answer with the memfs
+        // original's metadata — the materialized copy open() hands out
+        // carries the same content and permissions.
+        if let Some(tail) = Self::dlmap_tail(path) {
+            if let Some(mount) = self.find_mount(&tail) {
+                let rel = Self::relative_path(mount, &tail);
+                if let Ok(st) = mount.backend.stat(rel) {
+                    return Ok(st);
+                }
+            }
+        }
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08), see open().
             self.host_check(path, HostAccess::Ro)?;
@@ -711,8 +764,29 @@ impl FsContext {
     // ---------------------------------------------------------------
 
     /// tebako_fs_dlmap2file: extract a memfs file to a host path for
-    /// dlopen, with per-process cache and tmpdir (legacy semantics).
+    /// dlopen, with per-process cache and tmpdir. The extraction layout
+    /// is `<tmp>/tebako-dl-<hex>/<full memfs path>` (a deviation from the
+    /// C++ oracle's mount-basename layout, which collided across mounts
+    /// sharing a basename): the full path makes the dlmap-prefix
+    /// redirect (open/stat) an exact inverse and lets paths computed
+    /// relative to a materialized binary resolve back to their memfs
+    /// originals.
     pub fn dlmap2file(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        let mut visited = std::collections::HashSet::new();
+        self.dlmap2file_at(path, path, &[], &mut visited)
+    }
+
+    /// dlmap2file with the closure-walk context: `exe` is the original
+    /// exec target (`@executable_path` anchor), `chain_rpaths` the
+    /// rpaths accumulated down the load chain, `visited` the
+    /// cycle-breaking set of memfs paths already extracted.
+    fn dlmap2file_at(
+        &mut self,
+        path: &str,
+        exe: &str,
+        chain_rpaths: &[String],
+        visited: &mut std::collections::HashSet<String>,
+    ) -> Result<std::ffi::CString, i32> {
         let path = &Self::normalize(path);
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08), see open(). The tmpdir
@@ -722,7 +796,6 @@ impl FsContext {
             return Err(libc::ENOENT);
         };
         let owner = mount.handle;
-        let mount_point = mount.mount_point.clone();
         let rel_owned = Self::relative_path(mount, path).to_string();
         let mount = self.mounts.get(&owner).unwrap();
 
@@ -758,9 +831,7 @@ impl FsContext {
             }
         };
 
-        let host_path = tmpdir
-            .join(mount_point_basename(&mount_point))
-            .join(&rel_owned);
+        let host_path = tmpdir.join(path.trim_start_matches('/'));
         if let Some(parent) = host_path.parent() {
             std::fs::create_dir_all(parent).map_err(|_| libc::EIO)?;
         }
@@ -791,8 +862,111 @@ impl FsContext {
         }
 
         self.dl_cache.insert(path.to_string(), host_path.clone());
+        // Eager dependency closure: the platform loader's probes are
+        // raw syscalls no userland hook can serve (dyld proven on
+        // macOS 15), so the image's dylibs must exist as real files
+        // under the dlmap root before exec/dlopen runs.
+        visited.insert(path.to_string());
+        self.extract_closure(&host_path, path, exe, chain_rpaths, visited);
         let s = host_path.to_string_lossy().into_owned();
         std::ffi::CString::new(s).map_err(|_| libc::EIO)
+    }
+
+    /// Walk the Mach-O/ELF dependency closure of an extracted image,
+    /// materializing every dependency that resolves into the mounts.
+    /// Unresolvable names are host/system libraries — the loader
+    /// answers for them exactly as before.
+    fn extract_closure(
+        &mut self,
+        host_file: &std::path::Path,
+        referrer: &str,
+        exe: &str,
+        chain_rpaths: &[String],
+        visited: &mut std::collections::HashSet<String>,
+    ) {
+        use std::io::Read as _;
+        let mut head = Vec::new();
+        if std::fs::File::open(host_file)
+            .and_then(|f| f.take(exec_closure::HEADER_WINDOW as u64).read_to_end(&mut head))
+            .is_err()
+        {
+            return;
+        }
+        let Some(parsed) = exec_closure::parse(&head) else {
+            return;
+        };
+        let referrer_dir = memfs_dirname(referrer);
+        let exe_dir = memfs_dirname(exe);
+        let mut chain: Vec<String> = chain_rpaths.to_vec();
+        for rp in &parsed.rpaths {
+            if !chain.contains(rp) {
+                chain.push(rp.clone());
+            }
+        }
+        for dep in &parsed.deps {
+            let Some(memfs) = self.resolve_dep(dep, &referrer_dir, &exe_dir, &parsed.rpaths, &chain)
+            else {
+                continue;
+            };
+            if !visited.insert(memfs.clone()) {
+                continue;
+            }
+            // The dep's own closure rides its extraction (same exe).
+            let _ = self.dlmap2file_at(&memfs, exe, &chain, visited);
+        }
+    }
+
+    /// Resolve one dependency name to a memfs path the mounts hold
+    /// (dyld semantics, simplified): `@rpath` names try each rpath of
+    /// the referencing image then the chain's; `@executable_path` /
+    /// `@loader_path` / `$ORIGIN` expand against the exec target and
+    /// the referrer; absolute paths are taken verbatim; bare names take
+    /// the rpath lookup.
+    fn resolve_dep(
+        &self,
+        name: &str,
+        referrer_dir: &str,
+        exe_dir: &str,
+        own_rpaths: &[String],
+        chain_rpaths: &[String],
+    ) -> Option<String> {
+        let mut candidates: Vec<String> = Vec::new();
+        let mut push = |c: String| {
+            if !candidates.contains(&c) {
+                candidates.push(c);
+            }
+        };
+        if let Some(rest) = name.strip_prefix("@rpath/") {
+            for rp in own_rpaths.iter().chain(chain_rpaths) {
+                push(Self::normalize(&format!(
+                    "{}/{rest}",
+                    expand_loader_vars(rp, referrer_dir, exe_dir)
+                )));
+            }
+        } else if name.starts_with('@') || name.contains('$') {
+            push(Self::normalize(&expand_loader_vars(name, referrer_dir, exe_dir)));
+        } else if name.starts_with('/') {
+            push(Self::normalize(name));
+        } else {
+            for rp in own_rpaths.iter().chain(chain_rpaths) {
+                push(Self::normalize(&format!(
+                    "{}/{name}",
+                    expand_loader_vars(rp, referrer_dir, exe_dir)
+                )));
+            }
+        }
+        candidates.into_iter().find(|c| self.held_file(c))
+    }
+
+    /// True when `path` is held by a mount as a regular file.
+    fn held_file(&self, path: &str) -> bool {
+        let Some(mount) = self.find_mount(path) else {
+            return false;
+        };
+        matches!(
+            mount.backend.stat(Self::relative_path(mount, path)),
+            Ok(st) if st.entry_type == EntryType::File
+        )
     }
 
     /// Compat getters (report on the legacy init mount).
@@ -838,6 +1012,51 @@ fn mount_point_basename(mount_point: &str) -> &str {
         "root"
     } else {
         base
+    }
+}
+
+/// A `tebako-dl-<hex>` path component (the create_dl_tmpdir marker).
+fn is_dlmap_marker(component: &str) -> bool {
+    let Some(hex) = component.strip_prefix("tebako-dl-") else {
+        return false;
+    };
+    !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// The parent directory of a memfs path (`/a/b/c` → `/a/b`, `/a` → `/`).
+fn memfs_dirname(path: &str) -> String {
+    match path.rfind('/') {
+        Some(0) | None => "/".to_string(),
+        Some(i) => path[..i].to_string(),
+    }
+}
+
+/// Expand the loader variables in a dependency or rpath template:
+/// `@executable_path` (the exec target's memfs dir), `@loader_path` and
+/// `$ORIGIN` (the referencing image's memfs dir).
+fn expand_loader_vars(template: &str, referrer_dir: &str, exe_dir: &str) -> String {
+    template
+        .replace("@executable_path", exe_dir)
+        .replace("@loader_path", referrer_dir)
+        .replace("$ORIGIN", referrer_dir)
+}
+
+/// Open a materialized dlmap copy for real (no TEBAKO_FD_FLAG): the
+/// consumer's is-embedded check answers false and treats the fd as a
+/// plain host descriptor — which it is. O_CREAT/O_TRUNC are masked:
+/// the copy exists by construction and truncating a shared mmap source
+/// is never the caller's intent.
+fn real_open(path: &std::ffi::CString, flags: i32) -> Result<i32, i32> {
+    let flags = flags & !(libc::O_CREAT | libc::O_TRUNC);
+    // SAFETY: path is a valid CString that outlives the call; no
+    // O_CREAT means the variadic mode argument is not read.
+    let fd = unsafe { libc::open(path.as_ptr(), flags) };
+    if fd < 0 {
+        Err(std::io::Error::last_os_error()
+            .raw_os_error()
+            .unwrap_or(libc::EIO))
+    } else {
+        Ok(fd)
     }
 }
 

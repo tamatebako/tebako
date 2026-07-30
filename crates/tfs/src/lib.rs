@@ -78,6 +78,7 @@ pub mod backends_zip;
 pub mod c_api;
 pub mod context;
 pub mod errno;
+pub mod exec_closure;
 pub mod journal;
 pub mod mount;
 pub mod mount_spec;

@@ -337,6 +337,176 @@ fn dlmap2file_missing_in_mount() {
 }
 
 // ===================================================================
+// dlmap-prefix redirect (the exec/dyld-closure path)
+// ===================================================================
+
+/// Materialize `/content/hello.txt` and return the per-process dlmap
+/// root (the path up to and excluding the full-memfs-path tail).
+fn dlmap_root(f: &F) -> String {
+    let host = unsafe { tfs::c_api::tebako_fs_dlmap2file(p(f, "/content/hello.txt").as_ptr()) };
+    assert!(!host.is_null());
+    let path = unsafe { std::ffi::CStr::from_ptr(host) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { libc::free(host.cast()) };
+    path.trim_end_matches("/__tebako_test__/content/hello.txt")
+        .to_string()
+}
+
+#[test]
+fn dlmap2file_layout_preserves_full_memfs_path() {
+    let f = setup();
+    f.init();
+    let host = unsafe { tfs::c_api::tebako_fs_dlmap2file(p(&f, "/content/hello.txt").as_ptr()) };
+    assert!(!host.is_null());
+    let path = unsafe { std::ffi::CStr::from_ptr(host) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { libc::free(host.cast()) };
+    assert!(path.contains("/tebako-dl-"), "dlmap marker dir: {path}");
+    assert!(
+        path.ends_with("/__tebako_test__/content/hello.txt"),
+        "the full memfs path is the extraction tail: {path}"
+    );
+}
+
+#[test]
+fn open_dlmap_prefix_redirect_materializes_real_fd() {
+    let f = setup();
+    f.init();
+    let root = dlmap_root(&f);
+    // Open a NOT-yet-materialized file through its dlmap spelling: the
+    // redirect materializes the memfs original and answers with a real
+    // host fd (no TEBAKO_FD_FLAG) — mmap-capable, as dyld needs.
+    let spelling = c(&format!("{root}/__tebako_test__/content/data.bin"));
+    let fd = unsafe { tfs::c_api::tebako_fs_open(spelling.as_ptr(), libc::O_RDONLY) };
+    assert!(fd >= 0, "redirect open errno: {}", unsafe { errno() });
+    assert_eq!(
+        unsafe { tfs::c_api::tebako_fd_is_embedded(fd) },
+        0,
+        "a real host fd, not a token"
+    );
+    let mut buf = [0u8; 1024];
+    let n = unsafe { libc::read(fd, buf.as_mut_ptr().cast(), buf.len()) };
+    assert_eq!(n, 1024);
+    assert_eq!(unsafe { libc::close(fd) }, 0);
+    // …and the spelling is now a real host file as well.
+    assert_eq!(
+        std::fs::metadata(spelling.to_str().unwrap()).unwrap().len(),
+        1024
+    );
+}
+
+#[test]
+fn stat_dlmap_prefix_redirect_answers_memfs_metadata() {
+    let f = setup();
+    f.init();
+    let root = dlmap_root(&f);
+    let spelling = c(&format!("{root}/__tebako_test__/content/data.bin"));
+    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    let rc = unsafe { tfs::c_api::tebako_fs_stat(spelling.as_ptr(), &mut st) };
+    assert_eq!(rc, 0, "redirect stat errno: {}", unsafe { errno() });
+    assert_eq!(st.st_size, 1024);
+}
+
+#[test]
+fn open_dlmap_prefix_tail_not_held_passes_through() {
+    let f = setup();
+    f.init();
+    let root = dlmap_root(&f);
+    // A tail the image does not hold: the redirect declines and the
+    // literal path takes the host answer — ENOENT.
+    let spelling = c(&format!("{root}/__tebako_test__/content/nonexistent.txt"));
+    let fd = unsafe { tfs::c_api::tebako_fs_open(spelling.as_ptr(), libc::O_RDONLY) };
+    assert_eq!(fd, -1);
+    assert_eq!(unsafe { errno() }, libc::ENOENT);
+}
+
+// ===================================================================
+// dlmap2file dependency closure (exec/dlopen of in-image binaries)
+// ===================================================================
+
+/// A minimal 64-bit thin Mach-O fixture with the given LC_LOAD_DYLIB
+/// references and LC_RPATH entries.
+fn macho64_fixture(deps: &[&str], rpaths: &[&str]) -> Vec<u8> {
+    const LC_LOAD_DYLIB: u32 = 0x0C;
+    const LC_RPATH: u32 = 0x1C | 0x8000_0000;
+    let mut cmds = Vec::new();
+    for name in deps {
+        let name_bytes = name.as_bytes();
+        let cmdsize = (24 + name_bytes.len() + 1 + 7) & !7;
+        let mut cmd = vec![0u8; cmdsize];
+        cmd[0..4].copy_from_slice(&LC_LOAD_DYLIB.to_le_bytes());
+        cmd[4..8].copy_from_slice(&(cmdsize as u32).to_le_bytes());
+        cmd[8..12].copy_from_slice(&24_u32.to_le_bytes());
+        cmd[24..24 + name_bytes.len()].copy_from_slice(name_bytes);
+        cmds.extend_from_slice(&cmd);
+    }
+    for path in rpaths {
+        let path_bytes = path.as_bytes();
+        let cmdsize = (12 + path_bytes.len() + 1 + 7) & !7;
+        let mut cmd = vec![0u8; cmdsize];
+        cmd[0..4].copy_from_slice(&LC_RPATH.to_le_bytes());
+        cmd[4..8].copy_from_slice(&(cmdsize as u32).to_le_bytes());
+        cmd[8..12].copy_from_slice(&12_u32.to_le_bytes());
+        cmd[12..12 + path_bytes.len()].copy_from_slice(path_bytes);
+        cmds.extend_from_slice(&cmd);
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(&0xFEED_FACF_u32.to_le_bytes()); // MH_MAGIC_64
+    out.extend_from_slice(&0x0100_000C_u32.to_le_bytes()); // CPU_TYPE_ARM64
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&2_u32.to_le_bytes()); // MH_EXECUTE
+    out.extend_from_slice(&((deps.len() + rpaths.len()) as u32).to_le_bytes());
+    out.extend_from_slice(&(cmds.len() as u32).to_le_bytes());
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&0_u32.to_le_bytes());
+    out.extend_from_slice(&cmds);
+    out
+}
+
+#[test]
+fn dlmap2file_materializes_dependency_closure() {
+    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    unsafe { tfs::c_api::tebako_fs_unmount() };
+    let tmp = TempDir::new("io-closure");
+    let archive = tmp.0.join("closure.zip");
+    let prog = macho64_fixture(&["@rpath/libfoo.dylib"], &["@executable_path/../lib"]);
+    let libfoo = macho64_fixture(&[], &[]);
+    tebako_contract_tests::build_zip(
+        &archive,
+        &["bin/", "lib/"],
+        &[("bin/prog", &prog), ("lib/libfoo.dylib", &libfoo)],
+    );
+    let rc = unsafe {
+        tfs::c_api::tebako_fs_init_from_file(
+            c(archive.to_str().unwrap()).as_ptr(),
+            c("/__tebako_closure__").as_ptr(),
+        )
+    };
+    assert_eq!(rc, 0);
+
+    let host = unsafe {
+        tfs::c_api::tebako_fs_dlmap2file(c("/__tebako_closure__/bin/prog").as_ptr())
+    };
+    assert!(!host.is_null(), "dlmap errno: {}", unsafe { errno() });
+    let exe = unsafe { std::ffi::CStr::from_ptr(host) }
+        .to_string_lossy()
+        .into_owned();
+    unsafe { libc::free(host.cast()) };
+
+    // The closure: the rpath-resolved dylib is materialized at the very
+    // spot the loader's @executable_path/../lib probe will stat.
+    let root = exe.trim_end_matches("/__tebako_closure__/bin/prog");
+    let dep = format!("{root}/__tebako_closure__/lib/libfoo.dylib");
+    assert_eq!(
+        std::fs::read(&dep).expect("the dependency closure is materialized"),
+        libfoo
+    );
+    unsafe { tfs::c_api::tebako_fs_unmount() };
+}
+
+// ===================================================================
 // pread semantics (ports of the C++ pread block)
 // ===================================================================
 

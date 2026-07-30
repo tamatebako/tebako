@@ -20,10 +20,12 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # The engine, embedded in-process: the shim is a TFS consumer, never a
-# format. The pure-cargo backends (zip/tar) keep the shim lean and
-# vcpkg-free; the vendored native backends stay opt-in via the tfs crate's
-# own features.
-tfs = { version = "0.1.0", path = "../tfs", default-features = false }
+# format. The pure-cargo backends (zip/tar) cover the fixture cases; the
+# vendored dwarfs backend is mandatory in production — the ecosystem's
+# image format is dwarfs-t, and a shim that cannot mount a payload
+# payload-side (ENOTSUP) is a shim that cannot do its job. squashfs
+# stays opt-in via the tfs crate's own features.
+tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 libc = "0.2"
 
 [dev-dependencies]
