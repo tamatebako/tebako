@@ -97,8 +97,13 @@ export DWARFS_RS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_INSTALLED_DIR="$WS/.sqfs-musl/$TRIPLET"
 cargo build --release --target "$TARGET" \
-  -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli
+  -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
 
 echo "== stage / strip / size-gate =="
 export TARGET
 bash .github/workflows/lib/stage.sh
+
+echo "== link unit (tebako-driver + tfs, scoped, + closure) =="
+cargo build --release --target "$TARGET" -p tfs -p tebako-driver
+ruby tools/stage_link_unit "out/link-unit-$PLATFORM" --skip-build
+tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"

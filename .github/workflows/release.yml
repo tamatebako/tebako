@@ -142,6 +142,30 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: bash .github/workflows/lib/stage.sh
 
+      - name: Stage the link unit (tebako-driver + tfs, scoped, + closure)
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          SQFS_SYS_VCPKG_ROOT: ${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p out/link-unit-$PLATFORM
+          ruby tools/stage_link_unit "out/link-unit-$PLATFORM" --skip-build
+          tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
+
+      - name: Upload link-unit
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          asset_name: link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz
+          asset_path: tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_content_type: application/gzip
+
       - name: Upload fragment artifact
         uses: actions/upload-artifact@v4
         with:
@@ -290,6 +314,30 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
         run: bash .github/workflows/lib/stage.sh
+
+      - name: Stage the link unit (tebako-driver + tfs, scoped, + closure)
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          SQFS_SYS_VCPKG_ROOT: ${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p out/link-unit-$PLATFORM
+          ruby tools/stage_link_unit "out/link-unit-$PLATFORM" --skip-build
+          tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
+
+      - name: Upload link-unit
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          asset_name: link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz
+          asset_path: tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_content_type: application/gzip
 
       - name: Upload fragment artifact
         uses: actions/upload-artifact@v4
@@ -480,6 +528,17 @@ jobs:
           upload_url: ${{ needs.prepare.outputs.upload_url }}
           asset_content_type: application/octet-stream
 
+      - name: Upload link-unit
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          asset_name: link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz
+          asset_path: tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_content_type: application/gzip
+
   # ==========================================================================
   # finalize: SHA256SUMS + manifest.json + the item-11 completeness gate
   # ==========================================================================
@@ -537,7 +596,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          EXPECTED=$(( 5 * 6 + 2 ))   # 5 tools x 6 platforms (macos x2, gnu x2, musl x2) + SHA256SUMS + manifest.json
+          EXPECTED=$(( 5 * 6 + 6 + 2 ))   # 5 tools x 6 platforms + 6 link-unit tarballs + SHA256SUMS + manifest.json
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort
