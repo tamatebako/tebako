@@ -156,10 +156,12 @@ impl RuntimeDeployer {
 
     /// mkmf-driven native extension builds spawn RbConfig.ruby / Gem.ruby
     /// as a subprocess (the extconf.rb run). The shim re-enters the driver
-    /// image with the script as argument (the stub's script mode).
+    /// image at its stub (the script mode applies the RbConfig overrides
+    /// and loads the script in-process — the interpreter keyword would
+    /// skip them).
     fn write_ruby_shim(&self) -> Result<(), TebakoError> {
         let shim = format!(
-            "#!/bin/sh\nTEBAKO_DEPLOY_BINDIR=\"$(dirname \"$0\")\"; export TEBAKO_DEPLOY_BINDIR\nexec \"{}\" --tebako-image \"{}\" --tebako-entry ruby \"$@\"\n",
+            "#!/bin/sh\nTEBAKO_DEPLOY_BINDIR=\"$(dirname \"$0\")\"; export TEBAKO_DEPLOY_BINDIR\nexec \"{}\" --tebako-image \"{}\" --tebako-entry /local/stub.rb \"$@\"\n",
             self.runtime_path.display(),
             self.driver_image_ref()
         );
