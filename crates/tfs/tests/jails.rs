@@ -143,6 +143,19 @@ fn errno() -> i32 {
     unsafe { c_api::tebako_get_errno() }
 }
 
+/// The thread's C errno (POSIX parity — the ruby io-routing patches
+/// read this, not `tebako_get_errno`).
+#[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
+fn c_errno() -> i32 {
+    unsafe { *libc::__error() }
+}
+
+/// The thread's C errno (see above).
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn c_errno() -> i32 {
+    unsafe { *libc::__errno_location() }
+}
+
 /// Reset to the open policy (today's behavior).
 unsafe fn policy_open() {
     unsafe {
@@ -295,10 +308,14 @@ fn covered_but_not_held_paths_fall_through_to_the_host_decision() {
     let host_file = f.sibling.join("secret.txt");
     assert_eq!(open(&host_file, libc::O_RDONLY), -1);
     assert_eq!(errno(), libc::ENOENT);
+    // POSIX parity: the C ABI also writes the thread's C errno — the
+    // ruby io-routing patches read it (a stale 0 is Errno::NOERROR).
+    assert_eq!(c_errno(), libc::ENOENT);
     assert_eq!(stat(&host_file), -1);
     assert_eq!(errno(), libc::ENOENT);
     assert!(opendir(&f.sibling).is_null());
     assert_eq!(errno(), libc::ENOENT);
+    assert_eq!(c_errno(), libc::ENOENT);
     assert_eq!(open(&host_file, libc::O_WRONLY | libc::O_CREAT), -1);
     assert_eq!(
         errno(),

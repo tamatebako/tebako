@@ -11,8 +11,24 @@ thread_local! {
 }
 
 /// Store an errno value and return it (for tail-position convenience).
+/// Also writes the C `errno`: POSIX consumers of the C ABI (the ruby
+/// io-routing patches, any `tebako_fs_*` caller) read the thread's
+/// errno on failure, and an answer they cannot see is an answer that
+/// never happened (a stale 0 surfaces as `Errno::NOERROR`).
 pub fn set_errno(err: i32) -> i32 {
     ERRNO.with(|c| c.set(err));
+    #[cfg(unix)]
+    // The FFI boundary: the one place touching the C errno cell.
+    unsafe {
+        #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
+        {
+            *libc::__error() = err;
+        }
+        #[cfg(any(target_os = "linux", target_os = "android"))]
+        {
+            *libc::__errno_location() = err;
+        }
+    }
     err
 }
 

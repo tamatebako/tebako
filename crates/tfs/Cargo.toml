@@ -66,7 +66,7 @@ vendored-squashfs = ["dep:sqfs-sys"]
 # Tempdir scaffolding for backend tests (large-archive RSS fixtures).
 tempfile = "3"
 # ENC tests mint recipient key pairs in-memory (same pin as tebako-signer).
-rnp = { package = "rnp-rs", version = "=0.1.10", features = ["vendored"] }
+rnp = { package = "rnp-rs", version = "=0.1.11", features = ["vendored"] }
 # gzip trailer checksums in tar-backend test fixtures.
 crc32fast = "1"
 
