@@ -648,6 +648,31 @@ impl FsContext {
         self.find_mount(path).is_some()
     }
 
+    /// The mount table in the `TEBAKO_TFS_MOUNTS` grammar
+    /// ("image:mount,image:mount,…") — the env a spawned child needs to
+    /// re-establish this namespace through the preload shim. Only
+    /// file-backed mounts serialize; memory mounts have no image path
+    /// and are skipped (a child cannot remount them anyway).
+    pub fn mounts_env(&self) -> Option<std::ffi::CString> {
+        let mut out = String::new();
+        for mount in self.mounts.values() {
+            let Some(archive) = &mount.archive_path else {
+                continue;
+            };
+            if !out.is_empty() {
+                out.push(',');
+            }
+            out.push_str(&archive.to_string_lossy());
+            out.push(':');
+            out.push_str(&mount.mount_point);
+        }
+        if out.is_empty() {
+            None
+        } else {
+            std::ffi::CString::new(out).ok()
+        }
+    }
+
     // ---------------------------------------------------------------
     // Extraction
     // ---------------------------------------------------------------

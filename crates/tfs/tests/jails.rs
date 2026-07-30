@@ -235,6 +235,16 @@ fn dot_dot_paths_normalize_lexically() {
 // --- the profiles ---------------------------------------------------------
 
 #[test]
+fn mounts_env_serializes_the_file_backed_table_for_respawn() {
+    let f = setup("mounts-env");
+    let mounts = unsafe { c_api::tebako_fs_mounts() };
+    assert!(!mounts.is_null(), "one mounted image serializes");
+    let s = unsafe { std::ffi::CStr::from_ptr(mounts) }.to_string_lossy();
+    assert_eq!(s, format!("{}:{MOUNT_POINT}", f.archive.display()));
+    unsafe { libc::free(mounts.cast()) };
+}
+
+#[test]
 fn default_state_and_open_profile_pass_through_unrestricted() {
     let f = setup("open");
     let host_file = f.sibling.join("secret.txt");

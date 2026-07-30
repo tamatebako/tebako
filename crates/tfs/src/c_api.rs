@@ -926,6 +926,33 @@ pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_cha
     out
 }
 
+/// `tebako_fs_mounts`: the mount table in the `TEBAKO_TFS_MOUNTS`
+/// grammar ("image:mount,image:mount,…"), heap-allocated with libc
+/// malloc (the caller `free()`s it); NULL when nothing file-backed is
+/// mounted. A spawned child re-establishes the namespace from this —
+/// the spawn hook writes it into the child's environment.
+///
+/// # Safety
+/// C ABI entry point; the returned string must be freed with libc
+/// `free()`.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_mounts() -> *mut c_char {
+    let Some(env) = context().read().unwrap().mounts_env() else {
+        set_errno(0);
+        return std::ptr::null_mut();
+    };
+    let bytes = env.as_bytes_with_nul();
+    // SAFETY: malloc'd buffer of bytes.len(); copy then hand over ownership.
+    let out = unsafe { libc::malloc(bytes.len()).cast::<c_char>() };
+    if out.is_null() {
+        fail(libc::ENOMEM);
+        return std::ptr::null_mut();
+    }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr().cast(), out, bytes.len()) };
+    set_errno(0);
+    out
+}
+
 // ===================================================================
 // Host-Access Policy (Jails, spec 08)
 // ===================================================================
