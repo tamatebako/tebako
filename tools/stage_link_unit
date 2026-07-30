@@ -1,0 +1,124 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# tools/stage_link_unit — assemble the v2 link unit a runtime factory
+# consumes as TEBAKO_RUST_LIBDIR:
+#
+#   <out>/libtebako_driver.a   (tebako-arscope-scoped)
+#   <out>/libtfs.a             (tebako-arscope-scoped)
+#   <out>/closure/*.a          (the native dependency closure)
+#
+# The closure is harvested from the cargo build-script outputs this repo
+# already produces, per the provenance map proven against the v2 driver
+# probe (the link is only complete with exactly these archives):
+#
+#   dwarfs-t-sys-*/out/dwarfs-build/                    the dwarfs-t libraries
+#   dwarfs-t-sys-*/out/dwarfs-build/vcpkg_installed/…   their vcpkg closure
+#   sqfs-sys-*/out/                                      the squashfs pair
+#   rnp-src-*/out/install/                               the rnp family
+#
+# No shell-outs to anything but cargo (dev-side tooling, never a shipped
+# artifact).
+#
+# usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--skip-build]
+
+require "fileutils"
+
+def die(msg)
+  warn "stage_link_unit: #{msg}"
+  exit 64
+end
+
+out = ARGV[0] or die "usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--skip-build]"
+root = File.expand_path(ARGV.include?("--tebako-rs-root") ? ARGV[ARGV.index("--tebako-rs-root") + 1] : File.join(__dir__, ".."))
+skip_build = ARGV.include?("--skip-build")
+build_dir = File.join(root, "target", "release")
+script_out = File.join(build_dir, "build")
+FileUtils.mkdir_p(File.join(out, "closure"))
+
+# --- 1. the staticlibs -----------------------------------------------------
+unless skip_build
+  env = {
+    "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"] || ENV["VCPKG_ROOT"].to_s,
+    "SQFS_SYS_VCPKG_ROOT" => ENV["SQFS_SYS_VCPKG_ROOT"] || ENV["VCPKG_ROOT"].to_s,
+    "CARGO_NET_GIT_FETCH_WITH_CLI" => "true",
+  }
+  env["VCPKG_ROOT"] = ENV["VCPKG_ROOT"].to_s
+  system(env, "cargo", "build", "--release", "-p", "tfs", "-p", "tebako-driver", chdir: root, exception: true)
+end
+
+%w[libtebako_driver.a libtfs.a].each do |name|
+  src = File.join(build_dir, name)
+  die "missing staticlib #{src} (drop --skip-build or build first)" unless File.file?(src)
+end
+
+# --- 2. scope them ---------------------------------------------------------
+system({ "CARGO_NET_GIT_FETCH_WITH_CLI" => "true", "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"].to_s,
+         "VCPKG_ROOT" => ENV["VCPKG_ROOT"].to_s, "SQFS_SYS_VCPKG_ROOT" => ENV["SQFS_SYS_VCPKG_ROOT"].to_s },
+       "cargo", "run", "-q", "-p", "tebako-arscope", "--",
+       File.join(build_dir, "libtebako_driver.a"), File.join(out, "libtebako_driver.a"), chdir: root, exception: true)
+system({ "CARGO_NET_GIT_FETCH_WITH_CLI" => "true", "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"].to_s,
+         "VCPKG_ROOT" => ENV["VCPKG_ROOT"].to_s, "SQFS_SYS_VCPKG_ROOT" => ENV["SQFS_SYS_VCPKG_ROOT"].to_s },
+       "cargo", "run", "-q", "-p", "tebako-arscope", "--",
+       File.join(build_dir, "libtfs.a"), File.join(out, "libtfs.a"), chdir: root, exception: true)
+
+# --- 3. the closure --------------------------------------------------------
+# Newest build-script out dir per family (mtime — the one the current
+# staticlibs were built against).
+def newest_out(pattern)
+  dirs = Dir.glob(pattern).select { |d| File.directory?(d) }
+  dirs.max_by { |d| File.mtime(d) }
+end
+
+def harvest(out, src, note)
+  die "missing closure input #{src} (#{note}) — build the workspace first" unless File.file?(src)
+
+  FileUtils.cp(src, File.join(out, "closure", File.basename(src)))
+  puts format("  closure %-28s <= %s", File.basename(src), src.sub(%r{^.*/build/}, "build/"))
+end
+
+dwarfs = newest_out(File.join(script_out, "dwarfs-t-sys-*", "out"))
+die "no dwarfs-t-sys build under #{script_out}" unless dwarfs
+
+sqfs = newest_out(File.join(script_out, "sqfs-sys-*", "out"))
+die "no sqfs-sys build under #{script_out}" unless sqfs
+
+rnp = newest_out(File.join(script_out, "rnp-src-*", "out"))
+die "no rnp-src build under #{script_out} (rnp with the vendored feature)" unless rnp
+
+# the dwarfs-t libraries (its own build)
+%w[libdwarfs_c.a libdwarfs_common.a libdwarfs_compressor.a libdwarfs_decompressor.a
+   libdwarfs_metadata_legacy.a libdwarfs_reader.a libdwarfs_writer.a].each do |name|
+  harvest(out, File.join(dwarfs, "dwarfs-build", name), "dwarfs-t")
+end
+
+# their vcpkg closure (codecs, boost, crypto — the static triplet)
+vlib = Dir.glob(File.join(dwarfs, "dwarfs-build", "vcpkg_installed", "*-static", "lib")).min
+die "no vcpkg static lib dir under #{dwarfs}" unless vlib
+%w[libFLAC++.a libFLAC.a libogg.a libboost_atomic.a libboost_chrono.a libboost_container.a
+   libboost_context.a libboost_date_time.a libboost_filesystem.a libboost_process.a
+   libboost_program_options.a libbrotlicommon.a libbrotlidec.a libbrotlienc.a libbz2.a
+   libcrypto.a libfmt.a liblz4.a liblzma.a libxxhash.a libz.a libzstd.a].each do |name|
+  harvest(out, File.join(vlib, name), "dwarfs-t vcpkg closure")
+end
+
+# the squashfs pair
+harvest(out, File.join(sqfs, "libsqfs_abi_check.a"), "sqfs-sys shim")
+sqfs_vlib = Dir.glob(File.join(sqfs, "vcpkg_installed", "*-static", "lib")).min
+die "no vcpkg static lib dir under #{sqfs}" unless sqfs_vlib
+harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
+
+# the rnp family (rnp-src's own install tree — never a prebuilt download)
+{
+  "rnp/lib/librnp.a" => "librnp (rnp-src)",
+  "rnp/lib/libsexpp.a" => "libsexpp (rnp-src)",
+  "json-c/lib/libjson-c.a" => "json-c (rnp-src)",
+  "botan/lib/libbotan-3.a" => "botan (botan-src via rnp-src)",
+}.each do |rel, note|
+  harvest(out, File.join(rnp, "install", rel), note)
+end
+
+count = Dir.glob(File.join(out, "closure", "*.a")).size
+die "closure incomplete: #{count} archives (expected 35)" unless count == 35
+
+puts "staged the v2 link unit at #{out} (2 scoped staticlibs + #{count} closure archives)"
