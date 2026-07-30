@@ -78,8 +78,12 @@ int tebako_fs_host_policy(int default_open /* 0 = deny */,
   the historic answer ENOENT ("not ours, pass through") for reads AND
   writes — under `open` a host write attempt therefore answers ENOENT,
   not EROFS, so the consumer's pass-through can perform the write
-  (profile 1: "cwd + writes pass through"). Memfs paths are byte-for-byte
-  unchanged (write opens on them stay EROFS).
+  (profile 1: "cwd + writes pass through"). Held memfs content is
+  byte-for-byte unchanged (write opens on it stay EROFS).
+- "Host path" means **any path the mounts do not hold** — outside every
+  mount, or covered by a mount but absent from its image (spec 11 §2):
+  the app payload mounts at `/` and the host filesystem stays
+  reachable exactly through this rule.
 - A mount's access bit applies even under an `open` default (an ro bind
   is ro in an otherwise open namespace, docker-style); longest host
   prefix wins on path-component boundaries; argument files are an exact

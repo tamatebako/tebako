@@ -293,14 +293,32 @@ impl FsContext {
             self.host_check(path, need)?;
             return Err(libc::ENOENT);
         };
-        // Only O_RDONLY is supported: fd-based writes land with the
-        // spec 11 §7 write family; path-level writes (pwrite_path & co)
-        // are gated by the mount mode.
+        let rel = Self::relative_path(mount, path);
+        let st = match mount.backend.stat(rel) {
+            Ok(st) => st,
+            // A path a mount covers but its image does not hold is a
+            // HOST path (spec 08): the policy gates the consumer's
+            // fall-through exactly as if no mount claimed it. With the
+            // app payload mounted at "/", this is what keeps the host
+            // filesystem reachable.
+            Err(e) if e == libc::ENOENT => {
+                let need = if (flags & libc::O_ACCMODE) == libc::O_RDONLY {
+                    HostAccess::Ro
+                } else {
+                    HostAccess::Rw
+                };
+                self.host_check(path, need)?;
+                return Err(libc::ENOENT);
+            }
+            Err(e) => return Err(e),
+        };
+        // Only O_RDONLY is supported: mounted content is read-only
+        // (fd-based writes land with the spec 11 §7 write family;
+        // path-level writes (pwrite_path & co) are gated by the mount
+        // mode).
         if (flags & libc::O_ACCMODE) != libc::O_RDONLY {
             return Err(libc::EROFS);
         }
-        let rel = Self::relative_path(mount, path);
-        let st = mount.backend.stat(rel)?;
         match st.entry_type {
             EntryType::File => {}
             // C++ maps NotAFile -> EISDIR for any non-regular open.
@@ -423,7 +441,15 @@ impl FsContext {
             return Err(libc::ENOENT);
         };
         let rel = Self::relative_path(mount, path);
-        let entries = mount.backend.read_dir(rel)?;
+        let entries = match mount.backend.read_dir(rel) {
+            Ok(entries) => entries,
+            // Covered but not held: a host path (see open()).
+            Err(e) if e == libc::ENOENT => {
+                self.host_check(path, HostAccess::Ro)?;
+                return Err(libc::ENOENT);
+            }
+            Err(e) => return Err(e),
+        };
         let owner = mount.handle;
         let id = self.next_dir_id;
         self.next_dir_id += 1;
@@ -519,7 +545,14 @@ impl FsContext {
             return Err(libc::ENOENT);
         };
         let rel = Self::relative_path(mount, path);
-        mount.backend.stat(rel)
+        match mount.backend.stat(rel) {
+            // Covered but not held: a host path (see open()).
+            Err(e) if e == libc::ENOENT => {
+                self.host_check(path, HostAccess::Ro)?;
+                Err(libc::ENOENT)
+            }
+            other => other,
+        }
     }
 
     /// tebako_fs_fstat (re-dispatched by the fd's path, like C++).

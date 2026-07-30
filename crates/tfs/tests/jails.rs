@@ -268,6 +268,58 @@ fn deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected() {
     assert_eq!(unsafe { c_api::tebako_fs_closedir(dir) }, 0);
 }
 
+/// The v2 app-payload shape (the image mounted at "/"): every host path
+/// is COVERED by the mount, but the image holds none of them. A covered
+/// path the image does not hold takes the host-passthrough decision
+/// (policy-gated), never the mounted-content answers — this is what
+/// keeps the host filesystem reachable under a "/" mount.
+#[test]
+fn covered_but_not_held_paths_fall_through_to_the_host_decision() {
+    let f = setup("fallthrough");
+    unsafe {
+        c_api::tebako_fs_unmount();
+    }
+    let rc =
+        unsafe { c_api::tebako_fs_init_from_file(c(&f.archive).as_ptr(), c_str("/").as_ptr()) };
+    assert_eq!(rc, 0, "the image mounts at /");
+
+    // Covered + held: served from the image; a write open is EROFS.
+    let fd = unsafe { c_api::tebako_fs_open(c_str("/content/hello.txt").as_ptr(), libc::O_RDONLY) };
+    assert!(fd >= 0, "held content serves from the mount");
+    assert_eq!(unsafe { c_api::tebako_fs_close(fd) }, 0);
+    assert_eq!(open(Path::new("/content/hello.txt"), libc::O_WRONLY), -1);
+    assert_eq!(errno(), libc::EROFS, "held content is read-only");
+
+    // Covered + absent: the host decision — ENOENT under the open policy
+    // ("not ours, pass through"), for reads AND writes.
+    let host_file = f.sibling.join("secret.txt");
+    assert_eq!(open(&host_file, libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::ENOENT);
+    assert_eq!(stat(&host_file), -1);
+    assert_eq!(errno(), libc::ENOENT);
+    assert!(opendir(&f.sibling).is_null());
+    assert_eq!(errno(), libc::ENOENT);
+    assert_eq!(open(&host_file, libc::O_WRONLY | libc::O_CREAT), -1);
+    assert_eq!(
+        errno(),
+        libc::ENOENT,
+        "absent content passes writes through"
+    );
+
+    // The jail still engages on the fall-through: deny answers EPERM…
+    assert_eq!(install_policy(0, &[], &[]), 0);
+    assert_eq!(open(&host_file, libc::O_RDONLY), -1);
+    assert_eq!(errno(), libc::EPERM);
+    assert_eq!(stat(&host_file), -1);
+    assert_eq!(errno(), libc::EPERM);
+    assert!(opendir(&f.sibling).is_null());
+    assert_eq!(errno(), libc::EPERM);
+    // …while held content stays unaffected.
+    let fd = unsafe { c_api::tebako_fs_open(c_str("/content/hello.txt").as_ptr(), libc::O_RDONLY) };
+    assert!(fd >= 0, "held content is unaffected by the jail");
+    assert_eq!(unsafe { c_api::tebako_fs_close(fd) }, 0);
+}
+
 #[test]
 fn directory_scoped_mount_rw_works_and_sibling_denies() {
     let f = setup("scoped");

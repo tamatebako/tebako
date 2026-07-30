@@ -26,6 +26,13 @@ surgery — tebako's concept, not TFS's).
   reused), each with mount point + backend instance.
 - **Longest-prefix dispatch** (path-component boundary); nested mounts
   shadow outer ones; duplicate mount point → `EEXIST`.
+- **Coverage is not presence**: a path a mount covers but its image
+  does not hold takes the host-passthrough decision (spec 08) — open,
+  stat, and opendir fall through to the (policy-gated) host answer
+  instead of surfacing the backend's ENOENT. With the app payload
+  mounted at `/` (the v2 dispatch shape), this is what keeps the host
+  filesystem reachable: held content serves from the image (read-only),
+  everything else behaves as if no mount claimed it.
 - fd/dir tables record the owning mount; unmount-by-handle force-closes
   only that mount's fds/dirs (later use → `EBADF`).
 - Legacy `init*` single-mount semantics layered on top (`EEXIST` when
