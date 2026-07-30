@@ -773,24 +773,50 @@ impl FsContext {
     /// originals.
     pub fn dlmap2file(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
         let mut visited = std::collections::HashSet::new();
-        self.dlmap2file_at(path, path, &[], &mut visited)
+        let host = self.extract_for_exec(path, path, &ClosureDest::Dlcache, &[], &mut visited)?;
+        let s = host.to_string_lossy().into_owned();
+        std::ffi::CString::new(s).map_err(|_| libc::EIO)
     }
 
-    /// dlmap2file with the closure-walk context: `exe` is the original
-    /// exec target (`@executable_path` anchor), `chain_rpaths` the
-    /// rpaths accumulated down the load chain, `visited` the
-    /// cycle-breaking set of memfs paths already extracted.
-    fn dlmap2file_at(
+    /// The store-side sibling of dlmap2file (tebako install's
+    /// zero-runtime materialization): extract `path` plus its exec
+    /// dependency closure to `<dest>/<full memfs path>` and return the
+    /// host path of the file itself. No cache, no cleanup — the store
+    /// tree is permanent and mirrors the memfs layout so the platform
+    /// loader's `@executable_path`-relative probes land on real files.
+    pub fn extract_exec_closure(
+        &mut self,
+        path: &str,
+        dest: &std::path::Path,
+    ) -> Result<std::path::PathBuf, i32> {
+        let mut visited = std::collections::HashSet::new();
+        self.extract_for_exec(
+            path,
+            path,
+            &ClosureDest::Store(dest.to_path_buf()),
+            &[],
+            &mut visited,
+        )
+    }
+
+    /// One closure-extraction step: materialize `path` under the
+    /// destination root, then walk its Mach-O/ELF dependency closure
+    /// recursively. `exe` is the original exec target
+    /// (`@executable_path` anchor), `chain_rpaths` the rpaths
+    /// accumulated down the load chain, `visited` the cycle-breaking
+    /// set of memfs paths already extracted in this walk.
+    fn extract_for_exec(
         &mut self,
         path: &str,
         exe: &str,
+        dest: &ClosureDest,
         chain_rpaths: &[String],
         visited: &mut std::collections::HashSet<String>,
-    ) -> Result<std::ffi::CString, i32> {
+    ) -> Result<std::path::PathBuf, i32> {
         let path = &Self::normalize(path);
         let Some(mount) = self.find_mount(path) else {
-            // Host-passthrough decision (spec 08), see open(). The tmpdir
-            // writes dlmap2file itself performs are process-internal and
+            // Host-passthrough decision (spec 08), see open(). The
+            // extraction writes themselves are process-internal and
             // not policy-gated.
             self.host_check(path, HostAccess::Ro)?;
             return Err(libc::ENOENT);
@@ -799,9 +825,10 @@ impl FsContext {
         let rel_owned = Self::relative_path(mount, path).to_string();
         let mount = self.mounts.get(&owner).unwrap();
 
-        if let Some(cached) = self.dl_cache.get(path) {
-            let s = cached.to_string_lossy().into_owned();
-            return std::ffi::CString::new(s).map_err(|_| libc::EIO);
+        if matches!(dest, ClosureDest::Dlcache) {
+            if let Some(cached) = self.dl_cache.get(path) {
+                return Ok(cached.clone());
+            }
         }
 
         if rel_owned.is_empty() {
@@ -810,7 +837,7 @@ impl FsContext {
         let st = match mount.backend.stat(&rel_owned) {
             Ok(st) => st,
             // Covered but not held: a host path (see open()) — the
-            // dlmap consumer falls back to the host dlopen.
+            // consumer falls back to the host answer.
             Err(e) if e == libc::ENOENT => {
                 self.host_check(path, HostAccess::Ro)?;
                 return Err(libc::ENOENT);
@@ -821,17 +848,20 @@ impl FsContext {
             return Err(libc::EISDIR);
         }
 
-        let tmpdir = match &self.dl_tmpdir {
-            Some(d) => d.clone(),
-            None => {
-                let d = create_dl_tmpdir().ok_or(libc::EIO)?;
-                register_dl_cleanup(&d);
-                self.dl_tmpdir = Some(d.clone());
-                d
-            }
+        let root = match dest {
+            ClosureDest::Dlcache => match &self.dl_tmpdir {
+                Some(d) => d.clone(),
+                None => {
+                    let d = create_dl_tmpdir().ok_or(libc::EIO)?;
+                    register_dl_cleanup(&d);
+                    self.dl_tmpdir = Some(d.clone());
+                    d
+                }
+            },
+            ClosureDest::Store(root) => root.clone(),
         };
 
-        let host_path = tmpdir.join(path.trim_start_matches('/'));
+        let host_path = root.join(path.trim_start_matches('/'));
         if let Some(parent) = host_path.parent() {
             std::fs::create_dir_all(parent).map_err(|_| libc::EIO)?;
         }
@@ -861,41 +891,27 @@ impl FsContext {
             let _ = std::fs::set_permissions(&host_path, std::fs::Permissions::from_mode(st.perms));
         }
 
-        self.dl_cache.insert(path.to_string(), host_path.clone());
+        if matches!(dest, ClosureDest::Dlcache) {
+            self.dl_cache.insert(path.to_string(), host_path.clone());
+        }
         // Eager dependency closure: the platform loader's probes are
         // raw syscalls no userland hook can serve (dyld proven on
         // macOS 15), so the image's dylibs must exist as real files
-        // under the dlmap root before exec/dlopen runs.
+        // under the same root before exec/dlopen runs. Unresolvable
+        // names are host/system libraries — the loader answers for
+        // them exactly as before.
         visited.insert(path.to_string());
-        self.extract_closure(&host_path, path, exe, chain_rpaths, visited);
-        let s = host_path.to_string_lossy().into_owned();
-        std::ffi::CString::new(s).map_err(|_| libc::EIO)
-    }
-
-    /// Walk the Mach-O/ELF dependency closure of an extracted image,
-    /// materializing every dependency that resolves into the mounts.
-    /// Unresolvable names are host/system libraries — the loader
-    /// answers for them exactly as before.
-    fn extract_closure(
-        &mut self,
-        host_file: &std::path::Path,
-        referrer: &str,
-        exe: &str,
-        chain_rpaths: &[String],
-        visited: &mut std::collections::HashSet<String>,
-    ) {
         use std::io::Read as _;
         let mut head = Vec::new();
-        if std::fs::File::open(host_file)
+        let Ok(_) = std::fs::File::open(&host_path)
             .and_then(|f| f.take(exec_closure::HEADER_WINDOW as u64).read_to_end(&mut head))
-            .is_err()
-        {
-            return;
-        }
-        let Some(parsed) = exec_closure::parse(&head) else {
-            return;
+        else {
+            return Ok(host_path);
         };
-        let referrer_dir = memfs_dirname(referrer);
+        let Some(parsed) = exec_closure::parse(&head) else {
+            return Ok(host_path);
+        };
+        let referrer_dir = memfs_dirname(path);
         let exe_dir = memfs_dirname(exe);
         let mut chain: Vec<String> = chain_rpaths.to_vec();
         for rp in &parsed.rpaths {
@@ -908,12 +924,14 @@ impl FsContext {
             else {
                 continue;
             };
-            if !visited.insert(memfs.clone()) {
+            if visited.contains(&memfs) {
                 continue;
             }
-            // The dep's own closure rides its extraction (same exe).
-            let _ = self.dlmap2file_at(&memfs, exe, &chain, visited);
+            // The dep's own closure rides its extraction (same exe,
+            // same destination).
+            let _ = self.extract_for_exec(&memfs, exe, dest, &chain, visited);
         }
+        Ok(host_path)
     }
 
     /// Resolve one dependency name to a memfs path the mounts hold
@@ -1021,6 +1039,15 @@ fn is_dlmap_marker(component: &str) -> bool {
         return false;
     };
     !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// Where an exec-closure extraction lands.
+enum ClosureDest {
+    /// The per-process dlmap tmpdir (dlmap2file): cached, cleaned at exit.
+    Dlcache,
+    /// A permanent store root (tebako install's zero-runtime
+    /// materialization): never cleaned, never cached.
+    Store(std::path::PathBuf),
 }
 
 /// The parent directory of a memfs path (`/a/b/c` → `/a/b`, `/a` → `/`).
