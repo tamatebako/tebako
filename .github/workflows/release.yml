@@ -668,7 +668,7 @@ jobs:
           # Static-link the mingw C++ runtimes: the runner carries several
           # mingw installs and first-DLL-wins resolution is
           # STATUS_ENTRYPOINT_NOT_FOUND at process start.
-          RUSTFLAGS: -C link-arg=-static -C link-arg=-static-libgcc -C link-arg=-static-libstdc++
+          RUSTFLAGS: -C link-arg=-static-libgcc -C link-arg=-static-libstdc++
           # Short installed-tree root (MAX_PATH: boost's deepest headers
           # overran 260 inside the cargo build dir)
           DWARFS_RS_VCPKG_INSTALLED_DIR: C:/vcpkg-inst
