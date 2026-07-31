@@ -145,6 +145,8 @@ payloads (inkscape & co.) are feedstocks in the
 | `tebako press` | package an app (lean/fat; `--suite` for multi-command packages; `--jail` presses a host-access policy) |
 | `tebako run <pkg>` | run a pressed package with a user jail tightening (`--jail`/`--mount`/`--no-host`) |
 | `tebako install <ref\|name@ver>` | install a payload from a registry + register its shims |
+| `tebako info [topic]` | the store/system surface: system, runtimes, payloads, shims, registries, store (`--remote` adds what the world offers; `--json` everywhere) |
+| `tebako inspect <artifact>` | payload/package introspection: manifest, provides, requires, platforms, verify (strict), JSON |
 | `tebako use / list / doctor` | manage shims, versions, and health |
 | `tebako publish` | press → sign → upload → registry → tap formula (developer flow) |
 | `tebako-pkg` | tpkg trailer surgery: bundle/unbundle/reassemble/insert/remove/info/validate/sign/verify |
