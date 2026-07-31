@@ -69,6 +69,7 @@ pub mod backend;
 pub mod backends_cow;
 #[cfg(feature = "vendored-dwarfs")]
 pub mod backends_dwarfs;
+#[cfg(feature = "enc")]
 pub mod backends_enc;
 pub mod backends_hostdir;
 #[cfg(feature = "vendored-squashfs")]
@@ -83,11 +84,18 @@ pub mod journal;
 pub mod mount;
 pub mod mount_spec;
 pub mod policy;
+#[cfg(feature = "enc")]
 pub mod secure_buf;
 pub mod tree_walk;
 
 pub use backend::{Backend, EntryType, RawDirEntry, RawStat, WritableBackend};
+#[cfg(feature = "enc")]
 pub use backends_enc::{EncBackend, KeySource, ENOKEY};
+/// ENC is compiled out (windows ships without rnp for now): the errno
+/// code stays exported — an ENC mount attempt fails with named ENOTSUP
+/// from the mount layer, never a silent skip.
+#[cfg(not(feature = "enc"))]
+pub const ENOKEY: i32 = 126;
 pub use context::{TebakoCDirent, DT_DIR, DT_REG, TEBAKO_FD_FLAG, TEBAKO_FD_MAX};
 pub use mount::{MountMode, TEBAKO_MOUNT_COW, TEBAKO_MOUNT_RO, TEBAKO_MOUNT_RW};
 pub use policy::{HostAccess, HostMount, HostMountSpec, HostPolicy, JailSpec, JailSpecError};

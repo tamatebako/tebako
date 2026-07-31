@@ -45,7 +45,7 @@ sqfs-sys = { version = "0.1.0", path = "../sqfs-sys", optional = true }
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
 # buffers. All pure-Rust RustCrypto crates — no shell-outs anywhere.
 tpkg = { version = "0.1.0", path = "../tpkg" }
-tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+tebako-signer = { version = "0.1.0", path = "../tebako-signer", optional = true }
 aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
@@ -58,9 +58,15 @@ getrandom = "0.2"
 # `vendored-squashfs` (default): build the SquashFS backend against vcpkg's
 # squashfs-tools-ng (requires SQFS_SYS_VCPKG_ROOT, falls back to
 # DWARFS_RS_VCPKG_ROOT / VCPKG_ROOT).
-default = ["vendored-dwarfs", "vendored-squashfs"]
+# `enc` (default): the ENC confidentiality transform via tebako-signer
+# (rnp). Windows (ucrt64) ships WITHOUT it for now — rnp's mingw build is
+# unproven (TODO.v2-1/08), so windows consumers take
+# default-features = false, features = ["vendored-dwarfs"] and an ENC
+# mount fails with named ENOTSUP.
+default = ["vendored-dwarfs", "vendored-squashfs", "enc"]
 vendored-dwarfs = ["dep:dwarfs-t"]
 vendored-squashfs = ["dep:sqfs-sys"]
+enc = ["dep:tebako-signer"]
 
 [dev-dependencies]
 # Tempdir scaffolding for backend tests (large-archive RSS fixtures).

@@ -29,10 +29,12 @@ def die(msg)
   exit 64
 end
 
-out = ARGV[0] or die "usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--skip-build]"
+out = ARGV[0] or die "usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--target TRIPLE] [--skip-build]"
 root = File.expand_path(ARGV.include?("--tebako-rs-root") ? ARGV[ARGV.index("--tebako-rs-root") + 1] : File.join(__dir__, ".."))
 skip_build = ARGV.include?("--skip-build")
-build_dir = File.join(root, "target", "release")
+target = ARGV.include?("--target") ? ARGV[ARGV.index("--target") + 1] : nil
+windows_gnu = target == "x86_64-pc-windows-gnu"
+build_dir = target ? File.join(root, "target", target, "release") : File.join(root, "target", "release")
 script_out = File.join(build_dir, "build")
 FileUtils.mkdir_p(File.join(out, "closure"))
 
@@ -44,7 +46,15 @@ unless skip_build
     "CARGO_NET_GIT_FETCH_WITH_CLI" => "true",
   }
   env["VCPKG_ROOT"] = ENV["VCPKG_ROOT"].to_s
-  system(env, "cargo", "build", "--release", "-p", "tfs", "-p", "tebako-driver", "-p", "libtfs-preload", chdir: root, exception: true)
+  pkgs = windows_gnu ? %w[tfs tebako-driver] : %w[tfs tebako-driver libtfs-preload]
+  args = ["build", "--release", *(target ? ["--target", target] : [])]
+  # windows ships dwarfs-only (squashfs is POSIX-only; ENC needs rnp's
+  # mingw build, TODO.v2-1/08).
+  args += ["-p", "tfs", *(windows_gnu ? ["--no-default-features", "--features", "vendored-dwarfs"] : [])]
+  (pkgs - ["tfs"]).each { |p| args += ["-p", p] }
+  # MinGW cross-link (windows-gnu): the msys ruby legs link with mingw-gcc.
+  env["CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER"] = "x86_64-w64-mingw32-gcc" if windows_gnu
+  system(env, "cargo", *args, chdir: root, exception: true)
 end
 
 %w[libtebako_driver.a libtfs.a].each do |name|
@@ -53,20 +63,25 @@ end
 end
 
 # The preload shim (the spawned child's VFS re-entry, spec 07 §8): the
-# runtime's env image carries it at /lib/tebako/.
-preload = %w[libtfs_preload.dylib libtfs_preload.so].map { |n| File.join(build_dir, n) }.find { |p| File.file?(p) }
-die "missing the preload cdylib under #{build_dir}" unless preload
-FileUtils.cp(preload, File.join(out, File.basename(preload)))
+# runtime's env image carries it at /lib/tebako/. POSIX-only — windows has
+# no DYLD_INSERT_LIBRARIES/LD_PRELOAD mechanism (the msys memfs-exec story
+# is the later windows campaign).
+unless windows_gnu
+  preload = %w[libtfs_preload.dylib libtfs_preload.so].map { |n| File.join(build_dir, n) }.find { |p| File.file?(p) }
+  die "missing the preload cdylib under #{build_dir}" unless preload
+  FileUtils.cp(preload, File.join(out, File.basename(preload)))
+end
 
-# --- 2. scope them ---------------------------------------------------------
-system({ "CARGO_NET_GIT_FETCH_WITH_CLI" => "true", "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"].to_s,
-         "VCPKG_ROOT" => ENV["VCPKG_ROOT"].to_s, "SQFS_SYS_VCPKG_ROOT" => ENV["SQFS_SYS_VCPKG_ROOT"].to_s },
-       "cargo", "run", "-q", "-p", "tebako-arscope", "--",
-       File.join(build_dir, "libtebako_driver.a"), File.join(out, "libtebako_driver.a"), chdir: root, exception: true)
-system({ "CARGO_NET_GIT_FETCH_WITH_CLI" => "true", "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"].to_s,
-         "VCPKG_ROOT" => ENV["VCPKG_ROOT"].to_s, "SQFS_SYS_VCPKG_ROOT" => ENV["SQFS_SYS_VCPKG_ROOT"].to_s },
-       "cargo", "run", "-q", "-p", "tebako-arscope", "--",
-       File.join(build_dir, "libtfs.a"), File.join(out, "libtfs.a"), chdir: root, exception: true)
+# --- 2. scope them -----------------------------------------------------------
+# COFF scoping landed with the GNU index form (the windows-gnu link unit is
+# now sealed like the POSIX hosts): every defined non-tebako_* symbol is
+# renamed __tebako_internal_*, definitions and references alike.
+%w[libtebako_driver.a libtfs.a].each do |name|
+  system({ "CARGO_NET_GIT_FETCH_WITH_CLI" => "true", "DWARFS_RS_VCPKG_ROOT" => ENV["DWARFS_RS_VCPKG_ROOT"].to_s,
+           "VCPKG_ROOT" => ENV["VCPKG_ROOT"].to_s, "SQFS_SYS_VCPKG_ROOT" => ENV["SQFS_SYS_VCPKG_ROOT"].to_s },
+         "cargo", "run", "-q", "-p", "tebako-arscope", "--",
+         File.join(build_dir, name), File.join(out, name), chdir: root, exception: true)
+end
 
 # --- 3. the closure --------------------------------------------------------
 # Newest build-script out dir per family (mtime — the one the current
@@ -86,42 +101,57 @@ end
 dwarfs = newest_out(File.join(script_out, "dwarfs-t-sys-*", "out"))
 die "no dwarfs-t-sys build under #{script_out}" unless dwarfs
 
-sqfs = newest_out(File.join(script_out, "sqfs-sys-*", "out"))
-die "no sqfs-sys build under #{script_out}" unless sqfs
-
-rnp = newest_out(File.join(script_out, "rnp-src-*", "out"))
-die "no rnp-src build under #{script_out} (rnp with the vendored feature)" unless rnp
-
 # the dwarfs-t libraries (its own build)
 %w[libdwarfs_c.a libdwarfs_common.a libdwarfs_compressor.a libdwarfs_decompressor.a
    libdwarfs_metadata_legacy.a libdwarfs_reader.a libdwarfs_writer.a].each do |name|
   harvest(out, File.join(dwarfs, "dwarfs-build", name), "dwarfs-t")
 end
 
-# their vcpkg closure (codecs, boost, crypto — the static triplet)
-vlib = Dir.glob(File.join(dwarfs, "dwarfs-build", "vcpkg_installed", "*-static", "lib")).min
-die "no vcpkg static lib dir under #{dwarfs}" unless vlib
-%w[libFLAC++.a libFLAC.a libogg.a libboost_atomic.a libboost_chrono.a libboost_container.a
-   libboost_context.a libboost_date_time.a libboost_filesystem.a libboost_process.a
-   libboost_program_options.a libbrotlicommon.a libbrotlidec.a libbrotlienc.a libbz2.a
-   libcrypto.a libfmt.a liblz4.a liblzma.a libxxhash.a libz.a libzstd.a].each do |name|
-  harvest(out, File.join(vlib, name), "dwarfs-t vcpkg closure")
-end
+if windows_gnu
+  # The MinGW vcpkg closure: every archive the dwarfs-t link emits (boost
+  # carries the -gccN-mt-x64-VER suffix; test/manual-link archives never
+  # ship).
+  vlib = Dir.glob(File.join(dwarfs, "dwarfs-build", "vcpkg_installed", "*-static", "lib")).min
+  die "no vcpkg static lib dir under #{dwarfs}" unless vlib
+  Dir.glob(File.join(vlib, "*.a")).sort.each do |a|
+    base = File.basename(a)
+    next if base.start_with?("libgtest", "libgmock")
 
-# the squashfs pair
-harvest(out, File.join(sqfs, "libsqfs_abi_check.a"), "sqfs-sys shim")
-sqfs_vlib = Dir.glob(File.join(sqfs, "vcpkg_installed", "*-static", "lib")).min
-die "no vcpkg static lib dir under #{sqfs}" unless sqfs_vlib
-harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
+    FileUtils.cp(a, File.join(out, "closure", base))
+  end
+  puts "  closure (mingw glob)      <= #{vlib.sub(%r{^.*/build/}, "build/")}"
+else
+  sqfs = newest_out(File.join(script_out, "sqfs-sys-*", "out"))
+  die "no sqfs-sys build under #{script_out}" unless sqfs
 
-# the rnp family (rnp-src's own install tree — never a prebuilt download)
-{
-  "rnp/lib/librnp.a" => "librnp (rnp-src)",
-  "rnp/lib/libsexpp.a" => "libsexpp (rnp-src)",
-  "json-c/lib/libjson-c.a" => "json-c (rnp-src)",
-  "botan/lib/libbotan-3.a" => "botan (botan-src via rnp-src)",
-}.each do |rel, note|
-  harvest(out, File.join(rnp, "install", rel), note)
+  rnp = newest_out(File.join(script_out, "rnp-src-*", "out"))
+  die "no rnp-src build under #{script_out} (rnp with the vendored feature)" unless rnp
+
+  # their vcpkg closure (codecs, boost, crypto — the static triplet)
+  vlib = Dir.glob(File.join(dwarfs, "dwarfs-build", "vcpkg_installed", "*-static", "lib")).min
+  die "no vcpkg static lib dir under #{dwarfs}" unless vlib
+  %w[libFLAC++.a libFLAC.a libogg.a libboost_atomic.a libboost_chrono.a libboost_container.a
+     libboost_context.a libboost_date_time.a libboost_filesystem.a libboost_process.a
+     libboost_program_options.a libbrotlicommon.a libbrotlidec.a libbrotlienc.a libbz2.a
+     libcrypto.a libfmt.a liblz4.a liblzma.a libxxhash.a libz.a libzstd.a].each do |name|
+    harvest(out, File.join(vlib, name), "dwarfs-t vcpkg closure")
+  end
+
+  # the squashfs pair
+  harvest(out, File.join(sqfs, "libsqfs_abi_check.a"), "sqfs-sys shim")
+  sqfs_vlib = Dir.glob(File.join(sqfs, "vcpkg_installed", "*-static", "lib")).min
+  die "no vcpkg static lib dir under #{sqfs}" unless sqfs_vlib
+  harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
+
+  # the rnp family (rnp-src's own install tree — never a prebuilt download)
+  {
+    "rnp/lib/librnp.a" => "librnp (rnp-src)",
+    "rnp/lib/libsexpp.a" => "libsexpp (rnp-src)",
+    "json-c/lib/libjson-c.a" => "json-c (rnp-src)",
+    "botan/lib/libbotan-3.a" => "botan (botan-src via rnp-src)",
+  }.each do |rel, note|
+    harvest(out, File.join(rnp, "install", rel), note)
+  end
 end
 
 # The canonical C ABI header (tebako-rs is the shipping implementation):
@@ -132,6 +162,7 @@ FileUtils.mkdir_p(File.join(out, "include", "tebako", "fs"))
 FileUtils.cp(header_src, File.join(out, "include", "tebako", "fs", "c_api.h"))
 
 count = Dir.glob(File.join(out, "closure", "*.a")).size
-die "closure incomplete: #{count} archives (expected 35)" unless count == 35
+expected = windows_gnu ? 42 : 35
+die "closure incomplete: #{count} archives (expected #{expected})" unless count == expected
 
-puts "staged the v2 link unit at #{out} (2 scoped staticlibs + #{count} closure archives)"
+puts "staged the v2 link unit at #{out} (2 scoped staticlibs + #{count} closure archives#{windows_gnu ? ", windows-gnu (mingw)" : ""})"

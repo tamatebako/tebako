@@ -237,7 +237,9 @@ pub unsafe extern "C" fn tebako_fs_pread(
         return fail(libc::EINVAL) as libc::ssize_t;
     }
     let buf = unsafe { std::slice::from_raw_parts_mut(buf.cast::<u8>(), nbyte) };
-    match context().write().unwrap().pread(fd, buf, offset) {
+    // the engine works in i64 offsets; the ABI's off_t is platform-sized
+    // (i32 in the mingw CRT).
+    match context().write().unwrap().pread(fd, buf, i64::from(offset)) {
         Ok(n) => {
             set_errno(0);
             n as libc::ssize_t
@@ -256,10 +258,10 @@ pub unsafe extern "C" fn tebako_fs_lseek(
     offset: libc::off_t,
     whence: libc::c_int,
 ) -> libc::off_t {
-    match context().write().unwrap().lseek(fd, offset, whence) {
+    match context().write().unwrap().lseek(fd, i64::from(offset), whence) {
         Ok(pos) => {
             set_errno(0);
-            pos
+            pos as libc::off_t
         }
         Err(e) => fail(e) as libc::off_t,
     }
@@ -386,8 +388,16 @@ fn fill_stat(st: *mut libc::stat, raw: &crate::backend::RawStat) -> i32 {
         // C++ returns EINVAL for anything that is neither file nor dir.
         _ => return libc::EINVAL,
     };
-    out.st_mode = (type_bits | raw.perms) as libc::mode_t;
-    out.st_size = raw.size as libc::off_t;
+    // st_mode is mode_t on unix, u32 in the CRT's struct stat.
+    #[cfg(unix)]
+    {
+        out.st_mode = (type_bits | raw.perms) as libc::mode_t;
+    }
+    #[cfg(windows)]
+    {
+        out.st_mode = (type_bits | raw.perms) as u16;
+    }
+    out.st_size = raw.size as _;
     out.st_mtime = raw.mtime as libc::time_t;
     out.st_nlink = 1 as _;
     0
@@ -851,7 +861,7 @@ pub unsafe extern "C" fn tebako_fs_seekdir(dir: *mut c_void, pos: libc::c_long) 
         fail(libc::EBADF);
         return;
     }
-    match context().write().unwrap().seekdir(dir as usize, pos) {
+    match context().write().unwrap().seekdir(dir as usize, i64::from(pos)) {
         Ok(()) => {
             set_errno(0);
         }

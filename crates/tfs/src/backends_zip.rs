@@ -234,6 +234,35 @@ impl Backend for ZipBackend {
 /// Convert a ZIP DOS timestamp to unix seconds in the LOCAL timezone
 /// (matching libzip, and therefore the C++ oracle: ZIP stores local time
 /// with no zone). Uses libc mktime so DST rules match the C library.
+/// The ucrt's `_mktime64` is the same function on Windows.
+#[cfg(windows)]
+fn dos_to_unix(dt: zip::DateTime) -> i64 {
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    tm.tm_year = i32::from(dt.year()) - 1900;
+    tm.tm_mon = i32::from(dt.month()) - 1;
+    tm.tm_mday = i32::from(dt.day());
+    tm.tm_hour = i32::from(dt.hour());
+    tm.tm_min = i32::from(dt.minute());
+    tm.tm_sec = i32::from(dt.second());
+    tm.tm_isdst = -1; // let mktime figure out DST
+    unsafe { mktime64(&mut tm) }
+}
+
+#[cfg(windows)]
+unsafe extern "C" {
+    fn _mktime64(tm: *mut libc::tm) -> i64;
+}
+
+#[cfg(windows)]
+#[allow(non_snake_case)]
+unsafe fn mktime64(tm: *mut libc::tm) -> i64 {
+    unsafe { _mktime64(tm) }
+}
+
+/// Convert a ZIP DOS timestamp to unix seconds in the LOCAL timezone
+/// (matching libzip, and therefore the C++ oracle: ZIP stores local time
+/// with no zone). Uses libc mktime so DST rules match the C library.
+#[cfg(unix)]
 fn dos_to_unix(dt: zip::DateTime) -> i64 {
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     tm.tm_year = i32::from(dt.year()) - 1900;
@@ -250,6 +279,17 @@ fn dos_to_unix(dt: zip::DateTime) -> i64 {
 mod tests {
     use super::*;
 
+    /// The platform's mktime reference for the oracle comparison.
+    #[cfg(unix)]
+    fn reference_mktime(tm: &mut libc::tm) -> i64 {
+        unsafe { libc::mktime(tm) as i64 }
+    }
+
+    #[cfg(windows)]
+    fn reference_mktime(tm: &mut libc::tm) -> i64 {
+        unsafe { mktime64(tm) }
+    }
+
     #[test]
     fn dos_time_is_local() {
         // The conversion must agree with libc mktime for the same civil
@@ -259,7 +299,7 @@ mod tests {
         tm.tm_year = 80;
         tm.tm_mday = 1;
         tm.tm_isdst = -1;
-        let expected = unsafe { libc::mktime(&mut tm) as i64 };
+        let expected = reference_mktime(&mut tm);
         assert_eq!(dos_to_unix(dt), expected);
 
         let dt = zip::DateTime::from_date_and_time(2000, 2, 29, 12, 0, 0).unwrap();
@@ -269,7 +309,7 @@ mod tests {
         tm.tm_mday = 29;
         tm.tm_hour = 12;
         tm.tm_isdst = -1;
-        let expected = unsafe { libc::mktime(&mut tm) as i64 };
+        let expected = reference_mktime(&mut tm);
         assert_eq!(dos_to_unix(dt), expected);
     }
 }

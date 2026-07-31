@@ -73,7 +73,7 @@ pub fn strerror(err: i32) -> &'static [u8] {
         libc::ENOMEM => c"Cannot allocate memory",
         libc::EALREADY => c"Operation already in progress",
         libc::ENOTSUP => c"Operation not supported",
-        crate::backends_enc::ENOKEY => c"Required key not available",
+        crate::ENOKEY => c"Required key not available",
         _ => c"Unknown error",
     }
     .to_bytes_with_nul()

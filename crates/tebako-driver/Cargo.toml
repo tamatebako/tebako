@@ -16,12 +16,19 @@ categories = ["filesystem"]
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
-# The mounts land in the same process-global context the C ABI serves —
-# the libtfs-preload pattern (a native Rust consumer of the engine).
-tfs = { version = "0.1.0", path = "../tfs" }
 # Trailer probing for `<self|package>:<slot>` resolution (spec 02).
 tpkg = { version = "0.1.0", path = "../tpkg" }
 libc = "0.2"
+
+# The mounts land in the same process-global context the C ABI serves —
+# the libtfs-preload pattern (a native Rust consumer of the engine).
+# Windows ships dwarfs-only (squashfs-tools-ng is POSIX/autotools-only,
+# TODO.v2-1/02; ENC needs rnp's mingw build, TODO.v2-1/08).
+[target.'cfg(not(windows))'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs" }
+
+[target.'cfg(windows)'.dependencies]
+tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 
 [dev-dependencies]
 # Zip fixtures built in-code (the tests/contract pattern).

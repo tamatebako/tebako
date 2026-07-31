@@ -146,13 +146,25 @@ fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, St
     }
 
     // The archive symbol index: ld consumes archives THROUGH it (a
-    // missing index is "no table of contents"). BSD __.SYMDEF on
-    // Darwin — emitted in the cargo/llvm-ranlib form: a "#1/12" header
-    // (__.SYMDEF padded to 12), ranlib entries in member order (nlist
-    // order per member, offsets non-decreasing), the string table
-    // padded to an 8-byte multiple so the SYMDEF member size stays a
-    // multiple of 4 (see the alignment note above).
-    let bsd = cfg!(target_os = "macos");
+    // missing index is "no table of contents"). The index FORM follows
+    // the INPUT archive's own index member (__.SYMDEF on Darwin, "/"
+    // GNU-style elsewhere — a COFF input gets the GNU index regardless
+    // of the host). BSD __.SYMDEF is emitted in the cargo/llvm-ranlib
+    // form: a "#1/12" header (__.SYMDEF padded to 12), ranlib entries
+    // in member order (nlist order per member, offsets non-decreasing),
+    // the string table padded to an 8-byte multiple so the SYMDEF
+    // member size stays a multiple of 4 (see the alignment note above).
+    let bsd = {
+        let mut has_symdef = false;
+        for member in archive.members() {
+            let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
+            if member.name() == b"__.SYMDEF" {
+                has_symdef = true;
+                break;
+            }
+        }
+        has_symdef
+    };
     let index = build_index(&members, bsd);
     let index_name = if bsd { "__.SYMDEF" } else { "/" };
 
@@ -242,10 +254,13 @@ fn write_member(
 
 /// The member size of the header + name (BSD "#1/<padded>" inline
 /// form — on Darwin for every name, elsewhere only for long names).
-/// MUST stay in lockstep with write_member: the index offsets are
-/// computed from these sizes.
-fn member_header_size(name: &str) -> usize {
-    if cfg!(target_os = "macos") {
+/// The on-disk size of one member (header + inline name bytes). MUST
+/// stay in lockstep with write_member: the index offsets are computed
+/// from these sizes. The BSD form pads names per bsd_name_pad; the GNU
+/// long form pads the 60-byte header's inline name to a 4-byte
+/// multiple, short names ride the 60-byte header alone.
+fn member_header_size(name: &str, bsd: bool) -> usize {
+    if bsd {
         return 60 + bsd_name_pad(name);
     }
     let len = name.len();
@@ -266,12 +281,12 @@ fn build_index(members: &[(String, Vec<u8>, Vec<String>)], bsd: bool) -> Vec<u8>
     // Index fields are fixed-width — the size is known directly.
     let index_len = index_size(members, index_name, 0, bsd);
 
-    let index_member_size = member_header_size(index_name) + index_len;
+    let index_member_size = member_header_size(index_name, bsd) + index_len;
     let mut member_offsets = Vec::with_capacity(members.len());
     let mut offset = 8 + index_member_size + (index_member_size % 2);
     for (name, data, _) in members {
         member_offsets.push(offset);
-        let member_size = member_header_size(name) + data.len();
+        let member_size = member_header_size(name, bsd) + data.len();
         offset += member_size + (member_size % 2);
     }
 
@@ -415,6 +430,17 @@ fn scope_object(
 
     let mut symbol_ids = std::collections::HashMap::new();
     for symbol in obj.symbols() {
+        // COFF section symbols are per-section bookkeeping the writer
+        // regenerates (the object crate's COFF emit rejects re-adding
+        // them). Relocations reference them by index — remap those to
+        // the writer's own section symbol for the same section.
+        if symbol.kind() == object::SymbolKind::Section {
+            if let object::SymbolSection::Section(index) = symbol.section() {
+                let id = out.section_symbol(section_ids[&index]);
+                symbol_ids.insert(symbol.index(), id);
+            }
+            continue;
+        }
         let name = symbol.name().map_err(|e| format!("symbol name: {e}"))?;
         let logical = logical_name(name, obj.format());
         // Rename everything EXTERNALLY VISIBLE (weak or Linkage/

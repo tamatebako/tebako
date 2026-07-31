@@ -19,6 +19,14 @@ pub const TEBAKO_FD_FLAG: i32 = 0x4000_0000;
 /// Maximum internal FD value.
 pub const TEBAKO_FD_MAX: i32 = 0x0FFF_FFFF;
 
+/// The access-mode mask of open flags: `O_ACCMODE` on unix, spelled out
+/// on Windows (the libc crate carries no O_ACCMODE there; the three
+/// access modes are the whole set).
+#[cfg(unix)]
+pub(crate) const O_ACCMODE: i32 = libc::O_ACCMODE;
+#[cfg(windows)]
+pub(crate) const O_ACCMODE: i32 = libc::O_RDONLY | libc::O_WRONLY | libc::O_RDWR;
+
 /// Directory entry type constant (POSIX DT_REG).
 pub const DT_REG: u8 = 8;
 /// Directory entry type constant (POSIX DT_DIR).
@@ -353,7 +361,7 @@ impl FsContext {
             // alike — Ok => ENOENT ("not ours, pass through", today's
             // answer); Err => EPERM (outside every grant under deny) or
             // EROFS (write against an ro grant).
-            let need = if (flags & libc::O_ACCMODE) == libc::O_RDONLY {
+            let need = if (flags & O_ACCMODE) == libc::O_RDONLY {
                 HostAccess::Ro
             } else {
                 HostAccess::Rw
@@ -370,7 +378,7 @@ impl FsContext {
             // app payload mounted at "/", this is what keeps the host
             // filesystem reachable.
             Err(e) if e == libc::ENOENT => {
-                let need = if (flags & libc::O_ACCMODE) == libc::O_RDONLY {
+                let need = if (flags & O_ACCMODE) == libc::O_RDONLY {
                     HostAccess::Ro
                 } else {
                     HostAccess::Rw
@@ -384,7 +392,7 @@ impl FsContext {
         // (fd-based writes land with the spec 11 §7 write family;
         // path-level writes (pwrite_path & co) are gated by the mount
         // mode).
-        if (flags & libc::O_ACCMODE) != libc::O_RDONLY {
+        if (flags & O_ACCMODE) != libc::O_RDONLY {
             return Err(libc::EROFS);
         }
         match st.entry_type {
@@ -1172,6 +1180,7 @@ fn extract_dir_recursive(
 /// modification time preserved, best effort).
 fn extract_file(backend: &dyn Backend, rel: &str, host: &std::path::Path) -> Result<(), i32> {
     use std::io::Write as _;
+    #[cfg_attr(windows, allow(unused_variables))]
     let st = backend.stat(rel)?;
     let mut out = std::fs::File::create(host).map_err(|_| libc::EIO)?;
     let mut offset = 0u64;
