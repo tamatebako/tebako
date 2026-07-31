@@ -1201,9 +1201,11 @@ mod tests {
         // Relative image path (the CLI form defaults the mount to /mnt).
         let (msg, _) = cmd_exec(&opts(&["rel.zip"], None, &["true"])).unwrap_err();
         assert!(msg.contains("not absolute"), "{msg}");
-        // A mount at "/" is rejected (jail bypass).
+        // A mount at "/" is legitimate (spec 17's app-payload mount —
+        // covered-but-not-held falls through with the policy gate), so
+        // the missing image dominates exactly like any other.
         let (msg, _) = cmd_exec(&opts(&["/x.zip:/"], None, &["true"])).unwrap_err();
-        assert!(msg.contains("'/'"), "{msg}");
+        assert!(msg.contains("Image not found"), "{msg}");
         // A missing image.
         let (msg, _) = cmd_exec(&opts(&["/no/such/image.zip"], None, &["true"])).unwrap_err();
         assert!(msg.contains("Image not found"), "{msg}");

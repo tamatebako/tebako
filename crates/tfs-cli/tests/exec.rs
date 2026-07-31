@@ -415,14 +415,16 @@ fn exec_usage_and_named_errors() {
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("Image not found"), "stderr: {stderr}");
 
-    // A mount at "/" is refused (it would bypass the jail).
+    // A mount at "/" is legitimate (spec 17's app-payload mount — the
+    // exec proceeds; here it fails at the entrypoint the fixture image
+    // does not carry, never at the mount point).
     let out = Command::new(bin().unwrap())
         .args(["exec", &format!("{}:/", f.zip.display()), "--", "/bin/true"])
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("'/'"), "stderr: {stderr}");
+    assert!(stderr.contains("cannot materialize"), "stderr: {stderr}");
 
     // A malformed --jail spec.
     let r = tfs_exec(f, &["--jail", "frob", "--", "/bin/true"]);
