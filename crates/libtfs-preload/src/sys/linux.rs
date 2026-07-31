@@ -148,6 +148,11 @@ real_fn!(
     unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
 );
 real_fn!(
+    real_fopen,
+    c"fopen",
+    unsafe extern "C" fn(*const c_char, *const c_char) -> *mut libc::FILE
+);
+real_fn!(
     real_fstatat,
     c"fstatat",
     unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat, c_int) -> c_int

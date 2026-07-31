@@ -43,14 +43,12 @@ fn validate(image: &str, mount: &str, context: &str) -> Result<MountDecl, MountS
     if !mount.starts_with('/') {
         return Err(err("mount point is not absolute"));
     }
-    // A mount at "/" would claim EVERY absolute path (longest-prefix
-    // dispatch), so host-passthrough decisions would never consult the host
-    // policy — a silent jail bypass (spec 08). Forbidden outright.
-    if mount.trim_end_matches('/').is_empty() {
-        return Err(err(
-            "mount point '/' is not supported by the preload shim (it would claim every host path and bypass the jail)",
-        ));
-    }
+    // A mount at "/" is legitimate (the app payload mounts there, spec
+    // 17): covered-but-not-held paths fall through to the host WITH the
+    // policy gate consulted (spec 08), so the jail is engaged exactly as
+    // for any other mount. (An earlier revision rejected "/" outright on
+    // the grounds that longest-prefix dispatch would swallow the host;
+    // the passthrough decision moots that.)
     Ok(MountDecl {
         image: image.to_string(),
         mount: mount.to_string(),
@@ -157,7 +155,6 @@ mod tests {
             ("/a.zip", "image:mount"),
             ("relative.zip:/tfs", "not absolute"),
             ("/a.zip:tfs", "not absolute"),
-            ("/a.zip:/", "mount point '/'"),
             ("/a.zip:/tfs,", "empty entry"),
             (",/a.zip:/tfs", "empty entry"),
             (":/tfs", "empty image"),
@@ -168,6 +165,14 @@ mod tests {
                 "spec {spec:?}: error {e:?} should mention {frag:?}"
             );
         }
+    }
+
+    #[test]
+    fn root_mount_is_legitimate() {
+        // the app payload mounts at "/" (spec 17); covered-but-not-held
+        // paths fall through to the host with the policy gate consulted
+        let d = parse_mounts("/a.zip:/").unwrap();
+        assert_eq!(d[0].mount, "/");
     }
 
     #[test]
@@ -183,6 +188,6 @@ mod tests {
         assert_eq!(d.mount, "/mnt");
         assert!(parse_cli_image_mount("").is_err());
         assert!(parse_cli_image_mount("rel.zip").is_err());
-        assert!(parse_cli_image_mount("/a.zip:/").is_err());
+        assert_eq!(parse_cli_image_mount("/a.zip:/").unwrap().mount, "/");
     }
 }

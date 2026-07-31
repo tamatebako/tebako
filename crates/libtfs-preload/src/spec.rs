@@ -25,7 +25,9 @@ mod tests {
     fn reexports_resolve() {
         let decls = parse_mounts("/a/img.zip:/tfs").unwrap();
         assert_eq!(to_env_spec(&decls), "/a/img.zip:/tfs");
-        assert!(parse_mounts("/a.zip:/").is_err());
+        // a `/` mount is legitimate (the app payload mounts there; the
+        // covered-but-not-held passthrough keeps the jail engaged)
+        assert_eq!(parse_mounts("/a.zip:/").unwrap()[0].mount, "/");
         assert_eq!(parse_cli_image_mount("/a.zip").unwrap().mount, "/mnt");
         let _ = MountSpecError("x".to_string());
         let _ = MountDecl {

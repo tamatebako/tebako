@@ -701,6 +701,18 @@ impl FsContext {
         self.find_mount(path).is_some()
     }
 
+    /// A mount HOLDS `path` (an entry exists in the image) — the
+    /// write gate's discriminator. A covered-but-not-held path is a
+    /// host path (the spec 08 passthrough, same as open/stat): with a
+    /// `/` mount in play, this is what keeps host writes legal.
+    pub fn path_is_held(&self, path: &str) -> bool {
+        let path = &Self::normalize(path);
+        let Some(mount) = self.find_mount(path) else {
+            return false;
+        };
+        mount.backend.stat(Self::relative_path(mount, path)).is_ok()
+    }
+
     /// The mount table in the `TEBAKO_TFS_MOUNTS` grammar
     /// ("image:mount,image:mount,…") — the env a spawned child needs to
     /// re-establish this namespace through the preload shim. Only
@@ -772,8 +784,14 @@ impl FsContext {
     /// relative to a materialized binary resolve back to their memfs
     /// originals.
     pub fn dlmap2file(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        let path = &Self::normalize(path);
+        // dlmap-prefix redirect (see open()): the dlmap spelling of a
+        // memfs path materializes the original — stdio (`fopen`) and
+        // dlopen consumers of loader-computed paths land here.
+        let tail = Self::dlmap_tail(path);
+        let effective = tail.as_deref().unwrap_or(path);
         let mut visited = std::collections::HashSet::new();
-        let host = self.extract_for_exec(path, path, &ClosureDest::Dlcache, &[], &mut visited)?;
+        let host = self.extract_for_exec(effective, effective, &ClosureDest::Dlcache, &[], &mut visited)?;
         let s = host.to_string_lossy().into_owned();
         std::ffi::CString::new(s).map_err(|_| libc::EIO)
     }

@@ -124,13 +124,26 @@ pub fn vfs_dlmap(path: &str) -> PathRoute<std::ffi::CString> {
     route_answer(answer, path, HostAccess::Ro)
 }
 
-/// Write-class routing (mkdir/unlink/rename). A memfs path is EROFS
-/// (payload images are always ro; path-level writes would route through a
-/// COW overlay, which the shim never mounts). A host path is gated with a
-/// write need: Ok(()) means "pass through to the real call".
+/// fopen routing (read modes only): like dlopen, the consumer needs a
+/// real `FILE *` — the engine materializes the memfs original
+/// (`dlmap2file`, dlmap-prefix redirect included) and the real fopen
+/// opens that copy. Write modes never route here (the caller's real
+/// fopen answers for the host path, policy-gated like any write).
+pub fn vfs_fopen(path: &str) -> PathRoute<std::ffi::CString> {
+    let answer = { context().write().unwrap().dlmap2file(path) };
+    route_answer(answer, path, HostAccess::Ro)
+}
+
+/// Write-class routing (mkdir/unlink/rename). A path a mount HOLDS is
+/// EROFS (payload images are always ro; path-level writes would route
+/// through a COW overlay, which the shim never mounts). A path merely
+/// COVERED (the image holds nothing there) is a host path — the spec 08
+/// passthrough, gated with a write need exactly like an uncovered one:
+/// Ok(()) means "pass through to the real call". This is what keeps a
+/// `/` mount from outlawing every host write.
 pub fn vfs_write_path(path: &str) -> Result<(), i32> {
     let ctx = context().read().unwrap();
-    if ctx.path_is_embedded(path) {
+    if ctx.path_is_held(path) {
         return Err(libc::EROFS);
     }
     ctx.host_check(path, HostAccess::Rw)

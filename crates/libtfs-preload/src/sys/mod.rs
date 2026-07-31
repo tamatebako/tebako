@@ -247,11 +247,27 @@ fn readdir_memfs(id: usize) -> *mut libc::dirent {
 // implementation with the ORIGINAL arguments.
 // ---------------------------------------------------------------------
 
-/// Interposed `open`. Declared with a fixed third `mode` parameter (the
-/// varargs promotion is identical on the supported ABIs; `mode` is
-/// forwarded verbatim and read by the callee only under O_CREAT).
+/// Interposed `open`. Declared with a fixed third `mode` parameter.
+///
+/// ABI note (proven against Temurin 21's NIO opens): on Darwin arm64
+/// VARIADIC arguments are passed ON THE STACK (the first variadic slot
+/// at [sp, 0]), not in the next register — a fixed-parameter shim reads
+/// garbage for `mode` there (file creations landed mode 0000). The
+/// trampoline below hoists the stack-passed mode into the register
+/// before the Rust body runs. x86_64 Darwin and Linux pass it in the
+/// register, so the fixed declaration is correct there.
 #[cfg_attr(target_os = "linux", no_mangle)]
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 pub unsafe extern "C" fn open(path: *const c_char, flags: c_int, mode: c_int) -> c_int {
+    open_impl(path, flags, mode)
+}
+
+/// The Rust body of the open shim (entry point per ABI, see above).
+#[no_mangle]
+pub unsafe extern "C" fn open_impl(path: *const c_char, flags: c_int, mode: c_int) -> c_int {
+    if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+        eprintln!("[preload] open flags={flags:#o} mode={mode:#o}");
+    }
     let Some(p) = (unsafe { c_path(path) }) else {
         // SAFETY: forwarding the original arguments.
         return unsafe { plat::real_open()(path, flags, mode) };
@@ -269,14 +285,29 @@ pub unsafe extern "C" fn open(path: *const c_char, flags: c_int, mode: c_int) ->
     }
 }
 
-/// Interposed `openat` (see `open` for the `mode` note).
+/// Interposed `openat` (see `open` for the ABI note).
 #[cfg_attr(target_os = "linux", no_mangle)]
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
 pub unsafe extern "C" fn openat(
     dirfd: c_int,
     path: *const c_char,
     flags: c_int,
     mode: c_int,
 ) -> c_int {
+    openat_impl(dirfd, path, flags, mode)
+}
+
+/// The Rust body of the openat shim (entry point per ABI, see above).
+#[no_mangle]
+pub unsafe extern "C" fn openat_impl(
+    dirfd: c_int,
+    path: *const c_char,
+    flags: c_int,
+    mode: c_int,
+) -> c_int {
+    if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+        eprintln!("[preload] openat flags={flags:#o} mode={mode:#o}");
+    }
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_openat()(dirfd, path, flags, mode) };
     };
@@ -755,6 +786,43 @@ pub unsafe extern "C" fn dlopen(path: *const c_char, mode: c_int) -> *mut c_void
         }
         Some(PathRoute::Host) | None => unsafe { plat::real_dlopen()(path, mode) },
     }
+}
+
+/// Interposed `fopen` (read modes): libSystem's stdio opens files
+/// through its own internal syscall path (never the interposed `open` —
+/// the JVM's `jvm.cfg` read proved it), so stdio consumers need their
+/// own hook. Like dlopen: the engine materializes the memfs original
+/// (`dlmap2file`, dlmap-prefix redirect included) and the REAL fopen
+/// opens that copy. Write/append/update modes pass through with the
+/// ORIGINAL arguments (memfs content is read-only; the real fopen
+/// answers).
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut libc::FILE {
+    let (Some(p), Some(m)) = (unsafe { c_path(path) }, unsafe { c_path(mode) }) else {
+        return unsafe { plat::real_fopen()(path, mode) };
+    };
+    if !m.starts_with('r') {
+        return unsafe { plat::real_fopen()(path, mode) };
+    }
+    match engine_call(|| route::vfs_fopen(p)) {
+        // SAFETY: `host` outlives the call.
+        Some(PathRoute::Vfs(host)) => unsafe { plat::real_fopen()(host.as_ptr(), mode) },
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            std::ptr::null_mut()
+        }
+        Some(PathRoute::Host) | None => unsafe { plat::real_fopen()(path, mode) },
+    }
+}
+
+/// macOS's `fopen$DARWIN_EXTSN` (the extended-signature export the 64-bit
+/// SDK binds) — the same body as `fopen`.
+#[cfg(target_os = "macos")]
+pub unsafe extern "C" fn fopen_darwin_extsn(
+    path: *const c_char,
+    mode: *const c_char,
+) -> *mut libc::FILE {
+    unsafe { fopen(path, mode) }
 }
 
 /// Shared body of the *at stat family (fstatat / fstatat64 / __fxstatat):

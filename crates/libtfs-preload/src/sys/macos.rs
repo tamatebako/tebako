@@ -60,17 +60,54 @@ macro_rules! interpose {
     };
 }
 
+// Darwin arm64 passes VARIADIC arguments (open/openat's `mode`) ON THE
+// STACK (first variadic slot at [sp, 0]) — a fixed-parameter Rust shim
+// reads the wrong register and forwards garbage mode (Temurin's NIO
+// file creations landed mode 0000). The trampolines hoist the
+// stack-passed mode into the fixed-parameter register and tail-branch
+// to the Rust body. x86_64 Darwin passes it in the register, so the
+// tuples bind the Rust fn directly there.
+#[cfg(target_arch = "aarch64")]
+core::arch::global_asm!(
+    ".text",
+    ".p2align 2",
+    ".globl _tebako_tramp_open",
+    "_tebako_tramp_open:",
+    "    ldr w2, [sp]",
+    "    b _open_impl",
+    ".globl _tebako_tramp_openat",
+    "_tebako_tramp_openat:",
+    "    ldr w3, [sp]",
+    "    b _openat_impl",
+);
+
+#[cfg(target_arch = "aarch64")]
+unsafe extern "C" {
+    fn tebako_tramp_open(path: *const c_char, flags: c_int, mode: c_int) -> c_int;
+    fn tebako_tramp_openat(
+        dirfd: c_int,
+        path: *const c_char,
+        flags: c_int,
+        mode: c_int,
+    ) -> c_int;
+}
+
+#[cfg(target_arch = "aarch64")]
+use {tebako_tramp_open as shim_open, tebako_tramp_openat as shim_openat};
+#[cfg(not(target_arch = "aarch64"))]
+use {super::open as shim_open, super::openat as shim_openat};
+
 interpose!(
     INTERPOSE_OPEN,
     real_open,
-    super::open,
+    shim_open,
     libc::open,
     unsafe extern "C" fn(*const c_char, c_int, ...) -> c_int
 );
 interpose!(
     INTERPOSE_OPENAT,
     real_openat,
-    super::openat,
+    shim_openat,
     libc::openat,
     unsafe extern "C" fn(c_int, *const c_char, c_int, ...) -> c_int
 );
@@ -185,6 +222,27 @@ interpose!(
     super::dlopen,
     libc::dlopen,
     unsafe extern "C" fn(*const c_char, c_int) -> *mut c_void
+);
+// `fopen$DARWIN_EXTSN`: the 64-bit SDK's stdio export — no libc crate
+// binding, declared here so its address (the REAL function) can seed the
+// tuple the way libc::* addresses do (the JVM imports it directly).
+unsafe extern "C" {
+    #[link_name = "fopen$DARWIN_EXTSN"]
+    fn fopen_extsn(path: *const c_char, mode: *const c_char) -> *mut libc::FILE;
+}
+interpose!(
+    INTERPOSE_FOPEN,
+    real_fopen,
+    super::fopen,
+    libc::fopen,
+    unsafe extern "C" fn(*const c_char, *const c_char) -> *mut libc::FILE
+);
+interpose!(
+    INTERPOSE_FOPEN_EXTSN,
+    real_fopen_extsn,
+    super::fopen_darwin_extsn,
+    fopen_extsn,
+    unsafe extern "C" fn(*const c_char, *const c_char) -> *mut libc::FILE
 );
 interpose!(
     INTERPOSE_FSTATAT,

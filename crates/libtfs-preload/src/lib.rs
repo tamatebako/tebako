@@ -55,10 +55,12 @@
 //!   classes — the child's own IO stays jailed via env propagation).
 //!   Platform binaries under SIP (macOS) strip `DYLD_*` — they leave the
 //!   VFS, as does any statically linked child.
-//! - A mount at `/` is rejected (it would claim every host path and
-//!   bypass the jail). Non-UTF-8 paths always pass to the host (the
-//!   engine itself is UTF-8-only). `dlopen` jail-denials return NULL with
-//!   the cause in errno — `dlerror()` text is not settable portably.
+//! - A mount at `/` is legitimate (the app payload mounts there, spec
+//!   17): covered-but-not-held paths fall through to the host with the
+//!   policy gate consulted, exactly like any other mount. Non-UTF-8 paths
+//!   always pass to the host (the engine itself is UTF-8-only). `dlopen`
+//!   jail-denials return NULL with the cause in errno — `dlerror()` text
+//!   is not settable portably.
 //! - `dirfd` of a memfs stream answers -1/ENOTSUP (there is no host fd
 //!   behind it; the stream itself works through the readdir family).
 //!   `getdents64` on a memfs fd answers ENOTDIR (memfs fds are regular
