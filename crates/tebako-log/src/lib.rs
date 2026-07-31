@@ -97,9 +97,8 @@ fn config() -> &'static Config {
 }
 
 /// Read the configuration from the environment (idempotent, lazy — the
-/// first [`enabled`]/[`event`] call resolves it). Public for tests that
-/// reset the lock through `TEBAKO_LOG_TEST_REINIT`.
-pub fn init_from_env() -> Config {
+/// first [`enabled`]/[`event`] call resolves it).
+fn init_from_env() -> Config {
     let mut level = std::env::var("TEBAKO_DEBUG")
         .ok()
         .and_then(|v| parse_level_spec(&v).0);
@@ -161,7 +160,10 @@ fn open_sink(path: &str) -> Sink {
     {
         Ok(f) => Sink::File(Mutex::new(f)),
         Err(e) => {
-            eprintln!("tebako-log: cannot open TEBAKO_DEBUG_FILE {}: {e} — logging to stderr", path.display());
+            eprintln!(
+                "tebako-log: cannot open TEBAKO_DEBUG_FILE {}: {e} — logging to stderr",
+                path.display()
+            );
             Sink::Stderr
         }
     }
@@ -174,11 +176,7 @@ pub fn enabled(level: Level, component: &str) -> bool {
     if !cfg.only.is_empty() && !cfg.only.iter().any(|c| c == component) {
         return false;
     }
-    let admitted = cfg
-        .components
-        .get(component)
-        .copied()
-        .unwrap_or(cfg.level);
+    let admitted = cfg.components.get(component).copied().unwrap_or(cfg.level);
     match admitted {
         Some(max) => level <= max,
         None => false,
