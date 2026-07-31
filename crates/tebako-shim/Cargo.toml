@@ -22,6 +22,8 @@ tpkg = { version = "0.1.0", path = "../tpkg" }
 # scan: tebako-json's small parser — the substring-scan era read the next
 # entry's sha256 for image assets.
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
+# The stack's one logging facility (resolution decisions at debug).
+tebako-log = { version = "0.1.0", path = "../tebako-log" }
 # Remote registry resolution at dispatch time (spec 04 §2 — item 33):
 # every registry form (service contents API, pinned release artifact, git
 # blob, file) behind the per-ref dispatch cache in src/regcache.rs. The

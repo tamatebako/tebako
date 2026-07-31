@@ -130,6 +130,7 @@ fn mount_built(built: Result<tfs::context::Mount, i32>, what: &str) -> Result<()
             io(format!("{what}: {}", errno_text(e)))
         }
     })?;
+    let mount_point = mount.mount_point.clone();
     context()
         .write()
         .unwrap()
@@ -141,6 +142,11 @@ fn mount_built(built: Result<tfs::context::Mount, i32>, what: &str) -> Result<()
                 io(format!("{what}: {}", errno_text(e)))
             }
         })?;
+    tebako_log::log!(
+        tebako_log::Level::Debug,
+        "driver",
+        "mounted what={what} at={mount_point}"
+    );
     Ok(())
 }
 

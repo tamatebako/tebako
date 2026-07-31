@@ -16,6 +16,8 @@ categories = ["filesystem"]
 crate-type = ["staticlib", "rlib"]
 
 [dependencies]
+# The stack's one logging facility (mount/jail decisions at debug).
+tebako-log = { version = "0.1.0", path = "../tebako-log" }
 # Trailer probing for `<self|package>:<slot>` resolution (spec 02).
 tpkg = { version = "0.1.0", path = "../tpkg" }
 libc = "0.2"

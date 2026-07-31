@@ -116,6 +116,11 @@ fn dependency_mount(
             ),
         );
     };
+    tebako_log::log!(
+        tebako_log::Level::Debug,
+        "shim",
+        "dep-mount kind={kind} name={name} version={version} mount={mount}"
+    );
     Ok(Some(MountSpec {
         image: crate::manifest::payload_record(&ctx.home, name, version).image,
         slot: 0,
@@ -153,6 +158,23 @@ pub fn plan(
     let mounts = compose_mounts(res, ctx)?;
     let runtime =
         runtime::resolve_runtime(entry.runtime_requirement.as_ref(), allow_download, ctx)?;
+    tebako_log::log!(
+        tebako_log::Level::Debug,
+        "shim",
+        "dispatch tool={} payload={}@{} source={:?} mounts={} runtime={}",
+        res.tool,
+        res.payload_name,
+        res.version,
+        res.source,
+        mounts.len(),
+        match &runtime {
+            RuntimeResolution::Ready(rt) => format!(
+                "{} {} (tebako {})",
+                rt.engine, rt.lang_version, rt.tebako_version
+            ),
+            RuntimeResolution::Zero => "zero".to_string(),
+        }
+    );
 
     let mut argv: Vec<String> = Vec::new();
     let mut env: Vec<(String, String)> = Vec::new();
