@@ -547,7 +547,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
-    needs: [prepare, macos, linux-gnu, linux-musl]
+    needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
@@ -596,30 +596,109 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          EXPECTED=$(( 5 * 6 + 6 + 2 ))   # 5 tools x 6 platforms + 6 link-unit tarballs + SHA256SUMS + manifest.json
+          EXPECTED=$(( 5 * 6 + 7 + 2 ))   # 5 tools x 6 platforms + 7 link-unit tarballs (incl. windows-gnu) + SHA256SUMS + manifest.json
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort
           test "$COUNT" -eq "$EXPECTED"
 
   # ==========================================================================
-  # Windows (ucrt64) — DISABLED, blockers documented honestly:
-  #  - dwarfs-t-sys: "windows-msvc is untested in v1" (the static triplets
-  #    use /MT, Rust defaults to /MD → link errors likely); no
-  #    windows-gnu/ucrt64/gnullvm triplet selection exists in
-  #    dwarfs-t-sys/build.rs's default_triplet at all.
-  #  - sqfs (squashfs-tools-ng) is POSIX/autotools only — GATED per-target
-  #    in the tfs consumers (TODO.v2-1/02): Windows builds ship dwarfs-only,
-  #    a squashfs mount fails with named ENOTSUP. No longer a blocker.
-  #  - OpenPGP (rnp-rs 0.1.7 vendored) has no Windows prebuilt — gating
-  #    planned in TODO.v2-1/08.
+  # Windows (ucrt64) — the link-unit leg. The staticlibs build and scope
+  # (the COFF arscope) and the mingw closure lands; the five binaries wait
+  # for the windows exec/lock ports (bootstrap) and the POSIX-oriented
+  # spawn/scrub paths (cli), tracked in TODO.v2-1.
+  # ==========================================================================
+  windows-link-unit:
+    name: Windows link-unit (ucrt64)
+    runs-on: windows-latest
+    needs: prepare
+    env:
+      CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: gcc.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: msys2 (ucrt64 toolchain)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      - name: Cache vcpkg package archives
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**') }}
+          restore-keys: |
+            vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build the windows-gnu staticlibs (tfs, dwarfs-only)
+        working-directory: tebako-rs
+        shell: msys2 {0}
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: |
+          export PATH="/ucrt64/bin:$PATH"
+          cargo build --release --target x86_64-pc-windows-gnu \
+            -p tfs --no-default-features --features vendored-dwarfs \
+            -p tebako-driver
+
+      - name: Stage the link unit (scoped, + the mingw closure)
+        working-directory: tebako-rs
+        shell: msys2 {0}
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          export PATH="/ucrt64/bin:$PATH"
+          mkdir -p out/link-unit-x86_64-windows-gnu
+          ruby tools/stage_link_unit out/link-unit-x86_64-windows-gnu \
+            --target x86_64-pc-windows-gnu --skip-build
+          tar -czf "out/link-unit-${VERSION}-x86_64-windows-gnu.tar.gz" -C out link-unit-x86_64-windows-gnu
+
+      - name: Upload link-unit
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          asset_name: link-unit-${{ needs.prepare.outputs.version }}-x86_64-windows-gnu.tar.gz
+          asset_path: tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-x86_64-windows-gnu.tar.gz
+          upload_url: ${{ needs.prepare.outputs.upload_url }}
+          asset_content_type: application/gzip
+
+  # ==========================================================================
+  # Windows (ucrt64) — the FULL leg (the five binaries). Still blocked on:
   #  - tebako-bootstrap: the Windows exec/lock ports are not implemented
   #    (M6 v1 ships macOS/Linux).
   #  - tebako-cli's runtime-spawn/scrub paths are POSIX-oriented.
   # When those land, enable this leg on windows-latest (ucrt64 target).
   # ==========================================================================
   windows:
-    name: Windows (ucrt64) — DISABLED (see blockers above)
+    name: Windows binaries (ucrt64) — DISABLED (see blockers above)
     if: false
     runs-on: windows-latest
     needs: prepare
