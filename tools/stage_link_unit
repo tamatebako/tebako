@@ -177,7 +177,19 @@ FileUtils.mkdir_p(File.join(out, "include", "tebako", "fs"))
 FileUtils.cp(header_src, File.join(out, "include", "tebako", "fs", "c_api.h"))
 
 count = Dir.glob(File.join(out, "closure", "*.a")).size
-expected = windows_gnu ? 42 : 35
-die "closure incomplete: #{count} archives (expected #{expected})" unless count == expected
+# The load-bearing set, not a raw count: the libarchive/libsodium feature
+# gates (dwarfs-t vcpkg.json) shrink the closure by design, so an exact
+# archive count only re-breaks on the next gate. These are the libraries
+# the dwarfs_c reader/writer + its codecs actually reference.
+required = %w[libboost_atomic libboost_chrono libboost_container libboost_context
+              libboost_date_time libboost_filesystem libboost_iostreams libboost_process
+              libboost_program_options libboost_random libboost_thread
+              libbrotlicommon libbrotlidec libbrotlienc libbz2 libcrypto libdate-tz
+              libflatbuffers libFLAC libfmt libjemalloc liblz4 liblzma libogg
+              libssl libxxhash libzlib libzstd]
+missing = required.reject do |base|
+  Dir.glob(File.join(out, "closure", "#{base}-*.a")).any? || File.file?(File.join(out, "closure", "#{base}.a"))
+end
+die "closure missing required archives: #{missing.join(', ')}" unless missing.empty?
 
 puts "staged the v2 link unit at #{out} (2 scoped staticlibs + #{count} closure archives#{windows_gnu ? ", windows-gnu (mingw)" : ""})"
