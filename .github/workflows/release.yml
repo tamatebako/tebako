@@ -629,15 +629,21 @@ jobs:
         with:
           targets: x86_64-pc-windows-gnu
 
-      - name: msys2 (ucrt64 toolchain)
-        uses: msys2/setup-msys2@v2
+      # The proven windows-gnu shape (dwarfs-t's green CI + the factory's
+      # msys campaign): Git-bash steps + the runner's built-in MinGW +
+      # get-cmake, NEVER an msys2 shell or msys2 bin on PATH (vcpkg's own
+      # msys2 ABI-clashes with it; the autotools ports die in install).
+      - name: Install CMake and Ninja
+        uses: lukka/get-cmake@latest
         with:
-          msystem: UCRT64
-          update: false
-          install: >-
-            mingw-w64-ucrt-x86_64-gcc
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
+          cmakeVersion: latest
+          ninjaVersion: latest
+
+      # the stage script is ruby
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3"
+          bundler-cache: false
 
       - name: Set up vcpkg
         uses: lukka/run-vcpkg@v11
@@ -655,25 +661,29 @@ jobs:
 
       - name: Build the windows-gnu staticlibs (tfs, dwarfs-only)
         working-directory: tebako-rs
-        shell: msys2 {0}
+        shell: bash
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
           VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          # Static-link the mingw C++ runtimes: the runner carries several
+          # mingw installs and first-DLL-wins resolution is
+          # STATUS_ENTRYPOINT_NOT_FOUND at process start.
+          RUSTFLAGS: -C link-arg=-static -C link-arg=-static-libgcc -C link-arg=-static-libstdc++
         run: |
-          export PATH="/ucrt64/bin:$PATH"
+          export PATH="/c/Users/runneradmin/.cargo/bin:$PATH"
           cargo build --release --target x86_64-pc-windows-gnu \
             -p tfs --no-default-features --features vendored-dwarfs \
             -p tebako-driver
 
       - name: Stage the link unit (scoped, + the mingw closure)
         working-directory: tebako-rs
-        shell: msys2 {0}
+        shell: bash
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
           VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
-          export PATH="/ucrt64/bin:$PATH"
+          export PATH="/c/Users/runneradmin/.cargo/bin:$PATH"
           mkdir -p out/link-unit-x86_64-windows-gnu
           ruby tools/stage_link_unit out/link-unit-x86_64-windows-gnu \
             --target x86_64-pc-windows-gnu --skip-build
