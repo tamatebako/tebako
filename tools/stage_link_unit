@@ -30,6 +30,9 @@ def die(msg)
 end
 
 out = ARGV[0] or die "usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--target TRIPLE] [--skip-build]"
+# absolute: the arscope step runs chdir'd into the tebako-rs root, and a
+# relative OUT would silently resolve THERE instead of next to the caller
+out = File.expand_path(out)
 root = File.expand_path(ARGV.include?("--tebako-rs-root") ? ARGV[ARGV.index("--tebako-rs-root") + 1] : File.join(__dir__, ".."))
 skip_build = ARGV.include?("--skip-build")
 target = ARGV.include?("--target") ? ARGV[ARGV.index("--target") + 1] : nil
