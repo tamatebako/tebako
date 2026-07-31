@@ -29,6 +29,18 @@ def die(msg)
   exit 64
 end
 
+# The vcpkg installed tree: DWARFS_RS_VCPKG_INSTALLED_DIR (a short absolute
+# root — the windows legs set it to dodge MAX_PATH) takes priority over the
+# default inside the cargo build dir, mirroring dwarfs-t-sys/build.rs.
+def vcpkg_installed_dir(dwarfs, triplet_glob)
+  custom = ENV["DWARFS_RS_VCPKG_INSTALLED_DIR"].to_s
+  if custom != ""
+    dir = Dir.glob(File.join(custom, triplet_glob, "lib")).min
+    return dir if dir
+  end
+  Dir.glob(File.join(dwarfs, "dwarfs-build", "vcpkg_installed", triplet_glob, "lib")).min
+end
+
 out = ARGV[0] or die "usage: tools/stage_link_unit <outdir> [--tebako-rs-root DIR] [--target TRIPLE] [--skip-build]"
 # absolute: the arscope step runs chdir'd into the tebako-rs root, and a
 # relative OUT would silently resolve THERE instead of next to the caller
@@ -114,8 +126,8 @@ if windows_gnu
   # The MinGW vcpkg closure: every archive the dwarfs-t link emits (boost
   # carries the -gccN-mt-x64-VER suffix; test/manual-link archives never
   # ship).
-  vlib = Dir.glob(File.join(dwarfs, "dwarfs-build", "vcpkg_installed", "*-static", "lib")).min
-  die "no vcpkg static lib dir under #{dwarfs}" unless vlib
+  vlib = vcpkg_installed_dir(dwarfs, "*-static")
+  die "no vcpkg static lib dir under #{dwarfs} (or DWARFS_RS_VCPKG_INSTALLED_DIR)" unless vlib
   Dir.glob(File.join(vlib, "*.a")).sort.each do |a|
     base = File.basename(a)
     next if base.start_with?("libgtest", "libgmock")
@@ -131,8 +143,8 @@ else
   die "no rnp-src build under #{script_out} (rnp with the vendored feature)" unless rnp
 
   # their vcpkg closure (codecs, boost, crypto — the static triplet)
-  vlib = Dir.glob(File.join(dwarfs, "dwarfs-build", "vcpkg_installed", "*-static", "lib")).min
-  die "no vcpkg static lib dir under #{dwarfs}" unless vlib
+  vlib = vcpkg_installed_dir(dwarfs, "*-static")
+  die "no vcpkg static lib dir under #{dwarfs} (or DWARFS_RS_VCPKG_INSTALLED_DIR)" unless vlib
   %w[libFLAC++.a libFLAC.a libogg.a libboost_atomic.a libboost_chrono.a libboost_container.a
      libboost_context.a libboost_date_time.a libboost_filesystem.a libboost_process.a
      libboost_program_options.a libbrotlicommon.a libbrotlidec.a libbrotlienc.a libbz2.a
