@@ -182,7 +182,8 @@ fn run_inspect(args: &[String]) -> Result<(), CliExit> {
         }
         i += 1;
     }
-    let path = path.ok_or_else(|| CliExit::Usage("tebako inspect needs an artifact path".to_string()))?;
+    let path =
+        path.ok_or_else(|| CliExit::Usage("tebako inspect needs an artifact path".to_string()))?;
     let (out, code) = tebako_cli::inspect::inspect(std::path::Path::new(&path), &opts)?;
     print!("{out}");
     if code != 0 {

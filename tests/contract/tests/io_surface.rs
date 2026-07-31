@@ -486,9 +486,8 @@ fn dlmap2file_materializes_dependency_closure() {
     };
     assert_eq!(rc, 0);
 
-    let host = unsafe {
-        tfs::c_api::tebako_fs_dlmap2file(c("/__tebako_closure__/bin/prog").as_ptr())
-    };
+    let host =
+        unsafe { tfs::c_api::tebako_fs_dlmap2file(c("/__tebako_closure__/bin/prog").as_ptr()) };
     assert!(!host.is_null(), "dlmap errno: {}", unsafe { errno() });
     let exe = unsafe { std::ffi::CStr::from_ptr(host) }
         .to_string_lossy()

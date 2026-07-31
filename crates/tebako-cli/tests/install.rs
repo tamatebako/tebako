@@ -889,8 +889,9 @@ fn data_image(name: &str, version: &str) -> Vec<u8> {
 /// A registry carrying one payload at several versions; each version's
 /// artifact ref must already be written to the mirror.
 fn versions_registry_yaml(name: &str, kind: &str, versions: &[(&str, &str)]) -> String {
-    let mut yaml =
-        format!("schema_version: 1\npayloads:\n  - name: {name}\n    kind: {kind}\n    versions:\n");
+    let mut yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: {kind}\n    versions:\n"
+    );
     for (version, payload_ref) in versions {
         yaml.push_str(&format!(
             "      - version: {version}\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n"
@@ -934,11 +935,10 @@ fn install_walks_the_requires_closure_and_installs_the_deps() {
     // the closure landed: images + mirrors + journal, no shims for the
     // executable-less deps
     assert!(fx.payloads_dir().join("inkscape/1.4.3.tfs").is_file());
-    assert!(
-        fx.payloads_dir()
-            .join("inkscape/1.4.3.manifest.yaml")
-            .is_file()
-    );
+    assert!(fx
+        .payloads_dir()
+        .join("inkscape/1.4.3.manifest.yaml")
+        .is_file());
     assert!(fx.payloads_dir().join("fonts/2.1.tfs").is_file());
     assert!(!fx.home.join("shims/inkscape").exists());
     let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
@@ -959,11 +959,7 @@ fn dep_walk_prefers_a_cached_satisfying_version_over_a_newer_registry_one() {
     let i150 = fx.payload("inkscape-1.5.0.tfs", &toolkit_image("inkscape", "1.5.0"));
     let inkscape_reg = fx.registry(
         "inkscape-registry.yaml",
-        &versions_registry_yaml(
-            "inkscape",
-            "toolkit",
-            &[("1.4.3", &i143), ("1.5.0", &i150)],
-        ),
+        &versions_registry_yaml("inkscape", "toolkit", &[("1.4.3", &i143), ("1.5.0", &i150)]),
     );
     install::add_registry(&fx.home, &inkscape_reg).unwrap();
 

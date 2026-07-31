@@ -84,18 +84,13 @@ core::arch::global_asm!(
 #[cfg(target_arch = "aarch64")]
 unsafe extern "C" {
     fn tebako_tramp_open(path: *const c_char, flags: c_int, mode: c_int) -> c_int;
-    fn tebako_tramp_openat(
-        dirfd: c_int,
-        path: *const c_char,
-        flags: c_int,
-        mode: c_int,
-    ) -> c_int;
+    fn tebako_tramp_openat(dirfd: c_int, path: *const c_char, flags: c_int, mode: c_int) -> c_int;
 }
 
-#[cfg(target_arch = "aarch64")]
-use {tebako_tramp_open as shim_open, tebako_tramp_openat as shim_openat};
 #[cfg(not(target_arch = "aarch64"))]
 use {super::open as shim_open, super::openat as shim_openat};
+#[cfg(target_arch = "aarch64")]
+use {tebako_tramp_open as shim_open, tebako_tramp_openat as shim_openat};
 
 interpose!(
     INTERPOSE_OPEN,

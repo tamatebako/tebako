@@ -258,7 +258,11 @@ pub unsafe extern "C" fn tebako_fs_lseek(
     offset: libc::off_t,
     whence: libc::c_int,
 ) -> libc::off_t {
-    match context().write().unwrap().lseek(fd, i64::from(offset), whence) {
+    match context()
+        .write()
+        .unwrap()
+        .lseek(fd, i64::from(offset), whence)
+    {
         Ok(pos) => {
             set_errno(0);
             pos as libc::off_t
@@ -861,7 +865,11 @@ pub unsafe extern "C" fn tebako_fs_seekdir(dir: *mut c_void, pos: libc::c_long) 
         fail(libc::EBADF);
         return;
     }
-    match context().write().unwrap().seekdir(dir as usize, i64::from(pos)) {
+    match context()
+        .write()
+        .unwrap()
+        .seekdir(dir as usize, i64::from(pos))
+    {
         Ok(()) => {
             set_errno(0);
         }

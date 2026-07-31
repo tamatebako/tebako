@@ -1008,8 +1008,7 @@ fn install_dependency_closure<T: Transport>(
             } => ("data", name, constraint),
         };
         let eval = versions::from_validated(constraint);
-        let installed =
-            tebako_shim::resolve::installed_versions(home, name).map_err(map_shim)?;
+        let installed = tebako_shim::resolve::installed_versions(home, name).map_err(map_shim)?;
         if installed.iter().any(|v| eval.matches(v)) {
             continue;
         }

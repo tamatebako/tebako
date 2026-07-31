@@ -98,10 +98,7 @@ fn zero_runtime_entrypoint_skips_runtime_resolution() {
 
     assert!(matches!(plan.runtime, RuntimeResolution::Zero));
     assert_eq!(plan.program, entry_host);
-    let expected: Vec<String> = vec![
-        entry_host.to_string_lossy().into_owned(),
-        "file.svg".into(),
-    ];
+    let expected: Vec<String> = vec![entry_host.to_string_lossy().into_owned(), "file.svg".into()];
     assert_eq!(plan.argv, expected);
     // the mounts grammar rides the child's env (the preload re-mounts)
     let mounts_env = plan

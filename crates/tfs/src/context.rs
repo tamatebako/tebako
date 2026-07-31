@@ -799,7 +799,13 @@ impl FsContext {
         let tail = Self::dlmap_tail(path);
         let effective = tail.as_deref().unwrap_or(path);
         let mut visited = std::collections::HashSet::new();
-        let host = self.extract_for_exec(effective, effective, &ClosureDest::Dlcache, &[], &mut visited)?;
+        let host = self.extract_for_exec(
+            effective,
+            effective,
+            &ClosureDest::Dlcache,
+            &[],
+            &mut visited,
+        )?;
         let s = host.to_string_lossy().into_owned();
         std::ffi::CString::new(s).map_err(|_| libc::EIO)
     }
@@ -929,9 +935,10 @@ impl FsContext {
         visited.insert(path.to_string());
         use std::io::Read as _;
         let mut head = Vec::new();
-        let Ok(_) = std::fs::File::open(&host_path)
-            .and_then(|f| f.take(exec_closure::HEADER_WINDOW as u64).read_to_end(&mut head))
-        else {
+        let Ok(_) = std::fs::File::open(&host_path).and_then(|f| {
+            f.take(exec_closure::HEADER_WINDOW as u64)
+                .read_to_end(&mut head)
+        }) else {
             return Ok(host_path);
         };
         let Some(parsed) = exec_closure::parse(&head) else {
@@ -946,7 +953,8 @@ impl FsContext {
             }
         }
         for dep in &parsed.deps {
-            let Some(memfs) = self.resolve_dep(dep, &referrer_dir, &exe_dir, &parsed.rpaths, &chain)
+            let Some(memfs) =
+                self.resolve_dep(dep, &referrer_dir, &exe_dir, &parsed.rpaths, &chain)
             else {
                 continue;
             };
@@ -988,7 +996,11 @@ impl FsContext {
                 )));
             }
         } else if name.starts_with('@') || name.contains('$') {
-            push(Self::normalize(&expand_loader_vars(name, referrer_dir, exe_dir)));
+            push(Self::normalize(&expand_loader_vars(
+                name,
+                referrer_dir,
+                exe_dir,
+            )));
         } else if name.starts_with('/') {
             push(Self::normalize(name));
         } else {

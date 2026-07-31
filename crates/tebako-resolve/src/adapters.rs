@@ -212,7 +212,9 @@ impl ServiceAdapter for GithubAdapter {
         let Some(download) = strings(&doc, "download_url") else {
             return Err(ResolveError::ServiceFailed {
                 service: Service::Github,
-                reason: format!("{url} carries neither content nor download_url (is {REGISTRY_FILE} a file?)"),
+                reason: format!(
+                    "{url} carries neither content nor download_url (is {REGISTRY_FILE} a file?)"
+                ),
             });
         };
         get_bytes(transport, &download)
@@ -651,7 +653,10 @@ mod tests {
         let body = "{\"name\":\"tpkg-registry.yaml\",\"content\":\"ZnJlc2ggcmVnaXN0cnkK\",\"download_url\":\"https://raw/o/r/HEAD/tpkg-registry.yaml\"}";
         let t = MockTransport::with(&[
             (api, body),
-            ("https://raw/o/r/HEAD/tpkg-registry.yaml", "stale registry\n"),
+            (
+                "https://raw/o/r/HEAD/tpkg-registry.yaml",
+                "stale registry\n",
+            ),
         ]);
         let got = GithubAdapter.registry_file(&t, "o", "r").unwrap();
         assert_eq!(got, b"fresh registry\n");
@@ -659,7 +664,10 @@ mod tests {
 
     #[test]
     fn base64_decode_handles_wrapped_and_padded_text() {
-        assert_eq!(base64_decode("aGVsbG8sIHdvcmxk"), Some(b"hello, world".to_vec()));
+        assert_eq!(
+            base64_decode("aGVsbG8sIHdvcmxk"),
+            Some(b"hello, world".to_vec())
+        );
         assert_eq!(base64_decode("aGVs\nbG8s\n"), Some(b"hello,".to_vec()));
         assert_eq!(base64_decode(""), Some(Vec::new()));
         assert_eq!(base64_decode("aGVsbG8="), Some(b"hello".to_vec()));

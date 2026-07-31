@@ -35,7 +35,14 @@ fn err(code: i32, message: impl Into<String>) -> TebakoError {
 }
 
 /// The topics `tebako info <what>` accepts.
-const TOPICS: [&str; 6] = ["system", "runtimes", "payloads", "shims", "registries", "store"];
+const TOPICS: [&str; 6] = [
+    "system",
+    "runtimes",
+    "payloads",
+    "shims",
+    "registries",
+    "store",
+];
 
 pub fn run(
     home: &Path,
@@ -47,7 +54,10 @@ pub fn run(
     if !TOPICS.contains(&topic) {
         return Err(err(
             EX_USAGE,
-            format!("unknown info topic '{topic}' (topics: {})", TOPICS.join(", ")),
+            format!(
+                "unknown info topic '{topic}' (topics: {})",
+                TOPICS.join(", ")
+            ),
         ));
     }
     let out = match topic {
@@ -96,7 +106,12 @@ fn s(text: &str) -> tebako_json::Value {
 }
 
 fn obj(members: Vec<(&str, tebako_json::Value)>) -> tebako_json::Value {
-    tebako_json::Value::Object(members.into_iter().map(|(k, v)| (k.to_string(), v)).collect())
+    tebako_json::Value::Object(
+        members
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect(),
+    )
 }
 
 fn arr(items: Vec<tebako_json::Value>) -> tebako_json::Value {
@@ -131,11 +146,23 @@ fn system(home: &Path, json: bool) -> Result<String, TebakoError> {
             ("tebako_version", s(product_version())),
             ("platform", s(&crate::options::host_platform()?)),
             ("home", s(&home.display().to_string())),
-            ("runtimes", tebako_json::Value::Number(runtimes.len().to_string())),
-            ("payloads", tebako_json::Value::Number(payload_count.to_string())),
+            (
+                "runtimes",
+                tebako_json::Value::Number(runtimes.len().to_string()),
+            ),
+            (
+                "payloads",
+                tebako_json::Value::Number(payload_count.to_string()),
+            ),
             ("shims", tebako_json::Value::Number(shim_count.to_string())),
-            ("registries", tebako_json::Value::Number(registry_count.to_string())),
-            ("store_bytes", tebako_json::Value::Number(home_size.to_string())),
+            (
+                "registries",
+                tebako_json::Value::Number(registry_count.to_string()),
+            ),
+            (
+                "store_bytes",
+                tebako_json::Value::Number(home_size.to_string()),
+            ),
         ])));
     }
     Ok(format!(
@@ -193,7 +220,10 @@ fn runtimes(home: &Path, remote: bool, json: bool) -> Result<String, TebakoError
                 rt.engine,
                 rt.lang_version,
                 rt.tebako_version,
-                rt.abi.as_deref().map(|a| format!(", abi {a}")).unwrap_or_default(),
+                rt.abi
+                    .as_deref()
+                    .map(|a| format!(", abi {a}"))
+                    .unwrap_or_default(),
                 if rt.image.is_some() { "" } else { ", no image" },
                 human(rt.exe.metadata().map(|m| m.len()).unwrap_or(0)),
             ));
@@ -289,7 +319,11 @@ fn payload_dirs(home: &Path) -> Vec<PathBuf> {
     let Ok(rd) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
-    let mut out: Vec<PathBuf> = rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+    let mut out: Vec<PathBuf> = rd
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .collect();
     out.sort();
     out
 }
@@ -297,7 +331,10 @@ fn payload_dirs(home: &Path) -> Vec<PathBuf> {
 fn payloads(home: &Path, remote: bool, json: bool) -> Result<String, TebakoError> {
     let mut entries: Vec<(String, String, String, u64, String)> = Vec::new(); // (name, version, kind, bytes, origin)
     for dir in payload_dirs(home) {
-        let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let name = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
         let versions = tebako_shim::resolve::installed_versions(home, &name)
             .map_err(|e| err(EX_TEBAKO_IO, e.message))?;
         for version in versions {
@@ -434,7 +471,10 @@ fn shims(home: &Path, json: bool) -> Result<String, TebakoError> {
                     .map(|r| format!(" (runtime: {} {})", r.engine, r.constraint))
                     .unwrap_or_default()
             ),
-            Err(e) => format!("(unresolvable: {})", e.message.lines().next().unwrap_or("?")),
+            Err(e) => format!(
+                "(unresolvable: {})",
+                e.message.lines().next().unwrap_or("?")
+            ),
         };
         rows.push((name, preview));
     }
@@ -446,7 +486,9 @@ fn shims(home: &Path, json: bool) -> Result<String, TebakoError> {
                 "shims",
                 arr(rows
                     .iter()
-                    .map(|(name, preview)| obj(vec![("command", s(name)), ("dispatches_to", s(preview))]))
+                    .map(|(name, preview)| {
+                        obj(vec![("command", s(name)), ("dispatches_to", s(preview))])
+                    })
                     .collect()),
             ),
         ])));
@@ -469,7 +511,9 @@ fn registries(home: &Path, json: bool) -> Result<String, TebakoError> {
         let state = match regcache::freshness(home, reg_ref) {
             regcache::RegistryFreshness::Local => "local".to_string(),
             regcache::RegistryFreshness::Fresh(age) => format!("fresh ({}s old)", age),
-            regcache::RegistryFreshness::Stale(age) => format!("stale ({}s old — next dispatch refreshes)", age),
+            regcache::RegistryFreshness::Stale(age) => {
+                format!("stale ({}s old — next dispatch refreshes)", age)
+            }
             regcache::RegistryFreshness::Missing => "not cached (fetched on demand)".to_string(),
             regcache::RegistryFreshness::BadRef(e) => format!("invalid ref: {e}"),
         };
@@ -502,7 +546,16 @@ fn registries(home: &Path, json: bool) -> Result<String, TebakoError> {
 // ---------------------------------------------------------------------
 
 fn store(home: &Path, json: bool) -> Result<String, TebakoError> {
-    let sections = ["runtimes", "payloads", "shims", "registries", "tmp", "locks", "keys", "trust"];
+    let sections = [
+        "runtimes",
+        "payloads",
+        "shims",
+        "registries",
+        "tmp",
+        "locks",
+        "keys",
+        "trust",
+    ];
     let mut sizes: Vec<(String, u64)> = sections
         .iter()
         .map(|s| (s.to_string(), dir_size(&home.join(s))))
@@ -517,7 +570,10 @@ fn store(home: &Path, json: bool) -> Result<String, TebakoError> {
                 arr(sizes
                     .iter()
                     .map(|(name, bytes)| {
-                        obj(vec![("name", s(name)), ("bytes", tebako_json::Value::Number(bytes.to_string()))])
+                        obj(vec![
+                            ("name", s(name)),
+                            ("bytes", tebako_json::Value::Number(bytes.to_string())),
+                        ])
                     })
                     .collect()),
             ),

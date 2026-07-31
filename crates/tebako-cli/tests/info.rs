@@ -34,7 +34,10 @@ impl Fixture {
         fs::write(&image, zip_image_with_manifest(name, version, kind)).unwrap();
         fs::write(
             dir.join(format!("{version}.tfs.sha256")),
-            format!("{}  {version}.tfs\n", tebako_resolve::sha256_hex(&fs::read(&image).unwrap())),
+            format!(
+                "{}  {version}.tfs\n",
+                tebako_resolve::sha256_hex(&fs::read(&image).unwrap())
+            ),
         )
         .unwrap();
         fs::write(
@@ -61,7 +64,9 @@ impl Fixture {
     /// A cached runtime entry.
     fn runtime(&self, lv: &str, tebako: &str) {
         let platform = tebako_shim::runtime::platform_string();
-        let dir = self.home.join(format!("runtimes/ruby-{lv}-{tebako}-{platform}"));
+        let dir = self
+            .home
+            .join(format!("runtimes/ruby-{lv}-{tebako}-{platform}"));
         fs::create_dir_all(&dir).unwrap();
         let exe = dir.join(format!("tebako-runtime-{tebako}-{lv}-{platform}"));
         fs::write(&exe, b"fake runtime exe\n").unwrap();

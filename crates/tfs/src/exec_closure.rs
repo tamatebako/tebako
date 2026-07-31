@@ -293,7 +293,9 @@ fn parse_elf(bytes: &[u8]) -> Option<ImageDeps> {
         }
     }
     let strtab = strtab?;
-    let strsz = strsz.unwrap_or(usize::MAX).min(bytes.len().saturating_sub(strtab));
+    let strsz = strsz
+        .unwrap_or(usize::MAX)
+        .min(bytes.len().saturating_sub(strtab));
     let strings = bytes.get(strtab..strtab.checked_add(strsz)?)?;
     let str_at = |offset: u64| -> Option<String> {
         let tail = strings.get(offset as usize..)?;
@@ -393,8 +395,14 @@ mod tests {
     #[test]
     fn macho64_deps_and_rpaths() {
         let bytes = macho64(
-            &["@rpath/libinkscape_base.1.dylib", "/usr/lib/libSystem.B.dylib"],
-            &["@executable_path/../lib", "@executable_path/../lib/inkscape"],
+            &[
+                "@rpath/libinkscape_base.1.dylib",
+                "/usr/lib/libSystem.B.dylib",
+            ],
+            &[
+                "@executable_path/../lib",
+                "@executable_path/../lib/inkscape",
+            ],
         );
         let parsed = parse(&bytes).expect("a Mach-O parses");
         assert_eq!(
@@ -470,7 +478,7 @@ mod tests {
         out[phoff + 8..phoff + 16].copy_from_slice(&0_u64.to_le_bytes()); // offset
         out[phoff + 16..phoff + 24].copy_from_slice(&0_u64.to_le_bytes()); // vaddr
         out[phoff + 32..phoff + 40].copy_from_slice(&(total as u64).to_le_bytes()); // filesz
-        // PT_DYNAMIC
+                                                                                    // PT_DYNAMIC
         let dph = phoff + phentsize;
         out[dph..dph + 4].copy_from_slice(&PT_DYNAMIC.to_le_bytes());
         out[dph + 8..dph + 16].copy_from_slice(&(dyn_off as u64).to_le_bytes());

@@ -141,18 +141,15 @@ pub fn plan(
     allow_download: bool,
     jail_env: Vec<(String, String)>,
 ) -> Result<ExecPlan, ShimError> {
-    let entry = res
-        .manifest
-        .entrypoint(&res.tool)
-        .ok_or_else(|| {
-            ShimError::new(
-                EX_TEBAKO_MANIFEST,
-                format!(
-                    "payload \"{}\" {} declares no entrypoint \"{}\"",
-                    res.payload_name, res.version, res.tool
-                ),
-            )
-        })?;
+    let entry = res.manifest.entrypoint(&res.tool).ok_or_else(|| {
+        ShimError::new(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "payload \"{}\" {} declares no entrypoint \"{}\"",
+                res.payload_name, res.version, res.tool
+            ),
+        )
+    })?;
     let mounts = compose_mounts(res, ctx)?;
     let runtime =
         runtime::resolve_runtime(entry.runtime_requirement.as_ref(), allow_download, ctx)?;

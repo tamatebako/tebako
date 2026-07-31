@@ -217,11 +217,8 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
         path,
         version: None,
     });
-    let toolkit = (
-        prop::collection::vec(executable, 0..=3),
-        arb_platforms(),
-    )
-        .prop_map(|(executables, platforms)| {
+    let toolkit = (prop::collection::vec(executable, 0..=3), arb_platforms()).prop_map(
+        |(executables, platforms)| {
             Provides::Toolkit(ToolkitProvides {
                 executables,
                 libraries: Vec::new(),
@@ -233,7 +230,8 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
                     host: None,
                 },
             })
-        });
+        },
+    );
     let other = prop::collection::btree_map(arb_name(), arb_annotation_value(), 0..2)
         .prop_map(Provides::Other);
     match kind {
