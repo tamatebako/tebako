@@ -42,7 +42,7 @@ fn registry_install_uninstall_smoke() {
     fs::write(
         mirror.join("tpkg-registry.yaml"),
         format!(
-            "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: file://{}/app-1.0.tfs}}\n        entrypoints: [app]\n    default: 1.0\n",
+            "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: file://{}/app-1.0.tfs}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
             mirror.display()
         ),
     )

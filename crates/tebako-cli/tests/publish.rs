@@ -432,3 +432,93 @@ fn version_is_derived_from_the_artifact_names() {
     assert_eq!(outcome.version, "2.3.4");
     assert_eq!(outcome.tag, "2.3.4");
 }
+
+// ---------------------------------------------------------------------
+// the dependency-closure proof (spec 03 §2.3 — publish verifies the
+// whole graph the way a user's install resolves it)
+// ---------------------------------------------------------------------
+
+/// An app manifest with `requires:` edges (embedded in the published image).
+fn app_manifest_with_requires(name: &str, version: &str, requires: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /app/bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\nrequires:\n{requires}",
+        sha(b'a'),
+        sha(b'b')
+    )
+}
+
+/// A toolkit image + its one-version registry in the publisher's home.
+fn register_dep(fx: &Fixture, name: &str, version: &str) -> String {
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: toolkit\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  platforms: universal\n  capabilities: {{exec: false, read: true}}\n",
+        sha(b'a'),
+        sha(b'b')
+    );
+    let dep_path = fx.work.join(format!("{name}-{version}.tfs"));
+    fs::write(&dep_path, zip_image(&manifest)).unwrap();
+    let registry_path = fx.work.join(format!("{name}-registry.yaml"));
+    fs::write(
+        &registry_path,
+        format!(
+            "schema_version: 1\npayloads:\n  - name: {name}\n    kind: toolkit\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: file://{}}}\n    default: {version}\n",
+            dep_path.display()
+        ),
+    )
+    .unwrap();
+    let registry_ref = format!("file://{}", registry_path.display());
+    tebako_cli::install::add_registry(&fx.home, &registry_ref).unwrap();
+    registry_ref
+}
+
+#[test]
+fn publish_verify_proves_the_dependency_closure_with_the_publishers_registries() {
+    let fx = Fixture::new("pubdeps");
+    register_dep(&fx, "inkscape", "1.4.3");
+
+    let payload = write_payload(
+        &fx,
+        "app-1.0.tfs",
+        &app_manifest_with_requires(
+            "app",
+            "1.0",
+            "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+        ),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.payloads.push(PayloadInput {
+        triplet: None,
+        path: payload,
+    });
+    let outcome = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
+    let verified = outcome.verified.unwrap();
+    assert!(
+        verified.contains("verified: clean-cache install of app 1.0"),
+        "{verified}"
+    );
+    assert!(
+        verified.contains("1 publisher registry(ies) inherited"),
+        "{verified}"
+    );
+}
+
+#[test]
+fn publish_verify_fails_closed_when_a_dep_is_unresolvable() {
+    let fx = Fixture::new("pubnodeps");
+    let payload = write_payload(
+        &fx,
+        "app-1.0.tfs",
+        &app_manifest_with_requires(
+            "app",
+            "1.0",
+            "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+        ),
+    );
+    let mut opts = base_opts(&fx, "app");
+    opts.payloads.push(PayloadInput {
+        triplet: None,
+        path: payload,
+    });
+    let err = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("inkscape"), "{err:?}");
+    assert!(err.message.contains("add-registry"), "{err:?}");
+}

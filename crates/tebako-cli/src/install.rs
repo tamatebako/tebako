@@ -38,7 +38,7 @@ use tebako_resolve::{
 };
 use tebako_shim::config::{self, AddRegistryOutcome};
 use tebako_shim::manifest::{self, Manifest, PayloadRecord};
-use tebako_shim::{manage, ShimError};
+use tebako_shim::{manage, versions, ShimError};
 use tpkg::Platform;
 
 use crate::error::TebakoError;
@@ -651,32 +651,10 @@ fn plan_from_nickname<T: Transport>(
     host: Option<Platform>,
 ) -> Result<InstallPlan, TebakoError> {
     let (name, version_req) = parse_nickname(target)?;
-    let cfg = config::load_config(home).map_err(map_shim)?;
-
-    let mut found: Vec<(String, RegistryPayload)> = Vec::new();
-    for reg_ref in &cfg.registries {
-        let r = RegistryRef::parse(reg_ref).map_err(|e| {
-            err(
-                EX_TEBAKO_MANIFEST,
-                format!("registered registry '{reg_ref}' is invalid: {e}"),
-            )
-        })?;
-        let registry = fetcher.resolve_registry(&r).map_err(map_resolve)?;
-        if let Some(payload) = registry.payload(&name) {
-            found.push((reg_ref.clone(), payload.clone()));
-        }
-    }
+    let mut found = find_in_registries(home, fetcher, &name)?;
     match found.len() {
         0 => {
-            let registries = if cfg.registries.is_empty() {
-                "    (none)".to_string()
-            } else {
-                cfg.registries
-                    .iter()
-                    .map(|r| format!("    - {r}"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
+            let registries = registered_registries_listing(home)?;
             Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
@@ -692,6 +670,117 @@ fn plan_from_nickname<T: Transport>(
             EX_TEBAKO_MANIFEST,
             format!(
                 "payload '{name}' is listed by {n} registered registries (AmbiguousRegistries):\n{}\n  disambiguate with the full reference: tebako install tfs:<service>:owner/repo:version[#artifact]",
+                found
+                    .iter()
+                    .map(|(r, _)| format!("    - {r}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            ),
+        )),
+    }
+}
+
+/// Every registered registry carrying `name`, as (registry ref, payload)
+/// pairs — the one search both the nickname form and dependency edges
+/// run (spec 04 §2: the registered set is the whole namespace).
+fn find_in_registries<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+    name: &str,
+) -> Result<Vec<(String, RegistryPayload)>, TebakoError> {
+    let cfg = config::load_config(home).map_err(map_shim)?;
+    let mut found: Vec<(String, RegistryPayload)> = Vec::new();
+    for reg_ref in &cfg.registries {
+        let r = RegistryRef::parse(reg_ref).map_err(|e| {
+            err(
+                EX_TEBAKO_MANIFEST,
+                format!("registered registry '{reg_ref}' is invalid: {e}"),
+            )
+        })?;
+        let registry = fetcher.resolve_registry(&r).map_err(map_resolve)?;
+        if let Some(payload) = registry.payload(name) {
+            found.push((reg_ref.clone(), payload.clone()));
+        }
+    }
+    Ok(found)
+}
+
+/// The registered-registries listing for the not-found errors.
+fn registered_registries_listing(home: &Path) -> Result<String, TebakoError> {
+    let cfg = config::load_config(home).map_err(map_shim)?;
+    Ok(if cfg.registries.is_empty() {
+        "    (none)".to_string()
+    } else {
+        cfg.registries
+            .iter()
+            .map(|r| format!("    - {r}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    })
+}
+
+/// The plan for one `requires:` edge (spec 03 §2.3): the edge's
+/// constraint — not the registry default — selects the version, newest
+/// satisfying. The consumer's identity heads the errors so the user
+/// knows which payload declared the edge.
+fn plan_from_dependency_edge<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+    consumer: &Manifest,
+    kind: &str,
+    name: &str,
+    constraint: &tpkg::Constraint,
+) -> Result<InstallPlan, TebakoError> {
+    let mut found = find_in_registries(home, fetcher, name)?;
+    let declares = || {
+        format!(
+            "{} {} requires {kind} {name} ({constraint})",
+            consumer.name(),
+            consumer.version()
+        )
+    };
+    match found.len() {
+        0 => {
+            let registries = registered_registries_listing(home)?;
+            Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "{} but no registered registry carries it\n  registered registries:\n{registries}\n  register one with: tebako add-registry <ref>",
+                    declares()
+                ),
+            ))
+        }
+        1 => {
+            let (reg_ref, payload) = found.pop().expect("len == 1 checked");
+            let eval = versions::from_validated(constraint);
+            let version = payload
+                .versions
+                .iter()
+                .map(|v| v.version.as_str())
+                .filter(|v| eval.matches(v))
+                .max_by(|a, b| versions::compare(a, b));
+            match version {
+                Some(v) => plan_from_registry_entry(&reg_ref, &payload, Some(v), None),
+                None => Err(err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "{} but registry {reg_ref} offers no satisfying version (available: {})",
+                        declares(),
+                        payload
+                            .versions
+                            .iter()
+                            .map(|v| v.version.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                )),
+            }
+        }
+        n => Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "{} and it is listed by {n} registered registries (AmbiguousRegistries):\n{}\n  install the dependency explicitly first: tebako install {name}@<version>",
+                declares(),
                 found
                     .iter()
                     .map(|(r, _)| format!("    - {r}"))
@@ -800,7 +889,7 @@ fn host_platform() -> Result<Platform, TebakoError> {
     })
 }
 
-// ---- the shared tail: fetch → verify → cache → mirror → shims --------
+// ---- the shared tail: fetch → verify → cache → mirror → shims → deps --------
 
 fn finish_install<T: Transport>(
     home: &Path,
@@ -872,6 +961,14 @@ fn finish_install<T: Transport>(
             entry.origin.as_deref().unwrap_or("")
         ),
     );
+
+    // The dependency closure (spec 03 §2.3): the mirror's toolkit/data
+    // edges resolve to cached-or-registry installs, recursively. Every
+    // payload is cached BEFORE its own edges walk, so a re-encountered
+    // name short-circuits on the cache check — no cycle guard, and the
+    // finite registry set bounds the recursion.
+    install_dependency_closure(home, fetcher, &mirror, shim_binary)?;
+
     Ok(InstallOutcome {
         name: plan.name,
         version: plan.version,
@@ -883,6 +980,41 @@ fn finish_install<T: Transport>(
         signer,
         notes,
     })
+}
+
+/// Install the dependency closure a mirror declares (spec 03 §2.3):
+/// every toolkit/data `requires:` edge resolves to the newest CACHED
+/// satisfying version (a no-op — the pin the user installed stands) or,
+/// failing that, the newest registry version satisfying the edge's
+/// constraint, installed through the same fetch → verify → cache → walk
+/// tail. `kind: language` edges are the runtime axis — the dispatcher
+/// resolves them at run time, never here.
+fn install_dependency_closure<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+    mirror: &Manifest,
+    shim_binary: Option<&Path>,
+) -> Result<(), TebakoError> {
+    for req in mirror.requires() {
+        let (kind, name, constraint) = match req {
+            tpkg::Requirement::Language { .. } => continue,
+            tpkg::Requirement::Toolkit {
+                name, constraint, ..
+            } => ("toolkit", name, constraint),
+            tpkg::Requirement::Data {
+                name, constraint, ..
+            } => ("data", name, constraint),
+        };
+        let eval = versions::from_validated(constraint);
+        let installed =
+            tebako_shim::resolve::installed_versions(home, name).map_err(map_shim)?;
+        if installed.iter().any(|v| eval.matches(v)) {
+            continue;
+        }
+        let plan = plan_from_dependency_edge(home, fetcher, mirror, kind, name, constraint)?;
+        finish_install(home, fetcher, plan, shim_binary)?;
+    }
+    Ok(())
 }
 
 /// Materialize every zero-runtime entrypoint (no `runtime_requirement`)

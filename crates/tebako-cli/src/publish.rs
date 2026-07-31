@@ -960,6 +960,7 @@ pub fn publish_full(
         };
         let line = verify_install(
             opts,
+            home,
             &version,
             &registry_ref,
             &tag,
@@ -1060,10 +1061,14 @@ static VERIFY_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU
 /// just-published payload — fresh TEBAKO_HOME, the just-written registry,
 /// the mirror (or the live release) as the artifact source. Signed
 /// publishes register the signer's public key in the temp keyring first
-/// (the install's strict signature path is part of the proof).
+/// (the install's strict signature path is part of the proof). The
+/// publisher's own registered registries join the temp home so the
+/// dependency closure (`requires:`) resolves exactly as it will for a
+/// user — the proof is the whole graph, not the lone artifact.
 #[allow(clippy::too_many_arguments)]
 fn verify_install(
     opts: &PublishOptions,
+    publisher_home: &Path,
     version: &str,
     registry_ref: &str,
     tag: &str,
@@ -1088,6 +1093,7 @@ fn verify_install(
     let result = verify_install_at(
         opts,
         &home,
+        publisher_home,
         version,
         registry_ref,
         tag,
@@ -1103,6 +1109,7 @@ fn verify_install(
 fn verify_install_at(
     opts: &PublishOptions,
     home: &Path,
+    publisher_home: &Path,
     version: &str,
     registry_ref: &str,
     tag: &str,
@@ -1134,6 +1141,7 @@ fn verify_install_at(
             verify_with(
                 opts,
                 home,
+                publisher_home,
                 version,
                 registry_ref,
                 host,
@@ -1146,6 +1154,7 @@ fn verify_install_at(
             verify_with(
                 opts,
                 home,
+                publisher_home,
                 version,
                 registry_ref,
                 host,
@@ -1157,10 +1166,16 @@ fn verify_install_at(
     Ok(line)
 }
 
-/// The install proof over an injected fetcher (mirror or live).
+/// The install proof over an injected fetcher (mirror or live). The
+/// temp home inherits the publisher's registered registries (the
+/// dependency-closure proof needs them — a `requires:` edge resolves
+/// against the registered set); a registry that fails to load here is a
+/// note in the verify line, never a publish failure of its own.
+#[allow(clippy::too_many_arguments)]
 fn verify_with<T: Transport>(
     opts: &PublishOptions,
     home: &Path,
+    publisher_home: &Path,
     version: &str,
     registry_ref: &str,
     host: Option<Platform>,
@@ -1168,6 +1183,19 @@ fn verify_with<T: Transport>(
     fetcher: &Fetcher<T>,
 ) -> Result<String, TebakoError> {
     crate::install::add_registry_with(home, registry_ref, fetcher)?;
+    let mut inherited = 0usize;
+    let mut unreachable: Vec<String> = Vec::new();
+    if let Ok(cfg) = tebako_shim::config::load_config(publisher_home) {
+        for reg in &cfg.registries {
+            if reg == registry_ref {
+                continue;
+            }
+            match crate::install::add_registry_with(home, reg, fetcher) {
+                Ok(_) => inherited += 1,
+                Err(_) => unreachable.push(reg.clone()),
+            }
+        }
+    }
     // the just-published version explicitly (the registry default may
     // point at an older line)
     let target = format!("{}@{version}", opts.name);
@@ -1176,13 +1204,22 @@ fn verify_with<T: Transport>(
         Some(s) => format!(", signed by {s}"),
         None => String::new(),
     };
+    let registries = match (inherited, unreachable.len()) {
+        (0, 0) => String::new(),
+        (i, 0) => format!(", {i} publisher registry(ies) inherited"),
+        (i, u) => format!(
+            ", {i} publisher registry(ies) inherited, {u} unreachable: {}",
+            unreachable.join(", ")
+        ),
+    };
     Ok(format!(
-        "verified: clean-cache install of {} {} ({} shim(s): {}{})",
+        "verified: clean-cache install of {} {} ({} shim(s): {}{}{})",
         opts.name,
         version,
         outcome.commands.len(),
         outcome.commands.join(", "),
-        signed
+        signed,
+        registries
     ))
 }
 

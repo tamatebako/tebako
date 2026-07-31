@@ -850,3 +850,249 @@ fn uninstall_removes_shims_and_cache_and_journals_the_anchors() {
     let err = install::uninstall(&fx.home, "app").unwrap_err();
     assert!(err.message.contains("is not installed"), "{err:?}");
 }
+
+// ---------------------------------------------------------------------
+// the dependency closure walk (spec 03 §2.3 `requires:`)
+// ---------------------------------------------------------------------
+
+/// An app image whose embedded manifest carries the given `requires:` edges.
+fn app_image_with_requires(name: &str, version: &str, requires: &str) -> Vec<u8> {
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /app/bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\nrequires:\n{requires}",
+        sha(b'a'),
+        sha(b'b')
+    );
+    zip_image_with_manifest(&manifest)
+}
+
+/// A toolkit image: an embedded kind:toolkit manifest with no executables
+/// (a pure mountable layer — nothing to materialize, no shims).
+fn toolkit_image(name: &str, version: &str) -> Vec<u8> {
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: toolkit\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  platforms: universal\n  capabilities: {{exec: false, read: true}}\n",
+        sha(b'a'),
+        sha(b'b')
+    );
+    zip_image_with_manifest(&manifest)
+}
+
+/// A data image: an embedded kind:data manifest (mount semantics only).
+fn data_image(name: &str, version: &str) -> Vec<u8> {
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  mount_semantics: {{suggested: \"/\"}}\n  capabilities: {{exec: false, read: true}}\n",
+        sha(b'a'),
+        sha(b'b')
+    );
+    zip_image_with_manifest(&manifest)
+}
+
+/// A registry carrying one payload at several versions; each version's
+/// artifact ref must already be written to the mirror.
+fn versions_registry_yaml(name: &str, kind: &str, versions: &[(&str, &str)]) -> String {
+    let mut yaml =
+        format!("schema_version: 1\npayloads:\n  - name: {name}\n    kind: {kind}\n    versions:\n");
+    for (version, payload_ref) in versions {
+        yaml.push_str(&format!(
+            "      - version: {version}\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n"
+        ));
+    }
+    yaml
+}
+
+#[test]
+fn install_walks_the_requires_closure_and_installs_the_deps() {
+    let fx = Fixture::new("depwalk");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n  - kind: data\n    name: fonts\n    constraint: \">= 2\"\n    mount: /opt/fonts\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+
+    let inkscape_ref = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));
+    let inkscape_reg = fx.registry(
+        "inkscape-registry.yaml",
+        &versions_registry_yaml("inkscape", "toolkit", &[("1.4.3", &inkscape_ref)]),
+    );
+    let fonts_ref = fx.payload("fonts-2.1.tfs", &data_image("fonts", "2.1"));
+    let fonts_reg = fx.registry(
+        "fonts-registry.yaml",
+        &versions_registry_yaml("fonts", "data", &[("2.1", &fonts_ref)]),
+    );
+
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    install::add_registry(&fx.home, &inkscape_reg).unwrap();
+    install::add_registry(&fx.home, &fonts_reg).unwrap();
+
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["app"]);
+
+    // the closure landed: images + mirrors + journal, no shims for the
+    // executable-less deps
+    assert!(fx.payloads_dir().join("inkscape/1.4.3.tfs").is_file());
+    assert!(
+        fx.payloads_dir()
+            .join("inkscape/1.4.3.manifest.yaml")
+            .is_file()
+    );
+    assert!(fx.payloads_dir().join("fonts/2.1.tfs").is_file());
+    assert!(!fx.home.join("shims/inkscape").exists());
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains("event=payload-installed name=inkscape version=1.4.3"),
+        "{journal}"
+    );
+    assert!(
+        journal.contains("event=payload-installed name=fonts version=2.1"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn dep_walk_prefers_a_cached_satisfying_version_over_a_newer_registry_one() {
+    let fx = Fixture::new("depcached");
+    let i143 = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));
+    let i150 = fx.payload("inkscape-1.5.0.tfs", &toolkit_image("inkscape", "1.5.0"));
+    let inkscape_reg = fx.registry(
+        "inkscape-registry.yaml",
+        &versions_registry_yaml(
+            "inkscape",
+            "toolkit",
+            &[("1.4.3", &i143), ("1.5.0", &i150)],
+        ),
+    );
+    install::add_registry(&fx.home, &inkscape_reg).unwrap();
+
+    // the user pinned 1.4.3 explicitly; the app only asks for >= 1.3
+    install::install(&fx.home, "inkscape@1.4.3", None, Some(&fx.shim_binary)).unwrap();
+
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+
+    install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert!(fx.payloads_dir().join("inkscape/1.4.3.tfs").is_file());
+    assert!(
+        !fx.payloads_dir().join("inkscape/1.5.0.tfs").exists(),
+        "a cached satisfying version stands — the walk never fetches a newer one"
+    );
+}
+
+#[test]
+fn dep_walk_selects_the_newest_satisfying_registry_version() {
+    let fx = Fixture::new("depnewest");
+    let i130 = fx.payload("inkscape-1.3.0.tfs", &toolkit_image("inkscape", "1.3.0"));
+    let i143 = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));
+    let i150 = fx.payload("inkscape-1.5.0.tfs", &toolkit_image("inkscape", "1.5.0"));
+    let inkscape_reg = fx.registry(
+        "inkscape-registry.yaml",
+        &versions_registry_yaml(
+            "inkscape",
+            "toolkit",
+            &[("1.3.0", &i130), ("1.4.3", &i143), ("1.5.0", &i150)],
+        ),
+    );
+    install::add_registry(&fx.home, &inkscape_reg).unwrap();
+
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3, < 1.5\"\n    mount: /opt/inkscape\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+
+    install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert!(fx.payloads_dir().join("inkscape/1.4.3.tfs").is_file());
+    assert!(!fx.payloads_dir().join("inkscape/1.3.0.tfs").exists());
+    assert!(!fx.payloads_dir().join("inkscape/1.5.0.tfs").exists());
+}
+
+#[test]
+fn dep_walk_missing_dep_is_a_named_error_and_the_app_stays_installed() {
+    let fx = Fixture::new("depmissing");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("inkscape"), "{err:?}");
+    assert!(err.message.contains(">= 1.3"), "{err:?}");
+    assert!(err.message.contains("add-registry"), "{err:?}");
+    // the app's own install completed before the walk — retrying after
+    // the dep's registry lands is a cache hit plus the walk
+    assert!(fx.payloads_dir().join("app/1.0.tfs").is_file());
+}
+
+#[test]
+fn dep_walk_registry_without_a_satisfying_version_is_a_named_error() {
+    let fx = Fixture::new("depnosat");
+    let i120 = fx.payload("inkscape-1.2.0.tfs", &toolkit_image("inkscape", "1.2.0"));
+    let inkscape_reg = fx.registry(
+        "inkscape-registry.yaml",
+        &versions_registry_yaml("inkscape", "toolkit", &[("1.2.0", &i120)]),
+    );
+    install::add_registry(&fx.home, &inkscape_reg).unwrap();
+
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("inkscape"), "{err:?}");
+    assert!(err.message.contains("1.2.0"), "{err:?}");
+    assert!(!fx.payloads_dir().join("inkscape/1.2.0.tfs").exists());
+}
+
+#[test]
+fn language_requires_edges_are_the_runtime_axis_never_payload_installs() {
+    let fx = Fixture::new("deplang");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: language\n    engine: ruby\n    constraint: \">= 3.1\"\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+
+    // no registry carries a payload named "ruby" — a walk of the language
+    // edge would fail; the runtime axis resolves at dispatch instead
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["app"]);
+}
