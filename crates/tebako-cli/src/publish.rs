@@ -295,7 +295,8 @@ impl GithubStore {
     }
 
     /// The release document `{id, upload_url, assets: [{name, id}]}`,
-    /// or None on 404.
+    /// or None on 404. Authenticated — the unauthenticated tag-lookup
+    /// lags or 404s on fresh public releases.
     fn get_release(
         &self,
         owner: &str,
@@ -303,8 +304,8 @@ impl GithubStore {
         tag: &str,
     ) -> Result<Option<ReleaseDoc>, TebakoError> {
         let url = Self::release_api_url(owner, repo, tag);
-        let text = match tebako_http::get_text(&url) {
-            Ok(t) => t,
+        let bytes = match tebako_http::get_bearer(&url, Some(&self.token)) {
+            Ok(b) => b,
             Err(tebako_http::FetchError::IndexUnavailable(_)) => return Ok(None),
             Err(e) => {
                 return Err(err(
@@ -313,6 +314,12 @@ impl GithubStore {
                 ))
             }
         };
+        let text = String::from_utf8(bytes).map_err(|e| {
+            err(
+                EX_TEBAKO_UNAVAILABLE,
+                format!("the GitHub release {owner}/{repo}:{tag} is not UTF-8: {e}"),
+            )
+        })?;
         match ReleaseDoc::parse(&text) {
             Some(doc) => Ok(Some(doc)),
             None => Err(err(

@@ -126,6 +126,14 @@ pub fn file_path_from_url(remainder: &str) -> &str {
 /// GET `url` and return the response body. `https://` (redirects
 /// followed, HTTPS-only) or `file://`.
 pub fn get(url: &str) -> Result<Vec<u8>, FetchError> {
+    get_bearer(url, None)
+}
+
+/// [`get`] with an optional bearer token. The releases-API reads
+/// authenticate: GitHub's unauthenticated tag-lookup lags (or 404s
+/// outright) on fresh public releases, and the anonymous rate limit is
+/// tight on CI egress IPs.
+pub fn get_bearer(url: &str, bearer: Option<&str>) -> Result<Vec<u8>, FetchError> {
     if let Some(path) = url.strip_prefix("file://") {
         return read_file_url(file_path_from_url(path));
     }
@@ -134,7 +142,11 @@ pub fn get(url: &str) -> Result<Vec<u8>, FetchError> {
             "refusing non-HTTPS URL {url} (https:// and file:// are supported)"
         )));
     }
-    let mut response = agent().get(url).call().map_err(map_ureq_error(url))?;
+    let mut req = agent().get(url);
+    if let Some(token) = bearer {
+        req = req.header("Authorization", &format!("Bearer {token}"));
+    }
+    let mut response = req.call().map_err(map_ureq_error(url))?;
     response
         .body_mut()
         .with_config()
