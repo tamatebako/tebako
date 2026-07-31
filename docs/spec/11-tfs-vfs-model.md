@@ -175,3 +175,32 @@ subtree); paths are %-escaped (space, newline, `%` itself); the journal
 is rewritten atomically (tmp+rename) on every mutation; ANY malformed
 line fails the mount with EINVAL (strict, never lenient). Whiteouts
 mask BASE entries only; an overlay entry of the same name always wins.
+
+## 11. The debug contract (`tebako-log`, locked)
+
+One facility (`crates/tebako-log`), every component wired through it —
+no ad-hoc `eprintln!` anywhere in the stack.
+
+- **`TEBAKO_DEBUG`** — the level: `off` (default) / `error` / `warn` /
+  `debug` / `trace`, plus per-component overrides
+  (`debug,preload=trace,tfs=warn`). The legacy boolean
+  `TEBAKO_DEBUG_TFS` maps to `debug` for back-compat.
+- **`TEBAKO_DEBUG_FILE`** — the sink: stderr by default (**stdout
+  belongs to the payload, never to the log**); a path opens append-mode
+  with `%p` → pid expansion so exec'd children don't clobber one file;
+  parents created; unopenable → stderr with one warn line.
+- **`TEBAKO_DEBUG_COMPONENTS`** — comma filter of component names
+  (default: all). Components are crate names: `preload`, `tfs`,
+  `driver`, `shim`, `bootstrap`, `cli`, `pkg`, `resolve`.
+- **Format**: one parseable line per event —
+  `tebako[<pid>] <level> <component>: <event> <k=v>…`
+- **Discipline**: zero cost when off (the config reads once, the gate
+  runs before any formatting); paths, decisions, and digests are
+  loggable — payload contents and key material never are.
+
+The write gate's discriminator is `path_is_held` (§3): a path is held
+when the image holds an entry at it OR at any existing in-image
+ancestor (implied parents count — zip has no explicit dir entries,
+dwarfs always does; `Backend::has_entry_or_children` answers per
+backend). Writes into a held tree are EROFS; covered paths with no
+in-image ancestor pass to the host, policy-gated (§6, spec 08).
