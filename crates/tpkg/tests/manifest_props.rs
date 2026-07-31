@@ -156,6 +156,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
             runtime_requirement: Some(RuntimeRequirement {
                 engine: "ruby".to_string(),
                 constraint: c,
+                abi: None,
             }),
         });
     let app = (prop::collection::vec(entrypoint, 1..=3), arb_platforms()).prop_map(

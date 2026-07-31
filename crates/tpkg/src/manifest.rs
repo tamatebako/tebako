@@ -678,13 +678,20 @@ impl Capabilities {
     }
 }
 
-/// An entrypoint's runtime requirement (`{engine, constraint}`): a range
-/// like `">= 3.3, < 5.0"` for pure payloads, an abi-line like `"~> 3.3.0"`
-/// for native-extension ones (spec 03 §2.2).
+/// An entrypoint's runtime requirement (`{engine, constraint, abi?}`):
+/// a range like `">= 3.3, < 5.0"` for pure payloads, an abi-line like
+/// `"~> 3.3.0"` for native-extension ones (spec 03 §2.2). `abi` is the
+/// runtime's own platform string the payload's native extensions were
+/// built against (ruby: `Gem::Platform.local.to_s`, e.g.
+/// `arm64-darwin-23`); present iff the payload carries native extensions
+/// — the version line and the platform line are orthogonal constraints
+/// and resolution checks both (spec 05 §5).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeRequirement {
     pub engine: String,
     pub constraint: Constraint,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abi: Option<String>,
 }
 
 /// One entrypoint of an app (spec 03 §2.2 — the ARRAY allows multi-entry
@@ -856,6 +863,12 @@ impl AppProvides {
                     &req.engine,
                     "provides.entrypoints[].runtime_requirement.engine must not be empty",
                 )?;
+                if let Some(abi) = &req.abi {
+                    check_non_empty(
+                        abi,
+                        "provides.entrypoints[].runtime_requirement.abi must not be empty when present",
+                    )?;
+                }
             }
         }
         self.platforms.validate()?;
@@ -1395,6 +1408,7 @@ mod tests {
                 runtime_requirement: Some(RuntimeRequirement {
                     engine: "ruby".into(),
                     constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
+                    abi: None,
                 }),
             }],
             platforms: Platforms::Universal,
@@ -1417,6 +1431,7 @@ mod tests {
                 runtime_requirement: Some(RuntimeRequirement {
                     engine: "ruby".into(),
                     constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
+                    abi: None,
                 }),
             }],
             platforms: Platforms::Universal,

@@ -764,6 +764,7 @@ pub fn publish_full(
                     .map(|r| RegistryRuntimeRequirement {
                         engine: r.engine.clone(),
                         constraint: r.constraint.as_str().to_string(),
+                        abi: r.abi.clone(),
                     }),
             ),
             tpkg::Provides::Toolkit(toolkit) => (

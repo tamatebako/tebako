@@ -118,11 +118,17 @@ pub struct SignaturePin {
     pub asc: String,
 }
 
-/// `runtime_requirement: {engine: …, constraint: …}` (optional mirror).
+/// `runtime_requirement: {engine: …, constraint: …, abi?}` (optional
+/// mirror). `abi` is the runtime's platform string a native-extension
+/// payload was built against (ruby: `Gem::Platform.local.to_s`) — the
+/// resolution checks BOTH the version line and the platform line
+/// (spec 05 §5); absent means pure-language (the version line alone).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistryRuntimeRequirement {
     pub engine: String,
     pub constraint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub abi: Option<String>,
 }
 
 impl Serialize for RegistryPlatforms {

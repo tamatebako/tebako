@@ -204,3 +204,20 @@ pub fn write_config(home: &Path, yaml: &str) {
     std::fs::create_dir_all(home).expect("home");
     std::fs::write(home.join("config.yaml"), yaml).expect("config");
 }
+
+/// `write_runtime` plus a release index manifest carrying the runtime's
+/// own `abi` string (spec 13's per-package `abi` key) — the field the
+/// abi-line filter reads.
+pub fn write_runtime_abi(home: &Path, lv: &str, ver: &str, abi: Option<&str>) -> PathBuf {
+    let exe = write_runtime(home, lv, ver, false);
+    if let Some(abi) = abi {
+        let dir = exe.parent().expect("runtime entry dir").to_path_buf();
+        let exe_name = exe.file_name().expect("exe name").to_string_lossy();
+        std::fs::write(
+            dir.join("manifest.json"),
+            format!("[{{\"filename\": \"{exe_name}\", \"abi\": \"{abi}\"}}]\n"),
+        )
+        .expect("manifest.json");
+    }
+    exe
+}

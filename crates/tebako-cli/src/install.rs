@@ -214,7 +214,9 @@ struct InstallPlan {
     /// Registry-declared entrypoint names (the ref form has none and
     /// falls back to the payload name).
     entrypoints: Vec<String>,
-    runtime_requirement: Option<(String, String)>,
+    /// engine + constraint + the optional abi line (native-extension
+    /// payloads, spec 05 §5)
+    runtime_requirement: Option<(String, String, Option<String>)>,
     /// Name form: the embedded manifest MUST agree with the registry's
     /// name/version (the registry is the trust source).
     strict_identity: bool,
@@ -872,7 +874,7 @@ fn plan_from_registry_entry(
         runtime_requirement: entry
             .runtime_requirement
             .as_ref()
-            .map(|r| (r.engine.clone(), r.constraint.clone())),
+            .map(|r| (r.engine.clone(), r.constraint.clone(), r.abi.clone())),
         strict_identity: true,
     })
 }
@@ -1115,7 +1117,7 @@ fn synthesize_manifest(
     plan: &InstallPlan,
 ) -> Result<tpkg::PayloadManifest, TebakoError> {
     let requirement = match &plan.runtime_requirement {
-        Some((engine, constraint)) => Some(tpkg::RuntimeRequirement {
+        Some((engine, constraint, abi)) => Some(tpkg::RuntimeRequirement {
             engine: engine.clone(),
             constraint: tpkg::Constraint::new(constraint).map_err(|e| {
                 err(
@@ -1123,6 +1125,7 @@ fn synthesize_manifest(
                     format!("the registry's runtime_requirement constraint is invalid: {e}"),
                 )
             })?,
+            abi: abi.clone(),
         }),
         None => None,
     };

@@ -80,6 +80,11 @@ pub struct CachedRuntime {
     /// The image-era runtime image, present iff both the `.tfs` and its
     /// `.sha256` trust marker are cached.
     pub image: Option<PathBuf>,
+    /// The runtime's own platform string (ruby: `Gem::Platform.local` —
+    /// from the release index's `abi` key); `None` for releases that
+    /// predate the field (the compat window — eligible, never a match
+    /// failure of its own).
+    pub abi: Option<String>,
 }
 
 /// Parse a cache entry directory name `<lang>-<lv>-<ver>-<triplet>`:
@@ -98,6 +103,26 @@ fn parse_entry_name(name: &str, platform: &str) -> Option<(String, String, Strin
 
 fn entry_exe_name(lv: &str, ver: &str, platform: &str) -> String {
     format!("tebako-runtime-{ver}-{lv}-{platform}{}", exe_suffix())
+}
+
+/// The runtime's own `abi` string from the cached release index (the
+/// manifest.json entry whose `filename` is the exe): `None` when the
+/// entry or the key is absent (pre-abi releases — the compat window).
+fn entry_abi(entry_dir: &Path, exe_name: &str) -> Option<String> {
+    let text = std::fs::read_to_string(entry_dir.join("manifest.json")).ok()?;
+    let parsed = tebako_json::parse(&text).ok()?;
+    let tebako_json::Value::Array(entries) = &parsed else {
+        return None;
+    };
+    entries.iter().find_map(|entry| {
+        (entry
+            .find("filename")
+            .and_then(|f| f.as_string())
+            .as_deref()
+            == Some(exe_name))
+        .then(|| entry.find("abi").and_then(|a| a.as_string()))
+        .flatten()
+    })
 }
 
 /// Scan `~/.tebako/runtimes/` for cached runtimes of `engine` on this
@@ -122,7 +147,8 @@ pub fn scan_cached(home: &Path, engine: &str) -> Vec<CachedRuntime> {
         if lang != engine {
             continue;
         }
-        let exe = entry_dir.join(entry_exe_name(&lv, &ver, platform));
+        let exe_name = entry_exe_name(&lv, &ver, platform);
+        let exe = entry_dir.join(&exe_name);
         if !exe.is_file() {
             continue;
         }
@@ -133,6 +159,7 @@ pub fn scan_cached(home: &Path, engine: &str) -> Vec<CachedRuntime> {
         } else {
             None
         };
+        let abi = entry_abi(&entry_dir, &exe_name);
         out.push(CachedRuntime {
             engine: lang,
             lang_version: lv,
@@ -140,6 +167,7 @@ pub fn scan_cached(home: &Path, engine: &str) -> Vec<CachedRuntime> {
             dir: entry_dir,
             exe,
             image,
+            abi,
         });
     }
     out
@@ -188,9 +216,44 @@ pub fn resolve_runtime(
     // the dispatcher only evaluates it against cached/offered versions.
     let constraint = versions::from_validated(&req.constraint);
     let cached = scan_cached(&ctx.home, &req.engine);
-    if let Some(hit) = newest_compatible(&cached, &constraint) {
+    // The abi line (spec 05 §5): a native-extension payload matches only
+    // runtimes carrying ITS platform string. A runtime whose release
+    // predates the field (abi: None) stays eligible — the compat window,
+    // never a match failure of its own.
+    let abi_compatible = |c: &CachedRuntime| {
+        req.abi
+            .as_ref()
+            .is_none_or(|want| c.abi.as_ref().is_none_or(|have| have == want))
+    };
+    if let Some(hit) = newest_compatible(
+        &cached
+            .iter()
+            .filter(|c| abi_compatible(c))
+            .cloned()
+            .collect::<Vec<_>>(),
+        &constraint,
+    ) {
         return Ok(RuntimeResolution::Ready(hit));
     }
+    let abi_note = match &req.abi {
+        Some(want)
+            if cached
+                .iter()
+                .any(|c| c.abi.as_ref().is_some_and(|have| have != want)) =>
+        {
+            format!(
+                "; the cached abi line(s) ({}) do not match the payload's \"{want}\"",
+                cached
+                    .iter()
+                    .filter_map(|c| c.abi.as_deref())
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        }
+        _ => String::new(),
+    };
 
     // No compatible cached runtime. The download fallback needs an exact
     // ref: the user's runtime preference for the engine (config.yaml
@@ -202,7 +265,7 @@ pub fn resolve_runtime(
         format!("no cached {} runtimes for this platform", req.engine)
     } else {
         format!(
-            "cached {} runtimes ({}) do not satisfy \"{}\"{}",
+            "cached {} runtimes ({}) do not satisfy \"{}\"{}{}",
             req.engine,
             cached
                 .iter()
@@ -214,7 +277,8 @@ pub fn resolve_runtime(
                 " — a native-extension payload locks to its ABI line; a newer line needs a new payload build"
             } else {
                 ""
-            }
+            },
+            abi_note
         )
     };
     let Some(pref) = pref else {
@@ -253,6 +317,19 @@ pub fn resolve_runtime(
         );
     }
     let rt = download_runtime(&req.engine, pref, ctx)?;
+    // The downloaded runtime's abi line must satisfy the payload too —
+    // the release index carries it (abi: None is the compat window).
+    if let (Some(want), Some(have)) = (&req.abi, &rt.abi) {
+        if want != have {
+            return fail(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "downloaded runtime {}@{} carries abi \"{have}\" but the payload requires \"{want}\" — the payload was built against a different platform line; rebuild the payload or pin a matching runtime",
+                    req.engine, pref.version
+                ),
+            );
+        }
+    }
     Ok(RuntimeResolution::Ready(rt))
 }
 
@@ -631,6 +708,7 @@ fn download_runtime(
                 .join(&image_asset)
                 .is_file()
                 .then(|| entry_dir.join(&image_asset)),
+            abi: entry_abi(&entry_dir, &asset),
         });
     }
 
@@ -692,6 +770,7 @@ fn download_runtime(
                 .join(&image_asset)
                 .is_file()
                 .then(|| entry_dir.join(&image_asset)),
+            abi: entry_abi(&entry_dir, &asset),
         });
     }
 
@@ -791,6 +870,7 @@ fn download_runtime(
                 tebako_version: pref.tebako.clone(),
                 exe: exe_path,
                 image: has_image.then(|| entry_dir.join(&image_asset)),
+                abi: entry_abi(&entry_dir, &asset),
                 dir: entry_dir,
             })
         }

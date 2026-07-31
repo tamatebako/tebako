@@ -12,6 +12,7 @@ fn req(constraint: &str) -> RuntimeRequirement {
     RuntimeRequirement {
         engine: "ruby".to_string(),
         constraint: Constraint::new(constraint).expect("test constraint parses"),
+        abi: None,
     }
 }
 
@@ -283,4 +284,71 @@ fn a_multi_package_manifest_verifies_against_the_right_entry() {
     assert_eq!(rt.lang_version, "3.3.7");
     assert!(rt.exe.is_file());
     assert!(rt.image.is_some());
+}
+
+// ---------------------------------------------------------------------
+// the abi line (spec 05 §5: native-extension payloads match the
+// runtime's own platform string, orthogonally to the version line)
+// ---------------------------------------------------------------------
+
+fn req_abi(constraint: &str, abi: &str) -> RuntimeRequirement {
+    RuntimeRequirement {
+        engine: "ruby".to_string(),
+        constraint: Constraint::new(constraint).expect("test constraint parses"),
+        abi: Some(abi.to_string()),
+    }
+}
+
+#[test]
+fn abi_line_filters_cached_runtimes_to_the_matching_platform_string() {
+    let tmp = TempDir::new("abi-filter");
+    let home = tmp.path().join("home");
+    write_runtime_abi(&home, "3.3.7", "0.16.0", Some("arm64-darwin-24"));
+    write_runtime_abi(&home, "3.3.7", "0.15.9", Some("arm64-darwin-23"));
+    let rt = ready(
+        runtime::resolve_runtime(
+            Some(&req_abi("~> 3.3.0", "arm64-darwin-23")),
+            false,
+            &ctx(&home, tmp.path()),
+        )
+        .unwrap(),
+    );
+    assert_eq!(rt.tebako_version, "0.15.9");
+}
+
+#[test]
+fn abi_mismatch_is_a_named_error_with_both_lines() {
+    let tmp = TempDir::new("abi-mismatch");
+    let home = tmp.path().join("home");
+    write_runtime_abi(&home, "3.3.7", "0.16.0", Some("arm64-darwin-24"));
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.7\n    tebako: 0.16.0\n",
+    );
+    let err = runtime::resolve_runtime(
+        Some(&req_abi("~> 3.3.0", "arm64-darwin-23")),
+        false,
+        &ctx(&home, tmp.path()),
+    )
+    .unwrap_err();
+    assert!(err.message.contains("arm64-darwin-24"), "{}", err.message);
+    assert!(err.message.contains("arm64-darwin-23"), "{}", err.message);
+}
+
+#[test]
+fn a_runtime_without_an_abi_line_stays_eligible() {
+    let tmp = TempDir::new("abi-compat");
+    let home = tmp.path().join("home");
+    // pre-abi release: no manifest.json — the compat window, never a
+    // match failure of its own
+    write_runtime(&home, "3.3.7", "0.16.0", false);
+    let rt = ready(
+        runtime::resolve_runtime(
+            Some(&req_abi("~> 3.3.0", "arm64-darwin-23")),
+            false,
+            &ctx(&home, tmp.path()),
+        )
+        .unwrap(),
+    );
+    assert_eq!(rt.lang_version, "3.3.7");
 }
