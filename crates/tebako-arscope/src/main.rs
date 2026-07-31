@@ -147,23 +147,24 @@ fn run(input: &str, output: &str, keep: &str, prefix: &str) -> Result<Report, St
 
     // The archive symbol index: ld consumes archives THROUGH it (a
     // missing index is "no table of contents"). The index FORM follows
-    // the INPUT archive's own index member (__.SYMDEF on Darwin, "/"
-    // GNU-style elsewhere — a COFF input gets the GNU index regardless
-    // of the host). BSD __.SYMDEF is emitted in the cargo/llvm-ranlib
-    // form: a "#1/12" header (__.SYMDEF padded to 12), ranlib entries
-    // in member order (nlist order per member, offsets non-decreasing),
-    // the string table padded to an 8-byte multiple so the SYMDEF
-    // member size stays a multiple of 4 (see the alignment note above).
+    // the OBJECT format inside: Mach-O archives get the BSD __.SYMDEF
+    // (the cargo/llvm-ranlib form — see the note above), everything
+    // else the GNU "/" index. (The input's own index member, when it
+    // has one, is the same discriminator in practice; a hand-made
+    // Mach-O fixture without one still gets the BSD form.)
     let bsd = {
-        let mut has_symdef = false;
+        let mut is_macho = false;
         for member in archive.members() {
             let member = member.map_err(|e| format!("cannot read a member of {input}: {e}"))?;
-            if member.name() == b"__.SYMDEF" {
-                has_symdef = true;
+            let data = member
+                .data(&bytes[..])
+                .map_err(|e| format!("cannot read a member of {input}: {e}"))?;
+            if macho::defined(data, keep).is_ok() {
+                is_macho = true;
                 break;
             }
         }
-        has_symdef
+        is_macho
     };
     let index = build_index(&members, bsd);
     let index_name = if bsd { "__.SYMDEF" } else { "/" };
