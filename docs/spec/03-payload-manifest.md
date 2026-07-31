@@ -50,6 +50,11 @@ entrypoints:                          # ARRAY — multi-entry suites; N=1 for si
     runtime_requirement: {engine: ruby, constraint: ">= 3.3, < 5.0"}
       # OPTIONAL — omit entirely for native entrypoints (see below);
       # range for pure-language; abi-line "~> 3.3.0" for native-extension payloads
+    # native-extension entrypoints ALSO pin the platform line:
+    runtime_requirement: {engine: ruby, constraint: "~> 3.3.0", abi: "arm64-darwin-23"}
+      # abi = the runtime's own platform string the extensions were built
+      # against (ruby: Gem::Platform.local.to_s). The version line and the
+      # platform line are ORTHOGONAL — resolution checks both (spec 05 §5).
   platforms: [x86_64-linux-gnu, aarch64-macos]  # native-ext apps are triplet-bound;
                                                 # universal only for pure-language
 capabilities: {exec: true, read: true}

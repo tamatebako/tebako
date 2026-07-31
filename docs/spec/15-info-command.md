@@ -106,8 +106,32 @@ Rules:
 - `--slot N` reads the image in place via the tfs mount-from-region —
   nothing is extracted.
 
-## 4. Registry/cache introspection (same surface, other objects)
+## 4. Store/system introspection (`tebako info`) and the artifact umbrella (`tebako inspect`)
 
+Two verbs on the product CLI (both SHIPPED; `--json` on every view,
+`"info_schema": 1`):
+
+- **`tebako inspect <artifact>`** — the §2/§3 surfaces on the product
+  CLI: payload images and tpkg binaries auto-detected (trailer
+  presence), the section flags (`--manifest/--provides/--requires/
+  --platforms/--slot N/--backend-json`), `--json`, and `--verify` with
+  the §5 exit codes. The entrypoint line names the abi line when the
+  manifest declares it (`runtime: ruby ~> 3.3.0, abi arm64-darwin-23`).
+- **`tebako info [topic]`** — the machine view of the STORE and, with
+  `--remote`, of the world:
+  - `system` (bare) — tebako version, platform, home, cached counts,
+    store size.
+  - `runtimes` — cached runtimes (engine, version, tebako, abi, image,
+    size); `--remote` adds the runtime factory's release index (tag ×
+    ruby × platform × abi × contract).
+  - `payloads` — cached payloads (name, version, kind, size, origin);
+    `--remote` adds every registered registry's catalog (name, kind,
+    versions, default).
+  - `shims` — each registered command's dispatch preview: the payload,
+    version, and runtime it would run today (read-only resolution).
+  - `registries` — registered registries and their dispatch-cache
+    freshness (fresh/stale/missing/local).
+  - `store` — disk usage by section (runtimes/payloads/shims/tmp/…).
 - `tebako cache list --json` — cached runtimes and payloads with their
   trust anchors, origins, sizes (extends the existing command additively).
 - `tfs info <dir>` on a cache entry — same as the image form (a cache

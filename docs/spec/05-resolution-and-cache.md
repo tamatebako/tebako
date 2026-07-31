@@ -87,6 +87,13 @@ against `;sha256=`.
 
 **Compatibility model:** pure-language payloads take a range (`>= 3.3,
 < 5.0`) — any newer runtime works; native-extension payloads lock to the
-ABI line they were built against (`~> 3.3.0`) — a newer line needs a new
-payload build (or an SDK rebuild path). A wrong-line runtime produces a
-named compatibility error, never a segfault.
+ABI line they were built against, which is TWO-dimensional: the version
+line (`~> 3.3.0`) AND the platform line (`abi: arm64-darwin-23` — the
+runtime's own platform string; ruby: `Gem::Platform.local.to_s`, from
+the staging runtime's `RbConfig::CONFIG["arch"]`). A newer line needs a
+new payload build (or an SDK rebuild path); a wrong line on EITHER axis
+produces a named compatibility error, never a segfault. Runtimes publish
+their platform string as the per-package `abi` key in the release index
+(spec 13); cached runtimes installed before the field existed stay
+eligible (the compat window — a payload's abi check never fails against
+an unknown line).

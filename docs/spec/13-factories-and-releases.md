@@ -42,6 +42,32 @@ dwarfs-t (C++ format lib) → releases → dwarfs-rs (FFI crate) → tebako-rs
 - Any patch that fails `git apply --check` aborts the build — loud, never
   silent.
 
+## 2a. The release-index entry (manifest.json, locked)
+
+One entry per runtime PACKAGE (the executable), additive forever:
+
+```json
+{
+  "tebako_version": "0.16.0",
+  "contract_version": 2,
+  "ruby_version": "3.3.7",
+  "platform": "macos-arm64",
+  "filename": "tebako-runtime-0.16.0-3.3.7-macos-arm64",
+  "sha256": "…", "size_bytes": 38683544,
+  "abi": "arm64-darwin-23",
+  "image": {"filename": "….tfs", "sha256": "…", "size_bytes": 7658081}
+}
+```
+
+- `abi` is the runtime's own platform string (ruby:
+  `Gem::Platform.local.to_s` — `RbConfig::CONFIG["arch"]` with the darwin
+  segment hyphenated). Native-extension payloads constrain BOTH the
+  version line and this line (spec 05 §5); readers that predate the key
+  ignore it (the compat window — an absent `abi` never fails a check).
+- The image nests under `image` (name + sha + size); the exe's own
+  digest is the entry's `sha256`. `contract_version` negotiates the
+  launcher semantics (spec 17).
+
 ## 3. Drift loop (SHIPPED pending PR merge: ruby#41, runtime-ruby#17)
 
 - Monitor (daily cron): diff upstream releases vs versions.yml → new
