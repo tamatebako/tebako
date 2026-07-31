@@ -17,6 +17,8 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 
 [dependencies]
 libc = "0.2"
+# The stack's one logging facility (TEBAKO_DEBUG; zero cost when off).
+tebako-log = { version = "0.1.0", path = "../tebako-log" }
 # The `zip` crate (pure Rust) rather than libzip-sys: the C ABI contract is
 # behavioral, not library-level; a pure-Rust reader keeps consumers and CI
 # free of a native libzip build, and the v1 scope (read-only, no encryption)

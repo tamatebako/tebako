@@ -136,6 +136,17 @@ impl Backend for ZipBackend {
         c"ZIP"
     }
 
+    fn has_entry_or_children(&self, path: &str) -> bool {
+        let path = normalize(path);
+        if path.is_empty() {
+            return true; // the root always holds
+        }
+        let prefix = format!("{path}/");
+        self.names
+            .iter()
+            .any(|n| n.trim_end_matches('/') == path || n.starts_with(&prefix))
+    }
+
     fn stat(&self, path: &str) -> Result<RawStat, i32> {
         let path = normalize(path);
         if path.is_empty() {

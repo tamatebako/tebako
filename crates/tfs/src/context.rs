@@ -709,16 +709,35 @@ impl FsContext {
         self.find_mount(path).is_some()
     }
 
-    /// A mount HOLDS `path` (an entry exists in the image) — the
-    /// write gate's discriminator. A covered-but-not-held path is a
-    /// host path (the spec 08 passthrough, same as open/stat): with a
-    /// `/` mount in play, this is what keeps host writes legal.
+    /// A mount HOLDS `path` — the write gate's discriminator. An entry
+    /// existing at `path` in the image is held; so is a path whose
+    /// deepest EXISTING in-image ancestor is held (a write into a held
+    /// tree writes into the image's territory — EROFS, never a silent
+    /// host passthrough with the wrong errno). A covered path with NO
+    /// existing in-image ancestor is a host path (the spec 08
+    /// passthrough, same as open/stat): with a `/` mount in play, this
+    /// is what keeps host writes legal.
     pub fn path_is_held(&self, path: &str) -> bool {
         let path = &Self::normalize(path);
         let Some(mount) = self.find_mount(path) else {
             return false;
         };
-        mount.backend.stat(Self::relative_path(mount, path)).is_ok()
+        let mut relative = Self::relative_path(mount, path).to_string();
+        loop {
+            let held_here = mount.backend.has_entry_or_children(&relative);
+            tebako_log::log!(
+                tebako_log::Level::Trace,
+                "tfs",
+                "path_is_held path={path} probe={relative} held_here={held_here}"
+            );
+            if held_here {
+                return true;
+            }
+            let Some((parent, _)) = relative.rsplit_once('/') else {
+                return false;
+            };
+            relative = parent.to_string();
+        }
     }
 
     /// The mount table in the `TEBAKO_TFS_MOUNTS` grammar
@@ -1221,4 +1240,51 @@ fn extract_file(backend: &dyn Backend, rel: &str, host: &std::path::Path) -> Res
 pub fn context() -> &'static RwLock<FsContext> {
     static CONTEXT: RwLock<FsContext> = RwLock::new(FsContext::new());
     &CONTEXT
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write as _;
+
+    /// A zip holding ONLY "data/secret.txt" — no explicit "data/" entry:
+    /// the zip backend's implied-parent case (production dwarfs images
+    /// always carry dir entries; zips usually do not).
+    fn fixture_zip(dir: &std::path::Path) -> std::path::PathBuf {
+        let path = dir.join("img.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("data/secret.txt", options).unwrap();
+        writer.write_all(b"hush").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn path_is_held_walks_to_the_deepest_existing_in_image_ancestor() {
+        let dir = std::env::temp_dir().join(format!("tfs-held-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_zip(&dir);
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        // an implied parent of real content is territory
+        assert!(ctx.path_is_held("/tfs/data"));
+        // a NEW path inside a held tree: the deepest existing ancestor
+        // ("data", via its children) is in-image — EROFS, never a silent
+        // host passthrough with the wrong errno
+        assert!(ctx.path_is_held("/tfs/data/newdir"));
+        assert!(ctx.path_is_held("/tfs/data/deeper/still-new"));
+        // the mount root itself holds
+        assert!(ctx.path_is_held("/tfs"));
+        // a covered path with NO in-image ancestor stays a host path
+        assert!(!ctx.path_is_held("/tfs/elsewhere/x"));
+        // outside every mount
+        assert!(!ctx.path_is_held("/elsewhere"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

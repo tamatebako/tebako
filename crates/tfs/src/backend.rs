@@ -54,6 +54,16 @@ pub trait Backend: Send + Sync {
     /// Look up an entry. `Err(ENOENT)` when missing.
     fn stat(&self, path: &str) -> Result<RawStat, i32>;
 
+    /// The write gate's territory check: the image holds an entry at
+    /// `path` OR any content under it. Implied parents count — a write
+    /// into an implied directory still writes into the image's tree
+    /// (zip: entries exist under `path/` without an explicit dir entry;
+    /// dwarfs/squashfs/tar: the explicit entries already make stat answer
+    /// this). Default: the stat answer; zip overrides with a prefix scan.
+    fn has_entry_or_children(&self, path: &str) -> bool {
+        self.stat(path).is_ok()
+    }
+
     /// Read from a regular file at `offset` (pread primitive).
     /// Callers clamp to EOF; backends may read less.
     fn pread(&self, path: &str, buf: &mut [u8], offset: u64) -> Result<usize, i32>;
