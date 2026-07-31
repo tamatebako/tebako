@@ -187,8 +187,14 @@ required = %w[libboost_atomic libboost_chrono libboost_container libboost_contex
               libbrotlicommon libbrotlidec libbrotlienc libbz2 libcrypto libdate-tz
               libflatbuffers libFLAC libfmt libjemalloc liblz4 liblzma libogg
               libssl libxxhash libzlib libzstd]
+# vcpkg names zlib differently per port version/platform (libz / libzs /
+# libzlib); any spelling satisfies the requirement.
+ALTERNATES = { "libzlib" => %w[libz libzs libzlib].freeze }.freeze
 missing = required.reject do |base|
-  Dir.glob(File.join(out, "closure", "#{base}-*.a")).any? || File.file?(File.join(out, "closure", "#{base}.a"))
+  names = ALTERNATES.fetch(base, [base])
+  names.any? do |n|
+    Dir.glob(File.join(out, "closure", "#{n}-*.a")).any? || File.file?(File.join(out, "closure", "#{n}.a"))
+  end
 end
 die "closure missing required archives: #{missing.join(', ')}" unless missing.empty?
 
