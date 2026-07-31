@@ -374,7 +374,23 @@ impl ReleaseStore for GithubStore {
         name: &str,
         bytes: &[u8],
     ) -> Result<(), TebakoError> {
-        let release = self.get_release(owner, repo, tag)?.ok_or_else(|| {
+        // The tag-lookup read races the release create on GitHub (the
+        // tag lands a beat after the POST returns): retry the read a few
+        // times before declaring the release gone.
+        let mut release = None;
+        for attempt in 0..5u32 {
+            match self.get_release(owner, repo, tag)? {
+                Some(doc) => {
+                    release = Some(doc);
+                    break;
+                }
+                None if attempt < 4 => std::thread::sleep(std::time::Duration::from_millis(
+                    400 * u64::from(attempt + 1),
+                )),
+                None => {}
+            }
+        }
+        let release = release.ok_or_else(|| {
             err(
                 EX_TEBAKO_UNAVAILABLE,
                 format!("the GitHub release {owner}/{repo}:{tag} vanished mid-publish"),
@@ -726,25 +742,38 @@ pub fn publish_full(
             ),
         ));
     }
-    let tpkg::Provides::App(app) = &embedded.provides else {
-        return Err(err(
-            EX_TEBAKO_MANIFEST,
-            format!(
-                "publish ships apps — {} is a {:?} payload",
-                opts.payloads[0].path.display(),
-                embedded.identity.kind
+    // The registry mirrors ONE dispatchable view per payload kind
+    // (spec 03 §2): apps publish their entrypoints (plus the runtime
+    // requirement), toolkits their executables, data payloads nothing.
+    // Runtime payloads publish through the runtime factory's own release
+    // flow (spec 13), never through `tebako publish`.
+    let (entrypoints, runtime_requirement): (Vec<String>, Option<RegistryRuntimeRequirement>) =
+        match &embedded.provides {
+            tpkg::Provides::App(app) => (
+                app.entrypoints.iter().map(|e| e.name.clone()).collect(),
+                app.entrypoints
+                    .first()
+                    .and_then(|e| e.runtime_requirement.as_ref())
+                    .map(|r| RegistryRuntimeRequirement {
+                        engine: r.engine.clone(),
+                        constraint: r.constraint.as_str().to_string(),
+                    }),
             ),
-        ));
-    };
-    let entrypoints: Vec<String> = app.entrypoints.iter().map(|e| e.name.clone()).collect();
-    let runtime_requirement = app
-        .entrypoints
-        .first()
-        .and_then(|e| e.runtime_requirement.as_ref())
-        .map(|r| RegistryRuntimeRequirement {
-            engine: r.engine.clone(),
-            constraint: r.constraint.as_str().to_string(),
-        });
+            tpkg::Provides::Toolkit(toolkit) => (
+                toolkit.executables.iter().map(|e| e.name.clone()).collect(),
+                None,
+            ),
+            tpkg::Provides::Data(_) => (Vec::new(), None),
+            _ => {
+                return Err(err(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "publish does not ship {:?} payloads — apps, toolkits, and data payloads only (runtimes publish through the runtime factory's release flow)",
+                        embedded.identity.kind
+                    ),
+                ));
+            }
+        };
     for input in opts.payloads.iter().skip(1) {
         // every triplet's manifest must agree (the registry mirrors ONE set)
         if let Some(text) = image_manifest::read_embedded_manifest(&input.path)? {
@@ -759,13 +788,16 @@ pub fn publish_full(
             })?;
             let other_eps: Vec<String> = match &other.provides {
                 tpkg::Provides::App(a) => a.entrypoints.iter().map(|e| e.name.clone()).collect(),
+                tpkg::Provides::Toolkit(t) => {
+                    t.executables.iter().map(|e| e.name.clone()).collect()
+                }
                 _ => Vec::new(),
             };
             if other_eps != entrypoints {
                 return Err(err(
                     EX_TEBAKO_MANIFEST,
                     format!(
-                        "{} declares different entrypoints than the first payload — per-triplet variants of one app must agree",
+                        "{} declares different entrypoints than the first payload — per-triplet variants of one payload must agree",
                         input.path.display()
                     ),
                 ));
@@ -895,7 +927,13 @@ pub fn publish_full(
             }
         }
     };
-    upsert_registry(&mut registry, &opts.name, version_entry, &mut notes);
+    upsert_registry(
+        &mut registry,
+        &opts.name,
+        embedded.identity.kind,
+        version_entry,
+        &mut notes,
+    );
     let registry_text = registry.to_yaml().map_err(|e| {
         err(
             EX_TEBAKO_MANIFEST,
@@ -996,10 +1034,13 @@ pub fn publish_full(
 
 /// Upsert the payload's version entry: a re-published version REPLACES
 /// its entry (idempotent re-publish), a new version appends, a new
-/// payload's default starts at its first version.
+/// payload's default starts at its first version. The kind is the
+/// embedded manifest's — publish ships apps, toolkits, and data
+/// payloads alike.
 fn upsert_registry(
     registry: &mut Registry,
     name: &str,
+    kind: tpkg::PayloadKind,
     entry: RegistryVersion,
     notes: &mut Vec<String>,
 ) {
@@ -1021,7 +1062,7 @@ fn upsert_registry(
         }
         None => registry.payloads.push(RegistryPayload {
             name: name.to_string(),
-            kind: tpkg::PayloadKind::App,
+            kind,
             versions: vec![entry],
             default: Some(version),
         }),

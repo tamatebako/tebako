@@ -522,3 +522,91 @@ fn publish_verify_fails_closed_when_a_dep_is_unresolvable() {
     assert!(err.message.contains("inkscape"), "{err:?}");
     assert!(err.message.contains("add-registry"), "{err:?}");
 }
+
+// ---------------------------------------------------------------------
+// every payload kind publishes (apps, toolkits, data — spec 03 §2)
+// ---------------------------------------------------------------------
+
+/// A toolkit image with two executables (zero-runtime dispatch).
+fn toolkit_image_with_executables(name: &str, version: &str, executables: &[&str]) -> Vec<u8> {
+    let execs: String = executables
+        .iter()
+        .map(|e| format!("    - {{name: \"{e}\", path: \"/bin/{e}\", version: \"{version}\"}}\n"))
+        .collect();
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: toolkit\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  executables:\n{execs}  libraries: []\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        sha(b'a'),
+        sha(b'b')
+    );
+    // the executables must exist in the image — the verify install
+    // materializes every zero-runtime entrypoint into the store tree
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    writer
+        .start_file("__tpkg__/manifest.yaml", options)
+        .unwrap();
+    writer.write_all(manifest.as_bytes()).unwrap();
+    for e in executables {
+        writer.start_file(format!("bin/{e}"), options).unwrap();
+        writer.write_all(b"#!/bin/sh\n").unwrap();
+    }
+    writer.finish().unwrap().into_inner()
+}
+
+/// A data image (mount semantics only).
+fn data_image(name: &str, version: &str) -> Vec<u8> {
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: data\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  mount_semantics: {{suggested: \"/\"}}\n  capabilities: {{exec: false, read: true}}\n",
+        sha(b'a'),
+        sha(b'b')
+    );
+    zip_image(&manifest)
+}
+
+#[test]
+fn publish_ships_toolkit_payloads_with_their_executables_as_entrypoints() {
+    let fx = Fixture::new("pubtoolkit");
+    let path = fx.work.join("openjdk-21.0.12.tfs");
+    fs::write(
+        &path,
+        toolkit_image_with_executables("openjdk", "21.0.12", &["java", "keytool"]),
+    )
+    .unwrap();
+    let mut opts = base_opts(&fx, "openjdk");
+    opts.release = "tfs:github:acme/openjdk:21.0.12".to_string();
+    opts.payloads.push(PayloadInput {
+        triplet: None,
+        path,
+    });
+    let outcome = publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
+    let registry = fs::read_to_string(fx.work.join("tpkg-registry.yaml")).unwrap();
+    assert!(registry.contains("kind: toolkit"), "{registry}");
+    assert!(
+        registry.contains("entrypoints:\n    - java\n    - keytool"),
+        "{registry}"
+    );
+    assert!(!registry.contains("runtime_requirement"), "{registry}");
+    // the verify proof registered the executables' shims
+    let verified = outcome.verified.unwrap();
+    assert!(verified.contains("java, keytool"), "{verified}");
+}
+
+#[test]
+fn publish_ships_data_payloads_with_no_entrypoints() {
+    let fx = Fixture::new("pubdata");
+    let path = fx.work.join("fonts-2.1.tfs");
+    fs::write(&path, data_image("fonts", "2.1")).unwrap();
+    let mut opts = base_opts(&fx, "fonts");
+    opts.release = "tfs:github:acme/fonts:2.1".to_string();
+    opts.payloads.push(PayloadInput {
+        triplet: None,
+        path,
+    });
+    publish::publish_full(&opts, &fx.home, &fx.work, Some(&fx.shim_binary)).unwrap();
+    let registry = fs::read_to_string(fx.work.join("tpkg-registry.yaml")).unwrap();
+    assert!(registry.contains("kind: data"), "{registry}");
+    assert!(
+        !registry.contains("entrypoints"),
+        "a data payload declares no entrypoints: {registry}"
+    );
+}

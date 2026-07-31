@@ -364,8 +364,11 @@ impl RegistryVersion {
                 )));
             }
         }
-        // Entrypoints are the app PROVIDES mirror (spec 03 §4 tier 3): an
-        // app declares at least one command; other kinds declare none.
+        // Entrypoints are the dispatchable view's mirror (spec 03 §4 tier
+        // 3, spec 07 §1: app entrypoints ∪ toolkit executables, one view):
+        // an app declares at least one command; a toolkit declares its
+        // executables (a pure-library toolkit none); every other kind
+        // declares none — its consumption is mount-only.
         match payload.kind {
             PayloadKind::App if self.entrypoints.is_empty() => {
                 return Err(invalid_entry(format!(
@@ -373,10 +376,10 @@ impl RegistryVersion {
                     payload.name, self.version
                 )));
             }
-            PayloadKind::App => {}
+            PayloadKind::App | PayloadKind::Toolkit => {}
             _ if !self.entrypoints.is_empty() => {
                 return Err(invalid_entry(format!(
-                    "payload '{}' {} is kind {:?} — only apps declare entrypoints",
+                    "payload '{}' {} is kind {:?} — only apps and toolkits declare entrypoints",
                     payload.name, self.version, payload.kind
                 )));
             }
@@ -754,7 +757,7 @@ payloads:
             ),
             (
                 "schema_version: 1\npayloads:\n  - name: x\n    kind: data\n    versions:\n      - {version: 1.0, platforms: universal, release: {ref: file:///m/a.tfs}, entrypoints: [x]}\n",
-                "only apps declare entrypoints",
+                "only apps and toolkits declare entrypoints",
             ),
             (
                 "schema_version: 1\npayloads:\n  - name: x\n    kind: app\n    default: 9.9\n    versions:\n      - {version: 1.0, platforms: universal, release: {ref: tfs:github:o/x:1.0}, entrypoints: [x]}\n",
