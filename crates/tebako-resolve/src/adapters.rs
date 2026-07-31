@@ -190,7 +190,12 @@ impl ServiceAdapter for GithubAdapter {
     }
 
     /// The contents API names the default branch implicitly; the file's
-    /// `download_url` carries the raw bytes.
+    /// bytes come INLINE in `content` (base64 — always fresh at request
+    /// time). The `download_url` (raw.githubusercontent.com) is only the
+    /// fallback: the raw CDN caches for minutes after a push, and an
+    /// install that reads a STALE registry fails its sha check against
+    /// the fresh release assets (proven live: a registry updated 2
+    /// minutes before an install resolved the old pin).
     fn registry_file(
         &self,
         transport: &dyn Transport,
@@ -199,14 +204,48 @@ impl ServiceAdapter for GithubAdapter {
     ) -> Result<Vec<u8>, ResolveError> {
         let url = format!("https://api.github.com/repos/{owner}/{repo}/contents/{REGISTRY_FILE}");
         let doc = get_json(transport, Service::Github, &url)?;
+        if let Some(content) = strings(&doc, "content") {
+            if let Some(bytes) = base64_decode(&content) {
+                return Ok(bytes);
+            }
+        }
         let Some(download) = strings(&doc, "download_url") else {
             return Err(ResolveError::ServiceFailed {
                 service: Service::Github,
-                reason: format!("{url} has no download_url (is {REGISTRY_FILE} a file?)"),
+                reason: format!("{url} carries neither content nor download_url (is {REGISTRY_FILE} a file?)"),
             });
         };
         get_bytes(transport, &download)
     }
+}
+
+/// Standard base64 with arbitrary whitespace (the contents API wraps at
+/// 60 columns); `None` on malformed input (the caller falls back).
+fn base64_decode(text: &str) -> Option<Vec<u8>> {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    fn value(byte: u8) -> Option<u32> {
+        ALPHABET.iter().position(|&c| c == byte).map(|p| p as u32)
+    }
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let mut acc: u32 = 0;
+    let mut bits: u32 = 0;
+    let mut padding = 0;
+    for byte in text.bytes().filter(|b| !b.is_ascii_whitespace()) {
+        if byte == b'=' {
+            padding += 1;
+            continue;
+        }
+        if padding > 0 {
+            return None; // content after '='
+        }
+        acc = (acc << 6) | value(byte)?;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    Some(out)
 }
 
 // ---- GitLab ---------------------------------------------------------------
@@ -601,6 +640,32 @@ mod tests {
             GithubAdapter.registry_file(&t, "o", "missing"),
             Err(ResolveError::NotFound { .. })
         ));
+    }
+
+    #[test]
+    fn github_registry_file_prefers_the_inline_content_over_the_cdn() {
+        // The raw download_url (CDN) caches for minutes after a push —
+        // the inline base64 `content` is fresh at request time. Both
+        // present: the inline bytes win.
+        let api = "https://api.github.com/repos/o/r/contents/tpkg-registry.yaml";
+        let body = "{\"name\":\"tpkg-registry.yaml\",\"content\":\"ZnJlc2ggcmVnaXN0cnkK\",\"download_url\":\"https://raw/o/r/HEAD/tpkg-registry.yaml\"}";
+        let t = MockTransport::with(&[
+            (api, body),
+            ("https://raw/o/r/HEAD/tpkg-registry.yaml", "stale registry\n"),
+        ]);
+        let got = GithubAdapter.registry_file(&t, "o", "r").unwrap();
+        assert_eq!(got, b"fresh registry\n");
+    }
+
+    #[test]
+    fn base64_decode_handles_wrapped_and_padded_text() {
+        assert_eq!(base64_decode("aGVsbG8sIHdvcmxk"), Some(b"hello, world".to_vec()));
+        assert_eq!(base64_decode("aGVs\nbG8s\n"), Some(b"hello,".to_vec()));
+        assert_eq!(base64_decode(""), Some(Vec::new()));
+        assert_eq!(base64_decode("aGVsbG8="), Some(b"hello".to_vec()));
+        assert_eq!(base64_decode("aGVsbG8"), Some(b"hello".to_vec()));
+        assert_eq!(base64_decode("####"), None);
+        assert_eq!(base64_decode("aGVs==aA"), None);
     }
 
     #[test]
