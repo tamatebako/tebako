@@ -57,6 +57,8 @@ pub mod error;
 pub mod fetch;
 pub mod image;
 pub mod image_manifest;
+pub mod info;
+pub mod inspect;
 pub mod install;
 pub mod options;
 pub mod packager;

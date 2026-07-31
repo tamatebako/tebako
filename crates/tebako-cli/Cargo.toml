@@ -18,6 +18,9 @@ tebako-http = { version = "0.1.0", path = "../tebako-http" }
 tebako-resolve = { version = "0.1.0", path = "../tebako-resolve" }
 # Release-API JSON for the publish upload leg (GitHub release documents).
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
+# The spec-15 introspection model (payload + package inspections, the
+# strict verify) — the `tebako inspect` surface renders through it.
+tebako-info = { version = "0.1.0", path = "../tebako-info" }
 # Config writes (registries:), the manifest mirror and the shim link/unlink
 # — called as a library, never spawned (spec 14 §3: no shell-outs).
 tebako-shim = { version = "0.1.0", path = "../tebako-shim" }

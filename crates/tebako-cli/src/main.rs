@@ -24,6 +24,9 @@ const USAGE: &str = "Usage:
   tebako update-registries             refresh the dispatch-time registry cache
   tebako install <ref | name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
+  tebako info [topic] [--remote] [--json]
+                                       the store/system surface (system|runtimes|payloads|shims|registries|store)
+  tebako inspect <artifact> [flags]    payload/package introspection (spec 15)
   tebako publish --name <app> [--version <v>] --release tfs:github:<owner>/<repo>[:<tag>]
                (--payload <path> | --payload <triplet>=<path>)...
                [--standalone <triplet>=<path>]... [--sign[=<keyid>]]
@@ -94,6 +97,8 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "update-registries" => run_update_registries(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
+        "info" => run_info(rest),
+        "inspect" => run_inspect(rest),
         "publish" => run_publish(rest),
         "clean" | "setup" | "hash" => Err(CliExit::Usage(format!(
             "'tebako {subcommand}' is a later tebako-rs milestone"
@@ -112,6 +117,78 @@ fn tebako_home() -> Result<PathBuf, CliExit> {
             i32::from(e.code),
         ))
     })
+}
+
+/// `tebako info [topic] [--remote] [--json]` — the store/system surface.
+fn run_info(args: &[String]) -> Result<(), CliExit> {
+    let mut topic: Option<&str> = None;
+    let mut remote = false;
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "--remote" => remote = true,
+            "--json" => json = true,
+            other if topic.is_none() && !other.starts_with('-') => topic = Some(other),
+            other => {
+                return Err(CliExit::Usage(format!(
+                    "unknown info option '{other}' (usage: tebako info [topic] [--remote] [--json])"
+                )))
+            }
+        }
+    }
+    let (out, code) = tebako_cli::info::run(&tebako_home()?, topic, remote, json)?;
+    print!("{out}");
+    if code != 0 {
+        std::process::exit(code);
+    }
+    Ok(())
+}
+
+/// `tebako inspect <artifact> [flags]` — the spec-15 artifact surface.
+fn run_inspect(args: &[String]) -> Result<(), CliExit> {
+    let mut path: Option<String> = None;
+    let mut opts = tebako_cli::inspect::InspectOptions::default();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--manifest" => opts.manifest = true,
+            "--provides" => opts.provides = true,
+            "--requires" => opts.requires = true,
+            "--platforms" => opts.platforms = true,
+            "--json" => opts.json = true,
+            "--verify" => opts.verify = true,
+            "--require-signed" => {
+                opts.verify = true;
+                opts.require_signed = true;
+            }
+            "--backend-json" => opts.backend_json = true,
+            "--slot" => {
+                i += 1;
+                let value = args
+                    .get(i)
+                    .ok_or_else(|| CliExit::Usage("--slot needs a number".to_string()))?;
+                opts.slot = Some(
+                    value
+                        .parse()
+                        .map_err(|_| CliExit::Usage(format!("--slot needs a number, got '{value}'")))?,
+                );
+            }
+            other if path.is_none() && !other.starts_with('-') => path = Some(other.to_string()),
+            other => {
+                return Err(CliExit::Usage(format!(
+                    "unknown inspect option '{other}' (usage: tebako inspect <artifact> [--manifest|--provides|--requires|--platforms|--json|--verify|--require-signed|--backend-json|--slot N])"
+                )))
+            }
+        }
+        i += 1;
+    }
+    let path = path.ok_or_else(|| CliExit::Usage("tebako inspect needs an artifact path".to_string()))?;
+    let (out, code) = tebako_cli::inspect::inspect(std::path::Path::new(&path), &opts)?;
+    print!("{out}");
+    if code != 0 {
+        std::process::exit(code);
+    }
+    Ok(())
 }
 
 fn run_add_registry(args: &[String]) -> Result<(), CliExit> {

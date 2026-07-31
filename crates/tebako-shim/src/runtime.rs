@@ -173,6 +173,51 @@ pub fn scan_cached(home: &Path, engine: &str) -> Vec<CachedRuntime> {
     out
 }
 
+/// Scan `~/.tebako/runtimes/` for cached runtimes of EVERY engine on
+/// this platform — the info surface's machine view (resolution itself
+/// always asks per engine).
+pub fn scan_all_cached(home: &Path) -> Vec<CachedRuntime> {
+    let platform = platform_string();
+    let dir = home.join("runtimes");
+    let Ok(rd) = std::fs::read_dir(&dir) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in rd.flatten() {
+        let entry_dir = entry.path();
+        if !entry_dir.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some((lang, lv, ver)) = parse_entry_name(&name, platform) else {
+            continue;
+        };
+        let exe_name = entry_exe_name(&lv, &ver, platform);
+        let exe = entry_dir.join(&exe_name);
+        if !exe.is_file() {
+            continue;
+        }
+        let image_base = format!("tebako-runtime-{ver}-{lv}-{platform}.tfs");
+        let image = entry_dir.join(&image_base);
+        let image = if image.is_file() && entry_dir.join(format!("{image_base}.sha256")).is_file() {
+            Some(image)
+        } else {
+            None
+        };
+        let abi = entry_abi(&entry_dir, &exe_name);
+        out.push(CachedRuntime {
+            engine: lang,
+            lang_version: lv,
+            tebako_version: ver,
+            dir: entry_dir,
+            exe,
+            image,
+            abi,
+        });
+    }
+    out
+}
+
 /// The newest cached runtime satisfying `constraint` (spec 05 §5:
 /// range → any newer within range; abi-line `~>` → the locked line).
 /// Two cache entries may share the language version (different tebako

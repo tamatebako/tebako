@@ -129,7 +129,10 @@ fn provides_section(m: &PayloadManifest, out: &mut String) {
                 }
                 match &ep.runtime_requirement {
                     Some(req) => {
-                        line.push_str(&format!("  runtime: {} {}", req.engine, req.constraint))
+                        line.push_str(&format!("  runtime: {} {}", req.engine, req.constraint));
+                        if let Some(abi) = &req.abi {
+                            line.push_str(&format!(", abi {abi}"));
+                        }
                     }
                     // spec 03 §2.2: native entrypoint — zero-runtime dispatch
                     None => line.push_str("  runtime: none (native)"),
