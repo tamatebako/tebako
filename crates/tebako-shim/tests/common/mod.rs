@@ -167,7 +167,9 @@ pub fn write_runtime(home: &Path, lv: &str, ver: &str, with_image: bool) -> Path
 }
 
 /// A file:// runtime mirror holding one release (`v<ver>`) with exe,
-/// image, and a manifest.json index.
+/// image, and a manifest.json index in the factory's shape (spec 13):
+/// one entry per package, the image nested under the additive `image`
+/// key.
 pub fn write_mirror(root: &Path, lv: &str, ver: &str, tamper: bool) -> PathBuf {
     let platform = platform();
     let dir = root.join(format!("v{ver}"));
@@ -191,7 +193,7 @@ pub fn write_mirror(root: &Path, lv: &str, ver: &str, tamper: bool) -> PathBuf {
     std::fs::write(
         dir.join("manifest.json"),
         format!(
-            "[{{\"filename\": \"{exe_name}\", \"sha256\": \"{exe_sha}\"}},\n {{\"filename\": \"{image_name}\", \"sha256\": \"{image_sha}\"}}]\n"
+            "[{{\"filename\": \"{exe_name}\", \"sha256\": \"{exe_sha}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{image_sha}\"}}}}]\n"
         ),
     )
     .expect("manifest.json");

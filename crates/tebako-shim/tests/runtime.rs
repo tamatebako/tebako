@@ -234,3 +234,53 @@ fn zero_requirement_skips_resolution_entirely() {
     let res = runtime::resolve_runtime(None, true, &ctx(&home, tmp.path())).unwrap();
     assert!(matches!(res, RuntimeResolution::Zero));
 }
+
+#[test]
+fn a_multi_package_manifest_verifies_against_the_right_entry() {
+    let tmp = TempDir::new("multi-pkg");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    let platform = platform();
+    let dir = mirror.join("v0.16.0");
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    // Two packages in one release index (the factory's real shape): the
+    // 3.3.7 pair first, the 4.0.6 pair second. Resolving 3.3.7 must
+    // verify against ITS OWN entry — the substring-scan era read the
+    // NEXT entry's sha256 for the image asset.
+    let mut manifest = String::from("[\n");
+    let mut first = true;
+    for lv in ["3.3.7", "4.0.6"] {
+        let base = format!("tebako-runtime-0.16.0-{lv}-{platform}");
+        let exe_name = format!("{base}{}", tebako_shim::runtime::exe_suffix());
+        let image_name = format!("{base}.tfs");
+        let exe_bytes = format!("{lv} exe\n");
+        let image_bytes = format!("{lv} image\n");
+        std::fs::write(dir.join(&exe_name), exe_bytes.as_bytes()).expect("exe");
+        std::fs::write(dir.join(&image_name), image_bytes.as_bytes()).expect("image");
+        if !first {
+            manifest.push_str(",\n");
+        }
+        first = false;
+        manifest.push_str(&format!(
+            "  {{\"filename\": \"{exe_name}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{}\"}}}}",
+            sha256_hex(exe_bytes.as_bytes()),
+            sha256_hex(image_bytes.as_bytes())
+        ));
+    }
+    manifest.push_str("\n]\n");
+    std::fs::write(dir.join("manifest.json"), manifest).expect("manifest.json");
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.7\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        format!("file://{}", mirror.display()),
+    );
+
+    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "3.3.7");
+    assert!(rt.exe.is_file());
+    assert!(rt.image.is_some());
+}

@@ -464,27 +464,39 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
     }
 }
 
-/// manifest.json: array of {"filename": …, "sha256": …} objects (plus the
-/// additive image-era `image` key); read the "sha256" of the object that
-/// holds `"<asset>"`. Mirrors the bootstrap's extraction.
+/// The expected sha256 of `asset` in a release manifest (spec 13's
+/// machine-readable index — the additive image-era `image` key
+/// included): a per-entry lookup — the entry's `filename` answers its
+/// `sha256`; the nested `image.filename` answers the image's own
+/// `sha256`. An absent asset is no answer (the SHA256SUMS fallback
+/// decides; the v1-era image rule needs the miss).
 #[allow(clippy::result_unit_err)]
 fn sha_from_manifest(text: &str, asset: &str) -> Result<String, ()> {
-    let needle = format!("\"{asset}\"");
-    let p = text.find(&needle).ok_or(())?;
-    let k = text[p..].find("\"sha256\"").map(|e| p + e).ok_or(())?;
-    let after = &text[k + 8..];
-    let after = after.trim_start_matches([':', ' ', '\t', '\n', '\r']);
-    if !after.starts_with('"') {
+    let parsed = tebako_json::parse(text).map_err(|_| ())?;
+    let tebako_json::Value::Array(entries) = &parsed else {
         return Err(());
+    };
+    for entry in entries {
+        if entry
+            .find("filename")
+            .and_then(|f| f.as_string())
+            .as_deref()
+            == Some(asset)
+        {
+            return entry.find("sha256").and_then(|s| s.as_string()).ok_or(());
+        }
+        if let Some(image) = entry.find("image") {
+            if image
+                .find("filename")
+                .and_then(|f| f.as_string())
+                .as_deref()
+                == Some(asset)
+            {
+                return image.find("sha256").and_then(|s| s.as_string()).ok_or(());
+            }
+        }
     }
-    let hex = &after[1..];
-    let endq = hex.find('"').ok_or(())?;
-    let hex = &hex[..endq];
-    if hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
-        Ok(hex.to_string())
-    } else {
-        Err(())
-    }
+    Err(())
 }
 
 /// SHA256SUMS.txt fallback: "<64hex><spaces>[*]<filename>" per line.

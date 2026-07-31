@@ -18,6 +18,10 @@ categories = ["command-line-utilities"]
 # dispatch flags into TEBAKO_JAIL — the engine stays out of the
 # dispatcher).
 tpkg = { version = "0.1.0", path = "../tpkg" }
+# The release manifest index (spec 13) parses as DATA, never by string
+# scan: tebako-json's small parser — the substring-scan era read the next
+# entry's sha256 for image assets.
+tebako-json = { version = "0.1.0", path = "../tebako-json" }
 # Remote registry resolution at dispatch time (spec 04 §2 — item 33):
 # every registry form (service contents API, pinned release artifact, git
 # blob, file) behind the per-ref dispatch cache in src/regcache.rs. The
