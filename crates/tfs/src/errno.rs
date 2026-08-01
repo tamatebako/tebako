@@ -15,9 +15,23 @@ thread_local! {
 /// io-routing patches, any `tebako_fs_*` caller) read the thread's
 /// errno on failure, and an answer they cannot see is an answer that
 /// never happened (a stale 0 surfaces as `Errno::NOERROR`).
+///
+/// Windows matters just as much: without the CRT-errno write, the msys
+/// io shims read a STALE CRT errno from whatever host call last failed,
+/// and ruby surfaces that instead of the real answer (bundler's
+/// ProcessLock met a leftover EBADF where the held-tree gate had
+/// answered EROFS — the 2026-08-01 boot-smoke class). The UCRT's
+/// `_errno()` accessor lives in ucrtbase.dll, present on every supported
+/// Windows.
+#[cfg(windows)]
+mod crt_errno {
+    extern "C" {
+        pub fn _errno() -> *mut libc::c_int;
+    }
+}
+
 pub fn set_errno(err: i32) -> i32 {
     ERRNO.with(|c| c.set(err));
-    #[cfg(unix)]
     // The FFI boundary: the one place touching the C errno cell.
     unsafe {
         #[cfg(any(target_os = "macos", target_os = "ios", target_os = "freebsd"))]
@@ -27,6 +41,10 @@ pub fn set_errno(err: i32) -> i32 {
         #[cfg(any(target_os = "linux", target_os = "android"))]
         {
             *libc::__errno_location() = err;
+        }
+        #[cfg(windows)]
+        {
+            *crt_errno::_errno() = err;
         }
     }
     err
