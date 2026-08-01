@@ -51,14 +51,17 @@ export BOTAN_CONFIGURE_CC=gcc
 # MSVC mode: with no mingw header dirs on its search path, rnp.h dies on
 # <stdbool.h> (tebako-rs CI run 30714614829). Point clang at the ucrt64
 # headers — the C library's and gcc's own (stdbool.h lives there) — and
-# name the target explicitly. Fail loudly if the toolchain layout moves.
+# name the target explicitly. The paths must be WINDOWS-FORM (D:/...):
+# libclang is a native Windows binary — the msys form (/d/a/...) does not
+# resolve for it (openjdk feedstock run 30719756048 proved the msys form
+# a no-op). Fail loudly if the toolchain layout moves.
 UCRT64=/d/a/_temp/msys64/ucrt64
 GCC_INCLUDE=$(echo "$UCRT64"/lib/gcc/x86_64-w64-mingw32/*/include)
 if [ ! -d "$GCC_INCLUDE" ]; then
   echo "ucrt64 gcc include dir not found under $UCRT64/lib/gcc — toolchain layout changed"
   exit 1
 fi
-export BINDGEN_EXTRA_CLANG_ARGS="--target=x86_64-w64-mingw32 -isystem $UCRT64/include -isystem $GCC_INCLUDE"
+export BINDGEN_EXTRA_CLANG_ARGS="--target=x86_64-w64-mingw32 -isystem $(cygpath -m "$UCRT64/include") -isystem $(cygpath -m "$GCC_INCLUDE")"
 
 TARGET=x86_64-pc-windows-gnu
 
