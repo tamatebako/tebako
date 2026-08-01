@@ -10,8 +10,29 @@ homepage.workspace = true
 keywords = ["tebako", "https", "download"]
 categories = ["web-programming::http-client"]
 
-[dependencies]
+# The rustls crypto provider is platform-split: ring everywhere EXCEPT
+# windows-gnu — ring 0.17 has no windows-gnu support (its C fails to
+# compile under mingw), so the gnu target rides aws-lc-rs instead (a
+# vendored crate exactly like ring; ureq's documented provider-swap
+# pattern). ureq is told `rustls-no-provider` there and tebako-http sets
+# the provider explicitly on the TlsConfig.
+[target.'cfg(not(all(windows, target_env = "gnu")))'.dependencies]
 ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+
+[target.'cfg(all(windows, target_env = "gnu"))'.dependencies]
+ureq = { version = "3", default-features = false, features = [
+    "rustls-no-provider",
+    "rustls-webpki-roots",
+    "platform-verifier",
+] }
+# Same rustls surface ureq asks for (std/tls12/logging), provider
+# aws_lc_rs instead of ring.
+rustls = { version = "0.23", default-features = false, features = [
+    "std",
+    "tls12",
+    "logging",
+    "aws_lc_rs",
+] }
 
 [lib]
 name = "tebako_http"

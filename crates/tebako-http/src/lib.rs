@@ -1,12 +1,16 @@
 //! tebako-http — in-process HTTPS downloads for the tebako stack.
 //!
-//! One rule, one client: ureq + rustls (ring provider) with Mozilla's
-//! webpki-roots **bundled** — the OS trust store is never consulted
-//! unless `TEBAKO_TLS_PLATFORM_ROOTS` is set (env opt-in). HTTPS-only
-//! (plain `http://` URLs and redirect downgrades are rejected), redirects
-//! bounded at [`REDIRECT_LIMIT`], connect timeout 15 s, global timeout
-//! 300 s (the gem's net/http timeouts). `file://` URLs read from disk so
-//! `TEBAKO_*_MIRROR=file://...` works with no network stack at all.
+//! One rule, one client: ureq + rustls with Mozilla's webpki-roots
+//! **bundled** — the OS trust store is never consulted unless
+//! `TEBAKO_TLS_PLATFORM_ROOTS` is set (env opt-in). The rustls crypto
+//! provider is ring everywhere except windows-gnu, where ring 0.17 does
+//! not compile: there it is aws-lc-rs, set explicitly on the TlsConfig
+//! (ureq's `rustls-no-provider` + documented provider-swap pattern).
+//! HTTPS-only (plain `http://` URLs and redirect downgrades are
+//! rejected), redirects bounded at [`REDIRECT_LIMIT`], connect timeout
+//! 15 s, global timeout 300 s (the gem's net/http timeouts). `file://`
+//! URLs read from disk so `TEBAKO_*_MIRROR=file://...` works with no
+//! network stack at all.
 //!
 //! Error semantics mirror the gem's reader: a missing object (HTTP 404 /
 //! ENOENT on `file://`) is [`FetchError::IndexUnavailable`] — try the
@@ -59,9 +63,15 @@ fn agent() -> &'static ureq::Agent {
         } else {
             ureq::tls::RootCerts::WebPki
         };
-        let tls = ureq::tls::TlsConfig::builder()
-            .root_certs(root_certs)
-            .build();
+        let tls_builder = ureq::tls::TlsConfig::builder().root_certs(root_certs);
+        // windows-gnu: ureq is built `rustls-no-provider` (ring does not
+        // compile under mingw), so the provider must be named explicitly —
+        // ureq's documented aws-lc-rs swap.
+        #[cfg(all(windows, target_env = "gnu"))]
+        let tls_builder = tls_builder.unversioned_rustls_crypto_provider(std::sync::Arc::new(
+            rustls::crypto::aws_lc_rs::default_provider(),
+        ));
+        let tls = tls_builder.build();
         ureq::Agent::config_builder()
             .tls_config(tls)
             .https_only(true)
