@@ -296,7 +296,7 @@ fn resolve_entry(
 /// semantics preserved: the parser scans from index 0 (callers pass the
 /// full argv; non-loader leading args end the scan — the plain-boot
 /// case). `runtime_root` is the mount point the interpreter was compiled
-/// against (ruby: `/__tebako_memfs__`).
+/// against (ruby: `/__tebako_memfs__`, `A:/__tebako_memfs__` on windows).
 pub fn boot(
     argv: &[String],
     runtime_root: &str,

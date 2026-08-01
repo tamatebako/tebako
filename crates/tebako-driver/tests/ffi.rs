@@ -159,7 +159,13 @@ fn tebako_main_boots_with_the_ruby_root_and_exports_the_contract() {
         0
     );
     let mp = unsafe { CStr::from_ptr(tebako_driver::ffi::tebako_mount_point()) }.to_string_lossy();
+    // The ruby runtime root convention: the memfs is its own drive on
+    // windows, a root-level dir elsewhere (the msys 13/21 boot-smoke
+    // class was this constant disagreeing with the factory convention).
+    #[cfg(not(windows))]
     assert_eq!(mp, "/__tebako_memfs__");
+    #[cfg(windows)]
+    assert_eq!(mp, "A:/__tebako_memfs__");
     let pwd =
         unsafe { CStr::from_ptr(tebako_driver::ffi::tebako_original_pwd()) }.to_string_lossy();
     assert!(!pwd.is_empty(), "the original cwd is recorded");

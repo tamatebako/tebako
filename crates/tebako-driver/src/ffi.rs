@@ -27,9 +27,21 @@ use crate::driver::ProcessEnv;
 use crate::{EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 
 /// The ruby runtime root — the memfs mount point the patched ruby is
-/// compiled against (a ruby-factory constant).
+/// compiled against (a ruby-factory constant: `A:/__tebako_memfs__` on
+/// windows, where the memfs presents as its own drive, and
+/// `/__tebako_memfs__` elsewhere). The msys build's compiled-in load
+/// paths, the io-routing patches, and the factory's CMakeLists/platform
+/// model all carry the same convention; a mismatch here strands every
+/// in-image path behind the host passthrough (the msys 13/21 boot-smoke
+/// failure class, 2026-08-01).
+#[cfg(windows)]
+const RUBY_RUNTIME_ROOT: &str = "A:/__tebako_memfs__";
+#[cfg(not(windows))]
 const RUBY_RUNTIME_ROOT: &str = "/__tebako_memfs__";
 
+#[cfg(windows)]
+static DEFAULT_ROOT: &[u8] = b"A:/__tebako_memfs__\0";
+#[cfg(not(windows))]
 static DEFAULT_ROOT: &[u8] = b"/__tebako_memfs__\0";
 static EMPTY: &[u8] = b"\0";
 
