@@ -598,7 +598,7 @@ mod tests {
         RuntimeDeployer {
             runtime_path: PathBuf::from("/tmp/runtime"),
             staging_bin_dir: PathBuf::from("/tmp/o/p"),
-            fs_mount_point: "/__tebako_memfs__".to_string(),
+            fs_mount_point: "/__tfs__".to_string(),
             ruby_version: "3.3.7".to_string(),
             tebako_version: "0.15.9".to_string(),
             verbose: false,

@@ -163,9 +163,9 @@ fn tebako_main_boots_with_the_ruby_root_and_exports_the_contract() {
     // windows, a root-level dir elsewhere (the msys 13/21 boot-smoke
     // class was this constant disagreeing with the factory convention).
     #[cfg(not(windows))]
-    assert_eq!(mp, "/__tebako_memfs__");
+    assert_eq!(mp, "/__tfs__");
     #[cfg(windows)]
-    assert_eq!(mp, "A:/__tebako_memfs__");
+    assert_eq!(mp, "A:/t");
     let pwd =
         unsafe { CStr::from_ptr(tebako_driver::ffi::tebako_original_pwd()) }.to_string_lossy();
     assert!(!pwd.is_empty(), "the original cwd is recorded");
@@ -196,7 +196,7 @@ fn boot_rewrites_argv_in_place() {
         "/bin/app",
         "--version",
     ]);
-    let root = CString::new("/__tebako_memfs__").unwrap();
+    let root = CString::new("/__tfs__").unwrap();
     let mut argc: c_int = 6;
     let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
 
@@ -227,7 +227,7 @@ fn boot_failure_returns_the_named_code_and_leaves_argv_alone() {
         "--tebako-entry",
         "/bin/app",
     ]);
-    let root = CString::new("/__tebako_memfs__").unwrap();
+    let root = CString::new("/__tfs__").unwrap();
     let mut argc: c_int = 5;
     let mut argvp: *mut *mut c_char = cargv.ptrs.as_mut_ptr();
 

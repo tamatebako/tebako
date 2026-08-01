@@ -110,7 +110,7 @@ fn insert_then_remove_restores_the_package() {
     let m = tpkg::read_from(&mut f).expect("manifest after insert");
     assert_eq!(m.slots.len(), 3);
     assert_eq!(m.slots[2].format_id, tpkg::TPKG_FORMAT_SQUASHFS);
-    assert_eq!(m.slots[2].mount_point_str(), Some("/__tebako_memfs_2__"));
+    assert_eq!(m.slots[2].mount_point_str(), Some("/__tfs_2__"));
 
     // Removing it restores the original bytes exactly.
     remove_image(&pkg, 2).expect("remove-image");
@@ -196,8 +196,8 @@ fn image_spec_parsing_and_defaults() {
     assert_eq!(img.path, Path::new("C"));
     assert_eq!(img.mount_point, "/images/a.dwarfs");
 
-    assert_eq!(default_mount(0), "/__tebako_memfs__");
-    assert_eq!(default_mount(3), "/__tebako_memfs_3__");
+    assert_eq!(default_mount(0), "/__tfs__");
+    assert_eq!(default_mount(3), "/__tfs_3__");
 
     assert_eq!(
         sniff_format(&fixture("simple.dwarfs")),

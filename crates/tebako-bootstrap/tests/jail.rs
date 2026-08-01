@@ -60,7 +60,7 @@ fn stitch_pkg(h: &Harness, name: &str, jail: Option<tpkg::HostJail>) -> PathBuf 
     let img = h.fake_image();
     let mut pos = std::fs::metadata(&h.bootstrap).unwrap().len();
     let size = std::fs::metadata(&img).unwrap().len();
-    let slot = tpkg::Slot::new(pos, size, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__");
+    let slot = tpkg::Slot::new(pos, size, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__");
     pos += size;
     let _ = pos;
     m.slots.push(slot);

@@ -226,7 +226,7 @@ impl Harness {
         let img = self.fake_image();
         self.stitch(
             &self.bootstrap,
-            &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__")],
+            &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__")],
             &self.runtime_ref,
             0,
             &out,
@@ -241,7 +241,7 @@ impl Harness {
         let img = self.fake_image();
         self.stitch(
             &self.bootstrap,
-            &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__")],
+            &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__")],
             &format!("{};image", self.runtime_ref),
             0,
             &out,
@@ -263,7 +263,7 @@ impl Harness {
         self.stitch(
             &self.bootstrap,
             &[
-                (img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__"),
+                (img, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__"),
                 (payload.to_path_buf(), tpkg::TPKG_FORMAT_RUNTIME, ""),
             ],
             &ref_sha,
@@ -283,7 +283,7 @@ impl Harness {
         self.stitch(
             &self.bootstrap,
             &[
-                (img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__"),
+                (img, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__"),
                 (payload.to_path_buf(), tpkg::TPKG_FORMAT_RUNTIME, ""),
             ],
             &ref_sha,

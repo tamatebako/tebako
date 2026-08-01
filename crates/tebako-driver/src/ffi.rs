@@ -27,22 +27,21 @@ use crate::driver::ProcessEnv;
 use crate::{EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 
 /// The ruby runtime root — the memfs mount point the patched ruby is
-/// compiled against (a ruby-factory constant: `A:/__tebako_memfs__` on
-/// windows, where the memfs presents as its own drive, and
-/// `/__tebako_memfs__` elsewhere). The msys build's compiled-in load
-/// paths, the io-routing patches, and the factory's CMakeLists/platform
-/// model all carry the same convention; a mismatch here strands every
-/// in-image path behind the host passthrough (the msys 13/21 boot-smoke
-/// failure class, 2026-08-01).
+/// compiled against. The factory is the single owner of the value (the
+/// source tarball's tebako-mount-root manifest → the exe's generated fs
+/// TU → tebako_main forwards it here); this default is only for
+/// driver-only consumers and tests and follows the factory convention:
+/// `A:/t` on windows, where the memfs presents as its own drive, and
+/// `/__tfs__` elsewhere.
 #[cfg(windows)]
-const RUBY_RUNTIME_ROOT: &str = "A:/__tebako_memfs__";
+const RUBY_RUNTIME_ROOT: &str = "A:/t";
 #[cfg(not(windows))]
-const RUBY_RUNTIME_ROOT: &str = "/__tebako_memfs__";
+const RUBY_RUNTIME_ROOT: &str = "/__tfs__";
 
 #[cfg(windows)]
-static DEFAULT_ROOT: &[u8] = b"A:/__tebako_memfs__\0";
+static DEFAULT_ROOT: &[u8] = b"A:/t\0";
 #[cfg(not(windows))]
-static DEFAULT_ROOT: &[u8] = b"/__tebako_memfs__\0";
+static DEFAULT_ROOT: &[u8] = b"/__tfs__\0";
 static EMPTY: &[u8] = b"\0";
 
 /// The mount point the boot established (read by the io-routing patches

@@ -179,10 +179,10 @@ fn plain_boot_passes_argv_through_and_mounts_the_env_image() {
     let mut env = MapEnv::new();
     env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
 
-    let out = boot(&argv(&["ruby", "--version"]), "/__tebako_memfs__", &env).unwrap();
+    let out = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
     assert_eq!(out.argv, argv(&["ruby", "--version"]));
     assert!(context().read().unwrap().is_mounted());
-    let bytes = read_file("/__tebako_memfs__/lib/ruby/rubygems.rb");
+    let bytes = read_file("/__tfs__/lib/ruby/rubygems.rb");
     assert_eq!(bytes, b"# rubygems core\n");
 }
 
@@ -201,7 +201,7 @@ fn bare_payload_mounts_whole_with_slot_0() {
             "/bin/app",
             "--version",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap();
@@ -224,7 +224,7 @@ fn bare_payload_mounts_whole_with_dash() {
             "--tebako-entry",
             "bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap();
@@ -248,14 +248,14 @@ fn env_image_plus_payload_coexist_at_nested_points() {
             "--tebako-entry",
             "/bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap();
     assert_eq!(out.argv, argv(&["ruby", "/bin/app"]));
     // Both mounts live: the env image at its root, the payload at /.
     assert_eq!(
-        read_file("/__tebako_memfs__/lib/ruby/rubygems.rb"),
+        read_file("/__tfs__/lib/ruby/rubygems.rb"),
         b"# rubygems core\n"
     );
     assert_eq!(read_file("/bin/app"), b"#!/usr/bin/env ruby\nputs 'hi'\n");
@@ -275,7 +275,7 @@ fn slot_beyond_zero_on_a_bare_image_is_a_named_error_and_rolls_back() {
             "--tebako-entry",
             "/bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap_err();
@@ -302,7 +302,7 @@ fn packaged_file_mounts_the_slot_region() {
             "--tebako-entry",
             "/bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap();
@@ -323,7 +323,7 @@ fn no_entry_starts_the_interpreter_with_its_own_args() {
             &format!("{}:0:/", payload.display()),
             "--version",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap();
@@ -350,7 +350,7 @@ fn the_interpreter_keyword_is_dropped() {
             "-e",
             "puts 1",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap();
@@ -376,7 +376,7 @@ fn dash_on_a_packaged_file_is_a_named_error() {
             "--tebako-entry",
             "/bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap_err();
@@ -400,7 +400,7 @@ fn runtime_role_slot_is_never_mounted() {
             "--tebako-entry",
             "/bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap_err();
@@ -425,7 +425,7 @@ fn images_without_entry_starts_the_interpreter_bare() {
             "--tebako-image",
             &format!("{}:0:/", payload.display()),
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap();
@@ -448,7 +448,7 @@ fn missing_entry_is_named_65_and_rolls_back() {
             "--tebako-entry",
             "/bin/nope",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap_err();
@@ -472,7 +472,7 @@ fn malformed_triple_is_named_65() {
             "--tebako-entry",
             "/x",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap_err();
@@ -492,7 +492,7 @@ fn missing_image_file_is_named_69() {
             "--tebako-entry",
             "/bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap_err();
@@ -521,7 +521,7 @@ fn jail_deny_blocks_host_reads_but_not_the_payload() {
             "--tebako-entry",
             "bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap();
@@ -556,7 +556,7 @@ fn malformed_jail_is_named_73_and_rolls_back() {
             "--tebako-entry",
             "/bin/app",
         ]),
-        "/__tebako_memfs__",
+        "/__tfs__",
         &env,
     )
     .unwrap_err();

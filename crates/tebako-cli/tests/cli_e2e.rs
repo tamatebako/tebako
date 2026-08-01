@@ -1062,7 +1062,7 @@ fn image_era_press_and_cold_run() {
         &base,
         &[tebako_pkg::PackageImage {
             path: entry_dir.join(&image_name),
-            mount_point: "/__tebako_memfs__".to_string(),
+            mount_point: "/__tfs__".to_string(),
             format_id: tpkg::TPKG_FORMAT_DWARFS,
         }],
         &wrapped,
@@ -1077,7 +1077,7 @@ fn image_era_press_and_cold_run() {
     let mut wrapped_run = Command::new(entry_dir.join(&asset));
     wrapped_run
         .arg("--tebako-image")
-        .arg(format!("{}:0:/__tebako_memfs__", wrapped.display()));
+        .arg(format!("{}:0:/__tfs__", wrapped.display()));
     let (code, out) = run(&mut wrapped_run);
     assert_eq!(code, 0, "standalone image mount failed:\n{out}");
     assert!(
@@ -1257,7 +1257,7 @@ fn runtime_driver_exec(
         &base,
         &[tebako_pkg::PackageImage {
             path: image,
-            mount_point: "/__tebako_memfs__".to_string(),
+            mount_point: "/__tfs__".to_string(),
             format_id: tpkg::TPKG_FORMAT_DWARFS,
         }],
         &pkg,
@@ -1271,7 +1271,7 @@ fn runtime_driver_exec(
     .unwrap();
     let mut cmd = Command::new(runtime);
     cmd.arg("--tebako-image")
-        .arg(format!("{}:0:/__tebako_memfs__", pkg.display()))
+        .arg(format!("{}:0:/__tfs__", pkg.display()))
         .env("TEBAKO_PASS_THROUGH", "1");
     run(&mut cmd)
 }

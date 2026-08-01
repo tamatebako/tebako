@@ -74,7 +74,7 @@ fn script_pkg(dir: &Path, name: &str, jail: Option<tpkg::HostJail>) -> PathBuf {
         base,
         size,
         tpkg::TPKG_FORMAT_DWARFS,
-        "/__tebako_memfs__",
+        "/__tfs__",
     ));
     if let Some(jail) = jail {
         m.set_package_manifest(&package_manifest(jail)).unwrap();

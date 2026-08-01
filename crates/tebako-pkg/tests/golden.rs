@@ -105,6 +105,31 @@ fn strip_signature_line(out: &str) -> String {
         .collect()
 }
 
+/// The ONE sanctioned invariant-8 deviation: the v2 mount-root rename
+/// (`/__tebako_memfs__` → `/__tfs__`, TODO.prepublish/02). The C++
+/// oracle always emits its legacy default mount for bare images; rewrite
+/// it to the v2 default before the byte comparison so everything ELSE
+/// (structure, metadata, content) is asserted byte-exact. Any OTHER
+/// difference fails the test exactly as before.
+fn normalize_oracle(bytes: &[u8]) -> Vec<u8> {
+    let mut out = bytes.to_vec();
+    let (legacy, current) = (b"/__tebako_memfs__".as_slice(), b"/__tfs__".as_slice());
+    while let Some(pos) = out.windows(legacy.len()).position(|w| w == legacy) {
+        // Fixed-width binary fields (the 256-byte, NUL-padded slot
+        // record) keep the span: pad the shorter current form with NULs.
+        // Text fields (the YAML manifest) tolerate a shorter splice.
+        let replacement: Vec<u8> = if out.get(pos + legacy.len()) == Some(&0) {
+            let mut r = current.to_vec();
+            r.resize(legacy.len(), 0);
+            r
+        } else {
+            current.to_vec()
+        };
+        out.splice(pos..pos + legacy.len(), replacement.iter().copied());
+    }
+    out
+}
+
 #[test]
 fn golden_bundle_info_unbundle_reassemble() {
     let Some(cpp) = cpp_tebakofs() else {
@@ -163,10 +188,14 @@ fn golden_bundle_info_unbundle_reassemble() {
     // Signing is opt-in: the default bundle is unsigned, byte-identical
     // to the oracle's unsigned package.
     assert_eq!(
-        std::fs::read(&pkg_cpp).unwrap(),
+        normalize_oracle(&std::fs::read(&pkg_cpp).unwrap()),
         std::fs::read(&pkg_rs).unwrap(),
         "unsigned bundle output must be byte-identical to the oracle"
     );
+    // The one sanctioned invariant-8 deviation, applied in place: the
+    // oracle's package now carries the v2 default mount, so every
+    // downstream operation/compare asserts full byte parity directly.
+    std::fs::write(&pkg_cpp, normalize_oracle(&std::fs::read(&pkg_cpp).unwrap())).unwrap();
 
     // info on the SAME package file → identical output modulo the rust-only
     // Signature line (here: unsigned v1 oracle package, reported as legacy).
@@ -200,7 +229,7 @@ fn golden_bundle_info_unbundle_reassemble() {
         0
     );
     assert_eq!(
-        std::fs::read(parts_cpp.join("manifest.json")).unwrap(),
+        normalize_oracle(&std::fs::read(parts_cpp.join("manifest.json")).unwrap()),
         std::fs::read(parts_rs.join("manifest.json")).unwrap(),
         "manifest.json must be identical"
     );
@@ -244,11 +273,11 @@ fn golden_bundle_info_unbundle_reassemble() {
         0
     );
     assert_eq!(
-        std::fs::read(&re_cpp).unwrap(),
+        normalize_oracle(&std::fs::read(&re_cpp).unwrap()),
         std::fs::read(&re_rs).unwrap()
     );
     assert_eq!(
-        std::fs::read(&pkg_cpp).unwrap(),
+        normalize_oracle(&std::fs::read(&pkg_cpp).unwrap()),
         std::fs::read(&re_rs).unwrap(),
         "bundle / unbundle / reassemble must round-trip exactly"
     );
@@ -285,6 +314,10 @@ fn golden_insert_remove_set_runtime() {
     }
     let pkg_cpp = w.0.join("pkg-cpp");
     let pkg_rs = w.0.join("pkg-rs");
+    // The one sanctioned invariant-8 deviation, applied in place: the
+    // oracle's package now carries the v2 default mount, so every
+    // downstream operation/compare asserts full byte parity directly.
+    std::fs::write(&pkg_cpp, normalize_oracle(&std::fs::read(&pkg_cpp).unwrap())).unwrap();
     assert_eq!(
         std::fs::read(&pkg_cpp).unwrap(),
         std::fs::read(&pkg_rs).unwrap(),

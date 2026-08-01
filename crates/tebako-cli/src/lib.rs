@@ -85,7 +85,11 @@ pub const LAUNCHER_ABI: u32 = 1;
 /// The tebako version this CLI presses with: the runtime release consumed
 /// and the tebako=<...> component of the trailer's runtime_ref. Matches
 /// the reference gem's Tebako::VERSION at port time.
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.15.9";
+/// The tebako release line the CLI presses against. New-era only: from
+/// 0.16.1 the runtimes bake the renamed mount root (`/__tfs__`, `A:/t`);
+/// older releases carry the legacy `__tebako_memfs__` layout and are NOT
+/// served (no old contract, no compat readers).
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.1";
 
 pub const VERSION_BANNER: &str = "Tebako executable packager version 0.15.9";
 

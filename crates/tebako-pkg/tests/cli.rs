@@ -287,7 +287,7 @@ fn error_exit_codes_and_messages() {
     assert!(out.contains("Bootstrap size: 1024 bytes"), "{out}");
     assert!(out.contains("Slots: 2"), "{out}");
     assert!(
-        out.contains("format=dwarfs flags=0 mount=/__tebako_memfs__"),
+        out.contains("format=dwarfs flags=0 mount=/__tfs__"),
         "{out}"
     );
     assert!(out.contains("format=squashfs flags=0 mount=/data"), "{out}");

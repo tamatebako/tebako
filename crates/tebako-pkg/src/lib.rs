@@ -85,12 +85,12 @@ struct SlotSource {
 // ---------------------------------------------------------------------
 
 /// Default mount point for slot `index`
-/// (`/__tebako_memfs__` for 0, `/__tebako_memfs_<N>__` for N).
+/// (`/__tfs__` for 0, `/__tfs_<N>__` for N).
 pub fn default_mount(index: u32) -> String {
     if index == 0 {
-        "/__tebako_memfs__".to_string()
+        "/__tfs__".to_string()
     } else {
-        format!("/__tebako_memfs_{index}__")
+        format!("/__tfs_{index}__")
     }
 }
 

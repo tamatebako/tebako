@@ -18,7 +18,7 @@ fn s1_download_path() {
     assert_eq!((rc, err.as_str()), (0, ""), "{err}");
     assert!(out.contains("FAKE-RUNTIME"), "{out}");
     assert!(out.contains("--tebako-image"), "{out}");
-    assert!(out.contains(":0:/__tebako_memfs__"), "{out}");
+    assert!(out.contains(":0:/__tfs__"), "{out}");
     assert!(out.contains("--tebako-entry"), "{out}");
     assert!(out.contains("hello"), "{out}");
     assert!(out.contains("arg two"), "{out}");
@@ -113,7 +113,7 @@ fn s5_launcher_abi_mismatch() {
     let pkg = h.tmp.0.join("abi99");
     h.stitch(
         &h.bootstrap,
-        &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__")],
+        &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__")],
         &h.runtime_ref,
         99,
         &pkg,
@@ -172,7 +172,7 @@ fn s8_fat_package_installs_payload_offline() {
     assert!(out.contains("FAKE-RUNTIME"), "{out}");
     // The payload slot must NOT leak into --tebako-image argv.
     assert_eq!(out.matches("--tebako-image").count(), 1, "{out}");
-    assert!(out.contains(":0:/__tebako_memfs__"), "{out}");
+    assert!(out.contains(":0:/__tfs__"), "{out}");
     assert!(out.contains("hello"), "{out}");
 
     let cached = h.cache_exe(&home);
@@ -333,7 +333,7 @@ fn parity_with_cpp_bootstrap() {
         assert_eq!((rc, err.as_str()), (0, ""), "{tag}: {err}");
         assert!(out.contains("FAKE-RUNTIME"), "{tag}: {out}");
         assert!(out.contains("--tebako-image"), "{tag}: {out}");
-        assert!(out.contains(":0:/__tebako_memfs__"), "{tag}: {out}");
+        assert!(out.contains(":0:/__tfs__"), "{tag}: {out}");
         assert!(out.contains("--tebako-entry"), "{tag}: {out}");
         assert!(out.contains("hello"), "{tag}: {out}");
         assert!(out.contains("arg two"), "{tag}: {out}");
@@ -354,7 +354,7 @@ fn parity_with_cpp_bootstrap() {
         let abi_pkg = h.tmp.0.join(format!("abi99-{tag}"));
         h.stitch(
             &h.bootstrap,
-            &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__")],
+            &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__")],
             &h.runtime_ref,
             99,
             &abi_pkg,
@@ -426,7 +426,7 @@ fn s11_image_era_lean_resolves_image_and_hands_env() {
         "{out}"
     );
     assert!(out.contains("--tebako-image"), "{out}");
-    assert!(out.contains(":0:/__tebako_memfs__"), "{out}");
+    assert!(out.contains(":0:/__tfs__"), "{out}");
 
     // A v1 (no-`;image`) package against the SAME image-carrying mirror
     // resolves the executable only — byte-identical v1 behavior.
@@ -539,7 +539,7 @@ fn s14_image_sums_fallback_and_fat_payload() {
         h2.stitch(
             &h2.bootstrap,
             &[
-                (img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__"),
+                (img, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__"),
                 (h2.fake_runtime.clone(), tpkg::TPKG_FORMAT_RUNTIME, ""),
             ],
             &ref_full,
@@ -733,7 +733,7 @@ fn s17_install_verb_guides_and_the_flag_refuses() {
     let frozen = h2.tmp.0.join("frozen");
     h2.stitch_flags(
         &h2.bootstrap,
-        &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tebako_memfs__")],
+        &[(img, tpkg::TPKG_FORMAT_DWARFS, "/__tfs__")],
         &h2.runtime_ref,
         0,
         tpkg::TPKG_FLAG_NO_INSTALL,

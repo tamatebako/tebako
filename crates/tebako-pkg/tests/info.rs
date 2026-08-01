@@ -186,7 +186,7 @@ fn full_report_unsigned_classic() {
     );
     assert!(out.contains("    [0] "), "{out}");
     assert!(
-        out.contains(" B @ 2,048  format: dwarfs  mount: /__tebako_memfs__\n"),
+        out.contains(" B @ 2,048  format: dwarfs  mount: /__tfs__\n"),
         "{out}"
     );
     assert!(
@@ -236,11 +236,11 @@ fn full_report_signed_lean_and_depths() {
     assert!(out.contains("  trust: v2-signed, signer "), "{out}");
     assert!(out.contains(" — unverified\n"), "{out}");
     assert!(
-        out.contains("format: dwarfs  mount: /__tebako_memfs__\n"),
+        out.contains("format: dwarfs  mount: /__tfs__\n"),
         "{out}"
     );
     assert!(
-        out.contains("format: squashfs  mount: /__tebako_memfs_1__\n"),
+        out.contains("format: squashfs  mount: /__tfs_1__\n"),
         "{out}"
     );
     assert!(
@@ -302,7 +302,7 @@ fn full_report_runtime_legacy_role_slot() {
         &[
             tebako_pkg::PackageImage {
                 path: app,
-                mount_point: "/__tebako_memfs__".into(),
+                mount_point: "/__tfs__".into(),
                 format_id: tpkg::TPKG_FORMAT_DWARFS,
             },
             tebako_pkg::PackageImage {
