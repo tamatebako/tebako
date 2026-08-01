@@ -336,7 +336,10 @@ fn covered_but_not_held_paths_fall_through_to_the_host_decision() {
     // ProcessLock class: the host answer on a nonexistent drive is
     // EBADF, outside every tolerance set).
     assert_eq!(
-        open(Path::new("/content/bundler.lock"), libc::O_WRONLY | libc::O_CREAT),
+        open(
+            Path::new("/content/bundler.lock"),
+            libc::O_WRONLY | libc::O_CREAT
+        ),
         -1
     );
     assert_eq!(

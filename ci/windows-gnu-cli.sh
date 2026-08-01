@@ -46,6 +46,19 @@ export RUSTFLAGS="-C link-arg=-static-libgcc -C link-arg=-static-libstdc++ -C li
 # configure dies on "Default compiler is msvc but could not find 'cl'").
 export BOTAN_CONFIGURE_CC=gcc
 
+# bindgen (rnp-rs's rnp bindings) drives the runner image's libclang in
+# MSVC mode: with no mingw header dirs on its search path, rnp.h dies on
+# <stdbool.h> (tebako-rs CI run 30714614829). Point clang at the ucrt64
+# headers — the C library's and gcc's own (stdbool.h lives there) — and
+# name the target explicitly. Fail loudly if the toolchain layout moves.
+UCRT64=/d/a/_temp/msys64/ucrt64
+GCC_INCLUDE=$(echo "$UCRT64"/lib/gcc/x86_64-w64-mingw32/*/include)
+if [ ! -d "$GCC_INCLUDE" ]; then
+  echo "ucrt64 gcc include dir not found under $UCRT64/lib/gcc — toolchain layout changed"
+  exit 1
+fi
+export BINDGEN_EXTRA_CLANG_ARGS="--target=x86_64-w64-mingw32 -isystem $UCRT64/include -isystem $GCC_INCLUDE"
+
 # E2E presses stay off on this leg: they download a runtime and press
 # side-by-side with the reference gem (a host ruby + thor) — the windows
 # dogfood e2e is TODO.prepublish/06's story. Every other test runs.
