@@ -381,11 +381,12 @@ pub unsafe extern "C" fn tebako_fs_dir_is_embedded(dir: *mut c_void) -> libc::c_
 /// any drift a compile error on this side, exactly like the header's
 /// `_Static_assert`s on theirs).
 ///
-/// Windows pins the CRT `__stat64` layout (64-bit st_size, 48 bytes):
-/// "struct stat" means different structs to different CRT consumers
-/// (plain `stat` has a 32-bit st_size; ruby's `stati128` a 64-bit one),
-/// which is how the 2026-08-01 msys boot-smoke class happened (writer
-/// emitted stat64, shims read plain stat, st_size landed on padding).
+/// Windows pins the CRT `__stat64` layout (64-bit st_size, 56 bytes
+/// with natural 8-byte alignment of the i64 fields): "struct stat"
+/// means different structs to different CRT consumers (plain `stat`
+/// has a 32-bit st_size; ruby's `stati128` a 64-bit one), which is how
+/// the 2026-08-01 msys boot-smoke class happened (writer emitted
+/// stat64, shims read plain stat, st_size landed on padding).
 #[cfg(windows)]
 #[repr(C)]
 pub struct TebakoStat {
@@ -404,9 +405,9 @@ pub struct TebakoStat {
 
 #[cfg(windows)]
 const _: () = {
-    assert!(std::mem::size_of::<TebakoStat>() == 48);
-    assert!(std::mem::offset_of!(TebakoStat, st_size) == 16);
-    assert!(std::mem::offset_of!(TebakoStat, st_mtime) == 32);
+    assert!(std::mem::size_of::<TebakoStat>() == 56);
+    assert!(std::mem::offset_of!(TebakoStat, st_size) == 24);
+    assert!(std::mem::offset_of!(TebakoStat, st_mtime) == 40);
 };
 
 /// POSIX: the platform's own `struct stat` — the platform libc is the

@@ -53,7 +53,8 @@ extern "C" {
  * On Windows `struct stat` means DIFFERENT structs to different
  * consumers (the CRT's plain `stat` has a 32-bit st_size; `__stat64`
  * and ruby's `stati128` have a 64-bit one), so the ABI is pinned here
- * explicitly: the CRT `__stat64` layout (64-bit st_size, 48 bytes).
+ * explicitly: the CRT `__stat64` layout (64-bit st_size, 56 bytes with
+ * natural 8-byte alignment of the i64 fields).
  * The Rust side mirrors this declaration with matching layout asserts;
  * the layout asserts below make any edit on either side a compile
  * error, never a silent drift. (The 2026-08-01 msys class: the Rust
@@ -69,14 +70,15 @@ struct tebako_stat {
     int16_t  st_uid;    /* offset 10 */
     int16_t  st_gid;    /* offset 12 */
     uint32_t st_rdev;   /* offset 14 */
-    int64_t  st_size;   /* offset 16 */
-    int64_t  st_atime;  /* offset 24 */
-    int64_t  st_mtime;  /* offset 32 */
-    int64_t  st_ctime;  /* offset 40 */
-};                      /* sizeof 48 */
-_Static_assert(sizeof(struct tebako_stat) == 48, "tebako_stat ABI drift");
-_Static_assert(offsetof(struct tebako_stat, st_size) == 16, "tebako_stat ABI drift");
-_Static_assert(offsetof(struct tebako_stat, st_mtime) == 32, "tebako_stat ABI drift");
+    /* 2 bytes padding to the 8-aligned i64 */
+    int64_t  st_size;   /* offset 24 */
+    int64_t  st_atime;  /* offset 32 */
+    int64_t  st_mtime;  /* offset 40 */
+    int64_t  st_ctime;  /* offset 48 */
+};                      /* sizeof 56 */
+_Static_assert(sizeof(struct tebako_stat) == 56, "tebako_stat ABI drift");
+_Static_assert(offsetof(struct tebako_stat, st_size) == 24, "tebako_stat ABI drift");
+_Static_assert(offsetof(struct tebako_stat, st_mtime) == 40, "tebako_stat ABI drift");
 #else
 #define tebako_stat stat
 #endif
