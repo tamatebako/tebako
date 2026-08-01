@@ -29,15 +29,9 @@ jobs:
           - os: ubuntu-24.04
             crypto_triplet: x64-linux-dynamic
             triplet: x64-linux-static
-            vcpkg_inst: /home/runner/vcpkg-inst
           - os: macos-14
             crypto_triplet: arm64-osx-dynamic
             triplet: arm64-osx-static
-            vcpkg_inst: /Users/runner/vcpkg-inst
-    env:
-      # The baseline artifact's canonical root — vcpkg trees embed
-      # absolute paths, so consumers must not relocate.
-      DWARFS_RS_VCPKG_INSTALLED_DIR: ${{ matrix.vcpkg_inst }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -58,9 +52,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Never fails the leg: a miss means the ports build normally.
+        # The script owns the canonical root and exports
+        # DWARFS_RS_VCPKG_INSTALLED_DIR into GITHUB_ENV.
         run: |
           bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
-            dwarfs-rs/dwarfs-t "${{ matrix.triplet }}" "${{ matrix.vcpkg_inst }}" \
+            dwarfs-rs/dwarfs-t "${{ matrix.triplet }}" \
             || echo "baseline miss — ports build normally"
 
       - name: Cache the cargo target dir

@@ -79,16 +79,10 @@ jobs:
             target: aarch64-apple-darwin
             platform: macos-arm64
             triplet: arm64-osx-static
-            vcpkg_inst: /Users/runner/vcpkg-inst
           - os: macos-15-intel
             target: x86_64-apple-darwin
             platform: macos-x86_64
             triplet: x64-osx-static
-            vcpkg_inst: /Users/runner/vcpkg-inst
-    env:
-      # The baseline artifact's canonical root — vcpkg trees embed
-      # absolute paths, so consumers must not relocate.
-      DWARFS_RS_VCPKG_INSTALLED_DIR: ${{ matrix.vcpkg_inst }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -104,9 +98,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Never fails the leg: a miss means the ports build normally.
+        # The script owns the canonical root and exports
+        # DWARFS_RS_VCPKG_INSTALLED_DIR into GITHUB_ENV.
         run: |
           bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
-            dwarfs-rs/dwarfs-t "${{ matrix.triplet }}" "${{ matrix.vcpkg_inst }}" \
+            dwarfs-rs/dwarfs-t "${{ matrix.triplet }}" \
             || echo "baseline miss — ports build normally"
 
       - uses: dtolnay/rust-toolchain@1.94.1
@@ -260,15 +256,11 @@ jobs:
             platform: linux-gnu-x86_64
             triplet: x64-linux-static
             dyn_triplet: x64-linux-dynamic
-            vcpkg_inst: /home/runner/vcpkg-inst
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             platform: linux-gnu-arm64
             triplet: arm64-linux-static
             dyn_triplet: arm64-linux-dynamic
-            vcpkg_inst: /home/runner/vcpkg-inst
-    env:
-      DWARFS_RS_VCPKG_INSTALLED_DIR: ${{ matrix.vcpkg_inst }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -284,9 +276,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Never fails the leg: a miss means the ports build normally.
+        # The script owns the canonical root and exports
+        # DWARFS_RS_VCPKG_INSTALLED_DIR into GITHUB_ENV.
         run: |
           bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
-            dwarfs-rs/dwarfs-t "${{ matrix.triplet }}" "${{ matrix.vcpkg_inst }}" \
+            dwarfs-rs/dwarfs-t "${{ matrix.triplet }}" \
             || echo "baseline miss — ports build normally"
 
       - uses: dtolnay/rust-toolchain@1.94.1
@@ -642,11 +636,6 @@ jobs:
     needs: prepare
     env:
       CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: gcc.exe
-      # Short installed-tree root (MAX_PATH: boost's deepest headers
-      # overran 260 inside the cargo build dir); also the canonical root
-      # the vcpkg-baseline artifact restores into. Job-level: the stage
-      # step's closure lookup reads it too.
-      DWARFS_RS_VCPKG_INSTALLED_DIR: C:/vcpkg-inst
     steps:
       - uses: actions/checkout@v4
         with:
@@ -663,9 +652,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         # Never fails the leg: a miss means the ports build normally.
+        # The script owns the canonical root (C:/vcpkg-inst — also the
+        # MAX_PATH dodge) and exports DWARFS_RS_VCPKG_INSTALLED_DIR into
+        # GITHUB_ENV (the stage step's closure lookup reads it).
         run: |
           bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
-            dwarfs-rs/dwarfs-t x64-mingw-static C:/vcpkg-inst \
+            dwarfs-rs/dwarfs-t x64-mingw-static \
             || echo "baseline miss — ports build normally"
 
       - uses: dtolnay/rust-toolchain@1.94.1
