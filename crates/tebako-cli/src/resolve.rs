@@ -1109,11 +1109,11 @@ mod tests {
     fn sha256sums_bootstrap_entries() {
         let r = Resolver::new(Flavor::Bootstrap);
         let body = "aaa111  tebako-bootstrap-0.2.0-macos-arm64\n\
-                    bbb222  tebako-bootstrap-0.2.0-windows-x86_64.exe\n";
+                    bbb222  tebako-bootstrap-0.2.0-windows-ucrt64.exe\n";
         let entries = r.parse_sha256sums(body, "0.2.0");
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].platform.as_deref(), Some("macos-arm64"));
-        assert_eq!(entries[1].platform.as_deref(), Some("windows-x86_64"));
+        assert_eq!(entries[1].platform.as_deref(), Some("windows-ucrt64"));
     }
 
     #[test]

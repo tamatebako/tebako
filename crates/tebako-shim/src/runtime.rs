@@ -30,33 +30,11 @@ const DEFAULT_RELEASES_BASE: &str =
 const LOCK_TIMEOUT_MS: u64 = 120_000;
 const LOCK_POLL_MS: u64 = 200;
 
-/// Runtime-package platform string; must match tebako-runtime-ruby's
-/// asset naming (mirrors the bootstrap's platform_string).
+/// Runtime-package platform string for asset-name construction.
+/// `tpkg::Platform` owns the vocabulary and host detection (spec 03 §3);
+/// this is the `&'static str` convenience over it.
 pub fn platform_string() -> &'static str {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    return "macos-arm64";
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    return "macos-x86_64";
-    #[cfg(all(target_os = "linux", target_env = "gnu", target_arch = "x86_64"))]
-    return "linux-gnu-x86_64";
-    #[cfg(all(target_os = "linux", target_env = "gnu", target_arch = "aarch64"))]
-    return "linux-gnu-arm64";
-    #[cfg(all(target_os = "linux", target_env = "musl", target_arch = "x86_64"))]
-    return "linux-musl-x86_64";
-    #[cfg(all(target_os = "linux", target_env = "musl", target_arch = "aarch64"))]
-    return "linux-musl-arm64";
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    return "windows-x86_64";
-    #[cfg(not(any(
-        all(target_os = "macos", target_arch = "aarch64"),
-        all(target_os = "macos", target_arch = "x86_64"),
-        all(target_os = "linux", target_env = "gnu", target_arch = "x86_64"),
-        all(target_os = "linux", target_env = "gnu", target_arch = "aarch64"),
-        all(target_os = "linux", target_env = "musl", target_arch = "x86_64"),
-        all(target_os = "linux", target_env = "musl", target_arch = "aarch64"),
-        all(target_os = "windows", target_arch = "x86_64")
-    )))]
-    compile_error!("unsupported platform");
+    tpkg::Platform::host().release_asset_name()
 }
 
 pub fn exe_suffix() -> &'static str {

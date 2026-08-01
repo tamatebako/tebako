@@ -18,7 +18,9 @@
 # signatures slot in later (item 29 phase 2) by signing SHA256SUMS and
 # uploading .asc files — no restructuring.
 #
-# Windows (ucrt64) is a disabled leg, documented at the bottom.
+# Windows (ucrt64) ships from the `windows` job (the five binaries,
+# platform id windows-ucrt64 per the spec 03 §3 axis) and the
+# `windows-link-unit` job (the factory's staticlib input).
 #
 # Crypto: rnp-rs 0.1.8 prebuilt is self-contained — librnp + json-c +
 # MINIMIZED botan + libbz2 static archives ship inside the crate; no
@@ -435,7 +437,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
-    needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit]
+    needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit, windows]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -474,7 +476,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          EXPECTED=$(( 5 * 6 + 7 + 2 ))   # 5 tools x 6 platforms + 7 link-unit tarballs (incl. windows-gnu) + SHA256SUMS + manifest.json
+          EXPECTED=$(( 5 * 7 + 7 + 2 ))   # 5 tools x 7 platforms (incl. windows-ucrt64) + 7 link-unit tarballs + SHA256SUMS + manifest.json
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort
@@ -591,16 +593,121 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ==========================================================================
-  # Windows (ucrt64) — the FULL leg (the five binaries). Still blocked on:
-  #  - tebako-bootstrap: the Windows exec/lock ports are not implemented
-  #    (M6 v1 ships macOS/Linux).
-  #  - tebako-cli's runtime-spawn/scrub paths are POSIX-oriented.
-  # When those land, enable this leg on windows-latest (ucrt64 target).
+  # Windows (ucrt64) — the five binaries. Provisioning mirrors the ci.yml
+  # windows-gnu legs (setup-msys2 ucrt64 + the closed PATH, the make
+  # toolshim and BOTAN_CONFIGURE_CC for tebako-signer's vendored Botan);
+  # all build/stage logic lives in ci/windows-gnu-release.sh. The platform
+  # id is windows-ucrt64 per the spec 03 §3 axis (tpkg::Platform owns it).
   # ==========================================================================
   windows:
-    name: Windows binaries (ucrt64) — DISABLED (see blockers above)
-    if: false
+    name: Windows binaries (ucrt64)
+    permissions:
+      contents: write
     runs-on: windows-latest
     needs: prepare
     steps:
-      - run: echo "disabled — see the blockers documented in the job header"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tebako-rs
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - name: Restore the vcpkg baseline (dwarfs-t is the single writer)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Never fails the leg: a miss means the ports build normally.
+        # The script owns the canonical root (C:/vcpkg-inst — also the
+        # MAX_PATH dodge) and exports DWARFS_RS_VCPKG_INSTALLED_DIR.
+        run: |
+          bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
+            dwarfs-rs/dwarfs-t x64-mingw-static \
+            || echo "baseline miss — ports build normally"
+
+      # cmake + ninja come from the ucrt64 toolchain (the ci.yml
+      # windows-gnu legs' proven shape): the script's closed PATH excludes
+      # every other bin dir, so get-cmake's paths would be dead.
+      - name: Set up MSys2 (ucrt64 toolchain + cmake/ninja)
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: ucrt64
+          path-type: minimal
+          install: mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-make
+
+      - uses: dtolnay/rust-toolchain@e43eeffd51aefeea929f4ea14e09fd077153e788 # 1.94.1
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      - name: Cache vcpkg package archives
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**') }}
+          restore-keys: |
+            vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build + stage the five binaries (release)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: windows-ucrt64
+        run: bash ci/windows-gnu-release.sh
+
+      - name: Dump vcpkg build logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          for f in .vcpkg-root/buildtrees/*/build-x64-mingw-static-*-err.log .vcpkg-root/buildtrees/*/install-x64-mingw-static-*-err.log; do
+            [ -f "$f" ] || continue
+            echo "=== $f ==="
+            tail -200 "$f"
+          done
+
+      - name: Upload fragment artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frag-windows-ucrt64
+          path: tebako-rs/fragments/frag-windows-ucrt64
+
+      - name: Upload tebako-bootstrap
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-bootstrap-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tfs
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tfs-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tebako-pkg
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-pkg-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tebako
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tebako-shim
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

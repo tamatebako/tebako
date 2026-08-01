@@ -258,25 +258,9 @@ fn join_path(base: &str, rel: &str) -> String {
 }
 
 /// Platform id of the host, as used by tebako-runtime-ruby package names
-/// (OptionsManager#host_platform).
+/// (OptionsManager#host_platform). `tpkg::Platform` owns the vocabulary
+/// and host detection (spec 03 §3); unsupported targets fail to compile
+/// there, so this cannot produce an off-axis id.
 pub fn host_platform() -> Result<String, TebakoError> {
-    let os = if cfg!(target_os = "windows") {
-        "windows"
-    } else if cfg!(target_os = "macos") {
-        "macos"
-    } else if cfg!(all(target_os = "linux", target_env = "musl")) {
-        "linux-musl"
-    } else if cfg!(target_os = "linux") {
-        "linux-gnu"
-    } else {
-        return Err(packaging_error(112, Some(std::env::consts::OS)));
-    };
-    let arch = if cfg!(target_arch = "x86_64") {
-        "x86_64"
-    } else if cfg!(target_arch = "aarch64") {
-        "arm64"
-    } else {
-        return Err(packaging_error(112, Some(std::env::consts::ARCH)));
-    };
-    Ok(format!("{os}-{arch}"))
+    Ok(tpkg::Platform::host().release_asset_name().to_string())
 }

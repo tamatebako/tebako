@@ -12,12 +12,15 @@ mkdir -p out
 FRAG=fragments
 
 # ---- SHA256SUMS (sorted, "<sha>  <file>") ------------------------------
+# Windows platform ids carry the .exe suffix on the uploaded asset name
+# (the frag files themselves are suffix-free).
 : > out/SHA256SUMS
 for platform_dir in "$FRAG"/frag-*; do
   platform="${platform_dir##*/frag-}"
-  for tool in tebako-bootstrap tfs tebako-pkg tebako; do
+  exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
+  for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim; do
     sha=$(cat "$platform_dir/${tool}-${platform}.sha256")
-    echo "$sha  ${tool}-${VERSION}-${platform}" >> out/SHA256SUMS
+    echo "$sha  ${tool}-${VERSION}-${platform}${exe}" >> out/SHA256SUMS
   done
 done
 sort -k2 -o out/SHA256SUMS out/SHA256SUMS
@@ -27,20 +30,22 @@ sort -k2 -o out/SHA256SUMS out/SHA256SUMS
 #   "name": "tebako-rs",
 #   "version": "<VERSION>",
 #   "assets": [ {platform, file, sha256, size_bytes}, ... ],   # tebako-bootstrap
-#   "tools": { "tfs": [...], "tebako-pkg": [...], "tebako": [...] }
+#   "tools": { "tfs": [...], "tebako-pkg": [...], "tebako": [...], "tebako-shim": [...] }
 # }
 # The `assets` array is exactly the BootstrapManager's consumed shape, so
-# the gem/tebako-cli resolve the Rust bootstrap unchanged.
+# the gem/tebako-cli resolve the Rust bootstrap unchanged. Windows asset
+# names carry .exe (both here and in SHA256SUMS).
 jq_entries() {
   local tool="$1"
   for platform_dir in "$FRAG"/frag-*; do
     platform="${platform_dir##*/frag-}"
     [ -f "$platform_dir/${tool}-${platform}.sha256" ] || continue
+    exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
     sha=$(cat "$platform_dir/${tool}-${platform}.sha256")
     size=$(cat "$platform_dir/${tool}-${platform}.size")
     jq -cn \
       --arg platform "$platform" \
-      --arg file "${tool}-${VERSION}-${platform}" \
+      --arg file "${tool}-${VERSION}-${platform}${exe}" \
       --arg sha256 "$sha" \
       --argjson size_bytes "$size" \
       '{platform: $platform, file: $file, sha256: $sha256, size_bytes: $size_bytes}'
@@ -51,6 +56,7 @@ bootstrap_json=$(jq_entries tebako-bootstrap | jq -s 'sort_by(.platform)')
 tfs_json=$(jq_entries tfs | jq -s 'sort_by(.platform)')
 pkg_json=$(jq_entries tebako-pkg | jq -s 'sort_by(.platform)')
 cli_json=$(jq_entries tebako | jq -s 'sort_by(.platform)')
+shim_json=$(jq_entries tebako-shim | jq -s 'sort_by(.platform)')
 
 jq -n \
   --arg version "$VERSION" \
@@ -58,6 +64,7 @@ jq -n \
   --argjson tfs "$tfs_json" \
   --argjson pkg "$pkg_json" \
   --argjson cli "$cli_json" \
+  --argjson shim "$shim_json" \
   '{
     name: "tebako-rs",
     version: $version,
@@ -65,7 +72,8 @@ jq -n \
     tools: {
       "tfs": $tfs,
       "tebako-pkg": $pkg,
-      "tebako": $cli
+      "tebako": $cli,
+      "tebako-shim": $shim
     }
   }' > out/manifest.json
 
@@ -83,7 +91,7 @@ cat out/manifest.json
   echo "|---|---|---|"
   for platform_dir in $(ls -d "$FRAG"/frag-* | sort); do
     platform="${platform_dir##*/frag-}"
-    for tool in tebako-bootstrap tfs tebako-pkg tebako; do
+    for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim; do
       size=$(cat "$platform_dir/${tool}-${platform}.size")
       echo "| $platform | $tool | $size |"
     done

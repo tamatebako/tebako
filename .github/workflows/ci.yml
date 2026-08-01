@@ -350,15 +350,16 @@ jobs:
         shell: bash
         run: bash ci/windows-gnu-shim.sh
 
-  # tebako-cli on the same target (TODO.prepublish/03): the full stack —
-  # tfs vendored-dwarfs (dwarfs-t-sys's CMake/vcpkg build against the
+  # The full-stack product crates on the same target (TODO.prepublish/03):
+  # tebako-cli, tfs-cli and tebako-pkg — tfs vendored-dwarfs (dwarfs-t-sys's
+  # CMake/vcpkg build against the
   # x64-mingw-static baseline, the dwarfs-rs leg's proven setup) and
   # tebako-signer's vendored rnp/Botan (gcc-steered in the script) —
   # then the serialized test run. The vcpkg baseline restore/archive
   # cache mirrors the release link-unit leg; all build/test logic lives
   # in ci/windows-gnu-cli.sh.
   test-windows-gnu-cli:
-    name: test (windows-latest, x86_64-pc-windows-gnu, tebako-cli)
+    name: test (windows-latest, x86_64-pc-windows-gnu, tebako-cli + tfs-cli + tebako-pkg)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

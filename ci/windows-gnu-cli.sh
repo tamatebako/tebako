@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# ci/windows-gnu-cli.sh — tebako-cli on windows-gnu (ucrt64), end to end:
-# the full dependency-stack build (tfs vendored-dwarfs via dwarfs-t-sys's
+# ci/windows-gnu-cli.sh — the full-stack product crates on windows-gnu
+# (ucrt64), end to end: tebako-cli, tfs-cli and tebako-pkg — the full
+# dependency-stack build (tfs vendored-dwarfs via dwarfs-t-sys's
 # CMake/vcpkg build against the x64-mingw-static baseline, tebako-signer's
 # vendored rnp/Botan), DLL-import forensics, then the serialized test run.
 #
@@ -57,8 +58,8 @@ TARGET=x86_64-pc-windows-gnu
 SERIAL="--test-threads=1"
 
 # --- 1. build + test-compile ------------------------------------------------
-cargo build -p tebako-cli --target "$TARGET"
-cargo test -p tebako-cli --target "$TARGET" --no-run
+cargo build -p tebako-cli -p tfs-cli -p tebako-pkg --target "$TARGET"
+cargo test -p tebako-cli -p tfs-cli -p tebako-pkg --target "$TARGET" --no-run
 
 # --- 2. DLL-import forensics ------------------------------------------------
 # STATUS_ENTRYPOINT_NOT_FOUND fails the process BEFORE main, so the
@@ -74,4 +75,4 @@ for exe in target/"$TARGET"/debug/deps/*.exe; do
 done
 
 # --- 3. test (serialized) ---------------------------------------------------
-cargo test -p tebako-cli --target "$TARGET" -- "$SERIAL" --nocapture
+cargo test -p tebako-cli -p tfs-cli -p tebako-pkg --target "$TARGET" -- "$SERIAL" --nocapture

@@ -160,6 +160,36 @@ impl Platform {
     pub fn is_reserved(self) -> bool {
         self == Platform::Aarch64WindowsUcrt
     }
+
+    /// The Platform of the compile target — the single owner of host
+    /// detection. Every "what platform am I" question (bootstrap, shim,
+    /// cli) delegates here; unsupported targets fail to compile.
+    pub fn host() -> Platform {
+        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
+        return Platform::Aarch64Macos;
+        #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
+        return Platform::X86_64Macos;
+        #[cfg(all(target_os = "linux", target_env = "gnu", target_arch = "x86_64"))]
+        return Platform::X86_64LinuxGnu;
+        #[cfg(all(target_os = "linux", target_env = "gnu", target_arch = "aarch64"))]
+        return Platform::Aarch64LinuxGnu;
+        #[cfg(all(target_os = "linux", target_env = "musl", target_arch = "x86_64"))]
+        return Platform::X86_64LinuxMusl;
+        #[cfg(all(target_os = "linux", target_env = "musl", target_arch = "aarch64"))]
+        return Platform::Aarch64LinuxMusl;
+        #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+        return Platform::X86_64WindowsUcrt;
+        #[cfg(not(any(
+            all(target_os = "macos", target_arch = "aarch64"),
+            all(target_os = "macos", target_arch = "x86_64"),
+            all(target_os = "linux", target_env = "gnu", target_arch = "x86_64"),
+            all(target_os = "linux", target_env = "gnu", target_arch = "aarch64"),
+            all(target_os = "linux", target_env = "musl", target_arch = "x86_64"),
+            all(target_os = "linux", target_env = "musl", target_arch = "aarch64"),
+            all(target_os = "windows", target_arch = "x86_64")
+        )))]
+        compile_error!("unsupported platform (outside the spec 03 §3 axis)");
+    }
 }
 
 impl fmt::Display for Platform {
@@ -1223,6 +1253,13 @@ mod tests {
     fn platform_reserved() {
         assert!(Platform::Aarch64WindowsUcrt.is_reserved());
         assert!(!Platform::X86_64WindowsUcrt.is_reserved());
+    }
+
+    #[test]
+    fn platform_host_is_on_the_axis() {
+        let h = Platform::host();
+        assert!(Platform::ALL.contains(&h));
+        assert!(!h.is_reserved());
     }
 
     #[test]
