@@ -3,8 +3,9 @@
 # platform, with the size-gate table, SHA256SUMS and manifest.json.
 #
 # Shape: parsanol-rs's release-binary.yml — prepare (get_release →
-# upload_url) → native runners per OS → actions/upload-release-asset per
-# artifact — plus our additions: the vendored native deps via vcpkg
+# upload_url) → native runners per OS → `gh release upload` per artifact
+# (the archived actions/upload-release-asset was retired 2026-08-01) —
+# plus our additions: the vendored native deps via vcpkg
 # (baseline pin + archive cache, mirrored from ci.yml), the musl legs in
 # Alpine containers (docker run from the host; the proven native-musl
 # path — see ci/musl-build.sh; node actions cannot run on musl), the
