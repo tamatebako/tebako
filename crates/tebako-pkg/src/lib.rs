@@ -470,6 +470,27 @@ fn require_manifest(binary: &Path) -> Result<Manifest, String> {
     }
 }
 
+// ---------------------------------------------------------------------
+// the spec-18 contract gate (C6, exit 77)
+// ---------------------------------------------------------------------
+
+/// The spec-18 C6 contract check for the verbs that open packages
+/// strictly (`validate`, `info --verify`): `Ok(None)` when the file is
+/// not a contract question here — no trailer, or a structurally broken
+/// one (the spec-15 verify paths own those verdicts with their own
+/// codes) — and `Ok(Some(_))` the named refusal to surface with its exit
+/// code (77). The era-1 ("no block") and era-mismatch paths are distinct
+/// variants of the typed [`tpkg::ContractError`]; the loader maps every
+/// one of them to 77.
+pub fn check_contract(binary: &Path) -> Result<Option<tpkg::ContractError>, String> {
+    let mut f =
+        fs::File::open(binary).map_err(|_| format!("{}: cannot read file", binary.display()))?;
+    match tpkg::read_from(&mut f) {
+        Ok(m) => Ok(m.verify_contract().err()),
+        Err(_) => Ok(None),
+    }
+}
+
 fn slots_from_manifest(binary: &Path, m: &Manifest) -> Vec<SlotSource> {
     m.slots
         .iter()
@@ -1146,12 +1167,13 @@ fn signature_status(archive: &Path, m: &Manifest) -> String {
 /// type-2 extension block rendered when present, an explicit "none" line
 /// otherwise, an INVALID notice (never a hard failure — info is read-only
 /// and lenient; `--verify`-class strictness is a separate mode) when the
-/// block does not parse.
+/// block does not parse. The spec-18 contract card (era / pressed_by /
+/// reader_era) rides the section when the block exists.
 fn package_manifest_section(m: &Manifest) -> String {
     let Some(block) = m.ext_block(tpkg::TPKG_EXT_TYPE_PACKAGE_MANIFEST) else {
         return "Package manifest: none (v1 package)\n".to_string();
     };
-    match m.package_manifest() {
+    let mut out = match m.package_manifest() {
         Ok(Some(pm)) => {
             let mut out = format!(
                 "Package manifest: schema v{} (ext block type 2, {} bytes)\n",
@@ -1192,7 +1214,18 @@ fn package_manifest_section(m: &Manifest) -> String {
             "Package manifest: present ({} bytes) but INVALID: {e}\n",
             block.payload.len()
         ),
+    };
+    // The spec-18 C6 contract card (additive display — info is lenient;
+    // the strict gate is `validate` / `info --verify`).
+    match m.package_contract() {
+        Ok(Some(c)) => out.push_str(&format!(
+            "  contract: era {}, pressed_by {}, reader_era {}\n",
+            c.contract_era, c.pressed_by, c.reader_era
+        )),
+        Ok(None) => out.push_str("  contract: none (pre-era package — spec 18 C6)\n"),
+        Err(e) => out.push_str(&format!("  contract: INVALID: {e}\n")),
     }
+    out
 }
 
 /// Dump a three-part package trailer (exact C++ `cmd_info` tpkg output),

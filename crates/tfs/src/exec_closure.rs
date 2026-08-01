@@ -278,7 +278,7 @@ fn parse_elf(bytes: &[u8]) -> Option<ImageDeps> {
             )
         } else {
             (
-                u32e(bytes.get(base..base + 4)?)? as u32 as i32 as i64,
+                u32e(bytes.get(base..base + 4)?)? as i32 as i64,
                 u32e(bytes.get(base + 4..base + 8)?)? as u64,
             )
         };

@@ -32,6 +32,7 @@
 pub mod driver;
 pub mod ffi;
 pub mod handoff;
+pub mod layout;
 
 pub use driver::{boot, BootOutcome, DriverError, Env, ProcessEnv};
 pub use handoff::{Handoff, ImageSource, ImageSpec, SlotRef};
@@ -48,3 +49,6 @@ pub(crate) const EX_TEBAKO_MANIFEST: i32 = 65;
 pub(crate) const EX_TEBAKO_UNAVAILABLE: i32 = 69;
 pub(crate) const EX_TEBAKO_JAIL: i32 = 73;
 pub(crate) const EX_TEBAKO_IO: i32 = 74;
+// spec 18 §7: the env-image layout check (C3) — the driver's own code,
+// the 65–76 loader allocation untouched.
+pub(crate) const EX_TEBAKO_LAYOUT: i32 = 78;

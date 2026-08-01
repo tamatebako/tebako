@@ -20,6 +20,9 @@ crate-type = ["staticlib", "rlib"]
 tebako-log = { version = "0.1.0", path = "../tebako-log" }
 # Trailer probing for `<self|package>:<slot>` resolution (spec 02).
 tpkg = { version = "0.1.0", path = "../tpkg" }
+# The env-image layout declaration (spec 18 C3) is authored YAML.
+serde = { version = "1", features = ["derive"] }
+serde_yml = "0.0.12"
 libc = "0.2"
 
 # The mounts land in the same process-global context the C ABI serves —

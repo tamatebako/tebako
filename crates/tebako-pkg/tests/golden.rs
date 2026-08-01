@@ -195,7 +195,11 @@ fn golden_bundle_info_unbundle_reassemble() {
     // The one sanctioned invariant-8 deviation, applied in place: the
     // oracle's package now carries the v2 default mount, so every
     // downstream operation/compare asserts full byte parity directly.
-    std::fs::write(&pkg_cpp, normalize_oracle(&std::fs::read(&pkg_cpp).unwrap())).unwrap();
+    std::fs::write(
+        &pkg_cpp,
+        normalize_oracle(&std::fs::read(&pkg_cpp).unwrap()),
+    )
+    .unwrap();
 
     // info on the SAME package file → identical output modulo the rust-only
     // Signature line (here: unsigned v1 oracle package, reported as legacy).
@@ -317,7 +321,11 @@ fn golden_insert_remove_set_runtime() {
     // The one sanctioned invariant-8 deviation, applied in place: the
     // oracle's package now carries the v2 default mount, so every
     // downstream operation/compare asserts full byte parity directly.
-    std::fs::write(&pkg_cpp, normalize_oracle(&std::fs::read(&pkg_cpp).unwrap())).unwrap();
+    std::fs::write(
+        &pkg_cpp,
+        normalize_oracle(&std::fs::read(&pkg_cpp).unwrap()),
+    )
+    .unwrap();
     assert_eq!(
         std::fs::read(&pkg_cpp).unwrap(),
         std::fs::read(&pkg_rs).unwrap(),

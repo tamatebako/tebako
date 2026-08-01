@@ -18,7 +18,8 @@
 //! ```
 //!
 //! Exit codes: 0 success, 1 any error; `info --verify` and `validate`
-//! exit with the spec-15 §5 codes (0/65/70/71/72). Errors print
+//! exit with the spec-15 §5 codes (0/65/70/71/72) plus 77 for the
+//! spec-18 C6 contract gate (era-1 or era-mismatch refusal). Errors print
 //! `Error: <cmd> failed: <message>` to stderr (matching the C++ tool).
 //! The flag-less `info` output keeps byte-parity with the C++ oracle.
 
@@ -192,6 +193,17 @@ fn cmd_info(rest: &[String]) -> ExitCode {
         Ok(o) => o,
         Err(e) => return fail("info", &e),
     };
+    // The spec-18 C6 contract gate rides the strict path (exit 77).
+    if opts.verify {
+        match tebako_pkg::check_contract(binary) {
+            Ok(Some(e)) => {
+                eprintln!("Error: {e}");
+                return ExitCode::from(e.exit_code() as u8);
+            }
+            Ok(None) => {}
+            Err(e) => return fail("info", &e),
+        }
+    }
     if opts.any_rich() {
         return match info_rich(binary, &opts) {
             Ok((text, code)) => {
@@ -256,6 +268,16 @@ fn cmd_validate(rest: &[String]) -> ExitCode {
     };
     if let Err(e) = a.need_positional(1, "tebako-pkg validate [--require-signed] <binary>") {
         return fail("validate", &e);
+    }
+    // The spec-18 C6 contract gate (fail-closed, exit 77): era-1 and
+    // era-mismatch refusals are the typed ContractError's distinct paths.
+    match tebako_pkg::check_contract(Path::new(&a.positional[0])) {
+        Ok(Some(e)) => {
+            eprintln!("Error: {e}");
+            return ExitCode::from(e.exit_code() as u8);
+        }
+        Ok(None) => {}
+        Err(e) => return fail("validate", &e),
     }
     match validate(Path::new(&a.positional[0]), a.require_signed) {
         Ok((text, code)) => {
@@ -454,7 +476,7 @@ fn print_help() {
     println!("  info          Dump a three-part package trailer (or archive summary);");
     println!("                --full container report, --slot N payload, --json document,");
     println!("                --verify strict checks, --depth 0|1|2 (spec 15)");
-    println!("  validate      Strict package verification (exit 0/65/70/71/72)");
+    println!("  validate      Strict package verification (exit 0/65/70/71/72/77)");
     println!("  bundle        Assemble a three-part package (bootstrap + images + trailer)");
     println!("  unbundle      Decompose a three-part package into a directory");
     println!("  reassemble    Rebuild a binary from an unbundled directory");
@@ -470,8 +492,11 @@ fn print_help() {
     println!("operations preserve the input's signing state. Verification of signed");
     println!("packages at run time is always strict.");
     println!("`bundle --package-manifest <file.yaml>` embeds the L2 package manifest");
-    println!("(ext block type 2, spec 02 §5b / spec 03 §6); rewrites preserve extension");
-    println!("blocks, and `info --full` prints the package section when present.");
+    println!("(ext block type 2, spec 02 §5b / spec 03 §6) — the press adds the spec-18");
+    println!("contract declaration (contract_era/pressed_by/reader_era) to it; rewrites");
+    println!("preserve extension blocks, and `info --full` prints the package section");
+    println!("when present. `validate` / `info --verify` enforce the contract gate");
+    println!("(exit 77: pre-era or era-mismatch refusal, spec 18 C6).");
     println!("Options vary per command; the default mountpoint for image slot 0 is");
     println!("{} (slot N: {}).", default_mount(0), default_mount(1));
 }

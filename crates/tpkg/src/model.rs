@@ -206,7 +206,9 @@ impl Manifest {
             // Type 1 is reserved for the v2 signing extension — it keeps
             // its historical tail position and is never a block (spec 02
             // §5b); fail closed so no block collides with a signature.
-            if block.block_type == TPKG_EXT_TYPE_V2_SIGNING {
+            // The check is on the base type: the critical flag
+            // (TPKG_EXT_FLAG_CRITICAL) never lifts the reservation.
+            if block.base_type() == TPKG_EXT_TYPE_V2_SIGNING {
                 return Err(TpkgError::Invalid);
             }
             if block.payload.len() > u32::MAX as usize {

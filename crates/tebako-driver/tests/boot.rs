@@ -104,14 +104,26 @@ fn build_zip(path: &Path, dirs: &[&str], files: &[(&str, &[u8])]) {
     w.finish().unwrap();
 }
 
-/// The env-image fixture: the runtime's files.
+/// A well-formed layout declaration for the tests' runtime root
+/// (spec 18 C3 — `docs/spec/schemas/layout.yaml`).
+const GOOD_LAYOUT: &str = "schema_version: 1\nera: 2\nimage_layout: 1\nmount_root: /__tfs__\ninterpreter_api_version: \"3.4\"\n";
+
+/// The env-image fixture: the runtime's files + the spec-18 layout
+/// declaration (an era-2 image — the layout check gates every boot).
 fn write_env_image(dir: &Path) -> PathBuf {
+    write_env_image_with_layout(dir, Some(GOOD_LAYOUT))
+}
+
+/// The env-image fixture with a custom (or absent) layout declaration —
+/// the S17–S19 refusal fixtures.
+fn write_env_image_with_layout(dir: &Path, layout: Option<&str>) -> PathBuf {
     let p = dir.join("runtime.tfs");
-    build_zip(
-        &p,
-        &["lib/", "lib/ruby/"],
-        &[("lib/ruby/rubygems.rb", b"# rubygems core\n".as_slice())],
-    );
+    let mut files: Vec<(&str, &[u8])> =
+        vec![("lib/ruby/rubygems.rb", b"# rubygems core\n".as_slice())];
+    if let Some(text) = layout {
+        files.push(("lib/tebako/layout.yaml", text.as_bytes()));
+    }
+    build_zip(&p, &["lib/", "lib/ruby/", "lib/tebako/"], &files);
     p
 }
 
@@ -563,4 +575,141 @@ fn malformed_jail_is_named_73_and_rolls_back() {
     assert_eq!(err.code, 73, "{}", err.message);
     assert!(!context().read().unwrap().is_mounted());
     let _ = g;
+}
+
+// ---------------------------------------------------------------------
+// the env-image layout check (spec 18 C3 / S17–S19, exit 78)
+// ---------------------------------------------------------------------
+
+/// Boot the plain path against an env image carrying `layout`
+/// (`Some(yaml)` / `None` for the absent case).
+fn boot_with_layout(
+    g: &Guard,
+    layout: Option<&str>,
+) -> Result<tebako_driver::BootOutcome, tebako_driver::DriverError> {
+    let env_image = write_env_image_with_layout(g.path(), layout);
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env)
+}
+
+#[test]
+fn layout_absent_is_an_era1_refusal_naming_the_image() {
+    // S17: no /lib/tebako/layout.yaml — era 1, never assumed.
+    let g = guard("layout-absent");
+    let err = boot_with_layout(&g, None).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(
+        err.message.contains("pre-era image (era 1)"),
+        "{}",
+        err.message
+    );
+    assert!(
+        err.message.contains("runtime.tfs"),
+        "the image is named: {}",
+        err.message
+    );
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "a refused boot leaves nothing mounted"
+    );
+}
+
+#[test]
+fn layout_newer_major_is_an_upgrade_refusal() {
+    // S18: a newer schema MAJOR — upgrade, both versions named.
+    let g = guard("layout-major");
+    let yaml = GOOD_LAYOUT.replace("schema_version: 1", "schema_version: 2");
+    let err = boot_with_layout(&g, Some(&yaml)).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("schema 2"), "{}", err.message);
+    assert!(
+        err.message.contains("upgrade your tebako"),
+        "{}",
+        err.message
+    );
+    assert!(!context().read().unwrap().is_mounted());
+}
+
+#[test]
+fn layout_newer_era_and_generation_are_upgrade_refusals() {
+    let g = guard("layout-newer");
+    // era newer than the driver speaks
+    let yaml = GOOD_LAYOUT.replace("era: 2", "era: 3");
+    let err = boot_with_layout(&g, Some(&yaml)).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("era 3"), "{}", err.message);
+    assert!(err.message.contains("speaks era 2"), "{}", err.message);
+
+    // image_layout generation newer than the driver speaks (same guard —
+    // one LOCK acquisition per test)
+    let yaml = GOOD_LAYOUT.replace("image_layout: 1", "image_layout: 2");
+    let err = boot_with_layout(&g, Some(&yaml)).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("generation 2"), "{}", err.message);
+    assert!(
+        err.message.contains("upgrade your tebako"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn layout_declared_era1_is_refused_like_the_undeclared() {
+    let g = guard("layout-era1");
+    let yaml = GOOD_LAYOUT.replace("era: 2", "era: 1");
+    let err = boot_with_layout(&g, Some(&yaml)).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("pre-era"), "{}", err.message);
+}
+
+#[test]
+fn layout_mount_root_mismatch_is_78_with_both_values() {
+    // S19: the image was built for another root — a mismatched pair,
+    // never a ruby LoadError.
+    let g = guard("layout-root");
+    let yaml = GOOD_LAYOUT.replace("/__tfs__", "/__other__");
+    let err = boot_with_layout(&g, Some(&yaml)).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("'/__other__'"), "{}", err.message);
+    assert!(err.message.contains("'/__tfs__'"), "{}", err.message);
+    assert!(!context().read().unwrap().is_mounted());
+}
+
+#[test]
+fn layout_malformed_is_a_named_78() {
+    let g = guard("layout-malformed");
+    let err = boot_with_layout(&g, Some("schema_version: [1\n")).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("malformed"), "{}", err.message);
+}
+
+#[test]
+fn layout_check_gates_the_handoff_path_too() {
+    // The handoff boot (payload + entry) runs the same check before any
+    // payload mount or interpreter touch.
+    let g = guard("layout-handoff");
+    let env_image = write_env_image_with_layout(g.path(), None);
+    let payload = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("pre-era image"), "{}", err.message);
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the env image rolls back with the refusal"
+    );
 }

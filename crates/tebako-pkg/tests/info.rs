@@ -129,6 +129,20 @@ fn bootstrap(w: &TempDir) -> PathBuf {
     boot
 }
 
+/// A valid L2 package manifest (spec 03 §6), pressed into the packages of
+/// the verify-stage tests: the strict gate's contract stage (spec 18 C6,
+/// exit 77) refuses pre-era packages, so the stages these tests exercise
+/// (65/70/71/72/0) must press era-2 packages.
+const PACKAGE_MANIFEST_YAML: &str = "schema_version: 1\n\
+     package: {name: probe, version: 1.0.0, producer: {tool: tebako-pkg, tool_version: 0.1.0}, created: 2026-08-01T00:00:00Z}\n\
+     entries:\n  - {name: probe, slot: 0, entrypoint: probe, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n";
+
+fn package_manifest_file(w: &TempDir) -> PathBuf {
+    let f = w.0.join("package-manifest.yaml");
+    std::fs::write(&f, PACKAGE_MANIFEST_YAML).unwrap();
+    f
+}
+
 /// bundle (via the binary) and assert success.
 fn bundle(home: &Path, w: &TempDir, extra: &[&str], images: &[&Path], out: &Path) {
     let boot = bootstrap(w);
@@ -235,10 +249,7 @@ fn full_report_signed_lean_and_depths() {
     );
     assert!(out.contains("  trust: v2-signed, signer "), "{out}");
     assert!(out.contains(" — unverified\n"), "{out}");
-    assert!(
-        out.contains("format: dwarfs  mount: /__tfs__\n"),
-        "{out}"
-    );
+    assert!(out.contains("format: dwarfs  mount: /__tfs__\n"), "{out}");
     assert!(
         out.contains("format: squashfs  mount: /__tfs_1__\n"),
         "{out}"
@@ -296,7 +307,8 @@ fn full_report_runtime_legacy_role_slot() {
     let pkg = w.0.join("fat");
     // A fat package's runtime payload slot carries format_id 4 (the v1
     // legacy role wart) — built via the lib's bundle_exact (the binary's
-    // sniff never assigns 4).
+    // sniff never assigns 4). The package manifest makes it era-2 (the
+    // strict gate's contract stage below).
     tebako_pkg::bundle_exact(
         &boot,
         &[
@@ -312,7 +324,12 @@ fn full_report_runtime_legacy_role_slot() {
             },
         ],
         &pkg,
-        &tebako_pkg::PackageOptions::default(),
+        &tebako_pkg::PackageOptions {
+            package_manifest: Some(
+                tpkg::PackageManifest::from_yaml(PACKAGE_MANIFEST_YAML).unwrap(),
+            ),
+            ..Default::default()
+        },
     )
     .unwrap();
 
@@ -497,8 +514,15 @@ fn validate_signed_plain_slots_passes() {
     let z = w.0.join("z.zip");
     tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
     let sqfs = fixture("simple.sqfs");
+    let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
-    bundle(&home, &w, &["--sign"], &[&z, &sqfs], &pkg);
+    bundle(
+        &home,
+        &w,
+        &["--sign", "--package-manifest", pm.to_str().unwrap()],
+        &[&z, &sqfs],
+        &pkg,
+    );
 
     let (rc, out, err) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
     assert_eq!((rc, err.as_str()), (0, ""), "{out}");
@@ -551,8 +575,15 @@ fn validate_tampered_slot_is_70() {
     let home = test_home("p70");
     let z = w.0.join("z.zip");
     tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
-    bundle(&home, &w, &["--sign"], &[&z], &pkg);
+    bundle(
+        &home,
+        &w,
+        &["--sign", "--package-manifest", pm.to_str().unwrap()],
+        &[&z],
+        &pkg,
+    );
 
     // Flip a byte inside slot 0's image bytes (the trailer is untouched:
     // the signature still verifies; the digest does not).
@@ -577,8 +608,15 @@ fn validate_unsigned_require_signed_is_71() {
     let home = test_home("p71");
     let z = w.0.join("z.zip");
     tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
-    bundle(&home, &w, &[], &[&z], &pkg);
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&z],
+        &pkg,
+    );
 
     let (rc, out, _) = run(
         &["validate", "--require-signed", pkg.to_str().unwrap()],
@@ -608,8 +646,15 @@ fn validate_unknown_signer_is_72() {
     let home_a = test_home("p72a");
     let z = w.0.join("z.zip");
     tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
-    bundle(&home_a, &w, &["--sign"], &[&z], &pkg);
+    bundle(
+        &home_a,
+        &w,
+        &["--sign", "--package-manifest", pm.to_str().unwrap()],
+        &[&z],
+        &pkg,
+    );
 
     // A keyring that never saw the signer.
     let home_b = test_home("p72b");
@@ -645,10 +690,18 @@ fn validate_malformed_is_65() {
     assert_eq!(rc, 65, "{out}");
 
     // Schema-invalid slot manifest is 65 (unsigned: digests/signature
-    // skip, the manifest check decides).
+    // skip, the manifest check decides). The era-2 block lets it pass the
+    // contract stage to reach that check.
     let bad = mk_image(&w, "bad.tfs", Some("identity: [not: valid: yaml"));
+    let pm = package_manifest_file(&w);
     let pkg2 = w.0.join("pkg2");
-    bundle(&home, &w, &[], &[&bad], &pkg2);
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&bad],
+        &pkg2,
+    );
     let (rc, out, _) = run(&["validate", pkg2.to_str().unwrap()], &w.0, &home);
     assert_eq!(rc, 65, "{out}");
     assert!(out.contains("  slot[0] manifest: FAILED"), "{out}");
@@ -662,8 +715,15 @@ fn validate_digest_agreement_is_70() {
     // embedded in the image it describes cannot name that image's digest,
     // so the agreement check reports the disagreement as 70.
     let app = mk_image(&w, "app.tfs", Some(APP_MANIFEST));
+    let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
-    bundle(&home, &w, &[], &[&app], &pkg);
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
     assert_eq!(rc, 70, "{out}");

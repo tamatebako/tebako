@@ -1,0 +1,162 @@
+# =============================================================================
+# runtime-manifest.yaml — the runtime release card grammar (spec 18 §2.2, C2)
+#
+# The complete pre-download contract between the runtime factory
+# (tebako-runtime-ruby) and the loader family: the loader verifies era and
+# contract_version BEFORE any download, never after exec.
+#
+# Provenance: the era-1 instance of this grammar is the factory's
+# `manifest.json` release-index entry (spec 13 §2a — JSON, flat exe keys,
+# `ruby_version` for the interpreter). This schema formalizes that shape
+# as schema_version 1 PLUS the spec-18 contract fields (era, mount_root,
+# image_layout, built_from) — it is a declaration of what exists, not a
+# redesign. The YAML card is the era-2 form; the JSON index entry remains
+# the resolution mirror (no duplicated authority: the card is
+# authoritative, the index mirrors it).
+#
+# SSOT: this file owns the grammar in the product repo; the runtime
+# factory (tebako-runtime-ruby) FLOWS it into its release tooling and
+# ASSERTS parity in its CI (separate release chain — spec 00 §10).
+# =============================================================================
+
+schema: runtime-manifest
+schema_version: 1 # MAJOR — breaking changes only
+schema_minor: 0 # MINOR — additive changes only
+status: normative
+owner: tebako-runtime-ruby (the runtime factory); mirrored here as the cross-repo contract
+edge: C2 (runtime factory → loader; = C9 loader/shim → runtime release manifest)
+
+# The schema evolution law (spec 18 §3) — every schema in this registry
+# obeys it; per-schema specializations are noted under `notes:`.
+evolution:
+  major_minor: >-
+    schema_version is a single integer MAJOR; schema_minor an additive
+    counter. MAJOR breaks, MINOR adds.
+  unknown_fields: >-
+    Readers ignore unknown fields within their MAJOR — but never invent
+    semantics for them. A field you do not understand changes nothing you do.
+  unknown_major: >-
+    A named refusal naming the artifact, its schema + version, the consumer
+    and its max spoken version, and "upgrade". Exit code per spec 18 §7.
+  missing_schema_version: >-
+    Era 1 — a named refusal ("pre-era document; regenerate with a current
+    tool"), never a silent default.
+  type_changes: >-
+    MAJOR only — no silent coercion (string→list, int→string, kebab→snake).
+    Renames ride the deprecation window.
+  deprecation_window: >-
+    To rename/retype a field inside one MAJOR: writers emit BOTH old and
+    new for two consecutive MINOR versions (noted under `deprecated:` with
+    the window dates); readers prefer new and warn on old; after two MINORs
+    the old field is dropped in the next MINOR.
+  critical_flag: >-
+    Any container that skips unknown entries supports `critical: true` on
+    an entry: a reader that does not understand a critical entry refuses
+    with a named error instead of skipping it (spec 18 §3.7).
+  lists_stay_lists: >-
+    Ordered/multiplicity data is a list of entries carrying their identity
+    fields — never keyed maps.
+
+declaration:
+  where: "the runtime release (per (version × triplet): exe + env image + this card + SHA256SUMS)"
+  format: YAML (authored-manifest rule, invariant 6)
+
+grammar:
+  schema_version:
+    type: int
+    required: true
+    notes: this schema's MAJOR; missing = era 1 (pre-era release, S11)
+  era:
+    type: int
+    required: true
+    notes: contract era of the release; >= 2 once declared (spec 18 C2)
+  contract_version:
+    type: int
+    required: true
+    notes: >-
+      The handoff semantics version (spec 06 §6 / spec 17): 1 = spec 06,
+      2 = spec 17. Newer than the loader speaks → exit 75 (S12).
+  mount_root:
+    type: string
+    required: true
+    notes: >-
+      The exe's compiled-in runtime root (ruby: /__tfs__, A:/t on
+      windows). FLOWS from tamatebako/ruby's patch literals — the single
+      owner — through the source tarball's tebako-mount-root manifest;
+      nothing downstream re-authors it.
+  image_layout:
+    type: int
+    required: true
+    notes: >-
+      The env image's layout generation — the exe-side expectation of C3;
+      must agree with the in-image /lib/tebako/layout.yaml (layout.yaml
+      schema).
+  abi:
+    type: string
+    required: true
+    notes: >-
+      The runtime's own platform string (ruby: Gem::Platform.local.to_s,
+      e.g. arm64-darwin-23). Native-extension payloads constrain BOTH the
+      version line and this line (spec 05 §5); an abi with no host match
+      filters the entry, then a named error if nothing remains (S36).
+  interpreter:
+    type: map
+    required: true
+    fields:
+      engine:
+        type: string
+        required: true
+        notes: the interpreter name (ruby; python/julia later)
+      version:
+        type: string
+        required: true
+        notes: the interpreter version (the era-1 JSON key was ruby_version)
+      api_version:
+        type: string
+        required: true
+        notes: the interpreter API version line the env image carries (e.g. "3.4")
+  platform:
+    type: string
+    required: true
+    notes: the release-asset platform name (spec 03 §3's release-asset form)
+  tebako_version:
+    type: string
+    required: true
+    notes: the tebako product version the runtime was built with
+  exe:
+    type: map
+    required: true
+    fields:
+      filename: {type: string, required: true}
+      sha256: {type: string, required: true, notes: 64 lowercase hex}
+      size_bytes: {type: int, required: true}
+    notes: era-1 JSON writes these flat at the top level (filename/sha256/size_bytes)
+  image:
+    type: map
+    required: true
+    fields:
+      filename: {type: string, required: true}
+      sha256: {type: string, required: true, notes: 64 lowercase hex}
+      size_bytes: {type: int, required: true}
+  built_from:
+    type: map
+    required: true
+    fields:
+      source_release:
+        type: string
+        required: true
+        notes: the tamatebako/ruby source release tag (the patch set)
+      src_sha256:
+        type: string
+        required: true
+        notes: 64 lowercase hex — the patched-source tarball digest (C1's anchor)
+
+refusals:
+  - case: manifest missing the contract fields (era 1), incl. side-loaded local runtimes (S16)
+    behavior: refusal BEFORE any download — "runtime release is pre-era — rebuild with the current factory" (S11)
+  - case: contract_version newer than the loader speaks
+    behavior: exit 75, both numbers printed (S12)
+  - case: abi mismatch
+    behavior: resolution keeps searching, then a named error (C2)
+
+deprecated: [] # no field is in a deprecation window

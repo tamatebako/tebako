@@ -104,8 +104,10 @@ pub unsafe extern "C" fn tebako_is_running_miniruby() -> c_int {
 /// long as the process). `runtime_root` is the mount point the
 /// interpreter was compiled against.
 ///
-/// Returns 0 on success; a named loader exit code (65–74) on failure,
-/// with the named message on stderr and nothing left mounted.
+/// Returns 0 on success; a named loader exit code (65–74, 78) on failure,
+/// with the named message on stderr and nothing left mounted. 78 is the
+/// spec-18 C3 env-image layout refusal (the pair check runs post-mount,
+/// before any handoff).
 ///
 /// # Safety
 /// C ABI entry point: `argc`, `argv`, `*argv`, and `runtime_root` must

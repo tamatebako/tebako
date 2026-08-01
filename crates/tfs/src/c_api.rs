@@ -226,6 +226,9 @@ pub unsafe extern "C" fn tebako_fs_read(
 ///
 /// # Safety
 /// `buf` must be writable for `nbyte` bytes.
+// i64::from(off_t) is identity on LP64 but a real widening in the mingw
+// CRT (off_t = i32) — the allow is platform-lint noise, not dead code.
+#[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_pread(
     fd: libc::c_int,
@@ -252,6 +255,8 @@ pub unsafe extern "C" fn tebako_fs_pread(
 ///
 /// # Safety
 /// C ABI entry point.
+// i64::from(off_t): see tebako_fs_pread — platform-lint noise, not dead code.
+#[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_lseek(
     fd: libc::c_int,
@@ -898,6 +903,8 @@ pub unsafe extern "C" fn tebako_fs_telldir(dir: *mut c_void) -> libc::c_long {
 ///
 /// # Safety
 /// `dir` must be a handle from tebako_fs_opendir.
+// i64::from(c_long): see tebako_fs_pread — platform-lint noise, not dead code.
+#[allow(clippy::useless_conversion)]
 #[no_mangle]
 pub unsafe extern "C" fn tebako_fs_seekdir(dir: *mut c_void, pos: libc::c_long) {
     if dir.is_null() {

@@ -1,0 +1,246 @@
+# =============================================================================
+# payload-manifest.yaml — the L1 in-image payload manifest grammar
+# (spec 18 §2.2; spec 03 §1–§5 formalized)
+#
+# The self-description every payload carries at /__tpkg__/manifest.yaml:
+# IDENTITY + PROVIDES + DEPENDS on a common provenance/trust layer. This
+# file formalizes the CURRENT shape (crates/tpkg/src/manifest.rs, the
+# implementation of record) as schema_version 1 — plus the spec-18
+# contract field identity.era. It is a declaration of what exists, not a
+# redesign.
+#
+# SSOT: this file owns the grammar; crates/tpkg/src/manifest.rs (the
+# serde model + validators) mirrors it — keep the two in sync in the same
+# PR. The versioned JSON Schema the code comments reference
+# (schema/tpkg-manifest-v1.schema.json) is generated FROM this file when
+# the JSON-Schema pipeline lands (spec 18 §3.9).
+# =============================================================================
+
+schema: payload-manifest
+schema_version: 1 # MAJOR — breaking changes only
+schema_minor: 0 # MINOR — additive changes only
+status: normative
+owner: crates/tpkg (the model) in tamatebako/tebako
+edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
+
+# The schema evolution law (spec 18 §3) — every schema in this registry
+# obeys it; per-schema specializations are noted under `notes:`.
+evolution:
+  major_minor: >-
+    schema_version is a single integer MAJOR; schema_minor an additive
+    counter. MAJOR breaks, MINOR adds.
+  unknown_fields: >-
+    Readers ignore unknown fields within their MAJOR — but never invent
+    semantics for them. A field you do not understand changes nothing you do.
+    (Here: tolerated at every section level; only identity.annotations is
+    guaranteed lossless on round-trip.)
+  unknown_major: >-
+    A named refusal naming the artifact, its schema + version, the consumer
+    and its max spoken version, and "upgrade". Exit code per spec 18 §7.
+  missing_schema_version: >-
+    Era 1 — a named refusal ("pre-era document; regenerate with a current
+    tool"), never a silent default. (Here: identity.schema_version.)
+  type_changes: >-
+    MAJOR only — no silent coercion (string→list, int→string, kebab→snake).
+    Renames ride the deprecation window.
+  deprecation_window: >-
+    To rename/retype a field inside one MAJOR: writers emit BOTH old and
+    new for two consecutive MINOR versions (noted under `deprecated:` with
+    the window dates); readers prefer new and warn on old; after two MINORs
+    the old field is dropped in the next MINOR.
+  critical_flag: >-
+    Any container that skips unknown entries supports `critical: true` on
+    an entry: a reader that does not understand a critical entry refuses
+    with a named error instead of skipping it (spec 18 §3.7). Applies to
+    provides/requires entries.
+  lists_stay_lists: >-
+    Ordered/multiplicity data is a list of entries carrying their identity
+    fields — never keyed maps. (Here: entrypoints, requires, executables,
+    libraries, encryption parts.)
+
+declaration:
+  where: /__tpkg__/manifest.yaml inside every payload image
+  format: YAML (authored-manifest rule, invariant 6)
+
+grammar:
+  identity:
+    type: map
+    required: true
+    fields:
+      schema_version: {type: int, required: true, notes: this schema's MAJOR}
+      era:
+        type: int
+        required: false
+        notes: >-
+          The spec-18 contract field: the payload's declared era (>= 2
+          once declared). Absent = era 1 (pre-era payload) — consumers
+          that require the contract refuse by name (spec 18 §2.2).
+      kind: {type: enum, values: [app, data, toolkit, runtime, language], required: true}
+      name: {type: string, required: true}
+      version: {type: string, required: true, notes: free-form (semver AND datever exist)}
+      producer:
+        type: map
+        required: true
+        fields:
+          tool: {type: string, required: true}
+          tool_version: {type: string, required: true}
+      created: {type: string, required: true, notes: RFC 3339 rendering; the model does not interpret time}
+      source:
+        type: map
+        required: false
+        fields:
+          src_sha256: {type: string, required: false, notes: 64 lowercase hex}
+          commit: {type: string, required: false}
+          builder: {type: string, required: false}
+        notes: at least one digest/id required when the block is present
+      sbom:
+        type: map
+        required: false
+        fields:
+          ref: {type: string, required: true}
+      digest:
+        type: map
+        required: true
+        fields:
+          tree_hash:
+            type: string
+            required: true
+            notes: "\"<algorithm>:<64 lowercase hex>\" — the manifest-excluded merkle root (tfs-merkle-1), the CAS identity"
+          blob_sha256:
+            type: string
+            required: true
+            notes: 64 lowercase hex — advisory provenance only in an embedded manifest (spec 03 §7 fixed-point rule)
+      signing:
+        type: map
+        required: true
+        fields:
+          state: {type: enum, values: [unsigned, signed], required: true}
+          keyid: {type: string, required: "iff state signed", notes: 16 lowercase hex — low 64 bits of the OpenPGP fingerprint}
+          mechanism: {type: enum, values: [openpgp], required: "iff state signed"}
+      encryption:
+        type: map
+        required: true
+        fields:
+          state: {type: enum, values: [none, encrypted], required: true}
+          parts:
+            type: list
+            required: "iff state encrypted (non-empty)"
+            entry:
+              paths: {type: list of absolute in-image paths, required: true}
+              algorithm: {type: string, required: true}
+              envelope_refs: {type: list of string, required: true, notes: references to externally-held grant envelopes — NEVER keys}
+      annotations:
+        type: map
+        required: false
+        notes: free-form k/v; preserved on round-trip
+  provides:
+    type: kind-specialized map (bound to identity.kind at parse time)
+    required: true
+    variants:
+      app:
+        entrypoints:
+          type: list
+          required: true
+          notes: N>=1 — one per invocable command (suites)
+          entry:
+            name: {type: string, required: true, notes: the command name the shim registers}
+            path: {type: string, required: true, notes: absolute in-image path}
+            args_default: {type: list of string, required: false}
+            runtime_requirement:
+              type: map
+              required: false
+              notes: omit entirely for native / zero-runtime entrypoints (spec 03 §2.2 locked)
+              fields:
+                engine: {type: string, required: true}
+                constraint: {type: string, required: true, notes: "range for pure-language (\">= 3.3, < 5.0\"); abi-line for native-extension (\"~> 3.3.0\")"}
+                abi: {type: string, required: false, notes: "the runtime's platform string the native extensions were built against (ruby: Gem::Platform.local.to_s)"}
+        platforms: {type: "\"universal\" | list of vcpkg triplets", required: true, notes: "spec 03 §3 axis; aarch64-windows-ucrt reserved"}
+        capabilities:
+          type: map
+          required: true
+          notes: "exactly {exec: true, read: true}; may carry host (spec 08 §4 jail request)"
+      runtime:
+        provides:
+          type: "map | list of maps (one-or-many)"
+          required: true
+          entry:
+            engine: {type: string, required: true}
+            version: {type: string, required: true}
+            abi_line: {type: string, required: true, notes: "the abi line this build satisfies (e.g. \"4.0\")"}
+            platform: {type: vcpkg triplet, required: true}
+        built_from:
+          type: map
+          required: true
+          fields:
+            src_sha256: {type: string, required: true, notes: 64 lowercase hex}
+            patch_set: {type: string, required: true}
+        env: {type: map, required: false, notes: environment defaults the dispatcher composes}
+        capabilities:
+          type: map
+          required: true
+          notes: "exactly {exec: true, read: true, runtime: true}"
+      data:
+        mount_semantics:
+          type: map
+          required: true
+          fields:
+            suggested: {type: string, required: true, notes: absolute path — SUGGESTED only (the MOUNT RULE gives the decision to the consumer)}
+        consumers: {type: list of string, required: false, notes: informational reverse edges}
+        capabilities:
+          type: map
+          required: true
+          notes: "exactly {exec: false, read: true}"
+      toolkit:
+        executables:
+          type: list
+          required: false
+          entry:
+            name: {type: string, required: true}
+            path: {type: string, required: true, notes: absolute in-image path}
+            version: {type: string, required: false}
+          notes: native, zero-runtime programs — never a runtime_requirement
+        libraries:
+          type: list
+          required: false
+          entry:
+            name: {type: string, required: true}
+            path: {type: string, required: true}
+        platforms: {type: "\"universal\" | list of vcpkg triplets", required: true}
+        capabilities:
+          type: map
+          required: true
+          notes: "must carry read: true; may carry host (spec 08 §4)"
+        provides_abi:
+          type: list
+          required: false
+          notes: >-
+            The spec-18 C11 contract field (feature/toolkit payloads): a C
+            ABI name + version at an in-image path. Consumers bind only on
+            match, both versions printed on mismatch (exit 79 reserved).
+          entry:
+            name: {type: string, required: true}
+            version: {type: string, required: true}
+            path: {type: string, required: true, notes: absolute in-image path}
+      language:
+        notes: no locked v1 shape — preserved losslessly (Provides::Other)
+  requires:
+    type: list
+    required: false
+    notes: the MOUNT RULE — mount is declared HERE, in the consumer's manifest
+    entry:
+      kind: {type: enum, values: [language, toolkit, data], required: true}
+      "language": {engine: "string, required", constraint: "string, required"}
+      "toolkit": {name: "string, required", constraint: "string, required", triplets: "list of vcpkg triplets, optional", mount: "absolute path, optional"}
+      "data": {name: "string, required", constraint: "string, required", mount: "absolute path, optional"}
+
+refusals:
+  - case: identity.schema_version missing
+    behavior: era-1 named refusal (never a silent default)
+  - case: kind ↔ provides shape mismatch
+    behavior: structural error at parse (never a validation surprise later)
+  - case: entrypoint's runtime_requirement unsatisfiable at dispatch (S26/C10)
+    behavior: named error naming the entrypoint and the requirement — never a segfault
+  - case: provides_abi mismatch at bind (C11)
+    behavior: named refusal, both versions printed (exit 79 reserved)
+
+deprecated: [] # no field is in a deprecation window

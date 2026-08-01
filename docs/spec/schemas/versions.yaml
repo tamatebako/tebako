@@ -1,0 +1,97 @@
+# =============================================================================
+# versions.yaml — the source factory's supported-versions grammar
+# (spec 18 §2.2, C1; tamatebako/ruby's versions.yml formalized)
+#
+# The supported upstream ruby versions the source factory
+# (tamatebako/ruby) patches and ships as tfs-ruby-<ver>-src[-<scenario>]
+# tarballs. This file MIRRORS the owner's own JSON Schema
+# (schema/versions.schema.yml in tamatebako/ruby) as the cross-repo
+# contract record — the owner FLOWS changes here (or asserts parity in
+# CI) per spec 00 §10.
+#
+# The CURRENT shape is formalized as schema_version 1 — do not redesign:
+# `versions:` is a KEYED MAP (version → entry), the one sanctioned
+# exception to the lists-stay-lists rule, recorded here explicitly. The
+# era-1 file carries no schema_version key; C1's consumer (the factory
+# source fetcher) refuses a missing/corrupt declaration with exit 132.
+# =============================================================================
+
+schema: versions
+schema_version: 1 # MAJOR — breaking changes only
+schema_minor: 0 # MINOR — additive changes only
+status: normative
+owner: tamatebako/ruby (the source factory; schema/versions.schema.yml there is the owner's own copy)
+edge: C1 (source tarball → runtime factory; with tebako-mount-root + SHA256SUMS)
+
+# The schema evolution law (spec 18 §3) — every schema in this registry
+# obeys it; per-schema specializations are noted under `notes:`.
+evolution:
+  major_minor: >-
+    schema_version is a single integer MAJOR; schema_minor an additive
+    counter. MAJOR breaks, MINOR adds.
+  unknown_fields: >-
+    Readers ignore unknown fields within their MAJOR — but never invent
+    semantics for them. A field you do not understand changes nothing you do.
+  unknown_major: >-
+    A named refusal naming the artifact, its schema + version, the consumer
+    and its max spoken version, and "upgrade". Exit code per spec 18 §7.
+  missing_schema_version: >-
+    Era 1 — a named refusal ("pre-era document; regenerate with a current
+    tool"), never a silent default.
+  type_changes: >-
+    MAJOR only — no silent coercion (string→list, int→string, kebab→snake).
+    Renames ride the deprecation window.
+  deprecation_window: >-
+    To rename/retype a field inside one MAJOR: writers emit BOTH old and
+    new for two consecutive MINOR versions (noted under `deprecated:` with
+    the window dates); readers prefer new and warn on old; after two MINORs
+    the old field is dropped in the next MINOR.
+  critical_flag: >-
+    Any container that skips unknown entries supports `critical: true` on
+    an entry: a reader that does not understand a critical entry refuses
+    with a named error instead of skipping it (spec 18 §3.7).
+  lists_stay_lists: >-
+    Ordered/multiplicity data is a list of entries carrying their identity
+    fields — never keyed maps. EXCEPTION (formalized as-is): the existing
+    versions.yml is a keyed map version → entry; the map key IS the
+    entry's identity field. A future MAJOR may re-list it; this MAJOR
+    records what exists.
+
+declaration:
+  where: versions.yml at the tamatebako/ruby repo root
+  format: YAML (authored-manifest rule, invariant 6)
+
+grammar:
+  versions:
+    type: map(version → entry) # the existing keyed-map shape (see the lists_stay_lists exception above)
+    required: true
+    notes: at least one entry; keys match ^[0-9]+\.[0-9]+\.[0-9]+$
+    entry:
+      url:
+        type: string
+        required: true
+        notes: "the upstream tarball URL (^https://cache.ruby-lang.org/pub/ruby/<line>/ruby-<version>.tar.gz$)"
+      sha256:
+        type: string
+        required: true
+        notes: 64 lowercase hex — the tarball digest (mirrors the tebako gem RUBY_VERSIONS)
+      line:
+        type: string
+        required: true
+        notes: "the abi line (^[0-9]+\\.[0-9]+$ — e.g. \"3.3\")"
+      scenarios:
+        type: list of enum
+        values: [linux-gnu, linux-musl, msys]
+        required: false
+        notes: >-
+          The platform scenarios this version ships src releases for;
+          absent means linux-gnu only. linux-gnu is mandatory (the
+          unsuffixed back-compat asset); entries unique.
+
+refusals:
+  - case: tarball without tebako-mount-root, or a corrupt versions declaration (S49)
+    behavior: exit 132 — "pre-era or corrupt source tarball — roll a new one with tamatebako/ruby >= v0.2.13"
+  - case: a patch failing `git apply --check` at build
+    behavior: abort the build — loud, never silent
+
+deprecated: [] # no field is in a deprecation window

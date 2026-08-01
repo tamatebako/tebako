@@ -1,0 +1,138 @@
+# =============================================================================
+# package-manifest.yaml — the L2 package manifest grammar (spec 18 §2.2,
+# C6; spec 03 §6 formalized)
+#
+# The composition manifest carried as tpkg extension block type 2 (spec 02
+# §5b) — YAML, OUTSIDE every payload image, readable without backend
+# knowledge. It owns composition (identity, entries, package-level jail +
+# env); the contract fields (contract_era, pressed_by, reader_era) are the
+# spec-18 addition: a package pressed from now on declares its era, and a
+# reader verifies fail-closed on open (exit 77).
+#
+# SSOT: this file owns the grammar; crates/tpkg/src/package.rs (the
+# composition model) and crates/tpkg/src/contract.rs (the contract view)
+# mirror it — keep them in sync in the same PR. The type-2 document is
+# ONE YAML document with two typed views: PackageManifest (composition)
+# and PackageContract (era declaration) — the composition model predates
+# the contract fields and tolerates them as unknown keys.
+# =============================================================================
+
+schema: package-manifest
+schema_version: 1 # MAJOR — breaking changes only
+schema_minor: 1 # MINOR 1: the contract fields (contract_era, pressed_by, reader_era) added
+status: normative
+owner: crates/tpkg (the model) in tamatebako/tebako
+edge: C6 (loader → package trailer; the L2 half)
+
+# The schema evolution law (spec 18 §3) — every schema in this registry
+# obeys it; per-schema specializations are noted under `notes:`.
+evolution:
+  major_minor: >-
+    schema_version is a single integer MAJOR; schema_minor an additive
+    counter. MAJOR breaks, MINOR adds. (MINOR 1 added the contract fields;
+    era-1 blocks — pressed by tebako < 0.16.1 — lack them and are refused
+    by name.)
+  unknown_fields: >-
+    Readers ignore unknown fields within their MAJOR — but never invent
+    semantics for them. A field you do not understand changes nothing you do.
+  unknown_major: >-
+    A named refusal naming the artifact, its schema + version, the consumer
+    and its max spoken version, and "upgrade". Exit code per spec 18 §7.
+  missing_schema_version: >-
+    Era 1 — a named refusal ("pre-era document; regenerate with a current
+    tool"), never a silent default.
+  type_changes: >-
+    MAJOR only — no silent coercion (string→list, int→string, kebab→snake).
+    Renames ride the deprecation window.
+  deprecation_window: >-
+    To rename/retype a field inside one MAJOR: writers emit BOTH old and
+    new for two consecutive MINOR versions (noted under `deprecated:` with
+    the window dates); readers prefer new and warn on old; after two MINORs
+    the old field is dropped in the next MINOR.
+  critical_flag: >-
+    Any container that skips unknown entries supports `critical: true` on
+    an entry: a reader that does not understand a critical entry refuses
+    with a named error instead of skipping it (spec 18 §3.7). For the tpkg
+    container this flag rides the high bit of the extension-block type
+    word (TPKG_EXT_FLAG_CRITICAL): an unknown base type with the bit set
+    is refused on open (S10); non-critical unknown blocks still skip
+    (invariant 7) and rewrites preserve them verbatim.
+  lists_stay_lists: >-
+    Ordered/multiplicity data is a list of entries carrying their identity
+    fields — never keyed maps. (Here: entries.)
+
+declaration:
+  where: tpkg extension block type 2, between the slot table and the v2 signing extension / trailer header
+  format: YAML (authored-manifest rule, invariant 6)
+
+grammar:
+  schema_version: {type: int, required: true, notes: this schema's MAJOR (1)}
+  contract_era:
+    type: int
+    required: "from schema_minor 1 (era 2) onward"
+    notes: >-
+      The contract era the package was pressed under. Absent = era 1:
+      "pre-era package — re-press with tebako >= 0.16.1 or run it with
+      tebako v1" (exit 77). Newer than the reader's era → "package from a
+      newer tebako (era N) — upgrade your tebako (speaks era M)" (S1,
+      exit 77).
+  pressed_by:
+    type: string
+    required: "with contract_era"
+    notes: the tebako product version that pressed the package (e.g. "0.16.1")
+  reader_era:
+    type: int
+    required: "with contract_era"
+    notes: >-
+      The minimum reader era. A reader speaking less refuses: "upgrade
+      tebako" (exit 77). Current presses emit 2.
+  package:
+    type: map
+    required: true
+    fields:
+      name: {type: string, required: true}
+      version: {type: string, required: true, notes: free-form (semver AND datever exist)}
+      producer:
+        type: map
+        required: true
+        fields:
+          tool: {type: string, required: true}
+          tool_version: {type: string, required: true}
+      created: {type: string, required: true, notes: RFC 3339 rendering}
+  entries:
+    type: list
+    required: true
+    notes: N>=1 — one per invocable command; names unique
+    entry:
+      name: {type: string, required: true, notes: the command name the shim registers}
+      slot: {type: int, required: true, notes: which payload slot carries the entrypoint's image (0..TPKG_MAX_SLOTS-1)}
+      entrypoint: {type: string, required: true, notes: which PROVIDES entrypoint inside that image}
+      runtime_ref: {type: string, required: true, notes: "per-entry runtime reference (type@version;tebako=<abi>[;params]) — kills the trailer's 128-byte limit"}
+  jail:
+    type: map
+    required: false
+    notes: package-level jail request (spec 08 §1 owns the shape) — composed with the user's tightening at handoff (spec 08 §2)
+  env:
+    type: map
+    required: false
+    notes: package-level env (composition rules spec 07); keys non-empty
+
+refusals:
+  - case: no type-2 block, or a block without contract_era (S2)
+    behavior: >-
+      era-1 refusal — "pre-era package — re-press with tebako >= 0.16.1
+      or run it with tebako v1" (exit 77). Distinct from the era-mismatch
+      path: the typed ContractError separates "no block" from "block
+      present, era mismatch".
+  - case: contract_era newer than the reader's era (S1)
+    behavior: >-
+      "package from a newer tebako (era N) — upgrade your tebako (speaks
+      era M)" (exit 77)
+  - case: reader_era newer than the reader's era
+    behavior: '"upgrade tebako" (exit 77) — both eras printed'
+  - case: unknown critical extension block on open (S10)
+    behavior: named refusal; non-critical unknown blocks skip (invariant 7)
+  - case: partial contract (contract_era present, pressed_by/reader_era absent)
+    behavior: named malformed-contract refusal (fail-closed, exit 77)
+
+deprecated: [] # no field is in a deprecation window

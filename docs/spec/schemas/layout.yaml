@@ -1,0 +1,103 @@
+# =============================================================================
+# layout.yaml — the env-image layout declaration grammar (spec 18 §2.2, C3)
+#
+# The in-image contract between a runtime exe and its env image (the
+# pair): /lib/tebako/layout.yaml inside the env `.tfs`. The DRIVER
+# verifies it post-mount, before any interpreter handoff — a mismatch is
+# never a ruby LoadError.
+#
+# SSOT: this file owns the grammar. crates/tebako-driver (the reader,
+# src/layout.rs) mirrors it — keep the two in sync in the same PR. The
+# runtime factory (the writer) FLOWS it from the same owned values
+# (mount_root from tamatebako/ruby's patch literals) and asserts parity
+# in its CI (separate release chain — spec 00 §10).
+# =============================================================================
+
+schema: layout
+schema_version: 1 # MAJOR — breaking changes only
+schema_minor: 0 # MINOR — additive changes only
+status: normative
+owner: tebako-runtime-ruby (writer) + crates/tebako-driver (reader); grammar owned here
+edge: C3 (runtime exe ↔ env image)
+
+# The schema evolution law (spec 18 §3) — every schema in this registry
+# obeys it; per-schema specializations are noted under `notes:`.
+evolution:
+  major_minor: >-
+    schema_version is a single integer MAJOR; schema_minor an additive
+    counter. MAJOR breaks, MINOR adds.
+  unknown_fields: >-
+    Readers ignore unknown fields within their MAJOR — but never invent
+    semantics for them. A field you do not understand changes nothing you do.
+  unknown_major: >-
+    A named refusal naming the artifact, its schema + version, the consumer
+    and its max spoken version, and "upgrade". Exit code per spec 18 §7.
+  missing_schema_version: >-
+    Era 1 — a named refusal ("pre-era document; regenerate with a current
+    tool"), never a silent default.
+  type_changes: >-
+    MAJOR only — no silent coercion (string→list, int→string, kebab→snake).
+    Renames ride the deprecation window.
+  deprecation_window: >-
+    To rename/retype a field inside one MAJOR: writers emit BOTH old and
+    new for two consecutive MINOR versions (noted under `deprecated:` with
+    the window dates); readers prefer new and warn on old; after two MINORs
+    the old field is dropped in the next MINOR.
+  critical_flag: >-
+    Any container that skips unknown entries supports `critical: true` on
+    an entry: a reader that does not understand a critical entry refuses
+    with a named error instead of skipping it (spec 18 §3.7).
+  lists_stay_lists: >-
+    Ordered/multiplicity data is a list of entries carrying their identity
+    fields — never keyed maps.
+
+declaration:
+  where: /lib/tebako/layout.yaml inside the env image (read through the TFS layer, never the host fs)
+  format: YAML (authored-manifest rule, invariant 6)
+
+grammar:
+  schema_version:
+    type: int
+    required: true
+    notes: this schema's MAJOR; missing = era 1 (pre-era document, S17's kin)
+  era:
+    type: int
+    required: true
+    notes: >-
+      The contract era of the image. >= 2 once declared; < 2 is the
+      pre-era refusal. Newer than the driver speaks → upgrade refusal.
+  image_layout:
+    type: int
+    required: true
+    notes: >-
+      The image's internal layout generation (where stdlib, gems and the
+      manifest tree live). The driver speaks <= its own compiled
+      generation (1); newer → upgrade refusal.
+  mount_root:
+    type: string
+    required: true
+    notes: >-
+      The mount root the image was built for — must equal the exe's
+      compiled-in value (the one tebako_main forwards to the driver;
+      ruby: /__tfs__, A:/t on windows). Mismatch → exit 78, both values
+      printed (S19). The value FLOWS from tamatebako/ruby's patch
+      literals (the single owner); nothing re-authors it.
+  interpreter_api_version:
+    type: string
+    required: true
+    notes: >-
+      The interpreter API version line the image carries (ruby: the
+      "3.4"-style line). Declared for the factory and future consumers;
+      the era-2 driver parses but does not gate on it.
+
+refusals:
+  - case: /lib/tebako/layout.yaml absent (S17)
+    behavior: era-1 refusal naming the image — exit 78
+  - case: schema_version / era / image_layout newer than the driver speaks (S18)
+    behavior: upgrade refusal naming both versions — exit 78
+  - case: era < 2 or the declaration malformed
+    behavior: named refusal — exit 78
+  - case: mount_root != the exe's compiled-in root (S19)
+    behavior: exit 78 with both values printed — a mismatched pair, never a ruby LoadError
+
+deprecated: [] # no field is in a deprecation window

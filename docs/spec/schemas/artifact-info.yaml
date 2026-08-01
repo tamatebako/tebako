@@ -1,0 +1,89 @@
+# =============================================================================
+# artifact-info.yaml — the bootstrap self-description grammar (spec 18 §2.2)
+#
+# The declarative contract a tebako-bootstrap binary carries about ITSELF:
+# an artifact-info.yaml document embedded in the binary at build time (the
+# appended self-description block). Consumers: `tebako press` (S38 — it
+# refuses to stitch an era-1 bootstrap) and `tebako info` (the contract
+# card; spec 18 implementation map item 13).
+#
+# SSOT: this file is the single owner of the grammar. The Rust writer/
+# reader (crates/tebako-info artifact surface) mirrors it; keep them in
+# sync in the same PR.
+# =============================================================================
+
+schema: artifact-info
+schema_version: 1 # MAJOR — breaking changes only
+schema_minor: 0 # MINOR — additive changes only
+status: normative
+owner: tamatebako/tebako (the product repo)
+edge: spec 18 §2.2 (bootstrap self-description; consumed at press time by S38)
+
+# The schema evolution law (spec 18 §3) — every schema in this registry
+# obeys it; per-schema specializations are noted under `notes:`.
+evolution:
+  major_minor: >-
+    schema_version is a single integer MAJOR; schema_minor an additive
+    counter. MAJOR breaks, MINOR adds.
+  unknown_fields: >-
+    Readers ignore unknown fields within their MAJOR — but never invent
+    semantics for them. A field you do not understand changes nothing you do.
+  unknown_major: >-
+    A named refusal naming the artifact, its schema + version, the consumer
+    and its max spoken version, and "upgrade". Exit code per spec 18 §7.
+  missing_schema_version: >-
+    Era 1 — a named refusal ("pre-era document; regenerate with a current
+    tool"), never a silent default.
+  type_changes: >-
+    MAJOR only — no silent coercion (string→list, int→string, kebab→snake).
+    Renames ride the deprecation window.
+  deprecation_window: >-
+    To rename/retype a field inside one MAJOR: writers emit BOTH old and
+    new for two consecutive MINOR versions (noted under `deprecated:` with
+    the window dates); readers prefer new and warn on old; after two MINORs
+    the old field is dropped in the next MINOR.
+  critical_flag: >-
+    Any container that skips unknown entries supports `critical: true` on
+    an entry: a reader that does not understand a critical entry refuses
+    with a named error instead of skipping it (spec 18 §3.7).
+  lists_stay_lists: >-
+    Ordered/multiplicity data is a list of entries carrying their identity
+    fields — never keyed maps.
+
+declaration:
+  where: embedded in the tebako-bootstrap binary at build time (appended block)
+  format: YAML (authored-manifest rule, invariant 6)
+
+grammar:
+  schema_version:
+    type: int
+    required: true
+    notes: this schema's MAJOR; missing = era 1 (pre-era bootstrap)
+  era:
+    type: int
+    required: true
+    notes: >-
+      The contract era of the artifact. >= 2 once declared; era 1 is the
+      undeclared pre-era and is refused by name, never assumed.
+  version:
+    type: string
+    required: true
+    notes: the tebako product version of this bootstrap (e.g. "0.16.1")
+  launcher_abi:
+    type: int
+    required: true
+    notes: the launcher ABI this bootstrap speaks (spec 06; currently 1)
+  contract_version:
+    type: int
+    required: true
+    notes: >-
+      The handoff semantics version this bootstrap speaks (spec 06 §6 /
+      spec 17): 1 = spec 06, 2 = spec 17's widened grammar.
+
+refusals:
+  - case: block absent or unparseable where a consumer requires it (S38 press)
+    behavior: era-1 refusal — a package is only ever stitched from a declared bootstrap
+  - case: unknown MAJOR
+    behavior: named upgrade refusal (both versions printed)
+
+deprecated: [] # no field is in a deprecation window

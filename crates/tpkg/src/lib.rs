@@ -86,7 +86,14 @@
 //!            future block collides with a signature in the tail slot.
 //!   type 2 = package manifest (YAML — spec 03 §6, see the `package`
 //!            module): composition identity, entrypoint/suite entries,
-//!            package-level jail + env, per-entry runtime refs
+//!            package-level jail + env, per-entry runtime refs — plus the
+//!            spec-18 contract fields (contract_era, pressed_by,
+//!            reader_era — see the `contract` module and
+//!            docs/spec/schemas/package-manifest.yaml)
+//!
+//! The type word's high bit ([`TPKG_EXT_FLAG_CRITICAL`]) marks a block
+//! CRITICAL (spec 18 §3.7): a reader that does not know the base type
+//! refuses instead of skipping.
 //! ```
 //!
 //! Blocks walk forward from the end of the slot table; the v2 signing
@@ -134,6 +141,7 @@
 #![forbid(unsafe_code)]
 
 mod codec;
+mod contract;
 mod crc32;
 mod envelope;
 mod error;
@@ -150,6 +158,7 @@ pub use codec::{
     encode_ext_blocks, encode_trailer, parse_ext_blocks, parse_trailer, trailer_len,
     v2_signed_region,
 };
+pub use contract::{ContractError, PackageContract};
 pub use crc32::{crc32, Crc32};
 pub use envelope::{EnvelopeManifest, Grant, Suite, ENVELOPES_PATH, ENVELOPES_SCHEMA_VERSION};
 pub use error::{strerror, TpkgError};
@@ -233,6 +242,24 @@ pub const TPKG_EXT_HEADER_SIZE: usize = 8;
 pub const TPKG_EXT_TYPE_V2_SIGNING: u32 = 1;
 /// Extension block type 2: the L2 package manifest (YAML, spec 03 §6).
 pub const TPKG_EXT_TYPE_PACKAGE_MANIFEST: u32 = 2;
+/// Extension block type flag (the high bit of the type word): the block
+/// is CRITICAL (spec 18 §3.7) — a reader that does not know the base type
+/// refuses with a named error instead of skipping it (S10); non-critical
+/// unknowns still skip (invariant 7). The bit is wire-compatible: blocks
+/// that do not opt in encode byte-identically to before.
+pub const TPKG_EXT_FLAG_CRITICAL: u32 = 0x8000_0000;
+
+// ---------------------------------------------------------------------
+// The spec-18 contract layer (C6 — docs/spec/schemas/package-manifest.yaml)
+// ---------------------------------------------------------------------
+
+/// The contract era this build speaks (spec 18). Era 1 is the undeclared
+/// pre-era — refused by name, never assumed. Everything this build
+/// presses declares era 2.
+pub const TPKG_CONTRACT_ERA: u32 = 2;
+/// The spec-18 §7 exit code for package/payload contract-era failures
+/// (either direction), raised by any trailer/manifest reader.
+pub const EX_TEBAKO_CONTRACT_ERA: i32 = 77;
 
 // ---------------------------------------------------------------------
 // v2 chain-of-trust extension (all v2-extension numerics BIG-ENDIAN;

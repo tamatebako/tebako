@@ -1,9 +1,11 @@
 //! The boot orchestration (the safe core; [`crate::ffi`] is the thin C
 //! entry over it).
 //!
-//! Order of operations (spec 17): parse the handoff → mount the env
-//! image (whole-file at the runtime root) → mount each payload triple in
-//! order (bare files whole; package files by trailer region) → install
+//! Order of operations (spec 17 + spec 18 C3): parse the handoff → mount
+//! the env image (whole-file at the runtime root) → **verify the env
+//! image's `/lib/tebako/layout.yaml`** (post-mount, before any
+//! interpreter handoff — exit 78) → mount each payload triple in order
+//! (bare files whole; package files by trailer region) → install
 //! the jail policy (after the mounts — spec 08 §3) → resolve and verify
 //! the entry → rewrite argv. Any failure unmounts everything: never a
 //! partial mount.
@@ -13,7 +15,9 @@ use std::path::Path;
 use tfs::context::context;
 
 use crate::handoff::{Handoff, ImageSource, SlotRef};
-use crate::{EX_TEBAKO_IO, EX_TEBAKO_JAIL, EX_TEBAKO_MANIFEST, EX_TEBAKO_UNAVAILABLE};
+use crate::{
+    EX_TEBAKO_IO, EX_TEBAKO_JAIL, EX_TEBAKO_LAYOUT, EX_TEBAKO_MANIFEST, EX_TEBAKO_UNAVAILABLE,
+};
 
 /// A named driver failure carrying the loader's exit code (spec 06 §4).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,6 +31,14 @@ impl DriverError {
         DriverError { code, message }
     }
 }
+
+impl std::fmt::Display for DriverError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for DriverError {}
 
 fn manifest(message: impl Into<String>) -> DriverError {
     DriverError::new(EX_TEBAKO_MANIFEST, message.into())
@@ -166,6 +178,56 @@ fn mount_env_image(
     )?;
     mounted.push(runtime_root.to_string());
     Ok(())
+}
+
+/// Read a small text file through the mounted VFS (never the host fs) —
+/// the layout declaration lives INSIDE the env image (spec 18 C3).
+fn read_mounted_text(path: &str) -> Result<String, i32> {
+    let mut ctx = context().write().unwrap();
+    let fd = ctx.open(path, libc::O_RDONLY)?;
+    let mut out = Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        let n = match ctx.read(fd, &mut buf) {
+            Ok(n) => n,
+            Err(e) => {
+                let _ = ctx.close(fd);
+                return Err(e);
+            }
+        };
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&buf[..n]);
+        if out.len() > crate::layout::LAYOUT_MAX_BYTES {
+            let _ = ctx.close(fd);
+            return Err(libc::EFBIG);
+        }
+    }
+    ctx.close(fd)?;
+    String::from_utf8(out).map_err(|_| libc::EINVAL)
+}
+
+/// The env-image layout check (spec 18 C3): after the env image mounts
+/// and BEFORE any interpreter handoff, `/lib/tebako/layout.yaml` inside
+/// it is verified against this exe's expectations — fail-closed, exit 78
+/// (S17 absent → era-1 refusal; S18 newer → upgrade refusal; S19
+/// mount_root mismatch). A boot without `TEBAKO_RUNTIME_IMAGE` mounts no
+/// env image and has no pair to check.
+fn check_env_layout(env: &dyn Env, runtime_root: &str) -> Result<(), DriverError> {
+    let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") else {
+        return Ok(());
+    };
+    let path = join_mount(runtime_root, crate::layout::LAYOUT_IMAGE_PATH);
+    let text = read_mounted_text(&path).map_err(|_| {
+        DriverError::new(
+            EX_TEBAKO_LAYOUT,
+            format!(
+                "env image '{image}' declares no /lib/tebako/layout.yaml — pre-era image (era 1): rebuild the runtime with the current factory (spec 18 C3)"
+            ),
+        )
+    })?;
+    crate::layout::ImageLayout::check(&text, runtime_root, &image).map(|_| ())
 }
 
 fn mount_image(
@@ -311,6 +373,7 @@ pub fn boot(
         let result = (|| {
             let mut mounted = Vec::new();
             mount_env_image(env, runtime_root, &mut mounted)?;
+            check_env_layout(env, runtime_root)?;
             apply_jail(env)?;
             Ok(BootOutcome {
                 argv: argv.to_vec(),
@@ -325,6 +388,9 @@ pub fn boot(
     let result = (|| {
         let mut mounted: Vec<String> = Vec::new();
         mount_env_image(env, runtime_root, &mut mounted)?;
+        // The env image's pair-check runs post-mount, before any payload
+        // or interpreter touch (spec 18 C3 — exit 78).
+        check_env_layout(env, runtime_root)?;
         for spec in &h.images {
             mount_image(spec, &mut mounted)?;
         }

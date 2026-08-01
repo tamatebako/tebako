@@ -68,7 +68,9 @@ pub(crate) fn hex_lower(bytes: &[u8]) -> String {
 pub fn encode_ext_blocks(blocks: &[ExtBlock]) -> Result<Vec<u8>, TpkgError> {
     let mut len = 0usize;
     for b in blocks {
-        if b.block_type == crate::TPKG_EXT_TYPE_V2_SIGNING || b.payload.len() > u32::MAX as usize {
+        // The reserved check is on the base type: a critical-flagged
+        // type 1 stays reserved.
+        if b.base_type() == crate::TPKG_EXT_TYPE_V2_SIGNING || b.payload.len() > u32::MAX as usize {
             return Err(TpkgError::Invalid);
         }
         len += b.encoded_len();

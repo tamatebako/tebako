@@ -1,0 +1,96 @@
+# =============================================================================
+# store-config.yaml — the store configuration grammar (spec 18 §2.2, C13)
+#
+# The user-authored configuration of the local store (~/.tebako), plus the
+# store's own layout marker. The dispatcher only READS config.yaml; the
+# one authored-config write the toolchain performs is `tebako
+# add-registry` (a structural edit, tmp + rename). Shim-managed state
+# (shims/.disabled.yaml) is kept OUT of the authored file.
+#
+# SSOT: this file owns the grammar; the store-layout module (today:
+# crates/tebako-shim/src/config.rs — one model, parse + validate) mirrors
+# it. The C13 layout-version marker is declared here; the read check
+# (newer → upgrade refusal; older → the named migration) is spec 18
+# implementation map item 8.
+# =============================================================================
+
+schema: store-config
+schema_version: 1 # MAJOR — breaking changes only
+schema_minor: 0 # MINOR — additive changes only
+status: normative
+owner: crates/tebako-shim (the config model of record) in tamatebako/tebako
+edge: C13 (everything local → store)
+
+# The schema evolution law (spec 18 §3) — every schema in this registry
+# obeys it; per-schema specializations are noted under `notes:`.
+evolution:
+  major_minor: >-
+    schema_version is a single integer MAJOR; schema_minor an additive
+    counter. MAJOR breaks, MINOR adds.
+  unknown_fields: >-
+    Readers ignore unknown fields within their MAJOR — but never invent
+    semantics for them. A field you do not understand changes nothing you do.
+  unknown_major: >-
+    A named refusal naming the artifact, its schema + version, the consumer
+    and its max spoken version, and "upgrade". Exit code per spec 18 §7.
+  missing_schema_version: >-
+    Era 1 — a named refusal ("pre-era document; regenerate with a current
+    tool"), never a silent default.
+  type_changes: >-
+    MAJOR only — no silent coercion (string→list, int→string, kebab→snake).
+    Renames ride the deprecation window.
+  deprecation_window: >-
+    To rename/retype a field inside one MAJOR: writers emit BOTH old and
+    new for two consecutive MINOR versions (noted under `deprecated:` with
+    the window dates); readers prefer new and warn on old; after two MINORs
+    the old field is dropped in the next MINOR.
+  critical_flag: >-
+    Any container that skips unknown entries supports `critical: true` on
+    an entry: a reader that does not understand a critical entry refuses
+    with a named error instead of skipping it (spec 18 §3.7).
+  lists_stay_lists: >-
+    Ordered/multiplicity data is a list of entries carrying their identity
+    fields — never keyed maps. (defaults:/runtimes: are k/v SETTINGS maps,
+    not multiplicity data; registries: is a list.)
+
+declaration:
+  where: ~/.tebako/config.yaml (user-authored)
+  format: YAML (authored-manifest rule, invariant 6)
+
+grammar:
+  defaults:
+    type: map(command name → version string)
+    required: false
+    notes: per-tool version pins, written by `tebako use <tool>@<version>` — the version chain's user-default link (S28)
+  registries:
+    type: list of string
+    required: false
+    notes: spec 04 §2 registry refs; shipped config has ZERO registries (explicit only — no default service)
+  runtimes:
+    type: map(engine → {version, tebako})
+    required: false
+    notes: >-
+      Per-engine runtime preference (the download fallback of spec 05 §5
+      needs an exact ref), written by `tebako use --runtime <engine>@<version>`.
+      version = the language version (e.g. "4.0.6"); tebako = the tebako
+      (launcher) abi version the runtime was built with — the <ver> of the
+      cache layout runtimes/<lang>-<lv>-<ver>-<triplet>/.
+
+store_layout_marker:
+  path: ~/.tebako/layout-version
+  grammar: a single integer — the store layout era
+  notes: >-
+    C13's second declaration (spec 18 §2.2). Verified on first access per
+    process: newer than the binary → upgrade refusal (S41); older → the
+    named migration runs or refuses explicitly, never a silent mixed
+    layout (S42).
+
+refusals:
+  - case: layout-version newer than the binary (S41)
+    behavior: upgrade refusal
+  - case: layout-version older (S42)
+    behavior: the named migration — never a silent mix
+  - case: config.yaml unparseable
+    behavior: named error ("fix or remove it") — the dispatcher never guesses
+
+deprecated: [] # no field is in a deprecation window
