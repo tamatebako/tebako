@@ -272,6 +272,48 @@ jobs:
         working-directory: tebako-rs
         run: cargo clippy -p tebako-bootstrap -p tebako-shim -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg --all-targets -- -D warnings
 
+  # The bootstrap on the target the release binaries actually ship on
+  # (x86_64-pc-windows-gnu, ucrt64 — TODO.prepublish/03). ring does not
+  # compile under mingw, so the HTTP stack rides rustls/aws-lc-rs there
+  # (tebako-http's target-split provider); this leg proves that stack
+  # builds, tests, and stays under the standing < 3 MiB size gate on the
+  # real ucrt64 toolchain. All logic lives in ci/windows-gnu-bootstrap.sh
+  # (closed PATH, RUSTFLAGS, serialized tests, size gate) — never inline
+  # run-blocks.
+  test-windows-gnu-bootstrap:
+    name: test (windows-latest, x86_64-pc-windows-gnu, tebako-bootstrap)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      # tpkg/tfs path deps resolve at manifest level (no submodules needed).
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+
+      # ONE toolchain across the ecosystem (the factory's ruby link uses
+      # the same ucrt64 gcc); setup-msys2's /usr/bin stays OFF PATH —
+      # the script's closed PATH takes Git's coreutils instead.
+      - name: Set up MSys2 (ucrt64 toolchain)
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: ucrt64
+          path-type: minimal
+          install: mingw-w64-ucrt-x86_64-toolchain
+
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: bootstrap tests + size gate (windows-gnu)
+        working-directory: tebako-rs
+        shell: bash
+        run: bash ci/windows-gnu-bootstrap.sh
+
   fmt:
     name: fmt
     runs-on: ubuntu-24.04
