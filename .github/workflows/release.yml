@@ -710,8 +710,12 @@ jobs:
           VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
           # Static-link the mingw C++ runtimes: the runner carries several
           # mingw installs and first-DLL-wins resolution is
-          # STATUS_ENTRYPOINT_NOT_FOUND at process start.
-          RUSTFLAGS: -C link-arg=-static-libgcc -C link-arg=-static-libstdc++
+          # STATUS_ENTRYPOINT_NOT_FOUND at process start. The trailing
+          # -lmsvcrt restores the msvcrt-after-mingwex order invariant
+          # (rustc's -nodefaultlibs tail violates it; the factory probe
+          # proved libmingwex's compat _assert.o then dies on
+          # __imp___msvcrt_assert).
+          RUSTFLAGS: -C link-arg=-static-libgcc -C link-arg=-static-libstdc++ -C link-arg=-lmsvcrt
         run: |
           export PATH="/c/Users/runneradmin/.cargo/bin:$PATH"
           cargo build --release --target x86_64-pc-windows-gnu \
