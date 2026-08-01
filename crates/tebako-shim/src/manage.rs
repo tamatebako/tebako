@@ -570,7 +570,10 @@ fn shim_file_name(command: &str) -> String {
 }
 
 #[cfg(unix)]
-fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<Option<String>, ShimError> {
+fn link_one(
+    shim_binary: &std::path::Path,
+    link: &std::path::Path,
+) -> Result<Option<String>, ShimError> {
     std::os::unix::fs::symlink(shim_binary, link).map_err(|e| {
         ShimError::new(
             EX_TEBAKO_IO,
@@ -594,22 +597,23 @@ fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<Opt
 /// would re-parse argv through cmd.exe quoting and could not be spawned
 /// in place by CreateProcess callers.
 #[cfg(windows)]
-fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<Option<String>, ShimError> {
+fn link_one(
+    shim_binary: &std::path::Path,
+    link: &std::path::Path,
+) -> Result<Option<String>, ShimError> {
     match std::fs::hard_link(shim_binary, link) {
         Ok(()) => Ok(None),
         Err(hard_err) => {
-            std::fs::copy(shim_binary, link)
-                .map(|_| ())
-                .map_err(|e| {
-                    ShimError::new(
-                        EX_TEBAKO_IO,
-                        format!(
-                            "cannot link {} -> {} (hardlink: {hard_err}; copy: {e})",
-                            link.display(),
-                            shim_binary.display()
-                        ),
-                    )
-                })?;
+            std::fs::copy(shim_binary, link).map(|_| ()).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_IO,
+                    format!(
+                        "cannot link {} -> {} (hardlink: {hard_err}; copy: {e})",
+                        link.display(),
+                        shim_binary.display()
+                    ),
+                )
+            })?;
             Ok(Some(format!(
                 "{}: NTFS hardlink unavailable ({hard_err}) — copied the dispatcher instead (byte-identical bytes; keep the tebako home and the binary on one volume to share them)",
                 link.display()

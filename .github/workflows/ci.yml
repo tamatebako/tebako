@@ -387,13 +387,15 @@ jobs:
 
       # cmake + ninja come from the ucrt64 toolchain (the dwarfs-rs leg's
       # proven shape): the script's closed PATH excludes every other bin
-      # dir, so get-cmake's paths would be dead.
+      # dir, so get-cmake's paths would be dead. `make` is the ucrt64
+      # mingw32-make (rnp's Botan spawns plain `make` — the script shims
+      # it onto the closed PATH).
       - name: Set up MSys2 (ucrt64 toolchain + cmake/ninja)
         uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
         with:
           msystem: ucrt64
           path-type: minimal
-          install: mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-gdb
+          install: mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-gdb mingw-w64-ucrt-x86_64-make
 
       - uses: dtolnay/rust-toolchain@1.94.1
         with:

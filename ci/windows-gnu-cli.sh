@@ -19,6 +19,17 @@ set -euo pipefail
 # start).
 export PATH="/d/a/_temp/msys64/ucrt64/bin:/c/Program Files/Git/usr/bin:/c/Program Files/Git/cmd:/c/Users/runneradmin/.cargo/bin:/c/Windows/System32"
 
+# tebako-signer's vendored rnp builds Botan via botan-src, which spawns
+# plain `make` (hardcoded upstream); MSYS2's ucrt64 ships only
+# mingw32-make.exe. Give it a `make` on the closed PATH — a COPY (Git
+# bash "symlinks" are text files to CreateProcess). Fails loudly here if
+# the toolchain ever drops mingw32-make, instead of upstream's cryptic
+# "program not found".
+TOOLSHIM=/d/a/_temp/tebako-toolshim
+mkdir -p "$TOOLSHIM"
+cp "/d/a/_temp/msys64/ucrt64/bin/mingw32-make.exe" "$TOOLSHIM/make.exe"
+export PATH="$TOOLSHIM:$PATH"
+
 # One linker, resolved from the closed PATH above (ucrt64's gcc).
 export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=gcc.exe
 
