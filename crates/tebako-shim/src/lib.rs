@@ -2,6 +2,11 @@
 //! retires mnenv).
 //!
 //! ONE static binary, linked per command name under `~/.tebako/shims/`.
+//! The link shape is platform's own: symlink on unix; on Windows an
+//! NTFS hardlink first (no admin needed), a byte copy as the named
+//! fallback — never a `.cmd` wrapper, so argv0 dispatch is
+//! byte-identical on every platform (manage.rs `link_one` carries the
+//! decision record).
 //! Two faces:
 //!
 //! - **argv0 dispatch** (spec 07 §2): invoked as `~/.tebako/shims/<tool>`,

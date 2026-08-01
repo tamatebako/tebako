@@ -310,6 +310,133 @@ jobs:
         shell: bash
         run: bash ci/windows-gnu-bootstrap.sh
 
+  # tebako-shim + tebako-resolve on the target the release binaries ship
+  # on (x86_64-pc-windows-gnu, ucrt64 — TODO.prepublish/03), mirroring
+  # the bootstrap leg. tebako-resolve rides along: its gix/reqwest TLS
+  # rides rustls/aws-lc-rs on this target (ring does not compile under
+  # mingw — the tebako-http provider split, commit 8de4335), proven here
+  # on the real toolchain. All logic lives in ci/windows-gnu-shim.sh.
+  test-windows-gnu-shim:
+    name: test (windows-latest, x86_64-pc-windows-gnu, tebako-shim)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      # tpkg/tfs path deps resolve at manifest level (no submodules needed).
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+
+      # ONE toolchain across the ecosystem (the factory's ruby link uses
+      # the same ucrt64 gcc); setup-msys2's /usr/bin stays OFF PATH —
+      # the script's closed PATH takes Git's coreutils instead.
+      - name: Set up MSys2 (ucrt64 toolchain)
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: ucrt64
+          path-type: minimal
+          install: mingw-w64-ucrt-x86_64-toolchain
+
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: shim + resolve tests (windows-gnu)
+        working-directory: tebako-rs
+        shell: bash
+        run: bash ci/windows-gnu-shim.sh
+
+  # tebako-cli on the same target (TODO.prepublish/03): the full stack —
+  # tfs vendored-dwarfs (dwarfs-t-sys's CMake/vcpkg build against the
+  # x64-mingw-static baseline, the dwarfs-rs leg's proven setup) and
+  # tebako-signer's vendored rnp/Botan (gcc-steered in the script) —
+  # then the serialized test run. The vcpkg baseline restore/archive
+  # cache mirrors the release link-unit leg; all build/test logic lives
+  # in ci/windows-gnu-cli.sh.
+  test-windows-gnu-cli:
+    name: test (windows-latest, x86_64-pc-windows-gnu, tebako-cli)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      # The vendored dwarfs-t build needs the submodule content.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - name: Restore the vcpkg baseline (dwarfs-t is the single writer)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # Never fails the leg: a miss means the ports build normally.
+        # The script owns the canonical root (C:/vcpkg-inst — also the
+        # MAX_PATH dodge) and exports DWARFS_RS_VCPKG_INSTALLED_DIR.
+        run: |
+          bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
+            dwarfs-rs/dwarfs-t x64-mingw-static \
+            || echo "baseline miss — ports build normally"
+
+      # cmake + ninja come from the ucrt64 toolchain (the dwarfs-rs leg's
+      # proven shape): the script's closed PATH excludes every other bin
+      # dir, so get-cmake's paths would be dead.
+      - name: Set up MSys2 (ucrt64 toolchain + cmake/ninja)
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: ucrt64
+          path-type: minimal
+          install: mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-gdb
+
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      - name: Cache vcpkg package archives
+        uses: actions/cache@v4
+        with:
+          path: ~/AppData/Local/vcpkg/archives
+          key: vcpkg-archives-${{ runner.os }}-mingw-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**') }}
+          restore-keys: |
+            vcpkg-archives-${{ runner.os }}-mingw-
+
+      - name: Cache the cargo target dir
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            tebako-rs
+
+      - name: cli build + tests (windows-gnu)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: bash ci/windows-gnu-cli.sh
+
+      - name: Dump vcpkg build logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          for f in .vcpkg-root/buildtrees/*/build-x64-mingw-static-*-err.log .vcpkg-root/buildtrees/*/install-x64-mingw-static-*-err.log; do
+            [ -f "$f" ] || continue
+            echo "=== $f ==="
+            tail -40 "$f"
+          done
+
   fmt:
     name: fmt
     runs-on: ubuntu-24.04

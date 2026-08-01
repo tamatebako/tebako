@@ -27,8 +27,14 @@ serde_yml = "0.0.12"
 sha2 = "0.10"
 libc = "0.2"
 # tfs+git: via gitoxide (spec 04 §3) — never the git CLI. Local and
-# smart-protocol fetch in-process; reqwest's TLS is steered to rustls/ring
-# (the same provider tebako-http uses) instead of reqwest's aws-lc default.
+# smart-protocol fetch in-process; reqwest is `rustls-no-provider`, so the
+# rustls crate features below select the crypto provider (the process
+# default is installed from crate features — the same pattern tebako-http
+# uses, commit 8de4335). The provider is platform-split: ring everywhere
+# EXCEPT windows-gnu — ring 0.17 has no windows-gnu support (its C fails
+# to compile under mingw), so the gnu target rides aws-lc-rs instead (a
+# vendored crate exactly like ring; no native-tls, no schannel, no
+# behavior change).
 gix = { version = "0.86", default-features = false, features = [
     "sha1",
     "blocking-network-client",
@@ -37,7 +43,17 @@ gix = { version = "0.86", default-features = false, features = [
     "tree-editor",
 ] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+
+[target.'cfg(not(all(windows, target_env = "gnu")))'.dependencies]
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+
+[target.'cfg(all(windows, target_env = "gnu"))'.dependencies]
+rustls = { version = "0.23", default-features = false, features = [
+    "aws_lc_rs",
+    "std",
+    "tls12",
+    "logging",
+] }
 
 [lib]
 name = "tebako_resolve"

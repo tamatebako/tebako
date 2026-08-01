@@ -161,7 +161,7 @@ impl RuntimeSdk {
         } else {
             self.provision()
         };
-        crate::resolve::flock(&lock, libc::LOCK_UN);
+        crate::resolve::flock(&lock, crate::resolve::LOCK_UN);
         result?;
         Ok(self.paths())
     }
@@ -180,7 +180,7 @@ impl RuntimeSdk {
     fn acquire_lock(&self, lock: &fs::File) -> Result<(), TebakoError> {
         let deadline = std::time::Instant::now() + LOCK_TIMEOUT;
         loop {
-            if crate::resolve::flock(lock, libc::LOCK_EX | libc::LOCK_NB) {
+            if crate::resolve::flock(lock, crate::resolve::LOCK_EX | crate::resolve::LOCK_NB) {
                 return Ok(());
             }
             if std::time::Instant::now() >= deadline {

@@ -19,6 +19,19 @@
 //! inside the driver then compile against the runtime's own headers,
 //! exactly like the gem. Without the SDK the overrides carry only the
 //! bindir override (the gem's no-SDK branch).
+//!
+//! Windows decision (TODO.prepublish/03): the ruby shim is a `#!/bin/sh`
+//! re-entry script — mkmf spawns RbConfig.ruby, the shim execs the
+//! runtime with the deploy image attached, and the driver's script mode
+//! (ARGV.any? below) emulates the ruby command line. A .cmd/.ps1
+//! equivalent is NOT meaningful: it would have to re-implement that
+//! interpreter-switch parser through cmd.exe quoting, and the only
+//! consumers of script mode are mkmf-driven native extension builds,
+//! which are POSIX-only here by construction (packager keeps Windows on
+//! the gem's no-SDK branch — precompiled gems, no ruby shim). So script
+//! mode gets a NAMED unsupported error on Windows, never a silently
+//! wrong file: [`unsupported_script_op`] refuses `Op::BundleExec` up
+//! front and the shim/bundle_exec files are not written.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -71,6 +84,11 @@ impl RuntimeDeployer {
         env: &[(String, String)],
         seed_dir: &Path,
     ) -> Result<(), TebakoError> {
+        if let Some(op) = unsupported_script_op(ops, self.shim_supported()) {
+            return Err(crate::error::plain_error(format!(
+                "deploy op {op:?} is unsupported on this platform: script mode (the bundle_exec re-entry) rides the ruby shim, a #!/bin/sh script with no Windows shape — press on a POSIX host, or drop the native-extension deploy"
+            )));
+        }
         self.write_driver(seed_dir, ops);
         crate::image::build_image(&self.driver_image(), seed_dir)?;
         self.stitch_driver_package()?;
@@ -257,6 +275,19 @@ impl RuntimeDeployer {
 // ---------------------------------------------------------------------
 // op serialization (RuntimeDeployer#op_line)
 // ---------------------------------------------------------------------
+
+/// The upfront script-mode guard (execute() refuses by name, never
+/// writes a file the platform cannot exec): the first op that needs the
+/// ruby shim when the platform has none. `Op::BundleExec` re-enters the
+/// driver through the shim's script mode; everything else (Gem, Bundle,
+/// Chdir, InstallAll) runs in the driver's plain branch on every
+/// platform.
+fn unsupported_script_op(ops: &[Op], shim_supported: bool) -> Option<&Op> {
+    if shim_supported {
+        return None;
+    }
+    ops.iter().find(|op| matches!(op, Op::BundleExec(..)))
+}
 
 fn op_lines(ops: &[Op]) -> String {
     ops.iter().map(op_line).collect::<Vec<_>>().join("\n")
@@ -559,6 +590,25 @@ end
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn script_mode_ops_are_named_unsupported_without_the_shim() {
+        let ops = vec![
+            Op::Chdir("/tmp/x".to_string()),
+            Op::BundleExec(None, vec!["install".to_string()]),
+        ];
+        // POSIX (shim present): nothing refused.
+        assert!(unsupported_script_op(&ops, true).is_none());
+        // Windows shape: the BundleExec op is the one named (Gem/Bundle/
+        // Chdir/InstallAll stay supported — they run the driver's plain
+        // branch).
+        assert_eq!(
+            unsupported_script_op(&ops, false),
+            Some(&Op::BundleExec(None, vec!["install".to_string()]))
+        );
+        let plain = vec![Op::Gem(vec!["env".to_string()])];
+        assert!(unsupported_script_op(&plain, false).is_none());
+    }
 
     #[test]
     fn op_lines_match_gem_rendering() {

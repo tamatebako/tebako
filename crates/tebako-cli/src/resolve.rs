@@ -18,6 +18,7 @@
 //! cache.
 
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
@@ -286,9 +287,7 @@ impl Resolver {
         let err = |e: std::io::Error| {
             crate::error::plain_error(format!("{e} installing {}", image_path.display()))
         };
-        let mut perms = fs::metadata(&tmp).map_err(err)?.permissions();
-        perms.set_mode(0o444);
-        fs::set_permissions(&tmp, perms).map_err(err)?;
+        make_readonly(&tmp).map_err(err)?;
         fs::rename(&tmp, &image_path).map_err(err)?;
         fs::write(&marker, format!("{expected}  {}\n", image.filename)).map_err(err)?;
         fs::write(
@@ -568,9 +567,7 @@ impl Resolver {
         let err = |e: std::io::Error| {
             crate::error::plain_error(format!("{e} installing {}", executable.display()))
         };
-        let mut perms = fs::metadata(tmp).map_err(err)?.permissions();
-        perms.set_mode(0o755);
-        fs::set_permissions(tmp, perms).map_err(err)?;
+        make_executable(tmp).map_err(err)?;
         fs::rename(tmp, executable).map_err(err)?;
         let dir = executable.parent().unwrap_or_else(|| Path::new("."));
         fs::write(dir.join(SHA256_FILE), format!("{}\n", entry.sha256)).map_err(err)?;
@@ -824,7 +821,7 @@ impl Resolver {
             })?;
         self.acquire_lock(&lock, entry_ref, &lock_path)?;
         let result = f();
-        flock(&lock, libc::LOCK_UN);
+        flock(&lock, LOCK_UN);
         result
     }
 
@@ -836,7 +833,7 @@ impl Resolver {
     ) -> Result<(), TebakoError> {
         let deadline = std::time::Instant::now() + self.lock_timeout;
         loop {
-            if flock(lock, libc::LOCK_EX | libc::LOCK_NB) {
+            if flock(lock, LOCK_EX | LOCK_NB) {
                 return Ok(());
             }
             if std::time::Instant::now() >= deadline {
@@ -879,12 +876,88 @@ impl Resolver {
     }
 }
 
+/// 0755 (installed executable): unix mode bits; a Windows executable
+/// needs no bit (PATHEXT makes the .exe runnable), so this is a no-op
+/// there. Mirrors tebako-shim's runtime install helpers.
+fn make_executable(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let mut perms = fs::metadata(path)?.permissions();
+        perms.set_mode(0o755);
+        fs::set_permissions(path, perms)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        Ok(())
+    }
+}
+
+/// 0444 (read-only artifact): unix mode bits; the Windows form is the
+/// readonly attribute (mode bits do not exist there).
+fn make_readonly(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let mut perms = fs::metadata(path)?.permissions();
+        perms.set_mode(0o444);
+        fs::set_permissions(path, perms)
+    }
+    #[cfg(not(unix))]
+    {
+        let mut perms = fs::metadata(path)?.permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(path, perms)
+    }
+}
+
+/// Lock ops for [`flock`]. The unix values are libc's flock(2) ops; the
+/// Windows port re-declares the three the install locks use (EX/NB map
+/// onto LockFileEx flags, UN onto UnlockFileEx) — call sites stay
+/// platform-free.
+#[cfg(unix)]
+pub(crate) use libc::{LOCK_EX, LOCK_NB, LOCK_UN};
+#[cfg(windows)]
+pub(crate) const LOCK_EX: i32 = 2;
+#[cfg(windows)]
+pub(crate) const LOCK_NB: i32 = 4;
+#[cfg(windows)]
+pub(crate) const LOCK_UN: i32 = 8;
+
 /// flock(2) wrapper; returns true when the operation succeeded.
 /// pub(crate): the RuntimeSdk lock (src/sdk.rs) reuses it — the crate's
-/// only flock call sites stay here.
+/// only lock call sites stay here.
+#[cfg(unix)]
 pub(crate) fn flock(file: &fs::File, op: i32) -> bool {
     use std::os::unix::io::AsRawFd;
     unsafe { libc::flock(file.as_raw_fd(), op) == 0 }
+}
+
+/// Windows: LockFileEx on one byte at offset 0 of the lock file — the
+/// same semantics as the unix flock (exclusive/shared, non-blocking on
+/// LOCK_NB; the kernel releases a crashed holder's lock when the handle
+/// dies). The shape tebako-shim's runtime.rs and tebako-bootstrap's
+/// platform.rs already use; the Win32 FFI is quarantined in this
+/// function (the crate's lock boundary).
+#[cfg(windows)]
+pub(crate) fn flock(file: &fs::File, op: i32) -> bool {
+    use std::os::windows::io::AsRawHandle as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        LockFileEx, UnlockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
+    };
+    use windows_sys::Win32::System::IO::OVERLAPPED;
+
+    let mut ov = OVERLAPPED::default();
+    if op & LOCK_UN != 0 {
+        return unsafe { UnlockFileEx(file.as_raw_handle(), 0, 1, 0, &mut ov) != 0 };
+    }
+    let mut flags = 0;
+    if op & LOCK_EX != 0 {
+        flags |= LOCKFILE_EXCLUSIVE_LOCK;
+    }
+    if op & LOCK_NB != 0 {
+        flags |= LOCKFILE_FAIL_IMMEDIATELY;
+    }
+    unsafe { LockFileEx(file.as_raw_handle(), flags, 0, 1, 0, &mut ov) != 0 }
 }
 
 /// Split `<x.y.z>-<platform>` (ruby version is exactly three numeric

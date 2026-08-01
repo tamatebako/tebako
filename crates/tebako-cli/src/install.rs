@@ -374,7 +374,10 @@ pub fn install_local(
             .collect();
         if !commands.is_empty() {
             let binary = resolve_shim_binary(shim_binary)?;
-            outcome.shims = manage::link_shims(home, &binary, &commands).map_err(map_shim)?;
+            let (shims, shim_notes) =
+                manage::link_shims(home, &binary, &commands).map_err(map_shim)?;
+            outcome.shims = shims;
+            outcome.notes.extend(shim_notes);
         }
     }
     Ok(outcome)
@@ -950,7 +953,9 @@ fn finish_install<T: Transport>(
         Vec::new()
     } else {
         let binary = resolve_shim_binary(shim_binary)?;
-        manage::link_shims(home, &binary, &commands).map_err(map_shim)?
+        let (shims, shim_notes) = manage::link_shims(home, &binary, &commands).map_err(map_shim)?;
+        notes.extend(shim_notes);
+        shims
     };
 
     journal(

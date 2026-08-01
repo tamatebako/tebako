@@ -258,10 +258,34 @@ fn link_and_unlink_use_the_platform_shim_name() {
     #[cfg(not(windows))]
     let want = "metanorma";
 
-    let linked = tebako_shim::manage::link_shims(&home, &dispatcher, &["metanorma".to_string()])
-        .expect("link");
+    let (linked, notes) =
+        tebako_shim::manage::link_shims(&home, &dispatcher, &["metanorma".to_string()])
+            .expect("link");
     assert_eq!(linked, vec![home.join("shims").join(want)]);
     assert!(home.join("shims").join(want).exists());
+    // Same-volume temp dirs: the Windows shape is a same-content link
+    // (hardlink or copy) — either way byte-identical to the dispatcher —
+    // and the fallback note only fires when the hardlink is declined.
+    #[cfg(unix)]
+    {
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(
+            std::fs::read_link(home.join("shims").join(want)).unwrap(),
+            dispatcher
+        );
+    }
+    #[cfg(windows)]
+    {
+        assert_eq!(
+            std::fs::read(home.join("shims").join(want)).unwrap(),
+            std::fs::read(&dispatcher).unwrap()
+        );
+        // A fallback (cross-volume) is the only note the link emits, and
+        // it names itself.
+        for note in &notes {
+            assert!(note.contains("copied the dispatcher"), "{note}");
+        }
+    }
 
     let removed =
         tebako_shim::manage::unlink_shims(&home, &["metanorma".to_string()]).expect("unlink");

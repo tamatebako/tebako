@@ -57,6 +57,14 @@ tfs = { version = "0.1.0", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
 tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
+# The runtime/SDK install locks (src/resolve.rs flock port): LockFileEx on
+# one byte at offset 0 — the tebako-shim runtime.rs shape. FFI is
+# quarantined in that one function.
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+] }
 
 [[bin]]
 name = "tebako"

@@ -502,15 +502,24 @@ pub fn shims_dir(home: &std::path::Path) -> PathBuf {
     home.join("shims")
 }
 
-/// Link `shim_binary` as `~/.tebako/shims/<command>` for every command —
-/// symlink on unix, a copy on Windows (symlink creation needs privilege
-/// there). Existing links are replaced (install/reinstall is
-/// idempotent). Returns the linked paths in command order.
+/// Link `shim_binary` as `~/.tebako/shims/<command>` for every command:
+/// symlink on unix; on Windows an NTFS hardlink FIRST (needs no admin
+/// and no Developer Mode — symlink creation needs
+/// SeCreateSymbolicLinkPrivilege), falling back to a byte copy when the
+/// hardlink fails (hardlinks are same-volume only, and some filesystems
+/// decline them). Both Windows shapes place the dispatcher's own bytes
+/// at `<command>.exe`, so argv0 dispatch is byte-identical either way —
+/// a `.cmd` wrapper was rejected: argv would re-parse through cmd.exe
+/// quoting, and CreateProcess callers could not spawn it in place.
+/// Existing links are replaced (install/reinstall is idempotent).
+/// Returns the linked paths in command order plus the notes naming each
+/// copy fallback (spec 07: a fallback is documented and named, never
+/// silent).
 pub fn link_shims(
     home: &std::path::Path,
     shim_binary: &std::path::Path,
     commands: &[String],
-) -> Result<Vec<PathBuf>, ShimError> {
+) -> Result<(Vec<PathBuf>, Vec<String>), ShimError> {
     if !shim_binary.is_file() {
         return fail(
             EX_TEBAKO_IO,
@@ -528,6 +537,7 @@ pub fn link_shims(
         )
     })?;
     let mut linked = Vec::new();
+    let mut notes = Vec::new();
     for command in commands {
         manifest::check_path_component("command name", command)?;
         let link = dir.join(shim_file_name(command));
@@ -539,10 +549,12 @@ pub fn link_shims(
                 )
             })?;
         }
-        link_one(shim_binary, &link)?;
+        if let Some(note) = link_one(shim_binary, &link)? {
+            notes.push(note);
+        }
         linked.push(link);
     }
-    Ok(linked)
+    Ok((linked, notes))
 }
 
 /// The shim's on-disk filename for a command: `<command>` on unix
@@ -558,7 +570,7 @@ fn shim_file_name(command: &str) -> String {
 }
 
 #[cfg(unix)]
-fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<(), ShimError> {
+fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<Option<String>, ShimError> {
     std::os::unix::fs::symlink(shim_binary, link).map_err(|e| {
         ShimError::new(
             EX_TEBAKO_IO,
@@ -568,21 +580,42 @@ fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<(),
                 shim_binary.display()
             ),
         )
-    })
+    })?;
+    Ok(None)
 }
 
+/// Windows: NTFS hardlink first — no admin, no Developer Mode (symlink
+/// creation needs SeCreateSymbolicLinkPrivilege) and the shims share the
+/// dispatcher's bytes. A hardlink is same-volume only, so a store on a
+/// different volume than the binary (or a filesystem without hardlink
+/// support) falls back to a byte copy, NAMED in the returned note (the
+/// installer prints it). Copy, not a `.cmd` wrapper: the copied file IS
+/// the dispatcher (argv0 dispatch byte-identical), while a wrapper
+/// would re-parse argv through cmd.exe quoting and could not be spawned
+/// in place by CreateProcess callers.
 #[cfg(windows)]
-fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<(), ShimError> {
-    std::fs::copy(shim_binary, link).map(|_| ()).map_err(|e| {
-        ShimError::new(
-            EX_TEBAKO_IO,
-            format!(
-                "cannot copy {} to {}: {e}",
-                shim_binary.display(),
+fn link_one(shim_binary: &std::path::Path, link: &std::path::Path) -> Result<Option<String>, ShimError> {
+    match std::fs::hard_link(shim_binary, link) {
+        Ok(()) => Ok(None),
+        Err(hard_err) => {
+            std::fs::copy(shim_binary, link)
+                .map(|_| ())
+                .map_err(|e| {
+                    ShimError::new(
+                        EX_TEBAKO_IO,
+                        format!(
+                            "cannot link {} -> {} (hardlink: {hard_err}; copy: {e})",
+                            link.display(),
+                            shim_binary.display()
+                        ),
+                    )
+                })?;
+            Ok(Some(format!(
+                "{}: NTFS hardlink unavailable ({hard_err}) — copied the dispatcher instead (byte-identical bytes; keep the tebako home and the binary on one volume to share them)",
                 link.display()
-            ),
-        )
-    })
+            )))
+        }
+    }
 }
 
 /// Remove `~/.tebako/shims/<command>` for every command (idempotent —
