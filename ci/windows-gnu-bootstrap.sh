@@ -42,10 +42,13 @@ cargo test -p tebako-bootstrap --target "$TARGET" --no-run
 # --- 2. DLL-import forensics ------------------------------------------------
 # STATUS_ENTRYPOINT_NOT_FOUND fails the process BEFORE main, so the
 # failure's own stderr never names the missing entry — enumerate every
-# import up front instead.
+# import up front instead. Unprefixed binutils: MSYS2's ucrt64 package
+# ships objdump.exe/strip.exe WITHOUT the x86_64-w64-mingw32- alias
+# (run 30697405256 proved the prefixed names do not resolve); the closed
+# PATH makes the one toolchain's tools unambiguous.
 for exe in target/"$TARGET"/debug/deps/*.exe; do
   echo "=== imports: $exe ==="
-  x86_64-w64-mingw32-objdump -p "$exe" \
+  objdump -p "$exe" \
     | grep -E "DLL Name|^\s+[0-9a-f]+\s+\S+\s*$" | head -60 || true
 done
 
@@ -55,7 +58,7 @@ cargo test -p tebako-bootstrap --target "$TARGET" -- "$SERIAL" --nocapture
 # --- 4. release size gate ---------------------------------------------------
 cargo build --release -p tebako-bootstrap --target "$TARGET"
 EXE="target/$TARGET/release/tebako-bootstrap.exe"
-x86_64-w64-mingw32-strip "$EXE"
+strip "$EXE"
 size=$(stat -c %s "$EXE")
 echo "tebako-bootstrap.exe (stripped, release): $size bytes (budget $BUDGET)"
 if [ "$size" -ge "$BUDGET" ]; then
