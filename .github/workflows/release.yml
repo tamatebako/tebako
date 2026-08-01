@@ -243,83 +243,38 @@ jobs:
           path: dwarfs-rs
           submodules: recursive
 
-      - name: Restore the vcpkg baseline (dwarfs-t is the single writer)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # Never fails the leg: a miss means the ports build normally.
-        # The script owns the canonical root and exports
-        # DWARFS_RS_VCPKG_INSTALLED_DIR into GITHUB_ENV.
-        run: |
-          bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
-            dwarfs-rs/dwarfs-t "${{ matrix.triplet }}" \
-            || echo "baseline miss — ports build normally"
-
-      - uses: dtolnay/rust-toolchain@e43eeffd51aefeea929f4ea14e09fd077153e788 # 1.94.1
-
-      - name: Install native build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config \
-            autoconf automake autoconf-archive libtool \
-            curl zip unzip tar ca-certificates \
-            libbz2-dev
-
-
-      - name: Set up vcpkg
-        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11.6
-        with:
-          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
-          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
-
       - name: Cache vcpkg package archives
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/vcpkg
-          key: vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**', 'tebako-rs/crates/sqfs-sys/vcpkg.json', 'tebako-rs/crates/sqfs-sys/vcpkg_ports/**', 'tebako-rs/crates/sqfs-sys/vcpkg_triplets/**') }}
+          key: vcpkg-archives-floor-${{ runner.arch }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**', 'tebako-rs/crates/sqfs-sys/vcpkg.json', 'tebako-rs/crates/sqfs-sys/vcpkg_ports/**', 'tebako-rs/crates/sqfs-sys/vcpkg_triplets/**') }}
           restore-keys: |
-            vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-
+            vcpkg-archives-floor-${{ runner.arch }}-
 
-      - name: Pre-install squashfs-tools-ng (serialized)
-        working-directory: tebako-rs
-        run: |
-          ../.vcpkg-root/vcpkg install \
-            --vcpkg-root "${{ github.workspace }}/.vcpkg-root" \
-            --x-wait-for-lock \
-            --x-manifest-root crates/sqfs-sys \
-            --x-install-root "${{ github.workspace }}/.sqfs-installed" \
-            --triplet "${{ matrix.triplet }}" \
-            --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
-            --overlay-ports crates/sqfs-sys/vcpkg_ports
-          echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
-
-      - name: Build the five binaries (release)
-        working-directory: tebako-rs
-        env:
-          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-        run: |
-          cargo build --release --target ${{ matrix.target }} \
-            -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
-
-      - name: Stage, strip, size-gate
-        working-directory: tebako-rs
+      # The glibc floor (spec 19 §3): the shipping linux-gnu artifacts
+      # build INSIDE an ubuntu:20.04 container (glibc 2.31) — a 24.04
+      # build refuses to start anywhere older (symbol versions are
+      # one-directional). No vcpkg-baseline restore: the published
+      # baseline is 24.04-built and would re-import 2.39 symbols through
+      # the back door; the ports build in-leg. The build script also
+      # gates the produced bootstrap on max GLIBC ≤ 2.31.
+      - name: Build in the ubuntu:20.04 floor container (docker run)
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
-        run: bash .github/workflows/lib/stage.sh
-
-      - name: Stage the link unit (tebako-driver + tfs, scoped, + closure)
-        working-directory: tebako-rs
-        env:
-          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-          SQFS_SYS_VCPKG_ROOT: ${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}
-          VERSION: ${{ needs.prepare.outputs.version }}
-          PLATFORM: ${{ matrix.platform }}
+          TARGET: ${{ matrix.target }}
+          TRIPLET: ${{ matrix.triplet }}
+          RUST_VERSION: ${{ env.RUST_VERSION }}
+          VCPKG_COMMIT: ${{ env.VCPKG_COMMIT }}
+          BOOTSTRAP_SIZE_BUDGET: ${{ env.BOOTSTRAP_SIZE_BUDGET }}
         run: |
-          mkdir -p out/link-unit-$PLATFORM
-          ruby tools/stage_link_unit "out/link-unit-$PLATFORM" --skip-build
-          tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -v "$HOME/.cache/vcpkg:/root/.cache/vcpkg" \
+            -e VERSION -e PLATFORM -e TARGET -e TRIPLET \
+            -e RUST_VERSION -e VCPKG_COMMIT -e BOOTSTRAP_SIZE_BUDGET \
+            -e GITHUB_STEP_SUMMARY -e GITHUB_WORKSPACE \
+            ubuntu:20.04 bash "$GITHUB_WORKSPACE/tebako-rs/ci/gnu-floor-build.sh"
 
       - name: Upload link-unit
         if: needs.prepare.outputs.upload_url != ''
