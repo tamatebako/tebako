@@ -124,8 +124,8 @@ pub unsafe extern "C" fn tebako_driver_boot(
     boot_impl(argc, argv, runtime_root)
 }
 
-/// The ruby-runtime entry (the patched ruby `main.c` hook). Identical to
-/// [`tebako_driver_boot`] with the ruby memfs root, plus:
+/// The ruby-runtime entry (the patched ruby `main.c` hook's behavior).
+/// Identical to [`tebako_driver_boot`] with the ruby memfs root, plus:
 ///
 /// - the `miniruby` pass-through: the build-time tool links the same
 ///   patched `main.c` and must run as a plain interpreter (no mounts, no
@@ -136,9 +136,14 @@ pub unsafe extern "C" fn tebako_driver_boot(
 /// - the mount-point and original-pwd getters, set for the io-routing
 ///   patches.
 ///
+/// NOT a C export: the `tebako_main` C symbol belongs to the runtime
+/// factory's generated fs TU, which forwards to [`tebako_driver_boot`]
+/// with the exe's own compiled-in mount point (the factory is the single
+/// owner of the runtime root; the driver carries only this default for
+/// driver-only consumers and tests — the two can never drift).
+///
 /// # Safety
 /// Same contract as [`tebako_driver_boot`], minus `runtime_root`.
-#[no_mangle]
 pub unsafe extern "C" fn tebako_main(argc: *mut c_int, argv: *mut *mut *mut c_char) -> c_int {
     if argc.is_null() || argv.is_null() {
         return EX_TEBAKO_IO;
