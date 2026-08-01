@@ -157,27 +157,32 @@ fn runtime_ref_falls_back_to_the_press_level_ruby() {
         runtime_ref: None,
         ..explicit
     };
+    // the fallback rides the press's own tebako version (the default at
+    // test time — version-agnostic on purpose)
     assert_eq!(
         entry_runtime_ref(&fallback, "3.3.7", &o, &resolved),
-        "ruby@3.3.7;tebako=0.15.9"
+        format!("ruby@3.3.7;tebako={}", tebako_cli::DEFAULT_TEBAKO_VERSION)
     );
 }
 
 #[test]
 fn explicit_refs_must_match_the_press_abi() {
-    let o = opts(); // tebako_version 0.15.9
+    let o = opts();
     let good = SuiteEntry {
         name: "a".to_string(),
         root: "r".to_string(),
         entry: "e".to_string(),
-        runtime_ref: Some("ruby@3.4.2;tebako=0.15.9".to_string()),
+        runtime_ref: Some(format!(
+            "ruby@3.4.2;tebako={}",
+            tebako_cli::DEFAULT_TEBAKO_VERSION
+        )),
     };
     check_entry_abi(&good, &o).unwrap();
     let bad = SuiteEntry {
-        runtime_ref: Some("ruby@3.4.2;tebako=0.16.0".to_string()),
+        runtime_ref: Some("ruby@3.4.2;tebako=9.9.9".to_string()),
         ..good
     };
     let e = check_entry_abi(&bad, &o).unwrap_err();
-    assert!(e.message.contains("0.16.0"), "{e:?}");
+    assert!(e.message.contains("9.9.9"), "{e:?}");
     assert!(e.message.contains("abi"), "{e:?}");
 }

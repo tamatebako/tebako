@@ -26,7 +26,9 @@ const USAGE: &str = "Usage:
   tebako uninstall <name>              remove a payload's shims and cache entry
   tebako info [topic] [--remote] [--json]
                                        the store/system surface (system|runtimes|payloads|shims|registries|store)
-  tebako inspect <artifact> [flags]    payload/package introspection (spec 15)
+  tebako inspect <artifact> [flags]    payload/package introspection (spec 15);
+                                       --contract prints the spec-18 contract card
+                                       (era, contract versions, mount_root, abi, trust + verdict)
   tebako publish --name <app> [--version <v>] --release tfs:github:<owner>/<repo>[:<tag>]
                (--payload <path> | --payload <triplet>=<path>)...
                [--standalone <triplet>=<path>]... [--sign[=<keyid>]]
@@ -83,6 +85,27 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         eprintln!("{VERSION_BANNER}");
     } else {
         println!("{VERSION_BANNER}");
+    }
+    // spec 18 C13: the store layout check runs once per process, ahead of
+    // every store-touching verb (S41: a newer stamp is the upgrade
+    // refusal; S42: a pre-versioning store is stamped and the named
+    // migration announced on stderr — tebako-resolve::store owns both).
+    if let Ok(home) = tebako_home() {
+        match tebako_resolve::store::check_once(&home) {
+            Ok(tebako_resolve::store::LayoutCheck::Migrated) => {
+                eprintln!(
+                    "tebako: note: {}",
+                    tebako_resolve::store::migration_message(&home)
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                return Err(CliExit::Error(tebako_cli::error::TebakoError::new(
+                    e.to_string(),
+                    74,
+                )));
+            }
+        }
     }
     match subcommand {
         "press" => {
@@ -162,6 +185,7 @@ fn run_inspect(args: &[String]) -> Result<(), CliExit> {
                 opts.require_signed = true;
             }
             "--backend-json" => opts.backend_json = true,
+            "--contract" => opts.contract = true,
             "--slot" => {
                 i += 1;
                 let value = args
@@ -176,7 +200,7 @@ fn run_inspect(args: &[String]) -> Result<(), CliExit> {
             other if path.is_none() && !other.starts_with('-') => path = Some(other.to_string()),
             other => {
                 return Err(CliExit::Usage(format!(
-                    "unknown inspect option '{other}' (usage: tebako inspect <artifact> [--manifest|--provides|--requires|--platforms|--json|--verify|--require-signed|--backend-json|--slot N])"
+                    "unknown inspect option '{other}' (usage: tebako inspect <artifact> [--contract|--manifest|--provides|--requires|--platforms|--json|--verify|--require-signed|--backend-json|--slot N])"
                 )))
             }
         }

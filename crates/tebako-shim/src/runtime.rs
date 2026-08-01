@@ -7,8 +7,10 @@
 //!
 //! The download path mirrors tebako-bootstrap's semantics — per-entry
 //! flock (120 s), tmp + rename install, `sha256`/`origin` trust markers,
-//! read-only image, manifest.json-primary / SHA256SUMS-fallback checksum
-//! extraction, `TEBAKO_RUNTIME_MIRROR` / `TEBAKO_OFFLINE` — reimplemented
+//! read-only image, the spec 18 C2 release-card gate (pre-download
+//! contract refusal; tebako-resolve::contract owns the reader),
+//! manifest.json-primary / SHA256SUMS-fallback checksum extraction,
+//! `TEBAKO_RUNTIME_MIRROR` / `TEBAKO_OFFLINE` — reimplemented
 //! here rather than linked: the bootstrap crate drags in rnp, and the
 //! shim stays pure-Rust + tebako-http.
 
@@ -19,7 +21,9 @@ use tpkg::RuntimeRequirement;
 
 use crate::config::{self, RuntimePref};
 use crate::versions::{self, Constraint};
-use crate::{fail, Ctx, ShimError, EX_TEBAKO_IO, EX_TEBAKO_SHA, EX_TEBAKO_UNAVAILABLE};
+use crate::{
+    fail, Ctx, ShimError, EX_TEBAKO_CONTRACT, EX_TEBAKO_IO, EX_TEBAKO_SHA, EX_TEBAKO_UNAVAILABLE,
+};
 
 const DEFAULT_RELEASES_BASE: &str =
     "https://github.com/tamatebako/tebako-runtime-ruby/releases/download";
@@ -266,9 +270,9 @@ pub fn resolve_runtime(
     // predates the field (abi: None) stays eligible — the compat window,
     // never a match failure of its own.
     let abi_compatible = |c: &CachedRuntime| {
-        req.abi
-            .as_ref()
-            .map_or(true, |want| c.abi.as_ref().map_or(true, |have| have == want))
+        req.abi.as_ref().map_or(true, |want| {
+            c.abi.as_ref().map_or(true, |have| have == want)
+        })
     };
     if let Some(hit) = newest_compatible(
         &cached
@@ -638,31 +642,90 @@ fn sha_from_sums(text: &str, asset: &str) -> Result<String, ()> {
     Err(())
 }
 
+/// Fetch the release index (`manifest.json`) into the tmp staging dir
+/// and return its text. `None` when it does not exist or does not read —
+/// the caller decides what that means (spec 18: the pre-era signal).
+fn fetch_manifest_text(base: &str, local: bool, abi: &str, tmp_dir: &Path) -> Option<String> {
+    let manifest_tmp = tmp_dir.join("manifest.json");
+    fetch_url(
+        &format!("{base}/v{abi}/manifest.json"),
+        local,
+        &manifest_tmp,
+    )
+    .ok()?;
+    std::fs::read_to_string(&manifest_tmp).ok()
+}
+
+/// spec 18 C2 pre-download gate (S11/S12): the release manifest's entry
+/// for the runtime exe must declare its contract set — tebako-resolve's
+/// reader owns the semantics (the shim links it); the refusal is exit 75
+/// with both sides named. An entry-less asset is undeclared by
+/// definition (no old-path readers).
+fn contract_gate(runtime_ref: &str, manifest_text: &str, asset: &str) -> Result<(), ShimError> {
+    match tebako_resolve::contract::gate(manifest_text, asset) {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => fail(
+            EX_TEBAKO_CONTRACT,
+            format!(
+                "runtime \"{runtime_ref}\" is pre-era — its release manifest entry declares no contract set (no entry for {asset}) — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+            ),
+        ),
+        Err(e) => fail(
+            EX_TEBAKO_CONTRACT,
+            format!("runtime \"{runtime_ref}\": {e}"),
+        ),
+    }
+}
+
 /// The expected checksum for an asset: manifest.json primary,
 /// SHA256SUMS.txt fallback (the bootstrap's exact order). Returns the
 /// optional sha plus the two diagnostic indices so the caller names the
 /// failure itself — an absent entry is data, not an error (the v1-era
-/// image rule needs it).
+/// image rule needs it). `manifest_text` is the already-fetched release
+/// index when the caller holds it (the contract gate reads it first);
+/// `None` fetches it here.
+#[allow(clippy::too_many_arguments)]
 fn expected_checksum(
     base: &str,
     local: bool,
     abi: &str,
     asset: &str,
     tmp_dir: &Path,
+    manifest_text: Option<&str>,
 ) -> Result<(Option<String>, (usize, usize)), ShimError> {
-    let manifest_url = format!("{base}/v{abi}/manifest.json");
     let sums_url = format!("{base}/v{abi}/SHA256SUMS.txt");
     let mut expected = None;
     let mut diag_manifest = 1;
-    let manifest_tmp = tmp_dir.join("manifest.json");
-    if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
-        diag_manifest = 2;
-        if let Ok(text) = std::fs::read_to_string(&manifest_tmp) {
+    let owned_text;
+    let text = match manifest_text {
+        Some(text) => {
             diag_manifest = 3;
-            if let Ok(sha) = sha_from_manifest(&text, asset) {
-                diag_manifest = 4;
-                expected = Some(sha);
+            text
+        }
+        None => {
+            let manifest_tmp = tmp_dir.join("manifest.json");
+            if fetch_url(
+                &format!("{base}/v{abi}/manifest.json"),
+                local,
+                &manifest_tmp,
+            )
+            .is_ok()
+            {
+                diag_manifest = 2;
+                owned_text = std::fs::read_to_string(&manifest_tmp).ok();
+                if owned_text.is_some() {
+                    diag_manifest = 3;
+                }
+                owned_text.as_deref().unwrap_or("")
+            } else {
+                ""
             }
+        }
+    };
+    if diag_manifest == 3 {
+        if let Ok(sha) = sha_from_manifest(text, asset) {
+            diag_manifest = 4;
+            expected = Some(sha);
         }
     }
     let mut diag_sums = 0;
@@ -830,10 +893,31 @@ fn download_runtime(
         )
     });
     let result = result.and_then(|()| {
+        // spec 18 C2: the release card gates BEFORE any asset download —
+        // a contract refusal never downloads a byte of the runtime. No
+        // readable manifest is the same pre-era signal (no old-path
+        // readers; the SHA256SUMS fallback covers checksums only).
+        let manifest_url = format!("{base}/v{}/manifest.json", pref.tebako);
+        let manifest_text = fetch_manifest_text(&base, local, &pref.tebako, &tmp_dir).ok_or_else(|| {
+            ShimError::new(
+                EX_TEBAKO_CONTRACT,
+                format!(
+                    "runtime \"{runtime_ref}\" is pre-era — no readable release manifest at {manifest_url} — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                ),
+            )
+        })?;
+        contract_gate(&runtime_ref, &manifest_text, &asset)?;
+
         // executable
         let exe_url = format!("{base}/v{}/{asset}", pref.tebako);
-        let (exe_sha, (diag_m, diag_s)) =
-            expected_checksum(&base, local, &pref.tebako, &asset, &tmp_dir)?;
+        let (exe_sha, (diag_m, diag_s)) = expected_checksum(
+            &base,
+            local,
+            &pref.tebako,
+            &asset,
+            &tmp_dir,
+            Some(&manifest_text),
+        )?;
         const DIAG: [&str; 5] = [
             "not tried",
             "download failed",
@@ -853,11 +937,21 @@ fn download_runtime(
         let actual = install_asset(&exe_url, local, &asset, &tmp_dir, &expected)?;
         make_executable(&tmp_dir.join(&asset));
         // image-era runtime image: same mirror/offline/verify rules —
-        // when the release index carries it. A pre-image (v1-era) release
-        // has no image entry: the runtime's embedded image serves (the
-        // bootstrap's graceful-degradation rule), and the exe installs
-        // alone rather than hard-failing.
-        let (image_sha, _) = expected_checksum(&base, local, &pref.tebako, &image_asset, &tmp_dir)?;
+        // when the release index carries it. The image is optional only
+        // in an otherwise contract-complete release (an entry with the
+        // contract set but no `image` key: the exe's embedded image
+        // serves and it installs alone — the s14 sums-fallback shape).
+        // The contract gate is the same one (the exe entry governs its
+        // additive image too).
+        contract_gate(&runtime_ref, &manifest_text, &asset)?;
+        let (image_sha, _) = expected_checksum(
+            &base,
+            local,
+            &pref.tebako,
+            &image_asset,
+            &tmp_dir,
+            Some(&manifest_text),
+        )?;
         let has_image = if let Some(image_expected) = image_sha {
             let image_url = format!("{base}/v{}/{image_asset}", pref.tebako);
             let image_actual =

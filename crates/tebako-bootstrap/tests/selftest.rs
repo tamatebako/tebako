@@ -501,7 +501,8 @@ fn s13_image_offline_miss_and_sha_mismatch() {
 
 #[test]
 fn s14_image_sums_fallback_and_fat_payload() {
-    // manifest.json WITHOUT the image key: the SHA256SUMS line supplies
+    // manifest.json WITHOUT the image key (but WITH the contract set —
+    // the pre-download gate runs first): the SHA256SUMS line supplies
     // the expected checksum.
     let h1 = h();
     let manifest = h1
@@ -511,7 +512,7 @@ fn s14_image_sums_fallback_and_fat_payload() {
     std::fs::write(
         &manifest,
         format!(
-            "[\n  {{\n    \"tebako_version\": \"{TEBAKO_VER}\",\n    \"ruby_version\": \"{RUBY_VER}\",\n    \"platform\": \"{}\",\n    \"filename\": \"{}\",\n    \"sha256\": \"{}\",\n    \"size_bytes\": 12345\n  }}\n]\n",
+            "[\n  {{\n    \"tebako_version\": \"{TEBAKO_VER}\",\n    \"contract_era\": 2,\n    \"contract_version\": 2,\n    \"mount_root\": \"/__tfs__\",\n    \"ruby_version\": \"{RUBY_VER}\",\n    \"platform\": \"{}\",\n    \"filename\": \"{}\",\n    \"sha256\": \"{}\",\n    \"size_bytes\": 12345\n  }}\n]\n",
             harness::platform(),
             h1.asset,
             h1.sha
@@ -624,7 +625,7 @@ fn contract_version_parsing() {
     let text2 = text.replace("\"contract_version\": 1", "\"contract_version\": 2");
     assert_eq!(contract(&text2, exe), Some(2));
 
-    // Absent field = pre-contract release = None (legacy contract 1).
+    // Absent field = None (the gate reads that as the pre-era signal).
     let legacy = text.replace("    \"contract_version\": 1,\n", "");
     assert!(!legacy.contains("contract_version"));
     assert_eq!(contract(&legacy, exe), None);
@@ -639,17 +640,9 @@ fn contract_version_parsing() {
 
 #[test]
 fn s15_contract_negotiation_accept_then_refuse() {
-    // Declared contract 1 (this bootstrap's generation): accepted.
+    // The era-2 factory shape (the harness default: contract_era 2,
+    // contract_version 2, mount_root declared): accepted.
     let h1 = h();
-    let manifest = h1
-        .mirror_root
-        .join(format!("v{TEBAKO_VER}"))
-        .join("manifest.json");
-    let declared1 = std::fs::read_to_string(&manifest).unwrap().replace(
-        "\"tebako_version\":",
-        "\"contract_version\": 1,\n    \"tebako_version\":",
-    );
-    std::fs::write(&manifest, declared1).unwrap();
     let pkg = h1.lean_pkg("myapp");
     let home = h1.home("home-c1");
     let (rc, out, err) = h1.run(&pkg, &home, &[], &["hello"]);
@@ -657,27 +650,84 @@ fn s15_contract_negotiation_accept_then_refuse() {
     assert!(out.contains("FAKE-RUNTIME"), "{out}");
 
     // Declared contract 2 (a future generation): fail CLOSED, exit 75,
-    // nothing enters the cache.
+    // nothing enters the cache — and the refusal fires BEFORE the
+    // download (no download progress in the raw transcript).
     let h2 = h();
     let manifest2 = h2
         .mirror_root
         .join(format!("v{TEBAKO_VER}"))
         .join("manifest.json");
-    let declared2 = std::fs::read_to_string(&manifest2).unwrap().replace(
-        "\"tebako_version\":",
-        "\"contract_version\": 2,\n    \"tebako_version\":",
-    );
+    let declared2 = std::fs::read_to_string(&manifest2)
+        .unwrap()
+        .replace("\"contract_version\": 2", "\"contract_version\": 3");
     std::fs::write(&manifest2, declared2).unwrap();
     let pkg2 = h2.lean_pkg("myapp");
     let home2 = h2.home("home-c2");
-    let (rc, _, err) = h2.run(&pkg2, &home2, &[], &[]);
+    let (rc, _, err) = h2.run_raw(&pkg2, &home2, &[], &[]);
     assert_eq!(rc, 75, "{err}");
-    assert!(err.contains("contract_version 2"), "{err}");
-    assert!(err.contains("speaks contract 1"), "{err}");
+    assert!(err.contains("contract_version 3"), "{err}");
+    assert!(err.contains("speaks contract 2"), "{err}");
+    assert!(
+        !err.contains("downloading "),
+        "the contract refusal must precede any download: {err}"
+    );
     assert!(
         !home2.join("runtimes").join(&h2.entry).exists(),
         "a refused-contract runtime entered the cache"
     );
+}
+
+#[test]
+fn s11_pre_era_manifest_is_refused_before_download() {
+    // spec 18 S11: a release manifest that declares no contract set
+    // (the pre-18 factory shape) is refused by name — never adapted.
+    let h1 = h();
+    let manifest = h1
+        .mirror_root
+        .join(format!("v{TEBAKO_VER}"))
+        .join("manifest.json");
+    let pre_era = std::fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("    \"contract_era\": 2,\n", "")
+        .replace("    \"contract_version\": 2,\n", "")
+        .replace("    \"mount_root\": \"/__tfs__\",\n", "");
+    assert!(!pre_era.contains("contract_"));
+    std::fs::write(&manifest, pre_era).unwrap();
+    let pkg = h1.lean_pkg("myapp");
+    let home = h1.home("home-pre-era");
+    let (rc, _, err) = h1.run_raw(&pkg, &home, &[], &[]);
+    assert_eq!(rc, 75, "{err}");
+    assert!(err.contains("pre-era"), "{err}");
+    assert!(
+        err.contains("contract_era, contract_version, mount_root"),
+        "{err}"
+    );
+    assert!(
+        !err.contains("downloading "),
+        "the pre-era refusal must precede any download: {err}"
+    );
+    assert!(
+        !home.join("runtimes").join(&h1.entry).exists(),
+        "a pre-era runtime entered the cache"
+    );
+
+    // A newer declared era is the upgrade refusal (both numbers named).
+    let h3 = h();
+    let manifest3 = h3
+        .mirror_root
+        .join(format!("v{TEBAKO_VER}"))
+        .join("manifest.json");
+    let era3 = std::fs::read_to_string(&manifest3)
+        .unwrap()
+        .replace("\"contract_era\": 2", "\"contract_era\": 3");
+    std::fs::write(&manifest3, era3).unwrap();
+    let pkg3 = h3.lean_pkg("myapp");
+    let home3 = h3.home("home-era3");
+    let (rc, _, err) = h3.run(&pkg3, &home3, &[], &[]);
+    assert_eq!(rc, 75, "{err}");
+    assert!(err.contains("era 3"), "{err}");
+    assert!(err.contains("speaks era 2"), "{err}");
+    assert!(!err.contains("pre-era"), "{err}");
 }
 
 #[test]
@@ -694,16 +744,19 @@ fn s16_image_contract_mismatch_refused() {
         .mirror_root
         .join(format!("v{TEBAKO_VER}"))
         .join("manifest.json");
-    let declared2 = std::fs::read_to_string(&manifest).unwrap().replace(
-        "\"tebako_version\":",
-        "\"contract_version\": 2,\n    \"tebako_version\":",
-    );
+    let declared2 = std::fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("\"contract_version\": 2", "\"contract_version\": 3");
     std::fs::write(&manifest, declared2).unwrap();
 
     let pkg = h.lean_pkg_image("imgapp");
-    let (rc, _, err) = h.run(&pkg, &home, &[], &[]);
+    let (rc, _, err) = h.run_raw(&pkg, &home, &[], &[]);
     assert_eq!(rc, 75, "{err}");
-    assert!(err.contains("contract_version 2"), "{err}");
+    assert!(err.contains("contract_version 3"), "{err}");
+    assert!(
+        !err.contains("downloading "),
+        "the image-path refusal must precede the image download: {err}"
+    );
     assert!(
         !h.cache_image(&home).exists(),
         "a refused-contract image entered the cache"

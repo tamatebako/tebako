@@ -218,6 +218,14 @@ impl PayloadCache {
         if let Some(entry) = self.get(name, version)? {
             return Ok((entry, InstallStatus::Hit));
         }
+        // spec 18 C13 (defense in depth — the loader binaries check at
+        // their entry points): a store stamped by a newer tebako refuses
+        // every install; a pre-versioning store is stamped once.
+        crate::store::check_once(&self.root).map_err(|e| ResolveError::CacheIo {
+            op: "checking the store layout of",
+            path: self.root.clone(),
+            reason: e.to_string(),
+        })?;
         let lock_path = self.lock_file(name, version);
         self.with_entry_lock(&lock_path, || {
             if let Some(entry) = self.get(name, version)? {

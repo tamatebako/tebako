@@ -52,6 +52,7 @@
 //!   gem's 8-byte padding is cosmetic);
 //! - .tebako.yml is not read.
 
+pub mod contract;
 pub mod deploy;
 pub mod error;
 pub mod fetch;

@@ -911,7 +911,7 @@ pub fn publish_full(
         .unwrap_or_else(|| cwd.join("tpkg-registry.yaml").display().to_string());
     let mut registry = if registry_out == "-" {
         Registry {
-            schema_version: 1,
+            schema_version: Some(tebako_resolve::registry::REGISTRY_SCHEMA_VERSION),
             payloads: Vec::new(),
         }
     } else {
@@ -924,7 +924,7 @@ pub fn publish_full(
                 )
             })?,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Registry {
-                schema_version: 1,
+                schema_version: Some(tebako_resolve::registry::REGISTRY_SCHEMA_VERSION),
                 payloads: Vec::new(),
             },
             Err(e) => {
@@ -946,6 +946,18 @@ pub fn publish_full(
         err(
             EX_TEBAKO_MANIFEST,
             format!("cannot serialize the registry: {e}"),
+        )
+    })?;
+    // spec 18 C12: publish validates the outgoing registry against the
+    // schema it declares — the reader's own discipline (a document this
+    // build cannot read back is never published).
+    Registry::from_yaml(&registry_text).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the outgoing registry does not validate against schema_version {}: {e}",
+                tebako_resolve::registry::REGISTRY_SCHEMA_VERSION
+            ),
         )
     })?;
     let registry_path = if registry_out == "-" {

@@ -27,6 +27,10 @@ tebako-shim = { version = "0.1.0", path = "../tebako-shim" }
 # OpenPGP verification of signed registry entries (spec 09; strict when the
 # entry carries a signature, the v1-legacy warn when it does not).
 tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+# The bootstrap's embedded artifact-info block (spec 18 §2.2/S38): the
+# `tebako inspect --contract` card reads it through the owner crate — the
+# marker grammar has exactly one home.
+tebako-bootstrap = { version = "0.1.0", path = "../tebako-bootstrap" }
 # (the tfs dependency is per-target, below — squashfs is POSIX-only)
 # The suite file (--suite) is authored YAML (spec 00 invariant 6) — the
 # tpkg manifest convention (serde_yml), not serde_yaml.

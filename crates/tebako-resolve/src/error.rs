@@ -48,6 +48,9 @@ pub enum RegistryError {
     /// forms listed, never a fallback chain (spec 04 §2: exactly one
     /// location per form).
     BadRef { input: String, reason: String },
+    /// The document carries no `schema_version` (spec 18 C8/S46): an
+    /// era-1 document — refused by name, never a silent default.
+    PreEra,
     /// YAML structural failure (the document does not match the model).
     Yaml { reason: String },
     /// Semantic validation failure (bad schema_version, dangling default,
@@ -68,6 +71,10 @@ impl fmt::Display for RegistryError {
             RegistryError::BadRef { input, reason } => write!(
                 f,
                 "invalid registry reference '{input}': {reason}; expected one of {REGISTRY_REF_FORMS}"
+            ),
+            RegistryError::PreEra => write!(
+                f,
+                "the registry carries no schema_version — a pre-era (era 1) document; republish the registry with a current tebako (spec 18 C8)"
             ),
             RegistryError::Yaml { reason } => {
                 write!(f, "cannot parse the registry yaml: {reason}")

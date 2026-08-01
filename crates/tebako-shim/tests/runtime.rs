@@ -186,12 +186,14 @@ fn sha_mismatch_is_exit_70_and_nothing_enters_the_cache() {
 }
 
 #[test]
-fn v1_era_release_without_an_image_entry_installs_exe_only() {
-    let tmp = TempDir::new("v1-era");
+fn pre_era_release_is_refused_before_download() {
+    // spec 18 S11: a release whose manifest declares no contract set
+    // (the pre-18 factory shape — contract fields absent) is refused by
+    // name, exit 75, before any download. No old-path readers: the v1
+    // graceful-degradation era is over.
+    let tmp = TempDir::new("pre-era");
     let home = tmp.path().join("home");
     let mirror = tmp.path().join("mirror");
-    // A pre-image (v1-era) release: the exe alone, a manifest carrying
-    // only the exe entry — no .tfs anywhere in the release index.
     let platform = platform();
     let dir = mirror.join("v9.9.9");
     std::fs::create_dir_all(&dir).expect("mirror dir");
@@ -199,7 +201,7 @@ fn v1_era_release_without_an_image_entry_installs_exe_only() {
         "tebako-runtime-9.9.9-3.3.7-{platform}{}",
         tebako_shim::runtime::exe_suffix()
     );
-    let exe_bytes = b"v1-era runtime exe\n";
+    let exe_bytes = b"pre-era runtime exe\n";
     std::fs::write(dir.join(&exe_name), exe_bytes).expect("exe");
     std::fs::write(
         dir.join("manifest.json"),
@@ -219,12 +221,56 @@ fn v1_era_release_without_an_image_entry_installs_exe_only() {
         format!("file://{}", mirror.display()),
     );
 
-    // The v1 rule: the exe installs alone (its embedded image serves) —
-    // the absent image entry degrades instead of hard-failing.
-    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
-    assert_eq!(rt.lang_version, "3.3.7");
-    assert!(rt.exe.is_file());
-    assert!(rt.image.is_none());
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT, "{}", err.message);
+    assert!(err.message.contains("pre-era"), "{}", err.message);
+    assert!(
+        !home
+            .join("runtimes")
+            .join(format!("ruby-3.3.7-9.9.9-{platform}"))
+            .exists(),
+        "a pre-era runtime entered the cache"
+    );
+}
+
+#[test]
+fn a_newer_declared_contract_is_the_upgrade_refusal() {
+    // spec 18 S12: contract_version newer than spoken → exit 75, both
+    // numbers named; nothing enters the cache.
+    let tmp = TempDir::new("contract-2");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_mirror(&mirror, "4.0.6", "0.16.0", false);
+    let manifest = mirror.join("v0.16.0").join("manifest.json");
+    let declared2 = std::fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("\"contract_version\": 2", "\"contract_version\": 3");
+    std::fs::write(&manifest, declared2).unwrap();
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 4.0.6\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        format!("file://{}", mirror.display()),
+    );
+
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT, "{}", err.message);
+    assert!(
+        err.message.contains("contract_version 3"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("speaks contract 2"), "{}", err.message);
+    assert!(
+        !home
+            .join("runtimes")
+            .join(format!("ruby-4.0.6-0.16.0-{}", platform()))
+            .exists(),
+        "a refused-contract runtime entered the cache"
+    );
 }
 
 #[test]
@@ -263,7 +309,7 @@ fn a_multi_package_manifest_verifies_against_the_right_entry() {
         }
         first = false;
         manifest.push_str(&format!(
-            "  {{\"filename\": \"{exe_name}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{}\"}}}}",
+            "  {{\"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"filename\": \"{exe_name}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{}\"}}}}",
             sha256_hex(exe_bytes.as_bytes()),
             sha256_hex(image_bytes.as_bytes())
         ));

@@ -192,8 +192,11 @@ pub fn write_mirror(root: &Path, lv: &str, ver: &str, tamper: bool) -> PathBuf {
     };
     std::fs::write(
         dir.join("manifest.json"),
+        // The era-2 factory shape (spec 18 C2): the contract set is
+        // declared per entry — the pre-download gate refuses anything
+        // less.
         format!(
-            "[{{\"filename\": \"{exe_name}\", \"sha256\": \"{exe_sha}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{image_sha}\"}}}}]\n"
+            "[{{\"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"filename\": \"{exe_name}\", \"sha256\": \"{exe_sha}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{image_sha}\"}}}}]\n"
         ),
     )
     .expect("manifest.json");

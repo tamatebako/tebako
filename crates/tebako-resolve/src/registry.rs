@@ -43,7 +43,13 @@ pub const REGISTRY_SCHEMA_VERSION: u32 = 1;
 /// A `tpkg-registry.yaml` document.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Registry {
-    pub schema_version: u32,
+    /// The schema MAJOR this document declares (spec 18 C8: missing =
+    /// era 1, refused by name; newer = the upgrade refusal). Optional at
+    /// the serde level so the reader can name the era-1 case — the
+    /// validator refuses `None`; writers always set
+    /// [`REGISTRY_SCHEMA_VERSION`].
+    #[serde(default)]
+    pub schema_version: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub payloads: Vec<RegistryPayload>,
 }
@@ -221,11 +227,22 @@ impl Registry {
     }
 
     fn validate(&self) -> Result<(), RegistryError> {
-        if self.schema_version != REGISTRY_SCHEMA_VERSION {
-            return Err(invalid_entry(format!(
-                "unsupported schema_version {} (this build reads {REGISTRY_SCHEMA_VERSION})",
-                self.schema_version
-            )));
+        match self.schema_version {
+            // spec 18 C8/S46: no `schema_version` is an era-1 document —
+            // refused by name, never a silent default.
+            None => return Err(RegistryError::PreEra),
+            // S45: a newer MAJOR is the upgrade refusal.
+            Some(v) if v > REGISTRY_SCHEMA_VERSION => {
+                return Err(invalid_entry(format!(
+                    "schema_version {v} is newer than this tebako speaks ({REGISTRY_SCHEMA_VERSION}) — upgrade tebako"
+                )));
+            }
+            Some(v) if v < REGISTRY_SCHEMA_VERSION => {
+                return Err(invalid_entry(format!(
+                    "schema_version {v} is not a valid registry schema ({REGISTRY_SCHEMA_VERSION} expected)"
+                )));
+            }
+            Some(_) => {}
         }
         for payload in &self.payloads {
             payload.validate()?;
@@ -685,9 +702,35 @@ payloads:
 "#;
 
     #[test]
+    fn a_registry_without_schema_version_is_the_era_1_refusal() {
+        // spec 18 C8/S46: missing schema_version is pre-era — "republish
+        // the registry", never a silent default.
+        let err = Registry::from_yaml("payloads: []\n").unwrap_err();
+        assert!(matches!(err, RegistryError::PreEra));
+        let msg = err.to_string();
+        assert!(msg.contains("pre-era"), "{msg}");
+        assert!(msg.contains("republish the registry"), "{msg}");
+        // an explicit null is the same absence
+        let err = Registry::from_yaml("schema_version: null\npayloads: []\n").unwrap_err();
+        assert!(matches!(err, RegistryError::PreEra));
+    }
+
+    #[test]
+    fn a_newer_schema_major_is_the_upgrade_refusal() {
+        // spec 18 C8/S45.
+        let err = Registry::from_yaml("schema_version: 99\npayloads: []\n").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("schema_version 99"), "{msg}");
+        assert!(msg.contains("speaks (1)"), "{msg}");
+        assert!(msg.contains("upgrade tebako"), "{msg}");
+        // distinct from the era-1 message class
+        assert!(!msg.contains("pre-era"), "{msg}");
+    }
+
+    #[test]
     fn model_round_trips_the_spec_example() {
         let registry = Registry::from_yaml(EXAMPLE).unwrap();
-        assert_eq!(registry.schema_version, 1);
+        assert_eq!(registry.schema_version, Some(1));
         assert_eq!(registry.payloads.len(), 2);
 
         let m = registry.payload("metanorma").unwrap();
@@ -736,6 +779,7 @@ payloads:
     fn schema_errors_are_named() {
         for (yaml, needle) in [
             ("schema_version: 2\npayloads: []\n", "schema_version 2"),
+            ("schema_version: 0\npayloads: []\n", "schema_version 0"),
             ("schema_version: one\n", "yaml"), // structural
             (
                 "schema_version: 1\npayloads:\n  - {name: '', kind: app, versions: []}\n",

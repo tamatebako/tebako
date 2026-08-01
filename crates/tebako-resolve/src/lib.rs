@@ -15,17 +15,24 @@
 //! - [`Registry`] / [`RegistryRef`] — the developer-hosted
 //!   `tpkg-registry.yaml` model and its resolution (spec 04 §2): exactly
 //!   one location per form, declarative host-triplet selection.
+//! - [`contract`] — the runtime release card (spec 18 C2): the
+//!   pre-download contract gate, era/contract_version/mount_root.
+//! - [`store`] — the `~/.tebako` layout-version stamp (spec 18 C13):
+//!   write-on-create, first-access check, named migration.
 
 pub mod adapters;
 pub mod cache;
+pub mod contract;
 pub mod error;
 pub mod fetch;
 pub mod git;
 pub mod reference;
 pub mod registry;
+pub mod store;
 pub mod transport;
 
 pub use cache::{default_cache_root, CacheEntry, InstallStatus, PayloadCache};
+pub use contract::{ContractError, ContractSet};
 pub use error::{ReferenceError, RegistryError, ResolveError};
 pub use fetch::{sha256_hex, FetchedPayload, Fetcher};
 pub use reference::{Reference, Service};

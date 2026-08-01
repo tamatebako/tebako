@@ -812,7 +812,10 @@ fn cache_version_guard_matches_the_gem() {
     let (code, out) = run_press(&prefix, &[]);
     assert_eq!(code, 107, "{out}");
     assert!(
-        out.contains("Tebako cache was created by a gem version 0.0.0 and cannot be used for gem version 0.15.9"),
+        out.contains(&format!(
+            "Tebako cache was created by a gem version 0.0.0 and cannot be used for gem version {}",
+            tebako_cli::DEFAULT_TEBAKO_VERSION
+        )),
         "{out}"
     );
     assert!(!deps.exists(), "stale cache must be cleaned");
@@ -825,7 +828,10 @@ fn cache_version_guard_matches_the_gem() {
     fs::create_dir_all(&deps).unwrap();
     fs::write(
         deps.join(".environment.version"),
-        "0.15.9 at /some/other/source",
+        format!(
+            "{} at /some/other/source",
+            tebako_cli::DEFAULT_TEBAKO_VERSION
+        ),
     )
     .unwrap();
     fs::create_dir_all(prefix.join("o")).unwrap();

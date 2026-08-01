@@ -54,6 +54,7 @@
 //! this machine`; a cache hit is one quiet `runtime <ref> (cached)` line.
 //! stdout is the payload's and is never touched.
 
+pub mod artifact_info;
 pub mod platform;
 pub mod sha;
 
@@ -88,8 +89,10 @@ pub const EX_TEBAKO_TRUST: u8 = 72;
 pub const EX_TEBAKO_JAIL: u8 = 73;
 pub const EX_TEBAKO_IO: u8 = 74;
 /// The runtime declares a bootstrap↔runtime contract this bootstrap does
-/// not speak (roadmap 45): contract_version in the release manifest is
-/// outside this bootstrap's supported range — fail CLOSED, never a guess.
+/// not speak — or none at all (roadmap 45 + spec 18 C2): a pre-era
+/// release manifest (no contract set declared), a newer contract era, or
+/// a contract_version outside this bootstrap's supported range — fail
+/// CLOSED before any download, never a guess.
 pub const EX_TEBAKO_CONTRACT: u8 = 75;
 /// The explicit install verb (TODO.v2-1/12) was refused
 /// (`TPKG_FLAG_NO_INSTALL` — the publisher froze the package) or needs
@@ -97,11 +100,25 @@ pub const EX_TEBAKO_CONTRACT: u8 = 75;
 /// size-capped bootstrap deliberately does not carry).
 pub const EX_TEBAKO_INSTALL: u8 = 76;
 
-/// The bootstrap↔runtime contract this bootstrap speaks (roadmap 45):
-/// today's env/argv/image-handoff semantics. Min and max are the same
-/// until a second contract version exists (the bump rule: any change to
-/// env/argv/handoff semantics = +1).
-pub const SUPPORTED_CONTRACT: u32 = 1;
+/// The bootstrap↔runtime contract this bootstrap speaks (spec 17's
+/// handoff grammar — co-mount, `--tebako-image` triples, the env image):
+/// **2** in the schema vocabulary (docs/spec/schemas/
+/// runtime-manifest.yaml: 1 = spec 06, 2 = spec 17; the roadmap-45
+/// interim numbering, 1 = "current", is superseded — the factory
+/// declares 2 for its spec-17 runtimes from v0.16.0). A declared
+/// contract other than this one is a different generation — refused
+/// fail-closed either direction, both numbers named (spec 18 C2/S12).
+/// Canonical owner: tebako-resolve::contract::SPOKEN_CONTRACT — the
+/// size-capped bootstrap cannot link that crate (gix/reqwest would blow
+/// the 3 MiB gate); the value is pinned identical by both sides'
+/// refusal-message tests.
+pub const SUPPORTED_CONTRACT: u32 = 2;
+
+/// The contract era this bootstrap speaks (spec 18: anything undeclared
+/// is pre-era — era 1 — and refused by name, never assumed). Canonical
+/// owner: tebako-resolve::contract::SPOKEN_ERA (same mirror pin as
+/// [`SUPPORTED_CONTRACT`]).
+pub const SPOKEN_ERA: u32 = 2;
 
 const DEFAULT_RELEASES_BASE: &str =
     "https://github.com/tamatebako/tebako-runtime-ruby/releases/download";
@@ -372,7 +389,78 @@ pub fn prepare_jail(
 // cache layout
 // ---------------------------------------------------------------------
 
+/// The store layout version this bootstrap writes and reads (spec 18
+/// C13). Canonical owner: tebako-resolve::store::STORE_LAYOUT_VERSION —
+/// the size-capped bootstrap cannot link that crate (gix/reqwest would
+/// blow the 3 MiB gate); the value and the refusal/migration message
+/// texts are pinned identical by both sides' tests.
+const STORE_LAYOUT_VERSION: u32 = 1;
+
+/// spec 18 C13/S41/S42: `~/.tebako/layout-version` — checked once per
+/// process (a run has exactly one home). A newer stamp is the upgrade
+/// refusal; a pre-versioning store is stamped and the named migration
+/// announced on stderr; a new store is born stamped. Mirrors
+/// tebako-resolve::store (the canonical owner — see the constant).
+fn store_layout_check(root: &Path) -> Result<(), BootError> {
+    static DONE: std::sync::OnceLock<Result<(), String>> = std::sync::OnceLock::new();
+    let result = DONE.get_or_init(|| store_layout_check_once(root)).clone();
+    match result {
+        Ok(()) => Ok(()),
+        Err(message) => fail(EX_TEBAKO_IO, message),
+    }
+}
+
+fn store_layout_check_once(root: &Path) -> Result<(), String> {
+    let stamp = root.join("layout-version");
+    let write_stamp = || std::fs::write(&stamp, format!("{STORE_LAYOUT_VERSION}\n"));
+    let migrate = || {
+        eprintln!(
+            "tebako-bootstrap: note: migrated the tebako store at {} to layout {STORE_LAYOUT_VERSION} (stamped layout-version; the store predates layout versioning — spec 18 C13)",
+            root.display()
+        );
+    };
+    match std::fs::read_to_string(&stamp) {
+        Ok(text) => {
+            let found: u32 = text.trim().parse().map_err(|_| {
+                format!(
+                    "the tebako store at {} carries an unreadable layout-version ({:?}) — remove the file and rerun, or clear the store",
+                    root.display(),
+                    text.trim().chars().take(40).collect::<String>()
+                )
+            })?;
+            if found > STORE_LAYOUT_VERSION {
+                return Err(format!(
+                    "the tebako store at {} was created by a newer tebako (layout {found}); this build speaks layout {STORE_LAYOUT_VERSION} — upgrade tebako",
+                    root.display()
+                ));
+            }
+            if found < STORE_LAYOUT_VERSION {
+                write_stamp().map_err(|e| format!("{e} (writing {})", stamp.display()))?;
+                migrate();
+            }
+            Ok(())
+        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            if root.exists() {
+                write_stamp().map_err(|e| format!("{e} (writing {})", stamp.display()))?;
+                migrate();
+            } else {
+                let _ = std::fs::create_dir_all(root);
+                write_stamp().map_err(|e| format!("{e} (writing {})", stamp.display()))?;
+            }
+            Ok(())
+        }
+        Err(e) => Err(format!("{e} (reading {})", stamp.display())),
+    }
+}
+
 fn cache_root() -> Result<PathBuf, BootError> {
+    let root = cache_root_path()?;
+    store_layout_check(&root)?;
+    Ok(root)
+}
+
+fn cache_root_path() -> Result<PathBuf, BootError> {
     if let Ok(home) = std::env::var("TEBAKO_HOME") {
         if !home.is_empty() {
             return Ok(PathBuf::from(home));
@@ -727,19 +815,21 @@ pub fn sha_from_manifest_json(text: &str, asset: &str) -> Result<String, ()> {
     }
 }
 
-/// The `contract_version` of the release-manifest entry for `asset`
-/// (roadmap 45): the same bounding as [`sha_from_manifest_json`], reading
-/// the object's integer "contract_version" when present. `None` when the
-/// field is absent (pre-contract releases, which are contract 1 by
-/// definition) or unparseable.
-pub fn contract_from_manifest_json(text: &str, asset: &str) -> Option<u32> {
+/// The integer field `key` of the release-manifest entry for `asset`
+/// (the same bounding as [`sha_from_manifest_json`]): `None` when the
+/// entry or the field is absent, unparseable, or zero (a zero contract
+/// declares nothing). The contract keys are entry-level and precede the
+/// nested `image` object in the factory's writer — the bounding assumes
+/// no nested object before them.
+fn int_field_of_entry(text: &str, asset: &str, key: &str) -> Option<u32> {
     let needle = format!("\"{asset}\"");
     let p = text.find(&needle)?;
     let obj = text[..p].rfind('{')?;
     let end = text[p..].find('}').map(|e| p + e)?;
     let body = &text[obj..end];
-    let k = body.find("\"contract_version\"")?;
-    let after = &body[k + 18..];
+    let quoted = format!("\"{key}\"");
+    let k = body.find(&quoted)?;
+    let after = &body[k + quoted.len()..];
     let after = after.trim_start_matches([':', ' ', '\t', '\n', '\r']);
     let digits: String = after
         .bytes()
@@ -749,7 +839,54 @@ pub fn contract_from_manifest_json(text: &str, asset: &str) -> Option<u32> {
     if digits.is_empty() {
         return None;
     }
-    digits.parse().ok()
+    digits.parse().ok().filter(|v| *v > 0)
+}
+
+/// The `contract_version` of the release-manifest entry for `asset`
+/// (roadmap 45): the same bounding as [`sha_from_manifest_json`], reading
+/// the object's integer "contract_version" when present. `None` when the
+/// field is absent or unparseable — spec 18 reads that as the pre-era
+/// signal (see [`contract_gate`]).
+pub fn contract_from_manifest_json(text: &str, asset: &str) -> Option<u32> {
+    int_field_of_entry(text, asset, "contract_version")
+}
+
+/// The `contract_era` of the release-manifest entry for `asset` (spec 18
+/// C2): `None` when absent, unparseable, or zero.
+pub fn era_from_manifest_json(text: &str, asset: &str) -> Option<u32> {
+    int_field_of_entry(text, asset, "contract_era")
+}
+
+/// The `mount_root` of the release-manifest entry for `asset` (spec 18
+/// C2): `None` when absent or not a non-empty string. Declared, never
+/// guessed — the reader invents no fallback value.
+pub fn mount_root_from_manifest_json(text: &str, asset: &str) -> Option<String> {
+    let needle = format!("\"{asset}\"");
+    let p = text.find(&needle)?;
+    let obj = text[..p].rfind('{')?;
+    let end = text[p..].find('}').map(|e| p + e)?;
+    let body = &text[obj..end];
+    let k = body.find("\"mount_root\"")?;
+    let after = &body[k + 12..];
+    let after = after.trim_start_matches([':', ' ', '\t', '\n', '\r']);
+    if !after.starts_with('"') {
+        return None;
+    }
+    let inner = &after[1..];
+    let endq = inner.find('"')?;
+    let value = &inner[..endq];
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+/// Whether the manifest carries an entry for `asset` at all (the gate's
+/// "not a contract question" case — the checksum path names a missing
+/// entry).
+fn contract_entry_present(text: &str, asset: &str) -> bool {
+    text.contains(&format!("\"{asset}\""))
 }
 
 /// roadmap 45 negotiation failure (exe and image paths share the message).
@@ -762,18 +899,57 @@ fn contract_mismatch_error(runtime_ref: &str, declared: u32) -> BootError {
     )
 }
 
-/// Fail-closed contract gate (roadmap 45): the release manifest's declared
-/// `contract_version` for `asset` must equal [`SUPPORTED_CONTRACT`]. An
-/// absent field means a pre-contract release, which is contract 1 by
-/// definition (accepted while 1 is the supported contract). Returns the
-/// negotiation error to propagate, or `None` when the manifest is
-/// acceptable (matching, or legacy).
+/// Fail-closed contract gate (roadmap 45 + spec 18 C2/S11/S12), run
+/// BEFORE any asset download: the release manifest's entry for `asset`
+/// must DECLARE its contract set (contract_era / contract_version /
+/// mount_root) — anything undeclared is pre-era (era 1) and refused by
+/// name, never assumed (no old-path readers; the manifest itself is the
+/// release card, and an entry-less asset is undeclared by definition).
+/// A declared era or contract_version newer than this bootstrap speaks
+/// is refused with both numbers named. Returns the negotiation error to
+/// propagate, or `None` when the entry is acceptable.
 fn contract_gate(runtime_ref: &str, manifest_text: &str, asset: &str) -> Option<BootError> {
-    let declared = contract_from_manifest_json(manifest_text, asset)?;
-    if declared == SUPPORTED_CONTRACT {
-        return None;
+    let pre_era = |detail: &str| {
+        BootError::new(
+            EX_TEBAKO_CONTRACT,
+            format!(
+                "runtime \"{runtime_ref}\" is pre-era — its release manifest entry declares no contract set ({detail}) — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+            ),
+        )
+    };
+    if !contract_entry_present(manifest_text, asset) {
+        return Some(pre_era(&format!("no entry for {asset}")));
     }
-    Some(contract_mismatch_error(runtime_ref, declared))
+    let era = era_from_manifest_json(manifest_text, asset);
+    let contract = contract_from_manifest_json(manifest_text, asset);
+    let mount_root = mount_root_from_manifest_json(manifest_text, asset);
+    let mut missing: Vec<&str> = Vec::new();
+    if era.is_none() {
+        missing.push("contract_era");
+    }
+    if contract.is_none() {
+        missing.push("contract_version");
+    }
+    if mount_root.is_none() {
+        missing.push("mount_root");
+    }
+    if !missing.is_empty() {
+        return Some(pre_era(&format!("missing: {}", missing.join(", "))));
+    }
+    let era = era.unwrap_or(0);
+    if era > SPOKEN_ERA {
+        return Some(BootError::new(
+            EX_TEBAKO_CONTRACT,
+            format!(
+                "runtime \"{runtime_ref}\" speaks contract era {era}, but this tebako-bootstrap speaks era {SPOKEN_ERA} — refusing to install or execute\n  upgrade tebako (or pin an older runtime) and retry"
+            ),
+        ));
+    }
+    let declared = contract.unwrap_or(0);
+    if declared != SUPPORTED_CONTRACT {
+        return Some(contract_mismatch_error(runtime_ref, declared));
+    }
+    None
 }
 
 /// SHA256SUMS.txt fallback: "<64hex><spaces>[*]<filename>" per line.
@@ -1549,6 +1725,32 @@ fn download_executable(
         return Ok(exe_path.clone());
     };
 
+    // spec 18 C2: the release card gates BEFORE any asset download —
+    // a contract refusal never downloads a byte of the runtime. No
+    // readable manifest at all is the same pre-era signal (no old-path
+    // readers; the SHA256SUMS fallback covers checksums only).
+    let manifest_tmp = ins.tmp_dir.join("manifest.json");
+    let manifest_text = if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
+        std::fs::read_to_string(&manifest_tmp).ok()
+    } else {
+        None
+    };
+    let Some(manifest_text) = manifest_text else {
+        cleanup_tmp_entry(&ins.tmp_dir, asset);
+        lock_release(ins.lock);
+        return fail(
+            EX_TEBAKO_CONTRACT,
+            format!(
+                "runtime \"{runtime_ref}\" is pre-era — no readable release manifest at {manifest_url} — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+            ),
+        );
+    };
+    if let Some(e) = contract_gate(runtime_ref, &manifest_text, asset) {
+        cleanup_tmp_entry(&ins.tmp_dir, asset);
+        lock_release(ins.lock);
+        return Err(e);
+    }
+
     if fetch_asset(&asset_url, local, &ins.tmp_asset, asset, &mut ux.prog).is_err() {
         cleanup_tmp_entry(&ins.tmp_dir, asset);
         lock_release(ins.lock);
@@ -1562,7 +1764,8 @@ fn download_executable(
 
     ux.prog.phase("verifying sha256");
 
-    // expected checksum: manifest.json primary, SHA256SUMS.txt fallback.
+    // expected checksum: the (already gated) release manifest primary,
+    // SHA256SUMS.txt fallback.
     const DIAG_NAMES: [&str; 5] = [
         "not tried",
         "download failed",
@@ -1571,24 +1774,10 @@ fn download_executable(
         "ok",
     ];
     let mut expected: Option<String> = None;
-    let mut diag_manifest = 1;
-    let manifest_tmp = ins.tmp_dir.join("manifest.json");
-    if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
-        diag_manifest = 2;
-        if let Ok(text) = std::fs::read_to_string(&manifest_tmp) {
-            // roadmap 45: the runtime's declared contract must be one we
-            // speak — fail CLOSED before any checksum acceptance.
-            if let Some(e) = contract_gate(runtime_ref, &text, asset) {
-                cleanup_tmp_entry(&ins.tmp_dir, asset);
-                lock_release(ins.lock);
-                return Err(e);
-            }
-            diag_manifest = 3;
-            if let Ok(sha) = sha_from_manifest_json(&text, asset) {
-                diag_manifest = 4;
-                expected = Some(sha);
-            }
-        }
+    let mut diag_manifest = 3;
+    if let Ok(sha) = sha_from_manifest_json(&manifest_text, asset) {
+        diag_manifest = 4;
+        expected = Some(sha);
     }
     let mut diag_sums = 0;
     if expected.is_none() {
@@ -1751,6 +1940,32 @@ fn resolve_image(
         e
     };
 
+    // spec 18 C2: the release card gates BEFORE the image download (the
+    // image is additive metadata of the exe's package entry — the entry
+    // anchored by the executable's filename governs it, the same gate
+    // the executable path applies). No readable manifest is the same
+    // pre-era signal.
+    let manifest_tmp = tmp_dir.join("manifest.json");
+    let manifest_text = if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
+        std::fs::read_to_string(&manifest_tmp).ok()
+    } else {
+        None
+    };
+    let Some(manifest_text) = manifest_text else {
+        return Err(fail_image(
+            lock,
+            BootError::new(
+                EX_TEBAKO_CONTRACT,
+                format!(
+                    "runtime \"{runtime_ref}\" is pre-era — no readable release manifest at {manifest_url} — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                ),
+            ),
+        ));
+    };
+    if let Some(e) = contract_gate(runtime_ref, &manifest_text, &layout.asset) {
+        return Err(fail_image(lock, e));
+    }
+
     if fetch_asset(&image_url, local, &tmp_image, &image_asset, &mut ux.prog).is_err() {
         return Err(fail_image(
             lock,
@@ -1765,8 +1980,9 @@ fn resolve_image(
 
     ux.prog.phase("verifying sha256");
 
-    // expected checksum: manifest.json `image` key primary, SHA256SUMS
-    // line fallback (the same sources the executable's checksum uses).
+    // expected checksum: the (already gated) manifest's `image` key
+    // primary, SHA256SUMS line fallback (the same sources the
+    // executable's checksum uses).
     const DIAG_NAMES: [&str; 5] = [
         "not tried",
         "download failed",
@@ -1775,24 +1991,10 @@ fn resolve_image(
         "ok",
     ];
     let mut expected: Option<String> = None;
-    let mut diag_manifest = 1;
-    let manifest_tmp = tmp_dir.join("manifest.json");
-    if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
-        diag_manifest = 2;
-        if let Ok(text) = std::fs::read_to_string(&manifest_tmp) {
-            // roadmap 45: the image is additive metadata of the same
-            // package entry — the entry's contract_version (anchored by
-            // the executable's filename) governs it. Same fail-closed
-            // gate as the executable path.
-            if let Some(e) = contract_gate(runtime_ref, &text, &layout.asset) {
-                return Err(fail_image(lock, e));
-            }
-            diag_manifest = 3;
-            if let Ok(sha) = sha_from_manifest_image(&text, &image_asset) {
-                diag_manifest = 4;
-                expected = Some(sha);
-            }
-        }
+    let mut diag_manifest = 3;
+    if let Ok(sha) = sha_from_manifest_image(&manifest_text, &image_asset) {
+        diag_manifest = 4;
+        expected = Some(sha);
     }
     let mut diag_sums = 0;
     if expected.is_none() {
@@ -2109,4 +2311,68 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         argv,
         jail.as_ref(),
     ))
+}
+
+#[cfg(test)]
+mod store_layout_tests {
+    use super::*;
+
+    fn dir(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-boot-store-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[test]
+    fn a_new_store_is_born_stamped() {
+        let home = dir("new");
+        assert_eq!(store_layout_check_once(&home), Ok(()));
+        assert_eq!(
+            std::fs::read_to_string(home.join("layout-version")).unwrap(),
+            format!("{STORE_LAYOUT_VERSION}\n")
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_pre_versioning_store_is_stamped() {
+        let home = dir("legacy");
+        std::fs::create_dir_all(home.join("runtimes")).unwrap();
+        assert_eq!(store_layout_check_once(&home), Ok(()));
+        assert_eq!(
+            std::fs::read_to_string(home.join("layout-version")).unwrap(),
+            format!("{STORE_LAYOUT_VERSION}\n")
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_newer_stamp_is_the_upgrade_refusal() {
+        let home = dir("newer");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("layout-version"), "99\n").unwrap();
+        let err = store_layout_check_once(&home).unwrap_err();
+        // The canonical message text — pinned identical to
+        // tebako-resolve::store's Newer refusal (the mirror rule).
+        assert!(err.contains("layout 99"), "{err}");
+        assert!(err.contains("speaks layout 1"), "{err}");
+        assert!(err.contains("upgrade tebako"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(home.join("layout-version")).unwrap(),
+            "99\n",
+            "no silent downgrade"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_corrupt_stamp_is_named() {
+        let home = dir("corrupt");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("layout-version"), "banana\n").unwrap();
+        let err = store_layout_check_once(&home).unwrap_err();
+        assert!(err.contains("banana"), "{err}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }

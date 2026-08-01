@@ -450,8 +450,15 @@ impl Resolver {
     ) -> Result<IndexEntry, TebakoError> {
         let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
         self.offline_check(&entry_ref, tebako_version)?;
-        let index = self.fetch_index(tebako_version)?;
+        let (index, card) = self.fetch_index(tebako_version)?;
         let entry = self.find_entry(&index, ruby_version, platform, tebako_version)?;
+        // spec 18 C2: the release card gates BEFORE the runtime download
+        // (the Runtime flavor only — the bootstrap release's
+        // self-description is the embedded artifact-info block, not this
+        // card).
+        if self.flavor == Flavor::Runtime {
+            contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
+        }
         let url = self.package_url(&entry.filename, tebako_version);
         let tmp = self.download(&url, &entry.filename)?;
         self.verify(&tmp, entry)?;
@@ -575,13 +582,22 @@ impl Resolver {
         Ok(())
     }
 
-    fn fetch_index(&self, tebako_version: &str) -> Result<Vec<IndexEntry>, TebakoError> {
+    /// The release index plus, when it parsed from manifest.json, the
+    /// raw card text (the spec 18 contract gate reads it ahead of the
+    /// download — no second fetch of the index).
+    fn fetch_index(
+        &self,
+        tebako_version: &str,
+    ) -> Result<(Vec<IndexEntry>, Option<String>), TebakoError> {
         let mut tried: Vec<String> = Vec::new();
         for name in self.index_files() {
             let url = self.index_url(name, tebako_version);
             match fetch_text(&url) {
                 Ok(body) => match self.parse_index(name, &body, tebako_version) {
-                    Ok(entries) => return Ok(entries),
+                    Ok(entries) => {
+                        let card = (*name == "manifest.json").then_some(body);
+                        return Ok((entries, card));
+                    }
                     Err(FetchError::IndexUnavailable(_)) => tried.push(url),
                     Err(FetchError::DownloadFailed(msg)) => {
                         return Err(packaging_error(122, Some(&msg)));
@@ -923,6 +939,33 @@ pub(crate) const LOCK_NB: i32 = 4;
 #[cfg(windows)]
 pub(crate) const LOCK_UN: i32 = 8;
 
+/// spec 18 C2 pre-download gate (S11/S12): the runtime release's
+/// manifest.json entry for the resolved asset must declare its contract
+/// set (contract_era / contract_version / mount_root) — anything less is
+/// pre-era and refused by name, before a byte of the runtime downloads.
+/// tebako-resolve owns the reader semantics; the press surfaces the
+/// refusal as exit 75 (the loader family's shared contract code).
+fn contract_gate(entry_ref: &str, card: Option<&str>, asset: &str) -> Result<(), TebakoError> {
+    let Some(text) = card else {
+        return Err(TebakoError::new(
+            format!(
+                "{entry_ref} is pre-era — the release provides no readable manifest.json (a checksum-only index declares no contract set) — rebuild with the current factory (spec 18 C2), or pin a runtime that declares its contract"
+            ),
+            75,
+        ));
+    };
+    match tebako_resolve::contract::gate(text, asset) {
+        Ok(Some(_)) => Ok(()),
+        Ok(None) => Err(TebakoError::new(
+            format!(
+                "{entry_ref} is pre-era — its release manifest declares no contract set (no entry for {asset}) — rebuild with the current factory (spec 18 C2)"
+            ),
+            75,
+        )),
+        Err(e) => Err(TebakoError::new(format!("{entry_ref}: {e}"), 75)),
+    }
+}
+
 /// flock(2) wrapper; returns true when the operation succeeded.
 /// pub(crate): the RuntimeSdk lock (src/sdk.rs) reuses it — the crate's
 /// only lock call sites stay here.
@@ -1104,5 +1147,40 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].platform.as_deref(), Some("macos-arm64"));
         assert_eq!(entries[0].sha256, "def");
+    }
+
+    #[test]
+    fn contract_gate_classes() {
+        let asset = "tebako-runtime-0.16.1-3.4.2-macos-arm64";
+        let card = |contract_bits: &str| {
+            format!(
+                "[{{{contract_bits}\"filename\":\"{asset}\",\"sha256\":\"604e87a1b1d74a6868b35ecdbb11c4e3db01b23286cea9f078636fdf246172b8\"}}]"
+            )
+        };
+        let full = "\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"/__tfs__\",";
+        // accept: the era-2 factory shape
+        contract_gate("ruby@3.4.2", Some(&card(full)), asset).unwrap();
+        // pre-era: no contract fields (exit 75, named)
+        let err = contract_gate("ruby@3.4.2", Some(&card("")), asset).unwrap_err();
+        assert_eq!(err.code, 75);
+        assert!(err.message.contains("pre-era"), "{}", err.message);
+        // pre-era: no readable card at all (a sums-only index)
+        let err = contract_gate("ruby@3.4.2", None, asset).unwrap_err();
+        assert_eq!(err.code, 75);
+        assert!(err.message.contains("pre-era"), "{}", err.message);
+        // newer contract_version: both numbers named
+        let newer = "\"contract_era\":2,\"contract_version\":3,\"mount_root\":\"/__tfs__\",";
+        let err = contract_gate("ruby@3.4.2", Some(&card(newer)), asset).unwrap_err();
+        assert_eq!(err.code, 75);
+        assert!(
+            err.message.contains("contract_version 3"),
+            "{}",
+            err.message
+        );
+        assert!(err.message.contains("speaks contract 2"), "{}", err.message);
+        // the entry itself missing: pre-era, not a silent pass
+        let err = contract_gate("ruby@3.4.2", Some(&card(full)), "nope").unwrap_err();
+        assert_eq!(err.code, 75);
+        assert!(err.message.contains("pre-era"), "{}", err.message);
     }
 }

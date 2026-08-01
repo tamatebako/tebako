@@ -135,8 +135,12 @@ impl Harness {
         .unwrap();
         std::fs::write(
             mirror.join("manifest.json"),
+            // The era-2 factory shape (spec 18 C2): every package entry
+            // declares its contract set (contract_era / contract_version /
+            // mount_root) ahead of the filename, the additive image key
+            // last — the pre-download gate refuses anything less.
             format!(
-                "[\n  {{\n    \"tebako_version\": \"{TEBAKO_VER}\",\n    \"ruby_version\": \"{RUBY_VER}\",\n    \"platform\": \"{plat}\",\n    \"filename\": \"{asset}\",\n    \"sha256\": \"{sha}\",\n    \"size_bytes\": 12345,\n    \"image\": {{\"filename\": \"{image_asset}\", \"sha256\": \"{image_sha}\", \"size_bytes\": 6789}}\n  }}\n]\n"
+                "[\n  {{\n    \"tebako_version\": \"{TEBAKO_VER}\",\n    \"contract_era\": 2,\n    \"contract_version\": 2,\n    \"mount_root\": \"/__tfs__\",\n    \"ruby_version\": \"{RUBY_VER}\",\n    \"platform\": \"{plat}\",\n    \"filename\": \"{asset}\",\n    \"sha256\": \"{sha}\",\n    \"size_bytes\": 12345,\n    \"image\": {{\"filename\": \"{image_asset}\", \"sha256\": \"{image_sha}\", \"size_bytes\": 6789}}\n  }}\n]\n"
             ),
         )
         .unwrap();
@@ -406,7 +410,11 @@ fn strip_progress(stderr: String) -> String {
             || line.starts_with("installed ")
             || line == "verifying sha256"
             || line == "installing (locked)"
-            || (line.starts_with("runtime ") && line.ends_with(" (cached)"));
+            || (line.starts_with("runtime ") && line.ends_with(" (cached)"))
+            // spec 18 C13: a pre-versioning store is stamped with the
+            // named migration note (additive, once per store) — asserted
+            // in the store-layout tests, stripped for golden comparison.
+            || line.starts_with("tebako-bootstrap: note: migrated the tebako store at ");
         if !is_progress {
             out.push_str(line);
             out.push('\n');

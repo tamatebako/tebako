@@ -65,6 +65,12 @@ pub const EX_TEBAKO_MANIFEST: u8 = 65;
 pub const EX_TEBAKO_UNAVAILABLE: u8 = 69;
 pub const EX_TEBAKO_SHA: u8 = 70;
 pub const EX_TEBAKO_IO: u8 = 74;
+/// The runtime release declares a contract this shim does not speak —
+/// or none at all (spec 18 C2/S11/S12): a pre-era release manifest, a
+/// newer contract era, or a newer contract_version — refused BEFORE any
+/// download, both sides named (tebako-resolve::contract owns the
+/// semantics).
+pub const EX_TEBAKO_CONTRACT: u8 = 75;
 
 /// A named shim error: exit code + full message body (stderr gets
 /// "tebako-shim: {message}\n").
@@ -161,6 +167,7 @@ pub(crate) fn command_from_shim_name(file_name: &str) -> &str {
 /// The binary's two faces (spec 07 §2.0): linked as `<tool>` → dispatch;
 /// invoked as `tebako-shim` → management commands.
 pub fn run(argv: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
+    check_store_layout(ctx)?;
     let argv0 = argv.first().cloned().unwrap_or_default();
     let tool = std::path::Path::new(&argv0)
         .file_name()
@@ -172,5 +179,24 @@ pub fn run(argv: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
         manage::run_command(&argv[1..], ctx)
     } else {
         dispatch::dispatch(&tool, &argv[1..], ctx).map(|p| Action::Exec(Box::new(p)))
+    }
+}
+
+/// The store layout contract (spec 18 C13/S41/S42), checked once per
+/// process before any dispatch or management read: a newer stamp is the
+/// upgrade refusal; a pre-versioning store is stamped and the named
+/// migration announced (stderr, once — tebako-resolve::store owns the
+/// semantics and the message).
+fn check_store_layout(ctx: &Ctx) -> Result<(), ShimError> {
+    match tebako_resolve::store::check_once(&ctx.home) {
+        Ok(tebako_resolve::store::LayoutCheck::Migrated) => {
+            eprintln!(
+                "tebako-shim: note: {}",
+                tebako_resolve::store::migration_message(&ctx.home)
+            );
+            Ok(())
+        }
+        Ok(_) => Ok(()),
+        Err(e) => fail(EX_TEBAKO_IO, e.to_string()),
     }
 }

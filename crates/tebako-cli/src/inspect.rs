@@ -19,6 +19,7 @@ fn err(code: i32, message: impl Into<String>) -> TebakoError {
 }
 
 /// What the user asked to see.
+#[derive(Default)]
 pub struct InspectOptions {
     pub manifest: bool,
     pub provides: bool,
@@ -30,28 +31,28 @@ pub struct InspectOptions {
     pub backend_json: bool,
     /// Package slots only: `--slot N`.
     pub slot: Option<usize>,
-}
-
-impl Default for InspectOptions {
-    fn default() -> Self {
-        InspectOptions {
-            manifest: false,
-            provides: false,
-            requires: false,
-            platforms: false,
-            json: false,
-            verify: false,
-            require_signed: false,
-            backend_json: false,
-            slot: None,
-        }
-    }
+    /// The spec-18 §6 contract card: era, contract versions, mount_root,
+    /// abi, trust + the verdict against this tebako (crates/tebako-cli's
+    /// contract.rs — packages, payload images, runtime directories,
+    /// tebako-bootstrap binaries).
+    pub contract: bool,
 }
 
 /// `tebako inspect <path>`: detect the artifact kind and inspect it.
 /// Returns the output; the process exit code is TebakoError::code on
 /// error (0 normally; the spec-15 §5 codes under `--verify`).
 pub fn inspect(path: &Path, opts: &InspectOptions) -> Result<(String, i32), TebakoError> {
+    if opts.contract {
+        let card = crate::contract::inspect(path)?;
+        return Ok((
+            if opts.json {
+                crate::contract::render_json(&card, path)
+            } else {
+                crate::contract::render(&card, path)
+            },
+            0,
+        ));
+    }
     if crate::install::is_tpkg_package(path) {
         inspect_package(path, opts)
     } else {
