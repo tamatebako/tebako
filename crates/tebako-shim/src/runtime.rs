@@ -268,7 +268,7 @@ pub fn resolve_runtime(
     let abi_compatible = |c: &CachedRuntime| {
         req.abi
             .as_ref()
-            .is_none_or(|want| c.abi.as_ref().is_none_or(|have| have == want))
+            .map_or(true, |want| c.abi.as_ref().map_or(true, |have| have == want))
     };
     if let Some(hit) = newest_compatible(
         &cached
