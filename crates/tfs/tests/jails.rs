@@ -330,6 +330,22 @@ fn covered_but_not_held_paths_fall_through_to_the_host_decision() {
     assert_eq!(open(Path::new("/content/hello.txt"), libc::O_WRONLY), -1);
     assert_eq!(errno(), libc::EROFS, "held content is read-only");
 
+    // Held-tree write-create (a file the image does NOT hold, under a
+    // directory it DOES): the write lands in image territory — EROFS,
+    // never a host passthrough with the wrong errno (the msys bundler
+    // ProcessLock class: the host answer on a nonexistent drive is
+    // EBADF, outside every tolerance set).
+    assert_eq!(
+        open(Path::new("/content/bundler.lock"), libc::O_WRONLY | libc::O_CREAT),
+        -1
+    );
+    assert_eq!(
+        errno(),
+        libc::EROFS,
+        "a write-create into a held tree is EROFS, not a host passthrough"
+    );
+    assert_eq!(c_errno(), libc::EROFS);
+
     // Covered + absent: the host decision — ENOENT under the open policy
     // ("not ours, pass through"), for reads AND writes.
     let host_file = f.sibling.join("secret.txt");

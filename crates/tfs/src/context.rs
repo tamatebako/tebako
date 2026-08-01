@@ -372,13 +372,22 @@ impl FsContext {
         let rel = Self::relative_path(mount, path);
         let st = match mount.backend.stat(rel) {
             Ok(st) => st,
-            // A path a mount covers but its image does not hold is a
-            // HOST path (spec 08): the policy gates the consumer's
-            // fall-through exactly as if no mount claimed it. With the
-            // app payload mounted at "/", this is what keeps the host
-            // filesystem reachable.
+            // A write naming a file the image does not hold: the held-tree
+            // rule decides. An ancestor the image DOES hold means the write
+            // lands in image territory — EROFS (never a host passthrough
+            // with the wrong errno; on msys the host answer for a path on
+            // a nonexistent drive is EBADF, which bundler's ProcessLock
+            // does not tolerate — the 2026-08-01 boot-smoke class). Only
+            // with NO held ancestor is the path a host path (spec 08):
+            // the policy gates the consumer's fall-through exactly as if
+            // no mount claimed it. With the app payload mounted at "/",
+            // this is what keeps the host filesystem reachable.
             Err(e) if e == libc::ENOENT => {
-                let need = if (flags & O_ACCMODE) == libc::O_RDONLY {
+                let accmode = flags & O_ACCMODE;
+                if accmode != libc::O_RDONLY && self.path_is_held(path) {
+                    return Err(libc::EROFS);
+                }
+                let need = if accmode == libc::O_RDONLY {
                     HostAccess::Ro
                 } else {
                     HostAccess::Rw
