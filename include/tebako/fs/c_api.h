@@ -40,6 +40,47 @@ extern "C" {
 #include <sys/stat.h>
 #include <tebako/fs/platform.h>
 
+/* ============================================================
+ * The stat ABI — the single authority
+ * ============================================================
+ *
+ * tebako_fs_stat / tebako_fs_fstat fill a `struct tebako_stat`.
+ *
+ * On POSIX this is the platform's own `struct stat` — the platform libc
+ * is the authority and the Rust tfs (via its libc crate) mirrors it
+ * exactly, so writer and readers can never disagree.
+ *
+ * On Windows `struct stat` means DIFFERENT structs to different
+ * consumers (the CRT's plain `stat` has a 32-bit st_size; `__stat64`
+ * and ruby's `stati128` have a 64-bit one), so the ABI is pinned here
+ * explicitly: the CRT `__stat64` layout (64-bit st_size, 48 bytes).
+ * The Rust side mirrors this declaration with matching layout asserts;
+ * the layout asserts below make any edit on either side a compile
+ * error, never a silent drift. (The 2026-08-01 msys class: the Rust
+ * writer emitted stat64 while the io shims read plain stat — st_size
+ * landed on padding and every in-image file stat'd size 0.)
+ */
+#if defined(_WIN32)
+struct tebako_stat {
+    uint32_t st_dev;    /* offset  0 */
+    uint16_t st_ino;    /* offset  4 */
+    uint16_t st_mode;   /* offset  6 */
+    int16_t  st_nlink;  /* offset  8 */
+    int16_t  st_uid;    /* offset 10 */
+    int16_t  st_gid;    /* offset 12 */
+    uint32_t st_rdev;   /* offset 14 */
+    int64_t  st_size;   /* offset 16 */
+    int64_t  st_atime;  /* offset 24 */
+    int64_t  st_mtime;  /* offset 32 */
+    int64_t  st_ctime;  /* offset 40 */
+};                      /* sizeof 48 */
+_Static_assert(sizeof(struct tebako_stat) == 48, "tebako_stat ABI drift");
+_Static_assert(offsetof(struct tebako_stat, st_size) == 16, "tebako_stat ABI drift");
+_Static_assert(offsetof(struct tebako_stat, st_mtime) == 32, "tebako_stat ABI drift");
+#else
+#define tebako_stat stat
+#endif
+
 /* Directory entry type constants (from POSIX dirent.h) */
 #ifndef DT_REG
 #define DT_REG 8 /**< Regular file */
@@ -515,7 +556,7 @@ void tebako_fs_seekdir(tebako_dir_t dir, long pos);
  * Fills in a stat structure with file metadata. Behaves like POSIX stat(2).
  *
  * @param path File path
- * @param st Pointer to stat structure to fill
+ * @param st Pointer to tebako_stat structure to fill
  * @return 0 on success, -1 on error
  *
  * @note Populates: st_mode, st_size, st_mtime
@@ -523,7 +564,7 @@ void tebako_fs_seekdir(tebako_dir_t dir, long pos);
  *
  * @example
  * @code
- * struct stat st;
+ * struct tebako_stat st;
  * if (tebako_fs_stat("/__tebako__/file.txt", &st) == 0) {
  *     printf("Size: %lld bytes\n", (long long)st.st_size);
  *     if (S_ISREG(st.st_mode)) {
@@ -532,7 +573,7 @@ void tebako_fs_seekdir(tebako_dir_t dir, long pos);
  * }
  * @endcode
  */
-int tebako_fs_stat(const char* path, struct stat* st);
+int tebako_fs_stat(const char* path, struct tebako_stat* st);
 
 /**
  * @brief Get file status via file descriptor
@@ -540,10 +581,10 @@ int tebako_fs_stat(const char* path, struct stat* st);
  * Like tebako_fs_stat() but takes a file descriptor.
  *
  * @param fd File descriptor from tebako_fs_open()
- * @param st Pointer to stat structure to fill
+ * @param st Pointer to tebako_stat structure to fill
  * @return 0 on success, -1 on error
  */
-int tebako_fs_fstat(int fd, struct stat* st);
+int tebako_fs_fstat(int fd, struct tebako_stat* st);
 
 /* ============================================================
  * Path Detection

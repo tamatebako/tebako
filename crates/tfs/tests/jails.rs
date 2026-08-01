@@ -194,7 +194,7 @@ fn open(path: &Path, flags: i32) -> i32 {
 }
 
 fn stat(path: &Path) -> i32 {
-    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    let mut st: c_api::TebakoStat = unsafe { std::mem::zeroed() };
     unsafe { c_api::tebako_fs_stat(c(path).as_ptr(), &mut st) }
 }
 
@@ -295,7 +295,7 @@ fn deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected() {
     let fd = memfs_open_hello();
     assert!(fd >= 0, "memfs open must still work");
     assert_eq!(unsafe { c_api::tebako_fs_close(fd) }, 0);
-    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    let mut st: c_api::TebakoStat = unsafe { std::mem::zeroed() };
     let rc = unsafe {
         c_api::tebako_fs_stat(
             c_str(&format!("{MOUNT_POINT}/content/hello.txt")).as_ptr(),

@@ -376,14 +376,52 @@ pub unsafe extern "C" fn tebako_fs_dir_is_embedded(dir: *mut c_void) -> libc::c_
 // Metadata Operations
 // ===================================================================
 
-/// Fill a caller's `struct stat` from a RawStat (zeroed first, like C++).
+/// The stat ABI the C consumers read (include/tebako/fs/c_api.h is the
+/// single authority — keep these in lockstep; the layout asserts make
+/// any drift a compile error on this side, exactly like the header's
+/// `_Static_assert`s on theirs).
+///
+/// Windows pins the CRT `__stat64` layout (64-bit st_size, 48 bytes):
+/// "struct stat" means different structs to different CRT consumers
+/// (plain `stat` has a 32-bit st_size; ruby's `stati128` a 64-bit one),
+/// which is how the 2026-08-01 msys boot-smoke class happened (writer
+/// emitted stat64, shims read plain stat, st_size landed on padding).
+#[cfg(windows)]
+#[repr(C)]
+pub struct TebakoStat {
+    st_dev: u32,
+    st_ino: u16,
+    st_mode: u16,
+    st_nlink: i16,
+    st_uid: i16,
+    st_gid: i16,
+    st_rdev: u32,
+    st_size: i64,
+    st_atime: i64,
+    st_mtime: i64,
+    st_ctime: i64,
+}
+
+#[cfg(windows)]
+const _: () = {
+    assert!(std::mem::size_of::<TebakoStat>() == 48);
+    assert!(std::mem::offset_of!(TebakoStat, st_size) == 16);
+    assert!(std::mem::offset_of!(TebakoStat, st_mtime) == 32);
+};
+
+/// POSIX: the platform's own `struct stat` — the platform libc is the
+/// authority and the libc crate mirrors it exactly.
+#[cfg(not(windows))]
+pub type TebakoStat = libc::stat;
+
+/// Fill a caller's `struct tebako_stat` from a RawStat (zeroed first, like C++).
 // The S_IF* constant widths differ per platform (u16 on macOS, u32 on
 // Linux): the widening `as u32` is required on macOS and an identity cast
 // on Linux, so the platform-dependent unnecessary_cast lint is allowed
 // here deliberately.
 #[allow(clippy::unnecessary_cast)]
-fn fill_stat(st: *mut libc::stat, raw: &crate::backend::RawStat) -> i32 {
-    // SAFETY: caller guarantees `st` points to a valid struct stat.
+fn fill_stat(st: *mut TebakoStat, raw: &crate::backend::RawStat) -> i32 {
+    // SAFETY: caller guarantees `st` points to a valid struct tebako_stat.
     let out = unsafe { &mut *st };
     *out = unsafe { std::mem::zeroed() };
     let type_bits: u32 = match raw.entry_type {
@@ -392,7 +430,7 @@ fn fill_stat(st: *mut libc::stat, raw: &crate::backend::RawStat) -> i32 {
         // C++ returns EINVAL for anything that is neither file nor dir.
         _ => return libc::EINVAL,
     };
-    // st_mode is mode_t on unix, u32 in the CRT's struct stat.
+    // st_mode is mode_t on unix, u16 in the pinned windows tebako_stat.
     #[cfg(unix)]
     {
         out.st_mode = (type_bits | raw.perms) as libc::mode_t;
@@ -402,7 +440,7 @@ fn fill_stat(st: *mut libc::stat, raw: &crate::backend::RawStat) -> i32 {
         out.st_mode = (type_bits | raw.perms) as u16;
     }
     out.st_size = raw.size as _;
-    out.st_mtime = raw.mtime as libc::time_t;
+    out.st_mtime = raw.mtime as _;
     out.st_nlink = 1 as _;
     0
 }
@@ -410,9 +448,9 @@ fn fill_stat(st: *mut libc::stat, raw: &crate::backend::RawStat) -> i32 {
 /// `tebako_fs_stat`.
 ///
 /// # Safety
-/// `path` must be a valid C string; `st` must point to a valid struct stat.
+/// `path` must be a valid C string; `st` must point to a valid struct tebako_stat.
 #[no_mangle]
-pub unsafe extern "C" fn tebako_fs_stat(path: *const c_char, st: *mut libc::stat) -> libc::c_int {
+pub unsafe extern "C" fn tebako_fs_stat(path: *const c_char, st: *mut TebakoStat) -> libc::c_int {
     if st.is_null() {
         return fail(libc::EINVAL);
     }
@@ -437,9 +475,9 @@ pub unsafe extern "C" fn tebako_fs_stat(path: *const c_char, st: *mut libc::stat
 /// `tebako_fs_fstat`.
 ///
 /// # Safety
-/// `st` must point to a valid struct stat.
+/// `st` must point to a valid struct tebako_stat.
 #[no_mangle]
-pub unsafe extern "C" fn tebako_fs_fstat(fd: libc::c_int, st: *mut libc::stat) -> libc::c_int {
+pub unsafe extern "C" fn tebako_fs_fstat(fd: libc::c_int, st: *mut TebakoStat) -> libc::c_int {
     if st.is_null() {
         return fail(libc::EINVAL);
     }
