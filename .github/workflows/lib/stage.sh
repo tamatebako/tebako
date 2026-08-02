@@ -13,6 +13,13 @@ BUDGET="${BOOTSTRAP_SIZE_BUDGET:-3145728}"
 TARGET="${TARGET:-$(rustc -vV | sed -n 's/^host: //p')}"
 EXE="${EXE_SUFFIX:-}"
 
+# The docker legs (floor/musl) inherit GITHUB_STEP_SUMMARY by name, but
+# the runner's file-command directory is outside the mounted workspace —
+# the append would die under set -e (run 30748661257, both musl legs
+# after full green builds). Fall back to /dev/null when it is not there.
+SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
+[ -d "$(dirname "$SUMMARY")" ] || SUMMARY=/dev/null
+
 # Tool list: binary names equal the artifact tool names (no mapping
 # table — this script must also run under bash 3.2 / POSIX sh, which
 # have no `declare -A`). tebako-shim is the dispatcher (TODO.testing/07).
@@ -20,8 +27,8 @@ TOOLS="tebako-bootstrap tfs tebako-pkg tebako tebako-shim"
 
 mkdir -p out "fragments/frag-$PLATFORM"
 
-echo "| platform | binary | size (bytes) |" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
-echo "|---|---|---|" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+echo "| platform | binary | size (bytes) |" >> "$SUMMARY"
+echo "|---|---|---|" >> "$SUMMARY"
 
 for tool in $TOOLS; do
   src="target/${TARGET}/release/${tool}${EXE}"
@@ -40,7 +47,7 @@ for tool in $TOOLS; do
     strip "$dest" 2>/dev/null || true
   fi
   size=$(stat -c %s "$dest" 2>/dev/null || stat -f %z "$dest")
-  echo "| $PLATFORM | $tool | $size |" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
+  echo "| $PLATFORM | $tool | $size |" >> "$SUMMARY"
   if command -v shasum >/dev/null 2>&1; then
     sha256=$(shasum -a 256 "$dest" | cut -d' ' -f1)
   else
