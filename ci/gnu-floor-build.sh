@@ -94,6 +94,6 @@ if [ -n "$floor" ] && [ "$(printf '%s\n2.31\n' "$floor" | sort -V | tail -1)" !=
 fi
 
 echo "== link unit (tebako-driver + tfs, scoped, + closure) =="
-cargo build --release --target "$TARGET" -p tfs -p tebako-driver
-ruby tools/stage_link_unit "out/link-unit-$PLATFORM" --skip-build
+cargo build --release --target "$TARGET" -p tfs -p tebako-driver -p libtfs-preload
+ruby tools/stage_link_unit "out/link-unit-$PLATFORM" --target "$TARGET" --skip-build
 tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
