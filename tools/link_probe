@@ -1,0 +1,441 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# tools/link_probe — the standalone LINK-PROBE (TODO.v2-1/14 fix #2):
+# link a tiny consumer against the EXACT link line a link-unit consumer
+# uses, and report named verdicts in seconds instead of at the end of a
+# 60-minute factory build.
+#
+#   tools/link_probe <staged-link-unit-dir> [--symbols a,b,c] [--cc <compiler>] [-- <extra link args>]
+#
+# The link line is composed exactly as a consumer composes it (the
+# factory's Mlibs#rust_link_libraries):
+#
+#   <dir>/libtebako_driver.a <dir>/libtfs.a <dir>/closure/*.a  (sorted,
+#   deterministic)
+#
+# with the probe object FIRST (object-then-archives — GNU ld's
+# single-pass scan resolves an archive's members only against the
+# undefined symbols already seen) and any consumer-context tail (the
+# factory links `-lc++ -lc++abi` on darwin, `-l:libstdc++.a -lgcc_eh`
+# plus `-l:libz.a` on linux-gnu) passed explicitly after `--`.
+#
+# Verdicts (stdout, boot-smoke style — named, one per line):
+#
+#   LINK-PROBE ok archives=<n> closure=<m>                       exit 0
+#   LINK-PROBE fail duplicate <symbol> (<objA> vs <objB>)        exit 1
+#   LINK-PROBE fail missing <symbol> (referenced by <obj>)       exit 1
+#   LINK-PROBE fail link <detail>         a link failure outside the
+#                                         duplicate/missing grammar    exit 1
+#   LINK-PROBE fail toolchain <detail>    compiler absent, staged dir
+#                                         malformed, probe compile     exit 64
+#   LINK-PROBE note <detail>              battery adjustments — never
+#                                         a failure
+#
+# The probe's main references a default battery — dwarfs_c_abi_version
+# (the dwarfs-t C ABI), tebako_driver_boot (the Rust driver entry),
+# uncompress (zlib), malloc_usable_size (the jemalloc family; glibc and
+# libSystem export it too — the probe's value is duplicate/missing
+# DETECTION, so link semantics stay) — plus --symbols. Declarations come
+# from the staged headers (<dir>/include/**/*.h) where one declares the
+# symbol, with an extern fallback otherwise; tebako_driver_boot is the
+# exception: with no staged header declaring it, it is DROPPED from the
+# battery with a note (the staged unit today carries only
+# include/tebako/fs/c_api.h — the driver header arrives with the
+# link-unit migration). Every reference sits inside an
+# `if (argc == -1) { ... }` block — never true at runtime (argc >= 1),
+# never provable at compile time: a literal `if (0)` is folded away by
+# clang even at -O0 (proven on Apple clang 15: the dead block's symbol
+# references never reach the object file), which would silently empty
+# the battery. The probe still compiles at -O0 so nothing else is
+# optimized out.
+#
+# ld dialects: GNU ld (linux/mingw) and ld64 (macOS) parsed first-class
+# with fixture-pinned grammars — both ld64 vintages: the classic
+# "Undefined symbols for architecture" blocks and the ld_prime (Xcode
+# 15+) "ld: Undefined symbols:" blocks with demangled C++ and
+# archive[N](obj.o) members; lld parsed on its own phrasing
+# (fixture-tested only). Two ld_prime behaviors are worked around, not
+# inherited: its duplicate-object listing order is unstable (the verdict
+# pair is sorted), and it reports only the undefined symbols of a
+# mixed-error link (a note tells the user duplicates surface on rerun).
+# No shell-outs beyond the compiler/linker themselves (build-time
+# tooling, never a shipped artifact); stdlib only.
+
+require "open3"
+require "shellwords"
+require "tmpdir"
+
+# The probe, modelled for the specs: battery/source generation, the
+# linker-stderr grammar, and the verdict report are pure functions; only
+# .run touches the filesystem and the toolchain.
+module LinkProbe
+  USAGE = "usage: tools/link_probe <staged-link-unit-dir> [--symbols a,b,c] [--cc <compiler>] [-- <extra link args>]"
+  EX_USAGE = 64
+
+  BatteryEntry = Struct.new(:name, :fallback_decl, :header_or_drop, keyword_init: true)
+
+  # The default battery. fallback_decl serves when no staged header
+  # declares the symbol; header_or_drop marks tebako_driver_boot —
+  # dropped with a note rather than extern-guessed when the staged
+  # include tree carries no driver header.
+  BATTERY = [
+    BatteryEntry.new(name: "dwarfs_c_abi_version", fallback_decl: "extern int dwarfs_c_abi_version(void);",
+                     header_or_drop: false),
+    BatteryEntry.new(name: "tebako_driver_boot", fallback_decl: nil, header_or_drop: true),
+    BatteryEntry.new(name: "uncompress", fallback_decl: "extern int uncompress();", header_or_drop: false),
+    BatteryEntry.new(name: "malloc_usable_size", fallback_decl: "extern size_t malloc_usable_size();",
+                     header_or_drop: false),
+  ].freeze
+
+  Finding = Struct.new(:sym, :obj_a, :obj_b, keyword_init: true)
+
+  # --- probe source ---------------------------------------------------
+
+  # Returns [source, notes]: the probe C translation unit plus the
+  # battery adjustment notes (dropped symbols).
+  def self.build_probe_source(include_dir, user_symbols)
+    notes = []
+    decls = []
+    refs = []
+    BATTERY.each do |entry|
+      decl = header_declaration(include_dir, entry.name)
+      if decl.nil? && entry.header_or_drop
+        notes << "dropped #{entry.name} (no staged header declares it)"
+        next
+      end
+
+      decl ||= entry.fallback_decl
+      decls << decl
+      refs << reference_for(entry.name, decl)
+    end
+
+    lines = +<<~C
+      /* generated by tools/link_probe — link-only references, never executed */
+      #include <stdint.h>
+      #include <stddef.h>
+      #include <sys/types.h>
+      #include <sys/stat.h>
+      /* c_api.h aliases struct tebako_stat to the platform struct stat on POSIX */
+      #ifndef tebako_stat
+      #define tebako_stat stat
+      #endif
+
+      static volatile void *link_probe_sink;
+    C
+    lines << decls.map { |d| "#{d}\n" }.join
+    # The never-true, never-provable guard (see the header comment: clang
+    # folds `if (0)` even at -O0 and the references would vanish).
+    lines << "\nint main(int argc, char **argv) {\n    (void)argv;\n    if (argc == -1) {\n"
+    refs.each { |r| lines << "        #{r}\n" }
+    # --symbols: declared and referenced inside the dead block, so the
+    # references are link-only.
+    user_symbols.each { |s| lines << "        extern void #{s}(void); #{s}();\n" }
+    lines << "    }\n    return 0;\n}\n"
+    [lines, notes]
+  end
+
+  # A call reference when the declaration takes no arguments (or its
+  # parameter list is unspecified, K&R style); a volatile address store
+  # otherwise — both are hard symbol references at -O0, and neither runs
+  # (the argc guard).
+  def self.reference_for(name, decl)
+    params = decl[/\b#{Regexp.escape(name)}\s*\(([^)]*)\)/, 1].to_s.strip
+    if params.empty? || params == "void"
+      "#{name}();"
+    else
+      "link_probe_sink = (void *)&#{name};"
+    end
+  end
+
+  # The first out-of-comment declaration of sym under include_dir, as a
+  # standalone statement (trailing context and any ALLCAPS export macro
+  # like DWARFS_C_API stripped). nil when no staged header declares it.
+  def self.header_declaration(include_dir, sym)
+    return nil unless File.directory?(include_dir)
+
+    Dir.glob(File.join(include_dir, "**", "*.h")).sort.each do |header|
+      decl = scan_header_for(File.read(header), sym)
+      return decl if decl
+    end
+    nil
+  end
+
+  def self.scan_header_for(text, sym)
+    lines = text.lines
+    in_comment = false
+    lines.each_with_index do |line, i|
+      code, in_comment = strip_c_comments(line, in_comment)
+      next unless code =~ /\b#{Regexp.escape(sym)}\s*\(/
+      next if code.lstrip.start_with?("#") # a macro, not a declaration
+
+      stmt = code.strip.dup
+      while !stmt.include?(";") && i + 1 < lines.size && stmt.lines.size < 8
+        i += 1
+        stmt << " " << lines[i].strip
+      end
+      stmt = stmt[/\A[^;]*;/].to_s
+      # a declaration names and types; calls/definitions do not ride along
+      next if stmt.empty? || stmt =~ /\breturn\b|[={}]/
+
+      return stmt.sub(/\A[A-Z][A-Z0-9_]+\s+(?=[A-Za-z_])/, "")
+    end
+    nil
+  end
+
+  # /* ... */ and // stripping with the comment state carried across
+  # lines (headers doc-comment their examples, and those mentions are
+  # not declarations).
+  def self.strip_c_comments(line, in_comment)
+    out = +""
+    i = 0
+    while i < line.length
+      if in_comment
+        if line[i, 2] == "*/"
+          in_comment = false
+          i += 2
+        else
+          i += 1
+        end
+      elsif line[i, 2] == "/*"
+        in_comment = true
+        i += 2
+      elsif line[i, 2] == "//"
+        break
+      else
+        out << line[i]
+        i += 1
+      end
+    end
+    [out, in_comment]
+  end
+
+  # --- the linker-stderr grammar (GNU ld, ld64, lld) ------------------
+
+  # { duplicates: [Finding(sym:, obj_a:, obj_b:)], missing: [Finding(sym:, obj_a:)] }
+  # obj_a is "first defined here" for duplicates, "referenced by" for
+  # missing. Mach-O's leading underscore is stripped for cross-ld parity.
+  def self.parse_linker_stderr(stderr)
+    lines = stderr.lines.map(&:chomp)
+    dups = []
+    missing = []
+    lines.each_with_index do |line, i|
+      case line
+      # NOTE: capture the symbol FIRST in every branch — the loc_objs /
+      # following_block scans below re-match regexes and clobber $~.
+      when /multiple definition of [`'](?<sym>[^`']+)'/ # GNU ld
+        sym = $~[:sym]
+        before, after = line.split(";", 2)
+        obj_a = after ? loc_objs(after.sub(/first defined here.*\z/, "")).first : nil
+        obj_b = loc_objs(before).first || context_obj(lines, i) || "unknown"
+        dups << Finding.new(sym: sym, obj_a: obj_a || "unknown", obj_b: obj_b)
+      when /undefined reference to [`'](?<sym>[^`']+)'/ # GNU ld
+        sym = $~[:sym]
+        obj = loc_objs(line).first || context_obj(lines, i) || "unknown"
+        missing << Finding.new(sym: sym, obj_a: obj)
+      when /^duplicate symbol ['"](?<sym>[^'"]+)['"] in:/ # ld64
+        sym = $~[:sym]
+        # ld64 (classic and ld_prime alike) lists the objects in no
+        # stable order — ld_prime's varies run to run — so the pair is
+        # sorted for a deterministic verdict.
+        objs = following_block(lines, i).flat_map { |l| loc_objs(l) }.sort
+        dups << Finding.new(sym: unmangle(sym), obj_a: objs[0] || "unknown", obj_b: objs[1] || "unknown")
+      when /ld\.lld: error: duplicate symbol: (?<sym>\S+)/ # lld
+        sym = $~[:sym]
+        objs = following_block(lines, i).grep(/defined at/).flat_map { |l| loc_objs(l) }
+        dups << Finding.new(sym: sym, obj_a: objs[0] || "unknown", obj_b: objs[1] || "unknown")
+      when /ld\.lld: error: undefined symbol: (?<sym>\S+)/ # lld
+        sym = $~[:sym]
+        obj = following_block(lines, i).flat_map { |l| loc_objs(l) }.first || "unknown"
+        missing << Finding.new(sym: sym, obj_a: obj)
+      end
+    end
+    missing.concat(parse_ld64_undefined(lines))
+    { duplicates: uniq_findings(dups), missing: uniq_findings(missing) }
+  end
+
+  # ld64's block form:
+  #   Undefined symbols for architecture arm64:
+  #     "_uncompress", referenced from:
+  #         _main in probe.o
+  def self.parse_ld64_undefined(lines)
+    out = []
+    sym = nil
+    lines.each do |line|
+      # classic ld64 opens "Undefined symbols for architecture arm64:";
+      # ld_prime (Xcode 15+) opens "ld: Undefined symbols:"
+      if line.start_with?("Undefined symbols for architecture") || line.chomp == "ld: Undefined symbols:"
+        sym = nil
+      elsif (m = line.match(/^\s+"(?<s>[^"]+)", referenced from:/)) # classic: quoted
+        sym = unmangle(m[:s])
+      elsif (m = line.match(/^\s{2}(?<s>\S[^"]*), referenced from:/)) # ld_prime: bare, demangled C++
+        sym = unmangle(m[:s])
+      elsif sym && (m = line.match(/\s+in (?<obj>[^\s]+)\s*$/))
+        out << Finding.new(sym: sym, obj_a: loc_objs(m[:obj]).first || m[:obj].strip)
+        sym = nil
+      end
+    end
+    out
+  end
+
+  # archive(member) or bare object tokens, path-stripped, in order of
+  # appearance; ld64's member index (lib.a[4](obj.o)) is stripped to the
+  # plain archive(member) form. Locations like foo.c:(.text+0x1c)
+  # deliberately match nothing — the referencing OBJECT rides the
+  # context line there.
+  def self.loc_objs(text)
+    text.scan(%r{[^/\s()]+\.(?:a|lib)(?:\[\d+\])?\([^()]+\)|[^/\s()]+\.(?:o|obj)\b})
+        .map { |tok| tok.sub(/\[\d+\]\(/, "(") }
+  end
+
+  # GNU's two-line form puts the object on the preceding
+  # `ld: <obj>: in function ...' line.
+  def self.context_obj(lines, i)
+    (i - 1).downto([i - 3, 0].max) do |j|
+      objs = loc_objs(lines[j])
+      return objs.first unless objs.empty?
+    end
+    nil
+  end
+
+  # The lines an ld64/lld finding spans: indented (ld64) or >>> (lld).
+  def self.following_block(lines, i)
+    block = []
+    ((i + 1)...lines.size).each do |j|
+      break unless lines[j] =~ /^(?:\s|>>>)/
+
+      block << lines[j]
+    end
+    block
+  end
+
+  def self.unmangle(sym)
+    sym.sub(/\A_/, "")
+  end
+
+  def self.uniq_findings(list)
+    seen = {}
+    list.each_with_object([]) do |finding, out|
+      key = [finding.sym, finding.obj_a, finding.obj_b]
+      next if seen[key]
+
+      seen[key] = true
+      out << finding
+    end
+  end
+
+  # --- the verdict report ----------------------------------------------
+
+  def self.verdict_lines(findings, archives:, closure:, other_failure: nil)
+    dups = findings[:duplicates].sort_by(&:sym)
+    miss = findings[:missing].sort_by(&:sym)
+    return ["LINK-PROBE ok archives=#{archives} closure=#{closure}"] if dups.empty? && miss.empty? && other_failure.nil?
+
+    lines = dups.map { |f| "LINK-PROBE fail duplicate #{f.sym} (#{f.obj_a} vs #{f.obj_b})" }
+    lines.concat(miss.map { |f| "LINK-PROBE fail missing #{f.sym} (referenced by #{f.obj_a})" })
+    lines << "LINK-PROBE fail link #{other_failure}" if lines.empty? && other_failure
+    lines
+  end
+
+  # --- the run ----------------------------------------------------------
+
+  # Prints the verdict lines to $stdout; returns the exit code.
+  def self.run(dir, cc:, user_symbols:, extra:, out: $stdout)
+    malformed = []
+    malformed << "no such directory" unless File.directory?(dir)
+    if malformed.empty?
+      %w[libtebako_driver.a libtfs.a].each do |name|
+        malformed << "missing #{name}" unless File.file?(File.join(dir, name))
+      end
+      malformed << "no closure/*.a" if Dir.glob(File.join(dir, "closure", "*.a")).empty?
+    end
+    unless malformed.empty?
+      out.puts "LINK-PROBE fail toolchain staged dir malformed: #{malformed.join(', ')} (#{dir})"
+      return EX_USAGE
+    end
+
+    source, notes = build_probe_source(File.join(dir, "include"), user_symbols)
+    notes.each { |note| out.puts "LINK-PROBE note #{note}" }
+
+    closure = Dir.glob(File.join(dir, "closure", "*.a")).sort
+    link_line = [File.join(dir, "libtebako_driver.a"), File.join(dir, "libtfs.a"), *closure]
+
+    Dir.mktmpdir("link_probe") do |tmp|
+      probe_c = File.join(tmp, "probe.c")
+      probe_o = File.join(tmp, "probe.o")
+      File.write(probe_c, source)
+      cc_words = Shellwords.split(cc)
+
+      begin
+        _, compile_err, compile_st = Open3.capture3(*cc_words, "-O0", "-c", probe_c, "-o", probe_o)
+      rescue SystemCallError => e
+        out.puts "LINK-PROBE fail toolchain compiler #{cc_words.first} not runnable: #{e.message}"
+        return EX_USAGE
+      end
+      unless compile_st.success?
+        detail = compile_err.lines.map(&:strip).reject(&:empty?).first || "cc exited #{compile_st.exitstatus}"
+        out.puts "LINK-PROBE fail toolchain probe compile failed: #{detail}"
+        return EX_USAGE
+      end
+
+      begin
+        _, link_err, link_st = Open3.capture3(*cc_words, probe_o, *link_line, "-o", File.join(tmp, "probe"), *extra)
+      rescue SystemCallError => e
+        out.puts "LINK-PROBE fail toolchain linker #{cc_words.first} not runnable: #{e.message}"
+        return EX_USAGE
+      end
+
+      if link_st.success?
+        findings = { duplicates: [], missing: [] }
+        other = nil
+      else
+        findings = parse_linker_stderr(link_err)
+        other = nil
+        if findings[:duplicates].empty? && findings[:missing].empty?
+          detail = link_err.lines.map(&:strip).find { |l| l =~ /error|undefined|duplicate|ld:/i } ||
+                   link_err.lines.map(&:strip).find { |l| !l.empty? } || "ld exited #{link_st.exitstatus}"
+          other = detail
+        end
+      end
+
+      # ld_prime (Xcode 15+) reports ONLY the undefined symbols of a
+      # mixed-error link: the duplicate report surfaces on a rerun once
+      # the missing set resolves (proven on Apple clang 15). Say so —
+      # otherwise a darwin run reads as "no duplicates" when the check
+      # simply never ran.
+      if RUBY_PLATFORM.include?("darwin") && !link_st.success? &&
+         findings[:duplicates].empty? && !findings[:missing].empty?
+        out.puts "LINK-PROBE note ld64 reports undefined symbols first; duplicate symbols (if any) surface " \
+                 "on a rerun once the missing set resolves"
+      end
+
+      verdict_lines(findings, archives: link_line.size, closure: closure.size, other_failure: other)
+        .each { |line| out.puts line }
+      other.nil? && findings[:duplicates].empty? && findings[:missing].empty? ? 0 : 1
+    end
+  end
+end
+
+def die(msg)
+  warn "link_probe: #{msg}"
+  exit LinkProbe::EX_USAGE
+end
+
+if __FILE__ == $PROGRAM_NAME
+  dir = ARGV[0]
+  die LinkProbe::USAGE if dir.nil? || dir.start_with?("-")
+
+  sep = ARGV.index("--")
+  extra = sep ? ARGV[(sep + 1)..] : []
+  argv = sep ? ARGV[0...sep] : ARGV
+
+  symbols = argv.include?("--symbols") ? argv[argv.index("--symbols") + 1].to_s : ""
+  symbols = symbols.split(",").map(&:strip).reject(&:empty?)
+  bad = symbols.reject { |s| s =~ /\A[A-Za-z_]\w*\z/ }
+  die "invalid --symbols names: #{bad.join(', ')}" unless bad.empty?
+
+  cc = argv.include?("--cc") ? argv[argv.index("--cc") + 1].to_s : ENV.fetch("CC", "cc")
+  die "empty --cc" if cc.empty?
+
+  exit LinkProbe.run(File.expand_path(dir), cc: cc, user_symbols: symbols.uniq, extra: extra)
+end
