@@ -85,8 +85,10 @@ fn usage(msg: &str) -> ExitCode {
 /// prefix would also match .data.rel.ro*, a real data section every
 /// rustc object with relocated statics carries.
 fn skipped_bookkeeping(name: &[u8]) -> bool {
-    matches!(name, b".symtab" | b".strtab" | b".shstrtab" | b".group" | b".rel")
-        || name.starts_with(b".rela")
+    matches!(
+        name,
+        b".symtab" | b".strtab" | b".shstrtab" | b".group" | b".rel"
+    ) || name.starts_with(b".rela")
         || name.starts_with(b".rel.")
 }
 
@@ -405,6 +407,18 @@ fn scope_object(
     // Mach-O: raw LC_SYMTAB surgery (sections and relocations stay
     // byte-identical — the general rewrite breaks ld64's atomizers).
     if obj.format() == object::BinaryFormat::MachO {
+        // A member with no LC_SYMTAB carries no symbols at all (an
+        // empty TU or an LTO bitcode blob): nothing to rename, nothing
+        // exported — inert to scoping by construction, so it passes
+        // through byte-identical (macos-x86_64: filters_comp_filter.o).
+        // The literal is macho.rs's symtab() error for exactly this
+        // case — one crate, one spelling.
+        if let Err(e) = macho::defined(data, keep) {
+            if e == "no LC_SYMTAB in this Mach-O object" {
+                return Ok((data.to_vec(), Vec::new()));
+            }
+            return Err(format!("Mach-O member: {e}"));
+        }
         let (out, exported, renamed, kept) = macho::scope(data, keep, prefix, defined)?;
         report.scoped += renamed;
         report.kept += kept;
@@ -415,7 +429,8 @@ fn scope_object(
     let mut exported: Vec<String> = Vec::new();
 
     let mut section_ids = std::collections::HashMap::new();
-    let mut skipped: std::collections::HashSet<object::SectionIndex> = std::collections::HashSet::new();
+    let mut skipped: std::collections::HashSet<object::SectionIndex> =
+        std::collections::HashSet::new();
     for section in obj.sections() {
         let name = section
             .name_bytes()

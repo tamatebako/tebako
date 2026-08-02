@@ -153,8 +153,10 @@ else
   # extractor chain; the boost iostreams/random/thread, date-tz,
   # flatbuffers, jemalloc and ssl archives were never copied — the
   # required-set check below then failed on its own contract). Test and
-  # manual-link archives never ship.
-  vlib = vcpkg_installed_dir(dwarfs, "*-static")
+  # manual-link archives never ship. The glob also matches the musl
+  # overlay triplets (x64-linux-musl / arm64-linux-musl carry no
+  # -static suffix; musl linkage is static by construction there).
+  vlib = vcpkg_installed_dir(dwarfs, "{*-static,*-linux-musl}")
   die "no vcpkg static lib dir under #{dwarfs} (or DWARFS_RS_VCPKG_INSTALLED_DIR)" unless vlib
   Dir.glob(File.join(vlib, "*.a")).sort.each do |a|
     base = File.basename(a)
@@ -166,7 +168,7 @@ else
 
   # the squashfs pair
   harvest(out, File.join(sqfs, "libsqfs_abi_check.a"), "sqfs-sys shim")
-  sqfs_vlib = Dir.glob(File.join(sqfs, "vcpkg_installed", "*-static", "lib")).min
+  sqfs_vlib = Dir.glob(File.join(sqfs, "vcpkg_installed", "{*-static,*-linux-musl}", "lib")).min
   die "no vcpkg static lib dir under #{sqfs}" unless sqfs_vlib
   harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
 
