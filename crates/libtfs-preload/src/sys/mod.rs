@@ -27,7 +27,7 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{CStr, c_char, c_int, c_void};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
@@ -39,6 +39,8 @@ use crate::route::{self, PathRoute};
 mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
+#[cfg(target_os = "linux")]
+pub(crate) mod statx_abi;
 
 #[cfg(target_os = "linux")]
 use linux as plat;
@@ -314,7 +316,7 @@ pub unsafe extern "C" fn openat_impl(
     let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
         Ok(route::AtRoute::Routed(rp)) => rp,
         Ok(route::AtRoute::Real) => {
-            return unsafe { plat::real_openat()(dirfd, path, flags, mode) }
+            return unsafe { plat::real_openat()(dirfd, path, flags, mode) };
         }
         Err(e) => {
             set_errno(e);
@@ -445,7 +447,7 @@ pub unsafe extern "C" fn faccessat(
     let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
         Ok(route::AtRoute::Routed(rp)) => rp,
         Ok(route::AtRoute::Real) => {
-            return unsafe { plat::real_faccessat()(dirfd, path, mode, flags) }
+            return unsafe { plat::real_faccessat()(dirfd, path, mode, flags) };
         }
         Err(e) => {
             set_errno(e);
@@ -906,7 +908,10 @@ pub unsafe extern "C" fn fstatat64(
 }
 
 /// Linux: `statx` (roadmap 39). The engine's RawStat fills the statx
-/// answer; stx_mask reports exactly the fields written.
+/// answer; stx_mask reports exactly the fields written. The ABI comes
+/// from statx_abi (libc on glibc, the uapi mirror on musl — libc
+/// 0.2.189 has no musl statx, and musl itself lacks the wrapper before
+/// 1.2.4).
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn statx(
@@ -914,7 +919,7 @@ pub unsafe extern "C" fn statx(
     path: *const c_char,
     flags: c_int,
     mask: libc::c_uint,
-    stx: *mut libc::statx,
+    stx: *mut statx_abi::statx,
 ) -> c_int {
     use tfs::backend::EntryType;
 
@@ -927,7 +932,7 @@ pub unsafe extern "C" fn statx(
     let routed = match route::resolve_at_strict(dirfd, p, at_base(dirfd, p)) {
         Ok(route::AtRoute::Routed(rp)) => rp,
         Ok(route::AtRoute::Real) => {
-            return unsafe { plat::real_statx()(dirfd, path, flags, mask, stx) }
+            return unsafe { plat::real_statx()(dirfd, path, flags, mask, stx) };
         }
         Err(e) => {
             set_errno(e);
@@ -948,17 +953,17 @@ pub unsafe extern "C" fn statx(
             // SAFETY: a zeroed struct statx is valid; stx is valid per the
             // call contract. Field-by-field assignment: statx_timestamp's
             // padding is private (libc-version dependent).
-            let mut out: libc::statx = unsafe { std::mem::zeroed() };
+            let mut out: statx_abi::statx = unsafe { std::mem::zeroed() };
             out.stx_mode = (type_bits | raw.perms) as u16;
             out.stx_size = raw.size as u64;
             out.stx_nlink = 1;
             out.stx_mtime.tv_sec = raw.mtime;
             out.stx_mtime.tv_nsec = 0;
-            out.stx_mask = libc::STATX_TYPE
-                | libc::STATX_MODE
-                | libc::STATX_NLINK
-                | libc::STATX_SIZE
-                | libc::STATX_MTIME;
+            out.stx_mask = statx_abi::STATX_TYPE
+                | statx_abi::STATX_MODE
+                | statx_abi::STATX_NLINK
+                | statx_abi::STATX_SIZE
+                | statx_abi::STATX_MTIME;
             unsafe { *stx = out };
             0
         }

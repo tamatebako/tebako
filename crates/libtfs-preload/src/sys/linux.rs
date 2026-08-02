@@ -162,11 +162,43 @@ real_fn!(
     c"fstatat64",
     unsafe extern "C" fn(c_int, *const c_char, *mut libc::stat, c_int) -> c_int
 );
+#[cfg(not(target_env = "musl"))]
 real_fn!(
     real_statx,
     c"statx",
-    unsafe extern "C" fn(c_int, *const c_char, c_int, libc::c_uint, *mut libc::statx) -> c_int
+    unsafe extern "C" fn(
+        c_int,
+        *const c_char,
+        c_int,
+        libc::c_uint,
+        *mut super::statx_abi::statx,
+    ) -> c_int
 );
+#[cfg(target_env = "musl")]
+pub(super) fn real_statx() -> unsafe extern "C" fn(
+    c_int,
+    *const c_char,
+    c_int,
+    libc::c_uint,
+    *mut super::statx_abi::statx,
+) -> c_int {
+    // musl gained the statx(2) wrapper only in 1.2.4 (alpine >= 3.19):
+    // RTLD_NEXT finds nothing on the 3.17 floor and the real_fn! assert
+    // would panic. The kernel uapi is one ABI — answer through the raw
+    // syscall (musl's syscall() sets errno itself; ENOSYS where the
+    // kernel predates statx(2) — the truthful passthrough, and inert
+    // where no caller can name statx at all).
+    unsafe extern "C" fn via_syscall(
+        dirfd: c_int,
+        path: *const c_char,
+        flags: c_int,
+        mask: libc::c_uint,
+        stx: *mut super::statx_abi::statx,
+    ) -> c_int {
+        unsafe { libc::syscall(libc::SYS_statx, dirfd, path, flags, mask, stx) as c_int }
+    }
+    via_syscall
+}
 real_fn!(
     real_getdents64,
     c"getdents64",
