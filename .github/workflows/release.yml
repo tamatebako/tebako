@@ -38,6 +38,11 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # Every build leg checks out into the tebako-rs/ (and dwarfs-rs/)
+  # subdir, so $GITHUB_WORKSPACE itself is NOT a git repository and gh's
+  # git-based repo resolution dies ("failed to run git: fatal: not a git
+  # repository"). Name the repo explicitly for every gh invocation.
+  GH_REPO: ${{ github.repository }}
   # Must match ci.yml (the dwarfs-t vcpkg baseline).
   VCPKG_COMMIT: f14401ca0f2754347c3864da7488a9b955b4e47a
   RUST_VERSION: "1.94.1"
@@ -496,6 +501,8 @@ jobs:
   # ==========================================================================
   windows-link-unit:
     name: Windows link-unit (ucrt64)
+    permissions:
+      contents: write
     runs-on: windows-latest
     needs: prepare
     env:
