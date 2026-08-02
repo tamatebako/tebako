@@ -409,16 +409,20 @@ fn scope_object(
             .map_err(|e| format!("section name: {e}"))?
             .to_vec();
         // Sections the writer regenerates from the symbol/relocation
-        // re-adds below (.symtab/.strtab/.shstrtab, the .rel/.rela set)
-        // and the COMDAT bookkeeping it cannot represent (.group):
-        // copying them as DATA produced stray mis-typed sections (a
-        // PROGBITS .strtab, PROGBITS relocation dumps) that GNU ld then
-        // resolves against — links succeeded, binaries died at startup
-        // (the gnu leg's miniruby; ld64 and the mingw link tolerate the
-        // strays, which is why only the ELF path broke).
-        if matches!(name.as_slice(), b".symtab" | b".strtab" | b".shstrtab" | b".group")
+        // re-adds below (.symtab/.strtab/.shstrtab, the .rel./.rela.
+        // relocation set) and the COMDAT bookkeeping it cannot
+        // represent (.group): copying them as DATA produced stray
+        // mis-typed sections (a PROGBITS .strtab, PROGBITS relocation
+        // dumps) that GNU ld then resolves against — links succeeded,
+        // binaries died at startup (the gnu leg's miniruby; ld64 and
+        // the mingw link tolerate the strays, which is why only the
+        // ELF path broke). The .rel. form carries the trailing dot:
+        // a bare ".rel" prefix would also eat .data.rel.ro*, a real
+        // data section every rustc object with relocated statics has
+        // (its symbols then missed their section mapping).
+        if matches!(name.as_slice(), b".symtab" | b".strtab" | b".shstrtab" | b".group" | b".rel")
             || name.starts_with(b".rela")
-            || name.starts_with(b".rel")
+            || name.starts_with(b".rel.")
         {
             continue;
         }
