@@ -175,10 +175,8 @@ jobs:
           SQFS_SYS_VCPKG_ROOT: ${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
-        run: |
-          mkdir -p out/link-unit-$PLATFORM
-          ruby tools/stage_link_unit "out/link-unit-$PLATFORM" --target "${{ matrix.target }}" --skip-build
-          tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
+          TARGET: ${{ matrix.target }}
+        run: bash .github/workflows/lib/link-unit-stage.sh
 
       - name: Upload link-unit
         if: needs.prepare.outputs.upload_url != ''
