@@ -19,7 +19,16 @@ apk --no-cache add \
   build-base cmake ninja git bash sudo \
   autoconf automake libtool make pkgconfig perl python3 \
   curl zip unzip tar ca-certificates linux-headers \
-  clang19-libclang
+  clang19-libclang ruby
+
+# The workspace is bind-mounted from the runner (files owned by uid 1001)
+# but the build runs as root — alpine's git (>= 2.35.2) refuses the
+# mounted repos as "dubious ownership", so dwarfs-t's cmake/version.cmake
+# sees NO git metadata and dies ("missing version files - git metadata
+# unavailable and no pre-generated version files found"; release run
+# 30742821370). This is a single-use --rm container: trust every repo
+# under the mount.
+git config --global --add safe.directory '*'
 
 # clang19-libclang: rnp-rs 0.1.10's build.rs runs bindgen (the rnp-src
 # source-built model) — bindgen dlopens libclang.so at runtime, which
