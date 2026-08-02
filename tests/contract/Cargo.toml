@@ -9,8 +9,16 @@ repository.workspace = true
 homepage.workspace = true
 publish = false
 
-[dependencies]
+[target.'cfg(not(windows))'.dependencies]
 tfs = { version = "0.1.0", path = "../../crates/tfs" }
+
+# Windows gets the dwarfs-only tfs (the consumer per-target split — the
+# SquashFS backend is POSIX/autotools-only and sqfs-sys's build script
+# refuses by design; the ENC transform is unproven on mingw).
+[target.'cfg(windows)'.dependencies]
+tfs = { version = "0.1.0", path = "../../crates/tfs", default-features = false, features = ["vendored-dwarfs"] }
+
+[dependencies]
 libc = "0.2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 
