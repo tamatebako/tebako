@@ -21,7 +21,7 @@ apt-get install -y -qq --no-install-recommends \
   build-essential cmake ninja-build pkg-config \
   autoconf automake autoconf-archive libtool \
   curl zip unzip tar ca-certificates git gnupg lsb-release wget \
-  libbz2-dev ruby software-properties-common
+  libbz2-dev ruby
 
 # rnp-rs's build.rs runs bindgen, which dlopens libclang. Focal's stock
 # libclang (v10) is too old for the current bindgen; llvm.org publishes
@@ -49,7 +49,16 @@ export LIBCLANG_PATH=/usr/lib/llvm-19/lib
 # the ppa's newer libstdc++ adds no runtime floor — the GLIBC gate below
 # stays the arbiter.
 echo "== gcc-11 (ubuntu-toolchain-r ppa) =="
-add-apt-repository -y -n ppa:ubuntu-toolchain-r/test
+# add-apt-repository's launchpad API lookup hangs ~9 min then dies on
+# the arm64 runners ("'~ubuntu-toolchain-r' user or team does not
+# exist"; run 30745532174) — the llvm.org pattern (key + deb line, no
+# API call) works on both arches. Key 1E9377A2BA9EF27F ("Launchpad
+# Toolchain builds") is the ppa's published signer; the ppa ships
+# gcc-11/g++-11 for focal amd64 AND arm64.
+curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x1E9377A2BA9EF27F" \
+  | gpg --dearmor -o /usr/share/keyrings/toolchainr.gpg
+echo "deb [signed-by=/usr/share/keyrings/toolchainr.gpg] http://ppa.launchpad.net/ubuntu-toolchain-r/test/ubuntu focal main" \
+  > /etc/apt/sources.list.d/toolchainr.list
 apt-get update -qq
 apt-get install -y -qq --no-install-recommends gcc-11 g++-11
 update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
@@ -57,6 +66,17 @@ update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
 update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-11 110
 update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-11 110
 g++ --version | head -1
+
+# dwarfs-t's cmake_minimum_required is 3.28 (its non-TEBAKO_BUILD
+# branch) and librnp 0.18.1's is 3.18 — focal's stock cmake is 3.16
+# (run 30745532174). Kitware's release tarball is arch-exact and runs on
+# focal's glibc; it shadows the stock one via /usr/local/bin.
+echo "== cmake 3.31.8 (Kitware tarball — dwarfs-t needs >= 3.28) =="
+cmake_arch=x86_64; [ "$(uname -m)" = "aarch64" ] && cmake_arch=aarch64
+curl -fsSL "https://github.com/Kitware/CMake/releases/download/v3.31.8/cmake-3.31.8-linux-${cmake_arch}.tar.gz" \
+  | tar -xz -C /opt
+ln -sfn "/opt/cmake-3.31.8-linux-${cmake_arch}/bin/cmake" /usr/local/bin/cmake
+cmake --version | head -1
 
 echo "== rustup ($RUST_VERSION, $TARGET) =="
 curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh
