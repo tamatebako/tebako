@@ -98,14 +98,25 @@ echo "== pre-install squashfs-tools-ng ($TRIPLET) =="
 # artifacts are dynamic-musl, same shape as the runtime factory's musl
 # runtimes (musl libc is present on every musl system by definition;
 # the symbol floor is documented alongside them).
+#
+# The flag must reach HOST units (build scripts) too — and with an
+# explicit `--target` cargo applies RUSTFLAGS to the target units ONLY
+# (proven against cargo 1.94: build scripts get neither RUSTFLAGS nor
+# CARGO_TARGET_<host>_RUSTFLAGS once --target is passed), so rnp-rs's
+# build script linked static and bindgen died on "Dynamic loading not
+# supported" (run 30745532174). Every musl leg is native (the alpine
+# container's host triple IS $TARGET), so build WITHOUT --target:
+# RUSTFLAGS then covers host units, and the artifacts land in the
+# default-target layout target/release (stage.sh and link-unit-stage.sh
+# resolve both layouts).
 export RUSTFLAGS="-C target-feature=-crt-static"
-echo "== cargo build (release, $TARGET) =="
+echo "== cargo build (release, $TARGET — native, no --target) =="
 cd "$WS/tebako-rs"
 export DWARFS_RS_VCPKG_ROOT="$WS/.vcpkg-musl"
 export DWARFS_RS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_INSTALLED_DIR="$WS/.sqfs-musl/$TRIPLET"
-cargo build --release --target "$TARGET" \
+cargo build --release \
   -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
 
 echo "== stage / strip / size-gate =="
@@ -113,6 +124,5 @@ export TARGET
 bash .github/workflows/lib/stage.sh
 
 echo "== link unit (tebako-driver + tfs, scoped, + closure) =="
-cargo build --release --target "$TARGET" -p tfs -p tebako-driver -p libtfs-preload
-ruby tools/stage_link_unit "out/link-unit-$PLATFORM" --target "$TARGET" --skip-build
-tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
+cargo build --release -p tfs -p tebako-driver -p libtfs-preload
+TARGET= bash .github/workflows/lib/link-unit-stage.sh

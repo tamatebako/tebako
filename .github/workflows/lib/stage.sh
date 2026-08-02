@@ -25,7 +25,13 @@ echo "|---|---|---|" >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
 for tool in $TOOLS; do
   src="target/${TARGET}/release/${tool}${EXE}"
-  test -x "$src" || { echo "missing build output: $src"; exit 1; }
+  # A leg that builds native WITHOUT --target (the musl container — its
+  # host triple IS the target, and RUSTFLAGS must reach host units there)
+  # lands in the default-target layout.
+  if [ ! -x "$src" ] && [ -x "target/release/${tool}${EXE}" ]; then
+    src="target/release/${tool}${EXE}"
+  fi
+  test -x "$src" || { echo "missing build output: target/${TARGET}/release/${tool}${EXE} (or the default-target layout)"; exit 1; }
   dest="out/${tool}-${VERSION}-${PLATFORM}${EXE}"
   cp "$src" "$dest"
   if [ "$(uname -s)" = "Darwin" ]; then
