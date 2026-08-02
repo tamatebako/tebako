@@ -404,15 +404,29 @@ fn scope_object(
 
     let mut section_ids = std::collections::HashMap::new();
     for section in obj.sections() {
+        let name = section
+            .name_bytes()
+            .map_err(|e| format!("section name: {e}"))?
+            .to_vec();
+        // Sections the writer regenerates from the symbol/relocation
+        // re-adds below (.symtab/.strtab/.shstrtab, the .rel/.rela set)
+        // and the COMDAT bookkeeping it cannot represent (.group):
+        // copying them as DATA produced stray mis-typed sections (a
+        // PROGBITS .strtab, PROGBITS relocation dumps) that GNU ld then
+        // resolves against — links succeeded, binaries died at startup
+        // (the gnu leg's miniruby; ld64 and the mingw link tolerate the
+        // strays, which is why only the ELF path broke).
+        if matches!(name.as_slice(), b".symtab" | b".strtab" | b".shstrtab" | b".group")
+            || name.starts_with(b".rela")
+            || name.starts_with(b".rel")
+        {
+            continue;
+        }
         let segment = section
             .segment_name()
             .map_err(|e| format!("section segment name: {e}"))?
             .unwrap_or("")
             .as_bytes()
-            .to_vec();
-        let name = section
-            .name_bytes()
-            .map_err(|e| format!("section name: {e}"))?
             .to_vec();
         let id = out.add_section(segment, name, section.kind());
         let new_section = out.section_mut(id);
@@ -451,8 +465,13 @@ fn scope_object(
         // the writer's own section symbol for the same section.
         if symbol.kind() == object::SymbolKind::Section {
             if let object::SymbolSection::Section(index) = symbol.section() {
-                let id = out.section_symbol(section_ids[&index]);
-                symbol_ids.insert(symbol.index(), id);
+                // A skipped bookkeeping section (.rela & co) can carry a
+                // section symbol; it has no counterpart in the output
+                // and nothing references it there.
+                if let Some(out_index) = section_ids.get(&index) {
+                    let id = out.section_symbol(*out_index);
+                    symbol_ids.insert(symbol.index(), id);
+                }
             }
             continue;
         }
@@ -511,10 +530,23 @@ fn scope_object(
     }
 
     for section in obj.sections() {
+        // Skipped bookkeeping sections carry no relocations that matter
+        // (their own data is never emitted); a real section always has
+        // its output id here.
+        let Some(out_section) = section_ids.get(&section.index()) else {
+            continue;
+        };
         for (offset, relocation) in section.relocations() {
             let symbol = match relocation.target() {
                 RelocationTarget::Symbol(index) => symbol_ids[&index],
-                RelocationTarget::Section(index) => out.section_symbol(section_ids[&index]),
+                RelocationTarget::Section(index) => {
+                    let Some(out_index) = section_ids.get(&index) else {
+                        return Err(format!(
+                            "relocation targets a skipped bookkeeping section (offset {offset:#x}) — not seen for compiler-emitted objects"
+                        ));
+                    };
+                    out.section_symbol(*out_index)
+                }
                 other => {
                     return Err(format!(
                         "an unsupported relocation target ({other:?}, offset {offset:#x}, kind {:?}) — implement it when the ELF leg needs it",
@@ -523,7 +555,7 @@ fn scope_object(
                 }
             };
             out.add_relocation(
-                section_ids[&section.index()],
+                *out_section,
                 object::write::Relocation {
                     offset,
                     symbol,
