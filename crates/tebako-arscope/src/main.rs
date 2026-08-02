@@ -426,9 +426,9 @@ fn scope_object(
         // broke). Clear the membership flag — the weak symbols inside
         // still merge by name at link time.
         new_section.flags = match section.flags() {
-            object::SectionFlags::Elf { sh_flags } => {
-                object::SectionFlags::Elf { sh_flags: sh_flags & !0x200 }
-            }
+            object::SectionFlags::Elf { sh_flags } => object::SectionFlags::Elf {
+                sh_flags: sh_flags & !0x200,
+            },
             other => other,
         };
         if section.kind().is_bss() {
