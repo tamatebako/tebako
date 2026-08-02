@@ -67,6 +67,21 @@ update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-11 110
 update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-11 110
 g++ --version | head -1
 
+# glibc 2.31 keeps pthreads in a separate libpthread (2.34 folds it into
+# libc), and librnp 0.18.1 builds its examples unconditionally
+# (add_subdirectory — no switch) with no find_package(Threads) anywhere:
+# their link of libbotan-3.a dies on undefined pthread_create /
+# pthread_setname_np (run 30748661257). -pthread as a DRIVER flag is
+# order-immune — gcc expands it in LIB_SPEC after the objects, so the
+# front-of-line position cmake gives env flags cannot strand it ahead of
+# the archives (a plain -lpthread there is dropped by --as-needed).
+# cmake reads CFLAGS/CXXFLAGS into CMAKE_C(XX)_FLAGS at first configure,
+# so this covers dwarfs-t-sys and every rnp-src dep; vcpkg's own
+# toolchain overrides these for its ports, so the port builds are
+# untouched.
+export CFLAGS=-pthread
+export CXXFLAGS=-pthread
+
 # dwarfs-t's cmake_minimum_required is 3.28 (its non-TEBAKO_BUILD
 # branch) and librnp 0.18.1's is 3.18 — focal's stock cmake is 3.16
 # (run 30745532174). Kitware's release tarball is arch-exact and runs on
