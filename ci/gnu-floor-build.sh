@@ -156,7 +156,12 @@ echo "== glibc floor gate (the artifact must need ≤ 2.31) =="
 floor="$(objdump -T "out/tebako-bootstrap-${VERSION}-${PLATFORM}" \
   | grep -oE 'GLIBC_[0-9]+\.[0-9]+' | sort -Vu | tail -1)"
 echo "max glibc symbol version required: ${floor:-none}"
-if [ -n "$floor" ] && [ "$(printf '%s\n2.31\n' "$floor" | sort -V | tail -1)" != "2.31" ]; then
+# Compare the NUMERIC tail: with the GLIBC_ prefix in the sort input,
+# strverscmp orders letters after digits, so every value — even a
+# compliant GLIBC_2.30 — comes out ">" 2.31 (run 30756664324: the gate
+# failed its own contract on a clean binary).
+floor_num="${floor#GLIBC_}"
+if [ -n "$floor_num" ] && [ "$(printf '%s\n2.31\n' "$floor_num" | sort -V | tail -1)" != "2.31" ]; then
   echo "::error::floor violation: the bootstrap requires $floor (> 2.31)" >&2
   exit 65
 fi
