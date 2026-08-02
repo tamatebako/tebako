@@ -21,7 +21,7 @@ apt-get install -y -qq --no-install-recommends \
   build-essential cmake ninja-build pkg-config \
   autoconf automake autoconf-archive libtool \
   curl zip unzip tar ca-certificates git gnupg lsb-release wget \
-  libbz2-dev ruby
+  libbz2-dev ruby software-properties-common
 
 # rnp-rs's build.rs runs bindgen, which dlopens libclang. Focal's stock
 # libclang (v10) is too old for the current bindgen; llvm.org publishes
@@ -35,6 +35,28 @@ apt-get install -y -qq --no-install-recommends clang-19 libclang-19-dev
 echo "/usr/lib/llvm-19/lib" > /etc/ld.so.conf.d/llvm19.conf
 ldconfig
 export LIBCLANG_PATH=/usr/lib/llvm-19/lib
+
+# rnp-src 0.2.0 builds Botan 3.12 (botan-src 0.31200.0): its configure
+# hard-gates on gcc >= 11, and Botan 3's public headers need a C++20
+# stdlib (std::span/concepts) that focal's stock libstdc++-9 lacks —
+# focal main tops out at gcc 10 (run 30742821370 died on "This version
+# of Botan requires at least gcc 11.0"). rnp-src pins the librnp
+# compiler by NAME (gcc/g++), so the lever is to make those names
+# resolve to the toolchain-r ppa's gcc-11: botan's configure
+# auto-detect then passes and librnp/dwarfs-t/vcpkg ports all build with
+# the same compiler. libstdc++ is absorbed STATICALLY into the shipped
+# binaries (the v0.1.0 artifacts have no libstdc++.so NEEDED entry), so
+# the ppa's newer libstdc++ adds no runtime floor — the GLIBC gate below
+# stays the arbiter.
+echo "== gcc-11 (ubuntu-toolchain-r ppa) =="
+add-apt-repository -y -n ppa:ubuntu-toolchain-r/test
+apt-get update -qq
+apt-get install -y -qq --no-install-recommends gcc-11 g++-11
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-11 110 \
+  --slave /usr/bin/g++ g++ /usr/bin/g++-11
+update-alternatives --install /usr/bin/cc cc /usr/bin/gcc-11 110
+update-alternatives --install /usr/bin/c++ c++ /usr/bin/g++-11 110
+g++ --version | head -1
 
 echo "== rustup ($RUST_VERSION, $TARGET) =="
 curl -fsSL https://sh.rustup.rs -o /tmp/rustup-init.sh
