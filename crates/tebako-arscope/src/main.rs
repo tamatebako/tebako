@@ -78,6 +78,18 @@ fn usage(msg: &str) -> ExitCode {
     ExitCode::from(64)
 }
 
+/// Sections the object-crate writer regenerates from the symbol and
+/// relocation re-adds (.symtab/.strtab/.shstrtab, the .rel./.rela.
+/// relocation set) plus the COMDAT bookkeeping it cannot represent
+/// (.group). The .rel. form carries the trailing dot: a bare ".rel"
+/// prefix would also match .data.rel.ro*, a real data section every
+/// rustc object with relocated statics carries.
+fn skipped_bookkeeping(name: &[u8]) -> bool {
+    matches!(name, b".symtab" | b".strtab" | b".shstrtab" | b".group" | b".rel")
+        || name.starts_with(b".rela")
+        || name.starts_with(b".rel.")
+}
+
 #[derive(Default)]
 struct Report {
     members: usize,
@@ -403,6 +415,7 @@ fn scope_object(
     let mut exported: Vec<String> = Vec::new();
 
     let mut section_ids = std::collections::HashMap::new();
+    let mut skipped: std::collections::HashSet<object::SectionIndex> = std::collections::HashSet::new();
     for section in obj.sections() {
         let name = section
             .name_bytes()
@@ -420,10 +433,8 @@ fn scope_object(
         // a bare ".rel" prefix would also eat .data.rel.ro*, a real
         // data section every rustc object with relocated statics has
         // (its symbols then missed their section mapping).
-        if matches!(name.as_slice(), b".symtab" | b".strtab" | b".shstrtab" | b".group" | b".rel")
-            || name.starts_with(b".rela")
-            || name.starts_with(b".rel.")
-        {
+        if skipped_bookkeeping(&name) {
+            skipped.insert(section.index());
             continue;
         }
         let segment = section
@@ -512,6 +523,22 @@ fn scope_object(
         };
         let section = match symbol.section() {
             object::SymbolSection::Section(index) => {
+                if skipped.contains(&index) {
+                    // A symbol defined in bookkeeping data (a group
+                    // signature symbol and its kin) is referenced only
+                    // from the skipped section itself and drops with
+                    // it — but an exported definition there means the
+                    // skip list ate something real: name it, loudly.
+                    let visible = symbol.is_weak()
+                        || matches!(symbol.scope(), SymbolScope::Linkage | SymbolScope::Dynamic);
+                    if visible && !symbol.is_undefined() {
+                        return Err(format!(
+                            "symbol '{}' is defined in a skipped bookkeeping section — refusing to drop an exported definition",
+                            symbol.name().unwrap_or("<unnamed>")
+                        ));
+                    }
+                    continue;
+                }
                 object::write::SymbolSection::Section(section_ids[&index])
             }
             object::SymbolSection::Undefined => object::write::SymbolSection::Undefined,
@@ -542,7 +569,11 @@ fn scope_object(
         };
         for (offset, relocation) in section.relocations() {
             let symbol = match relocation.target() {
-                RelocationTarget::Symbol(index) => symbol_ids[&index],
+                RelocationTarget::Symbol(index) => *symbol_ids.get(&index).ok_or_else(|| {
+                    format!(
+                        "relocation at {offset:#x} references a dropped bookkeeping symbol — unhandled case"
+                    )
+                })?,
                 RelocationTarget::Section(index) => {
                     let Some(out_index) = section_ids.get(&index) else {
                         return Err(format!(
