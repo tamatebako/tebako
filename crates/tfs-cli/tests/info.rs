@@ -18,21 +18,7 @@ use tebako_contract_tests::TempDir;
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn bin() -> PathBuf {
-    let target = std::env::var("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target")
-                .canonicalize()
-                .unwrap()
-        });
-    for profile in ["debug", "release"] {
-        let cand = target.join(profile).join("tfs");
-        if cand.is_file() {
-            return cand;
-        }
-    }
-    panic!("tfs binary not built")
+    PathBuf::from(env!("CARGO_BIN_EXE_tfs"))
 }
 
 /// An isolated TEBAKO_HOME per test (the derived runtime-compat fact and
@@ -92,6 +78,9 @@ fn mk_image(w: &TempDir, name: &str, manifest: Option<&str>) -> PathBuf {
     img
 }
 
+// The vendored fixtures are needed for the squashfs probe only (POSIX —
+// the windows tfs build is dwarfs-only, TODO.v2-1/02).
+#[cfg(not(windows))]
 fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tests/contract/tests/fixtures")
@@ -329,19 +318,24 @@ fn format_detection_per_backend() {
         "{out}"
     );
 
-    // squashfs (vendored fixture; no manifest → named note).
-    let (rc, out, _) = run(
-        &[
-            "info",
-            "--manifest",
-            fixture("simple.sqfs").to_str().unwrap(),
-        ],
-        &w.0,
-        &home,
-    );
-    assert_eq!(rc, 0, "{out}");
-    assert!(out.contains("  format: squashfs  ro  "), "{out}");
-    assert!(out.contains("manifest: none"), "{out}");
+    // squashfs (vendored fixture; no manifest → named note). POSIX only —
+    // the windows tfs build is dwarfs-only, where the sqfs mount is the
+    // named ENOTSUP (TODO.v2-1/02).
+    #[cfg(not(windows))]
+    {
+        let (rc, out, _) = run(
+            &[
+                "info",
+                "--manifest",
+                fixture("simple.sqfs").to_str().unwrap(),
+            ],
+            &w.0,
+            &home,
+        );
+        assert_eq!(rc, 0, "{out}");
+        assert!(out.contains("  format: squashfs  ro  "), "{out}");
+        assert!(out.contains("manifest: none"), "{out}");
+    }
 
     // zip with a manifest inside.
     let z = w.0.join("z.zip");

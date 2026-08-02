@@ -19,21 +19,7 @@ use tebako_contract_tests::TempDir;
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn bin() -> PathBuf {
-    let target = std::env::var("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target")
-                .canonicalize()
-                .unwrap()
-        });
-    for profile in ["debug", "release"] {
-        let cand = target.join(profile).join("tebako-pkg");
-        if cand.is_file() {
-            return cand;
-        }
-    }
-    panic!("tebako-pkg binary not built")
+    PathBuf::from(env!("CARGO_BIN_EXE_tebako-pkg"))
 }
 
 fn test_home(tag: &str) -> PathBuf {
@@ -97,7 +83,9 @@ fn patterned_bytes(n: usize, seed: u8) -> Vec<u8> {
     v
 }
 
-/// A minimal ustar tar with one file.
+/// A minimal ustar tar with one file. Only the squashfs-era detection
+/// test uses it (POSIX — TODO.v2-1/02).
+#[cfg(not(windows))]
 fn build_tar(path: &Path, name: &str, content: &[u8]) {
     let mut out = Vec::new();
     let mut hdr = [0u8; 512];
@@ -213,6 +201,9 @@ fn full_report_unsigned_classic() {
     assert!(!out.contains("backend:"), "{out}");
 }
 
+// squashfs slots mount on POSIX only — the windows tfs is dwarfs-only,
+// where the probe renders the named mount-failure state (TODO.v2-1/02).
+#[cfg(not(windows))]
 #[test]
 fn full_report_signed_lean_and_depths() {
     let w = TempDir::new("pfull2");
@@ -397,14 +388,19 @@ fn slot_view_and_errors() {
     assert!(out.contains("  manifest:\n"), "{out}");
     assert!(out.contains("      schema_version: 1\n"), "{out}");
 
-    // A plain-image slot reports the named note.
-    let (rc, out, _) = run(&["info", "--slot", "1", pkg.to_str().unwrap()], &w.0, &home);
-    assert_eq!(rc, 0, "{out}");
-    assert!(out.contains("  format: squashfs  ro  "), "{out}");
-    assert!(
-        out.contains("  manifest: none (no /__tpkg__/manifest.yaml — plain image)\n"),
-        "{out}"
-    );
+    // A plain-image slot reports the named note. POSIX only — the
+    // windows tfs is dwarfs-only, the sqfs slot reports the named mount
+    // failure there (TODO.v2-1/02).
+    #[cfg(not(windows))]
+    {
+        let (rc, out, _) = run(&["info", "--slot", "1", pkg.to_str().unwrap()], &w.0, &home);
+        assert_eq!(rc, 0, "{out}");
+        assert!(out.contains("  format: squashfs  ro  "), "{out}");
+        assert!(
+            out.contains("  manifest: none (no /__tpkg__/manifest.yaml — plain image)\n"),
+            "{out}"
+        );
+    }
 
     // Out of range is a named error.
     let (rc, _, err) = run(&["info", "--slot", "9", pkg.to_str().unwrap()], &w.0, &home);
@@ -488,6 +484,9 @@ fn json_document_contract() {
             .as_deref(),
         Some("squashfs")
     );
+    // squashfs mounts on POSIX only — windows carries the named
+    // mount_error instead of the plain-image note (TODO.v2-1/02).
+    #[cfg(not(windows))]
     assert!(
         slots[1]
             .find("manifest_note")
@@ -507,6 +506,9 @@ fn json_document_contract() {
 // validate / --verify (spec 15 §5 exit codes)
 // ---------------------------------------------------------------------
 
+// squashfs slots mount on POSIX only (TODO.v2-1/02) — on windows the
+// slot's manifest check fails the mount (named ENOTSUP), never skips.
+#[cfg(not(windows))]
 #[test]
 fn validate_signed_plain_slots_passes() {
     let w = TempDir::new("pok");
@@ -739,6 +741,9 @@ fn validate_digest_agreement_is_70() {
 // Format detection per slot (never trusting format_id alone)
 // ---------------------------------------------------------------------
 
+// squashfs detection mounts the slot — POSIX only (TODO.v2-1/02); the
+// windows row renders the named "squashfs (undetected)" state instead.
+#[cfg(not(windows))]
 #[test]
 fn format_detection_per_slot() {
     let w = TempDir::new("pfmt");

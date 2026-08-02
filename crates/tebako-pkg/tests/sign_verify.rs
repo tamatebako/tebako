@@ -11,17 +11,7 @@ use tebako_contract_tests::TempDir;
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn bin() -> PathBuf {
-    let target = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../target")
-        .canonicalize()
-        .unwrap();
-    for profile in ["debug", "release"] {
-        let cand = target.join(profile).join("tebako-pkg");
-        if cand.is_file() {
-            return cand;
-        }
-    }
-    panic!("tebako-pkg binary not built")
+    PathBuf::from(env!("CARGO_BIN_EXE_tebako-pkg"))
 }
 
 fn test_home(name: &str) -> PathBuf {

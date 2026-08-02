@@ -395,17 +395,20 @@ pub unsafe extern "C" fn tebako_fs_dir_is_embedded(dir: *mut c_void) -> libc::c_
 #[cfg(windows)]
 #[repr(C)]
 pub struct TebakoStat {
-    st_dev: u32,
-    st_ino: u16,
-    st_mode: u16,
-    st_nlink: i16,
-    st_uid: i16,
-    st_gid: i16,
-    st_rdev: u32,
-    st_size: i64,
-    st_atime: i64,
-    st_mtime: i64,
-    st_ctime: i64,
+    // The fields are pub exactly like the C struct's (all C struct fields
+    // are public; the header's own example reads st.st_size/st.st_mode) —
+    // Rust consumers (tfs-cli, tebako-pkg) read them the same way.
+    pub st_dev: u32,
+    pub st_ino: u16,
+    pub st_mode: u16,
+    pub st_nlink: i16,
+    pub st_uid: i16,
+    pub st_gid: i16,
+    pub st_rdev: u32,
+    pub st_size: i64,
+    pub st_atime: i64,
+    pub st_mtime: i64,
+    pub st_ctime: i64,
 }
 
 #[cfg(windows)]

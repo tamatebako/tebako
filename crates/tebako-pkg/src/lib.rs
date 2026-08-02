@@ -1387,7 +1387,9 @@ fn count_recursive(path: &str, files: &mut i64, dirs: &mut i64, total: &mut i64)
             count_recursive(&format!("{path}/{name}"), files, dirs, total);
         } else {
             *files += 1;
-            let mut st: libc::stat = unsafe { std::mem::zeroed() };
+            // TebakoStat: the platform's `struct stat` on unix, the
+            // pinned `__stat64`-layout struct on windows (c_api.rs).
+            let mut st: TebakoStat = unsafe { std::mem::zeroed() };
             let fpath = std::ffi::CString::new(format!("{path}/{name}")).unwrap();
             if unsafe { tebako_fs_stat(fpath.as_ptr(), &mut st) } == 0 {
                 *total += st.st_size;

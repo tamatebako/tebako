@@ -34,22 +34,7 @@ fn cpp_tebakofs() -> Option<PathBuf> {
 }
 
 fn rust_tebako_pkg() -> PathBuf {
-    // The integration test runs next to the workspace target dir.
-    let target = std::env::var("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target")
-                .canonicalize()
-                .unwrap()
-        });
-    for profile in ["debug", "release"] {
-        let cand = target.join(profile).join("tebako-pkg");
-        if cand.is_file() {
-            return cand;
-        }
-    }
-    panic!("tebako-pkg binary not built (run `cargo build -p tebako-pkg`)")
+    PathBuf::from(env!("CARGO_BIN_EXE_tebako-pkg"))
 }
 
 fn fixtures(w: &TempDir) -> (PathBuf, PathBuf, PathBuf) {

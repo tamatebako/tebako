@@ -7,6 +7,9 @@
 //! X25519 encryption subkey — the SUITE-1 shape); images are built with
 //! `tfs mkimage` from a source tree carrying the `data.yaml` manifest
 //! fixture.
+#![cfg(not(windows))] // the ENC transform ships in the POSIX tfs build only
+                      // (TODO.v2-1/08); windows asserts the named ENOTSUP
+                      // surface in cli.rs (TODO.v2-1/02).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -18,21 +21,7 @@ use tfs::Backend as _;
 static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 fn bin() -> PathBuf {
-    let target = std::env::var("CARGO_TARGET_DIR")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join("../../target")
-                .canonicalize()
-                .unwrap()
-        });
-    for profile in ["debug", "release"] {
-        let cand = target.join(profile).join("tfs");
-        if cand.is_file() {
-            return cand;
-        }
-    }
-    panic!("tfs binary not built")
+    PathBuf::from(env!("CARGO_BIN_EXE_tfs"))
 }
 
 fn run(args: &[&str], cwd: &Path) -> (i32, String, String) {

@@ -47,14 +47,7 @@ fn target_dir() -> PathBuf {
 }
 
 fn bin() -> Option<PathBuf> {
-    let target = target_dir();
-    for profile in ["debug", "release"] {
-        let cand = target.join(profile).join("tfs");
-        if cand.is_file() {
-            return Some(cand);
-        }
-    }
-    None
+    Some(PathBuf::from(env!("CARGO_BIN_EXE_tfs")))
 }
 
 fn shim_path() -> Option<PathBuf> {

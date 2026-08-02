@@ -12,6 +12,14 @@ use std::path::{Path, PathBuf};
 
 use tfs::c_api::*;
 
+// The ENC verbs compile where tfs ships the `enc` feature (everywhere
+// but windows — rnp's mingw build is unproven, TODO.v2-1/08); windows
+// gets the named-ENOTSUP surface instead (TODO.v2-1/02). Same module API
+// on both sides — keep enc.rs and enc_enotsup.rs in lockstep.
+#[cfg(not(windows))]
+pub mod enc;
+#[cfg(windows)]
+#[path = "enc_enotsup.rs"]
 pub mod enc;
 
 /// Options shared by the listing commands.
@@ -95,10 +103,12 @@ fn full_path(path: &str) -> String {
     }
 }
 
-/// stat helper (errno-valued).
-fn stat_raw(path: &str) -> Result<libc::stat, i32> {
+/// stat helper (errno-valued). TebakoStat is the platform's `struct stat`
+/// on unix and the pinned `__stat64`-layout struct on windows (the C ABI
+/// authority — c_api.rs).
+fn stat_raw(path: &str) -> Result<TebakoStat, i32> {
     let cpath = cstring(path).map_err(|_| libc::EINVAL)?;
-    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    let mut st: TebakoStat = unsafe { std::mem::zeroed() };
     let rc = unsafe { tebako_fs_stat(cpath.as_ptr(), &mut st) };
     if rc != 0 {
         return Err(unsafe { tebako_get_errno() });
@@ -110,12 +120,20 @@ fn exists(path: &str) -> bool {
     stat_raw(path).is_ok()
 }
 
+// st_mode is mode_t on unix (u16 macOS / u32 Linux), u16 in the pinned
+// windows tebako_stat, and the S_IF* constant widths follow the platform;
+// the widening `as u32` is required on macOS/windows and an identity cast
+// on Linux, so the platform-dependent unnecessary_cast lint is allowed
+// here deliberately (the c_api::fill_stat pattern).
+#[allow(clippy::unnecessary_cast)]
 fn is_file(path: &str) -> bool {
-    stat_raw(path).is_ok_and(|st| (st.st_mode & libc::S_IFMT) == libc::S_IFREG as _)
+    stat_raw(path).is_ok_and(|st| (st.st_mode as u32 & libc::S_IFMT as u32) == libc::S_IFREG as u32)
 }
 
+// The same st_mode/S_IF* width story as is_file above.
+#[allow(clippy::unnecessary_cast)]
 fn is_directory(path: &str) -> bool {
-    stat_raw(path).is_ok_and(|st| (st.st_mode & libc::S_IFMT) == libc::S_IFDIR as _)
+    stat_raw(path).is_ok_and(|st| (st.st_mode as u32 & libc::S_IFMT as u32) == libc::S_IFDIR as u32)
 }
 
 struct DirEntry {
@@ -189,7 +207,15 @@ pub fn format_time(mtime: i64) -> String {
     unsafe {
         let mut tm: libc::tm = std::mem::zeroed();
         let t: libc::time_t = mtime as libc::time_t;
-        if libc::localtime_r(&t, &mut tm).is_null() {
+        // The reentrant localtime per platform: POSIX localtime_r
+        // (time_t*, tm*) returns null on failure; the MS CRT localtime_s
+        // takes the REVERSED argument order (tm*, time_t*) and returns an
+        // errno_t (0 == success). Both fill `tm` in place on success.
+        #[cfg(unix)]
+        let failed = libc::localtime_r(&t, &mut tm).is_null();
+        #[cfg(windows)]
+        let failed = libc::localtime_s(&mut tm, &t) != 0;
+        if failed {
             return "1970-01-01 00:00:00".to_string();
         }
         format!(
@@ -796,6 +822,7 @@ fn find_recursive(dir: &str, pattern: &str, out: &mut String) {
 }
 
 /// fnmatch(pattern, name, 0) via libc.
+#[cfg(unix)]
 fn name_matches(pattern: &str, name: &str) -> bool {
     let Ok(p) = CString::new(pattern) else {
         return false;
@@ -804,6 +831,122 @@ fn name_matches(pattern: &str, name: &str) -> bool {
         return false;
     };
     unsafe { libc::fnmatch(p.as_ptr(), n.as_ptr(), 0) == 0 }
+}
+
+/// fnmatch(pattern, name, 0) in pure Rust — the MS CRT has no fnmatch.
+/// Flag-0 semantics: `*` matches any run INCLUDING '/', `?` any single
+/// character, `[...]` character classes (ranges, a leading `!` negates, a
+/// `]` first is a literal member), `\` quotes the next character (a
+/// trailing `\` is a literal backslash), and an unterminated `[` is a
+/// literal '['. The classic recursive matcher — find patterns are small.
+/// The unit tests run on every platform, so libc's fnmatch stays the
+/// oracle this matcher is held to.
+#[cfg(windows)]
+fn name_matches(pattern: &str, name: &str) -> bool {
+    /// One class character at `*i` (`\x` unescaped); None at the end.
+    fn class_char(p: &[char], i: &mut usize) -> Option<char> {
+        let c = *p.get(*i)?;
+        *i += 1;
+        if c == '\\' {
+            let e = *p.get(*i)?;
+            *i += 1;
+            Some(e)
+        } else {
+            Some(c)
+        }
+    }
+
+    /// The "[...]" at p[0] against `c`: (matched, consumed pattern
+    /// length), or None when the class is unterminated.
+    fn class_match(p: &[char], c: char) -> Option<(bool, usize)> {
+        let mut i = 1;
+        let negated = p.get(i) == Some(&'!');
+        if negated {
+            i += 1;
+        }
+        let mut matched = false;
+        let mut first = true;
+        loop {
+            match p.get(i) {
+                None => return None,
+                Some(&']') if !first => return Some((matched != negated, i + 1)),
+                _ => {}
+            }
+            first = false;
+            let lo = class_char(p, &mut i)?;
+            // A range: '-' followed by a character other than ']'.
+            let hi = if p.get(i) == Some(&'-') && p.get(i + 1).is_some_and(|&h| h != ']') {
+                i += 1;
+                class_char(p, &mut i)?
+            } else {
+                lo
+            };
+            if lo <= c && c <= hi {
+                matched = true;
+            }
+        }
+    }
+
+    fn mat(p: &[char], n: &[char]) -> bool {
+        let (mut pi, mut ni) = (0, 0);
+        while pi < p.len() {
+            match p[pi] {
+                // A star run: try every rest (a trailing star matches the
+                // empty rest too).
+                '*' => {
+                    while p.get(pi + 1) == Some(&'*') {
+                        pi += 1;
+                    }
+                    return (ni..=n.len()).any(|k| mat(&p[pi + 1..], &n[k..]));
+                }
+                '?' => {
+                    if ni == n.len() {
+                        return false;
+                    }
+                    pi += 1;
+                    ni += 1;
+                }
+                '[' => {
+                    if ni == n.len() {
+                        return false;
+                    }
+                    match class_match(&p[pi..], n[ni]) {
+                        Some((true, len)) => {
+                            pi += len;
+                            ni += 1;
+                        }
+                        Some((false, _)) => return false,
+                        // Unterminated class: a literal '['.
+                        None if n[ni] == '[' => {
+                            pi += 1;
+                            ni += 1;
+                        }
+                        None => return false,
+                    }
+                }
+                // `\x` quotes x.
+                '\\' if pi + 1 < p.len() => {
+                    if n.get(ni) != Some(&p[pi + 1]) {
+                        return false;
+                    }
+                    pi += 2;
+                    ni += 1;
+                }
+                c => {
+                    if n.get(ni) != Some(&c) {
+                        return false;
+                    }
+                    pi += 1;
+                    ni += 1;
+                }
+            }
+        }
+        ni == n.len()
+    }
+
+    let p: Vec<char> = pattern.chars().collect();
+    let n: Vec<char> = name.chars().collect();
+    mat(&p, &n)
 }
 
 // ---------------------------------------------------------------------
@@ -918,6 +1061,7 @@ fn preload_lib_name() -> &'static str {
 }
 
 /// Engine errno text for messages.
+#[cfg(unix)]
 fn errno_text(e: i32) -> String {
     String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
 }
@@ -1240,5 +1384,39 @@ mod tests {
             assert_eq!(preload_var(), "LD_PRELOAD");
             assert_eq!(preload_lib_name(), "libtfs_preload.so");
         }
+    }
+
+    /// fnmatch flag-0 semantics. Runs on every platform: on unix it
+    /// exercises libc::fnmatch (the oracle the windows pure-Rust matcher
+    /// is held to), on windows the hand-rolled matcher itself.
+    #[test]
+    fn name_matches_fnmatch_semantics() {
+        // '*' — any run, INCLUDING '/'.
+        assert!(name_matches("*.txt", "readme.txt"));
+        assert!(name_matches("*", "anything"));
+        assert!(name_matches("a*c", "a/b/c"));
+        assert!(!name_matches("*.txt", "readme.md"));
+        // '?' — exactly one character.
+        assert!(name_matches("a?c", "abc"));
+        assert!(!name_matches("a?c", "ac"));
+        assert!(!name_matches("a?c", "abbc"));
+        // '[...]' — members, ranges, leading-'!' negation, literal ']'.
+        assert!(name_matches("[abc]at", "bat"));
+        assert!(name_matches("[a-z]at", "mat"));
+        assert!(!name_matches("[a-z]at", "Mat"));
+        assert!(name_matches("[!a-z]at", "9at"));
+        assert!(!name_matches("[!abc]x", "bx"));
+        assert!(name_matches("[]a]x", "]x"));
+        // Backslash quoting.
+        assert!(name_matches("\\*", "*"));
+        assert!(!name_matches("\\*", "anything"));
+        assert!(name_matches("a\\?b", "a?b"));
+        // A trailing star matches the empty rest too.
+        assert!(name_matches("a*", "a"));
+        assert!(name_matches("prefix*", "prefix"));
+        assert!(name_matches("a*", "a/b"));
+        // (No unterminated-'[' case: the libcs diverge there — BSD
+        // refuses the match, glibc and the windows matcher treat '[' as
+        // a literal — so the shared oracle cannot pin it.)
     }
 }
