@@ -19,6 +19,15 @@ vcpkg_extract_source_archive(
     ARCHIVE "${ARCHIVE}"
 )
 
+# macOS has no strchrnul, and the x86_64 runners' configure misdetects
+# it as present — dir_reader.o then references a symbol ld64 cannot
+# resolve (the factory's macos-x86_64 miniruby link). Pin the autoconf
+# verdict so every Apple build takes the !HAVE_STRCHRNUL path, the one
+# the arm64 leg already proves end to end.
+if(VCPKG_TARGET_IS_OSX)
+    set(ENV{ac_cv_func_strchrnul} no)
+endif()
+
 vcpkg_configure_make(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
