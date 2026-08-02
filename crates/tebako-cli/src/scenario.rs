@@ -352,9 +352,24 @@ impl ScenarioManager {
             .unwrap_or_else(|_| PathBuf::from(&cleaned))
             .to_string_lossy()
             .into_owned();
+        // canonicalize yields the \\?\ verbatim prefix on windows; the
+        // entry comparison/reduction below works in cleanpath's drive
+        // form, so strip the prefix (\\?\UNC\srv\share keeps its UNC
+        // root as \\srv\share).
+        #[cfg(windows)]
+        let fs_root = {
+            let stripped =
+                fs_root
+                    .strip_prefix("\\\\?\\")
+                    .map(|rest| match rest.strip_prefix("UNC\\") {
+                        Some(unc) => format!("\\\\{unc}"),
+                        None => rest.to_string(),
+                    });
+            stripped.unwrap_or(fs_root)
+        };
 
         let mut ent = cleanpath(entrance);
-        if Path::new(&ent).is_absolute() {
+        if absolute_path(&ent) {
             if !path_starts_with(&ent, &fs_root) {
                 return Err(packaging_error(114, None));
             }
@@ -580,9 +595,20 @@ fn latest_bundler_version() -> Option<String> {
 }
 
 /// Lexical path cleanup (Pathname.cleanpath for the shapes tebako sees:
-/// duplicate slashes, ".", ".." with an absolute base).
+/// duplicate slashes, ".", ".." with an absolute base). The windows
+/// shapes keep their prefix: a drive-letter path ("D:\…") keeps the
+/// drive — absolutizing with a leading slash would LOSE it ("/D:/…" is
+/// rooted but NOT absolute to Rust's windows is_absolute, which is how
+/// the root check misjudged drive roots as relative); a UNC path
+/// ("\\srv\share\…") comes out as "//srv/share/…".
 pub fn cleanpath(p: &str) -> String {
-    let absolute = p.starts_with('/') || (cfg!(windows) && p.chars().nth(1) == Some(':'));
+    let drive = if cfg!(windows) && p.chars().nth(1) == Some(':') {
+        Some(&p[..2])
+    } else {
+        None
+    };
+    let unc = cfg!(windows) && drive.is_none() && p.starts_with("\\\\");
+    let absolute = p.starts_with('/') || drive.is_some() || unc;
     let mut out: Vec<&str> = Vec::new();
     for part in p.split(['/', '\\']) {
         match part {
@@ -594,17 +620,32 @@ pub fn cleanpath(p: &str) -> String {
                     out.push("..");
                 }
             }
+            // The drive component goes back verbatim (see above).
+            _ if Some(part) == drive => {}
             _ => out.push(part),
         }
     }
     let joined = out.join("/");
-    if absolute {
+    if let Some(d) = drive {
+        format!("{d}/{joined}")
+    } else if unc {
+        format!("//{joined}")
+    } else if absolute {
         format!("/{joined}")
     } else if joined.is_empty() {
         ".".to_string()
     } else {
         joined
     }
+}
+
+/// Ruby `Pathname#absolute?` semantics: Rust's `Path::is_absolute` (the
+/// drive-letter/UNC forms on windows), plus the rooted form (`/x`, `\x`)
+/// — Ruby and the MS CRT count it as absolute while Rust's windows
+/// is_absolute calls it rooted-but-not-absolute (no drive). An entry
+/// like `/etc/passwd` is absolute on every platform tebako runs on.
+fn absolute_path(p: &str) -> bool {
+    Path::new(p).is_absolute() || (cfg!(windows) && (p.starts_with('/') || p.starts_with('\\')))
 }
 
 fn path_starts_with(path: &str, prefix: &str) -> bool {
@@ -700,6 +741,29 @@ mod tests {
         assert_eq!(cleanpath("/a/./b/../c"), "/a/c");
         assert_eq!(cleanpath("a/b"), "a/b");
         assert_eq!(cleanpath("/a//b"), "/a/b");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn cleanpath_windows_shapes() {
+        // Drive-letter paths keep the drive — never "/D:/…" (the 113
+        // misjudgment: rooted-but-not-absolute).
+        assert_eq!(cleanpath("D:\\a\\b\\"), "D:/a/b");
+        assert_eq!(cleanpath("D:/a/./b/../c"), "D:/a/c");
+        // UNC paths absolutize as //srv/share.
+        assert_eq!(cleanpath("\\\\srv\\share\\x"), "//srv/share/x");
+        // Rooted paths stay POSIX-shaped.
+        assert_eq!(cleanpath("/a/b"), "/a/b");
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn absolute_path_counts_the_rooted_form() {
+        // Ruby Pathname#absolute?: the rooted form counts on windows too.
+        assert!(absolute_path("/etc/passwd"));
+        assert!(absolute_path("D:/a/b"));
+        assert!(absolute_path("\\\\srv\\share\\x"));
+        assert!(!absolute_path("rel/x"));
     }
 
     #[test]
