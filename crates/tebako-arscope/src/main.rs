@@ -416,7 +416,21 @@ fn scope_object(
             .to_vec();
         let id = out.add_section(segment, name, section.kind());
         let new_section = out.section_mut(id);
-        new_section.flags = section.flags();
+        // COMDAT membership does not survive the rewrite (the object
+        // crate emits no SHT_GROUP section): a member section keeping
+        // SHF_GROUP without its group is an inconsistent ELF, and GNU
+        // ld rejects the whole archive ("no group info for section
+        // '.data.DW.ref.rust_eh_personality'", then 'file format not
+        // recognized' — binutils 2.34, the ubuntu:20.04 floor; ld64 and
+        // the mingw link tolerate it, which is why only the ELF path
+        // broke). Clear the membership flag — the weak symbols inside
+        // still merge by name at link time.
+        new_section.flags = match section.flags() {
+            object::SectionFlags::Elf { sh_flags } => {
+                object::SectionFlags::Elf { sh_flags: sh_flags & !0x200 }
+            }
+            other => other,
+        };
         if section.kind().is_bss() {
             // BSS carries no bytes but keeps its size and alignment.
             new_section.append_bss(section.size(), section.align());
