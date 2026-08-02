@@ -23,6 +23,17 @@ apt-get install -y -qq --no-install-recommends \
   curl zip unzip tar ca-certificates git gnupg lsb-release wget \
   libbz2-dev ruby
 
+# The workspace is bind-mounted from the runner (files owned by uid
+# 1001) but the build runs as root — focal's git (2.25 with the
+# CVE-2022-24765 backport) refuses the mounted repos as "dubious
+# ownership", so dwarfs-t's cmake/version.cmake sees NO git metadata and
+# dies ("missing version files - git metadata unavailable and no
+# pre-generated version files found"; run 30750321798 — it only surfaces
+# now that cmake 3.31 lets the configure reach version.cmake). Same fix
+# as the musl leg: single-use --rm container, trust every repo under the
+# mount.
+git config --global --add safe.directory '*'
+
 # rnp-rs's build.rs runs bindgen, which dlopens libclang. Focal's stock
 # libclang (v10) is too old for the current bindgen; llvm.org publishes
 # clang-19 for focal (the same version the musl leg uses).
