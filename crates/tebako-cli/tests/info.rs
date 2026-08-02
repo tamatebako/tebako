@@ -68,7 +68,14 @@ impl Fixture {
             .home
             .join(format!("runtimes/ruby-{lv}-{tebako}-{platform}"));
         fs::create_dir_all(&dir).unwrap();
-        let exe = dir.join(format!("tebako-runtime-{tebako}-{lv}-{platform}"));
+        // The exe name carries the platform suffix (".exe" on windows) —
+        // tebako_shim::runtime::exe_suffix is the scan's own source for
+        // it, and the manifest's filename key must match the exe exactly.
+        let exe_name = format!(
+            "tebako-runtime-{tebako}-{lv}-{platform}{}",
+            tebako_shim::runtime::exe_suffix()
+        );
+        let exe = dir.join(&exe_name);
         fs::write(&exe, b"fake runtime exe\n").unwrap();
         #[cfg(unix)]
         {
@@ -77,9 +84,7 @@ impl Fixture {
         }
         fs::write(
             dir.join("manifest.json"),
-            format!(
-                "[{{\"filename\": \"tebako-runtime-{tebako}-{lv}-{platform}\", \"abi\": \"arm64-darwin-23\"}}]\n"
-            ),
+            format!("[{{\"filename\": \"{exe_name}\", \"abi\": \"arm64-darwin-23\"}}]\n"),
         )
         .unwrap();
     }
