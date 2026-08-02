@@ -139,18 +139,30 @@ else
   sqfs = newest_out(File.join(script_out, "sqfs-sys-*", "out"))
   die "no sqfs-sys build under #{script_out}" unless sqfs
 
-  rnp = newest_out(File.join(script_out, "rnp-src-*", "out"))
-  die "no rnp-src build under #{script_out} (rnp with the vendored feature)" unless rnp
+  # rnp-src variants multiply in a reused target dir (a non-vendored
+  # graph leaves an EMPTY out dir): newest-by-mtime alone picks the
+  # stub. Only an out dir with the vendored install tree qualifies.
+  rnp = Dir.glob(File.join(script_out, "rnp-src-*", "out"))
+           .select { |d| File.file?(File.join(d, "install", "rnp", "lib", "librnp.a")) }
+           .max_by { |d| File.mtime(d) }
+  die "no rnp-src build with an install tree under #{script_out} (rnp with the vendored feature)" unless rnp
 
-  # their vcpkg closure (codecs, boost, crypto — the static triplet)
+  # their vcpkg closure (codecs, boost, crypto — the static triplet):
+  # every archive the dwarfs-t link emits, the same rule as the mingw
+  # branch — the cherry-pick list drifted stale (libz rode the removed
+  # extractor chain; the boost iostreams/random/thread, date-tz,
+  # flatbuffers, jemalloc and ssl archives were never copied — the
+  # required-set check below then failed on its own contract). Test and
+  # manual-link archives never ship.
   vlib = vcpkg_installed_dir(dwarfs, "*-static")
   die "no vcpkg static lib dir under #{dwarfs} (or DWARFS_RS_VCPKG_INSTALLED_DIR)" unless vlib
-  %w[libFLAC++.a libFLAC.a libogg.a libboost_atomic.a libboost_chrono.a libboost_container.a
-     libboost_context.a libboost_date_time.a libboost_filesystem.a libboost_process.a
-     libboost_program_options.a libbrotlicommon.a libbrotlidec.a libbrotlienc.a libbz2.a
-     libcrypto.a libfmt.a liblz4.a liblzma.a libxxhash.a libz.a libzstd.a].each do |name|
-    harvest(out, File.join(vlib, name), "dwarfs-t vcpkg closure")
+  Dir.glob(File.join(vlib, "*.a")).sort.each do |a|
+    base = File.basename(a)
+    next if base.start_with?("libgtest", "libgmock")
+
+    FileUtils.cp(a, File.join(out, "closure", base))
   end
+  puts "  closure (vcpkg glob)      <= #{vlib.sub(%r{^.*/build/}, "build/")}"
 
   # the squashfs pair
   harvest(out, File.join(sqfs, "libsqfs_abi_check.a"), "sqfs-sys shim")
