@@ -16,10 +16,10 @@
 //! interpose touches, on both x86_64 and aarch64.
 
 #[cfg(all(target_os = "linux", not(target_env = "musl")))]
-pub(crate) use libc::{STATX_MODE, STATX_MTIME, STATX_NLINK, STATX_SIZE, STATX_TYPE, statx};
+pub(crate) use libc::{statx, STATX_MODE, STATX_MTIME, STATX_NLINK, STATX_SIZE, STATX_TYPE};
 
 #[cfg(all(target_os = "linux", target_env = "musl"))]
-pub(crate) use self::musl::{STATX_MODE, STATX_MTIME, STATX_NLINK, STATX_SIZE, STATX_TYPE, statx};
+pub(crate) use self::musl::{statx, STATX_MODE, STATX_MTIME, STATX_NLINK, STATX_SIZE, STATX_TYPE};
 
 #[cfg(all(target_os = "linux", target_env = "musl"))]
 mod musl {
