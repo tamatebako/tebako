@@ -261,18 +261,26 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     }
 
     let package = format!("{}{}", opts.package(), scenario.exe_suffix);
-    // spec 08: a --jail press embeds the policy as the type-2 package
-    // manifest's `jail:` block — the package's host-access REQUEST (the
-    // user tightens it at run time, never loosens it; block-less packages
-    // keep the exact v1 shape).
-    let package_manifest =
-        jail.map(|j| press_package_manifest(&package, &runtime_ref, &opts.tebako_version, j));
+    // The L2 package manifest rides EVERY runnable press (spec 03 §6):
+    // entries[0] names the in-image dispatcher entry (mount-relative —
+    // the driver joins mount+entry, spec 17 §1) and the mounts block
+    // declares the app slot's union over the env image at the runtime
+    // root (the image-era mount model — the env image owns the root,
+    // the app image merges over it). A --jail press composes the policy
+    // into the SAME block (spec 08 §4 — one manifest, never two paths).
+    let package_manifest = press_package_manifest(
+        &package,
+        &runtime_ref,
+        &opts.tebako_version,
+        &scenario.fs_mount_point,
+        jail,
+    );
     stitch(
         &bootstrap_path,
         &images,
         &package,
         &runtime_ref,
-        package_manifest.as_ref(),
+        Some(&package_manifest),
         opts.no_install,
     )?;
     println!("Created tebako package at \"{package}\"");
@@ -347,9 +355,9 @@ fn check_bootstrap_version() -> Result<(), TebakoError> {
 /// `runtime_ref` is the trailer's 128-byte field as built by the caller
 /// (suites: entries[0]'s ref — the type-2 manifest carries the per-entry
 /// refs, spec 02 §5b / spec 03 §6). `package_manifest`, when present, is
-/// embedded as extension block type 2 (a `--jail` press embeds the policy
-/// this way, spec 08 §4); `None` keeps the package block-less
-/// (byte-identical pre-jails shape).
+/// embedded as extension block type 2 (every runnable press writes one —
+/// the union mount model, spec 03 §6); `None` keeps the package
+/// block-less (the v1 shape — bare payload stitching, tests).
 pub(crate) fn stitch(
     bootstrap_path: &Path,
     images: &[(PathBuf, String, u32)],
@@ -452,10 +460,11 @@ pub(crate) fn stitch(
             tpkg::TPKG_FLAG_LEAN
         },
         launcher_abi: LAUNCHER_ABI,
-        // The L2 package manifest rides along only when the press declares
-        // one (today: a --jail policy); block-less packages keep the exact
-        // v1 shape. The entry's runtime_ref mirrors the trailer's, so old
-        // and new loaders resolve identically (spec 02 §5b).
+        // The L2 package manifest rides along when the caller declares
+        // one (every runnable press does — the union mount model);
+        // block-less stitching stays available for bare payloads. The
+        // entry's runtime_ref mirrors the trailer's, so old and new
+        // loaders resolve identically (spec 02 §5b).
         package_manifest: package_manifest.cloned(),
         ..Default::default()
     };
@@ -466,17 +475,23 @@ pub(crate) fn stitch(
     Ok(())
 }
 
-/// The L2 package manifest a `tebako press --jail` writes (spec 03 §6 /
+/// The L2 package manifest every runnable press writes (spec 03 §6 /
 /// spec 02 §5b): minimal identity (press has no package-version input —
 /// a --package-version flag is a later milestone), one entry naming the
-/// package, `runtime_ref` mirroring the trailer field, and the jail
-/// request. The bootstrap reads this block and composes the jail with the
-/// user's tightening at handoff (spec 08 §2).
+/// package whose entrypoint is the in-image dispatcher (`/local/stub.rb`
+/// — mount-relative; the driver joins mount+entry, spec 17 §1),
+/// `runtime_ref` mirroring the trailer field, and the `mounts:` row
+/// declaring the app slot's union over the env image at the runtime
+/// root (`mount_point` — the trailer's own mount point, `/__tfs__` or
+/// `A:/t` on windows, so the two stay consistent by construction). A
+/// --jail press composes the policy into the same block — the package's
+/// host-access REQUEST the bootstrap tightens at handoff (spec 08 §2).
 fn press_package_manifest(
     package: &str,
     runtime_ref: &str,
     tebako_version: &str,
-    jail: tpkg::HostJail,
+    mount_point: &str,
+    jail: Option<tpkg::HostJail>,
 ) -> tpkg::PackageManifest {
     let stem = Path::new(package)
         .file_stem()
@@ -496,11 +511,17 @@ fn press_package_manifest(
         entries: vec![tpkg::PackageEntry {
             name: stem.clone(),
             slot: 0,
-            entrypoint: stem,
+            entrypoint: "/local/stub.rb".to_string(),
             runtime_ref: runtime_ref.to_string(),
         }],
-        jail: Some(jail),
+        jail,
         env: Default::default(),
+        mounts: vec![tpkg::PackageMount {
+            slot: 0,
+            point: mount_point.to_string(),
+            mode: tpkg::MountMode::Union,
+            precedence: Some(tpkg::Precedence::AfterEnv),
+        }],
     }
 }
 
@@ -811,26 +832,54 @@ mod tests {
     }
 
     #[test]
-    fn press_package_manifest_carries_the_jail_and_mirrors_the_trailer() {
+    fn press_package_manifest_carries_the_union_model_and_the_jail() {
         let jail = tpkg::HostJail::from_cli_spec("deny:arg").unwrap();
         let m = press_package_manifest(
             "/tmp/out/hello",
             "ruby@3.4.2;tebako=0.15.9;image",
             "0.15.9",
-            jail,
+            "/__tfs__",
+            Some(jail),
         );
         // Valid per the tpkg discipline (schema version, N>=1 entries, the
-        // jail block's own validation).
+        // jail block's own validation, the mounts block's rules).
         m.validate().unwrap();
         assert_eq!(m.package.name, "hello");
         assert_eq!(m.package.producer.tool, "tebako-cli");
         assert_eq!(m.entries.len(), 1);
         assert_eq!(m.entries[0].slot, 0);
+        // The entry is the in-image dispatcher, mount-relative (the
+        // driver joins mount+entry — spec 17 §1).
+        assert_eq!(m.entries[0].entrypoint, "/local/stub.rb");
         assert_eq!(m.entries[0].runtime_ref, "ruby@3.4.2;tebako=0.15.9;image");
+        // The app slot unions over the env image at the runtime root —
+        // the point mirrors the trailer's mount point.
+        assert_eq!(m.mounts.len(), 1);
+        assert_eq!(m.mounts[0].slot, 0);
+        assert_eq!(m.mounts[0].point, "/__tfs__");
+        assert_eq!(m.mounts[0].mode, tpkg::MountMode::Union);
+        assert_eq!(m.mounts[0].precedence, Some(tpkg::Precedence::AfterEnv));
         let jail = m.jail.as_ref().unwrap();
         assert!(!jail.default_open);
         assert!(jail.argument_files.auto);
         // The YAML form survives a round trip (the block embeds as YAML).
+        let back = tpkg::PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn press_package_manifest_without_a_jail_still_declares_the_union() {
+        let m = press_package_manifest(
+            "/tmp/out/hello",
+            "ruby@3.4.2;tebako=0.15.9;image",
+            "0.15.9",
+            "/__tfs__",
+            None,
+        );
+        m.validate().unwrap();
+        assert!(m.jail.is_none());
+        assert_eq!(m.mounts.len(), 1);
+        assert_eq!(m.mounts[0].mode, tpkg::MountMode::Union);
         let back = tpkg::PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
         assert_eq!(back, m);
     }

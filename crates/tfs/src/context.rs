@@ -228,6 +228,40 @@ impl FsContext {
         Ok(self.insert_mount(mount))
     }
 
+    /// Multi-mount API, union mode (spec 17 §1 / spec 03 §6): `mount`'s
+    /// point is already taken — merge its backend over the incumbent's
+    /// as a UNION composite (the new image shadows; members stay
+    /// read-only). The incumbent keeps its handle; the union view
+    /// replaces its backend in place, so established fds keep their
+    /// owner. `Err(EINVAL)` on an empty point, `Err(ENODEV)` when the
+    /// point is free — a union needs an incumbent (a lone image is a
+    /// plain exclusive mount).
+    pub fn mount_union(&mut self, mount: Mount) -> Result<i32, i32> {
+        if mount.mount_point.is_empty() {
+            return Err(libc::EINVAL);
+        }
+        let Some(handle) = self
+            .mounts
+            .values()
+            .find(|m| m.mount_point == mount.mount_point)
+            .map(|m| m.handle)
+        else {
+            return Err(libc::ENODEV);
+        };
+        let mut incumbent = self.mounts.remove(&handle).ok_or(libc::ENODEV)?;
+        let union =
+            crate::backends_union::UnionBackend::new(vec![incumbent.backend, mount.backend])?;
+        incumbent.backend = Box::new(union);
+        self.mounts.insert(handle, incumbent);
+        Ok(handle)
+    }
+
+    /// The mount with `handle`, when it exists (boot-time introspection:
+    /// the driver journals the union set it established).
+    pub fn mount_by_handle(&self, handle: i32) -> Option<&Mount> {
+        self.mounts.get(&handle)
+    }
+
     /// Unmount a single mount by handle: force-close only its own fds and
     /// dir handles (they fail with EBADF afterwards), drop the mount, and
     /// release the mount point. Handles are never reused.

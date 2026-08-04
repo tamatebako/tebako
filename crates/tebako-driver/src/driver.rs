@@ -89,8 +89,69 @@ pub struct BootOutcome {
     pub argv: Vec<String>,
 }
 
-/// Where an image's bytes come from after trailer probing.
-enum ResolvedImage {
+/// The mount-mode source (spec 17 §1, locked 2026-08-04): mount
+/// semantics ride the running package's OWN trailer (the `<self>`
+/// manifest block — spelled `self` or as the package's path, the same
+/// file), never the argv grammar — the launcher ABI is unchanged and
+/// drivers predating this refuse a union package loudly (EEXIST).
+/// Consulted only when a triple's mount point is already occupied;
+/// `trailer` is the one [`resolve_image`] already parsed from the
+/// triple's image file, and the answer is the L2 `mounts:` row for the
+/// triple's slot.
+pub trait MountModes {
+    fn row_for(
+        &self,
+        spec: &crate::handoff::ImageSpec,
+        trailer: Option<&tpkg::Manifest>,
+    ) -> Result<Option<tpkg::PackageMount>, DriverError>;
+}
+
+/// The shipped source: the L2 `mounts:` block of the trailer the
+/// triple's own image file carries. A bare image (no trailer), a
+/// whole-file mount, a package without the block, and a slot without a
+/// row are all spellings of "exclusive" — payloads handed over without
+/// a package manifest (shim dispatch, bare images) are always
+/// exclusive (spec 17 §1).
+pub struct OwnTrailer;
+
+impl MountModes for OwnTrailer {
+    fn row_for(
+        &self,
+        spec: &crate::handoff::ImageSpec,
+        trailer: Option<&tpkg::Manifest>,
+    ) -> Result<Option<tpkg::PackageMount>, DriverError> {
+        let slot = match &spec.source {
+            ImageSource::OwnSlot(n) => *n,
+            ImageSource::File(_, SlotRef::Slot(n)) => *n,
+            // A whole-file mount is a bare image by construction (a
+            // packaged file's `-` is resolve_image's named error
+            // already) — nothing declares its mode.
+            ImageSource::File(_, SlotRef::Whole) => return Ok(None),
+        };
+        let Some(trailer) = trailer else {
+            return Ok(None);
+        };
+        let package = trailer.package_manifest().map_err(|e| {
+            manifest(format!(
+                "invalid L2 package manifest in the mounted package: {e}"
+            ))
+        })?;
+        Ok(package.and_then(|p| p.mounts.into_iter().find(|row| row.slot == slot)))
+    }
+}
+
+/// Where an image's bytes come from after trailer probing, plus the
+/// parsed trailer when the file is a package (the mount-mode source's
+/// input — spec 17 §1).
+struct ResolvedImage {
+    /// The region to mount.
+    region: ResolvedRegion,
+    /// The package's trailer, when the image file carries one.
+    trailer: Option<tpkg::Manifest>,
+}
+
+/// The mount region of a probed image.
+enum ResolvedRegion {
     /// A bare file, mounted whole (slot `0` ≡ `-`).
     Whole,
     /// A package file's slot region (offset, size).
@@ -103,7 +164,10 @@ fn resolve_image(path: &Path, slot: SlotRef, display: &str) -> Result<ResolvedIm
         .map_err(|e| unavailable(format!("cannot open image file '{display}': {e}")))?;
     match tpkg::read_from(&mut file) {
         Err(tpkg::TpkgError::NoTrailer) => match slot {
-            SlotRef::Whole | SlotRef::Slot(0) => Ok(ResolvedImage::Whole),
+            SlotRef::Whole | SlotRef::Slot(0) => Ok(ResolvedImage {
+                region: ResolvedRegion::Whole,
+                trailer: None,
+            }),
             SlotRef::Slot(n) => Err(manifest(format!(
                 "--tebako-image slot {n} is out of range for '{display}' (a bare image file — no slot table; use slot 0 or -)"
             ))),
@@ -128,20 +192,41 @@ fn resolve_image(path: &Path, slot: SlotRef, display: &str) -> Result<ResolvedIm
                         "--tebako-image slot {n} of '{display}' is a runtime payload slot — payload slots are never mounted"
                     )));
                 }
-                Ok(ResolvedImage::Region(s.offset, s.size))
+                Ok(ResolvedImage {
+                    region: ResolvedRegion::Region(s.offset, s.size),
+                    trailer: Some(m),
+                })
             }
         },
     }
 }
 
-fn mount_built(built: Result<tfs::context::Mount, i32>, what: &str) -> Result<(), DriverError> {
-    let mount = built.map_err(|e| {
+/// One established member of the boot's mount table: the point and a
+/// human-readable member description for the union journal (spec 17 §1:
+/// the union set — point + members + precedence — is journaled at boot).
+struct MountedMember {
+    point: String,
+    desc: String,
+}
+
+/// Map a backend-construction failure into the named boot error
+/// (ENOENT is the unavailable image; everything else is IO).
+fn build_error(
+    built: Result<tfs::context::Mount, i32>,
+    what: &str,
+) -> Result<tfs::context::Mount, DriverError> {
+    built.map_err(|e| {
         if e == libc::ENOENT {
             unavailable(format!("{what}: {}", errno_text(e)))
         } else {
             io(format!("{what}: {}", errno_text(e)))
         }
-    })?;
+    })
+}
+
+/// The exclusive mount path (the historical behavior): a free point is
+/// claimed, an occupied point is the named EEXIST error.
+fn mount_exclusive(mount: tfs::context::Mount, what: &str) -> Result<(), DriverError> {
     let mount_point = mount.mount_point.clone();
     context()
         .write()
@@ -162,21 +247,99 @@ fn mount_built(built: Result<tfs::context::Mount, i32>, what: &str) -> Result<()
     Ok(())
 }
 
+/// Mount one payload triple's image at its point (spec 17 §1 mount
+/// modes): a free point is claimed exclusively; an occupied point is
+/// governed by the L2 `mounts:` row the mode source answers for the
+/// triple's slot — `union` merges the image over the incumbents with
+/// the declared precedence (journaled at boot), anything else (no row,
+/// `exclusive`) is the named EEXIST error it always was.
+fn mount_at_point(
+    mount: tfs::context::Mount,
+    spec: &crate::handoff::ImageSpec,
+    trailer: Option<&tpkg::Manifest>,
+    what: &str,
+    new_desc: &str,
+    modes: &dyn MountModes,
+    mounted: &mut Vec<MountedMember>,
+) -> Result<(), DriverError> {
+    if !context().read().unwrap().mount_point_taken(&spec.mount) {
+        mount_exclusive(mount, what)?;
+        mounted.push(MountedMember {
+            point: spec.mount.clone(),
+            desc: new_desc.to_string(),
+        });
+        return Ok(());
+    }
+    let Some(row) = modes.row_for(spec, trailer)? else {
+        return Err(manifest(format!("{what}: duplicate mount point")));
+    };
+    match row.mode {
+        tpkg::MountMode::Union => {
+            context()
+                .write()
+                .unwrap()
+                .mount_union(mount)
+                .map_err(|e| io(format!("{what}: {}", errno_text(e))))?;
+            let precedence = row
+                .precedence
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            let incumbents = mounted
+                .iter()
+                .filter(|m| m.point == spec.mount)
+                .map(|m| m.desc.as_str())
+                .collect::<Vec<_>>()
+                .join(", ");
+            tebako_log::log!(
+                tebako_log::Level::Debug,
+                "driver",
+                "union mount point={} members=[{}; {}] precedence={}",
+                spec.mount,
+                incumbents,
+                new_desc,
+                precedence
+            );
+            if !mounted
+                .iter()
+                .any(|m| m.point == spec.mount && m.desc == new_desc)
+            {
+                mounted.push(MountedMember {
+                    point: spec.mount.clone(),
+                    desc: new_desc.to_string(),
+                });
+            }
+            Ok(())
+        }
+        // `exclusive` — and every spelling the L2 validation let through
+        // without a row — keeps the named EEXIST error. The reserved
+        // `cow`/`enc` spellings never reach here: the L2 block fails
+        // tpkg's validation and the mode source answered with the named
+        // error already.
+        _ => Err(manifest(format!("{what}: duplicate mount point"))),
+    }
+}
+
 /// The env image (`TEBAKO_RUNTIME_IMAGE`): a bare `.tfs`, mounted whole
 /// at the runtime root. Records `runtime_root` in `mounted`.
 fn mount_env_image(
     env: &dyn Env,
     runtime_root: &str,
-    mounted: &mut Vec<String>,
+    mounted: &mut Vec<MountedMember>,
 ) -> Result<(), DriverError> {
     let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") else {
         return Ok(());
     };
-    mount_built(
-        tfs::mount::build_from_file(&image, runtime_root),
+    mount_exclusive(
+        build_error(
+            tfs::mount::build_from_file(&image, runtime_root),
+            &format!("failed to mount the runtime filesystem image from '{image}'"),
+        )?,
         &format!("failed to mount the runtime filesystem image from '{image}'"),
     )?;
-    mounted.push(runtime_root.to_string());
+    mounted.push(MountedMember {
+        point: runtime_root.to_string(),
+        desc: format!("env image '{image}'"),
+    });
     Ok(())
 }
 
@@ -232,45 +395,59 @@ fn check_env_layout(env: &dyn Env, runtime_root: &str) -> Result<(), DriverError
 
 fn mount_image(
     spec: &crate::handoff::ImageSpec,
-    mounted: &mut Vec<String>,
+    mounted: &mut Vec<MountedMember>,
+    modes: &dyn MountModes,
 ) -> Result<(), DriverError> {
     match &spec.source {
         ImageSource::OwnSlot(n) => {
             let exe = std::env::current_exe()
                 .map_err(|e| io(format!("cannot determine own executable path: {e}")))?;
             let display = exe.display().to_string();
-            match resolve_image(&exe, SlotRef::Slot(*n), &display)? {
-                ResolvedImage::Whole => Err(manifest(
+            let resolved = resolve_image(&exe, SlotRef::Slot(*n), &display)?;
+            match resolved.region {
+                ResolvedRegion::Whole => Err(manifest(
                     "the running executable carries no tpkg trailer — <self> slots require a stitched package",
                 )),
-                ResolvedImage::Region(offset, size) => {
-                    mount_built(
+                ResolvedRegion::Region(offset, size) => {
+                    let what = format!("failed to mount own slot {n} at '{}'", spec.mount);
+                    let mount = build_error(
                         tfs::mount::build_from_file_at(&display, offset, size, &spec.mount),
-                        &format!("failed to mount own slot {n} at '{}'", spec.mount),
+                        &what,
                     )?;
-                    mounted.push(spec.mount.clone());
-                    Ok(())
+                    mount_at_point(
+                        mount,
+                        spec,
+                        resolved.trailer.as_ref(),
+                        &what,
+                        &format!("own slot {n}"),
+                        modes,
+                        mounted,
+                    )
                 }
             }
         }
         ImageSource::File(path, slot) => {
             let display = path.display().to_string();
-            match resolve_image(path, *slot, &display)? {
-                ResolvedImage::Whole => {
-                    mount_built(
-                        tfs::mount::build_from_file(&display, &spec.mount),
-                        &format!("failed to mount image '{display}' at '{}'", spec.mount),
-                    )?;
+            let resolved = resolve_image(path, *slot, &display)?;
+            let what = format!("failed to mount image '{display}' at '{}'", spec.mount);
+            let mount = match resolved.region {
+                ResolvedRegion::Whole => {
+                    build_error(tfs::mount::build_from_file(&display, &spec.mount), &what)?
                 }
-                ResolvedImage::Region(offset, size) => {
-                    mount_built(
-                        tfs::mount::build_from_file_at(&display, offset, size, &spec.mount),
-                        &format!("failed to mount image '{display}' at '{}'", spec.mount),
-                    )?;
-                }
-            }
-            mounted.push(spec.mount.clone());
-            Ok(())
+                ResolvedRegion::Region(offset, size) => build_error(
+                    tfs::mount::build_from_file_at(&display, offset, size, &spec.mount),
+                    &what,
+                )?,
+            };
+            mount_at_point(
+                mount,
+                spec,
+                resolved.trailer.as_ref(),
+                &what,
+                &format!("'{display}'"),
+                modes,
+                mounted,
+            )
         }
     }
 }
@@ -326,7 +503,7 @@ fn join_mount(mount_point: &str, entry: &str) -> String {
 fn resolve_entry(
     h: &Handoff,
     runtime_root: &str,
-    mounted: &[String],
+    mounted: &[MountedMember],
 ) -> Result<String, DriverError> {
     let entry = h
         .entry
@@ -338,7 +515,7 @@ fn resolve_entry(
         .map(|i| i.mount.as_str())
         .unwrap_or(runtime_root);
     let resolved = join_mount(base, entry);
-    if mounted.iter().any(|mp| in_mount(&resolved, mp)) {
+    if mounted.iter().any(|m| in_mount(&resolved, &m.point)) {
         let mut ctx = context().write().unwrap();
         match ctx.open(&resolved, libc::O_RDONLY) {
             Ok(fd) => {
@@ -364,6 +541,19 @@ pub fn boot(
     runtime_root: &str,
     env: &dyn Env,
 ) -> Result<BootOutcome, DriverError> {
+    boot_with_mount_modes(argv, runtime_root, env, &OwnTrailer)
+}
+
+/// The boot with an explicit mount-mode source — the shipped [`boot`]
+/// reads the modes from the running package's OWN trailer ([`OwnTrailer`],
+/// spec 17 §1); the tests substitute a stub. The argv grammar is
+/// identical either way: mount semantics never ride the handoff.
+pub fn boot_with_mount_modes(
+    argv: &[String],
+    runtime_root: &str,
+    env: &dyn Env,
+    modes: &dyn MountModes,
+) -> Result<BootOutcome, DriverError> {
     let h = Handoff::parse(argv)?;
 
     // Plain boot: no loader args at all. The interpreter runs its own
@@ -386,13 +576,13 @@ pub fn boot(
     }
 
     let result = (|| {
-        let mut mounted: Vec<String> = Vec::new();
+        let mut mounted: Vec<MountedMember> = Vec::new();
         mount_env_image(env, runtime_root, &mut mounted)?;
         // The env image's pair-check runs post-mount, before any payload
         // or interpreter touch (spec 18 C3 — exit 78).
         check_env_layout(env, runtime_root)?;
         for spec in &h.images {
-            mount_image(spec, &mut mounted)?;
+            mount_image(spec, &mut mounted, modes)?;
         }
         apply_jail(env)?;
         let rewritten = match h.entry.as_deref() {
