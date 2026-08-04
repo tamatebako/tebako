@@ -8,7 +8,7 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard};
 
-use tebako_driver::{boot, Env};
+use tebako_driver::{boot, Env, MountModes};
 use tfs::context::context;
 
 static LOCK: Mutex<()> = Mutex::new(());
@@ -575,6 +575,339 @@ fn malformed_jail_is_named_73_and_rolls_back() {
     assert_eq!(err.code, 73, "{}", err.message);
     assert!(!context().read().unwrap().is_mounted());
     let _ = g;
+}
+
+// ---------------------------------------------------------------------
+// mount modes (spec 17 §1, locked 2026-08-04): an occupied point is
+// governed by the L2 mounts block — exclusive is the named EEXIST it
+// always was, union merges the trees. The shipped boot() reads the
+// running package's own trailer (the test exe carries none → every
+// spec answers "no row"); the union cases ride boot_with_mount_modes
+// with a stub row source.
+// ---------------------------------------------------------------------
+
+/// A fixed L2-row answer for every triple (the union/exclusive cases).
+struct StubModes(Option<tpkg::PackageMount>);
+
+impl tebako_driver::MountModes for StubModes {
+    fn row_for(
+        &self,
+        _spec: &tebako_driver::ImageSpec,
+        _trailer: Option<&tpkg::Manifest>,
+    ) -> Result<Option<tpkg::PackageMount>, tebako_driver::DriverError> {
+        Ok(self.0.clone())
+    }
+}
+
+fn union_row() -> tpkg::PackageMount {
+    tpkg::PackageMount {
+        slot: 0,
+        point: "/__tfs__".to_string(),
+        mode: tpkg::MountMode::Union,
+        precedence: Some(tpkg::Precedence::AfterEnv),
+    }
+}
+
+/// A trailer carrying the given L2 block as raw YAML (the production
+/// row extraction's input; hand-authored so reserved spellings reach
+/// the parser — `set_package_manifest` validates at write time).
+fn trailer_with_l2(yaml: &str) -> tpkg::Manifest {
+    let mut m = tpkg::Manifest {
+        package_flags: tpkg::TPKG_FLAG_LEAN,
+        launcher_abi: 1,
+        ..Default::default()
+    };
+    m.slots.push(tpkg::Slot::new(
+        0,
+        100,
+        tpkg::TPKG_FORMAT_DWARFS,
+        "/__tfs__",
+    ));
+    m.insert_ext_block(
+        tpkg::ExtBlock::new(
+            tpkg::TPKG_EXT_TYPE_PACKAGE_MANIFEST,
+            yaml.as_bytes().to_vec(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    m
+}
+
+const L2_HEADER: &str = "schema_version: 1\n\
+                         package: {name: x, version: 1.0.0, producer: {tool: t, tool_version: 1}, created: now}\n\
+                         entries:\n  - {name: x, slot: 0, entrypoint: /local/stub.rb, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n";
+
+#[test]
+fn own_trailer_source_reads_the_row_of_the_mounted_package() {
+    // The production source: the L2 row comes from the trailer of the
+    // very file the triple mounts (spec 17 §1 — `<self>` spelled as a
+    // path is the same file).
+    let trailer = trailer_with_l2(&format!(
+        "{L2_HEADER}mounts:\n  - {{slot: 0, point: /__tfs__, mode: union, precedence: after-env}}\n"
+    ));
+    let file = tebako_driver::ImageSpec {
+        source: tebako_driver::ImageSource::File(
+            PathBuf::from("/x/pkg"),
+            tebako_driver::SlotRef::Slot(0),
+        ),
+        mount: "/__tfs__".to_string(),
+    };
+    let row = tebako_driver::OwnTrailer
+        .row_for(&file, Some(&trailer))
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.mode, tpkg::MountMode::Union);
+    assert_eq!(row.precedence, Some(tpkg::Precedence::AfterEnv));
+    // A slot without a row answers exclusive; a bare image (no
+    // trailer) and a whole-file mount answer exclusive too.
+    let other_slot = tebako_driver::ImageSpec {
+        source: tebako_driver::ImageSource::File(
+            PathBuf::from("/x/pkg"),
+            tebako_driver::SlotRef::Slot(1),
+        ),
+        mount: "/__tfs__".to_string(),
+    };
+    assert_eq!(
+        tebako_driver::OwnTrailer
+            .row_for(&other_slot, Some(&trailer))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        tebako_driver::OwnTrailer.row_for(&file, None).unwrap(),
+        None
+    );
+    let whole = tebako_driver::ImageSpec {
+        source: tebako_driver::ImageSource::File(
+            PathBuf::from("/x/bare.tfs"),
+            tebako_driver::SlotRef::Whole,
+        ),
+        mount: "/__tfs__".to_string(),
+    };
+    assert_eq!(
+        tebako_driver::OwnTrailer
+            .row_for(&whole, Some(&trailer))
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
+fn own_trailer_source_names_the_reserved_modes() {
+    // `mode: cow` never parses into a valid L2 block — the driver's
+    // answer is the named validation error, never a silent exclusive.
+    let trailer = trailer_with_l2(&format!(
+        "{L2_HEADER}mounts:\n  - {{slot: 0, point: /__tfs__, mode: cow}}\n"
+    ));
+    let file = tebako_driver::ImageSpec {
+        source: tebako_driver::ImageSource::File(
+            PathBuf::from("/x/pkg"),
+            tebako_driver::SlotRef::Slot(0),
+        ),
+        mount: "/__tfs__".to_string(),
+    };
+    let err = tebako_driver::OwnTrailer
+        .row_for(&file, Some(&trailer))
+        .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("mode 'cow' is reserved"),
+        "{}",
+        err.message
+    );
+}
+
+/// A payload zip that shares the env image's root AND one of its files.
+fn write_shadowing_payload(dir: &Path) -> PathBuf {
+    let p = dir.join("shadow.tfs");
+    build_zip(
+        &p,
+        &["bin/", "lib/", "lib/ruby/", "local/"],
+        &[
+            ("bin/app", b"#!/usr/bin/env ruby\nputs 'hi'\n".as_slice()),
+            ("local/stub.rb", b"load \"/__tfs__/bin/app\"\n".as_slice()),
+            (
+                "lib/ruby/rubygems.rb",
+                b"# app-shadowed rubygems\n".as_slice(),
+            ),
+        ],
+    );
+    p
+}
+
+#[test]
+fn occupied_point_without_a_row_is_the_named_eexist() {
+    let g = guard("occupied-eexist");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    // The env image owns /__tfs__; a payload triple onto the same point
+    // with no L2 row is the historical named error (the shipped boot —
+    // file triples are always exclusive).
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/__tfs__", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("duplicate mount point"),
+        "{}",
+        err.message
+    );
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "a refused boot leaves nothing mounted"
+    );
+}
+
+#[test]
+fn an_exclusive_row_keeps_the_named_eexist() {
+    let g = guard("exclusive-row");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    let modes = StubModes(Some(tpkg::PackageMount {
+        slot: 0,
+        point: "/__tfs__".to_string(),
+        mode: tpkg::MountMode::Exclusive,
+        precedence: None,
+    }));
+
+    let err = tebako_driver::boot_with_mount_modes(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/__tfs__", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+        &modes,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("duplicate mount point"),
+        "{}",
+        err.message
+    );
+    assert!(!context().read().unwrap().is_mounted());
+}
+
+#[test]
+fn union_row_merges_the_trees_at_the_runtime_root() {
+    let g = guard("union-merge");
+    let env_image = write_env_image(g.path());
+    let payload = write_shadowing_payload(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let out = tebako_driver::boot_with_mount_modes(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/__tfs__", payload.display()),
+            "--tebako-entry",
+            "/local/stub.rb",
+        ]),
+        "/__tfs__",
+        &env,
+        &StubModes(Some(union_row())),
+    )
+    .unwrap();
+    // The entry resolves against the first image's mount — through the
+    // union (the app member holds local/stub.rb).
+    assert_eq!(out.argv, argv(&["ruby", "/__tfs__/local/stub.rb"]));
+    // Both members read through; the app member shadows the shared file.
+    assert_eq!(
+        read_file("/__tfs__/local/stub.rb"),
+        b"load \"/__tfs__/bin/app\"\n"
+    );
+    assert_eq!(
+        read_file("/__tfs__/lib/ruby/rubygems.rb"),
+        b"# app-shadowed rubygems\n"
+    );
+    // Directories merge: the env member's lib/tebako rides alongside.
+    let mut ctx = context().write().unwrap();
+    let dir = ctx.opendir("/__tfs__/lib").unwrap();
+    let mut seen = Vec::new();
+    while ctx.readdir_abi(dir).unwrap() {
+        let cur = ctx.dir_current(dir).unwrap();
+        let len = cur
+            .d_name
+            .iter()
+            .position(|&c| c == 0)
+            .unwrap_or(cur.d_name.len());
+        seen.push(
+            cur.d_name[..len]
+                .iter()
+                .map(|&c| c as u8 as char)
+                .collect::<String>(),
+        );
+    }
+    ctx.closedir(dir).unwrap();
+    drop(ctx);
+    seen.sort();
+    assert_eq!(seen, vec!["ruby", "tebako"]);
+}
+
+#[test]
+fn a_named_mode_source_error_surfaces_and_rolls_back() {
+    let g = guard("modes-err");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    // The reserved-mode refusal (cow/enc never parse into a valid L2
+    // block — tpkg's validation names them) reaches the boot as the
+    // mode source's named error.
+    struct ReservedModes;
+    impl tebako_driver::MountModes for ReservedModes {
+        fn row_for(
+            &self,
+            _spec: &tebako_driver::ImageSpec,
+            _trailer: Option<&tpkg::Manifest>,
+        ) -> Result<Option<tpkg::PackageMount>, tebako_driver::DriverError> {
+            Err(tebako_driver::DriverError::new(
+                65,
+                "invalid L2 package manifest in the mounted package: mounts[].mode 'cow' is reserved"
+                    .to_string(),
+            ))
+        }
+    }
+    let err = tebako_driver::boot_with_mount_modes(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/__tfs__", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+        &ReservedModes,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(err.message.contains("reserved"), "{}", err.message);
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "a refused boot leaves nothing mounted"
+    );
 }
 
 // ---------------------------------------------------------------------

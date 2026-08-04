@@ -75,6 +75,7 @@ pub mod backends_hostdir;
 #[cfg(feature = "vendored-squashfs")]
 pub mod backends_squashfs;
 pub mod backends_tar;
+pub mod backends_union;
 pub mod backends_zip;
 pub mod c_api;
 pub mod context;

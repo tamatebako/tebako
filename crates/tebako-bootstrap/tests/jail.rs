@@ -45,6 +45,7 @@ fn package_manifest(runtime_ref: &str, jail: tpkg::HostJail) -> tpkg::PackageMan
         }],
         jail: Some(jail),
         env: Default::default(),
+        mounts: Vec::new(),
     }
 }
 
