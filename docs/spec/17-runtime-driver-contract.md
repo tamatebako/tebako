@@ -22,9 +22,22 @@ exact contract (roadmap 22's "add a language" playbook).
   `TEBAKO_RUNTIME_IMAGE` case is a bare path mounted whole — the `-`
   semantics without a triple.)
 - **Mount order:** the env image first, then payload triples in argv
-  order; the table is longest-prefix and nested mounts are legal; a
-  duplicate mount point is a named error; any failure unmounts
-  everything — never a partial mount.
+  order; the table is longest-prefix and nested mounts are legal; any
+  failure unmounts everything — never a partial mount.
+- **Mount modes (locked 2026-08-04):** every mount is `exclusive`
+  (default) or `union`, declared per slot in the package manifest's
+  `mounts:` block (spec 03 §6). An exclusive mount onto an occupied
+  point is a named error (EEXIST). A union mount onto an occupied
+  point merges the trees: directories combine, file conflicts resolve
+  by the declared precedence (`after-env` — over the env image — or
+  `after:<slot>`); union members are read-only and the union set
+  (point + members + precedence) is journaled at boot. The driver
+  reads the mode from the running package's OWN trailer (the `<self>`
+  manifest block) — mount semantics never ride the argv grammar, so
+  the launcher ABI is unchanged and drivers predating this section
+  refuse a union package loudly (EEXIST), never silently. Payloads
+  handed over without a package manifest (shim dispatch, bare images)
+  are always exclusive.
 - `--tebako-entry` separates loader args from user args; `argv0` is the
   entrypoint inside the mounted tree, resolved against the FIRST
   `--tebako-image` mount (the app payload) — or against the runtime root

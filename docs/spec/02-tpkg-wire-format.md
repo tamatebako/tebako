@@ -99,7 +99,8 @@ ext block: [u32be type][u32be length][payload bytes]
            header, self-delimiting from the tail via its sig_len field)
   type 2 = package manifest (YAML — spec 03 §6; identity, entrypoint/
            suite composition, package-level jail + env, per-entry
-           runtime refs)
+           runtime refs, per-slot mount modes — exclusive/union,
+           spec 17 §1)
 ```
 
 Rules: blocks walk forward from the end of the slot table (type+length
