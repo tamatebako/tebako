@@ -27,7 +27,7 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::ffi::{CStr, c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, c_void, CStr};
 use std::path::PathBuf;
 use std::sync::Mutex;
 
