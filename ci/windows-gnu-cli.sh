@@ -31,8 +31,19 @@ mkdir -p "$TOOLSHIM"
 cp "/d/a/_temp/msys64/ucrt64/bin/mingw32-make.exe" "$TOOLSHIM/make.exe"
 export PATH="$TOOLSHIM:$PATH"
 
-# One linker, resolved from the closed PATH above (ucrt64's gcc).
-export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=gcc.exe
+# One linker, resolved from the closed PATH above (ucrt64's gcc) — behind
+# the release-link wrapper (ci/windows-gnu-link-wrap.c): the MinGW C/C++
+# runtime chain links STATICALLY into every shipped exe. A libstdc++-6.dll /
+# libwinpthread-1.dll import is exit 127 before main on any stock Windows
+# (the 0.1.1 windows-ucrt64 failure class; ucrt64/bin sits on THIS runner's
+# PATH, never on a user's). The trailing RUSTFLAGS below cannot do it —
+# rustc emits a build script's `-lstdc++`/`-lpthread` (rnp-rs's is an
+# explicit `dylib=stdc++`) at its own position, BEFORE the `-C link-arg`
+# tail — so the wrapper rewrites those references at the driver boundary,
+# and the import gate (step 2) proves the result on the real binaries.
+WRAP="$RUNNER_TEMP/tebako-link-wrap.exe"
+gcc -O2 -o "$WRAP" ci/windows-gnu-link-wrap.c
+export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="$(cygpath -w "$WRAP")"
 
 # Static-link the mingw C/C++ runtimes; the trailing -lmsvcrt restores
 # the msvcrt-after-mingwex order invariant (rustc's -nodefaultlibs tail
@@ -77,18 +88,19 @@ SERIAL="--test-threads=1"
 cargo build -p tebako-cli -p tfs-cli -p tebako-pkg --target "$TARGET"
 cargo test -p tebako-cli -p tfs-cli -p tebako-pkg --target "$TARGET" --no-run
 
-# --- 2. DLL-import forensics ------------------------------------------------
-# STATUS_ENTRYPOINT_NOT_FOUND fails the process BEFORE main, so the
-# failure's own stderr never names the missing entry — enumerate every
-# import up front instead. Unprefixed binutils: MSYS2's ucrt64 package
-# ships objdump.exe/strip.exe WITHOUT the x86_64-w64-mingw32- alias
+# --- 2. DLL-import gate -----------------------------------------------------
+# The informational forensics dump became a GATE (the 0.1.1 windows-ucrt64
+# exes imported libstdc++-6.dll/libwinpthread-1.dll and nobody failed the
+# build — they die before main on stock Windows). The gate audits the
+# shipped-shape exes against the inbox-DLL allowlist; the link wrapper
+# above is the mechanism it verifies. Unprefixed binutils: MSYS2's ucrt64
+# package ships objdump.exe/strip.exe WITHOUT the x86_64-w64-mingw32- alias
 # (run 30697405256 proved the prefixed names do not resolve); the closed
 # PATH makes the one toolchain's tools unambiguous.
-for exe in target/"$TARGET"/debug/deps/*.exe; do
-  echo "=== imports: $exe ==="
-  objdump -p "$exe" \
-    | grep -E "DLL Name|^\s+[0-9a-f]+\s+\S+\s*$" | head -60 || true
-done
+bash ci/windows-gnu-import-gate.sh \
+  target/"$TARGET"/debug/tebako.exe \
+  target/"$TARGET"/debug/tfs.exe \
+  target/"$TARGET"/debug/tebako-pkg.exe
 
 # --- 3. test (serialized) ---------------------------------------------------
 cargo test -p tebako-cli -p tfs-cli -p tebako-pkg --target "$TARGET" -- "$SERIAL" --nocapture

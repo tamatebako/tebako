@@ -32,8 +32,19 @@ mkdir -p "$TOOLSHIM"
 cp "/d/a/_temp/msys64/ucrt64/bin/mingw32-make.exe" "$TOOLSHIM/make.exe"
 export PATH="$TOOLSHIM:$PATH"
 
-# One linker, resolved from the closed PATH above (ucrt64's gcc).
-export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=gcc.exe
+# One linker, resolved from the closed PATH above (ucrt64's gcc) — behind
+# the release-link wrapper (ci/windows-gnu-link-wrap.c): the MinGW C/C++
+# runtime chain links STATICALLY into every shipped exe. A libstdc++-6.dll /
+# libwinpthread-1.dll import is exit 127 before main on any stock Windows
+# (the 0.1.1 windows-ucrt64 failure class; ucrt64/bin sits on THIS runner's
+# PATH, never on a user's). The trailing RUSTFLAGS below cannot do it —
+# rustc emits a build script's `-lstdc++`/`-lpthread` (rnp-rs's is an
+# explicit `dylib=stdc++`) at its own position, BEFORE the `-C link-arg`
+# tail — so the wrapper rewrites those references at the driver boundary,
+# and the import gate (step 3) proves the result on the staged exes.
+WRAP="$RUNNER_TEMP/tebako-link-wrap.exe"
+gcc -O2 -o "$WRAP" ci/windows-gnu-link-wrap.c
+export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="$(cygpath -w "$WRAP")"
 
 # Static-link the mingw C/C++ runtimes; the trailing -lmsvcrt restores
 # the msvcrt-after-mingwex order invariant (rustc's -nodefaultlibs tail
@@ -75,15 +86,12 @@ cargo build --release --target "$TARGET" \
 # manifest.json. The windows binaries carry .exe.
 TARGET="$TARGET" EXE_SUFFIX=.exe bash .github/workflows/lib/stage.sh
 
-# --- 3. DLL-import forensics ------------------------------------------------
-# STATUS_ENTRYPOINT_NOT_FOUND fails the process BEFORE main, so a bad
-# import never names itself — enumerate every import of the SHIPPED exes
-# up front instead. Unprefixed binutils: MSYS2's ucrt64 ships objdump.exe
-# without the x86_64-w64-mingw32- alias; the closed PATH makes the one
-# toolchain's tools unambiguous. Informational (the static-libgcc /
-# static-libstdc++ RUSTFLAGS above are the invariant this audits).
-for exe in out/*.exe; do
-  echo "=== imports: $exe ==="
-  objdump -p "$exe" \
-    | grep -E "DLL Name" | sort -u || true
-done
+# --- 3. DLL-import gate -----------------------------------------------------
+# The SHIPPED exes run on machines with no toolchain on PATH: an off-list
+# import is exit 127 before main (the 0.1.1 windows-ucrt64 failure class —
+# this step was informational then and shipped the break). The gate audits
+# every staged exe against the inbox-DLL allowlist; the link wrapper above
+# is the mechanism it verifies. Unprefixed binutils: MSYS2's ucrt64 ships
+# objdump.exe without the x86_64-w64-mingw32- alias; the closed PATH makes
+# the one toolchain's tools unambiguous.
+bash ci/windows-gnu-import-gate.sh out/*.exe
