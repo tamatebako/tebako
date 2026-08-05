@@ -12,6 +12,13 @@ use std::path::PathBuf;
 
 use tebako_cli::install;
 use tebako_resolve::{sha256_hex, Fetcher, Transport};
+
+/// The registered shim path for a command — windows names it
+/// `<command>.exe` (production's own mapping, tebako-shim#manage).
+fn shim_path(home: &std::path::Path, command: &str) -> PathBuf {
+    home.join("shims")
+        .join(tebako_shim::manage::shim_file_name(command))
+}
 use tpkg::Platform;
 
 fn scratch(tag: &str) -> PathBuf {
@@ -785,8 +792,8 @@ fn suite_install_registers_every_entry_shim() {
     let out = install::install(&fx.home, "metasuite", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.commands, vec!["metanorma", "mn2pdf"]);
     assert_eq!(out.shims.len(), 2);
-    assert!(fx.home.join("shims/metanorma").exists());
-    assert!(fx.home.join("shims/mn2pdf").exists());
+    assert!(shim_path(&fx.home, "metanorma").exists());
+    assert!(shim_path(&fx.home, "mn2pdf").exists());
 
     // the mirror carries each entry's own runtime requirement
     let mirror = tebako_shim::manifest::Manifest::load(
@@ -822,12 +829,12 @@ fn uninstall_removes_shims_and_cache_and_journals_the_anchors() {
     install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
     install::install(&fx.home, "app@1.0", None, Some(&fx.shim_binary)).unwrap();
     install::install(&fx.home, "app@1.1", None, Some(&fx.shim_binary)).unwrap();
-    assert!(fx.home.join("shims/app").exists());
+    assert!(shim_path(&fx.home, "app").exists());
 
     let out = install::uninstall(&fx.home, "app").unwrap();
     assert_eq!(out.versions, vec!["1.0", "1.1"]);
     assert_eq!(out.shims_removed.len(), 1);
-    assert!(!fx.home.join("shims/app").exists());
+    assert!(!shim_path(&fx.home, "app").exists());
     assert!(!fx.payloads_dir().join("app").exists());
 
     // the trust anchors survived in the audit journal
@@ -936,7 +943,7 @@ fn install_walks_the_requires_closure_and_installs_the_deps() {
         .join("inkscape/1.4.3.manifest.yaml")
         .is_file());
     assert!(fx.payloads_dir().join("fonts/2.1.tfs").is_file());
-    assert!(!fx.home.join("shims/inkscape").exists());
+    assert!(!shim_path(&fx.home, "inkscape").exists());
     let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
     assert!(
         journal.contains("event=payload-installed name=inkscape version=1.4.3"),
