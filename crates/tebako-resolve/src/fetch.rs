@@ -69,7 +69,10 @@ impl<T: Transport> Fetcher<T> {
         let (bytes, origin) = match reference {
             Reference::Https { url, .. } => (self.get(url)?, url.clone()),
             Reference::File { path, .. } => {
-                let url = format!("file://{path}");
+                // the canonical constructor — a windows drive path needs
+                // the third slash (file:///C:/x), and the mock transports
+                // key on exactly this form
+                let url = tebako_http::file_url(std::path::Path::new(path));
                 (self.get(&url)?, url)
             }
             Reference::Service {
