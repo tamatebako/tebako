@@ -109,7 +109,20 @@ echo "== pre-install squashfs-tools-ng ($TRIPLET) =="
 # RUSTFLAGS then covers host units, and the artifacts land in the
 # default-target layout target/release (stage.sh and link-unit-stage.sh
 # resolve both layouts).
-export RUSTFLAGS="-C target-feature=-crt-static"
+# ...but the toolchain runtimes are NOT part of that contract: a NEEDED
+# libstdc++.so.6/libgcc_s.so.1 is exit 127 on a vanilla alpine (proven by
+# the 0.1.1 musl assets). Absorb them STATICALLY: the trailing-flags
+# trick cannot (rustc emits a build script's -lstdc++/-lgcc_s before the
+# -C link-arg tail — see ci/linux-link-wrap.sh), so the driver-boundary
+# wrapper rewrites those tokens. Engaged via -C linker INSIDE RUSTFLAGS:
+# this leg builds without --target, and cargo honors neither
+# CARGO_TARGET_<host-triple>_LINKER nor target-unit-only flags for the
+# shipped exes in that mode (proven on alpine:3.21 cargo) — RUSTFLAGS is
+# the one channel that covers every unit here. The wrapper's rewrites
+# are harmless to build-script links. The release leg's ship gate (the
+# musl ldd whitelist in .github/workflows/lib/ship-gate.sh) is the
+# enforcement: libc.musl ONLY.
+export RUSTFLAGS="-C target-feature=-crt-static -C linker=$WS/tebako-rs/ci/linux-link-wrap.sh"
 echo "== cargo build (release, $TARGET — native, no --target) =="
 cd "$WS/tebako-rs"
 export DWARFS_RS_VCPKG_ROOT="$WS/.vcpkg-musl"
