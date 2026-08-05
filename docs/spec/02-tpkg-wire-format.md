@@ -37,7 +37,7 @@ container itself stays byte-identical either way.
 |-------:|-----:|-------|
 | 0  | 8   | u64 offset (absolute file offset of the image) |
 | 8  | 8   | u64 size |
-| 16 | 4   | u32 format_id — IMAGE FORMAT ONLY: 0=auto, 1=dwarfs, 2=squashfs, 3=zip (4=runtime: legacy role wart, §5) |
+| 16 | 4   | u32 format_id — IMAGE FORMAT ONLY: 0=auto, 1=dwarfs, 2=squashfs, 3=zip, 5=limnifs (spec 20, PLANNED) (4=runtime: legacy role wart, §5) |
 | 20 | 4   | u32 flags (0 today; future home of role bits) |
 | 24 | 256 | char mount_point[256] (UTF-8, NUL-padded) |
 
