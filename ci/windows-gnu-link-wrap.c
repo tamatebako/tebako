@@ -69,11 +69,7 @@ static const char *rewrite_arg(const char *arg)
   return rewrite_lib(arg + 2);
 }
 
-/* ---------------- @response files ---------------- */
-/* gcc response file grammar: whitespace-separated tokens, single- or
- * double-quoted groups, backslash escapes the next character. The
- * rewrite is token-exact, so re-emitting tokens bare (quoting only when
- * a token genuinely needs it) preserves the file's semantics. */
+/* ---------------- token rewriting ---------------- */
 
 typedef struct {
   char *data;
@@ -99,30 +95,86 @@ static void buf_puts(buf *b, const char *s)
     buf_putc(b, *s++);
 }
 
-/* Append `tok` to `out`, applying the lib rewrite; quote on emit only
- * when the token carries response-file specials. */
-static void emit_token(buf *out, const char *tok)
+static void *xstrndup(const char *s, size_t len)
+{
+  char *m = malloc(len + 1);
+  if (!m) {
+    fprintf(stderr, "tebako-link-wrap: out of memory\n");
+    exit(70);
+  }
+  memcpy(m, s, len);
+  m[len] = '\0';
+  return m;
+}
+
+/* The full token rewrite, shared by the argv path and the @response-file
+ * path: an exact -l<name>, or any -l<name> member of a -Wl,<a>,<b>,...
+ * comma list (member order and framing preserved). Returns a malloc'd
+ * replacement, or NULL when the token needs none. */
+static char *rewrite_token_dup(const char *tok)
 {
   const char *r = rewrite_arg(tok);
-  if (r) {
-    buf_puts(out, r);
-    return;
+  if (r)
+    return xstrndup(r, strlen(r));
+  if (strncmp(tok, "-Wl,", 4) != 0)
+    return NULL;
+  buf out = {0};
+  buf_puts(&out, "-Wl,");
+  const char *p = tok + 4;
+  int first = 1, changed = 0;
+  while (1) {
+    const char *comma = strchr(p, ',');
+    size_t len = comma ? (size_t)(comma - p) : strlen(p);
+    char *member = xstrndup(p, len);
+    const char *mr = rewrite_arg(member);
+    if (mr)
+      changed = 1;
+    if (!first)
+      buf_putc(&out, ',');
+    buf_puts(&out, mr ? mr : member);
+    free(member);
+    first = 0;
+    if (!comma)
+      break;
+    p = comma + 1;
   }
-  int need_quote = (tok[0] == '\0');
-  for (const char *p = tok; *p && !need_quote; p++)
+  buf_putc(&out, '\0');
+  if (!changed) {
+    free(out.data);
+    return NULL;
+  }
+  return out.data;
+}
+
+/* ---------------- @response files ---------------- */
+/* gcc response file grammar: whitespace-separated tokens, single- or
+ * double-quoted groups, backslash escapes the next character. The
+ * rewrite is token-exact, so re-emitting tokens bare (quoting only when
+ * a token genuinely needs it) preserves the file's semantics. */
+
+/* Append `tok` to `out`, applying the rewrite; quote on emit only when
+ * the (possibly rewritten) token carries response-file specials. */
+static void emit_token(buf *out, const char *tok)
+{
+  char *rt = rewrite_token_dup(tok);
+  const char *s = rt ? rt : tok;
+  int need_quote = (s[0] == '\0');
+  for (const char *p = s; *p && !need_quote; p++)
     if (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == '"' || *p == '\'' || *p == '\\')
       need_quote = 1;
   if (!need_quote) {
-    buf_puts(out, tok);
+    buf_puts(out, s);
+    free(rt);
     return;
   }
   buf_putc(out, '"');
-  for (const char *p = tok; *p; p++) {
+  for (const char *p = s; *p; p++) {
     if (*p == '"' || *p == '\\')
       buf_putc(out, '\\');
     buf_putc(out, *p);
   }
   buf_putc(out, '"');
+  free(rt);
 }
 
 /* Rewrite the response file at `path` (token-exact) into
@@ -218,7 +270,6 @@ static char *rewrite_response_file(const char *arg)
 int main(int argc, char **argv)
 {
   static char *out[8192];
-  static char wlbuf[8192][512]; /* rewritten -Wl, list members */
   int n = 0;
   out[n++] = (char *)"gcc";
 
@@ -230,38 +281,9 @@ int main(int argc, char **argv)
       continue;
     }
 
-    const char *r = rewrite_arg(a);
-    if (r) {
-      out[n++] = (char *)r;
-      continue;
-    }
-
-    if (strncmp(a, "-Wl,", 4) == 0) {
-      /* Rewrite any -l<name> members of a -Wl,<a>,<b>,... list,
-       * preserving the member order and the -Wl, framing. */
-      const char *p = a + 4;
-      char *dst = wlbuf[i % 8192];
-      char *d = dst;
-      size_t cap = sizeof(wlbuf[0]);
-      d += snprintf(d, cap, "-Wl,");
-      int first = 1;
-      while (1) {
-        const char *comma = strchr(p, ',');
-        size_t len = comma ? (size_t)(comma - p) : strlen(p);
-        char member[480];
-        if (len >= sizeof(member))
-          len = sizeof(member) - 1;
-        memcpy(member, p, len);
-        member[len] = '\0';
-        const char *mr = rewrite_arg(member);
-        d += snprintf(d, cap - (size_t)(d - dst), "%s%s", first ? "" : ",",
-                      mr ? mr : member);
-        first = 0;
-        if (!comma)
-          break;
-        p = comma + 1;
-      }
-      out[n++] = dst;
+    char *rt = rewrite_token_dup(a);
+    if (rt) {
+      out[n++] = rt;
       continue;
     }
 
