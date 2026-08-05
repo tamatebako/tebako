@@ -193,7 +193,11 @@ impl fmt::Display for Reference {
                 pin(f, sha256, if bare.contains('?') { "&" } else { "?" })
             }
             Reference::File { path, sha256 } => {
-                write!(f, "file://{path}")?;
+                // path is stored OS-native (the drive-recovered C:/x on
+                // windows); the canonical URL form comes from the one
+                // constructor — `file://{path}` would emit file://C:/x,
+                // which the parser itself rejects (self-poisoning).
+                write!(f, "{}", tebako_http::file_url(std::path::Path::new(path)))?;
                 pin(f, sha256, "?")
             }
         }
