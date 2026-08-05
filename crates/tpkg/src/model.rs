@@ -3,7 +3,7 @@
 use crate::error::TpkgError;
 use crate::ext::ExtBlock;
 use crate::{
-    TPKG_EXT_TYPE_V2_SIGNING, TPKG_FLAG_SIGNED_V2, TPKG_FORMAT_RUNTIME, TPKG_KEYID_LEN,
+    TPKG_EXT_TYPE_V2_SIGNING, TPKG_FLAG_SIGNED_V2, TPKG_FORMAT_LIMNIFS, TPKG_KEYID_LEN,
     TPKG_MAX_SLOTS, TPKG_MOUNT_POINT_LEN, TPKG_RUNTIME_REF_LEN, TPKG_SHA256_LEN, TPKG_SIG_MAX,
     TPKG_VERSION,
 };
@@ -173,8 +173,11 @@ impl Manifest {
 
     /// Magic-independent structural checks, mirroring the C `tpkg_validate()`:
     /// version supported, `1..=TPKG_MAX_SLOTS` slots, `offset+size`
-    /// non-overflowing, `format_id <= TPKG_FORMAT_RUNTIME`, `runtime_ref` and
-    /// mount points NUL-terminated within their fixed fields. Extension
+    /// non-overflowing, `format_id <= TPKG_FORMAT_LIMNIFS` (spec 20 raised
+    /// the bound from the C reference's `TPKG_FORMAT_RUNTIME` — the
+    /// documented parity end: the C99 header keeps rejecting format 5 by
+    /// name), `runtime_ref` and mount points NUL-terminated within their
+    /// fixed fields. Extension
     /// blocks (spec 02 §5b) must not use the reserved type 1 and must fit
     /// the u32 length field; unknown types PASS here (readers skip them —
     /// [`Manifest::validate_strict`] is the fail-closed gate). The v2
@@ -195,7 +198,7 @@ impl Manifest {
             if slot.size > u64::MAX - slot.offset {
                 return Err(TpkgError::Invalid);
             }
-            if slot.format_id > TPKG_FORMAT_RUNTIME {
+            if slot.format_id > TPKG_FORMAT_LIMNIFS {
                 return Err(TpkgError::Invalid);
             }
             if strnlen(&slot.mount_point) == TPKG_MOUNT_POINT_LEN {

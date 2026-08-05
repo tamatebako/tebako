@@ -13,8 +13,8 @@
 //! so the flavor is read off the schema-section size.
 
 use tpkg::{
-    TPKG_FORMAT_AUTO, TPKG_FORMAT_DWARFS, TPKG_FORMAT_RUNTIME, TPKG_FORMAT_SQUASHFS,
-    TPKG_FORMAT_ZIP,
+    TPKG_FORMAT_AUTO, TPKG_FORMAT_DWARFS, TPKG_FORMAT_LIMNIFS, TPKG_FORMAT_RUNTIME,
+    TPKG_FORMAT_SQUASHFS, TPKG_FORMAT_ZIP,
 };
 
 /// The schema-section marker size emitted for FlatBuffers images.
@@ -51,6 +51,7 @@ impl FormatInfo {
                 )
             }
             "SquashFS" => ("squashfs".to_string(), "squashfs".to_string()),
+            "LimniFS" => ("limnifs".to_string(), "limnifs".to_string()),
             "ZIP" => ("zip".to_string(), "zip".to_string()),
             "TAR" => ("tar".to_string(), "tar".to_string()),
             "TAR.GZ" => ("tar.gz".to_string(), "tar.gz".to_string()),
@@ -104,7 +105,8 @@ fn dwarfs_flavor(backend_json: Option<&str>) -> DwarfsFlavor {
 }
 
 /// The `format_id` hint rendered for humans (spec 02 §6: 4 is a legacy
-/// ROLE riding in the format field, reported as such).
+/// ROLE riding in the format field, reported as such; 5 is limnifs —
+/// spec 20).
 pub fn hint_name(format_id: u32) -> &'static str {
     match format_id {
         TPKG_FORMAT_AUTO => "auto",
@@ -112,6 +114,7 @@ pub fn hint_name(format_id: u32) -> &'static str {
         TPKG_FORMAT_SQUASHFS => "squashfs",
         TPKG_FORMAT_ZIP => "zip",
         TPKG_FORMAT_RUNTIME => "runtime (legacy role)",
+        TPKG_FORMAT_LIMNIFS => "limnifs",
         _ => "unknown",
     }
 }
@@ -166,6 +169,8 @@ mod tests {
     fn backend_labels() {
         assert_eq!(FormatInfo::detect("ZIP", None).short, "zip");
         assert_eq!(FormatInfo::detect("SquashFS", None).short, "squashfs");
+        assert_eq!(FormatInfo::detect("LimniFS", None).short, "limnifs");
+        assert_eq!(FormatInfo::detect("LimniFS", None).label, "limnifs");
         assert_eq!(FormatInfo::detect("TAR", None).label, "tar");
         assert_eq!(FormatInfo::detect("TAR.GZ", None).label, "tar.gz");
         assert_eq!(FormatInfo::detect("TAR.ZST", None).label, "tar.zst");
@@ -178,6 +183,7 @@ mod tests {
         assert_eq!(hint_name(TPKG_FORMAT_SQUASHFS), "squashfs");
         assert_eq!(hint_name(TPKG_FORMAT_ZIP), "zip");
         assert_eq!(hint_name(TPKG_FORMAT_RUNTIME), "runtime (legacy role)");
+        assert_eq!(hint_name(TPKG_FORMAT_LIMNIFS), "limnifs");
         assert_eq!(hint_name(9), "unknown");
     }
 }

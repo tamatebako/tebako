@@ -26,7 +26,7 @@
 //!   offset  size  field
 //!      0     8    u64 offset (image start, absolute file offset)
 //!      8     8    u64 size   (image length in bytes)
-//!     16     4    u32 format_id (0=auto, 1=dwarfs, 2=squashfs, 3=zip, 4=runtime)
+//!     16     4    u32 format_id (0=auto, 1=dwarfs, 2=squashfs, 3=zip, 4=runtime, 5=limnifs)
 //!     20     4    u32 flags
 //!     24   256    char mount_point[256] (UTF-8, NUL-padded)
 //! ```
@@ -225,6 +225,12 @@ pub const TPKG_FORMAT_SQUASHFS: u32 = 2;
 pub const TPKG_FORMAT_ZIP: u32 = 3;
 /// `format_id`: runtime payload slot (fat packages).
 pub const TPKG_FORMAT_RUNTIME: u32 = 4;
+/// `format_id`: LimniFS image (spec 20). The reference C99 `tpkg.h`
+/// keeps its validation bound at 4 and rejects a format-5 slot with its
+/// NAMED invalid error — fail-closed and correct (a v1-era reader
+/// cannot read limnifs bytes, so it refuses by name). Parity ends
+/// exactly at the new id; ids ≥ 6 stay unallocated.
+pub const TPKG_FORMAT_LIMNIFS: u32 = 5;
 
 // ---------------------------------------------------------------------
 // Typed extension blocks (spec 02 §5b; all block numerics BIG-ENDIAN,

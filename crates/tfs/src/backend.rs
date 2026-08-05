@@ -132,6 +132,8 @@ pub enum ImageFormat {
     Dwarfs,
     /// SquashFS image ("hsqs").
     Squashfs,
+    /// LimniFS image ("LMFS" manifest magic — spec 20).
+    Limnifs,
     /// tar stream (no strong magic — header-checksum heuristic, LAST).
     Tar,
     /// gzip-wrapped tar ("\x1f\x8b" + deflate method byte).
@@ -143,8 +145,10 @@ pub enum ImageFormat {
 }
 
 /// Sniff the archive format from its first bytes (spec 11 §3: strong magic
-/// first, the weak tar heuristic LAST). `magic` should carry at least one
-/// 512-byte tar block for the tar heuristic to fire.
+/// first, the weak tar heuristic LAST; spec 20 §3 locks the probe order:
+/// zip, dwarfs, squashfs, limnifs, tar envelopes, then the heuristic).
+/// `magic` should carry at least one 512-byte tar block for the tar
+/// heuristic to fire.
 pub fn detect_format(magic: &[u8]) -> ImageFormat {
     if magic.starts_with(b"PK\x03\x04") || magic.starts_with(b"PK\x05\x06") {
         ImageFormat::Zip
@@ -152,6 +156,11 @@ pub fn detect_format(magic: &[u8]) -> ImageFormat {
         ImageFormat::Dwarfs
     } else if magic.starts_with(b"hsqs") {
         ImageFormat::Squashfs
+    } else if magic.starts_with(b"LMFS") {
+        // Disjoint 4-byte prefix against every arm above; `LIM1` (the
+        // slab magic) is a section magic inside the image, never an
+        // offset-0 image magic.
+        ImageFormat::Limnifs
     } else if magic.len() >= 3 && magic[0] == 0x1f && magic[1] == 0x8b && magic[2] == 8 {
         // gzip envelope; the only gzip payload TFS mounts is tar.
         ImageFormat::TarGz

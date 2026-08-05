@@ -90,7 +90,18 @@ impl RuntimeDeployer {
             )));
         }
         self.write_driver(seed_dir, ops);
-        crate::image::build_image(&self.driver_image(), seed_dir)?;
+        // The deploy driver image is PRESS-INTERNAL machinery: the
+        // resolved runtime mounts it to run the deploy ops, and released
+        // runtimes predate the limnifs backend — it stays dwarfs
+        // regardless of --format (which governs the shipped app payload
+        // only). A limnifs-less runtime therefore presses a
+        // `--format limnifs` package fine; running that package needs a
+        // limnifs-capable runtime (spec 20 §5's fail-closed rule).
+        crate::image::build_image(
+            &self.driver_image(),
+            seed_dir,
+            crate::options::PressImageFormat::Dwarfs,
+        )?;
         self.stitch_driver_package()?;
         if self.shim_supported() {
             self.write_bundle_exec_script()?;
