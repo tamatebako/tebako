@@ -505,7 +505,10 @@ fn base_is_local(base: &str) -> bool {
 }
 
 fn skip_file_scheme(base: &str) -> &str {
-    base.strip_prefix("file://").unwrap_or(base)
+    // RFC 8089 drive recovery included: `file:///C:/x` strips to `/C:/x`,
+    // which is not a windows path — file_path_from_url hands back `C:/x`.
+    // Unix remainders pass through unchanged.
+    tebako_http::file_path_from_url(base.strip_prefix("file://").unwrap_or(base))
 }
 
 // ---------------------------------------------------------------------
