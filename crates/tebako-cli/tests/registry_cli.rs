@@ -6,6 +6,13 @@ use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
 
+/// The registered shim path for a command — windows names it
+/// `<command>.exe` (production's own mapping, tebako-shim#manage).
+fn shim_path(home: &std::path::Path, command: &str) -> PathBuf {
+    home.join("shims")
+        .join(tebako_shim::manage::shim_file_name(command))
+}
+
 fn tebako_bin() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_tebako"))
 }
@@ -68,7 +75,7 @@ fn registry_install_uninstall_smoke() {
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("installed app 1.0"), "{text}");
     assert!(home.join("payloads/app/1.0.tfs").is_file(), "{text}");
-    assert!(home.join("shims/app").exists(), "{text}");
+    assert!(shim_path(&home, "app").exists(), "{text}");
 
     // the legacy unsigned warning fires on stderr but does not fail
     assert!(text.contains("WARNING"), "{text}");
@@ -86,7 +93,7 @@ fn registry_install_uninstall_smoke() {
     assert_eq!(code, 0, "{text}");
     assert!(text.contains("removed app (1.0)"), "{text}");
     assert!(!home.join("payloads/app").exists());
-    assert!(!home.join("shims/app").exists());
+    assert!(!shim_path(&home, "app").exists());
 
     let _ = fs::remove_dir_all(&dir);
 }
