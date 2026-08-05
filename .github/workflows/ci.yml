@@ -22,6 +22,12 @@ jobs:
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      # packages:write populates the org's GitHub Packages vcpkg binary
+      # cache (ci/vcpkg-nuget-cache.sh); fork PRs are auto-downgraded to
+      # read-only, where pushes degrade to a non-fatal vcpkg note.
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -75,13 +81,15 @@ jobs:
         # libbz2-dev: rnp-rs 0.1.7 declares dylib=bz2 — give the linker a
         # REAL shared library (base-OS dep, same class as libz; macOS links
         # the system libbz2.dylib identically). Until rnp-rs ≥ 0.1.10.
+        # mono-complete: vcpkg's NuGet binary-cache provider drives
+        # nuget.exe through mono on non-Windows (macos runners ship mono).
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             autoconf automake autoconf-archive libtool \
             curl zip unzip tar ca-certificates \
-            libbz2-dev
+            libbz2-dev mono-complete
 
       - name: Install native build tools (macos)
         if: runner.os == 'macOS'
@@ -93,15 +101,17 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
           vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
 
-      - name: Cache vcpkg package archives
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/vcpkg
-            ~/Library/Caches/vcpkg
-          key: vcpkg-archives-${{ runner.os }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**', 'tebako-rs/crates/sqfs-sys/vcpkg.json', 'tebako-rs/crates/sqfs-sys/vcpkg_ports/**', 'tebako-rs/crates/sqfs-sys/vcpkg_triplets/**') }}
-          restore-keys: |
-            vcpkg-archives-${{ runner.os }}-
+      # run-vcpkg@v11 injects VCPKG_BINARY_SOURCES=clear;x-gha,readwrite,
+      # and vcpkg removed x-gha (2025.06) — that spec is zero binary cache,
+      # and it also neutered the old actions/cache over the archives dir
+      # (files provider cleared + archives path redirected). The override
+      # is the org's GitHub Packages NuGet feed; the dead cache step is
+      # gone (details in ci/vcpkg-nuget-cache.sh).
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
 
       # Pre-install libsquashfs & co in a serialized step: sqfs-sys's
       # build.rs would otherwise race dwarfs-t-sys's CMake-driven vcpkg run
@@ -361,6 +371,12 @@ jobs:
   test-windows-gnu-cli:
     name: test (windows-latest, x86_64-pc-windows-gnu, tebako-cli + tfs-cli + tebako-pkg)
     runs-on: windows-latest
+    permissions:
+      # packages:write populates the org's GitHub Packages vcpkg binary
+      # cache (ci/vcpkg-nuget-cache.sh); fork PRs are auto-downgraded to
+      # read-only, where pushes degrade to a non-fatal vcpkg note.
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -408,13 +424,15 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
           vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
 
-      - name: Cache vcpkg package archives
-        uses: actions/cache@v4
-        with:
-          path: ~/AppData/Local/vcpkg/archives
-          key: vcpkg-archives-${{ runner.os }}-mingw-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**') }}
-          restore-keys: |
-            vcpkg-archives-${{ runner.os }}-mingw-
+      # See the test job: run-vcpkg's injected x-gha spec is zero binary
+      # cache since vcpkg 2025.06 removed the provider; the org's GitHub
+      # Packages NuGet feed replaces it (ci/vcpkg-nuget-cache.sh).
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
 
       - name: Cache the cargo target dir
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
