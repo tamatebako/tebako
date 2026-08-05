@@ -145,6 +145,24 @@ export DWARFS_RS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_INSTALLED_DIR="$WS/.sqfs-floor/$TRIPLET"
 export CARGO_NET_GIT_FETCH_WITH_CLI=true
+# Absorb the C/C++ runtime chain (libstdc++, libgcc_s) STATICALLY into
+# the shipped binaries. The floor promise is "runs on a vanilla 20.04+
+# box", and a NEEDED libstdc++.so.6 built against the ppa gcc imports
+# GLIBCXX symbol versions above focal's stock 3.4.28 — the same
+# dies-before-main class as the 0.1.1 windows exes. Trailing link-arg
+# flags cannot do it: rustc emits a build script's -lstdc++/-lgcc_s
+# wrapped in -Wl,-Bdynamic at its own position, BEFORE the -C link-arg
+# tail, and gcc's -static-libstdc++ rewrites only the driver's own
+# implicit -l (proven on this container's gcc). ci/linux-link-wrap.sh
+# rewrites the tokens at the driver boundary (the linux twin of the
+# windows-gnu legs' ci/windows-gnu-link-wrap.c). Engaged via -C linker
+# in RUSTFLAGS: with --target passed, RUSTFLAGS reaches the target
+# units (the shipped exes) while build scripts keep the default linker
+# (CARGO_TARGET_<triple>_LINKER would work here too, but -C linker is
+# the one form that ALSO covers the musl leg's no---target build —
+# one mechanism for both). The release leg's ship gate (the ldd
+# whitelist in .github/workflows/lib/ship-gate.sh) is the enforcement.
+export RUSTFLAGS="-C linker=$WS/tebako-rs/ci/linux-link-wrap.sh"
 cargo build --release --target "$TARGET" \
   -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
 

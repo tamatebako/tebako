@@ -17,6 +17,17 @@
 # completeness gate (the finalize job fails unless every expected asset
 # landed).
 #
+# The ship gate (.github/workflows/lib/ship-gate.sh): every leg proves
+# its staged binaries BEFORE any upload — a bare no-op launch in the
+# cleanest environment the leg allows (windows: PATH scrubbed of every
+# msys2/ucrt64/Git bin dir; linux-gnu: a PRISTINE ubuntu:20.04
+# container, the floor the leg claims; linux-musl: a pristine
+# alpine:3.21; macos: plain launch) plus a hard dynamic-dependency
+# whitelist audit (PE imports / ldd / otool -L). A broken binary fails
+# its own leg and blocks finalize — it never ships (the 0.1.1 windows
+# exes imported ucrt64 DLLs and died before main on stock Windows with
+# build-success as the only gate).
+#
 # Unsigned-first: SHA256SUMS + manifest.json ship from day one; detached
 # signatures slot in later (item 29 phase 2) by signing SHA256SUMS and
 # uploading .asc files — no restructuring.
@@ -64,6 +75,11 @@ jobs:
       - name: Get release
         id: get_release
         uses: bruceadams/get-release@v1.3.2
+        # workflow_dispatch has no release to get: tolerate the miss so a
+        # dispatch is a build+gate dry run (every upload/publish step is
+        # already gated on upload_url != ''). Real release events stay
+        # strict — a get-release failure there must fail the pipeline.
+        continue-on-error: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
       - name: Resolve tag and version
@@ -71,7 +87,11 @@ jobs:
         run: |
           TAG="${{ github.event.release.tag_name || github.ref_name }}"
           echo "tag_name=$TAG" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          VERSION="${TAG#v}"
+          # A workflow_dispatch carries the BRANCH name (ci/foo), and the
+          # version lands in the staged artifact filenames — slashes
+          # would make them paths. Real tags never contain one.
+          echo "version=${VERSION//\//-}" >> "$GITHUB_OUTPUT"
 
   # ==========================================================================
   # macOS (native runners, both arches — parsanol shape)
@@ -181,6 +201,15 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
         run: bash .github/workflows/lib/stage.sh
+
+      # The ship gate BEFORE any upload: bare-launch smoke (plain run on
+      # the runner) + the otool -L whitelist (/usr/lib + /System only).
+      - name: Ship gate (bare-launch smoke + dylib audit)
+        working-directory: tebako-rs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM"
 
       - name: Stage the link unit (tebako-driver + tfs, scoped, + closure)
         working-directory: tebako-rs
@@ -308,6 +337,22 @@ jobs:
             -e GITHUB_STEP_SUMMARY -e GITHUB_WORKSPACE \
             ubuntu:20.04 bash "$GITHUB_WORKSPACE/tebako-rs/ci/gnu-floor-build.sh"
 
+      # The ship gate BEFORE any upload, in a PRISTINE ubuntu:20.04
+      # container — the exact floor the leg claims, with none of the
+      # build container's apt additions (a dependency that only the
+      # build container provides fails HERE, not on a user box):
+      # bare-launch smoke + the ldd glibc-surface whitelist.
+      - name: Ship gate (pristine ubuntu:20.04 — smoke + ldd audit)
+        working-directory: tebako-rs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -w "$GITHUB_WORKSPACE/tebako-rs" \
+            ubuntu:20.04 bash .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM"
+
       - name: Upload link-unit
         if: needs.prepare.outputs.upload_url != ''
         run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz" --clobber
@@ -421,6 +466,22 @@ jobs:
             -e RUST_VERSION -e VCPKG_COMMIT -e BOOTSTRAP_SIZE_BUDGET \
             -e GITHUB_STEP_SUMMARY -e GITHUB_WORKSPACE \
             alpine:3.21 sh "$GITHUB_WORKSPACE/tebako-rs/ci/musl-build.sh"
+
+      # The ship gate BEFORE any upload, in a PRISTINE alpine:3.21
+      # container — a vanilla musl box (busybox sh, no toolchain
+      # libraries): bare-launch smoke + the ldd whitelist (libc.musl
+      # only; libstdc++/libgcc_s = FAIL — the 0.1.1 musl assets exit 127
+      # here).
+      - name: Ship gate (pristine alpine:3.21 — smoke + ldd audit)
+        working-directory: tebako-rs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+            -w "$GITHUB_WORKSPACE/tebako-rs" \
+            alpine:3.21 sh .github/workflows/lib/ship-gate.sh "$PLATFORM" out/*-"$VERSION-$PLATFORM"
 
       - name: Upload fragment artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -726,6 +787,22 @@ jobs:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: windows-ucrt64
         run: bash ci/windows-gnu-release.sh
+
+      # The ship gate BEFORE any upload: the PE import audit (the
+      # windows-gnu-import-gate delegation — inbox DLLs only;
+      # libstdc++-6.dll/libwinpthread-1.dll = FAIL) and the bare-launch
+      # smoke with PATH scrubbed to System32+Windows — what a user
+      # machine actually looks like (no msys2/ucrt64/Git bin dirs; the
+      # 0.1.1 exes only survived because ucrt64/bin sat on the runner's
+      # PATH).
+      - name: Ship gate (clean-PATH smoke + PE import audit)
+        working-directory: tebako-rs
+        shell: bash
+        run: |
+          # objdump for the import audit comes from the ucrt64 toolchain
+          # (the same closed-PATH root windows-gnu-release.sh uses).
+          export PATH="/d/a/_temp/msys64/ucrt64/bin:$PATH"
+          bash .github/workflows/lib/ship-gate.sh windows-ucrt64 out/*.exe
 
       - name: Dump vcpkg build logs on failure
         if: failure()
