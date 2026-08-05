@@ -13,26 +13,47 @@ pub use tebako_http::FetchError;
 pub const DOWNLOAD_ATTEMPTS: u32 = 3;
 pub const RETRY_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// Throttling is a schedule, not a failure: the round count + backoff
+/// policy live in tebako-http (THROTTLE_ROUNDS / throttle_backoff), the
+/// SSOT every crate's retry loop shares.
+pub const THROTTLE_ATTEMPTS: u32 = tebako_http::THROTTLE_ROUNDS;
+
 /// One attempt at reading `url` (redirects followed inside the client).
 pub fn read_url(url: &str) -> Result<Vec<u8>, FetchError> {
     tebako_http::get(url)
 }
 
-/// `with_retries`: every failure except IndexUnavailable is retried up to
-/// DOWNLOAD_ATTEMPTS times, then wrapped as DownloadFailed.
+/// `with_retries`: IndexUnavailable returns immediately (try the next
+/// index name); Throttled honors the server's schedule (bounded by
+/// THROTTLE_ATTEMPTS); other failures retry up to DOWNLOAD_ATTEMPTS with
+/// a fixed delay.
 pub fn with_retries<F>(url: &str, mut f: F) -> Result<Vec<u8>, FetchError>
 where
     F: FnMut() -> Result<Vec<u8>, FetchError>,
 {
     let mut attempts = 0;
+    let mut throttles = 0;
     loop {
-        attempts += 1;
         match f() {
             Ok(body) => return Ok(body),
             Err(FetchError::IndexUnavailable(msg)) => {
                 return Err(FetchError::IndexUnavailable(msg))
             }
+            Err(FetchError::Throttled {
+                retry_after,
+                status,
+                ..
+            }) => {
+                throttles += 1;
+                if throttles >= THROTTLE_ATTEMPTS {
+                    return Err(FetchError::DownloadFailed(format!(
+                        "still throttled after {THROTTLE_ATTEMPTS} backoff rounds fetching {url} ({status})"
+                    )));
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
             Err(FetchError::DownloadFailed(msg)) => {
+                attempts += 1;
                 if attempts >= DOWNLOAD_ATTEMPTS {
                     return Err(FetchError::DownloadFailed(format!(
                         "failed to download {url} after {DOWNLOAD_ATTEMPTS} attempts: {msg}"
