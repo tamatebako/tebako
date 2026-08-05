@@ -23,7 +23,16 @@
 # position and to the surrounding -Bstatic/-Bdynamic mode:
 #
 #   -lstdc++   ->  -l:libstdc++.a            (exact-archive form)
-#   -lgcc_s    ->  -l:libgcc.a -l:libgcc_eh.a
+#   -lgcc_s    ->  -l:libgcc.a -l:libgcc_eh.a -l:libgcc.a
+#
+# The libgcc BOOKEND mirrors gcc's own static spec (libgcc, libgcc_eh,
+# libgcc): libgcc_eh's frame-registry objects back-reference the
+# compiler support routines — on aarch64 the LSE outline atomics
+# (__aarch64_cas8_acq_rel & co. from unwind-dw2-btree.h, live in
+# libgcc.a) — and a single leading -l:libgcc.a has already been passed
+# by then (alpine:3.21 gcc-14 musl-arm64 link of any rust build script:
+# "undefined reference to __aarch64_cas8_acq_rel"; green run
+# 30986954656's musl-arm64 leg).
 #
 # in all three rustc emission shapes: bare argv entries, members of
 # -Wl,<a>,<b>,... comma lists, and tokens inside @response files (rustc
@@ -58,7 +67,7 @@ trap 'rm -rf "$TMPD"' EXIT HUP INT TERM
 rewrite_respfile() {
   nf="$TMPD/$2"
   sed -e 's/-lstdc++/-l:libstdc++.a/g' \
-      -e 's/-lgcc_s/-l:libgcc.a -l:libgcc_eh.a/g' "$1" > "$nf"
+      -e 's/-lgcc_s/-l:libgcc.a -l:libgcc_eh.a -l:libgcc.a/g' "$1" > "$nf"
   printf '%s' "$nf"
 }
 
@@ -75,7 +84,7 @@ rewrite_wl() {
     IFS=$oldifs
     case $m in
       -lstdc++) r='-l:libstdc++.a' ;;
-      -lgcc_s)  r='-l:libgcc.a,-l:libgcc_eh.a' ;;
+      -lgcc_s)  r='-l:libgcc.a,-l:libgcc_eh.a,-l:libgcc.a' ;;
       *)        r=$m ;;
     esac
     if [ "$first" -eq 1 ]; then
@@ -102,7 +111,7 @@ for a in "$@"; do
     -lstdc++)
       printf '%s\n' '-l:libstdc++.a' >> "$LIST" ;;
     -lgcc_s)
-      printf '%s\n%s\n' '-l:libgcc.a' '-l:libgcc_eh.a' >> "$LIST" ;;
+      printf '%s\n%s\n%s\n' '-l:libgcc.a' '-l:libgcc_eh.a' '-l:libgcc.a' >> "$LIST" ;;
     -Wl,*)
       rewrite_wl "$a" >> "$LIST" ;;
     @*)
