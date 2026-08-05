@@ -57,12 +57,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("payload.tfs");
         std::fs::write(&file, b"bytes").unwrap();
-        let got = HttpTransport
-            .get(&format!("file://{}", file.display()))
-            .unwrap();
+        let got = HttpTransport.get(&tebako_http::file_url(&file)).unwrap();
         assert_eq!(got, b"bytes");
         assert!(matches!(
-            HttpTransport.get(&format!("file://{}/missing", dir.display())),
+            HttpTransport.get(&tebako_http::file_url(&dir.join("missing"))),
             Err(FetchError::IndexUnavailable(_))
         ));
         let _ = std::fs::remove_dir_all(&dir);

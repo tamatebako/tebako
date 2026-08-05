@@ -456,16 +456,16 @@ fn register_dep(fx: &Fixture, name: &str, version: &str) -> String {
     );
     let dep_path = fx.work.join(format!("{name}-{version}.tfs"));
     fs::write(&dep_path, zip_image(&manifest)).unwrap();
+    let dep_url = tebako_http::file_url(&dep_path);
     let registry_path = fx.work.join(format!("{name}-registry.yaml"));
     fs::write(
         &registry_path,
         format!(
-            "schema_version: 1\npayloads:\n  - name: {name}\n    kind: toolkit\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: file://{}}}\n    default: {version}\n",
-            dep_path.display()
+            "schema_version: 1\npayloads:\n  - name: {name}\n    kind: toolkit\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: {dep_url}}}\n    default: {version}\n",
         ),
     )
     .unwrap();
-    let registry_ref = format!("file://{}", registry_path.display());
+    let registry_ref = tebako_http::file_url(&registry_path);
     tebako_cli::install::add_registry(&fx.home, &registry_ref).unwrap();
     registry_ref
 }

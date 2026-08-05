@@ -86,8 +86,8 @@ fn config_beats_registry() {
     write_config(
         &home,
         &format!(
-            "defaults: {{metanorma: 1.2.3}}\nregistries:\n  - file://{}\n",
-            reg.display()
+            "defaults: {{metanorma: 1.2.3}}\nregistries:\n  - {}\n",
+            tebako_http::file_url(&reg)
         ),
     );
     let res = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap();
@@ -103,7 +103,7 @@ fn registry_default_is_the_last_resort() {
     let reg = seed_registry(tmp.path(), "1.0.0");
     write_config(
         &home,
-        &format!("registries:\n  - file://{}\n", reg.display()),
+        &format!("registries:\n  - {}\n", tebako_http::file_url(&reg)),
     );
     let res = resolve::resolve("metanorma", &ctx(&home, tmp.path())).unwrap();
     assert_eq!(res.version, "1.0.0");

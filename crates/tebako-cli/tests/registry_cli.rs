@@ -39,15 +39,15 @@ fn registry_install_uninstall_smoke() {
     fs::write(&shim, b"#!/bin/sh\n").unwrap();
 
     fs::write(mirror.join("app-1.0.tfs"), b"app-bytes").unwrap();
+    let app_url = tebako_http::file_url(&mirror.join("app-1.0.tfs"));
     fs::write(
         mirror.join("tpkg-registry.yaml"),
         format!(
-            "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: file://{}/app-1.0.tfs}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
-            mirror.display()
+            "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {app_url}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
         ),
     )
     .unwrap();
-    let reg_ref = format!("file://{}/tpkg-registry.yaml", mirror.display());
+    let reg_ref = tebako_http::file_url(&mirror.join("tpkg-registry.yaml"));
 
     let (code, text) = run(&home, &shim, &["add-registry", &reg_ref]);
     assert_eq!(code, 0, "{text}");

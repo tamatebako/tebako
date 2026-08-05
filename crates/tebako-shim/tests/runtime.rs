@@ -130,7 +130,7 @@ fn download_installs_verified_readonly_image_and_markers() {
     let mut ctx = ctx(&home, tmp.path());
     ctx.env.insert(
         "TEBAKO_RUNTIME_MIRROR".into(),
-        format!("file://{}", mirror.display()),
+        tebako_http::file_url(&mirror),
     );
 
     let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
@@ -172,7 +172,7 @@ fn sha_mismatch_is_exit_70_and_nothing_enters_the_cache() {
     let mut ctx = ctx(&home, tmp.path());
     ctx.env.insert(
         "TEBAKO_RUNTIME_MIRROR".into(),
-        format!("file://{}", mirror.display()),
+        tebako_http::file_url(&mirror),
     );
     let err = runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_SHA);
@@ -218,7 +218,7 @@ fn pre_era_release_is_refused_before_download() {
     let mut ctx = ctx(&home, tmp.path());
     ctx.env.insert(
         "TEBAKO_RUNTIME_MIRROR".into(),
-        format!("file://{}", mirror.display()),
+        tebako_http::file_url(&mirror),
     );
 
     let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap_err();
@@ -253,7 +253,7 @@ fn a_newer_declared_contract_is_the_upgrade_refusal() {
     let mut ctx = ctx(&home, tmp.path());
     ctx.env.insert(
         "TEBAKO_RUNTIME_MIRROR".into(),
-        format!("file://{}", mirror.display()),
+        tebako_http::file_url(&mirror),
     );
 
     let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap_err();
@@ -323,7 +323,7 @@ fn a_multi_package_manifest_verifies_against_the_right_entry() {
     let mut ctx = ctx(&home, tmp.path());
     ctx.env.insert(
         "TEBAKO_RUNTIME_MIRROR".into(),
-        format!("file://{}", mirror.display()),
+        tebako_http::file_url(&mirror),
     );
 
     let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());

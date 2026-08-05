@@ -967,7 +967,10 @@ fn press_against_mirror(
         .arg(&prefix)
         .arg("-R")
         .arg("3.3.7")
-        .env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
+        .env(
+            "TEBAKO_RUNTIME_MIRROR",
+            tebako_http::file_url(Path::new(&mirror_root)),
+        )
         .env("TEBAKO_HOME", work.join("home"));
     for (key, value) in extra_env {
         cmd.env(key, value);
@@ -1351,12 +1354,12 @@ fn native_ext_press_builds_and_packages() {
         .arg(&prefix)
         .arg("-R")
         .arg("3.3.7")
-        .env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
-        .env("TEBAKO_HOME", work.join("home"))
         .env(
-            "TEBAKO_SDK_SRC_MIRROR",
-            format!("file://{}", sdk_mirror.display()),
-        );
+            "TEBAKO_RUNTIME_MIRROR",
+            tebako_http::file_url(Path::new(&mirror_root)),
+        )
+        .env("TEBAKO_HOME", work.join("home"))
+        .env("TEBAKO_SDK_SRC_MIRROR", tebako_http::file_url(&sdk_mirror));
     let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
         "tebako-bootstrap.exe"
     } else {
@@ -1437,12 +1440,12 @@ fn native_ext_press_builds_and_packages() {
         .arg(&prefix)
         .arg("-R")
         .arg("3.3.7")
-        .env("TEBAKO_RUNTIME_MIRROR", format!("file://{mirror_root}"))
-        .env("TEBAKO_HOME", work.join("home"))
         .env(
-            "TEBAKO_SDK_SRC_MIRROR",
-            format!("file://{}", sdk_mirror.display()),
-        );
+            "TEBAKO_RUNTIME_MIRROR",
+            tebako_http::file_url(Path::new(&mirror_root)),
+        )
+        .env("TEBAKO_HOME", work.join("home"))
+        .env("TEBAKO_SDK_SRC_MIRROR", tebako_http::file_url(&sdk_mirror));
     if sibling.is_file() {
         cmd.env("TEBAKO_BOOTSTRAP", &sibling);
     }

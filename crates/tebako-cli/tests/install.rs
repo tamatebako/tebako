@@ -49,12 +49,12 @@ impl Fixture {
 
     fn payload(&self, file: &str, bytes: &[u8]) -> String {
         fs::write(self.mirror.join(file), bytes).unwrap();
-        format!("file://{}/{}", self.mirror.display(), file)
+        tebako_http::file_url(&self.mirror.join(file))
     }
 
     fn registry(&self, file: &str, yaml: &str) -> String {
         fs::write(self.mirror.join(file), yaml).unwrap();
-        format!("file://{}/{}", self.mirror.display(), file)
+        tebako_http::file_url(&self.mirror.join(file))
     }
 
     fn payloads_dir(&self) -> PathBuf {
@@ -139,7 +139,7 @@ fn add_registry_rejects_bad_refs_and_unparsable_registries() {
     let err = install::add_registry(&fx.home, &bad).unwrap_err();
     assert!(err.message.contains("schema_version 99"), "{err:?}");
 
-    let missing = format!("file://{}/missing.yaml", fx.mirror.display());
+    let missing = tebako_http::file_url(&fx.mirror.join("missing.yaml"));
     assert!(install::add_registry(&fx.home, &missing).is_err());
     // nothing was registered
     assert!(install::list_registries(&fx.home).unwrap().is_empty());
@@ -354,7 +354,8 @@ impl MockTransport {
     }
     fn with_file(mut self, url_path: &str) -> MockTransport {
         let bytes = fs::read(url_path).unwrap();
-        self.answers.insert(format!("file://{url_path}"), bytes);
+        self.answers
+            .insert(tebako_http::file_url(std::path::Path::new(url_path)), bytes);
         self
     }
     fn with(mut self, url: &str, body: &[u8]) -> MockTransport {
@@ -397,7 +398,7 @@ fn per_triplet_selection_fetches_the_host_artifact_with_the_registry_pin() {
         .with("https://dl/app-1.0-linux.tfs", b"linux-payload");
     let fetcher = Fetcher::with_transport(t);
 
-    let reg_ref = format!("file://{}", registry_path.display());
+    let reg_ref = tebako_http::file_url(&registry_path);
     install::add_registry_with(&fx.home, &reg_ref, &fetcher).unwrap();
 
     // a triplet whose registry pin does not match the bytes → sha error,
@@ -461,12 +462,7 @@ fn universal_selection_uses_the_single_tfs_rule() {
         .with(api, release.as_bytes())
         .with("https://dl/tool-2.0.tfs", b"tool-bytes");
     let fetcher = Fetcher::with_transport(t);
-    install::add_registry_with(
-        &fx.home,
-        &format!("file://{}", registry_path.display()),
-        &fetcher,
-    )
-    .unwrap();
+    install::add_registry_with(&fx.home, &tebako_http::file_url(&registry_path), &fetcher).unwrap();
 
     let out = install::install_with(
         &fx.home,

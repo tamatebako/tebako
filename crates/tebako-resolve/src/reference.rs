@@ -635,7 +635,11 @@ mod tests {
         assert_eq!(r.to_string(), "file:///opt/images/tool.tfs");
 
         let sha = "d".repeat(64);
-        let r = Reference::parse(&format!("file:///opt/t.tfs?sha256={sha}")).unwrap();
+        let url = format!(
+            "{}?sha256={sha}",
+            tebako_http::file_url(std::path::Path::new("/opt/t.tfs"))
+        );
+        let r = Reference::parse(&url).unwrap();
         assert!(matches!(&r, Reference::File { sha256: Some(s), .. } if s == &sha));
     }
 
