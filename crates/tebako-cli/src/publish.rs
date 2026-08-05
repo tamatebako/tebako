@@ -470,11 +470,12 @@ impl Transport for MirrorTransport {
                     assets.push(',');
                 }
                 first = false;
+                // the canonical URL constructor: a windows dir carries
+                // backslashes that poison the JSON string (invalid escape)
                 assets.push_str(&format!(
-                    "{{\"name\":\"{}\",\"browser_download_url\":\"file://{}/{}\"}}",
+                    "{{\"name\":\"{}\",\"browser_download_url\":\"{}\"}}",
                     tebako_json::escape(&name),
-                    self.dir.display(),
-                    tebako_json::escape(&name)
+                    tebako_json::escape(&tebako_http::file_url(&self.dir.join(&name)))
                 ));
             }
             assets.push(']');
