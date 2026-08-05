@@ -112,6 +112,10 @@ impl<T: Transport> Fetcher<T> {
             FetchError::IndexUnavailable(_) => ResolveError::NotFound {
                 origin: url.to_string(),
             },
+            FetchError::Throttled { .. } => ResolveError::DownloadFailed {
+                origin: url.to_string(),
+                reason: e.to_string(),
+            },
             FetchError::DownloadFailed(reason) => ResolveError::DownloadFailed {
                 origin: url.to_string(),
                 reason,

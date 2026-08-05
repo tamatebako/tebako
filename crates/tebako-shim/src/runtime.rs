@@ -557,12 +557,20 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
             .map_err(|_| ());
     }
     let mut attempts = 0;
+    let mut throttles = 0;
     loop {
-        attempts += 1;
         match tebako_http::get(url) {
             Ok(bytes) => return std::fs::write(out, bytes).map_err(|_| ()),
             Err(tebako_http::FetchError::IndexUnavailable(_)) => return Err(()),
+            Err(tebako_http::FetchError::Throttled { retry_after, .. }) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(());
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
             Err(tebako_http::FetchError::DownloadFailed(_)) => {
+                attempts += 1;
                 if attempts >= 3 {
                     return Err(());
                 }

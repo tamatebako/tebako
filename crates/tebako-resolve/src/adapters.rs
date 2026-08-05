@@ -125,6 +125,10 @@ fn map_fetch(url: &str, e: FetchError) -> ResolveError {
         FetchError::IndexUnavailable(_) => ResolveError::NotFound {
             origin: url.to_string(),
         },
+        FetchError::Throttled { .. } => ResolveError::DownloadFailed {
+            origin: url.to_string(),
+            reason: e.to_string(),
+        },
         FetchError::DownloadFailed(msg) => ResolveError::DownloadFailed {
             origin: url.to_string(),
             reason: msg,

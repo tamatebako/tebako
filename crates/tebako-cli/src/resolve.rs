@@ -286,6 +286,10 @@ impl Resolver {
                 let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&format!("{url}: not found"))));
             }
+            Err(e @ FetchError::Throttled { .. }) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&e.to_string())));
+            }
             Err(FetchError::DownloadFailed(msg)) => {
                 let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&msg)));
@@ -619,11 +623,17 @@ impl Resolver {
                         return Ok((entries, card));
                     }
                     Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                    Err(e @ FetchError::Throttled { .. }) => {
+                        return Err(packaging_error(122, Some(&e.to_string())));
+                    }
                     Err(FetchError::DownloadFailed(msg)) => {
                         return Err(packaging_error(122, Some(&msg)));
                     }
                 },
                 Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                Err(e @ FetchError::Throttled { .. }) => {
+                    return Err(packaging_error(122, Some(&e.to_string())));
+                }
                 Err(FetchError::DownloadFailed(msg)) => {
                     return Err(packaging_error(122, Some(&msg)))
                 }
@@ -829,6 +839,10 @@ impl Resolver {
             Err(FetchError::IndexUnavailable(_)) => {
                 let _ = fs::remove_file(&tmp);
                 Err(packaging_error(122, Some(&format!("{url}: not found"))))
+            }
+            Err(e @ FetchError::Throttled { .. }) => {
+                let _ = fs::remove_file(&tmp);
+                Err(packaging_error(122, Some(&e.to_string())))
             }
             Err(FetchError::DownloadFailed(msg)) => {
                 let _ = fs::remove_file(&tmp);
