@@ -191,6 +191,10 @@ fn press_command(env: &PressEnv, entry: &str, output: &Path) -> Command {
 #[test]
 fn press_simple_script_runs() {
     let _guard = press_lock().lock().unwrap();
+    if linux_deploy_blocked() {
+        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
+        return;
+    }
     let Some(env) = press_env("simple", "test-00") else {
         return;
     };
@@ -215,6 +219,10 @@ fn press_simple_script_runs() {
 #[test]
 fn press_gemfile_runs() {
     let _guard = press_lock().lock().unwrap();
+    if linux_deploy_blocked() {
+        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
+        return;
+    }
     let Some(env) = press_env("gemfile", "gemfile-app") else {
         return;
     };
@@ -366,6 +374,10 @@ fn press_gemfile_nokogiri_precompiled_runs() {
 #[test]
 fn press_missing_entry_point_is_106() {
     let _guard = press_lock().lock().unwrap();
+    if linux_deploy_blocked() {
+        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
+        return;
+    }
     let Some(env) = press_env("e106", "test-00") else {
         return;
     };
