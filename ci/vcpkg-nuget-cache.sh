@@ -46,6 +46,12 @@
 #   restores keep working — and a cold feed just builds from source,
 #   exactly the pre-fix behavior. Any failure here is a warning, never a
 #   red leg: cache setup must not take the build down with it.
+# - GitHub Packages quirk (community discussion #159893): the FIRST push
+#   of a new package id cannot be done by GITHUB_TOKEN (403 Forbidden on
+#   creation — proven on tebako run 30989981488's ubuntu leg). Set the
+#   org secret TEBAKO_PACKAGES_PAT (classic PAT, write:packages) and the
+#   workflow's GH_TOKEN prefers it; GITHUB_TOKEN remains the read path
+#   and the fallback while the secret is absent.
 set -euo pipefail
 
 : "${GH_TOKEN:?set GH_TOKEN to secrets.GITHUB_TOKEN}"

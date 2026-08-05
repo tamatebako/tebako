@@ -141,7 +141,11 @@ jobs:
       - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
         working-directory: tebako-rs
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # First-push of a new package id CANNOT be done by GITHUB_TOKEN
+          # (GitHub quirk: 403 on creation; community#159893) — the org
+          # secret (classic PAT, write:packages) owns creation when present;
+          # GITHUB_TOKEN remains the read path and the whole fallback.
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
         run: bash ci/vcpkg-nuget-cache.sh
 
       - name: Pre-install squashfs-tools-ng (serialized)
@@ -590,7 +594,11 @@ jobs:
         working-directory: tebako-rs
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # First-push of a new package id CANNOT be done by GITHUB_TOKEN
+          # (GitHub quirk: 403 on creation; community#159893) — the org
+          # secret (classic PAT, write:packages) owns creation when present;
+          # GITHUB_TOKEN remains the read path and the whole fallback.
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
         run: bash ci/vcpkg-nuget-cache.sh
 
       - name: Build the windows-gnu staticlibs (tfs, dwarfs-only)
@@ -702,7 +710,11 @@ jobs:
         working-directory: tebako-rs
         shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # First-push of a new package id CANNOT be done by GITHUB_TOKEN
+          # (GitHub quirk: 403 on creation; community#159893) — the org
+          # secret (classic PAT, write:packages) owns creation when present;
+          # GITHUB_TOKEN remains the read path and the whole fallback.
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
         run: bash ci/vcpkg-nuget-cache.sh
 
       - name: Build + stage the five binaries (release)
