@@ -42,9 +42,14 @@ export PATH="$TOOLSHIM:$PATH"
 # explicit `dylib=stdc++`) at its own position, BEFORE the `-C link-arg`
 # tail — so the wrapper rewrites those references at the driver boundary,
 # and the import gate (step 3) proves the result on the staged exes.
+# THROWAWAY (proof run — never merge this branch): the link wrapper is
+# DISENGAGED to reproduce the 0.1.1 break (rnp-rs's dylib=stdc++ emission
+# reaches the linker unrewritten, so the staged exes import
+# libstdc++-6.dll/libwinpthread-1.dll). The release.yml ship-gate step
+# must fail this leg before any upload.
 WRAP="$RUNNER_TEMP/tebako-link-wrap.exe"
 gcc -O2 -o "$WRAP" ci/windows-gnu-link-wrap.c
-export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="$(cygpath -w "$WRAP")"
+export CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER=gcc.exe
 
 # Static-link the mingw C/C++ runtimes; the trailing -lmsvcrt restores
 # the msvcrt-after-mingwex order invariant (rustc's -nodefaultlibs tail
@@ -94,4 +99,7 @@ TARGET="$TARGET" EXE_SUFFIX=.exe bash .github/workflows/lib/stage.sh
 # is the mechanism it verifies. Unprefixed binutils: MSYS2's ucrt64 ships
 # objdump.exe without the x86_64-w64-mingw32- alias; the closed PATH makes
 # the one toolchain's tools unambiguous.
-bash ci/windows-gnu-import-gate.sh out/*.exe
+# THROWAWAY (proof run — never merge this branch): the in-script gate
+# call is disabled too, so the demonstration proves the RELEASE.yml
+# ship-gate step itself is the backstop that fails the leg.
+echo "THROWAWAY: in-script import gate disabled for the proof run"
