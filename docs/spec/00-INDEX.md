@@ -50,6 +50,7 @@ spec 02 §6).
 15. [15 — The info surface](15-info-command.md) — payload and package introspection (`tfs info` / `tebako-pkg info`), verification exit codes, JSON contract
 16. [16 — Distribution and installation](16-distribution-and-installation.md) — personas, channels (brew/curl|sh/tebako install), slim/fat, trust per channel
 17. [17 — Runtime driver contract](17-runtime-driver-contract.md) — the language-agnostic loader↔runtime surface (argv, env, IO, exit codes)
+20. [20 — LimniFS backend](20-limnifs-backend.md) — image format 5: detection, the backend adapter contract, backend cargo features, the writer path (PLANNED)
 
 ## Locked invariants (all specs subordinate to these)
 
