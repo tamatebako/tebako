@@ -203,6 +203,45 @@ pub fn write_mirror(root: &Path, lv: &str, ver: &str, tamper: bool) -> PathBuf {
     root.to_path_buf()
 }
 
+/// `write_mirror` plus the windows ruby DLL facet
+/// (tebako-runtime-ruby#40): the release also carries `<asset_base>.dll`
+/// and the manifest entry declares the additive `dll` key with the PE
+/// name (`install_as`) the exe imports. `tamper` poisons the DLL's
+/// declared sha256. Returns (mirror root, install_as).
+pub fn write_mirror_dll(root: &Path, lv: &str, ver: &str, tamper: bool) -> (PathBuf, String) {
+    let platform = platform();
+    let dir = root.join(format!("v{ver}"));
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    let asset_base = format!("tebako-runtime-{ver}-{lv}-{platform}");
+    let exe_name = format!("{asset_base}{}", tebako_shim::runtime::exe_suffix());
+    let image_name = format!("{asset_base}.tfs");
+    let dll_name = format!("{asset_base}.dll");
+    let install_as = "x64-ucrt-ruby330.dll";
+    let exe_bytes = b"mirrored runtime exe\n";
+    let image_bytes = b"mirrored runtime image\n";
+    let dll_bytes = b"mirrored ruby dll\n";
+    std::fs::write(dir.join(&exe_name), exe_bytes).expect("exe");
+    std::fs::write(dir.join(&image_name), image_bytes).expect("image");
+    std::fs::write(dir.join(&dll_name), dll_bytes).expect("dll");
+    let exe_sha = sha256_hex(exe_bytes);
+    let image_sha = sha256_hex(image_bytes);
+    let dll_sha = if tamper {
+        "f".repeat(64)
+    } else {
+        sha256_hex(dll_bytes)
+    };
+    std::fs::write(
+        dir.join("manifest.json"),
+        // The era-2 factory shape with the additive `dll` key
+        // (tebako-runtime-ruby#40) alongside the `image` key.
+        format!(
+            "[{{\"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"filename\": \"{exe_name}\", \"sha256\": \"{exe_sha}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{image_sha}\"}}, \"dll\": {{\"filename\": \"{dll_name}\", \"install_as\": \"{install_as}\", \"sha256\": \"{dll_sha}\"}}}}]\n"
+        ),
+    )
+    .expect("manifest.json");
+    (root.to_path_buf(), install_as.to_string())
+}
+
 pub fn write_config(home: &Path, yaml: &str) {
     std::fs::create_dir_all(home).expect("home");
     std::fs::write(home.join("config.yaml"), yaml).expect("config");

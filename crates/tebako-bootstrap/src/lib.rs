@@ -25,7 +25,12 @@
 //!    the runtime image (`<asset>.tfs`) — downloaded and SHA256-verified
 //!    against the same release index (manifest `image` key primary,
 //!    SHA256SUMS line fallback), installed READ-ONLY with
-//!    `<image>.sha256`/`<image>.origin` trusted markers, never extracted;
+//!    `<image>.sha256`/`<image>.origin` trusted markers, never extracted.
+//!    A dll-era windows runtime (tebako-runtime-ruby#40) additionally
+//!    resolves its ruby DLL under the same flag — installed read-only next
+//!    to the exe under the manifest-declared PE name (`install_as`) with
+//!    the same marker discipline, so the PE loader resolves the exe's
+//!    imports against the exe's own directory;
 //!
 //! 6. apply the package's jail (spec 08 §2/§4): the `jail:` block of the
 //!    type-2 package manifest REQUESTS host access; the user's TEBAKO_JAIL
@@ -1014,6 +1019,35 @@ pub fn sha_from_manifest_image(text: &str, image_asset: &str) -> Result<String, 
     }
 }
 
+/// manifest.json, the dll facet (tebako-runtime-ruby#40): locate
+/// `"<dll_asset>"` (the .dll filename — it appears only inside the exe
+/// entry's additive `dll` key) and read the NEXT `"install_as"` value,
+/// bounded by the dll object's closing brace (never a later entry's
+/// key). The PE name is declared, never derived — the factory's
+/// RubyVersion#msys_dll_name is its single owner.
+#[allow(clippy::result_unit_err)] // C-style -1 error by design
+pub fn dll_install_as_from_manifest(text: &str, dll_asset: &str) -> Result<String, ()> {
+    let needle = format!("\"{dll_asset}\"");
+    let p = text.find(&needle).ok_or(())?;
+    let rest = &text[p + needle.len()..];
+    let close = rest.find('}').ok_or(())?;
+    let body = &rest[..close];
+    let k = body.find("\"install_as\"").ok_or(())?;
+    let after = &body[k + 12..];
+    let after = after.trim_start_matches([':', ' ', '\t', '\n', '\r']);
+    if !after.starts_with('"') {
+        return Err(());
+    }
+    let inner = &after[1..];
+    let endq = inner.find('"').ok_or(())?;
+    let value = &inner[..endq];
+    if value.is_empty() {
+        Err(())
+    } else {
+        Ok(value.to_string())
+    }
+}
+
 // ---------------------------------------------------------------------
 // fat package: install the runtime payload slot
 // ---------------------------------------------------------------------
@@ -1705,6 +1739,14 @@ fn resolve_runtime(
     } else {
         None
     };
+    // tebako-runtime-ruby#40: a dll-era (windows) runtime also needs its
+    // ruby DLL next to the exe — it rides the same image-era release
+    // card, resolved alongside; a no-op when the cached release index
+    // declares no dll facet (every POSIX release, pre-#40 windows
+    // releases). No handoff: the PE loader finds the DLL on its own.
+    if runtime_ref_wants_image(runtime_ref) {
+        resolve_dll(runtime_ref, rr, &layout, &mut ux)?;
+    }
     Ok((exe, image))
 }
 
@@ -2100,6 +2142,202 @@ fn resolve_image(
 }
 
 // ---------------------------------------------------------------------
+// runtime ruby DLL resolution (tebako-runtime-ruby#40, windows runtimes)
+// ---------------------------------------------------------------------
+
+/// Resolve the windows ruby DLL (`<asset_base>.dll`) into the
+/// executable's cache entry when the release declares the additive `dll`
+/// facet: download (same mirror/offline rules as the image), verify
+/// against the declared sha256, install read-only AS `install_as` — the
+/// PE name the exe and the extension .so's import, never the asset name
+/// (assets are unique per leg; two same-ABI legs share the PE name) —
+/// with `<install_as>.sha256`/`<install_as>.origin` trusted markers. The
+/// PE loader resolves the exe's imports against the exe's own directory
+/// first, so the DLL must sit next to the exe. `Ok(None)` when the
+/// release declares no dll facet (every POSIX release, pre-#40 windows
+/// releases) — the facet is declared, never derived.
+///
+/// The facet source is the entry's cached release index (the verified
+/// lean install leaves manifest.json in the entry), so a cached run
+/// never re-fetches the index — a run stays a run, offline-safe. An
+/// entry without a cached index (the fat-payload path never fetches one)
+/// declares nothing here.
+fn resolve_dll(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    layout: &CacheLayout,
+    ux: &mut BootUx,
+) -> Result<Option<PathBuf>, BootError> {
+    let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
+    let dll_asset = format!("{}.dll", layout.asset_base);
+
+    let Ok(manifest_text) = std::fs::read_to_string(entry_dir.join("manifest.json")) else {
+        return Ok(None);
+    };
+    let Ok(install_as) = dll_install_as_from_manifest(&manifest_text, &dll_asset) else {
+        return Ok(None);
+    };
+    let dll_path = entry_dir.join(&install_as);
+    let marker = entry_dir.join(format!("{install_as}.sha256"));
+    if file_exists(&dll_path) && file_exists(&marker) {
+        return Ok(Some(dll_path));
+    }
+    let Ok(expected) = sha_from_manifest_image(&manifest_text, &dll_asset) else {
+        return Ok(None); // an incomplete facet is no facet — never guess
+    };
+    if install_as.contains('/') || install_as.contains('\\') {
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "release manifest dll facet for {} carries an unusable install_as (\"{install_as}\") — the PE name must be a bare file name — refusing to install or execute",
+                layout.asset
+            ),
+        );
+    }
+
+    let base_raw = releases_base();
+    let base = skip_file_scheme(&base_raw).to_string();
+    let local = base_is_local(&base_raw);
+    let dll_url = format!("{base}/v{}/{dll_asset}", rr.abi);
+
+    if offline_mode() {
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "cannot resolve runtime dll \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {dll_url}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
+                entry_dir.display()
+            ),
+        );
+    }
+
+    ux.resolving(runtime_ref);
+
+    // Serialize against other bootstraps installing this entry (the same
+    // lock file the executable and image installs use).
+    let locks = root.join("locks");
+    mkdir_p(&locks).map_err(|e| {
+        BootError::new(
+            EX_TEBAKO_IO,
+            format!(
+                "cannot create tebako cache directories under {}: {e}",
+                root.display()
+            ),
+        )
+    })?;
+    let lock_path = locks.join(format!("{entry}.lock"));
+    let lock = flock_acquire(&lock_path, LOCK_TIMEOUT_MS).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::TimedOut {
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "timed out after {}s waiting for another tebako bootstrap to finish installing \"{runtime_ref}\"\n  lock: {}\n  if no other tebako process is running, remove the stale lock file",
+                    LOCK_TIMEOUT_MS / 1000,
+                    lock_path.display()
+                ),
+            )
+        } else {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot acquire install lock {}: {e}", lock_path.display()),
+            )
+        }
+    })?;
+
+    // re-check under the lock
+    if file_exists(&dll_path) && file_exists(&marker) {
+        lock_release(lock);
+        return Ok(Some(dll_path));
+    }
+
+    let tmp_dir = root
+        .join("tmp")
+        .join(format!("{entry}.{}.dll", std::process::id()));
+    let tmp_dll = tmp_dir.join(&dll_asset);
+    cleanup_tmp_entry(&tmp_dir, &dll_asset);
+    if let Err(e) = std::fs::create_dir(&tmp_dir) {
+        lock_release(lock);
+        return Err(BootError::new(
+            EX_TEBAKO_IO,
+            format!("cannot create {}: {e}", tmp_dir.display()),
+        ));
+    }
+
+    let fail_dll = |lock: EntryLock, e: BootError| -> BootError {
+        cleanup_tmp_entry(&tmp_dir, &dll_asset);
+        lock_release(lock);
+        e
+    };
+
+    if fetch_asset(&dll_url, local, &tmp_dll, &dll_asset, &mut ux.prog).is_err() {
+        return Err(fail_dll(
+            lock,
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve runtime dll \"{runtime_ref}\": download failed\n  url: {dll_url}\n  downloads are in-process (ureq + rustls, webpki-roots) — check the network, or set\n  TEBAKO_RUNTIME_MIRROR to a reachable mirror, or TEBAKO_OFFLINE=1 for cache-only mode"
+                ),
+            ),
+        ));
+    }
+
+    ux.prog.phase("verifying sha256");
+
+    let actual = match sha256_file_hex(&tmp_dll) {
+        Ok(a) => a,
+        Err(e) => {
+            return Err(fail_dll(
+                lock,
+                BootError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot hash downloaded file {}: {e}", tmp_dll.display()),
+                ),
+            ));
+        }
+    };
+
+    let expected = expected.to_lowercase();
+    if expected != actual {
+        return Err(fail_dll(
+            lock,
+            BootError::new(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for downloaded runtime dll {dll_asset} — refusing to install or execute\n  expected: {expected} (from the cached release manifest)\n  actual:   {actual}\n  the download was deleted; the cache was not touched"
+                ),
+            ),
+        ));
+    }
+
+    // Install: the dll is immutable (0444) with trusted markers, AS
+    // install_as next to the exe.
+    ux.prog.phase("installing (locked)");
+    make_readonly(&tmp_dll);
+    if let Err(e) = os_rename(&tmp_dll, &dll_path) {
+        return Err(fail_dll(
+            lock,
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot install the runtime dll into the cache ({} -> {}): {e}",
+                    tmp_dll.display(),
+                    dll_path.display()
+                ),
+            ),
+        ));
+    }
+    let _ = write_small_file(&marker, &format!("{actual}  {install_as}\n"));
+    let _ = write_small_file(
+        &entry_dir.join(format!("{install_as}.origin")),
+        &format!("runtime_ref={runtime_ref}\nurl={dll_url}\nsha256={actual}\n"),
+    );
+    cleanup_tmp_entry(&tmp_dir, &dll_asset);
+    lock_release(lock);
+    let size = std::fs::metadata(&dll_path).map(|m| m.len()).unwrap_or(0);
+    ux.prog.line(&installed_line(&install_as, size, entry_dir));
+    Ok(Some(dll_path))
+}
+
+// ---------------------------------------------------------------------
 // exec handoff (launcher ABI v1)
 // ---------------------------------------------------------------------
 
@@ -2395,5 +2633,217 @@ mod store_layout_tests {
         let err = store_layout_check_once(&home).unwrap_err();
         assert!(err.contains("banana"), "{err}");
         let _ = std::fs::remove_dir_all(&home);
+    }
+}
+
+#[cfg(test)]
+mod dll_tests {
+    use super::*;
+
+    const EXE: &str = "tebako-runtime-0.16.3-3.3.12-windows-ucrt64.exe";
+    const DLL: &str = "tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll";
+    const INSTALL_AS: &str = "x64-ucrt-ruby330.dll";
+    const RUNTIME_REF: &str = "ruby@3.3.12;tebako=0.16.3;image";
+
+    fn dir(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-boot-dll-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    /// The era-2 factory manifest shape with the given `dll` key body
+    /// appended to the exe entry ("" = no facet, the POSIX shape).
+    fn manifest(dll_key: &str) -> String {
+        format!(
+            "[{{\"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"filename\": \"{EXE}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"tebako-runtime-0.16.3-3.3.12-windows-ucrt64.tfs\", \"sha256\": \"{}\"}}{dll_key}}}]\n",
+            "a".repeat(64),
+            "b".repeat(64),
+        )
+    }
+
+    fn dll_key(install_as: &str, sha256: &str) -> String {
+        format!(
+            ", \"dll\": {{\"filename\": \"{DLL}\", \"install_as\": \"{install_as}\", \"sha256\": \"{sha256}\", \"size_bytes\": 14}}"
+        )
+    }
+
+    /// A cache entry (exe + optional cached release index) in the shape
+    /// the lean install leaves behind (its tmp/ dir included — the exe
+    /// install creates it before the dll resolution runs).
+    fn dll_layout(home: &Path, manifest_text: Option<&str>) -> (CacheLayout, RuntimeRef) {
+        let entry = "ruby-3.3.12-0.16.3-windows-ucrt64";
+        let asset_base = "tebako-runtime-0.16.3-3.3.12-windows-ucrt64";
+        let asset = format!("{asset_base}.exe");
+        let entry_dir = home.join("runtimes").join(entry);
+        std::fs::create_dir_all(&entry_dir).unwrap();
+        std::fs::create_dir_all(home.join("tmp")).unwrap();
+        std::fs::write(entry_dir.join(&asset), b"fake runtime exe\n").unwrap();
+        if let Some(text) = manifest_text {
+            std::fs::write(entry_dir.join("manifest.json"), text).unwrap();
+        }
+        (
+            CacheLayout {
+                root: home.to_path_buf(),
+                entry_dir: entry_dir.clone(),
+                exe_path: entry_dir.join(&asset),
+                asset,
+                asset_base: asset_base.to_string(),
+                entry: entry.to_string(),
+            },
+            RuntimeRef {
+                r#type: "ruby".to_string(),
+                version: "3.3.12".to_string(),
+                abi: "0.16.3".to_string(),
+            },
+        )
+    }
+
+    #[test]
+    fn dll_install_as_parses_from_the_dll_facet() {
+        let text = manifest(&dll_key(INSTALL_AS, &"c".repeat(64)));
+        assert_eq!(
+            dll_install_as_from_manifest(&text, DLL),
+            Ok(INSTALL_AS.to_string())
+        );
+        // the facet's sha rides the same next-sha256 reader the image uses
+        assert_eq!(sha_from_manifest_image(&text, DLL), Ok("c".repeat(64)));
+    }
+
+    #[test]
+    fn dll_facet_absent_or_incomplete_is_no_answer() {
+        // no dll key at all (every POSIX release, pre-#40 windows)
+        assert_eq!(dll_install_as_from_manifest(&manifest(""), DLL), Err(()));
+        // the dll key without install_as — never guess the PE name
+        let text = manifest(&format!(
+            ", \"dll\": {{\"filename\": \"{DLL}\", \"sha256\": \"{}\"}}",
+            "c".repeat(64)
+        ));
+        assert_eq!(dll_install_as_from_manifest(&text, DLL), Err(()));
+        // an empty install_as is no name
+        let text = manifest(&dll_key("", &"c".repeat(64)));
+        assert_eq!(dll_install_as_from_manifest(&text, DLL), Err(()));
+    }
+
+    #[test]
+    fn dll_install_as_is_bounded_to_its_own_entry() {
+        // the first entry's dll object has no install_as; the second
+        // entry's must not leak across the object boundary
+        let text = format!(
+            "[{{\"filename\": \"{EXE}\", \"sha256\": \"{a}\", \"dll\": {{\"filename\": \"{DLL}\", \"sha256\": \"{b}\"}}}}, {{\"filename\": \"other.exe\", \"sha256\": \"{a}\", \"dll\": {{\"filename\": \"other.dll\", \"install_as\": \"x64-ucrt-ruby340.dll\", \"sha256\": \"{b}\"}}}}]",
+            a = "a".repeat(64),
+            b = "b".repeat(64),
+        );
+        assert_eq!(dll_install_as_from_manifest(&text, DLL), Err(()));
+    }
+
+    /// The env-using flow (TEBAKO_RUNTIME_MIRROR / TEBAKO_OFFLINE) lives
+    /// in ONE test so the process-wide variables never race a sibling.
+    #[test]
+    fn resolve_dll_flow() {
+        let home = dir("flow");
+        let mirror = home.join("mirror").join("v0.16.3");
+        std::fs::create_dir_all(&mirror).unwrap();
+        std::fs::write(mirror.join(DLL), b"fake ruby dll\n").unwrap();
+        let dll_sha = sha256_file_hex(&mirror.join(DLL)).unwrap();
+        let text = manifest(&dll_key(INSTALL_AS, &dll_sha));
+        let (layout, rr) = dll_layout(&home, Some(&text));
+        std::env::set_var(
+            "TEBAKO_RUNTIME_MIRROR",
+            format!("file://{}", home.join("mirror").display()),
+        );
+
+        // fresh install: the dll lands AS install_as with trusted markers
+        let mut ux = BootUx::new();
+        let got = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap();
+        let dll_path = layout.entry_dir.join(INSTALL_AS);
+        assert_eq!(got, Some(dll_path.clone()));
+        assert!(dll_path.is_file());
+        assert!(
+            !layout.entry_dir.join(DLL).exists(),
+            "the asset name is not the install name"
+        );
+        let marker =
+            std::fs::read_to_string(layout.entry_dir.join(format!("{INSTALL_AS}.sha256"))).unwrap();
+        assert_eq!(marker, format!("{dll_sha}  {INSTALL_AS}\n"));
+        let origin =
+            std::fs::read_to_string(layout.entry_dir.join(format!("{INSTALL_AS}.origin"))).unwrap();
+        assert!(origin.contains(&format!("/v0.16.3/{DLL}")), "{origin}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(
+                dll_path.metadata().unwrap().permissions().mode() & 0o777,
+                0o444
+            );
+        }
+
+        // a cached run needs no mirror at all (offline-safe re-resolution)
+        std::fs::remove_dir_all(home.join("mirror")).unwrap();
+        let mut ux = BootUx::new();
+        let got = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap();
+        assert_eq!(got, Some(dll_path.clone()));
+
+        // a declared-but-missing dll under TEBAKO_OFFLINE is the named error
+        std::fs::remove_file(&dll_path).unwrap();
+        std::fs::remove_file(layout.entry_dir.join(format!("{INSTALL_AS}.sha256"))).unwrap();
+        std::env::set_var("TEBAKO_OFFLINE", "1");
+        let mut ux = BootUx::new();
+        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(err.message.contains("TEBAKO_OFFLINE"), "{}", err.message);
+        std::env::remove_var("TEBAKO_OFFLINE");
+
+        // a wrong declared sha is exit 70; the download is deleted
+        std::fs::create_dir_all(&mirror).unwrap();
+        std::fs::write(mirror.join(DLL), b"fake ruby dll\n").unwrap();
+        std::fs::write(
+            layout.entry_dir.join("manifest.json"),
+            manifest(&dll_key(INSTALL_AS, &"f".repeat(64))),
+        )
+        .unwrap();
+        let mut ux = BootUx::new();
+        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_SHA);
+        assert!(!dll_path.exists());
+        assert!(
+            !layout
+                .entry_dir
+                .join(format!("{INSTALL_AS}.sha256"))
+                .exists(),
+            "a failed install leaves no trust marker"
+        );
+
+        // an install_as with a path separator is refused by name
+        std::fs::write(
+            layout.entry_dir.join("manifest.json"),
+            manifest(&dll_key("../evil.dll", &dll_sha)),
+        )
+        .unwrap();
+        let mut ux = BootUx::new();
+        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(err.message.contains("bare file name"), "{}", err.message);
+        assert!(!home.join("runtimes").join("evil.dll").exists());
+
+        // no dll key declared (every POSIX release): a quiet no-op
+        let home2 = dir("nofacet");
+        let (layout2, rr2) = dll_layout(&home2, Some(&manifest("")));
+        let mut ux = BootUx::new();
+        assert!(resolve_dll(RUNTIME_REF, &rr2, &layout2, &mut ux)
+            .unwrap()
+            .is_none());
+        // no cached release index at all (the fat-payload path): a no-op
+        let home3 = dir("nomanifest");
+        let (layout3, rr3) = dll_layout(&home3, None);
+        let mut ux = BootUx::new();
+        assert!(resolve_dll(RUNTIME_REF, &rr3, &layout3, &mut ux)
+            .unwrap()
+            .is_none());
+
+        std::env::remove_var("TEBAKO_RUNTIME_MIRROR");
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&home2);
+        let _ = std::fs::remove_dir_all(&home3);
     }
 }
