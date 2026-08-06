@@ -284,6 +284,11 @@ pub fn suite_package_manifest(
             .collect(),
         jail: None,
         env: BTreeMap::new(),
+        // Suite members keep exclusive mounts for now: their shared
+        // point collides with the env image's runtime root exactly like
+        // the plain press's app slot did — the union rows for suites
+        // land with the suite mount-model follow-up (TODO.prepublish/12).
+        mounts: Vec::new(),
     };
     manifest
         .validate()

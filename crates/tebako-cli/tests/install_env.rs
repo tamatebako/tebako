@@ -34,11 +34,11 @@ impl Env {
         fs::create_dir_all(&home).unwrap();
         fs::create_dir_all(&mirror).unwrap();
         fs::write(mirror.join("app-1.0.tfs"), b"app-bytes").unwrap();
+        let app_url = tebako_http::file_url(&mirror.join("app-1.0.tfs"));
         fs::write(
             mirror.join("tpkg-registry.yaml"),
             format!(
-                "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: file://{}/app-1.0.tfs}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
-                mirror.display()
+                "schema_version: 1\npayloads:\n  - name: app\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {app_url}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [app]\n    default: 1.0\n",
             ),
         )
         .unwrap();
@@ -52,7 +52,7 @@ impl Env {
     }
 
     fn register(&self) {
-        let reg_ref = format!("file://{}/mirror/tpkg-registry.yaml", self.dir.display());
+        let reg_ref = tebako_http::file_url(&self.dir.join("mirror").join("tpkg-registry.yaml"));
         install::add_registry(&self.home, &reg_ref).unwrap();
     }
 }

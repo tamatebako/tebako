@@ -12,6 +12,13 @@ use std::path::PathBuf;
 
 use tebako_cli::install;
 use tebako_resolve::{sha256_hex, Fetcher, Transport};
+
+/// The registered shim path for a command — windows names it
+/// `<command>.exe` (production's own mapping, tebako-shim#manage).
+fn shim_path(home: &std::path::Path, command: &str) -> PathBuf {
+    home.join("shims")
+        .join(tebako_shim::manage::shim_file_name(command))
+}
 use tpkg::Platform;
 
 fn scratch(tag: &str) -> PathBuf {
@@ -49,12 +56,12 @@ impl Fixture {
 
     fn payload(&self, file: &str, bytes: &[u8]) -> String {
         fs::write(self.mirror.join(file), bytes).unwrap();
-        format!("file://{}/{}", self.mirror.display(), file)
+        tebako_http::file_url(&self.mirror.join(file))
     }
 
     fn registry(&self, file: &str, yaml: &str) -> String {
         fs::write(self.mirror.join(file), yaml).unwrap();
-        format!("file://{}/{}", self.mirror.display(), file)
+        tebako_http::file_url(&self.mirror.join(file))
     }
 
     fn payloads_dir(&self) -> PathBuf {
@@ -139,7 +146,7 @@ fn add_registry_rejects_bad_refs_and_unparsable_registries() {
     let err = install::add_registry(&fx.home, &bad).unwrap_err();
     assert!(err.message.contains("schema_version 99"), "{err:?}");
 
-    let missing = format!("file://{}/missing.yaml", fx.mirror.display());
+    let missing = tebako_http::file_url(&fx.mirror.join("missing.yaml"));
     assert!(install::add_registry(&fx.home, &missing).is_err());
     // nothing was registered
     assert!(install::list_registries(&fx.home).unwrap().is_empty());
@@ -354,7 +361,8 @@ impl MockTransport {
     }
     fn with_file(mut self, url_path: &str) -> MockTransport {
         let bytes = fs::read(url_path).unwrap();
-        self.answers.insert(format!("file://{url_path}"), bytes);
+        self.answers
+            .insert(tebako_http::file_url(std::path::Path::new(url_path)), bytes);
         self
     }
     fn with(mut self, url: &str, body: &[u8]) -> MockTransport {
@@ -397,7 +405,7 @@ fn per_triplet_selection_fetches_the_host_artifact_with_the_registry_pin() {
         .with("https://dl/app-1.0-linux.tfs", b"linux-payload");
     let fetcher = Fetcher::with_transport(t);
 
-    let reg_ref = format!("file://{}", registry_path.display());
+    let reg_ref = tebako_http::file_url(&registry_path);
     install::add_registry_with(&fx.home, &reg_ref, &fetcher).unwrap();
 
     // a triplet whose registry pin does not match the bytes → sha error,
@@ -461,12 +469,7 @@ fn universal_selection_uses_the_single_tfs_rule() {
         .with(api, release.as_bytes())
         .with("https://dl/tool-2.0.tfs", b"tool-bytes");
     let fetcher = Fetcher::with_transport(t);
-    install::add_registry_with(
-        &fx.home,
-        &format!("file://{}", registry_path.display()),
-        &fetcher,
-    )
-    .unwrap();
+    install::add_registry_with(&fx.home, &tebako_http::file_url(&registry_path), &fetcher).unwrap();
 
     let out = install::install_with(
         &fx.home,
@@ -789,8 +792,8 @@ fn suite_install_registers_every_entry_shim() {
     let out = install::install(&fx.home, "metasuite", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.commands, vec!["metanorma", "mn2pdf"]);
     assert_eq!(out.shims.len(), 2);
-    assert!(fx.home.join("shims/metanorma").exists());
-    assert!(fx.home.join("shims/mn2pdf").exists());
+    assert!(shim_path(&fx.home, "metanorma").exists());
+    assert!(shim_path(&fx.home, "mn2pdf").exists());
 
     // the mirror carries each entry's own runtime requirement
     let mirror = tebako_shim::manifest::Manifest::load(
@@ -826,12 +829,12 @@ fn uninstall_removes_shims_and_cache_and_journals_the_anchors() {
     install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
     install::install(&fx.home, "app@1.0", None, Some(&fx.shim_binary)).unwrap();
     install::install(&fx.home, "app@1.1", None, Some(&fx.shim_binary)).unwrap();
-    assert!(fx.home.join("shims/app").exists());
+    assert!(shim_path(&fx.home, "app").exists());
 
     let out = install::uninstall(&fx.home, "app").unwrap();
     assert_eq!(out.versions, vec!["1.0", "1.1"]);
     assert_eq!(out.shims_removed.len(), 1);
-    assert!(!fx.home.join("shims/app").exists());
+    assert!(!shim_path(&fx.home, "app").exists());
     assert!(!fx.payloads_dir().join("app").exists());
 
     // the trust anchors survived in the audit journal
@@ -940,7 +943,7 @@ fn install_walks_the_requires_closure_and_installs_the_deps() {
         .join("inkscape/1.4.3.manifest.yaml")
         .is_file());
     assert!(fx.payloads_dir().join("fonts/2.1.tfs").is_file());
-    assert!(!fx.home.join("shims/inkscape").exists());
+    assert!(!shim_path(&fx.home, "inkscape").exists());
     let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
     assert!(
         journal.contains("event=payload-installed name=inkscape version=1.4.3"),

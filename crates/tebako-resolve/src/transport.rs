@@ -27,14 +27,29 @@ pub struct HttpTransport;
 impl Transport for HttpTransport {
     fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
         let mut attempts = 0;
+        let mut throttles = 0;
         loop {
-            attempts += 1;
             match tebako_http::get(url) {
                 Ok(body) => return Ok(body),
                 Err(FetchError::IndexUnavailable(msg)) => {
                     return Err(FetchError::IndexUnavailable(msg))
                 }
+                Err(FetchError::Throttled {
+                    retry_after,
+                    status,
+                    ..
+                }) => {
+                    throttles += 1;
+                    if throttles >= tebako_http::THROTTLE_ROUNDS {
+                        return Err(FetchError::DownloadFailed(format!(
+                            "still throttled after {} backoff rounds fetching {url} ({status})",
+                            tebako_http::THROTTLE_ROUNDS
+                        )));
+                    }
+                    std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+                }
                 Err(FetchError::DownloadFailed(msg)) => {
+                    attempts += 1;
                     if attempts >= DOWNLOAD_ATTEMPTS {
                         return Err(FetchError::DownloadFailed(format!(
                             "failed to download {url} after {DOWNLOAD_ATTEMPTS} attempts: {msg}"
@@ -57,12 +72,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("payload.tfs");
         std::fs::write(&file, b"bytes").unwrap();
-        let got = HttpTransport
-            .get(&format!("file://{}", file.display()))
-            .unwrap();
+        let got = HttpTransport.get(&tebako_http::file_url(&file)).unwrap();
         assert_eq!(got, b"bytes");
         assert!(matches!(
-            HttpTransport.get(&format!("file://{}/missing", dir.display())),
+            HttpTransport.get(&tebako_http::file_url(&dir.join("missing"))),
             Err(FetchError::IndexUnavailable(_))
         ));
         let _ = std::fs::remove_dir_all(&dir);

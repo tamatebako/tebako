@@ -114,6 +114,92 @@ pub struct PackageEntry {
     pub runtime_ref: String,
 }
 
+/// The mount mode of one slot's image (spec 03 §6 / spec 17 §1). The
+/// default is [`MountMode::Exclusive`]: a slot without a `mounts` row —
+/// and every package without the block — behaves exactly as before (a
+/// duplicate mount point is the driver's named EEXIST error).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MountMode {
+    /// The image claims the mount point alone; an occupied point is the
+    /// driver's named EEXIST error (the historical behavior).
+    #[default]
+    Exclusive,
+    /// The image merges over the images already mounted at the point:
+    /// directories combine, file conflicts resolve by the declared
+    /// precedence (the env image is always lowest), and every member
+    /// stays read-only (spec 17 §1).
+    Union,
+    /// RESERVED spelling (spec 03 §6): the transforms law — COW overlays
+    /// exist only in the Rust TFS, never as package mount semantics.
+    /// [`PackageManifest::validate`] refuses it with a named error until
+    /// its spec lands.
+    Cow,
+    /// RESERVED spelling (spec 03 §6): same axis as `cow`.
+    Enc,
+}
+
+/// Where a union-mounted image sits in the stack at its point
+/// (spec 03 §6): over the runtime's env image (the pressed-app form) or
+/// over another payload slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Precedence {
+    /// Over the runtime's env image (`after-env` — the env image is
+    /// always the lowest member of a union).
+    AfterEnv,
+    /// Over another payload slot (`after:<slot>`).
+    AfterSlot(u32),
+}
+
+impl fmt::Display for Precedence {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Precedence::AfterEnv => f.write_str("after-env"),
+            Precedence::AfterSlot(n) => write!(f, "after:{n}"),
+        }
+    }
+}
+
+impl serde::Serialize for Precedence {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for Precedence {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        if text == "after-env" {
+            return Ok(Precedence::AfterEnv);
+        }
+        if let Some(n) = text.strip_prefix("after:") {
+            if let Ok(n) = n.parse::<u32>() {
+                return Ok(Precedence::AfterSlot(n));
+            }
+        }
+        Err(serde::de::Error::custom(format!(
+            "unknown precedence '{text}' — 'after-env' or 'after:<slot>'"
+        )))
+    }
+}
+
+/// One row of the `mounts:` block (spec 03 §6): the mount semantics of
+/// one slot's image — point, mode, and (union only) precedence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackageMount {
+    /// Which payload slot the row governs.
+    pub slot: u32,
+    /// The mount point (identical to the slot's trailer mount point).
+    pub point: String,
+    /// exclusive (default) | union; `cow`/`enc` parse but are named
+    /// errors at validation (reserved — the transforms law).
+    #[serde(default)]
+    pub mode: MountMode,
+    /// Union-only: which member this image shadows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub precedence: Option<Precedence>,
+}
+
 /// The L2 package manifest (spec 03 §6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PackageManifest {
@@ -130,6 +216,13 @@ pub struct PackageManifest {
     /// Package-level env (composition rules: spec 07).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// Per-slot mount semantics (spec 03 §6, locked 2026-08-04): the
+    /// driver reads the modes from the running package's OWN trailer
+    /// (spec 17 §1). A slot without a row mounts **exclusive** — the
+    /// historical behavior; an absent block (the v1 shape) is every slot
+    /// exclusive.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mounts: Vec<PackageMount>,
 }
 
 impl PackageManifest {
@@ -196,6 +289,61 @@ impl PackageManifest {
         if self.env.keys().any(|k| k.is_empty()) {
             return Err(PackageManifestError::Invalid("env keys must not be empty"));
         }
+        for mount in &self.mounts {
+            if mount.slot >= TPKG_MAX_SLOTS {
+                return Err(PackageManifestError::Invalid(
+                    "mounts[].slot is outside the container's slot capacity (0..TPKG_MAX_SLOTS-1)",
+                ));
+            }
+            check_non_empty(&mount.point, "mounts[].point must not be empty")?;
+            match mount.mode {
+                MountMode::Exclusive | MountMode::Union => {}
+                MountMode::Cow => {
+                    return Err(PackageManifestError::Invalid(
+                        "mounts[].mode 'cow' is reserved — COW overlays exist only in the Rust TFS (the transforms law) and are not package mount semantics until their spec lands",
+                    ));
+                }
+                MountMode::Enc => {
+                    return Err(PackageManifestError::Invalid(
+                        "mounts[].mode 'enc' is reserved — ENC overlays exist only in the Rust TFS (the transforms law) and are not package mount semantics until their spec lands",
+                    ));
+                }
+            }
+            match (mount.mode, mount.precedence) {
+                (MountMode::Union, None) => {
+                    return Err(PackageManifestError::Invalid(
+                        "mounts[].precedence is required for mode 'union' (after-env | after:<slot>)",
+                    ));
+                }
+                (MountMode::Exclusive, Some(_)) => {
+                    return Err(PackageManifestError::Invalid(
+                        "mounts[].precedence is union-only — an exclusive row declares no shadowing",
+                    ));
+                }
+                _ => {}
+            }
+            if let Some(Precedence::AfterSlot(n)) = mount.precedence {
+                if n >= TPKG_MAX_SLOTS {
+                    return Err(PackageManifestError::Invalid(
+                        "mounts[].precedence after:<slot> is outside the container's slot capacity",
+                    ));
+                }
+                if n == mount.slot {
+                    return Err(PackageManifestError::Invalid(
+                        "mounts[].precedence after:<slot> must not name the row's own slot",
+                    ));
+                }
+            }
+        }
+        {
+            let mut slots: Vec<u32> = self.mounts.iter().map(|m| m.slot).collect();
+            slots.sort_unstable();
+            if slots.windows(2).any(|w| w[0] == w[1]) {
+                return Err(PackageManifestError::Invalid(
+                    "duplicate mounts[].slot (one mount-semantics row per slot)",
+                ));
+            }
+        }
         if let Some(jail) = &self.jail {
             jail.validate().map_err(PackageManifestError::Jail)?;
         }
@@ -227,6 +375,7 @@ mod tests {
             }],
             jail: None,
             env: BTreeMap::new(),
+            mounts: Vec::new(),
         }
     }
 
@@ -341,5 +490,101 @@ mod tests {
                     jail: {default: deny, future: yes}\n";
         let m = PackageManifest::from_yaml(text).unwrap();
         assert!(!m.jail.as_ref().unwrap().default_open);
+    }
+
+    // ---------------------------------------------------------------
+    // The mounts block (spec 03 §6, locked 2026-08-04)
+    // ---------------------------------------------------------------
+
+    const HEADER: &str = "schema_version: 1\n\
+                          package: {name: x, version: 1.0.0, producer: {tool: t, tool_version: 1}, created: now}\n\
+                          entries:\n  - {name: x, slot: 0, entrypoint: x, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n";
+
+    #[test]
+    fn mounts_absent_block_is_the_v1_shape() {
+        // No mounts: key → empty block, and the empty block never
+        // serializes (v1-era packages keep their exact shape).
+        let m = PackageManifest::from_yaml(HEADER).unwrap();
+        assert_eq!(m.mounts, Vec::new());
+        assert!(!m.to_yaml().unwrap().contains("mounts"));
+    }
+
+    #[test]
+    fn mounts_exclusive_is_the_default_mode() {
+        let text = format!("{HEADER}mounts:\n  - {{slot: 0, point: /data}}\n");
+        let m = PackageManifest::from_yaml(&text).unwrap();
+        assert_eq!(m.mounts.len(), 1);
+        assert_eq!(m.mounts[0].mode, MountMode::Exclusive);
+        assert_eq!(m.mounts[0].precedence, None);
+        let back = PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn mounts_union_after_env_round_trips() {
+        let text = format!(
+            "{HEADER}mounts:\n  - {{slot: 0, point: /__tfs__, mode: union, precedence: after-env}}\n"
+        );
+        let m = PackageManifest::from_yaml(&text).unwrap();
+        assert_eq!(m.mounts[0].mode, MountMode::Union);
+        assert_eq!(m.mounts[0].precedence, Some(Precedence::AfterEnv));
+        let back = PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn mounts_union_after_slot_round_trips() {
+        let text = format!(
+            "{HEADER}mounts:\n  - {{slot: 2, point: /opt/x, mode: union, precedence: 'after:1'}}\n"
+        );
+        let m = PackageManifest::from_yaml(&text).unwrap();
+        assert_eq!(m.mounts[0].mode, MountMode::Union);
+        assert_eq!(m.mounts[0].precedence, Some(Precedence::AfterSlot(1)));
+        let back = PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn mounts_cow_and_enc_are_named_reserved_mode_errors() {
+        for spelling in ["cow", "enc"] {
+            let text = format!("{HEADER}mounts:\n  - {{slot: 0, point: /x, mode: {spelling}}}\n");
+            let err = PackageManifest::from_yaml(&text).unwrap_err();
+            let msg = err.to_string();
+            assert!(
+                msg.contains(&format!("mode '{spelling}' is reserved")),
+                "{spelling}: {msg}"
+            );
+        }
+        // An unknown spelling is a structural error, never a silent skip.
+        let text = format!("{HEADER}mounts:\n  - {{slot: 0, point: /x, mode: bogus}}\n");
+        assert!(PackageManifest::from_yaml(&text).is_err());
+    }
+
+    #[test]
+    fn mounts_semantic_rejections() {
+        let bad =
+            |rows: &str| PackageManifest::from_yaml(&format!("{HEADER}mounts:\n{rows}")).is_err();
+        // union without precedence
+        assert!(bad("  - {slot: 0, point: /x, mode: union}\n"));
+        // precedence on an exclusive row
+        assert!(bad("  - {slot: 0, point: /x, precedence: after-env}\n"));
+        // empty point
+        assert!(bad("  - {slot: 0, point: ''}\n"));
+        // slot out of capacity
+        assert!(bad("  - {slot: 8, point: /x}\n"));
+        // precedence naming the row's own slot
+        assert!(bad(
+            "  - {slot: 1, point: /x, mode: union, precedence: 'after:1'}\n"
+        ));
+        // precedence slot out of capacity
+        assert!(bad(
+            "  - {slot: 1, point: /x, mode: union, precedence: 'after:8'}\n"
+        ));
+        // duplicate slot rows
+        assert!(bad("  - {slot: 0, point: /x}\n  - {slot: 0, point: /y}\n"));
+        // a malformed precedence spelling
+        assert!(bad(
+            "  - {slot: 0, point: /x, mode: union, precedence: first}\n"
+        ));
     }
 }

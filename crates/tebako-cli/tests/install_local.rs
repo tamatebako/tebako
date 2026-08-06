@@ -10,6 +10,13 @@ use std::path::{Path, PathBuf};
 
 use tebako_cli::install;
 
+/// The registered shim path for a command — windows names it
+/// `<command>.exe` (production's own mapping, tebako-shim#manage).
+fn shim_path(home: &Path, command: &str) -> PathBuf {
+    home.join("shims")
+        .join(tebako_shim::manage::shim_file_name(command))
+}
+
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!(
         "tebako-cli-install-local-{tag}-{}",
@@ -137,7 +144,7 @@ fn install_lands_the_slice_with_markers_and_mirror() {
     assert_eq!(mirror.entrypoint("app").unwrap().path, "/app/bin/app");
     // no shims without the explicit ask
     assert!(outcome.shims.is_empty());
-    assert!(!home.join("shims").join("app").exists());
+    assert!(!shim_path(&home, "app").exists());
 }
 
 #[test]
@@ -289,5 +296,5 @@ fn shims_link_only_with_the_explicit_flag() {
 
     let with = install::install_local(&home, &pkg, true, Some(&shim_binary)).unwrap();
     assert_eq!(with.shims.len(), 1);
-    assert!(home.join("shims").join("app").exists());
+    assert!(shim_path(&home, "app").exists());
 }

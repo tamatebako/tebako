@@ -562,7 +562,7 @@ pub fn link_shims(
 /// CreateProcess/PATH resolution goes through PATHEXT, so the copied
 /// dispatcher needs the suffix. The dispatcher strips it from argv[0]
 /// (lib.rs `run`), so registration and lookup stay suffix-free.
-fn shim_file_name(command: &str) -> String {
+pub fn shim_file_name(command: &str) -> String {
     #[cfg(windows)]
     return format!("{command}.exe");
     #[cfg(not(windows))]

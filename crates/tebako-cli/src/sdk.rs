@@ -490,6 +490,9 @@ fn fetch_error(e: FetchError, url: &str) -> TebakoError {
         FetchError::IndexUnavailable(msg) | FetchError::DownloadFailed(msg) => {
             packaging_error(122, Some(&format!("{msg} fetching {url}")))
         }
+        e @ FetchError::Throttled { .. } => {
+            packaging_error(122, Some(&format!("{e} fetching {url}")))
+        }
     }
 }
 

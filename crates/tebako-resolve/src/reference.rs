@@ -193,7 +193,11 @@ impl fmt::Display for Reference {
                 pin(f, sha256, if bare.contains('?') { "&" } else { "?" })
             }
             Reference::File { path, sha256 } => {
-                write!(f, "file://{path}")?;
+                // path is stored OS-native (the drive-recovered C:/x on
+                // windows); the canonical URL form comes from the one
+                // constructor — `file://{path}` would emit file://C:/x,
+                // which the parser itself rejects (self-poisoning).
+                write!(f, "{}", tebako_http::file_url(std::path::Path::new(path)))?;
                 pin(f, sha256, "?")
             }
         }
@@ -635,7 +639,11 @@ mod tests {
         assert_eq!(r.to_string(), "file:///opt/images/tool.tfs");
 
         let sha = "d".repeat(64);
-        let r = Reference::parse(&format!("file:///opt/t.tfs?sha256={sha}")).unwrap();
+        let url = format!(
+            "{}?sha256={sha}",
+            tebako_http::file_url(std::path::Path::new("/opt/t.tfs"))
+        );
+        let r = Reference::parse(&url).unwrap();
         assert!(matches!(&r, Reference::File { sha256: Some(s), .. } if s == &sha));
     }
 

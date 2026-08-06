@@ -176,7 +176,8 @@ pub use manifest::{
 pub use merkle::{render_tree_hash, tree_digest, Child, MerkleDigest, NodeKind, TreeWalk};
 pub use model::{Manifest, Slot, V2Extension};
 pub use package::{
-    PackageEntry, PackageIdentity, PackageManifest, PackageManifestError, PACKAGE_SCHEMA_VERSION,
+    MountMode, PackageEntry, PackageIdentity, PackageManifest, PackageManifestError, PackageMount,
+    Precedence, PACKAGE_SCHEMA_VERSION,
 };
 
 /// Manifest format version (stays 1: the chain-of-trust extension is

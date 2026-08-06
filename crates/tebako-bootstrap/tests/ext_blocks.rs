@@ -40,6 +40,7 @@ fn package_manifest(entries: &[(&str, u32, &str, &str)]) -> tpkg::PackageManifes
             .collect(),
         jail: None,
         env: Default::default(),
+        mounts: Vec::new(),
     }
 }
 

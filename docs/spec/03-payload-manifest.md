@@ -184,12 +184,28 @@ entries:                          # one per invocable command (N=1 for simple ap
     runtime_ref: ruby@3.3.7;tebako=0.15.9
 jail: {…}                         # package-level request (spec 08)
 env: {…}                          # package-level env (composition rules: spec 07)
+mounts:                           # per-slot mount semantics (locked 2026-08-04)
+  - slot: 0
+    point: /__tfs__
+    mode: union                   # exclusive (default) | union; cow/enc reserved
+    precedence: after-env         # union only: this image shadows the env image
 ```
 
 - `runtime_ref` per entry kills the 128-byte single-field limit (suites,
   multi-runtime packages); the trailer's v1 field stays for v1 loaders.
 - v1-era packages without the block behave exactly as today (stub.rb /
   local conventions); the block is additive.
+- `mounts` is optional; a slot without a `mounts` row mounts
+  **exclusive** (spec 17's historical behavior — a duplicate point is a
+  named error). `mode: union` merges the image over the images already
+  mounted at `point` with declared precedence — read-only images only,
+  directories merge, file conflicts resolve by precedence order (the
+  env image is always lowest). `precedence` values: `after-env` (over
+  the runtime's env image — the pressed-app form) or `after:<slot>`
+  (over another payload slot). The union set is journaled at boot
+  (spec 17 §1). `cow`/`enc` are RESERVED mode spellings on the same
+  axis (the transforms law: overlays exist only in the Rust TFS) and
+  are named errors until their specs land.
 
 **toolkit** (native layer, e.g. inkscape/gtk — the distro-ports model,
 spec 13 §9):

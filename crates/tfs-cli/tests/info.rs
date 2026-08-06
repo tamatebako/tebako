@@ -477,7 +477,11 @@ fn verify_malformed_manifest_is_65() {
     assert!(out.contains("result: FAILED (exit 65)\n"), "{out}");
 
     // Schema-invalid (parses, but violates the locked rules) is 65 too.
-    let invalid = APP_MANIFEST.replace("name: metanorma\n", "name: ''\n");
+    // Normalize the checkout's line endings first (CRLF on windows) so the
+    // field-precise pattern matches on every platform — and only there.
+    let invalid = APP_MANIFEST
+        .replace("\r\n", "\n")
+        .replace("name: metanorma\n", "name: ''\n");
     let img2 = mk_image(&w, "bad2.tfs", Some(&invalid));
     let (rc, out, _) = run(&["info", "--verify", img2.to_str().unwrap()], &w.0, &home);
     assert_eq!(rc, 65, "{out}");

@@ -40,6 +40,16 @@ pub enum FetchError {
     /// The requested object is missing (HTTP 404 / ENOENT on file://);
     /// try the next index name.
     IndexUnavailable(String),
+    /// The server asked us to slow down (HTTP 429, or 403 with
+    /// rate-limit headers). `retry_after` is the server's own hint when
+    /// it sent one (Retry-After, or X-RateLimit-Reset with Remaining: 0)
+    /// — the caller MUST honor it: a throttled answer is a schedule, not
+    /// a failure.
+    Throttled {
+        url: String,
+        status: u16,
+        retry_after: Option<std::time::Duration>,
+    },
     /// A download failed at the transport or HTTP layer.
     DownloadFailed(String),
 }
@@ -48,6 +58,14 @@ impl fmt::Display for FetchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FetchError::IndexUnavailable(what) => write!(f, "not found: {what}"),
+            FetchError::Throttled {
+                status,
+                retry_after,
+                ..
+            } => match retry_after {
+                Some(d) => write!(f, "throttled ({status}, retry after {}s)", d.as_secs()),
+                None => write!(f, "throttled ({status})"),
+            },
             FetchError::DownloadFailed(why) => write!(f, "{why}"),
         }
     }
@@ -78,19 +96,100 @@ fn agent() -> &'static ureq::Agent {
             .max_redirects(REDIRECT_LIMIT)
             .timeout_connect(Some(CONNECT_TIMEOUT))
             .timeout_global(Some(GLOBAL_TIMEOUT))
+            // statuses are mapped by the caller: the rate-limit headers
+            // ride the RESPONSE, and ureq's StatusCode error drops them.
+            .http_status_as_error(false)
             .build()
             .into()
     })
 }
 
-fn map_ureq_error(url: &str) -> impl Fn(ureq::Error) -> FetchError + '_ {
-    move |e| match e {
-        ureq::Error::StatusCode(404) => FetchError::IndexUnavailable(url.to_string()),
-        ureq::Error::StatusCode(code) => {
-            FetchError::DownloadFailed(format!("{code} fetching {url}"))
-        }
-        other => FetchError::DownloadFailed(format!("{other} fetching {url}")),
+/// Seconds from a Retry-After header value (delta-seconds form; the
+/// HTTP-date form is GitHub-irrelevant — it always sends seconds).
+fn parse_retry_after(value: &str) -> Option<std::time::Duration> {
+    let secs: u64 = value.trim().parse().ok()?;
+    Some(std::time::Duration::from_secs(secs))
+}
+
+/// The throttle schedule a response carries, if any: Retry-After wins;
+/// X-RateLimit-Remaining: 0 + X-RateLimit-Reset (epoch seconds) is the
+/// primary-limit form. Neither header ⇒ no hint (the caller escalates).
+fn throttle_hint_from(get: impl Fn(&str) -> Option<String>) -> Option<std::time::Duration> {
+    if let Some(d) = get("retry-after").and_then(|v| parse_retry_after(&v)) {
+        return Some(d);
     }
+    let remaining = get("x-ratelimit-remaining").and_then(|v| v.trim().parse::<u64>().ok());
+    if remaining == Some(0) {
+        if let Some(reset) = get("x-ratelimit-reset").and_then(|v| v.trim().parse::<u64>().ok()) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            return Some(std::time::Duration::from_secs(reset.saturating_sub(now)));
+        }
+    }
+    None
+}
+
+fn throttle_hint(response: &ureq::http::Response<ureq::Body>) -> Option<std::time::Duration> {
+    throttle_hint_from(|name| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+    })
+}
+
+/// The throttle schedule policy, shared by every retry loop in the
+/// ecosystem — GitHub's own rules, verbatim:
+/// 1. `retry-after` present ⇒ wait exactly that long.
+/// 2. `x-ratelimit-remaining: 0` ⇒ wait until `x-ratelimit-reset`
+///    (epoch seconds).
+/// 3. Otherwise (a bare 403/429) ⇒ wait at least one minute, then
+///    exponentially longer between retries (60s × 2ⁿ), and give up
+///    after THROTTLE_ROUNDS — continuing to fire while limited gets
+///    the integration BANNED, so every wait is honored in full and no
+///    retry ever fires early.
+pub const THROTTLE_ROUNDS: u32 = 6;
+
+pub fn throttle_backoff(attempt: u32, hint: Option<std::time::Duration>) -> std::time::Duration {
+    hint.unwrap_or_else(|| {
+        // the hint-less exponential: 60, 120, 240, 480, 960 s
+        let shift = (attempt.max(1) - 1).min(4);
+        std::time::Duration::from_secs(60 << shift)
+    })
+}
+
+/// The one status→error mapping (http_status_as_error is false so the
+/// throttle headers survive to here): 2xx hands the response back, 404
+/// is IndexUnavailable, 429 / 403-with-rate-limit-headers is Throttled
+/// with the server's own schedule, anything else is DownloadFailed.
+fn classify(
+    response: ureq::http::Response<ureq::Body>,
+    url: &str,
+) -> Result<ureq::http::Response<ureq::Body>, FetchError> {
+    let status = response.status().as_u16();
+    if (200..300).contains(&status) {
+        return Ok(response);
+    }
+    if status == 404 {
+        return Err(FetchError::IndexUnavailable(url.to_string()));
+    }
+    if status == 429 || (status == 403 && throttle_hint(&response).is_some()) {
+        return Err(FetchError::Throttled {
+            url: url.to_string(),
+            status,
+            retry_after: throttle_hint(&response),
+        });
+    }
+    Err(FetchError::DownloadFailed(format!(
+        "{status} fetching {url}"
+    )))
+}
+
+fn map_ureq_error(url: &str) -> impl Fn(ureq::Error) -> FetchError + '_ {
+    move |e| FetchError::DownloadFailed(format!("{e} fetching {url}"))
 }
 
 fn read_file_url(path: &str) -> Result<Vec<u8>, FetchError> {
@@ -156,7 +255,11 @@ pub fn get_bearer(url: &str, bearer: Option<&str>) -> Result<Vec<u8>, FetchError
     if let Some(token) = bearer {
         req = req.header("Authorization", &format!("Bearer {token}"));
     }
-    let mut response = req.call().map_err(map_ureq_error(url))?;
+    // http_status_as_error(false): statuses are mapped HERE, because the
+    // throttle schedule lives in the response headers (ureq's StatusCode
+    // error drops them).
+    let response = req.call().map_err(map_ureq_error(url))?;
+    let mut response = classify(response, url)?;
     response
         .body_mut()
         .with_config()
@@ -188,7 +291,8 @@ pub fn get_with_progress(
         )));
     }
     use std::io::Read as _;
-    let mut response = agent().get(url).call().map_err(map_ureq_error(url))?;
+    let response = agent().get(url).call().map_err(map_ureq_error(url))?;
+    let mut response = classify(response, url)?;
     let content_length = response.body().content_length();
     let mut reader = response
         .body_mut()
@@ -243,7 +347,8 @@ pub fn post(
     if let Some(token) = bearer {
         req = req.header("Authorization", &format!("Bearer {token}"));
     }
-    let mut response = req.send(body).map_err(map_ureq_error(url))?;
+    let response = req.send(body).map_err(map_ureq_error(url))?;
+    let mut response = classify(response, url)?;
     response
         .body_mut()
         .with_config()
@@ -265,8 +370,13 @@ pub fn delete(url: &str, bearer: Option<&str>) -> Result<(), FetchError> {
         req = req.header("Authorization", &format!("Bearer {token}"));
     }
     match req.call() {
-        Ok(_) => Ok(()),
-        Err(ureq::Error::StatusCode(404)) => Ok(()),
+        Ok(response) => match classify(response, url) {
+            Ok(_) => Ok(()),
+            // 404 is success on delete: the asset is already gone —
+            // replacement stays idempotent.
+            Err(FetchError::IndexUnavailable(_)) => Ok(()),
+            Err(e) => Err(e),
+        },
         Err(e) => Err(map_ureq_error(url)(e)),
     }
 }
@@ -274,6 +384,83 @@ pub fn delete(url: &str, bearer: Option<&str>) -> Result<(), FetchError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retry_after_parses_delta_seconds() {
+        assert_eq!(
+            parse_retry_after("60"),
+            Some(std::time::Duration::from_secs(60))
+        );
+        assert_eq!(
+            parse_retry_after(" 5 "),
+            Some(std::time::Duration::from_secs(5))
+        );
+        assert_eq!(parse_retry_after("soon"), None);
+        assert_eq!(parse_retry_after(""), None);
+    }
+
+    #[test]
+    fn throttle_hint_prefers_retry_after() {
+        let h = throttle_hint_from(|name| match name {
+            "retry-after" => Some("42".to_string()),
+            "x-ratelimit-remaining" => Some("0".to_string()),
+            "x-ratelimit-reset" => Some("9999999999".to_string()),
+            _ => None,
+        });
+        assert_eq!(h, Some(std::time::Duration::from_secs(42)));
+    }
+
+    #[test]
+    fn throttle_hint_falls_back_to_ratelimit_reset() {
+        let future = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 120;
+        let h = throttle_hint_from(|name| match name {
+            "x-ratelimit-remaining" => Some("0".to_string()),
+            "x-ratelimit-reset" => Some(future.to_string()),
+            _ => None,
+        });
+        let d = h.expect("reset-based hint");
+        assert!(d.as_secs() > 100 && d.as_secs() <= 120, "{}", d.as_secs());
+    }
+
+    #[test]
+    fn throttle_hint_absent_without_headers() {
+        assert_eq!(throttle_hint_from(|_| None), None);
+        // remaining > 0 is not throttling
+        let h = throttle_hint_from(|name| match name {
+            "x-ratelimit-remaining" => Some("57".to_string()),
+            _ => None,
+        });
+        assert_eq!(h, None);
+    }
+
+    #[test]
+    fn hintless_backoff_is_the_documented_one_minute_then_exponential() {
+        assert_eq!(
+            throttle_backoff(1, None),
+            std::time::Duration::from_secs(60)
+        );
+        assert_eq!(
+            throttle_backoff(2, None),
+            std::time::Duration::from_secs(120)
+        );
+        assert_eq!(
+            throttle_backoff(3, None),
+            std::time::Duration::from_secs(240)
+        );
+        assert_eq!(
+            throttle_backoff(5, None),
+            std::time::Duration::from_secs(960)
+        );
+        // the hint always wins
+        assert_eq!(
+            throttle_backoff(3, Some(std::time::Duration::from_secs(17))),
+            std::time::Duration::from_secs(17)
+        );
+    }
 
     #[test]
     fn file_url_constructor_is_canonical_on_both_platforms() {

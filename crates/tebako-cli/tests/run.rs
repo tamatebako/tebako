@@ -52,6 +52,7 @@ fn package_manifest(jail: tpkg::HostJail) -> tpkg::PackageManifest {
         }],
         jail: Some(jail),
         env: Default::default(),
+        mounts: Vec::new(),
     }
 }
 

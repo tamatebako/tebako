@@ -34,7 +34,9 @@ pub mod ffi;
 pub mod handoff;
 pub mod layout;
 
-pub use driver::{boot, BootOutcome, DriverError, Env, ProcessEnv};
+pub use driver::{
+    boot, boot_with_mount_modes, BootOutcome, DriverError, Env, MountModes, OwnTrailer, ProcessEnv,
+};
 pub use handoff::{Handoff, ImageSource, ImageSpec, SlotRef};
 
 /// The bootstrap↔runtime contract semantics this driver implements

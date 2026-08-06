@@ -5,7 +5,8 @@
 # The composition manifest carried as tpkg extension block type 2 (spec 02
 # §5b) — YAML, OUTSIDE every payload image, readable without backend
 # knowledge. It owns composition (identity, entries, package-level jail +
-# env); the contract fields (contract_era, pressed_by, reader_era) are the
+# env, per-slot mount modes); the contract fields (contract_era,
+# pressed_by, reader_era) are the
 # spec-18 addition: a package pressed from now on declares its era, and a
 # reader verifies fail-closed on open (exit 77).
 #
@@ -19,7 +20,7 @@
 
 schema: package-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 1 # MINOR 1: the contract fields (contract_era, pressed_by, reader_era) added
+schema_minor: 2 # MINOR 2: the mounts block (per-slot mount modes, spec 03 §6 / spec 17 §1) added
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C6 (loader → package trailer; the L2 half)
@@ -31,7 +32,8 @@ evolution:
     schema_version is a single integer MAJOR; schema_minor an additive
     counter. MAJOR breaks, MINOR adds. (MINOR 1 added the contract fields;
     era-1 blocks — pressed by tebako < 0.16.1 — lack them and are refused
-    by name.)
+    by name. MINOR 2 added the mounts block; absent = every slot
+    exclusive, the v1 shape.)
   unknown_fields: >-
     Readers ignore unknown fields within their MAJOR — but never invent
     semantics for them. A field you do not understand changes nothing you do.
@@ -116,6 +118,21 @@ grammar:
     type: map
     required: false
     notes: package-level env (composition rules spec 07); keys non-empty
+  mounts:
+    type: list
+    required: false
+    notes: >-
+      per-slot mount semantics (spec 03 §6, locked 2026-08-04; schema_minor
+      2). Absent = every slot exclusive (the v1 shape); a slot without a
+      row mounts exclusive. The driver reads modes from the running
+      package's OWN trailer (spec 17 §1) — mount semantics never ride the
+      argv grammar; drivers predating the mount-modes lock refuse a union
+      package loudly (EEXIST).
+    entry:
+      slot: {type: int, required: true, notes: "which payload slot the row governs (0..TPKG_MAX_SLOTS-1); one row per slot"}
+      point: {type: string, required: true, notes: the mount point — identical to the slot's trailer mount point}
+      mode: {type: string, required: false, notes: "exclusive (default) | union; cow/enc are RESERVED spellings on the same axis — named errors until their specs land (the transforms law)"}
+      precedence: {type: string, required: "with mode: union (forbidden otherwise)", notes: "after-env | after:<slot> — which member this image shadows; the env image is always lowest"}
 
 refusals:
   - case: no type-2 block, or a block without contract_era (S2)

@@ -99,9 +99,19 @@ impl RuntimeDeployer {
         let mut full_env = self.toolchain_env();
         full_env.extend(env.iter().cloned());
         full_env.push(("TEBAKO_PASS_THROUGH".to_string(), "1".to_string()));
+        // The v2 handoff needs the entry explicitly (spec 17 §1): with no
+        // --tebako-entry the boot is the smoke form — the interpreter
+        // starts with its own args and the driver script never runs (the
+        // v1 runtime ran its compiled-in /local/stub.rb unconditionally).
+        // Same re-entry form as the ruby shim below.
         let out = run_with_capture(
             &self.runtime_path,
-            &["--tebako-image".to_string(), self.driver_image_ref()],
+            &[
+                "--tebako-image".to_string(),
+                self.driver_image_ref(),
+                "--tebako-entry".to_string(),
+                "/local/stub.rb".to_string(),
+            ],
             &full_env,
         )?;
         if self.verbose {

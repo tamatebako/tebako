@@ -505,7 +505,10 @@ fn base_is_local(base: &str) -> bool {
 }
 
 fn skip_file_scheme(base: &str) -> &str {
-    base.strip_prefix("file://").unwrap_or(base)
+    // RFC 8089 drive recovery included: `file:///C:/x` strips to `/C:/x`,
+    // which is not a windows path — file_path_from_url hands back `C:/x`.
+    // Unix remainders pass through unchanged.
+    tebako_http::file_path_from_url(base.strip_prefix("file://").unwrap_or(base))
 }
 
 // ---------------------------------------------------------------------
@@ -668,14 +671,23 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
         return copy_file(Path::new(url), out).map_err(|_| ());
     }
     // curl --retry 3 parity: transient failures get three attempts; a
-    // missing object (404) fails fast.
+    // missing object (404) fails fast. Throttling is a schedule, not a
+    // failure: the server's hint is honored, bounded by THROTTLE_ROUNDS.
     let mut attempts = 0;
+    let mut throttles = 0;
     loop {
-        attempts += 1;
         match tebako_http::get(url) {
             Ok(bytes) => return std::fs::write(out, bytes).map_err(|_| ()),
             Err(tebako_http::FetchError::IndexUnavailable(_)) => return Err(()),
+            Err(tebako_http::FetchError::Throttled { retry_after, .. }) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(());
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
             Err(tebako_http::FetchError::DownloadFailed(_)) => {
+                attempts += 1;
                 if attempts >= 3 {
                     return Err(());
                 }
@@ -760,8 +772,8 @@ fn fetch_asset(
         };
     }
     let mut attempts = 0;
+    let mut throttles = 0;
     loop {
-        attempts += 1;
         prog.download_begin(asset);
         let result = {
             let mut tick = |so_far: u64, total: Option<u64>| prog.download_tick(so_far, total);
@@ -776,8 +788,17 @@ fn fetch_asset(
                 prog.download_abort();
                 return Err(());
             }
+            Err(tebako_http::FetchError::Throttled { retry_after, .. }) => {
+                prog.download_abort();
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(());
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
             Err(tebako_http::FetchError::DownloadFailed(_)) => {
                 prog.download_abort();
+                attempts += 1;
                 if attempts >= 3 {
                     return Err(());
                 }

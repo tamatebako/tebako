@@ -173,7 +173,9 @@ impl Resolver {
     /// the release index carries an image entry, the runtime image —
     /// downloaded, verified and marked into the same cache entry the
     /// bootstrap consumes at first run. On a cache hit the image metadata
-    /// comes from the entry's trusted marker.
+    /// comes from the entry's trusted marker; an entry whose marker is
+    /// missing (installed before the image era, or partially wiped) has
+    /// its image backfilled from the release index.
     pub fn resolve_runtime(
         &self,
         ruby_version: &str,
@@ -182,29 +184,47 @@ impl Resolver {
     ) -> Result<Resolved, TebakoError> {
         let dir = self.entry_dir(ruby_version, platform, tebako_version);
         let executable = dir.join(self.filename(ruby_version, platform, tebako_version));
-        if executable.is_file() {
+        let image_marker = || self.read_image_marker(&dir, ruby_version, platform, tebako_version);
+        if executable.is_file() && image_marker().is_some() {
             return Ok(Resolved {
                 executable,
-                image: self.read_image_marker(&dir, ruby_version, platform, tebako_version),
+                image: image_marker(),
             });
         }
         self.with_entry_lock(
             &dir,
             &self.entry_ref(ruby_version, platform, tebako_version),
             || {
-                if executable.is_file() {
+                if !executable.is_file() {
+                    let entry =
+                        self.install(&executable, ruby_version, platform, tebako_version)?;
+                    if let Some(image) = entry.image.clone() {
+                        self.install_image(&dir, &image, tebako_version)?;
+                    }
                     return Ok(());
                 }
-                let entry = self.install(&executable, ruby_version, platform, tebako_version)?;
-                if let Some(image) = entry.image.clone() {
-                    self.install_image(&dir, &image, tebako_version)?;
+                // The exe is cached but its image marker is missing (an
+                // entry installed before the image era, or a partial
+                // wipe): backfill the image from the release index so the
+                // entry is complete again.
+                if image_marker().is_none() {
+                    let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
+                    self.offline_check(&entry_ref, tebako_version)?;
+                    let (index, card) = self.fetch_index(tebako_version)?;
+                    let entry = self.find_entry(&index, ruby_version, platform, tebako_version)?;
+                    if self.flavor == Flavor::Runtime {
+                        contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
+                    }
+                    if let Some(image) = entry.image.clone() {
+                        self.install_image(&dir, &image, tebako_version)?;
+                    }
                 }
                 Ok(())
             },
         )?;
         Ok(Resolved {
             executable,
-            image: self.read_image_marker(&dir, ruby_version, platform, tebako_version),
+            image: image_marker(),
         })
     }
 
@@ -265,6 +285,10 @@ impl Resolver {
             Err(FetchError::IndexUnavailable(_)) => {
                 let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&format!("{url}: not found"))));
+            }
+            Err(e @ FetchError::Throttled { .. }) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&e.to_string())));
             }
             Err(FetchError::DownloadFailed(msg)) => {
                 let _ = fs::remove_file(&tmp);
@@ -599,11 +623,17 @@ impl Resolver {
                         return Ok((entries, card));
                     }
                     Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                    Err(e @ FetchError::Throttled { .. }) => {
+                        return Err(packaging_error(122, Some(&e.to_string())));
+                    }
                     Err(FetchError::DownloadFailed(msg)) => {
                         return Err(packaging_error(122, Some(&msg)));
                     }
                 },
                 Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                Err(e @ FetchError::Throttled { .. }) => {
+                    return Err(packaging_error(122, Some(&e.to_string())));
+                }
                 Err(FetchError::DownloadFailed(msg)) => {
                     return Err(packaging_error(122, Some(&msg)))
                 }
@@ -809,6 +839,10 @@ impl Resolver {
             Err(FetchError::IndexUnavailable(_)) => {
                 let _ = fs::remove_file(&tmp);
                 Err(packaging_error(122, Some(&format!("{url}: not found"))))
+            }
+            Err(e @ FetchError::Throttled { .. }) => {
+                let _ = fs::remove_file(&tmp);
+                Err(packaging_error(122, Some(&e.to_string())))
             }
             Err(FetchError::DownloadFailed(msg)) => {
                 let _ = fs::remove_file(&tmp);

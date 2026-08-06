@@ -40,6 +40,9 @@ macro_rules! interpose {
         };
         /// The original implementation, read back from the tuple (see the
         /// module docs for why dlsym(RTLD_NEXT) cannot be used on macOS).
+        /// dead_code: a delegating replacement (fopen$DARWIN_EXTSN → fopen)
+        /// never calls its own original — it shares the target's body.
+        #[allow(dead_code)]
         pub(super) fn $real() -> $ty {
             // SAFETY: the tuple is initialized statically and written by
             // dyld before any user code runs; volatile because dyld's
