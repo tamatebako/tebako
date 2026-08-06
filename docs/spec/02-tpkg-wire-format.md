@@ -120,7 +120,10 @@ multi-runtime packages live in the type-2 manifest (no size cap).
 - Prefix ok, magic bad → `Magic`. Magic ok, crc bad → `Crc`.
 - Version ≠ 1 → `Version`. Slot count outside 1..=8 → `Slots`.
 - Structural validation mirrors the reference C `tpkg_validate()`:
-  `offset+size` non-overflowing, `format_id` ≤ 4, `runtime_ref` and mount
+  `offset+size` non-overflowing, `format_id` ≤ 5 (spec 20 raised the
+  bound from the C reference's ≤ 4 — the documented parity end: the C99
+  reader keeps rejecting format 5 with its named invalid error; ids ≥ 6
+  stay unallocated), `runtime_ref` and mount
   points NUL-terminated within their fixed fields; table fits entirely
   before the header.
 - v2: flag/extension co-presence; zeroed digest tail; signature non-empty

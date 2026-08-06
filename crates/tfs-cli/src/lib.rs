@@ -103,6 +103,21 @@ fn full_path(path: &str) -> String {
     }
 }
 
+/// The mounted image's backend name (`"DwarFS"`, `"LimniFS"`, …), or
+/// `None` when the ABI reports none. Read after `MountGuard::mount`.
+fn mount_backend_name() -> Option<String> {
+    let name = unsafe { tebako_get_backend_name() };
+    if name.is_null() {
+        None
+    } else {
+        Some(
+            unsafe { std::ffi::CStr::from_ptr(name) }
+                .to_string_lossy()
+                .into_owned(),
+        )
+    }
+}
+
 /// stat helper (errno-valued). TebakoStat is the platform's `struct stat`
 /// on unix and the pinned `__stat64`-layout struct on windows (the C ABI
 /// authority — c_api.rs).
@@ -466,8 +481,14 @@ pub fn cmd_info(image: &Path) -> Result<String, (String, i32)> {
     let ty = match ext.as_str() {
         "zip" => "ZIP",
         "sqfs" | "squashfs" => "SquashFS",
-        // .tfs is the dwarfs-t-native (FlatBuffers metadata) extension
-        "dwarfs" | "tfs" => "DwarFS",
+        // .tfs is the dwarfs-t-native (FlatBuffers metadata) extension,
+        // but the bytes are authoritative: a limnifs image under .tfs
+        // reports its own backend (spec 20 §2 — the detection-derived
+        // label), never "DwarFS".
+        "dwarfs" | "tfs" => match mount_backend_name().as_deref() {
+            Some("LimniFS") => "LimniFS",
+            _ => "DwarFS",
+        },
         _ => "Unknown",
     };
 
@@ -950,20 +971,21 @@ fn name_matches(pattern: &str, name: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------
-// mkimage (in-process dwarfs-t Writer — no mkdwarfs binary anywhere)
+// mkimage (in-process writers: dwarfs-t / limnifs — no binaries anywhere)
 // ---------------------------------------------------------------------
 
-/// `tfs mkimage --format dwarfs <srcdir> -o <img>` — builds the image
-/// in-process via the dwarfs-t Writer (the same C ABI the reader uses;
-/// no mkdwarfs binary, no PATH lookup). An existing output is replaced
-/// (the mkdwarfs --force parity). Images carry dwarfs-t-native
-/// (FlatBuffers) metadata — name them `.tfs` (the `.dwarfs` extension
-/// stays for upstream-compatible images).
+/// `tfs mkimage --format <fmt> <srcdir> -o <img>` — builds the image
+/// in-process (dwarfs: the dwarfs-t Writer, the same C ABI the reader
+/// uses; limnifs: `limnifs-write`, spec 20 §6). No mkdwarfs/limni binary,
+/// no PATH lookup. An existing output is replaced (the mkdwarfs --force
+/// parity). Dwarfs images carry dwarfs-t-native (FlatBuffers) metadata —
+/// name them `.tfs` (the `.dwarfs` extension stays for
+/// upstream-compatible images).
 pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(), (String, i32)> {
     let fmt = format.to_lowercase();
     if fmt == "zip" {
         return Err((
-            "mkimage --format zip is not supported: the zip backend is read-only (only 'dwarfs' can be written)"
+            "mkimage --format zip is not supported: the zip backend is read-only (only 'dwarfs' and 'limnifs' can be written)"
                 .to_string(),
             1,
         ));
@@ -975,9 +997,9 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
             1,
         ));
     }
-    if fmt != "dwarfs" {
+    if fmt != "dwarfs" && fmt != "limnifs" {
         return Err((
-            format!("unsupported image format '{format}' (supported: dwarfs)"),
+            format!("unsupported image format '{format}' (supported: dwarfs, limnifs)"),
             1,
         ));
     }
@@ -989,8 +1011,9 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
     }
     // Stamp the payload manifest's `tree_hash` when the source carries a
     // manifest (spec 03 §7 fixed-point rule: the hash excludes
-    // `/__tpkg__/`, so the stamp is a fixed point). The stamped tree is
-    // a hardlink staging mirror — the author's source is never mutated.
+    // `/__tpkg__/`, so the stamp is a fixed point). The stamp is
+    // format-neutral (spec 20 §6: the staged hardlink mirror rides ahead
+    // of writer selection) — the author's source is never mutated.
     let staged = stamp_tree_hash(source_dir)?;
     let staged_tree;
     let source = match &staged {
@@ -1006,17 +1029,57 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
         std::fs::remove_file(output)
             .map_err(|e| (format!("cannot replace {}: {e}", output.display()), 1))?;
     }
-    let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default())
-        .map_err(|e| (format!("dwarfs writer: {e}"), 1))?;
-    writer.add_tree(source, "/").map_err(|e| {
+    match fmt.as_str() {
+        "dwarfs" => {
+            let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default())
+                .map_err(|e| (format!("dwarfs writer: {e}"), 1))?;
+            writer.add_tree(source, "/").map_err(|e| {
+                (
+                    format!("dwarfs writer: scanning {}: {e}", source.display()),
+                    1,
+                )
+            })?;
+            writer
+                .write(output)
+                .map_err(|e| (format!("dwarfs writer: {}: {e}", output.display()), 1))?;
+        }
+        "limnifs" => write_limnifs_image(source, output)?,
+        _ => unreachable!("the format gate above admits only dwarfs/limnifs"),
+    }
+    Ok(())
+}
+
+/// `mkimage --format limnifs`: the tebako single-file layout (spec 20
+/// §4) — the writer's manifest bytes verbatim, then every slab appended
+/// in slab-ordinal order. Dictionaries are disabled: a dictionary
+/// section would sit between the history section and the slab region
+/// (and reference per-drop dictionary ids), neither of which the v1
+/// backend resolves.
+fn write_limnifs_image(source: &Path, output: &Path) -> Result<(), (String, i32)> {
+    let mut config = limnifs_write::WriteConfig::default_v0_1();
+    config.dictionaries.enabled = false;
+    let artifact = limnifs_write::write_directory_with_config(source, &config).map_err(|e| {
         (
-            format!("dwarfs writer: scanning {}: {e}", source.display()),
+            format!("limnifs writer: scanning {}: {e}", source.display()),
             1,
         )
     })?;
-    writer
-        .write(output)
-        .map_err(|e| (format!("dwarfs writer: {}: {e}", output.display()), 1))?;
+    if let Some(sidecar) = &artifact.metadata_sidecar {
+        return Err((
+            format!(
+                "limnifs writer: the tree's metadata externalized ({} bytes to '{}') — a self-contained tebako image inlines the metadata; the tree is too large for this format today",
+                sidecar.bytes.len(),
+                sidecar.locator
+            ),
+            1,
+        ));
+    }
+    let mut image = artifact.bytes;
+    for slab in &artifact.slabs {
+        image.extend_from_slice(&slab.bytes);
+    }
+    std::fs::write(output, &image)
+        .map_err(|e| (format!("limnifs writer: {}: {e}", output.display()), 1))?;
     Ok(())
 }
 
@@ -1418,5 +1481,37 @@ mod tests {
         // (No unterminated-'[' case: the libcs diverge there — BSD
         // refuses the match, glibc and the windows matcher treat '[' as
         // a literal — so the shared oracle cannot pin it.)
+    }
+
+    /// `mkimage --format limnifs` (spec 20 §6): the image detects as
+    /// limnifs and the backend serves the tree back. Windows ships a
+    /// dwarfs-only tfs, so the mount half of the check is POSIX-only —
+    /// the unsupported-format named error is platform-independent.
+    #[test]
+    fn mkimage_limnifs_writes_a_mountable_image() {
+        let dir = std::env::temp_dir().join(format!("tfs-cli-mkimage-{}", std::process::id()));
+        let src = dir.join("src");
+        std::fs::create_dir_all(src.join("sub")).unwrap();
+        std::fs::write(src.join("hello.txt"), b"hello from mkimage").unwrap();
+        std::fs::write(src.join("sub").join("big.bin"), vec![0xABu8; 120_000]).unwrap();
+        let out = dir.join("fs.tfs");
+        cmd_mkimage("limnifs", &src, &out).expect("mkimage limnifs");
+
+        #[cfg(not(windows))]
+        {
+            let mount = tfs::mount::build_from_file(&out.to_string_lossy(), "/mnt")
+                .expect("the written image mounts");
+            assert_eq!(mount.backend.name().to_str().unwrap(), "LimniFS");
+            assert_eq!(mount.backend.stat("hello.txt").unwrap().size, 18);
+            let mut buf = vec![0u8; 120_000];
+            let n = mount.backend.pread("sub/big.bin", &mut buf, 0).unwrap();
+            assert_eq!(n, 120_000);
+            assert!(buf.iter().all(|&b| b == 0xAB));
+        }
+
+        // The unsupported-format named error lists the new supported set.
+        let (msg, _) = cmd_mkimage("ext4", &src, &out).unwrap_err();
+        assert!(msg.contains("supported: dwarfs, limnifs"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

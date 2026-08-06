@@ -20,6 +20,7 @@
 //!                   │         composite write seam — spec 11 §4)
 //!                   ├── backends_zip.rs  (ZIP via the pure-Rust `zip` crate)
 //!                   ├── backends_tar.rs  (tar/tar.gz/tar.zst, offset index)
+//!                   ├── backends_limnifs.rs (LimniFS via limnifs-core, spec 20)
 //!                   ├── backends_cow.rs  (COW composite + whiteout journal)
 //!                   ├── backends_hostdir.rs (host directory, the COW overlay)
 //!                   ├── dwarfs           (external dwarfs-rs crate)
@@ -46,9 +47,11 @@
 //! journal) or `_RW` (2, ENOTSUP — no in-tree backend writes in place).
 //! Backends: ZIP (pure-Rust `zip` crate), tar/tar.gz/tar.zst (pure-Rust
 //! offset index — `backends_tar`), COW composite over any image
-//! (`backends_cow` + `backends_hostdir`), and DwarFS (external `dwarfs-rs`
-//! crate, feature `vendored-dwarfs`, default on); SquashFS via
-//! `crates/sqfs-sys` (feature `vendored-squashfs`, default on). Writes on
+//! (`backends_cow` + `backends_hostdir`), DwarFS (external `dwarfs-rs`
+//! crate, feature `vendored-dwarfs`, default on), SquashFS via
+//! `crates/sqfs-sys` (feature `vendored-squashfs`, default on), and
+//! LimniFS (spec 20 — `limnifs-core`, pure Rust, feature
+//! `backend-limnifs`, default on). Writes on
 //! RO mounts fail EROFS; path-level writes on COW mounts route through
 //! the context (`pwrite_path`/`truncate_path`/`mkdir_path`/`remove_path`);
 //! the fd-based write family (spec 11 §7) is a later additive milestone.
@@ -72,6 +75,8 @@ pub mod backends_dwarfs;
 #[cfg(feature = "enc")]
 pub mod backends_enc;
 pub mod backends_hostdir;
+#[cfg(feature = "backend-limnifs")]
+pub mod backends_limnifs;
 #[cfg(feature = "vendored-squashfs")]
 pub mod backends_squashfs;
 pub mod backends_tar;

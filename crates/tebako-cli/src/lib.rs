@@ -232,7 +232,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     let mut images: Vec<(PathBuf, String, u32)> = vec![(
         app_image,
         scenario.fs_mount_point.clone(),
-        tpkg::TPKG_FORMAT_DWARFS,
+        opts.format.tpkg_format_id(),
     )];
     for (path, mount) in opts.images()? {
         images.push((PathBuf::from(path), mount, tpkg::TPKG_FORMAT_DWARFS));

@@ -102,9 +102,10 @@ fn validate_rejects_bad_manifests() {
     m.version = 99;
     assert_eq!(m.validate(), Err(TpkgError::Version));
 
-    // format_id out of range
+    // format_id out of range (spec 20: 5 = limnifs is admitted; ids ≥ 6
+    // stay unallocated and fail closed)
     let mut m = one_slot_manifest();
-    m.slots[0].format_id = TPKG_FORMAT_RUNTIME + 1;
+    m.slots[0].format_id = TPKG_FORMAT_LIMNIFS + 1;
     assert_eq!(m.validate(), Err(TpkgError::Invalid));
 
     // offset+size overflow

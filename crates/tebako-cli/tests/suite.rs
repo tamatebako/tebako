@@ -32,6 +32,7 @@ fn opts() -> PressOptions {
         suite: None,
         jail: None,
         no_install: false,
+        format: tebako_cli::options::PressImageFormat::Dwarfs,
     }
 }
 

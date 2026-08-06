@@ -27,6 +27,9 @@ tebako-info = { version = "0.1.0", path = "../tebako-info" }
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
 # The in-process DwarFS writer for mkimage (dwarfs-t-rs).
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
+# The in-process LimniFS writer for `mkimage --format limnifs` (spec 20
+# §6) — pure Rust, no `limni` binary anywhere.
+limnifs-write = { git = "https://github.com/limnifs/limnifs", rev = "14ab01d017af054d24ff002775e17663146cdfad" }
 libc = "0.2"
 
 # tfs per-target: the SquashFS backend (squashfs-tools-ng) is

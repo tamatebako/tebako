@@ -57,7 +57,7 @@ pub fn build_app_image(
         align_layout_to_runtime(&opts.data_src_dir(), layout_dir, ruby_ver);
     }
     write_entry_dispatcher(&opts.data_src_dir(), scenario, opts.cwd.as_deref());
-    build_image(&opts.data_bundle_file(), &opts.data_src_dir())?;
+    build_image(&opts.data_bundle_file(), &opts.data_src_dir(), opts.format)?;
     Ok(opts.data_bundle_file())
 }
 
@@ -783,6 +783,7 @@ mod tests {
             suite: None,
             jail: None,
             no_install: false,
+            format: crate::options::PressImageFormat::Dwarfs,
         }
     }
 

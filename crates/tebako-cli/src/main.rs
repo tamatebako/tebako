@@ -13,6 +13,7 @@ const USAGE: &str = "Usage:
                [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local] [--jail <spec>]
+               [--format dwarfs|limnifs]
   tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
                one package, N commands (spec 03 §6: per-entry slots + type-2 manifest)
   tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
@@ -609,6 +610,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut suite: Option<PathBuf> = None;
     let mut jail: Option<String> = None;
     let mut no_install = false;
+    let mut format = tebako_cli::options::PressImageFormat::Dwarfs;
 
     let mut i = 0;
     while i < args.len() {
@@ -645,6 +647,11 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--suite" => suite = Some(PathBuf::from(take_value(&mut i)?)),
             "--jail" => jail = Some(take_value(&mut i)?),
             "--no-install" => no_install = true,
+            "--format" => {
+                let v = take_value(&mut i)?;
+                format =
+                    tebako_cli::options::PressImageFormat::parse(&v).map_err(CliExit::Usage)?;
+            }
             "-D" | "--devmode" => devmode = true,
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
@@ -710,5 +717,6 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         suite,
         jail,
         no_install,
+        format,
     })
 }

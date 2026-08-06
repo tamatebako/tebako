@@ -160,6 +160,53 @@ fn crc32_vectors_match_c() {
     assert_eq!(crc32(b"tebako"), 0xF39D_4673);
 }
 
+// ---------------------------------------------------------------------
+// spec 20 §2: format_id 5 = limnifs. The golden vectors above stay
+// byte-identical (the C parity); the limnifs allocation EXTENDS them —
+// the Rust validation bound admits 5 while the C99 reference keeps
+// rejecting it with its named invalid error (fail-closed, correct).
+// ---------------------------------------------------------------------
+
+#[test]
+fn limnifs_slot_encodes_validates_and_round_trips() {
+    let mut m = Manifest {
+        version: TPKG_VERSION,
+        package_flags: TPKG_FLAG_LEAN,
+        launcher_abi: 3,
+        ..Default::default()
+    };
+    m.set_runtime_ref(b"tebako-runtime-0.16.2-linux-arm64");
+    m.slots
+        .push(Slot::new(0, 4096, TPKG_FORMAT_LIMNIFS, "/__tebako__"));
+
+    // The raised bound admits format 5 (structural validation + the
+    // encode gate).
+    m.validate().expect("format 5 validates");
+    let encoded = encode_trailer(&m, TABLE_OFFSET).expect("encode format 5");
+
+    // The format_id field sits at record offset 16 (little-endian).
+    assert_eq!(&encoded[16..20], &TPKG_FORMAT_LIMNIFS.to_le_bytes());
+
+    let mut image = vec![0x5Au8; TABLE_OFFSET as usize];
+    image.extend_from_slice(&encoded);
+    let parsed = parse_trailer(&image).expect("parse format-5 trailer");
+    assert_eq!(parsed, m);
+    assert_eq!(parsed.slots[0].format_id, TPKG_FORMAT_LIMNIFS);
+}
+
+#[test]
+fn format_ids_above_limnifs_stay_unallocated() {
+    let mut m = Manifest::default();
+    m.slots
+        .push(Slot::new(0, 100, TPKG_FORMAT_LIMNIFS + 1, "/m"));
+    assert_eq!(m.validate(), Err(TpkgError::Invalid));
+    assert_eq!(
+        encode_trailer(&m, TABLE_OFFSET),
+        Err(TpkgError::Invalid),
+        "the encode gate shares the validation bound"
+    );
+}
+
 #[test]
 fn write_to_appends_at_eof_and_read_from_reads_it() {
     use std::io::Cursor;

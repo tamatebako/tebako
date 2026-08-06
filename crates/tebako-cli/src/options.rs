@@ -37,6 +37,44 @@ impl PressMode {
     }
 }
 
+/// The application image format (spec 20 §6, the PLANNED `--format`
+/// press flag): which writer the packager's image build runs and which
+/// `format_id` hint the app-image slots are stamped with. `dwarfs` is
+/// the default; the flag never changes anything else about press.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PressImageFormat {
+    Dwarfs,
+    Limnifs,
+}
+
+impl PressImageFormat {
+    pub fn parse(s: &str) -> Result<PressImageFormat, String> {
+        match s {
+            "dwarfs" => Ok(PressImageFormat::Dwarfs),
+            "limnifs" => Ok(PressImageFormat::Limnifs),
+            _ => Err(format!(
+                "unsupported image format '{s}' (supported: dwarfs, limnifs)"
+            )),
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            PressImageFormat::Dwarfs => "dwarfs",
+            PressImageFormat::Limnifs => "limnifs",
+        }
+    }
+
+    /// The slot-record `format_id` hint (spec 02 §6; detection stays
+    /// authoritative — the hint never overrides magic).
+    pub fn tpkg_format_id(&self) -> u32 {
+        match self {
+            PressImageFormat::Dwarfs => tpkg::TPKG_FORMAT_DWARFS,
+            PressImageFormat::Limnifs => tpkg::TPKG_FORMAT_LIMNIFS,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PressOptions {
     /// Root folder as given on the command line, made absolute
@@ -82,6 +120,9 @@ pub struct PressOptions {
     /// `tebako install <path>`) is refused with a named error. Off by
     /// default (installable on explicit request).
     pub no_install: bool,
+    /// --format <dwarfs|limnifs> (spec 20 §6): the application image
+    /// format. Dwarfs by default.
+    pub format: PressImageFormat,
 }
 
 impl PressOptions {

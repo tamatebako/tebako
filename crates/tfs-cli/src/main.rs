@@ -10,7 +10,7 @@
 //! tfs stat [-v] <image> <path>
 //! tfs extract [-v] [-q|--quiet] [-d|--dest <dir>] <image> [files...]
 //! tfs find [-v] <image> <pattern>
-//! tfs mkimage --format dwarfs <srcdir> -o <img> [-v]
+//! tfs mkimage --format dwarfs|limnifs <srcdir> -o <img> [-v]
 //! tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] -- <cmd> [args...]
 //! tfs encrypt <image> -o <img> --recipient <pubkey>... [--subtree <path>=<pubkey>]...
 //! tfs encrypt <image> -o <img> --rewrap --key <secret> --recipient <pubkey>...
@@ -398,8 +398,11 @@ fn cmd_mkimage_main(rest: &[String]) -> ExitCode {
         Ok(a) => a,
         Err(e) => return fail(&format!("Error: {e}")),
     };
-    if let Err(e) = a.positional_count(1, 1, "tfs mkimage --format dwarfs <srcdir> --output <img>")
-    {
+    if let Err(e) = a.positional_count(
+        1,
+        1,
+        "tfs mkimage --format dwarfs|limnifs <srcdir> --output <img>",
+    ) {
         return fail(&format!("Error: {e}"));
     }
     let Some(format) = a.format else {
@@ -626,7 +629,9 @@ fn print_help() {
     println!("  stat     Show file/directory metadata");
     println!("  extract  Extract archive contents (-d dest, default .)");
     println!("  find     Search for files by name glob");
-    println!("  mkimage  Create a dwarfs (.tfs) image from a directory (in-process writer)");
+    println!(
+        "  mkimage  Create a dwarfs or limnifs (.tfs) image from a directory (in-process writer)"
+    );
     println!("  exec     Run a dynamic native command with the VFS injected (preload shim)");
     println!("  encrypt  Encrypt an image to recipients (-o, --recipient, --subtree;");
     println!("           --rewrap --key rotates grants without touching the bulk)");

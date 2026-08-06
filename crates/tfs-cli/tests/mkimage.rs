@@ -89,6 +89,60 @@ fn mkimage_roundtrip_ls_cat_stat_extract() {
     assert_eq!(std::fs::read(dest.join("sub/two.txt")).unwrap(), b"two");
 }
 
+/// The limnifs writer path (spec 20 §6): same tree in, same CLI
+/// answers out — `Type: LimniFS` comes off the mounted backend, never
+/// the extension.
+#[test]
+#[cfg(not(windows))] // windows ships a dwarfs-only tfs (TODO.v2-1/02)
+fn mkimage_limnifs_roundtrip_ls_cat_stat_extract() {
+    let w = TempDir::new("mkimglim");
+    let src = make_source(&w);
+    let img = w.0.join("app.tfs");
+
+    let (rc, _, err) = run(
+        &[
+            "mkimage",
+            "--format",
+            "limnifs",
+            src.to_str().unwrap(),
+            "-o",
+            img.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "mkimage must succeed");
+    assert!(img.is_file());
+
+    let (rc, out, _) = run(&["info", img.to_str().unwrap()], &w.0);
+    assert_eq!(rc, 0);
+    assert!(out.contains("Type: LimniFS"), "{out}");
+    assert!(out.contains("Files: 3"), "{out}");
+    assert!(out.contains("Directories: 1"), "{out}");
+
+    let (rc, out, _) = run(&["tree", img.to_str().unwrap()], &w.0);
+    assert_eq!(rc, 0);
+    assert!(out.contains("one.txt"), "{out}");
+    assert!(out.contains("two.txt"), "{out}");
+
+    let (rc, out, _) = run(&["cat", img.to_str().unwrap(), "sub/three.txt"], &w.0);
+    assert_eq!((rc, out.as_str()), (0, "three"));
+
+    let dest = w.0.join("extracted");
+    std::fs::create_dir_all(&dest).unwrap();
+    let (rc, _, _) = run(
+        &[
+            "extract",
+            "-d",
+            dest.to_str().unwrap(),
+            img.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!(rc, 0);
+    assert_eq!(std::fs::read(dest.join("one.txt")).unwrap(), b"one");
+    assert_eq!(std::fs::read(dest.join("sub/two.txt")).unwrap(), b"two");
+}
+
 #[test]
 fn mkimage_overwrites_existing_output() {
     let w = TempDir::new("mkimg3");
@@ -118,7 +172,7 @@ fn mkimage_error_surfaces() {
     for (args, expect) in [
         (
             vec!["mkimage", "--format", "zip", src.to_str().unwrap(), "-o", "x.zip"],
-            "Error: mkimage failed: mkimage --format zip is not supported: the zip backend is read-only (only 'dwarfs' can be written)\n",
+            "Error: mkimage failed: mkimage --format zip is not supported: the zip backend is read-only (only 'dwarfs' and 'limnifs' can be written)\n",
         ),
         (
             vec!["mkimage", "--format", "squashfs", src.to_str().unwrap(), "-o", "x.sqfs"],
@@ -126,7 +180,7 @@ fn mkimage_error_surfaces() {
         ),
         (
             vec!["mkimage", "--format", "foo", src.to_str().unwrap(), "-o", "x"],
-            "Error: mkimage failed: unsupported image format 'foo' (supported: dwarfs)\n",
+            "Error: mkimage failed: unsupported image format 'foo' (supported: dwarfs, limnifs)\n",
         ),
         (
             vec!["mkimage", "--format", "dwarfs", "nosuchdir", "-o", "x.tfs"],

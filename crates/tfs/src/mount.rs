@@ -1,7 +1,8 @@
 //! Mount construction: open an image (file / file region / memory), sniff
 //! its format, build the backend. Mirrors the C++ BackendFactory dispatch:
-//! DwarFS (vendored-dwarfs) and SquashFS (vendored-squashfs) are real with
-//! their default features on, ENOTSUP stubs without.
+//! DwarFS (vendored-dwarfs), SquashFS (vendored-squashfs) and LimniFS
+//! (backend-limnifs, spec 20) are real with their default features on,
+//! ENOTSUP stubs without.
 //!
 //! Mounts carry a mode (spec 11 §3): RO (default), COW (a HostDir overlay
 //! stacked over the image backend — spec 11 §4), RW (in-place; no in-tree
@@ -22,6 +23,8 @@ use crate::context::Mount;
 
 #[cfg(feature = "vendored-dwarfs")]
 use crate::backends_dwarfs::DwarfsBackend;
+#[cfg(feature = "backend-limnifs")]
+use crate::backends_limnifs::LimnifsBackend;
 #[cfg(feature = "vendored-squashfs")]
 use crate::backends_squashfs::SquashfsBackend;
 
@@ -142,6 +145,12 @@ pub fn build_from_file_with_mode(
         ImageFormat::Squashfs => Box::new(SquashfsBackend::from_file(archive_path)?),
         #[cfg(not(feature = "vendored-squashfs"))]
         ImageFormat::Squashfs => return Err(libc::ENOTSUP),
+        #[cfg(feature = "backend-limnifs")]
+        ImageFormat::Limnifs => Box::new(LimnifsBackend::from_image(
+            std::fs::read(archive_path).map_err(open_error)?,
+        )?),
+        #[cfg(not(feature = "backend-limnifs"))]
+        ImageFormat::Limnifs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };
     let backend = apply_mode(backend, mode, overlay_dir)?;
@@ -229,6 +238,12 @@ pub fn build_from_file_at_with_mode(
         )?)?),
         #[cfg(not(feature = "vendored-squashfs"))]
         ImageFormat::Squashfs => return Err(libc::ENOTSUP),
+        #[cfg(feature = "backend-limnifs")]
+        ImageFormat::Limnifs => Box::new(LimnifsBackend::from_image(read_region(
+            &mut file, offset, length,
+        )?)?),
+        #[cfg(not(feature = "backend-limnifs"))]
+        ImageFormat::Limnifs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };
     let backend = apply_mode(backend, mode, overlay_dir)?;
@@ -275,6 +290,10 @@ pub fn build_from_memory_with_mode(
         ImageFormat::Squashfs => Box::new(SquashfsBackend::from_memory(data.to_vec())?),
         #[cfg(not(feature = "vendored-squashfs"))]
         ImageFormat::Squashfs => return Err(libc::ENOTSUP),
+        #[cfg(feature = "backend-limnifs")]
+        ImageFormat::Limnifs => Box::new(LimnifsBackend::from_image(data.to_vec())?),
+        #[cfg(not(feature = "backend-limnifs"))]
+        ImageFormat::Limnifs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };
     let backend = apply_mode(backend, mode, overlay_dir)?;
@@ -302,6 +321,30 @@ mod tests {
         magic.resize(SNIFF_LEN, 0);
         let path = std::env::temp_dir().join(format!(
             "tfs-enotsup-{}-{}.sqfs",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::write(&path, &magic).unwrap();
+        let result = build_from_file(&path.to_string_lossy(), "/x");
+        let _ = std::fs::remove_file(&path);
+        assert_eq!(result.err(), Some(libc::ENOTSUP));
+    }
+
+    /// The compiled-out rule (spec 20 §5): a mount of `LMFS` bytes on a
+    /// build without the limnifs backend fails with the NAMED ENOTSUP —
+    /// never a silent re-route. Runs in the `--no-default-features` CI
+    /// job (the limnifs feature is off there).
+    #[cfg(not(feature = "backend-limnifs"))]
+    #[test]
+    fn limnifs_without_the_backend_is_a_named_enotsup() {
+        let mut magic = Vec::with_capacity(SNIFF_LEN);
+        magic.extend_from_slice(b"LMFS");
+        magic.resize(SNIFF_LEN, 0);
+        let path = std::env::temp_dir().join(format!(
+            "tfs-enotsup-{}-{}.lim",
             std::process::id(),
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
