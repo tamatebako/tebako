@@ -80,8 +80,9 @@ grammar:
     type: string
     required: true
     notes: >-
-      The exe's compiled-in runtime root (ruby: /__tfs__, A:/t on
-      windows). FLOWS from tamatebako/ruby's patch literals — the single
+      The exe's compiled-in runtime root (ruby: /__tfs__, A:/__tfs__ on
+      windows — the one name on every platform). FLOWS from
+      tamatebako/ruby's patch literals — the single
       owner — through the source tarball's tebako-mount-root manifest;
       nothing downstream re-authors it.
   image_layout:

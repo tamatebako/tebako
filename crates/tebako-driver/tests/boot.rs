@@ -864,6 +864,88 @@ fn union_row_merges_the_trees_at_the_runtime_root() {
     assert_eq!(seen, vec!["ruby", "tebako"]);
 }
 
+// ---------------------------------------------------------------------
+// The uniform VFS namespace on windows roots (spec 17 §1): declared
+// mounts qualify onto the runtime root's drive before any mount/entry
+// computation.
+// ---------------------------------------------------------------------
+
+/// The env fixture's layout declaration with the windows root spelling.
+fn write_env_image_windows_root(dir: &Path) -> PathBuf {
+    write_env_image_with_layout(
+        dir,
+        Some(&GOOD_LAYOUT.replace("/__tfs__", "A:/__tfs__")),
+    )
+}
+
+#[test]
+fn windows_root_qualifies_declared_mounts_onto_the_vfs_drive() {
+    let g = guard("win-qualify");
+    let env_image = write_env_image_windows_root(g.path());
+    let payload = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let out = boot(
+        &argv(&[
+            "ruby.exe",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+            "--version",
+        ]),
+        "A:/__tfs__",
+        &env,
+    )
+    .unwrap();
+    // The declared `/` mount qualified onto the VFS drive; the entry
+    // resolves drive-qualified, so ruby's C-level expansion can never
+    // re-root it onto the cwd drive.
+    assert_eq!(out.argv, argv(&["ruby.exe", "A:/bin/app", "--version"]));
+    // Both mounts live in the physical namespace: the env image at the
+    // qualified root, the payload at the drive root.
+    assert_eq!(
+        read_file("A:/__tfs__/lib/ruby/rubygems.rb"),
+        b"# rubygems core\n"
+    );
+    assert_eq!(read_file("A:/bin/app"), b"#!/usr/bin/env ruby\nputs 'hi'\n");
+}
+
+#[test]
+fn windows_root_union_merges_at_the_qualified_root() {
+    let g = guard("win-union");
+    let env_image = write_env_image_windows_root(g.path());
+    let payload = write_shadowing_payload(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let out = tebako_driver::boot_with_mount_modes(
+        &argv(&[
+            "ruby.exe",
+            "--tebako-image",
+            &format!("{}:0:/__tfs__", payload.display()),
+            "--tebako-entry",
+            "/local/stub.rb",
+        ]),
+        "A:/__tfs__",
+        &env,
+        &StubModes(Some(union_row())),
+    )
+    .unwrap();
+    // The declared union target is the SAME NAME the root carries, so
+    // the qualified points coincide and the union row governs.
+    assert_eq!(out.argv, argv(&["ruby.exe", "A:/__tfs__/local/stub.rb"]));
+    assert_eq!(
+        read_file("A:/__tfs__/local/stub.rb"),
+        b"load \"/__tfs__/bin/app\"\n"
+    );
+    assert_eq!(
+        read_file("A:/__tfs__/lib/ruby/rubygems.rb"),
+        b"# app-shadowed rubygems\n"
+    );
+}
+
 #[test]
 fn a_named_mode_source_error_surfaces_and_rolls_back() {
     let g = guard("modes-err");

@@ -147,7 +147,7 @@ impl RuntimeDeployer {
         format!(
             "{}:0:{}",
             self.driver_package().display(),
-            self.fs_mount_point
+            crate::declared_mount(&self.fs_mount_point)
         )
     }
 
@@ -167,21 +167,58 @@ impl RuntimeDeployer {
 
     /// The runtime reads the slot region referenced by the file's tpkg
     /// trailer; the base bytes are irrelevant to the mount, so the package
-    /// is stitched onto an empty base.
+    /// is stitched onto an empty base. The slot's mount point is the
+    /// DECLARED root (the driver qualifies it onto the VFS drive at boot,
+    /// spec 17 §1) and the L2 `mounts:` row declares the union over the
+    /// env image — the deploy driver image lands at the runtime root the
+    /// env image already owns.
     fn stitch_driver_package(&self) -> Result<(), TebakoError> {
         let empty_base = self.staging_bin_dir.join(EMPTY_BASE);
         fs::write(&empty_base, b"").map_err(|e| {
             crate::error::plain_error(format!("{e} writing {}", empty_base.display()))
         })?;
+        let declared = crate::declared_mount(&self.fs_mount_point);
         let images = [tebako_pkg::PackageImage {
             path: self.driver_image(),
-            mount_point: self.fs_mount_point.clone(),
+            mount_point: declared.to_string(),
             format_id: tpkg::TPKG_FORMAT_DWARFS,
         }];
+        let runtime_ref = format!("ruby@{};tebako={}", self.ruby_version, self.tebako_version);
         let options = tebako_pkg::PackageOptions {
-            runtime_ref: format!("ruby@{};tebako={}", self.ruby_version, self.tebako_version),
+            runtime_ref: runtime_ref.clone(),
             package_flags: tpkg::TPKG_FLAG_LEAN,
             launcher_abi: crate::LAUNCHER_ABI,
+            package_manifest: Some(tpkg::PackageManifest {
+                schema_version: tpkg::PACKAGE_SCHEMA_VERSION,
+                package: tpkg::PackageIdentity {
+                    name: "tebako-deploy-driver".to_string(),
+                    version: self.tebako_version.clone(),
+                    producer: tpkg::Producer {
+                        tool: "tebako-cli".to_string(),
+                        tool_version: self.tebako_version.clone(),
+                    },
+                    created: crate::install::rfc3339_utc(
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0),
+                    ),
+                },
+                entries: vec![tpkg::PackageEntry {
+                    name: "tebako-deploy-driver".to_string(),
+                    slot: 0,
+                    entrypoint: "/local/stub.rb".to_string(),
+                    runtime_ref,
+                }],
+                jail: None,
+                env: Default::default(),
+                mounts: vec![tpkg::PackageMount {
+                    slot: 0,
+                    point: declared.to_string(),
+                    mode: tpkg::MountMode::Union,
+                    precedence: Some(tpkg::Precedence::AfterEnv),
+                }],
+            }),
             ..Default::default()
         };
         tebako_pkg::bundle_exact(&empty_base, &images, &self.driver_package(), &options)

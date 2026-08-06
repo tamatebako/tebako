@@ -87,8 +87,9 @@ pub const LAUNCHER_ABI: u32 = 1;
 /// and the tebako=<...> component of the trailer's runtime_ref. Matches
 /// the reference gem's Tebako::VERSION at port time.
 /// The tebako release line the CLI presses against. New-era only: from
-/// 0.16.1 the runtimes bake the renamed mount root (`/__tfs__`, `A:/t`);
-/// older releases carry the legacy `__tebako_memfs__` layout and are NOT
+/// 0.16.1 the runtimes bake the renamed mount root (`/__tfs__`,
+/// `A:/__tfs__` on windows — the one name on every platform); older
+/// releases carry the legacy `__tebako_memfs__` layout and are NOT
 /// served (no old contract, no compat readers).
 pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.2";
 
@@ -231,7 +232,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
 
     let mut images: Vec<(PathBuf, String, u32)> = vec![(
         app_image,
-        scenario.fs_mount_point.clone(),
+        declared_mount(&scenario.fs_mount_point).to_string(),
         opts.format.tpkg_format_id(),
     )];
     for (path, mount) in opts.images()? {
@@ -272,7 +273,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         &package,
         &runtime_ref,
         &opts.tebako_version,
-        &scenario.fs_mount_point,
+        declared_mount(&scenario.fs_mount_point),
         jail,
     );
     stitch(
@@ -475,6 +476,21 @@ pub(crate) fn stitch(
     Ok(())
 }
 
+/// The declared (POSIX) form of a mount point: the uniform VFS
+/// namespace name the trailer slots and L2 `mounts:` rows carry on
+/// every platform — the physical root minus any windows drive
+/// (`A:/__tfs__` → `/__tfs__`; POSIX roots are unchanged). The driver
+/// re-qualifies declared mounts onto the VFS drive at boot (spec 17
+/// §1), so the argv grammar never has to carry a drive colon.
+pub(crate) fn declared_mount(mount_point: &str) -> &str {
+    let b = mount_point.as_bytes();
+    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+        &mount_point[2..]
+    } else {
+        mount_point
+    }
+}
+
 /// The L2 package manifest every runnable press writes (spec 03 §6 /
 /// spec 02 §5b): minimal identity (press has no package-version input —
 /// a --package-version flag is a later milestone), one entry naming the
@@ -482,10 +498,11 @@ pub(crate) fn stitch(
 /// — mount-relative; the driver joins mount+entry, spec 17 §1),
 /// `runtime_ref` mirroring the trailer field, and the `mounts:` row
 /// declaring the app slot's union over the env image at the runtime
-/// root (`mount_point` — the trailer's own mount point, `/__tfs__` or
-/// `A:/t` on windows, so the two stay consistent by construction). A
-/// --jail press composes the policy into the same block — the package's
-/// host-access REQUEST the bootstrap tightens at handoff (spec 08 §2).
+/// root (`mount_point` — the trailer's own mount point, the declared
+/// `/__tfs__` on every platform, so the two stay consistent by
+/// construction). A --jail press composes the policy into the same
+/// block — the package's host-access REQUEST the bootstrap tightens at
+/// handoff (spec 08 §2).
 fn press_package_manifest(
     package: &str,
     runtime_ref: &str,

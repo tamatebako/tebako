@@ -496,6 +496,35 @@ fn join_mount(mount_point: &str, entry: &str) -> String {
     )
 }
 
+/// The VFS drive of a runtime root: `A:/__tfs__` → `Some("A:")`;
+/// `/__tfs__` → `None` (POSIX — no drive qualification).
+fn vfs_drive(runtime_root: &str) -> Option<&str> {
+    let b = runtime_root.as_bytes();
+    if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
+        Some(&runtime_root[..2])
+    } else {
+        None
+    }
+}
+
+/// Windows (spec 17 §1): a declared mount is a POSIX absolute path in
+/// the VFS namespace (`/`, `/__tfs__`, `/opt/x`); on windows the
+/// namespace presents on its own drive — the drive of the runtime root
+/// (`A:/__tfs__` — the uniform root: the same name on every platform).
+/// The driver therefore mounts every declared point at
+/// `<drive><mount>`. Ruby's C-level path expansion re-roots
+/// drive-relative paths (`/...`) onto the process cwd drive; only
+/// drive-qualified paths are stable across expansion, so qualifying is
+/// what keeps payload paths inside the VFS. POSIX roots carry no
+/// drive: the mount is used as declared. A relative mount (the grammar
+/// admits it) is never qualified.
+fn qualify_mount(mount: &str, runtime_root: &str) -> String {
+    match vfs_drive(runtime_root) {
+        Some(drive) if mount.starts_with('/') => format!("{drive}{mount}"),
+        _ => mount.to_string(),
+    }
+}
+
 /// Resolve the entry against the first image's mount (the app payload —
 /// spec 17 §1) and verify it exists in the mounted tree — but only
 /// against mounts THIS boot established (an entry outside them belongs
@@ -535,7 +564,8 @@ fn resolve_entry(
 /// semantics preserved: the parser scans from index 0 (callers pass the
 /// full argv; non-loader leading args end the scan — the plain-boot
 /// case). `runtime_root` is the mount point the interpreter was compiled
-/// against (ruby: `/__tfs__`, `A:/t` on windows).
+/// against (ruby: `/__tfs__`, `A:/__tfs__` on windows — the one name on
+/// every platform; spec 17 §1).
 pub fn boot(
     argv: &[String],
     runtime_root: &str,
@@ -554,7 +584,13 @@ pub fn boot_with_mount_modes(
     env: &dyn Env,
     modes: &dyn MountModes,
 ) -> Result<BootOutcome, DriverError> {
-    let h = Handoff::parse(argv)?;
+    let mut h = Handoff::parse(argv)?;
+    // Windows: qualify the declared mounts onto the VFS drive (spec 17
+    // §1) before any mount/entry use — the mount table, the union-mode
+    // rows, and the entry resolution all see the physical points.
+    for spec in &mut h.images {
+        spec.mount = qualify_mount(&spec.mount, runtime_root);
+    }
 
     // Plain boot: no loader args at all. The interpreter runs its own
     // argv; the env image still mounts when handed (image-era standalone
@@ -632,4 +668,43 @@ pub fn boot_with_mount_modes(
         context().write().unwrap().unmount();
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vfs_drive_reads_the_root_drive() {
+        assert_eq!(vfs_drive("A:/__tfs__"), Some("A:"));
+        assert_eq!(vfs_drive("a:/t"), Some("a:"));
+        assert_eq!(vfs_drive("A:"), Some("A:"));
+        assert_eq!(vfs_drive("/__tfs__"), None);
+        assert_eq!(vfs_drive("//share/x"), None);
+        assert_eq!(vfs_drive("1:/x"), None);
+        assert_eq!(vfs_drive(""), None);
+    }
+
+    #[test]
+    fn declared_mounts_qualify_onto_the_vfs_drive() {
+        // The uniform namespace (spec 17 §1): the POSIX absolute
+        // namespace presents on the runtime root's drive, so the
+        // runtime root is the same NAME on every platform.
+        assert_eq!(qualify_mount("/", "A:/__tfs__"), "A:/");
+        assert_eq!(qualify_mount("/__tfs__", "A:/__tfs__"), "A:/__tfs__");
+        assert_eq!(qualify_mount("/opt/x", "A:/__tfs__"), "A:/opt/x");
+    }
+
+    #[test]
+    fn posix_roots_never_qualify() {
+        assert_eq!(qualify_mount("/", "/__tfs__"), "/");
+        assert_eq!(qualify_mount("/__tfs__", "/__tfs__"), "/__tfs__");
+        assert_eq!(qualify_mount("/opt/x", "/__tfs__"), "/opt/x");
+    }
+
+    #[test]
+    fn relative_mounts_are_never_qualified() {
+        assert_eq!(qualify_mount("rel", "A:/__tfs__"), "rel");
+        assert_eq!(qualify_mount("rel", "/__tfs__"), "rel");
+    }
 }

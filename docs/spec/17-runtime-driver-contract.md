@@ -24,6 +24,19 @@ exact contract (roadmap 22's "add a language" playbook).
 - **Mount order:** the env image first, then payload triples in argv
   order; the table is longest-prefix and nested mounts are legal; any
   failure unmounts everything — never a partial mount.
+- **The uniform VFS namespace (locked 2026-08-06):** declared mount
+  points are POSIX absolute paths on every platform — in manifests, in
+  trailer slot records, and on this wire. On windows the namespace
+  presents on its own drive: the driver qualifies every declared mount
+  `<mount>` onto the runtime root's drive (`<drive><mount>`) before any
+  mount, union, or entry computation, and the runtime root is the one
+  name on every platform (ruby: `/__tfs__`, presented `A:/__tfs__` on
+  windows). An interpreter's C-level path expansion re-roots
+  drive-relative paths (`/...`) onto the process cwd drive; only
+  drive-qualified paths are stable across expansion, so qualifying is
+  what keeps payload paths inside the VFS. The wire grammar therefore
+  never carries a drive letter: `<mount>` is always the declared form,
+  and a declared mount naming a drive is malformed.
 - **Mount modes (locked 2026-08-04):** every mount is `exclusive`
   (default) or `union`, declared per slot in the package manifest's
   `mounts:` block (spec 03 §6). An exclusive mount onto an occupied

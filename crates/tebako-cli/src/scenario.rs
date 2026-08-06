@@ -390,7 +390,7 @@ impl ScenarioManager {
             fs_entrance: ent.clone(),
             fs_entry_point: format!("/bin/{ent}"),
             fs_mount_point: if msys {
-                "A:/t".to_string()
+                "A:/__tfs__".to_string()
             } else {
                 "/__tfs__".to_string()
             },
