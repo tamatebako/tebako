@@ -25,4 +25,4 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 [dev-dependencies]
 # The limnifs backend-pair golden class builds its fixture image
 # in-process (spec 20 §8) — never a `limni` binary.
-limnifs-write = { version = "0.2", path = "../../../../limnifs/limnifs/limnifs-write" }
+limnifs-write = { git = "https://github.com/limnifs/limnifs", rev = "14ab01d017af054d24ff002775e17663146cdfad" }
