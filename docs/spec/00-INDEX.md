@@ -51,6 +51,7 @@ spec 02 §6).
 16. [16 — Distribution and installation](16-distribution-and-installation.md) — personas, channels (brew/curl|sh/tebako install), slim/fat, trust per channel
 17. [17 — Runtime driver contract](17-runtime-driver-contract.md) — the language-agnostic loader↔runtime surface (argv, env, IO, exit codes)
 20. [20 — LimniFS backend](20-limnifs-backend.md) — image format 5: detection, the backend adapter contract, backend cargo features, the writer path (PLANNED)
+21. [21 — Crypto consolidation](21-crypto-consolidation.md) — one crypto home per layer: OpenPGP keeps trust and identity, ENC keeps confidentiality, limnifs-native crypto is evidence, never anchor (PROPOSED DECISION)
 
 ## Locked invariants (all specs subordinate to these)
 
