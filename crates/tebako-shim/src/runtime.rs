@@ -614,6 +614,35 @@ fn sha_from_manifest(text: &str, asset: &str) -> Result<String, ()> {
     Err(())
 }
 
+/// The release manifest's ruby DLL facet for the exe entry `asset`
+/// (tebako-runtime-ruby#40 — the additive `dll` key, windows packages
+/// only): `(dll asset filename, install_as, sha256)`. `None` when the
+/// entry carries no `dll` key (every POSIX entry) or the key is
+/// incomplete — the facet is manifest-keyed: the PE name (`install_as`)
+/// exists only there, never derived (the factory's
+/// RubyVersion#msys_dll_name is its single owner).
+fn dll_from_manifest(text: &str, asset: &str) -> Option<(String, String, String)> {
+    let parsed = tebako_json::parse(text).ok()?;
+    let tebako_json::Value::Array(entries) = &parsed else {
+        return None;
+    };
+    entries.iter().find_map(|entry| {
+        if entry
+            .find("filename")
+            .and_then(|f| f.as_string())
+            .as_deref()
+            != Some(asset)
+        {
+            return None;
+        }
+        let dll = entry.find("dll")?;
+        let filename = dll.find("filename").and_then(|v| v.as_string())?;
+        let install_as = dll.find("install_as").and_then(|v| v.as_string())?;
+        let sha256 = dll.find("sha256").and_then(|v| v.as_string())?;
+        Some((filename, install_as, sha256))
+    })
+}
+
 /// SHA256SUMS.txt fallback: "<64hex><spaces>[*]<filename>" per line.
 #[allow(clippy::result_unit_err)]
 fn sha_from_sums(text: &str, asset: &str) -> Result<String, ()> {
@@ -958,6 +987,37 @@ fn download_runtime(
         } else {
             false
         };
+        // windows dll-era runtimes (tebako-runtime-ruby#40): the exe
+        // imports the ruby core DLL — the release manifest's additive
+        // `dll` key names the asset and the PE name (`install_as`) it
+        // installs under next to the exe (never the asset name: assets
+        // are unique per leg, two same-ABI legs share the PE name). Same
+        // mirror/offline/verify rules as the image, the same contract
+        // gate (the exe entry governs its additive facets); a
+        // contract-complete entry with no `dll` key installs the exe
+        // alone (every POSIX release).
+        if let Some((dll_asset, install_as, dll_expected)) = dll_from_manifest(&manifest_text, &asset)
+        {
+            if install_as.contains('/') || install_as.contains('\\') {
+                return fail(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "release manifest dll facet for {asset} carries an unusable install_as (\"{install_as}\") — the PE name must be a bare file name — refusing to install or execute"
+                    ),
+                );
+            }
+            let dll_url = format!("{base}/v{}/{dll_asset}", pref.tebako);
+            let dll_actual = install_asset(&dll_url, local, &install_as, &tmp_dir, &dll_expected)?;
+            make_readonly(&tmp_dir.join(&install_as));
+            let _ = std::fs::write(
+                tmp_dir.join(format!("{install_as}.sha256")),
+                format!("{dll_actual}  {install_as}\n"),
+            );
+            let _ = std::fs::write(
+                tmp_dir.join(format!("{install_as}.origin")),
+                format!("runtime_ref={runtime_ref}\nurl={dll_url}\nsha256={dll_actual}\n"),
+            );
+        }
         let _ = std::fs::write(tmp_dir.join("sha256"), format!("{actual}  {asset}\n"));
         let _ = std::fs::write(
             tmp_dir.join("origin"),

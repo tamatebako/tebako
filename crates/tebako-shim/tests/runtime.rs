@@ -186,6 +186,153 @@ fn sha_mismatch_is_exit_70_and_nothing_enters_the_cache() {
 }
 
 #[test]
+fn download_installs_the_dll_as_install_as_with_markers() {
+    // tebako-runtime-ruby#40: a windows release declares the ruby DLL in
+    // the additive `dll` key — it installs next to the exe under its PE
+    // name (`install_as`), verified and marked like the image.
+    let tmp = TempDir::new("download-dll");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    let (_, install_as) = write_mirror_dll(&mirror, "3.3.12", "0.16.3", false);
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.12\n    tebako: 0.16.3\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+
+    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "3.3.12");
+    assert!(rt.exe.is_file());
+    // the dll materializes under its PE name — never the asset name
+    let dll = rt.dir.join(&install_as);
+    assert!(dll.is_file(), "{}", dll.display());
+    let asset_name = rt
+        .dir
+        .join(format!("tebako-runtime-0.16.3-3.3.12-{}.dll", platform()));
+    assert!(
+        !asset_name.exists(),
+        "the asset name is not the install name"
+    );
+    // trust markers installed
+    let marker = rt.dir.join(format!("{install_as}.sha256"));
+    assert!(marker.is_file(), "marker {}", marker.display());
+    let text = std::fs::read_to_string(&marker).unwrap();
+    assert_eq!(
+        text,
+        format!("{}  {install_as}\n", sha256_hex(b"mirrored ruby dll\n"))
+    );
+    let origin = std::fs::read_to_string(rt.dir.join(format!("{install_as}.origin"))).unwrap();
+    assert!(
+        origin.contains(&format!("tebako-runtime-0.16.3-3.3.12-{}.dll", platform())),
+        "{origin}"
+    );
+    // the dll is read-only (0444)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        assert_eq!(dll.metadata().unwrap().permissions().mode() & 0o777, 0o444);
+    }
+
+    // second resolution is a cache hit: the mirror is gone, still Ready
+    std::fs::remove_dir_all(&mirror).unwrap();
+    let rt2 = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());
+    assert_eq!(rt2.lang_version, "3.3.12");
+}
+
+#[test]
+fn dll_sha_mismatch_is_exit_70_and_nothing_enters_the_cache() {
+    let tmp = TempDir::new("dll-sha-mismatch");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_mirror_dll(&mirror, "3.3.12", "0.16.3", true);
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.12\n    tebako: 0.16.3\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_SHA);
+    assert!(
+        !home
+            .join("runtimes")
+            .join(format!("ruby-3.3.12-0.16.3-{}", platform()))
+            .exists(),
+        "a failed install must be invisible"
+    );
+}
+
+#[test]
+fn a_release_without_the_dll_key_installs_the_exe_alone() {
+    // the additive-key compat rule: a contract-complete release with no
+    // `dll` key (every POSIX release) installs the exe alone.
+    let tmp = TempDir::new("download-nodll");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_mirror(&mirror, "4.0.6", "0.16.0", false);
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 4.0.6\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    assert!(rt.exe.is_file());
+    assert!(
+        !std::fs::read_dir(&rt.dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .any(|e| e.file_name().to_string_lossy().ends_with(".dll")),
+        "no dll facet declared, no dll installed"
+    );
+}
+
+#[test]
+fn a_dll_install_as_with_a_path_separator_is_a_named_error() {
+    // the PE name installs a file into the cache entry — a name with a
+    // separator would escape it; refuse by name, never install.
+    let tmp = TempDir::new("dll-traversal");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_mirror_dll(&mirror, "3.3.12", "0.16.3", false);
+    let manifest = mirror.join("v0.16.3").join("manifest.json");
+    let text = std::fs::read_to_string(&manifest)
+        .unwrap()
+        .replace("x64-ucrt-ruby330.dll", "../evil.dll");
+    std::fs::write(&manifest, text).unwrap();
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.12\n    tebako: 0.16.3\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    let err = runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    assert!(err.message.contains("bare file name"), "{}", err.message);
+    assert!(!home.join("tmp").join("evil.dll").exists());
+    assert!(
+        !home
+            .join("runtimes")
+            .join(format!("ruby-3.3.12-0.16.3-{}", platform()))
+            .exists(),
+        "a refused install must be invisible"
+    );
+}
+
+#[test]
 fn pre_era_release_is_refused_before_download() {
     // spec 18 S11: a release whose manifest declares no contract set
     // (the pre-18 factory shape — contract fields absent) is refused by

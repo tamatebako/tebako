@@ -85,12 +85,27 @@ pub struct IndexEntry {
     /// The runtime image sibling (item 30b): `<asset>.tfs` from the
     /// manifest's additive `image` key or the SHA256SUMS line.
     pub image: Option<ImageRef>,
+    /// The windows ruby DLL sibling (tebako-runtime-ruby#40): `<asset>.dll`
+    /// from the manifest's additive `dll` key or the SHA256SUMS line.
+    pub dll: Option<DllRef>,
 }
 
 /// A resolved runtime image reference (filename + expected sha256).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRef {
     pub filename: String,
+    pub sha256: String,
+}
+
+/// A resolved ruby DLL reference (tebako-runtime-ruby#40): the release
+/// asset (`filename` — unique per leg), the PE name it installs under
+/// (`install_as` — two same-ABI legs share it; the SHA256SUMS index form
+/// carries no PE name, so a sums-derived ref cannot be installed), and the
+/// expected sha256.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DllRef {
+    pub filename: String,
+    pub install_as: Option<String>,
     pub sha256: String,
 }
 
@@ -175,7 +190,12 @@ impl Resolver {
     /// bootstrap consumes at first run. On a cache hit the image metadata
     /// comes from the entry's trusted marker; an entry whose marker is
     /// missing (installed before the image era, or partially wiped) has
-    /// its image backfilled from the release index.
+    /// its image backfilled from the release index. A windows release
+    /// (tebako-runtime-ruby#40) additionally carries the ruby DLL facet:
+    /// it installs next to the executable under its PE name (`install_as`)
+    /// whenever the index is in hand (the fresh install and the backfill
+    /// alike); a contract-complete entry with no `dll` key installs the
+    /// executable alone (every POSIX release).
     pub fn resolve_runtime(
         &self,
         ruby_version: &str,
@@ -201,6 +221,9 @@ impl Resolver {
                     if let Some(image) = entry.image.clone() {
                         self.install_image(&dir, &image, tebako_version)?;
                     }
+                    if let Some(dll) = entry.dll.clone() {
+                        self.install_dll(&dir, &dll, tebako_version)?;
+                    }
                     return Ok(());
                 }
                 // The exe is cached but its image marker is missing (an
@@ -217,6 +240,9 @@ impl Resolver {
                     }
                     if let Some(image) = entry.image.clone() {
                         self.install_image(&dir, &image, tebako_version)?;
+                    }
+                    if let Some(dll) = entry.dll.clone() {
+                        self.install_dll(&dir, &dll, tebako_version)?;
                     }
                 }
                 Ok(())
@@ -319,6 +345,86 @@ impl Resolver {
             format!("{url}\n"),
         )
         .map_err(err)?;
+        Ok(())
+    }
+
+    /// Download + verify + install the windows ruby DLL
+    /// (tebako-runtime-ruby#40) next to the executable AS `install_as` —
+    /// the PE name the exe and the extension .so's import (never the asset
+    /// name: assets are unique per leg, two same-ABI legs share the PE
+    /// name) — read-only with `<install_as>.sha256`/`<install_as>.origin`
+    /// trusted markers, the image's exact discipline. A ref without an
+    /// `install_as` (the SHA256SUMS index form carries no PE name) is not
+    /// installable: the dll facet is manifest-keyed. Called with the entry
+    /// lock already held.
+    fn install_dll(
+        &self,
+        dir: &Path,
+        dll: &DllRef,
+        tebako_version: &str,
+    ) -> Result<(), TebakoError> {
+        let Some(install_as) = dll.install_as.as_deref() else {
+            return Ok(());
+        };
+        // The PE name writes a file into the cache entry — a separator
+        // would escape it; refuse by name, never install.
+        if install_as.contains('/') || install_as.contains('\\') {
+            return Err(packaging_error(
+                122,
+                Some(&format!(
+                    "release index dll facet for {} carries an unusable install_as (\"{install_as}\") — the PE name must be a bare file name",
+                    dll.filename
+                )),
+            ));
+        }
+        let dll_path = dir.join(install_as);
+        let marker = dir.join(format!("{install_as}.sha256"));
+        if dll_path.is_file() && marker.is_file() {
+            return Ok(());
+        }
+        let url = self.package_url(&dll.filename, tebako_version);
+        let tmp_dir = self.cache_root.join(TMP_DIR);
+        let tmp = tmp_dir.join(format!("{}.{}.part", dll.filename, std::process::id()));
+        match fetch_bytes(&url) {
+            Ok(bytes) => {
+                if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
+                }
+            }
+            Err(FetchError::IndexUnavailable(_)) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&format!("{url}: not found"))));
+            }
+            Err(e @ FetchError::Throttled { .. }) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&e.to_string())));
+            }
+            Err(FetchError::DownloadFailed(msg)) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&msg)));
+            }
+        }
+        let actual = sha256_file_hex(&tmp)
+            .ok_or_else(|| packaging_error(121, Some(&format!("cannot hash {}", tmp.display()))))?;
+        let expected = dll.sha256.to_ascii_lowercase();
+        if actual != expected {
+            let _ = fs::remove_file(&tmp);
+            return Err(packaging_error(
+                121,
+                Some(&format!(
+                    "{}: expected {expected}, got {actual}; download deleted",
+                    dll.filename
+                )),
+            ));
+        }
+        let err = |e: std::io::Error| {
+            crate::error::plain_error(format!("{e} installing {}", dll_path.display()))
+        };
+        make_readonly(&tmp).map_err(err)?;
+        fs::rename(&tmp, &dll_path).map_err(err)?;
+        fs::write(&marker, format!("{expected}  {install_as}\n")).map_err(err)?;
+        fs::write(dir.join(format!("{install_as}.origin")), format!("{url}\n")).map_err(err)?;
         Ok(())
     }
 
@@ -713,6 +819,19 @@ impl Resolver {
                                     .to_ascii_lowercase(),
                             })
                         }),
+                        // tebako-runtime-ruby#40: the additive `dll` key
+                        // (windows packages only) — absent on every POSIX
+                        // entry, ignored by consumers that predate it.
+                        dll: e.find("dll").and_then(|d| {
+                            Some(DllRef {
+                                filename: d.find("filename").and_then(|v| v.as_string())?,
+                                install_as: d.find("install_as").and_then(|v| v.as_string()),
+                                sha256: d
+                                    .find("sha256")
+                                    .and_then(|v| v.as_string())?
+                                    .to_ascii_lowercase(),
+                            })
+                        }),
                     })
                     .collect())
             }
@@ -742,6 +861,7 @@ impl Resolver {
                             .unwrap_or_default()
                             .to_ascii_lowercase(),
                         image: None,
+                        dll: None,
                     })
                     .collect())
             }
@@ -750,10 +870,15 @@ impl Resolver {
 
     /// `<sha256>  <filename>` lines; filenames may carry a `*` prefix.
     /// Runtime lines may name the image sibling (`<asset>.tfs`, item
-    /// 30b): they attach to the matching runtime entry as its `image`.
+    /// 30b) or the windows ruby DLL sibling (`<asset>.dll`,
+    /// tebako-runtime-ruby#40): they attach to the matching runtime entry
+    /// as its `image` / `dll`. The sums form carries no PE name, so a
+    /// sums-derived dll ref has no `install_as` (not installable — the
+    /// dll facet is manifest-keyed).
     fn parse_sha256sums(&self, body: &str, tebako_version: &str) -> Vec<IndexEntry> {
         let mut out: Vec<IndexEntry> = Vec::new();
         let mut images: Vec<(String, String, String)> = Vec::new(); // (rv, platform, ImageRef parts)
+        let mut dlls: Vec<(String, String, String)> = Vec::new(); // (rv, platform, DllRef parts)
         for line in body.lines() {
             let mut parts = line.trim().splitn(2, char::is_whitespace);
             let (Some(sha256), Some(file)) = (parts.next(), parts.next()) else {
@@ -774,6 +899,14 @@ impl Resolver {
                         }
                         continue;
                     }
+                    // The ruby DLL sibling (tebako-runtime-ruby#40): the
+                    // same treatment.
+                    if let Some(rest) = rest.strip_suffix(".dll") {
+                        if let Some((ruby_version, platform)) = split_ruby_platform(rest) {
+                            dlls.push((ruby_version, platform, format!("{file}|{sha256}")));
+                        }
+                        continue;
+                    }
                     let rest = rest.strip_suffix(".exe").unwrap_or(rest);
                     let Some((ruby_version, platform)) = split_ruby_platform(rest) else {
                         continue;
@@ -784,6 +917,7 @@ impl Resolver {
                         filename: file.to_string(),
                         sha256: sha256.to_ascii_lowercase(),
                         image: None,
+                        dll: None,
                     });
                 }
                 Flavor::Bootstrap => {
@@ -801,6 +935,7 @@ impl Resolver {
                         filename: file.to_string(),
                         sha256: sha256.to_ascii_lowercase(),
                         image: None,
+                        dll: None,
                     });
                 }
             }
@@ -815,6 +950,21 @@ impl Resolver {
             }) {
                 entry.image = Some(ImageRef {
                     filename: filename.to_string(),
+                    sha256: sha256.to_ascii_lowercase(),
+                });
+            }
+        }
+        for (ruby_version, platform, parts) in dlls {
+            let Some((filename, sha256)) = parts.split_once('|') else {
+                continue;
+            };
+            if let Some(entry) = out.iter_mut().find(|e| {
+                e.ruby_version.as_deref() == Some(ruby_version.as_str())
+                    && e.platform.as_deref() == Some(platform.as_str())
+            }) {
+                entry.dll = Some(DllRef {
+                    filename: filename.to_string(),
+                    install_as: None,
                     sha256: sha256.to_ascii_lowercase(),
                 });
             }
@@ -1216,5 +1366,219 @@ mod tests {
         let err = contract_gate("ruby@3.4.2", Some(&card(full)), "nope").unwrap_err();
         assert_eq!(err.code, 75);
         assert!(err.message.contains("pre-era"), "{}", err.message);
+    }
+
+    // ---- tebako-runtime-ruby#40: the windows ruby DLL facet -------------
+
+    #[test]
+    fn sha256sums_dll_lines_attach_to_the_runtime_entry() {
+        let r = Resolver::new(Flavor::Runtime);
+        let body = "aaa111  tebako-runtime-0.16.3-3.3.12-windows-ucrt64.exe\n\
+                    bbb222  tebako-runtime-0.16.3-3.3.12-windows-ucrt64.tfs\n\
+                    ccc333  tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll\n\
+                    ddd444  tebako-runtime-0.16.3-3.4.2-macos-arm64\n";
+        let entries = r.parse_sha256sums(body, "0.16.3");
+        assert_eq!(entries.len(), 2);
+        let win = &entries[0];
+        assert_eq!(win.platform.as_deref(), Some("windows-ucrt64"));
+        assert_eq!(
+            win.image.as_ref().map(|i| i.filename.as_str()),
+            Some("tebako-runtime-0.16.3-3.3.12-windows-ucrt64.tfs")
+        );
+        let dll = win.dll.as_ref().expect("the dll line attaches");
+        assert_eq!(
+            dll.filename,
+            "tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll"
+        );
+        assert_eq!(dll.sha256, "ccc333");
+        // the sums form carries no PE name — not installable from here
+        assert_eq!(dll.install_as, None);
+        // a POSIX entry carries no facet
+        assert_eq!(entries[1].image, None);
+        assert_eq!(entries[1].dll, None);
+    }
+
+    #[test]
+    fn manifest_runtime_dll_facet() {
+        let r = Resolver::new(Flavor::Runtime);
+        let body = r#"[
+          {"tebako_version":"0.16.3","ruby_version":"3.3.12","platform":"windows-ucrt64",
+           "filename":"tebako-runtime-0.16.3-3.3.12-windows-ucrt64.exe","sha256":"AAA",
+           "image":{"filename":"tebako-runtime-0.16.3-3.3.12-windows-ucrt64.tfs","sha256":"BBB","size_bytes":5},
+           "dll":{"filename":"tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll",
+                  "install_as":"x64-ucrt-ruby330.dll","sha256":"CCC","size_bytes":7}},
+          {"tebako_version":"0.16.3","ruby_version":"3.3.12","platform":"macos-arm64",
+           "filename":"tebako-runtime-0.16.3-3.3.12-macos-arm64","sha256":"DDD",
+           "image":{"filename":"tebako-runtime-0.16.3-3.3.12-macos-arm64.tfs","sha256":"EEE","size_bytes":5}}
+        ]"#;
+        let entries = r.parse_manifest(body, "0.16.3").unwrap();
+        assert_eq!(entries.len(), 2);
+        let dll = entries[0].dll.as_ref().expect("the dll key parses");
+        assert_eq!(
+            dll.filename,
+            "tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll"
+        );
+        assert_eq!(dll.install_as.as_deref(), Some("x64-ucrt-ruby330.dll"));
+        assert_eq!(dll.sha256, "ccc");
+        // the POSIX entry carries no dll facet (the additive-key compat rule)
+        assert_eq!(entries[1].dll, None);
+    }
+
+    /// A scratch (cache root, release mirror) pair in the factory's
+    /// era-2 shape: exe + image (+ optional dll, `tamper_dll` poisons
+    /// its declared sha) and a manifest.json declaring the contract set.
+    fn dll_mirror(tag: &str, with_dll: bool, tamper_dll: bool) -> (PathBuf, PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-resolve-dll-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = dir.join("home");
+        let release = dir.join("mirror").join("v0.16.3");
+        fs::create_dir_all(&release).unwrap();
+        let exe = "tebako-runtime-0.16.3-3.3.12-windows-ucrt64.exe";
+        let image = "tebako-runtime-0.16.3-3.3.12-windows-ucrt64.tfs";
+        let dll = "tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll";
+        fs::write(release.join(exe), b"fake runtime exe\n").unwrap();
+        fs::write(release.join(image), b"fake env image\n").unwrap();
+        let mut manifest = format!(
+            "[{{\"tebako_version\":\"0.16.3\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"/__tfs__\",\"ruby_version\":\"3.3.12\",\"platform\":\"windows-ucrt64\",\"filename\":\"{exe}\",\"sha256\":\"{}\",\"image\":{{\"filename\":\"{image}\",\"sha256\":\"{}\"}}",
+            sha256_file_hex(&release.join(exe)).unwrap(),
+            sha256_file_hex(&release.join(image)).unwrap(),
+        );
+        if with_dll {
+            fs::write(release.join(dll), b"fake ruby dll\n").unwrap();
+            let declared = if tamper_dll {
+                "f".repeat(64)
+            } else {
+                sha256_file_hex(&release.join(dll)).unwrap()
+            };
+            manifest.push_str(&format!(
+                ",\"dll\":{{\"filename\":\"{dll}\",\"install_as\":\"x64-ucrt-ruby330.dll\",\"sha256\":\"{declared}\",\"size_bytes\":14}}"
+            ));
+        }
+        manifest.push_str("}]\n");
+        fs::write(release.join("manifest.json"), manifest).unwrap();
+        (cache, dir.join("mirror"))
+    }
+
+    fn dll_resolver(cache: &Path, mirror: &Path) -> Resolver {
+        Resolver {
+            flavor: Flavor::Runtime,
+            cache_root: cache.to_path_buf(),
+            mirror: format!("file://{}", mirror.display()),
+            lock_timeout: LOCK_TIMEOUT,
+        }
+    }
+
+    fn dll_entry_dir(cache: &Path) -> PathBuf {
+        cache
+            .join("runtimes")
+            .join("ruby-3.3.12-0.16.3-windows-ucrt64")
+    }
+
+    #[test]
+    fn resolve_runtime_installs_the_dll_as_install_as_with_markers() {
+        let (cache, mirror) = dll_mirror("install", true, false);
+        let r = dll_resolver(&cache, &mirror);
+        let resolved = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.3")
+            .unwrap();
+        assert!(resolved.executable.is_file());
+        let dir = dll_entry_dir(&cache);
+        // the env image landed too
+        assert!(dir
+            .join("tebako-runtime-0.16.3-3.3.12-windows-ucrt64.tfs")
+            .is_file());
+        // the dll materializes under its PE name — never the asset name
+        let dll = dir.join("x64-ucrt-ruby330.dll");
+        assert!(dll.is_file(), "{}", dll.display());
+        assert!(
+            !dir.join("tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll")
+                .exists(),
+            "the asset name is not the install name"
+        );
+        let marker = fs::read_to_string(dir.join("x64-ucrt-ruby330.dll.sha256")).unwrap();
+        assert_eq!(
+            marker,
+            format!("{}  x64-ucrt-ruby330.dll\n", sha256_file_hex(&dll).unwrap())
+        );
+        let origin = fs::read_to_string(dir.join("x64-ucrt-ruby330.dll.origin")).unwrap();
+        assert_eq!(
+            origin,
+            format!(
+                "file://{}/v0.16.3/tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll\n",
+                mirror.display()
+            )
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(dll.metadata().unwrap().permissions().mode() & 0o777, 0o444);
+        }
+        // a cache hit needs no mirror at all (a run is a run, offline-safe)
+        fs::remove_dir_all(&mirror).unwrap();
+        r.resolve_runtime("3.3.12", "windows-ucrt64", "0.16.3")
+            .unwrap();
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_without_the_dll_key_installs_the_exe_alone() {
+        let (cache, mirror) = dll_mirror("nodll", false, false);
+        let r = dll_resolver(&cache, &mirror);
+        r.resolve_runtime("3.3.12", "windows-ucrt64", "0.16.3")
+            .unwrap();
+        let dir = dll_entry_dir(&cache);
+        assert!(dir
+            .join("tebako-runtime-0.16.3-3.3.12-windows-ucrt64.exe")
+            .is_file());
+        assert!(!dir.join("x64-ucrt-ruby330.dll").exists());
+        assert!(
+            !fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .any(|e| e.file_name().to_string_lossy().ends_with(".dll")),
+            "no dll facet declared, no dll installed"
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_wrong_dll_sha_is_a_named_error() {
+        let (cache, mirror) = dll_mirror("badsha", true, true);
+        let r = dll_resolver(&cache, &mirror);
+        let err = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.3")
+            .unwrap_err();
+        assert_eq!(err.code, 121);
+        assert!(err.message.contains("download deleted"), "{}", err.message);
+        let dir = dll_entry_dir(&cache);
+        assert!(!dir.join("x64-ucrt-ruby330.dll").exists());
+        assert!(
+            !fs::read_dir(cache.join(TMP_DIR))
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .any(|e| e.file_name().to_string_lossy().contains(".dll")),
+            "the failed download was deleted"
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_dll_traversal_install_as_is_a_named_error() {
+        let (cache, mirror) = dll_mirror("traversal", true, false);
+        // poison the facet's PE name: a separator would escape the entry
+        let manifest_path = mirror.join("v0.16.3").join("manifest.json");
+        let text = fs::read_to_string(&manifest_path)
+            .unwrap()
+            .replace("x64-ucrt-ruby330.dll", "../evil.dll");
+        fs::write(&manifest_path, text).unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        let err = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.3")
+            .unwrap_err();
+        assert_eq!(err.code, 122);
+        assert!(err.message.contains("bare file name"), "{}", err.message);
+        assert!(!cache.join("runtimes").join("evil.dll").exists());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
     }
 }
