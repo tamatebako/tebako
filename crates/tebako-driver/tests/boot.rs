@@ -872,10 +872,7 @@ fn union_row_merges_the_trees_at_the_runtime_root() {
 
 /// The env fixture's layout declaration with the windows root spelling.
 fn write_env_image_windows_root(dir: &Path) -> PathBuf {
-    write_env_image_with_layout(
-        dir,
-        Some(&GOOD_LAYOUT.replace("/__tfs__", "A:/__tfs__")),
-    )
+    write_env_image_with_layout(dir, Some(&GOOD_LAYOUT.replace("/__tfs__", "A:/__tfs__")))
 }
 
 #[test]
