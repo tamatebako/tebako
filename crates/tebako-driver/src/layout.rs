@@ -152,8 +152,8 @@ mod tests {
         let with_future = format!("{GOOD}future_field: {{anything: goes}}\n");
         ImageLayout::check(&with_future, "/__tfs__", "/rt/ruby.tfs").unwrap();
         // the windows root spelling pairs the same way
-        let win = GOOD.replace("/__tfs__", "A:/t");
-        ImageLayout::check(&win, "A:/t", "C:/rt/ruby.tfs").unwrap();
+        let win = GOOD.replace("/__tfs__", "A:/__tfs__");
+        ImageLayout::check(&win, "A:/__tfs__", "C:/rt/ruby.tfs").unwrap();
     }
 
     #[test]

@@ -31,15 +31,16 @@ use crate::{EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 /// source tarball's tebako-mount-root manifest → the exe's generated fs
 /// TU → tebako_main forwards it here); this default is only for
 /// driver-only consumers and tests and follows the factory convention:
-/// `A:/t` on windows, where the memfs presents as its own drive, and
-/// `/__tfs__` elsewhere.
+/// `A:/__tfs__` on windows, where the memfs presents as its own drive —
+/// the one root name on every platform (spec 17 §1) — and `/__tfs__`
+/// elsewhere.
 #[cfg(windows)]
-const RUBY_RUNTIME_ROOT: &str = "A:/t";
+const RUBY_RUNTIME_ROOT: &str = "A:/__tfs__";
 #[cfg(not(windows))]
 const RUBY_RUNTIME_ROOT: &str = "/__tfs__";
 
 #[cfg(windows)]
-static DEFAULT_ROOT: &[u8] = b"A:/t\0";
+static DEFAULT_ROOT: &[u8] = b"A:/__tfs__\0";
 #[cfg(not(windows))]
 static DEFAULT_ROOT: &[u8] = b"/__tfs__\0";
 static EMPTY: &[u8] = b"\0";

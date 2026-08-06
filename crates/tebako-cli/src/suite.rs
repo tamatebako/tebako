@@ -393,7 +393,7 @@ pub fn press_suite(
         })?;
         images.push((
             staged,
-            scenario_mgr.fs_mount_point.clone(),
+            crate::declared_mount(&scenario_mgr.fs_mount_point).to_string(),
             entry_opts.format.tpkg_format_id(),
         ));
         runtime_refs.push(entry_runtime_ref(entry, &ruby_ver, opts, resolved));
