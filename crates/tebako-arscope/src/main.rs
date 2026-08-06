@@ -801,11 +801,8 @@ mod tests {
         } else {
             object::Architecture::X86_64
         };
-        let mut out = object::write::Object::new(
-            object::BinaryFormat::Elf,
-            arch,
-            object::Endianness::Little,
-        );
+        let mut out =
+            object::write::Object::new(object::BinaryFormat::Elf, arch, object::Endianness::Little);
         let text = out.add_section(
             b".text".to_vec(),
             b".text".to_vec(),
