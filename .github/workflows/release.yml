@@ -6,7 +6,10 @@
 # upload_url) → native runners per OS → `gh release upload` per artifact
 # (the archived actions/upload-release-asset was retired 2026-08-01) —
 # plus our additions: the vendored native deps via vcpkg
-# (baseline pin + archive cache, mirrored from ci.yml), the musl legs in
+# (baseline pin + the org's GitHub Packages NuGet binary cache on the
+# native legs — the run-vcpkg x-gha injection is dead since vcpkg 2025.06;
+# the container legs keep the mounted-archives actions/cache), the musl
+# legs in
 # Alpine containers (docker run from the host; the proven native-musl
 # path — see ci/musl-build.sh; node actions cannot run on musl), the
 # bootstrap size gate (back to 3 MB: rnp/botan is feature-gated out of
@@ -77,6 +80,9 @@ jobs:
     name: macOS (${{ matrix.platform }})
     permissions:
       contents: write
+      # packages:write populates the org's GitHub Packages vcpkg binary
+      # cache (ci/vcpkg-nuget-cache.sh).
+      packages: write
     runs-on: ${{ matrix.os }}
     needs: prepare
     strategy:
@@ -125,13 +131,22 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
           vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
 
-      - name: Cache vcpkg package archives
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/Library/Caches/vcpkg
-          key: vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**', 'tebako-rs/crates/sqfs-sys/vcpkg.json', 'tebako-rs/crates/sqfs-sys/vcpkg_ports/**', 'tebako-rs/crates/sqfs-sys/vcpkg_triplets/**') }}
-          restore-keys: |
-            vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-
+      # run-vcpkg@v11 injects VCPKG_BINARY_SOURCES=clear;x-gha,readwrite,
+      # and vcpkg removed x-gha (2025.06) — that spec is zero binary cache,
+      # and it also neutered the old actions/cache over the archives dir
+      # (files provider cleared + archives path redirected). The override
+      # is the org's GitHub Packages NuGet feed; the dead cache step is
+      # gone (details in ci/vcpkg-nuget-cache.sh). macos runners ship mono
+      # (vcpkg drives nuget.exe through it off-Windows).
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        env:
+          # First-push of a new package id CANNOT be done by GITHUB_TOKEN
+          # (GitHub quirk: 403 on creation; community#159893) — the org
+          # secret (classic PAT, write:packages) owns creation when present;
+          # GITHUB_TOKEN remains the read path and the whole fallback.
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
 
       - name: Pre-install squashfs-tools-ng (serialized)
         working-directory: tebako-rs
@@ -254,6 +269,12 @@ jobs:
           path: dwarfs-rs
           submodules: recursive
 
+      # Deliberately NOT the NuGet feed: vcpkg runs INSIDE the ubuntu:20.04
+      # container here (no run-vcpkg, so no dead x-gha injection — the
+      # default files provider reads/writes the mounted ~/.cache/vcpkg,
+      # and this actions/cache round-trips it). Wiring the NuGet provider
+      # into the container would need mono + feed credentials in-image for
+      # no observed 403 pain on these legs.
       - name: Cache vcpkg package archives
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -369,6 +390,11 @@ jobs:
           path: dwarfs-rs
           submodules: recursive
 
+      # Deliberately NOT the NuGet feed (same reasoning as the gnu-floor
+      # leg): vcpkg runs inside the alpine container — no run-vcpkg, no
+      # x-gha injection — and the mounted ~/.cache/vcpkg files provider
+      # round-trips through this actions/cache. Alpine has no mono package,
+      # so the NuGet provider cannot run in-leg at all.
       - name: Cache vcpkg package archives
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -501,6 +527,9 @@ jobs:
     name: Windows link-unit (ucrt64)
     permissions:
       contents: write
+      # packages:write populates the org's GitHub Packages vcpkg binary
+      # cache (ci/vcpkg-nuget-cache.sh).
+      packages: write
     runs-on: windows-latest
     needs: prepare
     env:
@@ -555,13 +584,22 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
           vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
 
-      - name: Cache vcpkg package archives
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/AppData/Local/vcpkg/archives
-          key: vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**') }}
-          restore-keys: |
-            vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-
+      # run-vcpkg@v11 injects VCPKG_BINARY_SOURCES=clear;x-gha,readwrite,
+      # and vcpkg removed x-gha (2025.06) — that spec is zero binary cache,
+      # and it also neutered the old actions/cache over the archives dir
+      # (files provider cleared + archives path redirected). The override
+      # is the org's GitHub Packages NuGet feed; the dead cache step is
+      # gone (details in ci/vcpkg-nuget-cache.sh).
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          # First-push of a new package id CANNOT be done by GITHUB_TOKEN
+          # (GitHub quirk: 403 on creation; community#159893) — the org
+          # secret (classic PAT, write:packages) owns creation when present;
+          # GITHUB_TOKEN remains the read path and the whole fallback.
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
 
       - name: Build the windows-gnu staticlibs (tfs, dwarfs-only)
         working-directory: tebako-rs
@@ -614,6 +652,9 @@ jobs:
     name: Windows binaries (ucrt64)
     permissions:
       contents: write
+      # packages:write populates the org's GitHub Packages vcpkg binary
+      # cache (ci/vcpkg-nuget-cache.sh).
+      packages: write
     runs-on: windows-latest
     needs: prepare
     steps:
@@ -659,13 +700,22 @@ jobs:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
           vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
 
-      - name: Cache vcpkg package archives
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/AppData/Local/vcpkg/archives
-          key: vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('dwarfs-rs/dwarfs-t/vcpkg.json', 'dwarfs-rs/dwarfs-t/vcpkg_ports/**', 'dwarfs-rs/dwarfs-t/vcpkg_triplets/**') }}
-          restore-keys: |
-            vcpkg-archives-${{ runner.os }}-${{ runner.arch }}-
+      # run-vcpkg@v11 injects VCPKG_BINARY_SOURCES=clear;x-gha,readwrite,
+      # and vcpkg removed x-gha (2025.06) — that spec is zero binary cache,
+      # and it also neutered the old actions/cache over the archives dir
+      # (files provider cleared + archives path redirected). The override
+      # is the org's GitHub Packages NuGet feed; the dead cache step is
+      # gone (details in ci/vcpkg-nuget-cache.sh).
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          # First-push of a new package id CANNOT be done by GITHUB_TOKEN
+          # (GitHub quirk: 403 on creation; community#159893) — the org
+          # secret (classic PAT, write:packages) owns creation when present;
+          # GITHUB_TOKEN remains the read path and the whole fallback.
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
 
       - name: Build + stage the five binaries (release)
         working-directory: tebako-rs
