@@ -562,12 +562,28 @@ fn scope_object(
             _ => object::write::SymbolSection::Undefined,
         };
         let flags = map_symbol_flags(symbol.flags(), &section_ids, &symbol_ids)?;
+        // object 0.37's ELF reader maps STB_GNU_UNIQUE (glibc-target
+        // g++'s vague-linkage binding — template/inline statics;
+        // libstdc++.a alone carries 154) to SymbolScope::Unknown, and its
+        // writer asserts a defined symbol is scoped (write/mod.rs:434).
+        // Re-scope to Linkage for the write: the passthrough st_info
+        // flags keep the UNIQUE binding in the emitted symbol, so the
+        // output is byte-equivalent to what the pre-assert writer
+        // produced — the v0.1.0 gnu link unit shipped exactly this shape
+        // and the factory consumed it. Only the gnu legs carry such
+        // members (musl and Mach-O have no GNU_UNIQUE), which is why the
+        // floor leg's scoper panic (run 30988106906) was the first time
+        // a gnu release build reached this code.
+        let scope = match symbol.scope() {
+            SymbolScope::Unknown if !symbol.is_undefined() => SymbolScope::Linkage,
+            scope => scope,
+        };
         let id = out.add_symbol(object::write::Symbol {
             name: renamed.into_bytes(),
             value: symbol.address(),
             size: symbol.size(),
             kind: symbol.kind(),
-            scope: symbol.scope(),
+            scope,
             weak: symbol.is_weak(),
             section,
             flags,
@@ -771,6 +787,74 @@ mod tests {
         );
         assert_eq!(report.kept, 1);
         assert_eq!(report.scoped, 1);
+    }
+
+    /// A defined STB_GNU_UNIQUE symbol (glibc-target g++'s vague-linkage
+    /// binding — every C++ object with template/inline statics carries
+    /// them on the gnu legs) reads back as SymbolScope::Unknown; the
+    /// rewrite must re-scope it for the writer instead of panicking on
+    /// its defined-symbol assert (the floor leg's scoper panic, release
+    /// run 30988106906). ELF-only: Mach-O has no such binding.
+    fn fixture_object_gnu_unique() -> Vec<u8> {
+        let arch = if cfg!(target_arch = "aarch64") {
+            object::Architecture::Aarch64
+        } else {
+            object::Architecture::X86_64
+        };
+        let mut out =
+            object::write::Object::new(object::BinaryFormat::Elf, arch, object::Endianness::Little);
+        let text = out.add_section(
+            b".text".to_vec(),
+            b".text".to_vec(),
+            object::SectionKind::Text,
+        );
+        out.section_mut(text).set_data(b"\x90\x90\xc3", 1);
+        out.add_symbol(object::write::Symbol {
+            name: b"_ZN1HIiE1vE".to_vec(),
+            value: 0,
+            size: 4,
+            kind: object::SymbolKind::Data,
+            scope: object::SymbolScope::Linkage,
+            weak: false,
+            section: object::write::SymbolSection::Section(text),
+            // st_info = STB_GNU_UNIQUE (10) << 4 | STT_OBJECT (1)
+            flags: object::SymbolFlags::Elf {
+                st_info: (10 << 4) | 1,
+                st_other: 0,
+            },
+        });
+        out.write().expect("fixture object")
+    }
+
+    #[test]
+    fn gnu_unique_symbols_survive_the_rewrite() {
+        let fixture = fixture_object_gnu_unique();
+        let obj = File::parse(&fixture[..]).expect("parse the fixture");
+        let sym = obj
+            .symbols()
+            .find(|s| s.name().ok() == Some("_ZN1HIiE1vE"))
+            .expect("the fixture carries the unique symbol");
+        assert_eq!(
+            sym.scope(),
+            SymbolScope::Unknown,
+            "the fixture must read back the way glibc-target objects do"
+        );
+
+        let mut report = Report::default();
+        let (bytes, _exported) = scope_object(
+            &fixture,
+            KEEP_PREFIX,
+            SCOPE_PREFIX,
+            &std::collections::HashSet::new(),
+            &mut report,
+        )
+        .expect("scope the fixture");
+        let obj = File::parse(&bytes[..]).expect("parse the rewritten object");
+        let sym = obj
+            .symbols()
+            .find(|s| s.name().ok() == Some("_ZN1HIiE1vE"))
+            .expect("the unique symbol survives the rewrite");
+        assert!(!sym.is_undefined());
     }
 
     /// A fixture object with one defined global and two undefined
