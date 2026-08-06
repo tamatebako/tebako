@@ -1,0 +1,5 @@
+# Test fixtures are read verbatim (include_str!, golden comparisons,
+# string replaces) — a CRLF checkout silently changes what the tests
+# assert on. Pin them to LF on every platform.
+crates/**/tests/fixtures/** text eol=lf
+**/testdata/** text eol=lf
