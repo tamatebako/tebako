@@ -769,12 +769,21 @@ mod tests {
                 .iter()
                 .any(|n: &String| n.trim_start_matches('_') == want.trim_start_matches('_'))
         };
+        // macho.rs scopes the raw nlist name VERBATIM (leading
+        // underscore kept — blake3's dual `_sym`/`sym` spellings must
+        // not collapse), so the Mach-O expectation carries the doubled
+        // underscore; the ELF path has no mangling prefix to keep.
+        let internal = if cfg!(target_os = "macos") {
+            "__tebako_internal__rust_eh_personality"
+        } else {
+            "__tebako_internal_rust_eh_personality"
+        };
         assert!(
             has("tebako_probe"),
             "the public surface survives: {names:?}"
         );
         assert!(
-            has("__tebako_internal_rust_eh_personality"),
+            names.iter().any(|n| n == internal),
             "the internal symbol is renamed: {names:?}"
         );
         assert!(
@@ -931,15 +940,114 @@ mod tests {
                 .any(|n: &String| n.trim_start_matches('_') == want.trim_start_matches('_'))
         };
         assert!(
-            has("__tebako_internal_rust_eh_personality"),
-            "the ref to the renamed def rides the prefix: {names:?}"
+            names
+                .iter()
+                .any(|n| n == "__tebako_internal__rust_eh_personality"),
+            "the ref to the renamed def rides the prefix (raw name verbatim): {names:?}"
         );
         assert!(has("malloc"), "the libc ref stays: {names:?}");
         assert!(
-            has("__tebako_internal_consumer_fn"),
-            "the member's own def is renamed: {names:?}"
+            names
+                .iter()
+                .any(|n| n == "__tebako_internal__consumer_fn"),
+            "the member's own def is renamed (raw name verbatim): {names:?}"
         );
         assert_eq!(renamed, 2, "one def + one ref renamed");
+    }
+
+    /// The 0.16.3-era macos-x86_64 regression: blake3's x86-64 assembly
+    /// defines every entry point TWICE in one object — `_name` (the
+    /// Mach-O spelling) and `name` (the ELF spelling), same address.
+    /// Scoping must keep the pair distinct; stripping the leading
+    /// underscore before prefixing collapses them into one scoped name
+    /// and ld64 errors "duplicate symbol" (11 blake3 symbols on the
+    /// miniruby link). The fixture is a raw LC_SYMTAB blob, so the test
+    /// runs on every host.
+    #[test]
+    fn macho_dual_spelling_definitions_stay_distinct() {
+        // Minimal MH_OBJECT: header + one LC_SYMTAB + symtab + strtab.
+        // macho.rs reads nothing else.
+        let strtab: &[u8] = b"\0_dual\0dual\0_tebako_api\0";
+        let strx = |name: &str| {
+            strtab
+                .windows(name.len())
+                .position(|w| w == name.as_bytes())
+                .unwrap() as u32
+        };
+        let nlist = |strx: u32, n_type: u8, value: u64| {
+            let mut e = Vec::with_capacity(16);
+            e.extend_from_slice(&strx.to_le_bytes());
+            e.push(n_type);
+            e.push(1); // n_sect
+            e.extend_from_slice(&[0, 0]); // n_desc
+            e.extend_from_slice(&value.to_le_bytes());
+            e
+        };
+        const N_SECT_EXT: u8 = 0x0e | 0x01; // N_SECT | N_EXT — a global definition
+        const N_UNDF_EXT: u8 = 0x01; // N_UNDF | N_EXT — an undefined reference
+        let mut syms = Vec::new();
+        syms.extend(nlist(strx("_dual"), N_SECT_EXT, 0x100)); // Mach-O spelling
+        syms.extend(nlist(strx("dual"), N_SECT_EXT, 0x100)); // ELF spelling, same address
+        syms.extend(nlist(strx("_tebako_api"), N_SECT_EXT, 0x200)); // kept public
+        syms.extend(nlist(strx("_dual"), N_UNDF_EXT, 0)); // a reference to the def
+
+        let symoff = 32 + 24;
+        let stroff = symoff + syms.len();
+        let mut obj = Vec::new();
+        obj.extend_from_slice(&0xfeedfacfu32.to_le_bytes()); // MH_MAGIC_64
+        obj.extend_from_slice(&[0; 12]); // cputype/cpusubtype/filetype
+        obj.extend_from_slice(&1u32.to_le_bytes()); // ncmds
+        obj.extend_from_slice(&24u32.to_le_bytes()); // sizeofcmds
+        obj.extend_from_slice(&[0; 4]); // flags
+        obj.extend_from_slice(&[0; 4]); // reserved
+        obj.extend_from_slice(&2u32.to_le_bytes()); // LC_SYMTAB
+        obj.extend_from_slice(&24u32.to_le_bytes()); // cmdsize
+        obj.extend_from_slice(&(symoff as u32).to_le_bytes());
+        obj.extend_from_slice(&4u32.to_le_bytes()); // nsyms
+        obj.extend_from_slice(&(stroff as u32).to_le_bytes());
+        obj.extend_from_slice(&(strtab.len() as u32).to_le_bytes());
+        obj.extend_from_slice(&syms);
+        obj.extend_from_slice(strtab);
+
+        let defined = macho::defined(&obj, KEEP_PREFIX).expect("pass A");
+        let (out, exported, renamed, kept) =
+            macho::scope(&obj, KEEP_PREFIX, SCOPE_PREFIX, &defined).expect("scope the fixture");
+        assert_eq!(renamed, 3, "both spellings + the reference ride the prefix");
+        assert_eq!(kept, 1, "the tebako_* definition stays public");
+
+        let (_, symoff, nsyms, stroff, _strsize) =
+            macho::symtab_for_test(&out).expect("parse the scoped symtab");
+        let names: Vec<String> = (0..nsyms)
+            .map(|i| {
+                let at = symoff + i * 16;
+                let strx = u32::from_le_bytes(out[at..at + 4].try_into().unwrap()) as usize;
+                let end = out[stroff + strx..]
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap();
+                String::from_utf8_lossy(&out[stroff + strx..stroff + strx + end]).into_owned()
+            })
+            .collect();
+        assert!(
+            names.iter().any(|n| n == "__tebako_internal__dual"),
+            "the Mach-O spelling scopes verbatim: {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == "__tebako_internal_dual"),
+            "the ELF spelling scopes verbatim — no collapse: {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == "_tebako_api"),
+            "the public surface keeps its name: {names:?}"
+        );
+        assert_eq!(names.len(), 4, "no symbol is dropped or added: {names:?}");
+        assert!(
+            exported
+                .iter()
+                .any(|n| n == "__tebako_internal__dual")
+                && exported.iter().any(|n| n == "__tebako_internal_dual"),
+            "both spellings land in the archive index: {exported:?}"
+        );
     }
 
     /// The archive layout ld64 demands, pinned byte-for-byte: BSD "#1/N"

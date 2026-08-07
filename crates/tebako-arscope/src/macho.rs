@@ -60,6 +60,13 @@ fn symtab(bytes: &[u8]) -> Result<(usize, usize, usize, usize, usize), String> {
     Ok((lc, symoff, nsyms, stroff, strsize))
 }
 
+/// Test-only view of the private symtab walker (the dual-spelling
+/// regression test parses the scoped object back).
+#[cfg(test)]
+pub fn symtab_for_test(bytes: &[u8]) -> Result<(usize, usize, usize, usize, usize), String> {
+    symtab(bytes)
+}
+
 /// One nlist entry, decoded.
 struct Sym {
     at: usize,
@@ -124,6 +131,20 @@ fn renames_def(name: &[u8], keep: &str) -> bool {
     !logical.trim_start_matches('_').starts_with(keep)
 }
 
+/// The scoped spelling of a raw nlist name. The raw name rides the
+/// prefix VERBATIM — the Mach-O leading underscore is NOT stripped.
+/// blake3's x86-64 assembly legitimately defines every entry point
+/// twice in one object (`_blake3_hash_many_sse2` AND
+/// `blake3_hash_many_sse2`, the Mach-O and ELF spellings, same
+/// address); stripping the underscore would collapse the pair into one
+/// scoped name and ld64 errors "duplicate symbol" on the synthetic
+/// collision (the 0.16.3-era macos-x86_64 miniruby link, 11 symbols).
+/// Keeping the underscore keeps the spellings distinct:
+/// `__tebako_internal__blake3_*` vs `__tebako_internal_blake3_*`.
+fn scoped_name(name: &[u8], prefix: &str) -> String {
+    format!("{prefix}{}", String::from_utf8_lossy(name))
+}
+
 /// Pass A: the raw strtab names of every definition this tool will
 /// rename anywhere in the archive. References compare against these
 /// raw names (Mach-O leading underscore included).
@@ -171,10 +192,7 @@ pub fn scope(
                 continue;
             }
             if renames_def(name, keep) {
-                exported.push(format!(
-                    "{prefix}{}",
-                    String::from_utf8_lossy(name.strip_prefix(b"_").unwrap_or(name))
-                ));
+                exported.push(scoped_name(name, prefix));
                 true
             } else {
                 exported.push(String::from_utf8_lossy(name).into_owned());
@@ -192,8 +210,7 @@ pub fn scope(
             continue;
         }
         renamed += 1;
-        let logical = name.strip_prefix(b"_").unwrap_or(name);
-        let new_name = format!("{prefix}{}", String::from_utf8_lossy(logical));
+        let new_name = scoped_name(name, prefix);
         let new_strx = new_strtab.len() as u32;
         new_strtab.extend_from_slice(new_name.as_bytes());
         new_strtab.push(0);
