@@ -872,7 +872,7 @@ fn union_row_merges_the_trees_at_the_runtime_root() {
 
 /// The env fixture's layout declaration with the windows root spelling.
 fn write_env_image_windows_root(dir: &Path) -> PathBuf {
-    write_env_image_with_layout(dir, Some(&GOOD_LAYOUT.replace("/__tfs__", "A:/__tfs__")))
+    write_env_image_with_layout(dir, Some(&GOOD_LAYOUT.replace("/__tfs__", "A:/t")))
 }
 
 #[test]
@@ -892,7 +892,7 @@ fn windows_root_qualifies_declared_mounts_onto_the_vfs_drive() {
             "/bin/app",
             "--version",
         ]),
-        "A:/__tfs__",
+        "A:/t",
         &env,
     )
     .unwrap();
@@ -902,10 +902,7 @@ fn windows_root_qualifies_declared_mounts_onto_the_vfs_drive() {
     assert_eq!(out.argv, argv(&["ruby.exe", "A:/bin/app", "--version"]));
     // Both mounts live in the physical namespace: the env image at the
     // qualified root, the payload at the drive root.
-    assert_eq!(
-        read_file("A:/__tfs__/lib/ruby/rubygems.rb"),
-        b"# rubygems core\n"
-    );
+    assert_eq!(read_file("A:/t/lib/ruby/rubygems.rb"), b"# rubygems core\n");
     assert_eq!(read_file("A:/bin/app"), b"#!/usr/bin/env ruby\nputs 'hi'\n");
 }
 
@@ -921,26 +918,77 @@ fn windows_root_union_merges_at_the_qualified_root() {
         &argv(&[
             "ruby.exe",
             "--tebako-image",
-            &format!("{}:0:/__tfs__", payload.display()),
+            &format!("{}:0:/t", payload.display()),
             "--tebako-entry",
             "/local/stub.rb",
         ]),
-        "A:/__tfs__",
+        "A:/t",
         &env,
         &StubModes(Some(union_row())),
     )
     .unwrap();
-    // The declared union target is the SAME NAME the root carries, so
-    // the qualified points coincide and the union row governs.
-    assert_eq!(out.argv, argv(&["ruby.exe", "A:/__tfs__/local/stub.rb"]));
+    // The declared union target is the root's declared form, so the
+    // qualified points coincide and the union row governs.
+    assert_eq!(out.argv, argv(&["ruby.exe", "A:/t/local/stub.rb"]));
     assert_eq!(
-        read_file("A:/__tfs__/local/stub.rb"),
+        read_file("A:/t/local/stub.rb"),
         b"load \"/__tfs__/bin/app\"\n"
     );
     assert_eq!(
-        read_file("A:/__tfs__/lib/ruby/rubygems.rb"),
+        read_file("A:/t/lib/ruby/rubygems.rb"),
         b"# app-shadowed rubygems\n"
     );
+}
+
+// ---------------------------------------------------------------------
+// TEBAKO_MOUNT_ROOT (spec 17 §1): the run-time root override — validated
+// at boot (exit 65), gated on the env image's mount_root_override grant
+// post-mount (exit 78).
+// ---------------------------------------------------------------------
+
+#[test]
+fn mount_root_override_redirects_the_env_mount() {
+    let g = guard("root-override");
+    let env_image = write_env_image_with_layout(
+        g.path(),
+        Some(&format!("{GOOD_LAYOUT}mount_root_override: true\n")),
+    );
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("TEBAKO_MOUNT_ROOT", "/rt");
+
+    let out = boot(&argv(&["ruby"]), "/__tfs__", &env).unwrap();
+    assert_eq!(out.argv, argv(&["ruby"]));
+    // The env image mounted at the override, never at the baked root.
+    assert_eq!(read_file("/rt/lib/ruby/rubygems.rb"), b"# rubygems core\n");
+    let mut ctx = context().write().unwrap();
+    assert!(ctx.open("/__tfs__/lib/ruby/rubygems.rb", libc::O_RDONLY).is_err());
+}
+
+#[test]
+fn mount_root_override_requires_the_images_grant() {
+    let g = guard("root-override-refused");
+    let env_image = write_env_image(g.path()); // GOOD_LAYOUT: no grant key
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("TEBAKO_MOUNT_ROOT", "/rt");
+
+    let err = boot(&argv(&["ruby"]), "/__tfs__", &env).unwrap_err();
+    assert_eq!(err.code, 78, "{err}");
+    assert!(err.message.contains("TEBAKO_MOUNT_ROOT"), "{err}");
+    // The refusal rolled the mount back (never a partial mount).
+    let mut ctx = context().write().unwrap();
+    assert!(ctx.open("/rt/lib/tebako/layout.yaml", libc::O_RDONLY).is_err());
+}
+
+#[test]
+fn a_malformed_mount_root_override_is_a_named_error() {
+    let _g = guard("root-override-malformed");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_MOUNT_ROOT", "relative/x");
+    let err = boot(&argv(&["ruby"]), "/__tfs__", &env).unwrap_err();
+    assert_eq!(err.code, 65, "{err}");
+    assert!(err.message.contains("TEBAKO_MOUNT_ROOT"), "{err}");
 }
 
 #[test]

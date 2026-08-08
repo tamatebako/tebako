@@ -56,6 +56,36 @@ fn jail(message: impl Into<String>) -> DriverError {
     DriverError::new(EX_TEBAKO_JAIL, message.into())
 }
 
+/// The run-time mount-root override (`TEBAKO_MOUNT_ROOT`, spec 17 §1):
+/// the per-platform compiled-in root is the DEFAULT, never the only
+/// spelling — the root is configurable per platform (the factory bakes
+/// `/__tfs__` on POSIX, `A:/t` on windows) and overridable at boot. An
+/// override is form-validated here (fail-closed, exit 65) and gated on
+/// the env image's layout permission post-mount (exit 78): a runtime
+/// whose rbconfig cannot follow the override refuses it by name instead
+/// of booting a broken interpreter.
+fn effective_root(declared: &str, env: &dyn Env) -> Result<String, DriverError> {
+    let Some(root) = env_var(env, "TEBAKO_MOUNT_ROOT") else {
+        return Ok(declared.to_string());
+    };
+    let b = root.as_bytes();
+    let drive_qualified = b.len() >= 4
+        && b[0].is_ascii_alphabetic()
+        && b[1] == b':'
+        && b[2] == b'/';
+    let posix_absolute = b.len() >= 2 && b[0] == b'/';
+    let well_formed = (drive_qualified || posix_absolute)
+        && !root.ends_with('/')
+        && !root.split('/').any(|component| component == "..");
+    if well_formed {
+        Ok(root)
+    } else {
+        Err(manifest(format!(
+            "TEBAKO_MOUNT_ROOT '{root}' is not a usable mount root (want an absolute path — '/…' or drive-qualified 'X:/…' — with no trailing slash and no '..')"
+        )))
+    }
+}
+
 fn errno_text(e: i32) -> String {
     String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
 }
@@ -375,13 +405,22 @@ fn read_mounted_text(path: &str) -> Result<String, i32> {
 /// and BEFORE any interpreter handoff, `/lib/tebako/layout.yaml` inside
 /// it is verified against this exe's expectations — fail-closed, exit 78
 /// (S17 absent → era-1 refusal; S18 newer → upgrade refusal; S19
-/// mount_root mismatch). A boot without `TEBAKO_RUNTIME_IMAGE` mounts no
-/// env image and has no pair to check.
-fn check_env_layout(env: &dyn Env, runtime_root: &str) -> Result<(), DriverError> {
+/// mount_root mismatch). The image's declared root is checked against
+/// the exe's BAKED root (`baked_root`); a `TEBAKO_MOUNT_ROOT` override
+/// (`effective_root` ≠ `baked_root`) additionally requires the image's
+/// `mount_root_override` permission — a runtime whose rbconfig predates
+/// the override era refuses by name rather than booting an interpreter
+/// whose load paths point at an unmounted root. A boot without
+/// `TEBAKO_RUNTIME_IMAGE` mounts no env image and has no pair to check.
+fn check_env_layout(
+    env: &dyn Env,
+    baked_root: &str,
+    effective_root: &str,
+) -> Result<(), DriverError> {
     let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") else {
         return Ok(());
     };
-    let path = join_mount(runtime_root, crate::layout::LAYOUT_IMAGE_PATH);
+    let path = join_mount(effective_root, crate::layout::LAYOUT_IMAGE_PATH);
     let text = read_mounted_text(&path).map_err(|_| {
         DriverError::new(
             EX_TEBAKO_LAYOUT,
@@ -390,7 +429,16 @@ fn check_env_layout(env: &dyn Env, runtime_root: &str) -> Result<(), DriverError
             ),
         )
     })?;
-    crate::layout::ImageLayout::check(&text, runtime_root, &image).map(|_| ())
+    let declaration = crate::layout::ImageLayout::check(&text, baked_root, &image)?;
+    if effective_root != baked_root && !declaration.mount_root_override {
+        return Err(DriverError::new(
+            EX_TEBAKO_LAYOUT,
+            format!(
+                "TEBAKO_MOUNT_ROOT override '{effective_root}' refused: env image '{image}' grants no mount_root_override (its rbconfig is pinned to '{baked_root}') — rebuild the runtime with the current factory"
+            ),
+        ));
+    }
+    Ok(())
 }
 
 fn mount_image(
@@ -496,7 +544,7 @@ fn join_mount(mount_point: &str, entry: &str) -> String {
     )
 }
 
-/// The VFS drive of a runtime root: `A:/__tfs__` → `Some("A:")`;
+/// The VFS drive of a runtime root: `A:/t` → `Some("A:")`;
 /// `/__tfs__` → `None` (POSIX — no drive qualification).
 fn vfs_drive(runtime_root: &str) -> Option<&str> {
     let b = runtime_root.as_bytes();
@@ -508,10 +556,10 @@ fn vfs_drive(runtime_root: &str) -> Option<&str> {
 }
 
 /// Windows (spec 17 §1): a declared mount is a POSIX absolute path in
-/// the VFS namespace (`/`, `/__tfs__`, `/opt/x`); on windows the
+/// the VFS namespace (`/`, `/t`, `/opt/x`); on windows the
 /// namespace presents on its own drive — the drive of the runtime root
-/// (`A:/__tfs__` — the uniform root: the same name on every platform).
-/// The driver therefore mounts every declared point at
+/// (`A:/t`, short by owner decision: MAX_PATH headroom on every in-image
+/// path). The driver therefore mounts every declared point at
 /// `<drive><mount>`. Ruby's C-level path expansion re-roots
 /// drive-relative paths (`/...`) onto the process cwd drive; only
 /// drive-qualified paths are stable across expansion, so qualifying is
@@ -564,8 +612,9 @@ fn resolve_entry(
 /// semantics preserved: the parser scans from index 0 (callers pass the
 /// full argv; non-loader leading args end the scan — the plain-boot
 /// case). `runtime_root` is the mount point the interpreter was compiled
-/// against (ruby: `/__tfs__`, `A:/__tfs__` on windows — the one name on
-/// every platform; spec 17 §1).
+/// against (ruby: `/__tfs__` on POSIX, `A:/t` on windows — per-platform
+/// baked defaults, overridable at boot via `TEBAKO_MOUNT_ROOT`; spec 17
+/// §1).
 pub fn boot(
     argv: &[String],
     runtime_root: &str,
@@ -584,6 +633,16 @@ pub fn boot_with_mount_modes(
     env: &dyn Env,
     modes: &dyn MountModes,
 ) -> Result<BootOutcome, DriverError> {
+    // The root this boot actually uses: the TEBAKO_MOUNT_ROOT override
+    // when handed (form-validated here; the layout permission is gated
+    // post-mount), else the exe's compiled-in value. Everything
+    // downstream — the env-image mount, the drive qualification, the
+    // entry resolution, the io-routing patches via tebako_mount_point —
+    // sees the effective root and nothing else.
+    let effective = effective_root(runtime_root, env)?;
+    let baked_root = runtime_root;
+    let runtime_root = effective.as_str();
+    crate::ffi::set_mount_point(runtime_root);
     let mut h = Handoff::parse(argv)?;
     // Windows: qualify the declared mounts onto the VFS drive (spec 17
     // §1) before any mount/entry use — the mount table, the union-mode
@@ -599,7 +658,7 @@ pub fn boot_with_mount_modes(
         let result = (|| {
             let mut mounted = Vec::new();
             mount_env_image(env, runtime_root, &mut mounted)?;
-            check_env_layout(env, runtime_root)?;
+            check_env_layout(env, baked_root, runtime_root)?;
             apply_jail(env)?;
             Ok(BootOutcome {
                 argv: argv.to_vec(),
@@ -616,7 +675,7 @@ pub fn boot_with_mount_modes(
         mount_env_image(env, runtime_root, &mut mounted)?;
         // The env image's pair-check runs post-mount, before any payload
         // or interpreter touch (spec 18 C3 — exit 78).
-        check_env_layout(env, runtime_root)?;
+        check_env_layout(env, baked_root, runtime_root)?;
         for spec in &h.images {
             mount_image(spec, &mut mounted, modes)?;
         }
@@ -676,7 +735,7 @@ mod tests {
 
     #[test]
     fn vfs_drive_reads_the_root_drive() {
-        assert_eq!(vfs_drive("A:/__tfs__"), Some("A:"));
+        assert_eq!(vfs_drive("A:/t"), Some("A:"));
         assert_eq!(vfs_drive("a:/t"), Some("a:"));
         assert_eq!(vfs_drive("A:"), Some("A:"));
         assert_eq!(vfs_drive("/__tfs__"), None);
@@ -688,11 +747,10 @@ mod tests {
     #[test]
     fn declared_mounts_qualify_onto_the_vfs_drive() {
         // The uniform namespace (spec 17 §1): the POSIX absolute
-        // namespace presents on the runtime root's drive, so the
-        // runtime root is the same NAME on every platform.
-        assert_eq!(qualify_mount("/", "A:/__tfs__"), "A:/");
-        assert_eq!(qualify_mount("/__tfs__", "A:/__tfs__"), "A:/__tfs__");
-        assert_eq!(qualify_mount("/opt/x", "A:/__tfs__"), "A:/opt/x");
+        // namespace presents on the runtime root's drive.
+        assert_eq!(qualify_mount("/", "A:/t"), "A:/");
+        assert_eq!(qualify_mount("/t", "A:/t"), "A:/t");
+        assert_eq!(qualify_mount("/opt/x", "A:/t"), "A:/opt/x");
     }
 
     #[test]
@@ -704,7 +762,54 @@ mod tests {
 
     #[test]
     fn relative_mounts_are_never_qualified() {
-        assert_eq!(qualify_mount("rel", "A:/__tfs__"), "rel");
+        assert_eq!(qualify_mount("rel", "A:/t"), "rel");
         assert_eq!(qualify_mount("rel", "/__tfs__"), "rel");
+    }
+
+    struct MapEnv(std::collections::HashMap<String, String>);
+
+    impl Env for MapEnv {
+        fn var(&self, key: &str) -> Option<String> {
+            self.0.get(key).cloned()
+        }
+    }
+
+    fn env_with(pairs: &[(&str, &str)]) -> MapEnv {
+        MapEnv(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn no_override_keeps_the_compiled_in_root() {
+        assert_eq!(effective_root("/__tfs__", &env_with(&[])).unwrap(), "/__tfs__");
+        // An empty value is no override (the env_var filter).
+        assert_eq!(
+            effective_root("A:/t", &env_with(&[("TEBAKO_MOUNT_ROOT", "")])).unwrap(),
+            "A:/t"
+        );
+    }
+
+    #[test]
+    fn a_well_formed_override_wins() {
+        let env = env_with(&[("TEBAKO_MOUNT_ROOT", "/rt")]);
+        assert_eq!(effective_root("/__tfs__", &env).unwrap(), "/rt");
+        // The drive-qualified form (the windows spelling) is accepted and
+        // its drive governs the qualification downstream.
+        let env = env_with(&[("TEBAKO_MOUNT_ROOT", "B:/rt")]);
+        assert_eq!(effective_root("A:/t", &env).unwrap(), "B:/rt");
+    }
+
+    #[test]
+    fn a_malformed_override_is_a_named_error() {
+        for bad in ["relative/x", "/", "A:/", "/trail/", "/has/../dot", "A:\\\\win"] {
+            let err = effective_root("/__tfs__", &env_with(&[("TEBAKO_MOUNT_ROOT", bad)]))
+                .unwrap_err();
+            assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{bad}");
+            assert!(err.message.contains("TEBAKO_MOUNT_ROOT"), "{bad}");
+        }
     }
 }
