@@ -3,7 +3,12 @@
 //! the entrypoint's `runtime_requirement` → newest COMPATIBLE runtime
 //! already cached (no download) → else download the newest compatible →
 //! verify → cache. Zero-runtime entrypoints (no `runtime_requirement`)
-//! skip this module entirely.
+//! skip this module entirely. The newest compatible to DOWNLOAD is the
+//! release index's pick, not only the config pin's (spec 13 §2a): the
+//! newest interpreter version satisfying the constraint AND released for
+//! this platform — a readable index with nothing satisfiable is the
+//! named platform-availability error (never a bare asset 404); an
+//! unreadable or availability-keyless index leaves the pin the target.
 //!
 //! The download path mirrors tebako-bootstrap's semantics — per-entry
 //! flock (120 s), tmp + rename install, `sha256`/`origin` trust markers,
@@ -343,7 +348,15 @@ pub fn resolve_runtime(
             ),
         );
     }
-    let rt = download_runtime(&req.engine, pref, ctx)?;
+    // The download target is the release index's pick, not only the
+    // config pin's: the newest interpreter version that both satisfies
+    // the constraint and is released for THIS platform. A readable index
+    // with nothing satisfiable fails here with the named
+    // platform-availability error; anything unreadable leaves the pin
+    // the target (all pin-path behaviors unchanged).
+    let target =
+        index_selected_target(req, &constraint, pref, ctx)?.unwrap_or_else(|| pref.clone());
+    let rt = download_runtime(&req.engine, &target, ctx)?;
     // The downloaded runtime's abi line must satisfy the payload too —
     // the release index carries it (abi: None is the compat window).
     if let (Some(want), Some(have)) = (&req.abi, &rt.abi) {
@@ -352,12 +365,125 @@ pub fn resolve_runtime(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
                     "downloaded runtime {}@{} carries abi \"{have}\" but the payload requires \"{want}\" — the payload was built against a different platform line; rebuild the payload or pin a matching runtime",
-                    req.engine, pref.version
+                    req.engine, target.version
                 ),
             );
         }
     }
     Ok(RuntimeResolution::Ready(rt))
+}
+
+/// The release index's availability facet for `platform` (spec 13 §2a —
+/// the locked entry shape declares `ruby_version` + `platform` +
+/// `tebako_version`): the `(ruby_version, tebako_version)` of every
+/// entry released for this platform. `None` when NO entry declares the
+/// availability keys at all — an index that predates them is
+/// uninformative (the config pin stays the target), never an
+/// availability verdict.
+fn released_versions(text: &str, platform: &str) -> Option<Vec<(String, Option<String>)>> {
+    let parsed = tebako_json::parse(text).ok()?;
+    let tebako_json::Value::Array(entries) = &parsed else {
+        return None;
+    };
+    let mut keyed = false;
+    let mut released = Vec::new();
+    for entry in entries {
+        let (Some(ruby_version), Some(entry_platform)) = (
+            entry.find("ruby_version").and_then(|v| v.as_string()),
+            entry.find("platform").and_then(|v| v.as_string()),
+        ) else {
+            continue;
+        };
+        keyed = true;
+        if entry_platform == platform {
+            released.push((
+                ruby_version,
+                entry.find("tebako_version").and_then(|v| v.as_string()),
+            ));
+        }
+    }
+    keyed.then_some(released)
+}
+
+/// The download-target selection on a cache miss: consult the release
+/// index of the pin's tebako line (`v{pref.tebako}/manifest.json`) for
+/// the newest interpreter version that both satisfies `constraint` and
+/// is released for this platform. Three outcomes:
+///
+/// - `Ok(None)` — the index did not read or carries no availability
+///   keys (and always in offline mode, which never fetches): the config
+///   pin stays the target and every pin-path behavior is unchanged;
+/// - `Ok(Some(target))` — the index's pick (the entry's own
+///   `tebako_version` when declared, else the pin's line);
+/// - `Err` — the index read fine and NOTHING released for this platform
+///   satisfies the constraint: the named platform-availability error
+///   naming the platform, the constraint, and what IS released (a
+///   platform that trails the payload's needs — e.g. windows-ucrt64
+///   released only through ruby 3.2.x — is a diagnosis, never a 404).
+fn index_selected_target(
+    req: &RuntimeRequirement,
+    constraint: &Constraint,
+    pref: &RuntimePref,
+    ctx: &Ctx,
+) -> Result<Option<RuntimePref>, ShimError> {
+    if offline_mode(ctx) {
+        return Ok(None);
+    }
+    let platform = platform_string();
+    let base_raw = releases_base(ctx);
+    let base = skip_file_scheme(&base_raw).to_string();
+    let local = base_is_local(&base_raw);
+    let probe = ctx
+        .home
+        .join("tmp")
+        .join(format!("index-probe.{}", std::process::id()));
+    if std::fs::create_dir_all(&probe).is_err() {
+        // Uninformative, not fatal: the download path re-creates the
+        // store dirs under the install lock and names the IO failure.
+        return Ok(None);
+    }
+    let text = fetch_manifest_text(&base, local, &pref.tebako, &probe);
+    let _ = std::fs::remove_dir_all(&probe);
+    let Some(text) = text else {
+        return Ok(None);
+    };
+    let Some(released) = released_versions(&text, platform) else {
+        return Ok(None);
+    };
+    if let Some((version, tebako)) = released
+        .iter()
+        .filter(|(version, _)| constraint.matches(version))
+        .max_by(|a, b| {
+            versions::compare(&a.0, &b.0).then_with(|| {
+                versions::compare(a.1.as_deref().unwrap_or(""), b.1.as_deref().unwrap_or(""))
+            })
+        })
+    {
+        return Ok(Some(RuntimePref {
+            version: version.clone(),
+            tebako: tebako.clone().unwrap_or_else(|| pref.tebako.clone()),
+        }));
+    }
+    let mut known: Vec<&str> = released
+        .iter()
+        .map(|(version, _)| version.as_str())
+        .collect();
+    known.sort_by(|a, b| versions::compare(a, b));
+    known.dedup();
+    let known = if known.is_empty() {
+        "nothing".to_string()
+    } else {
+        known.join(", ")
+    };
+    fail(
+        EX_TEBAKO_UNAVAILABLE,
+        format!(
+            "no released {} runtime for {platform} satisfies \"{}\"\n  released for {platform}: {known}\n  this payload needs a newer {} than this platform provides yet",
+            req.engine,
+            constraint.source(),
+            req.engine
+        ),
+    )
 }
 
 // ---------------------------------------------------------------------

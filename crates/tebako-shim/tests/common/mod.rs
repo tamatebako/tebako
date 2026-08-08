@@ -247,6 +247,39 @@ pub fn write_config(home: &Path, yaml: &str) {
     std::fs::write(home.join("config.yaml"), yaml).expect("config");
 }
 
+/// A file:// runtime mirror holding one release (`v<ver>`) whose
+/// manifest.json is a MULTI-entry release index in the factory's locked
+/// shape (spec 13 §2a): every entry declares `tebako_version`,
+/// `ruby_version`, `platform`, and the era-2 contract set. Exe + image
+/// assets are written for every listed version, so any index-selected
+/// download target resolves against real, verifiable bytes.
+pub fn write_release_index(root: &Path, ver: &str, lvs: &[&str]) -> PathBuf {
+    let platform = platform();
+    let dir = root.join(format!("v{ver}"));
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    let mut entries = Vec::new();
+    for lv in lvs {
+        let asset_base = format!("tebako-runtime-{ver}-{lv}-{platform}");
+        let exe_name = format!("{asset_base}{}", tebako_shim::runtime::exe_suffix());
+        let image_name = format!("{asset_base}.tfs");
+        let exe_bytes = format!("mirrored runtime exe {lv}\n");
+        let image_bytes = format!("mirrored runtime image {lv}\n");
+        std::fs::write(dir.join(&exe_name), &exe_bytes).expect("exe");
+        std::fs::write(dir.join(&image_name), &image_bytes).expect("image");
+        entries.push(format!(
+            "{{\"tebako_version\": \"{ver}\", \"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"ruby_version\": \"{lv}\", \"platform\": \"{platform}\", \"filename\": \"{exe_name}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{}\"}}}}",
+            sha256_hex(exe_bytes.as_bytes()),
+            sha256_hex(image_bytes.as_bytes())
+        ));
+    }
+    std::fs::write(
+        dir.join("manifest.json"),
+        format!("[{}]\n", entries.join(", ")),
+    )
+    .expect("manifest.json");
+    root.to_path_buf()
+}
+
 /// `write_runtime` plus a release index manifest carrying the runtime's
 /// own `abi` string (spec 13's per-package `abi` key) — the field the
 /// abi-line filter reads.

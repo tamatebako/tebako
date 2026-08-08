@@ -545,3 +545,133 @@ fn a_runtime_without_an_abi_line_stays_eligible() {
     );
     assert_eq!(rt.lang_version, "3.3.7");
 }
+
+// ---------------------------------------------------------------------
+// the release-index download target (spec 05 §5's download half,
+// completed; spec 13 §2a): on a cache miss the index — not only the
+// config pin — names the newest RELEASED version satisfying the
+// constraint on THIS platform, and a readable index with nothing
+// satisfiable is the named platform-availability error, never a bare
+// asset 404.
+// ---------------------------------------------------------------------
+
+/// The windows-ucrt64 release line as the factory publishes it today:
+/// 3.3+ is deferred (the windows native-extension bug), so the platform
+/// stops at 3.2.x. The fixture carries the CURRENT platform string —
+/// the released-versions line is the point, not the triplet.
+const WINDOWS_LINE: &[&str] = &["3.1.6", "3.2.4", "3.2.5", "3.2.6", "3.2.7", "3.2.11"];
+
+#[test]
+fn a_constraint_nothing_released_satisfies_is_the_platform_availability_error() {
+    let tmp = TempDir::new("index-unsatisfiable");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_release_index(&mirror, "0.16.0", WINDOWS_LINE);
+    // the pin satisfies the payload's constraint; the platform's
+    // release line does not — availability, not the pin, is the cause.
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.3.7\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    let platform = platform();
+    assert!(
+        err.message.contains(&format!(
+            "no released ruby runtime for {platform} satisfies \">= 3.3\""
+        )),
+        "{}",
+        err.message
+    );
+    assert!(
+        err.message.contains(&format!(
+            "released for {platform}: 3.1.6, 3.2.4, 3.2.5, 3.2.6, 3.2.7, 3.2.11"
+        )),
+        "{}",
+        err.message
+    );
+    assert!(
+        err.message
+            .contains("this payload needs a newer ruby than this platform provides yet"),
+        "{}",
+        err.message
+    );
+    assert!(
+        !home.join("runtimes").exists(),
+        "a refused resolution installs nothing"
+    );
+}
+
+#[test]
+fn the_index_target_is_the_newest_released_version_satisfying_the_constraint() {
+    let tmp = TempDir::new("index-target");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_release_index(&mirror, "0.16.0", WINDOWS_LINE);
+    // the pin names the tebako line to consult (and satisfies the
+    // constraint); the index, not the pin, picks the ruby version.
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.2.4\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+
+    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.2")), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "3.2.11");
+    assert_eq!(rt.tebako_version, "0.16.0");
+    assert!(rt.exe.is_file());
+    assert!(rt.image.is_some());
+    assert!(rt.dir.join("sha256").is_file());
+    assert!(rt.dir.join("origin").is_file());
+}
+
+#[test]
+fn a_cache_hit_never_consults_the_index() {
+    // the cache wins outright: with a satisfying cached runtime the
+    // mirror is never touched — here a mirror that does not even exist,
+    // so any fetch would fall through to the no-preference error.
+    let tmp = TempDir::new("index-cache-wins");
+    let home = tmp.path().join("home");
+    write_runtime(&home, "3.2.5", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&tmp.path().join("no-such-mirror")),
+    );
+    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.2")), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "3.2.5");
+}
+
+#[test]
+fn offline_never_consults_the_index() {
+    // TEBAKO_OFFLINE is cache-or-named-error: the index consult never
+    // fetches, so the download path's own offline error stands —
+    // unchanged by the index-driven target selection.
+    let tmp = TempDir::new("index-offline");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_release_index(&mirror, "0.16.0", &["3.2.11"]);
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 3.2.11\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    ctx.env.insert("TEBAKO_OFFLINE".into(), "1".into());
+    let err = runtime::resolve_runtime(Some(&req(">= 3.2")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    assert!(err.message.contains("TEBAKO_OFFLINE"), "{}", err.message);
+}
