@@ -70,6 +70,9 @@ jobs:
         with:
           workspaces: |
             tebako-rs
+          # Triplet-scoped, never the default job+lockfile key: each matrix
+          # row is one triplet and a cache must never serve another.
+          key: test-${{ matrix.triplet }}
 
       - name: Install toolchain (rustup)
         uses: dtolnay/rust-toolchain@1.94.1
@@ -447,6 +450,9 @@ jobs:
         with:
           workspaces: |
             tebako-rs
+          # Triplet-scoped, never the default job+lockfile key — this job
+          # builds x64-mingw-static only, and the key names it.
+          key: windows-gnu-cli-x64-mingw-static
 
       - name: cli build + tests (windows-gnu)
         working-directory: tebako-rs
