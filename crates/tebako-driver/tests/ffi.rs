@@ -165,7 +165,7 @@ fn tebako_main_boots_with_the_ruby_root_and_exports_the_contract() {
     #[cfg(not(windows))]
     assert_eq!(mp, "/__tfs__");
     #[cfg(windows)]
-    assert_eq!(mp, "A:/__tfs__");
+    assert_eq!(mp, "A:/t");
     let pwd =
         unsafe { CStr::from_ptr(tebako_driver::ffi::tebako_original_pwd()) }.to_string_lossy();
     assert!(!pwd.is_empty(), "the original cwd is recorded");

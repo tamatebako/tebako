@@ -87,8 +87,9 @@ pub const LAUNCHER_ABI: u32 = 1;
 /// and the tebako=<...> component of the trailer's runtime_ref. Matches
 /// the reference gem's Tebako::VERSION at port time.
 /// The tebako release line the CLI presses against. New-era only: from
-/// 0.16.1 the runtimes bake the renamed mount root (`/__tfs__`,
-/// `A:/__tfs__` on windows — the one name on every platform); older
+/// 0.16.1 the runtimes bake the renamed mount root (`/__tfs__` on POSIX,
+/// `A:/t` on windows — per-platform baked defaults, run-time overridable
+/// via `TEBAKO_MOUNT_ROOT` where the image grants it; spec 17 §1); older
 /// releases carry the legacy `__tebako_memfs__` layout and are NOT
 /// served (no old contract, no compat readers).
 pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.2";
@@ -479,7 +480,7 @@ pub(crate) fn stitch(
 /// The declared (POSIX) form of a mount point: the uniform VFS
 /// namespace name the trailer slots and L2 `mounts:` rows carry on
 /// every platform — the physical root minus any windows drive
-/// (`A:/__tfs__` → `/__tfs__`; POSIX roots are unchanged). The driver
+/// (`A:/t` → `/t`; POSIX roots are unchanged). The driver
 /// re-qualifies declared mounts onto the VFS drive at boot (spec 17
 /// §1), so the argv grammar never has to carry a drive colon.
 pub(crate) fn declared_mount(mount_point: &str) -> &str {
@@ -498,11 +499,11 @@ pub(crate) fn declared_mount(mount_point: &str) -> &str {
 /// — mount-relative; the driver joins mount+entry, spec 17 §1),
 /// `runtime_ref` mirroring the trailer field, and the `mounts:` row
 /// declaring the app slot's union over the env image at the runtime
-/// root (`mount_point` — the trailer's own mount point, the declared
-/// `/__tfs__` on every platform, so the two stay consistent by
-/// construction). A --jail press composes the policy into the same
-/// block — the package's host-access REQUEST the bootstrap tightens at
-/// handoff (spec 08 §2).
+/// root (`mount_point` — the trailer's own mount point, the root's
+/// declared form: `/__tfs__` on POSIX, `/t` on windows — so the two stay
+/// consistent by construction). A --jail press composes the policy into
+/// the same block — the package's host-access REQUEST the bootstrap
+/// tightens at handoff (spec 08 §2).
 fn press_package_manifest(
     package: &str,
     runtime_ref: &str,

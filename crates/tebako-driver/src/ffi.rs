@@ -31,16 +31,18 @@ use crate::{EX_TEBAKO_IO, EX_TEBAKO_MANIFEST};
 /// source tarball's tebako-mount-root manifest → the exe's generated fs
 /// TU → tebako_main forwards it here); this default is only for
 /// driver-only consumers and tests and follows the factory convention:
-/// `A:/__tfs__` on windows, where the memfs presents as its own drive —
-/// the one root name on every platform (spec 17 §1) — and `/__tfs__`
-/// elsewhere.
+/// `A:/t` on windows (short by owner decision — MAX_PATH headroom on
+/// every in-image path), `/__tfs__` elsewhere. A boot may redirect the
+/// root via `TEBAKO_MOUNT_ROOT` (spec 17 §1) when the env image's layout
+/// grants `mount_root_override` — the getter below then reports the
+/// effective root the boot established, never this default.
 #[cfg(windows)]
-const RUBY_RUNTIME_ROOT: &str = "A:/__tfs__";
+const RUBY_RUNTIME_ROOT: &str = "A:/t";
 #[cfg(not(windows))]
 const RUBY_RUNTIME_ROOT: &str = "/__tfs__";
 
 #[cfg(windows)]
-static DEFAULT_ROOT: &[u8] = b"A:/__tfs__\0";
+static DEFAULT_ROOT: &[u8] = b"A:/t\0";
 #[cfg(not(windows))]
 static DEFAULT_ROOT: &[u8] = b"/__tfs__\0";
 static EMPTY: &[u8] = b"\0";
@@ -64,8 +66,9 @@ pub unsafe extern "C" fn tebako_driver_contract_version() -> u32 {
     crate::TEBAKO_CONTRACT_VERSION
 }
 
-/// The mount point the boot established (the runtime root). Before any
-/// boot, the ruby default.
+/// The mount point the boot established (the effective runtime root —
+/// the compiled-in value or its `TEBAKO_MOUNT_ROOT` override). Before
+/// any boot, the ruby default.
 ///
 /// # Safety
 /// Returns a process-lifetime C string; never free it.
@@ -75,6 +78,15 @@ pub unsafe extern "C" fn tebako_mount_point() -> *const c_char {
         .get()
         .map(|c| c.as_ptr())
         .unwrap_or(DEFAULT_ROOT.as_ptr() as *const c_char)
+}
+
+/// Record the root a boot established (the effective value, after any
+/// `TEBAKO_MOUNT_ROOT` override). Called once per boot by the driver
+/// core; a repeat boot keeps the first value (process-lifetime state).
+pub(crate) fn set_mount_point(root: &str) {
+    if let Ok(c) = CString::new(root) {
+        let _ = MOUNT_POINT.set(c);
+    }
 }
 
 /// The process cwd captured at boot; empty before any boot.
@@ -192,9 +204,9 @@ fn boot_impl(argc: *mut c_int, argv: *mut *mut *mut c_char, runtime_root: *const
     let root = unsafe { CStr::from_ptr(runtime_root) }
         .to_string_lossy()
         .into_owned();
-    if let Ok(c) = CString::new(root.as_str()) {
-        let _ = MOUNT_POINT.set(c);
-    }
+    // The mount-point export is set by the driver core AFTER the
+    // TEBAKO_MOUNT_ROOT override resolves — never here (the baked value
+    // would be locked in before the override is known).
     if let Ok(cwd) = std::env::current_dir() {
         if let Ok(c) = CString::new(cwd.to_string_lossy().as_ref()) {
             let _ = ORIGINAL_PWD.set(c);

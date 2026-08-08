@@ -6,7 +6,10 @@
 //! The grammar's single owner is `docs/spec/schemas/layout.yaml`; this
 //! module is its only reader in the product. Fields: `schema_version`,
 //! `era`, `image_layout`, `mount_root`, `interpreter_api_version` — the
-//! era-2 driver parses the last but does not gate on it.
+//! era-2 driver parses the last but does not gate on it — and the
+//! additive `mount_root_override` (schema_minor 1): the image's grant
+//! that its rbconfig follows `TEBAKO_MOUNT_ROOT`, gating the driver's
+//! run-time root override (spec 17 §1).
 
 use serde::Deserialize;
 
@@ -45,6 +48,11 @@ pub struct ImageLayout {
     /// The interpreter API version line the image carries (parsed, not
     /// gated on in era 2).
     pub interpreter_api_version: String,
+    /// The image's grant that its rbconfig follows `TEBAKO_MOUNT_ROOT`
+    /// (additive, schema_minor 1): absent ⇒ `false` ⇒ the driver refuses
+    /// a run-time root override by name (exit 78) rather than booting an
+    /// interpreter whose load paths point at an unmounted root.
+    pub mount_root_override: bool,
 }
 
 /// The tolerant serde view: every field optional so the checks below can
@@ -57,6 +65,7 @@ struct LayoutView {
     image_layout: Option<u32>,
     mount_root: Option<String>,
     interpreter_api_version: Option<String>,
+    mount_root_override: Option<bool>,
 }
 
 impl ImageLayout {
@@ -125,6 +134,7 @@ impl ImageLayout {
             image_layout,
             mount_root,
             interpreter_api_version: api_version,
+            mount_root_override: view.mount_root_override.unwrap_or(false),
         })
     }
 }
@@ -146,14 +156,28 @@ mod tests {
                 image_layout: 1,
                 mount_root: "/__tfs__".to_string(),
                 interpreter_api_version: "3.4".to_string(),
+                mount_root_override: false,
             }
         );
         // unknown keys within the MAJOR are tolerated (spec 18 §3.2 / S57)
         let with_future = format!("{GOOD}future_field: {{anything: goes}}\n");
         ImageLayout::check(&with_future, "/__tfs__", "/rt/ruby.tfs").unwrap();
         // the windows root spelling pairs the same way
-        let win = GOOD.replace("/__tfs__", "A:/__tfs__");
-        ImageLayout::check(&win, "A:/__tfs__", "C:/rt/ruby.tfs").unwrap();
+        let win = GOOD.replace("/__tfs__", "A:/t");
+        ImageLayout::check(&win, "A:/t", "C:/rt/ruby.tfs").unwrap();
+    }
+
+    #[test]
+    fn the_override_grant_is_additive_and_defaults_closed() {
+        // absent (the pre-override era's images) ⇒ closed
+        assert!(!ImageLayout::check(GOOD, "/__tfs__", "/rt/ruby.tfs")
+            .unwrap()
+            .mount_root_override);
+        // declared ⇒ the image's rbconfig follows TEBAKO_MOUNT_ROOT
+        let granted = format!("{GOOD}mount_root_override: true\n");
+        assert!(ImageLayout::check(&granted, "/__tfs__", "/rt/ruby.tfs")
+            .unwrap()
+            .mount_root_override);
     }
 
     #[test]

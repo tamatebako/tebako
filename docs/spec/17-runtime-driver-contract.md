@@ -29,14 +29,32 @@ exact contract (roadmap 22's "add a language" playbook).
   trailer slot records, and on this wire. On windows the namespace
   presents on its own drive: the driver qualifies every declared mount
   `<mount>` onto the runtime root's drive (`<drive><mount>`) before any
-  mount, union, or entry computation, and the runtime root is the one
-  name on every platform (ruby: `/__tfs__`, presented `A:/__tfs__` on
-  windows). An interpreter's C-level path expansion re-roots
-  drive-relative paths (`/...`) onto the process cwd drive; only
-  drive-qualified paths are stable across expansion, so qualifying is
-  what keeps payload paths inside the VFS. The wire grammar therefore
-  never carries a drive letter: `<mount>` is always the declared form,
-  and a declared mount naming a drive is malformed.
+  mount, union, or entry computation. The runtime root is a
+  per-platform baked default owned by the runtime factory (ruby:
+  `/__tfs__` on POSIX, `A:/t` on windows — short by owner decision,
+  MAX_PATH headroom on every in-image path). An interpreter's C-level
+  path expansion re-roots drive-relative paths (`/...`) onto the
+  process cwd drive; only drive-qualified paths are stable across
+  expansion, so qualifying is what keeps payload paths inside the VFS.
+  The wire grammar therefore never carries a drive letter: `<mount>` is
+  always the declared form, and a declared mount naming a drive is
+  malformed.
+- **Run-time root override (`TEBAKO_MOUNT_ROOT`, locked 2026-08-08):**
+  the baked root is the default, never the only spelling. When
+  `TEBAKO_MOUNT_ROOT` is set in the runtime's environment, the driver
+  mounts the env image at that root instead and reports it from
+  `tebako_mount_point` (the io-routing patches and the interpreter's
+  rbconfig follow — era-2 rbconfig emits
+  `ENV["TEBAKO_MOUNT_ROOT"] || <baked>`). The override is validated
+  before any mount — an absolute path (`/…` or drive-qualified `X:/…`),
+  no trailing slash, no `..` — a malformed value is exit 65 naming the
+  variable. The override is then gated post-mount on the env image's
+  layout grant (`mount_root_override: true`, layout schema_minor 1): an
+  image without the grant predates the override era (its rbconfig is
+  pinned to the baked root), so the driver refuses with exit 78 naming
+  both the override and the image — never a boot whose load paths point
+  at an unmounted root. Declared payload mounts qualify onto the
+  override's drive exactly as they do the baked root's.
 - **Mount modes (locked 2026-08-04):** every mount is `exclusive`
   (default) or `union`, declared per slot in the package manifest's
   `mounts:` block (spec 03 §6). An exclusive mount onto an occupied
