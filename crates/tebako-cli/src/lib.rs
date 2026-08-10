@@ -97,7 +97,11 @@ pub const LAUNCHER_ABI: u32 = 1;
 /// fix).
 pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.3";
 
-pub const VERSION_BANNER: &str = "Tebako executable packager version 0.15.9";
+/// The CLI version banner: the product version IS the crate semver
+/// (env!("CARGO_PKG_VERSION") — the single owner; a hand-written copy
+/// here froze at 0.15.9 across two releases).
+pub const VERSION_BANNER: &str =
+    concat!("Tebako executable packager version ", env!("CARGO_PKG_VERSION"));
 
 pub(crate) const WARN: &str = "
 ******************************************************************************************************************

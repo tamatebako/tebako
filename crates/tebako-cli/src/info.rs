@@ -122,8 +122,8 @@ fn arr(items: Vec<tebako_json::Value>) -> tebako_json::Value {
 // system
 // ---------------------------------------------------------------------
 
-/// The product version the banner carries (0.15.9 — the CLI reports the
-/// product, never the crate's own semver).
+/// The product version the banner carries (the crate semver — the
+/// banner's single source is CARGO_PKG_VERSION).
 fn product_version() -> &'static str {
     crate::VERSION_BANNER
         .strip_prefix("Tebako executable packager version ")
