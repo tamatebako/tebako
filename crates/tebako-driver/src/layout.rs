@@ -170,14 +170,18 @@ mod tests {
     #[test]
     fn the_override_grant_is_additive_and_defaults_closed() {
         // absent (the pre-override era's images) ⇒ closed
-        assert!(!ImageLayout::check(GOOD, "/__tfs__", "/rt/ruby.tfs")
-            .unwrap()
-            .mount_root_override);
+        assert!(
+            !ImageLayout::check(GOOD, "/__tfs__", "/rt/ruby.tfs")
+                .unwrap()
+                .mount_root_override
+        );
         // declared ⇒ the image's rbconfig follows TEBAKO_MOUNT_ROOT
         let granted = format!("{GOOD}mount_root_override: true\n");
-        assert!(ImageLayout::check(&granted, "/__tfs__", "/rt/ruby.tfs")
-            .unwrap()
-            .mount_root_override);
+        assert!(
+            ImageLayout::check(&granted, "/__tfs__", "/rt/ruby.tfs")
+                .unwrap()
+                .mount_root_override
+        );
     }
 
     #[test]

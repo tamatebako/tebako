@@ -69,10 +69,8 @@ fn effective_root(declared: &str, env: &dyn Env) -> Result<String, DriverError> 
         return Ok(declared.to_string());
     };
     let b = root.as_bytes();
-    let drive_qualified = b.len() >= 4
-        && b[0].is_ascii_alphabetic()
-        && b[1] == b':'
-        && b[2] == b'/';
+    let drive_qualified =
+        b.len() >= 4 && b[0].is_ascii_alphabetic() && b[1] == b':' && b[2] == b'/';
     let posix_absolute = b.len() >= 2 && b[0] == b'/';
     let well_formed = (drive_qualified || posix_absolute)
         && !root.ends_with('/')
@@ -785,7 +783,10 @@ mod tests {
 
     #[test]
     fn no_override_keeps_the_compiled_in_root() {
-        assert_eq!(effective_root("/__tfs__", &env_with(&[])).unwrap(), "/__tfs__");
+        assert_eq!(
+            effective_root("/__tfs__", &env_with(&[])).unwrap(),
+            "/__tfs__"
+        );
         // An empty value is no override (the env_var filter).
         assert_eq!(
             effective_root("A:/t", &env_with(&[("TEBAKO_MOUNT_ROOT", "")])).unwrap(),
@@ -805,9 +806,16 @@ mod tests {
 
     #[test]
     fn a_malformed_override_is_a_named_error() {
-        for bad in ["relative/x", "/", "A:/", "/trail/", "/has/../dot", "A:\\\\win"] {
-            let err = effective_root("/__tfs__", &env_with(&[("TEBAKO_MOUNT_ROOT", bad)]))
-                .unwrap_err();
+        for bad in [
+            "relative/x",
+            "/",
+            "A:/",
+            "/trail/",
+            "/has/../dot",
+            "A:\\\\win",
+        ] {
+            let err =
+                effective_root("/__tfs__", &env_with(&[("TEBAKO_MOUNT_ROOT", bad)])).unwrap_err();
             assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{bad}");
             assert!(err.message.contains("TEBAKO_MOUNT_ROOT"), "{bad}");
         }

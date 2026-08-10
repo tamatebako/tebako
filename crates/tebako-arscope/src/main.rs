@@ -947,9 +947,7 @@ mod tests {
         );
         assert!(has("malloc"), "the libc ref stays: {names:?}");
         assert!(
-            names
-                .iter()
-                .any(|n| n == "__tebako_internal__consumer_fn"),
+            names.iter().any(|n| n == "__tebako_internal__consumer_fn"),
             "the member's own def is renamed (raw name verbatim): {names:?}"
         );
         assert_eq!(renamed, 2, "one def + one ref renamed");
@@ -1021,10 +1019,7 @@ mod tests {
             .map(|i| {
                 let at = symoff + i * 16;
                 let strx = u32::from_le_bytes(out[at..at + 4].try_into().unwrap()) as usize;
-                let end = out[stroff + strx..]
-                    .iter()
-                    .position(|&b| b == 0)
-                    .unwrap();
+                let end = out[stroff + strx..].iter().position(|&b| b == 0).unwrap();
                 String::from_utf8_lossy(&out[stroff + strx..stroff + strx + end]).into_owned()
             })
             .collect();
@@ -1042,9 +1037,7 @@ mod tests {
         );
         assert_eq!(names.len(), 4, "no symbol is dropped or added: {names:?}");
         assert!(
-            exported
-                .iter()
-                .any(|n| n == "__tebako_internal__dual")
+            exported.iter().any(|n| n == "__tebako_internal__dual")
                 && exported.iter().any(|n| n == "__tebako_internal_dual"),
             "both spellings land in the archive index: {exported:?}"
         );
