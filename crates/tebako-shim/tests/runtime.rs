@@ -93,14 +93,64 @@ fn no_compatible_cached_offline_is_the_named_compat_error() {
 fn no_runtime_preference_is_a_named_error() {
     let tmp = TempDir::new("no-pref");
     let home = tmp.path().join("home");
-    let err =
-        runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx(&home, tmp.path())).unwrap_err();
+    // An empty mirror: the default-line index probe reads nothing (never
+    // the real network), so the named refusal is what remains.
+    let mirror = tmp.path().join("mirror");
+    std::fs::create_dir_all(&mirror).expect("mirror dir");
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx).unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
     assert!(
         err.message.contains("runtime preference"),
         "{}",
         err.message
     );
+}
+
+#[test]
+fn no_preference_downloads_the_index_pick_on_the_default_line() {
+    let tmp = TempDir::new("prefless-index-pick");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    let line = tebako_resolve::DEFAULT_TEBAKO_VERSION;
+    write_release_index(&mirror, line, &["3.3.7", "3.4.2"]);
+    // NO runtime preference in config.yaml — the point of the test: the
+    // default-line release index picks the newest satisfier (spec 13 §2a).
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+
+    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.3.0")), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "3.3.7");
+    assert_eq!(rt.tebako_version, line);
+    assert!(rt.exe.is_file());
+}
+
+#[test]
+fn no_preference_and_an_index_without_a_satisfier_is_the_platform_error() {
+    let tmp = TempDir::new("prefless-unsatisfiable");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    write_release_index(
+        &mirror,
+        tebako_resolve::DEFAULT_TEBAKO_VERSION,
+        WINDOWS_LINE,
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    assert!(err.message.contains("satisfies"), "{}", err.message);
 }
 
 #[test]
