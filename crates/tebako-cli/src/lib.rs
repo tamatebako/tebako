@@ -91,8 +91,11 @@ pub const LAUNCHER_ABI: u32 = 1;
 /// `A:/t` on windows — per-platform baked defaults, run-time overridable
 /// via `TEBAKO_MOUNT_ROOT` where the image grants it; spec 17 §1); older
 /// releases carry the legacy `__tebako_memfs__` layout and are NOT
-/// served (no old contract, no compat readers).
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.2";
+/// served (no old contract, no compat readers). From 0.16.3 the runtimes
+/// carry the union-aware driver (the L2 `mounts:` block the press
+/// writes, spec 03 §6) and the io.c zero-copy guard (the linux deploy
+/// fix).
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.3";
 
 pub const VERSION_BANNER: &str = "Tebako executable packager version 0.15.9";
 

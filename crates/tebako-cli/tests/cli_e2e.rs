@@ -36,15 +36,6 @@ fn e2e_allowed() -> bool {
     std::env::var_os("TEBAKO_CLI_SKIP_E2E").is_none()
 }
 
-/// Linux gate (TODO.prepublish/12): the released 0.16.2 runtime's io.c
-/// lacks the zero-copy guard, so a deploy-time remote gem fetch dies with
-/// EBADF (copy_file_range on a synthetic VFS fd) — only on linux, where
-/// the syscall exists. Un-gate with the 0.16.3 runtime republication
-/// (the io.c guard rides it).
-fn linux_deploy_blocked() -> bool {
-    cfg!(target_os = "linux")
-}
-
 fn workdir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("tebako-cli-e2e-{tag}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
@@ -191,10 +182,6 @@ fn press_command(env: &PressEnv, entry: &str, output: &Path) -> Command {
 #[test]
 fn press_simple_script_runs() {
     let _guard = press_lock().lock().unwrap();
-    if linux_deploy_blocked() {
-        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
-        return;
-    }
     let Some(env) = press_env("simple", "test-00") else {
         return;
     };
@@ -208,31 +195,26 @@ fn press_simple_script_runs() {
         )),
         "unexpected press output:\n{log}"
     );
-    // Run BLOCKED (TODO.prepublish/12): the press now writes the union
-    // mount model (L2 mounts block, app slot unioning over the env
-    // image), which the RELEASED runtime exe's baked-in driver predates.
-    // The press assertions above are the proven parts; the run un-gates
-    // when the runtime factory republishes with the new driver.
-    eprintln!("run skipped — runtime factory republication pending (TODO.prepublish/12)");
+    let (code, out) = run(&mut Command::new(&package));
+    assert_eq!(code, 0, "packaged binary failed:\n{out}");
+    assert_eq!(out, "Hello!  This is test-00 talking from inside DwarFS\n");
 }
 
 #[test]
 fn press_gemfile_runs() {
     let _guard = press_lock().lock().unwrap();
-    if linux_deploy_blocked() {
-        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
-        return;
-    }
     let Some(env) = press_env("gemfile", "gemfile-app") else {
         return;
     };
     let package = env.work.join("gemfile-app");
     let (code, log) = run(&mut press_command(&env, "main.rb", &package));
     assert!(code == 0, "press failed:\n{log}");
-    // Run BLOCKED (TODO.prepublish/12): see press_simple_script_runs —
-    // the run un-gates when the runtime factory republishes with the
-    // union-aware driver.
-    eprintln!("run skipped — runtime factory republication pending (TODO.prepublish/12)");
+    let (code, out) = run(&mut Command::new(&package));
+    assert_eq!(code, 0, "packaged binary failed:\n{out}");
+    assert!(
+        out.starts_with("Hello from gemfile app with rake "),
+        "unexpected output: {out}"
+    );
 }
 
 // ---------------------------------------------------------------------
@@ -272,10 +254,6 @@ fn bundler_platform_tag() -> Option<String> {
 #[test]
 fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
     let _guard = press_lock().lock().unwrap();
-    if linux_deploy_blocked() {
-        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
-        return;
-    }
     let Some(tag) = bundler_platform_tag() else {
         eprintln!("skipping fontist press: no platform tag for this host");
         return;
@@ -319,11 +297,11 @@ fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
     assert!(config.contains("BUNDLE_BUILD__NOKOGIRI"), "{config}");
     assert!(!config.contains("FORCE_RUBY_PLATFORM"), "{config}");
 
-    // Run BLOCKED (TODO.prepublish/12): see press_simple_script_runs —
-    // the run un-gates when the runtime factory republishes with the
-    // union-aware driver. (The packaged binary then runs: fontist and
-    // its native deps load from the image.)
-    eprintln!("run skipped — runtime factory republication pending (TODO.prepublish/12)");
+    // The packaged binary runs: fontist and its native deps load from
+    // the image.
+    let (code, out) = run(&mut Command::new(&package));
+    assert_eq!(code, 0, "packaged binary failed:\n{out}");
+    assert_eq!(out, "fontist 3.0.10\n");
 }
 
 /// Item 5's green path: with --prefer-local the resolution prefers the
@@ -335,10 +313,6 @@ fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
 #[test]
 fn press_gemfile_nokogiri_precompiled_runs() {
     let _guard = press_lock().lock().unwrap();
-    if linux_deploy_blocked() {
-        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
-        return;
-    }
     let Some(tag) = bundler_platform_tag() else {
         eprintln!("skipping nokogiri press: no platform tag for this host");
         return;
@@ -365,19 +339,14 @@ fn press_gemfile_nokogiri_precompiled_runs() {
     );
     assert!(!log.contains("force_ruby_platform"), "{log}");
 
-    // Run BLOCKED (TODO.prepublish/12): see press_simple_script_runs —
-    // the run un-gates when the runtime factory republishes with the
-    // union-aware driver.
-    eprintln!("run skipped — runtime factory republication pending (TODO.prepublish/12)");
+    let (code, out) = run(&mut Command::new(&package));
+    assert_eq!(code, 0, "packaged binary failed:\n{out}");
+    assert_eq!(out, "Hello from nokogiri app with nokogiri 1.19.4\n");
 }
 
 #[test]
 fn press_missing_entry_point_is_106() {
     let _guard = press_lock().lock().unwrap();
-    if linux_deploy_blocked() {
-        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
-        return;
-    }
     let Some(env) = press_env("e106", "test-00") else {
         return;
     };
@@ -761,6 +730,8 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
     seed_rs_version_file(&env.prefix);
     let (code, rs_log) = run(&mut press_command(&env, entry, &package));
     assert!(code == 0, "tebako-rs press failed:\n{rs_log}");
+    let (code, rs_out) = run(&mut Command::new(&package));
+    assert_eq!(code, 0, "tebako-rs-pressed binary failed:\n{rs_out}");
 
     let gem_log = normalize_press_log(&gem_log);
     let rs_log = normalize_press_log(&rs_log);
@@ -769,13 +740,11 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
         rs_log.trim_end(),
         "press outputs diverge (gem left, tebako-rs right)"
     );
-    // tebako-rs run BLOCKED (TODO.prepublish/12): the rs press now writes
-    // the union mount model, which the RELEASED runtime exe's baked-in
-    // driver predates. The gem-pressed run above and the press-log parity
-    // are the proven parts; the rs run and the output parity un-gate when
-    // the runtime factory republishes with the union-aware driver.
-    eprintln!("tebako-rs run skipped — runtime factory republication pending (TODO.prepublish/12)");
-    let _ = expect;
+    assert_eq!(gem_out, rs_out, "packaged binary outputs diverge");
+    assert!(
+        rs_out.contains(expect),
+        "unexpected binary output: {rs_out}"
+    );
 }
 
 #[test]
@@ -1021,10 +990,6 @@ fn image_era_press_and_cold_run() {
     if !e2e_allowed() {
         return;
     }
-    if linux_deploy_blocked() {
-        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
-        return;
-    }
     let Some((work, mirror_root, asset, image_name)) = image_era_fixture("image-era") else {
         return;
     };
@@ -1066,13 +1031,38 @@ fn image_era_press_and_cold_run() {
         "no extracted tree in the cache"
     );
 
-    // Cold run BLOCKED (TODO.prepublish/12): the image-era press still
-    // stitches the v1 mount model (app overlay at /__tfs__, no L2
-    // entries), which the v2 driver refuses (duplicate mount). The
-    // press-time resolution and cache layout above are the proven parts;
-    // the bootstrap's cold resolve + run returns with the mount-model
-    // rollout — and with it the post-run cache assertions.
-    eprintln!("cold run skipped — image-era press mount model (TODO.prepublish/12)");
+    // Cold run: wipe the cache — the bootstrap downloads interpreter +
+    // image from the mirror and the app runs.
+    fs::remove_dir_all(&home).unwrap();
+    let mut cold = Command::new(&package);
+    cold.env(
+        "TEBAKO_RUNTIME_MIRROR",
+        tebako_http::file_url(Path::new(&mirror_root)),
+    )
+    .env("TEBAKO_HOME", &home);
+    let (code, out) = run(&mut cold);
+    assert_eq!(code, 0, "cold run failed:\n{out}");
+    assert!(
+        out.contains("Hello!  This is test-00 talking from inside DwarFS"),
+        "{out}"
+    );
+
+    // The cache holds interpreter + immutable image + markers — nothing else.
+    assert!(entry_dir.join(&asset).is_file());
+    let image = entry_dir.join(&image_name);
+    assert!(image.is_file());
+    assert!(entry_dir.join(format!("{image_name}.sha256")).is_file());
+    assert!(entry_dir.join(format!("{image_name}.origin")).is_file());
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let mode = fs::metadata(&image).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o444, "image must be read-only: {mode:o}");
+    }
+    assert!(
+        !entry_dir.join("layout").exists(),
+        "no extracted tree in the cache"
+    );
 
     // The runtime executes a stub from the standalone image (the driver
     // mounts it, zero driver change): wrap the image as a tpkg package
@@ -1171,10 +1161,6 @@ fn image_era_full_flow_official_pair() {
     if !e2e_allowed() {
         return;
     }
-    if linux_deploy_blocked() {
-        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
-        return;
-    }
     let Some((work, mirror_root, _asset, image_name)) = official_pair_fixture("image-era-official")
     else {
         eprintln!("skipping official-pair image-era e2e: runtime resolution failed");
@@ -1203,13 +1189,26 @@ fn image_era_full_flow_official_pair() {
         let (code, log) = press_against_mirror(&work, fixture, entry, &package, &mirror_root, &[]);
         assert!(code == 0, "{fixture} press failed:\n{log}");
 
-        // Cold run BLOCKED (TODO.prepublish/12): the image-era press
-        // still stitches the v1 mount model (app overlay at /__tfs__, no
-        // L2 entries), which the v2 driver refuses (duplicate mount).
-        // Resolution + press above are the proven parts; the cold run
-        // returns with the mount-model rollout.
-        eprintln!("{fixture}: cold run skipped — image-era press mount model (TODO.prepublish/12)");
-        let _ = (&home, expect, &entry_dir, &image_name);
+        // Cold run: wipe the cache; the bootstrap resolves interpreter +
+        // image from the mirror and the app runs.
+        fs::remove_dir_all(&home).unwrap();
+        let mut cold = Command::new(&package);
+        cold.env(
+            "TEBAKO_RUNTIME_MIRROR",
+            tebako_http::file_url(Path::new(&mirror_root)),
+        )
+        .env("TEBAKO_HOME", &home);
+        let (code, out) = run(&mut cold);
+        assert_eq!(code, 0, "{fixture} cold run failed:\n{out}");
+        assert!(out.contains(expect), "{fixture}: {out}");
+        assert!(
+            entry_dir.join(&image_name).is_file(),
+            "{fixture}: image missing"
+        );
+        assert!(
+            !entry_dir.join("layout").exists(),
+            "{fixture}: no extracted tree"
+        );
     }
 }
 
@@ -1355,10 +1354,6 @@ fn native_ext_press_builds_and_packages() {
     if !e2e_allowed() {
         return;
     }
-    if linux_deploy_blocked() {
-        eprintln!("skipped on linux until the 0.16.3 runtime republication (TODO.prepublish/12)");
-        return;
-    }
     let Some((work, mirror_root, asset, _image_name)) = official_pair_fixture("native-ext") else {
         eprintln!("skipping native-ext e2e: runtime resolution failed");
         return;
@@ -1431,12 +1426,20 @@ fn native_ext_press_builds_and_packages() {
         "built extension missing from the app image at {artifact}"
     );
 
-    // Cold run BLOCKED (TODO.prepublish/12): the image-era press still
-    // stitches the v1 mount model (app overlay at /__tfs__, no L2
-    // entries), which the v2 driver refuses (duplicate mount). The press,
-    // the SDK provision, and the in-image artifact above are the proven
-    // parts; the cold run returns with the mount-model rollout.
-    eprintln!("cold run skipped — image-era press mount model (TODO.prepublish/12)");
+    // Cold run: the packaged app loads the extension from the memfs.
+    let home = work.join("home-cold");
+    let mut cold = Command::new(&package);
+    cold.env(
+        "TEBAKO_RUNTIME_MIRROR",
+        tebako_http::file_url(Path::new(&mirror_root)),
+    )
+    .env("TEBAKO_HOME", &home);
+    let (code, out) = run(&mut cold);
+    assert_eq!(code, 0, "cold run failed:\n{out}");
+    assert!(
+        out.contains("native-ext app: toyext.answer = 42"),
+        "unexpected output: {out}"
+    );
 
     // A failing extension build fails the press loudly: the deploy driver
     // exits non-zero and the ext build output tail rides the error. The
