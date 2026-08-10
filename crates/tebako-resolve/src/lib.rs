@@ -42,6 +42,22 @@ pub use registry::{
 };
 pub use transport::{HttpTransport, Transport};
 
+/// The default tebako runtime release line (tamatebako/tebako-runtime-ruby)
+/// the stack resolves against when nothing else pins one (spec 13 §2a's
+/// default line). THE SINGLE OWNER: the CLI presses with it and the
+/// shim's runtime download probes its release index — every consumer
+/// flows it from here.
+///
+/// New-era only: from 0.16.1 the runtimes bake the renamed mount root
+/// (`/__tfs__` on POSIX, `A:/t` on windows — per-platform baked defaults,
+/// run-time overridable via `TEBAKO_MOUNT_ROOT` where the image grants
+/// it; spec 17 §1); older releases carry the legacy `__tebako_memfs__`
+/// layout and are NOT served (no old contract, no compat readers). From
+/// 0.16.3 the runtimes carry the union-aware driver (the L2 `mounts:`
+/// block the press writes, spec 03 §6) and the io.c zero-copy guard
+/// (the linux deploy fix).
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.3";
+
 /// Fetch `reference` (pin-verified at the fetch boundary) and install it
 /// as `payloads/<name>/<version>.tfs` — or return the existing entry.
 /// `expected_sha256` is the registry-supplied trust anchor; the

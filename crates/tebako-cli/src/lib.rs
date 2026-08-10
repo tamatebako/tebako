@@ -86,22 +86,17 @@ pub const LAUNCHER_ABI: u32 = 1;
 /// The tebako version this CLI presses with: the runtime release consumed
 /// and the tebako=<...> component of the trailer's runtime_ref. Matches
 /// the reference gem's Tebako::VERSION at port time.
-/// The tebako release line the CLI presses against. New-era only: from
-/// 0.16.1 the runtimes bake the renamed mount root (`/__tfs__` on POSIX,
-/// `A:/t` on windows — per-platform baked defaults, run-time overridable
-/// via `TEBAKO_MOUNT_ROOT` where the image grants it; spec 17 §1); older
-/// releases carry the legacy `__tebako_memfs__` layout and are NOT
-/// served (no old contract, no compat readers). From 0.16.3 the runtimes
-/// carry the union-aware driver (the L2 `mounts:` block the press
-/// writes, spec 03 §6) and the io.c zero-copy guard (the linux deploy
-/// fix).
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.3";
+/// The tebako release line the CLI presses against — owned by
+/// tebako-resolve (the single source every consumer flows from).
+pub use tebako_resolve::DEFAULT_TEBAKO_VERSION;
 
 /// The CLI version banner: the product version IS the crate semver
 /// (env!("CARGO_PKG_VERSION") — the single owner; a hand-written copy
 /// here froze at 0.15.9 across two releases).
-pub const VERSION_BANNER: &str =
-    concat!("Tebako executable packager version ", env!("CARGO_PKG_VERSION"));
+pub const VERSION_BANNER: &str = concat!(
+    "Tebako executable packager version ",
+    env!("CARGO_PKG_VERSION")
+);
 
 pub(crate) const WARN: &str = "
 ******************************************************************************************************************

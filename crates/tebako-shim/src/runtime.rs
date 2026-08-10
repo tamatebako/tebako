@@ -287,10 +287,11 @@ pub fn resolve_runtime(
         _ => String::new(),
     };
 
-    // No compatible cached runtime. The download fallback needs an exact
-    // ref: the user's runtime preference for the engine (config.yaml
-    // `runtimes:`, spec 07 §4 "runtime preferences") until the runtime
-    // registry ships.
+    // No compatible cached runtime. The download target: the release
+    // index's pick on the configured preference's line (config.yaml
+    // `runtimes:`, spec 07 §4 "runtime preferences") — or, with no
+    // preference configured, on the product default line
+    // (tebako-resolve::DEFAULT_TEBAKO_VERSION).
     let cfg = config::load_config(&ctx.home)?;
     let pref = cfg.runtimes.get(&req.engine);
     let cached_note = if cached.is_empty() {
@@ -313,18 +314,23 @@ pub fn resolve_runtime(
             abi_note
         )
     };
-    let Some(pref) = pref else {
-        return fail(
-            EX_TEBAKO_UNAVAILABLE,
-            format!(
-                "no compatible runtime for {} \"{}\": {cached_note}\n  and no runtime preference is configured — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
-                req.engine,
-                constraint.source(),
-                req.engine
-            ),
-        );
+    // The download line: the config pin's when one is configured, else
+    // the product default (tebako-resolve::DEFAULT_TEBAKO_VERSION — the
+    // single owner). A bare `tebako install` never strands on a missing
+    // pin: the release index on the default line picks the newest
+    // interpreter satisfying the constraint for this platform.
+    let (pref_owned, prefless) = match pref {
+        Some(p) => (p.clone(), false),
+        None => (
+            RuntimePref {
+                version: String::new(),
+                tebako: tebako_resolve::DEFAULT_TEBAKO_VERSION.to_string(),
+            },
+            true,
+        ),
     };
-    if !constraint.matches(&pref.version) {
+    let pref = &pref_owned;
+    if !prefless && !constraint.matches(&pref.version) {
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
@@ -337,6 +343,17 @@ pub fn resolve_runtime(
         );
     }
     if !allow_download {
+        if prefless {
+            return fail(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "no compatible runtime for {} \"{}\": {cached_note}\n  and no runtime preference is configured — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
+                    req.engine,
+                    constraint.source(),
+                    req.engine
+                ),
+            );
+        }
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
@@ -354,8 +371,21 @@ pub fn resolve_runtime(
     // with nothing satisfiable fails here with the named
     // platform-availability error; anything unreadable leaves the pin
     // the target (all pin-path behaviors unchanged).
-    let target =
-        index_selected_target(req, &constraint, pref, ctx)?.unwrap_or_else(|| pref.clone());
+    let target = match index_selected_target(req, &constraint, pref, ctx)? {
+        Some(pick) => pick,
+        None if !prefless => pref.clone(),
+        None => {
+            return fail(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "no compatible runtime for {} \"{}\": {cached_note}\n  and no runtime preference is configured, and the default-line release index did not read — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
+                    req.engine,
+                    constraint.source(),
+                    req.engine
+                ),
+            );
+        }
+    };
     let rt = download_runtime(&req.engine, &target, ctx)?;
     // The downloaded runtime's abi line must satisfy the payload too —
     // the release index carries it (abi: None is the compat window).
