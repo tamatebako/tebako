@@ -962,7 +962,9 @@ fn mount_root_override_redirects_the_env_mount() {
     // The env image mounted at the override, never at the baked root.
     assert_eq!(read_file("/rt/lib/ruby/rubygems.rb"), b"# rubygems core\n");
     let mut ctx = context().write().unwrap();
-    assert!(ctx.open("/__tfs__/lib/ruby/rubygems.rb", libc::O_RDONLY).is_err());
+    assert!(ctx
+        .open("/__tfs__/lib/ruby/rubygems.rb", libc::O_RDONLY)
+        .is_err());
 }
 
 #[test]
@@ -978,7 +980,9 @@ fn mount_root_override_requires_the_images_grant() {
     assert!(err.message.contains("TEBAKO_MOUNT_ROOT"), "{err}");
     // The refusal rolled the mount back (never a partial mount).
     let mut ctx = context().write().unwrap();
-    assert!(ctx.open("/rt/lib/tebako/layout.yaml", libc::O_RDONLY).is_err());
+    assert!(ctx
+        .open("/rt/lib/tebako/layout.yaml", libc::O_RDONLY)
+        .is_err());
 }
 
 #[test]
