@@ -26,6 +26,8 @@ pub const REDIRECT_LIMIT: u32 = 5;
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
 /// Global per-request timeout (the gem's read_timeout).
 pub const GLOBAL_TIMEOUT: Duration = Duration::from_secs(300);
+/// Upload timeout (the release-asset channel — see [`upload_agent`]).
+pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(1800);
 
 /// Set to opt into the OS trust store instead of the bundled
 /// webpki-roots (corporate MITM proxies and the like).
@@ -73,35 +75,47 @@ impl fmt::Display for FetchError {
 
 impl std::error::Error for FetchError {}
 
+fn build_agent(global_timeout: Duration) -> ureq::Agent {
+    let root_certs = if std::env::var_os(PLATFORM_ROOTS_ENV).is_some() {
+        ureq::tls::RootCerts::PlatformVerifier
+    } else {
+        ureq::tls::RootCerts::WebPki
+    };
+    let tls_builder = ureq::tls::TlsConfig::builder().root_certs(root_certs);
+    // windows-gnu: ureq is built `rustls-no-provider` (ring does not
+    // compile under mingw), so the provider must be named explicitly —
+    // ureq's documented aws-lc-rs swap.
+    #[cfg(all(windows, target_env = "gnu"))]
+    let tls_builder = tls_builder.unversioned_rustls_crypto_provider(std::sync::Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ));
+    let tls = tls_builder.build();
+    ureq::Agent::config_builder()
+        .tls_config(tls)
+        .https_only(true)
+        .max_redirects(REDIRECT_LIMIT)
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_global(Some(global_timeout))
+        // statuses are mapped by the caller: the rate-limit headers
+        // ride the RESPONSE, and ureq's StatusCode error drops them.
+        .http_status_as_error(false)
+        .build()
+        .into()
+}
+
 fn agent() -> &'static ureq::Agent {
     static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-    AGENT.get_or_init(|| {
-        let root_certs = if std::env::var_os(PLATFORM_ROOTS_ENV).is_some() {
-            ureq::tls::RootCerts::PlatformVerifier
-        } else {
-            ureq::tls::RootCerts::WebPki
-        };
-        let tls_builder = ureq::tls::TlsConfig::builder().root_certs(root_certs);
-        // windows-gnu: ureq is built `rustls-no-provider` (ring does not
-        // compile under mingw), so the provider must be named explicitly —
-        // ureq's documented aws-lc-rs swap.
-        #[cfg(all(windows, target_env = "gnu"))]
-        let tls_builder = tls_builder.unversioned_rustls_crypto_provider(std::sync::Arc::new(
-            rustls::crypto::aws_lc_rs::default_provider(),
-        ));
-        let tls = tls_builder.build();
-        ureq::Agent::config_builder()
-            .tls_config(tls)
-            .https_only(true)
-            .max_redirects(REDIRECT_LIMIT)
-            .timeout_connect(Some(CONNECT_TIMEOUT))
-            .timeout_global(Some(GLOBAL_TIMEOUT))
-            // statuses are mapped by the caller: the rate-limit headers
-            // ride the RESPONSE, and ureq's StatusCode error drops them.
-            .http_status_as_error(false)
-            .build()
-            .into()
-    })
+    AGENT.get_or_init(|| build_agent(GLOBAL_TIMEOUT))
+}
+
+/// The upload channel (release assets): 100 MB+ payloads on a degraded
+/// backend blow the 300 s global request timeout (the metanorma 1.16.9
+/// publish died at it, 2026-08-10; the factory's publish learned the
+/// same lesson the same night). Bounded but generous — 30 min covers a
+/// 150 MB asset at ~100 KB/s.
+fn upload_agent() -> &'static ureq::Agent {
+    static UPLOAD_AGENT: OnceLock<ureq::Agent> = OnceLock::new();
+    UPLOAD_AGENT.get_or_init(|| build_agent(UPLOAD_TIMEOUT))
 }
 
 /// Seconds from a Retry-After header value (delta-seconds form; the
@@ -339,7 +353,7 @@ pub fn post(
     bearer: Option<&str>,
 ) -> Result<Vec<u8>, FetchError> {
     require_https(url)?;
-    let mut req = agent()
+    let mut req = upload_agent()
         .post(url)
         .header("Content-Type", content_type)
         .header("Accept", "application/vnd.github+json")
