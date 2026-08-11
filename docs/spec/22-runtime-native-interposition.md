@@ -43,7 +43,9 @@ so every consumer is covered at once:
   pull). `--wrap` is FORBIDDEN (it only covers the link unit's own
   calls).
 - **macOS:** the interpose mechanism (`__interpose` section) — the same
-  mechanism the preload layer uses for exec.
+  mechanism the preload layer uses for exec. dyld honors tuples only
+  from dylib images, so delivery is driver self-insertion (see "Phase 1
+  delivery" below).
 - **Windows:** inside the interpreter's own dln path (the patched
   `dln.c`); C-extension self-loads via raw `LoadLibrary` are the
   documented edge (rare — evaluate per case, never silently).
@@ -56,6 +58,29 @@ original on musl (no `dlvsym`) without self-recursion. `dlerror` IS
 interposed: a failed VFS materialization must surface the tebako context
 line (the library, the mount, the verdict) through the standard dlopen
 error channel, never a stale loader message.
+
+**Phase 1 delivery (locked 2026-08-11, verified empirically).** The
+mechanics above are uniform; the DELIVERY is platform-split:
+
+- **ELF:** the ruby `dln_c_loader_interpose` patch carries the
+  exe-defined `dlopen`/`dlerror` wrappers; the main binary's definition
+  preempts `libdl`'s for the whole process (the interpreter, its C
+  extensions, and anything they pull). Originals resolve via
+  `dlsym(RTLD_NEXT, …)`.
+- **macOS:** dyld honors `__interpose` tuples only when they arrive in
+  a DYLIB image — tuples in the main executable are silently ignored
+  (verified: main-exe tuples never fire; dylib tuples apply
+  process-wide; `dlopen()` of an interposer after launch does NOT
+  activate it; `DYLD_INSERT_LIBRARIES` works). The driver therefore
+  SELF-INSERTS at the head of `tebako_driver_boot`, before any mount
+  and before the interpreter starts: it writes an embedded micro
+  interpose-dylib (compiled in the product repo, binding the exe's
+  `tebako_fs_*` exports via `-undefined dynamic_lookup` — one VFS
+  context, no third artifact) to a content-keyed cache path, sets
+  `DYLD_INSERT_LIBRARIES` plus the sentinel `TEBAKO_LOADER_INTERPOSED=1`,
+  and `execv`s itself. The sentinel makes the re-exec fire exactly
+  once; the re-exec precedes all mounting, so there is no double boot,
+  no partial-mount window, and no launcher-ABI change.
 
 **Rule L3.** Materialization reuses the spec-17 exec-closure walk
 (Mach-O/ELF dependency closure, content-keyed cache dir, write-once).
