@@ -1001,6 +1001,47 @@ pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_cha
     out
 }
 
+/// `tebako_fs_exec_materialize`: the exec surface's materialization —
+/// same malloc/free contract as `tebako_fs_dlmap2file`. A path inside a
+/// home-layout mount (the in-image manifest's
+/// `identity.annotations.java_home` — the payload root IS a tool home)
+/// materializes the mount's WHOLE tree once per process and the answer
+/// is the host twin inside that tree: a home's data files
+/// (lib/modules, lib/jvm.cfg) never ride a linked-library closure, so
+/// the dlmap2file answer boots a java that cannot find its boot class
+/// path. Any other path answers exactly like `tebako_fs_dlmap2file`.
+///
+/// # Safety
+/// `path` must be a valid C string.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_exec_materialize(path: *const c_char) -> *mut c_char {
+    let path = match unsafe { path_arg(path) } {
+        Ok(p) => p,
+        Err(e) => {
+            fail(e);
+            return std::ptr::null_mut();
+        }
+    };
+    let host = match context().write().unwrap().exec_materialize(path) {
+        Ok(h) => h,
+        Err(e) => {
+            fail(e);
+            return std::ptr::null_mut();
+        }
+    };
+    // Allocate with libc malloc so the C caller can free() the string.
+    let bytes = host.as_bytes_with_nul();
+    // SAFETY: malloc'd buffer of bytes.len(); copy then hand over ownership.
+    let out = unsafe { libc::malloc(bytes.len()).cast::<c_char>() };
+    if out.is_null() {
+        fail(libc::ENOMEM);
+        return std::ptr::null_mut();
+    }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr().cast(), out, bytes.len()) };
+    set_errno(0);
+    out
+}
+
 /// `tebako_fs_mounts`: the mount table in the `TEBAKO_TFS_MOUNTS`
 /// grammar ("image:mount,image:mount,…"), heap-allocated with libc
 /// malloc (the caller `free()`s it); NULL when nothing file-backed is

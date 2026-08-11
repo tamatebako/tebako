@@ -271,15 +271,17 @@ pub fn vfs_rewinddir(id: usize) -> Result<(), i32> {
     context().write().unwrap().rewinddir(id)
 }
 
-/// execve/posix_spawn of a MEMFS path (roadmap 39): materialize the file
-/// through the engine's `dlmap2file` host cache (execve needs a host path
-/// — one copy per exec, gc later, stated honestly in the spec) and force
-/// the exec bit (zip-family backends honestly report 0644). The routing
-/// is the dlopen rule: memfs → the host copy; host-or-denied → the
-/// route's answer (an allowed host path execs the original, a denied one
-/// fails EPERM/EROFS).
+/// execve/posix_spawn of a MEMFS path (roadmap 39): materialize through
+/// the engine's exec answer (`exec_materialize` — a home-layout mount
+/// (the in-image manifest's `java_home` annotation) extracts WHOLE once
+/// per process so the tool's self-relative data files (lib/modules,
+/// lib/jvm.cfg) exist next to the binary; any other mount rides the
+/// dlmap2file closure walk) and force the exec bit (zip-family backends
+/// honestly report 0644). The routing is the dlopen rule: memfs → the
+/// host copy; host-or-denied → the route's answer (an allowed host path
+/// execs the original, a denied one fails EPERM/EROFS).
 pub fn vfs_materialize_exec(path: &str) -> PathRoute<std::ffi::CString> {
-    let answer = { context().write().unwrap().dlmap2file(path) };
+    let answer = { context().write().unwrap().exec_materialize(path) };
     match answer {
         Ok(host) => match ensure_exec_bit(&host) {
             Ok(()) => PathRoute::Vfs(host),
