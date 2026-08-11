@@ -48,6 +48,15 @@ so every consumer is covered at once:
   `dln.c`); C-extension self-loads via raw `LoadLibrary` are the
   documented edge (rare — evaluate per case, never silently).
 
+**Phase 1 (POSIX) mechanics.** The interposed symbols are `dlopen` and
+`dlerror`, on both ELF and macOS. `dlsym` is deliberately NOT interposed
+in phase 1: the `dlopen` wrapper returns real loader handles, so `dlsym`
+needs no routing — and an exe-defined `dlsym` cannot resolve its own
+original on musl (no `dlvsym`) without self-recursion. `dlerror` IS
+interposed: a failed VFS materialization must surface the tebako context
+line (the library, the mount, the verdict) through the standard dlopen
+error channel, never a stale loader message.
+
 **Rule L3.** Materialization reuses the spec-17 exec-closure walk
 (Mach-O/ELF dependency closure, content-keyed cache dir, write-once).
 The cache is per runtime image sha — a rebuilt runtime never reads a
@@ -103,6 +112,11 @@ with the tebako context line (the library/binary path, the mount, the
 materialization verdict). No silent fallbacks: if a VFS load/exec/
 materialization cannot complete, the named error is the outcome —
 never a host-path shadow.
+
+For an interposed load the context line rides the dlerror channel: the
+interposed `dlerror` (§2) answers a failed VFS `dlopen` with the tebako
+line, so the caller's standard `dlopen`/`dlerror` handling reports the
+tebako verdict instead of whatever the loader last recorded.
 
 ## 6. The documented interface (the stable surface)
 
