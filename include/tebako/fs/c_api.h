@@ -613,33 +613,6 @@ int tebako_fs_fstat(int fd, struct tebako_stat* st);
 int tebako_path_is_embedded(const char* path);
 
 /**
- * @brief Get the mount point of the mount covering a path
- *
- * Returns the mount point of the longest-prefix mount covering path —
- * the mount-decision helper behind tebako_path_is_embedded(), in string
- * form (spec 22: an interposed loader names the mount that owns the
- * path it was asked to load).
- *
- * @param path Path to query
- * @return Heap-allocated mount point string (the caller releases it
- *         with free()); NULL on error (check errno via
- *         tebako_get_errno())
- *
- * @note Returns NULL with errno=ENOENT when no mount covers the path,
- *       EINVAL on a NULL or non-UTF-8 argument
- *
- * @example
- * @code
- * char* mount = tebako_fs_mount_of("/__tebako__/lib/native/ext.so");
- * if (mount != NULL) {
- *     // mount == "/__tebako__"
- *     free(mount);
- * }
- * @endcode
- */
-char* tebako_fs_mount_of(const char* path);
-
-/**
  * @brief Check if file descriptor is from libtfs
  *
  * Tests if a file descriptor was returned by tebako_fs_open().

@@ -1001,44 +1001,6 @@ pub unsafe extern "C" fn tebako_fs_dlmap2file(path: *const c_char) -> *mut c_cha
     out
 }
 
-/// `tebako_fs_mount_of`: the mount point of the longest-prefix mount
-/// covering `path` — spec 22 phase 1's mount-decision helper, so an
-/// interposed dlopen error line can name the mount (the later exec
-/// interposition reuses the same decision). NULL with ENOENT when no
-/// mount covers the path, EINVAL on a NULL/non-UTF-8 argument. The
-/// returned string is heap-allocated with libc `malloc` — the C contract
-/// says the caller releases it with `free()`.
-///
-/// # Safety
-/// `path` must be a valid C string.
-#[no_mangle]
-pub unsafe extern "C" fn tebako_fs_mount_of(path: *const c_char) -> *mut c_char {
-    let path = match unsafe { path_arg(path) } {
-        Ok(p) => p,
-        Err(e) => {
-            fail(e);
-            return std::ptr::null_mut();
-        }
-    };
-    let Some(mount_point) = context().read().unwrap().mount_point_of(path) else {
-        fail(libc::ENOENT);
-        return std::ptr::null_mut();
-    };
-    // Allocate with libc malloc so the C caller can free() the string.
-    let bytes = mount_point.as_bytes();
-    // SAFETY: malloc'd buffer of bytes.len() + 1; copy + NUL-terminate,
-    // then hand over ownership.
-    let out = unsafe { libc::malloc(bytes.len() + 1).cast::<c_char>() };
-    if out.is_null() {
-        fail(libc::ENOMEM);
-        return std::ptr::null_mut();
-    }
-    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr().cast(), out, bytes.len()) };
-    unsafe { *out.add(bytes.len()) = 0 };
-    set_errno(0);
-    out
-}
-
 /// `tebako_fs_mounts`: the mount table in the `TEBAKO_TFS_MOUNTS`
 /// grammar ("image:mount,image:mount,…"), heap-allocated with libc
 /// malloc (the caller `free()`s it); NULL when nothing file-backed is

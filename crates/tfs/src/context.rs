@@ -752,17 +752,6 @@ impl FsContext {
         self.find_mount(path).is_some()
     }
 
-    /// tebako_fs_mount_of: the mount point of the longest-prefix mount
-    /// covering `path` — the coverage answer behind `path_is_embedded`,
-    /// in string form (spec 22 phase 1's mount-decision helper: an
-    /// interposed load names the mount that owns the path). Same lexical
-    /// discipline as the coverage check — no normalization; the caller's
-    /// spelling is the dispatch input, so a Some here is exactly the
-    /// `path_is_embedded` == true case.
-    pub fn mount_point_of(&self, path: &str) -> Option<String> {
-        self.find_mount(path).map(|m| m.mount_point.clone())
-    }
-
     /// A mount HOLDS `path` — the write gate's discriminator. An entry
     /// existing at `path` in the image is held; so is a path whose
     /// deepest EXISTING in-image ancestor is held (a write into a held

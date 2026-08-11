@@ -761,47 +761,6 @@ fn path_is_embedded_not_initialized() {
 }
 
 #[test]
-fn mount_of_covered_paths() {
-    let f = setup();
-    f.init();
-    let p = unsafe { tfs::c_api::tebako_fs_mount_of(f.path_c("/content/hello.txt").as_ptr()) };
-    assert!(!p.is_null());
-    assert_eq!(unsafe { errno() }, 0);
-    assert_eq!(
-        unsafe { std::ffi::CStr::from_ptr(p) }.to_string_lossy(),
-        f.mount_point
-    );
-    unsafe { libc::free(p.cast()) };
-
-    // The mount root itself is covered.
-    let p = unsafe { tfs::c_api::tebako_fs_mount_of(f.mp_c().as_ptr()) };
-    assert!(!p.is_null());
-    assert_eq!(
-        unsafe { std::ffi::CStr::from_ptr(p) }.to_string_lossy(),
-        f.mount_point
-    );
-    unsafe { libc::free(p.cast()) };
-}
-
-#[test]
-fn mount_of_uncovered_path() {
-    let f = setup();
-    f.init();
-    let p1 = std::ffi::CString::new("/tmp/file.txt").unwrap();
-    let p = unsafe { tfs::c_api::tebako_fs_mount_of(p1.as_ptr()) };
-    assert!(p.is_null());
-    assert_eq!(unsafe { errno() }, libc::ENOENT);
-}
-
-#[test]
-fn mount_of_null_path() {
-    let _f = setup();
-    let p = unsafe { tfs::c_api::tebako_fs_mount_of(std::ptr::null()) };
-    assert!(p.is_null());
-    assert_eq!(unsafe { errno() }, libc::EINVAL);
-}
-
-#[test]
 fn fd_is_embedded_valid_fd() {
     let f = setup();
     f.init();
