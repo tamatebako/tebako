@@ -947,7 +947,15 @@ pub unsafe extern "C" fn tebako_fs_extract_all(dest_path: *const c_char) -> libc
         .unwrap()
         .extract_all(std::path::Path::new(dest))
     {
-        Ok(()) => {
+        Ok(skipped_symlinks) => {
+            // The count rides the debug journal; the C ABI's int return
+            // stays status-only (0/errno).
+            tebako_log::log!(
+                tebako_log::Level::Debug,
+                "tfs",
+                "extract_all done skipped_symlinks={}",
+                skipped_symlinks
+            );
             set_errno(0);
             0
         }
