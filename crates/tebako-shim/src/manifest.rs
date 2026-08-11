@@ -136,6 +136,20 @@ impl Manifest {
         &self.inner.requires
     }
 
+    /// The home-layout annotation (`identity.annotations.java_home` —
+    /// spec 03's free-form annotations): a payload whose root IS a
+    /// runtime home (a JRE — its bin/java probes lib/jvm.cfg relative
+    /// to its own real path) materializes WHOLE at install; the
+    /// exec-closure walk only ever sees linked binaries, never the
+    /// home's data files (the openjdk jvm.cfg miss, dogfood-found).
+    pub fn home_layout(&self) -> Option<&str> {
+        self.inner
+            .identity
+            .annotations
+            .get("java_home")
+            .and_then(|v| v.as_str())
+    }
+
     /// The payload's declared host-access request (spec 08 §4 — the app
     /// PROVIDES `capabilities.host`; the dispatcher composes it with the
     /// user's tightening flags, spec 08 §2).

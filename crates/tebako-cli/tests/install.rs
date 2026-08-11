@@ -701,6 +701,63 @@ fn embedded_manifest_yaml(name: &str, version: &str) -> String {
     )
 }
 
+/// A home-layout toolkit manifest (the openjdk shape): the payload root
+/// IS a runtime home — `annotations.java_home` — and the executable
+/// probes its data files relative to its own real path.
+fn toolkit_home_manifest_yaml(name: &str, exe: &str, version: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: toolkit\n  name: {name}\n  version: \"{version}\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\n  annotations: {{java_home: \"/\"}}\nprovides:\n  executables:\n    - {{name: {exe}, path: /bin/{exe}, version: \"{version}\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        sha(b'a'),
+        sha(b'b')
+    )
+}
+
+/// A zip image in the home layout: the manifest, the executable at
+/// bin/<exe>, and a load-bearing data file at lib/jvm.cfg (the exec
+/// closure never sees it — only whole-tree extraction carries it).
+/// Directory entries are EXPLICIT (add_directory): the zip backend
+/// mirrors the C++ iterator's explicit-only semantics and never
+/// synthesizes implicit parents (TODO.v2-1/24).
+fn zip_image_with_home(name: &str, exe: &str, version: &str) -> Vec<u8> {
+    let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+    let options = zip::write::SimpleFileOptions::default();
+    for dir in ["__tpkg__/", "bin/", "lib/"] {
+        writer.add_directory(dir, options).unwrap();
+    }
+    writer
+        .start_file("__tpkg__/manifest.yaml", options)
+        .unwrap();
+    writer
+        .write_all(toolkit_home_manifest_yaml(name, exe, version).as_bytes())
+        .unwrap();
+    writer.start_file(format!("bin/{exe}"), options).unwrap();
+    writer.write_all(b"#!/bin/sh\n").unwrap();
+    writer.start_file("lib/jvm.cfg", options).unwrap();
+    writer.write_all(b"-server KNOWN\n").unwrap();
+    writer.finish().unwrap().into_inner()
+}
+
+#[test]
+fn home_layout_payloads_materialize_the_whole_tree() {
+    let fx = Fixture::new("homelayout");
+    let image = zip_image_with_home("jre", "java", "21");
+    let payload_ref = fx.payload("jre-21.tfs", &image);
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: jre\n    kind: toolkit\n    versions:\n      - version: \"21\"\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        entrypoints: [java]\n    default: \"21\"\n"
+    );
+    let reg_ref = fx.registry("tpkg-registry.yaml", &yaml);
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    let out = install::install(&fx.home, "jre", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["java"]);
+    let tree = fx.payloads_dir().join("jre/21.tree");
+    assert!(tree.join("bin/java").is_file(), "the executable lands");
+    assert!(
+        tree.join("lib/jvm.cfg").is_file(),
+        "the home's data files ride the whole-tree materialization (the openjdk jvm.cfg miss)"
+    );
+}
+
 #[test]
 fn embedded_manifest_drives_the_mirror_when_present() {
     let fx = Fixture::new("embedded");
