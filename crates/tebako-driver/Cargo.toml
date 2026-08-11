@@ -35,6 +35,15 @@ tfs = { version = "0.1.0", path = "../tfs" }
 [target.'cfg(windows)'.dependencies]
 tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 
+# macOS loader interposition (spec 22 §2 "Phase 1 delivery"): the
+# boot-head self-insertion content-keys the embedded interpose-dylib by
+# its sha256, and build.rs compiles the dylib — both macOS-only.
+[target.'cfg(target_os = "macos")'.dependencies]
+sha2 = "0.10"
+
+[target.'cfg(target_os = "macos")'.build-dependencies]
+cc = "1"
+
 [dev-dependencies]
 # Zip fixtures built in-code (the tests/contract pattern).
 zip = { version = "2", default-features = false, features = ["deflate"] }

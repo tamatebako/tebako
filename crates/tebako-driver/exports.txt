@@ -21,6 +21,7 @@ tebako_fs_mount_from_file_at_with_mode
 tebako_fs_mount_from_file_with_mode
 tebako_fs_mount_from_memory
 tebako_fs_mount_from_memory_with_mode
+tebako_fs_mount_of
 tebako_fs_open
 tebako_fs_opendir
 tebako_fs_pread

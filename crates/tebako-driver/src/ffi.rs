@@ -17,6 +17,12 @@
 
 #![allow(unsafe_code)]
 
+/// The macOS boot-head self-insertion (spec 22 §2 "Phase 1 delivery"):
+/// the embedded interpose-dylib, DYLD_INSERT_LIBRARIES, and the once-only
+/// re-exec — see the module. Compiles out on every other target.
+#[cfg(target_os = "macos")]
+pub(crate) mod interpose;
+
 use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::OnceLock;
@@ -197,6 +203,13 @@ fn boot_impl(argc: *mut c_int, argv: *mut *mut *mut c_char, runtime_root: *const
     if argvp.is_null() {
         return EX_TEBAKO_IO;
     }
+    // macOS loader interposition (spec 22 §2, "Phase 1 delivery"): at
+    // the head of the boot — before any mount, before the jail, before
+    // the interpreter starts — re-exec once with the embedded interpose
+    // dylib inserted. Loud-continue on any failure. Never reached by
+    // miniruby: tebako_main's build-time pass-through returns above.
+    #[cfg(target_os = "macos")]
+    interpose::self_insert(argvp);
     let n = unsafe { *argc };
     if n < 0 {
         return EX_TEBAKO_IO;
