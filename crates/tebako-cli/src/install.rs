@@ -1028,6 +1028,12 @@ fn install_dependency_closure<T: Transport>(
 /// the native program plus its Mach-O/ELF dependency closure, so the
 /// dispatcher execs it without linking tfs (spec 07 §2 — install is
 /// the materialization verb; a run never extracts).
+///
+/// A payload declaring a home layout (`annotations.java_home` — the
+/// root IS a runtime home: a JRE's bin/java probes lib/jvm.cfg relative
+/// to its own real path) materializes WHOLE: the closure walk only
+/// ever sees linked binaries, never the home's data files (the openjdk
+/// jvm.cfg miss, dogfood-found 2026-08-10).
 fn materialize_zero_runtime(
     home: &Path,
     entry: &tebako_resolve::CacheEntry,
@@ -1042,8 +1048,25 @@ fn materialize_zero_runtime(
     if zero.is_empty() {
         return Ok(());
     }
+    let whole_tree = mirror.home_layout().is_some();
     let record: PayloadRecord = manifest::payload_record(home, mirror.name(), mirror.version());
     image_manifest::with_image_mounted(&entry.path, || {
+        if whole_tree {
+            return tfs::context::context()
+                .write()
+                .unwrap()
+                .extract_all(&record.tree)
+                .map_err(|e| {
+                    err(
+                        EX_TEBAKO_UNAVAILABLE,
+                        format!(
+                            "cannot materialize the home-layout payload {}: {}",
+                            entry.path.display(),
+                            String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
+                        ),
+                    )
+                });
+        }
         for path in &zero {
             tfs::context::context()
                 .write()
