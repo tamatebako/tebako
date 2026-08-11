@@ -37,11 +37,16 @@ tfs = { version = "0.1.0", path = "../tfs", default-features = false, features =
 
 # macOS loader interposition (spec 22 §2 "Phase 1 delivery"): the
 # boot-head self-insertion content-keys the embedded interpose-dylib by
-# its sha256, and build.rs compiles the dylib — both macOS-only.
+# its sha256 — macOS-only (the module compiles out elsewhere).
 [target.'cfg(target_os = "macos")'.dependencies]
 sha2 = "0.10"
 
-[target.'cfg(target_os = "macos")'.build-dependencies]
+# build.rs compiles the interpose dylib for darwin targets only (its
+# TARGET check early-returns elsewhere), but it references the cc crate
+# unconditionally — build scripts compile for the HOST, so gating cc on
+# cfg(macos) breaks every non-macOS host's compile with E0433. cc stays
+# an unconditional build-dependency.
+[build-dependencies]
 cc = "1"
 
 [dev-dependencies]
