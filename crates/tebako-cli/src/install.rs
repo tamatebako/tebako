@@ -1056,6 +1056,7 @@ fn materialize_zero_runtime(
                 .write()
                 .unwrap()
                 .extract_all(&record.tree)
+                .map(|_| ())
                 .map_err(|e| {
                     err(
                         EX_TEBAKO_UNAVAILABLE,
