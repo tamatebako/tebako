@@ -814,7 +814,9 @@ impl FsContext {
 
     /// tebako_fs_extract_all: one mount extracts directly into `dest`;
     /// multiple mounts each extract into `<dest>/<mount-point-basename>`.
-    pub fn extract_all(&mut self, dest: &std::path::Path) -> Result<(), i32> {
+    /// Returns the count of SKIPPED symlinks (no backend carries
+    /// readlink today — skipped, counted, never silent).
+    pub fn extract_all(&mut self, dest: &std::path::Path) -> Result<usize, i32> {
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
@@ -824,10 +826,11 @@ impl FsContext {
         if std::fs::create_dir_all(dest).is_err() {
             return Err(libc::EIO);
         }
+        let mut skipped = 0usize;
         if self.mounts.len() == 1 {
             // Single mount: historic behavior — tree directly into dest.
             let mount = self.mounts.values().next().unwrap();
-            extract_dir_recursive(mount.backend.as_ref(), "", dest)?;
+            extract_dir_recursive(mount.backend.as_ref(), "", dest, &mut skipped)?;
         } else {
             let mounts: Vec<&Mount> = self.mounts.values().collect();
             for mount in mounts {
@@ -835,10 +838,10 @@ impl FsContext {
                 if std::fs::create_dir_all(&subtree).is_err() {
                     return Err(libc::EIO);
                 }
-                extract_dir_recursive(mount.backend.as_ref(), "", &subtree)?;
+                extract_dir_recursive(mount.backend.as_ref(), "", &subtree, &mut skipped)?;
             }
         }
-        Ok(())
+        Ok(skipped)
     }
 
     // ---------------------------------------------------------------
@@ -1232,6 +1235,7 @@ fn extract_dir_recursive(
     backend: &dyn Backend,
     rel_dir: &str,
     host_dir: &std::path::Path,
+    skipped_symlinks: &mut usize,
 ) -> Result<(), i32> {
     std::fs::create_dir_all(host_dir).map_err(|_| libc::EIO)?;
     for entry in backend.read_dir(rel_dir)? {
@@ -1242,25 +1246,46 @@ fn extract_dir_recursive(
         };
         let child_host = host_dir.join(&entry.name);
         if entry.is_dir {
-            extract_dir_recursive(backend, &child_rel, &child_host)?;
-        } else {
-            extract_file(backend, &child_rel, &child_host)?;
+            extract_dir_recursive(backend, &child_rel, &child_host, skipped_symlinks)?;
+        } else if extract_file(backend, &child_rel, &child_host)? == ExtractStep::SkippedSymlink {
+            *skipped_symlinks += 1;
         }
     }
     Ok(())
 }
 
+/// What one walk step did with a non-directory entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExtractStep {
+    /// File content written to the host.
+    Written,
+    /// A symlink the walk cannot materialize (no backend carries
+    /// readlink today — the C ABI has no target surface). Skipped,
+    /// counted, never silent: the CLI reports the count.
+    SkippedSymlink,
+}
+
 /// Stream one file out of a backend onto the host (permissions and
 /// modification time preserved, best effort).
-fn extract_file(backend: &dyn Backend, rel: &str, host: &std::path::Path) -> Result<(), i32> {
+fn extract_file(
+    backend: &dyn Backend,
+    rel: &str,
+    host: &std::path::Path,
+) -> Result<ExtractStep, i32> {
     use std::io::Write as _;
     #[cfg_attr(windows, allow(unused_variables))]
     let st = backend.stat(rel)?;
+    if st.entry_type == EntryType::Symlink {
+        return Ok(ExtractStep::SkippedSymlink);
+    }
     let mut out = std::fs::File::create(host).map_err(|_| libc::EIO)?;
     let mut offset = 0u64;
     let mut buf = vec![0u8; 8192];
     loop {
-        let n = backend.pread(rel, &mut buf, offset)?;
+        let n = backend.pread(rel, &mut buf, offset).map_err(|e| {
+            eprintln!("extract debug: pread({rel}, offset {offset}) -> errno {e}");
+            e
+        })?;
         if n == 0 {
             break;
         }
@@ -1275,7 +1300,7 @@ fn extract_file(backend: &dyn Backend, rel: &str, host: &std::path::Path) -> Res
             std::time::UNIX_EPOCH + std::time::Duration::from_secs(st.mtime.max(0) as u64),
         );
     }
-    Ok(())
+    Ok(ExtractStep::Written)
 }
 
 /// The process-global context. Public C API functions lock it for the
@@ -1327,6 +1352,44 @@ mod tests {
         assert!(!ctx.path_is_held("/tfs/elsewhere/x"));
         // outside every mount
         assert!(!ctx.path_is_held("/elsewhere"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn extract_all_skips_symlinks_counted_and_lands_the_real_files() {
+        // A hostdir mount carrying a symlink: the walk skips it, COUNTED
+        // (no backend carries readlink — the C ABI has no target
+        // surface), and the real files all land. 2026-08-11: the walk
+        // died on exactly this with EINVAL in release builds (the
+        // openjdk linux leg's mute failure).
+        let dir = std::env::temp_dir().join(format!("tfs-symlink-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("lib")).unwrap();
+        std::fs::write(img.join("lib/real.txt"), b"data").unwrap();
+        std::os::unix::fs::symlink("real.txt", img.join("lib/link.txt")).unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        let backend = crate::backends_hostdir::HostDirBackend::new(&img).unwrap();
+        let mount = Mount {
+            handle: 0,
+            mount_point: "/tfs".to_string(),
+            mount_point_c: Box::new(std::ffi::CString::new("/tfs").unwrap()),
+            archive_path: None,
+            backend: Box::new(backend),
+            mode: crate::mount::MountMode::ReadOnly,
+        };
+        ctx.mount_checked(mount).unwrap();
+        let skipped = ctx.extract_all(&dest).unwrap();
+        assert_eq!(skipped, 1, "the symlink is counted");
+        assert!(dest.join("lib/real.txt").is_file(), "the real file lands");
+        assert!(
+            !dest.join("lib/link.txt").exists(),
+            "the symlink is not materialized"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
