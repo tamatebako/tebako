@@ -6,7 +6,7 @@
 //! (`src/c_api/fs_context.cpp`) semantics exactly; see each function's
 //! comments for the errno contract.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::RwLock;
 
 use crate::backend::{Backend, EntryType, RawDirEntry, RawStat, WritableBackend};
@@ -124,6 +124,13 @@ pub struct FsContext {
     /// dlmap2file cache: memfs path -> extracted host path. Extractions
     /// live for the process run and are removed at teardown (atexit).
     dl_cache: BTreeMap<String, std::path::PathBuf>,
+    /// The home-layout verdict per mount handle (the in-image manifest's
+    /// `identity.annotations.java_home`), memoized on first exec probe —
+    /// see `exec_materialize`.
+    home_memos: BTreeMap<i32, bool>,
+    /// The home mounts whose whole tree already materialized into the
+    /// dl tmpdir this process run (extract once per mount).
+    home_trees: BTreeSet<i32>,
     /// Host-access policy (spec 08 jails): consulted on every
     /// host-passthrough path decision (a path no memfs mount claims, and
     /// the mount family's image read). Process state, not namespace state:
@@ -151,6 +158,8 @@ impl FsContext {
             compat_handle: None,
             dl_tmpdir: None,
             dl_cache: BTreeMap::new(),
+            home_memos: BTreeMap::new(),
+            home_trees: BTreeSet::new(),
             host_policy: HostPolicy::open(),
             journal: None,
         }
@@ -875,6 +884,89 @@ impl FsContext {
         std::ffi::CString::new(s).map_err(|_| libc::EIO)
     }
 
+    /// The exec surface's answer for a memfs path (the preload's
+    /// execve/posix_spawn routing): a mount whose in-image manifest
+    /// declares the home annotation (`identity.annotations.java_home` —
+    /// the payload root IS a tool home, spec 03's free-form annotations)
+    /// materializes WHOLE once per process and the answer is the host
+    /// twin of `path` inside that tree. A home's data files
+    /// (lib/modules, lib/jvm.cfg) never ride a linked-library closure,
+    /// so the closure walk's answer boots a java that cannot find its
+    /// boot class path (the metanorma dogfood's jing failure). Any
+    /// other mount answers via dlmap2file's closure walk, unchanged.
+    pub fn exec_materialize(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        let normalized = Self::normalize(path);
+        let probe = self.find_mount(&normalized).map(|mount| {
+            (
+                mount.handle,
+                Self::relative_path(mount, &normalized).to_string(),
+            )
+        });
+        let Some((handle, rel)) = probe.filter(|(handle, _)| self.mount_is_home(*handle)) else {
+            return self.dlmap2file(path);
+        };
+        if rel.is_empty() {
+            return Err(libc::EISDIR);
+        }
+        let root = self.home_tree_root(handle)?;
+        if self.home_trees.insert(handle) {
+            let mount = self.mounts.get(&handle).ok_or(libc::ENODEV)?;
+            let mut skipped = 0usize;
+            extract_dir_recursive(mount.backend.as_ref(), "", &root, &mut skipped)?;
+        }
+        let host = root.join(&rel);
+        std::ffi::CString::new(host.to_string_lossy().into_owned()).map_err(|_| libc::EIO)
+    }
+
+    /// The mount's home-layout verdict, memoized per handle: the
+    /// in-image manifest carries `identity.annotations.java_home` with
+    /// a string value (the whole mount tree materializes — the shim's
+    /// install-time reading of the same annotation, #388). The read is
+    /// a tolerant value walk, never the validating model parse: a
+    /// schema newer than this runtime must still answer (spec 03's
+    /// compat rule — consumers ignore what they predate). An absent,
+    /// unreadable, or malformed manifest answers false: the closure
+    /// walk stays the default.
+    fn mount_is_home(&mut self, handle: i32) -> bool {
+        if let Some(verdict) = self.home_memos.get(&handle) {
+            return *verdict;
+        }
+        let verdict = self
+            .mounts
+            .get(&handle)
+            .and_then(|mount| {
+                read_backend_file(
+                    mount.backend.as_ref(),
+                    tpkg::PAYLOAD_MANIFEST_PATH.trim_start_matches('/'),
+                )
+            })
+            .and_then(|text| serde_yml::from_str::<serde_yml::Value>(&text).ok())
+            .and_then(|yaml| {
+                yaml.get("identity")?
+                    .get("annotations")?
+                    .get("java_home")?
+                    .as_str()
+                    .map(str::to_owned)
+            })
+            .is_some();
+        self.home_memos.insert(handle, verdict);
+        verdict
+    }
+
+    /// The per-process whole-tree root for a home mount
+    /// (`<dl tmpdir>/tebako-home-<handle>`), creating the dl tmpdir on
+    /// first use — the same lifecycle as dlmap2file's cache (registered
+    /// for cleanup at exit).
+    fn home_tree_root(&mut self, handle: i32) -> Result<std::path::PathBuf, i32> {
+        if self.dl_tmpdir.is_none() {
+            let dir = create_dl_tmpdir().ok_or(libc::EIO)?;
+            register_dl_cleanup(&dir);
+            self.dl_tmpdir = Some(dir);
+        }
+        let tmp = self.dl_tmpdir.as_ref().ok_or(libc::EIO)?;
+        Ok(tmp.join(format!("tebako-home-{handle}")))
+    }
+
     /// The store-side sibling of dlmap2file (tebako install's
     /// zero-runtime materialization): extract `path` plus its exec
     /// dependency closure to `<dest>/<full memfs path>` and return the
@@ -1254,6 +1346,27 @@ fn extract_dir_recursive(
     Ok(())
 }
 
+/// Read a small in-image file whole (the manifest probe): pread chunks
+/// to EOF. Any backend error — the absent file included — answers None
+/// (the probe's caller decides what absence means; it is never an exec
+/// failure of its own).
+fn read_backend_file(backend: &dyn Backend, rel: &str) -> Option<String> {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 8192];
+    let mut offset = 0u64;
+    loop {
+        match backend.pread(rel, &mut chunk, offset) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]);
+                offset += n as u64;
+            }
+            Err(_) => return None,
+        }
+    }
+    String::from_utf8(buf).ok()
+}
+
 /// What one walk step did with a non-directory entry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ExtractStep {
@@ -1387,6 +1500,96 @@ mod tests {
             !dest.join("lib/link.txt").exists(),
             "the symlink is not materialized"
         );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A zip with explicit dir entries (the zip backend's readdir is
+    /// explicit-only) carrying a fake tool home: bin/tool + lib/modules,
+    /// and the in-image manifest when `with_annotation` (the tolerant
+    /// exec probe reads only identity.annotations.java_home).
+    fn fixture_home_zip(dir: &std::path::Path, with_annotation: bool) -> std::path::PathBuf {
+        let name = if with_annotation {
+            "home.zip"
+        } else {
+            "plain.zip"
+        };
+        let path = dir.join(name);
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        for d in ["__tpkg__/", "bin/", "lib/"] {
+            writer.add_directory(d, options).unwrap();
+        }
+        if with_annotation {
+            writer
+                .start_file("__tpkg__/manifest.yaml", options)
+                .unwrap();
+            writer
+                .write_all(b"identity:\n  annotations:\n    java_home: \"/\"\n")
+                .unwrap();
+        }
+        writer.start_file("bin/tool", options).unwrap();
+        writer.write_all(b"#!/bin/fake\n").unwrap();
+        writer.start_file("lib/modules", options).unwrap();
+        writer.write_all(b"jimage-bytes").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    #[test]
+    fn exec_materialize_lands_the_whole_tree_for_a_home_layout_mount() {
+        let dir = std::env::temp_dir().join(format!("tfs-home-exec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_home_zip(&dir, true);
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/tfs/bin/tool").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(host.is_file(), "the exec twin lands: {host:?}");
+        assert_eq!(std::fs::read(&host).unwrap(), b"#!/bin/fake\n");
+        assert!(
+            host.to_string_lossy().contains("tebako-home-"),
+            "home-layout answers from the whole-tree root, not the closure cache: {host:?}"
+        );
+        // The point of the branch: the home's data files exist next to
+        // the binary (lib/modules — never in a linked closure).
+        let root = host.parent().unwrap().parent().unwrap();
+        assert_eq!(
+            std::fs::read(root.join("lib/modules")).unwrap(),
+            b"jimage-bytes"
+        );
+
+        // Idempotent within the process: a second exec reuses the tree.
+        let again = ctx.exec_materialize("/tfs/bin/tool").unwrap();
+        assert_eq!(again, answer);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exec_materialize_keeps_the_closure_walk_for_a_plain_mount() {
+        let dir = std::env::temp_dir().join(format!("tfs-plain-exec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_home_zip(&dir, false);
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/tfs/bin/tool").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(host.is_file(), "the closure-walk twin lands: {host:?}");
+        assert!(
+            !host.to_string_lossy().contains("tebako-home-"),
+            "a manifest-less mount keeps the closure walk: {host:?}"
+        );
+        // No whole-tree: the home's data file never materializes.
+        let root = host.parent().unwrap().parent().unwrap();
+        assert!(!root.join("lib/modules").exists());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
