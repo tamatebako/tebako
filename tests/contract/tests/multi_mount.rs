@@ -629,6 +629,32 @@ fn path_is_embedded_multi_mounts() {
 }
 
 #[test]
+fn mount_of_nested_longest_prefix_wins() {
+    let f = setup();
+    f.mount_a_mem("/__mm_outer__");
+    f.mount_b_mem("/__mm_outer__/inner");
+
+    // A path under the nested mount answers the deeper mount point.
+    let p = unsafe { tfs::c_api::tebako_fs_mount_of(c("/__mm_outer__/inner/beta.txt").as_ptr()) };
+    assert!(!p.is_null());
+    assert_eq!(
+        unsafe { std::ffi::CStr::from_ptr(p) }.to_string_lossy(),
+        "/__mm_outer__/inner"
+    );
+    unsafe { libc::free(p.cast()) };
+
+    // A path covered by the outer mount only answers the outer root.
+    let p =
+        unsafe { tfs::c_api::tebako_fs_mount_of(c("/__mm_outer__/content/alpha.txt").as_ptr()) };
+    assert!(!p.is_null());
+    assert_eq!(
+        unsafe { std::ffi::CStr::from_ptr(p) }.to_string_lossy(),
+        "/__mm_outer__"
+    );
+    unsafe { libc::free(p.cast()) };
+}
+
+#[test]
 fn extract_all_multi_mount_subtrees() {
     let f = setup();
     f.mount_a_mem("/__mm_xa__");
