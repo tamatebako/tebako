@@ -1282,10 +1282,7 @@ fn extract_file(
     let mut offset = 0u64;
     let mut buf = vec![0u8; 8192];
     loop {
-        let n = backend.pread(rel, &mut buf, offset).map_err(|e| {
-            eprintln!("extract debug: pread({rel}, offset {offset}) -> errno {e}");
-            e
-        })?;
+        let n = backend.pread(rel, &mut buf, offset)?;
         if n == 0 {
             break;
         }
