@@ -52,6 +52,7 @@ spec 02 §6).
 17. [17 — Runtime driver contract](17-runtime-driver-contract.md) — the language-agnostic loader↔runtime surface (argv, env, IO, exit codes)
 20. [20 — LimniFS backend](20-limnifs-backend.md) — image format 5: detection, the backend adapter contract, backend cargo features, the writer path (PLANNED)
 21. [21 — Crypto consolidation](21-crypto-consolidation.md) — one crypto home per layer: OpenPGP keeps trust and identity, ENC keeps confidentiality, limnifs-native crypto is evidence, never anchor (PROPOSED DECISION)
+22. [22 — Runtime-native interposition](22-runtime-native-interposition.md) — the generalized hooks: loader/exec/resource interposition inside the runtime, the documented interface, and the death of per-gem adapters (the spec-18 contract's runtime-internal half)
 
 ## Locked invariants (all specs subordinate to these)
 
