@@ -14,7 +14,7 @@ use std::path::Path;
 
 use tfs::context::context;
 
-use crate::handoff::{Handoff, ImageSource, SlotRef};
+use crate::handoff::{Handoff, ImageSource, ImageSpec, SlotRef};
 use crate::{
     EX_TEBAKO_IO, EX_TEBAKO_JAIL, EX_TEBAKO_LAYOUT, EX_TEBAKO_MANIFEST, EX_TEBAKO_UNAVAILABLE,
 };
@@ -578,6 +578,70 @@ fn qualify_mount(mount: &str, runtime_root: &str) -> String {
     }
 }
 
+/// The mechanical slug of a declared mount (spec 22 §6; v2-1/20): the
+/// drive qualifier dropped (`A:/tools/x` slugs like `/tools/x`),
+/// alphanumerics uppercased, everything else an underscore, edge
+/// underscores trimmed; the root mount slugs ROOT.
+fn mount_slug(mount: &str) -> String {
+    let declared = match vfs_drive(mount) {
+        Some(d) => &mount[d.len()..],
+        None => mount,
+    };
+    let slug: String = declared
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = slug.trim_matches('_');
+    if trimmed.is_empty() {
+        "ROOT".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// The mount-discovery surface (spec 22 §6; v2-1/20): per payload image
+/// this boot mounts, `TEBAKO_MOUNT_<SLUG>=<physical point>` rides the
+/// handoff env — the portable way to reference a co-mounted payload's
+/// files (the value is the QUALIFIED point on windows, re-rooting-proof).
+/// Union members share their point and get one var; two DIFFERENT
+/// physical points slugging alike is an authoring ambiguity — a named
+/// error, never a silent winner.
+///
+/// The root mount (`/`) exports NOTHING: its slug would spell
+/// `TEBAKO_MOUNT_ROOT`, which is the mount-root OVERRIDE var (spec 17
+/// §1) — exporting it would make every child runtime read an override.
+/// The app-at-/ flow needs no discovery var by construction (the
+/// rewritten entry + `__dir__` qualify automatically — v2-1/20).
+fn export_mount_vars(images: &[ImageSpec], env: &dyn Env) -> Result<(), DriverError> {
+    let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for spec in images {
+        let slug = mount_slug(&spec.mount);
+        if slug == "ROOT" {
+            continue;
+        }
+        match seen.get(&slug) {
+            Some(point) if point != &spec.mount => {
+                return Err(manifest(format!(
+                    "mount points '{point}' and '{}' both derive TEBAKO_MOUNT_{slug} — the discovery surface is ambiguous; rename one mount",
+                    spec.mount
+                )));
+            }
+            Some(_) => continue,
+            None => {
+                seen.insert(slug.clone(), spec.mount.clone());
+                env.set_var(&format!("TEBAKO_MOUNT_{slug}"), &spec.mount);
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Resolve the entry against the first image's mount (the app payload —
 /// spec 17 §1) and verify it exists in the mounted tree — but only
 /// against mounts THIS boot established (an entry outside them belongs
@@ -688,6 +752,9 @@ pub fn boot_with_mount_modes(
             mount_image(spec, &mut mounted, modes)?;
         }
         apply_jail(env)?;
+        // The mounts are established — publish the discovery surface
+        // (spec 22 §6; v2-1/20) into the handoff env.
+        export_mount_vars(&h.images, env)?;
         let rewritten = match h.entry.as_deref() {
             // No entry: the interpreter starts with its own args (the
             // bare `--tebako-image` invocation — the deploy-driver
@@ -834,5 +901,57 @@ mod tests {
             assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{bad}");
             assert!(err.message.contains("TEBAKO_MOUNT_ROOT"), "{bad}");
         }
+    }
+
+    #[test]
+    fn mount_slug_is_mechanical_and_drive_neutral() {
+        assert_eq!(mount_slug("/"), "ROOT");
+        assert_eq!(mount_slug("A:/"), "ROOT");
+        assert_eq!(mount_slug("/tools/inkscape"), "TOOLS_INKSCAPE");
+        assert_eq!(mount_slug("A:/tools/inkscape"), "TOOLS_INKSCAPE");
+        assert_eq!(mount_slug("/a-b/c.d"), "A_B_C_D");
+        assert_eq!(mount_slug("/x/"), "X");
+        assert_eq!(mount_slug("rel"), "REL");
+    }
+
+    fn image_spec(mount: &str) -> ImageSpec {
+        ImageSpec {
+            source: ImageSource::File(std::path::PathBuf::from("/x/img.tfs"), SlotRef::Whole),
+            mount: mount.to_string(),
+        }
+    }
+
+    #[test]
+    fn mount_vars_export_per_image_with_the_physical_value() {
+        let env = env_with(&[]);
+        export_mount_vars(&[image_spec("/"), image_spec("/tools/jdk")], &env).unwrap();
+        let m = env.0.borrow();
+        // The root mount exports nothing — TEBAKO_MOUNT_ROOT is the
+        // spec-17 mount-root override, never a discovery var.
+        assert!(!m.contains_key("TEBAKO_MOUNT_ROOT"));
+        assert_eq!(
+            m.get("TEBAKO_MOUNT_TOOLS_JDK").map(String::as_str),
+            Some("/tools/jdk")
+        );
+    }
+
+    #[test]
+    fn union_members_at_one_point_share_one_var() {
+        let env = env_with(&[]);
+        export_mount_vars(&[image_spec("/opt/x"), image_spec("/opt/x")], &env).unwrap();
+        assert_eq!(
+            env.0.borrow().get("TEBAKO_MOUNT_OPT_X").map(String::as_str),
+            Some("/opt/x")
+        );
+    }
+
+    #[test]
+    fn two_different_points_slugging_alike_is_a_named_error() {
+        let env = env_with(&[]);
+        let err = export_mount_vars(&[image_spec("/a-b"), image_spec("/a/b")], &env).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST);
+        assert!(err.message.contains("TEBAKO_MOUNT_A_B"), "{}", err.message);
+        assert!(err.message.contains("/a-b"), "{}", err.message);
+        assert!(err.message.contains("/a/b"), "{}", err.message);
     }
 }

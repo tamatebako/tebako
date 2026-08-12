@@ -1274,3 +1274,99 @@ fn a_boot_without_a_runtime_image_exports_the_host_keyed_cache() {
     let want = std::env::temp_dir().join("tebako-exec-host");
     assert_eq!(Path::new(&cache), want.as_path());
 }
+
+// ---------------------------------------------------------------------
+// spec 22 §6 + v2-1/20: the mount-discovery env
+// ---------------------------------------------------------------------
+
+#[test]
+fn co_mounted_payloads_export_their_mount_vars() {
+    let g = guard("mount-vars");
+    let env_image = write_env_image(g.path());
+    let app = write_payload_image(g.path());
+    let jdk = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/", app.display()),
+            "--tebako-image",
+            &format!("{}:-:/tools/jdk", jdk.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    // The app at / exports nothing: TEBAKO_MOUNT_ROOT stays the spec-17
+    // mount-root override, never a discovery var (the ffi suite's process
+    // env is the regression net for the clobber).
+    assert!(env.var("TEBAKO_MOUNT_ROOT").is_none());
+    assert_eq!(
+        env.var("TEBAKO_MOUNT_TOOLS_JDK").as_deref(),
+        Some("/tools/jdk")
+    );
+}
+
+#[test]
+fn the_mount_var_values_are_windows_safe() {
+    // The uniform namespace (spec 17 §1): declared mounts qualify onto
+    // the runtime root's drive; the exported value is the physical
+    // point, the slug stays the declared mechanical form.
+    let g = guard("mount-vars-win");
+    let env_image =
+        write_env_image_with_layout(g.path(), Some(&GOOD_LAYOUT.replace("/__tfs__", "A:/t")));
+    let jdk = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/tools/jdk", jdk.display()),
+        ]),
+        "A:/t",
+        &env,
+    )
+    .unwrap();
+
+    assert_eq!(
+        env.var("TEBAKO_MOUNT_TOOLS_JDK").as_deref(),
+        Some("A:/tools/jdk")
+    );
+}
+
+#[test]
+fn a_slug_collision_is_a_named_boot_error() {
+    let g = guard("mount-vars-collision");
+    let a = write_payload_image(g.path());
+    let b = write_payload_image(g.path());
+    let env = MapEnv::new();
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/a-b", a.display()),
+            "--tebako-image",
+            &format!("{}:-:/a/b", b.display()),
+            "--tebako-entry",
+            "/a-b/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(err.message.contains("TEBAKO_MOUNT_A_B"), "{}", err.message);
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refused composition unmounts everything"
+    );
+}
