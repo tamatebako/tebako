@@ -921,7 +921,9 @@ impl FsContext {
         }
         let Some((handle, rel)) = probe.filter(|(handle, _)| self.mount_is_home(*handle)) else {
             if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-                eprintln!("[tfs] exec_materialize: path={path} -> dlmap2file fallback (no home mount)");
+                eprintln!(
+                    "[tfs] exec_materialize: path={path} -> dlmap2file fallback (no home mount)"
+                );
             }
             return self.dlmap2file(path);
         };
@@ -953,7 +955,11 @@ impl FsContext {
         }
         let mount = self.mounts.get(&handle);
         if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-            eprintln!("[tfs] mount_is_home: handle={} mount_present={}", handle, mount.is_some());
+            eprintln!(
+                "[tfs] mount_is_home: handle={} mount_present={}",
+                handle,
+                mount.is_some()
+            );
         }
         let verdict = mount
             .and_then(|mount| {
@@ -962,22 +968,35 @@ impl FsContext {
                     tpkg::PAYLOAD_MANIFEST_PATH.trim_start_matches('/'),
                 );
                 if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-                    eprintln!("[tfs] mount_is_home: handle={} manifest_read={}", handle, text.is_some());
+                    eprintln!(
+                        "[tfs] mount_is_home: handle={} manifest_read={}",
+                        handle,
+                        text.is_some()
+                    );
                     if let Some(ref t) = text {
-                        eprintln!("[tfs] mount_is_home: handle={} manifest_len={} first100={:?}", handle, t.len(), &t[..t.len().min(100)]);
+                        eprintln!(
+                            "[tfs] mount_is_home: handle={} manifest_len={} first100={:?}",
+                            handle,
+                            t.len(),
+                            &t[..t.len().min(100)]
+                        );
                     }
                 }
                 text
             })
             .and_then(|text| serde_yml::from_str::<serde_yml::Value>(&text).ok())
             .and_then(|yaml| {
-                let result = yaml.get("identity")?
+                let result = yaml
+                    .get("identity")?
                     .get("annotations")?
                     .get("java_home")?
                     .as_str()
                     .map(str::to_owned);
                 if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-                    eprintln!("[tfs] mount_is_home: handle={} java_home={:?}", handle, result);
+                    eprintln!(
+                        "[tfs] mount_is_home: handle={} java_home={:?}",
+                        handle, result
+                    );
                 }
                 result
             })
