@@ -93,21 +93,64 @@ it never installs, upgrades, or deletes anything (a run is a run).
 
 ## 3. Class E — exec interposition
 
-**Rule E1.** The existing spawn hook (the interpreter's process-layer
-patches) covers the array-form spawn of an absolute VFS path. This spec
-EXTENDS coverage to the exec level: `execvp`, `execve`, `posix_spawn`.
-A shell-string spawn (`/bin/sh -c "java -jar /vfs/x.jar"`) then works
-unmodified — the shell parses and calls `execvp`, whose argv0 is
-intercepted like any other.
+**Rule E1.** The interpreter's spawn hook (the process-layer patches)
+covers the array-form spawn of an absolute VFS path: materialize
+parent-side, point the exec pair at the host copy, inject the child
+with the preload shim and the current mounts. This spec EXTENDS
+coverage to the exec level — `execve`/`posix_spawn` ride the same
+interpose surface as Class L, so every in-process exec caller is
+covered at once, and libc `execvp`/`posix_spawnp` PATH loops resolve
+through the interposed `execve`/`stat`. What each platform DELIVERS is
+pinned empirically in §3.1.
+
+### 3.1 The per-platform delivery matrix (locked 2026-08-13, verified empirically)
+
+| Platform | The runtime process | Array form, absolute VFS path | Shell string (`system("java -jar /vfs/x.jar")`) |
+|---|---|---|---|
+| **ELF (gnu/musl)** | exe-defined Class-L symbols; the runtime itself is never preload-injected | the spawn hook materializes and injects the child (`LD_PRELOAD` + `TEBAKO_TFS_MOUNTS` in its env) | **works unmodified** — the handoff env's `LD_PRELOAD` injects every child at its exec, `/bin/sh` included; the shell's PATH search and `execvp` loop route through the interposed surface |
+| **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **named SIP boundary** — `DYLD_INSERT_LIBRARIES` is stripped when exec'ing an Apple platform binary, so `/bin/sh` runs uninjected (probe 2026-08-13: the variable is absent from sh's environment; the dylib never loads into it). The shell's PATH search cannot see VFS binaries and answers its own `command not found` — an honest failure, never a tebako-intercepted one |
+| **windows** | — | deferred with windows Class L (§7 order) | deferred |
+
+The macOS consumption pattern for a dependency's binary is the array
+form with the absolute path (resolved through §3.2's surface);
+unmodified shell-string consumers of VFS binaries are an ELF
+capability. A shell string whose operands are all host paths behaves
+exactly as on any host — the boundary is the VFS-operand case only.
 
 **Rule E2.** Exec of a VFS-resident binary materializes the binary plus
-its loader closure (the same exec cache as Class L) and execs the real
-path with the original argv/env. Exec of a host path passes through.
+its loader closure (the same exec cache as Class L —
+`TEBAKO_EXEC_CACHE`, §6) and execs the real path with the original
+argv/env. Exec of a host path passes through. A covered path the
+mounts do not hold answers ENOENT: the exec fails honestly, and a libc
+PATH loop simply moves to its next candidate.
 
 **Rule E3.** A VFS binary that itself spawns children re-enters the
-same interposition (the preload-injection inheritance already proven
-for the spawn hook). Children of materialized binaries keep the VFS
-view — never a silent host fallback.
+same interposition: on ELF the inherited `LD_PRELOAD` covers every
+descendant's exec; on macOS the spawn hook's child-env injection
+covers the array-form chain and the runtime's own surface covers
+in-process exec callers. Children of materialized binaries keep the
+VFS view — never a silent host fallback.
+
+### 3.2 Bare-name resolution — the composition layer wires PATH
+
+A bare command name (`system("java …")`, mnconvert's form) resolves
+with no payload code learning tebako: **the driver prepends every
+co-mounted dependency image's declared bin dirs to `PATH` in the
+handoff env** — the dirname of each entrypoint path in the image's own
+manifest (the image declares, the driver flows; no second copy of the
+knowledge anywhere). On ELF the interposed exec loop then resolves the
+bare name through the VFS (§3.1). The explicit-reference surface for
+everything else — windows-safe and shell-free — is
+`TEBAKO_MOUNT_<SLUG>` per dependency mount (§6; v2-1/20), for payload
+authors who compute paths themselves.
+
+### 3.3 The class-E proof fixture
+
+The boot-smoke fixture jar is PRECOMPILED, checked into the factory's
+fixtures directory next to its `.java` source and a regeneration note
+(sha256-pinned). No CI leg needs a JDK: the fixture is a data file to
+the smoke, exactly like the C fixtures' compiled form on legs without
+a compiler.
 
 ## 4. Class R — declarative boot materialization
 
@@ -161,6 +204,11 @@ Payload authors and runtime factories may rely on, forever:
 - **The discovery surface.** `TEBAKO_MOUNT_<SLUG>` per dependency mount
   (spec 17 §2's env table; v2-1/20) — the portable way to reference a
   dependency payload's files, windows included.
+- **Dependency bin-dir `PATH` prepend.** The handoff env's `PATH` leads
+  with every co-mounted dependency image's declared bin dirs (§3.2) —
+  bare-name exec of a dependency's tool needs no payload code, and
+  where the shell hop is interposed (§3.1) the shell-string form works
+  unmodified too.
 
 Everything else (the mount table layout, the closure-walk order, the
 cache's on-disk naming) is implementation detail and may change between
