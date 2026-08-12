@@ -30,6 +30,7 @@
 #![deny(unsafe_code)]
 
 pub mod driver;
+pub mod exec_cache;
 pub mod ffi;
 pub mod handoff;
 pub mod layout;

@@ -92,6 +92,10 @@ fn errno_text(e: i32) -> String {
 /// `TEBAKO_JAIL`, `TEBAKO_JAIL_SOURCE`).
 pub trait Env {
     fn var(&self, key: &str) -> Option<String>;
+    /// Export into the interpreter's environment — the driver owns the
+    /// handoff env (the spec 22 §6 surface: `TEBAKO_EXEC_CACHE`, the
+    /// mount-discovery vars, the child-injection vars).
+    fn set_var(&self, key: &str, value: &str);
 }
 
 /// The process environment (the shipped path).
@@ -100,6 +104,9 @@ pub struct ProcessEnv;
 impl Env for ProcessEnv {
     fn var(&self, key: &str) -> Option<String> {
         std::env::var(key).ok()
+    }
+    fn set_var(&self, key: &str, value: &str) {
+        std::env::set_var(key, value);
     }
 }
 
@@ -642,6 +649,9 @@ pub fn boot_with_mount_modes(
     let runtime_root = effective.as_str();
     crate::ffi::set_mount_point(runtime_root);
     let mut h = Handoff::parse(argv)?;
+    // The exec cache (spec 22 §6) is named before anything can
+    // materialize: both boot paths below export it to the handoff env.
+    crate::exec_cache::export(env);
     // Windows: qualify the declared mounts onto the VFS drive (spec 17
     // §1) before any mount/entry use — the mount table, the union-mode
     // rows, and the entry resolution all see the physical points.
@@ -764,21 +774,26 @@ mod tests {
         assert_eq!(qualify_mount("rel", "/__tfs__"), "rel");
     }
 
-    struct MapEnv(std::collections::HashMap<String, String>);
+    struct MapEnv(std::cell::RefCell<std::collections::HashMap<String, String>>);
 
     impl Env for MapEnv {
         fn var(&self, key: &str) -> Option<String> {
-            self.0.get(key).cloned()
+            self.0.borrow().get(key).cloned()
+        }
+        fn set_var(&self, key: &str, value: &str) {
+            self.0
+                .borrow_mut()
+                .insert(key.to_string(), value.to_string());
         }
     }
 
     fn env_with(pairs: &[(&str, &str)]) -> MapEnv {
-        MapEnv(
+        MapEnv(std::cell::RefCell::new(
             pairs
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
-        )
+        ))
     }
 
     #[test]

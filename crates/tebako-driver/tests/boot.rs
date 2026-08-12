@@ -70,21 +70,27 @@ impl Drop for TempDir {
 }
 
 /// A map-backed [`Env`] (no process-env mutation).
-struct MapEnv(HashMap<String, String>);
+struct MapEnv(std::cell::RefCell<HashMap<String, String>>);
 
 impl MapEnv {
     fn new() -> MapEnv {
-        MapEnv(HashMap::new())
+        MapEnv(std::cell::RefCell::new(HashMap::new()))
     }
 
     fn set(&mut self, key: &str, value: impl Into<String>) {
-        self.0.insert(key.to_string(), value.into());
+        self.0.get_mut().insert(key.to_string(), value.into());
     }
 }
 
 impl Env for MapEnv {
     fn var(&self, key: &str) -> Option<String> {
-        self.0.get(key).cloned()
+        self.0.borrow().get(key).cloned()
+    }
+
+    fn set_var(&self, key: &str, value: &str) {
+        self.0
+            .borrow_mut()
+            .insert(key.to_string(), value.to_string());
     }
 }
 
@@ -1176,4 +1182,95 @@ fn layout_check_gates_the_handoff_path_too() {
         !context().read().unwrap().is_mounted(),
         "the env image rolls back with the refusal"
     );
+}
+
+// ---------------------------------------------------------------------
+// spec 22 §6: the exec-cache export
+// ---------------------------------------------------------------------
+
+/// The store trust-anchor sidecar next to an image (the store layout:
+/// `<image>.sha256`, sha256sum format).
+fn write_sidecar(image: &Path, hex64: &str) {
+    std::fs::write(
+        format!("{}.sha256", image.display()),
+        format!(
+            "{hex64}  {}\n",
+            image.file_name().unwrap().to_string_lossy()
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn boot_exports_the_exec_cache_root_keyed_by_the_env_image_sidecar() {
+    let g = guard("exec-cache");
+    let env_image = write_env_image(g.path());
+    write_sidecar(&env_image, &"ab".repeat(32));
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+
+    let cache = env
+        .var("TEBAKO_EXEC_CACHE")
+        .expect("the handoff env names the exec cache (spec 22 §6)");
+    let want = std::env::temp_dir().join("tebako-exec-abababababababab");
+    assert_eq!(Path::new(&cache), want.as_path());
+}
+
+#[test]
+fn a_second_runtime_image_sha_never_reads_the_firsts_exec_cache() {
+    // Rule L3 segregation: two boots whose env images carry different
+    // shas name different cache roots — a rebuilt runtime's process
+    // never reads the previous runtime's extraction namespace.
+    let g = guard("exec-cache-l3");
+    let image_a = write_env_image(g.path());
+    write_sidecar(&image_a, &"aa".repeat(32));
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", image_a.display().to_string());
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+    let root_a = env
+        .var("TEBAKO_EXEC_CACHE")
+        .expect("the first boot exports the cache root");
+
+    reset();
+    let image_b = g.path().join("runtime-b.tfs");
+    std::fs::copy(&image_a, &image_b).unwrap();
+    write_sidecar(&image_b, &"bb".repeat(32));
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", image_b.display().to_string());
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+    let root_b = env
+        .var("TEBAKO_EXEC_CACHE")
+        .expect("the second boot exports the cache root");
+
+    assert_ne!(root_a, root_b);
+    assert!(root_a.contains(&"a".repeat(16)), "{root_a}");
+    assert!(root_b.contains(&"b".repeat(16)), "{root_b}");
+}
+
+#[test]
+fn a_boot_without_a_runtime_image_exports_the_host_keyed_cache() {
+    let g = guard("exec-cache-host");
+    let payload = write_payload_image(g.path());
+    let env = MapEnv::new();
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    let cache = env
+        .var("TEBAKO_EXEC_CACHE")
+        .expect("a payload-only boot still names the exec cache");
+    let want = std::env::temp_dir().join("tebako-exec-host");
+    assert_eq!(Path::new(&cache), want.as_path());
 }

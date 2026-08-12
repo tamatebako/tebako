@@ -1203,9 +1203,18 @@ fn real_open(path: &std::ffi::CString, flags: i32) -> Result<i32, i32> {
 
 /// Create the per-process temporary directory for dlmap2file extractions
 /// (mirrors the legacy C++ semantics: a unique subdirectory of the system
-/// temp dir; a handful of attempts before giving up).
+/// temp dir; a handful of attempts before giving up). spec 22 §6: when
+/// the driver named `TEBAKO_EXEC_CACHE`, the leaf lands UNDER it — the
+/// `tebako-dl-<hex>` marker keeps the dlmap-prefix redirect and the
+/// exit cleanup untouched.
 fn create_dl_tmpdir() -> Option<std::path::PathBuf> {
-    let base = std::env::temp_dir();
+    let base = std::env::var_os("TEBAKO_EXEC_CACHE")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    // The named exec-cache root may not exist yet — the driver names it,
+    // the first materialization creates it.
+    std::fs::create_dir_all(&base).ok()?;
     let mut seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?
@@ -1400,5 +1409,32 @@ mod tests {
         );
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_exec_cache_env_rebases_the_dl_tmpdir() {
+        // spec 22 §6: when the driver named TEBAKO_EXEC_CACHE, the
+        // closure walk's extractions live UNDER it — in the same
+        // tebako-dl-<hex> per-process leaf (the dlmap-prefix redirect
+        // and the exit cleanup are untouched).
+        let base =
+            std::env::temp_dir().join(format!("tebako-exec-cache-ut-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::env::set_var("TEBAKO_EXEC_CACHE", &base);
+        let dir = create_dl_tmpdir();
+        std::env::remove_var("TEBAKO_EXEC_CACHE");
+        let dir = dir.expect("the tmpdir is created");
+        assert!(
+            dir.starts_with(&base),
+            "{dir:?} is not under the named exec cache {base:?}"
+        );
+        assert!(
+            dir.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("tebako-dl-"),
+            "the per-process leaf keeps its marker: {dir:?}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 }
