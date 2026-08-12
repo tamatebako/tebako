@@ -33,6 +33,7 @@ pub mod driver;
 pub mod exec_cache;
 pub mod ffi;
 pub mod handoff;
+pub mod injection;
 pub mod layout;
 
 pub use driver::{

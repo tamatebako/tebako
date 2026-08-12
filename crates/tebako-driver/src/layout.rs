@@ -53,6 +53,13 @@ pub struct ImageLayout {
     /// a run-time root override by name (exit 78) rather than booting an
     /// interpreter whose load paths point at an unmounted root.
     pub mount_root_override: bool,
+    /// The preload shim's in-image path, relative to the mount root
+    /// (additive, schema_minor 2): the image declares, the driver flows
+    /// it — materialized to the exec cache for the child-injection env
+    /// and exported as `TEBAKO_PRELOAD_SHIM` for the interpreter's spawn
+    /// hook (spec 22 §3; no second hand-written copy of the path).
+    /// Absent ⇒ no preload env (an older image — children get no VFS).
+    pub preload_shim: Option<String>,
 }
 
 /// The tolerant serde view: every field optional so the checks below can
@@ -66,6 +73,7 @@ struct LayoutView {
     mount_root: Option<String>,
     interpreter_api_version: Option<String>,
     mount_root_override: Option<bool>,
+    preload_shim: Option<String>,
 }
 
 impl ImageLayout {
@@ -135,6 +143,7 @@ impl ImageLayout {
             mount_root,
             interpreter_api_version: api_version,
             mount_root_override: view.mount_root_override.unwrap_or(false),
+            preload_shim: view.preload_shim.filter(|s| !s.is_empty()),
         })
     }
 }
@@ -157,6 +166,7 @@ mod tests {
                 mount_root: "/__tfs__".to_string(),
                 interpreter_api_version: "3.4".to_string(),
                 mount_root_override: false,
+                preload_shim: None,
             }
         );
         // unknown keys within the MAJOR are tolerated (spec 18 §3.2 / S57)
@@ -181,6 +191,34 @@ mod tests {
             ImageLayout::check(&granted, "/__tfs__", "/rt/ruby.tfs")
                 .unwrap()
                 .mount_root_override
+        );
+    }
+
+    #[test]
+    fn the_preload_shim_declaration_is_additive() {
+        // absent (older images) ⇒ no preload env downstream
+        assert_eq!(
+            ImageLayout::check(GOOD, "/__tfs__", "/rt/ruby.tfs")
+                .unwrap()
+                .preload_shim,
+            None
+        );
+        // declared (schema_minor 2) ⇒ the in-image path flows
+        let declared = format!("{GOOD}preload_shim: lib/tebako/libtfs_preload.so\n");
+        assert_eq!(
+            ImageLayout::check(&declared, "/__tfs__", "/rt/ruby.tfs")
+                .unwrap()
+                .preload_shim
+                .as_deref(),
+            Some("lib/tebako/libtfs_preload.so")
+        );
+        // an empty declaration is no declaration
+        let empty = format!("{GOOD}preload_shim: \"\"\n");
+        assert_eq!(
+            ImageLayout::check(&empty, "/__tfs__", "/rt/ruby.tfs")
+                .unwrap()
+                .preload_shim,
+            None
         );
     }
 

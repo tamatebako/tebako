@@ -1370,3 +1370,108 @@ fn a_slug_collision_is_a_named_boot_error() {
         "the refused composition unmounts everything"
     );
 }
+
+// ---------------------------------------------------------------------
+// spec 22 §3 (Rules E2/E3): the child-injection env
+// ---------------------------------------------------------------------
+
+/// The env-image fixture carrying the preload shim (schema_minor 2): the
+/// staged file plus its layout declaration.
+fn write_env_image_with_shim(dir: &Path) -> PathBuf {
+    let layout = format!("{GOOD_LAYOUT}preload_shim: lib/tebako/libtfs_preload.so\n");
+    let p = dir.join("runtime.tfs");
+    build_zip(
+        &p,
+        &["lib/", "lib/ruby/", "lib/tebako/"],
+        &[
+            ("lib/ruby/rubygems.rb", b"# rubygems core\n".as_slice()),
+            ("lib/tebako/layout.yaml", layout.as_bytes()),
+            (
+                "lib/tebako/libtfs_preload.so",
+                b"ELF pretend shim\n".as_slice(),
+            ),
+        ],
+    );
+    p
+}
+
+/// The platform's injection variable (the driver's INJECT_VAR).
+#[cfg(target_os = "macos")]
+const INJECT_VAR: &str = "DYLD_INSERT_LIBRARIES";
+#[cfg(all(unix, not(target_os = "macos")))]
+const INJECT_VAR: &str = "LD_PRELOAD";
+
+#[cfg(unix)]
+#[test]
+fn a_declared_shim_is_materialized_and_armed_in_the_handoff_env() {
+    let g = guard("inject");
+    let env_image = write_env_image_with_shim(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+
+    // The spawn hook's source: the VFS spelling, flowed from the image's
+    // own declaration (SSOT — no hand-written copy anywhere).
+    assert_eq!(
+        env.var("TEBAKO_PRELOAD_SHIM").as_deref(),
+        Some("/__tfs__/lib/tebako/libtfs_preload.so")
+    );
+    // The injection var names the MATERIALIZED copy (a real host file).
+    let host = env
+        .var(INJECT_VAR)
+        .expect("the preload var rides the handoff env");
+    let bytes = std::fs::read(&host).expect("the materialized shim exists");
+    assert_eq!(bytes, b"ELF pretend shim\n");
+    // The mounts list lets an injected child rebuild the namespace.
+    let mounts = env.var("TEBAKO_TFS_MOUNTS").expect("the mounts list");
+    assert!(
+        mounts.contains(&format!("{}:/__tfs__", env_image.display())),
+        "{mounts}"
+    );
+}
+
+#[test]
+fn a_declared_but_absent_shim_is_a_named_boot_error() {
+    let g = guard("inject-lie");
+    let layout = format!("{GOOD_LAYOUT}preload_shim: lib/tebako/libtfs_preload.so\n");
+    // The declaration WITHOUT the file — the image lies.
+    let env_image = {
+        let p = g.path().join("runtime.tfs");
+        build_zip(
+            &p,
+            &["lib/", "lib/ruby/", "lib/tebako/"],
+            &[
+                ("lib/ruby/rubygems.rb", b"# rubygems core\n".as_slice()),
+                ("lib/tebako/layout.yaml", layout.as_bytes()),
+            ],
+        );
+        p
+    };
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("declaration lies"), "{}", err.message);
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refusal unmounts everything"
+    );
+}
+
+#[test]
+fn an_undeclared_image_arms_only_the_mounts_list() {
+    let g = guard("inject-old");
+    let env_image = write_env_image(g.path()); // no preload_shim key
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+
+    assert!(env.var("TEBAKO_PRELOAD_SHIM").is_none());
+    #[cfg(unix)]
+    assert!(env.var(INJECT_VAR).is_none());
+    let mounts = env.var("TEBAKO_TFS_MOUNTS").expect("the mounts list");
+    assert!(mounts.contains(":/__tfs__"), "{mounts}");
+}

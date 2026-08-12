@@ -84,7 +84,7 @@ fn effective_root(declared: &str, env: &dyn Env) -> Result<String, DriverError> 
     }
 }
 
-fn errno_text(e: i32) -> String {
+pub(crate) fn errno_text(e: i32) -> String {
     String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
 }
 
@@ -416,14 +416,16 @@ fn read_mounted_text(path: &str) -> Result<String, i32> {
 /// `mount_root_override` permission — a runtime whose rbconfig predates
 /// the override era refuses by name rather than booting an interpreter
 /// whose load paths point at an unmounted root. A boot without
-/// `TEBAKO_RUNTIME_IMAGE` mounts no env image and has no pair to check.
+/// `TEBAKO_RUNTIME_IMAGE` mounts no env image and has no pair to check
+/// (None). On success the parsed declaration returns — its additive
+/// grants drive the child injection (spec 22 §3).
 fn check_env_layout(
     env: &dyn Env,
     baked_root: &str,
     effective_root: &str,
-) -> Result<(), DriverError> {
+) -> Result<Option<crate::layout::ImageLayout>, DriverError> {
     let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") else {
-        return Ok(());
+        return Ok(None);
     };
     let path = join_mount(effective_root, crate::layout::LAYOUT_IMAGE_PATH);
     let text = read_mounted_text(&path).map_err(|_| {
@@ -443,7 +445,7 @@ fn check_env_layout(
             ),
         ));
     }
-    Ok(())
+    Ok(Some(declaration))
 }
 
 fn mount_image(
@@ -541,7 +543,7 @@ fn in_mount(path: &str, mount_point: &str) -> bool {
 
 /// Join the entry onto its mount: mount `/` + `/bin/app` → `/bin/app`;
 /// mount `/opt` + `bin/app` → `/opt/bin/app`.
-fn join_mount(mount_point: &str, entry: &str) -> String {
+pub(crate) fn join_mount(mount_point: &str, entry: &str) -> String {
     format!(
         "{}/{}",
         mount_point.trim_end_matches('/'),
@@ -730,8 +732,11 @@ pub fn boot_with_mount_modes(
         let result = (|| {
             let mut mounted = Vec::new();
             mount_env_image(env, runtime_root, &mut mounted)?;
-            check_env_layout(env, baked_root, runtime_root)?;
+            let declaration = check_env_layout(env, baked_root, runtime_root)?;
             apply_jail(env)?;
+            // The standalone interpreter spawns too — arm its children
+            // the same way (spec 22 §3).
+            crate::injection::export(env, declaration.as_ref(), runtime_root)?;
             Ok(BootOutcome {
                 argv: argv.to_vec(),
             })
@@ -747,14 +752,15 @@ pub fn boot_with_mount_modes(
         mount_env_image(env, runtime_root, &mut mounted)?;
         // The env image's pair-check runs post-mount, before any payload
         // or interpreter touch (spec 18 C3 — exit 78).
-        check_env_layout(env, baked_root, runtime_root)?;
+        let declaration = check_env_layout(env, baked_root, runtime_root)?;
         for spec in &h.images {
             mount_image(spec, &mut mounted, modes)?;
         }
         apply_jail(env)?;
         // The mounts are established — publish the discovery surface
-        // (spec 22 §6; v2-1/20) into the handoff env.
+        // (spec 22 §6; v2-1/20) and arm the children (spec 22 §3).
         export_mount_vars(&h.images, env)?;
+        crate::injection::export(env, declaration.as_ref(), runtime_root)?;
         let rewritten = match h.entry.as_deref() {
             // No entry: the interpreter starts with its own args (the
             // bare `--tebako-image` invocation — the deploy-driver

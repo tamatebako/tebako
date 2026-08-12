@@ -264,7 +264,9 @@ impl FsContext {
 
     /// Unmount a single mount by handle: force-close only its own fds and
     /// dir handles (they fail with EBADF afterwards), drop the mount, and
-    /// release the mount point. Handles are never reused.
+    /// release the mount point. Handles are never reused. The dlmap cache
+    /// is flushed whole (entries carry no owner; serving an extraction of
+    /// the removed mount's image afterwards would be a stale leak).
     pub fn unmount_handle(&mut self, handle: i32) -> Result<(), i32> {
         if !self.mounts.contains_key(&handle) {
             return Err(libc::ENODEV);
@@ -275,10 +277,16 @@ impl FsContext {
         if self.compat_handle == Some(handle) {
             self.compat_handle = None;
         }
+        self.dl_cache.clear();
         Ok(())
     }
 
-    /// Unmount everything; all fds and dir handles become invalid.
+    /// Unmount everything; all fds and dir handles become invalid. The
+    /// dlmap cache dies with the mount table: its entries are a function
+    /// of THESE mounts' images, and serving them against a later table
+    /// would be a stale-extraction leak (the extracted FILES linger in
+    /// the per-process tmpdir until the exit cleanup — the map is what
+    /// must not outlive the mounts).
     pub fn unmount(&mut self) {
         self.mounts.clear();
         self.fd_table.clear();
@@ -286,6 +294,7 @@ impl FsContext {
         self.next_fd = 1;
         self.next_dir_id = 1;
         self.compat_handle = None;
+        self.dl_cache.clear();
     }
 
     pub fn is_mounted(&self) -> bool {
