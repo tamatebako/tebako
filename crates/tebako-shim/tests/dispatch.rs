@@ -100,14 +100,13 @@ fn zero_runtime_entrypoint_skips_runtime_resolution() {
     assert_eq!(plan.program, entry_host);
     let expected: Vec<String> = vec![entry_host.to_string_lossy().into_owned(), "file.svg".into()];
     assert_eq!(plan.argv, expected);
-    // the mounts grammar rides the child's env (the preload re-mounts)
-    let mounts_env = plan
-        .env
-        .iter()
-        .find(|(k, _)| k == "TEBAKO_TFS_MOUNTS")
-        .map(|(_, v)| v.clone())
-        .expect("TEBAKO_TFS_MOUNTS must be exported");
-    assert_eq!(mounts_env, format!("{}:/", image.display()));
+    // Zero-runtime: the child runs from the store tree (host paths) — no
+    // mounts, no preload shim (the openjdk JVM boot-classpath failure,
+    // dogfood-found 2026-08-12).
+    assert!(
+        !plan.env.iter().any(|(k, _)| k == "TEBAKO_TFS_MOUNTS"),
+        "TEBAKO_TFS_MOUNTS must NOT be exported for zero-runtime"
+    );
     assert_eq!(plan.mounts.len(), 1);
 }
 

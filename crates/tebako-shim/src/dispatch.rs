@@ -200,10 +200,12 @@ pub fn plan(
         RuntimeResolution::Zero => {
             // Zero-runtime: the install-time materialization is the
             // program (a run never materializes — install is the
-            // explicit verb). The child's own VFS access rides the
-            // mounts grammar; the release-channel preload joins when
-            // it ships (native payloads that read their own image
-            // answer honestly without it until then).
+            // explicit verb). The child runs from the store tree (host
+            // paths) — it needs NO VFS mounts and NO preload shim. The
+            // preload shim's env (LD_PRELOAD / DYLD_INSERT_LIBRARIES)
+            // would otherwise be inherited from the parent runtime and
+            // intercept the child's own IO (the openjdk JVM's boot
+            // classpath failure, dogfood-found 2026-08-12).
             let entry_host = res.record.tree.join(entry.path.trim_start_matches('/'));
             if !entry_host.is_file() {
                 return fail(
@@ -219,12 +221,6 @@ pub fn plan(
                 );
             }
             argv.push(entry_host.to_string_lossy().into_owned());
-            let mounts_env = mounts
-                .iter()
-                .map(|m| format!("{}:{}", m.image.display(), m.mount))
-                .collect::<Vec<_>>()
-                .join(",");
-            env.push(("TEBAKO_TFS_MOUNTS".to_string(), mounts_env));
             entry_host
         }
     };
@@ -352,6 +348,11 @@ pub fn compose_jail_env(
 }
 
 /// Exec the plan, replacing the process (unix). Never returns on success.
+///
+/// Zero-runtime dispatches scrub the preload shim's env (`LD_PRELOAD`,
+/// `DYLD_INSERT_LIBRARIES`): the child runs from the store tree (host
+/// paths), not the VFS, and the inherited shim would intercept its IO
+/// (the openjdk JVM's boot classpath failure, dogfood-found 2026-08-12).
 #[cfg(unix)]
 pub fn exec(plan: &ExecPlan) -> ShimError {
     use std::os::unix::process::CommandExt as _;
@@ -359,6 +360,12 @@ pub fn exec(plan: &ExecPlan) -> ShimError {
     cmd.args(&plan.argv[1..]);
     for (k, v) in &plan.env {
         cmd.env(k, v);
+    }
+    if matches!(plan.runtime, RuntimeResolution::Zero) {
+        cmd.env_remove("LD_PRELOAD");
+        cmd.env_remove("DYLD_INSERT_LIBRARIES");
+        cmd.env_remove("DYLD_PRINT_LIBRARIES");
+        cmd.env_remove("TEBAKO_TFS_MOUNTS");
     }
     let err = cmd.exec();
     ShimError::new(
@@ -378,6 +385,12 @@ pub fn exec(plan: &ExecPlan) -> ShimError {
     cmd.args(&plan.argv[1..]);
     for (k, v) in &plan.env {
         cmd.env(k, v);
+    }
+    if matches!(plan.runtime, RuntimeResolution::Zero) {
+        cmd.env_remove("LD_PRELOAD");
+        cmd.env_remove("DYLD_INSERT_LIBRARIES");
+        cmd.env_remove("DYLD_PRINT_LIBRARIES");
+        cmd.env_remove("TEBAKO_TFS_MOUNTS");
     }
     match cmd.spawn().and_then(|mut child| child.wait()) {
         Ok(status) => std::process::exit(status.code().unwrap_or(1)),
