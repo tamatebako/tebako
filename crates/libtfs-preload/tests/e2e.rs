@@ -259,6 +259,10 @@ fn preload_var() -> &'static str {
 
 struct Run {
     rc: i32,
+    /// The killing signal (unix; None on a clean exit and elsewhere) —
+    /// `code()` maps a signal death to None, which used to read as a
+    /// bare "rc: -1" with no name.
+    signal: Option<i32>,
     stdout: String,
     stderr: String,
 }
@@ -281,8 +285,13 @@ fn run(f: &Fixtures, tool: &str, args: &[&str], jail: Option<&str>) -> Run {
         }
     }
     let out = cmd.output().unwrap();
+    #[cfg(unix)]
+    let signal = std::os::unix::process::ExitStatusExt::signal(&out.status);
+    #[cfg(not(unix))]
+    let signal = None;
     Run {
         rc: out.status.code().unwrap_or(-1),
+        signal,
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
     }
@@ -489,8 +498,13 @@ fn run_in_dir(f: &Fixtures, cwd: &Path, tool: &str, args: &[&str], jail: Option<
         }
     }
     let out = cmd.output().unwrap();
+    #[cfg(unix)]
+    let signal = std::os::unix::process::ExitStatusExt::signal(&out.status);
+    #[cfg(not(unix))]
+    let signal = None;
     Run {
         rc: out.status.code().unwrap_or(-1),
+        signal,
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
     }
@@ -687,7 +701,11 @@ fn linux_lseek64_and_mmap64_on_a_memfs_fd() {
     let Some(f) = fixtures() else { return };
     let path = format!("{MOUNT}/data/secret.txt");
     let r = run(f, "mmap-probe", &[path.as_str()], None);
-    assert_eq!(r.rc, 0, "mmap-probe failed, stderr: {}", r.stderr);
+    assert_eq!(
+        r.rc, 0,
+        "mmap-probe failed (signal: {:?}), stderr: {} stdout: {}",
+        r.signal, r.stderr, r.stdout
+    );
     assert!(r.stdout.contains("anon-mmap:ok"), "stdout: {}", r.stdout);
     assert!(
         r.stdout.contains("lseek64-tail:E2E\n"),
