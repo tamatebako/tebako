@@ -142,9 +142,13 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    tfs-cli — macOS and linux-gnu first-class, windows later. Coverage
    (roadmap 39):** interposed surface open/openat/stat/
    lstat/fstat/fstatat(+fstatat64/statx/__xstat/__lxstat/__fxstat/
-   __fxstatat and the LFS open64/stat64/lstat64/fstat64/pread64 family
-   on linux)/access/faccessat/opendir/readdir(+readdir64)/
+   __fxstatat and the LFS open64/stat64/lstat64/fstat64/pread64/lseek64
+   family and the pre-2.33-glibc versioned __xstat64/__lxstat64/
+   __fxstat64 forms and the _FORTIFY_SOURCE __read_chk wrapper on
+   linux)/access/faccessat/opendir/readdir(+readdir64)/
    readdir_r/rewinddir/telldir/seekdir/dirfd/closedir/pread/read/lseek/
+   mmap(memfs fd → private anonymous mapping pre-filled from the VFS,
+   +mmap64 on linux)/
    close/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp;
    `TEBAKO_JAIL` carries the spec 08 §1 env form (`open|deny` +
    `host:mount:ro|rw` grants + `@` argument files); the ENTRYPOINT (when
@@ -154,7 +158,9 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    needs no extraction; environ propagates, so grandchildren stay in the
    VFS); every *at shim gates its fd branch on `dirfd >= 0` (AT_FDCWD
    carries the fd-flag bit — the runtime-builds regression class, pinned
-   by tests); exec of a HOST binary is not policy-gated (not an IO route
+   by tests); the mmap shim gates on `fd >= 0` and `!MAP_ANONYMOUS` (fd
+   -1 carries the same bit — the JVM PaX-check regression class); exec
+   of a HOST binary is not policy-gated (not an IO route
    in the policy's op classes — the child's own IO stays jailed via env
    propagation); SIP platform binaries strip `DYLD_*` and leave it; a
    mount at `/` is refused (it would claim every host path and bypass
@@ -162,7 +168,9 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    or symbol on linux-gnu — nothing to interpose; a raw `syscall(2)`
    caller bypasses userland interposition by construction), fstatat64 on
    macOS (the legacy
-   32-bit-inode layout), the LFS `__xstat64` versioned forms on linux,
+   32-bit-inode layout), `__fxstatat64` and the write-side
+   pwrite64/ftruncate64/statvfs64 family plus
+   readv/preadv/sendfile/copy_file_range on memfs fds on linux,
    fdopendir (memfs directories are never fd-opened), and
    syscall()-direct IO (raw syscalls bypass userland interposition by
    construction); `dirfd` of a memfs stream answers -1/ENOTSUP;

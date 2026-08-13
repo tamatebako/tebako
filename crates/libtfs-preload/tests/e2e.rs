@@ -10,6 +10,10 @@
 //!   on writes; rw grant passes),
 //! - the grandchild staying in the VFS (env propagation),
 //! - dlopen of a memfs library via the dlmap2file host cache,
+//! - the linux LFS64+fortify surface the JDK needs (lseek64 SEEK_END
+//!   probe, __read_chk fortified read, __fxstat64, anonymous mmap with
+//!   the fd -1 bit-test lie, mmap64 CEN window on a flagged memfs fd —
+//!   spec 22 class E),
 //! - named errors + EX_CONFIG (78) on misformatted env.
 //!
 //! Skip policy (documented in the crate README/spec): tests SKIP (pass
@@ -133,12 +137,18 @@ fn build_fixtures() -> Option<Fixtures> {
         "at-probe",
         "spawn-helper",
         "dir-stream",
+        "mmap-probe",
     ] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
         std::fs::create_dir_all(out.parent().unwrap()).unwrap();
         let extra: &[&str] = if name == "dl-user" && cfg!(target_os = "linux") {
             &["-ldl"]
+        } else if name == "mmap-probe" && cfg!(target_os = "linux") {
+            // fortify + LFS64: the probe's read/fstat compile to
+            // __read_chk/__fxstat64 — the JDK's exact fortified entry
+            // points (spec 22 class E).
+            &["-D_FORTIFY_SOURCE=2", "-D_FILE_OFFSET_BITS=64", "-O1"]
         } else {
             &[]
         };
@@ -657,4 +667,35 @@ fn rust_tool_reads_in_image_data() {
     // …and the deny jail gates the Rust binary identically.
     let r = run(f, "rust-tool", &["read", "/etc/hosts"], Some("deny"));
     assert_eq!(r.rc, libc::EPERM, "stderr: {}", r.stderr);
+}
+
+/// The linux LFS64+fortify surface (spec 22 class E): the JDK launcher
+/// maps `JLI_Lseek` to `lseek64`, reads the END record through the
+/// fortified `__read_chk`, stats via `__fxstat64`, and libzip mmaps the
+/// jar central directory — all must be served by the shim on a flagged
+/// memfs fd, never hit the kernel with the virtual fd (EBADF → "Invalid
+/// or corrupt jarfile"). The anonymous-mmap probe pins the fd -1
+/// bit-test lie (the JVM's PaX check): an ANONYMOUS request must pass
+/// through to the host.
+#[test]
+fn linux_lseek64_and_mmap64_on_a_memfs_fd() {
+    if !cfg!(target_os = "linux") {
+        eprintln!("skip: lseek64/mmap64 are glibc entry points (linux only)");
+        return;
+    }
+    let Some(f) = fixtures() else { return };
+    let path = format!("{MOUNT}/data/secret.txt");
+    let r = run(f, "mmap-probe", &[path.as_str()], None);
+    assert_eq!(r.rc, 0, "mmap-probe failed, stderr: {}", r.stderr);
+    assert!(r.stdout.contains("anon-mmap:ok"), "stdout: {}", r.stdout);
+    assert!(
+        r.stdout.contains("lseek64-tail:E2E\n"),
+        "stdout: {}",
+        r.stdout
+    );
+    assert!(
+        r.stdout.contains("mmap64-head:VFS-SECRET-E2E"),
+        "stdout: {}",
+        r.stdout
+    );
 }

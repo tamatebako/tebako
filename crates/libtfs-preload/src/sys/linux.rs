@@ -14,11 +14,33 @@
 //! `stat`/`lstat`/`fstat`/`fstatat` directly and are covered; binaries
 //! built against older glibc use the versioned `__xstat`/`__lxstat`/
 //! `__fxstat`/`__fxstatat` entry points, which are interposed as well
-//! (roadmap 39). The LFS `open64`/`stat64`/`lstat64`/`fstat64`/`pread64`
-//! family is interposed too — Rust std and `_FILE_OFFSET_BITS=64` builds
-//! call the 64 variants directly, and they are DISTINCT exported symbols
-//! from the plain names; the LFS `__xstat64`/`__lxstat64`/`__fxstat64`/
-//! `__fxstatat64` versioned forms remain a documented gap.
+//! (roadmap 39). The LFS `open64`/`stat64`/`lstat64`/`fstat64`/`pread64`/
+//! `lseek64` family is interposed too — Rust std and `_FILE_OFFSET_BITS=64`
+//! builds call the 64 variants directly, and they are DISTINCT exported
+//! symbols from the plain names (the JDK launcher maps `JLI_Lseek` to
+//! `lseek64` on glibc — spec 22 class E). `mmap`/`mmap64` are interposed
+//! for flagged memfs fds and served as private anonymous mappings
+//! pre-filled from the VFS (the JDK's libzip mmaps a jar's central
+//! directory at open — `USE_MMAP` is unconditional and `ZIP_Put_In_Cache`
+//! passes `usemmap=TRUE`). The LFS `__xstat64`/`__lxstat64`/`__fxstat64`
+//! versioned forms are interposed as delegations to
+//! `__xstat`/`__lxstat`/`__fxstat` — on glibc the *64 versioned entries
+//! are literally the same addresses (2.31 nm proof), the x86_64 layouts
+//! are identical, and the plain `stat64`/`fstat64` dynamic symbols do
+//! NOT exist before glibc 2.33, so the versioned entry is the only
+//! resolvable host passthrough there (the JDK's libjava/libnio import
+//! the *64 forms — spec 22 class E). The fortified `__read_chk` is
+//! interposed too (the wrapper lives INSIDE libc and calls the syscall
+//! stub directly, so an interposed `read` never sees a fortified caller
+//! — the debian/temurin JDK's libjli imports exactly it for the jar
+//! END-record read). `__fxstatat64` remains a documented gap, as do
+//! `readv`/`preadv`/`sendfile`/`copy_file_range` and the write-side
+//! `pwrite64`/`ftruncate64`/`statvfs64` family on memfs fds. A
+//! pre-existing landmine OUTSIDE the JDK path: the plain
+//! `stat`/`lstat`/`fstat`/`stat64`/`lstat64`/`fstat64` host passthroughs
+//! resolve dynamic symbols glibc only exports ≥ 2.33 — on an older
+//! glibc a host call through them panics the resolver (nothing on the
+//! JDK/ruby boot path takes them; both use the versioned entries).
 
 // The real_* helpers mirror libc symbol names; the versioned ones carry
 // double underscores (`__xstat` & co.), which are intentionally NOT
@@ -115,6 +137,16 @@ real_fn!(
     real_pread,
     c"pread",
     unsafe extern "C" fn(c_int, *mut c_void, usize, libc::off_t) -> libc::ssize_t
+);
+real_fn!(
+    real_mmap,
+    c"mmap",
+    unsafe extern "C" fn(*mut c_void, usize, c_int, c_int, c_int, libc::off_t) -> *mut c_void
+);
+real_fn!(
+    real_munmap,
+    c"munmap",
+    unsafe extern "C" fn(*mut c_void, usize) -> c_int
 );
 real_fn!(
     real_read,
@@ -225,6 +257,15 @@ real_fn!(
     c"__fxstatat",
     unsafe extern "C" fn(c_int, c_int, *const c_char, *mut libc::stat, c_int) -> c_int
 );
+// _FORTIFY_SOURCE=2 read: the check wrapper lives INSIDE libc and calls
+// the syscall stub directly, so interposing `read` alone never catches
+// it (the spec 22 class-E JDK's libjli imports `__read_chk`).
+real_fn!(
+    real___read_chk,
+    c"__read_chk",
+    unsafe extern "C" fn(c_int, *mut c_void, usize, usize) -> libc::ssize_t
+);
+real_fn!(real___chk_fail, c"__chk_fail", unsafe extern "C" fn() -> !);
 real_fn!(
     real_rewinddir,
     c"rewinddir",
