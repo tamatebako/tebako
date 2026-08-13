@@ -1475,3 +1475,201 @@ fn an_undeclared_image_arms_only_the_mounts_list() {
     let mounts = env.var("TEBAKO_TFS_MOUNTS").expect("the mounts list");
     assert!(mounts.contains(":/__tfs__"), "{mounts}");
 }
+
+// ---------------------------------------------------------------------
+// spec 22 §3.2: the dependency mounts' declared bin dirs ride PATH
+// ---------------------------------------------------------------------
+
+/// A payload-manifest fixture (spec 03): kind-specific PROVIDES body.
+fn payload_manifest(kind: &str, provides: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: {kind}\n  name: x\n  version: \"1\"\n  \
+         producer: {{tool: t, tool_version: \"1\"}}\n  created: \"2026-08-13T00:00:00Z\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n{provides}\n",
+        z = "0".repeat(64)
+    )
+}
+
+/// A toolkit-payload fixture: `bin/java` plus the in-image manifest
+/// declaring it (spec 03 §2.2 — the openjdk shape).
+fn write_toolkit_image(dir: &Path) -> PathBuf {
+    let manifest = payload_manifest(
+        "toolkit",
+        "provides:\n  executables:\n    - {name: java, path: /bin/java}\n  \
+         platforms: [aarch64-macos]\n  capabilities: {exec: true, read: true}",
+    );
+    let p = dir.join("toolkit.tfs");
+    build_zip(
+        &p,
+        &["bin/", "__tpkg__/"],
+        &[
+            ("bin/java", b"#!/bin/sh\n".as_slice()),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    p
+}
+
+fn joined_path(dirs: &[&str]) -> String {
+    std::env::join_paths(dirs.iter().map(std::path::PathBuf::from))
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[test]
+fn the_dependency_bin_dirs_prepend_path_in_triple_order() {
+    let g = guard("path-env");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path()); // no manifest: nothing declared
+    let toolkit = write_toolkit_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin:/bin");
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/openjdk", toolkit.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    assert_eq!(
+        env.var("PATH").as_deref(),
+        Some(joined_path(&["/opt/openjdk/bin", "/usr/bin", "/bin"]).as_str())
+    );
+}
+
+#[test]
+fn the_app_payloads_own_bins_are_never_prepended() {
+    let g = guard("path-env-first");
+    let env_image = write_env_image(g.path());
+    let app = write_toolkit_image(g.path()); // declares /bin, mounted FIRST
+    let dep = write_toolkit_image(g.path());
+    // A distinct bin for the dep so the assertions cannot conflate the two.
+    let dep = {
+        let _ = dep;
+        let manifest = payload_manifest(
+            "toolkit",
+            "provides:\n  executables:\n    - {name: x, path: /sbin/x}\n  \
+             platforms: [aarch64-macos]\n  capabilities: {exec: true, read: true}",
+        );
+        let p = g.path().join("dep.tfs");
+        build_zip(
+            &p,
+            &["sbin/", "__tpkg__/"],
+            &[
+                ("sbin/x", b"#!/bin/sh\n".as_slice()),
+                ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+            ],
+        );
+        p
+    };
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin");
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", app.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/dep", dep.display()),
+            "--tebako-entry",
+            "/bin/java",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    // Only the dependency contributes: the app's own /bin stays off PATH.
+    assert_eq!(
+        env.var("PATH").as_deref(),
+        Some(joined_path(&["/opt/dep/sbin", "/usr/bin"]).as_str())
+    );
+}
+
+#[test]
+fn an_image_without_a_manifest_declares_no_bins() {
+    let g = guard("path-env-plain");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let plain = write_payload_image(g.path()); // the dependency: no manifest at all
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin");
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/plain", plain.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    assert_eq!(env.var("PATH").as_deref(), Some("/usr/bin"));
+}
+
+#[test]
+fn a_corrupt_dependency_manifest_is_a_named_65() {
+    let g = guard("path-env-corrupt");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let corrupt = {
+        let p = g.path().join("corrupt.tfs");
+        build_zip(
+            &p,
+            &["__tpkg__/"],
+            &[(
+                "__tpkg__/manifest.yaml",
+                b"identity: [not a mapping\n".as_slice(),
+            )],
+        );
+        p
+    };
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/corrupt", corrupt.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("self-description lies"),
+        "{}",
+        err.message
+    );
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refusal unmounts everything"
+    );
+}

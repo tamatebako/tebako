@@ -35,6 +35,7 @@ pub mod ffi;
 pub mod handoff;
 pub mod injection;
 pub mod layout;
+pub mod path_env;
 
 pub use driver::{
     boot, boot_with_mount_modes, BootOutcome, DriverError, Env, MountModes, OwnTrailer, ProcessEnv,

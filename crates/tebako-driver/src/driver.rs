@@ -379,8 +379,9 @@ fn mount_env_image(
 }
 
 /// Read a small text file through the mounted VFS (never the host fs) —
-/// the layout declaration lives INSIDE the env image (spec 18 C3).
-fn read_mounted_text(path: &str) -> Result<String, i32> {
+/// the layout declaration lives INSIDE the env image (spec 18 C3), and so
+/// does each payload's own manifest (spec 22 §3.2).
+pub(crate) fn read_mounted_text(path: &str) -> Result<String, i32> {
     let mut ctx = context().write().unwrap();
     let fd = ctx.open(path, libc::O_RDONLY)?;
     let mut out = Vec::new();
@@ -758,8 +759,10 @@ pub fn boot_with_mount_modes(
         }
         apply_jail(env)?;
         // The mounts are established — publish the discovery surface
-        // (spec 22 §6; v2-1/20) and arm the children (spec 22 §3).
+        // (spec 22 §6; v2-1/20), wire the dependency bins onto PATH
+        // (spec 22 §3.2), and arm the children (spec 22 §3).
         export_mount_vars(&h.images, env)?;
+        crate::path_env::export(&h.images, env)?;
         crate::injection::export(env, declaration.as_ref(), runtime_root)?;
         let rewritten = match h.entry.as_deref() {
             // No entry: the interpreter starts with its own args (the
