@@ -108,17 +108,20 @@ pinned empirically in §3.1.
 | Platform | The runtime process | Array form, absolute VFS path | Shell string (`system("java -jar /vfs/x.jar")`) |
 |---|---|---|---|
 | **ELF (gnu/musl)** | exe-defined Class-L symbols; the runtime itself is never preload-injected | the spawn hook materializes and injects the child (`LD_PRELOAD` + `TEBAKO_TFS_MOUNTS` in its env) | **works unmodified** — the handoff env's `LD_PRELOAD` injects every child at its exec, `/bin/sh` included; the shell's PATH search and `execvp` loop route through the interposed surface |
-| **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **named SIP boundary** — `DYLD_INSERT_LIBRARIES` is stripped when exec'ing an Apple platform binary, so `/bin/sh` runs uninjected (probe 2026-08-13: the variable is absent from sh's environment; the dylib never loads into it). The shell's PATH search cannot see VFS binaries and answers its own `command not found` — an honest failure, never a tebako-intercepted one |
+| **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **host-dependent — both outcomes named** — SIP strips `DYLD_INSERT_LIBRARIES` when exec'ing an Apple platform binary, so `/bin/sh` MAY run uninjected. Empirically split by host: darwin23 strips (probe 2026-08-13: the variable is absent from sh's environment; the JVM answers `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one); darwin24 GitHub x86_64 runners HONOR the insertion into sh's exec child and the shell-string form works unmodified (factory runs 31685052887/31692800485, runner image 20260727.0377.1: the same leg flipped from jar.error1 to running the jar when the x86_64 plain-close interpose shipped — `/bin/sh` was injected all along). The boot smoke pins both named outcomes and fails loud on any third shape |
 | **windows** | — | deferred with windows Class L (§7 order) | deferred |
 
 Where the launcher tier (§3.2) is armed, the shell-string form works
-on macOS too — the launcher's explicit re-arm passes the strip. Where
-it is not (no shim delivered, or the image declares no executables),
-the macOS consumption pattern for a dependency's binary is the array
-form with the absolute path (resolved through §3.2's surface);
-unmodified shell-string consumers of VFS binaries remain an ELF
-capability. A shell string whose operands are all host paths behaves
-exactly as on any host — the boundary is the VFS-operand case only.
+on every macOS host — the launcher's explicit re-arm passes the strip.
+Where it is not (no shim delivered, or the image declares no
+executables), the macOS consumption pattern for a dependency's binary
+is the array form with the absolute path (resolved through §3.2's
+surface); unmodified shell-string consumers of VFS binaries are an ELF
+capability plus whatever macOS hosts honor the insertion past `/bin/sh`
+(§3.1's matrix — darwin24 CI runners do; never rely on it, the launcher
+tier is the guarantee). A shell string whose operands are all host
+paths behaves exactly as on any host — the boundary is the VFS-operand
+case only.
 
 **Rule E2.** Exec of a VFS-resident binary materializes the binary plus
 its loader closure (the same exec cache as Class L —
