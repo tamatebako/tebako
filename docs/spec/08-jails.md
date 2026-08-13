@@ -89,6 +89,17 @@ process, so the floor grants it always.
   idempotent), so a spawned child's inherited spec plus its bind yields
   a policy identical to the parent's. Enforcement treats authored and
   floor mounts as one longest-prefix set.
+- **The boundary (what never joins):** the floor is SYSTEM surface
+  only. The workload's own tool tree (a JRE, a third-party install)
+  and the user's home stay authored grants — an operator's `deny` must
+  not silently read-expose private data, and the prefix grammar cannot
+  express the "stat-only" grant the macOS CFPreferences home probe
+  needs (spec 22 §3.4's journal-pinned chain, 2026-08-14: floor →
+  named `jvm.cfg` error → named `InternalError` → boot with `<jre>:ro`
+  + `<home>:ro`). The floor's promise is the end of the segfault
+  class: every missing grant surfaces as the workload's own named
+  error, pinned in the audit journal — never a crash in someone else's
+  library.
 
 ## 3. Enforcement point (the single choke)
 

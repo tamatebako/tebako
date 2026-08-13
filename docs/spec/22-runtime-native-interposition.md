@@ -201,9 +201,31 @@ identically with no per-surface work; an authored grant covering a
 floor path supersedes it (the floor never narrows); and because every
 bind re-derives it, a child re-binding its inherited `TEBAKO_JAIL`
 enforces exactly its parent's policy. The operator burden of "jail
-policy must include platform grants" is retired: a scratch-only jail
-now boots a JVM, and what remains denied is what the operator actually
-named.
+policy must include platform grants" is retired.
+
+What the floor does NOT grant — by design — is the workload's own tool
+tree and the user's home. The journal-pinned evidence chain (macOS,
+openjdk 21.0.2, 2026-08-14): with the floor bound, a scratch-only jail
+fails the JVM launcher's `jvm.cfg` open with its own named error (the
+JRE tree is the operator's tool, never platform surface); with the JRE
+granted `ro`, the CFPreferences locale probe stats the passwd-entry
+home (the `HOME` env does not redirect it) and aborts with the JVM's
+named `InternalError: platform encoding not initialized` — the journal
+carries `deny /Users/<u> read`, never a segfault. The booted-child
+stack under a `deny` jail is therefore three named ingredients: the
+floor (system surface, automatic) + the tool tree (an authored `ro`
+grant — the JRE) + the user domain (an authored home read, or a
+redirected home the policy grants). Home never joins the floor: an
+operator's `deny` must not silently read-expose private data, and the
+prefix grammar cannot express the "stat-only" grant the probe needs.
+The acceptance leg (`jailed_exec`, §3) runs exactly
+`deny;<scratch>:<scratch>:rw;<jre>:<jre>:ro;<home>:<home>:ro`: the JVM
+boots and runs the VFS jar, and every remaining journal denial is a
+non-fatal fallback the operator actually named (`/etc/localtime` → UTC,
+`hsperfdata` → skipped, the TMPDIR parent, the `.hotspotrc` probes).
+The floor's promise is the end of the segfault class: every missing
+grant surfaces as the workload's own named error, pinned in the audit
+journal — never a crash in someone else's library.
 
 ## 4. Class R — declarative boot materialization
 
