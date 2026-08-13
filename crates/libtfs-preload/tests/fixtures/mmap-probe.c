@@ -34,6 +34,9 @@ int main(int argc, char **argv) {
     size_t len;
     struct stat st;
     volatile size_t n = 4;
+    /* Unbuffered: the stage markers must survive a crash — ubuntu-24.04
+     * CI (run 31714704212) ate them to a SIGSEGV's block-buffered loss. */
+    setvbuf(stdout, NULL, _IONBF, 0);
     if (argc < 2) return 64;
     /* The JVM's first allocation is an ANONYMOUS mmap (the PaX check)
      * with fd -1 — whose every bit, TEBAKO_FD_FLAG included, is set. The
