@@ -193,6 +193,28 @@ interpose!(
     libc::close,
     unsafe extern "C" fn(c_int) -> c_int
 );
+// `close` vs `close$NOCANCEL` (x86_64): the libc crate maps `libc::close`
+// to `close$NOCANCEL` on x86_64 darwin (libc's unix/mod.rs `link_name`),
+// so the tuple above covers ONLY the NOCANCEL spelling there — while C
+// binaries (the JVM's libjava/libjli/libzip among them) import PLAIN
+// `close`, whose flagged-fd calls then fell through to the kernel
+// (EBADF from FileDescriptor.close0 → LauncherHelper jar.error1 — the
+// class-E macos-15-intel leg). Declare the plain spelling directly (the
+// fopen$DARWIN_EXTSN pattern) so both route to the shim. arm64 needs no
+// second tuple: there `libc::close` IS plain close.
+#[cfg(target_arch = "x86_64")]
+unsafe extern "C" {
+    #[link_name = "close"]
+    fn close_plain(fd: c_int) -> c_int;
+}
+#[cfg(target_arch = "x86_64")]
+interpose!(
+    INTERPOSE_CLOSE_PLAIN,
+    real_close_plain,
+    super::close,
+    close_plain,
+    unsafe extern "C" fn(c_int) -> c_int
+);
 interpose!(
     INTERPOSE_MKDIR,
     real_mkdir,

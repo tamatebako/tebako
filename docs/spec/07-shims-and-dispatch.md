@@ -149,7 +149,10 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    readdir_r/rewinddir/telldir/seekdir/dirfd/closedir/pread/read/lseek/
    mmap(memfs fd → private anonymous mapping pre-filled from the VFS,
    +mmap64 on linux)/
-   close/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp;
+   close(+the plain and $NOCANCEL spellings on x86_64 darwin — the libc
+   crate maps `libc::close` to `close$NOCANCEL` there, C binaries
+   (the JVM's libjava/libjli/libzip) import plain `close`; both route
+   to the shim)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp;
    `TEBAKO_JAIL` carries the spec 08 §1 env form (`open|deny` +
    `host:mount:ro|rw` grants + `@` argument files); the ENTRYPOINT (when
    in-image) is materialized through `dlmap2file` (execve needs a host

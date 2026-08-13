@@ -138,6 +138,7 @@ fn build_fixtures() -> Option<Fixtures> {
         "spawn-helper",
         "dir-stream",
         "mmap-probe",
+        "close-probe",
     ] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
@@ -698,4 +699,26 @@ fn linux_lseek64_and_mmap64_on_a_memfs_fd() {
         "stdout: {}",
         r.stdout
     );
+}
+
+/// The darwin plain-`close` surface (spec 22 class E): the JVM's
+/// `FileDescriptor.close0` imports PLAIN `close`, while the libc crate
+/// maps `libc::close` to `close$NOCANCEL` on x86_64 darwin — so the
+/// shim's close tuple used to cover only the NOCANCEL spelling and the
+/// JVM's close of a flagged memfs fd fell through to the kernel (EBADF
+/// → LauncherHelper jar.error1 — the macos-15-intel leg). The probe
+/// CHECKS close's return on the flagged fd; on x86_64 it red-flags any
+/// regression of the plain-close tuple (arm64: `libc::close` IS plain
+/// close, one tuple covers both spellings).
+#[test]
+fn macos_plain_close_on_a_memfs_fd() {
+    if !cfg!(target_os = "macos") {
+        eprintln!("skip: the $NOCANCEL variant family is mach-o (macos only)");
+        return;
+    }
+    let Some(f) = fixtures() else { return };
+    let path = format!("{MOUNT}/data/secret.txt");
+    let r = run(f, "close-probe", &[path.as_str()], None);
+    assert_eq!(r.rc, 0, "close-probe failed, stderr: {}", r.stderr);
+    assert!(r.stdout.contains("close-probe:ok"), "stdout: {}", r.stdout);
 }
