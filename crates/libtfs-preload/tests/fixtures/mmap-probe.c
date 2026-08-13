@@ -47,24 +47,32 @@ int main(int argc, char **argv) {
     memset(anon, 0x5a, 4096);
     munmap(anon, 4096);
     puts("anon-mmap:ok");
+    /* Per-call stage markers: run 31716749098 died (SIGSEGV) inside the
+     * window below with only "anon-mmap:ok" flushed — the markers bisect
+     * it. fd is printed flagged-raw so a missing interpose is visible. */
     fd = open(argv[1], O_RDONLY);
     if (fd < 0) { perror("open"); return 66; }
+    printf("open-fd:%#x\n", fd);
     /* libjava's open path stats the jar (with _FILE_OFFSET_BITS=64 this
      * is __fxstat64 on glibc < 2.33). */
     if (fstat(fd, &st) < 0) { perror("fstat"); return 65; }
+    puts("fstat:ok");
     /* The launcher's END-record probe: seek to size-4, read the tail.
      * volatile n defeats constant folding so fortify emits __read_chk —
      * libjli's fortified read, exactly. */
     end = lseek64(fd, (off64_t)-4, SEEK_END);
     if (end < 0) { perror("lseek64"); return 65; }
+    printf("lseek64-end:%lld\n", (long long)end);
     memset(tail, 0, sizeof tail);
     if (read(fd, tail, n) != (ssize_t) n) { perror("read-tail"); return 65; }
+    printf("lseek64-tail:%.*s\n", 4, tail);
     /* libzip's central-directory window (PROT_READ|MAP_SHARED is its
      * exact request). */
     len = (size_t) lseek64(fd, (off64_t)0, SEEK_END);
+    printf("len:%zu\n", len);
     map = mmap64(NULL, len, PROT_READ, MAP_SHARED, fd, (off64_t)0);
     if (map == MAP_FAILED) { perror("mmap64"); return 65; }
-    printf("lseek64-tail:%.*s\n", 4, tail);
+    puts("mmap64:ok");
     printf("mmap64-head:%.*s\n", (int)(len < 16 ? len : 16), (char *)map);
     munmap(map, len);
     close(fd);
