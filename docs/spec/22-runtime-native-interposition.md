@@ -178,6 +178,33 @@ fixtures directory next to its `.java` source and a regeneration note
 the smoke, exactly like the C fixtures' compiled form on legs without
 a compiler.
 
+### 3.4 Spawned children and the jail — the platform floor (locked 2026-08-14)
+
+A spawned child inherits the process's jail through the handoff env's
+`TEBAKO_JAIL`, and the preload shim enforces it inside the child. What
+the child may read on the host is therefore exactly what the bound
+policy grants — and under a scratch-only jail
+(`deny;<scratch>:<scratch>:rw`) a materialized JVM could not finish its
+own boot: its locale/framework init reads under `/usr`, the denial
+surfaced as a NULL deref, and the process died with a SIGSEGV at
+`getMacOSXLocale` — never a named error (phase-E dogfood, 2026-08-13).
+The jail's failure mode for a missing grant MUST be a policy verdict
+(EPERM on an authored path), not a segfault in someone else's library.
+
+The answer is spec 08 §2.1's **platform floor**: every policy bound
+under the `deny` default gains the platform's read-only boot surface —
+macOS `/usr`, `/System`, `/Library`; windows `%SystemRoot%\System32`,
+`SysWOW64`, `Fonts`; other unix nothing yet (entries are added only
+with a proven consumer). The floor applies at `HostPolicy::bind`, so
+the driver, the shim, the bootstrap, and `tebako run` enforce it
+identically with no per-surface work; an authored grant covering a
+floor path supersedes it (the floor never narrows); and because every
+bind re-derives it, a child re-binding its inherited `TEBAKO_JAIL`
+enforces exactly its parent's policy. The operator burden of "jail
+policy must include platform grants" is retired: a scratch-only jail
+now boots a JVM, and what remains denied is what the operator actually
+named.
+
 ## 4. Class R — declarative boot materialization
 
 **Rule R1.** An image manifest MAY declare `materialize: [paths]`
@@ -229,7 +256,20 @@ Payload authors and runtime factories may rely on, forever:
   own manifests (spec 03 annotations).
 - **The discovery surface.** `TEBAKO_MOUNT_<SLUG>` per dependency mount
   (spec 17 §2's env table; v2-1/20) — the portable way to reference a
-  dependency payload's files, windows included.
+  dependency payload's files, windows included. **The slug grammar is
+  mount-path-derived (locked 2026-08-14):** drop the drive qualifier
+  (`A:/tools/x` slugs like `/tools/x`), uppercase every ASCII
+  alphanumeric and map every other character to `_`, trim leading and
+  trailing underscores (`/opt/openjdk` → `OPT_OPENJDK` →
+  `TEBAKO_MOUNT_OPT_OPENJDK`); interior separators are NOT collapsed
+  (`/a//b` → `A__B`). A mount whose slug is empty after the trim —
+  the root mount — slugs `ROOT` and exports NOTHING: `TEBAKO_MOUNT_ROOT`
+  is the mount-root OVERRIDE var (spec 17 §1), so the name is reserved,
+  never emitted. Union members sharing one physical point get one var;
+  two DIFFERENT physical points slugging alike is an authoring
+  ambiguity — a named boot error, never a silent winner. The value is
+  the physical mount point (drive-qualified on windows),
+  re-rooting-proof.
 - **Dependency `PATH` wiring.** The handoff env's `PATH` leads with the
   launcher dir (`<exec-cache-leaf>/wrap-bin/`, when the shim is
   delivered — §3.2's host-launcher tier) followed by every co-mounted

@@ -66,6 +66,62 @@ pub struct HostMountSpec {
     pub access: HostAccess,
 }
 
+/// The platform floor (spec 08 §2.1): the read-only grants every bound
+/// deny policy gains — the platform surface a spawned interpreter or
+/// runtime physically cannot boot without. On macOS the JVM's
+/// locale/framework init reads under these trees and a scratch-only jail
+/// crashed it with a SIGSEGV at `getMacOSXLocale` — never a named error
+/// (spec 22 phase-E dogfood, 2026-08-13). On windows the loader's DLL
+/// root, the 32-bit view, and the font tree are the corresponding
+/// surface. The list is evidence-driven: a path joins it only with a
+/// proven platform-process consumer, which is why the unix floor beyond
+/// macOS is empty until a leg proves one.
+#[cfg(target_os = "macos")]
+fn platform_floor() -> Vec<PathBuf> {
+    ["/usr", "/System", "/Library"]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn platform_floor() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(target_os = "windows")]
+fn platform_floor() -> Vec<PathBuf> {
+    // %SystemRoot% (C:\Windows virtually everywhere): System32 is the
+    // loader's DLL root (no process resolves its imports without it),
+    // SysWOW64 the 32-bit view for 32-bit children, Fonts the GDI tree
+    // GUI runtimes enumerate (the JVM's AWT init).
+    let root = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    ["System32", "SysWOW64", "Fonts"]
+        .iter()
+        .map(|sub| root.join(sub))
+        .collect()
+}
+
+/// The VFS-side spelling a floor mount carries (the mount point is
+/// informational — enforcement matches host prefixes): identity on unix,
+/// the drive-qualified forward-slash form on windows (`C:/Windows/…`,
+/// the driver's `X:/…` convention), so a serialized policy stays inside
+/// the `host:mount:ro|rw` grammar (a windows `C:\…` mount would break
+/// the right-split parse; floor entries therefore never ride
+/// `to_env_spec` — every bind re-derives them).
+#[cfg(unix)]
+fn floor_mount_point(host: &Path) -> String {
+    host.to_string_lossy().into_owned()
+}
+
+#[cfg(target_os = "windows")]
+fn floor_mount_point(host: &Path) -> String {
+    let s = host.to_string_lossy().replace('\\', "/");
+    s.strip_prefix("//?/").unwrap_or(&s).to_string()
+}
+
 /// The host-access policy of a process (spec 08 §1).
 ///
 /// The default is `open` with no mounts and no argument files — byte-for
@@ -75,6 +131,12 @@ pub struct HostMountSpec {
 pub struct HostPolicy {
     default_open: bool,
     mounts: Vec<HostMount>,
+    /// The platform floor (spec 08 §2.1), bound alongside `mounts` under
+    /// the deny default. Kept separate so `to_env_spec` serializes the
+    /// AUTHORED policy only — the floor is re-derived at every bind
+    /// (supersede makes that idempotent) and never travels the
+    /// `host:mount:ro|rw` grammar its windows spellings would break.
+    floor_mounts: Vec<HostMount>,
     arg_files: Vec<PathBuf>,
     /// Who installed the policy (`manifest`, `user`, `manifest+user`,
     /// `TEBAKO_JAIL`, …), recorded in the audit journal on every denial
@@ -95,6 +157,7 @@ impl HostPolicy {
         HostPolicy {
             default_open: true,
             mounts: Vec::new(),
+            floor_mounts: Vec::new(),
             arg_files: Vec::new(),
             source: String::new(),
         }
@@ -124,6 +187,19 @@ impl HostPolicy {
     /// Bind a policy: canonicalize every host path (mount sources and
     /// argument files) NOW, so later checks compare canonical forms.
     ///
+    /// Under the deny default the platform floor (spec 08 §2.1,
+    /// [`platform_floor`]) binds alongside as read-only grants: an
+    /// authored mount covering a floor path (same or ancestor prefix)
+    /// supersedes the floor entry — the floor never narrows what the
+    /// author allowed — and a floor path absent on this host is skipped
+    /// silently (it is a courtesy surface, not an authored request whose
+    /// absence must fail the bind). Under `open` the floor grants
+    /// nothing the default does not already allow, so it is not bound
+    /// (`never_denies` keeps its exact meaning). Floor mounts are NOT
+    /// serialized by [`to_env_spec`](Self::to_env_spec): they are
+    /// re-derived at every bind (supersede makes that idempotent) and
+    /// their windows spellings would break the env grammar.
+    ///
     /// Errors: EINVAL for a non-absolute virtual mount point; the
     /// canonicalization errno (ENOENT for a missing mount source or
     /// argument file, ENOTDIR/ELOOP/… as reported) otherwise.
@@ -144,6 +220,27 @@ impl HostPolicy {
                 access: spec.access,
             });
         }
+        let mut floor_mounts = Vec::new();
+        if !default_open {
+            'floor: for path in platform_floor() {
+                // Best-effort canonicalize FIRST so the supersede check
+                // below compares canonical with canonical (a symlinked
+                // operator grant covers its canonical floor twin).
+                let Ok(floor) = canonicalize(&path) else {
+                    continue;
+                };
+                for m in &bound_mounts {
+                    if m.host == floor || floor.starts_with(&m.host) {
+                        continue 'floor;
+                    }
+                }
+                floor_mounts.push(HostMount {
+                    mount: floor_mount_point(&floor),
+                    host: floor,
+                    access: HostAccess::Ro,
+                });
+            }
+        }
         let mut bound_files = Vec::with_capacity(arg_files.len());
         for f in &arg_files {
             bound_files.push(canonicalize(f)?);
@@ -151,6 +248,7 @@ impl HostPolicy {
         Ok(HostPolicy {
             default_open,
             mounts: bound_mounts,
+            floor_mounts,
             arg_files: bound_files,
             source: String::new(),
         })
@@ -178,10 +276,12 @@ impl HostPolicy {
             return Ok(());
         }
 
-        // Longest host-prefix match; Path::starts_with matches on whole
-        // path components, so "/work" never matches "/workshop".
+        // Longest host-prefix match across authored grants AND the floor
+        // (identical semantics; the lists are kept apart only so the env
+        // serialization stays authored-only); Path::starts_with matches
+        // on whole path components, so "/work" never matches "/workshop".
         let mut best: Option<&HostMount> = None;
-        for m in &self.mounts {
+        for m in self.mounts.iter().chain(self.floor_mounts.iter()) {
             let longer = match best {
                 Some(b) => b.host.as_os_str().len() < m.host.as_os_str().len(),
                 None => true,
@@ -518,6 +618,73 @@ mod tests {
         );
         assert_eq!(p.check(Path::new("/"), HostAccess::Ro), Err(libc::EPERM));
         assert_eq!(p.check(&tree.work, HostAccess::Rw), Err(libc::EPERM));
+    }
+
+    #[test]
+    fn deny_gains_the_platform_floor_read_only() {
+        let p = HostPolicy::bind(false, vec![], vec![]).unwrap();
+        for dir in platform_floor() {
+            if std::fs::canonicalize(&dir).is_err() {
+                continue; // absent on this host: skipped at bind
+            }
+            assert_eq!(
+                p.check(&dir, HostAccess::Ro),
+                Ok(()),
+                "floor read {dir:?}"
+            );
+            assert_eq!(
+                p.check(&dir, HostAccess::Rw),
+                Err(libc::EROFS),
+                "floor write {dir:?}"
+            );
+        }
+        // Everything outside the floor stays denied.
+        assert_eq!(p.check(Path::new("/"), HostAccess::Ro), Err(libc::EPERM));
+    }
+
+    #[test]
+    #[cfg(unix)] // the fixture path is unix-shaped; the supersede rule it pins is platform-free
+    fn authored_grant_covering_a_floor_path_supersedes_it() {
+        // An authored rw grant at / would be CLAMPED by a naive /usr:ro
+        // floor entry (longest-prefix) — the supersede rule skips floor
+        // entries an authored grant already covers, so the floor never
+        // narrows the authored allowance. (The floor list is empty off
+        // macOS/windows today; the assertion holds identically there.)
+        let p = HostPolicy::bind(
+            false,
+            vec![HostMountSpec {
+                host: PathBuf::from("/"),
+                mount: "/".to_string(),
+                access: HostAccess::Rw,
+            }],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(p.check(Path::new("/usr"), HostAccess::Rw), Ok(()));
+    }
+
+    #[test]
+    fn open_default_adds_no_floor_mounts() {
+        // Under `open` the floor grants nothing the default does not
+        // already allow — `never_denies` keeps its exact meaning.
+        let p = HostPolicy::bind(true, vec![], vec![]).unwrap();
+        assert!(p.never_denies());
+        assert!(p.mounts.is_empty());
+        assert!(p.floor_mounts.is_empty());
+    }
+
+    #[test]
+    fn floor_survives_an_env_spec_round_trip_once() {
+        // The child side of the handoff: the serialized policy carries
+        // the AUTHORED mounts only, and re-binding re-derives the floor
+        // — p1 and p2 enforce identically, with no duplicated entries
+        // (the TEBAKO_JAIL inheritance path relies on it).
+        let p1 = HostPolicy::bind(false, vec![], vec![]).unwrap();
+        let spec = p1.to_env_spec();
+        let parsed = JailSpec::parse(&spec).unwrap();
+        let p2 =
+            HostPolicy::bind(parsed.default_open, parsed.mounts, parsed.arg_files).unwrap();
+        assert_eq!(p1, p2);
     }
 
     #[test]
