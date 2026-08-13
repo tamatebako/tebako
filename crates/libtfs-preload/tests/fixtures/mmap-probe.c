@@ -8,12 +8,18 @@
  * shim interposed lseek64/mmap64/__read_chk the flagged (virtual) fd
  * reached the kernel — EBADF — and every `java -jar` against a VFS jar
  * failed. Linux-only body (the *64 entry points are glibc names). */
+#ifdef __linux__
+/* MUST precede every system header: glibc locks the feature set at the
+ * first inclusion (features.h via stdio.h); defining it below the
+ * includes leaves off64_t/mmap64 undeclared — ubuntu-24.04 CI proved it
+ * (tebako run 31705342187). musl exposes the *64 names regardless. */
+#define _LARGEFILE64_SOURCE
+#endif
 #include <stdio.h>
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
 #ifdef __linux__
-#define _LARGEFILE64_SOURCE
 #include <sys/mman.h>
 #include <sys/stat.h>
 #endif
