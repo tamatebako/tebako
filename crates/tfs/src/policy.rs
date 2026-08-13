@@ -627,11 +627,7 @@ mod tests {
             if std::fs::canonicalize(&dir).is_err() {
                 continue; // absent on this host: skipped at bind
             }
-            assert_eq!(
-                p.check(&dir, HostAccess::Ro),
-                Ok(()),
-                "floor read {dir:?}"
-            );
+            assert_eq!(p.check(&dir, HostAccess::Ro), Ok(()), "floor read {dir:?}");
             assert_eq!(
                 p.check(&dir, HostAccess::Rw),
                 Err(libc::EROFS),
@@ -682,8 +678,7 @@ mod tests {
         let p1 = HostPolicy::bind(false, vec![], vec![]).unwrap();
         let spec = p1.to_env_spec();
         let parsed = JailSpec::parse(&spec).unwrap();
-        let p2 =
-            HostPolicy::bind(parsed.default_open, parsed.mounts, parsed.arg_files).unwrap();
+        let p2 = HostPolicy::bind(parsed.default_open, parsed.mounts, parsed.arg_files).unwrap();
         assert_eq!(p1, p2);
     }
 
