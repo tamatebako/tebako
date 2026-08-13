@@ -199,7 +199,10 @@ fn materialize_launchers(
     std::fs::create_dir_all(&wrap_dir).map_err(|e| {
         DriverError::new(
             EX_TEBAKO_IO,
-            format!("cannot create the launcher dir '{}': {e}", wrap_dir.display()),
+            format!(
+                "cannot create the launcher dir '{}': {e}",
+                wrap_dir.display()
+            ),
         )
     })?;
     for (base, vfs) in &launches {
