@@ -108,20 +108,21 @@ pinned empirically in §3.1.
 | Platform | The runtime process | Array form, absolute VFS path | Shell string (`system("java -jar /vfs/x.jar")`) |
 |---|---|---|---|
 | **ELF (gnu/musl)** | exe-defined Class-L symbols; the runtime itself is never preload-injected | the spawn hook materializes and injects the child (`LD_PRELOAD` + `TEBAKO_TFS_MOUNTS` in its env) | **works unmodified** — the handoff env's `LD_PRELOAD` injects every child at its exec, `/bin/sh` included; the shell's PATH search and `execvp` loop route through the interposed surface |
-| **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **host-dependent — both outcomes named** — SIP strips `DYLD_INSERT_LIBRARIES` when exec'ing an Apple platform binary, so `/bin/sh` MAY run uninjected. Empirically split by host: darwin23 strips (probe 2026-08-13: the variable is absent from sh's environment; the JVM answers `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one); darwin24 GitHub x86_64 runners HONOR the insertion into sh's exec child and the shell-string form works unmodified (factory runs 31685052887/31692800485, runner image 20260727.0377.1: the same leg flipped from jar.error1 to running the jar when the x86_64 plain-close interpose shipped — `/bin/sh` was injected all along). The boot smoke pins both named outcomes and fails loud on any third shape |
+| **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **named boundary, enforced by the spawn hook** — an inherited `DYLD_INSERT_LIBRARIES` is FATAL to Apple platform binaries on darwin24 (dyld TERMINATES `/bin/sh` and `/usr/bin/cc` under a foreign insertion — factory run 31699651270; darwin23 stripped the variable instead), so the interpreter's spawn hook DROPS the variable per spawn whose target is restricted (any shell form; anything resolving into Apple's system binary dirs). The JVM behind a shell string then answers its own `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one. darwin24 x86_64 CI runners HONOR the insertion into sh's exec child (runs 31685052887/31692800485) — a relaxed-SIP artifact the scrub deliberately erases: every host behaves like the strictest one |
 | **windows** | — | deferred with windows Class L (§7 order) | deferred |
 
 Where the launcher tier (§3.2) is armed, the shell-string form works
-on every macOS host — the launcher's explicit re-arm passes the strip.
-Where it is not (no shim delivered, or the image declares no
-executables), the macOS consumption pattern for a dependency's binary
-is the array form with the absolute path (resolved through §3.2's
-surface); unmodified shell-string consumers of VFS binaries are an ELF
-capability plus whatever macOS hosts honor the insertion past `/bin/sh`
-(§3.1's matrix — darwin24 CI runners do; never rely on it, the launcher
-tier is the guarantee). A shell string whose operands are all host
-paths behaves exactly as on any host — the boundary is the VFS-operand
-case only.
+on every macOS host — the launcher's explicit re-arm passes the hook's
+scrub exactly as it passes dyld's strip. Where it is not (no shim
+delivered, or the image declares no executables), the macOS consumption
+pattern for a dependency's binary is the array form with the absolute
+path (resolved through §3.2's surface); unmodified shell-string
+consumers of VFS binaries remain an ELF capability. (darwin24 x86_64 CI
+runners tolerated the insertion past `/bin/sh` — a relaxed-SIP
+artifact; the hook's scrub erases it so every host behaves like the
+strictest one.) A shell string whose operands are all host paths
+behaves exactly as on any host — the boundary is the VFS-operand case
+only.
 
 **Rule E2.** Exec of a VFS-resident binary materializes the binary plus
 its loader closure (the same exec cache as Class L —

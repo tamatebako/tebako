@@ -19,12 +19,18 @@
 //!    stages the file and emits the layout key; the driver flows it; the
 //!    hook consumes it — no second hand-written path).
 //!
-//! Platform notes: on macOS the value only reaches non-Apple children
-//! (SIP strips it for platform binaries — spec 22 §3.1's named
-//! boundary). Windows has no preload tier yet (Phase W): a declaration
-//! there is parsed and flows to `TEBAKO_PRELOAD_SHIM` but no injection
-//! var is set. A declared-but-absent shim is the image lying about its
-//! contents — a named boot error (exit 78), never a skipped injection.
+//! Platform notes: on macOS the value reaches EVERY child in the
+//! inherited env — including Apple platform binaries, which dyld
+//! TERMINATES under a foreign insertion on darwin24 (darwin23 stripped
+//! the variable instead). The interpreter's spawn hook drops the
+//! variable per spawn whose target is restricted (tamatebako/ruby's
+//! `process_c_tebako_spawn.patch` — spec 22 §3.1's named boundary), so
+//! `/bin/sh` and `/usr/bin/*` survive while non-restricted host targets
+//! (a third-party JRE) keep the delivery. Windows has no preload tier
+//! yet (Phase W): a declaration there is parsed and flows to
+//! `TEBAKO_PRELOAD_SHIM` but no injection var is set. A
+//! declared-but-absent shim is the image lying about its contents — a
+//! named boot error (exit 78), never a skipped injection.
 
 use crate::driver::{join_mount, DriverError, Env};
 use crate::layout::ImageLayout;
