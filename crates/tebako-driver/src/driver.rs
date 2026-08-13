@@ -759,11 +759,13 @@ pub fn boot_with_mount_modes(
         }
         apply_jail(env)?;
         // The mounts are established — publish the discovery surface
-        // (spec 22 §6; v2-1/20), wire the dependency bins onto PATH
-        // (spec 22 §3.2), and arm the children (spec 22 §3).
+        // (spec 22 §6; v2-1/20), arm the children (spec 22 §3), and wire
+        // the dependency bins onto PATH (spec 22 §3.2 — the launcher
+        // tier embeds the shim's materialized copy when one is
+        // delivered, so injection runs first).
         export_mount_vars(&h.images, env)?;
-        crate::path_env::export(&h.images, env)?;
-        crate::injection::export(env, declaration.as_ref(), runtime_root)?;
+        let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
+        crate::path_env::export(&h.images, env, shim_host.as_deref())?;
         let rewritten = match h.entry.as_deref() {
             // No entry: the interpreter starts with its own args (the
             // bare `--tebako-image` invocation — the deploy-driver

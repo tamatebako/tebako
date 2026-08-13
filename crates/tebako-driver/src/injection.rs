@@ -38,23 +38,27 @@ pub const PRELOAD_SHIM_VAR: &str = "TEBAKO_PRELOAD_SHIM";
 const MOUNTS_VAR: &str = "TEBAKO_TFS_MOUNTS";
 
 /// The platform's injection variable (ELF / macOS; none elsewhere).
+/// pub(crate) for the PATH launchers (spec 22 §3.2): the wrapper
+/// re-arms exactly this var for its child.
 #[cfg(target_os = "macos")]
-const INJECT_VAR: &str = "DYLD_INSERT_LIBRARIES";
+pub(crate) const INJECT_VAR: &str = "DYLD_INSERT_LIBRARIES";
 #[cfg(all(unix, not(target_os = "macos")))]
-const INJECT_VAR: &str = "LD_PRELOAD";
+pub(crate) const INJECT_VAR: &str = "LD_PRELOAD";
 
 /// Export the child-injection env (see the module doc). Called per boot
 /// after the mounts and the jail, before the interpreter handoff.
+/// Returns the shim's materialized HOST path when one was delivered —
+/// the §3.2 launchers embed it; `None` when the image declares no shim.
 pub fn export(
     env: &dyn Env,
     declaration: Option<&ImageLayout>,
     runtime_root: &str,
-) -> Result<(), DriverError> {
+) -> Result<Option<String>, DriverError> {
     if let Some(mounts) = context().read().unwrap().mounts_env() {
         env.set_var(MOUNTS_VAR, &mounts.to_string_lossy());
     }
     let Some(rel) = declaration.and_then(|d| d.preload_shim.as_deref()) else {
-        return Ok(()); // no env image or an older image — nothing to inject with
+        return Ok(None); // no env image or an older image — nothing to inject with
     };
     let vfs = join_mount(runtime_root, rel);
     let host = context()
@@ -73,11 +77,10 @@ pub fn export(
     // The spawn hook reads the VFS spelling (it materializes per child
     // through the same dlmap cache — one copy on disk).
     env.set_var(PRELOAD_SHIM_VAR, &vfs);
+    let host = host.to_string_lossy().into_owned();
     #[cfg(unix)]
-    env.set_var(INJECT_VAR, &host.to_string_lossy());
-    #[cfg(not(unix))]
-    let _ = host;
-    Ok(())
+    env.set_var(INJECT_VAR, &host);
+    Ok(Some(host))
 }
 
 #[cfg(test)]
@@ -105,7 +108,8 @@ mod tests {
         // serializes only file-backed mounts).
         context().write().unwrap().unmount();
         let env = MapEnv(RefCell::new(HashMap::new()));
-        export(&env, None, "/__tfs__").unwrap();
+        let delivered = export(&env, None, "/__tfs__").unwrap();
+        assert!(delivered.is_none());
         let m = env.0.borrow();
         assert!(!m.contains_key(PRELOAD_SHIM_VAR));
         assert!(!m.contains_key(MOUNTS_VAR));

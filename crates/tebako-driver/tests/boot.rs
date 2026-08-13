@@ -1494,6 +1494,12 @@ fn payload_manifest(kind: &str, provides: &str) -> String {
 /// A toolkit-payload fixture: `bin/java` plus the in-image manifest
 /// declaring it (spec 03 §2.2 — the openjdk shape).
 fn write_toolkit_image(dir: &Path) -> PathBuf {
+    write_toolkit_image_with_java(dir, b"#!/bin/sh\n")
+}
+
+/// The toolkit fixture with a caller-chosen `bin/java` body (the
+/// launcher-tier run test makes it print a marker).
+fn write_toolkit_image_with_java(dir: &Path, java: &[u8]) -> PathBuf {
     let manifest = payload_manifest(
         "toolkit",
         "provides:\n  executables:\n    - {name: java, path: /bin/java}\n  \
@@ -1504,7 +1510,7 @@ fn write_toolkit_image(dir: &Path) -> PathBuf {
         &p,
         &["bin/", "__tpkg__/"],
         &[
-            ("bin/java", b"#!/bin/sh\n".as_slice()),
+            ("bin/java", java),
             ("__tpkg__/manifest.yaml", manifest.as_bytes()),
         ],
     );
@@ -1671,5 +1677,127 @@ fn a_corrupt_dependency_manifest_is_a_named_65() {
     assert!(
         !context().read().unwrap().is_mounted(),
         "the refusal unmounts everything"
+    );
+}
+
+// ---------------------------------------------------------------------
+// spec 22 §3.2: the host-launcher tier — self-injecting PATH wrappers
+// ---------------------------------------------------------------------
+
+/// The boot shape shared by the launcher tests: the shim env image, a
+/// plain app payload, and one toolkit dependency mounted at `point`.
+#[cfg(unix)]
+fn boot_with_toolkit(g: &Guard, point: &str, java: &[u8]) -> MapEnv {
+    let env_image = write_env_image_with_shim(g.path());
+    let payload = write_payload_image(g.path());
+    let toolkit = write_toolkit_image_with_java(g.path(), java);
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin:/bin");
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:{point}", toolkit.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    env
+}
+
+#[cfg(unix)]
+#[test]
+fn dependency_executables_materialize_as_self_injecting_launchers() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let g = guard("path-env-wrap");
+    let env = boot_with_toolkit(&g, "/opt/openjdk", b"#!/bin/sh\n");
+
+    // PATH leads with the launcher dir, then the VFS bin dir, then the
+    // inherited value.
+    let path = env.var("PATH").unwrap();
+    let dirs: Vec<String> = std::env::split_paths(std::ffi::OsStr::new(&path))
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(dirs.len(), 4, "{path}");
+    let wrap_dir = PathBuf::from(&dirs[0]);
+    assert_eq!(wrap_dir.file_name().unwrap().to_string_lossy(), "wrap-bin");
+    assert!(
+        wrap_dir
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("tebako-dl-"),
+        "the launchers live under the cleaned dl root: {}",
+        wrap_dir.display()
+    );
+    assert_eq!(dirs[1], "/opt/openjdk/bin");
+
+    // The wrapper re-arms the injection var explicitly and execs the
+    // materialized binary (the dl layout mirrors the full VFS path).
+    let shim_host = env.var(INJECT_VAR).unwrap();
+    let target = wrap_dir.parent().unwrap().join("opt/openjdk/bin/java");
+    let wrap = wrap_dir.join("java");
+    assert_eq!(
+        std::fs::read_to_string(&wrap).unwrap(),
+        format!(
+            "#!/bin/sh\n{v}='{shim_host}'\nexport {v}\nexec '{}' \"$@\"\n",
+            target.display(),
+            v = INJECT_VAR
+        )
+    );
+    assert_eq!(
+        std::fs::metadata(&wrap).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    // The zip reports 0644 — the tier forces the exec bit on the copy.
+    assert_ne!(
+        std::fs::metadata(&target).unwrap().permissions().mode() & 0o111,
+        0
+    );
+}
+
+/// The launcher's own proof on ELF: nothing is inherited (`env_clear`)
+/// — the wrapper alone arms the injection (ld.so then complains about
+/// the fixture shim, proving the var reached it) and execs the target.
+/// On macOS the same text is the SIP answer (dyld aborts on a bogus
+/// insert, so the run leg lives on linux; the macOS proof is the
+/// dogfood).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_launcher_re_arms_the_injection_and_execs_the_target() {
+    let g = guard("path-env-wrap-run");
+    // A distinct mount point: the dl cache keys by memfs path, and the
+    // content test's plain java must not shadow this one's marker.
+    let env = boot_with_toolkit(&g, "/opt/jdkrun", b"#!/bin/sh\necho TEBAKO-WRAP-OK\n");
+    let path = env.var("PATH").unwrap();
+    let wrap_dir = std::env::split_paths(std::ffi::OsStr::new(&path))
+        .next()
+        .unwrap();
+
+    let out = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg("java")
+        .env_clear()
+        .env("PATH", format!("{}:/usr/bin:/bin", wrap_dir.display()))
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "TEBAKO-WRAP-OK",
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("LD_PRELOAD"),
+        "the wrapper armed the injection var: {}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }

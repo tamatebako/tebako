@@ -111,9 +111,12 @@ pinned empirically in §3.1.
 | **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **named SIP boundary** — `DYLD_INSERT_LIBRARIES` is stripped when exec'ing an Apple platform binary, so `/bin/sh` runs uninjected (probe 2026-08-13: the variable is absent from sh's environment; the dylib never loads into it). The shell's PATH search cannot see VFS binaries and answers its own `command not found` — an honest failure, never a tebako-intercepted one |
 | **windows** | — | deferred with windows Class L (§7 order) | deferred |
 
-The macOS consumption pattern for a dependency's binary is the array
+Where the launcher tier (§3.2) is armed, the shell-string form works
+on macOS too — the launcher's explicit re-arm passes the strip. Where
+it is not (no shim delivered, or the image declares no executables),
+the macOS consumption pattern for a dependency's binary is the array
 form with the absolute path (resolved through §3.2's surface);
-unmodified shell-string consumers of VFS binaries are an ELF
+unmodified shell-string consumers of VFS binaries remain an ELF
 capability. A shell string whose operands are all host paths behaves
 exactly as on any host — the boundary is the VFS-operand case only.
 
@@ -143,6 +146,25 @@ bare name through the VFS (§3.1). The explicit-reference surface for
 everything else — windows-safe and shell-free — is
 `TEBAKO_MOUNT_<SLUG>` per dependency mount (§6; v2-1/20), for payload
 authors who compute paths themselves.
+
+**The host-launcher tier** (armed when the env image delivers the
+preload shim, §3; unix): the driver additionally materializes each
+dependency's declared executables through the exec cache and mirrors
+them as self-injecting launchers on ONE host dir
+(`<exec-cache-leaf>/wrap-bin/`) that LEADS `PATH`. A launcher is a
+one-line POSIX script that re-arms the platform's injection var
+explicitly and execs the materialized binary: SIP strips an INHERITED
+`DYLD_INSERT_LIBRARIES` at an Apple-binary exec (§3.1's named
+boundary), but a variable a script sets itself survives — so the
+shell-string form (`system("java …")`) resolves through `PATH`, runs
+the launcher, and the shim loads into the final binary exactly as on
+ELF (probe 2026-08-13: `/bin/sh -c <launcher>` loads the dylib past
+the strip; the bare-name and shell-string forms both work). On ELF the
+launchers ride over the inherited `LD_PRELOAD` (harmless — the same
+dir leads `PATH`); windows has no launcher tier yet (§7's order).
+Triple order wins on a basename collision; a declared executable that
+cannot be materialized is the image lying (a named 65), never a
+skipped entry.
 
 ### 3.3 The class-E proof fixture
 
@@ -204,11 +226,12 @@ Payload authors and runtime factories may rely on, forever:
 - **The discovery surface.** `TEBAKO_MOUNT_<SLUG>` per dependency mount
   (spec 17 §2's env table; v2-1/20) — the portable way to reference a
   dependency payload's files, windows included.
-- **Dependency bin-dir `PATH` prepend.** The handoff env's `PATH` leads
-  with every co-mounted dependency image's declared bin dirs (§3.2) —
-  bare-name exec of a dependency's tool needs no payload code, and
-  where the shell hop is interposed (§3.1) the shell-string form works
-  unmodified too.
+- **Dependency `PATH` wiring.** The handoff env's `PATH` leads with the
+  launcher dir (`<exec-cache-leaf>/wrap-bin/`, when the shim is
+  delivered — §3.2's host-launcher tier) followed by every co-mounted
+  dependency image's declared bin dirs. Bare-name exec of a
+  dependency's tool needs no payload code, and the shell-string form
+  works unmodified past the SIP strip (§3.1) exactly as on ELF.
 
 Everything else (the mount table layout, the closure-walk order, the
 cache's on-disk naming) is implementation detail and may change between

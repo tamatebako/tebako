@@ -895,6 +895,15 @@ impl FsContext {
         std::ffi::CString::new(s).map_err(|_| libc::EIO)
     }
 
+    /// The per-process dl tmpdir, created and cleanup-registered on
+    /// first use (the dlmap2file root). Exposed for the driver's PATH
+    /// launchers (spec 22 §3.2): the self-injecting wrappers live under
+    /// the same root, so the process-exit cleanup takes them with the
+    /// extractions.
+    pub fn ensure_dl_tmpdir(&mut self) -> Result<std::path::PathBuf, i32> {
+        ensure_dl_tmpdir(&mut self.dl_tmpdir)
+    }
+
     /// The store-side sibling of dlmap2file (tebako install's
     /// zero-runtime materialization): extract `path` plus its exec
     /// dependency closure to `<dest>/<full memfs path>` and return the
@@ -966,15 +975,7 @@ impl FsContext {
         }
 
         let root = match dest {
-            ClosureDest::Dlcache => match &self.dl_tmpdir {
-                Some(d) => d.clone(),
-                None => {
-                    let d = create_dl_tmpdir().ok_or(libc::EIO)?;
-                    register_dl_cleanup(&d);
-                    self.dl_tmpdir = Some(d.clone());
-                    d
-                }
-            },
+            ClosureDest::Dlcache => ensure_dl_tmpdir(&mut self.dl_tmpdir)?,
             ClosureDest::Store(root) => root.clone(),
         };
 
@@ -1207,6 +1208,21 @@ fn real_open(path: &std::ffi::CString, flags: i32) -> Result<i32, i32> {
             .unwrap_or(libc::EIO))
     } else {
         Ok(fd)
+    }
+}
+
+/// The per-process dl tmpdir behind `Context::ensure_dl_tmpdir`, as a
+/// field-disjoint free function — the exec walk holds an immutable
+/// borrow of `self.mounts` while the tmpdir slot rotates.
+fn ensure_dl_tmpdir(slot: &mut Option<std::path::PathBuf>) -> Result<std::path::PathBuf, i32> {
+    match slot {
+        Some(d) => Ok(d.clone()),
+        None => {
+            let d = create_dl_tmpdir().ok_or(libc::EIO)?;
+            register_dl_cleanup(&d);
+            *slot = Some(d.clone());
+            Ok(d)
+        }
     }
 }
 
