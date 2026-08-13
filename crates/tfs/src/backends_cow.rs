@@ -869,6 +869,11 @@ mod tests {
         use crate::c_api::*;
         use crate::context::context;
 
+        // The C API is the process-global context: serialize against the
+        // other global-context tests (a concurrent global unmount deleted
+        // this test's h_cow mid-body — ubuntu --no-default-features).
+        let _g = crate::context::lock_global_context();
+
         let dir = tempfile::tempdir().unwrap();
         let tar_path = dir.path().join("base.tar");
         std::fs::write(&tar_path, make_base_tar()).unwrap();

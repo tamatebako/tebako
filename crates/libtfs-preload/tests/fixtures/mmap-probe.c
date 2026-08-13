@@ -12,8 +12,10 @@
 /* MUST precede every system header: glibc locks the feature set at the
  * first inclusion (features.h via stdio.h); defining it below the
  * includes leaves off64_t/mmap64 undeclared — ubuntu-24.04 CI proved it
- * (tebako run 31705342187). musl exposes the *64 names regardless. */
+ * (tebako run 31705342187). musl exposes the *64 names regardless.
+ * _GNU_SOURCE: REG_RIP in the SEGV handler's ucontext. */
 #define _LARGEFILE64_SOURCE
+#define _GNU_SOURCE
 #endif
 #include <stdio.h>
 #include <string.h>
@@ -22,6 +24,30 @@
 #ifdef __linux__
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <execinfo.h>
+#include <signal.h>
+#include <ucontext.h>
+
+/* Evidence, not theory: the CEN-window mmap64 died SIGSEGV on glibc with
+ * the stage markers ending at len:15 (tebako run 31718292665) while every
+ * element of the path is proven safe by the sibling probes — print the
+ * fault address + RIP + a backtrace to stderr so the crashing frame
+ * names itself. */
+static void on_segv(int sig, siginfo_t *si, void *uctx) {
+    void *bt[24];
+    int n;
+#if defined(__x86_64__)
+    ucontext_t *uc = (ucontext_t *) uctx;
+    dprintf(STDERR_FILENO, "SEGV addr=%p rip=%llx\n", si->si_addr,
+            (unsigned long long) uc->uc_mcontext.gregs[REG_RIP]);
+#else
+    (void)uctx;
+    dprintf(STDERR_FILENO, "SEGV addr=%p\n", si->si_addr);
+#endif
+    n = backtrace(bt, 24);
+    backtrace_symbols_fd(bt, n, STDERR_FILENO);
+    _exit(128 + sig);
+}
 #endif
 
 int main(int argc, char **argv) {
@@ -34,6 +60,14 @@ int main(int argc, char **argv) {
     size_t len;
     struct stat st;
     volatile size_t n = 4;
+    /* The handler must be in place before the first shimmed call. */
+    {
+        struct sigaction sa;
+        memset(&sa, 0, sizeof sa);
+        sa.sa_sigaction = on_segv;
+        sa.sa_flags = SA_SIGINFO;
+        sigaction(SIGSEGV, &sa, NULL);
+    }
     /* Unbuffered: the stage markers must survive a crash — ubuntu-24.04
      * CI (run 31714704212) ate them to a SIGSEGV's block-buffered loss. */
     setvbuf(stdout, NULL, _IONBF, 0);

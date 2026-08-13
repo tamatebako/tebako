@@ -1352,6 +1352,23 @@ pub fn context() -> &'static RwLock<FsContext> {
     &CONTEXT
 }
 
+/// Test-only serialization for tests that touch the process-global
+/// context (`context()` or the `tebako_fs_*` C API): hold the guard for
+/// the test's whole body; acquiring resets the mount table so each
+/// holder starts empty. It must be ONE lock crate-wide — a
+/// module-private lock serializes a module only against itself, and a
+/// global `unmount()` taken under it then deletes other modules' mounts
+/// mid-test (backends_cow's C-ABI test lost `h_cow` to backends_union's
+/// private LOCK exactly so — ubuntu --no-default-features, tebako run
+/// 31718292665).
+#[cfg(test)]
+pub(crate) fn lock_global_context() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let g = LOCK.lock().unwrap();
+    context().write().unwrap().unmount();
+    g
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
