@@ -76,7 +76,7 @@ fn zero_runtime_entrypoint_skips_runtime_resolution() {
     let home = tmp.path().join("home");
     // NO runtimes dir, NO mirror, NO config: a native entrypoint must not
     // touch runtime resolution at all.
-    let image = seed_tool(
+    let _image = seed_tool(
         &home,
         "inkview",
         "  entrypoints:\n    - name: inkview\n      path: /app/bin/inkview\n",
