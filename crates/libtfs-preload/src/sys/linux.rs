@@ -149,6 +149,11 @@ real_fn!(
     unsafe extern "C" fn(*mut c_void, usize) -> c_int
 );
 real_fn!(
+    real_mprotect,
+    c"mprotect",
+    unsafe extern "C" fn(*mut c_void, usize, c_int) -> c_int
+);
+real_fn!(
     real_read,
     c"read",
     unsafe extern "C" fn(c_int, *mut c_void, usize) -> libc::ssize_t

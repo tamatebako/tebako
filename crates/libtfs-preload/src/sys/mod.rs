@@ -773,9 +773,14 @@ unsafe fn mmap_memfs_or_host(
         return libc::MAP_FAILED;
     }
     // The anonymous sibling: same address request (MAP_FIXED forwarded),
-    // private, fd -1.
+    // private, fd -1. ALWAYS mapped writable regardless of the caller's
+    // prot: the fill below stores the VFS bytes into it, and a backing
+    // page created PROT_READ faults at the first fill store (ubuntu-24.04
+    // mmap-probe: SEGV addr == the fresh page, rip in
+    // __memmove_avx_unaligned_erms — tebako run 31721085665). The
+    // requested protection is restored by the mprotect after the fill.
     let aflags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | (flags & libc::MAP_FIXED);
-    let p = unsafe { plat::real_mmap()(addr, len, prot, aflags, -1, 0) };
+    let p = unsafe { plat::real_mmap()(addr, len, prot | libc::PROT_WRITE, aflags, -1, 0) };
     if p == libc::MAP_FAILED {
         return p;
     }
@@ -798,6 +803,15 @@ unsafe fn mmap_memfs_or_host(
                 set_errno(libc::EIO);
                 return libc::MAP_FAILED;
             }
+        }
+    }
+    // Drop the fill-time PROT_WRITE the caller did not ask for, so a
+    // consumer write faults exactly as it would against a real mapping.
+    if prot & libc::PROT_WRITE == 0 {
+        // SAFETY: p/len name the live mapping; mprotect sets errno itself.
+        if unsafe { plat::real_mprotect()(p, len, prot) } != 0 {
+            unsafe { plat::real_munmap()(p, len) };
+            return libc::MAP_FAILED;
         }
     }
     p
