@@ -267,6 +267,13 @@ impl FileHasher {
     }
 }
 
+impl Default for FileHasher {
+    /// A hasher with no content fed yet — the same as [`FileHasher::new`].
+    fn default() -> FileHasher {
+        FileHasher::new()
+    }
+}
+
 // ---------------------------------------------------------------------
 // The driver
 // ---------------------------------------------------------------------
