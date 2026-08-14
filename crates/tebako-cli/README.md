@@ -145,9 +145,10 @@ download), 125 (SDK lock timeout).
   ([../../docs/runtime-as-image.md](../../docs/runtime-as-image.md));
 - **bootstrap**: `--bootstrap` > `$TEBAKO_BOOTSTRAP` > the Rust
   `tebako-bootstrap` binary next to the `tebako` executable (dogfooding
-  milestone 6) > the C++ tebako-bootstrap release, resolved with the gem's
-  BootstrapManager machinery (`TEBAKO_BOOTSTRAP_VERSION`,
-  `TEBAKO_BOOTSTRAP_MIRROR`);
+  milestone 6) — local sources only; the gem's BootstrapManager download
+  of the v1 C++ release is retired (its argv0-verbatim handoff is rejected
+  by the image-era runtime driver), so a press with no local bootstrap
+  fails closed with the named error 136;
 - **downloads**: all in-process via `crates/tebako-http` (ureq + rustls,
   webpki-roots bundled; HTTPS-only, redirects ≤ 5, `file://` mirrors,
   `TEBAKO_OFFLINE`; the OS trust store is opt-in via
@@ -161,8 +162,9 @@ download), 125 (SDK lock timeout).
 ## Deviations from the reference gem (documented, deliberate)
 
 - the bootstrap portion **defaults to the in-workspace Rust
-  tebako-bootstrap**; the gem always uses the C++ release (reachable via
-  the lookup chain above);
+  tebako-bootstrap**; the gem always uses the C++ release — the C++
+  download is not reachable here at all (retired; no local Rust bootstrap
+  → exit 136);
 - **no mkdwarfs anywhere** (owner rule): the gem shells out to a
   provisioned mkdwarfs binary; the CLI builds images in-process and the
   golden test filters the two sides' image-build lines when diffing
@@ -215,7 +217,7 @@ download), 125 (SDK lock timeout).
 
 Everything else is byte-level parity: the press stdout, the produced
 package's trailer fields, the packaged binary's output, the cache layout
-(shared with the gem), and the exit codes (106–135 + the packaging error
+(shared with the gem), and the exit codes (106–136 + the packaging error
 table).
 
 ## Tests
@@ -233,9 +235,10 @@ skip cleanly when `TEBAKO_CLI_SKIP_E2E` is set. Every press embeds the
 in-workspace Rust bootstrap (`target/debug/tebako-bootstrap`, set as
 `$TEBAKO_BOOTSTRAP` by the harness); `cargo test -p tebako-cli` alone
 does not build it, so build it first or run `cargo test --workspace` —
-without it the press would silently embed the downloaded v1 C++
-bootstrap, whose handoff the image-era runtime driver rejects at run
-time (the harness fails fast instead). The golden test
+without it the press fails closed with exit 136 (the v1 C++ bootstrap
+download fallback is retired: its handoff is rejected by the image-era
+runtime driver at run time), and the harness fails fast on its own
+instead. The golden test
 additionally needs a host ruby with the thor gem, a checkout of the
 reference gem at the matching version, and an mkdwarfs binary **for the
 reference gem's own press** (the CLI itself needs none). The

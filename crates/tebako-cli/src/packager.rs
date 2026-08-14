@@ -36,7 +36,7 @@ pub fn build_app_image(
             .join(&img.filename)
     });
     let layout_dir = if image_path.is_none() {
-        let resolver = crate::resolve::Resolver::new(crate::resolve::Flavor::Runtime);
+        let resolver = crate::resolve::Resolver::new();
         Some(resolver.layout(runtime_path, opts.verbose)?)
     } else {
         None

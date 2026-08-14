@@ -35,7 +35,7 @@ use serde::Deserialize;
 use crate::error::{packaging_error, plain_error, TebakoError};
 use crate::options::{host_platform, PressMode, PressOptions};
 use crate::packager;
-use crate::resolve::{Flavor, Resolved, Resolver};
+use crate::resolve::{Resolved, Resolver};
 use crate::scenario::{self, ruby_version_with_gemfile, ScenarioManager};
 
 // ---------------------------------------------------------------------
@@ -330,22 +330,9 @@ pub fn press_suite(
     }
     suite_warnings(opts, spec, suite_dir);
     let platform = host_platform()?;
-    let bootstrap_path = match crate::decide_bootstrap(opts) {
-        crate::BootstrapSource::Path(path) => {
-            if !path.is_file() {
-                return Err(packaging_error(
-                    127,
-                    Some(&format!("runtime not found: {}", path.display())),
-                ));
-            }
-            path
-        }
-        crate::BootstrapSource::Download => Resolver::new(Flavor::Bootstrap).resolve(
-            &crate::resolve::default_bootstrap_version(),
-            &platform,
-            &crate::resolve::default_bootstrap_version(),
-        )?,
-    };
+    // Local sources only — the retired C++ bootstrap download must never
+    // fire (exit 136 when no local Rust tebako-bootstrap is found).
+    let bootstrap_path = crate::local_bootstrap(opts)?;
 
     // Per-entry imaging; runtimes resolve once per distinct ruby version.
     let mut runtimes: BTreeMap<String, Resolved> = BTreeMap::new();
@@ -362,11 +349,7 @@ pub fn press_suite(
         scenario_mgr.configure_scenario()?;
         let ruby_ver = entry_ruby_version(opts, &scenario_mgr, entry)?;
         if !runtimes.contains_key(&ruby_ver) {
-            let r = Resolver::new(Flavor::Runtime).resolve_runtime(
-                &ruby_ver,
-                &platform,
-                &opts.tebako_version,
-            )?;
+            let r = Resolver::new().resolve_runtime(&ruby_ver, &platform, &opts.tebako_version)?;
             runtimes.insert(ruby_ver.clone(), r);
         }
         let resolved = &runtimes[&ruby_ver];
