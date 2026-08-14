@@ -1,6 +1,7 @@
 # Spec 23 — Declarative composition and needs resolution
 
-**Status: PLANNED (design lock pending owner sign-off, 2026-08-14).**
+**Status: PLANNED (owner-signed 2026-08-14 with the MECE/no-legacy
+amendment, the record mode, and the post-bake swap channel; §8/§9).**
 
 A tebako run is a composition of one runtime (exe + env image) and N
 payload slices, executed under one host-access policy. This spec makes
@@ -40,8 +41,12 @@ declaration.
 ## 2. D1 — the slice `needs:` block (spec 03 amendment)
 
 Additive manifest key (schema_minor bump; old readers ignore it, new
-readers enforce). Subsumes `capabilities.host`, which remains as the
-legacy spelling and reads identically; new manifests use `needs`.
+readers enforce). **`needs:` is the ONLY spelling** — MECE: one key,
+one grammar, one semantics. The pre-spec-23 `capabilities.host` model
+field is renamed to it in the same change; no alias, no dual-key union,
+no compat read of the old name. A manifest carrying the old key is a
+named validation error (`rename capabilities.host → needs.host`), never
+a silent merge.
 
 ```yaml
 needs:
@@ -121,9 +126,10 @@ grammar, the same code path.
 - A run with ANY declaration in force (a composition document, a slice
   with needs, a CLI flag) defaults to `policy: deny`. `open` must be
   asked for by name.
-- A run with NO declarations anywhere (a legacy package, a bare
-  dispatch) is byte-identical to today: open, no policy exported
-  (`never_denies`). Back-compat is untouched by construction.
+- A run with NO declarations anywhere (a bare package, a bare
+  dispatch) runs open with no policy exported (`never_denies`). This
+  is a first-class rule of the default matrix — declarations are what
+  turn the jail on — not a compatibility mode.
 - Under the deny default the effective world is exactly:
   1. the VFS: the env image + every resolved slice image, read-only by
      construction (spec 11; not policy-gated at all);
@@ -192,7 +198,73 @@ by union, and the inherited policy just works. A spawned HOST tool
 (host `java` from `JAVA_HOME`) is running-configuration surface: the
 composition or operator declares it (`mounts:`/`needs:` in D2/D5).
 
-## 8. Worked example — metanorma, fully declarative
+## 8. Discovery — the record mode ("perm all and monitor")
+
+A slice author usually does not KNOW the host surface their executable
+touches (the JVM's passwd-home probe was invisible until the journal
+named it, 2026-08-14). Discovery is a first-class policy mode, not a
+guess:
+
+- **`policy: record`** (D2/D5; env form: `TEBAKO_JAIL=record`) — a
+  third policy default beside `open`/`deny`. Under `record` every host
+  passthrough check is ALLOWED and journaled:
+  `event=jail-allow path=<p> op=read|write` on the same journal file.
+  Nothing is denied, so the workload cannot crash from policy during
+  discovery (the pre-floor JVM segfault class is impossible here).
+  Spawned children inherit the spec and re-bind it — their accesses
+  append to the same journal (the preload re-derivation, spec 08 §2.1).
+- **The generator**: `tfs needs --from-journal <journal.log>` reads a
+  record journal and emits a draft D1/D2 `needs:` block: distinct
+  canonical paths, access = the strongest observed op (write > read),
+  floor and system-surface paths EXCLUDED (they are automatic — never
+  declared), symbolic atoms re-substituted (`/Users/alice/…` →
+  `$HOME/…`, the invoking cwd → `$CWD`), each entry carrying
+  `why: "TODO — observed <n> <op> access(es)"` for the author to
+  replace with the real reason.
+- **The human gate**: the record shows the OBSERVED MINIMUM. The author
+  reviews the draft — flipping ro↔rw where production differs from the
+  observation, deleting noise, filling `why` — and merges it into the
+  slice manifest (D1) or the composition (D2). The generator never
+  edits a manifest itself.
+- `record` is a development mode: it journals at full volume and
+  installs no enforcement. Shipping a composition with `policy:
+  record` in force is a named lint warning; the store's audit journal
+  marks record-mode runs.
+
+## 9. Post-bake composition swap (no slice recompiles)
+
+Slice images are immutable, content-addressed, trust-anchored — a
+configuration change NEVER mutates or rebuilds one. Configuration
+lives in the composition layer, which is external by construction and
+therefore swappable at run time:
+
+- **Managed mode** (shim): nothing is baked — the composition document
+  and the registry mirrors are read per invocation. Swapping config IS
+  editing `tebako.yaml` (or passing flags). Nothing to add.
+- **Standalone packages** (bootstrap): the press-baked D3 block is the
+  DEFAULT composition, and an external document overrides it — first
+  hit wins: `--compose <path>` (argv before `--`), then
+  `TEBAKO_COMPOSE=<path>`, then a sidecar `<package>.tebako.yaml` next
+  to the package file. The override REPLACES the baked
+  policy/mounts/needs/entrypoint (and, for lean packages, the slice
+  requirements); a fat package's slice SET is physical (trailer slots)
+  — an override naming a slice the trailer does not carry is a named
+  error, never a silent skip.
+- **Validation**: the override is the same D2 document with the same
+  versioned schema; the bootstrap parses it (fail-closed, sysexits
+  `EX_CONFIG`), resolves, needs-checks (§6.4), and only then execs.
+- **Audit**: an external composition in force is journaled at boot:
+  `event=composition source=external(<path>) sha256=<digest>` (the
+  baked block in force: `source=baked`). The run's provenance always
+  names which configuration ran it.
+- **Trust**: a package signature covers its slices and trailer, NOT the
+  composition — the composition is operator domain (the operator can
+  already tighten or open the jail; spec 09 is unchanged). What the
+  override cannot do is conjure slice CONTENT: unsigned slices are not
+  introduced by a signed package's override; the trust checks of spec
+  09 apply to any newly referenced slice exactly as at press.
+
+## 10. Worked example — metanorma, fully declarative
 
 ```yaml
 # openjdk feedstock manifest (D1)
@@ -232,7 +304,7 @@ in-image. The spec-22 `jailed_exec` probe's hand-assembled
 composes from declarations; the probe becomes `policy: deny` plus the
 declarations above.
 
-## 9. The java question, settled in this frame
+## 11. The java question, settled in this frame
 
 There is no java RUNTIME slice and none is needed: java is a payload
 slice (openjdk-feedstock images) co-mounted and spawned by the ruby
@@ -241,12 +313,15 @@ interpreter exe + env image, launcher ABI) would slot into this spec
 unchanged — its manifest would declare the JVM's needs symbolically —
 and becomes relevant only when java is a package's ENTRY language.
 
-## 10. Error discipline and compatibility
+## 12. Error discipline
 
 - Named errors at every boundary (manifest validation, union conflict,
-  needs-check, bind) — never a silent fallback (invariant 9).
-- `capabilities.host` keeps reading as the legacy spelling of
-  `needs.host`; new manifests use `needs` (a lint names the drift).
-- Zero-declaration runs are byte-identical to pre-spec-23 behavior.
+  needs-check, bind, override parse) — never a silent fallback
+  (invariant 9).
+- One spelling only: `needs:`. The old `capabilities.host` key is a
+  named validation error naming the rename — no alias, no dual-key
+  merge (MECE; legacy spellings are dropped, not carried).
+- Zero-declaration runs follow §5's open rule as a first-class default.
 - The grammar is YAML with versioned JSON Schemas (invariant 6); the
-  env serialization stays the spec 08 form (authored only — §6 step 5).
+  env serialization stays the spec 08 form (authored only — §6 step 5),
+  extended by exactly one token: `record` as a policy default (§8).
