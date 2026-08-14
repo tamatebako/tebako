@@ -221,6 +221,7 @@ table).
 ## Tests
 
 ```console
+$ cargo build -p tebako-bootstrap              # the e2e presses dogfood it
 $ cargo test -p tebako-cli                     # unit + fast CLI tests
 $ TEBAKO_REFERENCE_GEM=/path/to/tebako-gem \   # optional: golden diff
   TEBAKO_MKDWARFS=/path/to/mkdwarfs \          # (for the gem's own press)
@@ -228,7 +229,13 @@ $ TEBAKO_REFERENCE_GEM=/path/to/tebako-gem \   # optional: golden diff
 ```
 
 The e2e tests download the prebuilt runtime into the cache (network) and
-skip cleanly when `TEBAKO_CLI_SKIP_E2E` is set. The golden test
+skip cleanly when `TEBAKO_CLI_SKIP_E2E` is set. Every press embeds the
+in-workspace Rust bootstrap (`target/debug/tebako-bootstrap`, set as
+`$TEBAKO_BOOTSTRAP` by the harness); `cargo test -p tebako-cli` alone
+does not build it, so build it first or run `cargo test --workspace` —
+without it the press would silently embed the downloaded v1 C++
+bootstrap, whose handoff the image-era runtime driver rejects at run
+time (the harness fails fast instead). The golden test
 additionally needs a host ruby with the thor gem, a checkout of the
 reference gem at the matching version, and an mkdwarfs binary **for the
 reference gem's own press** (the CLI itself needs none). The
