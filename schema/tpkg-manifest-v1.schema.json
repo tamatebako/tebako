@@ -10,6 +10,11 @@
     "requires": {
       "type": "array",
       "items": { "$ref": "#/$defs/requirement" }
+    },
+    "materialize": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/absPath" },
+      "description": "spec 22 §4 class R (payload-manifest schema_minor 1): absolute in-image paths of regular files the driver materializes to <TEBAKO_EXEC_CACHE>/resources/<image-key>/<P> after the mounts, before the interpreter handoff — whole-file, read-only, digest-verified. Any kind may declare; old readers ignore the key. The '..' refusal is semantic (the tpkg validator); only the absolute shape is checked here."
     }
   },
   "allOf": [

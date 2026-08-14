@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 0 # MINOR — additive changes only
+schema_minor: 1 # MINOR — additive changes only (1: materialize)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -232,6 +232,20 @@ grammar:
       "language": {engine: "string, required", constraint: "string, required"}
       "toolkit": {name: "string, required", constraint: "string, required", triplets: "list of vcpkg triplets, optional", mount: "absolute path, optional"}
       "data": {name: "string, required", constraint: "string, required", mount: "absolute path, optional"}
+  materialize:
+    type: list of absolute in-image paths
+    required: false
+    since: schema_minor 1
+    notes: >-
+      spec 22 §4 class R — regular files a C library must read through
+      its own IO (the OpenSSL CA cert is the canonical entry). Any kind
+      may declare. The driver extracts each declared path P to
+      <TEBAKO_EXEC_CACHE>/resources/<image-key>/<P> after the mounts and
+      the jail, before the interpreter handoff; the copy is whole-file,
+      read-only, and digest-verified (a <P>.tfs-digest record, the
+      tfs-merkle-1 file digest). Entries are absolute and carry no '..'
+      components (validated at parse). Old readers ignore the key
+      (unknown-field rule).
 
 refusals:
   - case: identity.schema_version missing
@@ -242,5 +256,9 @@ refusals:
     behavior: named error naming the entrypoint and the requirement — never a segfault
   - case: provides_abi mismatch at bind (C11)
     behavior: named refusal, both versions printed (exit 79 reserved)
+  - case: a materialize entry absent from the image, or not a regular file (schema_minor 1)
+    behavior: the manifest lies — boot fails with a named error (exit 65), never a skipped entry
+  - case: a materialized copy failing digest verification at boot (schema_minor 1)
+    behavior: the exec cache is tampered or corrupt — boot fails with a named error (exit 70), never a silently served corruption
 
 deprecated: [] # no field is in a deprecation window
