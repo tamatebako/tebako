@@ -6,6 +6,14 @@
 //! - the press tests need a mkdwarfs binary ($TEBAKO_MKDWARFS or PATH)
 //!   and network access for the runtime download (skipped when
 //!   TEBAKO_CLI_SKIP_E2E is set);
+//! - every press dogfoods the in-workspace Rust bootstrap
+//!   (target/debug/tebako-bootstrap). `cargo test -p tebako-cli` alone
+//!   never builds it (tebako-bootstrap is a lib dependency): build it
+//!   first (`cargo build -p tebako-bootstrap`) or run the suite as CI
+//!   does (`cargo build --workspace` then `cargo test --workspace`).
+//!   The harness fails fast when it is missing (see dogfood_bootstrap)
+//!   rather than silently pressing with the v1 C++ bootstrap download,
+//!   whose handoff the image-era runtime driver rejects at run time;
 //! - the golden test additionally needs $TEBAKO_REFERENCE_GEM pointing at
 //!   a checkout of the reference gem (tamatebako/tebako, the three-part
 //!   model) and a host ruby with the thor gem.
@@ -34,6 +42,36 @@ fn press_lock() -> &'static Mutex<()> {
 
 fn e2e_allowed() -> bool {
     std::env::var_os("TEBAKO_CLI_SKIP_E2E").is_none()
+}
+
+/// The in-workspace Rust bootstrap every e2e press dogfoods
+/// ($TEBAKO_BOOTSTRAP → the binary next to the tebako bin). REQUIRED,
+/// never a silent fallback: when the sibling is absent the CLI's
+/// decide_bootstrap downloads the v1 C++ bootstrap release, whose handoff
+/// (--tebako-entry = argv0 verbatim, no L2 package-manifest selection, no
+/// `;image` facet fetch) the image-era runtime driver rejects at run
+/// time — the suite then fails mid-cold-run with a driver-side
+/// "entrypoint '<package path>' not found at '/__tfs__/...' in the
+/// mounted tree" that indites the wrong component (exit 255), and the
+/// press_lock poison cascade hides the first failure. `cargo test -p
+/// tebako-cli` alone does not build the sibling; build it first
+/// (`cargo build -p tebako-bootstrap`) or run the suite as CI does
+/// (`cargo build --workspace` then `cargo test --workspace`).
+fn dogfood_bootstrap() -> PathBuf {
+    let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
+        "tebako-bootstrap.exe"
+    } else {
+        "tebako-bootstrap"
+    });
+    assert!(
+        sibling.is_file(),
+        "the in-workspace tebako-bootstrap binary is missing ({}): build it first \
+         (cargo build -p tebako-bootstrap) or run the suite via cargo test --workspace — \
+         without it the press silently embeds the downloaded v1 C++ bootstrap and every \
+         cold run fails in the runtime driver",
+        sibling.display()
+    );
+    sibling
 }
 
 fn workdir(tag: &str) -> PathBuf {
@@ -165,17 +203,9 @@ fn press_command(env: &PressEnv, entry: &str, output: &Path) -> Command {
         .arg(output)
         .arg("-p")
         .arg(&env.prefix);
-    // Dogfood the in-workspace Rust bootstrap when it sits next to the
-    // tebako binary (the decide_bootstrap default); otherwise the C++
-    // release is downloaded — both are valid press paths.
-    let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
-        "tebako-bootstrap.exe"
-    } else {
-        "tebako-bootstrap"
-    });
-    if sibling.is_file() {
-        cmd.env("TEBAKO_BOOTSTRAP", sibling);
-    }
+    // Dogfood the in-workspace Rust bootstrap (required — see
+    // dogfood_bootstrap for the failure mode of the download fallback).
+    cmd.env("TEBAKO_BOOTSTRAP", dogfood_bootstrap());
     cmd
 }
 
@@ -973,14 +1003,7 @@ fn press_against_mirror(
     for (key, value) in extra_env {
         cmd.env(key, value);
     }
-    let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
-        "tebako-bootstrap.exe"
-    } else {
-        "tebako-bootstrap"
-    });
-    if sibling.is_file() {
-        cmd.env("TEBAKO_BOOTSTRAP", sibling);
-    }
+    cmd.env("TEBAKO_BOOTSTRAP", dogfood_bootstrap());
     run(&mut cmd)
 }
 
@@ -1396,14 +1419,8 @@ fn native_ext_press_builds_and_packages() {
         )
         .env("TEBAKO_HOME", work.join("home"))
         .env("TEBAKO_SDK_SRC_MIRROR", tebako_http::file_url(&sdk_mirror));
-    let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
-        "tebako-bootstrap.exe"
-    } else {
-        "tebako-bootstrap"
-    });
-    if sibling.is_file() {
-        cmd.env("TEBAKO_BOOTSTRAP", &sibling);
-    }
+    let sibling = dogfood_bootstrap();
+    cmd.env("TEBAKO_BOOTSTRAP", &sibling);
     let (code, log) = run(&mut cmd);
     assert!(code == 0, "native-ext press failed:\n{log}");
     assert!(
@@ -1490,9 +1507,7 @@ fn native_ext_press_builds_and_packages() {
         )
         .env("TEBAKO_HOME", work.join("home"))
         .env("TEBAKO_SDK_SRC_MIRROR", tebako_http::file_url(&sdk_mirror));
-    if sibling.is_file() {
-        cmd.env("TEBAKO_BOOTSTRAP", &sibling);
-    }
+    cmd.env("TEBAKO_BOOTSTRAP", &sibling);
     let (code, log) = run(&mut cmd);
     assert_eq!(
         code, 255,
