@@ -736,6 +736,29 @@ int tebako_fs_extract_all(const char* dest_path);
 char* tebako_fs_dlmap2file(const char* path);
 
 /**
+ * @brief Materialize a memfs exec target to a host filesystem path
+ *
+ * The exec surface's answer, with the same ownership/lifetime contract
+ * as tebako_fs_dlmap2file(). A path inside a home-layout mount (the
+ * in-image manifest's identity.annotations.java_home — the payload
+ * root IS a tool home) materializes the mount's WHOLE tree once per
+ * process and the returned path is the host twin inside that tree: a
+ * home's data files (lib/modules, lib/jvm.cfg) never ride a
+ * linked-library dependency closure, so the dlmap2file answer boots a
+ * java that cannot find its boot class path. Any other path answers
+ * exactly like tebako_fs_dlmap2file().
+ *
+ * @param path Absolute path within a mounted filesystem
+ * @return Newly allocated host path string on success, NULL on error
+ *         (check errno via tebako_get_errno())
+ *
+ * @note Ownership: the RETURNED STRING is caller-owned and must be
+ *       released with free(). The host file it points to is owned by
+ *       libtfs — do not unlink or modify it.
+ */
+char* tebako_fs_exec_materialize(const char* path);
+
+/**
  * @brief Serialize the mount table in the TEBAKO_TFS_MOUNTS grammar
  * ("image:mount,image:mount,…").
  *

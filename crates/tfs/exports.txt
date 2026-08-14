@@ -8,6 +8,7 @@ tebako_fs_close
 tebako_fs_closedir
 tebako_fs_dir_is_embedded
 tebako_fs_dlmap2file
+tebako_fs_exec_materialize
 tebako_fs_extract_all
 tebako_fs_fstat
 tebako_fs_host_policy

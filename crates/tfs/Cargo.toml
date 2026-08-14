@@ -51,6 +51,11 @@ limnifs-core = { git = "https://github.com/limnifs/limnifs", rev = "eddaea404b76
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
 # buffers. All pure-Rust RustCrypto crates — no shell-outs anywhere.
 tpkg = { version = "0.1.0", path = "../tpkg" }
+# The exec probe's tolerant annotation read (exec_materialize): a value
+# walk of the in-image manifest — never the validating parse, which
+# would fail-closed a newer schema on an older runtime (spec 03's
+# compat rule: consumers ignore keys they predate). Same pin as tpkg.
+serde_yml = "0.0.12"
 tebako-signer = { version = "0.1.0", path = "../tebako-signer", optional = true }
 aes-gcm = "0.10"
 hkdf = "0.12"
