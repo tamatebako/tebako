@@ -46,9 +46,12 @@ so every consumer is covered at once:
   mechanism the preload layer uses for exec. dyld honors tuples only
   from dylib images, so delivery is driver self-insertion (see "Phase 1
   delivery" below).
-- **Windows:** inside the interpreter's own dln path (the patched
-  `dln.c`); C-extension self-loads via raw `LoadLibrary` are the
-  documented edge (rare — evaluate per case, never silently).
+- **Windows (msys):** inside the interpreter's own dln path (the
+  patched `dln.c` — the `dln_c_dlmap_msys` route carried from v1).
+  Loads that bypass `dln.c` — raw `LoadLibrary`/`LoadLibraryExA` from
+  fiddle, ffi, or a C extension self-loading — are the documented edge
+  (rare — evaluate per case, never silently); the per-case evaluation
+  is the windows delivery record below.
 
 **Phase 1 (POSIX) mechanics.** The interposed symbols are `dlopen` and
 `dlerror`, on both ELF and macOS. `dlsym` is deliberately NOT interposed
@@ -81,6 +84,76 @@ mechanics above are uniform; the DELIVERY is platform-split:
   and `execv`s itself. The sentinel makes the re-exec fire exactly
   once; the re-exec precedes all mounting, so there is no double boot,
   no partial-mount window, and no launcher-ABI change.
+
+**Windows (msys) delivery record (design-pinned 2026-08-14, phase W1;
+the implementation is W2).** Windows has no process-wide preemption
+surface (no exe-definition preemption as on ELF, no interpose section
+as on macOS), so coverage extends exactly as far as callers that route
+through the interpreter's own `dln.c`. What the msys dln dlmap route
+(tamatebako/ruby `patches/*/dln_c_dlmap_msys.patch`, wired into every
+msys patch manifest) covers TODAY:
+
+- The interpreter's own native-extension load (`require` of a PE
+  extension through `dln_load`/`dln_open`): a
+  `tebako_path_is_embedded`-covered path materializes through
+  `tebako_fs_dlmap2file` and the host twin loads via `LoadLibraryW`.
+  The factory's boot smoke asserts exactly this on the msys legs
+  (`load_native_extension`: racc's `cparse.so` extracts from the memfs
+  and binds).
+- Host passthrough per Rule L1: an uncovered host path loads
+  untouched; a covered path the mounts do not HOLD answers ENOENT from
+  the c_api and the host conversion serves it from the host — the same
+  jail-gated passthrough precedent as POSIX.
+- The extension's import of the ruby DLL binds by LAYOUT, not by
+  closure walking: the loader's standard search order heads with the
+  running exe's own directory, and the store entry carries the
+  PE-named DLL (`x64-ucrt-ruby<ABI>.dll`, the release manifest's
+  `install_as` — single owner: the factory's
+  `RubyVersion#msys_dll_name`, flowed through the manifest and
+  assembled next to the exe, sha256-verified, by the bootstrap's
+  install in `crates/tebako-bootstrap`; the factory boot smoke mirrors
+  the same materialization in-step). Upstream's
+  `rb_w32_check_imported` then rejects an extension bound against a
+  DIFFERENT ruby DLL with its own named "incompatible library version"
+  LoadError — the windows form of the ABI-line guarantee.
+- Symbol resolution needs no routing: the loads above return real
+  loader handles, so `GetProcAddress` works unmodified — the same
+  reasoning as phase 1's `dlsym` decision.
+
+What fiddle/ffi NEED on windows and do not get today: both load
+through RAW loader calls that never enter `dln.c` — fiddle's
+`Fiddle.dlopen` is a `LoadLibrary` macro (`ext/fiddle/fiddle.h` in the
+interpreter's vendored source), ffi's `FFI::DynamicLibrary.open` is
+`LoadLibraryExA` (absolute paths carrying
+`LOAD_WITH_ALTERED_SEARCH_PATH`). Each needs the same
+materialize-then-load the dln route performs; a VFS path through
+either today fails with the OS loader's own honest error (126,
+module-not-found) — an honest failure, never a tebako-intercepted one,
+never a silent success.
+
+The raw-`LoadLibrary` edge cases, per case (the phase-W exit gate's
+record):
+
+| Case | Verdict |
+|---|---|
+| `dln_load` of a VFS-resident extension (the `require` path) | **covered** — the dlmap route above |
+| host path uncovered by any mount | **covered** — passthrough untouched |
+| covered but not held (a host path under a covering mount) | **covered** — ENOENT → host passthrough |
+| extension importing the ruby DLL | **covered** — the exe-dir layout + `rb_w32_check_imported`'s named ABI error |
+| extension importing OTHER VFS-resident DLLs (sibling vendor imports) | **documented gap** — two compounding layers: the closure walk parses Mach-O/ELF only (`crates/tfs` `exec_closure` — no PE import parsing), and plain `LoadLibraryW` does not search the loaded DLL's own directory (no `LOAD_WITH_ALTERED_SEARCH_PATH` in `dln_open`), so even a materialized sibling would not bind; the failure is the OS loader's honest 126. No proven consumer — the only in-image PE import a leg has proven is the ruby DLL itself |
+| fiddle `Fiddle.dlopen` of a VFS path | **documented gap** — raw `LoadLibrary` bypasses `dln.c`; honest OS failure |
+| ffi `FFI::DynamicLibrary.open` of a VFS path | **documented gap** — raw `LoadLibraryExA`; honest OS failure |
+| a C extension self-loading a VFS path via raw `LoadLibrary` | **documented gap** — the same mechanism class as fiddle/ffi |
+| failed materialization through `dln_open` (covered path, non-ENOENT dlmap failure — a directory, a jail-denied passthrough) | **named error — phase-W fix** — the v1-era route's `goto failed` raises `LoadError` WITHOUT the tebako verdict (no library/mount/errno context); W2 delivers the §5 verdict line through the standard error channel, matching the POSIX leg's dlerror contract |
+
+One design question this record deliberately does NOT settle (a W2
+decision, taken with the owner — recorded so no leg of it happens
+silently): fiddle ships IN the env image (the interpreter's vendored
+source), so routing its loader macro through the c_api would be
+runtime-internal in the same sense the `dln.c` patch is; ffi is a
+third-party gem, where that move is the per-gem code this spec's law
+forbids. Whether fiddle gains the vendored route and ffi/self-loads
+stay a permanent documented gap is named here, undecided.
 
 **Rule L3.** Materialization reuses the spec-17 exec-closure walk
 (Mach-O/ELF dependency closure, content-keyed cache dir, write-once).
