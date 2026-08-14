@@ -22,6 +22,10 @@ pub mod enc;
 #[path = "enc_enotsup.rs"]
 pub mod enc;
 
+/// The compose file: declarative composition for `tfs exec --compose`
+/// (spec 23 §9 — the post-bake swap channel at the image layer).
+pub mod compose;
+
 /// Options shared by the listing commands.
 #[derive(Debug, Clone, Default)]
 pub struct ListOptions {
@@ -1095,6 +1099,10 @@ pub struct ExecOptions {
     /// The `--jail` spec (the spec 08 env form shared with the shim), if
     /// given.
     pub jail: Option<String>,
+    /// The `--compose` file (spec 23 §9): the WHOLE composition in one
+    /// YAML — mutually exclusive with `images`/`jail` (one source of
+    /// truth per run).
+    pub compose: Option<String>,
     /// Command + args, verbatim (everything after `--`).
     pub cmd: Vec<String>,
 }
@@ -1171,17 +1179,54 @@ fn exec_shim_path() -> Result<PathBuf, (String, i32)> {
 pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
     use tfs::policy::{HostPolicy, JailSpec};
 
-    if opts.images.is_empty() || opts.cmd.is_empty() {
+    const USAGE: &str = "tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec> | --compose <file.yaml>] -- <cmd> [args...]";
+    if opts.cmd.is_empty() {
+        return Err((format!("Error: missing command\nusage: {USAGE}"), 1));
+    }
+    // The composition source (spec 23 §9): --compose IS the whole
+    // composition — mixing it with --image/--jail is a named error (one
+    // source of truth per run).
+    if opts.compose.is_some() && (!opts.images.is_empty() || opts.jail.is_some()) {
         return Err((
-            "Error: wrong number of arguments\nusage: tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] -- <cmd> [args...]"
+            "Error: --compose cannot be combined with --image/--jail — one composition source per run (spec 23 §9)"
                 .to_string(),
             1,
         ));
     }
+    // Resolve the composition: the compose file lowers to image tokens +
+    // a bound jail's env form; the CLI flags carry theirs verbatim.
+    let (image_tokens, compose_jail): (Vec<String>, Option<String>) = match &opts.compose {
+        Some(path) => {
+            let text = std::fs::read_to_string(path)
+                .map_err(|e| (format!("Error: --compose: cannot read {path}: {e}"), 1))?;
+            let spec = compose::parse_compose(&text, &compose_atom_lookup, &compose_exists)
+                .map_err(|e| (format!("Error: --compose: {e}"), 1))?;
+            let env = match spec.jail {
+                Some(jail) => {
+                    // Validate NOW (grant paths must exist at compose time)
+                    // and carry the canonical form into the child.
+                    let policy = HostPolicy::bind(jail.default, jail.mounts, jail.arg_files)
+                        .map_err(|e| {
+                            (
+                                format!("Error: --compose: cannot bind policy: {}", errno_text(e)),
+                                1,
+                            )
+                        })?;
+                    Some(policy.to_env_spec())
+                }
+                None => None,
+            };
+            (spec.images, env)
+        }
+        None => (opts.images.clone(), None),
+    };
+    if image_tokens.is_empty() {
+        return Err((format!("Error: no images to mount\nusage: {USAGE}"), 1));
+    }
     // Parse + canonicalize the mounts: the exec'd child's cwd is not
     // necessarily ours, so image paths must be absolute in the env.
-    let mut decls: Vec<tfs::mount_spec::MountDecl> = Vec::with_capacity(opts.images.len());
-    for token in &opts.images {
+    let mut decls: Vec<tfs::mount_spec::MountDecl> = Vec::with_capacity(image_tokens.len());
+    for token in &image_tokens {
         let d = tfs::mount_spec::parse_cli_image_mount(token)
             .map_err(|e| (format!("Error: {e}"), 1))?;
         let canon = std::fs::canonicalize(&d.image)
@@ -1198,30 +1243,62 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
     // failing here beats dying in the child's constructor) and carry the
     // canonical form into the child. The policy is NOT installed in this
     // process.
-    let jail_env = match &opts.jail {
-        Some(spec) => {
-            let parsed = JailSpec::parse(spec).map_err(|e| (format!("Error: {e}"), 1))?;
-            let policy = HostPolicy::bind(parsed.default_open, parsed.mounts, parsed.arg_files)
-                .map_err(|e| {
-                    (
-                        format!("Error: --jail: cannot bind policy: {}", errno_text(e)),
-                        1,
-                    )
-                })?;
-            Some(policy.to_env_spec())
-        }
-        None => None,
+    let jail_env = match compose_jail {
+        Some(env) => Some(env),
+        None => match &opts.jail {
+            Some(spec) => {
+                let parsed = JailSpec::parse(spec).map_err(|e| (format!("Error: {e}"), 1))?;
+                let policy = HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files)
+                    .map_err(|e| {
+                        (
+                            format!("Error: --jail: cannot bind policy: {}", errno_text(e)),
+                            1,
+                        )
+                    })?;
+                Some(policy.to_env_spec())
+            }
+            None => None,
+        },
     };
     let shim = exec_shim_path()?;
     let cmd0 = materialize_entrypoint(&decls, &opts.cmd[0])?;
     let mounts_env = tfs::mount_spec::to_env_spec(&decls);
+    // The audit-journal source label names the composition surface (spec
+    // 08 §2): the compose file or the --jail flag.
+    let jail_source = if opts.compose.is_some() {
+        "tfs exec --compose"
+    } else {
+        "tfs exec --jail"
+    };
     exec_child(
         &shim,
         &mounts_env,
         jail_env.as_deref(),
+        jail_source,
         &cmd0,
         &opts.cmd[1..],
     )
+}
+
+/// The compose-time atom lookup (spec 23 §4): `$HOME`/`$TMPDIR` from the
+/// environment, `$CWD` = the working directory at compose time.
+#[cfg(unix)]
+fn compose_atom_lookup(atom: &str) -> Option<String> {
+    match atom {
+        "HOME" | "TMPDIR" => std::env::var(atom).ok().filter(|v| !v.is_empty()),
+        "CWD" => std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().into_owned()),
+        _ => None,
+    }
+}
+
+/// The compose-time existence probe: canonicalize is the bind-time
+/// condition, so it is the probe (a grant that cannot canonicalize could
+/// never bind).
+#[cfg(unix)]
+fn compose_exists(path: &str) -> bool {
+    std::fs::canonicalize(path).is_ok()
 }
 
 /// `tfs exec` is macOS/linux first (spec 07 §8 tier 1); windows is
@@ -1233,6 +1310,49 @@ pub fn cmd_exec(_opts: &ExecOptions) -> Result<(), (String, i32)> {
          (the preload shim targets macOS and linux-gnu first; windows is roadmap 30 phase 2)"
             .to_string(),
         1,
+    ))
+}
+
+// ---------------------------------------------------------------------
+// needs (spec 23 §8: the record-mode journal → a draft needs: block)
+// ---------------------------------------------------------------------
+
+/// `tfs needs --from-journal <log>` — draft a payload `needs:` block from
+/// a record-mode journal. `$HOME`/`$TMPDIR` are re-substituted as the
+/// manifest grammar's atoms; the platform floor, the tebako home, and the
+/// exec cache are excluded (a manifest never claims the platform's or
+/// tebako's own surface). Returns the YAML.
+pub fn cmd_needs_from_journal(journal_path: &str) -> Result<String, (String, i32)> {
+    let text = std::fs::read_to_string(journal_path).map_err(|e| {
+        (
+            format!("Error: cannot read the journal {journal_path}: {e}"),
+            1,
+        )
+    })?;
+    let mut substitutions: Vec<(PathBuf, &str)> = Vec::new();
+    for (var, atom) in [("HOME", "$HOME"), ("TMPDIR", "$TMPDIR")] {
+        if let Ok(v) = std::env::var(var) {
+            if !v.is_empty() {
+                substitutions.push((PathBuf::from(v), atom));
+            }
+        }
+    }
+    let mut exclusions = tfs::policy::platform_floor();
+    if let Some(home) = tfs::journal::tebako_home_dir() {
+        exclusions.push(home);
+    }
+    if let Ok(cache) = std::env::var("TEBAKO_EXEC_CACHE") {
+        if !cache.is_empty() {
+            exclusions.push(PathBuf::from(cache));
+        }
+    }
+    Ok(tfs::needs::needs_from_journal(
+        &text,
+        &substitutions,
+        &exclusions,
+        // Probe artifacts (stat'ed-but-absent paths) get `optional: true`;
+        // canonicalize is the bind-time condition, so it is the probe.
+        &|p| std::fs::canonicalize(p).is_ok(),
     ))
 }
 
@@ -1323,11 +1443,14 @@ fn materialize_entrypoint(
 /// first, then set exactly the shim contract) and exec with stdio
 /// inherited. Grandchildren inherit the env naturally — the process tree
 /// stays in the VFS (modulo SIP platform binaries stripping DYLD_*).
+/// `jail_source` is the audit-journal's source label (spec 08 §2): which
+/// surface authored the policy (`tfs exec --jail` / `tfs exec --compose`).
 #[cfg(unix)]
 fn exec_child(
     shim: &Path,
     mounts_env: &str,
     jail_env: Option<&str>,
+    jail_source: &str,
     cmd: &str,
     args: &[String],
 ) -> Result<(), (String, i32)> {
@@ -1344,9 +1467,7 @@ fn exec_child(
         .env("TEBAKO_TFS_MOUNTS", mounts_env);
     if let Some(j) = jail_env {
         command.env("TEBAKO_JAIL", j);
-        // The audit-journal source label (spec 08 §2): this policy came
-        // from the exec surface's --jail flag.
-        command.env("TEBAKO_JAIL_SOURCE", "tfs exec --jail");
+        command.env("TEBAKO_JAIL_SOURCE", jail_source);
     }
     let err = command.exec(); // returns only on failure
     Err((format!("Error: cannot exec {cmd}: {err}"), 1))
@@ -1395,8 +1516,60 @@ mod tests {
         ExecOptions {
             images: images.iter().map(|s| s.to_string()).collect(),
             jail: jail.map(|s| s.to_string()),
+            compose: None,
             cmd: cmd.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn exec_compose_conflicts_with_cli_composition() {
+        // spec 23 §9: --compose is the WHOLE composition — mixing it with
+        // --image/--jail is a named error (one source of truth per run).
+        let mut o = opts(&["/etc/hosts"], None, &["true"]);
+        o.compose = Some("/x.yaml".to_string());
+        let (msg, _) = cmd_exec(&o).unwrap_err();
+        assert!(msg.contains("one composition source"), "{msg}");
+        let mut o = opts(&[], Some("deny"), &["true"]);
+        o.compose = Some("/x.yaml".to_string());
+        let (msg, _) = cmd_exec(&o).unwrap_err();
+        assert!(msg.contains("one composition source"), "{msg}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn exec_compose_missing_file_and_parse_errors_are_named() {
+        let mut o = opts(&[], None, &["true"]);
+        o.compose = Some("/no/such/compose.yaml".to_string());
+        let (msg, _) = cmd_exec(&o).unwrap_err();
+        assert!(msg.contains("cannot read"), "{msg}");
+
+        // A key this layer does not own names the shim layer.
+        let dir =
+            std::env::temp_dir().join(format!("tfs-cli-compose-parse-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("bad.yaml");
+        std::fs::write(&file, "runtime: ruby-4.0\n").unwrap();
+        let mut o = opts(&[], None, &["true"]);
+        o.compose = Some(file.to_string_lossy().into_owned());
+        let (msg, _) = cmd_exec(&o).unwrap_err();
+        assert!(msg.contains("shim layer"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn exec_compose_without_images_is_a_named_error() {
+        let dir =
+            std::env::temp_dir().join(format!("tfs-cli-compose-empty-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("empty.yaml");
+        std::fs::write(&file, "policy: deny\n").unwrap();
+        let mut o = opts(&[], None, &["true"]);
+        o.compose = Some(file.to_string_lossy().into_owned());
+        let (msg, _) = cmd_exec(&o).unwrap_err();
+        assert!(msg.contains("no images"), "{msg}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

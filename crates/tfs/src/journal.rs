@@ -1,12 +1,14 @@
 //! The tebako audit journal for jail violations (spec 08 §2: "Violations
 //! are logged to the tebako audit journal with path + syscall class").
 //!
-//! One line per denied host-passthrough decision, appended to the tebako
-//! journal — the same file and line shape the bootstrap uses
+//! One line per denied host-passthrough decision — and, under the record
+//! policy (spec 23 §8), one line per ALLOWED decision — appended to the
+//! tebako journal — the same file and line shape the bootstrap uses
 //! (`$TEBAKO_HOME/journal.log`, `<unix seconds> <fields>`):
 //!
 //! ```text
-//! <ts> event=jail-deny path=<path> op=read|write source=<policy source>
+//! <ts> event=jail-deny  path=<path> op=read|write source=<policy source>
+//! <ts> event=jail-allow path=<path> op=read|write source=<policy source>
 //! ```
 //!
 //! The location resolves as `$TEBAKO_JAIL_JOURNAL` (an explicit override —
@@ -35,6 +37,9 @@ use crate::policy::HostAccess;
 /// The event name every jail-denial line carries.
 pub const JAIL_DENY_EVENT: &str = "jail-deny";
 
+/// The event name every record-mode allow line carries (spec 23 §8).
+pub const JAIL_ALLOW_EVENT: &str = "jail-allow";
+
 /// Resolve and open the journal file for append (creating the tebako home
 /// if needed). Call it at POLICY-INSTALL time, BEFORE the context guard is
 /// taken — never from inside a `host_check` (see the module docs). `None`
@@ -56,6 +61,19 @@ pub fn open_journal() -> Option<std::fs::File> {
 /// `write(2)` per event — never a path operation (see the module docs);
 /// best-effort: write failures are swallowed.
 pub fn journal_deny(file: &std::fs::File, path: &Path, need: HostAccess, source: &str) {
+    journal_event(file, JAIL_DENY_EVENT, path, need, source);
+}
+
+/// Append one record-mode allow line (spec 23 §8: the "perm all and
+/// monitor" journal records every host access the record policy lets
+/// through). Same fd discipline and line shape as [`journal_deny`].
+pub fn journal_allow(file: &std::fs::File, path: &Path, need: HostAccess, source: &str) {
+    journal_event(file, JAIL_ALLOW_EVENT, path, need, source);
+}
+
+/// The shared line writer: `<ts> event=<event> path=<p> op=read|write
+/// source=<s>` — a bare `write(2)` on the pre-opened file.
+fn journal_event(file: &std::fs::File, event: &str, path: &Path, need: HostAccess, source: &str) {
     use std::io::Write as _;
     let op = match need {
         HostAccess::Ro => "read",
@@ -66,8 +84,7 @@ pub fn journal_deny(file: &std::fs::File, path: &Path, need: HostAccess, source:
         .map(|d| d.as_secs())
         .unwrap_or(0);
     let line = format!(
-        "{now} event={} path={} op={} source={}\n",
-        JAIL_DENY_EVENT,
+        "{now} event={event} path={} op={} source={}\n",
         path.display(),
         op,
         if source.is_empty() {
@@ -82,6 +99,13 @@ pub fn journal_deny(file: &std::fs::File, path: &Path, need: HostAccess, source:
 /// The journal file under a tebako home (the bootstrap's convention).
 pub fn journal_file_of(home: &Path) -> PathBuf {
     home.join("journal.log")
+}
+
+/// The resolved tebako home for this process (the cache-root rule shared
+/// with the journal path). The needs generator excludes it (spec 23 §8 —
+/// a run never declares a need on its own store).
+pub fn tebako_home_dir() -> Option<PathBuf> {
+    tebako_home(|k| std::env::var(k).ok())
 }
 
 /// Resolution of the journal path: the explicit override, then
@@ -178,6 +202,46 @@ mod tests {
         assert_eq!(
             lines.next().unwrap().split_once(' ').unwrap().1,
             "event=jail-deny path=/x op=write source=user"
+        );
+        assert!(lines.next().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn journal_allow_line_shape() {
+        // The record mode's audit line (spec 23 §8): same shape as a
+        // denial, `event=jail-allow` — the `tfs needs` generator consumes
+        // both events from one journal. (Private dir: the deny test above
+        // shares this process — a shared journal path would interleave.)
+        let dir =
+            std::env::temp_dir().join(format!("tfs-journal-allow-test-{}", std::process::id()));
+        let log = dir.join("journal.log");
+        std::env::set_var("TEBAKO_JAIL_JOURNAL", &log);
+        let file = open_journal().expect("journal opens");
+        std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+        journal_allow(
+            &file,
+            Path::new("/home/u/.ssh/config"),
+            HostAccess::Ro,
+            "record",
+        );
+        journal_allow(&file, Path::new("/tmp/x"), HostAccess::Rw, "record");
+        drop(file);
+        let text = std::fs::read_to_string(&log).unwrap();
+        let mut lines = text.lines();
+        let line = lines.next().unwrap();
+        let (ts, rest) = line.split_once(' ').unwrap();
+        assert!(
+            ts.bytes().all(|b| b.is_ascii_digit()) && !ts.is_empty(),
+            "{line}"
+        );
+        assert_eq!(
+            rest,
+            "event=jail-allow path=/home/u/.ssh/config op=read source=record"
+        );
+        assert_eq!(
+            lines.next().unwrap().split_once(' ').unwrap().1,
+            "event=jail-allow path=/tmp/x op=write source=record"
         );
         assert!(lines.next().is_none());
         let _ = std::fs::remove_dir_all(&dir);

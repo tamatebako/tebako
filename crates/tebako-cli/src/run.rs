@@ -187,7 +187,7 @@ pub fn plan_run(parsed: &RunArgs) -> Result<RunPlan, TebakoError> {
 fn validate_binds(spec: &str) -> Result<(), TebakoError> {
     let parsed = tfs::policy::JailSpec::parse(spec)
         .map_err(|e| packaging_error(130, Some(&e.to_string())))?;
-    tfs::policy::HostPolicy::bind(parsed.default_open, parsed.mounts, parsed.arg_files).map_err(
+    tfs::policy::HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files).map_err(
         |e| {
             let text = String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned();
             packaging_error(

@@ -176,6 +176,9 @@ impl FsContext {
     /// Denials are journaled (spec 08 §2 — the audit journal records the
     /// path, the op class and the policy's source label) via the cached,
     /// pre-opened file: a bare write(2), no path operation under the lock.
+    /// Under the record policy (spec 23 §8) ALLOWS are journaled too
+    /// (`event=jail-allow`) — the "perm all and monitor" trail the
+    /// `tfs needs` generator turns into a draft `needs:` block.
     pub fn host_check<P: AsRef<std::path::Path>>(
         &self,
         path: P,
@@ -183,7 +186,19 @@ impl FsContext {
     ) -> Result<(), i32> {
         let path = path.as_ref();
         match self.host_policy.check(path, need) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                if self.host_policy.is_record() {
+                    if let Some(journal) = &self.journal {
+                        crate::journal::journal_allow(
+                            journal,
+                            path,
+                            need,
+                            self.host_policy.source(),
+                        );
+                    }
+                }
+                Ok(())
+            }
             Err(e) => {
                 if let Some(journal) = &self.journal {
                     crate::journal::journal_deny(journal, path, need, self.host_policy.source());
@@ -1448,6 +1463,69 @@ mod tests {
         assert!(
             !dest.join("lib/link.txt").exists(),
             "the symlink is not materialized"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn record_policy_journals_allows_and_open_policy_does_not() {
+        // spec 23 §8: under a record policy every ALLOWED host access is
+        // journaled (event=jail-allow) — the `tfs needs` generator's input.
+        // Under the default open policy allows stay silent (no noise).
+        let dir = std::env::temp_dir().join(format!("tfs-record-ctx-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("journal.log");
+        let journal = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+
+        let mut ctx = FsContext::new();
+        ctx.set_host_policy(
+            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Record, vec![], vec![])
+                .unwrap(),
+            Some(journal),
+        );
+        assert_eq!(ctx.host_check("/etc/hosts", HostAccess::Ro), Ok(()));
+        assert_eq!(ctx.host_check("/tmp/x", HostAccess::Rw), Ok(()));
+        drop(ctx);
+
+        let text = std::fs::read_to_string(&log).unwrap();
+        let mut lines = text.lines();
+        assert!(
+            lines
+                .next()
+                .unwrap()
+                .contains("event=jail-allow path=/etc/hosts op=read"),
+            "{text}"
+        );
+        assert!(
+            lines
+                .next()
+                .unwrap()
+                .contains("event=jail-allow path=/tmp/x op=write"),
+            "{text}"
+        );
+        assert!(lines.next().is_none(), "{text}");
+
+        // The open policy journals no allows (today's behavior, no noise).
+        let journal2 = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+        let mut ctx2 = FsContext::new();
+        ctx2.set_host_policy(crate::policy::HostPolicy::open(), Some(journal2));
+        assert_eq!(ctx2.host_check("/etc/hosts", HostAccess::Ro), Ok(()));
+        drop(ctx2);
+        let text2 = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(
+            text2.lines().count(),
+            2,
+            "open policy journals nothing: {text2}"
         );
 
         let _ = std::fs::remove_dir_all(&dir);

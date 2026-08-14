@@ -2,6 +2,11 @@
 
 **Status: PLANNED (owner-signed 2026-08-14 with the MECE/no-legacy
 amendment, the record mode, and the post-bake swap channel; §8/§9).**
+The §8 record mode and the §9 swap channel are IMPLEMENTED at the image
+layer (`TEBAKO_JAIL=record`, `tfs needs --from-journal`, `tfs exec
+--compose` — tfs crate + tfs-cli); the D1–D5 manifest/shim/press wiring
+is Phase-R. Dogfooded 2026-08-14: a JVM boot recorded, drafted, and
+replayed under deny with zero hand edits and zero unexpected denials.
 
 A tebako run is a composition of one runtime (exe + env image) and N
 payload slices, executed under one host-access policy. This spec makes
@@ -57,6 +62,11 @@ needs:
                                     # this VFS point (bind-mount spelling);
                                     # absent = enforcement-only passthrough
       when: [macos]                 # OPTIONAL platform filter
+      optional: true                # OPTIONAL: absent at bind = silently
+                                    # skipped (probe artifacts; the §8
+                                    # generator marks them). Absent WITHOUT
+                                    # this marker = a named error
+                                    # (fail-closed).
       why: "the tool probes its install root at boot"   # MANDATORY
 ```
 
@@ -214,13 +224,19 @@ guess:
   Spawned children inherit the spec and re-bind it — their accesses
   append to the same journal (the preload re-derivation, spec 08 §2.1).
 - **The generator**: `tfs needs --from-journal <journal.log>` reads a
-  record journal and emits a draft D1/D2 `needs:` block: distinct
-  canonical paths, access = the strongest observed op (write > read),
-  floor and system-surface paths EXCLUDED (they are automatic — never
-  declared), symbolic atoms re-substituted (`/Users/alice/…` →
-  `$HOME/…`, the invoking cwd → `$CWD`), each entry carrying
-  `why: "TODO — observed <n> <op> access(es)"` for the author to
-  replace with the real reason.
+  record journal — folding in `jail-deny` lines too, since a denial is
+  an UNMET need — and emits a draft D1/D2 `needs:` block: one entry
+  per observed path, aggregated on the atom-SUBSTITUTED form so raw
+  variants of one path (`/T/x` vs `/T//x`) merge; access = the
+  strongest observed op (any write ⇒ `rw`); floor, store, and
+  exec-cache paths EXCLUDED (they are automatic — never declared);
+  symbolic atoms re-substituted (`/Users/alice/…` → `$HOME/…`,
+  longest prefix wins); relative and empty paths (cwd- or
+  dirfd-relative probes — not declarable) OMITTED and counted in the
+  header, so the reviewer declares `$CWD` explicitly when the payload
+  wants it; paths absent at generation time marked `optional: true`
+  (§2); each entry carrying `why: "TODO — observed: <r> read, <w>
+  write"` for the author to replace with the real reason.
 - **The human gate**: the record shows the OBSERVED MINIMUM. The author
   reviews the draft — flipping ro↔rw where production differs from the
   observation, deleting noise, filling `why` — and merges it into the
@@ -263,6 +279,17 @@ therefore swappable at run time:
   override cannot do is conjure slice CONTENT: unsigned slices are not
   introduced by a signed package's override; the trust checks of spec
   09 apply to any newly referenced slice exactly as at press.
+- **Implemented at the image layer (2026-08-14)**: `tfs exec
+  --compose <file.yaml>` speaks the D2 image-layer subset —
+  `images:`/`policy:`/`mounts:`/`needs:` and nothing else (an unknown
+  top-level key is a named error pointing at the shim layer);
+  `$HOME`/`$TMPDIR`/`$CWD` atoms in host and image paths expand at
+  compose time; needs entries lower to identity host-mount grants;
+  `--compose` combined with `--image`/`--jail` is a named error (one
+  composition source per run); the run's provenance rides
+  `TEBAKO_JAIL_SOURCE` into the audit journal. The bootstrap/shim
+  override channels above (argv `--compose`, `TEBAKO_COMPOSE`, the
+  sidecar file) and the `event=composition` audit event are Phase-R.
 
 ## 10. Worked example — metanorma, fully declarative
 

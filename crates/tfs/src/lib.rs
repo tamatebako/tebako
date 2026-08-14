@@ -89,6 +89,7 @@ pub mod exec_closure;
 pub mod journal;
 pub mod mount;
 pub mod mount_spec;
+pub mod needs;
 pub mod policy;
 #[cfg(feature = "enc")]
 pub mod secure_buf;
