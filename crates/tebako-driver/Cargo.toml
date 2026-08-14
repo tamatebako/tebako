@@ -24,6 +24,11 @@ tpkg = { version = "0.1.0", path = "../tpkg" }
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0.12"
 libc = "0.2"
+# macOS loader interposition (spec 22 §2 "Phase 1 delivery") content-keys
+# the embedded interpose-dylib by its sha256; the exec-cache path-key
+# fallback (spec 22 §6, exec_cache.rs) hashes on every platform — sha2
+# is unconditional.
+sha2 = "0.10"
 
 # The mounts land in the same process-global context the C ABI serves —
 # the libtfs-preload pattern (a native Rust consumer of the engine).
@@ -34,6 +39,14 @@ tfs = { version = "0.1.0", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
 tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
+
+# build.rs compiles the interpose dylib for darwin targets only (its
+# TARGET check early-returns elsewhere), but it references the cc crate
+# unconditionally — build scripts compile for the HOST, so gating cc on
+# cfg(macos) breaks every non-macOS host's compile with E0433. cc stays
+# an unconditional build-dependency.
+[build-dependencies]
+cc = "1"
 
 [dev-dependencies]
 # Zip fixtures built in-code (the tests/contract pattern).

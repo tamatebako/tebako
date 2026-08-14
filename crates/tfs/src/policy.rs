@@ -10,7 +10,9 @@
 //! answer (ENOENT = "not ours, pass through"), so bootstrap, the runtime
 //! driver, `tebako run` and `tfs` enforce identically with no per-app work.
 //!
-//! Docker `-v` semantics: `default_open` is the namespace default; mounts
+//! Docker `-v` semantics: the namespace default is open, deny, or record
+//! (spec 23 §8: record allows everything and journals each access — the
+//! "perm all and monitor" mode); mounts
 //! are (host dir, virtual point, ro|rw) grants matched by longest host
 //! prefix on path-component boundaries; argument files are allowed for
 //! reading even under deny. Host paths are realpath-canonicalized at bind
@@ -42,6 +44,25 @@ pub enum HostAccess {
     Rw,
 }
 
+/// The namespace default of a host policy (spec 08 §1, spec 23 §8).
+///
+/// `Open` is today's pass-through; `Deny` refuses every host path no grant
+/// covers; `Record` allows everything AND journals each host access
+/// (`event=jail-allow`) — the "perm all and monitor" mode whose journal the
+/// `tfs needs` generator turns into a draft `needs:` block. Record carries
+/// no grants: mounts and argument files are inert under it, so parsing or
+/// binding one with either is a named error (MECE — configuration is never
+/// silently inert).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PolicyDefault {
+    /// Open pass-through (today's behavior).
+    Open,
+    /// Deny every host path not covered by a grant or an argument file.
+    Deny,
+    /// Allow everything, journal every access (spec 23 §8).
+    Record,
+}
+
 /// One host-mount grant, as bound (host side already canonicalized).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostMount {
@@ -66,6 +87,66 @@ pub struct HostMountSpec {
     pub access: HostAccess,
 }
 
+/// The platform floor (spec 08 §2.1): the read-only grants every bound
+/// deny policy gains — the platform surface a spawned interpreter or
+/// runtime physically cannot boot without. On macOS the JVM's
+/// locale/framework init reads under these trees and a scratch-only jail
+/// crashed it with a SIGSEGV at `getMacOSXLocale` — never a named error
+/// (spec 22 phase-E dogfood, 2026-08-13). On windows the loader's DLL
+/// root, the 32-bit view, and the font tree are the corresponding
+/// surface. The list is evidence-driven: a path joins it only with a
+/// proven platform-process consumer, which is why the unix floor beyond
+/// macOS is empty until a leg proves one.
+///
+/// Also the needs generator's exclusion input (spec 23 §8): a manifest
+/// never claims floor paths — they are the platform's, granted implicitly.
+#[cfg(target_os = "macos")]
+pub fn platform_floor() -> Vec<PathBuf> {
+    ["/usr", "/System", "/Library"]
+        .iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
+/// The platform floor on unix beyond macOS: empty (see the macOS variant).
+#[cfg(all(unix, not(target_os = "macos")))]
+pub fn platform_floor() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+#[cfg(target_os = "windows")]
+pub fn platform_floor() -> Vec<PathBuf> {
+    // %SystemRoot% (C:\Windows virtually everywhere): System32 is the
+    // loader's DLL root (no process resolves its imports without it),
+    // SysWOW64 the 32-bit view for 32-bit children, Fonts the GDI tree
+    // GUI runtimes enumerate (the JVM's AWT init).
+    let root = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
+    ["System32", "SysWOW64", "Fonts"]
+        .iter()
+        .map(|sub| root.join(sub))
+        .collect()
+}
+
+/// The VFS-side spelling a floor mount carries (the mount point is
+/// informational — enforcement matches host prefixes): identity on unix,
+/// the drive-qualified forward-slash form on windows (`C:/Windows/…`,
+/// the driver's `X:/…` convention), so a serialized policy stays inside
+/// the `host:mount:ro|rw` grammar (a windows `C:\…` mount would break
+/// the right-split parse; floor entries therefore never ride
+/// `to_env_spec` — every bind re-derives them).
+#[cfg(unix)]
+fn floor_mount_point(host: &Path) -> String {
+    host.to_string_lossy().into_owned()
+}
+
+#[cfg(target_os = "windows")]
+fn floor_mount_point(host: &Path) -> String {
+    let s = host.to_string_lossy().replace('\\', "/");
+    s.strip_prefix("//?/").unwrap_or(&s).to_string()
+}
+
 /// The host-access policy of a process (spec 08 §1).
 ///
 /// The default is `open` with no mounts and no argument files — byte-for
@@ -73,9 +154,23 @@ pub struct HostMountSpec {
 /// change.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HostPolicy {
-    default_open: bool,
+    default: PolicyDefault,
     mounts: Vec<HostMount>,
+    /// The platform floor (spec 08 §2.1), bound alongside `mounts` under
+    /// the deny default. Kept separate so `to_env_spec` serializes the
+    /// AUTHORED policy only — the floor is re-derived at every bind
+    /// (supersede makes that idempotent) and never travels the
+    /// `host:mount:ro|rw` grammar its windows spellings would break.
+    floor_mounts: Vec<HostMount>,
     arg_files: Vec<PathBuf>,
+    /// The ancestor traverse set (spec 08 §2.1): the strict ancestors of
+    /// every bound grant (mounts + floor), checkable as EXACT-path reads
+    /// — never prefix, never write. Canonicalization walks are universal
+    /// (the JVM reads its cwd and each ancestor at VM init; without the
+    /// traverse grant the factory's jailed_exec leg died with "Could not
+    /// determine current working directory", PR #95 macOS, 2026-08-14).
+    /// Derived at bind, never authored, never serialized.
+    traverse: Vec<PathBuf>,
     /// Who installed the policy (`manifest`, `user`, `manifest+user`,
     /// `TEBAKO_JAIL`, …), recorded in the audit journal on every denial
     /// (spec 08 §2: violations are logged with path + syscall class).
@@ -93,9 +188,11 @@ impl HostPolicy {
     /// The open policy (today's behavior; the context's initial state).
     pub const fn open() -> Self {
         HostPolicy {
-            default_open: true,
+            default: PolicyDefault::Open,
             mounts: Vec::new(),
+            floor_mounts: Vec::new(),
             arg_files: Vec::new(),
+            traverse: Vec::new(),
             source: String::new(),
         }
     }
@@ -114,24 +211,55 @@ impl HostPolicy {
         &self.source
     }
 
-    /// True when this policy can never deny anything (open default with no
-    /// mounts — argument files only ever ALLOW). Installers skip opening
-    /// the audit journal for it: there would never be a violation to log.
+    /// True when this policy can never deny anything AND has nothing to
+    /// journal (open default with no mounts — argument files only ever
+    /// ALLOW). Installers skip opening the audit journal for it: there
+    /// would never be a line to write. The record policy is NOT
+    /// never-denies: it allows everything but journals every allow, so
+    /// installers MUST open the journal for it.
     pub fn never_denies(&self) -> bool {
-        self.default_open && self.mounts.is_empty()
+        self.default == PolicyDefault::Open && self.mounts.is_empty()
+    }
+
+    /// True for the record policy (spec 23 §8): allow-all + audit. The
+    /// context journals every allowed host access under it.
+    pub fn is_record(&self) -> bool {
+        self.default == PolicyDefault::Record
     }
 
     /// Bind a policy: canonicalize every host path (mount sources and
     /// argument files) NOW, so later checks compare canonical forms.
     ///
-    /// Errors: EINVAL for a non-absolute virtual mount point; the
-    /// canonicalization errno (ENOENT for a missing mount source or
-    /// argument file, ENOTDIR/ELOOP/… as reported) otherwise.
+    /// Under the deny default the platform floor (spec 08 §2.1,
+    /// [`platform_floor`]) binds alongside as read-only grants: an
+    /// authored mount covering a floor path (same or ancestor prefix)
+    /// supersedes the floor entry — the floor never narrows what the
+    /// author allowed — and a floor path absent on this host is skipped
+    /// silently (it is a courtesy surface, not an authored request whose
+    /// absence must fail the bind). Under `open` the floor grants
+    /// nothing the default does not already allow, and under `record`
+    /// everything is allowed anyway, so neither binds it (`never_denies`
+    /// keeps its exact meaning). Floor mounts are NOT serialized by
+    /// [`to_env_spec`](Self::to_env_spec): they are re-derived at every
+    /// bind (supersede makes that idempotent) and their windows spellings
+    /// would break the env grammar.
+    ///
+    /// Record carries no grants (spec 23 §8): binding `Record` with any
+    /// mount or argument file fails EINVAL — inert configuration is a
+    /// named error, never silently ignored.
+    ///
+    /// Errors: EINVAL for a non-absolute virtual mount point or a record
+    /// policy with grants; the canonicalization errno (ENOENT for a
+    /// missing mount source or argument file, ENOTDIR/ELOOP/… as
+    /// reported) otherwise.
     pub fn bind(
-        default_open: bool,
+        default: PolicyDefault,
         mounts: Vec<HostMountSpec>,
         arg_files: Vec<PathBuf>,
     ) -> Result<Self, i32> {
+        if default == PolicyDefault::Record && (!mounts.is_empty() || !arg_files.is_empty()) {
+            return Err(libc::EINVAL);
+        }
         let mut bound_mounts = Vec::with_capacity(mounts.len());
         for spec in mounts {
             if !spec.mount.starts_with('/') {
@@ -144,14 +272,52 @@ impl HostPolicy {
                 access: spec.access,
             });
         }
+        let mut floor_mounts = Vec::new();
+        if default == PolicyDefault::Deny {
+            'floor: for path in platform_floor() {
+                // Best-effort canonicalize FIRST so the supersede check
+                // below compares canonical with canonical (a symlinked
+                // operator grant covers its canonical floor twin).
+                let Ok(floor) = canonicalize(&path) else {
+                    continue;
+                };
+                for m in &bound_mounts {
+                    if m.host == floor || floor.starts_with(&m.host) {
+                        continue 'floor;
+                    }
+                }
+                floor_mounts.push(HostMount {
+                    mount: floor_mount_point(&floor),
+                    host: floor,
+                    access: HostAccess::Ro,
+                });
+            }
+        }
         let mut bound_files = Vec::with_capacity(arg_files.len());
         for f in &arg_files {
             bound_files.push(canonicalize(f)?);
         }
+        // The ancestor traverse set (spec 08 §2.1): every strict ancestor
+        // of every bound grant is readable as an EXACT path — never
+        // prefix (no sideways exposure), never write. Canonicalization
+        // walks are universal (the JVM reads its cwd and each ancestor at
+        // VM init). Derived at bind, never authored, never serialized.
+        let mut traverse: Vec<PathBuf> = Vec::new();
+        for m in bound_mounts.iter().chain(floor_mounts.iter()) {
+            let mut anc = m.host.as_path();
+            while let Some(parent) = anc.parent() {
+                if !traverse.iter().any(|t| t == parent) {
+                    traverse.push(parent.to_path_buf());
+                }
+                anc = parent;
+            }
+        }
         Ok(HostPolicy {
-            default_open,
+            default,
             mounts: bound_mounts,
+            floor_mounts,
             arg_files: bound_files,
+            traverse,
             source: String::new(),
         })
     }
@@ -165,8 +331,12 @@ impl HostPolicy {
     /// against an ro grant.
     pub fn check(&self, path: &Path, need: HostAccess) -> Result<(), i32> {
         // Open policy with no mounts: today's behavior, zero overhead.
-        if self.default_open && self.mounts.is_empty() {
-            return Ok(());
+        // Record: allow everything (bind guarantees no grants; the context
+        // journals the allow — spec 23 §8).
+        match self.default {
+            PolicyDefault::Open if self.mounts.is_empty() => return Ok(()),
+            PolicyDefault::Record => return Ok(()),
+            PolicyDefault::Open | PolicyDefault::Deny => {}
         }
         // Re-validate realpath on each open: the target is canonicalized at
         // check time, so symlink swaps after bind resolve to their target.
@@ -178,10 +348,12 @@ impl HostPolicy {
             return Ok(());
         }
 
-        // Longest host-prefix match; Path::starts_with matches on whole
-        // path components, so "/work" never matches "/workshop".
+        // Longest host-prefix match across authored grants AND the floor
+        // (identical semantics; the lists are kept apart only so the env
+        // serialization stays authored-only); Path::starts_with matches
+        // on whole path components, so "/work" never matches "/workshop".
         let mut best: Option<&HostMount> = None;
-        for m in &self.mounts {
+        for m in self.mounts.iter().chain(self.floor_mounts.iter()) {
             let longer = match best {
                 Some(b) => b.host.as_os_str().len() < m.host.as_os_str().len(),
                 None => true,
@@ -199,7 +371,14 @@ impl HostPolicy {
             return Ok(());
         }
 
-        if self.default_open {
+        // The ancestor traverse set (spec 08 §2.1): exact-path read only.
+        // Prefix grants are wider and matched above; a write against a
+        // traverse path falls through to the default's denial.
+        if need == HostAccess::Ro && self.traverse.iter().any(|t| t == &canon) {
+            return Ok(());
+        }
+
+        if self.default == PolicyDefault::Open {
             return Ok(());
         }
         Err(libc::EPERM)
@@ -210,7 +389,11 @@ impl HostPolicy {
     /// host path is already canonical — a consumer that re-parses and
     /// re-binds the string gets an identical policy.
     pub fn to_env_spec(&self) -> String {
-        let mut out = String::from(if self.default_open { "open" } else { "deny" });
+        let mut out = String::from(match self.default {
+            PolicyDefault::Open => "open",
+            PolicyDefault::Deny => "deny",
+            PolicyDefault::Record => "record",
+        });
         for m in &self.mounts {
             out.push(';');
             out.push_str(&m.host.to_string_lossy());
@@ -238,20 +421,25 @@ impl HostPolicy {
 ///
 /// ```text
 /// jail      = directive *( ";" directive )
-/// directive = "open" | "deny"          # namespace default (default: open)
-///           | host ":" mount ":" mode  # docker -v grant; mount absolute
-///           | "@" path                 # argument file (read-only grant)
+/// directive = "open" | "deny" | "record" # namespace default (default: open)
+///           | host ":" mount ":" mode    # docker -v grant; mount absolute
+///           | "@" path                   # argument file (read-only grant)
 /// mode      = "ro" | "rw"
 /// ```
 ///
 /// Example: `deny;/home/u/src:/work:rw;@/home/u/input.csv`.
 ///
+/// `record` (spec 23 §8) is allow-all + audit: it journals every host
+/// access (`event=jail-allow`) for the `tfs needs` generator. It carries
+/// no grants — a spec mixing `record` with mounts or argument files is a
+/// named error, never silently-inert configuration.
+///
 /// Bind with [`HostPolicy::bind`]; serialize a bound policy back with
 /// [`HostPolicy::to_env_spec`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JailSpec {
-    /// Namespace default: `true` = open (today's behavior), `false` = deny.
-    pub default_open: bool,
+    /// Namespace default (open when no default directive is present).
+    pub default: PolicyDefault,
     /// Host-mount grants (docker `-v` semantics).
     pub mounts: Vec<HostMountSpec>,
     /// Argument files: read-only grants, honored even under deny.
@@ -273,15 +461,16 @@ impl std::error::Error for JailSpecError {}
 
 impl JailSpec {
     /// Parse a `TEBAKO_JAIL` / `--jail` spec. Errors on: empty spec,
-    /// conflicting or duplicated `open`/`deny`, unknown access modes,
-    /// non-absolute mount points, empty hosts/mounts/argument files, and
-    /// unrecognised directive shapes.
+    /// conflicting or duplicated `open`/`deny`/`record`, unknown access
+    /// modes, non-absolute mount points, empty hosts/mounts/argument
+    /// files, a `record` default carrying grants, and unrecognised
+    /// directive shapes.
     pub fn parse(spec: &str) -> Result<Self, JailSpecError> {
         let err = |msg: String| JailSpecError(format!("{msg} in {spec:?}"));
         if spec.trim().is_empty() {
             return Err(JailSpecError("empty spec".to_string()));
         }
-        let mut default_open: Option<bool> = None;
+        let mut default: Option<PolicyDefault> = None;
         let mut mounts = Vec::new();
         let mut arg_files = Vec::new();
         for token in spec.split(';') {
@@ -289,14 +478,18 @@ impl JailSpec {
                 return Err(err("empty directive (stray ';')".to_string()));
             }
             match token {
-                "open" | "deny" => {
-                    let value = token == "open";
-                    if default_open.is_some() {
+                "open" | "deny" | "record" => {
+                    let value = match token {
+                        "open" => PolicyDefault::Open,
+                        "deny" => PolicyDefault::Deny,
+                        _ => PolicyDefault::Record,
+                    };
+                    if default.is_some() {
                         return Err(err(format!(
                             "duplicate/conflicting default directive {token:?}"
                         )));
                     }
-                    default_open = Some(value);
+                    default = Some(value);
                 }
                 _ if token.starts_with('@') => {
                     let path = &token[1..];
@@ -339,8 +532,15 @@ impl JailSpec {
                 }
             }
         }
+        let default = default.unwrap_or(PolicyDefault::Open);
+        if default == PolicyDefault::Record && (!mounts.is_empty() || !arg_files.is_empty()) {
+            return Err(err(
+                "record carries no grants: mounts and argument files are inert under it — drop them"
+                    .to_string(),
+            ));
+        }
         Ok(JailSpec {
-            default_open: default_open.unwrap_or(true),
+            default,
             mounts,
             arg_files,
         })
@@ -511,20 +711,113 @@ mod tests {
     #[test]
     fn deny_without_grants_denies_everything() {
         let tree = Tree::new("deny");
-        let p = HostPolicy::bind(false, vec![], vec![]).unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![]).unwrap();
         assert_eq!(
             p.check(&tree.work.join("hello.txt"), HostAccess::Ro),
             Err(libc::EPERM)
         );
-        assert_eq!(p.check(Path::new("/"), HostAccess::Ro), Err(libc::EPERM));
+        // The one exception beyond the floor itself: the floor's strict
+        // ancestors are traversable (exact-path read, spec 08 §2.1).
+        for dir in platform_floor() {
+            let Ok(canon) = std::fs::canonicalize(&dir) else {
+                continue;
+            };
+            let mut anc = canon.parent();
+            while let Some(a) = anc {
+                assert_eq!(p.check(a, HostAccess::Ro), Ok(()), "traverse {a:?}");
+                anc = a.parent();
+            }
+        }
         assert_eq!(p.check(&tree.work, HostAccess::Rw), Err(libc::EPERM));
+    }
+
+    #[test]
+    fn deny_gains_the_platform_floor_read_only() {
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![]).unwrap();
+        for dir in platform_floor() {
+            if std::fs::canonicalize(&dir).is_err() {
+                continue; // absent on this host: skipped at bind
+            }
+            assert_eq!(p.check(&dir, HostAccess::Ro), Ok(()), "floor read {dir:?}");
+            assert_eq!(
+                p.check(&dir, HostAccess::Rw),
+                Err(libc::EROFS),
+                "floor write {dir:?}"
+            );
+        }
+        // The floor's strict ancestors are traversable (exact-path read,
+        // spec 08 §2.1) — never writable, never sideways.
+        for dir in platform_floor() {
+            let Ok(canon) = std::fs::canonicalize(&dir) else {
+                continue;
+            };
+            if let Some(parent) = canon.parent() {
+                assert_eq!(
+                    p.check(parent, HostAccess::Ro),
+                    Ok(()),
+                    "traverse {parent:?}"
+                );
+                assert_eq!(
+                    p.check(parent, HostAccess::Rw),
+                    Err(libc::EPERM),
+                    "traverse write {parent:?}"
+                );
+            }
+        }
+        // Everything outside the floor and its traverse chain stays denied.
+        let tree = Tree::new("flooroutside");
+        assert_eq!(p.check(&tree.work, HostAccess::Ro), Err(libc::EPERM));
+    }
+
+    #[test]
+    #[cfg(unix)] // the fixture path is unix-shaped; the supersede rule it pins is platform-free
+    fn authored_grant_covering_a_floor_path_supersedes_it() {
+        // An authored rw grant at / would be CLAMPED by a naive /usr:ro
+        // floor entry (longest-prefix) — the supersede rule skips floor
+        // entries an authored grant already covers, so the floor never
+        // narrows the authored allowance. (The floor list is empty off
+        // macOS/windows today; the assertion holds identically there.)
+        let p = HostPolicy::bind(
+            PolicyDefault::Deny,
+            vec![HostMountSpec {
+                host: PathBuf::from("/"),
+                mount: "/".to_string(),
+                access: HostAccess::Rw,
+            }],
+            vec![],
+        )
+        .unwrap();
+        assert_eq!(p.check(Path::new("/usr"), HostAccess::Rw), Ok(()));
+    }
+
+    #[test]
+    fn open_default_adds_no_floor_mounts() {
+        // Under `open` the floor grants nothing the default does not
+        // already allow — `never_denies` keeps its exact meaning.
+        let p = HostPolicy::bind(PolicyDefault::Open, vec![], vec![]).unwrap();
+        assert!(p.never_denies());
+        assert!(p.mounts.is_empty());
+        assert!(p.floor_mounts.is_empty());
+    }
+
+    #[test]
+    fn floor_survives_an_env_spec_round_trip_once() {
+        // The child side of the handoff: the serialized policy carries
+        // the AUTHORED mounts only, and re-binding re-derives the floor
+        // — p1 and p2 enforce identically, with no duplicated entries
+        // (the TEBAKO_JAIL inheritance path relies on it).
+        let p1 = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![]).unwrap();
+        let spec = p1.to_env_spec();
+        let parsed = JailSpec::parse(&spec).unwrap();
+        let p2 = HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files).unwrap();
+        assert_eq!(p1, p2);
     }
 
     #[test]
     fn scoped_mount_rw_allows_inside_denies_sibling() {
         let tree = Tree::new("scoped");
         let p = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
             vec![],
         )
@@ -545,7 +838,7 @@ mod tests {
     fn ro_mount_refuses_writes_with_erofs() {
         let tree = Tree::new("ro");
         let p = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![tree.spec(&tree.rodir, "/ro", HostAccess::Ro)],
             vec![],
         )
@@ -565,7 +858,7 @@ mod tests {
     #[test]
     fn arg_file_allowed_even_under_deny() {
         let tree = Tree::new("arg");
-        let p = HostPolicy::bind(false, vec![], vec![tree.input.clone()]).unwrap();
+        let p = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![tree.input.clone()]).unwrap();
         assert_eq!(p.check(&tree.input, HostAccess::Ro), Ok(()));
         // …but only for reading, and only the file itself (not its dir).
         assert_eq!(p.check(&tree.input, HostAccess::Rw), Err(libc::EPERM));
@@ -582,7 +875,7 @@ mod tests {
         std::fs::create_dir_all(&workshop).unwrap();
         std::fs::write(workshop.join("x.txt"), b"x").unwrap();
         let p = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
             vec![],
         )
@@ -598,7 +891,7 @@ mod tests {
         let tree = Tree::new("longest");
         let inner = tree.work.join("sub");
         let p = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![
                 tree.spec(&tree.work, "/work", HostAccess::Ro),
                 tree.spec(&inner, "/work/sub", HostAccess::Rw),
@@ -619,7 +912,7 @@ mod tests {
     fn open_default_with_ro_bind_still_enforces_the_bit() {
         let tree = Tree::new("openro");
         let p = HostPolicy::bind(
-            true,
+            PolicyDefault::Open,
             vec![tree.spec(&tree.rodir, "/ro", HostAccess::Ro)],
             vec![],
         )
@@ -641,7 +934,7 @@ mod tests {
     fn symlink_escape_is_denied() {
         let tree = Tree::new("escape");
         let p = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
             vec![],
         )
@@ -669,7 +962,7 @@ mod tests {
         std::fs::create_dir_all(&target).unwrap();
         std::fs::write(target.join("f.txt"), b"f").unwrap();
         let p = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
             vec![],
         )
@@ -689,7 +982,7 @@ mod tests {
     fn nonexistent_paths_resolve_through_existing_ancestors() {
         let tree = Tree::new("nonexistent");
         let p = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
             vec![],
         )
@@ -717,7 +1010,7 @@ mod tests {
         let tree = Tree::new("bindcanon");
         let dotted = tree.work.join("sub").join("..");
         let p = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![tree.spec(&dotted, "/work", HostAccess::Rw)],
             vec![],
         )
@@ -730,11 +1023,46 @@ mod tests {
     }
 
     #[test]
+    fn bind_derives_ancestor_traverse_grants() {
+        // spec 08 §2.1: a host grant implies its strict ancestors are
+        // traversable — exact-path READ, never prefix, never write.
+        // Canonicalization walks are universal: the JVM reads its cwd and
+        // every ancestor at VM init, and the factory's jailed_exec leg
+        // died with "Could not determine current working directory" when
+        // the chain was denied (PR #95 macOS legs, 2026-08-14). The
+        // traverse grant is derived at bind — never authored, never
+        // serialized — and never extends sideways.
+        let tree = Tree::new("traverse");
+        let deep = tree.work.join("a").join("b");
+        std::fs::create_dir_all(&deep).unwrap();
+        let p = HostPolicy::bind(
+            PolicyDefault::Deny,
+            vec![tree.spec(&deep, "/work", HostAccess::Rw)],
+            vec![],
+        )
+        .unwrap();
+        // The grant itself keeps its full access.
+        assert_eq!(p.check(&deep.join("f.txt"), HostAccess::Rw), Ok(()));
+        // Every strict ancestor up to the root: readable, not writable.
+        let mut anc = deep.parent().unwrap().to_path_buf();
+        loop {
+            assert_eq!(p.check(&anc, HostAccess::Ro), Ok(()), "{anc:?}");
+            assert_eq!(p.check(&anc, HostAccess::Rw), Err(libc::EPERM), "{anc:?}");
+            match anc.parent() {
+                Some(parent) => anc = parent.to_path_buf(),
+                None => break,
+            }
+        }
+        // Sideways: a child of a traversed ancestor is NOT exposed.
+        assert_eq!(p.check(&tree.sibling, HostAccess::Ro), Err(libc::EPERM));
+    }
+
+    #[test]
     fn bind_rejects_relative_mount_points_and_missing_sources() {
         let tree = Tree::new("binderr");
         assert_eq!(
             HostPolicy::bind(
-                false,
+                PolicyDefault::Deny,
                 vec![tree.spec(&tree.work, "work", HostAccess::Rw)],
                 vec![]
             ),
@@ -742,13 +1070,13 @@ mod tests {
         );
         let missing = tree.work.join("no-such-dir");
         let err = HostPolicy::bind(
-            false,
+            PolicyDefault::Deny,
             vec![tree.spec(&missing, "/work", HostAccess::Rw)],
             vec![],
         )
         .unwrap_err();
         assert_eq!(err, libc::ENOENT);
-        let err = HostPolicy::bind(false, vec![], vec![missing.clone()]).unwrap_err();
+        let err = HostPolicy::bind(PolicyDefault::Deny, vec![], vec![missing.clone()]).unwrap_err();
         assert_eq!(err, libc::ENOENT);
     }
 
@@ -760,7 +1088,7 @@ mod tests {
     fn jail_spec_parses_all_directive_kinds() {
         let s =
             JailSpec::parse("deny;/home/u/src:/work:rw;@/home/u/in.csv;/data:/data:ro").unwrap();
-        assert!(!s.default_open);
+        assert_eq!(s.default, PolicyDefault::Deny);
         assert_eq!(
             s.mounts,
             vec![
@@ -782,7 +1110,7 @@ mod tests {
     #[test]
     fn jail_spec_defaults_to_open_without_a_default_directive() {
         let s = JailSpec::parse("/h:/w:ro").unwrap();
-        assert!(s.default_open);
+        assert_eq!(s.default, PolicyDefault::Open);
         assert_eq!(s.mounts.len(), 1);
     }
 
@@ -830,10 +1158,10 @@ mod tests {
             tree.input.display()
         ))
         .unwrap();
-        let policy = HostPolicy::bind(spec.default_open, spec.mounts, spec.arg_files).unwrap();
+        let policy = HostPolicy::bind(spec.default, spec.mounts, spec.arg_files).unwrap();
         let env = policy.to_env_spec();
         let spec2 = JailSpec::parse(&env).unwrap();
-        let policy2 = HostPolicy::bind(spec2.default_open, spec2.mounts, spec2.arg_files).unwrap();
+        let policy2 = HostPolicy::bind(spec2.default, spec2.mounts, spec2.arg_files).unwrap();
         assert_eq!(policy, policy2, "env round trip: {env}");
         assert!(env.starts_with("deny;"), "{env}");
         assert!(env.contains(":/work:rw"), "{env}");
@@ -844,5 +1172,76 @@ mod tests {
     #[test]
     fn open_policy_serializes_to_open() {
         assert_eq!(HostPolicy::open().to_env_spec(), "open");
+    }
+
+    // ---------------------------------------------------------------
+    // The record default (spec 23 §8): allow-all + audit
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn jail_spec_parses_the_record_default() {
+        let s = JailSpec::parse("record").unwrap();
+        assert_eq!(s.default, PolicyDefault::Record);
+        assert!(s.mounts.is_empty());
+        assert!(s.arg_files.is_empty());
+    }
+
+    #[test]
+    fn record_rejects_inert_directives_with_named_errors() {
+        // Mounts/argument files under record are inert (record allows
+        // everything) — MECE: a record spec is the bare directive, anything
+        // more is a named error, never a silently-ignored directive.
+        for spec in ["record;/h:/w:ro", "record;@/f"] {
+            let e = JailSpec::parse(spec).unwrap_err();
+            assert!(
+                e.0.contains("record carries no grants"),
+                "spec {spec:?}: {e}"
+            );
+        }
+        for spec in ["record;record", "open;record", "record;deny"] {
+            let e = JailSpec::parse(spec).unwrap_err();
+            assert!(e.0.contains("duplicate/conflicting"), "spec {spec:?}: {e}");
+        }
+    }
+
+    #[test]
+    fn record_policy_allows_everything_but_is_not_never_denies() {
+        let tree = Tree::new("record");
+        let p = HostPolicy::bind(PolicyDefault::Record, vec![], vec![]).unwrap();
+        assert!(p.is_record());
+        // It never denies — but it journals every allow, so installers MUST
+        // open the journal for it: never_denies stays false.
+        assert!(!p.never_denies());
+        assert_eq!(
+            p.check(&tree.sibling.join("secret.txt"), HostAccess::Rw),
+            Ok(())
+        );
+        assert_eq!(p.check(Path::new("/private/etc"), HostAccess::Ro), Ok(()));
+        // No floor: record allows everything, the courtesy surface is moot.
+        assert!(p.floor_mounts.is_empty());
+    }
+
+    #[test]
+    fn bind_rejects_record_with_grants() {
+        let tree = Tree::new("recordgrants");
+        let err = HostPolicy::bind(
+            PolicyDefault::Record,
+            vec![tree.spec(&tree.work, "/work", HostAccess::Rw)],
+            vec![],
+        )
+        .unwrap_err();
+        assert_eq!(err, libc::EINVAL);
+        let err =
+            HostPolicy::bind(PolicyDefault::Record, vec![], vec![tree.input.clone()]).unwrap_err();
+        assert_eq!(err, libc::EINVAL);
+    }
+
+    #[test]
+    fn record_env_round_trip() {
+        let p = HostPolicy::bind(PolicyDefault::Record, vec![], vec![]).unwrap();
+        assert_eq!(p.to_env_spec(), "record");
+        let parsed = JailSpec::parse(&p.to_env_spec()).unwrap();
+        let p2 = HostPolicy::bind(parsed.default, parsed.mounts, parsed.arg_files).unwrap();
+        assert_eq!(p, p2);
     }
 }

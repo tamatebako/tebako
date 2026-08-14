@@ -70,21 +70,27 @@ impl Drop for TempDir {
 }
 
 /// A map-backed [`Env`] (no process-env mutation).
-struct MapEnv(HashMap<String, String>);
+struct MapEnv(std::cell::RefCell<HashMap<String, String>>);
 
 impl MapEnv {
     fn new() -> MapEnv {
-        MapEnv(HashMap::new())
+        MapEnv(std::cell::RefCell::new(HashMap::new()))
     }
 
     fn set(&mut self, key: &str, value: impl Into<String>) {
-        self.0.insert(key.to_string(), value.into());
+        self.0.get_mut().insert(key.to_string(), value.into());
     }
 }
 
 impl Env for MapEnv {
     fn var(&self, key: &str) -> Option<String> {
-        self.0.get(key).cloned()
+        self.0.borrow().get(key).cloned()
+    }
+
+    fn set_var(&self, key: &str, value: &str) {
+        self.0
+            .borrow_mut()
+            .insert(key.to_string(), value.to_string());
     }
 }
 
@@ -1175,5 +1181,623 @@ fn layout_check_gates_the_handoff_path_too() {
     assert!(
         !context().read().unwrap().is_mounted(),
         "the env image rolls back with the refusal"
+    );
+}
+
+// ---------------------------------------------------------------------
+// spec 22 §6: the exec-cache export
+// ---------------------------------------------------------------------
+
+/// The store trust-anchor sidecar next to an image (the store layout:
+/// `<image>.sha256`, sha256sum format).
+fn write_sidecar(image: &Path, hex64: &str) {
+    std::fs::write(
+        format!("{}.sha256", image.display()),
+        format!(
+            "{hex64}  {}\n",
+            image.file_name().unwrap().to_string_lossy()
+        ),
+    )
+    .unwrap();
+}
+
+#[test]
+fn boot_exports_the_exec_cache_root_keyed_by_the_env_image_sidecar() {
+    let g = guard("exec-cache");
+    let env_image = write_env_image(g.path());
+    write_sidecar(&env_image, &"ab".repeat(32));
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+
+    let cache = env
+        .var("TEBAKO_EXEC_CACHE")
+        .expect("the handoff env names the exec cache (spec 22 §6)");
+    let want = std::env::temp_dir().join("tebako-exec-abababababababab");
+    assert_eq!(Path::new(&cache), want.as_path());
+}
+
+#[test]
+fn a_second_runtime_image_sha_never_reads_the_firsts_exec_cache() {
+    // Rule L3 segregation: two boots whose env images carry different
+    // shas name different cache roots — a rebuilt runtime's process
+    // never reads the previous runtime's extraction namespace.
+    let g = guard("exec-cache-l3");
+    let image_a = write_env_image(g.path());
+    write_sidecar(&image_a, &"aa".repeat(32));
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", image_a.display().to_string());
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+    let root_a = env
+        .var("TEBAKO_EXEC_CACHE")
+        .expect("the first boot exports the cache root");
+
+    reset();
+    let image_b = g.path().join("runtime-b.tfs");
+    std::fs::copy(&image_a, &image_b).unwrap();
+    write_sidecar(&image_b, &"bb".repeat(32));
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", image_b.display().to_string());
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+    let root_b = env
+        .var("TEBAKO_EXEC_CACHE")
+        .expect("the second boot exports the cache root");
+
+    assert_ne!(root_a, root_b);
+    assert!(root_a.contains(&"a".repeat(16)), "{root_a}");
+    assert!(root_b.contains(&"b".repeat(16)), "{root_b}");
+}
+
+#[test]
+fn a_boot_without_a_runtime_image_exports_the_host_keyed_cache() {
+    let g = guard("exec-cache-host");
+    let payload = write_payload_image(g.path());
+    let env = MapEnv::new();
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    let cache = env
+        .var("TEBAKO_EXEC_CACHE")
+        .expect("a payload-only boot still names the exec cache");
+    let want = std::env::temp_dir().join("tebako-exec-host");
+    assert_eq!(Path::new(&cache), want.as_path());
+}
+
+// ---------------------------------------------------------------------
+// spec 22 §6 + v2-1/20: the mount-discovery env
+// ---------------------------------------------------------------------
+
+#[test]
+fn co_mounted_payloads_export_their_mount_vars() {
+    let g = guard("mount-vars");
+    let env_image = write_env_image(g.path());
+    let app = write_payload_image(g.path());
+    let jdk = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/", app.display()),
+            "--tebako-image",
+            &format!("{}:-:/tools/jdk", jdk.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    // The app at / exports nothing: TEBAKO_MOUNT_ROOT stays the spec-17
+    // mount-root override, never a discovery var (the ffi suite's process
+    // env is the regression net for the clobber).
+    assert!(env.var("TEBAKO_MOUNT_ROOT").is_none());
+    assert_eq!(
+        env.var("TEBAKO_MOUNT_TOOLS_JDK").as_deref(),
+        Some("/tools/jdk")
+    );
+}
+
+#[test]
+fn the_mount_var_values_are_windows_safe() {
+    // The uniform namespace (spec 17 §1): declared mounts qualify onto
+    // the runtime root's drive; the exported value is the physical
+    // point, the slug stays the declared mechanical form.
+    let g = guard("mount-vars-win");
+    let env_image =
+        write_env_image_with_layout(g.path(), Some(&GOOD_LAYOUT.replace("/__tfs__", "A:/t")));
+    let jdk = write_payload_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/tools/jdk", jdk.display()),
+        ]),
+        "A:/t",
+        &env,
+    )
+    .unwrap();
+
+    assert_eq!(
+        env.var("TEBAKO_MOUNT_TOOLS_JDK").as_deref(),
+        Some("A:/tools/jdk")
+    );
+}
+
+#[test]
+fn a_slug_collision_is_a_named_boot_error() {
+    let g = guard("mount-vars-collision");
+    let a = write_payload_image(g.path());
+    let b = write_payload_image(g.path());
+    let env = MapEnv::new();
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/a-b", a.display()),
+            "--tebako-image",
+            &format!("{}:-:/a/b", b.display()),
+            "--tebako-entry",
+            "/a-b/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(err.message.contains("TEBAKO_MOUNT_A_B"), "{}", err.message);
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refused composition unmounts everything"
+    );
+}
+
+// ---------------------------------------------------------------------
+// spec 22 §3 (Rules E2/E3): the child-injection env
+// ---------------------------------------------------------------------
+
+/// The env-image fixture carrying the preload shim (schema_minor 2): the
+/// staged file plus its layout declaration.
+fn write_env_image_with_shim(dir: &Path) -> PathBuf {
+    let layout = format!("{GOOD_LAYOUT}preload_shim: lib/tebako/libtfs_preload.so\n");
+    let p = dir.join("runtime.tfs");
+    build_zip(
+        &p,
+        &["lib/", "lib/ruby/", "lib/tebako/"],
+        &[
+            ("lib/ruby/rubygems.rb", b"# rubygems core\n".as_slice()),
+            ("lib/tebako/layout.yaml", layout.as_bytes()),
+            (
+                "lib/tebako/libtfs_preload.so",
+                b"ELF pretend shim\n".as_slice(),
+            ),
+        ],
+    );
+    p
+}
+
+/// The platform's injection variable (the driver's INJECT_VAR).
+#[cfg(target_os = "macos")]
+const INJECT_VAR: &str = "DYLD_INSERT_LIBRARIES";
+#[cfg(all(unix, not(target_os = "macos")))]
+const INJECT_VAR: &str = "LD_PRELOAD";
+
+#[cfg(unix)]
+#[test]
+fn a_declared_shim_is_materialized_and_armed_in_the_handoff_env() {
+    let g = guard("inject");
+    let env_image = write_env_image_with_shim(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+
+    // The spawn hook's source: the VFS spelling, flowed from the image's
+    // own declaration (SSOT — no hand-written copy anywhere).
+    assert_eq!(
+        env.var("TEBAKO_PRELOAD_SHIM").as_deref(),
+        Some("/__tfs__/lib/tebako/libtfs_preload.so")
+    );
+    // The injection var names the MATERIALIZED copy (a real host file).
+    let host = env
+        .var(INJECT_VAR)
+        .expect("the preload var rides the handoff env");
+    let bytes = std::fs::read(&host).expect("the materialized shim exists");
+    assert_eq!(bytes, b"ELF pretend shim\n");
+    // The mounts list lets an injected child rebuild the namespace.
+    let mounts = env.var("TEBAKO_TFS_MOUNTS").expect("the mounts list");
+    assert!(
+        mounts.contains(&format!("{}:/__tfs__", env_image.display())),
+        "{mounts}"
+    );
+}
+
+#[test]
+fn a_declared_but_absent_shim_is_a_named_boot_error() {
+    let g = guard("inject-lie");
+    let layout = format!("{GOOD_LAYOUT}preload_shim: lib/tebako/libtfs_preload.so\n");
+    // The declaration WITHOUT the file — the image lies.
+    let env_image = {
+        let p = g.path().join("runtime.tfs");
+        build_zip(
+            &p,
+            &["lib/", "lib/ruby/", "lib/tebako/"],
+            &[
+                ("lib/ruby/rubygems.rb", b"# rubygems core\n".as_slice()),
+                ("lib/tebako/layout.yaml", layout.as_bytes()),
+            ],
+        );
+        p
+    };
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap_err();
+    assert_eq!(err.code, 78, "{}", err.message);
+    assert!(err.message.contains("declaration lies"), "{}", err.message);
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refusal unmounts everything"
+    );
+}
+
+#[test]
+fn an_undeclared_image_arms_only_the_mounts_list() {
+    let g = guard("inject-old");
+    let env_image = write_env_image(g.path()); // no preload_shim key
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+
+    assert!(env.var("TEBAKO_PRELOAD_SHIM").is_none());
+    #[cfg(unix)]
+    assert!(env.var(INJECT_VAR).is_none());
+    let mounts = env.var("TEBAKO_TFS_MOUNTS").expect("the mounts list");
+    assert!(mounts.contains(":/__tfs__"), "{mounts}");
+}
+
+// ---------------------------------------------------------------------
+// spec 22 §3.2: the dependency mounts' declared bin dirs ride PATH
+// ---------------------------------------------------------------------
+
+/// A payload-manifest fixture (spec 03): kind-specific PROVIDES body.
+fn payload_manifest(kind: &str, provides: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: {kind}\n  name: x\n  version: \"1\"\n  \
+         producer: {{tool: t, tool_version: \"1\"}}\n  created: \"2026-08-13T00:00:00Z\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n{provides}\n",
+        z = "0".repeat(64)
+    )
+}
+
+/// A toolkit-payload fixture: `bin/java` plus the in-image manifest
+/// declaring it (spec 03 §2.2 — the openjdk shape).
+fn write_toolkit_image(dir: &Path) -> PathBuf {
+    write_toolkit_image_with_java(dir, b"#!/bin/sh\n")
+}
+
+/// The toolkit fixture with a caller-chosen `bin/java` body (the
+/// launcher-tier run test makes it print a marker).
+fn write_toolkit_image_with_java(dir: &Path, java: &[u8]) -> PathBuf {
+    let manifest = payload_manifest(
+        "toolkit",
+        "provides:\n  executables:\n    - {name: java, path: /bin/java}\n  \
+         platforms: [aarch64-macos]\n  capabilities: {exec: true, read: true}",
+    );
+    let p = dir.join("toolkit.tfs");
+    build_zip(
+        &p,
+        &["bin/", "__tpkg__/"],
+        &[
+            ("bin/java", java),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    p
+}
+
+fn joined_path(dirs: &[&str]) -> String {
+    std::env::join_paths(dirs.iter().map(std::path::PathBuf::from))
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
+}
+
+#[test]
+fn the_dependency_bin_dirs_prepend_path_in_triple_order() {
+    let g = guard("path-env");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path()); // no manifest: nothing declared
+    let toolkit = write_toolkit_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin:/bin");
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/openjdk", toolkit.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    assert_eq!(
+        env.var("PATH").as_deref(),
+        Some(joined_path(&["/opt/openjdk/bin", "/usr/bin", "/bin"]).as_str())
+    );
+}
+
+#[test]
+fn the_app_payloads_own_bins_are_never_prepended() {
+    let g = guard("path-env-first");
+    let env_image = write_env_image(g.path());
+    let app = write_toolkit_image(g.path()); // declares /bin, mounted FIRST
+    let dep = write_toolkit_image(g.path());
+    // A distinct bin for the dep so the assertions cannot conflate the two.
+    let dep = {
+        let _ = dep;
+        let manifest = payload_manifest(
+            "toolkit",
+            "provides:\n  executables:\n    - {name: x, path: /sbin/x}\n  \
+             platforms: [aarch64-macos]\n  capabilities: {exec: true, read: true}",
+        );
+        let p = g.path().join("dep.tfs");
+        build_zip(
+            &p,
+            &["sbin/", "__tpkg__/"],
+            &[
+                ("sbin/x", b"#!/bin/sh\n".as_slice()),
+                ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+            ],
+        );
+        p
+    };
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin");
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", app.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/dep", dep.display()),
+            "--tebako-entry",
+            "/bin/java",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    // Only the dependency contributes: the app's own /bin stays off PATH.
+    assert_eq!(
+        env.var("PATH").as_deref(),
+        Some(joined_path(&["/opt/dep/sbin", "/usr/bin"]).as_str())
+    );
+}
+
+#[test]
+fn an_image_without_a_manifest_declares_no_bins() {
+    let g = guard("path-env-plain");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let plain = write_payload_image(g.path()); // the dependency: no manifest at all
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin");
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/plain", plain.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    assert_eq!(env.var("PATH").as_deref(), Some("/usr/bin"));
+}
+
+#[test]
+fn a_corrupt_dependency_manifest_is_a_named_65() {
+    let g = guard("path-env-corrupt");
+    let env_image = write_env_image(g.path());
+    let payload = write_payload_image(g.path());
+    let corrupt = {
+        let p = g.path().join("corrupt.tfs");
+        build_zip(
+            &p,
+            &["__tpkg__/"],
+            &[(
+                "__tpkg__/manifest.yaml",
+                b"identity: [not a mapping\n".as_slice(),
+            )],
+        );
+        p
+    };
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/corrupt", corrupt.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("self-description lies"),
+        "{}",
+        err.message
+    );
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refusal unmounts everything"
+    );
+}
+
+// ---------------------------------------------------------------------
+// spec 22 §3.2: the host-launcher tier — self-injecting PATH wrappers
+// ---------------------------------------------------------------------
+
+/// The boot shape shared by the launcher tests: the shim env image, a
+/// plain app payload, and one toolkit dependency mounted at `point`.
+#[cfg(unix)]
+fn boot_with_toolkit(g: &Guard, point: &str, java: &[u8]) -> MapEnv {
+    let env_image = write_env_image_with_shim(g.path());
+    let payload = write_payload_image(g.path());
+    let toolkit = write_toolkit_image_with_java(g.path(), java);
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin:/bin");
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:{point}", toolkit.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    env
+}
+
+#[cfg(unix)]
+#[test]
+fn dependency_executables_materialize_as_self_injecting_launchers() {
+    use std::os::unix::fs::PermissionsExt as _;
+    let g = guard("path-env-wrap");
+    let env = boot_with_toolkit(&g, "/opt/openjdk", b"#!/bin/sh\n");
+
+    // PATH leads with the launcher dir, then the VFS bin dir, then the
+    // inherited value.
+    let path = env.var("PATH").unwrap();
+    let dirs: Vec<String> = std::env::split_paths(std::ffi::OsStr::new(&path))
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(dirs.len(), 4, "{path}");
+    let wrap_dir = PathBuf::from(&dirs[0]);
+    assert_eq!(wrap_dir.file_name().unwrap().to_string_lossy(), "wrap-bin");
+    assert!(
+        wrap_dir
+            .parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("tebako-dl-"),
+        "the launchers live under the cleaned dl root: {}",
+        wrap_dir.display()
+    );
+    assert_eq!(dirs[1], "/opt/openjdk/bin");
+
+    // The wrapper re-arms the injection var explicitly and execs the
+    // materialized binary (the dl layout mirrors the full VFS path).
+    let shim_host = env.var(INJECT_VAR).unwrap();
+    let target = wrap_dir.parent().unwrap().join("opt/openjdk/bin/java");
+    let wrap = wrap_dir.join("java");
+    assert_eq!(
+        std::fs::read_to_string(&wrap).unwrap(),
+        format!(
+            "#!/bin/sh\n{v}='{shim_host}'\nexport {v}\nexec '{}' \"$@\"\n",
+            target.display(),
+            v = INJECT_VAR
+        )
+    );
+    assert_eq!(
+        std::fs::metadata(&wrap).unwrap().permissions().mode() & 0o777,
+        0o755
+    );
+    // The zip reports 0644 — the tier forces the exec bit on the copy.
+    assert_ne!(
+        std::fs::metadata(&target).unwrap().permissions().mode() & 0o111,
+        0
+    );
+}
+
+/// The launcher's own proof on ELF: nothing is inherited (`env_clear`)
+/// — the wrapper alone arms the injection (ld.so then complains about
+/// the fixture shim, proving the var reached it) and execs the target.
+/// On macOS the same text is the SIP answer (dyld aborts on a bogus
+/// insert, so the run leg lives on linux; the macOS proof is the
+/// dogfood).
+#[cfg(target_os = "linux")]
+#[test]
+fn a_launcher_re_arms_the_injection_and_execs_the_target() {
+    let g = guard("path-env-wrap-run");
+    // A distinct mount point: the dl cache keys by memfs path, and the
+    // content test's plain java must not shadow this one's marker.
+    let env = boot_with_toolkit(&g, "/opt/jdkrun", b"#!/bin/sh\necho TEBAKO-WRAP-OK\n");
+    let path = env.var("PATH").unwrap();
+    let wrap_dir = std::env::split_paths(std::ffi::OsStr::new(&path))
+        .next()
+        .unwrap();
+
+    let out = std::process::Command::new("/bin/sh")
+        .arg("-c")
+        .arg("java")
+        .env_clear()
+        .env("PATH", format!("{}:/usr/bin:/bin", wrap_dir.display()))
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "TEBAKO-WRAP-OK",
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("LD_PRELOAD"),
+        "the wrapper armed the injection var: {}",
+        String::from_utf8_lossy(&out.stderr)
     );
 }

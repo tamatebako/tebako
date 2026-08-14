@@ -14,7 +14,7 @@ use std::path::Path;
 
 use tfs::context::context;
 
-use crate::handoff::{Handoff, ImageSource, SlotRef};
+use crate::handoff::{Handoff, ImageSource, ImageSpec, SlotRef};
 use crate::{
     EX_TEBAKO_IO, EX_TEBAKO_JAIL, EX_TEBAKO_LAYOUT, EX_TEBAKO_MANIFEST, EX_TEBAKO_UNAVAILABLE,
 };
@@ -84,7 +84,7 @@ fn effective_root(declared: &str, env: &dyn Env) -> Result<String, DriverError> 
     }
 }
 
-fn errno_text(e: i32) -> String {
+pub(crate) fn errno_text(e: i32) -> String {
     String::from_utf8_lossy(tfs::errno::strerror(e)).into_owned()
 }
 
@@ -92,6 +92,10 @@ fn errno_text(e: i32) -> String {
 /// `TEBAKO_JAIL`, `TEBAKO_JAIL_SOURCE`).
 pub trait Env {
     fn var(&self, key: &str) -> Option<String>;
+    /// Export into the interpreter's environment — the driver owns the
+    /// handoff env (the spec 22 §6 surface: `TEBAKO_EXEC_CACHE`, the
+    /// mount-discovery vars, the child-injection vars).
+    fn set_var(&self, key: &str, value: &str);
 }
 
 /// The process environment (the shipped path).
@@ -100,6 +104,9 @@ pub struct ProcessEnv;
 impl Env for ProcessEnv {
     fn var(&self, key: &str) -> Option<String> {
         std::env::var(key).ok()
+    }
+    fn set_var(&self, key: &str, value: &str) {
+        std::env::set_var(key, value);
     }
 }
 
@@ -372,8 +379,9 @@ fn mount_env_image(
 }
 
 /// Read a small text file through the mounted VFS (never the host fs) —
-/// the layout declaration lives INSIDE the env image (spec 18 C3).
-fn read_mounted_text(path: &str) -> Result<String, i32> {
+/// the layout declaration lives INSIDE the env image (spec 18 C3), and so
+/// does each payload's own manifest (spec 22 §3.2).
+pub(crate) fn read_mounted_text(path: &str) -> Result<String, i32> {
     let mut ctx = context().write().unwrap();
     let fd = ctx.open(path, libc::O_RDONLY)?;
     let mut out = Vec::new();
@@ -409,14 +417,16 @@ fn read_mounted_text(path: &str) -> Result<String, i32> {
 /// `mount_root_override` permission — a runtime whose rbconfig predates
 /// the override era refuses by name rather than booting an interpreter
 /// whose load paths point at an unmounted root. A boot without
-/// `TEBAKO_RUNTIME_IMAGE` mounts no env image and has no pair to check.
+/// `TEBAKO_RUNTIME_IMAGE` mounts no env image and has no pair to check
+/// (None). On success the parsed declaration returns — its additive
+/// grants drive the child injection (spec 22 §3).
 fn check_env_layout(
     env: &dyn Env,
     baked_root: &str,
     effective_root: &str,
-) -> Result<(), DriverError> {
+) -> Result<Option<crate::layout::ImageLayout>, DriverError> {
     let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") else {
-        return Ok(());
+        return Ok(None);
     };
     let path = join_mount(effective_root, crate::layout::LAYOUT_IMAGE_PATH);
     let text = read_mounted_text(&path).map_err(|_| {
@@ -436,7 +446,7 @@ fn check_env_layout(
             ),
         ));
     }
-    Ok(())
+    Ok(Some(declaration))
 }
 
 fn mount_image(
@@ -507,8 +517,8 @@ fn apply_jail(env: &dyn Env) -> Result<(), DriverError> {
     };
     let spec =
         tfs::policy::JailSpec::parse(&spec_str).map_err(|e| jail(format!("TEBAKO_JAIL: {e}")))?;
-    let policy = tfs::policy::HostPolicy::bind(spec.default_open, spec.mounts, spec.arg_files)
-        .map_err(|e| {
+    let policy =
+        tfs::policy::HostPolicy::bind(spec.default, spec.mounts, spec.arg_files).map_err(|e| {
             jail(format!(
                 "TEBAKO_JAIL: cannot bind policy: {}",
                 errno_text(e)
@@ -534,7 +544,7 @@ fn in_mount(path: &str, mount_point: &str) -> bool {
 
 /// Join the entry onto its mount: mount `/` + `/bin/app` → `/bin/app`;
 /// mount `/opt` + `bin/app` → `/opt/bin/app`.
-fn join_mount(mount_point: &str, entry: &str) -> String {
+pub(crate) fn join_mount(mount_point: &str, entry: &str) -> String {
     format!(
         "{}/{}",
         mount_point.trim_end_matches('/'),
@@ -569,6 +579,70 @@ fn qualify_mount(mount: &str, runtime_root: &str) -> String {
         Some(drive) if mount.starts_with('/') => format!("{drive}{mount}"),
         _ => mount.to_string(),
     }
+}
+
+/// The mechanical slug of a declared mount (spec 22 §6; v2-1/20): the
+/// drive qualifier dropped (`A:/tools/x` slugs like `/tools/x`),
+/// alphanumerics uppercased, everything else an underscore, edge
+/// underscores trimmed; the root mount slugs ROOT.
+fn mount_slug(mount: &str) -> String {
+    let declared = match vfs_drive(mount) {
+        Some(d) => &mount[d.len()..],
+        None => mount,
+    };
+    let slug: String = declared
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = slug.trim_matches('_');
+    if trimmed.is_empty() {
+        "ROOT".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// The mount-discovery surface (spec 22 §6; v2-1/20): per payload image
+/// this boot mounts, `TEBAKO_MOUNT_<SLUG>=<physical point>` rides the
+/// handoff env — the portable way to reference a co-mounted payload's
+/// files (the value is the QUALIFIED point on windows, re-rooting-proof).
+/// Union members share their point and get one var; two DIFFERENT
+/// physical points slugging alike is an authoring ambiguity — a named
+/// error, never a silent winner.
+///
+/// The root mount (`/`) exports NOTHING: its slug would spell
+/// `TEBAKO_MOUNT_ROOT`, which is the mount-root OVERRIDE var (spec 17
+/// §1) — exporting it would make every child runtime read an override.
+/// The app-at-/ flow needs no discovery var by construction (the
+/// rewritten entry + `__dir__` qualify automatically — v2-1/20).
+fn export_mount_vars(images: &[ImageSpec], env: &dyn Env) -> Result<(), DriverError> {
+    let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for spec in images {
+        let slug = mount_slug(&spec.mount);
+        if slug == "ROOT" {
+            continue;
+        }
+        match seen.get(&slug) {
+            Some(point) if point != &spec.mount => {
+                return Err(manifest(format!(
+                    "mount points '{point}' and '{}' both derive TEBAKO_MOUNT_{slug} — the discovery surface is ambiguous; rename one mount",
+                    spec.mount
+                )));
+            }
+            Some(_) => continue,
+            None => {
+                seen.insert(slug.clone(), spec.mount.clone());
+                env.set_var(&format!("TEBAKO_MOUNT_{slug}"), &spec.mount);
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Resolve the entry against the first image's mount (the app payload —
@@ -642,6 +716,9 @@ pub fn boot_with_mount_modes(
     let runtime_root = effective.as_str();
     crate::ffi::set_mount_point(runtime_root);
     let mut h = Handoff::parse(argv)?;
+    // The exec cache (spec 22 §6) is named before anything can
+    // materialize: both boot paths below export it to the handoff env.
+    crate::exec_cache::export(env);
     // Windows: qualify the declared mounts onto the VFS drive (spec 17
     // §1) before any mount/entry use — the mount table, the union-mode
     // rows, and the entry resolution all see the physical points.
@@ -656,8 +733,11 @@ pub fn boot_with_mount_modes(
         let result = (|| {
             let mut mounted = Vec::new();
             mount_env_image(env, runtime_root, &mut mounted)?;
-            check_env_layout(env, baked_root, runtime_root)?;
+            let declaration = check_env_layout(env, baked_root, runtime_root)?;
             apply_jail(env)?;
+            // The standalone interpreter spawns too — arm its children
+            // the same way (spec 22 §3).
+            crate::injection::export(env, declaration.as_ref(), runtime_root)?;
             Ok(BootOutcome {
                 argv: argv.to_vec(),
             })
@@ -673,11 +753,19 @@ pub fn boot_with_mount_modes(
         mount_env_image(env, runtime_root, &mut mounted)?;
         // The env image's pair-check runs post-mount, before any payload
         // or interpreter touch (spec 18 C3 — exit 78).
-        check_env_layout(env, baked_root, runtime_root)?;
+        let declaration = check_env_layout(env, baked_root, runtime_root)?;
         for spec in &h.images {
             mount_image(spec, &mut mounted, modes)?;
         }
         apply_jail(env)?;
+        // The mounts are established — publish the discovery surface
+        // (spec 22 §6; v2-1/20), arm the children (spec 22 §3), and wire
+        // the dependency bins onto PATH (spec 22 §3.2 — the launcher
+        // tier embeds the shim's materialized copy when one is
+        // delivered, so injection runs first).
+        export_mount_vars(&h.images, env)?;
+        let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
+        crate::path_env::export(&h.images, env, shim_host.as_deref())?;
         let rewritten = match h.entry.as_deref() {
             // No entry: the interpreter starts with its own args (the
             // bare `--tebako-image` invocation — the deploy-driver
@@ -764,21 +852,26 @@ mod tests {
         assert_eq!(qualify_mount("rel", "/__tfs__"), "rel");
     }
 
-    struct MapEnv(std::collections::HashMap<String, String>);
+    struct MapEnv(std::cell::RefCell<std::collections::HashMap<String, String>>);
 
     impl Env for MapEnv {
         fn var(&self, key: &str) -> Option<String> {
-            self.0.get(key).cloned()
+            self.0.borrow().get(key).cloned()
+        }
+        fn set_var(&self, key: &str, value: &str) {
+            self.0
+                .borrow_mut()
+                .insert(key.to_string(), value.to_string());
         }
     }
 
     fn env_with(pairs: &[(&str, &str)]) -> MapEnv {
-        MapEnv(
+        MapEnv(std::cell::RefCell::new(
             pairs
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
-        )
+        ))
     }
 
     #[test]
@@ -819,5 +912,57 @@ mod tests {
             assert_eq!(err.code, EX_TEBAKO_MANIFEST, "{bad}");
             assert!(err.message.contains("TEBAKO_MOUNT_ROOT"), "{bad}");
         }
+    }
+
+    #[test]
+    fn mount_slug_is_mechanical_and_drive_neutral() {
+        assert_eq!(mount_slug("/"), "ROOT");
+        assert_eq!(mount_slug("A:/"), "ROOT");
+        assert_eq!(mount_slug("/tools/inkscape"), "TOOLS_INKSCAPE");
+        assert_eq!(mount_slug("A:/tools/inkscape"), "TOOLS_INKSCAPE");
+        assert_eq!(mount_slug("/a-b/c.d"), "A_B_C_D");
+        assert_eq!(mount_slug("/x/"), "X");
+        assert_eq!(mount_slug("rel"), "REL");
+    }
+
+    fn image_spec(mount: &str) -> ImageSpec {
+        ImageSpec {
+            source: ImageSource::File(std::path::PathBuf::from("/x/img.tfs"), SlotRef::Whole),
+            mount: mount.to_string(),
+        }
+    }
+
+    #[test]
+    fn mount_vars_export_per_image_with_the_physical_value() {
+        let env = env_with(&[]);
+        export_mount_vars(&[image_spec("/"), image_spec("/tools/jdk")], &env).unwrap();
+        let m = env.0.borrow();
+        // The root mount exports nothing — TEBAKO_MOUNT_ROOT is the
+        // spec-17 mount-root override, never a discovery var.
+        assert!(!m.contains_key("TEBAKO_MOUNT_ROOT"));
+        assert_eq!(
+            m.get("TEBAKO_MOUNT_TOOLS_JDK").map(String::as_str),
+            Some("/tools/jdk")
+        );
+    }
+
+    #[test]
+    fn union_members_at_one_point_share_one_var() {
+        let env = env_with(&[]);
+        export_mount_vars(&[image_spec("/opt/x"), image_spec("/opt/x")], &env).unwrap();
+        assert_eq!(
+            env.0.borrow().get("TEBAKO_MOUNT_OPT_X").map(String::as_str),
+            Some("/opt/x")
+        );
+    }
+
+    #[test]
+    fn two_different_points_slugging_alike_is_a_named_error() {
+        let env = env_with(&[]);
+        let err = export_mount_vars(&[image_spec("/a-b"), image_spec("/a/b")], &env).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST);
+        assert!(err.message.contains("TEBAKO_MOUNT_A_B"), "{}", err.message);
+        assert!(err.message.contains("/a-b"), "{}", err.message);
+        assert!(err.message.contains("/a/b"), "{}", err.message);
     }
 }

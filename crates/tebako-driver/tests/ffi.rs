@@ -29,6 +29,11 @@ impl Guard {
 fn guard(tag: &str) -> Guard {
     let g = LOCK.lock().unwrap();
     let tmp = TempDir::new(tag);
+    // The in-process boots are the re-exec'd child by definition (spec 22
+    // §2 "Phase 1 delivery"): the sentinel skips the macOS boot-head
+    // self-insertion — a test process must never execv itself away. The
+    // functional re-exec proof lives in tests/interpose.rs.
+    std::env::set_var("TEBAKO_LOADER_INTERPOSED", "1");
     context().write().unwrap().unmount();
     context()
         .write()

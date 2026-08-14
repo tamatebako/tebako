@@ -11,7 +11,9 @@
 //! tfs extract [-v] [-q|--quiet] [-d|--dest <dir>] <image> [files...]
 //! tfs find [-v] <image> <pattern>
 //! tfs mkimage --format dwarfs|limnifs <srcdir> -o <img> [-v]
-//! tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] -- <cmd> [args...]
+//! tfs exec <image>[:mount] [--image <image:mount>]...
+//!          [--jail <spec> | --compose <file.yaml>] -- <cmd> [args...]
+//! tfs needs --from-journal <journal.log>
 //! tfs encrypt <image> -o <img> --recipient <pubkey>... [--subtree <path>=<pubkey>]...
 //! tfs encrypt <image> -o <img> --rewrap --key <secret> --recipient <pubkey>...
 //! tfs decrypt <image> -o <out.tar> --key <secret>
@@ -33,7 +35,8 @@ use tfs_cli::enc::{
 };
 use tfs_cli::{
     cmd_cat, cmd_exec, cmd_extract, cmd_find, cmd_info, cmd_info_json, cmd_info_rich, cmd_ls,
-    cmd_mkimage, cmd_stat, cmd_tree, ExecOptions, ExtractOptions, InfoOptions, ListOptions,
+    cmd_mkimage, cmd_needs_from_journal, cmd_stat, cmd_tree, ExecOptions, ExtractOptions,
+    InfoOptions, ListOptions,
 };
 
 fn main() -> ExitCode {
@@ -59,6 +62,7 @@ fn main() -> ExitCode {
         "find" => cmd_find_main(rest),
         "mkimage" => cmd_mkimage_main(rest),
         "exec" => cmd_exec_main(rest),
+        "needs" => cmd_needs_main(rest),
         "encrypt" => cmd_encrypt_main(rest),
         "decrypt" => cmd_decrypt_main(rest),
         "mount" => cmd_mount_main(rest),
@@ -429,12 +433,12 @@ fn cmd_mkimage_main(rest: &[String]) -> ExitCode {
 // exec (spec 07 §8 tier 1)
 // ---------------------------------------------------------------------
 
-/// `tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] --
+/// `tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec> | --compose <file.yaml>] --
 /// <cmd> [args...]` — everything after `--` is the command, verbatim (the
 /// generic flag parser must never see the command's own flags).
 fn cmd_exec_main(rest: &[String]) -> ExitCode {
     const USAGE: &str =
-        "tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec>] -- <cmd> [args...]";
+        "tfs exec <image>[:mount] [--image <image:mount>]... [--jail <spec> | --compose <file.yaml>] -- <cmd> [args...]";
     let Some(sep) = rest.iter().position(|a| a == "--") else {
         return fail(&format!(
             "Error: tfs exec requires `--` before the command\nusage: {USAGE}"
@@ -448,6 +452,7 @@ fn cmd_exec_main(rest: &[String]) -> ExitCode {
     }
     let mut images: Vec<String> = Vec::new();
     let mut jail: Option<String> = None;
+    let mut compose: Option<String> = None;
     let mut i = 0;
     while i < ours.len() {
         let arg = ours[i].as_str();
@@ -473,6 +478,10 @@ fn cmd_exec_main(rest: &[String]) -> ExitCode {
                 Ok(v) => jail = Some(v),
                 Err(e) => return fail(&format!("Error: {e}")),
             },
+            "--compose" => match take_value(&mut i) {
+                Ok(v) => compose = Some(v),
+                Err(e) => return fail(&format!("Error: {e}")),
+            },
             _ if arg.starts_with('-') => {
                 return fail(&format!("Error: unknown option: {arg}\nusage: {USAGE}"));
             }
@@ -480,12 +489,13 @@ fn cmd_exec_main(rest: &[String]) -> ExitCode {
         }
         i += 1;
     }
-    if images.is_empty() {
+    if images.is_empty() && compose.is_none() {
         return fail(&format!("Error: missing image\nusage: {USAGE}"));
     }
     let opts = ExecOptions {
         images,
         jail,
+        compose,
         cmd: cmd.to_vec(),
     };
     match cmd_exec(&opts) {
@@ -616,6 +626,51 @@ fn cmd_mount_main(rest: &[String]) -> ExitCode {
     }
 }
 
+/// `tfs needs --from-journal <journal.log>` — draft a payload `needs:`
+/// block from a record-mode journal (spec 23 §8: the "perm all and
+/// monitor" half of the workflow).
+fn cmd_needs_main(rest: &[String]) -> ExitCode {
+    const USAGE: &str = "tfs needs --from-journal <journal.log>";
+    let mut journal: Option<String> = None;
+    let mut i = 0;
+    while i < rest.len() {
+        let arg = rest[i].as_str();
+        let (name, mut value) = match arg.split_once('=') {
+            Some((n, v)) => (n, Some(v.to_string())),
+            None => (arg, None),
+        };
+        match name {
+            "--from-journal" => {
+                journal = match value.take() {
+                    Some(v) => Some(v),
+                    None => {
+                        i += 1;
+                        match rest.get(i) {
+                            Some(v) => Some(v.clone()),
+                            None => return fail("Error: missing value for --from-journal"),
+                        }
+                    }
+                };
+            }
+            _ => return fail(&format!("Error: unknown option: {arg}\nusage: {USAGE}")),
+        }
+        i += 1;
+    }
+    let Some(journal) = journal else {
+        return fail(&format!("Error: missing --from-journal\nusage: {USAGE}"));
+    };
+    match cmd_needs_from_journal(&journal) {
+        Ok(yaml) => {
+            print!("{yaml}");
+            ExitCode::SUCCESS
+        }
+        Err((msg, rc)) => {
+            eprintln!("{msg}");
+            ExitCode::from(rc as u8)
+        }
+    }
+}
+
 fn print_help() {
     println!("tfs - generic VFS image tool (tebako)\n");
     println!("Usage: tfs <command> [options]\n");
@@ -632,7 +687,10 @@ fn print_help() {
     println!(
         "  mkimage  Create a dwarfs or limnifs (.tfs) image from a directory (in-process writer)"
     );
-    println!("  exec     Run a dynamic native command with the VFS injected (preload shim)");
+    println!("  exec     Run a dynamic native command with the VFS injected (preload shim;");
+    println!("           --compose <file.yaml> takes the whole composition, spec 23 §9)");
+    println!("  needs    Draft a payload needs: block from a record-mode journal");
+    println!("           (--from-journal <log>; spec 23 §8)");
     println!("  encrypt  Encrypt an image to recipients (-o, --recipient, --subtree;");
     println!("           --rewrap --key rotates grants without touching the bulk)");
     println!("  decrypt  Decrypt an image to a plaintext tar (-o, --key)");

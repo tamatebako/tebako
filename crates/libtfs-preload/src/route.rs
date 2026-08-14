@@ -351,7 +351,7 @@ fn init_inner() -> Result<(), String> {
     let jail_spec = std::env::var("TEBAKO_JAIL").unwrap_or_default();
     if !jail_spec.trim().is_empty() {
         let spec = JailSpec::parse(&jail_spec).map_err(|e| format!("TEBAKO_JAIL: {e}"))?;
-        let policy = HostPolicy::bind(spec.default_open, spec.mounts, spec.arg_files)
+        let policy = HostPolicy::bind(spec.default, spec.mounts, spec.arg_files)
             .map_err(|e| format!("TEBAKO_JAIL: cannot bind policy: {}", errno_text(e)))?;
         // The audit-journal source label: whoever exported TEBAKO_JAIL
         // names the composition (TEBAKO_JAIL_SOURCE); a direct env install
@@ -524,10 +524,10 @@ mod tests {
         assert_eq!(vfs_telldir(dir_id), Err(libc::EBADF));
 
         // ---- deny policy: host denied, memfs unaffected ----
-        context()
-            .write()
-            .unwrap()
-            .set_host_policy(HostPolicy::bind(false, vec![], vec![]).unwrap(), None);
+        context().write().unwrap().set_host_policy(
+            HostPolicy::bind(tfs::policy::PolicyDefault::Deny, vec![], vec![]).unwrap(),
+            None,
+        );
         assert_eq!(
             vfs_open("/etc/definitely-host", libc::O_RDONLY),
             PathRoute::Denied(libc::EPERM)

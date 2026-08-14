@@ -185,6 +185,9 @@ impl FsContext {
     /// Denials are journaled (spec 08 §2 — the audit journal records the
     /// path, the op class and the policy's source label) via the cached,
     /// pre-opened file: a bare write(2), no path operation under the lock.
+    /// Under the record policy (spec 23 §8) ALLOWS are journaled too
+    /// (`event=jail-allow`) — the "perm all and monitor" trail the
+    /// `tfs needs` generator turns into a draft `needs:` block.
     pub fn host_check<P: AsRef<std::path::Path>>(
         &self,
         path: P,
@@ -192,7 +195,19 @@ impl FsContext {
     ) -> Result<(), i32> {
         let path = path.as_ref();
         match self.host_policy.check(path, need) {
-            Ok(()) => Ok(()),
+            Ok(()) => {
+                if self.host_policy.is_record() {
+                    if let Some(journal) = &self.journal {
+                        crate::journal::journal_allow(
+                            journal,
+                            path,
+                            need,
+                            self.host_policy.source(),
+                        );
+                    }
+                }
+                Ok(())
+            }
             Err(e) => {
                 if let Some(journal) = &self.journal {
                     crate::journal::journal_deny(journal, path, need, self.host_policy.source());
@@ -273,7 +288,9 @@ impl FsContext {
 
     /// Unmount a single mount by handle: force-close only its own fds and
     /// dir handles (they fail with EBADF afterwards), drop the mount, and
-    /// release the mount point. Handles are never reused.
+    /// release the mount point. Handles are never reused. The dlmap cache
+    /// is flushed whole (entries carry no owner; serving an extraction of
+    /// the removed mount's image afterwards would be a stale leak).
     pub fn unmount_handle(&mut self, handle: i32) -> Result<(), i32> {
         if !self.mounts.contains_key(&handle) {
             return Err(libc::ENODEV);
@@ -284,10 +301,16 @@ impl FsContext {
         if self.compat_handle == Some(handle) {
             self.compat_handle = None;
         }
+        self.dl_cache.clear();
         Ok(())
     }
 
-    /// Unmount everything; all fds and dir handles become invalid.
+    /// Unmount everything; all fds and dir handles become invalid. The
+    /// dlmap cache dies with the mount table: its entries are a function
+    /// of THESE mounts' images, and serving them against a later table
+    /// would be a stale-extraction leak (the extracted FILES linger in
+    /// the per-process tmpdir until the exit cleanup — the map is what
+    /// must not outlive the mounts).
     pub fn unmount(&mut self) {
         self.mounts.clear();
         self.fd_table.clear();
@@ -295,6 +318,7 @@ impl FsContext {
         self.next_fd = 1;
         self.next_dir_id = 1;
         self.compat_handle = None;
+        self.dl_cache.clear();
     }
 
     pub fn is_mounted(&self) -> bool {
@@ -895,6 +919,15 @@ impl FsContext {
         std::ffi::CString::new(s).map_err(|_| libc::EIO)
     }
 
+    /// The per-process dl tmpdir, created and cleanup-registered on
+    /// first use (the dlmap2file root). Exposed for the driver's PATH
+    /// launchers (spec 22 §3.2): the self-injecting wrappers live under
+    /// the same root, so the process-exit cleanup takes them with the
+    /// extractions.
+    pub fn ensure_dl_tmpdir(&mut self) -> Result<std::path::PathBuf, i32> {
+        ensure_dl_tmpdir(&mut self.dl_tmpdir)
+    }
+
     /// The exec surface's answer for a memfs path (the preload's
     /// execve/posix_spawn routing): a mount whose in-image manifest
     /// declares the home annotation (`identity.annotations.java_home` —
@@ -1093,15 +1126,7 @@ impl FsContext {
         }
 
         let root = match dest {
-            ClosureDest::Dlcache => match &self.dl_tmpdir {
-                Some(d) => d.clone(),
-                None => {
-                    let d = create_dl_tmpdir().ok_or(libc::EIO)?;
-                    register_dl_cleanup(&d);
-                    self.dl_tmpdir = Some(d.clone());
-                    d
-                }
-            },
+            ClosureDest::Dlcache => ensure_dl_tmpdir(&mut self.dl_tmpdir)?,
             ClosureDest::Store(root) => root.clone(),
         };
 
@@ -1337,11 +1362,35 @@ fn real_open(path: &std::ffi::CString, flags: i32) -> Result<i32, i32> {
     }
 }
 
+/// The per-process dl tmpdir behind `Context::ensure_dl_tmpdir`, as a
+/// field-disjoint free function — the exec walk holds an immutable
+/// borrow of `self.mounts` while the tmpdir slot rotates.
+fn ensure_dl_tmpdir(slot: &mut Option<std::path::PathBuf>) -> Result<std::path::PathBuf, i32> {
+    match slot {
+        Some(d) => Ok(d.clone()),
+        None => {
+            let d = create_dl_tmpdir().ok_or(libc::EIO)?;
+            register_dl_cleanup(&d);
+            *slot = Some(d.clone());
+            Ok(d)
+        }
+    }
+}
+
 /// Create the per-process temporary directory for dlmap2file extractions
 /// (mirrors the legacy C++ semantics: a unique subdirectory of the system
-/// temp dir; a handful of attempts before giving up).
+/// temp dir; a handful of attempts before giving up). spec 22 §6: when
+/// the driver named `TEBAKO_EXEC_CACHE`, the leaf lands UNDER it — the
+/// `tebako-dl-<hex>` marker keeps the dlmap-prefix redirect and the
+/// exit cleanup untouched.
 fn create_dl_tmpdir() -> Option<std::path::PathBuf> {
-    let base = std::env::temp_dir();
+    let base = std::env::var_os("TEBAKO_EXEC_CACHE")
+        .filter(|v| !v.is_empty())
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(std::env::temp_dir);
+    // The named exec-cache root may not exist yet — the driver names it,
+    // the first materialization creates it.
+    std::fs::create_dir_all(&base).ok()?;
     let mut seed = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .ok()?
@@ -1475,6 +1524,23 @@ pub fn context() -> &'static RwLock<FsContext> {
     &CONTEXT
 }
 
+/// Test-only serialization for tests that touch the process-global
+/// context (`context()` or the `tebako_fs_*` C API): hold the guard for
+/// the test's whole body; acquiring resets the mount table so each
+/// holder starts empty. It must be ONE lock crate-wide — a
+/// module-private lock serializes a module only against itself, and a
+/// global `unmount()` taken under it then deletes other modules' mounts
+/// mid-test (backends_cow's C-ABI test lost `h_cow` to backends_union's
+/// private LOCK exactly so — ubuntu --no-default-features, tebako run
+/// 31718292665).
+#[cfg(test)]
+pub(crate) fn lock_global_context() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let g = LOCK.lock().unwrap();
+    context().write().unwrap().unmount();
+    g
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1559,6 +1625,69 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn record_policy_journals_allows_and_open_policy_does_not() {
+        // spec 23 §8: under a record policy every ALLOWED host access is
+        // journaled (event=jail-allow) — the `tfs needs` generator's input.
+        // Under the default open policy allows stay silent (no noise).
+        let dir = std::env::temp_dir().join(format!("tfs-record-ctx-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("journal.log");
+        let journal = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+
+        let mut ctx = FsContext::new();
+        ctx.set_host_policy(
+            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Record, vec![], vec![])
+                .unwrap(),
+            Some(journal),
+        );
+        assert_eq!(ctx.host_check("/etc/hosts", HostAccess::Ro), Ok(()));
+        assert_eq!(ctx.host_check("/tmp/x", HostAccess::Rw), Ok(()));
+        drop(ctx);
+
+        let text = std::fs::read_to_string(&log).unwrap();
+        let mut lines = text.lines();
+        assert!(
+            lines
+                .next()
+                .unwrap()
+                .contains("event=jail-allow path=/etc/hosts op=read"),
+            "{text}"
+        );
+        assert!(
+            lines
+                .next()
+                .unwrap()
+                .contains("event=jail-allow path=/tmp/x op=write"),
+            "{text}"
+        );
+        assert!(lines.next().is_none(), "{text}");
+
+        // The open policy journals no allows (today's behavior, no noise).
+        let journal2 = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+        let mut ctx2 = FsContext::new();
+        ctx2.set_host_policy(crate::policy::HostPolicy::open(), Some(journal2));
+        assert_eq!(ctx2.host_check("/etc/hosts", HostAccess::Ro), Ok(()));
+        drop(ctx2);
+        let text2 = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(
+            text2.lines().count(),
+            2,
+            "open policy journals nothing: {text2}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A zip with explicit dir entries (the zip backend's readdir is
     /// explicit-only) carrying a fake tool home: bin/tool + lib/modules,
     /// and the in-image manifest when `with_annotation` (the tolerant
@@ -1623,6 +1752,33 @@ mod tests {
         assert_eq!(again, answer);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_exec_cache_env_rebases_the_dl_tmpdir() {
+        // spec 22 §6: when the driver named TEBAKO_EXEC_CACHE, the
+        // closure walk's extractions live UNDER it — in the same
+        // tebako-dl-<hex> per-process leaf (the dlmap-prefix redirect
+        // and the exit cleanup are untouched).
+        let base =
+            std::env::temp_dir().join(format!("tebako-exec-cache-ut-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::env::set_var("TEBAKO_EXEC_CACHE", &base);
+        let dir = create_dl_tmpdir();
+        std::env::remove_var("TEBAKO_EXEC_CACHE");
+        let dir = dir.expect("the tmpdir is created");
+        assert!(
+            dir.starts_with(&base),
+            "{dir:?} is not under the named exec cache {base:?}"
+        );
+        assert!(
+            dir.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("tebako-dl-"),
+            "the per-process leaf keeps its marker: {dir:?}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]

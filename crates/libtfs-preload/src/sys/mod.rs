@@ -571,6 +571,30 @@ pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, nbyte: usize) -> libc
     unsafe { plat::real_read()(fd, buf, nbyte) }
 }
 
+/// Linux: `__read_chk` (the _FORTIFY_SOURCE=2 read wrapper). The check
+/// wrapper lives inside libc and calls the syscall stub directly, so an
+/// interposed `read` never sees a fortified caller — the debian/temurin
+/// JDK's libjli imports this exact symbol for the jar END-record read
+/// (spec 22 class E). The fortify contract: a request larger than the
+/// compiler-known buffer aborts, otherwise it is a plain read.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __read_chk(
+    fd: c_int,
+    buf: *mut c_void,
+    nbyte: usize,
+    buflen: usize,
+) -> libc::ssize_t {
+    if !route::is_memfs_fd(fd) {
+        return unsafe { plat::real___read_chk()(fd, buf, nbyte, buflen) };
+    }
+    if nbyte > buflen {
+        // glibc's __read_chk calls __chk_fail here; it never returns.
+        unsafe { plat::real___chk_fail()() }
+    }
+    unsafe { read(fd, buf, nbyte) }
+}
+
 /// Interposed `pread` (fd position untouched).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn pread(
@@ -699,6 +723,127 @@ pub unsafe extern "C" fn pread64(
     offset: libc::off_t,
 ) -> libc::ssize_t {
     unsafe { pread(fd, buf, nbyte, offset) }
+}
+
+/// Linux: `lseek64` (the LFS alias of `lseek`). The JDK launcher maps
+/// `JLI_Lseek` to `lseek64` on glibc builds (spec 22 class E) — an
+/// un-interposed `lseek64` on a flagged memfs fd is an immediate EBADF,
+/// which is exactly how the launcher's zip END-record probe failed before
+/// this alias existed ("Invalid or corrupt jarfile").
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn lseek64(fd: c_int, offset: libc::off_t, whence: c_int) -> libc::off_t {
+    unsafe { lseek(fd, offset, whence) }
+}
+
+// ---------------------------------------------------------------------
+// mmap / mmap64 (linux) — the JDK's libzip mmaps a jar's central
+// directory at open (`USE_MMAP` is unconditional, `ZIP_Put_In_Cache`
+// passes `usemmap=TRUE`). A flagged memfs fd reaching the real mmap is
+// an immediate EBADF → MAP_FAILED, and libzip treats that as a hard
+// open failure. Serve a private anonymous mapping pre-filled from the
+// VFS instead; the consumer (the CEN scan, python's mmap module, git's
+// pack windows) only reads. `munmap` needs no interpose: the mapping is
+// a real anonymous one.
+// ---------------------------------------------------------------------
+
+/// Shared body of the linux mmap/mmap64 shims.
+#[cfg(target_os = "linux")]
+unsafe fn mmap_memfs_or_host(
+    addr: *mut c_void,
+    len: usize,
+    prot: c_int,
+    flags: c_int,
+    fd: c_int,
+    offset: libc::off_t,
+) -> *mut c_void {
+    // MAP_ANONYMOUS and negative fds are never memfs: fd -1 (the
+    // conventional anonymous companion) has every bit set, TEBAKO_FD_FLAG
+    // included, so the bare bit test lies exactly as it does for AT_FDCWD
+    // (route::resolve_at_strict's discipline). The JVM's very first
+    // PaX-check mmap is anonymous and died here.
+    if fd < 0 || flags & libc::MAP_ANONYMOUS != 0 || !route::is_memfs_fd(fd) {
+        return unsafe { plat::real_mmap()(addr, len, prot, flags, fd, offset) };
+    }
+    // A MAP_SHARED writable mapping would promise persistence the
+    // read-only memfs cannot honor; mmap(2) answers EACCES for exactly
+    // that against a read-only fd.
+    if flags & libc::MAP_SHARED != 0 && prot & libc::PROT_WRITE != 0 {
+        set_errno(libc::EACCES);
+        return libc::MAP_FAILED;
+    }
+    // The anonymous sibling: same address request (MAP_FIXED forwarded),
+    // private, fd -1. ALWAYS mapped writable regardless of the caller's
+    // prot: the fill below stores the VFS bytes into it, and a backing
+    // page created PROT_READ faults at the first fill store (ubuntu-24.04
+    // mmap-probe: SEGV addr == the fresh page, rip in
+    // __memmove_avx_unaligned_erms — tebako run 31721085665). The
+    // requested protection is restored by the mprotect after the fill.
+    let aflags = libc::MAP_PRIVATE | libc::MAP_ANONYMOUS | (flags & libc::MAP_FIXED);
+    let p = unsafe { plat::real_mmap()(addr, len, prot | libc::PROT_WRITE, aflags, -1, 0) };
+    if p == libc::MAP_FAILED {
+        return p;
+    }
+    // Fill [offset, offset+len) from the VFS. A region reaching past EOF
+    // keeps the anonymous zero-fill where a real mapping would SIGBUS —
+    // the documented deviation; every real consumer maps inside the file.
+    let mut done = 0usize;
+    while done < len {
+        let slice = unsafe { std::slice::from_raw_parts_mut(p.cast::<u8>().add(done), len - done) };
+        match engine_call(|| route::vfs_pread(fd, slice, offset + done as libc::off_t)) {
+            Some(Ok(0)) => break, // EOF: leave the zero-fill
+            Some(Ok(n)) => done += n,
+            Some(Err(e)) => {
+                unsafe { plat::real_munmap()(p, len) };
+                set_errno(e);
+                return libc::MAP_FAILED;
+            }
+            None => {
+                unsafe { plat::real_munmap()(p, len) };
+                set_errno(libc::EIO);
+                return libc::MAP_FAILED;
+            }
+        }
+    }
+    // Drop the fill-time PROT_WRITE the caller did not ask for, so a
+    // consumer write faults exactly as it would against a real mapping.
+    if prot & libc::PROT_WRITE == 0 {
+        // SAFETY: p/len name the live mapping; mprotect sets errno itself.
+        if unsafe { plat::real_mprotect()(p, len, prot) } != 0 {
+            unsafe { plat::real_munmap()(p, len) };
+            return libc::MAP_FAILED;
+        }
+    }
+    p
+}
+
+/// Linux: interposed `mmap` (fd-flag dispatch).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn mmap(
+    addr: *mut c_void,
+    len: usize,
+    prot: c_int,
+    flags: c_int,
+    fd: c_int,
+    offset: libc::off_t,
+) -> *mut c_void {
+    unsafe { mmap_memfs_or_host(addr, len, prot, flags, fd, offset) }
+}
+
+/// Linux: `mmap64` (the LFS alias of `mmap`; glibc builds of the JDK's
+/// libzip call it by this name).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn mmap64(
+    addr: *mut c_void,
+    len: usize,
+    prot: c_int,
+    flags: c_int,
+    fd: c_int,
+    offset: libc::off_t,
+) -> *mut c_void {
+    unsafe { mmap_memfs_or_host(addr, len, prot, flags, fd, offset) }
 }
 
 /// Interposed `close` (fd-flag dispatch; a memfs fd never reaches the
@@ -1068,6 +1213,35 @@ pub unsafe extern "C" fn __fxstatat(
             plat::real___fxstatat()(ver, dirfd, path, st, flags)
         })
     }
+}
+
+/// Linux: `__xstat64` (the LFS64 versioned stat entry — the JDK's
+/// libjava/libnio import it on glibc < 2.33 fortify builds, spec 22
+/// class E). Delegates to `__xstat`: on glibc the *64 versioned entries
+/// are literally the same addresses as the plain versioned ones (2.31
+/// nm proof), the x86_64 layouts are identical, and the plain
+/// `stat64`/`fstat64` dynamic symbols do NOT exist before glibc 2.33 —
+/// the versioned entry is the only resolvable host passthrough there.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __xstat64(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
+    unsafe { __xstat(ver, path, st) }
+}
+
+/// Linux: `__lxstat64` (versioned LFS64 lstat; memfs has no symlink
+/// duality). Same delegation rationale as `__xstat64`.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __lxstat64(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
+    unsafe { __lxstat(ver, path, st) }
+}
+
+/// Linux: `__fxstat64` (versioned LFS64 fstat — fd-flag dispatch). Same
+/// delegation rationale as `__xstat64`.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __fxstat64(ver: c_int, fd: c_int, st: *mut libc::stat) -> c_int {
+    unsafe { __fxstat(ver, fd, st) }
 }
 
 /// Interposed `rewinddir` (roadmap 39): reset a memfs stream to its first

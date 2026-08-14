@@ -15,7 +15,7 @@
 
 schema: layout
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 1 # MINOR — additive changes only (1: mount_root_override)
+schema_minor: 2 # MINOR — additive changes only (1: mount_root_override; 2: preload_shim)
 status: normative
 owner: tebako-runtime-ruby (writer) + crates/tebako-driver (reader); grammar owned here
 edge: C3 (runtime exe ↔ env image)
@@ -96,6 +96,21 @@ grammar:
       paths would point at an unmounted root. The driver validates the
       override's form before any mount (malformed → exit 65 naming the
       variable).
+  preload_shim:
+    type: string
+    required: false
+    since: schema_minor 2
+    notes: >-
+      The preload shim's in-image path, RELATIVE to the mount root
+      (e.g. lib/tebako/libtfs_preload.so). The image declares, the
+      driver flows it: materialized to the exec cache for the
+      child-injection env (LD_PRELOAD / DYLD_INSERT_LIBRARIES) and
+      exported as TEBAFO_PRELOAD_SHIM for the interpreter's spawn hook
+      (spec 22 §3 Rules E2/E3). SSOT: the factory stages the file and
+      emits this key in the same deploy pass — declared-but-absent is a
+      named boot error (exit 78: the declaration lies). Absent ⇒ no
+      preload env (an older image — spawned children get no VFS, the
+      honest degradation it always was).
   interpreter_api_version:
     type: string
     required: true
@@ -115,5 +130,7 @@ refusals:
     behavior: exit 78 with both values printed — a mismatched pair, never a ruby LoadError
   - case: TEBAKO_MOUNT_ROOT set but mount_root_override absent/false
     behavior: exit 78 naming the override and the image — the image's rbconfig cannot follow, never a broken boot
+  - case: preload_shim declared but the file absent from the image
+    behavior: exit 78 — the declaration lies; rebuild the runtime with the current factory
 
 deprecated: [] # no field is in a deprecation window

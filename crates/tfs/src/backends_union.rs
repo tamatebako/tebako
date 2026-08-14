@@ -125,15 +125,13 @@ mod tests {
     use crate::backends_tar::{TarBackend, TarCompression};
     use crate::context::context;
     use crate::mount;
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
 
-    /// The context is process-global; the context-level tests serialize.
-    static LOCK: Mutex<()> = Mutex::new(());
-
+    /// The context is process-global; the context-level tests serialize on
+    /// the crate-wide guard (a module-private lock would not stop other
+    /// modules' global-context tests — see context::lock_global_context).
     fn lock() -> MutexGuard<'static, ()> {
-        let g = LOCK.lock().unwrap();
-        context().write().unwrap().unmount();
-        g
+        crate::context::lock_global_context()
     }
 
     fn append_file(b: &mut tar::Builder<Vec<u8>>, path: &str, data: &[u8], mode: u32) {

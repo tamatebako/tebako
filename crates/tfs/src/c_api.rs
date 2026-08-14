@@ -15,7 +15,7 @@ use crate::backend::EntryType;
 use crate::context::{context, TebakoCDirent, TEBAKO_FD_FLAG};
 use crate::errno::{get_errno, set_errno, strerror};
 use crate::mount;
-use crate::policy::{HostAccess, HostMountSpec, HostPolicy};
+use crate::policy::{HostAccess, HostMountSpec, HostPolicy, PolicyDefault};
 
 /// Convert a borrowed C string argument to &str (EINVAL on NULL/non-UTF-8).
 ///
@@ -1196,7 +1196,19 @@ pub unsafe extern "C" fn tebako_fs_host_policy(
             Err(e) => return fail(e),
         }
     }
-    let policy = match HostPolicy::bind(default_open != 0, specs, files) {
+    // The C ABI predates the record default (spec 23 §8): 0 = deny, nonzero
+    // = open. Record rides the env channel (`TEBAKO_JAIL=record` →
+    // `JailSpec`); extending this ABI is a separate additive step if an FFI
+    // consumer ever needs it.
+    let policy = match HostPolicy::bind(
+        if default_open != 0 {
+            PolicyDefault::Open
+        } else {
+            PolicyDefault::Deny
+        },
+        specs,
+        files,
+    ) {
         Ok(p) => p,
         Err(e) => return fail(e),
     };

@@ -93,21 +93,139 @@ it never installs, upgrades, or deletes anything (a run is a run).
 
 ## 3. Class E — exec interposition
 
-**Rule E1.** The existing spawn hook (the interpreter's process-layer
-patches) covers the array-form spawn of an absolute VFS path. This spec
-EXTENDS coverage to the exec level: `execvp`, `execve`, `posix_spawn`.
-A shell-string spawn (`/bin/sh -c "java -jar /vfs/x.jar"`) then works
-unmodified — the shell parses and calls `execvp`, whose argv0 is
-intercepted like any other.
+**Rule E1.** The interpreter's spawn hook (the process-layer patches)
+covers the array-form spawn of an absolute VFS path: materialize
+parent-side, point the exec pair at the host copy, inject the child
+with the preload shim and the current mounts. This spec EXTENDS
+coverage to the exec level — `execve`/`posix_spawn` ride the same
+interpose surface as Class L, so every in-process exec caller is
+covered at once, and libc `execvp`/`posix_spawnp` PATH loops resolve
+through the interposed `execve`/`stat`. What each platform DELIVERS is
+pinned empirically in §3.1.
+
+### 3.1 The per-platform delivery matrix (locked 2026-08-13, verified empirically)
+
+| Platform | The runtime process | Array form, absolute VFS path | Shell string (`system("java -jar /vfs/x.jar")`) |
+|---|---|---|---|
+| **ELF (gnu/musl)** | exe-defined Class-L symbols; the runtime itself is never preload-injected | the spawn hook materializes and injects the child (`LD_PRELOAD` + `TEBAKO_TFS_MOUNTS` in its env) | **works unmodified** — the handoff env's `LD_PRELOAD` injects every child at its exec, `/bin/sh` included; the shell's PATH search and `execvp` loop route through the interposed surface |
+| **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **named boundary, enforced by the spawn hook** — an inherited `DYLD_INSERT_LIBRARIES` is FATAL to Apple platform binaries on darwin24 (dyld TERMINATES `/bin/sh` and `/usr/bin/cc` under a foreign insertion — factory run 31699651270; darwin23 stripped the variable instead), so the interpreter's spawn hook DROPS the variable per spawn whose target is restricted (any shell form; anything resolving into Apple's system binary dirs). The JVM behind a shell string then answers its own `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one. darwin24 x86_64 CI runners HONOR the insertion into sh's exec child (runs 31685052887/31692800485) — a relaxed-SIP artifact the scrub deliberately erases: every host behaves like the strictest one |
+| **windows** | — | deferred with windows Class L (§7 order) | deferred |
+
+Where the launcher tier (§3.2) is armed, the shell-string form works
+on every macOS host — the launcher's explicit re-arm passes the hook's
+scrub exactly as it passes dyld's strip. Where it is not (no shim
+delivered, or the image declares no executables), the macOS consumption
+pattern for a dependency's binary is the array form with the absolute
+path (resolved through §3.2's surface); unmodified shell-string
+consumers of VFS binaries remain an ELF capability. (darwin24 x86_64 CI
+runners tolerated the insertion past `/bin/sh` — a relaxed-SIP
+artifact; the hook's scrub erases it so every host behaves like the
+strictest one.) A shell string whose operands are all host paths
+behaves exactly as on any host — the boundary is the VFS-operand case
+only.
 
 **Rule E2.** Exec of a VFS-resident binary materializes the binary plus
-its loader closure (the same exec cache as Class L) and execs the real
-path with the original argv/env. Exec of a host path passes through.
+its loader closure (the same exec cache as Class L —
+`TEBAKO_EXEC_CACHE`, §6) and execs the real path with the original
+argv/env. Exec of a host path passes through. A covered path the
+mounts do not hold answers ENOENT: the exec fails honestly, and a libc
+PATH loop simply moves to its next candidate.
 
 **Rule E3.** A VFS binary that itself spawns children re-enters the
-same interposition (the preload-injection inheritance already proven
-for the spawn hook). Children of materialized binaries keep the VFS
-view — never a silent host fallback.
+same interposition: on ELF the inherited `LD_PRELOAD` covers every
+descendant's exec; on macOS the spawn hook's child-env injection
+covers the array-form chain and the runtime's own surface covers
+in-process exec callers. Children of materialized binaries keep the
+VFS view — never a silent host fallback.
+
+### 3.2 Bare-name resolution — the composition layer wires PATH
+
+A bare command name (`system("java …")`, mnconvert's form) resolves
+with no payload code learning tebako: **the driver prepends every
+co-mounted dependency image's declared bin dirs to `PATH` in the
+handoff env** — the dirname of each entrypoint path in the image's own
+manifest (the image declares, the driver flows; no second copy of the
+knowledge anywhere). On ELF the interposed exec loop then resolves the
+bare name through the VFS (§3.1). The explicit-reference surface for
+everything else — windows-safe and shell-free — is
+`TEBAKO_MOUNT_<SLUG>` per dependency mount (§6; v2-1/20), for payload
+authors who compute paths themselves.
+
+**The host-launcher tier** (armed when the env image delivers the
+preload shim, §3; unix): the driver additionally materializes each
+dependency's declared executables through the exec cache and mirrors
+them as self-injecting launchers on ONE host dir
+(`<exec-cache-leaf>/wrap-bin/`) that LEADS `PATH`. A launcher is a
+one-line POSIX script that re-arms the platform's injection var
+explicitly and execs the materialized binary: SIP strips an INHERITED
+`DYLD_INSERT_LIBRARIES` at an Apple-binary exec (§3.1's named
+boundary), but a variable a script sets itself survives — so the
+shell-string form (`system("java …")`) resolves through `PATH`, runs
+the launcher, and the shim loads into the final binary exactly as on
+ELF (probe 2026-08-13: `/bin/sh -c <launcher>` loads the dylib past
+the strip; the bare-name and shell-string forms both work). On ELF the
+launchers ride over the inherited `LD_PRELOAD` (harmless — the same
+dir leads `PATH`); windows has no launcher tier yet (§7's order).
+Triple order wins on a basename collision; a declared executable that
+cannot be materialized is the image lying (a named 65), never a
+skipped entry.
+
+### 3.3 The class-E proof fixture
+
+The boot-smoke fixture jar is PRECOMPILED, checked into the factory's
+fixtures directory next to its `.java` source and a regeneration note
+(sha256-pinned). No CI leg needs a JDK: the fixture is a data file to
+the smoke, exactly like the C fixtures' compiled form on legs without
+a compiler.
+
+### 3.4 Spawned children and the jail — the platform floor (locked 2026-08-14)
+
+A spawned child inherits the process's jail through the handoff env's
+`TEBAKO_JAIL`, and the preload shim enforces it inside the child. What
+the child may read on the host is therefore exactly what the bound
+policy grants — and under a scratch-only jail
+(`deny;<scratch>:<scratch>:rw`) a materialized JVM could not finish its
+own boot: its locale/framework init reads under `/usr`, the denial
+surfaced as a NULL deref, and the process died with a SIGSEGV at
+`getMacOSXLocale` — never a named error (phase-E dogfood, 2026-08-13).
+The jail's failure mode for a missing grant MUST be a policy verdict
+(EPERM on an authored path), not a segfault in someone else's library.
+
+The answer is spec 08 §2.1's **platform floor**: every policy bound
+under the `deny` default gains the platform's read-only boot surface —
+macOS `/usr`, `/System`, `/Library`; windows `%SystemRoot%\System32`,
+`SysWOW64`, `Fonts`; other unix nothing yet (entries are added only
+with a proven consumer). The floor applies at `HostPolicy::bind`, so
+the driver, the shim, the bootstrap, and `tebako run` enforce it
+identically with no per-surface work; an authored grant covering a
+floor path supersedes it (the floor never narrows); and because every
+bind re-derives it, a child re-binding its inherited `TEBAKO_JAIL`
+enforces exactly its parent's policy. The operator burden of "jail
+policy must include platform grants" is retired.
+
+What the floor does NOT grant — by design — is the workload's own tool
+tree and the user's home. The journal-pinned evidence chain (macOS,
+openjdk 21.0.2, 2026-08-14): with the floor bound, a scratch-only jail
+fails the JVM launcher's `jvm.cfg` open with its own named error (the
+JRE tree is the operator's tool, never platform surface); with the JRE
+granted `ro`, the CFPreferences locale probe stats the passwd-entry
+home (the `HOME` env does not redirect it) and aborts with the JVM's
+named `InternalError: platform encoding not initialized` — the journal
+carries `deny /Users/<u> read`, never a segfault. The booted-child
+stack under a `deny` jail is therefore three named ingredients: the
+floor (system surface, automatic) + the tool tree (an authored `ro`
+grant — the JRE) + the user domain (an authored home read, or a
+redirected home the policy grants). Home never joins the floor: an
+operator's `deny` must not silently read-expose private data, and the
+prefix grammar cannot express the "stat-only" grant the probe needs.
+The acceptance leg (`jailed_exec`, §3) runs exactly
+`deny;<scratch>:<scratch>:rw;<jre>:<jre>:ro;<home>:<home>:ro`: the JVM
+boots and runs the VFS jar, and every remaining journal denial is a
+non-fatal fallback the operator actually named (`/etc/localtime` → UTC,
+`hsperfdata` → skipped, the TMPDIR parent, the `.hotspotrc` probes).
+The floor's promise is the end of the segfault class: every missing
+grant surfaces as the workload's own named error, pinned in the audit
+journal — never a crash in someone else's library.
 
 ## 4. Class R — declarative boot materialization
 
@@ -160,7 +278,26 @@ Payload authors and runtime factories may rely on, forever:
   own manifests (spec 03 annotations).
 - **The discovery surface.** `TEBAKO_MOUNT_<SLUG>` per dependency mount
   (spec 17 §2's env table; v2-1/20) — the portable way to reference a
-  dependency payload's files, windows included.
+  dependency payload's files, windows included. **The slug grammar is
+  mount-path-derived (locked 2026-08-14):** drop the drive qualifier
+  (`A:/tools/x` slugs like `/tools/x`), uppercase every ASCII
+  alphanumeric and map every other character to `_`, trim leading and
+  trailing underscores (`/opt/openjdk` → `OPT_OPENJDK` →
+  `TEBAKO_MOUNT_OPT_OPENJDK`); interior separators are NOT collapsed
+  (`/a//b` → `A__B`). A mount whose slug is empty after the trim —
+  the root mount — slugs `ROOT` and exports NOTHING: `TEBAKO_MOUNT_ROOT`
+  is the mount-root OVERRIDE var (spec 17 §1), so the name is reserved,
+  never emitted. Union members sharing one physical point get one var;
+  two DIFFERENT physical points slugging alike is an authoring
+  ambiguity — a named boot error, never a silent winner. The value is
+  the physical mount point (drive-qualified on windows),
+  re-rooting-proof.
+- **Dependency `PATH` wiring.** The handoff env's `PATH` leads with the
+  launcher dir (`<exec-cache-leaf>/wrap-bin/`, when the shim is
+  delivered — §3.2's host-launcher tier) followed by every co-mounted
+  dependency image's declared bin dirs. Bare-name exec of a
+  dependency's tool needs no payload code, and the shell-string form
+  works unmodified past the SIP strip (§3.1) exactly as on ELF.
 
 Everything else (the mount table layout, the closure-walk order, the
 cache's on-disk naming) is implementation detail and may change between

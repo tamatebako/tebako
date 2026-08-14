@@ -25,6 +25,11 @@ zeroize = "1"
 tar = { version = "0.4", default-features = false }
 tebako-info = { version = "0.1.0", path = "../tebako-info" }
 tebako-json = { version = "0.1.0", path = "../tebako-json" }
+# `tfs exec --compose` reads authored YAML (invariant 6). serde_yaml 0.9 is
+# the cached, pure-Rust (unsafe-libyaml) parser — the shim's choice;
+# tpkg's manifest YAML rides serde_yml internally.
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
 # The in-process DwarFS writer for mkimage (dwarfs-t-rs).
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 # The in-process LimniFS writer for `mkimage --format limnifs` (spec 20

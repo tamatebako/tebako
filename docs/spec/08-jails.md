@@ -47,6 +47,71 @@ jail:
 - Violations are logged to the tebako audit journal with path + syscall
   class.
 
+## 2.1 The platform floor (locked 2026-08-14)
+
+Every policy bound under the `deny` default gains the **platform
+floor**: a fixed per-platform set of read-only grants covering the
+surface a spawned interpreter or runtime physically cannot boot
+without. The floor exists because the failure mode for a missing
+platform grant was never a policy verdict — under a scratch-only jail
+(`deny;<scratch>:<scratch>:rw`) the JVM crashed with a SIGSEGV at
+`getMacOSXLocale` (its locale/framework init NULL-derefs when reads
+under `/usr` are denied; spec 22 phase-E dogfood, 2026-08-13). A jail
+whose denial crashes the child in someone else's library is wrongly
+constructed: denying the platform surface never produced a working
+process, so the floor grants it always.
+
+- **Entries (evidence-driven):**
+  - macOS — `/usr`, `/System`, `/Library` (the proven set above).
+  - windows — `%SystemRoot%\System32` (the loader's DLL root; no
+    process resolves its imports without it), `%SystemRoot%\SysWOW64`
+    (the 32-bit view for 32-bit children), `%SystemRoot%\Fonts` (the
+    GDI font tree GUI runtimes enumerate — the JVM's AWT init reads
+    it). `%SystemRoot%` resolves at bind (`C:\Windows` when unset).
+  - Other unix — none today; an entry joins a list only with a proven
+    platform-process consumer, cited by run. The lists are amended by
+    evidence, never by anticipation.
+- **Supersede rule:** an authored mount covering a floor path (same or
+  an ancestor prefix) supersedes the floor entry — the floor never
+  narrows what the author allowed. Widening a floor path to `rw` is
+  therefore one authored grant away; there is no way to drop a floor
+  path short of not denying (see below) — that is the point of a floor.
+- **Bind semantics:** the floor applies at `HostPolicy::bind` (§3's
+  single choke), only under the `deny` default — under `open` it grants
+  nothing the default does not already allow, so the no-policy path
+  stays byte-identical (`never_denies` keeps its exact meaning). A
+  floor path absent on the host is skipped silently (it is a courtesy
+  surface, not an authored request whose absence must fail the bind).
+- **Ancestor traverse (locked 2026-08-14):** every bound grant
+  (authored mount or floor entry) implies its strict ancestors are
+  traversable: each ancestor answers an exact-path READ — never a
+  prefix (no sideways exposure), never a write. Canonicalization walks
+  are universal: the JVM reads its cwd and every ancestor at VM init,
+  and the factory's jailed_exec leg died with "Could not determine
+  current working directory" when the chain was denied (PR #95 macOS
+  legs). The set is derived at bind — never authored, never serialized.
+  It is what makes an authored `$CWD`-style grant sufficient in
+  practice: the payload names the directory it works in; the platform
+  walk to reach it passes by construction.
+- **Inheritance:** floor mounts are NOT serialized into `TEBAKO_JAIL` —
+  the env grammar's `host:mount:ro|rw` right-split cannot carry a
+  windows drive-qualified floor spelling, and it never needs to: every
+  consumer re-derives the floor at its own bind (supersede makes that
+  idempotent), so a spawned child's inherited spec plus its bind yields
+  a policy identical to the parent's. Enforcement treats authored and
+  floor mounts as one longest-prefix set.
+- **The boundary (what never joins):** the floor is SYSTEM surface
+  only. The workload's own tool tree (a JRE, a third-party install)
+  and the user's home stay authored grants — an operator's `deny` must
+  not silently read-expose private data, and the prefix grammar cannot
+  express the "stat-only" grant the macOS CFPreferences home probe
+  needs (spec 22 §3.4's journal-pinned chain, 2026-08-14: floor →
+  named `jvm.cfg` error → named `InternalError` → boot with `<jre>:ro`
+  + `<home>:ro`). The floor's promise is the end of the segfault
+  class: every missing grant surfaces as the workload's own named
+  error, pinned in the audit journal — never a crash in someone else's
+  library.
+
 ## 3. Enforcement point (the single choke)
 
 New TFS C ABI entry:
