@@ -274,9 +274,22 @@ fn deny_all_cannot_enumerate_or_read_but_memfs_is_unaffected() {
     let f = setup("deny");
     assert_eq!(install_policy(0, &[], &[]), 0);
 
-    // Profile 3: cannot even enumerate the root.
+    // Profile 3 with the ancestor traverse set (spec 08 §2.1): where the
+    // platform floor binds (macOS/windows), its strict ancestors — the
+    // root included — answer exact-path reads so canonicalization walks
+    // pass; on an empty-floor host (linux today) the root stays EPERM.
+    let root_traversable = tfs::policy::platform_floor()
+        .iter()
+        .any(|d| std::fs::canonicalize(d).is_ok());
+    // At this layer an allowed host path answers ENOENT (the caller
+    // passes through to the host fs), a denied one EPERM — the handle
+    // is null either way.
     assert!(opendir_str("/").is_null());
-    assert_eq!(errno(), libc::EPERM);
+    if root_traversable {
+        assert_eq!(errno(), libc::ENOENT, "the root anchor is traversable");
+    } else {
+        assert_eq!(errno(), libc::EPERM);
+    }
     assert!(opendir(&f.sibling).is_null());
     assert_eq!(errno(), libc::EPERM);
     // Reads and stats of host files: EPERM, not ENOENT.
@@ -451,8 +464,19 @@ fn tight_jail_allows_only_the_argument_file() {
     // Nothing else exists as far as the payload is concerned.
     assert_eq!(open(&f.sibling.join("secret.txt"), libc::O_RDONLY), -1);
     assert_eq!(errno(), libc::EPERM);
+    // Argument files derive no traverse set (one exact path, no walk);
+    // the root answers a read only where the platform floor's ancestors
+    // bind it (spec 08 §2.1 — macOS/windows; linux's floor is empty).
+    // ENOENT = allowed passthrough at this layer, EPERM = denied.
+    let root_traversable = tfs::policy::platform_floor()
+        .iter()
+        .any(|d| std::fs::canonicalize(d).is_ok());
     assert!(opendir_str("/").is_null());
-    assert_eq!(errno(), libc::EPERM);
+    if root_traversable {
+        assert_eq!(errno(), libc::ENOENT, "the root anchor is traversable");
+    } else {
+        assert_eq!(errno(), libc::EPERM);
+    }
 }
 
 #[cfg(unix)]
@@ -623,8 +647,12 @@ fn policy_survives_unmount_fail_closed() {
     assert_eq!(rc, 0);
     assert_eq!(open(&f.archive, libc::O_WRONLY), -1);
     assert_eq!(errno(), libc::EROFS);
+    // The granted dir's strict ancestors are traversable (exact-path
+    // read, spec 08 §2.1) — the root anchor included, on every
+    // platform. An allowed host path answers ENOENT here (the caller
+    // passes through to the host fs), a denied one EPERM.
     assert!(opendir_str("/").is_null());
-    assert_eq!(errno(), libc::EPERM);
+    assert_eq!(errno(), libc::ENOENT, "the root anchor is traversable");
 }
 
 // --- the audit journal (spec 08 §2) -------------------------------------

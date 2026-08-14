@@ -81,6 +81,11 @@ Rules (MECE, fail-closed):
 
 - Same canonical path declared twice by one slice: the accesses must
   agree, else a named manifest error.
+- Binding ANY host grant derives its strict ancestors as exact-path
+  traverse reads (spec 08 §2.1): canonicalization walks pass by
+  construction, so a `$CWD ro` need is sufficient for a workload that
+  canonicalizes its working directory at boot (the JVM, journal-pinned
+  2026-08-14).
 - Ancestor/descendant declarations: the ancestor's access must be at
   least the descendant's (an ro ancestor may not hide an rw need).
 - `access: rw` on a symbolic atom outside `$TEBAKO_HOME` requires the
@@ -234,9 +239,12 @@ guess:
   longest prefix wins); relative and empty paths (cwd- or
   dirfd-relative probes — not declarable) OMITTED and counted in the
   header, so the reviewer declares `$CWD` explicitly when the payload
-  wants it; paths absent at generation time marked `optional: true`
-  (§2); each entry carrying `why: "TODO — observed: <r> read, <w>
-  write"` for the author to replace with the real reason.
+  wants it; ro entries that are strict ancestors of other drafted
+  entries COLLAPSE (the bind's traverse set, spec 08 §2.1, covers
+  their reads; an rw ancestor stays); paths absent at generation time
+  marked `optional: true` (§2); each entry carrying `why: "TODO —
+  observed: <r> read, <w> write"` for the author to replace with the
+  real reason.
 - **The human gate**: the record shows the OBSERVED MINIMUM. The author
   reviews the draft — flipping ro↔rw where production differs from the
   observation, deleting noise, filling `why` — and merges it into the

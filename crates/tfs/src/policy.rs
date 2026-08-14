@@ -163,6 +163,14 @@ pub struct HostPolicy {
     /// `host:mount:ro|rw` grammar its windows spellings would break.
     floor_mounts: Vec<HostMount>,
     arg_files: Vec<PathBuf>,
+    /// The ancestor traverse set (spec 08 §2.1): the strict ancestors of
+    /// every bound grant (mounts + floor), checkable as EXACT-path reads
+    /// — never prefix, never write. Canonicalization walks are universal
+    /// (the JVM reads its cwd and each ancestor at VM init; without the
+    /// traverse grant the factory's jailed_exec leg died with "Could not
+    /// determine current working directory", PR #95 macOS, 2026-08-14).
+    /// Derived at bind, never authored, never serialized.
+    traverse: Vec<PathBuf>,
     /// Who installed the policy (`manifest`, `user`, `manifest+user`,
     /// `TEBAKO_JAIL`, …), recorded in the audit journal on every denial
     /// (spec 08 §2: violations are logged with path + syscall class).
@@ -184,6 +192,7 @@ impl HostPolicy {
             mounts: Vec::new(),
             floor_mounts: Vec::new(),
             arg_files: Vec::new(),
+            traverse: Vec::new(),
             source: String::new(),
         }
     }
@@ -288,11 +297,27 @@ impl HostPolicy {
         for f in &arg_files {
             bound_files.push(canonicalize(f)?);
         }
+        // The ancestor traverse set (spec 08 §2.1): every strict ancestor
+        // of every bound grant is readable as an EXACT path — never
+        // prefix (no sideways exposure), never write. Canonicalization
+        // walks are universal (the JVM reads its cwd and each ancestor at
+        // VM init). Derived at bind, never authored, never serialized.
+        let mut traverse: Vec<PathBuf> = Vec::new();
+        for m in bound_mounts.iter().chain(floor_mounts.iter()) {
+            let mut anc = m.host.as_path();
+            while let Some(parent) = anc.parent() {
+                if !traverse.iter().any(|t| t == parent) {
+                    traverse.push(parent.to_path_buf());
+                }
+                anc = parent;
+            }
+        }
         Ok(HostPolicy {
             default,
             mounts: bound_mounts,
             floor_mounts,
             arg_files: bound_files,
+            traverse,
             source: String::new(),
         })
     }
@@ -343,6 +368,13 @@ impl HostPolicy {
             if need == HostAccess::Rw && m.access == HostAccess::Ro {
                 return Err(libc::EROFS);
             }
+            return Ok(());
+        }
+
+        // The ancestor traverse set (spec 08 §2.1): exact-path read only.
+        // Prefix grants are wider and matched above; a write against a
+        // traverse path falls through to the default's denial.
+        if need == HostAccess::Ro && self.traverse.iter().any(|t| t == &canon) {
             return Ok(());
         }
 
@@ -684,7 +716,18 @@ mod tests {
             p.check(&tree.work.join("hello.txt"), HostAccess::Ro),
             Err(libc::EPERM)
         );
-        assert_eq!(p.check(Path::new("/"), HostAccess::Ro), Err(libc::EPERM));
+        // The one exception beyond the floor itself: the floor's strict
+        // ancestors are traversable (exact-path read, spec 08 §2.1).
+        for dir in platform_floor() {
+            let Ok(canon) = std::fs::canonicalize(&dir) else {
+                continue;
+            };
+            let mut anc = canon.parent();
+            while let Some(a) = anc {
+                assert_eq!(p.check(a, HostAccess::Ro), Ok(()), "traverse {a:?}");
+                anc = a.parent();
+            }
+        }
         assert_eq!(p.check(&tree.work, HostAccess::Rw), Err(libc::EPERM));
     }
 
@@ -702,8 +745,28 @@ mod tests {
                 "floor write {dir:?}"
             );
         }
-        // Everything outside the floor stays denied.
-        assert_eq!(p.check(Path::new("/"), HostAccess::Ro), Err(libc::EPERM));
+        // The floor's strict ancestors are traversable (exact-path read,
+        // spec 08 §2.1) — never writable, never sideways.
+        for dir in platform_floor() {
+            let Ok(canon) = std::fs::canonicalize(&dir) else {
+                continue;
+            };
+            if let Some(parent) = canon.parent() {
+                assert_eq!(
+                    p.check(parent, HostAccess::Ro),
+                    Ok(()),
+                    "traverse {parent:?}"
+                );
+                assert_eq!(
+                    p.check(parent, HostAccess::Rw),
+                    Err(libc::EPERM),
+                    "traverse write {parent:?}"
+                );
+            }
+        }
+        // Everything outside the floor and its traverse chain stays denied.
+        let tree = Tree::new("flooroutside");
+        assert_eq!(p.check(&tree.work, HostAccess::Ro), Err(libc::EPERM));
     }
 
     #[test]
@@ -957,6 +1020,41 @@ mod tests {
             p.check(&tree.work.join("hello.txt"), HostAccess::Rw),
             Ok(())
         );
+    }
+
+    #[test]
+    fn bind_derives_ancestor_traverse_grants() {
+        // spec 08 §2.1: a host grant implies its strict ancestors are
+        // traversable — exact-path READ, never prefix, never write.
+        // Canonicalization walks are universal: the JVM reads its cwd and
+        // every ancestor at VM init, and the factory's jailed_exec leg
+        // died with "Could not determine current working directory" when
+        // the chain was denied (PR #95 macOS legs, 2026-08-14). The
+        // traverse grant is derived at bind — never authored, never
+        // serialized — and never extends sideways.
+        let tree = Tree::new("traverse");
+        let deep = tree.work.join("a").join("b");
+        std::fs::create_dir_all(&deep).unwrap();
+        let p = HostPolicy::bind(
+            PolicyDefault::Deny,
+            vec![tree.spec(&deep, "/work", HostAccess::Rw)],
+            vec![],
+        )
+        .unwrap();
+        // The grant itself keeps its full access.
+        assert_eq!(p.check(&deep.join("f.txt"), HostAccess::Rw), Ok(()));
+        // Every strict ancestor up to the root: readable, not writable.
+        let mut anc = deep.parent().unwrap().to_path_buf();
+        loop {
+            assert_eq!(p.check(&anc, HostAccess::Ro), Ok(()), "{anc:?}");
+            assert_eq!(p.check(&anc, HostAccess::Rw), Err(libc::EPERM), "{anc:?}");
+            match anc.parent() {
+                Some(parent) => anc = parent.to_path_buf(),
+                None => break,
+            }
+        }
+        // Sideways: a child of a traversed ancestor is NOT exposed.
+        assert_eq!(p.check(&tree.sibling, HostAccess::Ro), Err(libc::EPERM));
     }
 
     #[test]

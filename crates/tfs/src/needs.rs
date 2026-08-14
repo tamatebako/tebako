@@ -12,8 +12,11 @@
 //! as `substitutions`; aggregation keys on the substituted form, so raw
 //! variants of one path merge), omits relative and empty paths (cwd- or
 //! dirfd-relative — not declarable; counted in the header so the reviewer
-//! considers `$CWD` explicitly), and emits YAML with a `why:` TODO the
-//! slice developer replaces while reviewing each `access` bit.
+//! considers `$CWD` explicitly), collapses ro entries that are strict
+//! ancestors of other drafted entries (the bind's traverse set, spec 08
+//! §2.1, already covers their reads — an rw ancestor stays), and emits
+//! YAML with a `why:` TODO the slice developer replaces while reviewing
+//! each `access` bit.
 //!
 //! The draft is a STARTING POINT, never an authoritative grant: the human
 //! decides ro/rw and drops paths the payload only probed. Paths are
@@ -78,6 +81,21 @@ pub fn needs_from_journal(
             o.reads += 1;
         }
     }
+    // The bind derives every grant's strict ancestors as exact-path
+    // traverse reads (spec 08 §2.1), so an ro entry that is itself a
+    // strict ancestor of another drafted entry is redundant — traverse
+    // covers its reads. An rw ancestor stays: traverse never grants
+    // write.
+    let paths: Vec<String> = observed.keys().cloned().collect();
+    for p in &paths {
+        let redundant = observed.get(p).is_some_and(|o| o.writes == 0)
+            && paths
+                .iter()
+                .any(|q| q != p && std::path::Path::new(q).starts_with(std::path::Path::new(p)));
+        if redundant {
+            observed.remove(p);
+        }
+    }
     emit_yaml(&observed, omitted)
 }
 
@@ -126,7 +144,9 @@ fn emit_yaml(observed: &std::collections::BTreeMap<String, Observation>, omitted
     let mut out = String::from(
         "# Drafted by `tfs needs --from-journal` (spec 23 §8): every host path the\n\
          # recorded run touched, strongest observed access. Review each `access`\n\
-         # (ro|rw) and replace every `why` before merging into the payload manifest.\n",
+         # (ro|rw) and replace every `why` before merging into the payload manifest.\n\
+         # Strict ancestors of granted paths are traversable by construction\n\
+         # (spec 08 §2.1) — collapsed out of this draft.\n",
     );
     if omitted > 0 {
         out.push_str(&format!(
@@ -233,7 +253,10 @@ mod tests {
             &|_| true,
         );
         assert!(yaml.contains("path: \"$HOME/.ssh/config\""), "{yaml}");
-        assert!(yaml.contains("path: \"$HOME\""), "{yaml}");
+        // The bare $HOME entry collapses: an ro strict ancestor of another
+        // drafted entry is redundant — the bind's traverse set (spec 08
+        // §2.1) already covers its reads.
+        assert!(!yaml.contains("path: \"$HOME\""), "{yaml}");
     }
 
     #[test]
@@ -346,5 +369,29 @@ mod tests {
         let yaml = needs_from_journal("", &[], &[], &|_| true);
         assert!(yaml.contains("needs:"), "{yaml}");
         assert!(yaml.contains("host: []"), "{yaml}");
+    }
+
+    #[test]
+    fn ro_strict_ancestors_of_other_entries_collapse() {
+        // The bind derives every grant's strict ancestors as exact-path
+        // traverse reads (spec 08 §2.1), so a drafted entry that is itself
+        // a strict ancestor of another drafted entry is redundant when ro
+        // — traverse covers its reads. An ancestor with observed WRITES
+        // stays: traverse never grants write.
+        let yaml = needs_from_journal(
+            "1 event=jail-allow path=/a op=read source=record\n\
+             2 event=jail-allow path=/a/b op=read source=record\n\
+             3 event=jail-allow path=/a/b/c op=read source=record\n\
+             4 event=jail-allow path=/x op=write source=record\n\
+             5 event=jail-allow path=/x/y op=read source=record\n",
+            &[],
+            &[],
+            &|_| true,
+        );
+        assert!(!yaml.contains("path: \"/a\""), "{yaml}");
+        assert!(!yaml.contains("path: \"/a/b\""), "{yaml}");
+        assert!(yaml.contains("path: \"/a/b/c\""), "{yaml}");
+        assert!(yaml.contains("path: \"/x\""), "{yaml}");
+        assert!(yaml.contains("path: \"/x/y\""), "{yaml}");
     }
 }
