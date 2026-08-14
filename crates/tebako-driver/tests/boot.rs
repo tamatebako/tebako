@@ -2156,9 +2156,20 @@ fn a_tampered_extracted_resource_fails_verification() {
     // Tamper with the cached copy: the next boot's verification fails
     // closed (Rule R3) — never a silently served corruption.
     let extracted = resources.join("lib/app.pem");
-    let mut perms = std::fs::metadata(&extracted).unwrap().permissions();
-    perms.set_readonly(false);
-    std::fs::set_permissions(&extracted, perms).unwrap();
+    // Make the read-only-extracted copy writable: an explicit mode on
+    // unix, the readonly attribute on windows.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        std::fs::set_permissions(&extracted, std::fs::Permissions::from_mode(0o644)).unwrap();
+    }
+    #[cfg(windows)]
+    {
+        let mut perms = std::fs::metadata(&extracted).unwrap().permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        std::fs::set_permissions(&extracted, perms).unwrap();
+    }
     std::fs::write(&extracted, b"PEM-FORGED\n").unwrap();
 
     reset();
