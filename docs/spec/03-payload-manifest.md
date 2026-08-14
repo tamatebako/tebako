@@ -126,6 +126,26 @@ requires:
   manifest's declared env → exec. The SAME signed `.tfs` artifact type at
   every graph level — one coherent algebra.
 
+### 2.4 MATERIALIZE (`materialize:`, additive — schema_minor 1)
+
+```yaml
+materialize:
+  - /lib/ssl/certs/cacert.pem    # an absolute in-image path, no '..' components
+```
+
+A top-level list (any kind may declare it; old readers ignore it under
+the unknown-field rule) naming **regular files a C library must read
+through its own IO** — the interpreter's patched IO never gets asked, so
+the bytes must exist on the host filesystem. The OpenSSL CA cert is the
+canonical entry. The driver extracts each declared path after the mounts
+and the jail, before the interpreter handoff, to
+`<TEBAKO_EXEC_CACHE>/resources/<image-key>/<P>` — whole-file, read-only,
+digest-verified. A declared path absent from the image, or not a regular
+file, is the manifest lying: boot fails by name (exit 65), never a
+skipped entry. The full mechanics and the trust chain are spec 22 §4
+(class R); the grammar is registered in
+`docs/spec/schemas/payload-manifest.yaml`.
+
 ## 3. Platform axis (locked, vcpkg-triplet form)
 
 `platforms` is EITHER `"universal"` (pure-ruby/data) OR an explicit list:

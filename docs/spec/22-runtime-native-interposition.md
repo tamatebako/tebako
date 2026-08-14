@@ -303,10 +303,19 @@ journal — never a crash in someone else's library.
 ## 4. Class R — declarative boot materialization
 
 **Rule R1.** An image manifest MAY declare `materialize: [paths]`
-(spec 03 §additive; `schema_minor` bump per the spec-03 rules — old
-readers ignore the key, new readers enforce). The driver extracts the
-listed paths to the runtime cache at boot, before the interpreter
-handoff.
+(spec 03 §2.4; `payload-manifest.yaml` schema_minor 1 — old readers
+ignore the key, new readers enforce). Entries are absolute in-image
+paths of regular files, carry no `..` components (validated at parse),
+and any kind may declare. The driver extracts the listed paths after
+the mounts and the jail, before the interpreter handoff — in both boot
+shapes (the standalone env-image boot and the `--tebako-image`
+grammar); the env image's own declarations extract first (the cert
+case), then each payload's in triple order. Each declared path `P`
+lands at `<TEBAKO_EXEC_CACHE>/resources/<image-key>/<P>`, where
+`<image-key>` is the exec cache's segregation idiom (the store
+sidecar's sha prefix when the image came from the store, else a key
+derived from the image path — the same rule the cache root itself
+uses).
 
 **Rule R2.** The canonical consumer pattern is an image-OWNED default:
 the image that ships a resource also ships the configuration pointing
@@ -315,9 +324,30 @@ default is the first entry). Payloads needing host-visible resources
 declare them in their own manifests; a consumer reads the materialized
 path through the documented cache-root convention (§6).
 
-**Rule R3.** Materialization is whole-file, read-only, and verified
-against the image's content hashes. A listed path absent from the
-image is a named boot error (the manifest lied), never a skipped entry.
+**Rule R3.** Materialization is whole-file, read-only, and verified.
+The mechanics (locked):
+
+- **Write-once.** The first boot to need `P` streams it from the
+  mounted image to a per-process staging file, hashing in flight with
+  the tfs-merkle-1 file construction, re-hashes the staged copy, and
+  refuses to install a copy that does not hash to the bytes the image
+  served. The digest record `<P>.tfs-digest` is renamed into place
+  BEFORE the content file, so a crash never leaves content without its
+  record — and content without a record is foreign by construction.
+  Later boots reuse the existing copy.
+- **Per-boot verification.** A reused copy is served only after it
+  re-hashes to its recorded digest. A mismatch, a missing record, or a
+  corrupt record is the cache tampered or corrupt — a named 70 (spec
+  06 §4's sha256-mismatch code), never a silently served corruption.
+  The remedy is named in the error: remove the image's resources
+  directory to force re-extraction.
+- **The trust chain.** The image itself is verified at fetch/install
+  (spec 09); the record pins the cache copy to the bytes the image
+  served; the per-boot rehash pins the copy to the record.
+- **Read-only.** The installed copy is made read-only after the rename.
+- **Named failures.** A listed path absent from the image, or not a
+  regular file, is a named 65 (the manifest lied), never a skipped
+  entry.
 
 ## 5. Error model
 
@@ -346,7 +376,9 @@ Payload authors and runtime factories may rely on, forever:
   process's lifetime. Its content is an implementation detail; its
   existence and per-image-sha segregation are contractual.
 - **The materialized-resource convention.** A manifest's
-  `materialize:` entry `P` lands at `<exec-cache>/resources/<image-sha>/<P>`.
+  `materialize:` entry `P` lands at `<exec-cache>/resources/<image-key>/<P>`
+  (`<image-key>` per Rule R1). The sidecar `<P>.tfs-digest` is cache
+  bookkeeping — the verification record, never a consumption path.
   Images that ship resources document their consumption path in their
   own manifests (spec 03 annotations).
 - **The discovery surface.** `TEBAKO_MOUNT_<SLUG>` per dependency mount
