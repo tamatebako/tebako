@@ -173,7 +173,9 @@ pub use manifest::{
     SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides,
     PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
-pub use merkle::{render_tree_hash, tree_digest, Child, MerkleDigest, NodeKind, TreeWalk};
+pub use merkle::{
+    render_tree_hash, tree_digest, Child, FileHasher, MerkleDigest, NodeKind, TreeWalk,
+};
 pub use model::{Manifest, Slot, V2Extension};
 pub use package::{
     MountMode, PackageEntry, PackageIdentity, PackageManifest, PackageManifestError, PackageMount,

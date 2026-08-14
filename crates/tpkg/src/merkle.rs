@@ -236,6 +236,38 @@ fn file_digest_of(fold: Fold) -> MerkleDigest {
 }
 
 // ---------------------------------------------------------------------
+// The single-file digest (spec 22 §4 class R)
+// ---------------------------------------------------------------------
+
+/// A streaming hasher for ONE file's content digest — the file-node
+/// value the tree hash commits (chunk-folded at [`CHUNK_SIZE`], the
+/// empty file as one empty chunk; see the module docs). The spec-22
+/// class-R boot materialization hashes the bytes the image serves and
+/// verifies the materialized host copy against the record.
+pub struct FileHasher {
+    chunker: Chunker,
+}
+
+impl FileHasher {
+    /// A hasher with no content fed yet.
+    pub fn new() -> FileHasher {
+        FileHasher {
+            chunker: Chunker::new(),
+        }
+    }
+
+    /// Feed content (any piece sizes — the re-chunker is exact).
+    pub fn update(&mut self, data: &[u8]) {
+        self.chunker.push(data);
+    }
+
+    /// The file's merkle digest.
+    pub fn finish(self) -> MerkleDigest {
+        self.chunker.finish()
+    }
+}
+
+// ---------------------------------------------------------------------
 // The driver
 // ---------------------------------------------------------------------
 
@@ -600,6 +632,49 @@ mod tests {
             render_tree_hash(&digest_of(&tree)),
             "sha256:d917098c8df4ecc0c1cb6febebcf6df159acfac807f31b17d3af882f564bcf2b"
         );
+    }
+
+    #[test]
+    fn file_hasher_is_the_tree_constructions_file_value() {
+        // The file digest IS the file-node value the tree hash commits
+        // (spec 22 §4 class R reuses this construction for extraction
+        // verification): chunk-folded at CHUNK_SIZE, the empty file as
+        // one empty chunk.
+        assert_eq!(FileHasher::new().finish(), chunk_leaf(b""));
+        let mut h = FileHasher::new();
+        h.update(b"abc");
+        assert_eq!(h.finish(), chunk_leaf(b"abc"));
+        let big = vec![0xAB; CHUNK_SIZE + 1];
+        let mut h = FileHasher::new();
+        h.update(&big);
+        let mut want = Fold::default();
+        want.push(chunk_leaf(&big[..CHUNK_SIZE]));
+        want.push(chunk_leaf(&big[CHUNK_SIZE..]));
+        assert_eq!(h.finish(), want.finish());
+    }
+
+    #[test]
+    fn file_hasher_streaming_is_chunk_size_blind() {
+        // Feeding in odd pieces re-chunks identically to one push…
+        let content: Vec<u8> = (0..9000u32).map(|i| (i % 251) as u8).collect();
+        let mut whole = FileHasher::new();
+        whole.update(&content);
+        let whole = whole.finish();
+        let mut pieces = FileHasher::new();
+        for piece in content.chunks(7) {
+            pieces.update(piece);
+        }
+        assert_eq!(whole, pieces.finish());
+        // …and the digest equals the value the tree walk commits for the
+        // file (the walker feeds odd piece sizes too).
+        let mut tree = MemTree::default();
+        tree.file("d/f", &content, false);
+        let child = Child {
+            name: "f".into(),
+            kind: NodeKind::File,
+            executable: false,
+        };
+        assert_eq!(whole, node_digest(&tree, &child, "d/f").unwrap());
     }
 
     // ---------------------------------------------------------------

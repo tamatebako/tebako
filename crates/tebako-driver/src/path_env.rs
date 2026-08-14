@@ -35,14 +35,14 @@ use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use crate::driver::{join_mount, read_mounted_text, DriverError, Env};
+use crate::driver::{join_mount, mounted_manifest_at, DriverError, Env};
 use crate::handoff::ImageSpec;
 #[cfg(unix)]
 use crate::EX_TEBAKO_IO;
 use crate::EX_TEBAKO_MANIFEST;
 #[cfg(unix)]
 use tfs::context::context;
-use tpkg::{PayloadManifest, Provides, PAYLOAD_MANIFEST_PATH};
+use tpkg::{PayloadManifest, Provides};
 
 /// Prepend the dependency mounts' declared bin dirs to `PATH` — led by
 /// the launcher dir when the shim was delivered (`shim_host`, unix).
@@ -58,7 +58,7 @@ pub fn export(
     // tier where one is delivered.
     let mut deps: Vec<(String, PayloadManifest)> = Vec::new();
     for spec in images.iter().skip(1) {
-        if let Some(manifest) = mounted_manifest(spec)? {
+        if let Some(manifest) = mounted_manifest_at(&spec.mount)? {
             deps.push((spec.mount.clone(), manifest));
         }
     }
@@ -100,25 +100,6 @@ fn compose(existing: Option<String>, dirs: &[String]) -> Result<Option<OsString>
         DriverError::new(
             EX_TEBAKO_MANIFEST,
             format!("cannot prepend the dependency bin dirs to PATH: {e}"),
-        )
-    })
-}
-
-/// The mounted image's own manifest, when readable (see the module
-/// doc): no manifest declares no bins; a corrupt one is the image lying
-/// about its self-description — a named 65.
-fn mounted_manifest(spec: &ImageSpec) -> Result<Option<PayloadManifest>, DriverError> {
-    let path = join_mount(&spec.mount, PAYLOAD_MANIFEST_PATH);
-    let Ok(text) = read_mounted_text(&path) else {
-        return Ok(None);
-    };
-    PayloadManifest::from_yaml(&text).map(Some).map_err(|e| {
-        DriverError::new(
-            EX_TEBAKO_MANIFEST,
-            format!(
-                "corrupt {PAYLOAD_MANIFEST_PATH} in the image mounted at '{}' ({e}) — the payload's self-description lies",
-                spec.mount
-            ),
         )
     })
 }

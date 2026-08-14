@@ -1237,6 +1237,10 @@ fn synthesize_manifest(
         },
         provides,
         requires: Vec::new(),
+        // A synthesized mirror declares nothing to materialize — only an
+        // embedded manifest can (the store layout: the embedded manifest
+        // wins; the mirror is synthesized LOUDLY).
+        materialize: Vec::new(),
     })
 }
 

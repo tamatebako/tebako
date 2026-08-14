@@ -1123,6 +1123,14 @@ pub struct PayloadManifest {
     pub provides: Provides,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub requires: Vec<Requirement>,
+    /// The spec-22 §4 class-R boot materialization list (additive —
+    /// schema_minor 1; old readers ignore it, new readers enforce):
+    /// absolute in-image paths of regular files the driver extracts to
+    /// the exec cache after the mounts, before the interpreter handoff.
+    /// Any kind may declare it (the runtime env image's own resource
+    /// default is the canonical entry). Absent = nothing to materialize.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub materialize: Vec<String>,
 }
 
 impl<'de> Deserialize<'de> for PayloadManifest {
@@ -1133,6 +1141,8 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             provides: serde_yml::Value,
             #[serde(default)]
             requires: Vec<Requirement>,
+            #[serde(default)]
+            materialize: Vec<String>,
         }
         let raw = Raw::deserialize(d)?;
         let provides = match raw.identity.kind {
@@ -1157,6 +1167,7 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             identity: raw.identity,
             provides,
             requires: raw.requires,
+            materialize: raw.materialize,
         })
     }
 }
@@ -1178,7 +1189,8 @@ impl PayloadManifest {
     /// Semantic checks beyond the serde structure: schema version,
     /// kind ↔ provides binding, the locked capability truth tables,
     /// digest/keyid shapes, signing/encryption state consistency, the
-    /// reserved-triplet rule and absolute-path rules. Unknown keys are
+    /// reserved-triplet rule, the absolute-path rules, and the
+    /// materialize grammar (spec 22 §4). Unknown keys are
     /// tolerated everywhere (only `annotations` is lossless by contract).
     pub fn validate(&self) -> Result<(), ManifestError> {
         self.identity.validate()?;
@@ -1198,6 +1210,14 @@ impl PayloadManifest {
         self.provides.validate()?;
         for req in &self.requires {
             req.validate()?;
+        }
+        for p in &self.materialize {
+            check_abs_path(p, "materialize[] must be absolute (inside the image)")?;
+            if p.split('/').any(|component| component == "..") {
+                return Err(ManifestError::Invalid(
+                    "materialize[] must not contain '..' components (the extraction target derives from the entry)",
+                ));
+            }
         }
         Ok(())
     }
@@ -1425,6 +1445,7 @@ mod tests {
             identity: minimal_identity(PayloadKind::App),
             provides: Provides::Other(BTreeMap::new()),
             requires: Vec::new(),
+            materialize: Vec::new(),
         };
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
@@ -1522,5 +1543,69 @@ mod tests {
         assert!(id.validate().is_ok());
         id.encryption.parts[0].paths = vec!["relative".into()];
         assert!(id.validate().is_err());
+    }
+
+    /// A minimal kind-data document with `extra` appended verbatim (the
+    /// materialize tests' vehicle).
+    fn minimal_data_yaml(extra: &str) -> String {
+        format!(
+            "identity:\n  schema_version: 1\n  kind: data\n  name: x\n  version: 1.0.0\n\
+             \x20 producer: {{tool: t, tool_version: \"1\"}}\n  created: now\n\
+             \x20 digest: {{tree_hash: \"sha256:{}\", blob_sha256: {}}}\n\
+             \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+             provides:\n  mount_semantics: {{suggested: /usr/share/x}}\n  capabilities: {{exec: false, read: true}}\n{extra}",
+            sha(1),
+            sha(2),
+        )
+    }
+
+    #[test]
+    fn materialize_defaults_empty_and_round_trips() {
+        // spec 22 §4 class R (schema_minor 1): the additive boot-
+        // materialization key — absolute in-image paths the driver
+        // extracts to the exec cache before the interpreter handoff.
+        let bare = PayloadManifest::from_yaml(&minimal_data_yaml("")).unwrap();
+        assert!(bare.materialize.is_empty());
+        // An absent key never serializes (additive on the wire: old
+        // readers see the document they always saw).
+        assert!(!bare.to_yaml().unwrap().contains("materialize"));
+
+        let with = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "materialize: [/lib/tebako/cacert.pem, /share/icu/icudt.dat]\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            with.materialize,
+            vec![
+                "/lib/tebako/cacert.pem".to_string(),
+                "/share/icu/icudt.dat".to_string()
+            ]
+        );
+        let rendered = with.to_yaml().unwrap();
+        assert!(rendered.contains("materialize:"), "{rendered}");
+        let back = PayloadManifest::from_yaml(&rendered).unwrap();
+        assert_eq!(back, with);
+    }
+
+    #[test]
+    fn materialize_entries_must_be_absolute_and_escape_free() {
+        // A relative entry is a named validation error.
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml("materialize: [lib/x.pem]\n"))
+            .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("materialize")),
+            "{err}"
+        );
+        // A '..' component would escape the exec-cache resources
+        // namespace on the host — rejected at validation, never at write.
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml("materialize: [/../../host/x]\n"))
+            .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("materialize")),
+            "{err}"
+        );
+        // A scalar is a structural error, never a one-item list.
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml("materialize: /x\n")).unwrap_err();
+        assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
     }
 }

@@ -6,7 +6,9 @@
 //! image's `/lib/tebako/layout.yaml`** (post-mount, before any
 //! interpreter handoff — exit 78) → mount each payload triple in order
 //! (bare files whole; package files by trailer region) → install
-//! the jail policy (after the mounts — spec 08 §3) → resolve and verify
+//! the jail policy (after the mounts — spec 08 §3) → materialize each
+//! mounted image's declared `materialize:` resources into the exec
+//! cache (spec 22 §4 class R) → resolve and verify
 //! the entry → rewrite argv. Any failure unmounts everything: never a
 //! partial mount.
 
@@ -110,7 +112,7 @@ impl Env for ProcessEnv {
     }
 }
 
-fn env_var(env: &dyn Env, key: &str) -> Option<String> {
+pub(crate) fn env_var(env: &dyn Env, key: &str) -> Option<String> {
     env.var(key).filter(|s| !s.is_empty())
 }
 
@@ -405,6 +407,28 @@ pub(crate) fn read_mounted_text(path: &str) -> Result<String, i32> {
     }
     ctx.close(fd)?;
     String::from_utf8(out).map_err(|_| libc::EINVAL)
+}
+
+/// The mounted image's own manifest, when readable: no manifest
+/// declares nothing (plain images mount fine); a corrupt one is the
+/// image lying about its self-description — a named 65. Shared by the
+/// path_env bin-dir export (spec 22 §3.2) and the class-R
+/// materialization (spec 22 §4).
+pub(crate) fn mounted_manifest_at(
+    mount: &str,
+) -> Result<Option<tpkg::PayloadManifest>, DriverError> {
+    let path = join_mount(mount, tpkg::PAYLOAD_MANIFEST_PATH);
+    let Ok(text) = read_mounted_text(&path) else {
+        return Ok(None);
+    };
+    tpkg::PayloadManifest::from_yaml(&text)
+        .map(Some)
+        .map_err(|e| {
+            manifest(format!(
+                "corrupt {} in the image mounted at '{mount}' ({e}) — the payload's self-description lies",
+                tpkg::PAYLOAD_MANIFEST_PATH
+            ))
+        })
 }
 
 /// The env-image layout check (spec 18 C3): after the env image mounts
@@ -735,6 +759,9 @@ pub fn boot_with_mount_modes(
             mount_env_image(env, runtime_root, &mut mounted)?;
             let declaration = check_env_layout(env, baked_root, runtime_root)?;
             apply_jail(env)?;
+            // The env image's own declared resources materialize before
+            // the interpreter runs (spec 22 §4 class R — the cert case).
+            crate::materialize::extract(&h.images, env, runtime_root)?;
             // The standalone interpreter spawns too — arm its children
             // the same way (spec 22 §3).
             crate::injection::export(env, declaration.as_ref(), runtime_root)?;
@@ -758,6 +785,10 @@ pub fn boot_with_mount_modes(
             mount_image(spec, &mut mounted, modes)?;
         }
         apply_jail(env)?;
+        // Declared resources land in the exec cache after the mounts and
+        // the jail, before any handoff (spec 22 §4 class R — Rule R3
+        // fails the boot by name).
+        crate::materialize::extract(&h.images, env, runtime_root)?;
         // The mounts are established — publish the discovery surface
         // (spec 22 §6; v2-1/20), arm the children (spec 22 §3), and wire
         // the dependency bins onto PATH (spec 22 §3.2 — the launcher

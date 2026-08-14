@@ -1801,3 +1801,386 @@ fn a_launcher_re_arms_the_injection_and_execs_the_target() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+// ---------------------------------------------------------------------
+// spec 22 §4 class R: declarative boot materialization
+// ---------------------------------------------------------------------
+
+/// A runtime-kind in-image manifest declaring `materialize` (the env
+/// image's own resource declaration — the cert case).
+fn runtime_manifest(materialize: &[&str]) -> String {
+    let list: String = materialize.iter().map(|p| format!("  - {p}\n")).collect();
+    format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: rt\n  version: \"1\"\n  \
+         producer: {{tool: t, tool_version: \"1\"}}\n  created: \"2026-08-14T00:00:00Z\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  provides: {{engine: ruby, version: 4.0.6, abi_line: \"4.0\", platform: aarch64-macos}}\n  \
+         built_from: {{src_sha256: {z}, patch_set: v0}}\n  capabilities: {{exec: true, read: true, runtime: true}}\n\
+         materialize:\n{list}",
+        z = "0".repeat(64)
+    )
+}
+
+/// An app-kind in-image manifest declaring `materialize` (a payload's
+/// own resource declaration).
+fn app_manifest(materialize: &[&str]) -> String {
+    let list: String = materialize.iter().map(|p| format!("  - {p}\n")).collect();
+    format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: app\n  version: \"1\"\n  \
+         producer: {{tool: t, tool_version: \"1\"}}\n  created: \"2026-08-14T00:00:00Z\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  entrypoints: [{{name: app, path: /bin/app}}]\n  \
+         platforms: universal\n  capabilities: {{exec: true, read: true}}\n\
+         materialize:\n{list}",
+        z = "0".repeat(64)
+    )
+}
+
+/// The env-image fixture carrying a manifest that declares the cert
+/// resource (spec 22 §4: the image-OWNED default — R2's cert case).
+fn write_env_image_with_resource(dir: &Path, cert: &[u8]) -> PathBuf {
+    let p = dir.join("runtime.tfs");
+    build_zip(
+        &p,
+        &["lib/", "lib/ruby/", "lib/tebako/", "__tpkg__/"],
+        &[
+            ("lib/ruby/rubygems.rb", b"# rubygems core\n".as_slice()),
+            ("lib/tebako/layout.yaml", GOOD_LAYOUT.as_bytes()),
+            ("lib/tebako/cacert.pem", cert),
+            (
+                "__tpkg__/manifest.yaml",
+                runtime_manifest(&["/lib/tebako/cacert.pem"]).as_bytes(),
+            ),
+        ],
+    );
+    p
+}
+
+/// A payload fixture carrying a manifest that declares one resource.
+fn write_payload_image_with_resource(dir: &Path, resource: &[u8]) -> PathBuf {
+    let p = dir.join("payload.tfs");
+    build_zip(
+        &p,
+        &["bin/", "lib/", "__tpkg__/"],
+        &[
+            ("bin/app", b"#!/usr/bin/env ruby\nputs 'hi'\n".as_slice()),
+            ("lib/app.pem", resource),
+            (
+                "__tpkg__/manifest.yaml",
+                app_manifest(&["/lib/app.pem"]).as_bytes(),
+            ),
+        ],
+    );
+    p
+}
+
+/// The resources namespace one boot of `image` extracts into
+/// (`<TEBAKO_EXEC_CACHE>/resources/<image-key>`, spec 22 §6) — computed
+/// pre-boot so the test can reset the write-once cache between runs.
+fn resources_dir(image: &Path, env_image: Option<&Path>) -> PathBuf {
+    let root_key = env_image
+        .map(tebako_driver::exec_cache::image_key)
+        .unwrap_or_else(|| "host".to_string());
+    tebako_driver::exec_cache::root_for(&std::env::temp_dir(), &root_key)
+        .join("resources")
+        .join(tebako_driver::exec_cache::image_key(image))
+}
+
+#[test]
+fn boot_materializes_a_declared_env_image_resource() {
+    let g = guard("mat-env");
+    let cert = b"CERT-A\n";
+    let env_image = write_env_image_with_resource(g.path(), cert);
+    write_sidecar(&env_image, &"ca".repeat(32));
+    let resources = resources_dir(&env_image, Some(&env_image));
+    let _ = std::fs::remove_dir_all(&resources);
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+
+    // The declared path lands at <exec-cache>/resources/<image-key>/<P>,
+    // read-only (Rule R3), content-exact.
+    let extracted = resources.join("lib/tebako/cacert.pem");
+    assert_eq!(std::fs::read(&extracted).unwrap(), cert);
+    assert!(
+        std::fs::metadata(&extracted)
+            .unwrap()
+            .permissions()
+            .readonly(),
+        "the materialized resource is read-only"
+    );
+    // The recorded digest pins the extraction to the bytes the image
+    // served (the tfs-merkle-1 file value).
+    let recorded = std::fs::read_to_string(resources.join("lib/tebako/cacert.pem.tfs-digest"))
+        .expect("the digest record rides alongside");
+    let mut h = tpkg::merkle::FileHasher::new();
+    h.update(cert);
+    assert_eq!(recorded.trim(), tpkg::merkle::render_tree_hash(&h.finish()));
+    // The mount stays live — materialization is additive, never a move.
+    assert_eq!(read_file("/__tfs__/lib/tebako/cacert.pem"), cert);
+    let _ = std::fs::remove_dir_all(&resources);
+}
+
+#[test]
+fn boot_materializes_a_declared_payload_resource() {
+    let g = guard("mat-payload");
+    let payload = write_payload_image_with_resource(g.path(), b"PAYLOAD-PEM\n");
+    let resources = resources_dir(&payload, None);
+    let _ = std::fs::remove_dir_all(&resources);
+    let env = MapEnv::new();
+
+    let out = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    assert_eq!(out.argv, argv(&["ruby", "/bin/app"]));
+    let extracted = resources.join("lib/app.pem");
+    assert_eq!(std::fs::read(&extracted).unwrap(), b"PAYLOAD-PEM\n");
+    let _ = std::fs::remove_dir_all(&resources);
+}
+
+#[test]
+fn a_listed_but_absent_path_is_a_named_boot_error() {
+    let g = guard("mat-absent");
+    // The manifest declares a path the image does not carry — the
+    // manifest lied (Rule R3), never a skipped entry.
+    let payload = {
+        let p = g.path().join("payload.tfs");
+        build_zip(
+            &p,
+            &["bin/", "__tpkg__/"],
+            &[
+                ("bin/app", b"#!/usr/bin/env ruby\n".as_slice()),
+                (
+                    "__tpkg__/manifest.yaml",
+                    app_manifest(&["/lib/missing.pem"]).as_bytes(),
+                ),
+            ],
+        );
+        p
+    };
+    let env = MapEnv::new();
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(err.message.contains("/lib/missing.pem"), "{}", err.message);
+    assert!(
+        err.message.contains("self-description lies"),
+        "{}",
+        err.message
+    );
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refusal unmounts everything"
+    );
+}
+
+#[test]
+fn a_listed_directory_is_a_named_boot_error() {
+    let g = guard("mat-dir");
+    // Rule R3 is whole-FILE: a listed directory is out of grammar.
+    let payload = {
+        let p = g.path().join("payload.tfs");
+        build_zip(
+            &p,
+            &["bin/", "lib/", "__tpkg__/"],
+            &[
+                ("bin/app", b"#!/usr/bin/env ruby\n".as_slice()),
+                ("lib/app.rb", b"# app\n".as_slice()),
+                ("__tpkg__/manifest.yaml", app_manifest(&["/lib"]).as_bytes()),
+            ],
+        );
+        p
+    };
+    let env = MapEnv::new();
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("not a regular file"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn a_materialize_escape_path_is_a_named_error() {
+    let g = guard("mat-escape");
+    // '..' would escape the resources namespace on the host — the
+    // manifest fails validation, so the image's self-description is
+    // corrupt by definition (the driver's named 65).
+    let payload = {
+        let p = g.path().join("payload.tfs");
+        build_zip(
+            &p,
+            &["bin/", "__tpkg__/"],
+            &[
+                ("bin/app", b"#!/usr/bin/env ruby\n".as_slice()),
+                (
+                    "__tpkg__/manifest.yaml",
+                    app_manifest(&["/../../host/x"]).as_bytes(),
+                ),
+            ],
+        );
+        p
+    };
+    let env = MapEnv::new();
+
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("self-description lies"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn a_second_boot_serves_the_verified_write_once_cache() {
+    let g = guard("mat-writeonce");
+    let payload = write_payload_image_with_resource(g.path(), b"PEM-ONE\n");
+    write_sidecar(&payload, &"ef".repeat(32));
+    let resources = resources_dir(&payload, None);
+    let _ = std::fs::remove_dir_all(&resources);
+    let env = MapEnv::new();
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    let extracted = resources.join("lib/app.pem");
+    assert_eq!(std::fs::read(&extracted).unwrap(), b"PEM-ONE\n");
+
+    // Rebuild the image at the same path with DIFFERENT content under
+    // the same sidecar key: the write-once namespace serves the verified
+    // first extraction (the store's content key is the production
+    // segregation; a fixed path key is the documented dev-boot caveat —
+    // exec_cache.rs).
+    write_payload_image_with_resource(g.path(), b"PEM-TWO\n");
+    reset();
+    let env = MapEnv::new();
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    assert_eq!(
+        std::fs::read(&extracted).unwrap(),
+        b"PEM-ONE\n",
+        "write-once: the verified cache is served, never re-extracted under one key"
+    );
+    let _ = std::fs::remove_dir_all(&resources);
+}
+
+#[test]
+fn a_tampered_extracted_resource_fails_verification() {
+    let g = guard("mat-tamper");
+    let payload = write_payload_image_with_resource(g.path(), b"PEM-ONE\n");
+    write_sidecar(&payload, &"ad".repeat(32));
+    let resources = resources_dir(&payload, None);
+    let _ = std::fs::remove_dir_all(&resources);
+    let env = MapEnv::new();
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    // Tamper with the cached copy: the next boot's verification fails
+    // closed (Rule R3) — never a silently served corruption.
+    let extracted = resources.join("lib/app.pem");
+    let mut perms = std::fs::metadata(&extracted).unwrap().permissions();
+    perms.set_readonly(false);
+    std::fs::set_permissions(&extracted, perms).unwrap();
+    std::fs::write(&extracted, b"PEM-FORGED\n").unwrap();
+
+    reset();
+    let env = MapEnv::new();
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 70, "{}", err.message);
+    assert!(err.message.contains("/lib/app.pem"), "{}", err.message);
+    assert!(err.message.contains("verification"), "{}", err.message);
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "the refusal unmounts everything"
+    );
+    let _ = std::fs::remove_dir_all(&resources);
+}
