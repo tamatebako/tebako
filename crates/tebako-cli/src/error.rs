@@ -57,12 +57,16 @@ pub fn packaging_message(code: i32) -> Option<&'static str> {
         128 => "Prebuilt runtime press requires the packaging environment (run 'tebako setup' first)",
         129 => "The resolved runtime package does not carry the tebako-runtime gem",
         130 => "Option combination is not supported",
+        // 131/132/134 were emitted by the retired v1 C++ tebako-bootstrap
+        // download path (and its fat-mode version guard); the rows stay as
+        // the gem's table mirror, the codes stay reserved.
         131 => "No tebako-bootstrap package for the requested platform",
         132 => "TEBAKO_OFFLINE is set and the requested tebako-bootstrap package is not cached",
         133 => "The 'runtime' press mode was removed: runtime packages are produced by the \
                  tebako-runtime-ruby pipeline and resolved automatically by the lean/fat/classic modes",
         134 => "Fat mode requires a payload-capable tebako-bootstrap release",
         135 => "Failed to provision the runtime SDK for native extension builds",
+        136 => "Press requires a local Rust tebako-bootstrap binary (the v1 C++ bootstrap download is retired)",
         201 => "Warning. Could not create cache version file",
         _ => return None,
     })

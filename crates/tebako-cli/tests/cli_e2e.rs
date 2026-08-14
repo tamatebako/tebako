@@ -11,9 +11,10 @@
 //!   never builds it (tebako-bootstrap is a lib dependency): build it
 //!   first (`cargo build -p tebako-bootstrap`) or run the suite as CI
 //!   does (`cargo build --workspace` then `cargo test --workspace`).
-//!   The harness fails fast when it is missing (see dogfood_bootstrap)
-//!   rather than silently pressing with the v1 C++ bootstrap download,
-//!   whose handoff the image-era runtime driver rejects at run time;
+//!   The harness fails fast when it is missing (see dogfood_bootstrap);
+//!   the CLI itself now also fails closed (exit 136) — the v1 C++
+//!   bootstrap download fallback whose handoff the image-era runtime
+//!   driver rejects at run time is retired;
 //! - the golden test additionally needs $TEBAKO_REFERENCE_GEM pointing at
 //!   a checkout of the reference gem (tamatebako/tebako, the three-part
 //!   model) and a host ruby with the thor gem.
@@ -45,18 +46,16 @@ fn e2e_allowed() -> bool {
 }
 
 /// The in-workspace Rust bootstrap every e2e press dogfoods
-/// ($TEBAKO_BOOTSTRAP → the binary next to the tebako bin). REQUIRED,
-/// never a silent fallback: when the sibling is absent the CLI's
-/// decide_bootstrap downloads the v1 C++ bootstrap release, whose handoff
-/// (--tebako-entry = argv0 verbatim, no L2 package-manifest selection, no
-/// `;image` facet fetch) the image-era runtime driver rejects at run
-/// time — the suite then fails mid-cold-run with a driver-side
-/// "entrypoint '<package path>' not found at '/__tfs__/...' in the
-/// mounted tree" that indites the wrong component (exit 255), and the
-/// press_lock poison cascade hides the first failure. `cargo test -p
-/// tebako-cli` alone does not build the sibling; build it first
-/// (`cargo build -p tebako-bootstrap`) or run the suite as CI does
-/// (`cargo build --workspace` then `cargo test --workspace`).
+/// ($TEBAKO_BOOTSTRAP → the binary next to the tebako bin). REQUIRED:
+/// when no local bootstrap is found the press fails closed (exit 136 —
+/// the v1 C++ bootstrap download is retired: its argv0-verbatim handoff,
+/// no L2 package-manifest selection, no `;image` facet fetch, is rejected
+/// by the image-era runtime driver at run time). The harness still fails
+/// fast on its own so the suite never pays a runtime download for the
+/// named refusal, and `cargo test -p tebako-cli` alone does not build
+/// the sibling; build it first (`cargo build -p tebako-bootstrap`) or
+/// run the suite as CI does (`cargo build --workspace` then `cargo test
+/// --workspace`).
 fn dogfood_bootstrap() -> PathBuf {
     let sibling = tebako_bin().parent().unwrap().join(if cfg!(windows) {
         "tebako-bootstrap.exe"
@@ -67,8 +66,8 @@ fn dogfood_bootstrap() -> PathBuf {
         sibling.is_file(),
         "the in-workspace tebako-bootstrap binary is missing ({}): build it first \
          (cargo build -p tebako-bootstrap) or run the suite via cargo test --workspace — \
-         without it the press silently embeds the downloaded v1 C++ bootstrap and every \
-         cold run fails in the runtime driver",
+         without it every press fails closed with exit 136 (the v1 C++ bootstrap \
+         download fallback is retired)",
         sibling.display()
     );
     sibling
@@ -203,8 +202,8 @@ fn press_command(env: &PressEnv, entry: &str, output: &Path) -> Command {
         .arg(output)
         .arg("-p")
         .arg(&env.prefix);
-    // Dogfood the in-workspace Rust bootstrap (required — see
-    // dogfood_bootstrap for the failure mode of the download fallback).
+    // Dogfood the in-workspace Rust bootstrap (required — the C++
+    // download fallback is retired; without it the press fails closed).
     cmd.env("TEBAKO_BOOTSTRAP", dogfood_bootstrap());
     cmd
 }
@@ -1141,7 +1140,7 @@ fn official_pair_fixture(tag: &str) -> Option<(PathBuf, String, String, String)>
     // download or the shared cache); resolve_runtime installs — and on a
     // stale entry backfills — the runtime image (item 30b) next to the
     // exe in the same cache entry.
-    let resolver = tebako_cli::resolve::Resolver::new(tebako_cli::resolve::Flavor::Runtime);
+    let resolver = tebako_cli::resolve::Resolver::new();
     let resolved = resolver.resolve_runtime(ruby, &plat, ver).ok()?;
     fs::copy(&resolved.executable, mirror.join(&asset)).unwrap();
 

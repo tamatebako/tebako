@@ -1,21 +1,24 @@
-//! Port of the gem's RuntimeManager / BootstrapManager
-//! (lib/tebako/runtime_manager.rb, lib/tebako/bootstrap_manager.rb):
+//! Port of the gem's RuntimeManager (lib/tebako/runtime_manager.rb):
 //! resolution, download, verification and machine-wide caching of the
-//! prebuilt tebako runtime packages and tebako-bootstrap launchers.
+//! prebuilt tebako runtime packages.
 //!
 //! Cache layout (rooted at $TEBAKO_HOME or ~/.tebako), identical to the gem:
 //!   runtimes/ruby-<ruby-version>-<tebakoabi>-<platform>/
 //!     tebako-runtime-<tebakoabi>-<ruby-version>-<platform>[.exe]
 //!     sha256    -- digest the installed file was verified against
 //!     origin    -- URL the package was downloaded from
-//!   bootstraps/tebako-bootstrap-<version>-<platform>/
-//!     tebako-bootstrap-<version>-<platform>[.exe]
-//!     sha256 / origin
 //!
 //! Installs are serialized per entry with a flock'd lockfile; packages are
 //! downloaded to tmp/, SHA256-verified against the release index and moved
 //! into place with an atomic rename, so partial downloads never poison the
 //! cache.
+//!
+//! The gem's BootstrapManager half is NOT ported: the v1 C++
+//! tebako-bootstrap download is retired (its argv0-verbatim handoff is
+//! rejected by the image-era runtime driver, so the fallback produced
+//! silently-broken packages). Pressing sources the bootstrap from local
+//! Rust binaries only and fails closed otherwise (src/lib.rs
+//! `local_bootstrap`, exit 136).
 
 use std::fs;
 #[cfg(unix)]
@@ -36,27 +39,15 @@ const SHA256_FILE: &str = "sha256";
 const ORIGIN_FILE: &str = "origin";
 const LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 
-/// Which release line the resolver consumes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Flavor {
-    /// tamatebako/tebako-runtime-ruby prebuilt runtimes.
-    Runtime,
-    /// tamatebako/tebako-bootstrap launchers.
-    Bootstrap,
-}
-
-/// The default tebako-bootstrap release (TEBAKO_BOOTSTRAP_VERSION
-/// overrides); 0.2.0 is the first payload-capable one.
-pub const BOOTSTRAP_VERSION: &str = "0.2.0";
-/// Fat mode requires a payload-capable bootstrap.
-pub const PAYLOAD_MIN_VERSION: &str = "0.2.0";
-
-pub fn default_bootstrap_version() -> String {
-    match std::env::var("TEBAKO_BOOTSTRAP_VERSION") {
-        Ok(v) if !v.is_empty() => v.strip_prefix('v').unwrap_or(&v).to_string(),
-        _ => BOOTSTRAP_VERSION.to_string(),
-    }
-}
+/// The tebako-runtime-ruby release mirror (TEBAKO_RUNTIME_MIRROR
+/// overrides).
+const DEFAULT_MIRROR: &str = "https://github.com/tamatebako/tebako-runtime-ruby/releases/download";
+const MIRROR_ENV_VAR: &str = "TEBAKO_RUNTIME_MIRROR";
+/// The cache subdirectory and release identity this resolver consumes.
+const CACHE_SUBDIR: &str = "runtimes";
+const RELEASE_NAME: &str = "tebako-runtime-ruby";
+/// The release index files, in preference order.
+const INDEX_FILES: &[&str] = &["manifest.json", "SHA256SUMS.txt"];
 
 /// $TEBAKO_HOME or ~/.tebako (LOCALAPPDATA\tebako on Windows).
 pub fn default_cache_root() -> PathBuf {
@@ -119,7 +110,6 @@ pub struct Resolved {
 
 #[derive(Debug)]
 pub struct Resolver {
-    pub flavor: Flavor,
     pub cache_root: PathBuf,
     pub mirror: String,
     pub lock_timeout: std::time::Duration,
@@ -132,56 +122,23 @@ pub struct CacheEntry {
     pub installed_at: std::time::SystemTime,
 }
 
+impl Default for Resolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Resolver {
-    pub fn new(flavor: Flavor) -> Self {
-        let (env_var, default_mirror) = match flavor {
-            Flavor::Runtime => (
-                "TEBAKO_RUNTIME_MIRROR",
-                "https://github.com/tamatebako/tebako-runtime-ruby/releases/download",
-            ),
-            Flavor::Bootstrap => (
-                "TEBAKO_BOOTSTRAP_MIRROR",
-                "https://github.com/tamatebako/tebako-bootstrap/releases/download",
-            ),
-        };
-        let mirror = std::env::var(env_var)
+    pub fn new() -> Self {
+        let mirror = std::env::var(MIRROR_ENV_VAR)
             .ok()
             .filter(|m| !m.is_empty())
-            .unwrap_or_else(|| default_mirror.to_string());
+            .unwrap_or_else(|| DEFAULT_MIRROR.to_string());
         Resolver {
-            flavor,
             cache_root: default_cache_root(),
             mirror: mirror.trim_end_matches('/').to_string(),
             lock_timeout: LOCK_TIMEOUT,
         }
-    }
-
-    /// Resolve (download/verify/cache when missing) the package for
-    /// `ruby_version` + `platform` at `tebako_version`; returns the cached
-    /// executable path. For the Bootstrap flavor `ruby_version` is the
-    /// bootstrap version and `tebako_version` equals it.
-    pub fn resolve(
-        &self,
-        ruby_version: &str,
-        platform: &str,
-        tebako_version: &str,
-    ) -> Result<PathBuf, TebakoError> {
-        let dir = self.entry_dir(ruby_version, platform, tebako_version);
-        let executable = dir.join(self.filename(ruby_version, platform, tebako_version));
-        if executable.is_file() {
-            return Ok(executable);
-        }
-        self.with_entry_lock(
-            &dir,
-            &self.entry_ref(ruby_version, platform, tebako_version),
-            || {
-                if !executable.is_file() {
-                    self.install(&executable, ruby_version, platform, tebako_version)?;
-                }
-                Ok(())
-            },
-        )?;
-        Ok(executable)
     }
 
     /// Resolve a runtime for press (item 30b): the interpreter plus, when
@@ -235,9 +192,7 @@ impl Resolver {
                     self.offline_check(&entry_ref, tebako_version)?;
                     let (index, card) = self.fetch_index(tebako_version)?;
                     let entry = self.find_entry(&index, ruby_version, platform, tebako_version)?;
-                    if self.flavor == Flavor::Runtime {
-                        contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
-                    }
+                    contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
                     if let Some(image) = entry.image.clone() {
                         self.install_image(&dir, &image, tebako_version)?;
                     }
@@ -455,7 +410,7 @@ impl Resolver {
 
     /// Cached entries (newest-dir listing like the gem's `entries`).
     pub fn entries(&self) -> Vec<CacheEntry> {
-        let base = self.cache_root.join(self.cache_subdir());
+        let base = self.cache_root.join(CACHE_SUBDIR);
         let mut out = Vec::new();
         let Ok(children) = fs::read_dir(&base) else {
             return out;
@@ -505,47 +460,12 @@ impl Resolver {
         Ok(removed)
     }
 
-    // ---- flavor specifics ------------------------------------------------
-
-    fn cache_subdir(&self) -> &'static str {
-        match self.flavor {
-            Flavor::Runtime => "runtimes",
-            Flavor::Bootstrap => "bootstraps",
-        }
-    }
-
-    fn index_files(&self) -> &'static [&'static str] {
-        match self.flavor {
-            Flavor::Runtime => &["manifest.json", "SHA256SUMS.txt"],
-            Flavor::Bootstrap => &["manifest.json", "SHA256SUMS"],
-        }
-    }
-
-    fn release_name(&self) -> &'static str {
-        match self.flavor {
-            Flavor::Runtime => "tebako-runtime-ruby",
-            Flavor::Bootstrap => "tebako-bootstrap",
-        }
-    }
-
-    fn mirror_env_var(&self) -> &'static str {
-        match self.flavor {
-            Flavor::Runtime => "TEBAKO_RUNTIME_MIRROR",
-            Flavor::Bootstrap => "TEBAKO_BOOTSTRAP_MIRROR",
-        }
-    }
+    // ---- entry naming ----------------------------------------------------
 
     fn entry_dir(&self, ruby_version: &str, platform: &str, tebako_version: &str) -> PathBuf {
-        match self.flavor {
-            Flavor::Runtime => self
-                .cache_root
-                .join("runtimes")
-                .join(format!("ruby-{ruby_version}-{tebako_version}-{platform}")),
-            Flavor::Bootstrap => self
-                .cache_root
-                .join("bootstraps")
-                .join(format!("tebako-bootstrap-{tebako_version}-{platform}")),
-        }
+        self.cache_root
+            .join(CACHE_SUBDIR)
+            .join(format!("ruby-{ruby_version}-{tebako_version}-{platform}"))
     }
 
     fn filename(&self, ruby_version: &str, platform: &str, tebako_version: &str) -> String {
@@ -554,19 +474,11 @@ impl Resolver {
         } else {
             ""
         };
-        match self.flavor {
-            Flavor::Runtime => {
-                format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}{suffix}")
-            }
-            Flavor::Bootstrap => format!("tebako-bootstrap-{tebako_version}-{platform}{suffix}"),
-        }
+        format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}{suffix}")
     }
 
     fn entry_ref(&self, ruby_version: &str, platform: &str, tebako_version: &str) -> String {
-        match self.flavor {
-            Flavor::Runtime => format!("ruby@{ruby_version} (tebako {tebako_version}, {platform})"),
-            Flavor::Bootstrap => format!("tebako-bootstrap@{tebako_version} ({platform})"),
-        }
+        format!("ruby@{ruby_version} (tebako {tebako_version}, {platform})")
     }
 
     // ---- install pipeline ------------------------------------------------
@@ -582,13 +494,8 @@ impl Resolver {
         self.offline_check(&entry_ref, tebako_version)?;
         let (index, card) = self.fetch_index(tebako_version)?;
         let entry = self.find_entry(&index, ruby_version, platform, tebako_version)?;
-        // spec 18 C2: the release card gates BEFORE the runtime download
-        // (the Runtime flavor only — the bootstrap release's
-        // self-description is the embedded artifact-info block, not this
-        // card).
-        if self.flavor == Flavor::Runtime {
-            contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
-        }
+        // spec 18 C2: the release card gates BEFORE the runtime download.
+        contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
         let url = self.package_url(&entry.filename, tebako_version);
         let tmp = self.download(&url, &entry.filename)?;
         self.verify(&tmp, entry)?;
@@ -606,17 +513,13 @@ impl Resolver {
         if !self.offline() {
             return Ok(());
         }
-        let code = match self.flavor {
-            Flavor::Runtime => 123,
-            Flavor::Bootstrap => 132,
-        };
         Err(packaging_error(
-            code,
+            123,
             Some(&format!(
                 "{} is not cached and downloads are disabled (release index: {}; {}={})",
                 entry_ref,
                 self.index_urls(tebako_version).join(", "),
-                self.mirror_env_var(),
+                MIRROR_ENV_VAR,
                 self.mirror
             )),
         ))
@@ -629,52 +532,29 @@ impl Resolver {
         platform: &str,
         tebako_version: &str,
     ) -> Result<&'a IndexEntry, TebakoError> {
-        match self.flavor {
-            Flavor::Runtime => {
-                if let Some(entry) = index.iter().find(|c| {
-                    c.ruby_version.as_deref() == Some(ruby_version)
-                        && c.platform.as_deref() == Some(platform)
-                }) {
-                    return Ok(entry);
-                }
-                let combos: Vec<String> = index
-                    .iter()
-                    .map(|c| {
-                        format!(
-                            "{}/{}",
-                            c.ruby_version.as_deref().unwrap_or("?"),
-                            c.platform.as_deref().unwrap_or("?")
-                        )
-                    })
-                    .collect();
-                Err(packaging_error(
-                    120,
-                    Some(&format!(
-                        "no package for ruby {ruby_version} on {platform} (tebako {tebako_version}). Available: {}. Use --build-runtime to build the runtime from source instead.",
-                        combos.join(", ")
-                    )),
-                ))
-            }
-            Flavor::Bootstrap => {
-                if let Some(entry) = index
-                    .iter()
-                    .find(|c| c.platform.as_deref() == Some(platform))
-                {
-                    return Ok(entry);
-                }
-                let platforms: Vec<String> = index
-                    .iter()
-                    .map(|c| c.platform.clone().unwrap_or_else(|| "?".to_string()))
-                    .collect();
-                Err(packaging_error(
-                    131,
-                    Some(&format!(
-                        "no tebako-bootstrap package for {platform} (bootstrap {tebako_version}). Available: {}.",
-                        platforms.join(", ")
-                    )),
-                ))
-            }
+        if let Some(entry) = index.iter().find(|c| {
+            c.ruby_version.as_deref() == Some(ruby_version)
+                && c.platform.as_deref() == Some(platform)
+        }) {
+            return Ok(entry);
         }
+        let combos: Vec<String> = index
+            .iter()
+            .map(|c| {
+                format!(
+                    "{}/{}",
+                    c.ruby_version.as_deref().unwrap_or("?"),
+                    c.platform.as_deref().unwrap_or("?")
+                )
+            })
+            .collect();
+        Err(packaging_error(
+            120,
+            Some(&format!(
+                "no package for ruby {ruby_version} on {platform} (tebako {tebako_version}). Available: {}. Use --build-runtime to build the runtime from source instead.",
+                combos.join(", ")
+            )),
+        ))
     }
 
     fn verify(&self, tmp: &Path, entry: &IndexEntry) -> Result<(), TebakoError> {
@@ -720,7 +600,7 @@ impl Resolver {
         tebako_version: &str,
     ) -> Result<(Vec<IndexEntry>, Option<String>), TebakoError> {
         let mut tried: Vec<String> = Vec::new();
-        for name in self.index_files() {
+        for name in INDEX_FILES {
             let url = self.index_url(name, tebako_version);
             match fetch_text(&url) {
                 Ok(body) => match self.parse_index(name, &body, tebako_version) {
@@ -749,7 +629,7 @@ impl Resolver {
             124,
             Some(&format!(
                 "{} release v{} provides no usable package index (tried: {})",
-                self.release_name(),
+                RELEASE_NAME,
                 tebako_version,
                 tried.join(", ")
             )),
@@ -769,10 +649,8 @@ impl Resolver {
         }
     }
 
-    /// Runtime: the tebako-runtime-ruby manifest.json is an array of
+    /// The tebako-runtime-ruby manifest.json is an array of
     /// {tebako_version, ruby_version, platform, filename, sha256, ...}.
-    /// Bootstrap: the tebako-bootstrap manifest.json is an object
-    /// {name, version, assets: [{platform, file, sha256}]}.
     fn parse_manifest(
         &self,
         body: &str,
@@ -781,91 +659,57 @@ impl Resolver {
         let data = json_parse(body).map_err(|_| {
             FetchError::IndexUnavailable("manifest.json is not valid JSON".to_string())
         })?;
-        match self.flavor {
-            Flavor::Runtime => {
-                let JsonValue::Array(items) = data else {
-                    return Err(FetchError::IndexUnavailable(
-                        "manifest.json is not an array".to_string(),
-                    ));
-                };
-                Ok(items
-                    .iter()
-                    .filter(|e| {
-                        e.find("tebako_version")
-                            .and_then(|v| v.as_string())
-                            .as_deref()
-                            == Some(tebako_version)
-                            && e.find("sha256").and_then(|v| v.as_string()).is_some()
-                            && e.find("filename").and_then(|v| v.as_string()).is_some()
-                    })
-                    .map(|e| IndexEntry {
-                        ruby_version: e.find("ruby_version").and_then(|v| v.as_string()),
-                        platform: e.find("platform").and_then(|v| v.as_string()),
-                        filename: e
-                            .find("filename")
-                            .and_then(|v| v.as_string())
-                            .unwrap_or_default(),
-                        sha256: e
+        let JsonValue::Array(items) = data else {
+            return Err(FetchError::IndexUnavailable(
+                "manifest.json is not an array".to_string(),
+            ));
+        };
+        Ok(items
+            .iter()
+            .filter(|e| {
+                e.find("tebako_version")
+                    .and_then(|v| v.as_string())
+                    .as_deref()
+                    == Some(tebako_version)
+                    && e.find("sha256").and_then(|v| v.as_string()).is_some()
+                    && e.find("filename").and_then(|v| v.as_string()).is_some()
+            })
+            .map(|e| IndexEntry {
+                ruby_version: e.find("ruby_version").and_then(|v| v.as_string()),
+                platform: e.find("platform").and_then(|v| v.as_string()),
+                filename: e
+                    .find("filename")
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default(),
+                sha256: e
+                    .find("sha256")
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase(),
+                image: e.find("image").and_then(|img| {
+                    Some(ImageRef {
+                        filename: img.find("filename").and_then(|v| v.as_string())?,
+                        sha256: img
                             .find("sha256")
-                            .and_then(|v| v.as_string())
-                            .unwrap_or_default()
+                            .and_then(|v| v.as_string())?
                             .to_ascii_lowercase(),
-                        image: e.find("image").and_then(|img| {
-                            Some(ImageRef {
-                                filename: img.find("filename").and_then(|v| v.as_string())?,
-                                sha256: img
-                                    .find("sha256")
-                                    .and_then(|v| v.as_string())?
-                                    .to_ascii_lowercase(),
-                            })
-                        }),
-                        // tebako-runtime-ruby#40: the additive `dll` key
-                        // (windows packages only) — absent on every POSIX
-                        // entry, ignored by consumers that predate it.
-                        dll: e.find("dll").and_then(|d| {
-                            Some(DllRef {
-                                filename: d.find("filename").and_then(|v| v.as_string())?,
-                                install_as: d.find("install_as").and_then(|v| v.as_string()),
-                                sha256: d
-                                    .find("sha256")
-                                    .and_then(|v| v.as_string())?
-                                    .to_ascii_lowercase(),
-                            })
-                        }),
                     })
-                    .collect())
-            }
-            Flavor::Bootstrap => {
-                let Some(JsonValue::Array(assets)) = data.find("assets").cloned() else {
-                    return Err(FetchError::IndexUnavailable(
-                        "manifest.json has no assets array".to_string(),
-                    ));
-                };
-                Ok(assets
-                    .iter()
-                    .filter(|a| {
-                        a.find("platform").and_then(|v| v.as_string()).is_some()
-                            && a.find("file").and_then(|v| v.as_string()).is_some()
-                            && a.find("sha256").and_then(|v| v.as_string()).is_some()
-                    })
-                    .map(|a| IndexEntry {
-                        ruby_version: None,
-                        platform: a.find("platform").and_then(|v| v.as_string()),
-                        filename: a
-                            .find("file")
-                            .and_then(|v| v.as_string())
-                            .unwrap_or_default(),
-                        sha256: a
+                }),
+                // tebako-runtime-ruby#40: the additive `dll` key
+                // (windows packages only) — absent on every POSIX
+                // entry, ignored by consumers that predate it.
+                dll: e.find("dll").and_then(|d| {
+                    Some(DllRef {
+                        filename: d.find("filename").and_then(|v| v.as_string())?,
+                        install_as: d.find("install_as").and_then(|v| v.as_string()),
+                        sha256: d
                             .find("sha256")
-                            .and_then(|v| v.as_string())
-                            .unwrap_or_default()
+                            .and_then(|v| v.as_string())?
                             .to_ascii_lowercase(),
-                        image: None,
-                        dll: None,
                     })
-                    .collect())
-            }
-        }
+                }),
+            })
+            .collect())
     }
 
     /// `<sha256>  <filename>` lines; filenames may carry a `*` prefix.
@@ -885,60 +729,38 @@ impl Resolver {
                 continue;
             };
             let file = file.trim().trim_start_matches('*');
-            match self.flavor {
-                Flavor::Runtime => {
-                    let prefix = format!("tebako-runtime-{tebako_version}-");
-                    let Some(rest) = file.strip_prefix(&prefix) else {
-                        continue;
-                    };
-                    // The image sibling: strip .tfs instead of .exe and
-                    // record for the second pass.
-                    if let Some(rest) = rest.strip_suffix(".tfs") {
-                        if let Some((ruby_version, platform)) = split_ruby_platform(rest) {
-                            images.push((ruby_version, platform, format!("{file}|{sha256}")));
-                        }
-                        continue;
-                    }
-                    // The ruby DLL sibling (tebako-runtime-ruby#40): the
-                    // same treatment.
-                    if let Some(rest) = rest.strip_suffix(".dll") {
-                        if let Some((ruby_version, platform)) = split_ruby_platform(rest) {
-                            dlls.push((ruby_version, platform, format!("{file}|{sha256}")));
-                        }
-                        continue;
-                    }
-                    let rest = rest.strip_suffix(".exe").unwrap_or(rest);
-                    let Some((ruby_version, platform)) = split_ruby_platform(rest) else {
-                        continue;
-                    };
-                    out.push(IndexEntry {
-                        ruby_version: Some(ruby_version),
-                        platform: Some(platform),
-                        filename: file.to_string(),
-                        sha256: sha256.to_ascii_lowercase(),
-                        image: None,
-                        dll: None,
-                    });
+            let prefix = format!("tebako-runtime-{tebako_version}-");
+            let Some(rest) = file.strip_prefix(&prefix) else {
+                continue;
+            };
+            // The image sibling: strip .tfs instead of .exe and
+            // record for the second pass.
+            if let Some(rest) = rest.strip_suffix(".tfs") {
+                if let Some((ruby_version, platform)) = split_ruby_platform(rest) {
+                    images.push((ruby_version, platform, format!("{file}|{sha256}")));
                 }
-                Flavor::Bootstrap => {
-                    let prefix = format!("tebako-bootstrap-{tebako_version}-");
-                    let Some(rest) = file.strip_prefix(&prefix) else {
-                        continue;
-                    };
-                    let platform = rest.strip_suffix(".exe").unwrap_or(rest);
-                    if platform.is_empty() {
-                        continue;
-                    }
-                    out.push(IndexEntry {
-                        ruby_version: None,
-                        platform: Some(platform.to_string()),
-                        filename: file.to_string(),
-                        sha256: sha256.to_ascii_lowercase(),
-                        image: None,
-                        dll: None,
-                    });
-                }
+                continue;
             }
+            // The ruby DLL sibling (tebako-runtime-ruby#40): the
+            // same treatment.
+            if let Some(rest) = rest.strip_suffix(".dll") {
+                if let Some((ruby_version, platform)) = split_ruby_platform(rest) {
+                    dlls.push((ruby_version, platform, format!("{file}|{sha256}")));
+                }
+                continue;
+            }
+            let rest = rest.strip_suffix(".exe").unwrap_or(rest);
+            let Some((ruby_version, platform)) = split_ruby_platform(rest) else {
+                continue;
+            };
+            out.push(IndexEntry {
+                ruby_version: Some(ruby_version),
+                platform: Some(platform),
+                filename: file.to_string(),
+                sha256: sha256.to_ascii_lowercase(),
+                image: None,
+                dll: None,
+            });
         }
         for (ruby_version, platform, parts) in images {
             let Some((filename, sha256)) = parts.split_once('|') else {
@@ -1065,7 +887,7 @@ impl Resolver {
     }
 
     fn index_urls(&self, tebako_version: &str) -> Vec<String> {
-        self.index_files()
+        INDEX_FILES
             .iter()
             .map(|n| self.index_url(n, tebako_version))
             .collect()
@@ -1269,7 +1091,7 @@ mod tests {
 
     #[test]
     fn sha256sums_runtime_entries() {
-        let r = Resolver::new(Flavor::Runtime);
+        let r = Resolver::new();
         let body = "abc123  tebako-runtime-0.15.9-3.3.7-macos-arm64\n\
                     def456  *tebako-runtime-0.15.9-3.1.6-linux-gnu-x86_64\n\
                     000000  tebako-runtime-0.15.8-3.3.7-macos-arm64\n\
@@ -1290,19 +1112,8 @@ mod tests {
     }
 
     #[test]
-    fn sha256sums_bootstrap_entries() {
-        let r = Resolver::new(Flavor::Bootstrap);
-        let body = "aaa111  tebako-bootstrap-0.2.0-macos-arm64\n\
-                    bbb222  tebako-bootstrap-0.2.0-windows-ucrt64.exe\n";
-        let entries = r.parse_sha256sums(body, "0.2.0");
-        assert_eq!(entries.len(), 2);
-        assert_eq!(entries[0].platform.as_deref(), Some("macos-arm64"));
-        assert_eq!(entries[1].platform.as_deref(), Some("windows-ucrt64"));
-    }
-
-    #[test]
     fn manifest_runtime_array() {
-        let r = Resolver::new(Flavor::Runtime);
+        let r = Resolver::new();
         let body = r#"[
           {"tebako_version":"0.15.9","ruby_version":"3.3.7","platform":"macos-arm64",
            "filename":"tebako-runtime-0.15.9-3.3.7-macos-arm64","sha256":"ABC","size_bytes":12},
@@ -1316,21 +1127,9 @@ mod tests {
 
     #[test]
     fn manifest_runtime_rejects_object() {
-        let r = Resolver::new(Flavor::Runtime);
+        let r = Resolver::new();
         let err = r.parse_manifest("{\"assets\":[]}", "0.15.9").unwrap_err();
         assert!(matches!(err, FetchError::IndexUnavailable(_)));
-    }
-
-    #[test]
-    fn manifest_bootstrap_object() {
-        let r = Resolver::new(Flavor::Bootstrap);
-        let body = r#"{"name":"tebako-bootstrap","version":"0.2.0","assets":[
-          {"platform":"macos-arm64","file":"tebako-bootstrap-0.2.0-macos-arm64","sha256":"DEF"}
-        ]}"#;
-        let entries = r.parse_manifest(body, "0.2.0").unwrap();
-        assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].platform.as_deref(), Some("macos-arm64"));
-        assert_eq!(entries[0].sha256, "def");
     }
 
     #[test]
@@ -1372,7 +1171,7 @@ mod tests {
 
     #[test]
     fn sha256sums_dll_lines_attach_to_the_runtime_entry() {
-        let r = Resolver::new(Flavor::Runtime);
+        let r = Resolver::new();
         let body = "aaa111  tebako-runtime-0.16.3-3.3.12-windows-ucrt64.exe\n\
                     bbb222  tebako-runtime-0.16.3-3.3.12-windows-ucrt64.tfs\n\
                     ccc333  tebako-runtime-0.16.3-3.3.12-windows-ucrt64.dll\n\
@@ -1400,7 +1199,7 @@ mod tests {
 
     #[test]
     fn manifest_runtime_dll_facet() {
-        let r = Resolver::new(Flavor::Runtime);
+        let r = Resolver::new();
         let body = r#"[
           {"tebako_version":"0.16.3","ruby_version":"3.3.12","platform":"windows-ucrt64",
            "filename":"tebako-runtime-0.16.3-3.3.12-windows-ucrt64.exe","sha256":"AAA",
@@ -1462,7 +1261,6 @@ mod tests {
 
     fn dll_resolver(cache: &Path, mirror: &Path) -> Resolver {
         Resolver {
-            flavor: Flavor::Runtime,
             cache_root: cache.to_path_buf(),
             mirror: format!("file://{}", mirror.display()),
             lock_timeout: LOCK_TIMEOUT,
