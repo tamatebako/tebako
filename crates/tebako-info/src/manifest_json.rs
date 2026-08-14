@@ -397,6 +397,12 @@ pub fn manifest_to_json(m: &PayloadManifest) -> Json {
             Json::Array(m.requires.iter().map(requirement_json).collect()),
         ));
     }
+    if !m.materialize.is_empty() {
+        out.push((
+            "materialize".to_string(),
+            Json::Array(m.materialize.iter().map(|p| s(p)).collect()),
+        ));
+    }
     Json::Object(out)
 }
 
@@ -524,6 +530,24 @@ mod tests {
                 .unwrap(),
             &Json::Bool(true)
         );
+    }
+
+    #[test]
+    fn materialize_maps_to_json_when_present() {
+        // spec 22 §4 class R (schema_minor 1): the additive key renders
+        // 1:1 when declared and stays absent otherwise.
+        let mut m = fixture();
+        m.materialize = vec!["/lib/tebako/cacert.pem".to_string()];
+        let j = manifest_to_json(&m);
+        let Json::Array(paths) = j.find("materialize").unwrap() else {
+            panic!("materialize must be an array");
+        };
+        assert_eq!(paths.len(), 1);
+        assert_eq!(
+            paths[0].as_string().as_deref(),
+            Some("/lib/tebako/cacert.pem")
+        );
+        assert!(manifest_to_json(&fixture()).find("materialize").is_none());
     }
 
     #[test]

@@ -278,13 +278,18 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
             arb_identity(kind),
             arb_provides(kind),
             prop::collection::vec(arb_requirement(), 0..=3),
+            // spec 22 §4 class R: absolute escape-free in-image paths.
+            prop::collection::vec(arb_path(), 0..=2),
         )
     })
-    .prop_map(|(identity, provides, requires)| PayloadManifest {
-        identity,
-        provides,
-        requires,
-    })
+    .prop_map(
+        |(identity, provides, requires, materialize)| PayloadManifest {
+            identity,
+            provides,
+            requires,
+            materialize,
+        },
+    )
 }
 
 proptest! {

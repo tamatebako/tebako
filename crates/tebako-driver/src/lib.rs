@@ -35,6 +35,7 @@ pub mod ffi;
 pub mod handoff;
 pub mod injection;
 pub mod layout;
+pub mod materialize;
 pub mod path_env;
 
 pub use driver::{
@@ -52,6 +53,9 @@ pub const TEBAKO_CONTRACT_VERSION: u32 = 2;
 // The loader's named exit codes (spec 06 §4) the driver reports with.
 pub(crate) const EX_TEBAKO_MANIFEST: i32 = 65;
 pub(crate) const EX_TEBAKO_UNAVAILABLE: i32 = 69;
+// spec 06 §4's sha256-mismatch code — the driver's class-R verification
+// failure (a tampered/corrupt materialized copy; spec 22 §4 Rule R3).
+pub(crate) const EX_TEBAKO_SHA: i32 = 70;
 pub(crate) const EX_TEBAKO_JAIL: i32 = 73;
 pub(crate) const EX_TEBAKO_IO: i32 = 74;
 // spec 18 §7: the env-image layout check (C3) — the driver's own code,
