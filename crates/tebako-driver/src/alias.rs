@@ -14,13 +14,20 @@
 //!
 //! Two surfaces consume the alias union this module builds per boot:
 //!
-//! - **The covered surface** (the patched `dln.c` / fiddle route —
-//!   vendored-runtime code): a match rewrites the call to the alias
-//!   target's absolute materialized path and loads it with the §2.1
-//!   binding (`LOAD_WITH_ALTERED_SEARCH_PATH`). The load-time check is
-//!   the c_api shim's (PR #406 stream); [`AliasUnion::resolve`] is the
-//!   one decision function — the match semantics are locked here and
-//!   tested here, never re-implemented per consumer (invariant 10).
+//! - **The covered surface** (the patched `dln.c` route — vendored-
+//!   runtime code): the load-time check is `tebako_fs_dlalias2file` on
+//!   the tfs context (the c_api export the patched `dln.c` calls); the
+//!   driver feeds it by registering the union's (name → materialized
+//!   host path) pairs at boot ([`register`]). A match rewrites the call
+//!   to the alias target's absolute materialized path and loads it with
+//!   the §2.1 binding (`LOAD_WITH_ALTERED_SEARCH_PATH`). The match rule
+//!   (the bare-name byte grammar, then a verbatim case-insensitive
+//!   compare) is locked and tested here on [`AliasUnion::resolve`] and
+//!   re-implemented in `tfs::context` by construction — tfs stays
+//!   tpkg-free and the c_api does its own grammar test per the patch's
+//!   contract; the mirrored case matrices on both sides assert parity
+//!   (invariant 10's assert-form — the one deliberate duplication,
+//!   spec-pinned in #406).
 //! - **The raw surface** (ffi's `LoadLibraryExA`, a C extension
 //!   self-loading — windows has no interception surface for them, and
 //!   patching third-party code is the per-gem work spec 22's law
@@ -50,7 +57,8 @@
 //! The `event=lib-load` record-mode journal (spec 23 §8's idiom — the
 //! author learns the exact spelling to declare from the journal instead
 //! of guessing) is owned by the PATCHED LOAD PATH, not by this module:
-//! a bare-name verdict exists only where a load is DECIDED, and the
+//! the verdict lines are emitted inside `tfs::context::dlalias2file`,
+//! where the verdict is MADE (under the record policy only), and the
 //! boot pass decides nothing — it materializes every declaration
 //! unconditionally.
 
@@ -147,11 +155,14 @@ impl AliasUnion {
     /// probe. A name carrying a path separator or a drive qualifier is
     /// not bare: path surface is Rule L1's, so the answer is Host.
     ///
-    /// SEAM (PR #406 — the vendored-route stream): the covered
-    /// surface's load-time check (the patched `dln.c` / fiddle c_api
-    /// shim) consumes exactly this decision; it is wired there, not
-    /// here — the boot pass below materializes unconditionally and never
-    /// resolves a presented name.
+    /// The union-side reference of the match rule: the covered
+    /// surface's load-time check is `tfs::context::dlalias2file` behind
+    /// the `tebako_fs_dlalias2file` c_api export (tfs is tpkg-free, so
+    /// the rule is re-implemented there — the one deliberate
+    /// duplication, parity-asserted by the mirrored case matrices).
+    /// The boot pass below materializes unconditionally and never
+    /// resolves a presented name; the registration feeds the table the
+    /// c_api answers from.
     pub fn resolve(&self, name: &str) -> AliasVerdict<'_> {
         if name.bytes().any(|b| b == b'/' || b == b'\\' || b == b':') {
             return AliasVerdict::Host;
@@ -178,19 +189,34 @@ fn collect_image(union: &mut AliasUnion, desc: &str, mount: &str) -> Result<(), 
     union.add_image(desc, mount, &manifest)
 }
 
-/// The boot pass for the raw surface (spec 22 §2.1): collect the alias
-/// union of every co-mounted image — the env image first, then each
-/// payload triple in order — materialize EVERY declared alias through
-/// the exec-closure entry, and answer the materialized host directories
-/// in union order (deduped) for the PATH lead. Called per boot after
-/// the mounts, the jail, and the class-R pass, before the interpreter
+/// The boot pass's yield (spec 22 §2.1, phase W2): the covered
+/// surface's registration table and the raw surface's PATH lead.
+#[derive(Default)]
+pub struct AliasBoot {
+    /// (declared bare name, materialized absolute host path) per alias,
+    /// in union order — the covered surface's decision table
+    /// ([`register`]).
+    pub pairs: Vec<(String, PathBuf)>,
+    /// The materialized copies' parent directories, union order,
+    /// deduped — the raw surface's PATH lead ([`export_path`]).
+    pub dirs: Vec<String>,
+}
+
+/// The boot pass (spec 22 §2.1): collect the alias union of every
+/// co-mounted image — the env image first, then each payload triple in
+/// order — and materialize EVERY declared alias through the
+/// exec-closure entry. Answers the [`AliasBoot`]: the per-alias (name,
+/// host path) pairs for the covered surface's registration
+/// ([`register`]) and the deduped materialized directories for the raw
+/// surface's PATH lead ([`export_path`]). Called per boot after the
+/// mounts, the jail, and the class-R pass, before the interpreter
 /// handoff — in both boot shapes; the call sites are windows-gated (the
 /// bare-name rule is a windows contract — POSIX boots never run this).
 pub fn extract(
     images: &[ImageSpec],
     env: &dyn Env,
     runtime_root: &str,
-) -> Result<Vec<String>, DriverError> {
+) -> Result<AliasBoot, DriverError> {
     let mut union = AliasUnion::new();
     // The env image's own declarations come first (the class-R
     // precedent: the runtime's resources extract ahead of payloads).
@@ -206,15 +232,31 @@ pub fn extract(
         };
         collect_image(&mut union, &desc, &spec.mount)?;
     }
-    let mut dirs: Vec<String> = Vec::new();
+    let mut boot = AliasBoot::default();
     for entry in &union.entries {
         let host = extract_one(entry)?;
         let dir = parent_dir(&host)?;
-        if !dirs.contains(&dir) {
-            dirs.push(dir);
+        if !boot.dirs.contains(&dir) {
+            boot.dirs.push(dir);
         }
+        boot.pairs.push((entry.name.clone(), host));
     }
-    Ok(dirs)
+    Ok(boot)
+}
+
+/// Register the boot's alias table with the tfs context — the covered
+/// surface's load-time decision input (spec 22 §2.1, phase W2): the
+/// patched `dln.c`'s `tebako_fs_dlalias2file` answers from exactly
+/// these (name → materialized host path) pairs. A direct Rust call on
+/// the shared in-process context, never a c_api round-trip — the c_api
+/// export exists for the runtime's patched C code. An empty union
+/// registers an empty table (the context's default state made
+/// explicit); the call sites are windows-gated like [`extract`]'s.
+pub fn register(boot: &AliasBoot) {
+    context()
+        .write()
+        .unwrap()
+        .register_dlaliases(boot.pairs.clone());
 }
 
 /// Materialize one declared alias and answer its host path. The
@@ -533,13 +575,41 @@ mod tests {
     #[test]
     fn extract_without_mounted_images_extracts_nothing() {
         // No env image handed, no payload triples: the union is empty,
-        // nothing materializes, no PATH dirs arise. (The mount-dependent
-        // paths — manifest reads and dlmap2file — are the factory
-        // dogfood's surface, mirroring materialize.rs's coverage shape.)
+        // nothing materializes, no PATH dirs and no registration pairs
+        // arise. (The mount-dependent paths — manifest reads and
+        // dlmap2file — are the factory dogfood's surface, mirroring
+        // materialize.rs's coverage shape.)
         let env = env_with(&[]);
-        assert_eq!(
-            extract(&[], &env, "/__tfs__").unwrap(),
-            Vec::<String>::new()
-        );
+        let boot = extract(&[], &env, "/__tfs__").unwrap();
+        assert!(boot.pairs.is_empty(), "{:?}", boot.pairs);
+        assert!(boot.dirs.is_empty(), "{:?}", boot.dirs);
+    }
+
+    #[test]
+    fn register_installs_the_table_into_the_tfs_context() {
+        // The covered surface's wiring: the boot's pairs land in the
+        // process-global tfs context the `tebako_fs_dlalias2file` c_api
+        // export reads. (The context is process state shared by this
+        // whole test binary — restore the empty table afterwards so no
+        // other test observes it.)
+        let dir =
+            std::env::temp_dir().join(format!("driver-alias-register-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let host = dir.join("libfoo-3.dll");
+        std::fs::write(&host, b"pe").unwrap();
+        let boot = AliasBoot {
+            pairs: vec![("libfoo-3.dll".to_string(), host.clone())],
+            dirs: Vec::new(),
+        };
+        register(&boot);
+        let answered = context()
+            .read()
+            .unwrap()
+            .dlalias2file("LIBFOO-3.DLL")
+            .unwrap();
+        assert_eq!(answered.to_str().unwrap(), host.to_string_lossy().as_ref());
+        context().write().unwrap().register_dlaliases(Vec::new());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -392,12 +392,17 @@ mod tests {
 
     #[test]
     fn malformed_and_foreign_lines_are_skipped() {
+        // The lib-load verdict lines (spec 22 §2.1 phase W2) ride the
+        // same journal file under record mode; the needs draft consumes
+        // only the jail events.
         let yaml = needs_from_journal(
             "garbage\n\
              1 event=composition source=external(/x.yaml) sha256=abc\n\
              2 event=jail-allow op=read source=record\n\
              3 event=jail-allow path=/no-op-field\n\
-             4 event=jail-allow path=/bad-op op=execute source=record\n",
+             4 event=jail-allow path=/bad-op op=execute source=record\n\
+             5 event=lib-load name=user32 verdict=host\n\
+             6 event=lib-load name=libfoo-3.dll verdict=alias\n",
             &[],
             &[],
             &|_| true,
