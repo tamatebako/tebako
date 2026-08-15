@@ -26,20 +26,22 @@ from, and why will it run on your machine?**
 The short answer: **we build it, you never do.** The bootstrap is a
 precompiled artifact we publish for every supported platform, alongside
 the rest of the tebako release. A press stitches it onto your payloads —
-today from a **local** Rust bootstrap (`--bootstrap`, `$TEBAKO_BOOTSTRAP`,
-or the `tebako-bootstrap` binary next to the `tebako` executable); the
-download-and-cache flow of §4 (PLANNED) makes that automatic. There is no
-C compiler, no CMake, no Rust toolchain, no vcpkg anywhere in that path —
-and there never will be.
+from a **local** Rust bootstrap when one is present (`--bootstrap`,
+`$TEBAKO_BOOTSTRAP`, or the `tebako-bootstrap` binary next to the `tebako`
+executable), and otherwise from the release-store flow of §4: the
+per-triplet bootstrap published with the press's own release, resolved
+into the store once, verified, and cached. There is no C compiler, no
+CMake, no Rust toolchain, no vcpkg anywhere in that path — and there
+never will be.
 
-> **Shipped vs planned.** The CLI today sources the bootstrap from local
-> binaries only and **fails closed** when none is found (named error,
-> exit 136). The retired v1 C++ `tebako-bootstrap` release download —
-> whose argv0-verbatim handoff the image-era runtime driver rejects — is
-> gone for good: no silent network fetch remains on the press path. The
-> per-triplet Rust bootstrap assets this document describes ARE published
-> with every tebako release (§3.3); teaching `tebako press` to resolve
-> them into the store (once, verified, cached) is the PLANNED part.
+> **Shipped behavior.** The CLI sources the bootstrap from local binaries
+> first and otherwise resolves the published per-triplet Rust bootstrap
+> into the store (§4 — once, verified, cached). The retired v1 C++
+> `tebako-bootstrap` release download — whose argv0-verbatim handoff the
+> image-era runtime driver rejects — is gone for good: no silent network
+> fetch of a v1 artifact remains on the press path. The per-triplet Rust
+> bootstrap assets this document describes are published with every tebako
+> release (§3.3).
 
 ## 2. The audience rule (who needs what)
 
@@ -104,35 +106,37 @@ for your machine; you never pick anything.
 ## 4. How a press gets its bootstrap (no compiler involved)
 
 **Shipped behavior:** `tebako press` sources the bootstrap from local
-Rust binaries, in this order:
+Rust binaries first, in this order:
 
 1. `--bootstrap <path>` — an explicit binary;
 2. `$TEBAKO_BOOTSTRAP` — the environment override;
 3. the `tebako-bootstrap` executable next to the `tebako` binary (the
    dogfooding/installed-pair layout).
 
-With none of these present the press **fails closed** with the named
-error "Press requires a local Rust tebako-bootstrap binary" (exit 136) —
-no network fetch is attempted. (The historical fallback downloaded the
-v1 C++ bootstrap release; its handoff predates the spec 17 driver
-contract and produced packages that fail at run time, so it is retired,
-not merely refused.)
-
-**PLANNED (not yet shipped):** the release-store flow below — resolving
-the published per-triplet Rust bootstrap into `~/.tebako/bootstraps/`
-automatically, with the same verification discipline the runtime cache
-already has:
+With none of these present the press resolves the bootstrap through the
+**release-store flow** below — the published per-triplet Rust bootstrap
+into `~/.tebako/bootstraps/`, with the same verification discipline the
+runtime cache already has (a press never fails closed for want of a
+bootstrap unless the store flow itself fails with a named error;
+`TEBAKO_OFFLINE=1` is cache-or-named-error, exit 138). (The historical
+fallback downloaded the v1 C++ bootstrap release; its handoff predates
+the spec 17 driver contract and produced packages that fail at run time,
+so it is retired, not merely refused. The interim fail-closed refusal,
+exit 136, is superseded by this flow.)
 
 ```
 tebako press app.rb -o myapp
         │
         ▼
-  1. resolve the bootstrap for the target triplet
+  1. resolve the bootstrap for the target triplet — the release
+     matching the press's own version (the bootstrap and the CLI
+     ship in one release, so the two never drift)
         ├── store hit: ~/.tebako/bootstraps/<version>-<triplet> → use it
         └── miss: download from the tebako release page
-                 ├── sha256-verified against the release's SHA256SUMS
-                 └── tmp + rename into the store (a partial download
-                     is invisible — never used)
+                 ├── sha256-verified against the release's
+                 │   manifest.json / SHA256SUMS
+                 └── tmp + rename into the store under the entry lock
+                     (a partial download is invisible — never used)
         │
         ▼
   2. read the bootstrap's embedded contract card
@@ -256,7 +260,7 @@ verify against each other (spec 18).
 The bootstrap is **ours, precompiled, per-triplet, verified, and
 cached** — built once in our pipeline on deliberately old floors (or
 musl, which has no floor), published with sha256 anchors, sourced by the
-press from local binaries today (failing closed otherwise; the release
-store download of §4 is PLANNED), and stitched onto your payloads by a
-press that checks its contract card first. You never compile it, you
-never pick it, and it always starts.
+press from local binaries when present and otherwise resolved from the
+release into the store (§4 — once, verified, cached), and stitched onto
+your payloads by a press that checks its contract card first. You never
+compile it, you never pick it, and it always starts.

@@ -29,12 +29,15 @@
 //! libraries, no process spawns (spec 14 §3).
 //!
 //! Documented deviations from the gem (README carries the full list):
-//! - the bootstrap portion comes from local Rust tebako-bootstrap
-//!   binaries only (--bootstrap / TEBAKO_BOOTSTRAP / the sibling of the
-//!   tebako binary); the gem's BootstrapManager download of the v1 C++
-//!   release is RETIRED — its argv0-verbatim handoff is rejected by the
-//!   image-era runtime driver, so the fallback produced silently-broken
-//!   packages. A press with no local bootstrap fails closed (exit 136);
+//! - the bootstrap portion comes from the local Rust tebako-bootstrap
+//!   binaries first (--bootstrap / TEBAKO_BOOTSTRAP / the sibling of the
+//!   tebako binary), else from the spec 19 §4 store flow: the per-triplet
+//!   Rust bootstrap published with the CLI's own release, resolved into
+//!   ~/.tebako/bootstraps/ (sha256-verified against the release index,
+//!   tmp+rename, per-entry lock; TEBAKO_OFFLINE=1 is cache-or-named-error).
+//!   The gem's BootstrapManager download of the v1 C++ release stays
+//!   RETIRED — its argv0-verbatim handoff is rejected by the image-era
+//!   runtime driver, so the fallback produced silently-broken packages;
 //! - no mkdwarfs binary anywhere: images are built in-process via the
 //!   dwarfs-t Writer and named `.tfs` (dwarfs-t-native FlatBuffers
 //!   metadata; `.dwarfs` stays for upstream-compatible images);
@@ -196,10 +199,11 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     println!("{}", opts.press_announce(&ruby_ver));
 
     let platform = host_platform()?;
-    // The bootstrap comes from local sources only and is refused BEFORE
-    // the runtime download — a missing local bootstrap must not cost a
-    // fetch, and the retired C++ download fallback must never fire.
-    let bootstrap_path = local_bootstrap(opts)?;
+    // The bootstrap is resolved BEFORE the runtime download: the local
+    // sources first, else the spec 19 §4 store flow (the CLI's own
+    // release asset, downloaded once into the store). The retired v1 C++
+    // download fallback never fires.
+    let bootstrap_path = press_bootstrap(opts, &platform)?;
 
     let runtime_resolver = Resolver::new();
     let resolved = runtime_resolver.resolve_runtime(&ruby_ver, &platform, &opts.tebako_version)?;
@@ -282,11 +286,12 @@ fn check_warnings(opts: &PressOptions) {
 }
 
 /// Bootstrap lookup: --bootstrap > $TEBAKO_BOOTSTRAP > the Rust
-/// tebako-bootstrap next to the tebako binary. LOCAL SOURCES ONLY — the
-/// v1 C++ bootstrap download is retired (its argv0-verbatim handoff is
-/// rejected by the image-era runtime driver, so the fallback produced
-/// silently-broken packages). `None` means no local source named a
-/// binary; [`local_bootstrap`] turns that into the named refusal.
+/// tebako-bootstrap next to the tebako binary (the dogfooding /
+/// installed-pair layout). `None` means no local source named a binary —
+/// [`press_bootstrap`] then resolves the published bootstrap into the
+/// store (spec 19 §4). The v1 C++ bootstrap download stays retired (its
+/// argv0-verbatim handoff is rejected by the image-era runtime driver, so
+/// the fallback produced silently-broken packages).
 pub(crate) fn decide_bootstrap(opts: &PressOptions) -> Option<PathBuf> {
     if let Some(path) = &opts.bootstrap {
         return Some(path.clone());
@@ -312,24 +317,36 @@ pub(crate) fn decide_bootstrap(opts: &PressOptions) -> Option<PathBuf> {
     None
 }
 
-/// The package's bootstrap portion from the local sources, or the named
-/// failure: no source at all → 136 (pressing requires a local Rust
-/// tebako-bootstrap; the C++ download is retired); a named file that does
-/// not exist → 127 (the gem's parity error for a bad --bootstrap).
-pub(crate) fn local_bootstrap(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
-    let Some(path) = decide_bootstrap(opts) else {
-        return Err(packaging_error(
-            136,
-            Some("set --bootstrap or $TEBAKO_BOOTSTRAP, or place the Rust tebako-bootstrap next to the tebako executable (the v1 C++ bootstrap download is retired)"),
-        ));
-    };
-    if !path.is_file() {
-        return Err(packaging_error(
-            127,
-            Some(&format!("runtime not found: {}", path.display())),
-        ));
+/// The package's bootstrap portion: the local sources first
+/// ([`decide_bootstrap`]; a named file that does not exist keeps the
+/// gem's parity error 127), else the spec 19 §4 store flow — the Rust
+/// tebako-bootstrap published with the CLI's own release, resolved into
+/// ~/.tebako/bootstraps/<version>-<triplet>/ (downloaded once,
+/// sha256-verified against the release index, tmp+rename installed under
+/// the entry lock; named errors 137-142, TEBAKO_OFFLINE=1 is
+/// cache-or-named-error 138).
+pub(crate) fn press_bootstrap(opts: &PressOptions, platform: &str) -> Result<PathBuf, TebakoError> {
+    press_bootstrap_with(opts, platform, &resolve::BootstrapResolver::new())
+}
+
+/// [`press_bootstrap`] with the store resolver injected (tests pin the
+/// cache root/mirror/version so the unit suite never touches the
+/// network or the real store).
+pub(crate) fn press_bootstrap_with(
+    opts: &PressOptions,
+    platform: &str,
+    store: &resolve::BootstrapResolver,
+) -> Result<PathBuf, TebakoError> {
+    if let Some(path) = decide_bootstrap(opts) {
+        if !path.is_file() {
+            return Err(packaging_error(
+                127,
+                Some(&format!("runtime not found: {}", path.display())),
+            ));
+        }
+        return Ok(path);
     }
-    Ok(path)
+    store.resolve(platform)
 }
 
 /// Stitcher.stitch (lean three-part): validate per the gem's error codes,
@@ -951,21 +968,38 @@ mod tests {
         }
     }
 
+    /// A store resolver that never leaves the fixture directory: offline,
+    /// empty cache root, unreachable mirror — the unit suite never touches
+    /// the network or the real ~/.tebako.
+    fn offline_store(dir: &Path) -> resolve::BootstrapResolver {
+        resolve::BootstrapResolver {
+            cache_root: dir.to_path_buf(),
+            mirror: "file:///nonexistent-tebako-mirror".to_string(),
+            version: "0.0.0".to_string(),
+            offline: true,
+            lock_timeout: std::time::Duration::from_secs(300),
+        }
+    }
+
     #[test]
-    fn local_bootstrap_prefers_the_option_and_rejects_a_missing_file() {
+    fn press_bootstrap_prefers_the_option_and_rejects_a_missing_file() {
         let dir = std::env::temp_dir().join(format!("tebako-cli-boot-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        let store = offline_store(&dir);
         let boot = dir.join("tebako-bootstrap");
         std::fs::write(&boot, b"BOOT").unwrap();
         // --bootstrap short-circuits every other source.
         let opts = press_opts(Some(boot.clone()));
-        assert_eq!(local_bootstrap(&opts).unwrap(), boot);
+        assert_eq!(
+            press_bootstrap_with(&opts, "macos-arm64", &store).unwrap(),
+            boot
+        );
         // A named file that does not exist keeps the gem's parity error
         // (127, "runtime not found").
         let missing = dir.join("nope");
         let opts = press_opts(Some(missing.clone()));
-        let err = local_bootstrap(&opts).unwrap_err();
+        let err = press_bootstrap_with(&opts, "macos-arm64", &store).unwrap_err();
         assert_eq!(err.code, 127);
         assert!(
             err.message
@@ -977,7 +1011,7 @@ mod tests {
     }
 
     #[test]
-    fn local_bootstrap_without_any_local_source_fails_closed_136() {
+    fn press_bootstrap_without_a_local_source_resolves_the_store() {
         // The only test that mutates the process env (TEBAKO_BOOTSTRAP) —
         // kept in one function so parallel tests never observe a
         // half-saved environment; restored on the way out.
@@ -991,9 +1025,10 @@ mod tests {
             Some(PathBuf::from("/nonexistent/env-bootstrap"))
         );
 
-        // No option, no env: the retired download does NOT fire — the
-        // press fails closed with the named error. (The unit-test binary
-        // runs from target/debug/deps/, which never holds a plain
+        // No option, no env: the spec 19 §4 store flow fires — with an
+        // offline empty store that is its named error 138 (never the
+        // retired v1 C++ download, never a silent fetch). (The unit-test
+        // binary runs from target/debug/deps/, which never holds a plain
         // `tebako-bootstrap` sibling — assert that precondition so a
         // change in cargo's layout fails diagnosably.)
         std::env::remove_var("TEBAKO_BOOTSTRAP");
@@ -1014,14 +1049,14 @@ mod tests {
         );
         let opts = press_opts(None);
         assert!(decide_bootstrap(&opts).is_none());
-        let err = local_bootstrap(&opts).unwrap_err();
-        assert_eq!(err.code, 136);
-        assert!(
-            err.message
-                .contains("requires a local Rust tebako-bootstrap"),
-            "{}",
-            err.message
-        );
+        let dir =
+            std::env::temp_dir().join(format!("tebako-cli-boot-store-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let err = press_bootstrap_with(&opts, "macos-arm64", &offline_store(&dir)).unwrap_err();
+        assert_eq!(err.code, 138);
+        assert!(err.message.contains("not cached"), "{}", err.message);
+        let _ = std::fs::remove_dir_all(&dir);
 
         if let Some(v) = saved {
             std::env::set_var("TEBAKO_BOOTSTRAP", v);
