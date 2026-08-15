@@ -54,6 +54,7 @@ spec 02 §6).
 21. [21 — Crypto consolidation](21-crypto-consolidation.md) — one crypto home per layer: OpenPGP keeps trust and identity, ENC keeps confidentiality, limnifs-native crypto is evidence, never anchor (PROPOSED DECISION)
 22. [22 — Runtime-native interposition](22-runtime-native-interposition.md) — the generalized hooks: loader/exec/resource interposition inside the runtime, the documented interface, and the death of per-gem adapters (the spec-18 contract's runtime-internal half)
 23. [23 — Declarative composition and needs resolution](23-declarative-composition.md) — the fully declarative slice stack: D1 needs / D2 composition doc / D3 press-baked union / D4-D5 operator surfaces; deny-safe by default, the needs-check law (PLANNED)
+24. [24 — Declarative overlays](24-declarative-overlays.md) — write areas and key bindings: the gated COW write gate, `TEBAKO_OVERLAYS` / `TEBAKO_DECRYPT`, the record-mode fold-in, exit 68 (PARTIAL)
 
 ## Locked invariants (all specs subordinate to these)
 

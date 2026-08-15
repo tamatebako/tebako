@@ -1,15 +1,34 @@
 # Spec 24 — Declarative overlays: write areas and key bindings
 
-**Status: PLANNED (spec-only; no implementation rides this change).**
-The transform machinery is SHIPPED — `CowBackend` over `HostDirBackend`
-with the `.tfs-whiteouts` journal (spec 11 §4), `EncBackend` +
-`KeySource` with the `/__tpkg__/envelopes.yaml` grant manifest (spec 10
-§7), the `TEBAKO_MOUNT_COW` mode and the `*_with_mode` mount family
-(spec 11 §7). What does not exist is the DECLARATIVE surface: no
-manifest key lets a slice say "I write here" or "I am sealed — bind a
-key", and no composition key lets an operator bind the overlay store or
-the recipient. This spec is the spec-23 amendment that closes that gap.
-One law follows, extending spec 23's declaration law:
+**Status: PARTIAL.** This change ships the TFS-layer mechanism: the
+gated COW composite (`CowBackend::with_write_areas` — the §5 write
+gate), the mount plumbing carrying declared write areas
+(`crates/tfs/src/mount.rs`'s `Overlay`), the `TEBAKO_OVERLAYS` /
+`TEBAKO_DECRYPT` env grammars (`crates/tfs/src/overlay_spec.rs`), the
+journal vocabulary (`vfs-deny` / `vfs-write` / `overlay` / `decrypt` —
+`crates/tfs/src/journal.rs`) with `vfs-deny` journaling live at the
+engine's write denials, the `tfs needs` generator's fold into draft
+`needs.write:` / `needs.decrypt:` blocks (§6), and the exit-68
+taxonomy row (§7 — `tpkg::EX_TEBAKO_OVERLAY`, owner-signed-off
+2026-08-15). Still PLANNED (the implementation chain, in dependency
+order): the D1 `needs.write` / `needs.decrypt` manifest model
+(`crates/tpkg`; open point 3), the D2 `overlays:` / `decrypt:`
+composition keys with resolver steps 3a–3c (§4), the driver's and
+preload shim's consumption of the env forms (the boot-time `overlay` /
+`decrypt` audit producers, the gated restack, and the sealed-read
+`class=ekey` producer), and record mode's ephemeral scratch stacking
+(§6's `vfs-write` producer).
+
+The transform machinery was already SHIPPED — `CowBackend` over
+`HostDirBackend` with the `.tfs-whiteouts` journal (spec 11 §4),
+`EncBackend` + `KeySource` with the `/__tpkg__/envelopes.yaml` grant
+manifest (spec 10 §7), the `TEBAKO_MOUNT_COW` mode and the
+`*_with_mode` mount family (spec 11 §7). What this spec adds is the
+DECLARATIVE surface: a manifest key letting a slice say "I write here"
+or "I am sealed — bind a key", and a composition key letting an
+operator bind the overlay store or the recipient. This spec is the
+spec-23 amendment that closes that gap. One law follows, extending
+spec 23's declaration law:
 
 **Nothing is transformed that was not declared.** A write area, an
 overlay store, a key binding — each is WRITTEN DOWN in exactly one
@@ -229,20 +248,36 @@ ORDER, between spec 23's steps 3 and 4:
   surfaces as a mid-run EROFS/ENOKEY — the needs-check law, extended.
 - **5′. Export** (extends spec 23 step 5): the bound overlay set
   serializes to `TEBAKO_OVERLAYS` (`<mount>=<store>` pairs,
-  `;`-separated, right-split on the LAST `=` — drive-qualified
-  windows stores keep their `:`) and `TEBAKO_DECRYPT`
-  (`<mount>=pgp:<keyid>`). No key material crosses the channel —
-  references resolve at the driver's mount. Spawned children inherit
+  `;`-separated, split on the FIRST `=` — a store keeps its own
+  `=`; drive-qualified windows stores keep their `:`) and
+  `TEBAKO_DECRYPT` (`<mount>=pgp:<keyid>`). No key material
+  crosses the channel — references resolve at the driver's mount. Spawned children inherit
   both alongside `TEBAKO_JAIL` and re-bind identically (spec 22
   class E; spec 08 §2.1's re-derivation discipline). Malformed env
-  forms fail closed: exit 68 (§7).
+  forms fail closed: exit 68 (§7). The parser is the one owner of
+  both grammars (`crates/tfs/src/overlay_spec.rs`); the malformed
+  forms, each a named error quoting the offending entry (SHIPPED):
+  an empty spec; an empty entry (a stray `;`); a missing `=`; an
+  empty or non-absolute mount (absolute = `/…` or drive-qualified
+  `X:/…`); an empty or non-absolute store; a duplicate mount (one
+  binding per mount, §3); a decrypt recipient that is not `pgp:` +
+  16 lowercase hex. A store containing `;` is unrepresentable by
+  construction — it splits into a second entry that fails the
+  grammar; fail-closed, never a silent misparse. A mount containing
+  `=` is unrepresentable the same way: the first-`=` split folds
+  the surplus into the store side, which fails the grammar.
 
 ## 5. Run time: the write gate and the sealed read
 
 - A mount carrying ≥1 write area stacks `CowBackend` per §1; the
-  driver passes the store as `overlay_dir` through the `_with_mode`
-  mount family (`TEBAKO_MOUNT_COW`, spec 11 §7). The jail installs
-  AFTER the mounts (spec 17) with the derived store grants in force.
+  driver passes the store through the `_with_mode` mount family
+  (`TEBAKO_MOUNT_COW`, spec 11 §7) with the declared area set —
+  `mount::Overlay::gated(store, areas)` on the Rust mount API. The
+  jail installs AFTER the mounts (spec 17) with the derived store
+  grants in force. (The C ABI's `*_with_mode` family keeps the
+  UNGATED programmatic form — a store and no areas, spec 11 §4
+  unchanged; the gated form is the declarative surface and never
+  crosses the C ABI.)
 - The write gate (spec 11's `path_is_held` discipline) gains the
   declared-area set: writes under a declared write area land in the
   overlay; writes elsewhere in a held tree stay **EROFS** — the
@@ -250,7 +285,20 @@ ORDER, between spec 23's steps 3 and 4:
   `event=vfs-deny op=write path=<p> mount=<mp>` (best-effort, the
   jail journal's discipline, spec 08 §4). An undeclared write is not
   a needs-check case (nothing was declared) and never silently
-  succeeds.
+  succeeds. The predicate (locked, SHIPPED in
+  `crates/tfs/src/backends_cow.rs`): areas are absolute in-image
+  paths normalized at mount time (no leading or trailing `/`; the
+  root area `/` covers the whole mount); a write to an area itself
+  or any path BELOW it — component boundary, `/a/b` never covers
+  `/a/bc` — is permitted; all four write verbs (`pwrite`,
+  `truncate`, `mkdir`, `remove`) are gated identically; reads are
+  never gated; the whiteout journal file keeps its `EPERM` under
+  every area set. A malformed area (relative, an empty component,
+  `.`/`..`) fails the mount with EINVAL — fail-closed, never a
+  silent widening. The journaled denial covers the RO mount's EROFS
+  on a held path and the gated COW mount's out-of-area EROFS alike
+  (the write-open EROFS included — the fd write family stays the
+  spec 11 §7 later milestone).
 - A read of a sealed path outside every opened grant answers
   **ENOKEY** (126 — the named EKEY class owned by
   `crates/tfs/src/backends_enc.rs`), never garbage, journaled
@@ -286,8 +334,9 @@ Discovery extends to the VFS write gate:
 
 Run-time errnos are existing and unchanged: EROFS (undeclared write),
 ENOKEY (sealed read). Resolution-time failures are named errors; the
-bootstrap/shim exit table (spec 06 §7) gains ONE row — the amendment
-rides the implementation chain:
+bootstrap/shim exit table (spec 06 §4) carries ONE added row —
+**owner-signed-off 2026-08-15**; the code constant is
+`tpkg::EX_TEBAKO_OVERLAY`:
 
 | 68 | `EX_TEBAKO_OVERLAY` | overlay/decrypt binding failure: unbound retained store, missing or non-opening key material, unwritable store, orphan binding, malformed `TEBAKO_OVERLAYS` / `TEBAKO_DECRYPT` |
 
@@ -326,11 +375,12 @@ construction:
 | Write-gate semantics; whiteout journal (`.tfs-whiteouts`, v1) | `crates/tfs/src/backends_cow.rs` (+ spec 11 §10) |
 | ENC construction (`tfsenc01`, HKDF labels); `ENOKEY` = 126 | `crates/tfs/src/backends_enc.rs` (+ spec 10) |
 | Envelope manifest path and grammar | `ENVELOPES_BACKEND_PATH` + `tpkg::EnvelopeManifest` (spec 10 §7) |
-| Mount-mode flags (`TEBAKO_MOUNT_*`), `overlay_dir` plumbing | `crates/tfs/src/mount.rs` (spec 11 §7) |
+| Mount-mode flags (`TEBAKO_MOUNT_*`), the `Overlay` plumbing (store + declared write areas) | `crates/tfs/src/mount.rs` (spec 11 §7) |
+| The `TEBAKO_OVERLAYS` / `TEBAKO_DECRYPT` env grammars | `crates/tfs/src/overlay_spec.rs` (§4 5′) |
 | Encryption FACTS (state/parts/envelope_refs) | `identity.encryption` (spec 03 §2.1) — `needs.decrypt` only references |
 | Key home and trust layout (`keys/`, `trust/`, `tmp/`) | spec 09 + the store layout (§8 of the ecosystem charter) |
 | The `pgp:<keyid>` reference spelling | spec 04's MECE reference axis (amendment in chain) |
-| Exit codes | spec 06 §7 (the 68 row amends it) |
+| Exit codes | spec 06 §4 (the 68 row; code constant `tpkg::EX_TEBAKO_OVERLAY`) |
 | Journal event vocabulary (`jail-*`, `vfs-*`, `overlay`, `decrypt`) | `crates/tfs/src/journal.rs` |
 | Payload-manifest schema | `docs/spec/schemas/payload-manifest.yaml` → `schema/tpkg-manifest-v1.schema.json` (MINOR bump, spec 18 §3) |
 | Composition-document schema | **`schema/tebako-compose-v1.schema.json`** — the D2 document's versioned JSON Schema, NAMED here; created by the schema pipeline (spec 18 §3.9), not part of this change |
@@ -359,10 +409,11 @@ construction:
 
 ## 11. Open points for the owner (pinned defaults in force until ruled)
 
-1. **Exit code 68** is the one spec-06 amendment this spec proposes;
-   reusing 73 (`EX_TEBAKO_JAIL`) or 74 (`EX_TEBAKO_IO`) was rejected —
-   the jail and IO classes would blur a distinct failure family.
-   Owner sign-off is needed on the new row.
+1. **Exit code 68** — RESOLVED: signed off by the owner 2026-08-15.
+   The spec 06 §4 table carries the row and `tpkg::EX_TEBAKO_OVERLAY`
+   is the code constant. (Reusing 73 `EX_TEBAKO_JAIL` or 74
+   `EX_TEBAKO_IO` was rejected — the jail and IO classes would blur a
+   distinct failure family.)
 2. **External envelope storage** (spec 03 §2.1's `envelope_refs`):
    undeclared by any shipped spec; v1 binds against in-image
    envelopes only.
