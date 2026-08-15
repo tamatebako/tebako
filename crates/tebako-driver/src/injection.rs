@@ -3,7 +3,7 @@
 //! needs to rebuild this namespace — so an exec'd descendant re-enters
 //! the same interposition instead of falling back to the host.
 //!
-//! Two exports, both after the mounts are established:
+//! Three exports, all after the mounts are established:
 //!
 //! 1. `TEBAKO_TFS_MOUNTS` — the mount table in the shim's grammar,
 //!    composed by the context (`mounts_env` — the single composer; the
@@ -18,6 +18,15 @@
 //!    for the interpreter's spawn hook (the SSOT flow: the factory
 //!    stages the file and emits the layout key; the driver flows it; the
 //!    hook consumes it — no second hand-written path).
+//! 3. `TEBAKO_RUNTIME_DLL`, when the env image's layout declares
+//!    `runtime_dll` (schema_minor 3; MSYS images only): the runtime's
+//!    own PE module basename, flowed VERBATIM into the handoff env on
+//!    every platform (POSIX legs never read it — one code path). The
+//!    reader is the tfs PE closure walk (`tfs::context`, the PR #409
+//!    stream): a bare import name matching it case-insensitively is
+//!    never materialized out of a payload image (spec 22 §2.1 — the
+//!    OS's basename-reuse rule binds the already-loaded copy). Absent ⇒
+//!    no export (an older image — the exclusion is simply off).
 //!
 //! Platform notes: on macOS the value reaches EVERY child in the
 //! inherited env — including Apple platform binaries, which dyld
@@ -39,6 +48,10 @@ use tfs::context::context;
 
 /// The spawn hook's source for the shim's in-VFS path (spec 17 §2).
 pub const PRELOAD_SHIM_VAR: &str = "TEBAKO_PRELOAD_SHIM";
+
+/// The runtime's own PE module basename for the tfs PE closure walk's
+/// exclusion (spec 22 §2.1; spec 17 §2's handoff-env row).
+pub const RUNTIME_DLL_VAR: &str = "TEBAKO_RUNTIME_DLL";
 
 /// The mounts list the shim rebuilds the namespace from (spec 17 §2).
 const MOUNTS_VAR: &str = "TEBAKO_TFS_MOUNTS";
@@ -62,6 +75,16 @@ pub fn export(
 ) -> Result<Option<String>, DriverError> {
     if let Some(mounts) = context().read().unwrap().mounts_env() {
         env.set_var(MOUNTS_VAR, &mounts.to_string_lossy());
+    }
+    // The runtime's own PE module name (schema_minor 3): flowed
+    // verbatim into the handoff env on EVERY platform — POSIX legs
+    // never read it, so one code path serves all. The reader is the
+    // tfs PE closure walk (`tfs::context`, the PR #409 stream), which
+    // excludes a bare import name matching it case-insensitively (spec
+    // 22 §2.1). Absent ⇒ no export (an older image — the exclusion is
+    // simply off).
+    if let Some(dll) = declaration.and_then(|d| d.runtime_dll.as_deref()) {
+        env.set_var(RUNTIME_DLL_VAR, dll);
     }
     let Some(rel) = declaration.and_then(|d| d.preload_shim.as_deref()) else {
         return Ok(None); // no env image or an older image — nothing to inject with
@@ -119,6 +142,47 @@ mod tests {
         let m = env.0.borrow();
         assert!(!m.contains_key(PRELOAD_SHIM_VAR));
         assert!(!m.contains_key(MOUNTS_VAR));
+        assert!(!m.contains_key(RUNTIME_DLL_VAR));
+    }
+
+    /// A declaration carrying only the fields under test (the pair-check
+    /// fields are layout.rs's surface, not this module's).
+    fn declaration(runtime_dll: Option<&str>) -> ImageLayout {
+        ImageLayout {
+            schema_version: 1,
+            era: 2,
+            image_layout: 1,
+            mount_root: "/__tfs__".to_string(),
+            interpreter_api_version: "3.4".to_string(),
+            mount_root_override: false,
+            preload_shim: None,
+            runtime_dll: runtime_dll.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn a_declared_runtime_dll_flows_to_the_handoff_env_on_every_platform() {
+        // No cfg gate: POSIX legs never read the var, so the export is
+        // one code path everywhere (spec 17 §2's row). The declared
+        // spelling flows verbatim — the reader (the tfs PE closure
+        // walk) lowercases for the windows loader's comparison.
+        let env = MapEnv(RefCell::new(HashMap::new()));
+        let layout = declaration(Some("x64-ucrt-ruby340.dll"));
+        let delivered = export(&env, Some(&layout), "/__tfs__").unwrap();
+        assert!(delivered.is_none(), "no preload shim declared");
+        assert_eq!(
+            env.0.borrow().get(RUNTIME_DLL_VAR).map(String::as_str),
+            Some("x64-ucrt-ruby340.dll")
+        );
+    }
+
+    #[test]
+    fn an_absent_runtime_dll_exports_nothing() {
+        // An older image: the closure walk's exclusion is simply off.
+        let env = MapEnv(RefCell::new(HashMap::new()));
+        let layout = declaration(None);
+        export(&env, Some(&layout), "/__tfs__").unwrap();
+        assert!(!env.0.borrow().contains_key(RUNTIME_DLL_VAR));
     }
 
     #[cfg(unix)]
