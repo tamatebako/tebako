@@ -51,7 +51,8 @@ so every consumer is covered at once:
   Loads that bypass `dln.c` — raw `LoadLibrary`/`LoadLibraryExA` from
   fiddle, ffi, or a C extension self-loading — are the documented edge
   (rare — evaluate per case, never silently); the per-case evaluation
-  is the windows delivery record below.
+  is the windows delivery record below, and its phase-W resolution is
+  §2.1 (the design; implementation W2).
 
 **Phase 1 (POSIX) mechanics.** The interposed symbols are `dlopen` and
 `dlerror`, on both ELF and macOS. `dlsym` is deliberately NOT interposed
@@ -146,20 +147,202 @@ record):
 | a C extension self-loading a VFS path via raw `LoadLibrary` | **documented gap** — the same mechanism class as fiddle/ffi |
 | failed materialization through `dln_open` (covered path, non-ENOENT dlmap failure — a directory, a jail-denied passthrough) | **named error — phase-W fix** — the v1-era route's `goto failed` raises `LoadError` WITHOUT the tebako verdict (no library/mount/errno context); W2 delivers the §5 verdict line through the standard error channel, matching the POSIX leg's dlerror contract |
 
-One design question this record deliberately does NOT settle (a W2
-decision, taken with the owner — recorded so no leg of it happens
-silently): fiddle ships IN the env image (the interpreter's vendored
-source), so routing its loader macro through the c_api would be
-runtime-internal in the same sense the `dln.c` patch is; ffi is a
-third-party gem, where that move is the per-gem code this spec's law
-forbids. Whether fiddle gains the vendored route and ffi/self-loads
-stay a permanent documented gap is named here, undecided.
+The fiddle-vs-ffi question this record raised (fiddle ships IN the env
+image — the interpreter's vendored source — so routing its loader macro
+through the c_api is runtime-internal in the same sense the `dln.c`
+patch is; ffi is a third-party gem, where that move is the per-gem code
+this spec's law forbids) is SETTLED in §2.1 (phase W, locked
+2026-08-15): the covered surface extends to fiddle; ffi and self-loads
+are covered by DECLARATION, never by patching and never by an
+interception surface windows does not have.
+
+### 2.1 Windows Class L — the phase-W design (locked 2026-08-15; implementation W2 — PLANNED)
+
+The delivery record above is the as-shipped baseline (phase W1); this
+section is the target the W2 implementation lands, and §8's windows row
+is its proof. Seven locked decisions; nothing below happens silently.
+
+**The interposition point.** Windows has no process-wide preemption
+surface (no exe-definition preemption as on ELF, no interpose section
+as on macOS — the record above), so the interposition point is the
+interpreter's own loader path: the patched `dln.c` (the
+`dln_c_dlmap_msys` route), a THIN SHIM whose only jobs are the Rule-L1
+path-prefix decision and the `tebako_fs_*` call — every mechanic lives
+behind the c_api in the Rust TFS (one owner; the C surface stays
+decision-only, invariant 3). The covered surface extends to fiddle:
+fiddle ships in the env image (the interpreter's vendored source), so
+routing its loader macro (`ext/fiddle/fiddle.h`) through the same c_api
+entry is runtime-internal in exactly the `dln.c` sense, from the same
+patch-set home (tamatebako/ruby). ffi is a third-party gem, and a
+self-loading C extension is third-party code: patching either is the
+per-gem work this spec's law forbids, and process-wide interception of
+their raw loader calls is a surface windows does not have. They are
+covered by DECLARATION (the bare-name rule below), never by patching,
+never by interception. The fork's axis is therefore not fiddle-vs-ffi
+but vendored-runtime vs third-party: everything the runtime ships
+routes through the c_api; everything else is a declaration plus the
+OS's own mechanisms.
+
+**Materialization and the PE closure walk.** A VFS-resident load
+materializes through `tebako_fs_dlmap2file`, whose closure walk
+(`crates/tfs` `exec_closure` — the single closure-walk owner; the C
+side learns nothing about PE) gains the PE import directory as a third
+parsed format beside Mach-O and ELF. The walk mirrors the POSIX
+semantics (the spec-17 exec-closure walk — Rules L3/E2): parse the
+referring image's import descriptors (the PE analogue of
+DT_NEEDED/LC_LOAD_DYLIB), resolve each import against the mounts,
+materialize what the mounts hold into the dlmap layout that mirrors the
+memfs tree exactly, recurse with a visited set. The PE specializations
+(locked):
+
+- **No rpath exists on PE.** A bare import name resolves against the
+  IMPORTING image's own in-image directory only (the `$ORIGIN`
+  analogue — the mirrored layout guarantees vendored siblings sit next
+  to their importer); an import name carrying a path separator resolves
+  verbatim or referrer-relative, normalized. A name the mounts do not
+  hold at those candidates is a HOST import — the OS loader answers for
+  it exactly as before (the POSIX unresolvable-name precedent). No
+  cross-mount basename probing, ever — that is a heuristic, and
+  heuristics are forbidden.
+- **API-set contracts** (`api-ms-win-*`, `ext-ms-win-*`) are
+  pseudo-modules the OS resolves internally — never files. The walk
+  skips them unconditionally; they are host surface by construction.
+- **The runtime's own ruby DLL** (the PE name flowed from the factory —
+  the record's single owner) is never materialized out of a payload
+  image: the import binds to the already-loaded module by the OS's
+  basename-reuse rule (which precedes any disk search), the exe-dir
+  layout copy stays the only one on disk, and `rb_w32_check_imported`
+  remains the ABI-line guard. A payload copy would be a dead file
+  written for no binding.
+- **Delay-load imports** are not walked in phase W — no proven consumer
+  (the evidence-driven rule). A delay-loaded vendored sibling is the
+  one sub-case the binding below does not reach: an honest OS failure,
+  named here until a leg proves the consumer.
+
+**The exec-cache lifecycle (windows).** A loaded DLL is LOCKED by the
+OS for the process's lifetime, so the POSIX idiom — a per-process
+`tebako-dl-<hex>` tmpdir reaped by the exit cleanup, legal there
+because unlink-while-loaded is — cannot apply: the reaper's delete
+fails on every still-loaded file. On windows, dlmap materializations
+are therefore LEAVE-IN-PLACE and CONTENT-KEYED:
+`<TEBAKO_EXEC_CACHE>/dlls/<image-key>/<P>` with the Rule-R1
+`<image-key>` idiom, so a rebuilt image never reads a stale extraction
+(Rule L3) and every process sharing the image shares one copy.
+Write-once and verified by the Rule-R3 mechanics unchanged (stage,
+hash in flight, the `<P>.tfs-digest` record renamed before the content,
+per-boot rehash on reuse, a named 70 on mismatch); the driver-side
+alias extraction and the load-time shim compute the path through the
+SAME tfs entry (one path authority — invariant 10). Never unlinked at
+load, never unlinked at exit: reclamation is the store's cache
+maintenance (spec 05 §4's `tebako cache prune`), which reaps an
+`<image-key>` no store entry resolves to and SKIPS a file the OS still
+has locked — the lock is the liveness proof; a locked survivor is
+retried on the next pass, never force-deleted, never an error surfaced
+to a run.
+
+**The binding: absolute-path rewrite + `LOAD_WITH_ALTERED_SEARCH_PATH`;
+`AddDllDirectory` is rejected.** A covered load call receives the
+absolute materialized path and carries `LOAD_WITH_ALTERED_SEARCH_PATH`,
+so the module's own directory leads the OS's search for its import
+tree — the PE analogue of `$ORIGIN`/`@loader_path`, and exactly what
+the mirrored closure layout feeds. `AddDllDirectory` was the
+alternative and is rejected on three grounds: it mutates PROCESS-GLOBAL
+loader state, so a payload's vendored directory would shadow host DLLs
+for every later bare-name load by any consumer — the silent-shadow
+class (invariant 9) — and two payloads' directories would race on
+insertion order; it takes effect only for loads carrying
+`LOAD_LIBRARY_SEARCH_*` flags (or a `SetDefaultDllDirectories`
+global), so the raw-`LoadLibrary` surface it was meant to rescue would
+not consult it anyway; and its cookies demand a removal discipline the
+OS's own file locks make unreliable. The rewrite's known OS rules are
+stated, not hidden: an import basename matching an already-loaded
+module binds to the loaded copy (module reuse precedes any disk
+search), and KnownDLLs always bind to System32 — both are the OS's
+documented precedence, host-by-default working as intended. The
+transitive binding (a vendored sibling two levels deep) is pinned
+empirically on the W2 dogfood, matching how §3.1's matrix was pinned.
+
+**The bare-name rule (the fiddle-vs-ffi fork, settled).** A loader call
+presenting a BARE name — no path separator, no drive qualifier
+(`ffi_lib 'user32'`, `Fiddle.dlopen 'foo'`) — means HOST by default,
+always: the name passes to the OS loader untouched — no VFS probe, no
+extension completion, no search-order trickery. Bare names are
+overwhelmingly the host-FFI idiom (system libraries); a bare name
+carries no mount information, so any VFS reading of it would be a guess
+(MECE forbids); and probing the VFS first would let a payload's
+vendored `zlib1.dll` silently shadow the host's for every consumer (the
+silent-fallback class). The ONE exception is declared: a bare name
+matching a co-mounted image's `library_aliases:` entry EXACTLY
+(verbatim, case-insensitive — the windows loader's own comparison;
+`foo` does not match `foo.dll`) means payload-vendored. The
+declaration — not a heuristic — is what makes the decision decidable at
+all. Grammar and validation: spec 03 §2.5 (additive; old readers ignore
+the key); the ambiguity rules (a duplicate within one image is a named
+manifest error; two co-mounted images declaring one name is a named
+boot error 65) are the spec 17 §2 slug precedent — never a silent
+winner. Rule L1 itself is unchanged: aliases are a NAME-routing rule
+for path-less calls, applied before L1's check runs; a rewritten alias
+becomes an absolute host path whose load then follows the binding
+above — it is not an L1 passthrough. Mechanically:
+
+- On the COVERED surface (dln, fiddle) the shim checks the alias union
+  first: a match rewrites the call to the absolute materialized path
+  (boot-extracted, below) and loads it with the binding above; no match
+  passes the name to the host untouched.
+- On the RAW surface (ffi, self-loads) nothing is intercepted: the
+  driver materializes every declared alias at boot — the class-R pass,
+  the same write-once/digest/per-boot-rehash mechanics — and PREPENDS
+  the materialized directories to the process `PATH` (the §3.2 wiring's
+  library form; EVERY co-mounted image contributes, the app payload
+  included — unlike bin dirs — because any consumer in the process may
+  present the name). The OS's own standard search order then resolves
+  the declared name for any caller, interception-free and
+  per-gem-code-free. The OS's precedence is stated honestly: the alias
+  guarantees AVAILABILITY on the search path, not precedence over the
+  OS's leading dirs — a declared name colliding with a System32 DLL
+  binds the host copy by OS rule, an aliasing mistake the declaration
+  surface cannot fix and the record-mode journal makes visible.
+- Discovery rides spec 23 §8's record-mode idiom: the patched load path
+  JOURNALS every bare-name verdict (`event=lib-load name=<n>
+  verdict=host|alias`), so the author learns the exact spelling to
+  declare from the journal instead of guessing. The needs-generator
+  ignores these lines (they are not needs).
+
+**Named errors and exit codes** (spec 06 §4 / spec 17 §4, unchanged
+taxonomy). Loader-side (boot): an alias whose `path` the image does not
+hold, or not a regular file, is a named 65 (the manifest lied); a name
+carrying a path separator is the same named 65 at parse; the
+cross-image ambiguity is a named 65 at boot; a tampered materialized
+copy is a named 70 with the Rule-R3 remedy; a host IO failure writing
+the cache is a named 74. Runtime-side (the covered load path): the
+interpreter's own `LoadError` carries the tebako verdict line (§5) —
+the v1-era bare `goto failed` is retired. Raw surface: the OS's own
+honest error (126 / `0x8007007E`), never intercepted, the remedy named
+in the table below — declare the alias.
+
+**The raw-`LoadLibrary` edge, per case** (the phase-W target; the W1
+record above is the as-shipped baseline):
+
+| Case | Verdict |
+|---|---|
+| `dln_load` of a VFS-resident extension (the `require` path) | **covered** — materialize + the PE closure walk + the binding above |
+| host path uncovered by any mount | **covered** — passthrough untouched |
+| covered but not held (a host path under a covering mount) | **covered** — ENOENT → host passthrough (the W1 precedent) |
+| extension importing the ruby DLL | **covered** — the exe-dir layout + the OS basename-reuse rule + `rb_w32_check_imported`'s named ABI error; the walk's exclusion above keeps a vendored copy off disk |
+| extension importing OTHER VFS-resident DLLs (sibling vendor imports) | **covered (W2)** — the PE closure walk materializes the siblings next to their importer; `LOAD_WITH_ALTERED_SEARCH_PATH` binds them. Closes the W1 two-layer gap |
+| fiddle `Fiddle.dlopen` of a VFS path or a declared alias | **covered (W2)** — fiddle joins the vendored route (the interposition decision above) |
+| ffi `FFI::DynamicLibrary.open` / a C-extension self-load of a DECLARED alias's bare name | **covered by declaration (W2)** — the boot-extracted copy resolves through the OS's own `PATH` search; zero interception, zero per-gem code |
+| ffi / self-load of an UNDECLARED bare name | **host by default** — the OS answers for it; the rule's whole point |
+| ffi / self-load of a VFS PATH (any separator) | **documented gap, permanent** — no interception surface exists and patching ffi is forbidden; the failure is the OS's honest 126, and the named remedy is the alias declaration. Never a silent success, never a tebako-intercepted error |
+| a delay-loaded vendored sibling | **documented gap (phase W)** — the walk skips delay-load imports (no proven consumer); an honest OS failure |
+| failed materialization on the covered path (a directory, a jail-denied passthrough) | **named error** — `LoadError` carrying the §5 verdict line plus the OS error text; the v1-era `goto failed` wart is retired |
 
 **Rule L3.** Materialization reuses the spec-17 exec-closure walk
-(Mach-O/ELF dependency closure, content-keyed cache dir, write-once).
-The cache is per runtime image sha — a rebuilt runtime never reads a
-stale extraction. Materialization failures are named errors naming the
-library and the mount that served it; never a partial load.
+(Mach-O/ELF dependency closure, content-keyed cache dir, write-once —
+PE's import directory joins as the third parsed format on windows,
+§2.1). The cache is per runtime image sha — a rebuilt runtime never
+reads a stale extraction. Materialization failures are named errors
+naming the library and the mount that served it; never a partial load.
 
 **Rule L4.** The interposition is read-only with respect to the store:
 it never installs, upgrades, or deletes anything (a run is a run).
@@ -182,7 +365,7 @@ pinned empirically in §3.1.
 |---|---|---|---|
 | **ELF (gnu/musl)** | exe-defined Class-L symbols; the runtime itself is never preload-injected | the spawn hook materializes and injects the child (`LD_PRELOAD` + `TEBAKO_TFS_MOUNTS` in its env) | **works unmodified** — the handoff env's `LD_PRELOAD` injects every child at its exec, `/bin/sh` included; the shell's PATH search and `execvp` loop route through the interposed surface |
 | **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **named boundary, enforced by the spawn hook** — an inherited `DYLD_INSERT_LIBRARIES` is FATAL to Apple platform binaries on darwin24 (dyld TERMINATES `/bin/sh` and `/usr/bin/cc` under a foreign insertion — factory run 31699651270; darwin23 stripped the variable instead), so the interpreter's spawn hook DROPS the variable per spawn whose target is restricted (any shell form; anything resolving into Apple's system binary dirs). The JVM behind a shell string then answers its own `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one. darwin24 x86_64 CI runners HONOR the insertion into sh's exec child (runs 31685052887/31692800485) — a relaxed-SIP artifact the scrub deliberately erases: every host behaves like the strictest one |
-| **windows** | — | deferred with windows Class L (§7 order) | deferred |
+| **windows** | — | deferred — class L's design is §2.1; the windows exec leg phases after it (§7 order) | deferred |
 
 Where the launcher tier (§3.2) is armed, the shell-string form works
 on every macOS host — the launcher's explicit re-arm passes the hook's
@@ -222,7 +405,11 @@ knowledge anywhere). On ELF the interposed exec loop then resolves the
 bare name through the VFS (§3.1). The explicit-reference surface for
 everything else — windows-safe and shell-free — is
 `TEBAKO_MOUNT_<SLUG>` per dependency mount (§6; v2-1/20), for payload
-authors who compute paths themselves.
+authors who compute paths themselves. On windows the same `PATH` lead
+carries the LIBRARY bare-name surface: the driver additionally prepends
+every co-mounted image's boot-materialized library-alias directories
+(§2.1's bare-name rule), so the OS loader's own search resolves a
+declared bare name for any caller in the process — interception-free.
 
 **The host-launcher tier** (armed when the env image delivers the
 preload shim, §3; unix): the driver additionally materializes each
@@ -364,6 +551,15 @@ interposed `dlerror` (§2) answers a failed VFS `dlopen` with the tebako
 line, so the caller's standard `dlopen`/`dlerror` handling reports the
 tebako verdict instead of whatever the loader last recorded.
 
+On windows the verdict channel is the `LoadError` message itself: the
+patched dln/fiddle route (§2.1) raises carrying the tebako context line
+— the library, the mount, the materialization verdict — with the OS's
+own error text appended (`FormatMessage`), never a bare 126. This is
+the phase-W fix for the v1-era `goto failed` wart the W1 record named,
+and the exact analogue of the POSIX dlerror contract. Raw
+`LoadLibrary` callers (the uncovered surface) get the OS's own honest
+error — never an intercepted one, never a silent success.
+
 ## 6. The documented interface (the stable surface)
 
 Payload authors and runtime factories may rely on, forever:
@@ -372,9 +568,14 @@ Payload authors and runtime factories may rely on, forever:
   loads/execs exactly as if it were on disk, from any caller in the
   process. No gem- or payload-specific action is ever required.
 - **The exec cache root.** `TEBAKO_EXEC_CACHE` (read-only to payloads):
-  the directory where materialized binaries/libraries live for the
-  process's lifetime. Its content is an implementation detail; its
-  existence and per-image-sha segregation are contractual.
+  the directory where materialized binaries/libraries live. The
+  lifecycle is platform-split (§2.1): on POSIX a materialization lives
+  in a per-process tmpdir reaped at exit (unlink-while-loaded is legal
+  there); on windows a loaded DLL is OS-locked, so materializations are
+  leave-in-place, content-keyed per image, and reaped by the store's
+  cache maintenance — never unlinked under a running loader. Its
+  content is an implementation detail; its existence and per-image-sha
+  segregation are contractual.
 - **The materialized-resource convention.** A manifest's
   `materialize:` entry `P` lands at `<exec-cache>/resources/<image-key>/<P>`
   (`<image-key>` per Rule R1). The sidecar `<P>.tfs-digest` is cache
@@ -402,7 +603,10 @@ Payload authors and runtime factories may rely on, forever:
   delivered — §3.2's host-launcher tier) followed by every co-mounted
   dependency image's declared bin dirs. Bare-name exec of a
   dependency's tool needs no payload code, and the shell-string form
-  works unmodified past the SIP strip (§3.1) exactly as on ELF.
+  works unmodified past the SIP strip (§3.1) exactly as on ELF. On
+  windows the boot-materialized library-alias directories join the same
+  lead (§2.1) — every co-mounted image contributing, the app payload
+  included.
 
 Everything else (the mount table layout, the closure-walk order, the
 cache's on-disk naming) is implementation detail and may change between
@@ -417,8 +621,10 @@ runtime releases.
   with the dogfood green WITHOUT it (metanorma + fontist are the
   oracle pair: ffi/fiddle/excavate-load + java-exec + cert-resource
   are all exercised there).
-- Landing order: Class L POSIX → Class E → Class R → windows L. Each
-  lands behind its dogfood proof; a failed proof keeps the adapter.
+- Landing order: Class L POSIX → Class E → Class R → windows L (§2.1 —
+  the phase-W design: the PE closure walk, the dln/fiddle vendored
+  route, the alias bare-name rule). Each lands behind its dogfood
+  proof; a failed proof keeps the adapter.
 
 ## 8. Acceptance
 
@@ -431,3 +637,12 @@ runtime releases.
   the memfs cache helpers.
 - The v2 dogfood suite is green with the maps empty on every
   published platform.
+- Windows Class L (phase W2's proof; the design is §2.1 — PLANNED): on
+  the msys legs, a payload whose gems load native libraries through the
+  interpreter's ext loader AND fiddle works with zero per-gem adapters;
+  a DECLARED alias's bare-name load binds the boot-materialized copy
+  for a raw `LoadLibrary` caller (the ffi form) through the OS's own
+  search; a vendored sibling import two levels deep binds through the
+  mirrored closure + `LOAD_WITH_ALTERED_SEARCH_PATH`; and a failed VFS
+  materialization surfaces the §5 verdict line in the raised
+  `LoadError`, never the v1-era bare `goto failed`.

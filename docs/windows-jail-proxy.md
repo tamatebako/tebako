@@ -5,7 +5,9 @@ SHIPPED (`crates/tfs` `HostPolicy`, spec 08). The declaration surface
 they compose with is spec 23: its record mode and image-layer compose
 are IMPLEMENTED (`TEBAKO_JAIL=record`, `tfs needs --from-journal`,
 `tfs exec --compose`); the D1–D5 manifest/shim/press wiring is
-Phase-R (PLANNED, owner-signed 2026-08-14). This document is the
+Phase-R (PLANNED, owner-signed 2026-08-14). The windows Class-L load
+path this document's §1/§4 rows cite is design-pinned in spec 22 §2.1
+(phase W; implementation W2 — PLANNED). This document is the
 windows reading of those two specs — it is not a third authority;
 every rule cites its owner.
 
@@ -66,6 +68,15 @@ Semantics (all spec 08 §2.1, all in `HostPolicy::bind`):
   drive-qualified forward-slash form (`C:/Windows/System32`,
   `floor_mount_point()`); it is informational — enforcement matches
   host prefixes.
+- The floor is also what the LIBRARY load path lives on (spec 22
+  §2.1): the patched dln/fiddle route's host passthrough is a gated
+  host read like any other (`dlmap2file` is in spec 08 §3's gated
+  set), so a bare name meaning a System32 library (`ffi_lib 'user32'`)
+  passes under `deny` exactly because the floor grants it — while a
+  bare name resolving outside floor+grants is EPERM, journaled. The
+  OS loader's own reads (process-boot import resolution, raw
+  `LoadLibrary` from an unpatched caller) never pass a tebako route
+  and are not gated — §5's honest scope.
 
 What never joins the floor (spec 08 §2.1's boundary): the workload's
 own tool tree (a JRE, a third-party install) and the user's home stay
@@ -159,7 +170,12 @@ tightening (declarations request; the operator tightens — spec 08
   the policy via `HostPolicy::bind` AFTER the mounts (spec 08 §3 — the
   mount family's image read is itself policy-gated once a policy is
   active). A spawned child inherits `TEBAKO_JAIL` and re-binds: same
-  policy, floor included.
+  policy, floor included. The boot-time materialization (spec 22 §4
+  class R + §2.1's library-alias extraction) runs after the policy
+  installs, and the load-time dll map (the POSIX dlmap twin) writes
+  mid-run: both are the system self-surface — process-internal,
+  never policy-gated — while payload IO sees the exec cache
+  read-only (spec 23 §5 item 3).
 
 The default matrix (spec 23 §5): a run with ANY declaration in force
 defaults to `policy: deny`; `open` is asked for by name; a run with no
@@ -181,6 +197,8 @@ files. Everything else is EPERM/EROFS, journaled.
 | `capabilities.host` in a manifest | named validation error naming the rename (`→ needs.host`) |
 | `record` carrying grants | EINVAL at bind — inert configuration is a named error, never silently ignored |
 | a composition override naming a slice the trailer does not carry (fat package) | named error, never a silent skip (spec 23 §9) |
+| a bare-name library load with no declared alias, the name outside floor+grants (deny) | EPERM from the gated `dlmap2file` route on the covered surface (patched dln/fiddle), journaled like any host read; a RAW `LoadLibrary` caller (unpatched ffi, a self-loading C extension) never passes a tebako route — the OS answers its own error, ungated and unjournaled (§5) |
+| an alias-declared bare-name or VFS-path library load (spec 22 §2.1) | materialized from/to the exec cache — the system self-surface, never policy-gated; a tampered cached copy is a named 70 (the Rule-R3 verdict), and a failed materialization surfaces the tebako verdict line in the raised `LoadError`, never a bare OS error |
 
 ## 5. Honest scope
 
@@ -189,4 +207,11 @@ claimed (`capabilities.network` is advisory). Coverage is every IO
 route through the TFS layer — interpreted payloads and native binaries
 under the preload shim alike; NOT covered: statically-linked binaries
 (direct syscalls, no interposition point) and any process that escapes
-the shim — stated honestly, never implied otherwise.
+the shim — stated honestly, never implied otherwise. The platform
+loader's own reads never pass a tebako route on ANY platform:
+process-boot import resolution and a raw `LoadLibrary`/`dlopen` from an
+unpatched caller (spec 22 §2.1's documented edge) are the OS's own
+file IO — not jail-gated, not journaled (the macOS dyld rpath probes
+are the same class, proven macOS 15). The floor and the authored
+grants govern the routes tebako actually serves; §1's floor is what
+keeps the GATED host-library passthrough working under `deny`.

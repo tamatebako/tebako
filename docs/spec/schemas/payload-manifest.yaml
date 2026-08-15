@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 1 # MINOR — additive changes only (1: materialize)
+schema_minor: 2 # MINOR — additive changes only (1: materialize, 2: library_aliases)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -246,6 +246,25 @@ grammar:
       tfs-merkle-1 file digest). Entries are absolute and carry no '..'
       components (validated at parse). Old readers ignore the key
       (unknown-field rule).
+  library_aliases:
+    type: list of entries
+    required: false
+    since: schema_minor 2
+    entry:
+      name: {type: string, required: true}
+      path: {type: absolute in-image path, required: true}
+    notes: >-
+      spec 22 §2.1 (windows Class L, phase W) — the ONLY bare library
+      names that resolve to the image's own files; a bare name matching
+      no entry is a HOST reference and passes through untouched
+      (host-by-default, no heuristics). `name` is the exact spelling a
+      loader call presents: no path separator, no drive qualifier
+      (validated at parse); matching is verbatim and case-insensitive,
+      never extension-completed. `path` is absolute, carries no '..'
+      components, and must name a regular file in the image. Any kind
+      may declare; no platform filter (native images are triplet-bound,
+      so an alias is platform surface by construction). Old readers
+      ignore the key (unknown-field rule).
 
 refusals:
   - case: identity.schema_version missing
@@ -260,5 +279,11 @@ refusals:
     behavior: the manifest lies — boot fails with a named error (exit 65), never a skipped entry
   - case: a materialized copy failing digest verification at boot (schema_minor 1)
     behavior: the exec cache is tampered or corrupt — boot fails with a named error (exit 70), never a silently served corruption
+  - case: a library_aliases name carrying a path separator or drive qualifier (schema_minor 2)
+    behavior: named validation error at parse — the bare-name grammar is exact, never guessed (exit 65)
+  - case: a library_aliases path absent from the image, or not a regular file (schema_minor 2)
+    behavior: the manifest lies — boot fails with a named error (exit 65), never a skipped entry
+  - case: a duplicate alias name within one image, or one alias name declared by two co-mounted images (schema_minor 2)
+    behavior: authoring ambiguity — a named error (parse-time, resp. boot-time exit 65), never a silent winner
 
 deprecated: [] # no field is in a deprecation window

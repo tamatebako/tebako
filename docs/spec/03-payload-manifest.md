@@ -146,6 +146,34 @@ skipped entry. The full mechanics and the trust chain are spec 22 §4
 (class R); the grammar is registered in
 `docs/spec/schemas/payload-manifest.yaml`.
 
+### 2.5 LIBRARY ALIASES (`library_aliases:`, additive — schema_minor 2)
+
+```yaml
+library_aliases:
+  - name: libfoo-3.dll        # the exact bare name a loader call presents —
+                              # no path separator, no drive qualifier
+                              # (validated at parse)
+    path: /lib/libfoo-3.dll   # the in-image absolute file the name resolves to
+```
+
+A top-level list (any kind may declare it; old readers ignore it under
+the unknown-field rule) naming the ONLY bare library names that resolve
+to the image's own files — the declarative half of the windows Class-L
+bare-name rule (semantics: spec 22 §2.1). A loader call presenting a
+bare name matching no entry is a HOST reference and passes through
+untouched: host-by-default, no probing, no heuristics, no silent
+fallback. Matching is verbatim and case-insensitive (the windows
+loader's own comparison); the name is never extension-completed (`foo`
+does not match `foo.dll`). `path` must be an absolute in-image path of
+a regular file, no `..` components — an absent or non-file target is
+the manifest lying (a named 65 at boot, the §2.4 precedent). A
+duplicate `name` within one image is a named manifest error; two
+co-mounted images declaring the same `name` is a named boot error
+(authoring ambiguity, the spec 17 §2 slug precedent), never a silent
+winner. No platform filter: native images are triplet-bound (§3), so an
+alias is platform surface by construction. The grammar is registered in
+`docs/spec/schemas/payload-manifest.yaml`.
+
 ## 3. Platform axis (locked, vcpkg-triplet form)
 
 `platforms` is EITHER `"universal"` (pure-ruby/data) OR an explicit list:
