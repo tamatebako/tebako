@@ -15,6 +15,18 @@
       "type": "array",
       "items": { "$ref": "#/$defs/absPath" },
       "description": "spec 22 §4 class R (payload-manifest schema_minor 1): absolute in-image paths of regular files the driver materializes to <TEBAKO_EXEC_CACHE>/resources/<image-key>/<P> after the mounts, before the interpreter handoff — whole-file, read-only, digest-verified. Any kind may declare; old readers ignore the key. The '..' refusal is semantic (the tpkg validator); only the absolute shape is checked here."
+    },
+    "library_aliases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "path"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "path": { "$ref": "#/$defs/absPath" }
+        }
+      },
+      "description": "spec 22 §2.1 windows Class L bare-name rule (payload-manifest schema_minor 2): the ONLY bare library names resolving to the image's own files — a bare name matching no entry is a host reference and passes through untouched. `name` is the exact bare spelling a loader call presents (the no-separator/no-drive refusal is semantic, the tpkg validator); `path` is the absolute in-image file it resolves to. Any kind may declare; old readers ignore the key."
     }
   },
   "allOf": [

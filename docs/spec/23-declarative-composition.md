@@ -92,6 +92,17 @@ Rules (MECE, fail-closed):
   composition's explicit consent (§6 step 4) — declared write access to
   user surface is visible by construction.
 
+The D1 manifest also carries one sibling declaration that is NOT a host
+need: `library_aliases:` (grammar spec 03 §2.5), the windows Class-L
+bare-name rule's allowlist (semantics spec 22 §2.1). It routes a bare
+loader name to an in-image file; it never widens host surface, so the
+needs-check law does not apply to it — the declaration law does: no
+bare name is rewritten that was not declared, and an undeclared name is
+a host reference by default, never a probe. The §8 record loop covers
+it: the patched load path journals every bare-name verdict, so the
+author discovers the spelling to declare from the journal rather than
+guessing.
+
 ## 3. D2 — the composition document (the docker-compose analogue)
 
 `tebako.yaml` — YAML, versioned JSON Schema, discovered walking up from
@@ -152,7 +163,11 @@ grammar, the same code path.
   3. the **system self-surface**: `$TEBAKO_HOME` (the store) and
      `TEBAKO_EXEC_CACHE` — read-only at bind; the system's own writes
      (install, materialize) happen before the policy installs. Our
-     surface, our declaration, in code — never a payload's burden;
+     surface, our declaration, in code — never a payload's burden. The
+     load-time materialization writes (spec 22's dlmap surfaces,
+     windows' leave-in-place dll map included, spec 22 §2.1) are
+     process-internal and never policy-gated — the cache stays
+     read-only to payload IO;
   4. the union of declared needs (§2), symbolic atoms resolved;
   5. the composition's `mounts:`/`needs:` (D2/D5) and operator config;
   6. `argument_files: auto` — payload arguments naming existing host
