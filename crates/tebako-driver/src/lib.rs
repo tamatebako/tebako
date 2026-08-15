@@ -29,6 +29,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod alias;
 pub mod driver;
 pub mod exec_cache;
 pub mod ffi;

@@ -1106,6 +1106,22 @@ impl Requirement {
 // The manifest itself
 // ---------------------------------------------------------------------
 
+/// One `library_aliases:` entry (spec 03 §2.5, additive — schema_minor
+/// 2): the exact bare name a loader call presents (`name` — no path
+/// separator, no drive qualifier) resolving to the in-image absolute
+/// file `path`. The declarative half of the windows Class-L bare-name
+/// rule (spec 22 §2.1): a bare name matching no entry is a HOST
+/// reference and passes through untouched; matching is verbatim and
+/// case-insensitive (the windows loader's own comparison), never
+/// extension-completed (`foo` does not match `foo.dll`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LibraryAlias {
+    /// The exact bare spelling a loader call presents.
+    pub name: String,
+    /// The in-image absolute file the name resolves to.
+    pub path: String,
+}
+
 /// The payload manifest (spec 03): IDENTITY + PROVIDES + DEPENDS on a
 /// common provenance/trust layer, carried at [`PAYLOAD_MANIFEST_PATH`].
 ///
@@ -1127,6 +1143,14 @@ pub struct PayloadManifest {
     /// default is the canonical entry). Absent = nothing to materialize.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub materialize: Vec<String>,
+    /// The spec-22 §2.1 windows Class-L bare-name declarations
+    /// (additive — schema_minor 2; old readers ignore it, new readers
+    /// enforce): the ONLY bare library names resolving to the image's
+    /// own files. Any kind may declare; no platform filter (native
+    /// images are triplet-bound — an alias is platform surface by
+    /// construction). Absent = no declared aliases.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub library_aliases: Vec<LibraryAlias>,
 }
 
 impl<'de> Deserialize<'de> for PayloadManifest {
@@ -1139,6 +1163,8 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             requires: Vec<Requirement>,
             #[serde(default)]
             materialize: Vec<String>,
+            #[serde(default)]
+            library_aliases: Vec<LibraryAlias>,
         }
         let raw = Raw::deserialize(d)?;
         let provides = match raw.identity.kind {
@@ -1164,6 +1190,7 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             provides,
             requires: raw.requires,
             materialize: raw.materialize,
+            library_aliases: raw.library_aliases,
         })
     }
 }
@@ -1185,8 +1212,9 @@ impl PayloadManifest {
     /// Semantic checks beyond the serde structure: schema version,
     /// kind ↔ provides binding, the locked capability truth tables,
     /// digest/keyid shapes, signing/encryption state consistency, the
-    /// reserved-triplet rule, the absolute-path rules, and the
-    /// materialize grammar (spec 22 §4). Unknown keys are
+    /// reserved-triplet rule, the absolute-path rules, the
+    /// materialize grammar (spec 22 §4), and the library_aliases
+    /// grammar (spec 03 §2.5 / spec 22 §2.1). Unknown keys are
     /// tolerated everywhere (only `annotations` is lossless by contract).
     pub fn validate(&self) -> Result<(), ManifestError> {
         self.identity.validate()?;
@@ -1212,6 +1240,42 @@ impl PayloadManifest {
             if p.split('/').any(|component| component == "..") {
                 return Err(ManifestError::Invalid(
                     "materialize[] must not contain '..' components (the extraction target derives from the entry)",
+                ));
+            }
+        }
+        for (i, alias) in self.library_aliases.iter().enumerate() {
+            check_non_empty(&alias.name, "library_aliases[].name must be non-empty")?;
+            // The bare-name grammar (spec 03 §2.5): no path separator,
+            // no drive qualifier. Rejecting ':' covers the drive form
+            // ('C:foo.dll') and every other qualified spelling.
+            if alias
+                .name
+                .bytes()
+                .any(|b| b == b'/' || b == b'\\' || b == b':')
+            {
+                return Err(ManifestError::Invalid(
+                    "library_aliases[].name must be a bare name — no path separator, no drive qualifier",
+                ));
+            }
+            check_abs_path(
+                &alias.path,
+                "library_aliases[].path must be absolute (inside the image)",
+            )?;
+            if alias.path.split('/').any(|component| component == "..") {
+                return Err(ManifestError::Invalid(
+                    "library_aliases[].path must not contain '..' components (the materialization target derives from the entry)",
+                ));
+            }
+            // A duplicate name within one image is an authoring
+            // ambiguity — a named manifest error, never a silent winner
+            // (the comparison is the match rule: verbatim,
+            // case-insensitive).
+            if self.library_aliases[..i]
+                .iter()
+                .any(|prior| prior.name.eq_ignore_ascii_case(&alias.name))
+            {
+                return Err(ManifestError::Invalid(
+                    "library_aliases[] declares a duplicate name (case-insensitive) — an authoring ambiguity, never a silent winner",
                 ));
             }
         }
@@ -1442,6 +1506,7 @@ mod tests {
             provides: Provides::Other(BTreeMap::new()),
             requires: Vec::new(),
             materialize: Vec::new(),
+            library_aliases: Vec::new(),
         };
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
@@ -1603,5 +1668,111 @@ mod tests {
         // A scalar is a structural error, never a one-item list.
         let err = PayloadManifest::from_yaml(&minimal_data_yaml("materialize: /x\n")).unwrap_err();
         assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
+    }
+
+    #[test]
+    fn library_aliases_default_empty_and_round_trip() {
+        // spec 03 §2.5 (schema_minor 2): the additive windows Class-L
+        // bare-name declarations — name → in-image file.
+        let bare = PayloadManifest::from_yaml(&minimal_data_yaml("")).unwrap();
+        assert!(bare.library_aliases.is_empty());
+        // An absent key never serializes (additive on the wire: old
+        // readers see the document they always saw).
+        assert!(!bare.to_yaml().unwrap().contains("library_aliases"));
+
+        let with = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "library_aliases:\n  - {name: libfoo-3.dll, path: /lib/libfoo-3.dll}\n  - {name: bar.dll, path: /vendor/bar.dll}\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            with.library_aliases,
+            vec![
+                LibraryAlias {
+                    name: "libfoo-3.dll".to_string(),
+                    path: "/lib/libfoo-3.dll".to_string(),
+                },
+                LibraryAlias {
+                    name: "bar.dll".to_string(),
+                    path: "/vendor/bar.dll".to_string(),
+                },
+            ]
+        );
+        let rendered = with.to_yaml().unwrap();
+        assert!(rendered.contains("library_aliases:"), "{rendered}");
+        let back = PayloadManifest::from_yaml(&rendered).unwrap();
+        assert_eq!(back, with);
+    }
+
+    #[test]
+    fn library_alias_names_must_be_bare() {
+        // The bare-name grammar (spec 03 §2.5): no path separator, no
+        // drive qualifier — a named validation error, never a guess.
+        for bad in [
+            "lib/foo.dll",
+            "lib\\foo.dll",
+            "C:foo.dll",
+            "C:\\lib\\foo.dll",
+        ] {
+            // Single-quoted YAML scalars: a backslash stays literal
+            // (double quotes would eat it as an escape).
+            let err = PayloadManifest::from_yaml(&minimal_data_yaml(&format!(
+                "library_aliases:\n  - {{name: '{bad}', path: /lib/foo.dll}}\n"
+            )))
+            .unwrap_err();
+            assert!(
+                matches!(err, ManifestError::Invalid(m) if m.contains("library_aliases")),
+                "{bad}: {err}"
+            );
+        }
+        // An empty name is a structural nothing.
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "library_aliases:\n  - {name: \"\", path: /lib/foo.dll}\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("library_aliases")),
+            "{err}"
+        );
+        // A missing name or path key is a structural error.
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "library_aliases:\n  - {path: /lib/foo.dll}\n",
+        ))
+        .unwrap_err();
+        assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
+    }
+
+    #[test]
+    fn library_alias_paths_must_be_absolute_and_escape_free() {
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "library_aliases:\n  - {name: foo.dll, path: lib/foo.dll}\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("library_aliases")),
+            "{err}"
+        );
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "library_aliases:\n  - {name: foo.dll, path: /../../host/foo.dll}\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("library_aliases")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn library_alias_duplicate_names_are_a_named_error() {
+        // A duplicate within one image — on the match rule's own
+        // comparison (verbatim, case-insensitive) — is an authoring
+        // ambiguity, never a silent winner (spec 03 §2.5).
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "library_aliases:\n  - {name: Foo.dll, path: /lib/a.dll}\n  - {name: foo.DLL, path: /lib/b.dll}\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("duplicate")),
+            "{err}"
+        );
     }
 }
