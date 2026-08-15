@@ -199,7 +199,10 @@ memfs tree exactly, recurse with a visited set. The PE specializations
   IMPORTING image's own in-image directory only (the `$ORIGIN`
   analogue — the mirrored layout guarantees vendored siblings sit next
   to their importer); an import name carrying a path separator resolves
-  verbatim or referrer-relative, normalized. A name the mounts do not
+  verbatim or referrer-relative, normalized. In-image candidate
+  matching is VERBATIM (the memfs is case-sensitive); the windows
+  loader's case-insensitivity governs the host binding only, never the
+  in-image name match. A name the mounts do not
   hold at those candidates is a HOST import — the OS loader answers for
   it exactly as before (the POSIX unresolvable-name precedent). No
   cross-mount basename probing, ever — that is a heuristic, and
@@ -208,16 +211,25 @@ memfs tree exactly, recurse with a visited set. The PE specializations
   pseudo-modules the OS resolves internally — never files. The walk
   skips them unconditionally; they are host surface by construction.
 - **The runtime's own ruby DLL** (the PE name flowed from the factory —
-  the record's single owner) is never materialized out of a payload
+  the record's single owner — through the handoff env's
+  `TEBAKO_RUNTIME_DLL`, exported by the driver at boot; spec 17 §2's
+  table) is never materialized out of a payload
   image: the import binds to the already-loaded module by the OS's
   basename-reuse rule (which precedes any disk search), the exe-dir
   layout copy stays the only one on disk, and `rb_w32_check_imported`
-  remains the ABI-line guard. A payload copy would be a dead file
+  remains the ABI-line guard. The exclusion matches BARE import names
+  only (case-insensitive); a separator-carrying name whose basename
+  happens to match is not excluded — the proven-consumer shape. A
+  payload copy would be a dead file
   written for no binding.
 - **Delay-load imports** are not walked in phase W — no proven consumer
   (the evidence-driven rule). A delay-loaded vendored sibling is the
   one sub-case the binding below does not reach: an honest OS failure,
   named here until a leg proves the consumer.
+- **Byte-exact parsing.** An RVA below `SizeOfHeaders` maps 1:1 — a
+  header-resident import directory parses. A malformed image parses as
+  DEPENDENCY-FREE (the truncated-header contract) and the OS loader
+  answers for it honestly.
 
 **The exec-cache lifecycle (windows).** A loaded DLL is LOCKED by the
 OS for the process's lifetime, so the POSIX idiom — a per-process
@@ -286,16 +298,26 @@ becomes an absolute host path whose load then follows the binding
 above — it is not an L1 passthrough. Mechanically:
 
 - On the COVERED surface (dln, fiddle) the shim checks the alias union
-  first: a match rewrites the call to the absolute materialized path
-  (boot-extracted, below) and loads it with the binding above; no match
-  passes the name to the host untouched.
+  first through exactly one c_api entry, `tebako_fs_dlalias2file`: it
+  applies the bare-name grammar itself (spec 03 §2.5 SSOT), matches the
+  union verbatim case-insensitive (no extension completion), and
+  answers the alias's registered boot-materialized absolute path; a
+  match rewrites the call to that path and loads it with the binding
+  above. `NULL`+`ENOENT` (a path-carrying or undeclared name) passes
+  the name to the host untouched; any other errno raises the §5
+  verdict. The union reaches the TFS at BOOT, never by env var: the
+  driver registers every co-mounted image's (name → materialized path)
+  pairs into the tfs context — plain strings, so tfs stays tpkg-free.
 - On the RAW surface (ffi, self-loads) nothing is intercepted: the
   driver materializes every declared alias at boot — the class-R pass,
   the same write-once/digest/per-boot-rehash mechanics — and PREPENDS
   the materialized directories to the process `PATH` (the §3.2 wiring's
-  library form; EVERY co-mounted image contributes, the app payload
-  included — unlike bin dirs — because any consumer in the process may
-  present the name). The OS's own standard search order then resolves
+  library form; EVERY co-mounted image contributes — the env image and
+  the app payload included, unlike bin dirs — because any consumer in
+  the process may
+  present the name; the lead order is locked: launcher dir → §3.2 bin
+  dirs → alias dirs → the inherited `PATH`). The OS's own standard
+  search order then resolves
   the declared name for any caller, interception-free and
   per-gem-code-free. The OS's precedence is stated honestly: the alias
   guarantees AVAILABILITY on the search path, not precedence over the
@@ -304,7 +326,8 @@ above — it is not an L1 passthrough. Mechanically:
   surface cannot fix and the record-mode journal makes visible.
 - Discovery rides spec 23 §8's record-mode idiom: the patched load path
   JOURNALS every bare-name verdict (`event=lib-load name=<n>
-  verdict=host|alias`), so the author learns the exact spelling to
+  verdict=host|alias`), emitted by the c_api side where the verdict is
+  made, so the author learns the exact spelling to
   declare from the journal instead of guessing. The needs-generator
   ignores these lines (they are not needs).
 
@@ -314,7 +337,10 @@ hold, or not a regular file, is a named 65 (the manifest lied); a name
 carrying a path separator is the same named 65 at parse; the
 cross-image ambiguity is a named 65 at boot; a tampered materialized
 copy is a named 70 with the Rule-R3 remedy; a host IO failure writing
-the cache is a named 74. Runtime-side (the covered load path): the
+the cache is a named 74. The TFS closure walk itself reports through the
+errno channel only — these named codes are emitted by their owning
+layers (the tpkg parse, the driver boot, the Rule-R3 materialize path);
+there is no parallel taxonomy inside tfs. Runtime-side (the covered load path): the
 interpreter's own `LoadError` carries the tebako verdict line (§5) —
 the v1-era bare `goto failed` is retired. Raw surface: the OS's own
 honest error (126 / `0x8007007E`), never intercepted, the remedy named
@@ -604,9 +630,10 @@ Payload authors and runtime factories may rely on, forever:
   dependency image's declared bin dirs. Bare-name exec of a
   dependency's tool needs no payload code, and the shell-string form
   works unmodified past the SIP strip (§3.1) exactly as on ELF. On
-  windows the boot-materialized library-alias directories join the same
-  lead (§2.1) — every co-mounted image contributing, the app payload
-  included.
+  windows the boot-materialized library-alias directories complete the
+  same lead (§2.1) — every co-mounted image contributing, the env image
+  and the app payload included; the locked order is launcher dir →
+  dependency bin dirs → alias dirs → the inherited `PATH`.
 
 Everything else (the mount table layout, the closure-walk order, the
 cache's on-disk naming) is implementation detail and may change between
