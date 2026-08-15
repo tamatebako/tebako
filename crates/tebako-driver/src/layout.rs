@@ -9,7 +9,9 @@
 //! era-2 driver parses the last but does not gate on it — and the
 //! additive `mount_root_override` (schema_minor 1): the image's grant
 //! that its rbconfig follows `TEBAKO_MOUNT_ROOT`, gating the driver's
-//! run-time root override (spec 17 §1).
+//! run-time root override (spec 17 §1); `preload_shim` (schema_minor 2)
+//! and `runtime_dll` (schema_minor 3) — flowed into the handoff env by
+//! the boot (see `crate::injection`).
 
 use serde::Deserialize;
 
@@ -60,6 +62,16 @@ pub struct ImageLayout {
     /// hook (spec 22 §3; no second hand-written copy of the path).
     /// Absent ⇒ no preload env (an older image — children get no VFS).
     pub preload_shim: Option<String>,
+    /// The runtime's own PE module basename, e.g. `x64-ucrt-ruby340.dll`
+    /// (additive, schema_minor 3; MSYS images only): the image declares,
+    /// the driver flows it — exported verbatim as `TEBAKO_RUNTIME_DLL`
+    /// into the handoff env (spec 17 §2), where the tfs PE closure walk
+    /// reads it to exclude the runtime's own DLL from payload
+    /// materialization (spec 22 §2.1). Bare-name grammar enforced here
+    /// (no separator, no drive qualifier — a violation is a named 78).
+    /// Absent ⇒ no export (an older image — the exclusion is simply
+    /// off).
+    pub runtime_dll: Option<String>,
 }
 
 /// The tolerant serde view: every field optional so the checks below can
@@ -74,6 +86,7 @@ struct LayoutView {
     interpreter_api_version: Option<String>,
     mount_root_override: Option<bool>,
     preload_shim: Option<String>,
+    runtime_dll: Option<String>,
 }
 
 impl ImageLayout {
@@ -136,6 +149,16 @@ impl ImageLayout {
                 "env image '{image}' layout.yaml carries an empty interpreter_api_version"
             )));
         }
+        // schema_minor 3: the runtime DLL is a bare PE module basename —
+        // a separator or drive qualifier is the declaration lying.
+        let runtime_dll = view.runtime_dll.filter(|s| !s.is_empty());
+        if let Some(dll) = &runtime_dll {
+            if dll.bytes().any(|b| b == b'/' || b == b'\\' || b == b':') {
+                return Err(layout(format!(
+                    "env image '{image}' layout.yaml declares runtime_dll '{dll}' carrying a path separator or drive qualifier — a basename owns no path: rebuild the runtime with the current factory"
+                )));
+            }
+        }
         Ok(ImageLayout {
             schema_version,
             era,
@@ -144,6 +167,7 @@ impl ImageLayout {
             interpreter_api_version: api_version,
             mount_root_override: view.mount_root_override.unwrap_or(false),
             preload_shim: view.preload_shim.filter(|s| !s.is_empty()),
+            runtime_dll,
         })
     }
 }
@@ -167,6 +191,7 @@ mod tests {
                 interpreter_api_version: "3.4".to_string(),
                 mount_root_override: false,
                 preload_shim: None,
+                runtime_dll: None,
             }
         );
         // unknown keys within the MAJOR are tolerated (spec 18 §3.2 / S57)
@@ -220,6 +245,45 @@ mod tests {
                 .preload_shim,
             None
         );
+    }
+
+    #[test]
+    fn the_runtime_dll_declaration_is_additive_and_grammar_checked() {
+        // absent (older images) ⇒ no TEBAKO_RUNTIME_DLL export downstream
+        assert_eq!(
+            ImageLayout::check(GOOD, "/__tfs__", "/rt/ruby.tfs")
+                .unwrap()
+                .runtime_dll,
+            None
+        );
+        // declared (schema_minor 3) ⇒ the PE module basename flows
+        // verbatim (the reader — the tfs PE closure walk — lowercases
+        // for the windows loader's comparison)
+        let declared = format!("{GOOD}runtime_dll: x64-ucrt-ruby340.dll\n");
+        assert_eq!(
+            ImageLayout::check(&declared, "/__tfs__", "/rt/ruby.tfs")
+                .unwrap()
+                .runtime_dll
+                .as_deref(),
+            Some("x64-ucrt-ruby340.dll")
+        );
+        // an empty declaration is no declaration
+        let empty = format!("{GOOD}runtime_dll: \"\"\n");
+        assert_eq!(
+            ImageLayout::check(&empty, "/__tfs__", "/rt/ruby.tfs")
+                .unwrap()
+                .runtime_dll,
+            None
+        );
+        // a separator or drive qualifier is the declaration lying — a
+        // named 78, never a flowed path (the spec 03 §2.5 byte rule)
+        for bad in ["lib/x64-ucrt-ruby340.dll", "lib\\x.dll", "C:x.dll"] {
+            let text = format!("{GOOD}runtime_dll: {bad}\n");
+            let err = ImageLayout::check(&text, "/__tfs__", "/rt/ruby.tfs").unwrap_err();
+            assert_eq!(err.code, 78, "{bad}: {}", err.message);
+            assert!(err.message.contains(bad), "{err}");
+            assert!(err.message.contains("/rt/ruby.tfs"), "{err}");
+        }
     }
 
     #[test]
