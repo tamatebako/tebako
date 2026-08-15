@@ -1077,7 +1077,7 @@ impl FsContext {
     }
 
     /// One closure-extraction step: materialize `path` under the
-    /// destination root, then walk its Mach-O/ELF dependency closure
+    /// destination root, then walk its Mach-O/ELF/PE dependency closure
     /// recursively. `exe` is the original exec target
     /// (`@executable_path` anchor), `chain_rpaths` the rpaths
     /// accumulated down the load chain, `visited` the cycle-breaking
@@ -1190,9 +1190,13 @@ impl FsContext {
             }
         }
         for dep in &parsed.deps {
-            let Some(memfs) =
-                self.resolve_dep(dep, &referrer_dir, &exe_dir, &parsed.rpaths, &chain)
-            else {
+            let resolved = match parsed.format {
+                exec_closure::ImageFormat::Pe => self.resolve_pe_dep(dep, &referrer_dir),
+                exec_closure::ImageFormat::MachO | exec_closure::ImageFormat::Elf => {
+                    self.resolve_dep(dep, &referrer_dir, &exe_dir, &parsed.rpaths, &chain)
+                }
+            };
+            let Some(memfs) = resolved else {
                 continue;
             };
             if visited.contains(&memfs) {
@@ -1249,6 +1253,46 @@ impl FsContext {
             }
         }
         candidates.into_iter().find(|c| self.held_file(c))
+    }
+
+    /// Resolve one PE import name (spec 22 §2.1 — no rpath exists on
+    /// PE). API-set contracts (`api-ms-win-*` / `ext-ms-win-*`) are
+    /// pseudo-modules the OS resolves internally — host surface by
+    /// construction, skipped unconditionally. The runtime's own DLL
+    /// (the PE name the handoff env names via `TEBAKO_RUNTIME_DLL`) is
+    /// never materialized from a payload: the OS's basename-reuse rule
+    /// binds the already-loaded copy, and a vendored copy would be a
+    /// dead file written for no binding. A bare name resolves against
+    /// the IMPORTING image's own in-image directory only (the $ORIGIN
+    /// analogue — never a cross-mount basename probe); a
+    /// separator-carrying name resolves verbatim when rooted,
+    /// referrer-relative otherwise, normalized. A name the mounts do
+    /// not hold at that candidate is a HOST import (None) — the OS
+    /// loader answers for it exactly as before.
+    fn resolve_pe_dep(&self, name: &str, referrer_dir: &str) -> Option<String> {
+        let lower = name.to_ascii_lowercase();
+        if lower.starts_with("api-ms-win-") || lower.starts_with("ext-ms-win-") {
+            return None;
+        }
+        if runtime_dll_name().as_deref() == Some(lower.as_str()) {
+            return None;
+        }
+        // The windows loader's separator is '\\' as often as '/'; the
+        // memfs tree spells only '/'.
+        let name = &name.replace('\\', "/");
+        let rooted = name.starts_with('/')
+            || (name.len() >= 3
+                && name.as_bytes()[0].is_ascii_alphabetic()
+                && name.as_bytes()[1] == b':'
+                && name.as_bytes()[2] == b'/');
+        let candidate = if rooted {
+            Self::normalize(name)
+        } else {
+            // Bare and relative names alike anchor at the importer's
+            // own directory — the one and only PE candidate.
+            Self::normalize(&format!("{referrer_dir}/{name}"))
+        };
+        self.held_file(&candidate).then_some(candidate)
     }
 
     /// True when `path` is held by a mount as a regular file.
@@ -1341,6 +1385,18 @@ fn expand_loader_vars(template: &str, referrer_dir: &str, exe_dir: &str) -> Stri
         .replace("@executable_path", exe_dir)
         .replace("@loader_path", referrer_dir)
         .replace("$ORIGIN", referrer_dir)
+}
+
+/// The runtime's own windows DLL name (the PE name the factory owns —
+/// spec 22 §2.1's closure-walk exclusion), named by the handoff env,
+/// lowercased for the windows loader's case-insensitive comparison.
+/// None when the leg never names one (every POSIX leg; windows legs
+/// before the driver wires the flow) — no exclusion then.
+fn runtime_dll_name() -> Option<String> {
+    std::env::var("TEBAKO_RUNTIME_DLL")
+        .ok()
+        .filter(|v| !v.is_empty())
+        .map(|v| v.to_ascii_lowercase())
 }
 
 /// Open a materialized dlmap copy for real (no TEBAKO_FD_FLAG): the
@@ -1802,6 +1858,346 @@ mod tests {
         let root = host.parent().unwrap().parent().unwrap();
         assert!(!root.join("lib/modules").exists());
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---------------------------------------------------------------
+    // PE exec-closure walk (spec 22 §2.1)
+    // ---------------------------------------------------------------
+
+    /// A minimal PE32+ image with an import directory naming `imports`
+    /// and a delay-load import directory naming `delay_imports` (the
+    /// same byte construction as exec_closure's pe64_fixture — fixture
+    /// builders stay local to their test module, like macho64_fixture).
+    fn pe64_fixture(imports: &[&str], delay_imports: &[&str]) -> Vec<u8> {
+        const HEADERS: usize = 0x200;
+        const SECTION_RVA: u32 = 0x1000;
+        let import_dir_size = (imports.len() + 1) * 20;
+        // Section body: the import descriptors (+ all-zero terminator),
+        // then the import name strings, then the delay-load descriptors
+        // (+ terminator) and their name strings.
+        let mut section = vec![0u8; import_dir_size];
+        let mut import_name_rvas = Vec::new();
+        for name in imports {
+            import_name_rvas.push(SECTION_RVA + section.len() as u32);
+            section.extend_from_slice(name.as_bytes());
+            section.push(0);
+        }
+        let delay_base = section.len();
+        let delay_dir_rva = SECTION_RVA + delay_base as u32;
+        let mut delay_name_rvas = Vec::new();
+        if !delay_imports.is_empty() {
+            section.resize(section.len() + (delay_imports.len() + 1) * 20, 0);
+            for name in delay_imports {
+                delay_name_rvas.push(SECTION_RVA + section.len() as u32);
+                section.extend_from_slice(name.as_bytes());
+                section.push(0);
+            }
+        }
+        let mut out = vec![0u8; HEADERS];
+        out[0..2].copy_from_slice(b"MZ");
+        out[0x3C..0x40].copy_from_slice(&0x80_u32.to_le_bytes()); // e_lfanew
+        out[0x80..0x84].copy_from_slice(b"PE\0\0");
+        let coff = 0x84;
+        out[coff..coff + 2].copy_from_slice(&0x8664_u16.to_le_bytes()); // AMD64
+        out[coff + 2..coff + 4].copy_from_slice(&1_u16.to_le_bytes()); // sections
+        out[coff + 16..coff + 18].copy_from_slice(&240_u16.to_le_bytes()); // opt hdr
+        let opt = coff + 20;
+        out[opt..opt + 2].copy_from_slice(&0x20B_u16.to_le_bytes()); // PE32+
+        out[opt + 60..opt + 64].copy_from_slice(&(HEADERS as u32).to_le_bytes());
+        out[opt + 108..opt + 112].copy_from_slice(&16_u32.to_le_bytes()); // dirs count
+        let dirs = opt + 112;
+        out[dirs + 8..dirs + 12].copy_from_slice(&SECTION_RVA.to_le_bytes());
+        out[dirs + 12..dirs + 16].copy_from_slice(&(import_dir_size as u32).to_le_bytes());
+        // Delay-load import directory (index 13) — present, never read.
+        if !delay_imports.is_empty() {
+            let d = dirs + 13 * 8;
+            out[d..d + 4].copy_from_slice(&delay_dir_rva.to_le_bytes());
+            out[d + 4..d + 8]
+                .copy_from_slice(&(((delay_imports.len() + 1) * 20) as u32).to_le_bytes());
+        }
+        // The one section header: .rdata, RVA 0x1000 → file HEADERS.
+        let sec = opt + 240;
+        out[sec..sec + 6].copy_from_slice(b".rdata");
+        out[sec + 8..sec + 12].copy_from_slice(&(section.len() as u32).to_le_bytes());
+        out[sec + 12..sec + 16].copy_from_slice(&SECTION_RVA.to_le_bytes());
+        out[sec + 16..sec + 20].copy_from_slice(&(section.len() as u32).to_le_bytes());
+        out[sec + 20..sec + 24].copy_from_slice(&(HEADERS as u32).to_le_bytes());
+        out.extend_from_slice(&section);
+        for (i, rva) in import_name_rvas.iter().enumerate() {
+            let at = HEADERS + i * 20;
+            out[at..at + 4].copy_from_slice(&1_u32.to_le_bytes()); // OriginalFirstThunk
+            out[at + 12..at + 16].copy_from_slice(&rva.to_le_bytes()); // Name
+            out[at + 16..at + 20].copy_from_slice(&1_u32.to_le_bytes()); // FirstThunk
+        }
+        for (i, rva) in delay_name_rvas.iter().enumerate() {
+            let at = HEADERS + delay_base + i * 20;
+            out[at..at + 4].copy_from_slice(&1_u32.to_le_bytes());
+            out[at + 12..at + 16].copy_from_slice(&rva.to_le_bytes());
+            out[at + 16..at + 20].copy_from_slice(&1_u32.to_le_bytes());
+        }
+        out
+    }
+
+    /// Mount a host-dir fixture tree at `point` on a fresh context.
+    fn mount_hostdir(ctx: &mut FsContext, dir: &std::path::Path, point: &str) {
+        let backend = crate::backends_hostdir::HostDirBackend::new(dir).unwrap();
+        let mount = Mount {
+            handle: 0,
+            mount_point: point.to_string(),
+            mount_point_c: Box::new(std::ffi::CString::new(point).unwrap()),
+            archive_path: None,
+            backend: Box::new(backend),
+            mode: crate::mount::MountMode::ReadOnly,
+        };
+        ctx.mount_checked(mount).unwrap();
+    }
+
+    #[test]
+    fn pe_closure_walk_materializes_the_importer_dir_tree() {
+        // spec 22 §2.1: bare imports resolve against the IMPORTING
+        // image's own in-image directory (the $ORIGIN analogue);
+        // separator-carrying names resolve referrer-relative, or
+        // verbatim when rooted ('/' or '\', normalized); the closure
+        // recurses with a visited set. Everything lands at its mirrored
+        // path under the destination root.
+        let dir = std::env::temp_dir().join(format!("tfs-pe-walk-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("bin/sub")).unwrap();
+        std::fs::write(img.join("rooted.dll"), pe64_fixture(&[], &[])).unwrap();
+        std::fs::write(
+            img.join("bin/tool.dll"),
+            pe64_fixture(
+                &[
+                    "sibling.dll",
+                    "sub/helper.dll",
+                    "sub\\nested.dll",
+                    "/tfs/rooted.dll",
+                ],
+                &[],
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            img.join("bin/sibling.dll"),
+            pe64_fixture(&["deeper.dll"], &[]),
+        )
+        .unwrap();
+        std::fs::write(img.join("bin/deeper.dll"), pe64_fixture(&[], &[])).unwrap();
+        std::fs::write(img.join("bin/sub/helper.dll"), pe64_fixture(&[], &[])).unwrap();
+        std::fs::write(img.join("bin/sub/nested.dll"), pe64_fixture(&[], &[])).unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &img, "/tfs");
+        let host = ctx
+            .extract_exec_closure("/tfs/bin/tool.dll", &dest)
+            .unwrap();
+
+        assert_eq!(host, dest.join("tfs/bin/tool.dll"));
+        for p in [
+            "tfs/bin/sibling.dll",    // bare, the importer's own dir
+            "tfs/bin/deeper.dll",     // transitive (sibling's bare import)
+            "tfs/bin/sub/helper.dll", // referrer-relative
+            "tfs/bin/sub/nested.dll", // '\' separator, referrer-relative
+            "tfs/rooted.dll",         // rooted, verbatim
+        ] {
+            assert!(dest.join(p).is_file(), "the closure lands at {p}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pe_closure_bare_import_never_probes_beyond_the_importers_dir() {
+        // spec 22 §2.1: importer-dir-only — a bare import the mounts do
+        // not hold AT the importer's own directory is a HOST import (the
+        // OS loader answers for it). Never a sibling-directory guess,
+        // never a cross-mount basename probe: /tfs-b/bin/lonely.dll
+        // (the same in-image relative dir in a SECOND image) must not
+        // serve /tfs-a/bin/tool.dll's import.
+        let dir = std::env::temp_dir().join(format!("tfs-pe-neg-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img_a = dir.join("img-a");
+        let img_b = dir.join("img-b");
+        std::fs::create_dir_all(img_a.join("bin")).unwrap();
+        std::fs::create_dir_all(img_a.join("lib")).unwrap();
+        std::fs::create_dir_all(img_b.join("bin")).unwrap();
+        std::fs::write(
+            img_a.join("bin/tool.dll"),
+            pe64_fixture(&["lonely.dll"], &[]),
+        )
+        .unwrap();
+        // The wrong directory of the SAME image…
+        std::fs::write(img_a.join("lib/lonely.dll"), pe64_fixture(&[], &[])).unwrap();
+        // …and the SAME relative directory of another image.
+        std::fs::write(img_b.join("bin/lonely.dll"), pe64_fixture(&[], &[])).unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &img_a, "/tfs-a");
+        mount_hostdir(&mut ctx, &img_b, "/tfs-b");
+        let host = ctx
+            .extract_exec_closure("/tfs-a/bin/tool.dll", &dest)
+            .unwrap();
+
+        assert!(host.is_file());
+        assert!(
+            !dest.join("tfs-a/bin/lonely.dll").exists(),
+            "the bare import is not satisfied from the other image's bin/"
+        );
+        assert!(
+            !dest.join("tfs-a/lib/lonely.dll").exists(),
+            "the bare import is not satisfied from a sibling directory"
+        );
+        assert!(!dest.join("tfs-b/bin/lonely.dll").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pe_closure_skips_api_set_contracts_even_when_held() {
+        // spec 22 §2.1: api-ms-win-* / ext-ms-win-* pseudo-modules are
+        // host surface by construction — skipped unconditionally, even
+        // when the image HOLDS a file by that name next to the importer
+        // (a vendored trap file must never materialize). The comparison
+        // is case-insensitive, like the windows loader's own.
+        let dir = std::env::temp_dir().join(format!("tfs-pe-apiset-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("bin")).unwrap();
+        std::fs::write(
+            img.join("bin/tool.dll"),
+            pe64_fixture(
+                &[
+                    "api-ms-win-core-file-l1-1-0.dll",
+                    "EXT-MS-WIN-NTUSER-STRING-L1-1-0.DLL",
+                    "real.dll",
+                ],
+                &[],
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            img.join("bin/api-ms-win-core-file-l1-1-0.dll"),
+            pe64_fixture(&[], &[]),
+        )
+        .unwrap();
+        std::fs::write(
+            img.join("bin/EXT-MS-WIN-NTUSER-STRING-L1-1-0.DLL"),
+            pe64_fixture(&[], &[]),
+        )
+        .unwrap();
+        std::fs::write(img.join("bin/real.dll"), pe64_fixture(&[], &[])).unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &img, "/tfs");
+        ctx.extract_exec_closure("/tfs/bin/tool.dll", &dest)
+            .unwrap();
+
+        assert!(dest.join("tfs/bin/real.dll").is_file());
+        assert!(!dest
+            .join("tfs/bin/api-ms-win-core-file-l1-1-0.dll")
+            .exists());
+        assert!(!dest
+            .join("tfs/bin/EXT-MS-WIN-NTUSER-STRING-L1-1-0.DLL")
+            .exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pe_closure_ignores_delay_load_imports() {
+        // spec 22 §2.1: delay-load is out of phase W — the delay
+        // directory is never read, so a planted delayed.dll never
+        // materializes (an honest OS failure at load, never a guess).
+        let dir = std::env::temp_dir().join(format!("tfs-pe-delay-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("bin")).unwrap();
+        std::fs::write(
+            img.join("bin/tool.dll"),
+            pe64_fixture(&[], &["delayed.dll"]),
+        )
+        .unwrap();
+        std::fs::write(img.join("bin/delayed.dll"), pe64_fixture(&[], &[])).unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &img, "/tfs");
+        ctx.extract_exec_closure("/tfs/bin/tool.dll", &dest)
+            .unwrap();
+
+        assert!(dest.join("tfs/bin/tool.dll").is_file());
+        assert!(!dest.join("tfs/bin/delayed.dll").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pe_closure_never_materializes_the_runtime_dll() {
+        // spec 22 §2.1: the runtime's own ruby DLL (the PE name the
+        // handoff env names via TEBAKO_RUNTIME_DLL) is never
+        // materialized from a payload — the OS's basename-reuse rule
+        // binds the already-loaded copy, so a vendored copy would be a
+        // dead file written for no binding. Case-insensitive, like the
+        // windows loader's own comparison.
+        std::env::set_var("TEBAKO_RUNTIME_DLL", "x64-ucrt-ruby999.dll");
+        let dir = std::env::temp_dir().join(format!("tfs-pe-rubydll-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("bin")).unwrap();
+        std::fs::write(
+            img.join("bin/tool.dll"),
+            pe64_fixture(
+                &["x64-ucrt-ruby999.dll", "X64-UCRT-RUBY999.DLL", "real.dll"],
+                &[],
+            ),
+        )
+        .unwrap();
+        std::fs::write(img.join("bin/x64-ucrt-ruby999.dll"), pe64_fixture(&[], &[])).unwrap();
+        std::fs::write(img.join("bin/real.dll"), pe64_fixture(&[], &[])).unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &img, "/tfs");
+        ctx.extract_exec_closure("/tfs/bin/tool.dll", &dest)
+            .unwrap();
+        std::env::remove_var("TEBAKO_RUNTIME_DLL");
+
+        assert!(dest.join("tfs/bin/real.dll").is_file());
+        assert!(
+            !dest.join("tfs/bin/x64-ucrt-ruby999.dll").exists(),
+            "the runtime's own DLL stays off disk even when a payload vendors it"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pe_closure_treats_a_malformed_image_as_dependency_free() {
+        // The named answer for a malformed PE is no-dependencies (the
+        // parse answers None): the image itself still materializes and
+        // the OS loader answers for its imports — never a panic, never
+        // a parse error surfaced on the extraction path.
+        let dir = std::env::temp_dir().join(format!("tfs-pe-bad-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("bin")).unwrap();
+        let mut bad = pe64_fixture(&["sibling.dll"], &[]);
+        bad[0x80..0x84].copy_from_slice(b"PX\0\0"); // a broken PE signature
+        std::fs::write(img.join("bin/tool.dll"), &bad).unwrap();
+        std::fs::write(img.join("bin/sibling.dll"), pe64_fixture(&[], &[])).unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &img, "/tfs");
+        let host = ctx
+            .extract_exec_closure("/tfs/bin/tool.dll", &dest)
+            .unwrap();
+
+        assert!(host.is_file(), "the malformed image itself still lands");
+        assert!(
+            !dest.join("tfs/bin/sibling.dll").exists(),
+            "no dependencies are read from a malformed image"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
