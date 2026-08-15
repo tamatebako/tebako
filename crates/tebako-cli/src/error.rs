@@ -55,7 +55,10 @@ pub fn packaging_message(code: i32) -> Option<&'static str> {
         126 => "Invalid stitch specification",
         127 => "Stitch input file is not accessible",
         128 => "Prebuilt runtime press requires the packaging environment (run 'tebako setup' first)",
-        129 => "The resolved runtime package does not carry the tebako-runtime gem",
+        // 129 was the v1-parity verify_runtime_gem! gate, retired by spec 22
+        // phase M2 (the env image carries no tebako-runtime gem by design);
+        // the row stays as the gem's table mirror, the code stays reserved.
+        129 => "The resolved runtime package does not carry the tebako-runtime gem (retired: spec 22 M2 env images are gem-less)",
         130 => "Option combination is not supported",
         // 131/132/134 were emitted by the retired v1 C++ tebako-bootstrap
         // download path (and its fat-mode version guard); the rows stay as
