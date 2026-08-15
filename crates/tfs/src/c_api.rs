@@ -970,6 +970,51 @@ pub unsafe extern "C" fn tebako_fs_extract_all(dest_path: *const c_char) -> libc
 // Dynamic Loading Support
 // ===================================================================
 
+/// `tebako_fs_dlalias2file`: the windows bare-name alias verdict at
+/// load time (spec 22 §2.1, phase W2 — the covered surface's check; the
+/// patched msys `dln.c` calls this for a presented name). A BARE name
+/// (no path separator, no drive qualifier) matching a boot-registered
+/// `library_aliases:` declaration VERBATIM, case-insensitively, answers
+/// the alias's boot-materialized absolute host path; a path-carrying or
+/// undeclared name is NULL with ENOENT (host-by-default — the name
+/// passes to the OS loader untouched); a registered alias whose
+/// materialized copy vanished under the process is NULL with EIO (the
+/// tamper case — the C side raises the §5 verdict LoadError, never a
+/// host shadow). The returned string is heap-allocated with libc
+/// `malloc` — the C contract says the caller releases it with `free()`
+/// (the `tebako_fs_dlmap2file` ownership contract).
+///
+/// # Safety
+/// `name` must be a valid C string.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_fs_dlalias2file(name: *const c_char) -> *mut c_char {
+    let name = match unsafe { path_arg(name) } {
+        Ok(n) => n,
+        Err(e) => {
+            fail(e);
+            return std::ptr::null_mut();
+        }
+    };
+    let host = match context().read().unwrap().dlalias2file(name) {
+        Ok(h) => h,
+        Err(e) => {
+            fail(e);
+            return std::ptr::null_mut();
+        }
+    };
+    // Allocate with libc malloc so the C caller can free() the string.
+    let bytes = host.as_bytes_with_nul();
+    // SAFETY: malloc'd buffer of bytes.len(); copy then hand over ownership.
+    let out = unsafe { libc::malloc(bytes.len()).cast::<c_char>() };
+    if out.is_null() {
+        fail(libc::ENOMEM);
+        return std::ptr::null_mut();
+    }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr().cast(), out, bytes.len()) };
+    set_errno(0);
+    out
+}
+
 /// `tebako_fs_dlmap2file`: the returned string is heap-allocated with
 /// libc `malloc` — the C contract says the caller releases it with `free()`.
 ///

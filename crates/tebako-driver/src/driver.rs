@@ -766,13 +766,16 @@ pub fn boot_with_mount_modes(
             // the interpreter runs (spec 22 §4 class R — the cert case).
             crate::materialize::extract(&h.images, env, runtime_root)?;
             // Windows Class L (spec 22 §2.1): boot-materialize every
-            // declared library alias and lead PATH with the
+            // declared library alias, register the (name → host path)
+            // table for the covered surface's `tebako_fs_dlalias2file`
+            // (the patched dln.c route), and lead PATH with the
             // materialized dirs — the raw LoadLibrary surface's
             // interception-free answer.
             #[cfg(windows)]
             {
-                let alias_dirs = crate::alias::extract(&h.images, env, runtime_root)?;
-                crate::alias::export_path(env, &alias_dirs);
+                let alias_boot = crate::alias::extract(&h.images, env, runtime_root)?;
+                crate::alias::register(&alias_boot);
+                crate::alias::export_path(env, &alias_boot.dirs);
             }
             // The standalone interpreter spawns too — arm its children
             // the same way (spec 22 §3).
@@ -803,14 +806,17 @@ pub fn boot_with_mount_modes(
         crate::materialize::extract(&h.images, env, runtime_root)?;
         // Windows Class L (spec 22 §2.1, phase W2): boot-materialize
         // every co-mounted image's declared library aliases (the app
-        // payload's included) and join the materialized dirs to the PATH
-        // lead — BEFORE path_env::export prepends the §3.2 bin dirs in
-        // front, so the exec surface's locked lead order stays
+        // payload's included), register the (name → host path) table
+        // for the covered surface's `tebako_fs_dlalias2file` (the
+        // patched dln.c route), and join the materialized dirs to the
+        // PATH lead — BEFORE path_env::export prepends the §3.2 bin
+        // dirs in front, so the exec surface's locked lead order stays
         // byte-stable (… launcher → bins → alias dirs → inherited).
         #[cfg(windows)]
         {
-            let alias_dirs = crate::alias::extract(&h.images, env, runtime_root)?;
-            crate::alias::export_path(env, &alias_dirs);
+            let alias_boot = crate::alias::extract(&h.images, env, runtime_root)?;
+            crate::alias::register(&alias_boot);
+            crate::alias::export_path(env, &alias_boot.dirs);
         }
         // The mounts are established — publish the discovery surface
         // (spec 22 §6; v2-1/20), arm the children (spec 22 §3), and wire

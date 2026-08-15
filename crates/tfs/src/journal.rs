@@ -61,6 +61,11 @@ pub const OVERLAY_EVENT: &str = "overlay";
 /// MATERIAL never touches a journal (spec 11 §11's log discipline).
 pub const DECRYPT_EVENT: &str = "decrypt";
 
+/// The event name every library-load verdict line carries (spec 22
+/// §2.1 phase W2 — the windows bare-name alias rule's audit, in spec 23
+/// §8's record-mode idiom).
+pub const LIB_LOAD_EVENT: &str = "lib-load";
+
 /// Resolve and open the journal file for append (creating the tebako home
 /// if needed). Call it at POLICY-INSTALL time, BEFORE the context guard is
 /// taken — never from inside a `host_check` (see the module docs). `None`
@@ -90,6 +95,33 @@ pub fn journal_deny(file: &std::fs::File, path: &Path, need: HostAccess, source:
 /// through). Same fd discipline and line shape as [`journal_deny`].
 pub fn journal_allow(file: &std::fs::File, path: &Path, need: HostAccess, source: &str) {
     journal_event(file, JAIL_ALLOW_EVENT, path, need, source);
+}
+
+/// Append one library-load verdict line — `<ts> event=lib-load name=<n>
+/// verdict=host|alias`. The windows bare-name alias rule's record
+/// (spec 22 §2.1 phase W2): emitted where the verdict is MADE (the
+/// `tebako_fs_dlalias2file` decision), never at boot — a boot decides
+/// nothing. Rides the same journal file under the record policy (the §8
+/// discovery instrument: one record-mode run shows the author every
+/// bare name a loader presented and which way it went); the `tfs needs`
+/// generator skips the event (its parser knows only the jail events).
+/// Same fd discipline as [`journal_deny`].
+pub fn journal_lib_load(file: &std::fs::File, name: &str, verdict: &str) {
+    use std::io::Write as _;
+    let line = format!(
+        "{} event={LIB_LOAD_EVENT} name={name} verdict={verdict}\n",
+        unix_now()
+    );
+    let _ = (&*file).write_all(line.as_bytes());
+}
+
+/// The journal timestamp: unix seconds (0 before the epoch — a clock
+/// failure never fails the audited operation).
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// The shared line writer: `<ts> event=<event> path=<p> op=read|write
@@ -384,6 +416,38 @@ mod tests {
                 "event=decrypt mount=/data recipient=pgp:3c8dba971d2b4f01 grants=g1,g2",
             ]
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn journal_lib_load_line_shape() {
+        // The bare-name alias rule's verdict line (spec 22 §2.1 phase
+        // W2, spec 23 §8's idiom): name + verdict, no path/op fields.
+        // (Private dir: the deny/allow tests above share this process —
+        // a shared journal path would interleave.)
+        let dir =
+            std::env::temp_dir().join(format!("tfs-journal-libload-test-{}", std::process::id()));
+        let log = dir.join("journal.log");
+        std::env::set_var("TEBAKO_JAIL_JOURNAL", &log);
+        let file = open_journal().expect("journal opens");
+        std::env::remove_var("TEBAKO_JAIL_JOURNAL");
+        journal_lib_load(&file, "libfoo-3.dll", "alias");
+        journal_lib_load(&file, "user32", "host");
+        drop(file);
+        let text = std::fs::read_to_string(&log).unwrap();
+        let mut lines = text.lines();
+        let line = lines.next().unwrap();
+        let (ts, rest) = line.split_once(' ').unwrap();
+        assert!(
+            ts.bytes().all(|b| b.is_ascii_digit()) && !ts.is_empty(),
+            "{line}"
+        );
+        assert_eq!(rest, "event=lib-load name=libfoo-3.dll verdict=alias");
+        assert_eq!(
+            lines.next().unwrap().split_once(' ').unwrap().1,
+            "event=lib-load name=user32 verdict=host"
+        );
+        assert!(lines.next().is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

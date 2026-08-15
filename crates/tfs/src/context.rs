@@ -108,6 +108,15 @@ pub struct DirState {
     pub current: Box<TebakoCDirent>,
 }
 
+/// One registered library alias (spec 22 §2.1, phase W2): the declared
+/// bare name (the manifest's own spelling — the match is
+/// case-insensitive, the spelling is preserved for the journal) and the
+/// alias target's boot-materialized absolute host path.
+struct DlAlias {
+    name: String,
+    host: std::path::PathBuf,
+}
+
 /// The process-global context state (behind a lock; see [`context`]).
 pub struct FsContext {
     mounts: BTreeMap<i32, Mount>,
@@ -144,6 +153,15 @@ pub struct FsContext {
     /// rationale). Follows the policy: replaced alongside it, left alone
     /// by `unmount()`.
     journal: Option<std::fs::File>,
+    /// The boot's registered library-alias table (spec 22 §2.1, phase
+    /// W2 — the windows bare-name rule's covered surface): declared bare
+    /// name → the target's boot-materialized absolute host path.
+    /// Installed by the driver after the class-L extraction pass
+    /// (windows boots only — the registration channel itself is
+    /// platform-neutral); the DEFAULT empty table answers every name
+    /// HOST, the bare-name rule's default. Process state like the
+    /// policy: `unmount()` deliberately leaves it.
+    dlaliases: Vec<DlAlias>,
 }
 
 impl FsContext {
@@ -162,6 +180,7 @@ impl FsContext {
             home_trees: BTreeSet::new(),
             host_policy: HostPolicy::open(),
             journal: None,
+            dlaliases: Vec::new(),
         }
     }
 
@@ -932,6 +951,88 @@ impl FsContext {
             }
         }
         Ok(skipped)
+    }
+
+    // ---------------------------------------------------------------
+    // Library aliases (spec 22 §2.1, phase W2)
+    // ---------------------------------------------------------------
+
+    /// Install the boot's library-alias table: plain (declared bare
+    /// name, boot-materialized absolute host path) pairs from the
+    /// driver's class-L extraction pass — the channel's only writer
+    /// (windows boots gate the call site; the channel itself is
+    /// platform-neutral). The driver registers only manifest-validated
+    /// declarations, so the pairs are trusted as-is — tfs stays
+    /// tpkg-free. Replaces any previous table; the default empty table
+    /// answers every name HOST.
+    pub fn register_dlaliases(&mut self, pairs: Vec<(String, std::path::PathBuf)>) {
+        self.dlaliases = pairs
+            .into_iter()
+            .map(|(name, host)| DlAlias { name, host })
+            .collect();
+    }
+
+    /// tebako_fs_dlalias2file: the bare-name alias verdict at LOAD time
+    /// — the covered surface's decision point (the patched msys `dln.c`
+    /// calls this for a presented name; spec 22 §2.1, phase W2).
+    ///
+    /// - A BARE name (no path separator, no drive qualifier — the byte
+    ///   grammar is this entry's own test, the same rule the manifest's
+    ///   `library_aliases:` validation enforces) matching a registered
+    ///   alias VERBATIM, case-insensitively (never extension-completed:
+    ///   `foo` does not match `foo.dll`) answers the alias's
+    ///   boot-materialized absolute host path — the `alias` verdict.
+    /// - A path-carrying name never reaches the alias rule (the path
+    ///   surface is Rule L1's): ENOENT, and NO verdict exists — nothing
+    ///   is journaled (the spec journals bare-name verdicts only).
+    /// - An undeclared bare name is HOST by default: ENOENT, the
+    ///   `host` verdict — the consumer passes the presented name to the
+    ///   OS loader untouched.
+    /// - A registered alias whose materialized path VANISHED under the
+    ///   process is the cache tampered with: EIO — deliberately NOT
+    ///   ENOENT, so the C side raises the §5 verdict LoadError instead
+    ///   of falling through to a host shadow (the verdict was `alias`;
+    ///   the failure is post-verdict).
+    ///
+    /// The verdict line (`event=lib-load name=<n> verdict=host|alias`)
+    /// is journaled where the verdict is MADE — here — under the RECORD
+    /// policy only (spec 23 §8's discovery instrument; production stays
+    /// silent), on the pre-opened audit file: a bare write(2), never a
+    /// path operation under the lock (the journal module's fd
+    /// discipline). The tamper failure's reporting channel is the §5
+    /// LoadError, not the journal. The covered path's existence probe
+    /// under the guard is safe: a non-empty table exists only on
+    /// windows boots, where no syscall interposition can re-enter.
+    pub fn dlalias2file(&self, name: &str) -> Result<std::ffi::CString, i32> {
+        if name.bytes().any(|b| b == b'/' || b == b'\\' || b == b':') {
+            // Not a bare name — the alias rule never engages; no
+            // bare-name verdict exists, so nothing is journaled.
+            return Err(libc::ENOENT);
+        }
+        let Some(alias) = self
+            .dlaliases
+            .iter()
+            .find(|a| a.name.eq_ignore_ascii_case(name))
+        else {
+            self.journal_lib_load(name, "host");
+            return Err(libc::ENOENT);
+        };
+        self.journal_lib_load(name, "alias");
+        if !alias.host.exists() {
+            return Err(libc::EIO);
+        }
+        std::ffi::CString::new(alias.host.to_string_lossy().into_owned()).map_err(|_| libc::EIO)
+    }
+
+    /// One lib-load verdict line on the audit journal, under the record
+    /// policy only — the helper keeps `dlalias2file` to one journal call
+    /// site per verdict.
+    fn journal_lib_load(&self, name: &str, verdict: &str) {
+        if self.host_policy.is_record() {
+            if let Some(journal) = &self.journal {
+                crate::journal::journal_lib_load(journal, name, verdict);
+            }
+        }
     }
 
     // ---------------------------------------------------------------
@@ -1861,6 +1962,156 @@ mod tests {
         let mut ctx2 = FsContext::new();
         ctx2.set_host_policy(crate::policy::HostPolicy::open(), Some(journal2));
         assert_eq!(ctx2.host_check("/etc/hosts", HostAccess::Ro), Ok(()));
+        drop(ctx2);
+        let text2 = std::fs::read_to_string(&log).unwrap();
+        assert_eq!(
+            text2.lines().count(),
+            2,
+            "open policy journals nothing: {text2}"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A fresh context with one registered alias whose materialized host
+    /// copy is a real temp file (the covered verdict re-probes the host
+    /// path — the tamper case's discriminator).
+    fn ctx_with_one_alias(dir: &std::path::Path) -> (FsContext, std::path::PathBuf) {
+        std::fs::create_dir_all(dir).unwrap();
+        let host = dir.join("libfoo-3.dll");
+        std::fs::write(&host, b"pe").unwrap();
+        let mut ctx = FsContext::new();
+        ctx.register_dlaliases(vec![("libfoo-3.dll".to_string(), host.clone())]);
+        (ctx, host)
+    }
+
+    #[test]
+    fn dlalias2file_matches_verbatim_case_insensitively() {
+        let dir = std::env::temp_dir().join(format!("tfs-dlalias-match-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (ctx, host) = ctx_with_one_alias(&dir);
+        let want = host.to_string_lossy().into_owned();
+        // The windows loader's own comparison: case-insensitive…
+        assert_eq!(
+            ctx.dlalias2file("LIBFOO-3.DLL").unwrap().to_str().unwrap(),
+            want
+        );
+        assert_eq!(
+            ctx.dlalias2file("LibFoo-3.Dll").unwrap().to_str().unwrap(),
+            want
+        );
+        // …but verbatim: never extension-completed, never a basename
+        // probe, never a prefix.
+        assert_eq!(ctx.dlalias2file("libfoo-3"), Err(libc::ENOENT));
+        assert_eq!(ctx.dlalias2file("libfoo-3.dll.dll"), Err(libc::ENOENT));
+        // An undeclared bare name is host-by-default — the rule's whole
+        // point.
+        assert_eq!(ctx.dlalias2file("user32"), Err(libc::ENOENT));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dlalias2file_only_bare_names_reach_the_rule() {
+        let dir = std::env::temp_dir().join(format!("tfs-dlalias-bare-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (ctx, _host) = ctx_with_one_alias(&dir);
+        // A separator or a drive qualifier makes the name path surface
+        // (Rule L1) — never an alias, even when the basename matches.
+        assert_eq!(
+            ctx.dlalias2file("/vendor/lib/libfoo-3.dll"),
+            Err(libc::ENOENT)
+        );
+        assert_eq!(ctx.dlalias2file("lib\\libfoo-3.dll"), Err(libc::ENOENT));
+        assert_eq!(ctx.dlalias2file("C:\\lib\\libfoo-3.dll"), Err(libc::ENOENT));
+        assert_eq!(ctx.dlalias2file("C:libfoo-3.dll"), Err(libc::ENOENT));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dlalias2file_empty_table_answers_everything_host() {
+        // The default state (no driver registration — every POSIX boot):
+        // every name is HOST, no probe, no journal.
+        let ctx = FsContext::new();
+        assert_eq!(ctx.dlalias2file("user32"), Err(libc::ENOENT));
+        assert_eq!(ctx.dlalias2file("libfoo-3.dll"), Err(libc::ENOENT));
+    }
+
+    #[test]
+    fn dlalias2file_vanished_materialization_is_eio_never_enoent() {
+        // A registered alias whose materialized copy vanished under the
+        // process is the cache tampered with: EIO — deliberately NOT
+        // ENOENT, so the C side raises the §5 verdict LoadError instead
+        // of falling through to a host shadow.
+        let dir = std::env::temp_dir().join(format!("tfs-dlalias-eio-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (ctx, host) = ctx_with_one_alias(&dir);
+        std::fs::remove_file(&host).unwrap();
+        assert_eq!(ctx.dlalias2file("libfoo-3.dll"), Err(libc::EIO));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dlalias2file_journals_verdicts_under_record_only() {
+        // The lib-load verdict line is the record mode's discovery
+        // instrument (spec 23 §8's idiom): under a record policy both
+        // verdicts journal; under the default open policy nothing does
+        // (production stays silent — the tamper case's reporting channel
+        // is the §5 LoadError, not the journal).
+        let dir = std::env::temp_dir().join(format!("tfs-dlalias-journal-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("journal.log");
+        let journal = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+
+        let (mut ctx, host) = ctx_with_one_alias(&dir);
+        ctx.set_host_policy(
+            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Record, vec![], vec![])
+                .unwrap(),
+            Some(journal),
+        );
+        let covered = ctx.dlalias2file("libfoo-3.dll").unwrap();
+        assert_eq!(covered.to_str().unwrap(), host.to_string_lossy().as_ref());
+        assert_eq!(ctx.dlalias2file("user32"), Err(libc::ENOENT));
+        // A path-carrying name has no bare-name verdict at all — the
+        // spec journals bare-name verdicts only.
+        assert_eq!(
+            ctx.dlalias2file("/vendor/lib/libfoo-3.dll"),
+            Err(libc::ENOENT)
+        );
+        drop(ctx);
+        let text = std::fs::read_to_string(&log).unwrap();
+        let mut lines = text.lines();
+        assert!(
+            lines
+                .next()
+                .unwrap()
+                .contains("event=lib-load name=libfoo-3.dll verdict=alias"),
+            "{text}"
+        );
+        assert!(
+            lines
+                .next()
+                .unwrap()
+                .contains("event=lib-load name=user32 verdict=host"),
+            "{text}"
+        );
+        assert!(lines.next().is_none(), "{text}");
+
+        // The open policy journals no verdicts (the jail-allow precedent:
+        // no noise outside record mode).
+        let journal2 = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+        let (mut ctx2, _host2) = ctx_with_one_alias(&dir);
+        ctx2.set_host_policy(crate::policy::HostPolicy::open(), Some(journal2));
+        assert!(ctx2.dlalias2file("libfoo-3.dll").is_ok());
+        assert_eq!(ctx2.dlalias2file("user32"), Err(libc::ENOENT));
         drop(ctx2);
         let text2 = std::fs::read_to_string(&log).unwrap();
         assert_eq!(
