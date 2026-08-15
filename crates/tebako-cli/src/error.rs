@@ -69,7 +69,19 @@ pub fn packaging_message(code: i32) -> Option<&'static str> {
                  tebako-runtime-ruby pipeline and resolved automatically by the lean/fat/classic modes",
         134 => "Fat mode requires a payload-capable tebako-bootstrap release",
         135 => "Failed to provision the runtime SDK for native extension builds",
+        // 136 was the fail-closed refusal of the local-only press (#405);
+        // the spec 19 §4 store flow superseded it — the row stays, the
+        // code stays reserved.
         136 => "Press requires a local Rust tebako-bootstrap binary (the v1 C++ bootstrap download is retired)",
+        // 137-142: the spec 19 §4 bootstrap store flow (the Rust
+        // tebako-bootstrap from the product's own releases) — the
+        // bootstrap parallel of the runtime rows 120-125.
+        137 => "No tebako-bootstrap asset for the requested platform in the tebako release",
+        138 => "TEBAKO_OFFLINE is set and the requested tebako-bootstrap is not cached",
+        139 => "SHA256 checksum mismatch for the downloaded tebako-bootstrap",
+        140 => "Failed to download the tebako-bootstrap",
+        141 => "The tebako release carries no usable tebako-bootstrap index",
+        142 => "Timed out waiting for the tebako-bootstrap cache lock",
         201 => "Warning. Could not create cache version file",
         _ => return None,
     })

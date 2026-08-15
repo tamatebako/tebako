@@ -330,9 +330,9 @@ pub fn press_suite(
     }
     suite_warnings(opts, spec, suite_dir);
     let platform = host_platform()?;
-    // Local sources only — the retired C++ bootstrap download must never
-    // fire (exit 136 when no local Rust tebako-bootstrap is found).
-    let bootstrap_path = crate::local_bootstrap(opts)?;
+    // Local sources first, else the spec 19 §4 store flow — the retired
+    // v1 C++ bootstrap download never fires.
+    let bootstrap_path = crate::press_bootstrap(opts, &platform)?;
 
     // Per-entry imaging; runtimes resolve once per distinct ruby version.
     let mut runtimes: BTreeMap<String, Resolved> = BTreeMap::new();

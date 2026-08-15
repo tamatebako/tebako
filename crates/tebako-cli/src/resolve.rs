@@ -13,12 +13,19 @@
 //! into place with an atomic rename, so partial downloads never poison the
 //! cache.
 //!
-//! The gem's BootstrapManager half is NOT ported: the v1 C++
-//! tebako-bootstrap download is retired (its argv0-verbatim handoff is
-//! rejected by the image-era runtime driver, so the fallback produced
-//! silently-broken packages). Pressing sources the bootstrap from local
-//! Rust binaries only and fails closed otherwise (src/lib.rs
-//! `local_bootstrap`, exit 136).
+//! The gem's BootstrapManager half is ported for the RUST bootstrap only
+//! (spec 19 §4): [`BootstrapResolver`] resolves the per-triplet
+//! tebako-bootstrap published with the product's own releases
+//! (tamatebako/tebako — the CLI's own version) into
+//!   bootstraps/<version>-<triplet>/
+//!     tebako-bootstrap-<version>-<triplet>[.exe]
+//!     sha256    -- digest the installed file was verified against
+//!     origin    -- URL the asset was downloaded from
+//! with the runtime cache's exact discipline (release-index sha256
+//! verification, tmp + rename, per-entry flock). The v1 C++
+//! tebako-bootstrap download the gem's BootstrapManager fetched stays
+//! retired: its argv0-verbatim handoff is rejected by the image-era
+//! runtime driver, so the fallback produced silently-broken packages.
 
 use std::fs;
 #[cfg(unix)]
@@ -504,9 +511,7 @@ impl Resolver {
     }
 
     fn offline(&self) -> bool {
-        std::env::var("TEBAKO_OFFLINE")
-            .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
-            .unwrap_or(false)
+        offline_env()
     }
 
     fn offline_check(&self, entry_ref: &str, tebako_version: &str) -> Result<(), TebakoError> {
@@ -829,47 +834,7 @@ impl Resolver {
     where
         F: FnOnce() -> Result<(), TebakoError>,
     {
-        fs::create_dir_all(dir)
-            .map_err(|e| crate::error::plain_error(format!("{e} creating {}", dir.display())))?;
-        let lock_path = dir.join(LOCK_FILE);
-        let lock = fs::OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&lock_path)
-            .map_err(|e| {
-                crate::error::plain_error(format!("{e} opening {}", lock_path.display()))
-            })?;
-        self.acquire_lock(&lock, entry_ref, &lock_path)?;
-        let result = f();
-        flock(&lock, LOCK_UN);
-        result
-    }
-
-    fn acquire_lock(
-        &self,
-        lock: &fs::File,
-        entry_ref: &str,
-        lock_path: &Path,
-    ) -> Result<(), TebakoError> {
-        let deadline = std::time::Instant::now() + self.lock_timeout;
-        loop {
-            if flock(lock, LOCK_EX | LOCK_NB) {
-                return Ok(());
-            }
-            if std::time::Instant::now() >= deadline {
-                return Err(packaging_error(
-                    125,
-                    Some(&format!(
-                        "{entry_ref}: another process is installing this runtime (no lock after {}s; lockfile: {})",
-                        self.lock_timeout.as_secs(),
-                        lock_path.display()
-                    )),
-                ));
-            }
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
+        with_install_lock(dir, entry_ref, self.lock_timeout, "runtime", 125, f)
     }
 
     // ---- urls ------------------------------------------------------------
@@ -895,6 +860,434 @@ impl Resolver {
 
     fn package_url(&self, filename: &str, tebako_version: &str) -> String {
         format!("{}/{filename}", self.release_url(tebako_version))
+    }
+}
+
+// ---------------------------------------------------------------------
+// The Rust bootstrap store (spec 19 §4)
+// ---------------------------------------------------------------------
+
+/// The product's own release mirror — the per-triplet Rust
+/// tebako-bootstrap assets publish here (TEBAKO_BOOTSTRAP_MIRROR
+/// overrides; tests use file://).
+const DEFAULT_BOOTSTRAP_MIRROR: &str = "https://github.com/tamatebako/tebako/releases/download";
+const BOOTSTRAP_MIRROR_ENV_VAR: &str = "TEBAKO_BOOTSTRAP_MIRROR";
+/// The store subdirectory the bootstrap resolves into
+/// (`bootstraps/<version>-<triplet>/`, spec 19 §4).
+const BOOTSTRAP_CACHE_SUBDIR: &str = "bootstraps";
+/// The product release's index files, in preference order. The
+/// manifest's top-level `assets` array is exactly the bootstrap set and
+/// SHA256SUMS carries one line per tool asset (both authored by
+/// .github/workflows/lib/finalize.sh).
+const BOOTSTRAP_INDEX_FILES: &[&str] = &["manifest.json", "SHA256SUMS"];
+
+/// One bootstrap asset in the release index (platform + filename +
+/// expected sha256).
+#[derive(Debug, Clone)]
+pub struct BootstrapEntry {
+    pub platform: String,
+    pub filename: String,
+    pub sha256: String,
+}
+
+/// Resolves the Rust tebako-bootstrap a press stitches with (spec 19
+/// §4): the asset published with the product release matching the CLI's
+/// own version (`env!("CARGO_PKG_VERSION")` — the bootstrap and the CLI
+/// ship in one release, so the versions never drift). A store hit
+/// returns immediately (no lock, no network); a miss downloads the
+/// asset sha256-verified against the release index into
+/// `bootstraps/<version>-<triplet>/` under the entry lock, tmp + rename
+/// so a partial download stays invisible. `TEBAKO_OFFLINE=1` is
+/// cache-or-named-error (138).
+#[derive(Debug)]
+pub struct BootstrapResolver {
+    pub cache_root: PathBuf,
+    pub mirror: String,
+    pub version: String,
+    pub offline: bool,
+    pub lock_timeout: std::time::Duration,
+}
+
+impl Default for BootstrapResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BootstrapResolver {
+    pub fn new() -> Self {
+        let mirror = std::env::var(BOOTSTRAP_MIRROR_ENV_VAR)
+            .ok()
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| DEFAULT_BOOTSTRAP_MIRROR.to_string());
+        BootstrapResolver {
+            cache_root: default_cache_root(),
+            mirror: mirror.trim_end_matches('/').to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            offline: offline_env(),
+            lock_timeout: LOCK_TIMEOUT,
+        }
+    }
+
+    /// The bootstrap binary for `platform` (a release-asset triplet like
+    /// `macos-arm64`): the cached store entry when present, else the
+    /// downloaded + verified + installed one.
+    pub fn resolve(&self, platform: &str) -> Result<PathBuf, TebakoError> {
+        let dir = self.entry_dir(platform);
+        let binary = dir.join(self.filename(platform));
+        if binary.is_file() {
+            return Ok(binary);
+        }
+        with_install_lock(
+            &dir,
+            &self.entry_ref(platform),
+            self.lock_timeout,
+            "bootstrap",
+            142,
+            || {
+                // Re-check under the lock: a concurrent press may have
+                // installed the entry while we waited.
+                if binary.is_file() {
+                    return Ok(());
+                }
+                self.install(&binary, platform)
+            },
+        )?;
+        Ok(binary)
+    }
+
+    // ---- entry naming ----------------------------------------------------
+
+    fn entry_dir(&self, platform: &str) -> PathBuf {
+        self.cache_root
+            .join(BOOTSTRAP_CACHE_SUBDIR)
+            .join(format!("{}-{platform}", self.version))
+    }
+
+    fn filename(&self, platform: &str) -> String {
+        let suffix = if platform.starts_with("windows") {
+            ".exe"
+        } else {
+            ""
+        };
+        format!("tebako-bootstrap-{}-{platform}{suffix}", self.version)
+    }
+
+    fn entry_ref(&self, platform: &str) -> String {
+        format!("tebako-bootstrap@{} ({platform})", self.version)
+    }
+
+    // ---- install pipeline ------------------------------------------------
+
+    fn install(&self, binary: &Path, platform: &str) -> Result<(), TebakoError> {
+        let entry_ref = self.entry_ref(platform);
+        self.offline_check(&entry_ref)?;
+        let index = self.fetch_index()?;
+        let entry = self.find_entry(&index, platform)?;
+        let url = self.asset_url(&entry.filename);
+        let tmp = self.download(&url, &entry.filename)?;
+        self.verify(&tmp, entry)?;
+        self.place(&tmp, binary, entry, &url)?;
+        Ok(())
+    }
+
+    fn offline_check(&self, entry_ref: &str) -> Result<(), TebakoError> {
+        if !self.offline {
+            return Ok(());
+        }
+        Err(packaging_error(
+            138,
+            Some(&format!(
+                "{} is not cached and downloads are disabled (release index: {}; {}={})",
+                entry_ref,
+                self.index_urls().join(", "),
+                BOOTSTRAP_MIRROR_ENV_VAR,
+                self.mirror
+            )),
+        ))
+    }
+
+    fn find_entry<'a>(
+        &self,
+        index: &'a [BootstrapEntry],
+        platform: &str,
+    ) -> Result<&'a BootstrapEntry, TebakoError> {
+        if let Some(entry) = index.iter().find(|e| e.platform == platform) {
+            return Ok(entry);
+        }
+        let combos: Vec<String> = index.iter().map(|e| e.platform.clone()).collect();
+        Err(packaging_error(
+            137,
+            Some(&format!(
+                "no tebako-bootstrap asset for {platform} (tebako {}). Available: {}. Set --bootstrap or $TEBAKO_BOOTSTRAP to a local Rust tebako-bootstrap instead.",
+                self.version,
+                combos.join(", ")
+            )),
+        ))
+    }
+
+    fn verify(&self, tmp: &Path, entry: &BootstrapEntry) -> Result<(), TebakoError> {
+        let actual = sha256_file_hex(tmp)
+            .ok_or_else(|| packaging_error(139, Some(&format!("cannot hash {}", tmp.display()))))?;
+        let expected = entry.sha256.to_ascii_lowercase();
+        if actual == expected {
+            return Ok(());
+        }
+        let _ = fs::remove_file(tmp);
+        Err(packaging_error(
+            139,
+            Some(&format!(
+                "{}: expected {expected}, got {actual}; download deleted",
+                entry.filename
+            )),
+        ))
+    }
+
+    fn place(
+        &self,
+        tmp: &Path,
+        binary: &Path,
+        entry: &BootstrapEntry,
+        url: &str,
+    ) -> Result<(), TebakoError> {
+        let err = |e: std::io::Error| {
+            crate::error::plain_error(format!("{e} installing {}", binary.display()))
+        };
+        make_executable(tmp).map_err(err)?;
+        fs::rename(tmp, binary).map_err(err)?;
+        let dir = binary.parent().unwrap_or_else(|| Path::new("."));
+        fs::write(dir.join(SHA256_FILE), format!("{}\n", entry.sha256)).map_err(err)?;
+        fs::write(dir.join(ORIGIN_FILE), format!("{url}\n")).map_err(err)?;
+        Ok(())
+    }
+
+    fn fetch_index(&self) -> Result<Vec<BootstrapEntry>, TebakoError> {
+        let mut tried: Vec<String> = Vec::new();
+        for name in BOOTSTRAP_INDEX_FILES {
+            let url = self.index_url(name);
+            match fetch_text(&url) {
+                Ok(body) => match self.parse_index(name, &body) {
+                    Ok(entries) => return Ok(entries),
+                    Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                    Err(e @ FetchError::Throttled { .. }) => {
+                        return Err(packaging_error(140, Some(&e.to_string())));
+                    }
+                    Err(FetchError::DownloadFailed(msg)) => {
+                        return Err(packaging_error(140, Some(&msg)));
+                    }
+                },
+                Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                Err(e @ FetchError::Throttled { .. }) => {
+                    return Err(packaging_error(140, Some(&e.to_string())));
+                }
+                Err(FetchError::DownloadFailed(msg)) => {
+                    return Err(packaging_error(140, Some(&msg)))
+                }
+            }
+        }
+        Err(packaging_error(
+            141,
+            Some(&format!(
+                "the tebako release v{} provides no usable bootstrap index (tried: {})",
+                self.version,
+                tried.join(", ")
+            )),
+        ))
+    }
+
+    fn parse_index(&self, name: &str, body: &str) -> Result<Vec<BootstrapEntry>, FetchError> {
+        if name == "manifest.json" {
+            self.parse_manifest(body)
+        } else {
+            Ok(self.parse_sha256sums(body))
+        }
+    }
+
+    /// The product release's manifest.json is an object whose top-level
+    /// `assets` array is exactly the bootstrap set ({platform, file,
+    /// sha256, size_bytes} — authored by finalize.sh; the per-tool
+    /// `tools` map never leaks into it).
+    fn parse_manifest(&self, body: &str) -> Result<Vec<BootstrapEntry>, FetchError> {
+        let data = json_parse(body).map_err(|_| {
+            FetchError::IndexUnavailable("manifest.json is not valid JSON".to_string())
+        })?;
+        let Some(JsonValue::Array(assets)) = data.find("assets").cloned() else {
+            return Err(FetchError::IndexUnavailable(
+                "manifest.json has no assets array".to_string(),
+            ));
+        };
+        Ok(assets
+            .iter()
+            .filter(|a| {
+                a.find("platform").and_then(|v| v.as_string()).is_some()
+                    && a.find("file").and_then(|v| v.as_string()).is_some()
+                    && a.find("sha256").and_then(|v| v.as_string()).is_some()
+            })
+            .map(|a| BootstrapEntry {
+                platform: a
+                    .find("platform")
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default(),
+                filename: a
+                    .find("file")
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default(),
+                sha256: a
+                    .find("sha256")
+                    .and_then(|v| v.as_string())
+                    .unwrap_or_default()
+                    .to_ascii_lowercase(),
+            })
+            .collect())
+    }
+
+    /// `<sha256>  <filename>` lines; filenames may carry a `*` prefix.
+    /// Only the `tebako-bootstrap-<version>-` lines are bootstrap assets
+    /// — the product's SHA256SUMS carries every tool's lines (tfs,
+    /// tebako-pkg, tebako, tebako-shim, the link-unit tarballs).
+    fn parse_sha256sums(&self, body: &str) -> Vec<BootstrapEntry> {
+        let mut out: Vec<BootstrapEntry> = Vec::new();
+        let prefix = format!("tebako-bootstrap-{}-", self.version);
+        for line in body.lines() {
+            let mut parts = line.trim().splitn(2, char::is_whitespace);
+            let (Some(sha256), Some(file)) = (parts.next(), parts.next()) else {
+                continue;
+            };
+            let file = file.trim().trim_start_matches('*');
+            let Some(rest) = file.strip_prefix(&prefix) else {
+                continue;
+            };
+            let platform = rest.strip_suffix(".exe").unwrap_or(rest);
+            if platform.is_empty() {
+                continue;
+            }
+            out.push(BootstrapEntry {
+                platform: platform.to_string(),
+                filename: file.to_string(),
+                sha256: sha256.to_ascii_lowercase(),
+            });
+        }
+        out
+    }
+
+    fn download(&self, url: &str, filename: &str) -> Result<PathBuf, TebakoError> {
+        let tmp_dir = self.cache_root.join(TMP_DIR);
+        fs::create_dir_all(&tmp_dir).map_err(|e| {
+            crate::error::plain_error(format!("{e} creating {}", tmp_dir.display()))
+        })?;
+        let tmp = tmp_dir.join(format!("{filename}.{}.part", std::process::id()));
+        match fetch_bytes(url) {
+            Ok(bytes) => {
+                if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(packaging_error(140, Some(&format!("{e} writing {url}"))));
+                }
+                Ok(tmp)
+            }
+            Err(FetchError::IndexUnavailable(_)) => {
+                let _ = fs::remove_file(&tmp);
+                Err(packaging_error(140, Some(&format!("{url}: not found"))))
+            }
+            Err(e @ FetchError::Throttled { .. }) => {
+                let _ = fs::remove_file(&tmp);
+                Err(packaging_error(140, Some(&e.to_string())))
+            }
+            Err(FetchError::DownloadFailed(msg)) => {
+                let _ = fs::remove_file(&tmp);
+                Err(packaging_error(140, Some(&msg)))
+            }
+        }
+    }
+
+    // ---- urls ------------------------------------------------------------
+
+    fn release_url(&self) -> String {
+        format!(
+            "{}/v{}",
+            self.mirror,
+            self.version.strip_prefix('v').unwrap_or(&self.version)
+        )
+    }
+
+    fn index_url(&self, name: &str) -> String {
+        format!("{}/{name}", self.release_url())
+    }
+
+    fn index_urls(&self) -> Vec<String> {
+        BOOTSTRAP_INDEX_FILES
+            .iter()
+            .map(|n| self.index_url(n))
+            .collect()
+    }
+
+    fn asset_url(&self, filename: &str) -> String {
+        format!("{}/{filename}", self.release_url())
+    }
+}
+
+/// TEBAKO_OFFLINE (1/true/yes, case-insensitive): every resolution is
+/// cache-or-named-error, never a silent fetch.
+fn offline_env() -> bool {
+    std::env::var("TEBAKO_OFFLINE")
+        .map(|v| matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
+}
+
+/// The store's per-entry install lock (the `.install.lock` file inside
+/// the entry directory): exclusive flock with a bounded wait, then `f`.
+/// A contended lock past `timeout` is the named error `code` naming the
+/// artifact kind (`noun`) — 125 for runtimes, 142 for bootstraps.
+fn with_install_lock<F>(
+    dir: &Path,
+    entry_ref: &str,
+    timeout: std::time::Duration,
+    noun: &str,
+    code: i32,
+    f: F,
+) -> Result<(), TebakoError>
+where
+    F: FnOnce() -> Result<(), TebakoError>,
+{
+    fs::create_dir_all(dir)
+        .map_err(|e| crate::error::plain_error(format!("{e} creating {}", dir.display())))?;
+    let lock_path = dir.join(LOCK_FILE);
+    let lock = fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| crate::error::plain_error(format!("{e} opening {}", lock_path.display())))?;
+    acquire_install_lock(&lock, entry_ref, &lock_path, timeout, noun, code)?;
+    let result = f();
+    flock(&lock, LOCK_UN);
+    result
+}
+
+fn acquire_install_lock(
+    lock: &fs::File,
+    entry_ref: &str,
+    lock_path: &Path,
+    timeout: std::time::Duration,
+    noun: &str,
+    code: i32,
+) -> Result<(), TebakoError> {
+    let deadline = std::time::Instant::now() + timeout;
+    loop {
+        if flock(lock, LOCK_EX | LOCK_NB) {
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err(packaging_error(
+                code,
+                Some(&format!(
+                    "{entry_ref}: another process is installing this {noun} (no lock after {}s; lockfile: {})",
+                    timeout.as_secs(),
+                    lock_path.display()
+                )),
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
     }
 }
 
@@ -1377,6 +1770,189 @@ mod tests {
         assert_eq!(err.code, 122);
         assert!(err.message.contains("bare file name"), "{}", err.message);
         assert!(!cache.join("runtimes").join("evil.dll").exists());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    // ---- spec 19 §4: the Rust bootstrap store ---------------------------
+
+    /// A scratch (cache root, release mirror) pair in the product
+    /// release's shape (finalize.sh): the tebako-bootstrap asset plus
+    /// both index files — manifest.json's top-level `assets` IS the
+    /// bootstrap set (a `tools` entry rides along and must not leak in)
+    /// and SHA256SUMS carries every tool's lines. `tamper` poisons the
+    /// declared sha.
+    fn boot_mirror(tag: &str, tamper: bool) -> (PathBuf, PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-resolve-boot-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = dir.join("home");
+        let release = dir.join("mirror").join("v0.1.8");
+        fs::create_dir_all(&release).unwrap();
+        let asset = "tebako-bootstrap-0.1.8-macos-arm64";
+        fs::write(release.join(asset), b"fake rust bootstrap\n").unwrap();
+        let declared = if tamper {
+            "f".repeat(64)
+        } else {
+            sha256_file_hex(&release.join(asset)).unwrap()
+        };
+        let manifest = format!(
+            r#"{{"name":"tebako-rs","version":"0.1.8","assets":[{{"platform":"macos-arm64","file":"{asset}","sha256":"{declared}","size_bytes":19}}],"tools":{{"tfs":[{{"platform":"macos-arm64","file":"tfs-0.1.8-macos-arm64","sha256":"{}","size_bytes":5}}]}}}}"#,
+            "0".repeat(64)
+        );
+        fs::write(release.join("manifest.json"), manifest).unwrap();
+        let sums = format!(
+            "{declared}  {asset}\n{}  tfs-0.1.8-macos-arm64\n{}  tebako-0.1.8-macos-arm64\n{}  tebako-bootstrap-0.1.7-macos-arm64\n{}  link-unit-0.1.8-macos-arm64.tar.gz\n",
+            "0".repeat(64),
+            "1".repeat(64),
+            "2".repeat(64),
+            "3".repeat(64)
+        );
+        fs::write(release.join("SHA256SUMS"), sums).unwrap();
+        (cache, dir.join("mirror"))
+    }
+
+    fn boot_resolver(cache: &Path, mirror: &Path, offline: bool) -> BootstrapResolver {
+        BootstrapResolver {
+            cache_root: cache.to_path_buf(),
+            mirror: format!("file://{}", mirror.display()),
+            version: "0.1.8".to_string(),
+            offline,
+            lock_timeout: LOCK_TIMEOUT,
+        }
+    }
+
+    fn boot_entry_dir(cache: &Path) -> PathBuf {
+        cache.join("bootstraps").join("0.1.8-macos-arm64")
+    }
+
+    #[test]
+    fn bootstrap_manifest_object_parses_the_assets_array() {
+        let (cache, mirror) = boot_mirror("parse-manifest", false);
+        let r = boot_resolver(&cache, &mirror, false);
+        let body = fs::read_to_string(mirror.join("v0.1.8").join("manifest.json")).unwrap();
+        let entries = r.parse_manifest(&body).unwrap();
+        assert_eq!(entries.len(), 1, "the tools map never leaks in");
+        assert_eq!(entries[0].platform, "macos-arm64");
+        assert_eq!(entries[0].filename, "tebako-bootstrap-0.1.8-macos-arm64");
+        // the array shape is mandatory — an object manifest is unusable
+        let err = r.parse_manifest("[{\"platform\":\"x\"}]").unwrap_err();
+        assert!(matches!(err, FetchError::IndexUnavailable(_)));
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn bootstrap_sha256sums_keeps_only_the_versioned_bootstrap_lines() {
+        let (cache, mirror) = boot_mirror("parse-sums", false);
+        let r = boot_resolver(&cache, &mirror, false);
+        let body = fs::read_to_string(mirror.join("v0.1.8").join("SHA256SUMS")).unwrap();
+        let entries = r.parse_sha256sums(&body);
+        // tfs-/tebako-/link-unit- lines and the OTHER version's bootstrap
+        // line are all filtered out
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].platform, "macos-arm64");
+        assert_eq!(entries[0].filename, "tebako-bootstrap-0.1.8-macos-arm64");
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_bootstrap_installs_from_the_manifest_with_markers() {
+        let (cache, mirror) = boot_mirror("install", false);
+        let r = boot_resolver(&cache, &mirror, false);
+        let path = r.resolve("macos-arm64").unwrap();
+        let dir = boot_entry_dir(&cache);
+        assert_eq!(path, dir.join("tebako-bootstrap-0.1.8-macos-arm64"));
+        assert!(path.is_file());
+        assert_eq!(
+            fs::read_to_string(dir.join("sha256")).unwrap(),
+            format!("{}\n", sha256_file_hex(&path).unwrap())
+        );
+        assert_eq!(
+            fs::read_to_string(dir.join("origin")).unwrap(),
+            format!(
+                "file://{}/v0.1.8/tebako-bootstrap-0.1.8-macos-arm64\n",
+                mirror.display()
+            )
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(path.metadata().unwrap().permissions().mode() & 0o777, 0o755);
+        }
+        // a cache hit needs no mirror at all (a run is a run, offline-safe)
+        fs::remove_dir_all(&mirror).unwrap();
+        let offline_hit = boot_resolver(&cache, &mirror, true);
+        assert_eq!(offline_hit.resolve("macos-arm64").unwrap(), path);
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_bootstrap_falls_back_to_sha256sums() {
+        let (cache, mirror) = boot_mirror("sums", false);
+        fs::remove_file(mirror.join("v0.1.8").join("manifest.json")).unwrap();
+        let r = boot_resolver(&cache, &mirror, false);
+        let path = r.resolve("macos-arm64").unwrap();
+        assert!(path.is_file());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_bootstrap_wrong_sha_is_a_named_error() {
+        let (cache, mirror) = boot_mirror("badsha", true);
+        let r = boot_resolver(&cache, &mirror, false);
+        let err = r.resolve("macos-arm64").unwrap_err();
+        assert_eq!(err.code, 139);
+        assert!(err.message.contains("download deleted"), "{}", err.message);
+        assert!(!boot_entry_dir(&cache)
+            .join("tebako-bootstrap-0.1.8-macos-arm64")
+            .exists());
+        assert!(
+            !fs::read_dir(cache.join(TMP_DIR))
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .any(|e| e.file_name().to_string_lossy().contains("tebako-bootstrap")),
+            "the failed download was deleted"
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_bootstrap_offline_miss_is_a_named_error() {
+        let (cache, mirror) = boot_mirror("offline", false);
+        let r = boot_resolver(&cache, &mirror, true);
+        let err = r.resolve("macos-arm64").unwrap_err();
+        assert_eq!(err.code, 138);
+        assert!(err.message.contains("not cached"), "{}", err.message);
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_bootstrap_unknown_platform_is_a_named_error() {
+        let (cache, mirror) = boot_mirror("noplatform", false);
+        let r = boot_resolver(&cache, &mirror, false);
+        let err = r.resolve("plan9-s390x").unwrap_err();
+        assert_eq!(err.code, 137);
+        assert!(
+            err.message.contains("macos-arm64"),
+            "the available list is named: {}",
+            err.message
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_bootstrap_without_an_index_is_a_named_error() {
+        let (cache, mirror) = boot_mirror("noindex", false);
+        let release = mirror.join("v0.1.8");
+        fs::remove_file(release.join("manifest.json")).unwrap();
+        fs::remove_file(release.join("SHA256SUMS")).unwrap();
+        let r = boot_resolver(&cache, &mirror, false);
+        let err = r.resolve("macos-arm64").unwrap_err();
+        assert_eq!(err.code, 141);
+        assert!(
+            err.message.contains("no usable bootstrap index"),
+            "{}",
+            err.message
+        );
         let _ = fs::remove_dir_all(cache.parent().unwrap());
     }
 }
