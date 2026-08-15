@@ -8,7 +8,10 @@
 //! (bare files whole; package files by trailer region) → install
 //! the jail policy (after the mounts — spec 08 §3) → materialize each
 //! mounted image's declared `materialize:` resources into the exec
-//! cache (spec 22 §4 class R) → resolve and verify
+//! cache (spec 22 §4 class R) → on windows, boot-materialize every
+//! co-mounted image's declared `library_aliases:` and join the
+//! materialized dirs to the PATH lead (spec 22 §2.1 — the raw
+//! LoadLibrary surface) → resolve and verify
 //! the entry → rewrite argv. Any failure unmounts everything: never a
 //! partial mount.
 
@@ -762,6 +765,15 @@ pub fn boot_with_mount_modes(
             // The env image's own declared resources materialize before
             // the interpreter runs (spec 22 §4 class R — the cert case).
             crate::materialize::extract(&h.images, env, runtime_root)?;
+            // Windows Class L (spec 22 §2.1): boot-materialize every
+            // declared library alias and lead PATH with the
+            // materialized dirs — the raw LoadLibrary surface's
+            // interception-free answer.
+            #[cfg(windows)]
+            {
+                let alias_dirs = crate::alias::extract(&h.images, env, runtime_root)?;
+                crate::alias::export_path(env, &alias_dirs);
+            }
             // The standalone interpreter spawns too — arm its children
             // the same way (spec 22 §3).
             crate::injection::export(env, declaration.as_ref(), runtime_root)?;
@@ -789,6 +801,17 @@ pub fn boot_with_mount_modes(
         // the jail, before any handoff (spec 22 §4 class R — Rule R3
         // fails the boot by name).
         crate::materialize::extract(&h.images, env, runtime_root)?;
+        // Windows Class L (spec 22 §2.1, phase W2): boot-materialize
+        // every co-mounted image's declared library aliases (the app
+        // payload's included) and join the materialized dirs to the PATH
+        // lead — BEFORE path_env::export prepends the §3.2 bin dirs in
+        // front, so the exec surface's locked lead order stays
+        // byte-stable (… launcher → bins → alias dirs → inherited).
+        #[cfg(windows)]
+        {
+            let alias_dirs = crate::alias::extract(&h.images, env, runtime_root)?;
+            crate::alias::export_path(env, &alias_dirs);
+        }
         // The mounts are established — publish the discovery surface
         // (spec 22 §6; v2-1/20), arm the children (spec 22 §3), and wire
         // the dependency bins onto PATH (spec 22 §3.2 — the launcher

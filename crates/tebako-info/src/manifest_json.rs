@@ -403,6 +403,22 @@ pub fn manifest_to_json(m: &PayloadManifest) -> Json {
             Json::Array(m.materialize.iter().map(|p| s(p)).collect()),
         ));
     }
+    if !m.library_aliases.is_empty() {
+        out.push((
+            "library_aliases".to_string(),
+            Json::Array(
+                m.library_aliases
+                    .iter()
+                    .map(|a| {
+                        Json::Object(vec![
+                            ("name".to_string(), s(&a.name)),
+                            ("path".to_string(), s(&a.path)),
+                        ])
+                    })
+                    .collect(),
+            ),
+        ));
+    }
     Json::Object(out)
 }
 
@@ -488,6 +504,37 @@ mod tests {
             reqs[1].find("mount").unwrap().as_string().as_deref(),
             Some("/__layers__/gtk")
         );
+    }
+
+    #[test]
+    fn library_aliases_map_and_omit() {
+        // spec 03 §2.5 (schema_minor 2): the additive key maps 1:1…
+        let m = PayloadManifest::from_yaml(
+            "identity:\n  schema_version: 1\n  kind: data\n  name: x\n  version: \"1\"\n  \
+             producer: {tool: t, tool_version: \"1\"}\n  created: \"2026-08-15T00:00:00Z\"\n  \
+             digest: {tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\", \
+             blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1}\n  \
+             signing: {state: unsigned}\n  encryption: {state: none}\n\
+             provides:\n  mount_semantics: {suggested: /usr/share/x}\n  capabilities: {exec: false, read: true}\n\
+             library_aliases:\n  - {name: libfoo-3.dll, path: /lib/libfoo-3.dll}\n",
+        )
+        .unwrap();
+        let j = manifest_to_json(&m);
+        let Json::Array(aliases) = j.find("library_aliases").unwrap() else {
+            panic!("library_aliases must be an array");
+        };
+        assert_eq!(aliases.len(), 1);
+        assert_eq!(
+            aliases[0].find("name").unwrap().as_string().as_deref(),
+            Some("libfoo-3.dll")
+        );
+        assert_eq!(
+            aliases[0].find("path").unwrap().as_string().as_deref(),
+            Some("/lib/libfoo-3.dll")
+        );
+        // …and an alias-less manifest omits the key (never a null).
+        let j = manifest_to_json(&fixture());
+        assert!(j.find("library_aliases").is_none());
     }
 
     #[test]

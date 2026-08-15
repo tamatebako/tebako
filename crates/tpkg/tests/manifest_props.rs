@@ -64,6 +64,14 @@ fn arb_path() -> impl Strategy<Value = String> {
     prop::collection::vec(arb_name(), 1..=3).prop_map(|segs| format!("/{}", segs.join("/")))
 }
 
+/// spec 03 §2.5: a bare name (the generated names carry no separator
+/// and no drive qualifier) resolving to an in-image absolute path. The
+/// index suffix keeps names unique within one image — the validation
+/// rejects a case-insensitive duplicate.
+fn arb_alias() -> impl Strategy<Value = LibraryAlias> {
+    (arb_name(), arb_path()).prop_map(|(name, path)| LibraryAlias { name, path })
+}
+
 fn arb_signing() -> impl Strategy<Value = Signing> {
     prop_oneof![
         Just(Signing {
@@ -280,16 +288,23 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
             prop::collection::vec(arb_requirement(), 0..=3),
             // spec 22 §4 class R: absolute escape-free in-image paths.
             prop::collection::vec(arb_path(), 0..=2),
+            // spec 03 §2.5: bare names, unique per image (indexed).
+            prop::collection::vec(arb_alias(), 0..=2),
         )
     })
-    .prop_map(
-        |(identity, provides, requires, materialize)| PayloadManifest {
+    .prop_map(|(identity, provides, requires, materialize, aliases)| {
+        let mut library_aliases = aliases;
+        for (i, a) in library_aliases.iter_mut().enumerate() {
+            a.name = format!("{}{i}", a.name);
+        }
+        PayloadManifest {
             identity,
             provides,
             requires,
             materialize,
-        },
-    )
+            library_aliases,
+        }
+    })
 }
 
 proptest! {

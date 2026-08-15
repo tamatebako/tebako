@@ -270,6 +270,38 @@ fn materialize_key_is_schema_legal() {
 }
 
 #[test]
+fn library_aliases_key_is_schema_legal() {
+    // spec 03 §2.5 / spec 22 §2.1 (schema_minor 2): the additive
+    // `library_aliases:` key — the versioned JSON Schema admits it and
+    // the model round-trips it (the windows Class-L bare-name
+    // declarations).
+    let text = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-ruby\n  version: 4.0.6\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-15T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: ruby, version: 4.0.6, abi_line: \"4.0\", platform: x86_64-windows-ucrt}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n\
+        library_aliases:\n  - {name: libfoo-3.dll, path: /lib/libfoo-3.dll}\n";
+    let m = PayloadManifest::from_yaml(text).unwrap();
+    assert_eq!(
+        m.library_aliases,
+        vec![LibraryAlias {
+            name: "libfoo-3.dll".to_string(),
+            path: "/lib/libfoo-3.dll".to_string(),
+        }]
+    );
+    // …and the schema agrees (MECE cross-check).
+    let validator = schema_validator();
+    validator
+        .validate(&yaml_text_to_json(text))
+        .expect("library_aliases: is schema-legal");
+    let back = PayloadManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, m);
+}
+
+#[test]
 fn unknown_keys_are_tolerated_annotations_preserved() {
     let text = read(&fixture_path("data"));
     let with_extras = format!(
