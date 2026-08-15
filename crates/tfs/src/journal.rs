@@ -40,6 +40,27 @@ pub const JAIL_DENY_EVENT: &str = "jail-deny";
 /// The event name every record-mode allow line carries (spec 23 §8).
 pub const JAIL_ALLOW_EVENT: &str = "jail-allow";
 
+/// The event name every VFS write-gate denial carries (spec 24 §5): a
+/// write into a held tree the composition did not open (EROFS), or —
+/// with `class=ekey` — a read of a sealed path outside every opened
+/// grant (ENOKEY).
+pub const VFS_DENY_EVENT: &str = "vfs-deny";
+
+/// The event name record-mode VFS writes carry (spec 24 §6): under
+/// `policy: record` a write into a held tree lands in the run's scratch
+/// overlay and is journaled, never denied.
+pub const VFS_WRITE_EVENT: &str = "vfs-write";
+
+/// The event name of the boot-time overlay binding record (spec 24 §8
+/// audit): which store serves which mount, and whether the binding was
+/// declared or ephemeral.
+pub const OVERLAY_EVENT: &str = "overlay";
+
+/// The event name of the boot-time decrypt binding record (spec 24 §8
+/// audit): which recipient reference opened which grants on a mount. Key
+/// MATERIAL never touches a journal (spec 11 §11's log discipline).
+pub const DECRYPT_EVENT: &str = "decrypt";
+
 /// Resolve and open the journal file for append (creating the tebako home
 /// if needed). Call it at POLICY-INSTALL time, BEFORE the context guard is
 /// taken — never from inside a `host_check` (see the module docs). `None`
@@ -74,26 +95,98 @@ pub fn journal_allow(file: &std::fs::File, path: &Path, need: HostAccess, source
 /// The shared line writer: `<ts> event=<event> path=<p> op=read|write
 /// source=<s>` — a bare `write(2)` on the pre-opened file.
 fn journal_event(file: &std::fs::File, event: &str, path: &Path, need: HostAccess, source: &str) {
-    use std::io::Write as _;
     let op = match need {
         HostAccess::Ro => "read",
         HostAccess::Rw => "write",
     };
+    journal_fields(
+        file,
+        &format!(
+            "event={event} path={} op={} source={}",
+            path.display(),
+            op,
+            if source.is_empty() {
+                "unattributed"
+            } else {
+                source
+            }
+        ),
+    );
+}
+
+/// Append one VFS write-gate denial line (spec 24 §5):
+/// `<ts> event=vfs-deny op=read|write path=<p> mount=<mp>[ class=ekey]`.
+/// The path is the FULL namespace path (the mount-relative form is the
+/// needs generator's job); `class` is the denial's errno class when it
+/// is not the plain EROFS write gate (`ekey` = ENOKEY, the sealed read).
+/// Same fd discipline and best-effort rule as [`journal_deny`].
+pub fn journal_vfs_deny(
+    file: &std::fs::File,
+    path: &Path,
+    need: HostAccess,
+    mount: &str,
+    class: Option<&str>,
+) {
+    let op = match need {
+        HostAccess::Ro => "read",
+        HostAccess::Rw => "write",
+    };
+    let class = class.map(|c| format!(" class={c}")).unwrap_or_default();
+    journal_fields(
+        file,
+        &format!(
+            "event={VFS_DENY_EVENT} op={op} path={} mount={mount}{class}",
+            path.display()
+        ),
+    );
+}
+
+/// Append one record-mode VFS write line (spec 24 §6):
+/// `<ts> event=vfs-write path=<p> mount=<mp>` — the write landed in the
+/// run's scratch overlay; the payload observed a writable world it never
+/// owned.
+pub fn journal_vfs_write(file: &std::fs::File, path: &Path, mount: &str) {
+    journal_fields(
+        file,
+        &format!(
+            "event={VFS_WRITE_EVENT} path={} mount={mount}",
+            path.display()
+        ),
+    );
+}
+
+/// Append the boot-time overlay binding record (spec 24 §8 audit):
+/// `<ts> event=overlay mount=<mp> store=<dir> source=<declared|ephemeral>`.
+pub fn journal_overlay(file: &std::fs::File, mount: &str, store: &Path, source: &str) {
+    journal_fields(
+        file,
+        &format!(
+            "event={OVERLAY_EVENT} mount={mount} store={} source={source}",
+            store.display()
+        ),
+    );
+}
+
+/// Append the boot-time decrypt binding record (spec 24 §8 audit):
+/// `<ts> event=decrypt mount=<mp> recipient=<pgp:keyid> grants=<ids>` —
+/// the recipient is the key REFERENCE, never material.
+pub fn journal_decrypt(file: &std::fs::File, mount: &str, recipient: &str, grants: &str) {
+    journal_fields(
+        file,
+        &format!("event={DECRYPT_EVENT} mount={mount} recipient={recipient} grants={grants}"),
+    );
+}
+
+/// The raw line writer: `<unix seconds> <fields>\n` — a bare `write(2)`
+/// on the pre-opened file; write failures are swallowed (best-effort by
+/// design: the journaled answer reaches the caller regardless).
+fn journal_fields(file: &std::fs::File, fields: &str) {
+    use std::io::Write as _;
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let line = format!(
-        "{now} event={event} path={} op={} source={}\n",
-        path.display(),
-        op,
-        if source.is_empty() {
-            "unattributed"
-        } else {
-            source
-        }
-    );
-    let _ = (&*file).write_all(line.as_bytes());
+    let _ = (&*file).write_all(format!("{now} {fields}\n").as_bytes());
 }
 
 /// The journal file under a tebako home (the bootstrap's convention).
@@ -244,6 +337,53 @@ mod tests {
             "event=jail-allow path=/tmp/x op=write source=record"
         );
         assert!(lines.next().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn vfs_and_binding_line_shapes() {
+        // The spec-24 vocabulary (§5/§6/§8): vfs-deny (with and without
+        // the ekey class), record-mode vfs-write, and the boot-time
+        // overlay/decrypt binding records. No env mutation — the file is
+        // handed in directly.
+        let dir = std::env::temp_dir().join(format!("tfs-journal-vfs-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("journal.log");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+        journal_vfs_deny(
+            &file,
+            Path::new("/app/var/cache/x"),
+            HostAccess::Rw,
+            "/app",
+            None,
+        );
+        journal_vfs_deny(
+            &file,
+            Path::new("/data/fonts/licensed/f.ttf"),
+            HostAccess::Ro,
+            "/data",
+            Some("ekey"),
+        );
+        journal_vfs_write(&file, Path::new("/app/var/cache/y"), "/app");
+        journal_overlay(&file, "/app", Path::new("/tmp/ov/app"), "ephemeral");
+        journal_decrypt(&file, "/data", "pgp:3c8dba971d2b4f01", "g1,g2");
+        drop(file);
+        let text = std::fs::read_to_string(&log).unwrap();
+        let bodies: Vec<&str> = text.lines().map(|l| l.split_once(' ').unwrap().1).collect();
+        assert_eq!(
+            bodies,
+            vec![
+                "event=vfs-deny op=write path=/app/var/cache/x mount=/app",
+                "event=vfs-deny op=read path=/data/fonts/licensed/f.ttf mount=/data class=ekey",
+                "event=vfs-write path=/app/var/cache/y mount=/app",
+                "event=overlay mount=/app store=/tmp/ov/app source=ephemeral",
+                "event=decrypt mount=/data recipient=pgp:3c8dba971d2b4f01 grants=g1,g2",
+            ]
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

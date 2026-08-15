@@ -693,12 +693,15 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file_with_mode(
         Ok(m) => m,
         Err(e) => return fail(e),
     };
-    let overlay_dir = match unsafe { optional_path_arg(overlay_dir) } {
-        Ok(o) => o,
+    // The C ABI speaks the ungated programmatic overlay form (a store
+    // directory, no declared write areas — spec 24's gated form is the
+    // declarative surface, bound by the resolver/driver chain).
+    let overlay = match unsafe { optional_path_arg(overlay_dir) } {
+        Ok(o) => o.map(mount::Overlay::new),
         Err(e) => return fail(e),
     };
     finish_mount(
-        mount::build_from_file_with_mode(archive_path, mount_point, mode, overlay_dir),
+        mount::build_from_file_with_mode(archive_path, mount_point, mode, overlay.as_ref()),
         out_handle,
     )
 }
@@ -765,8 +768,8 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file_at_with_mode(
         Ok(m) => m,
         Err(e) => return fail(e),
     };
-    let overlay_dir = match unsafe { optional_path_arg(overlay_dir) } {
-        Ok(o) => o,
+    let overlay = match unsafe { optional_path_arg(overlay_dir) } {
+        Ok(o) => o.map(mount::Overlay::new),
         Err(e) => return fail(e),
     };
     finish_mount(
@@ -776,7 +779,7 @@ pub unsafe extern "C" fn tebako_fs_mount_from_file_at_with_mode(
             length,
             mount_point,
             mode,
-            overlay_dir,
+            overlay.as_ref(),
         ),
         out_handle,
     )
@@ -834,13 +837,13 @@ pub unsafe extern "C" fn tebako_fs_mount_from_memory_with_mode(
         Ok(m) => m,
         Err(e) => return fail(e),
     };
-    let overlay_dir = match unsafe { optional_path_arg(overlay_dir) } {
-        Ok(o) => o,
+    let overlay = match unsafe { optional_path_arg(overlay_dir) } {
+        Ok(o) => o.map(mount::Overlay::new),
         Err(e) => return fail(e),
     };
     let data = unsafe { std::slice::from_raw_parts(data.cast::<u8>(), size) };
     finish_mount(
-        mount::build_from_memory_with_mode(data, mount_point, mode, overlay_dir),
+        mount::build_from_memory_with_mode(data, mount_point, mode, overlay.as_ref()),
         out_handle,
     )
 }

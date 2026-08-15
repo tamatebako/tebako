@@ -21,6 +21,21 @@
 //! lives inside it (`.tfs-whiteouts`) keeping the overlay self-contained.
 //! The journal file itself is hidden from the merged view.
 //!
+//! ## The declared write gate (spec 24 §5)
+//!
+//! [`CowBackend::new`] stacks the UNGATED programmatic form: every write
+//! lands in the overlay. [`CowBackend::with_write_areas`] stacks the GATED
+//! declarative form: the mount carries a declared write-area set (the
+//! slice's resolved `needs.write` paths) and a write outside every area is
+//! `EROFS` — nothing is transformed that was not declared. Areas are
+//! absolute in-image paths (`/app/var/cache`; `/` = the whole mount),
+//! normalized at construction to the backend convention (no leading or
+//! trailing `/`, `""` for the root); a write to an area itself or any
+//! path below it (component boundary — area `/a/b` never covers
+//! `/a/bc`) is permitted. All four write verbs (`pwrite`, `truncate`,
+//! `mkdir`, `remove`) are gated; reads are never gated. The gate does not
+//! relax the journal file's `EPERM`.
+//!
 //! ## Journal format (v1)
 //!
 //! ```text
@@ -142,12 +157,64 @@ pub struct CowBackend {
     /// persistent form, rewritten atomically on every change).
     whiteouts: RwLock<BTreeSet<String>>,
     journal_path: PathBuf,
+    /// The declared write areas (spec 24 §5), backend-normalized (`""` =
+    /// the mount root, covering everything): `Some` gates every write
+    /// verb to the declared set (outside → `EROFS`); `None` is the
+    /// ungated programmatic form (spec 11 §4).
+    write_areas: Option<BTreeSet<String>>,
+}
+
+/// Normalize and validate one declared write area (spec 24 §5): an
+/// absolute in-image path (`/app/var/cache`; `/` = the whole mount)
+/// stored in the backend convention (`app/var/cache`; `""` for the
+/// root). Trailing slashes fold; interior empty components (`//`) and
+/// `.` / `..` components are malformed — EINVAL, fail-closed.
+fn normalize_write_area(area: &str) -> Result<String, i32> {
+    if !area.starts_with('/') {
+        return Err(libc::EINVAL);
+    }
+    let trimmed = area.trim_end_matches('/');
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    if trimmed[1..]
+        .split('/')
+        .any(|c| c.is_empty() || c == "." || c == "..")
+    {
+        return Err(libc::EINVAL);
+    }
+    Ok(trimmed[1..].to_string())
 }
 
 impl CowBackend {
     /// Stack `overlay` over `base`, loading (or creating) the whiteout
     /// journal inside the overlay directory.
     pub fn new(base: Box<dyn Backend>, overlay: HostDirBackend) -> Result<CowBackend, i32> {
+        Self::stack(base, overlay, None)
+    }
+
+    /// [`CowBackend::new`] with the declared write gate (spec 24 §5):
+    /// writes land in the overlay only under one of `areas`; every other
+    /// write is `EROFS`. Areas are validated ([`normalize_write_area`]) —
+    /// a malformed area fails the mount with EINVAL, never a silent
+    /// widening.
+    pub fn with_write_areas(
+        base: Box<dyn Backend>,
+        overlay: HostDirBackend,
+        areas: &[String],
+    ) -> Result<CowBackend, i32> {
+        let mut normalized = BTreeSet::new();
+        for area in areas {
+            normalized.insert(normalize_write_area(area)?);
+        }
+        Self::stack(base, overlay, Some(normalized))
+    }
+
+    fn stack(
+        base: Box<dyn Backend>,
+        overlay: HostDirBackend,
+        write_areas: Option<BTreeSet<String>>,
+    ) -> Result<CowBackend, i32> {
         let journal_path = overlay.root().join(JOURNAL_FILE);
         let whiteouts = load_journal(&journal_path)?;
         if whiteouts.is_empty() {
@@ -160,6 +227,7 @@ impl CowBackend {
             overlay,
             whiteouts: RwLock::new(whiteouts),
             journal_path,
+            write_areas,
         })
     }
 
@@ -176,6 +244,29 @@ impl CowBackend {
     /// The current whiteout set (snapshot).
     pub fn whiteouts(&self) -> BTreeSet<String> {
         self.whiteouts.read().unwrap().clone()
+    }
+
+    /// The declared write areas (spec 24 §5), backend-normalized; `None`
+    /// for the ungated programmatic form.
+    pub fn write_areas(&self) -> Option<&BTreeSet<String>> {
+        self.write_areas.as_ref()
+    }
+
+    /// The write gate (spec 24 §5): a write to `path` (already
+    /// backend-normalized) is permitted when the mount is ungated or
+    /// `path` is an area itself or below one, at a component boundary
+    /// (area `a/b` never covers `a/bc`; the `""` area covers everything).
+    fn write_permitted(&self, path: &str) -> bool {
+        match &self.write_areas {
+            None => true,
+            Some(areas) => areas.iter().any(|area| {
+                area.is_empty()
+                    || path == area
+                    || (path.len() > area.len()
+                        && path.as_bytes()[area.len()] == b'/'
+                        && path.starts_with(area.as_str()))
+            }),
+        }
     }
 
     /// True when `path` is hidden by a whiteout (a whiteout on a
@@ -427,6 +518,9 @@ impl WritableBackend for CowBackend {
         if path == JOURNAL_FILE {
             return Err(libc::EPERM); // the journal is the audit delta, not content
         }
+        if !self.write_permitted(path) {
+            return Err(libc::EROFS); // outside every declared write area (spec 24 §5)
+        }
         // A whiteouted path recreates FRESH (no base copy-up): the delete
         // stands in the journal; the new overlay entry takes over the name.
         if !self.whiteouts.read().unwrap().contains(path) {
@@ -442,6 +536,9 @@ impl WritableBackend for CowBackend {
         if path.is_empty() || path == JOURNAL_FILE {
             return Err(libc::EINVAL);
         }
+        if !self.write_permitted(path) {
+            return Err(libc::EROFS);
+        }
         // truncate requires an existing file (merged view), then lands in
         // the overlay (copy-up first for base files).
         if self.stat_merged(path)?.entry_type != EntryType::File {
@@ -456,6 +553,9 @@ impl WritableBackend for CowBackend {
         if path.is_empty() || path == JOURNAL_FILE {
             return Err(libc::EEXIST);
         }
+        if !self.write_permitted(path) {
+            return Err(libc::EROFS);
+        }
         match self.stat_merged(path) {
             Ok(_) => return Err(libc::EEXIST),
             Err(libc::ENOENT) => {}
@@ -469,6 +569,9 @@ impl WritableBackend for CowBackend {
         let path = normalize(path);
         if path.is_empty() || path == JOURNAL_FILE {
             return Err(libc::EINVAL);
+        }
+        if !self.write_permitted(path) {
+            return Err(libc::EROFS);
         }
         // The merged view answers existence (hidden → ENOENT) and, for
         // directories, emptiness (rmdir semantics: ENOTEMPTY).
@@ -742,6 +845,228 @@ mod tests {
     }
 
     // ---------------------------------------------------------------
+    // The declared write gate (spec 24 §5)
+    // ---------------------------------------------------------------
+
+    fn gated_cow(areas: &[&str]) -> (tempfile::TempDir, CowBackend) {
+        let dir = tempfile::tempdir().unwrap();
+        let base =
+            Box::new(TarBackend::from_memory(make_base_tar(), TarCompression::None).unwrap());
+        let overlay = HostDirBackend::new(dir.path()).unwrap();
+        let areas: Vec<String> = areas.iter().map(|a| a.to_string()).collect();
+        let cow = CowBackend::with_write_areas(base, overlay, &areas).unwrap();
+        (dir, cow)
+    }
+
+    #[test]
+    fn write_area_normalization_is_fail_closed() {
+        // The manifest spelling (absolute) normalizes to the backend
+        // convention; `/` is the whole mount.
+        assert_eq!(
+            normalize_write_area("/app/var/cache").unwrap(),
+            "app/var/cache"
+        );
+        assert_eq!(
+            normalize_write_area("/app/var/cache/").unwrap(),
+            "app/var/cache"
+        );
+        assert_eq!(normalize_write_area("/").unwrap(), "");
+        // Malformed areas are EINVAL, never a silent widening.
+        for bad in [
+            "relative/path",
+            "",
+            "//double",
+            "/a//b",
+            "/a/./b",
+            "/a/../b",
+            "/..",
+        ] {
+            assert_eq!(normalize_write_area(bad), Err(libc::EINVAL), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn gated_cow_writes_inside_areas_land_in_overlay() {
+        let (dir, cow) = gated_cow(&["/etc/deep", "/var"]);
+        let w = cow.writable().unwrap();
+        assert_eq!(
+            cow.write_areas()
+                .unwrap()
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            vec!["etc/deep", "var"]
+        );
+        // Modify a base file inside the area (copy-up through the gate)...
+        w.pwrite("etc/deep/nested.txt", b"GATED", 0).unwrap();
+        assert_eq!(pread_all(&cow, "etc/deep/nested.txt"), b"GATEDd\n");
+        assert_eq!(pread_all(cow.base(), "etc/deep/nested.txt"), b"nested\n");
+        // ...create a new file in the area (parents materialize)...
+        w.pwrite("var/cache/new.bin", b"new", 0).unwrap();
+        assert!(dir.path().join("var/cache/new.bin").exists());
+        // ...mkdir and remove (whiteout) inside the area...
+        w.mkdir("var/made", 0o755).unwrap();
+        w.remove("etc/deep/nested.txt").unwrap();
+        assert_eq!(cow.stat("etc/deep/nested.txt").unwrap_err(), libc::ENOENT);
+        assert!(cow.whiteouts().contains("etc/deep/nested.txt"));
+        // ...and truncate inside the area.
+        w.pwrite("var/f.txt", b"abcdef", 0).unwrap();
+        w.truncate("var/f.txt", 3).unwrap();
+        assert_eq!(pread_all(&cow, "var/f.txt"), b"abc");
+    }
+
+    #[test]
+    fn gated_cow_writes_outside_areas_are_erofs_and_reads_untouched() {
+        let (_dir, cow) = gated_cow(&["/etc/deep"]);
+        let w = cow.writable().unwrap();
+        // Every verb on a path outside the declared set: EROFS.
+        assert_eq!(w.pwrite("etc/motd", b"x", 0).unwrap_err(), libc::EROFS);
+        assert_eq!(w.truncate("etc/motd", 0).unwrap_err(), libc::EROFS);
+        assert_eq!(w.mkdir("etc/made", 0o755).unwrap_err(), libc::EROFS);
+        assert_eq!(w.remove("etc/motd").unwrap_err(), libc::EROFS);
+        // The component boundary is exact: `etc/deepx` is not under
+        // `/etc/deep` (a bare string prefix would wrongly admit it).
+        assert_eq!(w.pwrite("etc/deepx", b"x", 0).unwrap_err(), libc::EROFS);
+        assert_eq!(w.pwrite("etc/deepish/x", b"x", 0).unwrap_err(), libc::EROFS);
+        // An area's PARENT is outside it: single-level mkdir of an area
+        // ancestor is the host's own write, not the slice's declaration.
+        assert_eq!(w.mkdir("etc", 0o755).unwrap_err(), libc::EROFS);
+        // Reads are never gated.
+        assert_eq!(pread_all(&cow, "etc/motd"), b"base-motd\n");
+        assert_eq!(names(&cow, "etc"), vec!["deep", "motd"]);
+        // The base stays byte-identical and no whiteout was recorded.
+        assert!(cow.whiteouts().is_empty());
+    }
+
+    #[test]
+    fn gated_cow_area_on_a_file_covers_exactly_it() {
+        let (_dir, cow) = gated_cow(&["/etc/motd"]);
+        let w = cow.writable().unwrap();
+        w.pwrite("etc/motd", b"AREA", 0).unwrap();
+        assert_eq!(pread_all(&cow, "etc/motd"), b"AREA-motd\n");
+        assert_eq!(w.remove("etc/deep/nested.txt").unwrap_err(), libc::EROFS);
+        // The gate is SYNTACTIC: `etc/motd/x` is below the area spelling,
+        // so the gate permits it and the merged view answers ENOTDIR (a
+        // file has no children) — never a silent success.
+        assert_eq!(w.pwrite("etc/motd/x", b"x", 0).unwrap_err(), libc::ENOTDIR);
+    }
+
+    #[test]
+    fn gated_cow_root_area_covers_everything_but_the_journal() {
+        let (_dir, cow) = gated_cow(&["/"]);
+        let w = cow.writable().unwrap();
+        w.pwrite("anywhere/at/all.txt", b"yes", 0).unwrap();
+        w.remove("todelete.txt").unwrap();
+        // The gate never relaxes the journal file's EPERM.
+        assert_eq!(w.pwrite(JOURNAL_FILE, b"x", 0).unwrap_err(), libc::EPERM);
+        assert_eq!(w.remove(JOURNAL_FILE).unwrap_err(), libc::EINVAL);
+    }
+
+    #[test]
+    fn gated_cow_malformed_areas_fail_the_mount() {
+        let dir = tempfile::tempdir().unwrap();
+        let tar_path = dir.path().join("base.tar");
+        std::fs::write(&tar_path, make_base_tar()).unwrap();
+        let path = tar_path.to_str().unwrap();
+
+        // Direct: a malformed area is EINVAL at stack time.
+        let base =
+            Box::new(TarBackend::from_memory(make_base_tar(), TarCompression::None).unwrap());
+        let overlay = HostDirBackend::new(dir.path()).unwrap();
+        assert_eq!(
+            CowBackend::with_write_areas(base, overlay, &["relative".to_string()]).err(),
+            Some(libc::EINVAL)
+        );
+
+        // Through the mount layer (the driver's path): same named failure.
+        let store = dir.path().join("store");
+        assert_eq!(
+            mount::build_from_file_with_mode(
+                path,
+                "/gated",
+                MountMode::Cow,
+                Some(&mount::Overlay::gated(
+                    store.to_str().unwrap(),
+                    vec!["/a//b".to_string()]
+                ))
+            )
+            .err(),
+            Some(libc::EINVAL)
+        );
+        // A well-formed gated mount through the mount layer stacks COW.
+        let ok = mount::build_from_file_with_mode(
+            path,
+            "/gated",
+            MountMode::Cow,
+            Some(&mount::Overlay::gated(
+                store.to_str().unwrap(),
+                vec!["/etc".to_string()],
+            )),
+        )
+        .unwrap();
+        let w = ok.backend.writable().unwrap();
+        w.pwrite("etc/motd", b"G", 0).unwrap();
+        assert_eq!(w.pwrite("bin/tool", b"G", 0).unwrap_err(), libc::EROFS);
+    }
+
+    /// The gate predicate against a reference implementation: every subset
+    /// of a small area alphabet (with and without the root area) against a
+    /// probe list covering equality, containment, and substring traps.
+    #[test]
+    fn write_gate_matches_the_reference_predicate() {
+        let reference = |areas: &BTreeSet<String>, path: &str| {
+            areas
+                .iter()
+                .any(|a| a.is_empty() || path == a || path.starts_with(&format!("{a}/")))
+        };
+        let base_areas = ["app", "app/var", "etc/deep", "a/x1"];
+        for subset_bits in 0..16u32 {
+            let mut areas: BTreeSet<String> = base_areas
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| subset_bits & (1 << i) != 0)
+                .map(|(_, a)| (*a).to_string())
+                .collect();
+            if subset_bits % 3 == 0 {
+                areas.insert(String::new()); // the whole-mount spelling
+            }
+            let cow = {
+                let base = Box::new(
+                    TarBackend::from_memory(make_base_tar(), TarCompression::None).unwrap(),
+                );
+                let dir = tempfile::tempdir().unwrap();
+                let overlay = HostDirBackend::new(dir.path()).unwrap();
+                // `with_write_areas` takes the manifest spelling
+                // (absolute); the reference set stays normalized.
+                let spelled: Vec<String> = areas.iter().map(|a| format!("/{a}")).collect();
+                CowBackend::with_write_areas(base, overlay, &spelled).unwrap()
+            };
+            for probe in [
+                "",
+                "app",
+                "app/var",
+                "app/var/cache",
+                "app2",
+                "app/va",
+                "apple",
+                "etc/deep",
+                "etc/deep/nested.txt",
+                "etc/deepx",
+                "a/x1",
+                "a/x1/y",
+                "a",
+                "a/x",
+            ] {
+                assert_eq!(
+                    cow.write_permitted(probe),
+                    reference(&areas, probe),
+                    "areas {areas:?} probe {probe:?}"
+                );
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
     // The whiteout journal format
     // ---------------------------------------------------------------
 
@@ -824,7 +1149,7 @@ mod tests {
             path,
             "/cow",
             MountMode::Cow,
-            Some(overlay.to_str().unwrap()),
+            Some(&mount::Overlay::new(overlay.to_str().unwrap())),
         )
         .unwrap();
         assert_eq!(cow.mode, MountMode::Cow);
@@ -833,11 +1158,12 @@ mod tests {
         assert!(overlay.join(JOURNAL_FILE).exists());
 
         // COW over a memory image works too.
+        let mem_overlay = tempfile::tempdir().unwrap();
         let cow_mem = mount::build_from_memory_with_mode(
             &make_base_tar(),
             "/cow-mem",
             MountMode::Cow,
-            Some(tempfile::tempdir().unwrap().path().to_str().unwrap()),
+            Some(&mount::Overlay::new(mem_overlay.path().to_str().unwrap())),
         )
         .unwrap();
         assert_eq!(cow_mem.backend.name().to_str().unwrap(), "COW");
@@ -853,7 +1179,7 @@ mod tests {
                 path,
                 "/bad1",
                 MountMode::ReadOnly,
-                Some(overlay.to_str().unwrap())
+                Some(&mount::Overlay::new(overlay.to_str().unwrap()))
             )
             .err(),
             Some(libc::EINVAL)

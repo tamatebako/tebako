@@ -589,11 +589,7 @@ impl Identity {
                 let keyid = self.signing.keyid.as_ref().ok_or(ManifestError::Invalid(
                     "identity.signing: signed payloads require keyid",
                 ))?;
-                if keyid.len() != 16
-                    || !keyid
-                        .bytes()
-                        .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-                {
+                if !crate::envelope::is_valid_keyid(keyid) {
                     return Err(ManifestError::Invalid(
                         "identity.signing.keyid must be 16 lowercase hex (low 64 bits of the OpenPGP fingerprint)",
                     ));

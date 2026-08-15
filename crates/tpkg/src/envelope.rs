@@ -113,12 +113,19 @@ pub struct EnvelopeManifest {
     pub grants: Vec<Grant>,
 }
 
-fn check_keyid(keyid: &str) -> Result<(), ManifestError> {
-    if keyid.len() != 16
-        || !keyid
+/// The OpenPGP keyid form (SSOT — spec 03 §2.1's keyid, the trailer's v2
+/// extension, envelope recipients, and spec 24's `pgp:<keyid>` reference
+/// all speak it): exactly 16 lowercase hex chars, the low 64 bits of the
+/// OpenPGP fingerprint.
+pub fn is_valid_keyid(keyid: &str) -> bool {
+    keyid.len() == 16
+        && keyid
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
-    {
+}
+
+fn check_keyid(keyid: &str) -> Result<(), ManifestError> {
+    if !is_valid_keyid(keyid) {
         return Err(ManifestError::Invalid(
             "envelope manifest recipient keyids must be 16 lowercase hex",
         ));

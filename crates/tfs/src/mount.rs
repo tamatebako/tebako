@@ -39,6 +39,40 @@ pub const TEBAKO_MOUNT_COW: u32 = 1;
 /// Mount-mode flag: read-write in place (no in-tree backend offers it).
 pub const TEBAKO_MOUNT_RW: u32 = 2;
 
+/// The COW overlay binding of a mount (spec 11 §4 + spec 24 §5): the host
+/// directory the overlay lives in (created when missing), plus the
+/// DECLARED write areas when the mount carries them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Overlay {
+    /// Host directory backing the overlay (the COW store).
+    pub dir: String,
+    /// The declared write areas (in-image absolute paths, spec 24 §5's
+    /// `needs.write` spelling): `Some` stacks the gated form — writes
+    /// outside every area are EROFS; `None` is the ungated programmatic
+    /// form (the C ABI's `with_mode` family speaks it).
+    pub write_areas: Option<Vec<String>>,
+}
+
+impl Overlay {
+    /// The ungated programmatic overlay: a store, no declared areas.
+    pub fn new(dir: impl Into<String>) -> Overlay {
+        Overlay {
+            dir: dir.into(),
+            write_areas: None,
+        }
+    }
+
+    /// The declarative overlay (spec 24 §5): a store bound to a declared
+    /// write-area set. Area validity is checked at stack time
+    /// (`CowBackend::with_write_areas` — a malformed area is EINVAL).
+    pub fn gated(dir: impl Into<String>, write_areas: Vec<String>) -> Overlay {
+        Overlay {
+            dir: dir.into(),
+            write_areas: Some(write_areas),
+        }
+    }
+}
+
 /// The mount mode (spec 11 §3); writes on RO mounts fail with EROFS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MountMode {
@@ -87,24 +121,29 @@ fn open_error(e: std::io::Error) -> i32 {
 
 /// Wrap the image backend for the mount mode (spec 11 §3/§4). COW creates
 /// the overlay directory when missing — it is a scratch area, disposable
-/// by deletion.
+/// by deletion — and stacks the gated composite when the binding carries
+/// declared write areas (spec 24 §5).
 fn apply_mode(
     backend: Box<dyn Backend>,
     mode: MountMode,
-    overlay_dir: Option<&str>,
+    overlay: Option<&Overlay>,
 ) -> Result<Box<dyn Backend>, i32> {
     match mode {
         MountMode::ReadOnly => {
-            if overlay_dir.is_some() {
+            if overlay.is_some() {
                 return Err(libc::EINVAL); // an overlay only makes sense for COW
             }
             Ok(backend)
         }
         MountMode::Cow => {
-            let dir = overlay_dir.ok_or(libc::EINVAL)?;
-            std::fs::create_dir_all(dir).map_err(|e| io_errno(&e))?;
-            let overlay = HostDirBackend::new(std::path::Path::new(dir))?;
-            Ok(Box::new(CowBackend::new(backend, overlay)?))
+            let overlay = overlay.ok_or(libc::EINVAL)?;
+            std::fs::create_dir_all(&overlay.dir).map_err(|e| io_errno(&e))?;
+            let store = HostDirBackend::new(std::path::Path::new(&overlay.dir))?;
+            let cow = match &overlay.write_areas {
+                None => CowBackend::new(backend, store)?,
+                Some(areas) => CowBackend::with_write_areas(backend, store, areas)?,
+            };
+            Ok(Box::new(cow))
         }
         // Honest capability model (spec 11 §3): no in-tree format backend
         // writes in place.
@@ -119,12 +158,13 @@ pub fn build_from_file(archive_path: &str, mount_point: &str) -> Result<Mount, i
 }
 
 /// [`build_from_file`] with an explicit mount mode (spec 11 §3). COW
-/// requires `overlay_dir` (created when missing); RW is ENOTSUP.
+/// requires `overlay` (its store directory is created when missing);
+/// RW is ENOTSUP.
 pub fn build_from_file_with_mode(
     archive_path: &str,
     mount_point: &str,
     mode: MountMode,
-    overlay_dir: Option<&str>,
+    overlay: Option<&Overlay>,
 ) -> Result<Mount, i32> {
     let mut file = File::open(archive_path).map_err(open_error)?;
     let mut magic = [0u8; SNIFF_LEN];
@@ -153,7 +193,7 @@ pub fn build_from_file_with_mode(
         ImageFormat::Limnifs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };
-    let backend = apply_mode(backend, mode, overlay_dir)?;
+    let backend = apply_mode(backend, mode, overlay)?;
     Ok(make_mount(mount_point, Some(archive_path), backend, mode))
 }
 
@@ -186,10 +226,10 @@ pub fn build_from_file_at_with_mode(
     length: u64,
     mount_point: &str,
     mode: MountMode,
-    overlay_dir: Option<&str>,
+    overlay: Option<&Overlay>,
 ) -> Result<Mount, i32> {
     if offset == 0 && length == 0 {
-        return build_from_file_with_mode(archive_path, mount_point, mode, overlay_dir);
+        return build_from_file_with_mode(archive_path, mount_point, mode, overlay);
     }
     let mut file = File::open(archive_path).map_err(open_error)?;
     let file_size = file.seek(SeekFrom::End(0)).map_err(|_| libc::EIO)?;
@@ -246,7 +286,7 @@ pub fn build_from_file_at_with_mode(
         ImageFormat::Limnifs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };
-    let backend = apply_mode(backend, mode, overlay_dir)?;
+    let backend = apply_mode(backend, mode, overlay)?;
     Ok(make_mount(mount_point, Some(archive_path), backend, mode))
 }
 
@@ -271,7 +311,7 @@ pub fn build_from_memory_with_mode(
     data: &[u8],
     mount_point: &str,
     mode: MountMode,
-    overlay_dir: Option<&str>,
+    overlay: Option<&Overlay>,
 ) -> Result<Mount, i32> {
     if data.is_empty() {
         return Err(libc::EINVAL);
@@ -296,7 +336,7 @@ pub fn build_from_memory_with_mode(
         ImageFormat::Limnifs => return Err(libc::ENOTSUP),
         ImageFormat::Unknown => return Err(libc::EINVAL),
     };
-    let backend = apply_mode(backend, mode, overlay_dir)?;
+    let backend = apply_mode(backend, mode, overlay)?;
     Ok(make_mount(mount_point, None, backend, mode))
 }
 
