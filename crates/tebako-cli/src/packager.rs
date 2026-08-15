@@ -256,7 +256,10 @@ fn deploy(
     // Bundler resolution happens here (ScenarioManagerWithBundler).
     scenario.resolve_bundler()?;
 
-    verify_runtime_gem(&tgd)?;
+    // Spec 22 phase M2: the env image no longer stages the tebako-runtime
+    // gem (its require maps shipped empty and the Rust driver covers the
+    // VFS), so the v1-parity verify_runtime_gem! gate is retired — a
+    // gem-less runtime is the only kind there is.
 
     let mut ops: Vec<Op> = Vec::new();
     if scenario.needs_bundler {
@@ -348,27 +351,6 @@ fn deploy(
     check_cwd(&target, opts.cwd.as_deref())?;
     crate::strip::strip(&target, &scenario.exe_suffix);
     Ok(())
-}
-
-/// DeployHelper#verify_runtime_gem!: the runtime layout carries the
-/// tebako-runtime gem pre-installed (error 129 otherwise).
-fn verify_runtime_gem(tgd: &Path) -> Result<(), TebakoError> {
-    let specs = tgd.join("specifications");
-    let found = fs::read_dir(&specs)
-        .map(|rd| {
-            rd.filter_map(|e| e.ok()).any(|e| {
-                e.file_name()
-                    .to_string_lossy()
-                    .starts_with("tebako-runtime-")
-                    && e.file_name().to_string_lossy().ends_with(".gemspec")
-            })
-        })
-        .unwrap_or(false);
-    if found {
-        Ok(())
-    } else {
-        Err(packaging_error(129, Some(&specs.to_string_lossy())))
-    }
 }
 
 /// DeployHelper#install_gem_op (+ install_argv_tail).
