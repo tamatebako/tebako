@@ -45,6 +45,12 @@
 //! `..._from_file_at_with_mode`, `..._from_memory_with_mode` taking
 //! `TEBAKO_MOUNT_RO` (0, default), `_COW` (1, HostDir overlay + whiteout
 //! journal) or `_RW` (2, ENOTSUP — no in-tree backend writes in place).
+//! The COW composite additionally carries the spec 24 §5 declarative
+//! write gate: a mount built with declared write areas
+//! ([`mount::Overlay::gated`], the Rust mount API) admits writes only
+//! under them (EROFS otherwise, journaled `vfs-deny`); the
+//! `TEBAKO_OVERLAYS` / `TEBAKO_DECRYPT` env grammars the resolver
+//! exports and the driver consumes live in [`overlay_spec`].
 //! Backends: ZIP (pure-Rust `zip` crate), tar/tar.gz/tar.zst (pure-Rust
 //! offset index — `backends_tar`), COW composite over any image
 //! (`backends_cow` + `backends_hostdir`), DwarFS (external `dwarfs-rs`
@@ -90,6 +96,7 @@ pub mod journal;
 pub mod mount;
 pub mod mount_spec;
 pub mod needs;
+pub mod overlay_spec;
 pub mod policy;
 #[cfg(feature = "enc")]
 pub mod secure_buf;

@@ -160,7 +160,9 @@ pub use codec::{
 };
 pub use contract::{ContractError, PackageContract};
 pub use crc32::{crc32, Crc32};
-pub use envelope::{EnvelopeManifest, Grant, Suite, ENVELOPES_PATH, ENVELOPES_SCHEMA_VERSION};
+pub use envelope::{
+    is_valid_keyid, EnvelopeManifest, Grant, Suite, ENVELOPES_PATH, ENVELOPES_SCHEMA_VERSION,
+};
 pub use error::{strerror, TpkgError};
 pub use ext::{ExtBlock, ExtError};
 pub use io::{read_from, write_to};
@@ -269,6 +271,13 @@ pub const TPKG_CONTRACT_ERA: u32 = 2;
 /// The spec-18 §7 exit code for package/payload contract-era failures
 /// (either direction), raised by any trailer/manifest reader.
 pub const EX_TEBAKO_CONTRACT_ERA: i32 = 77;
+/// The spec-24 §7 exit code (owner-signed-off 2026-08-15; spec 06 §4
+/// table row) for overlay/decrypt BINDING failures: an unbound retained
+/// store, missing or non-opening key material, an unwritable store, an
+/// orphan binding, or a malformed `TEBAKO_OVERLAYS` / `TEBAKO_DECRYPT`
+/// env form. Loader-side; raised by the resolver and the driver's mount
+/// path — run-time errnos (EROFS, ENOKEY) stay the syscalls' own.
+pub const EX_TEBAKO_OVERLAY: i32 = 68;
 
 // ---------------------------------------------------------------------
 // v2 chain-of-trust extension (all v2-extension numerics BIG-ENDIAN;

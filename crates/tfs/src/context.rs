@@ -452,6 +452,8 @@ impl FsContext {
             Err(e) if e == libc::ENOENT => {
                 let accmode = flags & O_ACCMODE;
                 if accmode != libc::O_RDONLY && self.path_is_held(path) {
+                    // The spec 24 §5 write gate: EROFS, journaled.
+                    self.journal_write_denial(path, &mount.mount_point);
                     return Err(libc::EROFS);
                 }
                 let need = if accmode == libc::O_RDONLY {
@@ -467,8 +469,10 @@ impl FsContext {
         // Only O_RDONLY is supported: mounted content is read-only
         // (fd-based writes land with the spec 11 §7 write family;
         // path-level writes (pwrite_path & co) are gated by the mount
-        // mode).
+        // mode). A write open of an in-image file is a write into a held
+        // tree by construction — the spec 24 §5 gate: EROFS, journaled.
         if (flags & O_ACCMODE) != libc::O_RDONLY {
+            self.journal_write_denial(path, &mount.mount_point);
             return Err(libc::EROFS);
         }
         match st.entry_type {
@@ -734,46 +738,88 @@ impl FsContext {
     // RO mounts fail EROFS (unchanged behavior), mounts whose backend
     // has no write view fail ENOTSUP. fd-based writes (the spec 11 §7
     // write family) are a later, additive milestone.
+    //
+    // The spec 24 §5 write gate: a denied write into a HELD tree is
+    // journaled `event=vfs-deny op=write` (best-effort — only when a
+    // journal rides the installed policy; the EROFS answer never
+    // depends on it). Two denials journal: an RO mount's EROFS on a
+    // held path, and a gated COW mount's out-of-area EROFS.
     // ---------------------------------------------------------------
 
-    /// The writable backend owning `path`, with the in-image path.
-    fn writable_for(&self, path: &str) -> Result<(&dyn WritableBackend, String), i32> {
+    /// Journal one write-gate denial (spec 24 §5) — best-effort, silent
+    /// when no journal is installed.
+    fn journal_write_denial(&self, path: &str, mount_point: &str) {
+        if let Some(journal) = &self.journal {
+            crate::journal::journal_vfs_deny(
+                journal,
+                std::path::Path::new(path),
+                HostAccess::Rw,
+                mount_point,
+                None,
+            );
+        }
+    }
+
+    /// The writable backend owning `path`, with its mount and the
+    /// in-image path.
+    fn writable_for(&self, path: &str) -> Result<(&Mount, &dyn WritableBackend, String), i32> {
         let path = &Self::normalize(path);
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
         let mount = self.find_mount(path).ok_or(libc::ENOENT)?;
         if mount.mode == MountMode::ReadOnly {
+            // The write gate (spec 24 §5): a write into a held tree is
+            // EROFS and journaled. A covered-but-not-held path is host
+            // territory — the same EROFS (the path write family does no
+            // passthrough) but never a vfs-deny line.
+            if self.path_is_held(path) {
+                self.journal_write_denial(path, &mount.mount_point);
+            }
             return Err(libc::EROFS);
         }
         let rel = Self::relative_path(mount, path).to_string();
         let w = mount.backend.writable().ok_or(libc::ENOTSUP)?;
-        Ok((w, rel))
+        Ok((mount, w, rel))
+    }
+
+    /// Dispatch one write verb, journaling the gated COW mount's
+    /// out-of-area EROFS (spec 24 §5 — on a COW mount EROFS comes only
+    /// from the declared-area gate; the overlay's own host failures
+    /// surface as their own errnos).
+    fn write_gated<T>(&self, mount: &Mount, path: &str, result: Result<T, i32>) -> Result<T, i32> {
+        match result {
+            Err(e) if e == libc::EROFS && mount.mode == MountMode::Cow => {
+                self.journal_write_denial(path, &mount.mount_point);
+                Err(e)
+            }
+            r => r,
+        }
     }
 
     /// Write `data` at `offset` in `path` (COW: copy-up into the overlay).
     pub fn pwrite_path(&self, path: &str, data: &[u8], offset: u64) -> Result<usize, i32> {
-        let (w, rel) = self.writable_for(path)?;
-        w.pwrite(&rel, data, offset)
+        let (mount, w, rel) = self.writable_for(path)?;
+        self.write_gated(mount, path, w.pwrite(&rel, data, offset))
     }
 
     /// Truncate `path` to `len` bytes.
     pub fn truncate_path(&self, path: &str, len: u64) -> Result<(), i32> {
-        let (w, rel) = self.writable_for(path)?;
-        w.truncate(&rel, len)
+        let (mount, w, rel) = self.writable_for(path)?;
+        self.write_gated(mount, path, w.truncate(&rel, len))
     }
 
     /// Create a single directory.
     pub fn mkdir_path(&self, path: &str, perms: u32) -> Result<(), i32> {
-        let (w, rel) = self.writable_for(path)?;
-        w.mkdir(&rel, perms)
+        let (mount, w, rel) = self.writable_for(path)?;
+        self.write_gated(mount, path, w.mkdir(&rel, perms))
     }
 
     /// Remove a file, symlink or empty directory (COW: whiteouts the
     /// base entry).
     pub fn remove_path(&self, path: &str) -> Result<(), i32> {
-        let (w, rel) = self.writable_for(path)?;
-        w.remove(&rel)
+        let (mount, w, rel) = self.writable_for(path)?;
+        self.write_gated(mount, path, w.remove(&rel))
     }
 
     // ---------------------------------------------------------------
@@ -1585,6 +1631,88 @@ mod tests {
         assert!(!ctx.path_is_held("/elsewhere"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_gate_denials_journal_vfs_deny() {
+        // Spec 24 §5: writes into held trees are EROFS and journaled
+        // `event=vfs-deny op=write path=<p> mount=<mp>` — across the RO
+        // mount, the write-open path, and the gated COW's out-of-area
+        // gate; allowed and ungated writes journal nothing.
+        let dir = tempfile::tempdir().unwrap();
+        let image = fixture_zip(dir.path());
+        let log = dir.path().join("journal.log");
+        let journal = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+
+        let mut ctx = FsContext::new();
+        ctx.set_host_policy(HostPolicy::open(), Some(journal));
+
+        // The RO mount: write opens and path-level writes on held paths.
+        let ro = crate::mount::build_from_file(image.to_str().unwrap(), "/ro").unwrap();
+        ctx.mount_checked(ro).unwrap();
+        assert_eq!(
+            ctx.open("/ro/data/secret.txt", libc::O_WRONLY).unwrap_err(),
+            libc::EROFS
+        );
+        assert_eq!(
+            ctx.open("/ro/data/new.txt", libc::O_WRONLY).unwrap_err(),
+            libc::EROFS
+        );
+        assert_eq!(
+            ctx.pwrite_path("/ro/data/secret.txt", b"x", 0).unwrap_err(),
+            libc::EROFS
+        );
+        // A covered-but-not-held path-level write: the same EROFS (the
+        // path write family does no passthrough) but NO vfs-deny line —
+        // it is host territory, not the image's.
+        assert_eq!(
+            ctx.pwrite_path("/ro/elsewhere/x", b"x", 0).unwrap_err(),
+            libc::EROFS
+        );
+
+        // The gated COW mount: in-area writes land (no line), out-of-area
+        // writes are EROFS and journaled.
+        let store = dir.path().join("store");
+        let cow = crate::mount::build_from_file_with_mode(
+            image.to_str().unwrap(),
+            "/cow",
+            crate::mount::MountMode::Cow,
+            Some(&crate::mount::Overlay::gated(
+                store.to_str().unwrap(),
+                vec!["/data".to_string()],
+            )),
+        )
+        .unwrap();
+        ctx.mount_checked(cow).unwrap();
+        ctx.pwrite_path("/cow/data/secret.txt", b"x", 0).unwrap();
+        assert_eq!(
+            ctx.pwrite_path("/cow/other.txt", b"x", 0).unwrap_err(),
+            libc::EROFS
+        );
+
+        let text = std::fs::read_to_string(&log).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        // Two write-open denials + one RO path-write denial + one gated
+        // out-of-area denial; the unheld and in-area writes journal none.
+        assert_eq!(lines.len(), 4, "{text}");
+        assert!(
+            text.contains("event=vfs-deny op=write path=/ro/data/secret.txt mount=/ro"),
+            "{text}"
+        );
+        assert!(
+            text.contains("event=vfs-deny op=write path=/ro/data/new.txt mount=/ro"),
+            "{text}"
+        );
+        assert!(
+            text.contains("event=vfs-deny op=write path=/cow/other.txt mount=/cow"),
+            "{text}"
+        );
+        assert!(!text.contains("elsewhere"), "{text}");
+        assert!(!text.contains("/cow/data"), "{text}");
     }
 
     #[cfg(unix)]
