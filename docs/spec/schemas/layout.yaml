@@ -15,7 +15,7 @@
 
 schema: layout
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 2 # MINOR — additive changes only (1: mount_root_override; 2: preload_shim)
+schema_minor: 3 # MINOR — additive changes only (1: mount_root_override; 2: preload_shim; 3: runtime_dll)
 status: normative
 owner: tebako-runtime-ruby (writer) + crates/tebako-driver (reader); grammar owned here
 edge: C3 (runtime exe ↔ env image)
@@ -105,12 +105,31 @@ grammar:
       (e.g. lib/tebako/libtfs_preload.so). The image declares, the
       driver flows it: materialized to the exec cache for the
       child-injection env (LD_PRELOAD / DYLD_INSERT_LIBRARIES) and
-      exported as TEBAFO_PRELOAD_SHIM for the interpreter's spawn hook
+      exported as TEBAKO_PRELOAD_SHIM for the interpreter's spawn hook
       (spec 22 §3 Rules E2/E3). SSOT: the factory stages the file and
       emits this key in the same deploy pass — declared-but-absent is a
       named boot error (exit 78: the declaration lies). Absent ⇒ no
       preload env (an older image — spawned children get no VFS, the
       honest degradation it always was).
+  runtime_dll:
+    type: string
+    required: false
+    since: schema_minor 3
+    notes: >-
+      The runtime's own PE module basename (e.g. x64-ucrt-ruby340.dll)
+      — MSYS builds only; POSIX builds omit the key. Bare-name grammar
+      (no '/', '\', ':' — the spec 03 §2.5 byte rule); a violation is
+      a named exit 78 (the declaration lies). The image declares, the
+      driver flows it: exported verbatim as TEBAKO_RUNTIME_DLL into the
+      handoff env at boot, on every platform (spec 17 §2 — POSIX legs
+      never read it). The reader is the tfs PE closure walk (spec 22
+      §2.1): a bare import name matching it case-insensitively is never
+      materialized out of a payload image — the OS's basename-reuse
+      rule binds the already-loaded copy, and the exe-dir layout copy
+      stays the only one on disk. SSOT: the factory knows the name at
+      build time (the built tree's bin/<name> is THE file the build
+      produced) and flows it; nothing downstream recomputes it. Absent
+      ⇒ no export (an older image — the exclusion is simply off).
   interpreter_api_version:
     type: string
     required: true
@@ -132,5 +151,7 @@ refusals:
     behavior: exit 78 naming the override and the image — the image's rbconfig cannot follow, never a broken boot
   - case: preload_shim declared but the file absent from the image
     behavior: exit 78 — the declaration lies; rebuild the runtime with the current factory
+  - case: runtime_dll declared with a path separator or drive qualifier
+    behavior: exit 78 — a basename owns no path; the declaration lies
 
 deprecated: [] # no field is in a deprecation window
