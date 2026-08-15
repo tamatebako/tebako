@@ -69,6 +69,7 @@ republish of v1-era runtimes needed.
 | 65 | `EX_TEBAKO_MANIFEST` | trailer missing/corrupt/invalid |
 | 66 | `EX_TEBAKO_ABI` | launcher_abi mismatch |
 | 67 | `EX_TEBAKO_RUNTIME_REF` | unparseable/unsupported runtime_ref |
+| 68 | `EX_TEBAKO_OVERLAY` | overlay/decrypt binding failure: unbound retained store, missing or non-opening key material, unwritable store, orphan binding, malformed `TEBAKO_OVERLAYS` / `TEBAKO_DECRYPT` (spec 24 §7; code constant `tpkg::EX_TEBAKO_OVERLAY`) |
 | 69 | `EX_TEBAKO_UNAVAILABLE` | runtime unresolvable (offline miss, download failure) |
 | 70 | `EX_TEBAKO_SHA` | sha256 mismatch (runtime or image) |
 | 71 | `EX_TEBAKO_SIGNATURE` | invalid signature; or unsigned under `TEBAKO_REQUIRE_SIGNED=1` |
