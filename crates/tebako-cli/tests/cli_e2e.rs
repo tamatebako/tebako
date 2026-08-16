@@ -1269,8 +1269,8 @@ fn sdk_mirror_fixture(work: &Path, ruby: &str) -> Option<PathBuf> {
 
 /// Run the runtime against a throwaway driver image whose /local/stub.rb
 /// is `stub_source` — the same launcher-ABI handoff the CLI's deploy uses
-/// (the driver image is the full runtime layout plus the stub) — with
-/// TEBAKO_PASS_THROUGH so the stub reads/writes host paths.
+/// (the driver image is the full runtime layout plus the stub). No jail is
+/// installed, so the stub reads/writes host paths directly.
 fn runtime_driver_exec(
     work: &Path,
     layout_src: &Path,
@@ -1312,8 +1312,7 @@ fn runtime_driver_exec(
     cmd.arg("--tebako-image")
         .arg(format!("{}:0:/__tfs__", pkg.display()))
         .arg("--tebako-entry")
-        .arg("/local/stub.rb")
-        .env("TEBAKO_PASS_THROUGH", "1");
+        .arg("/local/stub.rb");
     run(&mut cmd)
 }
 

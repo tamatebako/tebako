@@ -74,10 +74,10 @@ pub struct RuntimeDeployer {
 impl RuntimeDeployer {
     /// env: GEM_HOME/GEM_PATH/GEM_SPEC_CACHE/SSL_CERT_* for the deploy; it
     /// travels in the process environment because Gem::PathSupport
-    /// snapshots it at interpreter boot. TEBAKO_PASS_THROUGH joins it: the
-    /// tebako-patched rubygems filters gem paths to the memfs mount point
-    /// unless it is set, and the driver installs into the packaging
-    /// environment on the host.
+    /// snapshots it at interpreter boot. The deploy installs no jail, so
+    /// the driver writes the packaging environment on the host directly
+    /// (v1's TEBAKO_PASS_THROUGH memfs-filter escape is retired — no v2
+    /// runtime patch reads it).
     pub fn execute(
         &self,
         ops: &[Op],
@@ -109,7 +109,6 @@ impl RuntimeDeployer {
         }
         let mut full_env = self.toolchain_env();
         full_env.extend(env.iter().cloned());
-        full_env.push(("TEBAKO_PASS_THROUGH".to_string(), "1".to_string()));
         // The v2 handoff needs the entry explicitly (spec 17 §1): with no
         // --tebako-entry the boot is the smoke form — the interpreter
         // starts with its own args and the driver script never runs (the

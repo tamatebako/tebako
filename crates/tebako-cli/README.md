@@ -46,10 +46,9 @@ audit journal (`$TEBAKO_HOME/journal.log`, spec 08 §2).
    (bundle config/install for the Gemfile scenario) are serialized into a
    stub driver placed at `/local/stub.rb` of a throwaway image, which is
    imaged in-process, stitched onto an empty base and exec'd as
-   `runtime --tebako-image <driver>:0:/__tebako_memfs__` with a scrubbed
+   `runtime --tebako-image <driver>:0:<declared-mount>` with a scrubbed
    environment (`RUBYOPT`/`RUBYLIB`/`BUNDLE_*`/`BUNDLER_*` unset,
-   `GEM_HOME`/`GEM_PATH`/`GEM_SPEC_CACHE`/`SSL_CERT_*`/
-   `TEBAKO_PASS_THROUGH` set);
+   `GEM_HOME`/`GEM_PATH`/`GEM_SPEC_CACHE`/`SSL_CERT_*` set);
 4. **strip** build artefacts, align the arch layout to the runtime, write
    the entry dispatcher at `/local/stub.rb`;
 5. **image** the app (in-process dwarfs-t Writer → `fs.tfs`) and
