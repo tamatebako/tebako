@@ -410,6 +410,42 @@ impl FsContext {
         None
     }
 
+    /// The host-side tail of a memfs path under an extraction root (the
+    /// dlmap/exec-cache layout `<root>/<tail>`). A drive-letter memfs
+    /// root (msys: `A:/t`) makes the raw join operand drive-prefixed —
+    /// `Path::join` REPLACES the root on such an operand and the
+    /// extraction would target the nonexistent `A:` drive, failing EIO
+    /// (the msys native-extension extraction failure class the runtime
+    /// factory worked around C-side, `tfs_dlmap_extract`). A
+    /// drive-letter first component flattens its colon so the tail is a
+    /// RELATIVE host path. Every other shape is byte-stable: `:` is a
+    /// legal POSIX name and the layout is pinned. For a flattened tail
+    /// the dlmap-prefix redirect (`dlmap_tail`) names a memfs path the
+    /// mounts do not hold, so it falls through to the host — the
+    /// extracted file answers from the host, exactly the factory
+    /// helper's contract.
+    fn host_tail(path: &str) -> String {
+        let tail = path.trim_start_matches('/');
+        let mut parts = tail.splitn(2, '/');
+        let first = parts.next().unwrap_or("");
+        let rest = parts.next();
+        let first = if first.len() == 2
+            && first.ends_with(':')
+            && first
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphabetic())
+        {
+            format!("{}_", &first[..1])
+        } else {
+            first.to_string()
+        };
+        match rest {
+            Some(rest) => format!("{first}/{rest}"),
+            None => first,
+        }
+    }
+
     // ---------------------------------------------------------------
     // File operations
     // ---------------------------------------------------------------
@@ -1046,7 +1082,9 @@ impl FsContext {
     /// sharing a basename): the full path makes the dlmap-prefix
     /// redirect (open/stat) an exact inverse and lets paths computed
     /// relative to a materialized binary resolve back to their memfs
-    /// originals.
+    /// originals. A drive-letter memfs root (msys `A:/t`) flattens its
+    /// colon in the tail (`host_tail`) so the host join stays relative —
+    /// the redirect inverse degrades to host-serve there.
     pub fn dlmap2file(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
         let path = &Self::normalize(path);
         // dlmap-prefix redirect (see open()): the dlmap spelling of a
@@ -1277,7 +1315,7 @@ impl FsContext {
             ClosureDest::Store(root) => root.clone(),
         };
 
-        let host_path = root.join(path.trim_start_matches('/'));
+        let host_path = root.join(Self::host_tail(path));
         if let Some(parent) = host_path.parent() {
             std::fs::create_dir_all(parent).map_err(|_| libc::EIO)?;
         }
@@ -2384,6 +2422,60 @@ mod tests {
         ] {
             assert!(dest.join(p).is_file(), "the closure lands at {p}");
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn host_tail_flattens_a_drive_letter_root() {
+        // The msys memfs root carries a drive letter (A:/t): the
+        // extraction tail must be a RELATIVE host path, or Path::join
+        // replaces the cache root and the write targets the nonexistent
+        // drive (EIO). Only the drive-letter first component flattens.
+        assert_eq!(
+            FsContext::host_tail("A:/t/lib/ruby/x.so"),
+            "A_/t/lib/ruby/x.so"
+        );
+        assert_eq!(FsContext::host_tail("/A:/t/lib/x.so"), "A_/t/lib/x.so");
+        assert_eq!(FsContext::host_tail("A:"), "A_");
+        // Every other shape is byte-stable — ':' is a legal POSIX name
+        // and the extraction layout is pinned.
+        assert_eq!(
+            FsContext::host_tail("/__tfs__/lib/x.so"),
+            "__tfs__/lib/x.so"
+        );
+        assert_eq!(
+            FsContext::host_tail("/__tfs__/lib/we:ird.so"),
+            "__tfs__/lib/we:ird.so"
+        );
+        assert_eq!(FsContext::host_tail("foo:/bar"), "foo:/bar");
+    }
+
+    #[test]
+    fn dlmap2file_of_a_drive_letter_mount_stays_under_the_dl_root() {
+        // The msys shape end to end: a mount at A:/t, a dlmap of an
+        // in-image library — the materialized copy lands UNDER the
+        // per-process dl tmpdir (never on an A: drive) and exists.
+        let dir = std::env::temp_dir().join(format!("tfs-dlmap-drive-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("lib")).unwrap();
+        std::fs::write(img.join("lib/x.so"), pe64_fixture(&[], &[])).unwrap();
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &img, "A:/t");
+        let host = ctx.dlmap2file("A:/t/lib/x.so").unwrap();
+        let host = host.to_string_lossy().into_owned();
+
+        assert!(host.contains("tebako-dl-"), "under the dl root: {host}");
+        assert!(!host.starts_with("A:"), "never the drive itself: {host}");
+        assert!(
+            std::path::Path::new(&host).is_file(),
+            "the materialized copy exists: {host}"
+        );
+        assert!(
+            host.ends_with("A_/t/lib/x.so"),
+            "the flattened tail mirrors the memfs path: {host}"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
