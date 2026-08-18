@@ -15,12 +15,16 @@
 //! importer-dir-only rule, recursion with a visited set) lives in
 //! `context.rs`.
 //!
-//! Only the header region is parsed (the first [`HEADER_WINDOW`] bytes
-//! of the extracted copy): Mach-O load commands, the ELF dynamic
-//! string table, and the PE import directory all live in the first
-//! pages of any real image. A truncated or unparseable header yields no
-//! dependencies — the loader then answers for the host libraries
-//! exactly as before.
+//! Mach-O and ELF parse only the header region (the first
+//! [`HEADER_WINDOW`] bytes of the extracted copy): their load commands
+//! and dynamic tables ride the first pages of any real image. PE is the
+//! exception (incident 13): the import directory is SECTION-resident
+//! (.rdata), which sits past the window in a multi-MiB module (a
+//! -static-libstdc++ build) — a windowed parse silently answers an
+//! empty closure, so [`parse`] hands PE the whole buffer it was given
+//! (the caller reads PE images in full). A truncated or unparseable
+//! header yields no dependencies — the loader then answers for the host
+//! libraries exactly as before.
 
 /// Header bytes examined for dependency metadata.
 pub(crate) const HEADER_WINDOW: usize = 1 << 20;
@@ -57,9 +61,11 @@ pub struct ImageDeps {
 /// formats.
 pub fn parse(bytes: &[u8]) -> Option<ImageDeps> {
     let window = &bytes[..bytes.len().min(HEADER_WINDOW)];
+    // PE parses the WHOLE buffer (the module doc — incident 13): its
+    // import directory is section-resident, not header-resident.
     parse_macho(window)
         .or_else(|| parse_elf(window))
-        .or_else(|| parse_pe(window))
+        .or_else(|| parse_pe(bytes))
 }
 
 // ---------------------------------------------------------------------
@@ -687,8 +693,17 @@ mod tests {
     /// is out of phase W, spec 22 §2.1). One section (.rdata) maps RVA
     /// 0x1000 to the file offset right after the headers.
     fn pe64_fixture(imports: &[&str], delay_imports: &[&str]) -> Vec<u8> {
+        pe64_fixture_deep(0, imports, delay_imports)
+    }
+
+    /// The same fixture with `pad` zero bytes between the headers and the
+    /// section body: the import directory's FILE offset lands at
+    /// 0x200 + pad — a multi-MiB module's .rdata behind a big .text
+    /// (incident 13's libsass.so).
+    fn pe64_fixture_deep(pad: usize, imports: &[&str], delay_imports: &[&str]) -> Vec<u8> {
         const HEADERS: usize = 0x200;
         const SECTION_RVA: u32 = 0x1000;
+        let raw_off = HEADERS + pad;
         let import_dir_size = (imports.len() + 1) * PE_IMPORT_DESCRIPTOR_SIZE;
         // Section body: the import descriptors (+ all-zero terminator),
         // then the import name strings, then the delay-load descriptors
@@ -738,24 +753,25 @@ mod tests {
                 &(((delay_imports.len() + 1) * PE_IMPORT_DESCRIPTOR_SIZE) as u32).to_le_bytes(),
             );
         }
-        // The one section header: .rdata, RVA 0x1000 → file HEADERS.
+        // The one section header: .rdata, RVA 0x1000 → file raw_off.
         let sec = opt + 240;
         out[sec..sec + 6].copy_from_slice(b".rdata");
         out[sec + 8..sec + 12].copy_from_slice(&(section.len() as u32).to_le_bytes());
         out[sec + 12..sec + 16].copy_from_slice(&SECTION_RVA.to_le_bytes());
         out[sec + 16..sec + 20].copy_from_slice(&(section.len() as u32).to_le_bytes());
-        out[sec + 20..sec + 24].copy_from_slice(&(HEADERS as u32).to_le_bytes());
+        out[sec + 20..sec + 24].copy_from_slice(&(raw_off as u32).to_le_bytes());
+        out.resize(raw_off, 0);
         out.extend_from_slice(&section);
         // Fill the descriptors' name RVAs (thunks need not resolve —
         // the walk reads names only).
         for (i, rva) in import_name_rvas.iter().enumerate() {
-            let at = HEADERS + i * PE_IMPORT_DESCRIPTOR_SIZE;
+            let at = raw_off + i * PE_IMPORT_DESCRIPTOR_SIZE;
             out[at..at + 4].copy_from_slice(&1_u32.to_le_bytes()); // OriginalFirstThunk
             out[at + 12..at + 16].copy_from_slice(&rva.to_le_bytes()); // Name
             out[at + 16..at + 20].copy_from_slice(&1_u32.to_le_bytes()); // FirstThunk
         }
         for (i, rva) in delay_name_rvas.iter().enumerate() {
-            let at = HEADERS + delay_base + i * PE_IMPORT_DESCRIPTOR_SIZE;
+            let at = raw_off + delay_base + i * PE_IMPORT_DESCRIPTOR_SIZE;
             out[at..at + 4].copy_from_slice(&1_u32.to_le_bytes());
             out[at + 12..at + 16].copy_from_slice(&rva.to_le_bytes());
             out[at + 16..at + 20].copy_from_slice(&1_u32.to_le_bytes());
@@ -800,6 +816,25 @@ mod tests {
         let bytes = pe64_fixture(&["real.dll"], &["delayed.dll"]);
         let parsed = parse(&bytes).expect("a PE parses");
         assert_eq!(parsed.deps, vec!["real.dll".to_string()]);
+    }
+
+    #[test]
+    fn pe_import_directory_beyond_the_header_window_needs_the_whole_image() {
+        // Incident 13 (the msys libsass 126): a multi-MiB module's
+        // import table sits in .rdata past HEADER_WINDOW, and a
+        // windowed parse silently answers an empty dep set — the
+        // closure walk then materializes the importer ALONE and the OS
+        // load misses the vendored siblings. parse() hands PE the whole
+        // buffer for exactly this reason; this pins both sides of the
+        // hazard.
+        let bytes = pe64_fixture_deep(HEADER_WINDOW + 0x400, &["deep.dll"], &[]);
+        let parsed = parse(&bytes).expect("the whole image parses");
+        assert_eq!(parsed.deps, vec!["deep.dll".to_string()]);
+        let windowed = parse(&bytes[..HEADER_WINDOW]).expect("the window parses");
+        assert!(
+            windowed.deps.is_empty(),
+            "the truncated window silently misses the deep import table"
+        );
     }
 
     #[test]
