@@ -1092,6 +1092,9 @@ impl FsContext {
         // dlopen consumers of loader-computed paths land here.
         let tail = Self::dlmap_tail(path);
         let effective = tail.as_deref().unwrap_or(path);
+        if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+            eprintln!("[tfs] dlmap2file: {path} (effective {effective})");
+        }
         let mut visited = std::collections::HashSet::new();
         let host = self.extract_for_exec(
             effective,
@@ -1100,6 +1103,9 @@ impl FsContext {
             &[],
             &mut visited,
         )?;
+        if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+            eprintln!("[tfs] dlmap2file: {effective} -> {}", host.display());
+        }
         let s = host.to_string_lossy().into_owned();
         std::ffi::CString::new(s).map_err(|_| libc::EIO)
     }
@@ -1379,8 +1385,17 @@ impl FsContext {
             }
             exec_closure::parse(&head)
         })() else {
+            if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+                eprintln!("[tfs] closure: {path} — header parse unsupported, no dep walk");
+            }
             return Ok(host_path);
         };
+        if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+            eprintln!(
+                "[tfs] closure: {path} format={:?} deps={:?}",
+                parsed.format, parsed.deps
+            );
+        }
         let referrer_dir = memfs_dirname(path);
         let exe_dir = memfs_dirname(exe);
         let mut chain: Vec<String> = chain_rpaths.to_vec();
@@ -1397,6 +1412,11 @@ impl FsContext {
                 }
             };
             let Some(memfs) = resolved else {
+                if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+                    eprintln!(
+                        "[tfs] closure dep: {dep} — not held at the importer's dir (host/system)"
+                    );
+                }
                 continue;
             };
             if visited.contains(&memfs) {
@@ -1404,7 +1424,15 @@ impl FsContext {
             }
             // The dep's own closure rides its extraction (same exe,
             // same destination).
-            let _ = self.extract_for_exec(&memfs, exe, dest, &chain, visited);
+            if let Err(e) = self.extract_for_exec(&memfs, exe, dest, &chain, visited) {
+                // The OS load fails on its own with the loader's error;
+                // the trace names the dep the walk could not serve.
+                if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+                    eprintln!("[tfs] closure dep: {dep} -> {memfs} — extraction failed errno={e}");
+                }
+            } else if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+                eprintln!("[tfs] closure dep: {dep} -> {memfs} materialized");
+            }
         }
         Ok(host_path)
     }
@@ -2533,6 +2561,43 @@ mod tests {
         assert!(
             dest.join("tfs/bin/sibling.dll").is_file(),
             "the deep import table's sibling materializes beside the importer"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dlmap2file_drive_root_closure_materializes_siblings() {
+        // Incident 13 round 4 repro — the msys dogfood's exact shape:
+        // the payload mounted at the DRIVE ROOT (A:/), the importer
+        // dlopen'd by full drive-spelled path, the import directory
+        // past the 1-MiB header window, the vendored ucrt sibling
+        // beside it in-image. The closure walk must materialize the
+        // sibling next to the importer or the OS load 126s.
+        let dir = std::env::temp_dir().join(format!("tfs-dlmap-deep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let sassc = dir.join("img/probe/gemhome/gems/sassc-2.4.0/lib/sassc");
+        std::fs::create_dir_all(&sassc).unwrap();
+        std::fs::write(
+            sassc.join("libsass.so"),
+            pe64_fixture_deep(
+                exec_closure::HEADER_WINDOW + 0x400,
+                &["libgcc_s_seh-1.dll"],
+                &[],
+            ),
+        )
+        .unwrap();
+        std::fs::write(sassc.join("libgcc_s_seh-1.dll"), pe64_fixture(&[], &[])).unwrap();
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &dir.join("img"), "A:/");
+        let host = ctx
+            .dlmap2file("A:/probe/gemhome/gems/sassc-2.4.0/lib/sassc/libsass.so")
+            .unwrap();
+        let host = host.to_string_lossy().into_owned();
+        let sibling = std::path::Path::new(&host).with_file_name("libgcc_s_seh-1.dll");
+        assert!(
+            sibling.is_file(),
+            "the vendored sibling materializes beside the importer: {sibling:?} (importer at {host})"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
