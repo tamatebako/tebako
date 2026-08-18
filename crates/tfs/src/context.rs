@@ -1355,15 +1355,30 @@ impl FsContext {
         // names are host/system libraries — the loader answers for
         // them exactly as before.
         visited.insert(path.to_string());
-        use std::io::Read as _;
-        let mut head = Vec::new();
-        let Ok(_) = std::fs::File::open(&host_path).and_then(|f| {
-            f.take(exec_closure::HEADER_WINDOW as u64)
-                .read_to_end(&mut head)
-        }) else {
-            return Ok(host_path);
-        };
-        let Some(parsed) = exec_closure::parse(&head) else {
+        let Some(parsed) = (|| {
+            use std::io::Read as _;
+            let mut head = Vec::new();
+            std::fs::File::open(&host_path)
+                .and_then(|f| {
+                    f.take(exec_closure::HEADER_WINDOW as u64)
+                        .read_to_end(&mut head)
+                })
+                .ok()?;
+            // Incident 13: a PE import directory is section-resident
+            // (.rdata), past the header window in a multi-MiB module (a
+            // -static-libstdc++ libsass.so) — a windowed parse silently
+            // answers an empty closure and the OS load then 126s on the
+            // vendored siblings that never materialized. A dlmap target
+            // is a load module by construction, so PE images are parsed
+            // WHOLE; the ELF/Mach-O window stands (their load tables
+            // ride the headers).
+            if head.starts_with(b"MZ") {
+                if let Ok(full) = std::fs::read(&host_path) {
+                    head = full;
+                }
+            }
+            exec_closure::parse(&head)
+        })() else {
             return Ok(host_path);
         };
         let referrer_dir = memfs_dirname(path);
@@ -2287,8 +2302,17 @@ mod tests {
     /// same byte construction as exec_closure's pe64_fixture — fixture
     /// builders stay local to their test module, like macho64_fixture).
     fn pe64_fixture(imports: &[&str], delay_imports: &[&str]) -> Vec<u8> {
+        pe64_fixture_deep(0, imports, delay_imports)
+    }
+
+    /// The same fixture with `pad` zero bytes between the headers and
+    /// the section body: the import directory's FILE offset lands at
+    /// 0x200 + pad — a multi-MiB module's .rdata behind a big .text
+    /// (incident 13's libsass.so).
+    fn pe64_fixture_deep(pad: usize, imports: &[&str], delay_imports: &[&str]) -> Vec<u8> {
         const HEADERS: usize = 0x200;
         const SECTION_RVA: u32 = 0x1000;
+        let raw_off = HEADERS + pad;
         let import_dir_size = (imports.len() + 1) * 20;
         // Section body: the import descriptors (+ all-zero terminator),
         // then the import name strings, then the delay-load descriptors
@@ -2333,22 +2357,23 @@ mod tests {
             out[d + 4..d + 8]
                 .copy_from_slice(&(((delay_imports.len() + 1) * 20) as u32).to_le_bytes());
         }
-        // The one section header: .rdata, RVA 0x1000 → file HEADERS.
+        // The one section header: .rdata, RVA 0x1000 → file raw_off.
         let sec = opt + 240;
         out[sec..sec + 6].copy_from_slice(b".rdata");
         out[sec + 8..sec + 12].copy_from_slice(&(section.len() as u32).to_le_bytes());
         out[sec + 12..sec + 16].copy_from_slice(&SECTION_RVA.to_le_bytes());
         out[sec + 16..sec + 20].copy_from_slice(&(section.len() as u32).to_le_bytes());
-        out[sec + 20..sec + 24].copy_from_slice(&(HEADERS as u32).to_le_bytes());
+        out[sec + 20..sec + 24].copy_from_slice(&(raw_off as u32).to_le_bytes());
+        out.resize(raw_off, 0);
         out.extend_from_slice(&section);
         for (i, rva) in import_name_rvas.iter().enumerate() {
-            let at = HEADERS + i * 20;
+            let at = raw_off + i * 20;
             out[at..at + 4].copy_from_slice(&1_u32.to_le_bytes()); // OriginalFirstThunk
             out[at + 12..at + 16].copy_from_slice(&rva.to_le_bytes()); // Name
             out[at + 16..at + 20].copy_from_slice(&1_u32.to_le_bytes()); // FirstThunk
         }
         for (i, rva) in delay_name_rvas.iter().enumerate() {
-            let at = HEADERS + delay_base + i * 20;
+            let at = raw_off + delay_base + i * 20;
             out[at..at + 4].copy_from_slice(&1_u32.to_le_bytes());
             out[at + 12..at + 16].copy_from_slice(&rva.to_le_bytes());
             out[at + 16..at + 20].copy_from_slice(&1_u32.to_le_bytes());
@@ -2475,6 +2500,39 @@ mod tests {
         assert!(
             host.ends_with("A_/t/lib/x.so"),
             "the flattened tail mirrors the memfs path: {host}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn pe_closure_with_a_deep_import_directory_still_walks() {
+        // Incident 13: the import directory past the 1-MiB header
+        // window (a multi-MiB module's .rdata — a -static-libstdc++
+        // libsass.so) must still walk. A windowed parse silently
+        // answers no imports, the importer materializes ALONE, and the
+        // OS load then misses the vendored siblings (the msys 126).
+        let dir = std::env::temp_dir().join(format!("tfs-pe-deep-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let img = dir.join("img");
+        std::fs::create_dir_all(img.join("bin")).unwrap();
+        std::fs::write(
+            img.join("bin/tool.dll"),
+            pe64_fixture_deep(exec_closure::HEADER_WINDOW + 0x400, &["sibling.dll"], &[]),
+        )
+        .unwrap();
+        std::fs::write(img.join("bin/sibling.dll"), pe64_fixture(&[], &[])).unwrap();
+        let dest = dir.join("out");
+
+        let mut ctx = FsContext::new();
+        mount_hostdir(&mut ctx, &img, "/tfs");
+        let host = ctx
+            .extract_exec_closure("/tfs/bin/tool.dll", &dest)
+            .unwrap();
+
+        assert_eq!(host, dest.join("tfs/bin/tool.dll"));
+        assert!(
+            dest.join("tfs/bin/sibling.dll").is_file(),
+            "the deep import table's sibling materializes beside the importer"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
