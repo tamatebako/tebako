@@ -154,13 +154,28 @@ patch is; ffi is a third-party gem, where that move is the per-gem code
 this spec's law forbids) is SETTLED in §2.1 (phase W, locked
 2026-08-15): the covered surface extends to fiddle; ffi and self-loads
 are covered by DECLARATION, never by patching and never by an
-interception surface windows does not have.
+interception surface windows does not have. (Superseded in one class on
+2026-08-18 — the §2.1 amendment: the dln-load IAT rebind IS an
+interception surface for path-carrying raw calls, so ffi/self-loads of
+VFS paths are covered by interception; the declaration route stands for
+bare names.)
 
-### 2.1 Windows Class L — the phase-W design (locked 2026-08-15; implementation W2 — PLANNED)
+### 2.1 Windows Class L — the phase-W design (locked 2026-08-15; implementation W2 — DELIVERED 2026-08-18, amended same day)
 
 The delivery record above is the as-shipped baseline (phase W1); this
 section is the target the W2 implementation lands, and §8's windows row
 is its proof. Seven locked decisions; nothing below happens silently.
+
+W2 DELIVERED (2026-08-18 — tamatebako/ruby#86, tebako@d4975b1c +
+the PE closure walk): the PE closure walk, the
+`LOAD_WITH_ALTERED_SEARCH_PATH` binding, the §5 verdict line, and the
+bare-name alias route landed as designed. ONE amendment to the locked
+text (the incident-13 discovery, recorded at the interposition paragraph
+below): the dln-load IAT rebind gives windows a per-module interception
+surface after all, so ffi/self-loads of VFS PATHS are covered by
+interception — the 2026-08-15 settlement's declaration-only verdict for
+that class is superseded. The declaration route stands unchanged for
+BARE names.
 
 **The interposition point.** Windows has no process-wide preemption
 surface (no exe-definition preemption as on ELF, no interpose section
@@ -182,6 +197,37 @@ never by interception. The fork's axis is therefore not fiddle-vs-ffi
 but vendored-runtime vs third-party: everything the runtime ships
 routes through the c_api; everything else is a declaration plus the
 OS's own mechanisms.
+
+**AMENDMENT (2026-08-18, incident 13 — tamatebako/ruby#86).** The
+"no interception surface" premise above was wrong in one place. There
+is no PROCESS-wide preemption surface, but there is a per-module one:
+every extension module enters the process THROUGH `dln_open` (the
+`require` path — ffi's `ffi_c` and fiddle included), so the patched
+`dln.c` rebinds each just-loaded module's IAT entries for
+kernel32/KernelBase `LoadLibrary{A,W,ExA,ExW}` to four static shims at
+load time. A shim runs the same Rule-L1 decision and the same c_api
+calls as the dln route (`tebako_path_is_embedded` →
+`tebako_fs_dlmap2file`, the alias union via `tebako_fs_dlalias2file`),
+then invokes the captured original on the materialized host copy with
+`LOAD_WITH_ALTERED_SEARCH_PATH` (unless the caller passed its own
+`LOAD_LIBRARY_SEARCH_*` bits — 0x1F00 respected); `ENOENT` falls
+through to the original byte-identical; any other dlmap failure returns
+NULL with a named `SetLastError` (EACCES/EPERM/EROFS→5, ENOMEM→8,
+EIO→1117, else→1359). Originals are captured from the slot being
+replaced; already-shimmed slots are skipped; only data slots are
+written (no code patching) and `VirtualProtect` is restored. This is
+runtime-internal in exactly the `dln.c` sense — the interposition point
+is still the interpreter's own loader path, extended to the modules
+that path loads; no third-party gem is patched, and the C surface stays
+decision-only (invariant 3). Consequences: ffi/self-loads of VFS PATHS
+are COVERED BY INTERCEPTION (the edge table below), and the fiddle
+vendored-route question is moot — the rebind covers fiddle's raw macro
+without a `fiddle.h` change. The boundary, stated honestly: a module
+the OS loads as a mere dependency (never through `dln_open`) gets no
+rebind — its imports resolve through the PE closure walk and the
+altered-search binding instead; and the rebind routes PATH-carrying
+calls only — BARE names still mean host by default unless declared
+(the bare-name rule below is untouched by the amendment).
 
 **Materialization and the PE closure walk.** A VFS-resident load
 materializes through `tebako_fs_dlmap2file`, whose closure walk
@@ -342,9 +388,13 @@ errno channel only — these named codes are emitted by their owning
 layers (the tpkg parse, the driver boot, the Rule-R3 materialize path);
 there is no parallel taxonomy inside tfs. Runtime-side (the covered load path): the
 interpreter's own `LoadError` carries the tebako verdict line (§5) —
-the v1-era bare `goto failed` is retired. Raw surface: the OS's own
-honest error (126 / `0x8007007E`), never intercepted, the remedy named
-in the table below — declare the alias.
+the v1-era bare `goto failed` is retired. Raw surface (post-amendment):
+a PATH-carrying raw call is intercepted by the IAT rebind — a covered
+miss returns NULL with a named `SetLastError` (5 / 8 / 1117 / 1359) the
+caller (ffi, fiddle, a self-loading extension) surfaces through its own
+error channel, never a tebako-authored message. A BARE-name raw call
+stays the OS's own honest error (126 / `0x8007007E`), never
+intercepted, the remedy named in the table below — declare the alias.
 
 **The raw-`LoadLibrary` edge, per case** (the phase-W target; the W1
 record above is the as-shipped baseline):
@@ -356,10 +406,10 @@ record above is the as-shipped baseline):
 | covered but not held (a host path under a covering mount) | **covered** — ENOENT → host passthrough (the W1 precedent) |
 | extension importing the ruby DLL | **covered** — the exe-dir layout + the OS basename-reuse rule + `rb_w32_check_imported`'s named ABI error; the walk's exclusion above keeps a vendored copy off disk |
 | extension importing OTHER VFS-resident DLLs (sibling vendor imports) | **covered (W2)** — the PE closure walk materializes the siblings next to their importer; `LOAD_WITH_ALTERED_SEARCH_PATH` binds them. Closes the W1 two-layer gap |
-| fiddle `Fiddle.dlopen` of a VFS path or a declared alias | **covered (W2)** — fiddle joins the vendored route (the interposition decision above) |
+| fiddle `Fiddle.dlopen` of a VFS path or a declared alias | **covered (W2)** — the dln-load IAT rebind (the §2.1 amendment) routes fiddle's raw `LoadLibrary` macro through Rule-L1; no `fiddle.h` change was needed |
 | ffi `FFI::DynamicLibrary.open` / a C-extension self-load of a DECLARED alias's bare name | **covered by declaration (W2)** — the boot-extracted copy resolves through the OS's own `PATH` search; zero interception, zero per-gem code |
 | ffi / self-load of an UNDECLARED bare name | **host by default** — the OS answers for it; the rule's whole point |
-| ffi / self-load of a VFS PATH (any separator) | **documented gap, permanent** — no interception surface exists and patching ffi is forbidden; the failure is the OS's honest 126, and the named remedy is the alias declaration. Never a silent success, never a tebako-intercepted error |
+| ffi / self-load of a VFS PATH (any separator) | **covered (W2 — amended 2026-08-18)** — the dln-load IAT rebind (the §2.1 amendment) routes the raw `LoadLibrary`/`LoadLibraryExA` through Rule-L1: materialize-then-load with the PE closure walk and the altered-search binding; a covered dlmap failure returns NULL with a named `SetLastError` the caller surfaces through its own error channel. Never a silent success |
 | a delay-loaded vendored sibling | **documented gap (phase W)** — the walk skips delay-load imports (no proven consumer); an honest OS failure |
 | failed materialization on the covered path (a directory, a jail-denied passthrough) | **named error** — `LoadError` carrying the §5 verdict line plus the OS error text; the v1-era `goto failed` wart is retired |
 
@@ -578,13 +628,16 @@ line, so the caller's standard `dlopen`/`dlerror` handling reports the
 tebako verdict instead of whatever the loader last recorded.
 
 On windows the verdict channel is the `LoadError` message itself: the
-patched dln/fiddle route (§2.1) raises carrying the tebako context line
+patched dln route (§2.1) raises carrying the tebako context line
 — the library, the mount, the materialization verdict — with the OS's
 own error text appended (`FormatMessage`), never a bare 126. This is
 the phase-W fix for the v1-era `goto failed` wart the W1 record named,
 and the exact analogue of the POSIX dlerror contract. Raw
-`LoadLibrary` callers (the uncovered surface) get the OS's own honest
-error — never an intercepted one, never a silent success.
+`LoadLibrary` callers rebound through the IAT shim (the §2.1 amendment)
+surface a covered miss as the shim's named `SetLastError` code through
+their own error channel; bare-name callers (the uncovered surface) get
+the OS's own honest error — never an intercepted one, never a silent
+success.
 
 ## 6. The documented interface (the stable surface)
 
@@ -649,8 +702,8 @@ runtime releases.
   oracle pair: ffi/fiddle/excavate-load + java-exec + cert-resource
   are all exercised there).
 - Landing order: Class L POSIX → Class E → Class R → windows L (§2.1 —
-  the phase-W design: the PE closure walk, the dln/fiddle vendored
-  route, the alias bare-name rule). Each lands behind its dogfood
+  the phase-W design: the PE closure walk, the dln-load IAT rebind, the
+  alias bare-name rule). Each lands behind its dogfood
   proof; a failed proof keeps the adapter.
 
 ## 8. Acceptance
