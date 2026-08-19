@@ -1293,7 +1293,7 @@ fn check_check_name(name: &str) -> Result<(), ManifestError> {
 /// is last-wins, so the refusal lives here, not in `validate`).
 mod checks_map {
     use super::Check;
-    use serde::{Deserializer, de};
+    use serde::{de, Deserializer};
     use std::collections::BTreeMap;
 
     pub fn deserialize<'de, D: Deserializer<'de>>(
@@ -1305,10 +1305,7 @@ mod checks_map {
             fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 f.write_str("a map of check name to check")
             }
-            fn visit_map<A: de::MapAccess<'de>>(
-                self,
-                mut map: A,
-            ) -> Result<Self::Value, A::Error> {
+            fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
                 let mut out = BTreeMap::new();
                 while let Some((name, check)) = map.next_entry::<String, Check>()? {
                     if out.insert(name.clone(), check).is_some() {
@@ -2166,12 +2163,14 @@ mod tests {
         );
         assert_eq!(
             check.argv,
-            vec!["--type", "iso", "{scratch}/test-iso.adoc", "--agree-to-terms"]
+            vec![
+                "--type",
+                "iso",
+                "{scratch}/test-iso.adoc",
+                "--agree-to-terms"
+            ]
         );
-        assert_eq!(
-            check.fixtures.as_deref(),
-            Some("/__tpkg__/check/html-xml")
-        );
+        assert_eq!(check.fixtures.as_deref(), Some("/__tpkg__/check/html-xml"));
         assert_eq!(check.expect.exit, 0);
         assert_eq!(check.expect.files, vec!["test-iso.xml", "test-iso.html"]);
         assert_eq!(check.expect.stdout.as_deref(), Some("\"ok\":1"));
@@ -2242,10 +2241,8 @@ mod tests {
         );
         // On any other kind the reserved spelling names nothing — a
         // named validation error.
-        let err = PayloadManifest::from_yaml(&minimal_app_yaml(
-            "checks:\n  c:\n    entry: self\n",
-        ))
-        .unwrap_err();
+        let err = PayloadManifest::from_yaml(&minimal_app_yaml("checks:\n  c:\n    entry: self\n"))
+            .unwrap_err();
         assert!(
             matches!(err, ManifestError::Invalid(m) if m.contains("self")),
             "{err}"
@@ -2281,8 +2278,8 @@ mod tests {
             "{err}"
         );
         // A structural check with no image_files asserts nothing at all.
-        let err = PayloadManifest::from_yaml(&minimal_data_yaml("checks:\n  layout: {}\n"))
-            .unwrap_err();
+        let err =
+            PayloadManifest::from_yaml(&minimal_data_yaml("checks:\n  layout: {}\n")).unwrap_err();
         assert!(
             matches!(err, ManifestError::Invalid(m) if m.contains("image_files")),
             "{err}"
@@ -2303,7 +2300,10 @@ mod tests {
             );
         }
         // expect.image_files and fixtures are in-image ABSOLUTE, no '..'.
-        for (key, bad) in [("image_files", "rel/x.adoc"), ("image_files", "/a/../b.adoc")] {
+        for (key, bad) in [
+            ("image_files", "rel/x.adoc"),
+            ("image_files", "/a/../b.adoc"),
+        ] {
             let err = PayloadManifest::from_yaml(&minimal_data_yaml(&format!(
                 "checks:\n  layout:\n    expect: {{{key}: ['{bad}']}}\n"
             )))
