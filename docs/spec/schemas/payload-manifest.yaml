@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 2 # MINOR — additive changes only (1: materialize, 2: library_aliases)
+schema_minor: 3 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -265,6 +265,49 @@ grammar:
       may declare; no platform filter (native images are triplet-bound,
       so an alias is platform surface by construction). Old readers
       ignore the key (unknown-field rule).
+  checks:
+    type: map of check name → check
+    required: false
+    since: schema_minor 3
+    key: "[A-Za-z0-9][A-Za-z0-9._-]* — names surface in report lines and scratch dir names; unique by the map's construction"
+    entry:
+      entry: {type: "absolute in-image path | the reserved spelling \"self\"", required: false, notes: "PRESENT ⇒ an exec check; ABSENT ⇒ a structural check (MECE — one key decides the shape, never a kind flag). \"self\" is kind-runtime only (spec 26 §1.1: the runtime exe itself, env image mounted)"}
+      argv: {type: list of string, required: false, notes: "exec-only. `{scratch}` (the per-run host scratch dir) at most once per entry; every other spelling is literal passthrough — the engine substitutes, the model carries"}
+      fixtures: {type: absolute in-image path, required: false, notes: "exec-only. The dir whose CONTENTS land at the HOST scratch root — never VFS-spelled (spec 26 §1)"}
+      expect:
+        type: map
+        required: false
+        notes: "absent = the default {exit: 0}; byte-golden assertions do not exist by construction"
+        fields:
+          exit: {type: int, required: false, notes: "default 0"}
+          files: {type: list of scratch-relative paths, required: false, notes: "existence + non-empty after the run; never absolute, no '..' components"}
+          stdout: {type: string, required: false, notes: "one regex the run's stdout must match; carried uncompiled, the engine compiles it"}
+          image_files: {type: list of absolute in-image paths, required: false, notes: "existence + non-empty; the structural check's assertion channel — a structural check requires a non-empty image_files"}
+      needs:
+        type: list
+        required: false
+        notes: additive host needs for the check run ONLY (rare) — a minimal mirror of the spec 23 §2 D1 entry grammar
+        entry:
+          path: {type: string, required: true, notes: absolute host path or a spec 23 §2 symbolic atom}
+          access: {type: enum, values: [ro, rw], required: true}
+          when: {type: "list of enum [windows, macos, linux]", required: false}
+          why: {type: string, required: false}
+      requires:
+        type: map
+        required: false
+        notes: "composition prerequisites; unmet ⇒ SKIP (loud, the capability named), never FAIL (spec 26 §2)"
+        fields:
+          provides: {type: list of string, required: true, notes: non-empty}
+      when: {type: "list of enum [windows, macos, linux]", required: false, notes: "the OS-family axis, NOT the spec 03 §3 triplet axis; absent = every platform"}
+      timeout: {type: int, required: false, notes: positive seconds; expiry is a FAIL}
+    notes: >-
+      spec 26 §1 — the payload's own acceptance contracts, declared
+      in-image: "given my declared needs, I do my one real thing". Any
+      kind may declare checks (exec checks on executable/runtime slices —
+      the latter with entry: self — structural checks on data slices).
+      A malformed block is a named error at press/`tfs validate` (exit
+      65), never discovered at run time (spec 26 §7). Old readers ignore
+      the key (unknown-field rule).
 
 refusals:
   - case: identity.schema_version missing
@@ -285,5 +328,11 @@ refusals:
     behavior: the manifest lies — boot fails with a named error (exit 65), never a skipped entry
   - case: a duplicate alias name within one image, or one alias name declared by two co-mounted images (schema_minor 2)
     behavior: authoring ambiguity — a named error (parse-time, resp. boot-time exit 65), never a silent winner
+  - case: "entry: self on a kind other than runtime (schema_minor 3)"
+    behavior: named validation error at parse (exit 65) — the reserved spelling names the runtime exe, spec 26 §1.1
+  - case: a structural check (no entry) declaring argv/fixtures, or asserting no image_files (schema_minor 3)
+    behavior: named validation error at parse (exit 65) — exec-only keys on a structural check are a grammar violation
+  - case: a malformed checks block otherwise (bad name grammar, relative entry, absolute expect.files, '..' components, non-positive timeout, a when value outside windows/macos/linux) (schema_minor 3)
+    behavior: named validation error at press/`tfs validate` (exit 65), never discovered at run time (spec 26 §7)
 
 deprecated: [] # no field is in a deprecation window

@@ -72,6 +72,103 @@ fn arb_alias() -> impl Strategy<Value = LibraryAlias> {
     (arb_name(), arb_path()).prop_map(|(name, path)| LibraryAlias { name, path })
 }
 
+/// spec 26 §1: check argv entries carry the `{scratch}` token at most
+/// once each (the engine substitutes; the model only carries).
+fn arb_argv() -> impl Strategy<Value = Vec<String>> {
+    let arg = prop_oneof![
+        arb_name(),
+        arb_name().prop_map(|n| format!("{{scratch}}/{n}")),
+    ];
+    prop::collection::vec(arg, 0..=4)
+}
+
+/// Scratch-relative paths (no leading '/', no '..' components).
+fn arb_rel_files() -> impl Strategy<Value = Vec<String>> {
+    prop::collection::vec(
+        prop::collection::vec(arb_name(), 1..=2).prop_map(|segs| segs.join("/")),
+        0..=2,
+    )
+}
+
+/// spec 26 §1 (schema_minor 3): a valid check for the kind — exec
+/// checks (entry present; `self` only on runtime) or structural checks
+/// (no entry ⇒ no argv/fixtures; a non-empty image_files channel).
+fn arb_check(kind: PayloadKind) -> impl Strategy<Value = Check> {
+    let entry = match kind {
+        PayloadKind::Runtime => prop_oneof![
+            Just(CheckEntry::SelfExe),
+            arb_path().prop_map(CheckEntry::Path),
+        ]
+        .boxed(),
+        _ => arb_path().prop_map(CheckEntry::Path).boxed(),
+    };
+    let need = (
+        arb_path(),
+        prop::sample::select(vec![JailAccess::Ro, JailAccess::Rw]),
+        arb_name(),
+    )
+        .prop_map(|(path, access, why)| CheckNeed {
+            path,
+            access,
+            when: Vec::new(),
+            why: Some(why),
+        });
+    let platform = prop::sample::select(vec![
+        CheckPlatform::Windows,
+        CheckPlatform::Macos,
+        CheckPlatform::Linux,
+    ]);
+    let exec = (
+        entry,
+        arb_argv(),
+        prop::option::of(arb_path()),
+        arb_rel_files(),
+        prop::option::of(arb_name()),
+        prop::collection::vec(arb_path(), 0..=1),
+        prop::collection::vec(need, 0..=1),
+        prop::option::of(
+            prop::collection::vec(arb_name(), 1..=2).prop_map(|provides| CheckRequires { provides }),
+        ),
+        prop::collection::vec(platform, 0..=2),
+        prop::option::of(1u64..=600),
+    )
+        .prop_map(
+            |(entry, argv, fixtures, files, stdout, image_files, needs, requires, when, timeout)| {
+                Check {
+                    entry: Some(entry),
+                    argv,
+                    fixtures,
+                    expect: CheckExpect {
+                        exit: 0,
+                        files,
+                        stdout,
+                        image_files,
+                    },
+                    needs,
+                    requires,
+                    when,
+                    timeout,
+                }
+            },
+        );
+    let structural = prop::collection::vec(arb_path(), 1..=2).prop_map(|image_files| Check {
+        entry: None,
+        argv: Vec::new(),
+        fixtures: None,
+        expect: CheckExpect {
+            exit: 0,
+            files: Vec::new(),
+            stdout: None,
+            image_files,
+        },
+        needs: Vec::new(),
+        requires: None,
+        when: Vec::new(),
+        timeout: None,
+    });
+    prop_oneof![3 => exec.boxed(), 1 => structural.boxed()]
+}
+
 fn arb_signing() -> impl Strategy<Value = Signing> {
     prop_oneof![
         Just(Signing {
@@ -290,9 +387,12 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
             prop::collection::vec(arb_path(), 0..=2),
             // spec 03 §2.5: bare names, unique per image (indexed).
             prop::collection::vec(arb_alias(), 0..=2),
+            // spec 26 §1: checks, keyed by name (arb_name satisfies the
+            // check-name grammar).
+            prop::collection::btree_map(arb_name(), arb_check(kind), 0..=2),
         )
     })
-    .prop_map(|(identity, provides, requires, materialize, aliases)| {
+    .prop_map(|(identity, provides, requires, materialize, aliases, checks)| {
         let mut library_aliases = aliases;
         for (i, a) in library_aliases.iter_mut().enumerate() {
             a.name = format!("{}{i}", a.name);
@@ -303,6 +403,7 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
             requires,
             materialize,
             library_aliases,
+            checks,
         }
     })
 }

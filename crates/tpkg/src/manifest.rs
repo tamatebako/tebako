@@ -1122,6 +1122,316 @@ pub struct LibraryAlias {
     pub path: String,
 }
 
+/// A check's `entry` (spec 26 §1): EITHER the reserved spelling `self` —
+/// legal only when `identity.kind == Runtime` (§1.1: the runtime exe
+/// itself, with the env image mounted) — OR the absolute in-image path
+/// of the executable the check runs. A check never names a host system
+/// executable (invariant 1). ABSENT `entry` is not this type's question:
+/// it makes the check STRUCTURAL (see [`Check`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CheckEntry {
+    /// `self` — the runtime exe (runtime slices only, spec 26 §1.1).
+    SelfExe,
+    /// An absolute in-image path.
+    Path(String),
+}
+
+impl Serialize for CheckEntry {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        match self {
+            CheckEntry::SelfExe => s.serialize_str("self"),
+            CheckEntry::Path(p) => s.serialize_str(p),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CheckEntry {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<CheckEntry, D::Error> {
+        let s = String::deserialize(d)?;
+        Ok(if s == "self" {
+            CheckEntry::SelfExe
+        } else {
+            CheckEntry::Path(s)
+        })
+    }
+}
+
+/// A platform family of a check's `when:` filter (spec 26 §1): the OS
+/// family axis (`windows | macos | linux`), NOT the spec 03 §3 triplet
+/// axis — a check's filter is behavioral (the engine's per-platform
+/// SKIP), never ABI-bound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum CheckPlatform {
+    Windows,
+    Macos,
+    Linux,
+}
+
+/// One `needs:` entry of a check (spec 26 §1: additive host needs for
+/// the check run ONLY — rare): a minimal mirror of the spec 23 §2 D1
+/// entry grammar, `{path, access, when?, why?}`. The engine composes
+/// them into the run's effective policy; the model only carries.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckNeed {
+    /// Host path (absolute, or a spec 23 §2 symbolic atom).
+    pub path: String,
+    /// The grant bit — the same `ro | rw` axis as the jail model.
+    pub access: crate::jail::JailAccess,
+    /// Optional platform filter (the OS family axis).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub when: Vec<CheckPlatform>,
+    /// Documentation for the reviewer (spec 23 §2's `why`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
+}
+
+/// A check's `requires:` block (spec 26 §1): the capabilities the
+/// resolved composition must provide. An unmet prerequisite SKIPs the
+/// check (loud, the missing capability named), never FAILs it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckRequires {
+    pub provides: Vec<String>,
+}
+
+/// A check's `expect:` block (spec 26 §1) — the assertions. Byte-golden
+/// assertions do not exist by construction: there is no such field
+/// (output bytes churn with dependency versions; the Homebrew test's
+/// `assert_path_exists` is the parity bar, invariant 8).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CheckExpect {
+    /// Expected exit status (default 0).
+    #[serde(default, skip_serializing_if = "u32_is_zero")]
+    pub exit: u32,
+    /// Scratch-relative paths asserted to exist and be non-empty after
+    /// the run.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+    /// One regex the run's stdout must match. Carried UNCOMPILED — tpkg
+    /// has no regex dependency by design; the check engine (spec 26 §2)
+    /// compiles it at run time. Validated here only for non-emptiness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stdout: Option<String>,
+    /// In-image absolute paths asserted to exist and be non-empty — the
+    /// STRUCTURAL check's assertion channel (spec 26 §1.1).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub image_files: Vec<String>,
+}
+
+impl CheckExpect {
+    fn is_default(&self) -> bool {
+        self == &CheckExpect::default()
+    }
+}
+
+fn u32_is_zero(v: &u32) -> bool {
+    *v == 0
+}
+
+/// One `checks:` entry (spec 26 §1, additive — schema_minor 3): the
+/// payload's own acceptance contract, declared in-image — "given my
+/// declared needs, I do my one real thing". Any kind may declare checks.
+///
+/// The shape is decided by ONE key, never a `kind:` flag (MECE, spec 26
+/// §1.1): a check WITH `entry` is an EXEC check (the engine runs it
+/// under the resolved composition); a check WITHOUT `entry` is a
+/// STRUCTURAL check (the data-slice shape — the engine mounts the image
+/// and asserts `expect.image_files`, no runtime, no composition).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Check {
+    /// Exec checks: the in-image executable — or `self` on a runtime
+    /// slice (spec 26 §1.1). Absent ⇒ STRUCTURAL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entry: Option<CheckEntry>,
+    /// Exec-check argv. `{scratch}` is the ONE substitution token (the
+    /// per-run host scratch directory, spec 26 §2) — at most one
+    /// occurrence per entry; every other spelling is literal
+    /// passthrough. The engine substitutes; the model only carries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub argv: Vec<String>,
+    /// In-image fixtures directory whose CONTENTS land at the HOST
+    /// scratch root (never VFS-spelled — the consumer may be the
+    /// payload's own raw-surface component, spec 26 §1). Exec-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixtures: Option<String>,
+    /// The assertions (absent = the default `exit: 0`).
+    #[serde(default, skip_serializing_if = "CheckExpect::is_default")]
+    pub expect: CheckExpect,
+    /// Additive host needs for the check run ONLY (spec 23 §2 grammar).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub needs: Vec<CheckNeed>,
+    /// Composition prerequisites; unmet ⇒ SKIP, never FAIL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requires: Option<CheckRequires>,
+    /// Platform filter (the OS family axis); absent = every platform.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub when: Vec<CheckPlatform>,
+    /// Per-check timeout in seconds; expiry is a FAIL (spec 26 §2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout: Option<u64>,
+}
+
+/// The check-name grammar (spec 26 §1): names appear in report lines
+/// and scratch dir names — `[A-Za-z0-9][A-Za-z0-9._-]*`. Uniqueness is
+/// enforced by the map's own deserializer (see `checks_map`).
+fn check_check_name(name: &str) -> Result<(), ManifestError> {
+    let ok = matches!(name.bytes().next(), Some(b) if b.is_ascii_alphanumeric())
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    if !ok {
+        return Err(ManifestError::Invalid(
+            "checks[] names must match [A-Za-z0-9][A-Za-z0-9._-]* (they surface in report lines and scratch dir names)",
+        ));
+    }
+    Ok(())
+}
+
+/// Serde helper: the checks map refuses a re-declared name — an
+/// authoring ambiguity is a named structural error, never a silent
+/// winner (the duplicate-alias discipline; serde_yml's plain map read
+/// is last-wins, so the refusal lives here, not in `validate`).
+mod checks_map {
+    use super::Check;
+    use serde::{Deserializer, de};
+    use std::collections::BTreeMap;
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        d: D,
+    ) -> Result<BTreeMap<String, Check>, D::Error> {
+        struct Visitor;
+        impl<'de> de::Visitor<'de> for Visitor {
+            type Value = BTreeMap<String, Check>;
+            fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("a map of check name to check")
+            }
+            fn visit_map<A: de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<Self::Value, A::Error> {
+                let mut out = BTreeMap::new();
+                while let Some((name, check)) = map.next_entry::<String, Check>()? {
+                    if out.insert(name.clone(), check).is_some() {
+                        return Err(de::Error::custom(format_args!(
+                            "checks: duplicate check name {name:?} — an authoring ambiguity, never a silent winner"
+                        )));
+                    }
+                }
+                Ok(out)
+            }
+        }
+        d.deserialize_map(Visitor)
+    }
+}
+
+impl Check {
+    fn validate(&self, kind: PayloadKind) -> Result<(), ManifestError> {
+        match &self.entry {
+            Some(CheckEntry::SelfExe) => {
+                // §1.1: the reserved spelling names the runtime exe — a
+                // tebako artifact paired with the env image. On any
+                // other kind it names nothing.
+                if kind != PayloadKind::Runtime {
+                    return Err(ManifestError::Invalid(
+                        "checks[].entry: \"self\" is reserved for kind runtime (spec 26 §1.1)",
+                    ));
+                }
+            }
+            Some(CheckEntry::Path(p)) => {
+                check_abs_path(p, "checks[].entry must be absolute (inside the image)")?;
+                if p.split('/').any(|component| component == "..") {
+                    return Err(ManifestError::Invalid(
+                        "checks[].entry must not contain '..' components",
+                    ));
+                }
+            }
+            None => {
+                // STRUCTURAL (spec 26 §1.1 — the data-slice shape): no
+                // exec surface at all, so the exec-only keys are a named
+                // error and the only assertion channel is image_files.
+                if !self.argv.is_empty() {
+                    return Err(ManifestError::Invalid(
+                        "checks[].argv is exec-only — a structural check (no entry) declares none",
+                    ));
+                }
+                if self.fixtures.is_some() {
+                    return Err(ManifestError::Invalid(
+                        "checks[].fixtures is exec-only — a structural check (no entry) declares none",
+                    ));
+                }
+                if self.expect.image_files.is_empty() {
+                    return Err(ManifestError::Invalid(
+                        "a structural check (no entry) requires a non-empty expect.image_files — its only assertion channel (spec 26 §1.1)",
+                    ));
+                }
+            }
+        }
+        for arg in &self.argv {
+            if arg.matches("{scratch}").count() > 1 {
+                return Err(ManifestError::Invalid(
+                    "checks[].argv carries the {scratch} token at most once per entry",
+                ));
+            }
+        }
+        if let Some(fixtures) = &self.fixtures {
+            check_abs_path(
+                fixtures,
+                "checks[].fixtures must be absolute (inside the image)",
+            )?;
+            if fixtures.split('/').any(|component| component == "..") {
+                return Err(ManifestError::Invalid(
+                    "checks[].fixtures must not contain '..' components",
+                ));
+            }
+        }
+        for f in &self.expect.files {
+            if f.is_empty() || f.starts_with('/') || f.split('/').any(|c| c == "..") {
+                return Err(ManifestError::Invalid(
+                    "checks[].expect.files entries must be non-empty scratch-relative paths (never absolute, no '..' components)",
+                ));
+            }
+        }
+        if let Some(stdout) = &self.expect.stdout {
+            check_non_empty(
+                stdout,
+                "checks[].expect.stdout must not be empty (one regex the run's stdout must match)",
+            )?;
+        }
+        for f in &self.expect.image_files {
+            check_abs_path(
+                f,
+                "checks[].expect.image_files entries must be absolute (inside the image)",
+            )?;
+            if f.split('/').any(|component| component == "..") {
+                return Err(ManifestError::Invalid(
+                    "checks[].expect.image_files entries must not contain '..' components",
+                ));
+            }
+        }
+        for need in &self.needs {
+            check_non_empty(&need.path, "checks[].needs[].path must not be empty")?;
+            if let Some(why) = &need.why {
+                check_non_empty(why, "checks[].needs[].why must not be empty when present")?;
+            }
+        }
+        if let Some(requires) = &self.requires {
+            if requires.provides.is_empty() || requires.provides.iter().any(|p| p.is_empty()) {
+                return Err(ManifestError::Invalid(
+                    "checks[].requires.provides must be a non-empty list of non-empty capabilities",
+                ));
+            }
+        }
+        if let Some(timeout) = self.timeout {
+            if timeout == 0 {
+                return Err(ManifestError::Invalid(
+                    "checks[].timeout must be positive (seconds)",
+                ));
+            }
+        }
+        Ok(())
+    }
+}
+
 /// The payload manifest (spec 03): IDENTITY + PROVIDES + DEPENDS on a
 /// common provenance/trust layer, carried at [`PAYLOAD_MANIFEST_PATH`].
 ///
@@ -1151,6 +1461,18 @@ pub struct PayloadManifest {
     /// construction). Absent = no declared aliases.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub library_aliases: Vec<LibraryAlias>,
+    /// The spec-26 §1 payload checks (additive — schema_minor 3; old
+    /// readers ignore the key, new readers enforce): the payload's own
+    /// acceptance contracts, check-name → [`Check`]. Any kind may
+    /// declare; a re-declared name is a named structural error (the
+    /// duplicate-alias discipline, never a silent winner). Absent = no
+    /// declared checks (an executable kind declaring none is a
+    /// press-time lint WARNING — spec 26 §1 — never a manifest error).
+    /// Note the map renders sorted on serialize; spec 26 §2's
+    /// declaration-order run rule is the ENGINE's read of the in-image
+    /// YAML mapping, not this model's storage order.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub checks: BTreeMap<String, Check>,
 }
 
 impl<'de> Deserialize<'de> for PayloadManifest {
@@ -1165,6 +1487,8 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             materialize: Vec<String>,
             #[serde(default)]
             library_aliases: Vec<LibraryAlias>,
+            #[serde(default, deserialize_with = "checks_map::deserialize")]
+            checks: BTreeMap<String, Check>,
         }
         let raw = Raw::deserialize(d)?;
         let provides = match raw.identity.kind {
@@ -1191,6 +1515,7 @@ impl<'de> Deserialize<'de> for PayloadManifest {
             requires: raw.requires,
             materialize: raw.materialize,
             library_aliases: raw.library_aliases,
+            checks: raw.checks,
         })
     }
 }
@@ -1213,8 +1538,10 @@ impl PayloadManifest {
     /// kind ↔ provides binding, the locked capability truth tables,
     /// digest/keyid shapes, signing/encryption state consistency, the
     /// reserved-triplet rule, the absolute-path rules, the
-    /// materialize grammar (spec 22 §4), and the library_aliases
-    /// grammar (spec 03 §2.5 / spec 22 §2.1). Unknown keys are
+    /// materialize grammar (spec 22 §4), the library_aliases
+    /// grammar (spec 03 §2.5 / spec 22 §2.1), and the checks grammar
+    /// (spec 26 §1: name grammar, exec/structural split, `entry: self`
+    /// kind binding, path rules, platform filter). Unknown keys are
     /// tolerated everywhere (only `annotations` is lossless by contract).
     pub fn validate(&self) -> Result<(), ManifestError> {
         self.identity.validate()?;
@@ -1278,6 +1605,10 @@ impl PayloadManifest {
                     "library_aliases[] declares a duplicate name (case-insensitive) — an authoring ambiguity, never a silent winner",
                 ));
             }
+        }
+        for (name, check) in &self.checks {
+            check_check_name(name)?;
+            check.validate(self.identity.kind)?;
         }
         Ok(())
     }
@@ -1507,6 +1838,7 @@ mod tests {
             requires: Vec::new(),
             materialize: Vec::new(),
             library_aliases: Vec::new(),
+            checks: BTreeMap::new(),
         };
         assert!(matches!(m.validate(), Err(ManifestError::Invalid(_))));
     }
@@ -1773,6 +2105,362 @@ mod tests {
         assert!(
             matches!(err, ManifestError::Invalid(m) if m.contains("duplicate")),
             "{err}"
+        );
+    }
+
+    /// A minimal kind-app document with `extra` appended verbatim (the
+    /// checks tests' vehicle).
+    fn minimal_app_yaml(extra: &str) -> String {
+        format!(
+            "identity:\n  schema_version: 1\n  kind: app\n  name: x\n  version: 1.0.0\n\
+             \x20 producer: {{tool: t, tool_version: \"1\"}}\n  created: now\n\
+             \x20 digest: {{tree_hash: \"sha256:{}\", blob_sha256: {}}}\n\
+             \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+             provides:\n  entrypoints: [{{name: x, path: /x}}]\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n{extra}",
+            sha(1),
+            sha(2),
+        )
+    }
+
+    /// A minimal kind-runtime document with `extra` appended verbatim.
+    fn minimal_runtime_yaml(extra: &str) -> String {
+        format!(
+            "identity:\n  schema_version: 1\n  kind: runtime\n  name: x\n  version: 4.0.6\n\
+             \x20 producer: {{tool: t, tool_version: \"1\"}}\n  created: now\n\
+             \x20 digest: {{tree_hash: \"sha256:{}\", blob_sha256: {}}}\n\
+             \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+             provides:\n  provides: {{engine: ruby, version: 4.0.6, abi_line: \"4.0\", platform: aarch64-macos}}\n\
+             \x20 built_from: {{src_sha256: {}, patch_set: v0.2.8}}\n  capabilities: {{exec: true, read: true, runtime: true}}\n{extra}",
+            sha(1),
+            sha(2),
+            sha(3),
+        )
+    }
+
+    #[test]
+    fn checks_default_empty_and_round_trip() {
+        // spec 26 §1 (schema_minor 3): the additive `checks:` key —
+        // the payload's own acceptance contracts, declared in-image.
+        let bare = PayloadManifest::from_yaml(&minimal_data_yaml("")).unwrap();
+        assert!(bare.checks.is_empty());
+        // An absent key never serializes (additive on the wire: old
+        // readers see the document they always saw).
+        assert!(!bare.to_yaml().unwrap().contains("checks"));
+
+        // A full EXEC check (the spec 26 §4 metanorma shape) round-trips.
+        let with = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  html-xml:\n    entry: /bin/metanorma\n\
+             \x20   argv: [\"--type\", \"iso\", \"{scratch}/test-iso.adoc\", \"--agree-to-terms\"]\n\
+             \x20   fixtures: /__tpkg__/check/html-xml\n\
+             \x20   expect: {exit: 0, files: [test-iso.xml, test-iso.html], stdout: '\"ok\":1'}\n\
+             \x20   needs: [{path: /opt/vendor-tool, access: ro, when: [macos], why: \"probes its install root\"}]\n\
+             \x20   requires: {provides: [jvm]}\n\
+             \x20   when: [windows, macos, linux]\n\
+             \x20   timeout: 180\n",
+        ))
+        .unwrap();
+        let check = &with.checks["html-xml"];
+        assert_eq!(
+            check.entry,
+            Some(CheckEntry::Path("/bin/metanorma".to_string()))
+        );
+        assert_eq!(
+            check.argv,
+            vec!["--type", "iso", "{scratch}/test-iso.adoc", "--agree-to-terms"]
+        );
+        assert_eq!(
+            check.fixtures.as_deref(),
+            Some("/__tpkg__/check/html-xml")
+        );
+        assert_eq!(check.expect.exit, 0);
+        assert_eq!(check.expect.files, vec!["test-iso.xml", "test-iso.html"]);
+        assert_eq!(check.expect.stdout.as_deref(), Some("\"ok\":1"));
+        assert_eq!(
+            check.needs,
+            vec![CheckNeed {
+                path: "/opt/vendor-tool".to_string(),
+                access: crate::jail::JailAccess::Ro,
+                when: vec![CheckPlatform::Macos],
+                why: Some("probes its install root".to_string()),
+            }]
+        );
+        assert_eq!(
+            check.requires,
+            Some(CheckRequires {
+                provides: vec!["jvm".to_string()]
+            })
+        );
+        assert_eq!(
+            check.when,
+            vec![
+                CheckPlatform::Windows,
+                CheckPlatform::Macos,
+                CheckPlatform::Linux
+            ]
+        );
+        assert_eq!(check.timeout, Some(180));
+        let back = PayloadManifest::from_yaml(&with.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, with);
+
+        // A STRUCTURAL check (no entry — the data-slice shape, spec 26
+        // §1.1) round-trips; the all-default expect stays absent on the
+        // wire.
+        let structural = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "checks:\n  layout:\n    expect:\n      image_files: [/templates/org/cover.adoc, /templates/org/header.html]\n",
+        ))
+        .unwrap();
+        let check = &structural.checks["layout"];
+        assert_eq!(check.entry, None);
+        assert_eq!(
+            check.expect.image_files,
+            vec!["/templates/org/cover.adoc", "/templates/org/header.html"]
+        );
+        let back = PayloadManifest::from_yaml(&structural.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, structural);
+        // An exec check asserting only the default exit carries no
+        // expect block on the wire at all.
+        let smoke = PayloadManifest::from_yaml(&minimal_runtime_yaml(
+            "checks:\n  boot:\n    entry: self\n    argv: [\"-e\", \"puts 1\"]\n",
+        ))
+        .unwrap();
+        assert!(!smoke.to_yaml().unwrap().contains("expect"));
+    }
+
+    #[test]
+    fn checks_entry_self_is_runtime_only() {
+        // spec 26 §1.1: `self` names the runtime exe — legal on kind
+        // runtime only (the ruby runtime's boot-and-stdlib shape).
+        let ok = PayloadManifest::from_yaml(&minimal_runtime_yaml(
+            "checks:\n  boot-and-stdlib:\n    entry: self\n\
+             \x20   argv: [\"-e\", 'require \"json\"; puts JSON.generate({ok: 1})']\n\
+             \x20   expect: {exit: 0, stdout: '\"ok\":1'}\n    timeout: 60\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            ok.checks["boot-and-stdlib"].entry,
+            Some(CheckEntry::SelfExe)
+        );
+        // On any other kind the reserved spelling names nothing — a
+        // named validation error.
+        let err = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: self\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("self")),
+            "{err}"
+        );
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "checks:\n  c:\n    entry: self\n    expect: {image_files: [/x]}\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("self")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn checks_structural_rejects_exec_only_keys() {
+        // spec 26 §1.1 (MECE — one key decides the shape): a check with
+        // no entry is structural BY GRAMMAR; argv/fixtures are exec-only.
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "checks:\n  layout:\n    argv: [\"-e\", \"puts 1\"]\n    expect: {image_files: [/x]}\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("argv")),
+            "{err}"
+        );
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml(
+            "checks:\n  layout:\n    fixtures: /x\n    expect: {image_files: [/x]}\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("fixtures")),
+            "{err}"
+        );
+        // A structural check with no image_files asserts nothing at all.
+        let err = PayloadManifest::from_yaml(&minimal_data_yaml("checks:\n  layout: {}\n"))
+            .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("image_files")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn checks_path_rules() {
+        // expect.files are scratch-RELATIVE: never absolute, no '..'.
+        for bad in ["/abs/out.xml", "../escape.xml", "a/../../escape.xml"] {
+            let err = PayloadManifest::from_yaml(&minimal_app_yaml(&format!(
+                "checks:\n  c:\n    entry: /bin/x\n    expect: {{files: ['{bad}']}}\n"
+            )))
+            .unwrap_err();
+            assert!(
+                matches!(err, ManifestError::Invalid(m) if m.contains("files")),
+                "{bad}: {err}"
+            );
+        }
+        // expect.image_files and fixtures are in-image ABSOLUTE, no '..'.
+        for (key, bad) in [("image_files", "rel/x.adoc"), ("image_files", "/a/../b.adoc")] {
+            let err = PayloadManifest::from_yaml(&minimal_data_yaml(&format!(
+                "checks:\n  layout:\n    expect: {{{key}: ['{bad}']}}\n"
+            )))
+            .unwrap_err();
+            assert!(
+                matches!(err, ManifestError::Invalid(m) if m.contains("image_files")),
+                "{bad}: {err}"
+            );
+        }
+        for bad in ["rel/fixtures", "/a/../fixtures"] {
+            let err = PayloadManifest::from_yaml(&minimal_app_yaml(&format!(
+                "checks:\n  c:\n    entry: /bin/x\n    fixtures: '{bad}'\n"
+            )))
+            .unwrap_err();
+            assert!(
+                matches!(err, ManifestError::Invalid(m) if m.contains("fixtures")),
+                "{bad}: {err}"
+            );
+        }
+        // …and entry itself is an in-image absolute path.
+        for bad in ["bin/x", "/a/../x"] {
+            let err = PayloadManifest::from_yaml(&minimal_app_yaml(&format!(
+                "checks:\n  c:\n    entry: '{bad}'\n"
+            )))
+            .unwrap_err();
+            assert!(
+                matches!(err, ManifestError::Invalid(m) if m.contains("entry")),
+                "{bad}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn checks_when_values_come_from_the_platform_family_set() {
+        // A value outside windows/macos/linux is a named structural
+        // error (serde names the variant set).
+        let err = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: /bin/x\n    when: [solaris]\n",
+        ))
+        .unwrap_err();
+        assert!(matches!(err, ManifestError::Yaml(_)), "{err}");
+        // The full set round-trips in declaration order.
+        let ok = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: /bin/x\n    when: [linux, windows]\n",
+        ))
+        .unwrap();
+        assert_eq!(
+            ok.checks["c"].when,
+            vec![CheckPlatform::Linux, CheckPlatform::Windows]
+        );
+    }
+
+    #[test]
+    fn checks_name_grammar() {
+        // Names surface in report lines and scratch dir names:
+        // [A-Za-z0-9][A-Za-z0-9._-]*.
+        for good in ["html-xml", "boot.v2_ok", "9lives"] {
+            PayloadManifest::from_yaml(&minimal_app_yaml(&format!(
+                "checks:\n  {good}:\n    entry: /bin/x\n"
+            )))
+            .unwrap_or_else(|e| panic!("{good:?} should parse: {e}"));
+        }
+        for bad in ["-lead", ".lead", "has space", "has/slash"] {
+            let err = PayloadManifest::from_yaml(&minimal_app_yaml(&format!(
+                "checks:\n  '{bad}':\n    entry: /bin/x\n"
+            )))
+            .unwrap_err();
+            assert!(
+                matches!(err, ManifestError::Invalid(m) if m.contains("checks[] names")),
+                "{bad}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn checks_timeout_stdout_requires_rules() {
+        // timeout is positive seconds.
+        let err = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: /bin/x\n    timeout: 0\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("timeout")),
+            "{err}"
+        );
+        // stdout is one non-empty regex (carried uncompiled — the engine
+        // compiles it; tpkg has no regex dependency by design).
+        let err = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: /bin/x\n    expect: {stdout: \"\"}\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("stdout")),
+            "{err}"
+        );
+        // requires.provides is a non-empty list of non-empty names.
+        for bad in ["{provides: []}", "{provides: [\"\"]}"] {
+            let err = PayloadManifest::from_yaml(&minimal_app_yaml(&format!(
+                "checks:\n  c:\n    entry: /bin/x\n    requires: {bad}\n"
+            )))
+            .unwrap_err();
+            assert!(
+                matches!(err, ManifestError::Invalid(m) if m.contains("provides")),
+                "{bad}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn checks_scratch_token_at_most_once_per_arg() {
+        // `{scratch}` is the ONE argv substitution (spec 26 §1): at most
+        // one occurrence per entry — one per arg across several args is
+        // fine; twice in one arg is a named error.
+        let ok = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: /bin/x\n    argv: [\"{scratch}/a.adoc\", \"--out\", \"{scratch}/b\"]\n",
+        ))
+        .unwrap();
+        assert_eq!(ok.checks["c"].argv.len(), 3);
+        let err = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: /bin/x\n    argv: [\"{scratch}/a:{scratch}/b\"]\n",
+        ))
+        .unwrap_err();
+        assert!(
+            matches!(err, ManifestError::Invalid(m) if m.contains("{scratch}")),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn checks_tolerate_unknown_keys() {
+        // The crate's forward-compat discipline (spec 18 §3's
+        // unknown-field rule) applies INSIDE the block too: a key the
+        // model does not own changes nothing it does. NOTE: spec 26 §1's
+        // "unknown keys a named error" mis-describes the spec-03
+        // discipline — toleration is what makes the additive MINOR
+        // mechanism work (a schema_minor 4 field must not break a
+        // schema_minor 3 reader).
+        let m = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: /bin/x\n    future_key: {x: 1}\n",
+        ))
+        .expect("unknown key inside a check tolerated");
+        assert!(m.checks.contains_key("c"));
+    }
+
+    #[test]
+    fn checks_duplicate_names_are_a_named_error() {
+        // A re-declared check name is an authoring ambiguity — the map's
+        // deserializer refuses it (never a silent winner; serde_yml's
+        // plain map read would be last-wins, cf. the duplicate-alias rule).
+        let err = PayloadManifest::from_yaml(&minimal_app_yaml(
+            "checks:\n  c:\n    entry: /bin/x\n  c:\n    entry: /bin/y\n",
+        ))
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            matches!(err, ManifestError::Yaml(_)) && msg.contains("duplicate check name"),
+            "{msg}"
         );
     }
 }
