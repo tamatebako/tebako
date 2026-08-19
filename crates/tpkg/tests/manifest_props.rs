@@ -127,13 +127,25 @@ fn arb_check(kind: PayloadKind) -> impl Strategy<Value = Check> {
         prop::collection::vec(arb_path(), 0..=1),
         prop::collection::vec(need, 0..=1),
         prop::option::of(
-            prop::collection::vec(arb_name(), 1..=2).prop_map(|provides| CheckRequires { provides }),
+            prop::collection::vec(arb_name(), 1..=2)
+                .prop_map(|provides| CheckRequires { provides }),
         ),
         prop::collection::vec(platform, 0..=2),
         prop::option::of(1u64..=600),
     )
         .prop_map(
-            |(entry, argv, fixtures, files, stdout, image_files, needs, requires, when, timeout)| {
+            |(
+                entry,
+                argv,
+                fixtures,
+                files,
+                stdout,
+                image_files,
+                needs,
+                requires,
+                when,
+                timeout,
+            )| {
                 Check {
                     entry: Some(entry),
                     argv,
@@ -392,20 +404,22 @@ fn arb_manifest() -> impl Strategy<Value = PayloadManifest> {
             prop::collection::btree_map(arb_name(), arb_check(kind), 0..=2),
         )
     })
-    .prop_map(|(identity, provides, requires, materialize, aliases, checks)| {
-        let mut library_aliases = aliases;
-        for (i, a) in library_aliases.iter_mut().enumerate() {
-            a.name = format!("{}{i}", a.name);
-        }
-        PayloadManifest {
-            identity,
-            provides,
-            requires,
-            materialize,
-            library_aliases,
-            checks,
-        }
-    })
+    .prop_map(
+        |(identity, provides, requires, materialize, aliases, checks)| {
+            let mut library_aliases = aliases;
+            for (i, a) in library_aliases.iter_mut().enumerate() {
+                a.name = format!("{}{i}", a.name);
+            }
+            PayloadManifest {
+                identity,
+                provides,
+                requires,
+                materialize,
+                library_aliases,
+                checks,
+            }
+        },
+    )
 }
 
 proptest! {
