@@ -265,8 +265,11 @@ fn build_error(
 }
 
 /// The exclusive mount path (the historical behavior): a free point is
-/// claimed, an occupied point is the named EEXIST error.
-fn mount_exclusive(mount: tfs::context::Mount, what: &str) -> Result<(), DriverError> {
+/// claimed, an occupied point is the named EEXIST error. `what` phrases
+/// the failure, `desc` is the success journal's member wording — the two
+/// never share a string (a success line reading "failed to ..." sent
+/// incident 13 hunting a mount that had in fact succeeded).
+fn mount_exclusive(mount: tfs::context::Mount, what: &str, desc: &str) -> Result<(), DriverError> {
     let mount_point = mount.mount_point.clone();
     context()
         .write()
@@ -282,7 +285,7 @@ fn mount_exclusive(mount: tfs::context::Mount, what: &str) -> Result<(), DriverE
     tebako_log::log!(
         tebako_log::Level::Debug,
         "driver",
-        "mounted what={what} at={mount_point}"
+        "mounted {desc} at={mount_point}"
     );
     Ok(())
 }
@@ -303,7 +306,7 @@ fn mount_at_point(
     mounted: &mut Vec<MountedMember>,
 ) -> Result<(), DriverError> {
     if !context().read().unwrap().mount_point_taken(&spec.mount) {
-        mount_exclusive(mount, what)?;
+        mount_exclusive(mount, what, new_desc)?;
         mounted.push(MountedMember {
             point: spec.mount.clone(),
             desc: new_desc.to_string(),
@@ -360,25 +363,36 @@ fn mount_at_point(
 }
 
 /// The env image (`TEBAKO_RUNTIME_IMAGE`): a bare `.tfs`, mounted whole
-/// at the runtime root. Records `runtime_root` in `mounted`.
+/// at the runtime root. Records `runtime_root` in `mounted`. A boot
+/// without it is a legal shape (bare interpreter) but in managed mode a
+/// missing handoff otherwise surfaces much later as load errors with no
+/// obvious cause (incident 13 round 5) — so the absence is named on
+/// stderr (stdout is the payload's, never the log's).
 fn mount_env_image(
     env: &dyn Env,
     runtime_root: &str,
     mounted: &mut Vec<MountedMember>,
 ) -> Result<(), DriverError> {
     let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") else {
+        eprintln!(
+            "tebako-driver: TEBAKO_RUNTIME_IMAGE is not set — booting with no env image; \
+             the runtime root stays empty (a loader/harness handoff bug unless this is \
+             a deliberate bare boot)"
+        );
         return Ok(());
     };
+    let desc = format!("env image '{image}'");
     mount_exclusive(
         build_error(
             tfs::mount::build_from_file(&image, runtime_root),
             &format!("failed to mount the runtime filesystem image from '{image}'"),
         )?,
         &format!("failed to mount the runtime filesystem image from '{image}'"),
+        &desc,
     )?;
     mounted.push(MountedMember {
         point: runtime_root.to_string(),
-        desc: format!("env image '{image}'"),
+        desc,
     });
     Ok(())
 }
@@ -445,7 +459,7 @@ pub(crate) fn mounted_manifest_at(
 /// the override era refuses by name rather than booting an interpreter
 /// whose load paths point at an unmounted root. A boot without
 /// `TEBAKO_RUNTIME_IMAGE` mounts no env image and has no pair to check
-/// (None). On success the parsed declaration returns — its additive
+/// (None) — the mount side already named the absence on stderr. On success the parsed declaration returns — its additive
 /// grants drive the child injection (spec 22 §3).
 fn check_env_layout(
     env: &dyn Env,
