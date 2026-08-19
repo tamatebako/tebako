@@ -249,7 +249,7 @@ coverage features as these land upstream; none block T1/T2:
 |---|---|---|
 | `retrace-audit` + `path_contains` policy op | SHIPPED (tools/audit-converter; property-tested — P-POLICY-CONTAINS-SOUNDNESS) | the policy-matching half of coverage exists; usable on outside captures immediately |
 | pid + tid per log entry | ABSENT — entries carry `time` / `module` / `severity` / `message` only (src/core/logger.c:496) | multi-process compositions cannot regroup the outside stream; single-process coverage works today |
-| ntdll-depth hooks (`NtCreateFile` / `NtOpenFile` / `LdrLoadDll`) + NT-path normalization (`\??\C:\…`) | ABSENT — the windows backends interpose at the ucrt layer | windows sub-libc escapes stay invisible until both the hooks and a converter exist |
+| ntdll-depth hooks (`NtCreateFile` / `NtOpenFile` / `LdrLoadDll`) + NT-path normalization (`\??\C:\…`) | ABSENT — the windows backends interpose at the ucrt layer; a native payload calling Win32 directly already escapes that layer TODAY (libsass's importer reads via raw `CreateFileW` with `\\?\` prefixes — invisible at ucrt) | windows sub-libc escapes stay invisible until both the hooks and a converter exist |
 | streaming / JSONL output | today one JSON array document per capture (leading-comma emission; a crashed tail invalidates the document) | the correlator tolerates a trailing partial record |
 | `retrace-correlate` (the set-difference tool) | ABSENT | tebako ships its own (§6.3); parity fixtures shared when it lands |
 
