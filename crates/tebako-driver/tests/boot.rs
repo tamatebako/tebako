@@ -205,6 +205,19 @@ fn plain_boot_passes_argv_through_and_mounts_the_env_image() {
 }
 
 #[test]
+fn a_boot_without_the_env_image_is_legal_and_mounts_nothing() {
+    let g = guard("no-env-image");
+    let env = MapEnv::new(); // no TEBAKO_RUNTIME_IMAGE — the warn's shape
+
+    // The absence is named on stderr (an eprintln — process-global, not
+    // captured here); what this pins is that the warn never became an
+    // error: the bare boot stays a legal shape and nothing mounts.
+    let out = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+    assert_eq!(out.argv, argv(&["ruby", "--version"]));
+    assert!(!context().read().unwrap().is_mounted());
+}
+
+#[test]
 fn bare_payload_mounts_whole_with_slot_0() {
     let g = guard("bare-0");
     let payload = write_payload_image(g.path());
