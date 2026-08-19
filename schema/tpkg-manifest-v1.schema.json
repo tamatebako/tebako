@@ -27,6 +27,12 @@
         }
       },
       "description": "spec 22 §2.1 windows Class L bare-name rule (payload-manifest schema_minor 2): the ONLY bare library names resolving to the image's own files — a bare name matching no entry is a host reference and passes through untouched. `name` is the exact bare spelling a loader call presents (the no-separator/no-drive refusal is semantic, the tpkg validator); `path` is the absolute in-image file it resolves to. Any kind may declare; old readers ignore the key."
+    },
+    "checks": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/check" },
+      "description": "spec 26 §1 (payload-manifest schema_minor 3): the payload's own acceptance contracts — check name → check. A check WITH `entry` is an exec check; WITHOUT `entry` it is structural (the data-slice shape: asserts expect.image_files, no exec surface). The reserved entry spelling \"self\" is kind-runtime only, the exec/structural key split, the '..' refusals and the {scratch} arity are semantic (the tpkg validator); only shape is checked here. Any kind may declare; old readers ignore the key."
     }
   },
   "allOf": [
@@ -65,6 +71,71 @@
     "absPath": {
       "type": "string",
       "pattern": "^/"
+    },
+    "check": {
+      "type": "object",
+      "description": "One acceptance check (spec 26 §1). Absent `entry` makes the check STRUCTURAL by grammar (MECE — never a kind flag). Byte-golden assertions do not exist by construction: expect carries existence+non-empty channels only.",
+      "properties": {
+        "entry": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The in-image absolute executable path, or the reserved spelling \"self\" (kind runtime only — semantic). Exec checks only."
+        },
+        "argv": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Exec-only. `{scratch}` (the per-run host scratch dir) at most once per entry — semantic; every other spelling is literal passthrough."
+        },
+        "fixtures": {
+          "$ref": "#/$defs/absPath",
+          "description": "Exec-only. The in-image dir whose CONTENTS land at the host scratch root (never VFS-spelled)."
+        },
+        "expect": {
+          "type": "object",
+          "properties": {
+            "exit": { "type": "integer", "minimum": 0, "description": "Expected exit status; absent = 0." },
+            "files": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1, "not": { "pattern": "^/" } },
+              "description": "Scratch-relative paths asserted to exist and be non-empty; the '..' refusal is semantic (the tpkg validator)."
+            },
+            "stdout": { "type": "string", "minLength": 1, "description": "One regex the run's stdout must match; the engine compiles it." },
+            "image_files": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/absPath" },
+              "description": "In-image paths asserted to exist and be non-empty — the structural check's assertion channel."
+            }
+          }
+        },
+        "needs": {
+          "type": "array",
+          "description": "Additive host needs for the check run ONLY (a minimal mirror of the spec 23 §2 entry grammar).",
+          "items": {
+            "type": "object",
+            "required": ["path", "access"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "access": { "enum": ["ro", "rw"] },
+              "when": { "type": "array", "items": { "enum": ["windows", "macos", "linux"] } },
+              "why": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "requires": {
+          "type": "object",
+          "required": ["provides"],
+          "description": "Composition prerequisites; unmet ⇒ SKIP, never FAIL (spec 26 §2).",
+          "properties": {
+            "provides": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+          }
+        },
+        "when": {
+          "type": "array",
+          "items": { "enum": ["windows", "macos", "linux"] },
+          "description": "The OS-family platform filter (NOT the spec 03 §3 triplet axis); absent = every platform."
+        },
+        "timeout": { "type": "integer", "minimum": 1, "description": "Seconds; expiry is a FAIL." }
+      }
     },
     "constraint": {
       "type": "string",

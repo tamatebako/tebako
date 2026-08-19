@@ -302,6 +302,43 @@ fn library_aliases_key_is_schema_legal() {
 }
 
 #[test]
+fn checks_key_is_schema_legal() {
+    // spec 26 §1 (schema_minor 3): the additive `checks:` key — the
+    // versioned JSON Schema admits it and the model round-trips it.
+    // EXEC form (the runtime slice's boot-and-stdlib smoke, §1.1):
+    let exec = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-ruby\n  version: 4.0.6\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-19T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: ruby, version: 4.0.6, abi_line: \"4.0\", platform: aarch64-macos}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n\
+        checks:\n  boot-and-stdlib:\n    entry: self\n\
+        \x20   argv: [\"-e\", 'require \"json\"; puts JSON.generate({ok: 1})']\n\
+        \x20   expect: {exit: 0, stdout: '\"ok\":1'}\n    timeout: 60\n";
+    // STRUCTURAL form (the data slice's layout assertions, §1.1):
+    let structural = "identity:\n  schema_version: 1\n  kind: data\n  name: acme-templates\n  version: \"3\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-19T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  mount_semantics: {suggested: /templates/acme}\n  capabilities: {exec: false, read: true}\n\
+        checks:\n  layout:\n    expect:\n      image_files: [/templates/acme/cover.adoc, /templates/acme/header.html]\n";
+    let validator = schema_validator();
+    for (text, what) in [(exec, "exec"), (structural, "structural")] {
+        let m = PayloadManifest::from_yaml(text).unwrap_or_else(|e| panic!("{what} checks: {e}"));
+        assert_eq!(m.checks.len(), 1);
+        // …and the schema agrees (MECE cross-check).
+        validator
+            .validate(&yaml_text_to_json(text))
+            .unwrap_or_else(|e| panic!("{what} checks against the JSON schema: {e}"));
+        let back = PayloadManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, m, "{what} checks round-trip");
+    }
+}
+
+#[test]
 fn unknown_keys_are_tolerated_annotations_preserved() {
     let text = read(&fixture_path("data"));
     let with_extras = format!(
@@ -324,7 +361,7 @@ fn unknown_keys_are_tolerated_annotations_preserved() {
 #[test]
 fn model_and_schema_agree_on_rejections() {
     let validator = schema_validator();
-    let cases: [(&str, &str); 4] = [
+    let cases: [(&str, &str); 6] = [
         // kind app with a data-shaped provides
         (
             "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
@@ -366,6 +403,30 @@ fn model_and_schema_agree_on_rejections() {
              requires: [{kind: toolkit, name: gtk, constraint: \">= 3\", \
              triplets: [aarch64-windows-ucrt]}]\n",
             "reserved triplet",
+        ),
+        // a check name outside the [A-Za-z0-9][A-Za-z0-9._-]* grammar (spec 26 §1)
+        (
+            "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {entrypoints: [{name: x, path: /x}], platforms: universal, \
+             capabilities: {exec: true, read: true}}\n\
+             checks: {\"-lead\": {entry: /bin/x}}\n",
+            "bad check name",
+        ),
+        // a when value outside the windows/macos/linux family set
+        (
+            "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {entrypoints: [{name: x, path: /x}], platforms: universal, \
+             capabilities: {exec: true, read: true}}\n\
+             checks: {c: {entry: /bin/x, when: [solaris]}}\n",
+            "bad when value",
         ),
     ];
     for (text, what) in cases {

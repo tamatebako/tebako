@@ -174,6 +174,36 @@ winner. No platform filter: native images are triplet-bound (§3), so an
 alias is platform surface by construction. The grammar is registered in
 `docs/spec/schemas/payload-manifest.yaml`.
 
+### 2.6 CHECKS (`checks:`, additive — schema_minor 3)
+
+```yaml
+checks:
+  html-xml:                        # the check name — [A-Za-z0-9][A-Za-z0-9._-]*
+    entry: /bin/metanorma          # in-image executable; "self" on kind
+                                   # runtime only (the runtime exe itself)
+    argv: ["--type", "iso", "{scratch}/test-iso.adoc", "--agree-to-terms"]
+    fixtures: /__tpkg__/check/html-xml   # exec-only; CONTENTS land at the
+                                         # host scratch root
+    expect: {exit: 0, files: ["test-iso.xml", "test-iso.html"]}
+    timeout: 180
+  layout:                          # no entry ⇒ STRUCTURAL (the data-slice
+    expect:                        # shape): the engine mounts and asserts
+      image_files: [/templates/org/cover.adoc]   # in-image, exist + non-empty
+```
+
+A top-level map (any kind may declare checks; old readers ignore it under
+the unknown-field rule) naming the payload's own acceptance contracts —
+"given my declared needs, I do my one real thing". ONE key decides the
+shape (MECE, never a `kind:` flag): `entry` present ⇒ an exec check;
+absent ⇒ a structural check, which declares no `argv`/`fixtures` and
+asserts via `expect.image_files`. `expect.files` are scratch-relative
+existence + non-empty assertions; byte-golden assertions do not exist by
+construction. A malformed block is a named validation error at press /
+`tfs validate` (exit 65), never discovered at run time. The semantics —
+the engine, the three moments, SKIP/FAIL discipline — are spec 26; the
+grammar is registered in
+`docs/spec/schemas/payload-manifest.yaml`.
+
 ## 3. Platform axis (locked, vcpkg-triplet form)
 
 `platforms` is EITHER `"universal"` (pure-ruby/data) OR an explicit list:

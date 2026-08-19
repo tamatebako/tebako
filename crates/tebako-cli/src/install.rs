@@ -1244,6 +1244,8 @@ fn synthesize_manifest(
         // …and no library aliases (spec 03 §2.5 — the same mirror rule:
         // declarations live in the embedded manifest only).
         library_aliases: Vec::new(),
+        // …and no checks (spec 26 §1 — the same mirror rule).
+        checks: Default::default(),
     })
 }
 
