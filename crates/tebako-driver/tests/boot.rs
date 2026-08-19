@@ -206,7 +206,7 @@ fn plain_boot_passes_argv_through_and_mounts_the_env_image() {
 
 #[test]
 fn a_boot_without_the_env_image_is_legal_and_mounts_nothing() {
-    let g = guard("no-env-image");
+    let _g = guard("no-env-image");
     let env = MapEnv::new(); // no TEBAKO_RUNTIME_IMAGE — the warn's shape
 
     // The absence is named on stderr (an eprintln — process-global, not
