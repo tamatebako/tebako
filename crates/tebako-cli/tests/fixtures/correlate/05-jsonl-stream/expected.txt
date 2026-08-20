@@ -1,0 +1,1 @@
+escape /mnt/tfs/pkg/hidden.dat func=open tid=903 pid=901 class=read

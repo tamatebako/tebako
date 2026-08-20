@@ -21,6 +21,11 @@ const USAGE: &str = "Usage:
   tebako trace run <pkg> [--capture <path>] [--out <path>] [--] [<args>...]
                                        run under TEBAKO_JAIL=record with the trace bus
                                        armed; synthesize a suggested manifest (spec 25 §4)
+  tebako trace cover --inside <tfs.json> --outside <retrace.json> --prefix <path>
+               [--pid N] [--window SECS] [--exclude-probes] [--json] [--layer libc|kernel]
+                                       the escapes report (spec 25 §6, phase T3): outside
+                                       touches under the prefix the inside stream never saw
+                                       (exit 0 clean / 1 escapes / 2 error)
   tebako check <name | image.tfs | package | tebako.yaml>
                [--check <c>] [--list] [--record] [--keep-scratch]
                [--runtime <exe> --runtime-image <env.tfs>]
@@ -85,11 +90,14 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     let rest = &args[1..];
     // `cache list --json` is a machine contract: the banner moves to
     // stderr so stdout is the document alone. Every other call keeps the
-    // banner on stdout (unchanged).
-    let json_cache_list = subcommand == "cache"
+    // banner on stdout (unchanged). `trace cover` is a machine contract
+    // too: its stdout byte-compares against the retrace golden fixtures
+    // (spec 25 §6.3's parity clause).
+    let machine_stdout = (subcommand == "cache"
         && rest.first().map(|a| a.as_str()) == Some("list")
-        && rest.iter().any(|a| a == "--json");
-    if json_cache_list {
+        && rest.iter().any(|a| a == "--json"))
+        || (subcommand == "trace" && rest.first().map(|a| a.as_str()) == Some("cover"));
+    if machine_stdout {
         eprintln!("{VERSION_BANNER}");
     } else {
         println!("{VERSION_BANNER}");
@@ -551,17 +559,21 @@ fn run_package(args: &[String]) -> Result<(), CliExit> {
     Err(CliExit::Error(err))
 }
 
-/// `tebako trace run <pkg> [--capture <path>] [--out <path>] [--]
-/// [<args>...]` — spec 25 §4 (phase T1, discovery): run the package under
-/// `TEBAKO_JAIL=record` with the interception bus armed, then synthesize
-/// the capture into a suggested-manifest draft. The spawn/resolve
-/// emission is T2 (bus-side, landed); `cover`/`import` are T3 and
-/// `explain` T4. Never returns on success (the process exits
-/// with the payload's exit code).
+/// `tebako trace <run|cover> ...` — the spec 25 front-ends. `run` (§4,
+/// phase T1, discovery) runs the package under `TEBAKO_JAIL=record` with
+/// the interception bus armed, then synthesizes the capture into a
+/// suggested-manifest draft; it never returns on success (the process
+/// exits with the payload's exit code). `cover` (§6, phase T3) is the
+/// escapes correlator; it never returns either (the exit code is the
+/// coverage verdict: 0 clean / 1 escapes / 2 usage-or-IO, the
+/// retrace-correlate parity codes). The spawn/resolve emission is T2
+/// (bus-side, landed); `import` (the procmon converter, the rest of T3)
+/// and `explain` (§5, T4) are later milestones.
 fn run_trace(args: &[String]) -> Result<(), CliExit> {
     let Some(action) = args.first() else {
         return Err(CliExit::Usage(
-            "trace subcommand expected: run (explain | cover are later milestones)".to_string(),
+            "trace subcommand expected: run | cover (explain | import are later milestones)"
+                .to_string(),
         ));
     };
     match action.as_str() {
@@ -570,8 +582,9 @@ fn run_trace(args: &[String]) -> Result<(), CliExit> {
             tebako_cli::trace::trace_run(&parsed)?;
             Ok(())
         }
-        other @ ("explain" | "cover" | "import") => Err(CliExit::Usage(format!(
-            "'tebako trace {other}' is a later tebako-rs milestone (spec 25: cover/import are T3, explain is T4)"
+        "cover" => tebako_cli::trace::cover::trace_cover(&args[1..]),
+        other @ ("explain" | "import") => Err(CliExit::Usage(format!(
+            "'tebako trace {other}' is a later tebako-rs milestone (spec 25: import is the rest of T3, explain is T4)"
         ))),
         other => Err(CliExit::Usage(format!("unknown trace subcommand '{other}'"))),
     }

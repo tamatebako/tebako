@@ -1,0 +1,98 @@
+[
+{
+    "time": 0,
+    "pid": 9012,
+    "tid": 0,
+    "module": "ETW",
+    "severity": "WARN",
+    "message": {
+        "func": "QueryOpen",
+        "process": "sassc.exe",
+        "time_of_day": "11:02:01.1001220 AM",
+        "path": "C:\\pkg\\scss\\_a.scss",
+        "result": "NAME NOT FOUND",
+        "detail": "SyncType: Sync+Create"
+    }
+}
+,
+{
+    "time": 0,
+    "pid": 9012,
+    "tid": 0,
+    "module": "ETW",
+    "severity": "INFO",
+    "message": {
+        "func": "QueryOpen",
+        "process": "sassc.exe",
+        "time_of_day": "11:02:01.1003441 AM",
+        "path": "\\\\?\\C:\\pkg\\scss\\_vars.scss",
+        "result": "SUCCESS",
+        "detail": "Attributes: A"
+    }
+}
+,
+{
+    "time": 0,
+    "pid": 9012,
+    "tid": 0,
+    "module": "ETW",
+    "severity": "INFO",
+    "message": {
+        "func": "CreateFile",
+        "process": "sassc.exe",
+        "time_of_day": "11:02:01.1008802 AM",
+        "path": "\\\\?\\C:\\pkg\\scss\\main.scss",
+        "result": "SUCCESS",
+        "detail": "Desired Access: Generic Read"
+    }
+}
+,
+{
+    "time": 0,
+    "pid": 9012,
+    "tid": 0,
+    "module": "ETW",
+    "severity": "INFO",
+    "message": {
+        "func": "CreateFile",
+        "process": "sassc.exe",
+        "time_of_day": "11:02:01.1012099 AM",
+        "path": "\\\\?\\C:\\pkg\\scss\\_hidden.scss",
+        "result": "SUCCESS",
+        "detail": "Desired Access: Generic Read"
+    }
+}
+,
+{
+    "time": 0,
+    "pid": 9012,
+    "tid": 0,
+    "module": "ETW",
+    "severity": "INFO",
+    "message": {
+        "func": "CreateFile",
+        "process": "sassc.exe",
+        "time_of_day": "11:02:01.1015001 AM",
+        "path": "C:\\Windows\\System32\\kernelbase.dll",
+        "result": "SUCCESS",
+        "detail": "Desired Access: Read Attributes"
+    }
+}
+,
+{
+    "time": 0,
+    "pid": 7777,
+    "tid": 0,
+    "module": "ETW",
+    "severity": "INFO",
+    "message": {
+        "func": "CreateFile",
+        "process": "searchindex.exe",
+        "time_of_day": "11:02:01.1020000 AM",
+        "path": "\\\\?\\C:\\pkg\\scss\\_decoy.scss",
+        "result": "SUCCESS",
+        "detail": "Desired Access: Generic Read"
+    }
+}
+
+]

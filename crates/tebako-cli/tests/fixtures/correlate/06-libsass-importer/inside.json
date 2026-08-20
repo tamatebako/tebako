@@ -1,0 +1,4 @@
+[
+{ "time": 0, "pid": 9012, "tid": 0, "module": "tfs", "severity": "INFO", "message": { "op": "materialize", "path": "C:\\pkg\\scss\\main.scss" } },
+{ "time": 0, "pid": 9012, "tid": 0, "module": "tfs", "severity": "INFO", "message": { "op": "materialize", "path": "C:\\pkg\\scss\\_vars.scss" } }
+]

@@ -1,0 +1,7 @@
+﻿"Time of Day","Process Name","PID","Operation","Path","Result","Detail"
+"11:02:01.1001220 AM","sassc.exe","9012","QueryOpen","C:\pkg\scss\_a.scss","NAME NOT FOUND","SyncType: Sync+Create"
+"11:02:01.1003441 AM","sassc.exe","9012","QueryOpen","\\?\C:\pkg\scss\_vars.scss","SUCCESS","Attributes: A"
+"11:02:01.1008802 AM","sassc.exe","9012","CreateFile","\\?\C:\pkg\scss\main.scss","SUCCESS","Desired Access: Generic Read"
+"11:02:01.1012099 AM","sassc.exe","9012","CreateFile","\\?\C:\pkg\scss\_hidden.scss","SUCCESS","Desired Access: Generic Read"
+"11:02:01.1015001 AM","sassc.exe","9012","CreateFile","C:\Windows\System32\kernelbase.dll","SUCCESS","Desired Access: Read Attributes"
+"11:02:01.1020000 AM","searchindex.exe","7777","CreateFile","\\?\C:\pkg\scss\_decoy.scss","SUCCESS","Desired Access: Generic Read"

@@ -3,3 +3,9 @@
 # assert on. Pin them to LF on every platform.
 crates/**/tests/fixtures/** text eol=lf
 **/testdata/** text eol=lf
+
+# Exception: the correlate golden tree is a byte-verbatim copy of
+# retrace's tools/correlate/golden/ (spec 25 §6.3's parity clause) — the
+# procmon CSV keeps its upstream CRLF spelling (the §6.2 converter's
+# input fixture, regenerated and diffed upstream).
+crates/**/tests/fixtures/correlate/**/outside.csv -text

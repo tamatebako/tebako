@@ -15,11 +15,15 @@
 //! preload's fopen routing), closure-covered dlopen NOTEs, and
 //! host-executable entrypoint notes.
 //!
-//! `explain` (§5, phase T4) and `cover` (§6, phase T3) are later
-//! milestones; phase T2 was the spawn/resolve emission (the preload's
-//! posix_spawn surface and the driver's image-triple resolution — pure
-//! bus-side work, no consumer change needed here beyond the pinned
-//! spawn grammar below).
+//! `cover` (§6, phase T3) ships in the `cover` submodule: the escapes
+//! correlator, golden-parity with retrace-correlate on the shared
+//! fixtures. `explain` (§5, phase T4) and the procmon converter
+//! (`import`, §6.2 — the rest of T3) are later milestones; phase T2 was
+//! the spawn/resolve emission (the preload's posix_spawn surface and the
+//! driver's image-triple resolution — pure bus-side work, no consumer
+//! change needed here beyond the pinned spawn grammar below).
+
+pub mod cover;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

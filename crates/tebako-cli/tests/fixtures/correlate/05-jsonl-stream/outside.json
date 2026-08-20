@@ -1,0 +1,2 @@
+{ "time": 1755580000, "pid": 901, "tid": 903, "module": "retrace", "severity": "INFO", "message": { "func": "dlopen", "params": { "path": "/mnt/tfs/pkg/main.so" } } }
+{ "time": 1755580001, "pid": 901, "tid": 903, "module": "retrace", "severity": "INFO", "message": { "func": "open", "params": { "path": "/mnt/tfs/pkg/hidden.dat" } } }

@@ -1,0 +1,3 @@
+[
+{ "time": 1755580000, "pid": 701, "tid": 701, "module": "tfs", "severity": "INFO", "message": { "op": "open", "path": "C:\\pkg\\db.sqlite" } }
+]

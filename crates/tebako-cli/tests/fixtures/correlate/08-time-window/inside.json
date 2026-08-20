@@ -1,0 +1,3 @@
+[
+{ "time": 200, "pid": 42, "tid": 1, "module": "retrace", "severity": "INFO", "message": { "func": "materialize", "path": "/mnt/tfs/lazy.dat" } }
+]

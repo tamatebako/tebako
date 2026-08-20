@@ -1,0 +1,5 @@
+[
+{ "time": 1755580000, "pid": 501, "tid": 503, "module": "retrace", "severity": "INFO", "message": { "func": "open", "params": { "path": "/mnt/tfs/pkg/libcrypto.so" } } },
+{ "time": 1755580001, "pid": 501, "tid": 504, "module": "retrace", "severity": "INFO", "message": { "func": "fopen", "params": { "filename": "/mnt/tfs/etc/app.conf" } } },
+{ "time": 1755580002, "pid": 501, "tid": 503, "module": "retrace", "severity": "INFO", "message": { "func": "open", "params": { "path": "/var/log/system.log" } } }
+]

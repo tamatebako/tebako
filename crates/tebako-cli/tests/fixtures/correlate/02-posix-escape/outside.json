@@ -1,0 +1,6 @@
+[
+{ "time": 1755580000, "pid": 601, "tid": 603, "module": "retrace", "severity": "INFO", "message": { "func": "open", "params": { "path": "/mnt/tfs/pkg/libcrypto.so" } } },
+{ "time": 1755580003, "pid": 601, "tid": 603, "module": "retrace", "severity": "INFO", "message": { "func": "open", "params": { "path": "/mnt/tfs/secret/keys.pem" } } },
+{ "time": 1755580004, "pid": 601, "tid": 604, "module": "retrace", "severity": "INFO", "message": { "func": "stat", "params": { "path": "/mnt/tfs2/cache.bin" } } },
+{ "time": 1755580005, "pid": 601, "tid": 604, "module": "retrace", "severity": "INFO", "message": { "func": "openat", "params": { "path": "/mnt/tfs/tmp/.lock" } } }
+]
