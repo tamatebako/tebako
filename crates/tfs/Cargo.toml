@@ -48,7 +48,7 @@ sqfs-sys = { version = "0.1.0", path = "../sqfs-sys", optional = true }
 # The LimniFS backend (spec 20): the pure-Rust limnifs-core reader — no
 # system dependencies, `#![forbid(unsafe_code)]` upstream. Path dep until
 # limnifs has a release to pin against (same standing as dwarfs-t).
-limnifs-core = { git = "https://github.com/limnifs/limnifs", rev = "eddaea404b7686c4f22462c366065a3a35bf9b43", optional = true }
+limnifs-core = { git = "https://github.com/limnifs/limnifs", rev = "1bf0c59967e631b6bd970d56505712275768e8f2", optional = true }
 # The ENC stacking transform (spec 10, backends_enc): AES-256-GCM per-block
 # confidentiality with HKDF-SHA256 subtree keys, DEK grant envelopes via
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
@@ -95,5 +95,5 @@ rnp = { package = "rnp-rs", version = "=0.1.11", features = ["vendored"] }
 crc32fast = "1"
 # LimniFS golden fixtures are written in-process (never a limni binary) —
 # test-only, never linked into the shipped library.
-limnifs-write = { git = "https://github.com/limnifs/limnifs", rev = "eddaea404b7686c4f22462c366065a3a35bf9b43" }
+limnifs-write = { git = "https://github.com/limnifs/limnifs", rev = "1bf0c59967e631b6bd970d56505712275768e8f2" }
 
