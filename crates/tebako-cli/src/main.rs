@@ -587,7 +587,8 @@ fn run_trace(args: &[String]) -> Result<(), CliExit> {
     };
     match action.as_str() {
         "run" => {
-            let parsed = tebako_cli::trace::parse_trace_run_args(&args[1..]).map_err(CliExit::Usage)?;
+            let parsed =
+                tebako_cli::trace::parse_trace_run_args(&args[1..]).map_err(CliExit::Usage)?;
             tebako_cli::trace::trace_run(&parsed)?;
             Ok(())
         }
@@ -596,7 +597,9 @@ fn run_trace(args: &[String]) -> Result<(), CliExit> {
         other @ "explain" => Err(CliExit::Usage(format!(
             "'tebako trace {other}' is a later tebako-rs milestone (spec 25: explain is T4)"
         ))),
-        other => Err(CliExit::Usage(format!("unknown trace subcommand '{other}'"))),
+        other => Err(CliExit::Usage(format!(
+            "unknown trace subcommand '{other}'"
+        ))),
     }
 }
 
