@@ -64,7 +64,10 @@ fn csv_cases() -> Vec<PathBuf> {
         .filter(|p| p.join("outside.csv").is_file())
         .collect();
     cases.sort();
-    assert!(!cases.is_empty(), "the golden tree ships an outside.csv case");
+    assert!(
+        !cases.is_empty(),
+        "the golden tree ships an outside.csv case"
+    );
     cases
 }
 
@@ -78,7 +81,11 @@ fn golden_csv_converts_byte_for_byte_and_drives_cover() {
         let csv = case.join("outside.csv");
         let run = trace_import(&csv);
         let want_json = std::fs::read(case.join("outside.json")).unwrap();
-        assert_eq!(run.rc, 0, "{name}: import exit code (stderr: {})", run.stderr);
+        assert_eq!(
+            run.rc, 0,
+            "{name}: import exit code (stderr: {})",
+            run.stderr
+        );
         assert_eq!(
             run.stdout,
             want_json,
@@ -95,10 +102,8 @@ fn golden_csv_converts_byte_for_byte_and_drives_cover() {
         // 2. The converted stream is cover's --outside: the golden
         //    verdict reproduces (the process-substitution flow,
         //    file-mediated here).
-        let dir = std::env::temp_dir().join(format!(
-            "tebako-import-e2e-{}-{name}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("tebako-import-e2e-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let converted = dir.join("outside.json");
         std::fs::write(&converted, &run.stdout).unwrap();
@@ -158,7 +163,8 @@ fn import_usage_and_io_errors_exit_2() {
     assert!(run.stderr.contains("unknown import format 'strace'"));
 
     // An unreadable csv.
-    let missing = std::env::temp_dir().join(format!("tebako-import-nope-{}.csv", std::process::id()));
+    let missing =
+        std::env::temp_dir().join(format!("tebako-import-nope-{}.csv", std::process::id()));
     let run = trace_import(&missing);
     assert_eq!(run.rc, 2, "stderr: {}", run.stderr);
     assert!(run.stderr.contains("cannot read"), "stderr: {}", run.stderr);

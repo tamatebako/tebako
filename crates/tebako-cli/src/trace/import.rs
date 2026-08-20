@@ -492,7 +492,9 @@ fn entry_json(row: &CsvRow, colmap: &ColMap) -> Option<Vec<u8>> {
     let mut out = Vec::new();
     out.extend_from_slice(b"{\n");
     out.extend_from_slice(format!("    \"time\": {},\n", format_g17(0.0)).as_bytes());
-    out.extend_from_slice(format!("    \"pid\": {},\n", format_g17(row_pid(row, colmap))).as_bytes());
+    out.extend_from_slice(
+        format!("    \"pid\": {},\n", format_g17(row_pid(row, colmap))).as_bytes(),
+    );
     out.extend_from_slice(b"    \"tid\": 0,\n");
     out.extend_from_slice(b"    \"module\": \"ETW\",\n");
     out.extend_from_slice(format!("    \"severity\": \"{severity}\",\n").as_bytes());
@@ -676,10 +678,15 @@ mod tests {
     fn csv_scan_basic_shapes() {
         // CRLF, LF and CR record ends; quoted fields with an embedded
         // comma, CRLF and a doubled quote; the BOM at buffer start.
-        let (rows, stats) = scan(
-            b"\xEF\xBB\xBF\"a\",\"b,b\"\r\n\"c\r\nd\",\"e\"\"f\"\nlast,one\rfinal,line",
+        let (rows, stats) =
+            scan(b"\xEF\xBB\xBF\"a\",\"b,b\"\r\n\"c\r\nd\",\"e\"\"f\"\nlast,one\rfinal,line");
+        assert_eq!(
+            stats,
+            ScanStats {
+                records: 4,
+                truncated: 0
+            }
         );
-        assert_eq!(stats, ScanStats { records: 4, truncated: 0 });
         assert_eq!(rows[0], vec![b"a".to_vec(), b"b,b".to_vec()]);
         assert_eq!(rows[1], vec![b"c\r\nd".to_vec(), b"e\"f".to_vec()]);
         assert_eq!(rows[2], vec![b"last".to_vec(), b"one".to_vec()]);
@@ -693,7 +700,13 @@ mod tests {
 
         // EOF inside an open quote drops the record and counts it.
         let (rows, stats) = scan(b"a,b\n\"truncated,never-closed");
-        assert_eq!(stats, ScanStats { records: 1, truncated: 1 });
+        assert_eq!(
+            stats,
+            ScanStats {
+                records: 1,
+                truncated: 1
+            }
+        );
         assert_eq!(rows.len(), 1);
 
         // Stray text after a closing quote is tolerated and appended.
@@ -702,10 +715,7 @@ mod tests {
 
         // A trailing comma at EOF completes an empty final field.
         let (rows, _) = scan(b"a,b,");
-        assert_eq!(
-            rows[0],
-            vec![b"a".to_vec(), b"b".to_vec(), Vec::new()]
-        );
+        assert_eq!(rows[0], vec![b"a".to_vec(), b"b".to_vec(), Vec::new()]);
     }
 
     #[test]
@@ -719,7 +729,11 @@ mod tests {
         assert_eq!(rows[0][1].len(), PMCSV_FIELD_MAX - 1);
 
         // Fields past the 16th are ignored.
-        let text = (0..20).map(|i| format!("f{i}")).collect::<Vec<_>>().join(",") + "\n";
+        let text = (0..20)
+            .map(|i| format!("f{i}"))
+            .collect::<Vec<_>>()
+            .join(",")
+            + "\n";
         let (rows, _) = scan(text.as_bytes());
         assert_eq!(rows[0].len(), PMCSV_MAX_FIELDS);
         assert_eq!(rows[0][15], b"f15".to_vec());
@@ -885,9 +899,7 @@ mod tests {
 
         // The separator: ",\n" before every entry after the first; the
         // close is "\n]\n".
-        let (doc, _) = convert_procmon(
-            b"t,p,1,open,/a,SUCCESS,d\nt,p,2,open,/b,SUCCESS,d\n",
-        );
+        let (doc, _) = convert_procmon(b"t,p,1,open,/a,SUCCESS,d\nt,p,2,open,/b,SUCCESS,d\n");
         let text = String::from_utf8_lossy(&doc);
         assert!(text.starts_with("[\n{\n"), "{text}");
         assert!(text.contains("}\n,\n{\n"), "{text}");
