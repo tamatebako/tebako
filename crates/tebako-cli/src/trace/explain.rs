@@ -293,7 +293,7 @@ fn closure_matches(detail: Option<&Value>, rule: &ClosureRule) -> bool {
     deps.iter().all(|dep| {
         dep.find("verdict")
             .and_then(Value::as_string)
-            .is_some_and(|v| rule.dep_verdicts.iter().any(|allowed| *allowed == v))
+            .is_some_and(|v| rule.dep_verdicts.contains(&v))
     })
 }
 
@@ -438,7 +438,7 @@ pub fn replay(capture_text: &str, table: &SignatureTable) -> Diagnosis {
                 When::Absent { .. } => false,
                 w @ When::Event { .. } => event_matches(w, &event),
                 When::DenyThenError { error, .. } => {
-                    error.ops.iter().any(|op| *op == event.op)
+                    error.ops.contains(&event.op)
                         && error
                             .verdict_prefixes
                             .iter()
