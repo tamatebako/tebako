@@ -25,6 +25,9 @@ tpkg = { version = "0.1.0", path = "../tpkg" }
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0.12"
 sha2 = "0.10"
+# The contents-API commit (the Homebrew tap bump) base64-encodes the file
+# body — already in the tree via the git stack.
+base64 = "0.22"
 libc = "0.2"
 # tfs+git: via gitoxide (spec 04 §3) — never the git CLI. Local and
 # smart-protocol fetch in-process; reqwest's TLS is steered to rustls/ring

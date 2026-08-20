@@ -31,6 +31,10 @@ tfs = { version = "0.1.0", path = "../tfs" }
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 libc = "0.2"
 sha2 = "0.10"
+# The publish recipe (recipe.yml) is authored YAML — the tpkg manifest
+# convention (serde + serde_yml, as tebako-resolve's registry model).
+serde = { version = "1", features = ["derive"] }
+serde_yml = "0.0.12"
 # RuntimeSdk provisioning extracts the ruby src release in-process (no tar
 # binary): flate2 is already in the tree (miniz_oxide backend, pure Rust);
 # tar is its pure-Rust companion (xattr dropped — a src tarball needs none).

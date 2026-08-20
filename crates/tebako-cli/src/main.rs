@@ -18,7 +18,11 @@ const USAGE: &str = "Usage:
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
   tebako list-registries               list the registered registries
   tebako install <ref | name[@ver]>    install a payload + register its shims
-  tebako uninstall <name>              remove a payload's shims and cache entry";
+  tebako uninstall <name>              remove a payload's shims and cache entry
+  tebako publish [--recipe <path>] [--version <v>] [--name <n>] [--repo <owner/repo>]
+               [--registry <path>] [--payload <triplet|universal>=<path>]...
+               [--binary <triplet>=<path>]... [--sign[=<keyid>]]
+               [--tap <org/homebrew-tap>] [--tap-output <dir>] [--no-verify]";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -48,11 +52,16 @@ impl From<TebakoError> for CliExit {
 }
 
 fn run(args: &[String]) -> Result<(), CliExit> {
-    if args.iter().any(|a| a == "--version" || a == "-v") {
+    // Only a bare leading flag is the banner request — subcommands carry
+    // their own --version (publish) and --help-shaped flags.
+    if args
+        .first()
+        .is_some_and(|a| a == "--version" || a == "-v")
+    {
         println!("{VERSION_BANNER}");
         return Ok(());
     }
-    if args.iter().any(|a| a == "--help" || a == "-h") || args.is_empty() {
+    if args.first().is_some_and(|a| a == "--help" || a == "-h") || args.is_empty() {
         println!("{VERSION_BANNER}");
         println!("{USAGE}");
         return Ok(());
@@ -77,6 +86,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
             press(&opts)?;
             Ok(())
         }
+        "publish" => run_publish(rest),
         "cache" => run_cache(rest),
         "add-registry" => run_add_registry(rest),
         "list-registries" => run_list_registries(rest),
@@ -180,6 +190,107 @@ fn run_uninstall(args: &[String]) -> Result<(), CliExit> {
         println!("  unlinked {}", shim.display());
     }
     Ok(())
+}
+
+/// `tebako publish` (spec 16 §5, roadmap 41): the persona-C release flow
+/// — press outputs per triplet → sign → upload → registry → tap → verify.
+fn run_publish(args: &[String]) -> Result<(), CliExit> {
+    let mut opts = tebako_cli::publish::PublishOptions {
+        dir: std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+        home: tebako_home()?,
+        token: std::env::var("GITHUB_TOKEN")
+            .ok()
+            .filter(|t| !t.is_empty())
+            .or_else(|| std::env::var("GH_TOKEN").ok().filter(|t| !t.is_empty())),
+        ..Default::default()
+    };
+
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        let (flag, inline_value) = match arg.split_once('=') {
+            Some((f, v)) if f.starts_with("--") => (f, Some(v.to_string())),
+            _ => (arg.as_str(), None),
+        };
+        let take_value = |i: &mut usize| -> Result<String, CliExit> {
+            if let Some(v) = inline_value.clone() {
+                return Ok(v);
+            }
+            *i += 1;
+            args.get(*i)
+                .cloned()
+                .ok_or_else(|| CliExit::Usage(format!("option '{flag}' requires a value")))
+        };
+        match flag {
+            "--recipe" => opts.recipe = Some(PathBuf::from(take_value(&mut i)?)),
+            "--version" => opts.version = Some(take_value(&mut i)?),
+            "--name" => opts.name = Some(take_value(&mut i)?),
+            "--repo" => opts.repo = Some(take_value(&mut i)?),
+            "--registry" => opts.registry = Some(PathBuf::from(take_value(&mut i)?)),
+            "--payload" => {
+                let (key, path) = split_kv(&take_value(&mut i)?, "--payload")?;
+                opts.payloads.push((key, PathBuf::from(path)));
+            }
+            "--binary" => {
+                let (key, path) = split_kv(&take_value(&mut i)?, "--binary")?;
+                opts.binaries.push((key, PathBuf::from(path)));
+            }
+            "--sign" => {
+                // --sign (press-local key) or --sign=<keyid>; a space
+                // separated keyid would be ambiguous with positionals, so
+                // only the = form carries one (Thor's [=<keyid>] shape).
+                opts.sign = Some(inline_value.clone());
+            }
+            "--tap" => opts.tap = Some(take_value(&mut i)?),
+            "--tap-output" => opts.tap_output = Some(PathBuf::from(take_value(&mut i)?)),
+            "--no-verify" => opts.no_verify = true,
+            other => return Err(CliExit::Usage(format!("unknown publish option '{other}'"))),
+        }
+        i += 1;
+    }
+
+    let outcome = tebako_cli::publish::publish(&opts)?;
+    for note in &outcome.notes {
+        eprintln!("tebako: note: {note}");
+    }
+    println!(
+        "published {} {} to the {} release of {}",
+        outcome.name,
+        outcome.version,
+        outcome.tag,
+        opts.repo.as_deref().unwrap_or("<recipe repo>")
+    );
+    if let Some(signer) = &outcome.signer {
+        println!("  signed with key {signer}");
+    }
+    for asset in &outcome.uploaded {
+        let marker = if outcome.replaced.contains(asset) {
+            " (replaced)"
+        } else {
+            ""
+        };
+        println!("  asset {asset}{marker}");
+    }
+    println!("  registry {}", outcome.registry_path.display());
+    for tap in &outcome.tap {
+        println!("  tap {tap}");
+    }
+    if let Some(verified) = &outcome.verified {
+        println!("  verified: {verified}");
+    }
+    Ok(())
+}
+
+/// `<key>=<path>` for the repeatable --payload/--binary flags.
+fn split_kv(spec: &str, flag: &str) -> Result<(String, String), CliExit> {
+    match spec.split_once('=') {
+        Some((key, path)) if !key.is_empty() && !path.is_empty() => {
+            Ok((key.to_string(), path.to_string()))
+        }
+        _ => Err(CliExit::Usage(format!(
+            "invalid {flag} specification '{spec}' ('<triplet|universal>=<path>' expected)"
+        ))),
+    }
 }
 
 fn run_cache(args: &[String]) -> Result<(), CliExit> {

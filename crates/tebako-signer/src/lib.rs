@@ -35,6 +35,6 @@ pub use root::{
     successor_chain_path, verify_successor_statement, SuccessorStatement, STATEMENT_FORMAT,
 };
 pub use sign::{
-    dearmor_bytes, sign_detached, signature_issuer_fingerprint, verify_detached,
+    armor_signature, dearmor_bytes, sign_detached, signature_issuer_fingerprint, verify_detached,
     verify_detached_full, VerifyOutcome,
 };

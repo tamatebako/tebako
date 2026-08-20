@@ -44,6 +44,13 @@ pub fn dearmor_bytes(data: &[u8]) -> Result<Vec<u8>, SignerError> {
     rnp::dearmor_bytes(data).map_err(|e| SignerError::Verify(e.to_string()))
 }
 
+/// Armor a binary detached signature (the `.asc` release sidecar form,
+/// spec 09 §2 — one wrapper so release tooling needs no rnp dependency).
+pub fn armor_signature(signature: &[u8]) -> Result<Vec<u8>, SignerError> {
+    rnp::armor_bytes(signature, rnp::ops::ArmorType::Signature)
+        .map_err(|e| SignerError::Sign(format!("cannot armor the signature: {e}")))
+}
+
 /// Extract the issuer fingerprint (40-hex, uppercase) of a detached
 /// signature, via the OpenPGP packet dump — no keyring needed.
 pub fn signature_issuer_fingerprint(signature: &[u8]) -> Result<String, SignerError> {

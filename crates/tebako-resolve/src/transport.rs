@@ -20,6 +20,12 @@ pub trait Transport {
     fn get(&self, url: &str) -> Result<Vec<u8>, FetchError>;
 }
 
+impl<T: Transport + ?Sized> Transport for &T {
+    fn get(&self, url: &str) -> Result<Vec<u8>, FetchError> {
+        (**self).get(url)
+    }
+}
+
 /// The real transport: tebako-http with the gem's retry discipline.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct HttpTransport;

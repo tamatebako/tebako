@@ -21,6 +21,7 @@ pub mod cache;
 pub mod error;
 pub mod fetch;
 pub mod git;
+pub mod publish;
 pub mod reference;
 pub mod registry;
 pub mod transport;
@@ -28,6 +29,11 @@ pub mod transport;
 pub use cache::{default_cache_root, CacheEntry, InstallStatus, PayloadCache};
 pub use error::{ReferenceError, RegistryError, ResolveError};
 pub use fetch::{sha256_hex, FetchedPayload, Fetcher};
+pub use publish::{
+    artifact_name, binary_asset_name, commit_file, release_tag, upsert_entry, CommitOutcome,
+    EntrySpec, GithubReleaseClient, HttpPublishTransport, PublishTransport, PublishedRelease,
+    ReleaseError,
+};
 pub use reference::{Reference, Service};
 pub use registry::{
     PlatformSelection, Registry, RegistryPayload, RegistryPlatforms, RegistryRef, RegistryVersion,

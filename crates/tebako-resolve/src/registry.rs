@@ -210,7 +210,7 @@ impl Registry {
         self.payloads.iter().find(|p| p.name == name)
     }
 
-    fn validate(&self) -> Result<(), RegistryError> {
+    pub(crate) fn validate(&self) -> Result<(), RegistryError> {
         if self.schema_version != REGISTRY_SCHEMA_VERSION {
             return Err(invalid_entry(format!(
                 "unsupported schema_version {} (this build reads {REGISTRY_SCHEMA_VERSION})",

@@ -164,13 +164,98 @@ pub fn get_text(url: &str) -> Result<String, FetchError> {
     String::from_utf8(body).map_err(|e| FetchError::DownloadFailed(format!("{e} decoding {url}")))
 }
 
+/// The write side of the release APIs (roadmap 41 — `tebako publish`):
+/// send `method` (GET/POST/PUT/DELETE) to `url` with `headers` and an
+/// optional body, returning the status code and the response body. Any
+/// completed HTTP exchange is `Ok` — non-2xx statuses come back as
+/// `(code, [])` (ureq reports them without a body) for the caller's named
+/// errors; only transport failures are `Err`. HTTPS-only like [`get`];
+/// `file://` is supported for GET only (tests and air-gapped mirrors).
+pub fn request(
+    method: &str,
+    url: &str,
+    headers: &[(&str, &str)],
+    body: Option<&[u8]>,
+) -> Result<(u16, Vec<u8>), FetchError> {
+    if let Some(path) = url.strip_prefix("file://") {
+        return match method {
+            "GET" => match std::fs::read(path) {
+                Ok(bytes) => Ok((200, bytes)),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok((404, Vec::new())),
+                Err(e) => Err(FetchError::DownloadFailed(format!("{e} reading {path}"))),
+            },
+            _ => Err(FetchError::DownloadFailed(format!(
+                "refusing {method} on file:// URL {url} (GET only)"
+            ))),
+        };
+    }
+    if !url.starts_with("https://") {
+        return Err(FetchError::DownloadFailed(format!(
+            "refusing non-HTTPS URL {url} (https:// and file:// are supported)"
+        )));
+    }
+    let agent = agent();
+    // ureq's typestate splits body-less methods (WithoutBody) from
+    // body-carrying ones (WithBody); build each arm with its own headers.
+    let result = match method {
+        "GET" | "DELETE" => {
+            let builder = match method {
+                "GET" => agent.get(url),
+                _ => agent.delete(url),
+            };
+            let builder = headers
+                .iter()
+                .fold(builder, |b, (name, value)| b.header(*name, *value));
+            match body {
+                None => builder.call(),
+                Some(_) => {
+                    return Err(FetchError::DownloadFailed(format!(
+                        "{method} carries no body ({url})"
+                    )))
+                }
+            }
+        }
+        "POST" | "PUT" => {
+            let builder = match method {
+                "POST" => agent.post(url),
+                _ => agent.put(url),
+            };
+            let builder = headers
+                .iter()
+                .fold(builder, |b, (name, value)| b.header(*name, *value));
+            builder.send(body.unwrap_or(&[]))
+        }
+        other => {
+            return Err(FetchError::DownloadFailed(format!(
+                "unsupported HTTP method {other}"
+            )))
+        }
+    };
+    match result {
+        Ok(mut response) => {
+            let status = response.status().as_u16();
+            let body = response
+                .body_mut()
+                .with_config()
+                .limit(MAX_BODY_SIZE)
+                .read_to_vec()
+                .map_err(|e| FetchError::DownloadFailed(format!("{e} reading {url}")))?;
+            Ok((status, body))
+        }
+        Err(ureq::Error::StatusCode(code)) => Ok((code, Vec::new())),
+        Err(other) => Err(FetchError::DownloadFailed(format!(
+            "{other} fetching {url}"
+        ))),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn file_url_reads_from_disk() {
-        let dir = std::env::temp_dir().join(format!("tebako-http-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("tebako-http-file-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("index.txt");
         std::fs::write(&file, b"hello").unwrap();
@@ -196,7 +281,7 @@ mod tests {
 
     #[test]
     fn progress_hook_fires_once_for_file_urls() {
-        let dir = std::env::temp_dir().join(format!("tebako-http-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("tebako-http-progress-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let file = dir.join("asset.bin");
         std::fs::write(&file, b"hello progress").unwrap();
@@ -210,6 +295,33 @@ mod tests {
 
         // None is get()'s behavior, unchanged.
         assert_eq!(get_with_progress(&url, None).unwrap(), get(&url).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn request_gets_file_urls_and_refuses_writes_and_plain_http() {
+        let dir = std::env::temp_dir().join(format!("tebako-http-req-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("api.json");
+        std::fs::write(&file, b"{}").unwrap();
+        let url = format!("file://{}", file.display());
+        assert_eq!(request("GET", &url, &[], None).unwrap(), (200, b"{}".to_vec()));
+        assert_eq!(
+            request("GET", &format!("file://{}/missing", dir.display()), &[], None).unwrap(),
+            (404, Vec::new())
+        );
+        assert!(matches!(
+            request("POST", &url, &[], Some(b"x")),
+            Err(FetchError::DownloadFailed(_))
+        ));
+        assert!(matches!(
+            request("POST", "http://example.com/", &[], Some(b"x")),
+            Err(FetchError::DownloadFailed(_))
+        ));
+        assert!(matches!(
+            request("PATCH", &url, &[], None),
+            Err(FetchError::DownloadFailed(_))
+        ));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
