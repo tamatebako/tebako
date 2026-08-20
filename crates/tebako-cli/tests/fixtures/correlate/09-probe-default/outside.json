@@ -1,0 +1,7 @@
+[
+{ "time": 101, "pid": 5, "tid": 2, "module": "retrace", "severity": "INFO", "message": { "func": "QueryOpen", "path": "/mnt/tfs/miss.scss" } }
+,
+{ "time": 102, "pid": 5, "tid": 3, "module": "retrace", "severity": "INFO", "message": { "func": "CreateFile", "path": "/mnt/tfs/data.dat" } }
+,
+{ "time": 103, "pid": 5, "tid": 4, "module": "retrace", "severity": "INFO", "message": { "func": "open", "path": "/mnt/tfs/served.dat" } }
+]

@@ -1,0 +1,2 @@
+escape /mnt/tfs/lazy.dat func=open tid=7 pid=42 class=read
+escape /mnt/tfs/never.dat func=open tid=7 pid=42 class=read

@@ -1,0 +1,5 @@
+[
+{ "time": 1755580000, "pid": 701, "tid": 703, "module": "retrace", "severity": "INFO", "message": { "func": "NtCreateFile", "params": { "path": "\\Device\\HarddiskVolume3\\pkg\\db.sqlite" } } },
+{ "time": 1755580001, "pid": 701, "tid": 703, "module": "retrace", "severity": "INFO", "message": { "func": "NtOpenFile", "params": { "path": "\\??\\C:\\pkg\\cache\\tmp.bin" } } },
+{ "time": 1755580002, "pid": 701, "tid": 705, "module": "retrace", "severity": "INFO", "message": { "func": "LdrLoadDll", "params": { "path": "\\\\?\\C:\\pkg\\loader32.dll" } } }
+]

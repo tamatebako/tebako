@@ -1,0 +1,7 @@
+[
+{ "time": 199, "pid": 42, "tid": 7, "module": "retrace", "severity": "INFO", "message": { "func": "open", "path": "/mnt/tfs/lazy.dat" } }
+,
+{ "time": 190, "pid": 42, "tid": 7, "module": "retrace", "severity": "INFO", "message": { "func": "open", "path": "/mnt/tfs/lazy.dat" } }
+,
+{ "time": 195, "pid": 42, "tid": 7, "module": "retrace", "severity": "INFO", "message": { "func": "open", "path": "/mnt/tfs/never.dat" } }
+]

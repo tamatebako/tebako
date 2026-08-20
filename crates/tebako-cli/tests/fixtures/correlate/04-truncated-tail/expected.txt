@@ -1,0 +1,1 @@
+escape /mnt/tfs/pkg/.part.lock func=creat tid=803 pid=801 class=write

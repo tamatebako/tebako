@@ -1,0 +1,7 @@
+[
+{ "time": 101, "pid": 4242, "tid": 3, "module": "retrace", "severity": "INFO", "message": { "func": "open", "path": "/mnt/tfs/cov.dat" } }
+,
+{ "time": 102, "pid": 4242, "tid": 4, "module": "retrace", "severity": "INFO", "message": { "func": "open", "path": "/mnt/tfs/real-escape.dat" } }
+,
+{ "time": 103, "pid": 999, "tid": 5, "module": "retrace", "severity": "INFO", "message": { "func": "open", "path": "/mnt/tfs/not-mine.dat" } }
+]

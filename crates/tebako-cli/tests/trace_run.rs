@@ -197,7 +197,7 @@ fn trace_run_rejects_a_missing_package_and_bad_options() {
         "stderr: {}",
         r.stderr
     );
-    for sub in ["explain", "cover"] {
+    for sub in ["explain", "import"] {
         let r = tebako_trace(&[sub]);
         assert_eq!(r.rc, 1);
         assert!(

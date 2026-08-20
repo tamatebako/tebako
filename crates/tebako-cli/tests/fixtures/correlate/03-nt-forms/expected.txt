@@ -1,0 +1,2 @@
+escape C:/pkg/cache/tmp.bin func=NtOpenFile tid=703 pid=701 class=read
+escape C:/pkg/loader32.dll func=LdrLoadDll tid=705 pid=701 class=read

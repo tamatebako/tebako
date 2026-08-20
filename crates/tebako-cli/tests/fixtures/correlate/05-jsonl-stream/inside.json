@@ -1,0 +1,3 @@
+[
+{ "time": 1755580000, "pid": 901, "tid": 901, "module": "tfs", "severity": "INFO", "message": { "op": "open", "path": "/mnt/tfs/pkg/main.so" } }
+]

@@ -1,0 +1,3 @@
+[
+{ "time": 100, "pid": 4242, "tid": 1, "module": "retrace", "severity": "INFO", "message": { "func": "open", "path": "/mnt/tfs/cov.dat" } }
+]

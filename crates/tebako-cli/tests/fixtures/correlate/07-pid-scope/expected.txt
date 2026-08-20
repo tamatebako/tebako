@@ -1,0 +1,1 @@
+escape /mnt/tfs/real-escape.dat func=open tid=4 pid=4242 class=read

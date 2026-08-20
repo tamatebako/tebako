@@ -1,0 +1,2 @@
+escape /mnt/tfs/miss.scss func=QueryOpen tid=2 pid=5 class=probe
+escape /mnt/tfs/data.dat func=CreateFile tid=3 pid=5 class=read

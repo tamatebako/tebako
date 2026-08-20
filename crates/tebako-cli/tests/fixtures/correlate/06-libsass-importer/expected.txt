@@ -1,0 +1,2 @@
+escape C:/pkg/scss/_a.scss func=QueryOpen tid=0 pid=9012 class=probe
+escape C:/pkg/scss/_hidden.scss func=CreateFile tid=0 pid=9012 class=read
