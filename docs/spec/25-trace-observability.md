@@ -4,11 +4,15 @@
 interception bus + `docs/spec/schemas/trace-event.yaml` + `tebako trace
 run`; phase T2 shipped 2026-08-20: the `spawn`/`resolve` emission — the
 preload's posix_spawn surface and the driver's image-triple resolution;
-phase T3 shipped 2026-08-20 for the correlator half: `tebako trace
-cover` (§6.3) — the escapes report, golden-parity with retrace's shared
-correlate fixtures; the procmon converter (`tebako trace import`, §6.2)
-remains PLANNED within T3, and `explain` is T4 — re-phased 2026-08-20:
-emission completeness precedes the replay/correlation front-ends.
+phase T3 shipped: `tebako trace cover` (§6.3) 2026-08-20 — the escapes
+report, golden-parity with retrace's shared correlate fixtures — and
+2026-08-21 the procmon converter (`tebako trace import procmon`, §6.2),
+byte-parity with upstream procmon2retrace on the golden 06 fixture;
+phase T4 shipped 2026-08-21: `tebako trace explain` (§5) — the capture
+replay with the signature table in data. All four phases' CODE is on
+main; the PARTIAL remainder is dogfood, not code: the §8 legs (retrace
+libc-layer on both platforms; the kernel-layer leg as §6.4 lands) and
+the real incident-13 captures' archival into the explain fixtures.
 Owner-signed 2026-08-19 — architecture A: the in-tfs
 event bus + `tebako trace` front-ends; outside capture rides the
 three-layer producer model of §6.1, with retrace as the libc-boundary
@@ -338,8 +342,8 @@ block T1/T2:
 |-------|----------|---------|
 | T1 | the bus + schema + `run` (discovery) | the msys dogfood rides the bus; a payload author onboards a fresh gem without hand diagnostics |
 | T2 | the `spawn`/`resolve` emission: the preload's posix_spawn surface reports `spawn` (a child-process decision — the correlator's process-tree signal), and the driver emits one `resolve` event per `--tebako-image` triple (the payload/slot identity: whole / `slot:<n>` + offset/size/mount, or the named failure class) | a traced boot of a broken composition names the failing triple in the capture itself — no stderr spelunking; a traced run's spawns regroup by pid |
-| T3 | `cover` (certification) + the procmon converter | `cover` SHIPPED 2026-08-20 (the §6.3 correlator + the shared golden tree green in CI); the converter (`import`, §6.2) is PLANNED. Remaining dogfood: a leg under retrace on both platforms (libc layer); a kernel-layer leg (ptrace/eBPF on linux, procmon-converter on windows) as the §6.4 prerequisites land; escapes report in CI |
-| T4 | `explain` (diagnosis) | replay the incident-13 captures; the named hop matches history |
+| T3 | `cover` (certification) + the procmon converter | `cover` SHIPPED 2026-08-20 (the §6.3 correlator + the shared golden tree green in CI); the converter (`import`, §6.2) SHIPPED 2026-08-21 (byte-parity with procmon2retrace on the golden 06 case, the converted stream driving cover to expected.txt/exit.txt). Remaining dogfood: a leg under retrace on both platforms (libc layer); a kernel-layer leg (ptrace/eBPF on linux, procmon-converter on windows) as the §6.4 prerequisites land; escapes report in CI |
+| T4 | `explain` (diagnosis) | SHIPPED 2026-08-21: the replay + the signature table in data (`explain-signatures.yaml`), fixtures replaying the incident classes to their hand-derived answers (§7's gate shape). Remaining dogfood: replay the real incident-13 captures; the named hop matches history |
 
 (Re-phased 2026-08-20: emission completeness precedes the front-ends —
 the original T2 (`explain`) is T4, the original T3 (`cover` + the

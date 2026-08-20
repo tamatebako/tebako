@@ -8,10 +8,10 @@
 #
 # SSOT: this file owns the grammar; crates/tfs/src/trace.rs (the emitter),
 # crates/tebako-driver/src/driver.rs (the resolve emitter), and
-# crates/tebako-cli/src/trace/ (the `tebako trace run|cover` consumers)
-# mirror it — keep the four in sync in the same PR. The property test in
-# crates/tfs/src/trace.rs drives the op matrix against a mounted fixture
-# and validates every emitted event against this grammar.
+# crates/tebako-cli/src/trace/ (the `tebako trace run|cover|explain`
+# consumers) mirror it — keep the four in sync in the same PR. The
+# property test in crates/tfs/src/trace.rs drives the op matrix against a
+# mounted fixture and validates every emitted event against this grammar.
 # =============================================================================
 
 schema: trace-event
