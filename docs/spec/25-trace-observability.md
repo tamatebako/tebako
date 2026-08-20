@@ -2,8 +2,11 @@
 
 **Status: PARTIAL (phase T1 shipped 2026-08-19: the `tfs::trace`
 interception bus + `docs/spec/schemas/trace-event.yaml` + `tebako trace
-run`; `explain` is T2, `cover` + the procmon converter are T3.
-Owner-signed 2026-08-19 — architecture A: the in-tfs
+run`; phase T2 shipped 2026-08-20: the `spawn`/`resolve` emission — the
+preload's posix_spawn surface and the driver's image-triple resolution;
+`cover` + the procmon converter are T3, `explain` is T4 — re-phased
+2026-08-20: emission completeness precedes the replay/correlation
+front-ends. Owner-signed 2026-08-19 — architecture A: the in-tfs
 event bus + `tebako trace` front-ends; outside capture rides the
 three-layer producer model of §6.1, with retrace as the libc-boundary
 layer on BOTH platforms).**
@@ -81,10 +84,10 @@ already implements, one event per decision:
 | `mount` | mount table insert/remove | `ok` / `error:<errno>` |
 | `open` / `stat` | path dispatch (spec 11) | `image:<mount>` / `host` / `denied:<rule>` / `error:<errno>` |
 | `dlopen` | `dlmap2file` / `dlalias2file` | `materialized:<host-path>` / `host` / `error:<errno>` |
-| `exec` / `spawn` | exec routing (spec 17/22) | `routed:<entry>` / `host` / `error:<errno>` |
+| `exec` / `spawn` | exec routing (spec 17/22) — one routing decision, two syscall surfaces: `exec` is the execve surface (process replacement), `spawn` the posix_spawn surface (a child is created — the correlator's process-tree signal) | `routed:<entry>` / `host` / `error:<errno>` |
 | `materialize` | exec-cache extraction | `ok:<host-path>` / `cache-hit` / `error:<errno>` |
 | `jail` | policy bind / check (spec 08, 23 §8) | `allow:<rule>` / `deny:<rule>` / `record` |
-| `resolve` | runtime/payload resolution (L3) | `cache` / `fetched` / `error` |
+| `resolve` | the driver's `--tebako-image <path>:<slot>:<mount>` resolution (trailer probe → whole file or slot region — the payload/slot identity the correlator matches outside reads against). **PLANNED:** the L3 runtime/payload cache resolution (tebako-resolve — loader-side, outside the runtime process; its channel story lands with the phase that needs it) | `whole` / `slot:<n>` / `error:<errno>` — PLANNED L3 half: `cache` / `fetched` / `error` |
 
 The `dlopen` event's `detail` carries the closure walk as structure —
 the parsed format, the dep list, each dep's resolve verdict
@@ -287,8 +290,14 @@ coverage features as these land upstream; none block T1/T2:
 | phase | contents | dogfood |
 |-------|----------|---------|
 | T1 | the bus + schema + `run` (discovery) | the msys dogfood rides the bus; a payload author onboards a fresh gem without hand diagnostics |
-| T2 | `explain` (diagnosis) | replay the incident-13 captures; the named hop matches history |
+| T2 | the `spawn`/`resolve` emission: the preload's posix_spawn surface reports `spawn` (a child-process decision — the correlator's process-tree signal), and the driver emits one `resolve` event per `--tebako-image` triple (the payload/slot identity: whole / `slot:<n>` + offset/size/mount, or the named failure class) | a traced boot of a broken composition names the failing triple in the capture itself — no stderr spelunking; a traced run's spawns regroup by pid |
 | T3 | `cover` (certification) + the procmon converter | a dogfood leg under retrace on both platforms (libc layer); a kernel-layer leg (ptrace/eBPF on linux, procmon-converter on windows) as the §6.4 prerequisites land; escapes report in CI |
+| T4 | `explain` (diagnosis) | replay the incident-13 captures; the named hop matches history |
+
+(Re-phased 2026-08-20: emission completeness precedes the front-ends —
+the original T2 (`explain`) is T4, the original T3 (`cover` + the
+converter) stays T3, and T2 is the spawn/resolve emission the
+correlator's inputs depend on.)
 
 Each phase ships behind its own PR chain against this spec; the spec
 moves PLANNED → PARTIAL → SHIPPED per phase (spec 00's status law).

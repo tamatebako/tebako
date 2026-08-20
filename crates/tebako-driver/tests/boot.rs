@@ -292,6 +292,271 @@ fn a_broken_trace_channel_only_notes_and_the_boot_proceeds() {
     assert!(!tfs::trace::armed(), "the bus stayed disarmed");
 }
 
+// ---------------------------------------------------------------------
+// the resolve channel (spec 25 §2, phase T2): one `resolve` event per
+// --tebako-image triple, emitted BEFORE the mount it feeds. The env
+// image has no slot decision — it emits no resolve event.
+// ---------------------------------------------------------------------
+
+/// The capture's `resolve` events, parsed (the bus render shape).
+fn resolve_events(capture: &Path) -> Vec<tebako_json::Value> {
+    let text = std::fs::read_to_string(capture).expect("read the capture");
+    text.lines()
+        .map(|l| tebako_json::parse(l).expect("each capture line parses"))
+        .filter(|d| {
+            d.find("op")
+                .and_then(tebako_json::Value::as_string)
+                .as_deref()
+                == Some("resolve")
+        })
+        .collect()
+}
+
+fn field<'v>(doc: &'v tebako_json::Value, key: &str) -> &'v tebako_json::Value {
+    doc.find(key)
+        .unwrap_or_else(|| panic!("`{key}` present in {doc:?}"))
+}
+
+fn detail<'v>(doc: &'v tebako_json::Value, key: &str) -> &'v tebako_json::Value {
+    field(doc, "detail")
+        .find(key)
+        .unwrap_or_else(|| panic!("detail `{key}` present in {doc:?}"))
+}
+
+#[test]
+fn resolve_events_cover_the_whole_and_slot_decisions() {
+    let g = guard("resolve-ok");
+    let env_image = write_env_image(g.path());
+    let bare = write_payload_image(g.path());
+    let packaged = g.path().join("packaged.tfs");
+    build_zip(&packaged, &["tools/"], &[("tools/x", b"x\n".as_slice())]);
+    package_in_place(&packaged, tpkg::TPKG_FORMAT_ZIP);
+    let capture = g.path().join("trace.jsonl");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("TEBAKO_TRACE", capture.display().to_string());
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", bare.display()),
+            "--tebako-image",
+            &format!("{}:0:/opt/tool", packaged.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    let events = resolve_events(&capture);
+    assert_eq!(
+        events.len(),
+        2,
+        "one resolve event per triple — the env image has no slot decision: {events:?}"
+    );
+
+    // The bare image: the whole-file decision, slot as spelled.
+    let whole = &events[0];
+    assert_eq!(
+        field(whole, "path").as_string().as_deref(),
+        Some(bare.to_str().unwrap())
+    );
+    assert_eq!(
+        field(whole, "verdict").as_string().as_deref(),
+        Some("whole")
+    );
+    assert_eq!(detail(whole, "slot").as_string().as_deref(), Some("0"));
+    assert_eq!(detail(whole, "mount").as_string().as_deref(), Some("/"));
+    assert_eq!(
+        field(whole, "pid").as_u64(),
+        Some(u64::from(std::process::id())),
+        "the resolve event rides the envelope's pid"
+    );
+
+    // The package: the slot region — the payload/slot identity the
+    // correlator matches the outside capture's byte-range reads against.
+    let slot = &events[1];
+    assert_eq!(
+        field(slot, "path").as_string().as_deref(),
+        Some(packaged.to_str().unwrap())
+    );
+    assert_eq!(
+        field(slot, "verdict").as_string().as_deref(),
+        Some("slot:0")
+    );
+    assert_eq!(detail(slot, "offset").as_u64(), Some(0));
+    assert!(
+        detail(slot, "size").as_u64().unwrap_or(0) > 0,
+        "the region's byte size: {slot:?}"
+    );
+    assert_eq!(detail(slot, "slots").as_u64(), Some(1));
+    assert_eq!(
+        detail(slot, "mount").as_string().as_deref(),
+        Some("/opt/tool")
+    );
+
+    // Each triple's resolve decision precedes the mount it feeds (the
+    // schema's ordering note): the resolve event naming the image lands
+    // before the mount event whose image detail names it. (The env
+    // image's mount comes first overall — it has no resolve event.)
+    let text = std::fs::read_to_string(&capture).unwrap();
+    let lines: Vec<&str> = text.lines().collect();
+    let at = |op: &str, image: &str| {
+        lines
+            .iter()
+            .position(|l| l.contains(&format!("\"op\":\"{op}\"")) && l.contains(image))
+            .unwrap_or_else(|| panic!("a {op} event naming {image}: {text}"))
+    };
+    for image in [bare.display().to_string(), packaged.display().to_string()] {
+        assert!(
+            at("resolve", &image) < at("mount", &image),
+            "resolve precedes the mount for {image}: {text}"
+        );
+    }
+}
+
+/// One failing boot with the bus armed; returns the resolve events.
+fn resolve_failure_capture(
+    g: &Guard,
+    tag: &str,
+    triple: &str,
+) -> (tebako_driver::DriverError, Vec<tebako_json::Value>) {
+    let capture = g.path().join(format!("{tag}.jsonl"));
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_TRACE", capture.display().to_string());
+    let err = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            triple,
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    (err, resolve_events(&capture))
+}
+
+#[test]
+fn resolve_errors_carry_the_errno_and_the_failure_class() {
+    let g = guard("resolve-err");
+    let bare = write_payload_image(g.path());
+    let packaged = g.path().join("packaged.tfs");
+    build_zip(&packaged, &["tools/"], &[("tools/x", b"x\n".as_slice())]);
+    package_in_place(&packaged, tpkg::TPKG_FORMAT_ZIP);
+    let runtime_slotted = g.path().join("runtime.tfs");
+    build_zip(
+        &runtime_slotted,
+        &["tools/"],
+        &[("tools/x", b"x\n".as_slice())],
+    );
+    package_in_place(&runtime_slotted, tpkg::TPKG_FORMAT_RUNTIME);
+
+    // (triple, boot exit code, errno, reason): the named boot errors are
+    // unchanged (65 manifest / 69 unavailable); the event carries the
+    // errno-level fact and the class.
+    let cases: Vec<(String, i32, i32, &str)> = vec![
+        (
+            format!("{}:3:/", bare.display()),
+            65,
+            libc::EINVAL,
+            "no-trailer",
+        ),
+        (
+            format!("{}:3:/", packaged.display()),
+            65,
+            libc::ERANGE,
+            "slot-out-of-range",
+        ),
+        (
+            format!("{}:-:/", packaged.display()),
+            65,
+            libc::EINVAL,
+            "whole-on-package",
+        ),
+        (
+            format!("{}:0:/", runtime_slotted.display()),
+            65,
+            libc::EINVAL,
+            "runtime-slot",
+        ),
+        (
+            format!("{}:0:/", g.path().join("nope.tfs").display()),
+            69,
+            libc::ENOENT,
+            "open",
+        ),
+    ];
+    for (i, (triple, code, errno, reason)) in cases.iter().enumerate() {
+        let (err, events) = resolve_failure_capture(&g, &format!("case{i}"), triple);
+        assert_eq!(err.code, *code, "{triple}: {}", err.message);
+        assert_eq!(events.len(), 1, "{triple}: one resolve event: {events:?}");
+        let event = &events[0];
+        let verdict = format!("error:{errno}");
+        assert_eq!(
+            field(event, "verdict").as_string().as_deref(),
+            Some(verdict.as_str()),
+            "{triple}"
+        );
+        // The schema's typed-duplicate rule: the errno field IS the
+        // verdict suffix.
+        assert_eq!(
+            field(event, "errno").as_u64(),
+            Some(*errno as u64),
+            "{triple}"
+        );
+        assert_eq!(
+            detail(event, "reason").as_string().as_deref(),
+            Some(*reason),
+            "{triple}"
+        );
+        assert_eq!(detail(event, "mount").as_string().as_deref(), Some("/"));
+        assert!(
+            !context().read().unwrap().is_mounted(),
+            "{triple}: a refused boot leaves nothing mounted"
+        );
+    }
+}
+
+#[test]
+fn a_self_triple_without_a_trailer_traces_the_probe_and_the_refusal() {
+    let g = guard("resolve-self");
+    // The test executable carries no tpkg trailer: `self:0` probes clean
+    // (a bare file mounts whole for a FILE triple) and the self-slot
+    // rule then refuses — two resolve events, one decision each.
+    let (err, events) = resolve_failure_capture(&g, "self", "self:0:/");
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(
+        err.message.contains("carries no tpkg trailer"),
+        "{}",
+        err.message
+    );
+    assert_eq!(events.len(), 2, "the probe + the refusal: {events:?}");
+    assert_eq!(
+        field(&events[0], "verdict").as_string().as_deref(),
+        Some("whole")
+    );
+    assert_eq!(
+        field(&events[1], "verdict").as_string().as_deref(),
+        Some(format!("error:{}", libc::EINVAL).as_str())
+    );
+    assert_eq!(
+        detail(&events[1], "reason").as_string().as_deref(),
+        Some("self-not-packaged")
+    );
+    // The event's path is the file actually probed: the running exe.
+    let exe = std::env::current_exe().unwrap();
+    assert_eq!(
+        field(&events[0], "path").as_string().as_deref(),
+        Some(exe.to_str().unwrap())
+    );
+}
+
 #[test]
 fn bare_payload_mounts_whole_with_slot_0() {
     let g = guard("bare-0");

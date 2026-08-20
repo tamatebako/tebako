@@ -1589,7 +1589,7 @@ impl FsContext {
     }
 
     /// The exec surface's answer for a memfs path (the preload's
-    /// execve/posix_spawn routing): a mount whose in-image manifest
+    /// execve routing): a mount whose in-image manifest
     /// declares the home annotation (`identity.annotations.java_home` —
     /// the payload root IS a tool home, spec 03's free-form annotations)
     /// materializes WHOLE once per process and the answer is the host
@@ -1603,6 +1603,20 @@ impl FsContext {
     /// ENOENT fallthrough (the §4 entrypoint-note signal), or
     /// `error:<errno>`.
     pub fn exec_materialize(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        self.exec_materialize_op(path, trace::Op::Exec)
+    }
+
+    /// The posix_spawn surface's answer (spec 25 §2, phase T2): the
+    /// identical routing decision, emitted as `spawn` — the op token is
+    /// the process-tree signal (execve replaces the process, a spawn
+    /// creates a child whose events carry a new pid).
+    pub fn exec_materialize_for_spawn(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        self.exec_materialize_op(path, trace::Op::Spawn)
+    }
+
+    /// The shared exec/spawn routing: one decision, the op naming the
+    /// syscall surface it serves (the §2 table's single exec/spawn row).
+    fn exec_materialize_op(&mut self, path: &str, op: trace::Op) -> Result<std::ffi::CString, i32> {
         let normalized = Self::normalize(path);
         let trace_start = trace::Start::now();
         if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
@@ -1627,18 +1641,17 @@ impl FsContext {
             if let Some(start) = trace_start {
                 let event = match &result {
                     Ok(host) => trace::Event::new(
-                        trace::Op::Exec,
+                        op,
                         &normalized,
                         format!("routed:{}", host.to_string_lossy()),
                     )
                     .detail("route", Value::String("dlmap-closure".to_string())),
                     // ENOENT: nothing held — the consumer execs the host
                     // path (the §4 entrypoint/runtime-dep note signal).
-                    Err(e) if *e == libc::ENOENT => {
-                        trace::Event::new(trace::Op::Exec, &normalized, "host")
+                    Err(e) if *e == libc::ENOENT => trace::Event::new(op, &normalized, "host"),
+                    Err(e) => {
+                        trace::Event::new(op, &normalized, format!("error:{e}")).with_errno(*e)
                     }
-                    Err(e) => trace::Event::new(trace::Op::Exec, &normalized, format!("error:{e}"))
-                        .with_errno(*e),
                 };
                 trace::emit(event.dur(start));
             }
@@ -1647,13 +1660,9 @@ impl FsContext {
         if rel.is_empty() {
             if let Some(start) = trace_start {
                 trace::emit(
-                    trace::Event::new(
-                        trace::Op::Exec,
-                        &normalized,
-                        format!("error:{}", libc::EISDIR),
-                    )
-                    .with_errno(libc::EISDIR)
-                    .dur(start),
+                    trace::Event::new(op, &normalized, format!("error:{}", libc::EISDIR))
+                        .with_errno(libc::EISDIR)
+                        .dur(start),
                 );
             }
             return Err(libc::EISDIR);
@@ -1663,7 +1672,7 @@ impl FsContext {
             Err(e) => {
                 if let Some(start) = trace_start {
                     trace::emit(
-                        trace::Event::new(trace::Op::Exec, &normalized, format!("error:{e}"))
+                        trace::Event::new(op, &normalized, format!("error:{e}"))
                             .with_errno(e)
                             .dur(start),
                     );
@@ -1675,13 +1684,9 @@ impl FsContext {
             let Some(mount) = self.mounts.get(&handle) else {
                 if let Some(start) = trace_start {
                     trace::emit(
-                        trace::Event::new(
-                            trace::Op::Exec,
-                            &normalized,
-                            format!("error:{}", libc::ENODEV),
-                        )
-                        .with_errno(libc::ENODEV)
-                        .dur(start),
+                        trace::Event::new(op, &normalized, format!("error:{}", libc::ENODEV))
+                            .with_errno(libc::ENODEV)
+                            .dur(start),
                     );
                 }
                 return Err(libc::ENODEV);
@@ -1690,7 +1695,7 @@ impl FsContext {
             if let Err(e) = extract_dir_recursive(mount.backend.as_ref(), "", &root, &mut skipped) {
                 if let Some(start) = trace_start {
                     trace::emit(
-                        trace::Event::new(trace::Op::Exec, &normalized, format!("error:{e}"))
+                        trace::Event::new(op, &normalized, format!("error:{e}"))
                             .with_errno(e)
                             .dur(start),
                     );
@@ -1703,14 +1708,9 @@ impl FsContext {
             std::ffi::CString::new(host.to_string_lossy().into_owned()).map_err(|_| libc::EIO);
         if let Some(start) = trace_start {
             let event = match &result {
-                Ok(_) => trace::Event::new(
-                    trace::Op::Exec,
-                    &normalized,
-                    format!("routed:{}", host.display()),
-                )
-                .detail("route", Value::String("home-tree".to_string())),
-                Err(e) => trace::Event::new(trace::Op::Exec, &normalized, format!("error:{e}"))
-                    .with_errno(*e),
+                Ok(_) => trace::Event::new(op, &normalized, format!("routed:{}", host.display()))
+                    .detail("route", Value::String("home-tree".to_string())),
+                Err(e) => trace::Event::new(op, &normalized, format!("error:{e}")).with_errno(*e),
             };
             trace::emit(event.dur(start));
         }

@@ -20,6 +20,9 @@ crate-type = ["staticlib", "rlib"]
 tebako-log = { version = "0.1.0", path = "../tebako-log" }
 # Trailer probing for `<self|package>:<slot>` resolution (spec 02).
 tpkg = { version = "0.1.0", path = "../tpkg" }
+# The resolve trace events' detail values (spec 25 §7 blesses tebako-json
+# for trace emission; the envelope renderer lives in tfs::trace).
+tebako-json = { version = "0.1.0", path = "../tebako-json" }
 # The env-image layout declaration (spec 18 C3) is authored YAML.
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0.12"
