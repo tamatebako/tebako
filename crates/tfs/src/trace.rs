@@ -48,11 +48,12 @@
 //!
 //! ## Op vocabulary
 //!
-//! [`Op`] is the full §2 table. `Spawn` and `Resolve` are defined now so
-//! the vocabulary is stable, but their emission points are later
-//! integration (the preload's posix_spawn path and tebako-resolve — T2+);
-//! T1 emits mount/open/stat/dlopen/exec/materialize/jail from
-//! [`crate::context`].
+//! [`Op`] is the full §2 table. T1 emits mount/open/stat/dlopen/exec/
+//! materialize/jail from [`crate::context`]; T2 adds `Spawn` (the same
+//! context routing, selected by the preload's posix_spawn surface) and
+//! `Resolve` (emitted by the tebako-driver's image-triple resolution —
+//! the bus itself stays emitter-agnostic: anything linked against tfs
+//! appends through [`emit`]).
 
 use std::fmt;
 use std::fs::{File, OpenOptions};
@@ -90,13 +91,16 @@ pub enum Op {
     Stat,
     Dlopen,
     Exec,
-    /// Later integration (T2: the preload's posix_spawn path). Defined
-    /// now so the vocabulary is stable.
+    /// The posix_spawn surface's routing decision (T2: the preload's
+    /// posix_spawn/posix_spawnp path — same grammar as `Exec`, the op
+    /// token marking that a child process is created).
     Spawn,
     Materialize,
     Jail,
-    /// Later integration (T2+: tebako-resolve is L3, outside this
-    /// crate). Defined now so the vocabulary is stable.
+    /// The driver's `--tebako-image` triple resolution (T2:
+    /// tebako-driver's resolve_image — whole / slot:<n> / error:<errno>).
+    /// The PLANNED L3 cache resolution (cache/fetched) rides the same op
+    /// when its loader-side channel story lands.
     Resolve,
 }
 
@@ -692,6 +696,14 @@ mod tests {
             materialized = ctx.dlmap2file("/tfs/data/secret.txt").unwrap();
             assert_eq!(routed, materialized);
 
+            // The spawn surface (spec 25 §2's shared exec/spawn row, phase
+            // T2): the same routing decision, emitted as `spawn` — the
+            // preload's posix_spawn path's op.
+            let spawned = ctx
+                .exec_materialize_for_spawn("/tfs/data/secret.txt")
+                .unwrap();
+            assert_eq!(materialized, spawned);
+
             // The dlmap-prefix redirect (the §4 class-R materialize
             // signal): opening the materialized copy's path serves a raw
             // host fd under the `image:<mount>` verdict. The fd is left
@@ -764,9 +776,23 @@ mod tests {
                         || verdict.starts_with("allow:")
                         || verdict.starts_with("deny:")
                 }
-                // T1 never emits these (the vocabulary is stable, the
-                // emission points are T2+).
-                "spawn" | "resolve" => false,
+                // T2: the spawn surface shares the exec row's grammar
+                // (the preload's posix_spawn path routes here).
+                "spawn" => {
+                    verdict == "host"
+                        || verdict.starts_with("routed:")
+                        || verdict.starts_with("error:")
+                }
+                // T2: the driver's image-triple resolution (whole /
+                // slot:<n> / error:<errno>); the L3 cache/fetched half is
+                // PLANNED — listed so a stream carrying it validates.
+                "resolve" => {
+                    verdict == "whole"
+                        || verdict.starts_with("slot:")
+                        || verdict == "cache"
+                        || verdict == "fetched"
+                        || verdict.starts_with("error:")
+                }
                 _ => false,
             }
         };
@@ -858,6 +884,7 @@ mod tests {
         assert!(has("jail", "deny:"), "jail deny: {seen:?}");
         assert!(has("dlopen", "materialized:"), "dlopen: {seen:?}");
         assert!(has("exec", "routed:"), "exec routed: {seen:?}");
+        assert!(has("spawn", "routed:"), "spawn routed: {seen:?}");
         assert!(has("materialize", "ok:"), "materialize ok: {seen:?}");
         assert!(has("materialize", "cache-hit"), "materialize hit: {seen:?}");
 
@@ -918,6 +945,13 @@ mod tests {
         let exec = detail_of("exec", "routed:");
         assert_eq!(
             exec.find("route").and_then(Value::as_string).as_deref(),
+            Some("dlmap-closure")
+        );
+        // The spawn event is the exec row's grammar on the child-creating
+        // surface — the op token is the only difference.
+        let spawn = detail_of("spawn", "routed:");
+        assert_eq!(
+            spawn.find("route").and_then(Value::as_string).as_deref(),
             Some("dlmap-closure")
         );
         // The dlopen event carries the closure walk (schema §2): a

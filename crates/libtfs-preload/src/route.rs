@@ -283,7 +283,27 @@ pub fn vfs_rewinddir(id: usize) -> Result<(), i32> {
 /// host copy; host-or-denied → the route's answer (an allowed host path
 /// execs the original, a denied one fails EPERM/EROFS).
 pub fn vfs_materialize_exec(path: &str) -> PathRoute<std::ffi::CString> {
-    let answer = { context().write().unwrap().exec_materialize(path) };
+    materialize_exec_route(path, false)
+}
+
+/// The posix_spawn/posix_spawnp surface (spec 25 §2, phase T2): the same
+/// routing, emitted as a `spawn` trace event — the op token marks the
+/// child-creating surface for the stream's process-tree regrouping.
+pub fn vfs_materialize_spawn(path: &str) -> PathRoute<std::ffi::CString> {
+    materialize_exec_route(path, true)
+}
+
+/// The shared exec/spawn route: the engine answers with the trace op the
+/// syscall surface owns (`exec` for execve, `spawn` for posix_spawn).
+fn materialize_exec_route(path: &str, spawn: bool) -> PathRoute<std::ffi::CString> {
+    let answer = {
+        let mut ctx = context().write().unwrap();
+        if spawn {
+            ctx.exec_materialize_for_spawn(path)
+        } else {
+            ctx.exec_materialize(path)
+        }
+    };
     match answer {
         Ok(host) => match ensure_exec_bit(&host) {
             Ok(()) => PathRoute::Vfs(host),
@@ -502,6 +522,48 @@ mod tests {
             "a mount-claimed path absent from the image keeps the ENOENT pass-through"
         );
         assert_eq!(vfs_write_path("/tmp/libtfs-preload-route-write"), Ok(()));
+
+        // ---- exec/spawn trace surfaces (spec 25 §2, phase T2) ----
+        // execve and posix_spawn share the engine's routing answer; the
+        // trace op names the syscall surface. The bus is process-global:
+        // armed for this block only, disarmed right after.
+        let capture = dir.join("trace.jsonl");
+        assert!(tfs::trace::arm(&capture), "the bus arms");
+        let PathRoute::Vfs(exec_host) = vfs_materialize_exec(&tool) else {
+            panic!("memfs exec should route Vfs");
+        };
+        let PathRoute::Vfs(spawn_host) = vfs_materialize_spawn(&tool) else {
+            panic!("memfs spawn should route Vfs");
+        };
+        assert_eq!(exec_host, spawn_host, "one routing answer, two surfaces");
+        assert_eq!(
+            vfs_materialize_spawn("/etc/definitely-host"),
+            PathRoute::Host
+        );
+        tfs::trace::disarm();
+        let text = std::fs::read_to_string(&capture).unwrap();
+        let exec_line = text
+            .lines()
+            .find(|l| l.contains("\"op\":\"exec\""))
+            .unwrap_or_else(|| panic!("an exec event was traced: {text}"));
+        assert!(exec_line.contains("\"verdict\":\"routed:"), "{exec_line}");
+        let spawn_lines: Vec<&str> = text
+            .lines()
+            .filter(|l| l.contains("\"op\":\"spawn\""))
+            .collect();
+        assert_eq!(
+            spawn_lines.len(),
+            2,
+            "the memfs spawn and the host-passthrough spawn: {text}"
+        );
+        assert!(
+            spawn_lines[0].contains("\"verdict\":\"routed:"),
+            "{spawn_lines:?}"
+        );
+        assert!(
+            spawn_lines[1].contains("\"verdict\":\"host\""),
+            "the host fallthrough carries the exec row's host verdict: {spawn_lines:?}"
+        );
 
         // ---- write-class gating: memfs is EROFS ----
         assert_eq!(vfs_write_path(&secret), Err(libc::EROFS));

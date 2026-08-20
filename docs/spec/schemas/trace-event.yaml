@@ -6,9 +6,10 @@
 # owns the wire grammar: the envelope fields, the op vocabulary, and the
 # per-op verdict/detail keys.
 #
-# SSOT: this file owns the grammar; crates/tfs/src/trace.rs (the emitter)
-# and crates/tebako-cli/src/trace.rs (the `tebako trace run` consumer)
-# mirror it — keep the three in sync in the same PR. The property test in
+# SSOT: this file owns the grammar; crates/tfs/src/trace.rs (the emitter),
+# crates/tebako-driver/src/driver.rs (the resolve emitter), and
+# crates/tebako-cli/src/trace.rs (the `tebako trace run` consumer)
+# mirror it — keep the four in sync in the same PR. The property test in
 # crates/tfs/src/trace.rs drives the op matrix against a mounted fixture
 # and validates every emitted event against this grammar.
 # =============================================================================
@@ -18,7 +19,7 @@ schema_version: 1 # MAJOR — the envelope's `v` field; additive-only, NEVER bum
 schema_minor: 0 # MINOR — additive counter (unused while v1 grows by ops/keys)
 status: normative
 owner: crates/tfs (tfs::trace, the bus) in tamatebako/tebako
-edge: T1 (driver/context → trace channel), T1' (channel → tebako trace run generator)
+edge: T1 (driver/context → trace channel), T1' (channel → tebako trace run generator), T2 (preload posix_spawn surface → spawn; driver resolve_image → resolve)
 
 # The schema evolution law (spec 18 §3), specialized for an append-only
 # event stream: events are never re-read by their emitter, so evolution
@@ -147,14 +148,57 @@ grammar:
         reports an empty walk (format: null, deps: []) — the walk did not
         re-run; the paired materialize event carries cache-hit.
     exec:
-      emitter: crates/tfs/src/context.rs (exec_materialize — the preload's execve/posix_spawn routing)
+      emitter: crates/tfs/src/context.rs (exec_materialize — the execve-surface routing; the preload's execve and the C ABI's tebako_fs_exec_materialize)
       verdicts: ["routed:<host-path>", "host", "error:<errno>"]
       detail_keys:
         route: "home-tree | dlmap-closure"
       notes: >-
         verdict `host` on the ENOENT fallthrough is the spec 25 §4
         entrypoint/runtime-dep note signal (a spawned host-absolute
-        executable).
+        executable). The interpreter's own spawn hook (spec 22 rule E1)
+        rides the C ABI's exec surface — splitting it onto the spawn
+        vocabulary is factory-side follow-up, not a bus change.
+    spawn:
+      emitter: crates/tfs/src/context.rs (exec_materialize_for_spawn — the preload's posix_spawn/posix_spawnp routing; phase T2)
+      verdicts: ["routed:<host-path>", "host", "error:<errno>"]
+      detail_keys:
+        route: "home-tree | dlmap-closure"
+      notes: >-
+        The exec row's grammar on the child-creating surface (spec 25 §2):
+        same routing decision, same details — the op token is the
+        process-tree signal (a spawn means later events may carry a NEW
+        pid: the child's re-derived channel). A bare-name posix_spawnp
+        (no '/' in the file argument) is a host PATH search that never
+        consults the VFS — no routing decision exists, so no event; the
+        correlator treats it as a KNOWN-UNSERVED passthrough (§6.3).
+        Emitted at the routing decision, BEFORE the real spawn runs: the
+        child pid is not the event's to carry (the child's own events
+        report their own pid).
+    resolve:
+      emitter: crates/tebako-driver/src/driver.rs (resolve_image — the --tebako-image <path>:<slot>:<mount> triple → mount-region decision; phase T2)
+      verdicts: [whole, "slot:<n>", "error:<errno>"]
+      detail_keys:
+        slot: "the slot reference as spelled (`0`…`n` or `-`) — on whole and error verdicts (a slot:<n> verdict carries n itself)"
+        mount: "the triple's mount point (the physical, drive-qualified point on windows)"
+        offset: "int — the slot region's byte offset in the image file, on slot:<n>"
+        size: "int — the slot region's byte size, on slot:<n>"
+        slots: "int — the package's slot count, on slot:<n>"
+        reason: "open | no-trailer | corrupt-trailer | whole-on-package | slot-out-of-range | runtime-slot | self-not-packaged — the failure class, on error:<errno>"
+      notes: >-
+        One event per --tebako-image triple, BEFORE the mount it feeds:
+        path is the host file actually probed (a `<self>` triple names
+        the running executable), the verdict is the resolution class, and
+        the slot:<n> details are the payload/slot identity the §6
+        correlator matches the outside capture's byte-range reads
+        against. The env image (TEBAKO_RUNTIME_IMAGE) emits NO resolve
+        event — it is bare by construction (no slot decision); its mount
+        event covers it. Failures carry the closest errno-level fact
+        (the open's raw errno; EINVAL for the grammar refusals; ERANGE
+        for slot-out-of-range) with the named class in `reason`; the
+        boot's named-error path (exit codes 65/69) is unchanged.
+        PLANNED: the L3 runtime/payload cache resolution (tebako-resolve
+        — loader-side, outside the runtime process) adds verdicts
+        `cache` / `fetched` / `error` when its channel story lands.
     materialize:
       emitter: crates/tfs/src/context.rs (extract_for_exec — dlopen/exec extractions and tebako install's store-side pass)
       verdicts: ["ok:<host-path>", "cache-hit", "error:<errno>"]
@@ -179,20 +223,14 @@ grammar:
         (never under the open default — the op events carry those
         passthroughs). A policy-gated decision yields BOTH its op event
         and the jail event: two layers of one decision, by design.
-    spawn:
-      emitter: "none in phase T1 (T2: libtfs-preload's posix_spawn path)"
-      verdicts: ["routed:<entry>", "host", "error:<errno>"]
-      notes: Defined now so the vocabulary is stable; unemitted in T1.
-    resolve:
-      emitter: "none in phase T1 (T2+: tebako-resolve, the L3 layer)"
-      verdicts: [cache, fetched, "error:<errno>"]
-      notes: Defined now so the vocabulary is stable; unemitted in T1.
 
 notes: >-
   Phase T1 emits mount/open/stat/dlopen/exec/materialize/jail from the
-  tfs context. The driver's class-R boot materialization
+  tfs context; phase T2 adds spawn (the same context routing, the
+  preload's posix_spawn surface) and resolve (the driver's image-triple
+  resolution). The driver's class-R boot materialization
   (crates/tebako-driver/src/materialize.rs — declared-manifest
-  resources, merkle-verified) is deliberately NOT instrumented in T1: it
+  resources, merkle-verified) is deliberately NOT instrumented: it
   is boot work outside the interception surface, and its failures already
   abort the boot loudly. The TEBAKO_DEBUG_TFS eprintln gates remain as
   the human-readable degraded view over the same emission points.

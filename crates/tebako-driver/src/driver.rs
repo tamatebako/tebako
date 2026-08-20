@@ -198,39 +198,194 @@ enum ResolvedRegion {
     Region(u64, u64),
 }
 
-/// Probe a file's tpkg trailer and resolve the slot reference.
-fn resolve_image(path: &Path, slot: SlotRef, display: &str) -> Result<ResolvedImage, DriverError> {
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| unavailable(format!("cannot open image file '{display}': {e}")))?;
+/// The failure half of a resolve decision: the named boot error (the
+/// exit-code path, unchanged) plus the errno-level fact and class token
+/// the `resolve` trace event carries (spec 25 §2, phase T2 — the schema's
+/// `reason` key).
+struct ResolveFailure {
+    errno: i32,
+    reason: &'static str,
+    error: DriverError,
+}
+
+impl ResolveFailure {
+    fn new(errno: i32, reason: &'static str, error: DriverError) -> ResolveFailure {
+        ResolveFailure {
+            errno,
+            reason,
+            error,
+        }
+    }
+}
+
+/// The slot reference as spelled in the triple (the schema's `slot`
+/// detail): `-` for the whole-file form, the number otherwise.
+fn slot_spelled(slot: &SlotRef) -> String {
+    match slot {
+        SlotRef::Whole => "-".to_string(),
+        SlotRef::Slot(n) => n.to_string(),
+    }
+}
+
+/// Emit the `resolve` event for one triple's resolution (spec 25 §2,
+/// phase T2): `whole` for a bare image, `slot:<n>` with the region +
+/// slot-count details for a package, `error:<errno>` with the `reason`
+/// class on failure. `path` is the host file actually probed (a `<self>`
+/// triple names the running executable) — the value the §6 correlator
+/// matches the outside capture's reads against.
+fn trace_resolve(
+    start: tfs::trace::Start,
+    slot: &SlotRef,
+    mount: &str,
+    display: &str,
+    result: &Result<ResolvedImage, ResolveFailure>,
+) {
+    use tebako_json::Value;
+    let event = match result {
+        Ok(resolved) => match resolved.region {
+            ResolvedRegion::Whole => {
+                tfs::trace::Event::new(tfs::trace::Op::Resolve, display, "whole")
+                    .detail("slot", Value::String(slot_spelled(slot)))
+            }
+            // A Region answer always comes from a trailer probe that
+            // succeeded — the slots count rides along as the package's
+            // slot-table size. The slot number is the ref's (only a
+            // numeric ref resolves to a region); the Whole pairing is
+            // unreachable by construction, and the bus's law is that a
+            // trace-side surprise drops the event, never disturbs the
+            // run — so no unreachable!() panic here.
+            ResolvedRegion::Region(offset, size) => {
+                let slots = resolved
+                    .trailer
+                    .as_ref()
+                    .map_or(0, |t| t.slots.len() as u64);
+                let SlotRef::Slot(n) = slot else {
+                    return;
+                };
+                tfs::trace::Event::new(tfs::trace::Op::Resolve, display, format!("slot:{n}"))
+                    .detail("offset", tfs::trace::num(offset))
+                    .detail("size", tfs::trace::num(size))
+                    .detail("slots", tfs::trace::num(slots))
+            }
+        },
+        Err(f) => tfs::trace::Event::new(
+            tfs::trace::Op::Resolve,
+            display,
+            format!("error:{}", f.errno),
+        )
+        .detail("slot", Value::String(slot_spelled(slot)))
+        .detail("reason", Value::String(f.reason.to_string()))
+        .with_errno(f.errno),
+    };
+    tfs::trace::emit(
+        event
+            .detail("mount", Value::String(mount.to_string()))
+            .dur(start),
+    );
+}
+
+/// Emit the resolve failure that is decided ABOVE resolve_image: a
+/// `<self>` triple whose own executable carries no trailer probed clean
+/// (a `whole` answer) but is refused by the self-slot rule.
+fn trace_resolve_self_not_packaged(slot: &SlotRef, mount: &str, display: &str) {
+    let Some(start) = tfs::trace::Start::now() else {
+        return;
+    };
+    use tebako_json::Value;
+    tfs::trace::emit(
+        tfs::trace::Event::new(
+            tfs::trace::Op::Resolve,
+            display,
+            format!("error:{}", libc::EINVAL),
+        )
+        .detail("slot", Value::String(slot_spelled(slot)))
+        .detail("reason", Value::String("self-not-packaged".to_string()))
+        .detail("mount", Value::String(mount.to_string()))
+        .with_errno(libc::EINVAL)
+        .dur(start),
+    );
+}
+
+/// Probe a file's tpkg trailer and resolve the slot reference, tracing
+/// the decision (one `resolve` event per triple, BEFORE the mount it
+/// feeds — spec 25 §2). The disarmed cost is one relaxed atomic load.
+fn resolve_image(
+    path: &Path,
+    slot: SlotRef,
+    display: &str,
+    mount: &str,
+) -> Result<ResolvedImage, DriverError> {
+    let start = tfs::trace::Start::now();
+    let result = resolve_image_inner(path, slot, display);
+    if let Some(start) = start {
+        trace_resolve(start, &slot, mount, display, &result);
+    }
+    result.map_err(|f| f.error)
+}
+
+/// The trailer probe itself (the untraced core of [`resolve_image`]).
+fn resolve_image_inner(
+    path: &Path,
+    slot: SlotRef,
+    display: &str,
+) -> Result<ResolvedImage, ResolveFailure> {
+    let mut file = std::fs::File::open(path).map_err(|e| {
+        let errno = e.raw_os_error().unwrap_or(libc::EIO);
+        ResolveFailure::new(
+            errno,
+            "open",
+            unavailable(format!("cannot open image file '{display}': {e}")),
+        )
+    })?;
     match tpkg::read_from(&mut file) {
         Err(tpkg::TpkgError::NoTrailer) => match slot {
             SlotRef::Whole | SlotRef::Slot(0) => Ok(ResolvedImage {
                 region: ResolvedRegion::Whole,
                 trailer: None,
             }),
-            SlotRef::Slot(n) => Err(manifest(format!(
-                "--tebako-image slot {n} is out of range for '{display}' (a bare image file — no slot table; use slot 0 or -)"
-            ))),
+            SlotRef::Slot(n) => Err(ResolveFailure::new(
+                libc::EINVAL,
+                "no-trailer",
+                manifest(format!(
+                    "--tebako-image slot {n} is out of range for '{display}' (a bare image file — no slot table; use slot 0 or -)"
+                )),
+            )),
         },
-        Err(e) => Err(manifest(format!(
-            "corrupt tpkg manifest trailer in '{display}' ({e}) — re-stitch the package"
-        ))),
+        Err(e) => Err(ResolveFailure::new(
+            libc::EINVAL,
+            "corrupt-trailer",
+            manifest(format!(
+                "corrupt tpkg manifest trailer in '{display}' ({e}) — re-stitch the package"
+            )),
+        )),
         Ok(m) => match slot {
-            SlotRef::Whole => Err(manifest(format!(
-                "--tebako-image slot - names a whole bare image, but '{display}' is a package ({} slot(s)) — use a numeric slot",
-                m.slots.len()
-            ))),
+            SlotRef::Whole => Err(ResolveFailure::new(
+                libc::EINVAL,
+                "whole-on-package",
+                manifest(format!(
+                    "--tebako-image slot - names a whole bare image, but '{display}' is a package ({} slot(s)) — use a numeric slot",
+                    m.slots.len()
+                )),
+            )),
             SlotRef::Slot(n) => {
                 let Some(s) = m.slots.get(n as usize) else {
-                    return Err(manifest(format!(
-                        "--tebako-image slot {n} is out of range for '{display}' ({} slot(s) in its manifest)",
-                        m.slots.len()
-                    )));
+                    return Err(ResolveFailure::new(
+                        libc::ERANGE,
+                        "slot-out-of-range",
+                        manifest(format!(
+                            "--tebako-image slot {n} is out of range for '{display}' ({} slot(s) in its manifest)",
+                            m.slots.len()
+                        )),
+                    ));
                 };
                 if s.format_id == tpkg::TPKG_FORMAT_RUNTIME {
-                    return Err(manifest(format!(
-                        "--tebako-image slot {n} of '{display}' is a runtime payload slot — payload slots are never mounted"
-                    )));
+                    return Err(ResolveFailure::new(
+                        libc::EINVAL,
+                        "runtime-slot",
+                        manifest(format!(
+                            "--tebako-image slot {n} of '{display}' is a runtime payload slot — payload slots are never mounted"
+                        )),
+                    ));
                 }
                 Ok(ResolvedImage {
                     region: ResolvedRegion::Region(s.offset, s.size),
@@ -500,11 +655,18 @@ fn mount_image(
             let exe = std::env::current_exe()
                 .map_err(|e| io(format!("cannot determine own executable path: {e}")))?;
             let display = exe.display().to_string();
-            let resolved = resolve_image(&exe, SlotRef::Slot(*n), &display)?;
+            let resolved = resolve_image(&exe, SlotRef::Slot(*n), &display, &spec.mount)?;
             match resolved.region {
-                ResolvedRegion::Whole => Err(manifest(
-                    "the running executable carries no tpkg trailer — <self> slots require a stitched package",
-                )),
+                ResolvedRegion::Whole => {
+                    // The probe answered clean (a bare exe mounts whole
+                    // for a FILE triple) — but a <self> triple requires
+                    // the slot table. The refusal is the resolve
+                    // decision's own event (spec 25 §2).
+                    trace_resolve_self_not_packaged(&SlotRef::Slot(*n), &spec.mount, &display);
+                    Err(manifest(
+                        "the running executable carries no tpkg trailer — <self> slots require a stitched package",
+                    ))
+                }
                 ResolvedRegion::Region(offset, size) => {
                     let what = format!("failed to mount own slot {n} at '{}'", spec.mount);
                     let mount = build_error(
@@ -525,7 +687,7 @@ fn mount_image(
         }
         ImageSource::File(path, slot) => {
             let display = path.display().to_string();
-            let resolved = resolve_image(path, *slot, &display)?;
+            let resolved = resolve_image(path, *slot, &display, &spec.mount)?;
             let what = format!("failed to mount image '{display}' at '{}'", spec.mount);
             let mount = match resolved.region {
                 ResolvedRegion::Whole => {

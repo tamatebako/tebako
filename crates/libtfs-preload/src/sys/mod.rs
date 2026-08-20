@@ -1348,7 +1348,9 @@ pub unsafe extern "C" fn execve(
 }
 
 /// Interposed `posix_spawn` (roadmap 39): the execve routing with the
-/// spawn contract — the return IS the errno (never -1).
+/// spawn contract — the return IS the errno (never -1). The trace op is
+/// `spawn` (spec 25 §2: a child is created — the stream's process-tree
+/// signal), never `exec`.
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn posix_spawn(
     pid: *mut libc::pid_t,
@@ -1361,7 +1363,7 @@ pub unsafe extern "C" fn posix_spawn(
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_posix_spawn()(pid, path, file_actions, attrp, argv, envp) };
     };
-    match engine_call(|| route::vfs_materialize_exec(p)) {
+    match engine_call(|| route::vfs_materialize_spawn(p)) {
         Some(PathRoute::Vfs(host)) => unsafe {
             plat::real_posix_spawn()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
         },
@@ -1373,8 +1375,10 @@ pub unsafe extern "C" fn posix_spawn(
 }
 
 /// Interposed `posix_spawnp` (roadmap 39): an explicit path routes like
-/// posix_spawn; a bare name is a host PATH search (memfs dirs are not in
-/// the host PATH — pass through, stated honestly in the crate docs).
+/// posix_spawn (the `spawn` trace op, spec 25 §2); a bare name is a host
+/// PATH search (memfs dirs are not in the host PATH — pass through,
+/// stated honestly in the crate docs; no VFS decision exists, so no
+/// trace event).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn posix_spawnp(
     pid: *mut libc::pid_t,
@@ -1390,7 +1394,7 @@ pub unsafe extern "C" fn posix_spawnp(
     if !p.contains('/') {
         return unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) };
     }
-    match engine_call(|| route::vfs_materialize_exec(p)) {
+    match engine_call(|| route::vfs_materialize_spawn(p)) {
         Some(PathRoute::Vfs(host)) => unsafe {
             plat::real_posix_spawnp()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
         },

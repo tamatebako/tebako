@@ -554,8 +554,9 @@ fn run_package(args: &[String]) -> Result<(), CliExit> {
 /// `tebako trace run <pkg> [--capture <path>] [--out <path>] [--]
 /// [<args>...]` — spec 25 §4 (phase T1, discovery): run the package under
 /// `TEBAKO_JAIL=record` with the interception bus armed, then synthesize
-/// the capture into a suggested-manifest draft. `explain`/`cover` are
-/// the T2/T3 milestones. Never returns on success (the process exits
+/// the capture into a suggested-manifest draft. The spawn/resolve
+/// emission is T2 (bus-side, landed); `cover`/`import` are T3 and
+/// `explain` T4. Never returns on success (the process exits
 /// with the payload's exit code).
 fn run_trace(args: &[String]) -> Result<(), CliExit> {
     let Some(action) = args.first() else {
@@ -570,7 +571,7 @@ fn run_trace(args: &[String]) -> Result<(), CliExit> {
             Ok(())
         }
         other @ ("explain" | "cover" | "import") => Err(CliExit::Usage(format!(
-            "'tebako trace {other}' is a later tebako-rs milestone (spec 25: explain is T2, cover/import are T3)"
+            "'tebako trace {other}' is a later tebako-rs milestone (spec 25: cover/import are T3, explain is T4)"
         ))),
         other => Err(CliExit::Usage(format!("unknown trace subcommand '{other}'"))),
     }

@@ -15,7 +15,11 @@
 //! preload's fopen routing), closure-covered dlopen NOTEs, and
 //! host-executable entrypoint notes.
 //!
-//! `explain` (§5, T2) and `cover` (§6, T3) are later milestones.
+//! `explain` (§5, phase T4) and `cover` (§6, phase T3) are later
+//! milestones; phase T2 was the spawn/resolve emission (the preload's
+//! posix_spawn surface and the driver's image-triple resolution — pure
+//! bus-side work, no consumer change needed here beyond the pinned
+//! spawn grammar below).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -293,8 +297,9 @@ pub fn synthesize(
                 }
             }
             // A host-absolute exec the runtime routed OUT of the image:
-            // the entrypoint/runtime-dep note (spawn joins exec here when
-            // its emission lands — the vocabulary is already stable).
+            // the entrypoint/runtime-dep note. The spawn surface (T2:
+            // the preload's posix_spawn path) reports the same grammar
+            // and joins exec here.
             "exec" | "spawn" => {
                 if verdict == "host" && Path::new(&path).is_absolute() {
                     host_execs
@@ -519,6 +524,13 @@ mod tests {
         "/usr/bin/git"
     };
 
+    /// A second host executable, reached via the spawn surface (T2).
+    const HOST_SPAWN: &str = if cfg!(windows) {
+        "C:/Windows/system32/where.exe"
+    } else {
+        "/usr/bin/curl"
+    };
+
     #[test]
     fn synthesize_feeds_the_needs_generator_and_names_candidates() {
         let capture = [
@@ -544,15 +556,18 @@ mod tests {
             event("dlopen", "/tfs/lib/libmixed.so", "materialized:/tmp/tebako-dl-abc/tfs/lib/libmixed.so", "2026-08-19T01:00:10.000000Z",
                   "{\"closure\":{\"format\":\"elf\",\"deps\":[{\"name\":\"libSystem.dylib\",\"resolved\":null,\"verdict\":\"host-system\"}]}}"),
             // A host-absolute exec (the entrypoint note) and an in-image
-            // one (no note).
+            // one (no note). The T2 spawn surface joins exec here: same
+            // grammar, same note.
             event("exec", HOST_EXE, "host", "2026-08-19T01:00:11.000000Z", "{}"),
             event("exec", "/tfs/bin/tool", "routed:/tmp/tebako-exec-home-1/bin/tool", "2026-08-19T01:00:12.000000Z", "{\"route\":\"home-tree\"}"),
+            event("spawn", HOST_SPAWN, "host", "2026-08-19T01:00:13.000000Z", "{}"),
+            event("spawn", "/tfs/bin/tool", "routed:/tmp/tebako-exec-home-1/bin/tool", "2026-08-19T01:00:14.000000Z", "{\"route\":\"home-tree\"}"),
             // A crashed tail: the partial last line is dropped, not fatal.
-            "{\"v\":1,\"ts\":\"2026-08-19T01:00:13".to_string(),
+            "{\"v\":1,\"ts\":\"2026-08-19T01:00:15".to_string(),
         ]
         .join("\n");
         let s = synthesize(&capture, &[], &[], &|_| true);
-        assert_eq!(s.events, 12, "12 well-formed events of 13 lines");
+        assert_eq!(s.events, 14, "14 well-formed events of 15 lines");
         // The needs feed: /work/data collapses to one rw entry
         // (strongest-observed-op wins), the deny rides along as ro, the
         // exec-cache noise never reaches it.
@@ -602,9 +617,11 @@ mod tests {
         let (deps, obs) = &s.closure_covered["/tfs/lib/libsass.so"];
         assert_eq!(*deps, 2);
         assert_eq!(obs.count, 1);
-        // The host-exec note.
-        assert_eq!(s.host_execs.len(), 1);
+        // The host-exec notes: the exec surface and the spawn surface
+        // each contributed one.
+        assert_eq!(s.host_execs.len(), 2);
         assert!(s.host_execs.contains_key(HOST_EXE));
+        assert!(s.host_execs.contains_key(HOST_SPAWN));
     }
 
     #[test]
