@@ -74,7 +74,15 @@ thread_local! {
 /// Run `f` (a route-layer engine call) unless this thread is already
 /// inside the engine: re-entrant calls (the engine's own host IO) get
 /// `None` and the shim passes them straight to the real implementation.
-fn engine_call<T>(f: impl FnOnce() -> T) -> Option<T> {
+///
+/// pub(crate) for the TEST seam: a test that calls the route layer
+/// directly must enter through this guard exactly like the shims do.
+/// Unguarded direct entry leaves IN_ENGINE unset, so the engine's own
+/// host IO (the extraction writes under the context lock) re-enters the
+/// shims and deadlocks the context lock on glibc (the 2026-08-21
+/// route_matrix ubuntu hang; macOS test binaries do not interpose
+/// in-process, so only Linux CI saw it).
+pub(crate) fn engine_call<T>(f: impl FnOnce() -> T) -> Option<T> {
     IN_ENGINE.with(|c| {
         if c.get() {
             return None;

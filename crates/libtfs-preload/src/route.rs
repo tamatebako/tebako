@@ -529,15 +529,24 @@ mod tests {
         // armed for this block only, disarmed right after.
         let capture = dir.join("trace.jsonl");
         assert!(tfs::trace::arm(&capture), "the bus arms");
-        let PathRoute::Vfs(exec_host) = vfs_materialize_exec(&tool) else {
+        // Enter through the production seam (engine_call — the shims'
+        // re-entrancy guard): a direct unguarded route call leaves
+        // IN_ENGINE unset, and the extraction's host writes then
+        // re-enter the shims and deadlock the context lock on glibc
+        // (the 2026-08-21 ubuntu CI hang of this test).
+        let PathRoute::Vfs(exec_host) =
+            crate::sys::engine_call(|| vfs_materialize_exec(&tool)).unwrap()
+        else {
             panic!("memfs exec should route Vfs");
         };
-        let PathRoute::Vfs(spawn_host) = vfs_materialize_spawn(&tool) else {
+        let PathRoute::Vfs(spawn_host) =
+            crate::sys::engine_call(|| vfs_materialize_spawn(&tool)).unwrap()
+        else {
             panic!("memfs spawn should route Vfs");
         };
         assert_eq!(exec_host, spawn_host, "one routing answer, two surfaces");
         assert_eq!(
-            vfs_materialize_spawn("/etc/definitely-host"),
+            crate::sys::engine_call(|| vfs_materialize_spawn("/etc/definitely-host")).unwrap(),
             PathRoute::Host
         );
         tfs::trace::disarm();
