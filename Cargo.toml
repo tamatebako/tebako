@@ -21,3 +21,11 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 
+# TEMPORARY (2026-08-20): arrayref's author yanked every 0.3.5+ version
+# (blake3's `^0.3.5` floor) and deleted the upstream repo, killing every
+# fresh resolution of this workspace. Resolve arrayref to the vendored,
+# checksum-verified 0.3.9 (see vendor/arrayref/TEBAKO-PROVENANCE.md).
+# Remove when crates.io upstream settles (unyank or successor release).
+[patch.crates-io]
+arrayref = { path = "vendor/arrayref" }
+
