@@ -145,6 +145,7 @@ payloads (inkscape & co.) are feedstocks in the
 | `tebako press` | package an app (lean/fat; `--suite` for multi-command packages; `--jail` presses a host-access policy) |
 | `tebako run <pkg>` | run a pressed package with a user jail tightening (`--jail`/`--mount`/`--no-host`) |
 | `tebako trace run <pkg>` | run under `record` with the trace bus armed; synthesize a suggested manifest (needs/materialize/notes — spec 25 §4) |
+| `tebako trace cover` | the escapes report: correlate an inside capture against an outside retrace capture under `--prefix` (golden-parity with retrace-correlate — spec 25 §6) |
 | `tebako check <target>` | run a payload's in-image acceptance checks — a name, a bare `.tfs` (with `--runtime`/`--runtime-image`), a pressed package, or a composition `tebako.yaml`; `--list`/`--check`/`--record`/`--keep-scratch` (spec 26 §2) |
 | `tebako install <ref\|name@ver>` | install a payload from a registry + register its shims |
 | `tebako info [topic]` | the store/system surface: system, runtimes, payloads, shims, registries, store (`--remote` adds what the world offers; `--json` everywhere) |

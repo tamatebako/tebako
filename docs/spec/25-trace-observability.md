@@ -4,9 +4,12 @@
 interception bus + `docs/spec/schemas/trace-event.yaml` + `tebako trace
 run`; phase T2 shipped 2026-08-20: the `spawn`/`resolve` emission — the
 preload's posix_spawn surface and the driver's image-triple resolution;
-`cover` + the procmon converter are T3, `explain` is T4 — re-phased
-2026-08-20: emission completeness precedes the replay/correlation
-front-ends. Owner-signed 2026-08-19 — architecture A: the in-tfs
+phase T3 shipped 2026-08-20 for the correlator half: `tebako trace
+cover` (§6.3) — the escapes report, golden-parity with retrace's shared
+correlate fixtures; the procmon converter (`tebako trace import`, §6.2)
+remains PLANNED within T3, and `explain` is T4 — re-phased 2026-08-20:
+emission completeness precedes the replay/correlation front-ends.
+Owner-signed 2026-08-19 — architecture A: the in-tfs
 event bus + `tebako trace` front-ends; outside capture rides the
 three-layer producer model of §6.1, with retrace as the libc-boundary
 layer on BOTH platforms).**
@@ -236,6 +239,46 @@ surfaces (documented passthroughs, e.g. the platform floor) are
 declared in the composition so the report separates KNOWN-UNSERVED from
 ESCAPE.
 
+**The shipped surface (phase T3, the correlator half).**
+
+```
+tebako trace cover --inside <tfs.json|jsonl> --outside <retrace.json>
+                   --prefix <path> [--pid N] [--window SECS]
+                   [--exclude-probes] [--json] [--layer libc|kernel]
+```
+
+- **stdout is the golden contract**: one
+  `escape <path> func=<f> tid=<t> pid=<p> class=<probe|read|write|none>`
+  line per escape (retrace's report grammar since its v2.9.0), or
+  retrace's escape array under `--json`. Byte-compared in CI against
+  retrace's shared golden tree (`tools/correlate/golden/`, copied
+  byte-verbatim to `crates/tebako-cli/tests/fixtures/correlate/`) —
+  every case, stdout bytes and exit code. Nothing else ever writes
+  stdout for this subcommand (the version banner rides stderr).
+- **stderr** (outside the golden contract) carries the summary
+  (`inside=N entries, M paths; prefix=P; escapes=E`), the escapes
+  grouped by surface class with per-class coverage percentages, and the
+  producing layer named by `--layer` (default `libc` — §6.1's honesty
+  rule: the report certifies its named layer only; sub-libc escapes are
+  UNCERTIFIABLE under a libc-boundary capture).
+- **Exit codes** are retrace-correlate's: 0 no escapes, 1 escapes
+  found, 2 usage or I/O error.
+- **The kernel is retrace's** (the `retrace-correlate` port): the
+  tolerant stream scan (array document / JSONL / truncated tail),
+  any-depth path extraction, NT-form normalization (`\??\`, `//?/`,
+  `\\?\`, the `\Device\HarddiskVolumeN` drive guess), drive-letter-
+  insensitive path comparison with a case-SENSITIVE component-boundary
+  prefix test, pid/time-window coverage (a pid-less entry is a
+  wildcard; the bus's string `ts` never feeds `--window` — window mode
+  takes retrace-shaped inside captures with numeric `time`), the
+  name-keyed probe/write classification (a NAME-NOT-FOUND probe on an
+  unserved under-prefix path IS an escape — existence is information),
+  one escape per outside entry (the first under-prefix uncovered path
+  in field order), `--exclude-probes` for the jail-grant policy.
+  Documented deviations, error paths only: a non-numeric
+  `--pid`/`--window` and an unknown `--layer` are named usage errors
+  (exit 2) where upstream's atol/atof silently read 0 (spec 00 law 9).
+
 The correlator is tebako-owned because the invariants leave no other
 home: invariant 1 (no shell-outs in shipped artifacts) forbids invoking
 a retrace binary; invariant 3 (C/C++ only in dwarfs-t) forbids linking
@@ -244,20 +287,24 @@ small and pure. If the retrace project ships its own
 `retrace-correlate` for the generic market, the two implementations
 assert parity on shared golden fixtures in CI — invariant 10's parity
 escape hatch: the FORMAT is retrace's single source; the ALGORITHM has
-two implementations that must agree.
+two implementations that must agree. (retrace's `retrace-correlate`
+landed ahead of this phase — the golden tree above is that parity
+hatch, exercised.)
 
 ### 6.4 The contract with the retrace project
 
-Verified against riboseinc/retrace @ v2.6.1 (d06c6af). Tebako phases
-coverage features as these land upstream; none block T1/T2:
+Verified against riboseinc/retrace @ v2.6.1 (d06c6af); later shipments
+tracked below the table (the full correspondence lives in the work
+queue). Tebako phases coverage features as these land upstream; none
+block T1/T2:
 
 | prerequisite | state today | tebako impact until it lands |
 |---|---|---|
 | `retrace-audit` + `path_contains` policy op | SHIPPED (tools/audit-converter; property-tested — P-POLICY-CONTAINS-SOUNDNESS) | the policy-matching half of coverage exists; usable on outside captures immediately |
-| pid + tid per log entry | ABSENT — entries carry `time` / `module` / `severity` / `message` only (src/core/logger.c:496) | multi-process compositions cannot regroup the outside stream; single-process coverage works today |
-| ntdll-depth hooks (`NtCreateFile` / `NtOpenFile` / `LdrLoadDll`) + NT-path normalization (`\??\C:\…`) | ABSENT — the windows backends interpose at the ucrt layer; a native payload calling Win32 directly already escapes that layer TODAY (libsass's importer reads via raw `CreateFileW` with `\\?\` prefixes — invisible at ucrt) | windows sub-libc escapes stay invisible until both the hooks and a converter exist |
+| pid + tid per log entry | SHIPPED (v2.7.0) — the correlator joins on pid/tid when present | multi-process compositions regroup the outside stream |
+| ntdll-depth hooks (`NtCreateFile` / `NtOpenFile` / `LdrLoadDll`) + NT-path normalization (`\??\C:\…`) | ABSENT at v2.6.1 — the windows backends interpose at the ucrt layer; a native payload calling Win32 directly already escapes that layer TODAY (libsass's importer reads via raw `CreateFileW` with `\\?\` prefixes — invisible at ucrt) | windows sub-libc escapes stay invisible until both the hooks and a converter exist |
 | streaming / JSONL output | today one JSON array document per capture (leading-comma emission; a crashed tail invalidates the document) | the correlator tolerates a trailing partial record |
-| `retrace-correlate` (the set-difference tool) | ABSENT | tebako ships its own (§6.3); parity fixtures shared when it lands |
+| `retrace-correlate` (the set-difference tool) | SHIPPED (v2.7.0, with the shared golden tree incl. 06-libsass-importer; the report grammar stabilized in v2.9.0) | tebako ships its own (§6.3) and asserts byte-parity on the shared tree in CI — the parity hatch is exercised |
 
 ## 7. Testing and gates
 
@@ -291,7 +338,7 @@ coverage features as these land upstream; none block T1/T2:
 |-------|----------|---------|
 | T1 | the bus + schema + `run` (discovery) | the msys dogfood rides the bus; a payload author onboards a fresh gem without hand diagnostics |
 | T2 | the `spawn`/`resolve` emission: the preload's posix_spawn surface reports `spawn` (a child-process decision — the correlator's process-tree signal), and the driver emits one `resolve` event per `--tebako-image` triple (the payload/slot identity: whole / `slot:<n>` + offset/size/mount, or the named failure class) | a traced boot of a broken composition names the failing triple in the capture itself — no stderr spelunking; a traced run's spawns regroup by pid |
-| T3 | `cover` (certification) + the procmon converter | a dogfood leg under retrace on both platforms (libc layer); a kernel-layer leg (ptrace/eBPF on linux, procmon-converter on windows) as the §6.4 prerequisites land; escapes report in CI |
+| T3 | `cover` (certification) + the procmon converter | `cover` SHIPPED 2026-08-20 (the §6.3 correlator + the shared golden tree green in CI); the converter (`import`, §6.2) is PLANNED. Remaining dogfood: a leg under retrace on both platforms (libc layer); a kernel-layer leg (ptrace/eBPF on linux, procmon-converter on windows) as the §6.4 prerequisites land; escapes report in CI |
 | T4 | `explain` (diagnosis) | replay the incident-13 captures; the named hop matches history |
 
 (Re-phased 2026-08-20: emission completeness precedes the front-ends —

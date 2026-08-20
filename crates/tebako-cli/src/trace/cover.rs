@@ -127,7 +127,8 @@ pub enum Layer {
     Kernel,
 }
 
-const COVER_USAGE: &str = "usage: tebako trace cover --inside <tfs.json> --outside <retrace.json>\n\
+const COVER_USAGE: &str =
+    "usage: tebako trace cover --inside <tfs.json> --outside <retrace.json>\n\
      \x20                       --prefix <path> [--pid N] [--window SECS]\n\
      \x20                       [--exclude-probes] [--json] [--layer libc|kernel]";
 
@@ -315,7 +316,11 @@ struct CorrSet {
 
 impl CorrSet {
     fn add(&mut self, path: &str) {
-        if !self.items.iter().any(|i| corr_pathcmp(i, path) == Ordering::Equal) {
+        if !self
+            .items
+            .iter()
+            .any(|i| corr_pathcmp(i, path) == Ordering::Equal)
+        {
             self.items.push(path.to_string());
         }
     }
@@ -963,7 +968,11 @@ mod tests {
 
     /// retrace test_correlate_match.c's norm_case.
     fn norm_case(input: &str, want: &str) {
-        assert_eq!(corr_normalize(input).as_deref(), Some(want), "normalize {input:?}");
+        assert_eq!(
+            corr_normalize(input).as_deref(),
+            Some(want),
+            "normalize {input:?}"
+        );
     }
 
     #[test]
@@ -1054,7 +1063,10 @@ mod tests {
     fn classify_table() {
         assert_eq!(corr_classify(None, None), Class::None);
         assert_eq!(corr_classify(Some("QueryOpen"), None), Class::Probe);
-        assert_eq!(corr_classify(Some("GetFileAttributesW"), None), Class::Probe);
+        assert_eq!(
+            corr_classify(Some("GetFileAttributesW"), None),
+            Class::Probe
+        );
         assert_eq!(corr_classify(Some("stat"), None), Class::Probe);
         assert_eq!(corr_classify(Some("access"), None), Class::Probe);
         assert_eq!(
@@ -1120,7 +1132,13 @@ mod tests {
 
     #[test]
     fn escape_set_semantics() {
-        let inside = index_of(&[entry_full(Some("open"), "/mnt/tfs/covered.so", 601, 3, 100.0)]);
+        let inside = index_of(&[entry_full(
+            Some("open"),
+            "/mnt/tfs/covered.so",
+            601,
+            3,
+            100.0,
+        )]);
         let c = criteria("/mnt/tfs");
 
         let e = entry_full(Some("open"), "/mnt/tfs/covered.so", 601, 3, 101.0);
@@ -1280,24 +1298,17 @@ mod tests {
     #[test]
     fn stream_scan_shapes() {
         // The one-array document.
-        let (entries, skipped) = scan_stream(
-            "[\n{ \"a\": 1 }\n,\n{ \"b\": \"/x\" }\n]\n",
-            &mut |_| {},
-        );
+        let (entries, skipped) =
+            scan_stream("[\n{ \"a\": 1 }\n,\n{ \"b\": \"/x\" }\n]\n", &mut |_| {});
         assert_eq!((entries, skipped), (2, 0));
 
         // JSONL (one object per line), CRLF and a BOM between entries.
-        let (entries, skipped) = scan_stream(
-            "\u{feff}{ \"a\": 1 }\r\n{ \"b\": 2 }\r\n",
-            &mut |_| {},
-        );
+        let (entries, skipped) =
+            scan_stream("\u{feff}{ \"a\": 1 }\r\n{ \"b\": 2 }\r\n", &mut |_| {});
         assert_eq!((entries, skipped), (2, 0));
 
         // A truncated tail drops silently — neither counted nor corrupt.
-        let (entries, skipped) = scan_stream(
-            "[{ \"a\": 1 }, { \"b\": \"/mnt/tfs/esc",
-            &mut |_| {},
-        );
+        let (entries, skipped) = scan_stream("[{ \"a\": 1 }, { \"b\": \"/mnt/tfs/esc", &mut |_| {});
         assert_eq!((entries, skipped), (1, 0));
 
         // A complete but corrupt object counts as skipped.
@@ -1375,14 +1386,18 @@ mod tests {
     #[test]
     fn parse_cover_args_table() {
         let p = parse_trace_cover_args(&args(&[
-            "--inside", "in.jsonl",
+            "--inside",
+            "in.jsonl",
             "--outside=out.json",
-            "--prefix", "C:/pkg",
-            "--pid", "9012",
+            "--prefix",
+            "C:/pkg",
+            "--pid",
+            "9012",
             "--window=2.5",
             "--exclude-probes",
             "--json",
-            "--layer", "kernel",
+            "--layer",
+            "kernel",
         ]))
         .unwrap();
         assert_eq!(p.inside, PathBuf::from("in.jsonl"));
@@ -1400,11 +1415,25 @@ mod tests {
         // (retrace's atol/atof silent zero is a documented deviation).
         assert!(parse_trace_cover_args(&args(&["--frobnicate"])).is_err());
         assert!(parse_trace_cover_args(&args(&[
-            "--inside", "i", "--outside", "o", "--prefix", "/p", "--pid", "abc"
+            "--inside",
+            "i",
+            "--outside",
+            "o",
+            "--prefix",
+            "/p",
+            "--pid",
+            "abc"
         ]))
         .is_err());
         assert!(parse_trace_cover_args(&args(&[
-            "--inside", "i", "--outside", "o", "--prefix", "/p", "--layer", "loader"
+            "--inside",
+            "i",
+            "--outside",
+            "o",
+            "--prefix",
+            "/p",
+            "--layer",
+            "loader"
         ]))
         .is_err());
     }
