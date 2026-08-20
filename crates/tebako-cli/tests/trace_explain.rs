@@ -158,7 +158,10 @@ fn explain_usage_and_io_errors_exit_2() {
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("usage: tebako trace explain"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("usage: tebako trace explain"),
+        "stderr: {stderr}"
+    );
     assert!(out.stdout.is_empty());
 
     // An unknown option.
@@ -170,10 +173,14 @@ fn explain_usage_and_io_errors_exit_2() {
         .unwrap();
     assert_eq!(out.status.code(), Some(2));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("unknown option '--verbose'"), "stderr: {stderr}");
+    assert!(
+        stderr.contains("unknown option '--verbose'"),
+        "stderr: {stderr}"
+    );
 
     // An unreadable capture.
-    let missing = std::env::temp_dir().join(format!("tebako-explain-nope-{}.jsonl", std::process::id()));
+    let missing =
+        std::env::temp_dir().join(format!("tebako-explain-nope-{}.jsonl", std::process::id()));
     let run = trace_explain(&missing);
     assert_eq!(run.rc, 2, "stderr: {}", run.stderr);
     assert!(run.stderr.contains("cannot read"), "stderr: {}", run.stderr);
