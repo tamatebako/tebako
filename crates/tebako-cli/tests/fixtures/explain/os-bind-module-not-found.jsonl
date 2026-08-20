@@ -1,0 +1,4 @@
+{"v":1,"ts":"2026-08-13T22:31:40.000110Z","pid":4112,"tid":1,"op":"mount","path":"/__tfs__","verdict":"ok","detail":{"action":"insert","handle":1,"image":"/c/host/cache/env.tfs"},"dur_us":512}
+{"v":1,"ts":"2026-08-13T22:31:40.002031Z","pid":4112,"tid":1,"op":"resolve","path":"/c/pkg/sassc.tpkg","verdict":"whole","detail":{"slot":"-","mount":"/__tfs__"},"dur_us":87}
+{"v":1,"ts":"2026-08-13T22:31:40.009822Z","pid":4112,"tid":1,"op":"materialize","path":"/tfs/lib/libsass.so","verdict":"ok:/tmp/tebako-dl-9f2/tfs/lib/libsass.so","detail":{"dest":"dlcache","bytes":8411224},"dur_us":20311}
+{"v":1,"ts":"2026-08-13T22:31:40.030774Z","pid":4112,"tid":1,"op":"dlopen","path":"/tfs/lib/libsass.so","verdict":"error:126","detail":{"closure":{"format":"pe","deps":[{"name":"libsass-deps.dll","resolved":"/tfs/lib/libsass-deps.dll","verdict":"materialized"},{"name":"KERNEL32.dll","resolved":null,"verdict":"host-system"}]}},"dur_us":4402,"errno":126}

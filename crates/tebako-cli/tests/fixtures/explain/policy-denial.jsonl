@@ -1,0 +1,3 @@
+{"v":1,"ts":"2026-08-14T09:02:11.000004Z","pid":5877,"tid":1,"op":"mount","path":"/__tfs__","verdict":"ok","detail":{"action":"insert","handle":1,"image":"/c/host/cache/env.tfs"},"dur_us":388}
+{"v":1,"ts":"2026-08-14T09:02:11.410027Z","pid":5877,"tid":1,"op":"jail","path":"/work/repo/private","verdict":"deny:user","detail":{"access":"read"},"dur_us":2,"errno":13}
+{"v":1,"ts":"2026-08-14T09:02:11.410051Z","pid":5877,"tid":1,"op":"open","path":"/work/repo/private/token","verdict":"denied:user","detail":{"need":"read"},"dur_us":3,"errno":13}

@@ -1,0 +1,3 @@
+{"v":1,"ts":"2026-08-13T22:14:03.112004Z","pid":3104,"tid":1,"op":"mount","path":"/__tfs__","verdict":"error:2","detail":{"action":"insert","image":"/c/host/cache/tebako-runtime-3.3.7-ruby-3.3.7-windows-x64.tfs"},"dur_us":41,"errno":2}
+{"v":1,"ts":"2026-08-13T22:14:03.114551Z","pid":3104,"tid":1,"op":"open","path":"/__tfs__/lib/ruby/3.3.0/rubygems.rb","verdict":"error:2","detail":{"need":"read"},"dur_us":6,"errno":2}
+{"v":1,"ts":"2026-08-13T22:14:03.114989Z","pid":3104,"tid":1,"op":"open","path":"/__tfs__/lib/ruby/3.3.0/i386-mswin64_140/rbconfig.rb","verdict":"error:2","detail":{"need":"read"},"dur_us":5,"errno":2}

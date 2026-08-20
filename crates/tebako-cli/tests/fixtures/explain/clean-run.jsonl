@@ -1,0 +1,9 @@
+{"v":1,"ts":"2026-08-14T13:20:01.000001Z","pid":7010,"tid":1,"op":"mount","path":"/__tfs__","verdict":"ok","detail":{"action":"insert","handle":1,"image":"/c/host/cache/env.tfs"},"dur_us":377}
+{"v":1,"ts":"2026-08-14T13:20:01.010002Z","pid":7010,"tid":1,"op":"resolve","path":"/c/pkg/app.tpkg","verdict":"slot:1","detail":{"slot":"1","mount":"/tfs","offset":18874368,"size":4823041,"slots":2},"dur_us":92}
+{"v":1,"ts":"2026-08-14T13:20:01.020003Z","pid":7010,"tid":1,"op":"mount","path":"/tfs","verdict":"ok","detail":{"action":"union","handle":2,"image":"/c/pkg/app.tpkg"},"dur_us":450}
+{"v":1,"ts":"2026-08-14T13:20:01.100004Z","pid":7010,"tid":1,"op":"open","path":"/tfs/lib/app.rb","verdict":"image:/tfs","detail":{},"dur_us":8}
+{"v":1,"ts":"2026-08-14T13:20:01.200005Z","pid":7010,"tid":1,"op":"jail","path":"/work/repo/data.csv","verdict":"record","detail":{"access":"read"},"dur_us":2}
+{"v":1,"ts":"2026-08-14T13:20:01.300006Z","pid":7010,"tid":1,"op":"materialize","path":"/tfs/lib/native.so","verdict":"cache-hit","detail":{"dest":"dlcache","host":"/tmp/tebako-dl-71a/tfs/lib/native.so"},"dur_us":12}
+{"v":1,"ts":"2026-08-14T13:20:01.400007Z","pid":7010,"tid":1,"op":"dlopen","path":"/tfs/lib/native.so","verdict":"materialized:/tmp/tebako-dl-71a/tfs/lib/native.so","detail":{"closure":{"format":"elf","deps":[{"name":"libc.so","resolved":"/tfs/lib/libc.so","verdict":"materialized"}]}},"dur_us":8811}
+{"v":1,"ts":"2026-08-14T13:20:01.500008Z","pid":7010,"tid":1,"op":"spawn","path":"/usr/bin/git","verdict":"host","detail":{},"dur_us":15}
+{"v":1,"ts":"2026-08-14T13:20:01.60
