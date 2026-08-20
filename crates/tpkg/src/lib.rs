@@ -140,6 +140,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod atoms;
 mod codec;
 mod contract;
 mod crc32;
@@ -168,12 +169,13 @@ pub use ext::{ExtBlock, ExtError};
 pub use io::{read_from, write_to};
 pub use jail::{ArgumentFiles, HostJail, JailAccess, JailError, JailMount};
 pub use manifest::{
-    AppProvides, BuiltFrom, Capabilities, Check, CheckEntry, CheckExpect, CheckNeed, CheckPlatform,
-    CheckRequires, Constraint, DataProvides, Digest, Encryption, EncryptionPart, EncryptionState,
-    EngineProvides, Entrypoint, Identity, LibraryAlias, ManifestError, MountSemantics, PayloadKind,
-    PayloadManifest, Platform, Platforms, Producer, Provides, Requirement, RuntimeProvides,
-    RuntimeRequirement, Sbom, Signing, SigningMechanism, SigningState, Source, ToolkitExecutable,
-    ToolkitLibrary, ToolkitProvides, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
+    check_check_name, checks_map, AppProvides, BuiltFrom, Capabilities, Check, CheckEntry,
+    CheckExpect, CheckNeed, CheckPlatform, CheckRequires, Constraint, DataProvides, Digest,
+    Encryption, EncryptionPart, EncryptionState, EngineProvides, Entrypoint, Identity,
+    LibraryAlias, ManifestError, MountSemantics, PayloadKind, PayloadManifest, Platform, Platforms,
+    Producer, Provides, Requirement, RuntimeProvides, RuntimeRequirement, Sbom, Signing,
+    SigningMechanism, SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides,
+    PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
 pub use merkle::{
     render_tree_hash, tree_digest, Child, FileHasher, MerkleDigest, NodeKind, TreeWalk,
@@ -278,6 +280,15 @@ pub const EX_TEBAKO_CONTRACT_ERA: i32 = 77;
 /// env form. Loader-side; raised by the resolver and the driver's mount
 /// path — run-time errnos (EROFS, ENOKEY) stay the syscalls' own.
 pub const EX_TEBAKO_OVERLAY: i32 = 68;
+/// The spec-26 §2/§7 exit code (spec 06 §4 table row) for a payload
+/// CHECK failure: any selected check FAILed (a failed expectation, a
+/// timeout, or an engine error mid-check — the verdict line names it).
+/// SKIP never fails the aggregate. **79, not 72**: spec 26's draft text
+/// allocated 72, but 72 has been `EX_TEBAKO_TRUST` since spec 09 (the
+/// signer-key-not-trusted refusal, shipped in the bootstrap and the
+/// install path) — one code, one class; the check class takes the next
+/// free code in the loader block.
+pub const EX_TEBAKO_CHECK: i32 = 79;
 
 // ---------------------------------------------------------------------
 // v2 chain-of-trust extension (all v2-extension numerics BIG-ENDIAN;

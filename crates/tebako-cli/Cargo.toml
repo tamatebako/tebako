@@ -51,6 +51,11 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 tar = { version = "0.4", default-features = false }
 # Hardlink staging area for manifest tree_hash stamping (spec 03 §7).
 tempfile = "3"
+# spec 26 §2: checks[].expect.stdout is ONE regex the run's stdout must
+# match — tpkg carries it uncompiled by design (no regex dep in the
+# model); the check engine compiles it at run time (pure Rust, no system
+# deps).
+regex = "1"
 
 # The runtime image is extracted in-process through the tfs C ABI
 # (item 30b layout seeding); install reads the embedded payload manifest

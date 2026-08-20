@@ -78,6 +78,7 @@ republish of v1-era runtimes needed.
 | 74 | `EX_TEBAKO_IO` | filesystem/lock/install failure |
 | 75 | `EX_TEBAKO_CONTRACT` | runtime declares an unsupported `contract_version` (§6) |
 | 76 | `EX_TEBAKO_INSTALL` | `--tebako-install` refused (`TPKG_FLAG_NO_INSTALL`) or needs the CLI |
+| 79 | `EX_TEBAKO_CHECK` | a payload check FAILed — the `tebako check` aggregate (spec 26 §2; code constant `tpkg::EX_TEBAKO_CHECK`) |
 
 stderr body: `tebako-bootstrap: <message>\n` — message bodies match the
 C++ reference bootstrap 1:1 (golden parity).

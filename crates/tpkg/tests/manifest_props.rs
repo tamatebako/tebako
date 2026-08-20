@@ -150,6 +150,8 @@ fn arb_check(kind: PayloadKind) -> impl Strategy<Value = Check> {
                     entry: Some(entry),
                     argv,
                     fixtures,
+                    fixtures_inline: std::collections::BTreeMap::new(),
+                    fixtures_host: None,
                     expect: CheckExpect {
                         exit: 0,
                         files,
@@ -167,6 +169,8 @@ fn arb_check(kind: PayloadKind) -> impl Strategy<Value = Check> {
         entry: None,
         argv: Vec::new(),
         fixtures: None,
+        fixtures_inline: std::collections::BTreeMap::new(),
+        fixtures_host: None,
         expect: CheckExpect {
             exit: 0,
             files: Vec::new(),

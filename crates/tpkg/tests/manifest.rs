@@ -338,6 +338,135 @@ fn checks_key_is_schema_legal() {
     }
 }
 
+/// A minimal kind:app manifest base for checks-validation tests (an exec
+/// check needs an exec-capable kind).
+fn app_manifest_with_checks(checks: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: acme-app\n  version: \"1\"\n\
+        \x20 producer: {{tool: t, tool_version: \"1\"}}\n  created: \"2026-08-19T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+        provides:\n  entrypoints: [{{name: acme, path: /bin/acme}}]\n  platforms: [aarch64-macos]\n  capabilities: {{exec: true, read: true}}\n\
+        checks:\n{checks}"
+    )
+}
+
+#[test]
+fn checks_fixture_families_are_mece() {
+    // spec 26 §2.1: `fixtures` is the slice family's (in-image) source;
+    // `fixtures_inline`/`fixtures_host` are the composition family's.
+    // Each is a named error in the other's context.
+    let err = PayloadManifest::from_yaml(&app_manifest_with_checks(
+        "  c1:\n    entry: /bin/acme\n    fixtures_inline: {a.txt: hi}\n",
+    ))
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("fixtures_inline/fixtures_host belong to composition checks"),
+        "{err}"
+    );
+    let err = PayloadManifest::from_yaml(&app_manifest_with_checks(
+        "  c1:\n    entry: /bin/acme\n    fixtures_host: fixtures\n",
+    ))
+    .unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("fixtures_inline/fixtures_host belong to composition checks"),
+        "{err}"
+    );
+    // …and the composition context refuses the slice family.
+    let check: Check = serde_yml::from_str("entry: /bin/acme\nfixtures: /fixtures\n").unwrap();
+    let err = check.validate_composition().unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("a composition check declares fixtures_inline or fixtures_host"),
+        "{err}"
+    );
+    // Both composition families validate in their own context.
+    let check: Check =
+        serde_yml::from_str("entry: /bin/acme\nfixtures_inline: {a.txt: hi, sub/b.txt: bye}\n")
+            .unwrap();
+    check.validate_composition().unwrap();
+    let check: Check =
+        serde_yml::from_str("entry: /bin/acme\nfixtures_host: fixtures/iso\n").unwrap();
+    check.validate_composition().unwrap();
+}
+
+#[test]
+fn checks_fixtures_host_path_rules() {
+    // fixtures_host is relative to the composition FILE — the absolute
+    // spellings of EITHER platform family are refused everywhere (the
+    // validator's answer never depends on the host OS).
+    for bad in [
+        "/abs/fixtures",
+        "\\\\share\\\\fixtures",
+        "C:/fixtures",
+        "../up",
+        "a/../b",
+    ] {
+        let check: Check =
+            serde_yml::from_str(&format!("entry: /bin/acme\nfixtures_host: \"{bad}\"\n")).unwrap();
+        let err = check.validate_composition().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("fixtures_host must be relative to the composition file"),
+            "{bad}: {err}"
+        );
+    }
+    let check: Check = serde_yml::from_str("entry: /bin/acme\nfixtures_host: \"\"\n").unwrap();
+    let err = check.validate_composition().unwrap_err();
+    assert!(
+        err.to_string().contains("fixtures_host must not be empty"),
+        "{err}"
+    );
+}
+
+#[test]
+fn checks_fixtures_inline_name_rules() {
+    for bad in ["/abs.txt", "../up.txt", "a//b.txt"] {
+        let check: Check = serde_yml::from_str(&format!(
+            "entry: /bin/acme\nfixtures_inline: {{\"{bad}\": x}}\n"
+        ))
+        .unwrap();
+        let err = check.validate_composition().unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("fixtures_inline names must be non-empty scratch-relative file paths"),
+            "{bad}: {err}"
+        );
+    }
+}
+
+#[test]
+fn structural_checks_refuse_every_fixture_key() {
+    // A structural check (no entry) has no exec surface at all: every
+    // fixture key is a named error, in either context.
+    let err = PayloadManifest::from_yaml(&app_manifest_with_checks(
+        "  c1:\n    fixtures: /fixtures\n    expect: {image_files: [/a]}\n",
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("are exec-only"), "{err}");
+    let check: Check =
+        serde_yml::from_str("fixtures_inline: {a.txt: hi}\nexpect: {image_files: [/a]}\n").unwrap();
+    let err = check.validate_composition().unwrap_err();
+    assert!(err.to_string().contains("are exec-only"), "{err}");
+}
+
+#[test]
+fn duplicate_check_names_are_refused() {
+    // The checks map's own deserializer refuses a re-declared name — an
+    // authoring ambiguity is a named structural error, never last-wins.
+    let err = PayloadManifest::from_yaml(&app_manifest_with_checks(
+        "  c1:\n    entry: /bin/acme\n  c1:\n    entry: /bin/acme\n",
+    ))
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("duplicate check name \"c1\""),
+        "{err}"
+    );
+}
+
 #[test]
 fn unknown_keys_are_tolerated_annotations_preserved() {
     let text = read(&fixture_path("data"));

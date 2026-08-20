@@ -21,6 +21,10 @@ const USAGE: &str = "Usage:
   tebako trace run <pkg> [--capture <path>] [--out <path>] [--] [<args>...]
                                        run under TEBAKO_JAIL=record with the trace bus
                                        armed; synthesize a suggested manifest (spec 25 §4)
+  tebako check <name | image.tfs | package | tebako.yaml>
+               [--check <c>] [--list] [--record] [--keep-scratch]
+               [--runtime <exe> --runtime-image <env.tfs>]
+                                       the payload's in-image acceptance checks (spec 26 §2)
   tebako cache list [--json]
   tebako cache prune [--all] [--older-than Nd]
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
@@ -119,6 +123,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         }
         "run" => run_package(rest),
         "trace" => run_trace(rest),
+        "check" => run_check(rest),
         "cache" => run_cache(rest),
         "add-registry" => run_add_registry(rest),
         "list-registries" => run_list_registries(rest),
@@ -569,6 +574,18 @@ fn run_trace(args: &[String]) -> Result<(), CliExit> {
         ))),
         other => Err(CliExit::Usage(format!("unknown trace subcommand '{other}'"))),
     }
+}
+
+/// `tebako check <target> [flags]` — the spec 26 §2 check engine. The
+/// verdict lines print as checks run; the engine's return is the process
+/// exit code (0, or EX_TEBAKO_CHECK when any check FAILs).
+fn run_check(args: &[String]) -> Result<(), CliExit> {
+    let parsed = tebako_cli::check::parse_check_args(args).map_err(CliExit::Usage)?;
+    let code = tebako_cli::check::run(&parsed)?;
+    if code != 0 {
+        std::process::exit(code);
+    }
+    Ok(())
 }
 
 fn run_cache(args: &[String]) -> Result<(), CliExit> {

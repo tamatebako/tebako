@@ -54,7 +54,9 @@ pub struct ExecPlan {
 
 /// Compose the mount set: the payload image at `/`, then each declared
 /// dependency (spec 03 §2.3) resolved against the payload cache.
-fn compose_mounts(res: &Resolution, ctx: &Ctx) -> Result<Vec<MountSpec>, ShimError> {
+/// Public for the spec 26 §2 check engine (tebako-cli): a check run
+/// mounts exactly the composition dispatch would.
+pub fn compose_mounts(res: &Resolution, ctx: &Ctx) -> Result<Vec<MountSpec>, ShimError> {
     let mut mounts = vec![MountSpec {
         image: res.record.image.clone(),
         slot: 0,
