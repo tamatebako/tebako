@@ -9,10 +9,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::RwLock;
 
+use tebako_json::Value;
+
 use crate::backend::{Backend, EntryType, RawDirEntry, RawStat, WritableBackend};
 use crate::exec_closure;
 use crate::mount::MountMode;
 use crate::policy::{HostAccess, HostPolicy};
+use crate::trace;
 
 /// Flag bit distinguishing libtfs FDs from host OS FDs.
 pub const TEBAKO_FD_FLAG: i32 = 0x4000_0000;
@@ -117,6 +120,17 @@ struct DlAlias {
     host: std::path::PathBuf,
 }
 
+/// Which interception surface a dlmap2file answer serves — the trace
+/// event's op and shape follow it (spec 25 §2: the `dlopen` op carries
+/// the closure walk; an fopen routing is an `open` event with the
+/// `materialized` detail; internal callers emit their own op events).
+#[derive(Clone, Copy)]
+enum DlSurface {
+    Dlopen,
+    Open,
+    Silent,
+}
+
 /// The process-global context state (behind a lock; see [`context`]).
 pub struct FsContext {
     mounts: BTreeMap<i32, Mount>,
@@ -207,12 +221,19 @@ impl FsContext {
     /// Under the record policy (spec 23 §8) ALLOWS are journaled too
     /// (`event=jail-allow`) — the "perm all and monitor" trail the
     /// `tfs needs` generator turns into a draft `needs:` block.
+    ///
+    /// The trace bus's jail channel (spec 25 §2) is the same decisions,
+    /// formalized: every journaled decision is also a `jail` event
+    /// (`record` / `allow:<source>` / `deny:<source>`). The open default
+    /// stays silent on the bus exactly as on the journal — the open/stat
+    /// events already carry the passthrough.
     pub fn host_check<P: AsRef<std::path::Path>>(
         &self,
         path: P,
         need: HostAccess,
     ) -> Result<(), i32> {
         let path = path.as_ref();
+        let trace_start = trace::Start::now();
         match self.host_policy.check(path, need) {
             Ok(()) => {
                 if self.host_policy.is_record() {
@@ -225,11 +246,39 @@ impl FsContext {
                         );
                     }
                 }
+                if let Some(start) = trace_start {
+                    let verdict = if self.host_policy.is_record() {
+                        Some("record".to_string())
+                    } else if !self.host_policy.never_denies() {
+                        Some(format!("allow:{}", self.host_policy.source()))
+                    } else {
+                        None
+                    };
+                    if let Some(verdict) = verdict {
+                        trace::emit(
+                            trace::Event::new(trace::Op::Jail, path.to_string_lossy(), verdict)
+                                .detail("access", Value::String(need_token(need).to_string()))
+                                .dur(start),
+                        );
+                    }
+                }
                 Ok(())
             }
             Err(e) => {
                 if let Some(journal) = &self.journal {
                     crate::journal::journal_deny(journal, path, need, self.host_policy.source());
+                }
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(
+                            trace::Op::Jail,
+                            path.to_string_lossy(),
+                            format!("deny:{}", self.host_policy.source()),
+                        )
+                        .detail("access", Value::String(need_token(need).to_string()))
+                        .with_errno(e)
+                        .dur(start),
+                    );
                 }
                 Err(e)
             }
@@ -242,12 +291,29 @@ impl FsContext {
 
     /// Legacy single-mount init: fails with EEXIST when anything is mounted.
     pub fn init_mount(&mut self, mount: Mount) -> Result<(), i32> {
-        if !self.mounts.is_empty() {
-            return Err(libc::EEXIST);
+        let trace_start = trace::Start::now();
+        // The event's subjects are captured only when armed — disarmed,
+        // the cost stays the single Start::now() branch (spec 25 §2).
+        let subject = trace_start.map(|_| {
+            (
+                mount.mount_point.clone(),
+                mount
+                    .archive_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+            )
+        });
+        let result = if self.mounts.is_empty() {
+            let handle = self.insert_mount(mount);
+            self.compat_handle = Some(handle);
+            Ok(handle)
+        } else {
+            Err(libc::EEXIST)
+        };
+        if let Some((point, image)) = &subject {
+            trace_mount(trace_start, "init", point, image.as_deref(), &result);
         }
-        let handle = self.insert_mount(mount);
-        self.compat_handle = Some(handle);
-        Ok(())
+        result.map(|_| ())
     }
 
     /// Insert a mount; returns its handle.
@@ -262,13 +328,27 @@ impl FsContext {
     /// Multi-mount API: validate + insert, with the C++ errno contract.
     /// `Err` on taken mount point (EEXIST) or empty mount point (EINVAL).
     pub fn mount_checked(&mut self, mount: Mount) -> Result<i32, i32> {
-        if mount.mount_point.is_empty() {
-            return Err(libc::EINVAL);
+        let trace_start = trace::Start::now();
+        let subject = trace_start.map(|_| {
+            (
+                mount.mount_point.clone(),
+                mount
+                    .archive_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+            )
+        });
+        let result = if mount.mount_point.is_empty() {
+            Err(libc::EINVAL)
+        } else if self.mount_point_taken(&mount.mount_point) {
+            Err(libc::EEXIST)
+        } else {
+            Ok(self.insert_mount(mount))
+        };
+        if let Some((point, image)) = &subject {
+            trace_mount(trace_start, "insert", point, image.as_deref(), &result);
         }
-        if self.mount_point_taken(&mount.mount_point) {
-            return Err(libc::EEXIST);
-        }
-        Ok(self.insert_mount(mount))
+        result
     }
 
     /// Multi-mount API, union mode (spec 17 §1 / spec 03 §6): `mount`'s
@@ -280,7 +360,26 @@ impl FsContext {
     /// point is free — a union needs an incumbent (a lone image is a
     /// plain exclusive mount).
     pub fn mount_union(&mut self, mount: Mount) -> Result<i32, i32> {
+        let trace_start = trace::Start::now();
+        let subject = trace_start.map(|_| {
+            (
+                mount.mount_point.clone(),
+                mount
+                    .archive_path
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+            )
+        });
         if mount.mount_point.is_empty() {
+            if let Some((point, image)) = &subject {
+                trace_mount(
+                    trace_start,
+                    "union",
+                    point,
+                    image.as_deref(),
+                    &Err(libc::EINVAL),
+                );
+            }
             return Err(libc::EINVAL);
         }
         let Some(handle) = self
@@ -289,13 +388,35 @@ impl FsContext {
             .find(|m| m.mount_point == mount.mount_point)
             .map(|m| m.handle)
         else {
+            if let Some((point, image)) = &subject {
+                trace_mount(
+                    trace_start,
+                    "union",
+                    point,
+                    image.as_deref(),
+                    &Err(libc::ENODEV),
+                );
+            }
             return Err(libc::ENODEV);
         };
         let mut incumbent = self.mounts.remove(&handle).ok_or(libc::ENODEV)?;
-        let union =
-            crate::backends_union::UnionBackend::new(vec![incumbent.backend, mount.backend])?;
+        let union = match crate::backends_union::UnionBackend::new(vec![
+            incumbent.backend,
+            mount.backend,
+        ]) {
+            Ok(union) => union,
+            Err(e) => {
+                if let Some((point, image)) = &subject {
+                    trace_mount(trace_start, "union", point, image.as_deref(), &Err(e));
+                }
+                return Err(e);
+            }
+        };
         incumbent.backend = Box::new(union);
         self.mounts.insert(handle, incumbent);
+        if let Some((point, image)) = &subject {
+            trace_mount(trace_start, "union", point, image.as_deref(), &Ok(handle));
+        }
         Ok(handle)
     }
 
@@ -311,17 +432,31 @@ impl FsContext {
     /// is flushed whole (entries carry no owner; serving an extraction of
     /// the removed mount's image afterwards would be a stale leak).
     pub fn unmount_handle(&mut self, handle: i32) -> Result<(), i32> {
-        if !self.mounts.contains_key(&handle) {
-            return Err(libc::ENODEV);
+        let trace_start = trace::Start::now();
+        let subject =
+            trace_start.and_then(|_| self.mounts.get(&handle).map(|m| m.mount_point.clone()));
+        let result = if self.mounts.contains_key(&handle) {
+            self.fd_table.retain(|_, e| e.owner != handle);
+            self.dir_table.retain(|_, e| e.owner != handle);
+            self.mounts.remove(&handle);
+            if self.compat_handle == Some(handle) {
+                self.compat_handle = None;
+            }
+            self.dl_cache.clear();
+            Ok(handle)
+        } else {
+            Err(libc::ENODEV)
+        };
+        if trace_start.is_some() {
+            trace_mount(
+                trace_start,
+                "remove",
+                subject.as_deref().unwrap_or(""),
+                None,
+                &result,
+            );
         }
-        self.fd_table.retain(|_, e| e.owner != handle);
-        self.dir_table.retain(|_, e| e.owner != handle);
-        self.mounts.remove(&handle);
-        if self.compat_handle == Some(handle) {
-            self.compat_handle = None;
-        }
-        self.dl_cache.clear();
-        Ok(())
+        result.map(|_| ())
     }
 
     /// Unmount everything; all fds and dir handles become invalid. The
@@ -331,6 +466,14 @@ impl FsContext {
     /// the per-process tmpdir until the exit cleanup — the map is what
     /// must not outlive the mounts).
     pub fn unmount(&mut self) {
+        if let Some(start) = trace::Start::now() {
+            trace::emit(
+                trace::Event::new(trace::Op::Mount, "", "ok")
+                    .detail("action", Value::String("clear".to_string()))
+                    .detail("count", trace::num(self.mounts.len()))
+                    .dur(start),
+            );
+        }
         self.mounts.clear();
         self.fd_table.clear();
         self.dir_table.clear();
@@ -451,13 +594,26 @@ impl FsContext {
     // ---------------------------------------------------------------
 
     /// tebako_fs_open: dispatch + fd allocation. Returns the public fd
-    /// (with TEBAKO_FD_FLAG).
+    /// (with TEBAKO_FD_FLAG). One `open` trace event per call when the
+    /// bus is armed (spec 25 §2): `image:<mount>` (with
+    /// `dlmap_redirect`/`materialized` details when the dlmap-prefix
+    /// redirect served a raw host fd — the §4 materialize-candidate
+    /// signal), `host` (passthrough), `denied:<rule>` (jail source or
+    /// the spec 24 §5 write gate), or `error:<errno>`.
     pub fn open(&mut self, path: &str, flags: i32) -> Result<i32, i32> {
         let path = &Self::normalize(path);
+        let trace_start = trace::Start::now();
         if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
             eprintln!("[tfs] open: {path}");
         }
         if self.mounts.is_empty() {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Open, path, "host")
+                        .detail("reason", Value::String("no-mounts".to_string()))
+                        .dur(start),
+                );
+            }
             return Err(libc::ENODEV);
         }
         // dlmap-prefix redirect: a path under the dlmap cache
@@ -473,8 +629,51 @@ impl FsContext {
                 if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
                     eprintln!("[tfs] dlmap redirect: {path} -> {tail}");
                 }
-                let host = self.dlmap2file(&tail)?;
-                return real_open(&host, flags);
+                let host = match self.dlmap2file_inner(&tail) {
+                    Ok(host) => host,
+                    Err(e) => {
+                        if let Some(start) = trace_start {
+                            trace::emit(
+                                trace::Event::new(trace::Op::Open, path, format!("error:{e}"))
+                                    .detail("dlmap_redirect", Value::String(tail.clone()))
+                                    .with_errno(e)
+                                    .dur(start),
+                            );
+                        }
+                        return Err(e);
+                    }
+                };
+                return match real_open(&host, flags) {
+                    Ok(fd) => {
+                        if let Some(start) = trace_start {
+                            let point = self
+                                .find_mount(&tail)
+                                .map(|m| m.mount_point.clone())
+                                .unwrap_or_default();
+                            trace::emit(
+                                trace::Event::new(trace::Op::Open, path, format!("image:{point}"))
+                                    .detail("dlmap_redirect", Value::String(tail))
+                                    .detail(
+                                        "materialized",
+                                        Value::String(host.to_string_lossy().into_owned()),
+                                    )
+                                    .dur(start),
+                            );
+                        }
+                        Ok(fd)
+                    }
+                    Err(e) => {
+                        if let Some(start) = trace_start {
+                            trace::emit(
+                                trace::Event::new(trace::Op::Open, path, format!("error:{e}"))
+                                    .detail("dlmap_redirect", Value::String(tail))
+                                    .with_errno(e)
+                                    .dur(start),
+                            );
+                        }
+                        Err(e)
+                    }
+                };
             }
         }
         let Some(mount) = self.find_mount(path) else {
@@ -488,7 +687,28 @@ impl FsContext {
             } else {
                 HostAccess::Rw
             };
-            self.host_check(path, need)?;
+            if let Err(e) = self.host_check(path, need) {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(
+                            trace::Op::Open,
+                            path,
+                            format!("denied:{}", self.host_policy.source()),
+                        )
+                        .detail("need", Value::String(need_token(need).to_string()))
+                        .with_errno(e)
+                        .dur(start),
+                    );
+                }
+                return Err(e);
+            }
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Open, path, "host")
+                        .detail("need", Value::String(need_token(need).to_string()))
+                        .dur(start),
+                );
+            }
             return Err(libc::ENOENT);
         };
         let rel = Self::relative_path(mount, path);
@@ -509,6 +729,13 @@ impl FsContext {
                 if accmode != libc::O_RDONLY && self.path_is_held(path) {
                     // The spec 24 §5 write gate: EROFS, journaled.
                     self.journal_write_denial(path, &mount.mount_point);
+                    if let Some(start) = trace_start {
+                        trace::emit(
+                            trace::Event::new(trace::Op::Open, path, "denied:write-gate")
+                                .with_errno(libc::EROFS)
+                                .dur(start),
+                        );
+                    }
                     return Err(libc::EROFS);
                 }
                 let need = if accmode == libc::O_RDONLY {
@@ -516,10 +743,40 @@ impl FsContext {
                 } else {
                     HostAccess::Rw
                 };
-                self.host_check(path, need)?;
+                if let Err(e) = self.host_check(path, need) {
+                    if let Some(start) = trace_start {
+                        trace::emit(
+                            trace::Event::new(
+                                trace::Op::Open,
+                                path,
+                                format!("denied:{}", self.host_policy.source()),
+                            )
+                            .detail("need", Value::String(need_token(need).to_string()))
+                            .with_errno(e)
+                            .dur(start),
+                        );
+                    }
+                    return Err(e);
+                }
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Open, path, "host")
+                            .detail("need", Value::String(need_token(need).to_string()))
+                            .dur(start),
+                    );
+                }
                 return Err(libc::ENOENT);
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Open, path, format!("error:{e}"))
+                            .with_errno(e)
+                            .dur(start),
+                    );
+                }
+                return Err(e);
+            }
         };
         // Only O_RDONLY is supported: mounted content is read-only
         // (fd-based writes land with the spec 11 §7 write family;
@@ -528,16 +785,40 @@ impl FsContext {
         // tree by construction — the spec 24 §5 gate: EROFS, journaled.
         if (flags & O_ACCMODE) != libc::O_RDONLY {
             self.journal_write_denial(path, &mount.mount_point);
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Open, path, "denied:write-gate")
+                        .with_errno(libc::EROFS)
+                        .dur(start),
+                );
+            }
             return Err(libc::EROFS);
         }
         match st.entry_type {
             EntryType::File => {}
             // C++ maps NotAFile -> EISDIR for any non-regular open.
-            _ => return Err(libc::EISDIR),
+            _ => {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Open, path, format!("error:{}", libc::EISDIR))
+                            .with_errno(libc::EISDIR)
+                            .dur(start),
+                    );
+                }
+                return Err(libc::EISDIR);
+            }
         }
         let owner = mount.handle;
+        let trace_point = trace_start.map(|_| mount.mount_point.clone());
         let fd = self.next_fd;
         if fd > TEBAKO_FD_MAX {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Open, path, format!("error:{}", libc::EMFILE))
+                        .with_errno(libc::EMFILE)
+                        .dur(start),
+                );
+            }
             return Err(libc::EMFILE);
         }
         self.next_fd += 1;
@@ -550,6 +831,11 @@ impl FsContext {
                 owner,
             },
         );
+        if let (Some(start), Some(point)) = (trace_start, trace_point) {
+            trace::emit(
+                trace::Event::new(trace::Op::Open, path, format!("image:{point}")).dur(start),
+            );
+        }
         Ok(fd | TEBAKO_FD_FLAG)
     }
 
@@ -749,7 +1035,15 @@ impl FsContext {
     /// tebako_fs_stat.
     pub fn stat(&self, path: &str) -> Result<RawStat, i32> {
         let path = &Self::normalize(path);
+        let trace_start = trace::Start::now();
         if self.mounts.is_empty() {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Stat, path, "host")
+                        .detail("reason", Value::String("no-mounts".to_string()))
+                        .dur(start),
+                );
+            }
             return Err(libc::ENODEV);
         }
         // dlmap-prefix redirect (see open()): answer with the memfs
@@ -759,23 +1053,88 @@ impl FsContext {
             if let Some(mount) = self.find_mount(&tail) {
                 let rel = Self::relative_path(mount, &tail);
                 if let Ok(st) = mount.backend.stat(rel) {
+                    if let Some(start) = trace_start {
+                        trace::emit(
+                            trace::Event::new(
+                                trace::Op::Stat,
+                                path,
+                                format!("image:{}", mount.mount_point),
+                            )
+                            .detail("dlmap_redirect", Value::String(tail))
+                            .dur(start),
+                        );
+                    }
                     return Ok(st);
                 }
             }
         }
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08), see open().
-            self.host_check(path, HostAccess::Ro)?;
+            if let Err(e) = self.host_check(path, HostAccess::Ro) {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(
+                            trace::Op::Stat,
+                            path,
+                            format!("denied:{}", self.host_policy.source()),
+                        )
+                        .with_errno(e)
+                        .dur(start),
+                    );
+                }
+                return Err(e);
+            }
+            if let Some(start) = trace_start {
+                trace::emit(trace::Event::new(trace::Op::Stat, path, "host").dur(start));
+            }
             return Err(libc::ENOENT);
         };
         let rel = Self::relative_path(mount, path);
         match mount.backend.stat(rel) {
             // Covered but not held: a host path (see open()).
             Err(e) if e == libc::ENOENT => {
-                self.host_check(path, HostAccess::Ro)?;
+                if let Err(e) = self.host_check(path, HostAccess::Ro) {
+                    if let Some(start) = trace_start {
+                        trace::emit(
+                            trace::Event::new(
+                                trace::Op::Stat,
+                                path,
+                                format!("denied:{}", self.host_policy.source()),
+                            )
+                            .with_errno(e)
+                            .dur(start),
+                        );
+                    }
+                    return Err(e);
+                }
+                if let Some(start) = trace_start {
+                    trace::emit(trace::Event::new(trace::Op::Stat, path, "host").dur(start));
+                }
                 Err(libc::ENOENT)
             }
-            other => other,
+            Err(e) => {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Stat, path, format!("error:{e}"))
+                            .with_errno(e)
+                            .dur(start),
+                    );
+                }
+                Err(e)
+            }
+            Ok(st) => {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(
+                            trace::Op::Stat,
+                            path,
+                            format!("image:{}", mount.mount_point),
+                        )
+                        .dur(start),
+                    );
+                }
+                Ok(st)
+            }
         }
     }
 
@@ -1042,22 +1401,54 @@ impl FsContext {
     pub fn dlalias2file(&self, name: &str) -> Result<std::ffi::CString, i32> {
         if name.bytes().any(|b| b == b'/' || b == b'\\' || b == b':') {
             // Not a bare name — the alias rule never engages; no
-            // bare-name verdict exists, so nothing is journaled.
+            // bare-name verdict exists, so nothing is journaled (and no
+            // dlopen event either — the same bare-name-only rule).
             return Err(libc::ENOENT);
         }
+        let trace_start = trace::Start::now();
         let Some(alias) = self
             .dlaliases
             .iter()
             .find(|a| a.name.eq_ignore_ascii_case(name))
         else {
             self.journal_lib_load(name, "host");
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Dlopen, name, "host")
+                        .detail("alias", Value::Bool(false))
+                        .dur(start),
+                );
+            }
             return Err(libc::ENOENT);
         };
         self.journal_lib_load(name, "alias");
         if !alias.host.exists() {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Dlopen, name, format!("error:{}", libc::EIO))
+                        .detail("alias", Value::Bool(true))
+                        .with_errno(libc::EIO)
+                        .dur(start),
+                );
+            }
             return Err(libc::EIO);
         }
-        std::ffi::CString::new(alias.host.to_string_lossy().into_owned()).map_err(|_| libc::EIO)
+        let result = std::ffi::CString::new(alias.host.to_string_lossy().into_owned())
+            .map_err(|_| libc::EIO);
+        if let Some(start) = trace_start {
+            let event = match &result {
+                Ok(_) => trace::Event::new(
+                    trace::Op::Dlopen,
+                    name,
+                    format!("materialized:{}", alias.host.display()),
+                ),
+                Err(e) => {
+                    trace::Event::new(trace::Op::Dlopen, name, format!("error:{e}")).with_errno(*e)
+                }
+            };
+            trace::emit(event.detail("alias", Value::Bool(true)).dur(start));
+        }
+        result
     }
 
     /// One lib-load verdict line on the audit journal, under the record
@@ -1085,8 +1476,38 @@ impl FsContext {
     /// originals. A drive-letter memfs root (msys `A:/t`) flattens its
     /// colon in the tail (`host_tail`) so the host join stays relative —
     /// the redirect inverse degrades to host-serve there.
+    ///
+    /// The dlopen surface's trace event (spec 25 §2): verdict
+    /// `materialized:<host>` / `host` / `error:<errno>`, the closure
+    /// walk's format + per-dep verdicts in the detail.
     pub fn dlmap2file(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        self.dlmap2file_traced(path, DlSurface::Dlopen)
+    }
+
+    /// The preload's fopen routing (libtfs-preload `vfs_fopen`): the same
+    /// engine answer, but the surface is stdio — the event is the `open`
+    /// op carrying the `materialized` detail (the §4 materialize-
+    /// candidate signal), never a dlopen event.
+    pub fn dlmap2file_for_open(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        self.dlmap2file_traced(path, DlSurface::Open)
+    }
+
+    /// open()'s dlmap-prefix redirect and exec_materialize's fallback:
+    /// the caller emits its own op event — no surface event here.
+    fn dlmap2file_inner(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
+        self.dlmap2file_traced(path, DlSurface::Silent)
+    }
+
+    fn dlmap2file_traced(
+        &mut self,
+        path: &str,
+        surface: DlSurface,
+    ) -> Result<std::ffi::CString, i32> {
         let path = &Self::normalize(path);
+        let trace_start = trace::Start::now();
+        // The closure walk's trace record, filled by the top
+        // extract_for_exec frame only (recursion passes None).
+        let mut closure = trace_start.map(|_| trace::ClosureTrace::default());
         // dlmap-prefix redirect (see open()): the dlmap spelling of a
         // memfs path materializes the original — stdio (`fopen`) and
         // dlopen consumers of loader-computed paths land here.
@@ -1096,18 +1517,66 @@ impl FsContext {
             eprintln!("[tfs] dlmap2file: {path} (effective {effective})");
         }
         let mut visited = std::collections::HashSet::new();
-        let host = self.extract_for_exec(
+        let result = self.extract_for_exec(
             effective,
             effective,
             &ClosureDest::Dlcache,
             &[],
             &mut visited,
-        )?;
-        if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-            eprintln!("[tfs] dlmap2file: {effective} -> {}", host.display());
+            closure.as_mut(),
+        );
+        if let Ok(host) = &result {
+            if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+                eprintln!("[tfs] dlmap2file: {effective} -> {}", host.display());
+            }
         }
-        let s = host.to_string_lossy().into_owned();
-        std::ffi::CString::new(s).map_err(|_| libc::EIO)
+        let result = result.and_then(|host| {
+            std::ffi::CString::new(host.to_string_lossy().into_owned()).map_err(|_| libc::EIO)
+        });
+        if let (Some(start), Some(closure)) = (trace_start, closure) {
+            let event = match (surface, &result) {
+                // No surface event — the caller emits its own op event.
+                (DlSurface::Silent, _) => None,
+                (DlSurface::Dlopen, Ok(host)) => Some(trace::Event::new(
+                    trace::Op::Dlopen,
+                    path,
+                    format!("materialized:{}", host.to_string_lossy()),
+                )),
+                (DlSurface::Dlopen, Err(e)) if *e == libc::ENOENT => {
+                    Some(trace::Event::new(trace::Op::Dlopen, path, "host"))
+                }
+                (DlSurface::Dlopen, Err(e)) => Some(
+                    trace::Event::new(trace::Op::Dlopen, path, format!("error:{e}")).with_errno(*e),
+                ),
+                (DlSurface::Open, Ok(host)) => {
+                    let point = self
+                        .find_mount(effective)
+                        .map(|m| m.mount_point.clone())
+                        .unwrap_or_default();
+                    Some(
+                        trace::Event::new(trace::Op::Open, path, format!("image:{point}")).detail(
+                            "materialized",
+                            Value::String(host.to_string_lossy().into_owned()),
+                        ),
+                    )
+                }
+                (DlSurface::Open, Err(e)) if *e == libc::ENOENT => {
+                    Some(trace::Event::new(trace::Op::Open, path, "host"))
+                }
+                (DlSurface::Open, Err(e)) => Some(
+                    trace::Event::new(trace::Op::Open, path, format!("error:{e}")).with_errno(*e),
+                ),
+            };
+            if let Some(event) = event {
+                let event = if effective == path.as_str() {
+                    event
+                } else {
+                    event.detail("effective", Value::String(effective.to_string()))
+                };
+                trace::emit(event.detail("closure", closure.into_value()).dur(start));
+            }
+        }
+        result
     }
 
     /// The per-process dl tmpdir, created and cleanup-registered on
@@ -1129,8 +1598,13 @@ impl FsContext {
     /// so the closure walk's answer boots a java that cannot find its
     /// boot class path (the metanorma dogfood's jing failure). Any
     /// other mount answers via dlmap2file's closure walk, unchanged.
+    /// The `exec` trace event (spec 25 §2): `routed:<host>` with the
+    /// `route` detail (`home-tree` | `dlmap-closure`), `host` on the
+    /// ENOENT fallthrough (the §4 entrypoint-note signal), or
+    /// `error:<errno>`.
     pub fn exec_materialize(&mut self, path: &str) -> Result<std::ffi::CString, i32> {
         let normalized = Self::normalize(path);
+        let trace_start = trace::Start::now();
         if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
             eprintln!("[tfs] exec_materialize: path={path} normalized={normalized}");
         }
@@ -1149,19 +1623,98 @@ impl FsContext {
                     "[tfs] exec_materialize: path={path} -> dlmap2file fallback (no home mount)"
                 );
             }
-            return self.dlmap2file(path);
+            let result = self.dlmap2file_inner(path);
+            if let Some(start) = trace_start {
+                let event = match &result {
+                    Ok(host) => trace::Event::new(
+                        trace::Op::Exec,
+                        &normalized,
+                        format!("routed:{}", host.to_string_lossy()),
+                    )
+                    .detail("route", Value::String("dlmap-closure".to_string())),
+                    // ENOENT: nothing held — the consumer execs the host
+                    // path (the §4 entrypoint/runtime-dep note signal).
+                    Err(e) if *e == libc::ENOENT => {
+                        trace::Event::new(trace::Op::Exec, &normalized, "host")
+                    }
+                    Err(e) => trace::Event::new(trace::Op::Exec, &normalized, format!("error:{e}"))
+                        .with_errno(*e),
+                };
+                trace::emit(event.dur(start));
+            }
+            return result;
         };
         if rel.is_empty() {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(
+                        trace::Op::Exec,
+                        &normalized,
+                        format!("error:{}", libc::EISDIR),
+                    )
+                    .with_errno(libc::EISDIR)
+                    .dur(start),
+                );
+            }
             return Err(libc::EISDIR);
         }
-        let root = self.home_tree_root(handle)?;
+        let root = match self.home_tree_root(handle) {
+            Ok(root) => root,
+            Err(e) => {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Exec, &normalized, format!("error:{e}"))
+                            .with_errno(e)
+                            .dur(start),
+                    );
+                }
+                return Err(e);
+            }
+        };
         if self.home_trees.insert(handle) {
-            let mount = self.mounts.get(&handle).ok_or(libc::ENODEV)?;
+            let Some(mount) = self.mounts.get(&handle) else {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(
+                            trace::Op::Exec,
+                            &normalized,
+                            format!("error:{}", libc::ENODEV),
+                        )
+                        .with_errno(libc::ENODEV)
+                        .dur(start),
+                    );
+                }
+                return Err(libc::ENODEV);
+            };
             let mut skipped = 0usize;
-            extract_dir_recursive(mount.backend.as_ref(), "", &root, &mut skipped)?;
+            if let Err(e) = extract_dir_recursive(mount.backend.as_ref(), "", &root, &mut skipped) {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Exec, &normalized, format!("error:{e}"))
+                            .with_errno(e)
+                            .dur(start),
+                    );
+                }
+                return Err(e);
+            }
         }
         let host = root.join(&rel);
-        std::ffi::CString::new(host.to_string_lossy().into_owned()).map_err(|_| libc::EIO)
+        let result =
+            std::ffi::CString::new(host.to_string_lossy().into_owned()).map_err(|_| libc::EIO);
+        if let Some(start) = trace_start {
+            let event = match &result {
+                Ok(_) => trace::Event::new(
+                    trace::Op::Exec,
+                    &normalized,
+                    format!("routed:{}", host.display()),
+                )
+                .detail("route", Value::String("home-tree".to_string())),
+                Err(e) => trace::Event::new(trace::Op::Exec, &normalized, format!("error:{e}"))
+                    .with_errno(*e),
+            };
+            trace::emit(event.dur(start));
+        }
+        result
     }
 
     /// The mount's home-layout verdict, memoized per handle: the
@@ -1264,6 +1817,7 @@ impl FsContext {
             &ClosureDest::Store(dest.to_path_buf()),
             &[],
             &mut visited,
+            None,
         )
     }
 
@@ -1273,6 +1827,14 @@ impl FsContext {
     /// (`@executable_path` anchor), `chain_rpaths` the rpaths
     /// accumulated down the load chain, `visited` the cycle-breaking
     /// set of memfs paths already extracted in this walk.
+    ///
+    /// The `materialize` trace event (spec 25 §2): `ok:<host>` after the
+    /// write, `cache-hit` off the dl cache, `error:<errno>` on a real
+    /// failure. The ENOENT host-passthrough answers stay silent (the
+    /// caller's dlopen/exec event carries the `host` verdict — no
+    /// materialization was decided). `closure_trace`, when Some, records
+    /// the walk — format + per-dep verdicts — for the top frame's
+    /// dlopen event (recursion passes None; only the top frame records).
     fn extract_for_exec(
         &mut self,
         path: &str,
@@ -1280,13 +1842,29 @@ impl FsContext {
         dest: &ClosureDest,
         chain_rpaths: &[String],
         visited: &mut std::collections::HashSet<String>,
+        mut closure_trace: Option<&mut trace::ClosureTrace>,
     ) -> Result<std::path::PathBuf, i32> {
         let path = &Self::normalize(path);
+        let trace_start = trace::Start::now();
+        let dest_token = match dest {
+            ClosureDest::Dlcache => "dlcache",
+            ClosureDest::Store(_) => "store",
+        };
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08), see open(). The
             // extraction writes themselves are process-internal and
             // not policy-gated.
-            self.host_check(path, HostAccess::Ro)?;
+            if let Err(e) = self.host_check(path, HostAccess::Ro) {
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Materialize, path, format!("error:{e}"))
+                            .detail("dest", Value::String(dest_token.to_string()))
+                            .with_errno(e)
+                            .dur(start),
+                    );
+                }
+                return Err(e);
+            }
             return Err(libc::ENOENT);
         };
         let owner = mount.handle;
@@ -1295,51 +1873,115 @@ impl FsContext {
 
         if matches!(dest, ClosureDest::Dlcache) {
             if let Some(cached) = self.dl_cache.get(path) {
-                return Ok(cached.clone());
+                let cached = cached.clone();
+                if let Some(start) = trace_start {
+                    trace::emit(
+                        trace::Event::new(trace::Op::Materialize, path, "cache-hit")
+                            .detail("dest", Value::String(dest_token.to_string()))
+                            .detail("host", Value::String(cached.display().to_string()))
+                            .dur(start),
+                    );
+                }
+                return Ok(cached);
             }
         }
 
         if rel_owned.is_empty() {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(
+                        trace::Op::Materialize,
+                        path,
+                        format!("error:{}", libc::EISDIR),
+                    )
+                    .detail("dest", Value::String(dest_token.to_string()))
+                    .with_errno(libc::EISDIR)
+                    .dur(start),
+                );
+            }
             return Err(libc::EISDIR);
         }
+        // The error-verdict one-liner: the gate stays the Start token —
+        // disarmed, the closure body costs one branch and no builds.
+        let trace_err = |e: i32| {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Materialize, path, format!("error:{e}"))
+                        .detail("dest", Value::String(dest_token.to_string()))
+                        .with_errno(e)
+                        .dur(start),
+                );
+            }
+        };
         let st = match mount.backend.stat(&rel_owned) {
             Ok(st) => st,
             // Covered but not held: a host path (see open()) — the
             // consumer falls back to the host answer.
             Err(e) if e == libc::ENOENT => {
-                self.host_check(path, HostAccess::Ro)?;
+                if let Err(e) = self.host_check(path, HostAccess::Ro) {
+                    trace_err(e);
+                    return Err(e);
+                }
                 return Err(libc::ENOENT);
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                trace_err(e);
+                return Err(e);
+            }
         };
         if st.entry_type != EntryType::File {
+            trace_err(libc::EISDIR);
             return Err(libc::EISDIR);
         }
 
         let root = match dest {
-            ClosureDest::Dlcache => ensure_dl_tmpdir(&mut self.dl_tmpdir)?,
+            ClosureDest::Dlcache => match ensure_dl_tmpdir(&mut self.dl_tmpdir) {
+                Ok(root) => root,
+                Err(e) => {
+                    trace_err(e);
+                    return Err(e);
+                }
+            },
             ClosureDest::Store(root) => root.clone(),
         };
 
         let host_path = root.join(Self::host_tail(path));
         if let Some(parent) = host_path.parent() {
-            std::fs::create_dir_all(parent).map_err(|_| libc::EIO)?;
+            if std::fs::create_dir_all(parent).is_err() {
+                trace_err(libc::EIO);
+                return Err(libc::EIO);
+            }
         }
 
         // Stream the file out in chunks.
-        let mut out = std::fs::File::create(&host_path).map_err(|_| libc::EIO)?;
+        let mut out = match std::fs::File::create(&host_path) {
+            Ok(out) => out,
+            Err(_) => {
+                trace_err(libc::EIO);
+                return Err(libc::EIO);
+            }
+        };
         let mut offset = 0u64;
         let mut buf = vec![0u8; 8192];
         loop {
-            let n = mount.backend.pread(&rel_owned, &mut buf, offset)?;
+            let n = match mount.backend.pread(&rel_owned, &mut buf, offset) {
+                Ok(n) => n,
+                Err(e) => {
+                    trace_err(e);
+                    return Err(e);
+                }
+            };
             if n == 0 {
                 break;
             }
             use std::io::Write as _;
-            out.write_all(&buf[..n]).map_err(|_| {
+            if let Err(e) = out.write_all(&buf[..n]).map_err(|_| {
                 let _ = std::fs::remove_file(&host_path);
                 libc::EIO
-            })?;
+            }) {
+                trace_err(e);
+                return Err(e);
+            }
             offset += n as u64;
         }
         drop(out);
@@ -1353,6 +1995,18 @@ impl FsContext {
 
         if matches!(dest, ClosureDest::Dlcache) {
             self.dl_cache.insert(path.to_string(), host_path.clone());
+        }
+        if let Some(start) = trace_start {
+            trace::emit(
+                trace::Event::new(
+                    trace::Op::Materialize,
+                    path,
+                    format!("ok:{}", host_path.display()),
+                )
+                .detail("dest", Value::String(dest_token.to_string()))
+                .detail("bytes", trace::num(offset))
+                .dur(start),
+            );
         }
         // Eager dependency closure: the platform loader's probes are
         // raw syscalls no userland hook can serve (dyld proven on
@@ -1396,6 +2050,16 @@ impl FsContext {
                 parsed.format, parsed.deps
             );
         }
+        if let Some(ct) = closure_trace.as_deref_mut() {
+            ct.format = Some(
+                match parsed.format {
+                    exec_closure::ImageFormat::MachO => "macho",
+                    exec_closure::ImageFormat::Elf => "elf",
+                    exec_closure::ImageFormat::Pe => "pe",
+                }
+                .to_string(),
+            );
+        }
         let referrer_dir = memfs_dirname(path);
         let exe_dir = memfs_dirname(exe);
         let mut chain: Vec<String> = chain_rpaths.to_vec();
@@ -1417,21 +2081,52 @@ impl FsContext {
                         "[tfs] closure dep: {dep} — not held at the importer's dir (host/system)"
                     );
                 }
+                if let Some(ct) = closure_trace.as_deref_mut() {
+                    ct.deps.push(trace::ClosureDep {
+                        name: dep.clone(),
+                        resolved: None,
+                        verdict: "host-system".to_string(),
+                    });
+                }
                 continue;
             };
             if visited.contains(&memfs) {
+                // Already extracted earlier in this walk — materialized.
+                if let Some(ct) = closure_trace.as_deref_mut() {
+                    ct.deps.push(trace::ClosureDep {
+                        name: dep.clone(),
+                        resolved: Some(memfs),
+                        verdict: "materialized".to_string(),
+                    });
+                }
                 continue;
             }
             // The dep's own closure rides its extraction (same exe,
             // same destination).
-            if let Err(e) = self.extract_for_exec(&memfs, exe, dest, &chain, visited) {
+            if let Err(e) = self.extract_for_exec(&memfs, exe, dest, &chain, visited, None) {
                 // The OS load fails on its own with the loader's error;
                 // the trace names the dep the walk could not serve.
                 if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
                     eprintln!("[tfs] closure dep: {dep} -> {memfs} — extraction failed errno={e}");
                 }
-            } else if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-                eprintln!("[tfs] closure dep: {dep} -> {memfs} materialized");
+                if let Some(ct) = closure_trace.as_deref_mut() {
+                    ct.deps.push(trace::ClosureDep {
+                        name: dep.clone(),
+                        resolved: Some(memfs),
+                        verdict: format!("error:{e}"),
+                    });
+                }
+            } else {
+                if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+                    eprintln!("[tfs] closure dep: {dep} -> {memfs} materialized");
+                }
+                if let Some(ct) = closure_trace.as_deref_mut() {
+                    ct.deps.push(trace::ClosureDep {
+                        name: dep.clone(),
+                        resolved: Some(memfs),
+                        verdict: "materialized".to_string(),
+                    });
+                }
             }
         }
         Ok(host_path)
@@ -1625,6 +2320,42 @@ fn runtime_dll_name() -> Option<String> {
         .ok()
         .filter(|v| !v.is_empty())
         .map(|v| v.to_ascii_lowercase())
+}
+
+/// The trace detail's read/write token for a [`HostAccess`].
+fn need_token(need: HostAccess) -> &'static str {
+    match need {
+        HostAccess::Ro => "read",
+        HostAccess::Rw => "write",
+    }
+}
+
+/// Emit one `mount` event (spec 25 §2) when the bus is armed — the
+/// shared shape for init/insert/union/remove: the mount point is the
+/// event's path; `action`, the Ok handle, and the image path ride the
+/// detail. Errors render `error:<errno>` with the errno field set.
+fn trace_mount(
+    start: Option<trace::Start>,
+    action: &str,
+    mount_point: &str,
+    image: Option<&str>,
+    result: &Result<i32, i32>,
+) {
+    let Some(start) = start else {
+        return;
+    };
+    let mut event = match result {
+        Ok(handle) => trace::Event::new(trace::Op::Mount, mount_point, "ok")
+            .detail("action", Value::String(action.to_string()))
+            .detail("handle", trace::num(handle)),
+        Err(e) => trace::Event::new(trace::Op::Mount, mount_point, format!("error:{e}"))
+            .detail("action", Value::String(action.to_string()))
+            .with_errno(*e),
+    };
+    if let Some(image) = image {
+        event = event.detail("image", Value::String(image.to_string()));
+    }
+    trace::emit(event.dur(start));
 }
 
 /// Open a materialized dlmap copy for real (no TEBAKO_FD_FLAG): the

@@ -296,6 +296,52 @@ pub fn to_string(v: &Value) -> String {
     out
 }
 
+/// Serialize a [`Value`] in the compact single-line form (no whitespace
+/// anywhere) — the JSONL emission shape (spec 25 §3's event stream: one
+/// JSON object per line). `Number` values are emitted verbatim, strings
+/// through [`escape`].
+pub fn to_line(v: &Value) -> String {
+    let mut out = String::new();
+    write_line(v, &mut out);
+    out
+}
+
+fn write_line(v: &Value, out: &mut String) {
+    match v {
+        Value::Null => out.push_str("null"),
+        Value::Bool(b) => out.push_str(if *b { "true" } else { "false" }),
+        Value::Number(n) => out.push_str(n),
+        Value::String(s) => {
+            out.push('"');
+            out.push_str(&escape(s));
+            out.push('"');
+        }
+        Value::Array(items) => {
+            out.push('[');
+            for (i, item) in items.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                write_line(item, out);
+            }
+            out.push(']');
+        }
+        Value::Object(members) => {
+            out.push('{');
+            for (i, (k, val)) in members.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                out.push('"');
+                out.push_str(&escape(k));
+                out.push_str("\":");
+                write_line(val, out);
+            }
+            out.push('}');
+        }
+    }
+}
+
 fn write_value(v: &Value, indent: usize, out: &mut String) {
     match v {
         Value::Null => out.push_str("null"),
@@ -385,5 +431,42 @@ mod tests {
         assert_eq!(to_string(&Value::Object(vec![])), "{}");
         assert_eq!(to_string(&Value::Array(vec![])), "[]");
         assert_eq!(to_string(&Value::Null), "null");
+    }
+
+    #[test]
+    fn line_writer_is_compact_and_round_trips() {
+        // The JSONL emission shape (spec 25 §3): one line, no whitespace,
+        // and the parser accepts exactly what was emitted.
+        let v = Value::Object(vec![
+            ("v".into(), Value::Number("1".into())),
+            (
+                "ts".into(),
+                Value::String("2026-08-19T13:49:20.344211Z".into()),
+            ),
+            ("pid".into(), Value::Number("84213".into())),
+            ("op".into(), Value::String("open".into())),
+            (
+                "path".into(),
+                Value::String("/x/My Docs/quote\"\\\n".into()),
+            ),
+            ("flag".into(), Value::Bool(true)),
+            ("nothing".into(), Value::Null),
+            (
+                "detail".into(),
+                Value::Object(vec![(
+                    "deps".into(),
+                    Value::Array(vec![Value::Object(vec![
+                        ("name".into(), Value::String("libx.so".into())),
+                        ("verdict".into(), Value::String("materialized".into())),
+                    ])]),
+                )]),
+            ),
+        ]);
+        let line = to_line(&v);
+        assert!(!line.contains('\n'), "{line}");
+        assert!(!line.contains(": "), "{line}");
+        assert_eq!(parse(&line).unwrap(), v);
+        assert_eq!(to_line(&Value::Object(vec![])), "{}");
+        assert_eq!(to_line(&Value::Array(vec![])), "[]");
     }
 }

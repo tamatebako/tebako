@@ -129,8 +129,10 @@ pub fn vfs_dlmap(path: &str) -> PathRoute<std::ffi::CString> {
 /// (`dlmap2file`, dlmap-prefix redirect included) and the real fopen
 /// opens that copy. Write modes never route here (the caller's real
 /// fopen answers for the host path, policy-gated like any write).
+/// The trace surface is `open` (spec 25 §2: a stdio consumer is the
+/// §4 materialize-candidate signal), never dlopen.
 pub fn vfs_fopen(path: &str) -> PathRoute<std::ffi::CString> {
-    let answer = { context().write().unwrap().dlmap2file(path) };
+    let answer = { context().write().unwrap().dlmap2file_for_open(path) };
     route_answer(answer, path, HostAccess::Ro)
 }
 

@@ -1,6 +1,9 @@
 # Spec 25 — Trace observability: the interception bus, diagnosis, and coverage
 
-**Status: PLANNED (owner-signed 2026-08-19 — architecture A: the in-tfs
+**Status: PARTIAL (phase T1 shipped 2026-08-19: the `tfs::trace`
+interception bus + `docs/spec/schemas/trace-event.yaml` + `tebako trace
+run`; `explain` is T2, `cover` + the procmon converter are T3.
+Owner-signed 2026-08-19 — architecture A: the in-tfs
 event bus + `tebako trace` front-ends; outside capture rides the
 three-layer producer model of §6.1, with retrace as the libc-boundary
 layer on BOTH platforms).**

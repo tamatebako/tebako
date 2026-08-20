@@ -67,6 +67,12 @@
 //! against an ro grant EROFS, allowed paths keep today's ENOENT
 //! pass-through, and every denial is journaled to the tebako audit
 //! journal (`crates/tfs/src/journal.rs` — path, op class, policy source).
+//! The spec 25 trace bus (`crates/tfs/src/trace.rs`, phase T1) emits one
+//! structured JSONL event per interception decision — mount, open, stat,
+//! dlopen, exec, materialize, jail — to the channel named by
+//! `TEBAKO_TRACE` / the driver's `--tebako-trace` argument; disarmed it
+//! costs one branch, and the envelope grammar lives in
+//! `docs/spec/schemas/trace-event.yaml`.
 //!
 //! ## PLANNED (next milestones)
 //!
@@ -100,6 +106,7 @@ pub mod overlay_spec;
 pub mod policy;
 #[cfg(feature = "enc")]
 pub mod secure_buf;
+pub mod trace;
 pub mod tree_walk;
 
 pub use backend::{Backend, EntryType, RawDirEntry, RawStat, WritableBackend};

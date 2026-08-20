@@ -18,6 +18,9 @@ const USAGE: &str = "Usage:
                one package, N commands (spec 03 §6: per-entry slots + type-2 manifest)
   tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
                [--] [<args>...]
+  tebako trace run <pkg> [--capture <path>] [--out <path>] [--] [<args>...]
+                                       run under TEBAKO_JAIL=record with the trace bus
+                                       armed; synthesize a suggested manifest (spec 25 §4)
   tebako cache list [--json]
   tebako cache prune [--all] [--older-than Nd]
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
@@ -115,6 +118,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
             Ok(())
         }
         "run" => run_package(rest),
+        "trace" => run_trace(rest),
         "cache" => run_cache(rest),
         "add-registry" => run_add_registry(rest),
         "list-registries" => run_list_registries(rest),
@@ -540,6 +544,31 @@ fn run_package(args: &[String]) -> Result<(), CliExit> {
     let plan = tebako_cli::run::plan_run(&parsed).map_err(CliExit::Error)?;
     let err = tebako_cli::run::exec_plan(&plan);
     Err(CliExit::Error(err))
+}
+
+/// `tebako trace run <pkg> [--capture <path>] [--out <path>] [--]
+/// [<args>...]` — spec 25 §4 (phase T1, discovery): run the package under
+/// `TEBAKO_JAIL=record` with the interception bus armed, then synthesize
+/// the capture into a suggested-manifest draft. `explain`/`cover` are
+/// the T2/T3 milestones. Never returns on success (the process exits
+/// with the payload's exit code).
+fn run_trace(args: &[String]) -> Result<(), CliExit> {
+    let Some(action) = args.first() else {
+        return Err(CliExit::Usage(
+            "trace subcommand expected: run (explain | cover are later milestones)".to_string(),
+        ));
+    };
+    match action.as_str() {
+        "run" => {
+            let parsed = tebako_cli::trace::parse_trace_run_args(&args[1..]).map_err(CliExit::Usage)?;
+            tebako_cli::trace::trace_run(&parsed)?;
+            Ok(())
+        }
+        other @ ("explain" | "cover" | "import") => Err(CliExit::Usage(format!(
+            "'tebako trace {other}' is a later tebako-rs milestone (spec 25: explain is T2, cover/import are T3)"
+        ))),
+        other => Err(CliExit::Usage(format!("unknown trace subcommand '{other}'"))),
+    }
 }
 
 fn run_cache(args: &[String]) -> Result<(), CliExit> {

@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! --tebako-image <self|image-path>:<slot|->:<mount>   (repeatable)
+//! --tebako-trace <path>                               (optional; spec 25 §2)
 //! --tebako-entry <argv0> <user args...>               (terminates scanning)
 //! ```
 //!
@@ -10,7 +11,10 @@
 //! colons so the file component may itself contain colons (Windows drive
 //! prefixes). Anything before the first `--tebako-*` belongs to the
 //! interpreter; everything after `--tebako-entry` belongs to the user,
-//! verbatim.
+//! verbatim. `--tebako-trace` names the spec 25 trace channel (JSONL);
+//! it overrides `TEBAKO_TRACE` when both are set, and the driver opens it
+//! at boot, before any mount (spec 25 §2 — additive by option, the
+//! grammar's contract version never bumps).
 
 use std::path::PathBuf;
 
@@ -61,6 +65,10 @@ pub struct Handoff {
     /// own args) — the bare `--tebako-image` invocation (no entry)
     /// starts the interpreter with exactly these.
     pub interpreter_args: Vec<String>,
+    /// The `--tebako-trace` channel path (spec 25 §2), when given.
+    /// Overrides `TEBAKO_TRACE`; the driver opens it at boot, before any
+    /// mount.
+    pub trace: Option<String>,
 }
 
 fn malformed(value: &str) -> DriverError {
@@ -152,6 +160,19 @@ impl Handoff {
                     // rides the interpreter's own args for the no-entry
                     // boot.
                     h.interpreter_args.push(arg.clone());
+                    i += 1;
+                }
+                "--tebako-trace" => {
+                    // The spec 25 §2 trace channel; opened at boot,
+                    // before any mount; overrides TEBAKO_TRACE.
+                    let value = take_value(flag, inline, argv, &mut i)?;
+                    if value.is_empty() {
+                        return Err(DriverError::new(
+                            EX_TEBAKO_MANIFEST,
+                            "--tebako-trace shall name a channel path".to_string(),
+                        ));
+                    }
+                    h.trace = Some(value);
                     i += 1;
                 }
                 "--tebako-run" => {
@@ -309,6 +330,33 @@ mod tests {
         let err = Handoff::parse(&argv(&["ruby", "--tebako-image"])).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_MANIFEST);
         let err = Handoff::parse(&argv(&["ruby", "--tebako-entry"])).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST);
+        let err = Handoff::parse(&argv(&["ruby", "--tebako-trace"])).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_MANIFEST);
+    }
+
+    #[test]
+    fn tebako_trace_parses_both_value_forms() {
+        let h = Handoff::parse(&argv(&["ruby", "--tebako-trace", "/tmp/t.jsonl"])).unwrap();
+        assert_eq!(h.trace.as_deref(), Some("/tmp/t.jsonl"));
+        let h = Handoff::parse(&argv(&["ruby", "--tebako-trace=/tmp/t.jsonl"])).unwrap();
+        assert_eq!(h.trace.as_deref(), Some("/tmp/t.jsonl"));
+        // Not consumed as an interpreter arg, and composes with images.
+        assert!(h.interpreter_args.is_empty());
+        let h = Handoff::parse(&argv(&[
+            "ruby",
+            "--tebako-image",
+            "/x.tfs:-:/",
+            "--tebako-trace=/tmp/t.jsonl",
+            "--tebako-entry",
+            "/bin/x",
+        ]))
+        .unwrap();
+        assert_eq!(h.trace.as_deref(), Some("/tmp/t.jsonl"));
+        assert_eq!(h.images.len(), 1);
+        assert_eq!(h.entry.as_deref(), Some("/bin/x"));
+        // An empty channel path is a named error.
+        let err = Handoff::parse(&argv(&["ruby", "--tebako-trace="])).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_MANIFEST);
     }
 }
