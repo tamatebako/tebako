@@ -145,8 +145,8 @@ pub struct ErrorRule {
 /// drift (an unknown field/kind, an empty chain, a duplicate name) —
 /// compiled-in data that does not load is a build-time bug.
 pub fn load_signatures() -> Result<SignatureTable, String> {
-    let table: SignatureTable =
-        serde_yml::from_str(SIGNATURES_YAML).map_err(|e| format!("explain-signatures.yaml: {e}"))?;
+    let table: SignatureTable = serde_yml::from_str(SIGNATURES_YAML)
+        .map_err(|e| format!("explain-signatures.yaml: {e}"))?;
     if table.hop_chain.is_empty() {
         return Err("explain-signatures.yaml: the hop chain is empty".to_string());
     }
@@ -185,11 +185,7 @@ struct FlatEvent {
 
 impl FlatEvent {
     fn from_value(line: usize, doc: &Value) -> FlatEvent {
-        let get_str = |key: &str| {
-            doc.find(key)
-                .and_then(Value::as_string)
-                .unwrap_or_default()
-        };
+        let get_str = |key: &str| doc.find(key).and_then(Value::as_string).unwrap_or_default();
         let errno = match doc.find("errno") {
             Some(Value::Number(s)) => s.parse::<i64>().ok(),
             _ => None,
@@ -447,9 +443,9 @@ pub fn replay(capture_text: &str, table: &SignatureTable) -> Diagnosis {
                             .verdict_prefixes
                             .iter()
                             .any(|p| event.verdict.starts_with(p.as_str()))
-                        && pending
-                            .as_ref()
-                            .is_some_and(|p| std::ptr::eq(p.sig, sig) && dependent(&event.path, &p.path))
+                        && pending.as_ref().is_some_and(|p| {
+                            std::ptr::eq(p.sig, sig) && dependent(&event.path, &p.path)
+                        })
                 }
             };
             if matched {
@@ -513,7 +509,11 @@ pub fn replay(capture_text: &str, table: &SignatureTable) -> Diagnosis {
 }
 
 /// The stdout report (the diagnosis contract).
-pub fn render_report(capture: &std::path::Path, diagnosis: &Diagnosis, table: &SignatureTable) -> String {
+pub fn render_report(
+    capture: &std::path::Path,
+    diagnosis: &Diagnosis,
+    table: &SignatureTable,
+) -> String {
     let mut out = String::new();
     out.push_str(&format!(
         "tebako trace explain: {} — {} event(s) replayed (hop chain: {})\n",
@@ -633,7 +633,13 @@ mod tests {
         let table = load_signatures().unwrap();
         assert_eq!(
             table.hop_chain,
-            vec!["mount", "manifest read", "resolve", "materialize", "OS bind"]
+            vec![
+                "mount",
+                "manifest read",
+                "resolve",
+                "materialize",
+                "OS bind"
+            ]
         );
         let names: Vec<&str> = table.signatures.iter().map(|s| s.name.as_str()).collect();
         assert_eq!(
@@ -653,8 +659,20 @@ mod tests {
         // A live stream with no mount/ok: the env image never mounted
         // (a mount ERROR does not suppress — the note on the row).
         let capture = [
-            event("mount", "/__tfs__", "error:2", "2026-08-20T01:00:00.000000Z", "{}"),
-            event("open", "/__tfs__/lib/x.rb", "error:2", "2026-08-20T01:00:01.000000Z", "{}"),
+            event(
+                "mount",
+                "/__tfs__",
+                "error:2",
+                "2026-08-20T01:00:00.000000Z",
+                "{}",
+            ),
+            event(
+                "open",
+                "/__tfs__/lib/x.rb",
+                "error:2",
+                "2026-08-20T01:00:01.000000Z",
+                "{}",
+            ),
         ]
         .join("\n");
         let d = replay(&capture, &table);
@@ -665,8 +683,20 @@ mod tests {
 
         // A mount/ok suppresses it.
         let capture = [
-            event("mount", "/__tfs__", "ok", "2026-08-20T01:00:00.000000Z", "{\"action\":\"insert\",\"handle\":1}"),
-            event("open", "/__tfs__/lib/x.rb", "image:/__tfs__", "2026-08-20T01:00:01.000000Z", "{}"),
+            event(
+                "mount",
+                "/__tfs__",
+                "ok",
+                "2026-08-20T01:00:00.000000Z",
+                "{\"action\":\"insert\",\"handle\":1}",
+            ),
+            event(
+                "open",
+                "/__tfs__/lib/x.rb",
+                "image:/__tfs__",
+                "2026-08-20T01:00:01.000000Z",
+                "{}",
+            ),
         ]
         .join("\n");
         let d = replay(&capture, &table);
@@ -704,7 +734,13 @@ mod tests {
         // (The mount/ok keeps the absence signature out of these
         // negative cases: a mount-less fragment always reads as the
         // never-mounted shape, by the signature's design.)
-        let mount = event("mount", "/__tfs__", "ok", "2026-08-20T00:59:59.000000Z", "{\"action\":\"insert\",\"handle\":1}");
+        let mount = event(
+            "mount",
+            "/__tfs__",
+            "ok",
+            "2026-08-20T00:59:59.000000Z",
+            "{\"action\":\"insert\",\"handle\":1}",
+        );
         let bad = "{\"closure\":{\"format\":\"elf\",\"deps\":[{\"name\":\"libx.so\",\"resolved\":null,\"verdict\":\"error:2\"}]}}";
         let capture = format!(
             "{mount}\n{}",
@@ -736,8 +772,20 @@ mod tests {
         let table = load_signatures().unwrap();
         // deny → dependent open error: fires, quoting the deny.
         let capture = [
-            event("jail", "/secret/data", "deny:user", "2026-08-20T01:00:00.000000Z", "{\"access\":\"read\"}"),
-            event("open", "/secret/data/file", "denied:user", "2026-08-20T01:00:01.000000Z", "{\"need\":\"read\"}"),
+            event(
+                "jail",
+                "/secret/data",
+                "deny:user",
+                "2026-08-20T01:00:00.000000Z",
+                "{\"access\":\"read\"}",
+            ),
+            event(
+                "open",
+                "/secret/data/file",
+                "denied:user",
+                "2026-08-20T01:00:01.000000Z",
+                "{\"need\":\"read\"}",
+            ),
         ]
         .join("\n");
         let d = replay(&capture, &table);
@@ -747,26 +795,56 @@ mod tests {
         let evidence = red.evidence.unwrap();
         assert!(evidence.contains("open /secret/data/file"), "{evidence}");
         let related = red.related.unwrap();
-        assert!(related.contains("jail /secret/data verdict=deny:user"), "{related}");
+        assert!(
+            related.contains("jail /secret/data verdict=deny:user"),
+            "{related}"
+        );
 
         // The same path exactly also dependents; an error: verdict too.
         let capture = [
-            event("jail", "/secret", "deny:manifest", "2026-08-20T01:00:00.000000Z", "{\"access\":\"write\"}"),
-            event("stat", "/secret", "error:13", "2026-08-20T01:00:01.000000Z", "{}"),
+            event(
+                "jail",
+                "/secret",
+                "deny:manifest",
+                "2026-08-20T01:00:00.000000Z",
+                "{\"access\":\"write\"}",
+            ),
+            event(
+                "stat",
+                "/secret",
+                "error:13",
+                "2026-08-20T01:00:01.000000Z",
+                "{}",
+            ),
         ]
         .join("\n");
         let d = replay(&capture, &table);
-        assert_eq!(
-            d.red.map(|r| r.signature).as_deref(),
-            Some("policy-denial")
-        );
+        assert_eq!(d.red.map(|r| r.signature).as_deref(), Some("policy-denial"));
 
         // An unrelated path is not dependent (a component boundary).
-        let mount = event("mount", "/__tfs__", "ok", "2026-08-20T00:59:59.000000Z", "{\"action\":\"insert\",\"handle\":1}");
+        let mount = event(
+            "mount",
+            "/__tfs__",
+            "ok",
+            "2026-08-20T00:59:59.000000Z",
+            "{\"action\":\"insert\",\"handle\":1}",
+        );
         let capture = [
             mount.clone(),
-            event("jail", "/secret/data", "deny:user", "2026-08-20T01:00:00.000000Z", "{\"access\":\"read\"}"),
-            event("open", "/secret/data2/file", "error:2", "2026-08-20T01:00:01.000000Z", "{}"),
+            event(
+                "jail",
+                "/secret/data",
+                "deny:user",
+                "2026-08-20T01:00:00.000000Z",
+                "{\"access\":\"read\"}",
+            ),
+            event(
+                "open",
+                "/secret/data2/file",
+                "error:2",
+                "2026-08-20T01:00:01.000000Z",
+                "{}",
+            ),
         ]
         .join("\n");
         let d = replay(&capture, &table);
@@ -775,9 +853,27 @@ mod tests {
         // An intervening non-deny jail event for the path clears it.
         let capture = [
             mount,
-            event("jail", "/secret", "deny:user", "2026-08-20T01:00:00.000000Z", "{\"access\":\"read\"}"),
-            event("jail", "/secret", "allow:user", "2026-08-20T01:00:01.000000Z", "{\"access\":\"read\"}"),
-            event("open", "/secret", "error:13", "2026-08-20T01:00:02.000000Z", "{}"),
+            event(
+                "jail",
+                "/secret",
+                "deny:user",
+                "2026-08-20T01:00:00.000000Z",
+                "{\"access\":\"read\"}",
+            ),
+            event(
+                "jail",
+                "/secret",
+                "allow:user",
+                "2026-08-20T01:00:01.000000Z",
+                "{\"access\":\"read\"}",
+            ),
+            event(
+                "open",
+                "/secret",
+                "error:13",
+                "2026-08-20T01:00:02.000000Z",
+                "{}",
+            ),
         ]
         .join("\n");
         let d = replay(&capture, &table);
@@ -808,7 +904,13 @@ mod tests {
         // materialize hop is the report.
         let closure = "{\"closure\":{\"format\":\"elf\",\"deps\":[{\"name\":\"libc.so\",\"resolved\":\"/tfs/lib/libc.so\",\"verdict\":\"materialized\"}]}}";
         let capture = [
-            event("mount", "/__tfs__", "ok", "2026-08-20T01:00:00.000000Z", "{\"action\":\"insert\",\"handle\":1}"),
+            event(
+                "mount",
+                "/__tfs__",
+                "ok",
+                "2026-08-20T01:00:00.000000Z",
+                "{\"action\":\"insert\",\"handle\":1}",
+            ),
             event_errno("materialize", "/tfs/bin/tool", "error:28", 28, "{}"),
             event_errno("dlopen", "/tfs/lib/app.so", "error:126", 126, closure),
         ]
@@ -823,8 +925,20 @@ mod tests {
     fn the_tolerant_scan_drops_a_crashed_tail() {
         let table = load_signatures().unwrap();
         let capture = [
-            event("mount", "/__tfs__", "ok", "2026-08-20T01:00:00.000000Z", "{\"action\":\"insert\",\"handle\":1}"),
-            event("open", "/__tfs__/lib/x.rb", "image:/__tfs__", "2026-08-20T01:00:01.000000Z", "{}"),
+            event(
+                "mount",
+                "/__tfs__",
+                "ok",
+                "2026-08-20T01:00:00.000000Z",
+                "{\"action\":\"insert\",\"handle\":1}",
+            ),
+            event(
+                "open",
+                "/__tfs__/lib/x.rb",
+                "image:/__tfs__",
+                "2026-08-20T01:00:01.000000Z",
+                "{}",
+            ),
             "{\"v\":1,\"ts\":\"2026-08-20T01:00:02".to_string(), // the crashed tail
         ]
         .join("\n");
@@ -841,9 +955,14 @@ mod tests {
         let capture = event_errno("materialize", "/tfs/bin/tool", "error:28", 28, "{}");
         let d = replay(&capture, &table);
         let report = render_report(std::path::Path::new("/tmp/c.jsonl"), &d, &table);
-        assert!(report.contains("hop chain: mount → manifest read → resolve → materialize → OS bind"), "{report}");
         assert!(
-            report.contains("RED hop: materialize — exec-cache write failure [signature: materialize-error]"),
+            report.contains("hop chain: mount → manifest read → resolve → materialize → OS bind"),
+            "{report}"
+        );
+        assert!(
+            report.contains(
+                "RED hop: materialize — exec-cache write failure [signature: materialize-error]"
+            ),
             "{report}"
         );
         assert!(report.contains("evidence: event #1"), "{report}");
@@ -852,11 +971,20 @@ mod tests {
         let capture = event("open", "/x", "host", "2026-08-20T01:00:00.000000Z", "{}");
         let d = replay(&capture, &table);
         let report = render_report(std::path::Path::new("/tmp/c.jsonl"), &d, &table);
-        assert!(report.contains("RED hop: mount — env image never mounted (handoff env lost)"), "{report}");
+        assert!(
+            report.contains("RED hop: mount — env image never mounted (handoff env lost)"),
+            "{report}"
+        );
         assert!(report.contains("no `mount/ok` verdict"), "{report}");
 
         // GREEN.
-        let capture = event("mount", "/__tfs__", "ok", "2026-08-20T01:00:00.000000Z", "{\"action\":\"insert\",\"handle\":1}");
+        let capture = event(
+            "mount",
+            "/__tfs__",
+            "ok",
+            "2026-08-20T01:00:00.000000Z",
+            "{\"action\":\"insert\",\"handle\":1}",
+        );
         let d = replay(&capture, &table);
         let report = render_report(std::path::Path::new("/tmp/c.jsonl"), &d, &table);
         assert!(report.contains("GREEN: no red hop"), "{report}");
