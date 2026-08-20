@@ -1,6 +1,11 @@
 # Spec 26 — Payload checks: the in-image self-validation contract
 
-Status: PLANNED (draft for owner review)
+Status: PARTIAL (§1's `checks:` manifest block (schema_minor 3) and
+§2/§2.1's `tebako check` engine shipped 2026-08-20 — the four target
+forms (name / bare image / package / composition document), the SKIP
+discipline, and the jail composition; §3's press/install gate wiring
+remains. Note the §2 aggregate exit is 79, not this draft's original
+72 — 72 has been `EX_TEBAKO_TRUST` since spec 09)
 Depends on: 03 (payload manifest), 08 (jails), 17 (driver contract),
 22 (runtime-native interposition), 23 (declarative composition),
 24 (overlays), 25 (trace observability)
@@ -144,8 +149,11 @@ in declaration order (slice checks before composition checks, §2.1):
 1. `when:` filter — a non-matching platform SKIPs (loud).
 2. `requires:` — the resolved composition must provide every listed
    capability; an unmet prerequisite SKIPs with the missing capability
-   named. A check fails ONLY when its prerequisites are present and its
-   behavior is wrong.
+   named. The capability set is the union, over the composition's
+   slices, of the slice name, the app `entrypoints[].name`, the toolkit
+   `executables[].name`/`libraries[].name`, and the runtime
+   `provides.engine` (an openjdk slice provides `java`). A check fails
+   ONLY when its prerequisites are present and its behavior is wrong.
 3. A fresh scratch dir (host tmp) is created, auto-granted `rw` for the
    check's duration — an engine grant, never a declared need; fixtures
    materialize into it.
@@ -158,9 +166,12 @@ in declaration order (slice checks before composition checks, §2.1):
    test-iso.xml)`.
 
 Aggregate exit: `0` when every selected check PASSes or SKIPs;
-**exit 72 (`EX_TEBAKO_CHECK`)** when any FAILs (the code is allocated
-here; 65 keeps malformed-`checks:`-block, caught at press/validate time
-by the schema). Timeout and engine errors are FAILs with the reason
+**exit 79 (`EX_TEBAKO_CHECK`)** when any FAILs (the code is allocated
+here — this spec's draft said 72, but 72 has been `EX_TEBAKO_TRUST`
+since spec 09's trust chain; 79 is the allocation, owned by
+`tpkg::EX_TEBAKO_CHECK` and listed in spec 06 §4; 65 keeps
+malformed-`checks:`-block, caught at press/validate time by the
+schema). Timeout and engine errors are FAILs with the reason
 named. `--keep-scratch` preserves the dir for debugging (its path is
 printed); otherwise it is removed.
 
@@ -321,7 +332,9 @@ boot_smoke/smoke_verdict on every platform.
 - Malformed `checks:` block: schema error at press/`tfs validate` for a
   slice, at composition load for a D2 document, exit 65 — never
   discovered at run time.
-- Check FAIL: exit 72, the check name and the failed expectation named
+- Check FAIL: exit 79 (`EX_TEBAKO_CHECK` — re-allocated from this
+  spec's draft 72, which has been `EX_TEBAKO_TRUST` since spec 09),
+  the check name and the failed expectation named
   (missing file, exit code, stdout pattern, timeout) — never a bare
   nonzero.
 - SKIP is loud and always names the unmet prerequisite; a SKIP never

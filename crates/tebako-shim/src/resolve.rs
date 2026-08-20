@@ -188,14 +188,45 @@ fn project_pin(start: &Path, tool: &str) -> Result<Option<(String, PathBuf)>, Sh
 /// Resolve the dispatch target for `tool` through the full chain.
 pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
     let payload_name = providing_payload(&ctx.home, tool)?;
-    manifest::check_path_component("payload name", &payload_name)?;
-    let installed = installed_versions(&ctx.home, &payload_name)?;
+    let res = resolve_named(tool, &payload_name, ctx)?;
+    if res.manifest.entrypoint(tool).is_none() {
+        return fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "payload \"{payload_name}\" {version} declares no entrypoint \"{tool}\" in {mirror}\n  the shim link is stale; run `tebako-shim doctor`",
+                version = res.version,
+                mirror = res.record.manifest_mirror.display()
+            ),
+        );
+    }
+    Ok(res)
+}
+
+/// The payload-addressed resolution (spec 26 §2's check engine): the name
+/// IS the payload (never the suite scan — a check target names its slice
+/// directly), the version chain / record / mirror load are dispatch's
+/// own, and there is NO entrypoint gate (a data slice declares none —
+/// structural checks resolve exactly this far).
+pub fn resolve_payload(payload_name: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
+    manifest::check_path_component("payload name", payload_name)?;
+    if !ctx.home.join("payloads").join(payload_name).is_dir() {
+        return Err(no_provider(&ctx.home, payload_name));
+    }
+    resolve_named(payload_name, payload_name, ctx)
+}
+
+/// The shared resolution tail: version chain → disabled gate → record →
+/// mirror load. `tool` keys the version chain (env var, project pin,
+/// defaults); `payload_name` keys the store record.
+fn resolve_named(tool: &str, payload_name: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
+    manifest::check_path_component("payload name", payload_name)?;
+    let installed = installed_versions(&ctx.home, payload_name)?;
     if installed.is_empty() {
         return fail(
             EX_TEBAKO_MANIFEST,
             format!(
                 "payload \"{payload_name}\" (providing \"{tool}\") has no installed versions under {}\n  run `tebako-shim doctor` to diagnose",
-                ctx.home.join("payloads").join(&payload_name).display()
+                ctx.home.join("payloads").join(payload_name).display()
             ),
         );
     }
@@ -224,7 +255,7 @@ pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
     }
     // 4. registry default
     if picked.is_none() {
-        if let Some((version, reg)) = config::registry_default(&ctx.home, &cfg, &payload_name, ctx)?
+        if let Some((version, reg)) = config::registry_default(&ctx.home, &cfg, payload_name, ctx)?
         {
             picked = Some((version, VersionSource::RegistryDefault(reg)));
         }
@@ -264,7 +295,7 @@ pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
         );
     }
 
-    let record = manifest::payload_record(&ctx.home, &payload_name, &version);
+    let record = manifest::payload_record(&ctx.home, payload_name, &version);
     if !record.installed() {
         return fail(
             EX_TEBAKO_MANIFEST,
@@ -275,19 +306,10 @@ pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
         );
     }
     let manifest = Manifest::load(&record.manifest_mirror)?;
-    if manifest.entrypoint(tool).is_none() {
-        return fail(
-            EX_TEBAKO_MANIFEST,
-            format!(
-                "payload \"{payload_name}\" {version} declares no entrypoint \"{tool}\" in {}\n  the shim link is stale; run `tebako-shim doctor`",
-                record.manifest_mirror.display()
-            ),
-        );
-    }
 
     Ok(Resolution {
         tool: tool.to_string(),
-        payload_name,
+        payload_name: payload_name.to_string(),
         version,
         source,
         record,

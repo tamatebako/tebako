@@ -24,11 +24,12 @@
 //! MECE at this layer: only `images`, `policy`, `mounts`, `needs` are
 //! known keys — slice NAMES and entrypoints resolve at the shim layer, so
 //! a compose file naming `runtime:`, `slices:`, or `entrypoint:` earns a
-//! named error pointing there. `$HOME`/`$TMPDIR`/`$CWD` atoms in host and
-//! image paths expand at compose time. Needs entries lower to identity
-//! host-mount grants (the host path exposed at itself). `record` carries
-//! no grants (the same rule as the env grammar — inert configuration is a
-//! named error).
+//! named error pointing there. Symbolic atoms in host and image paths
+//! expand at compose time (the grammar is tpkg::atoms — the SSOT; the CLI
+//! binds `$HOME`/`$TMPDIR`/`$CWD` from the process environment). Needs
+//! entries lower to identity host-mount grants (the host path exposed at
+//! itself). `record` carries no grants (the same rule as the env grammar
+//! — inert configuration is a named error).
 //!
 //! The compose file is the whole composition: combining `--compose` with
 //! `--image`/`--jail` is a named error (one source of truth per run).
@@ -99,10 +100,11 @@ struct NeedEntry {
 }
 
 /// Parse a compose file. `expand` resolves the symbolic atoms (`$HOME`,
-/// `$TMPDIR`, `$CWD`) — the caller binds it to the process environment so
-/// tests never mutate it. `exists` probes the host at compose time (the
-/// CLI binds it to canonicalize): absent hosts named by `optional: true`
-/// needs are skipped; absent hosts otherwise are named errors.
+/// `$TMPDIR`, `$CWD`, … — the grammar is tpkg::atoms, the SSOT) — the
+/// caller binds it to the process environment so tests never mutate it.
+/// `exists` probes the host at compose time (the CLI binds it to
+/// canonicalize): absent hosts named by `optional: true` needs are
+/// skipped; absent hosts otherwise are named errors.
 pub fn parse_compose(
     yaml: &str,
     expand: &dyn Fn(&str) -> Option<String>,
@@ -196,23 +198,11 @@ pub fn parse_compose(
     Ok(ComposeSpec { images, jail })
 }
 
-/// Expand a leading `$ATOM` (the manifest grammar's atoms, spec 23 §4)
-/// using `expand`; an unknown atom is a named error. Atoms are path
-/// prefixes: bare `$HOME` or `$HOME/…`.
+/// Expand a leading symbolic atom (`$HOME/…`, `%TEMP%\…`) — the grammar
+/// lives in tpkg (spec 00 invariant 10); this is the compose file's
+/// binding of it.
 fn expand_atoms(path: &str, expand: &dyn Fn(&str) -> Option<String>) -> Result<String, String> {
-    let Some(rest) = path.strip_prefix('$') else {
-        return Ok(path.to_string());
-    };
-    let (atom, tail) = match rest.find('/') {
-        Some(i) => (&rest[..i], &rest[i..]),
-        None => (rest, ""),
-    };
-    match expand(atom) {
-        Some(base) => Ok(format!("{base}{tail}")),
-        None => Err(format!(
-            "unknown atom ${atom} in {path:?} (the compose file speaks $HOME, $TMPDIR, $CWD)"
-        )),
-    }
+    tpkg::atoms::expand_symbolic_atoms(path, expand)
 }
 
 /// The `ro|rw` grant bit, as the compose file spells it.

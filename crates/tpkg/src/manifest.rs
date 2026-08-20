@@ -1237,6 +1237,13 @@ fn u32_is_zero(v: &u32) -> bool {
 /// under the resolved composition); a check WITHOUT `entry` is a
 /// STRUCTURAL check (the data-slice shape — the engine mounts the image
 /// and asserts `expect.image_files`, no runtime, no composition).
+///
+/// The fixture families are MECE across the two `checks:` contexts
+/// (spec 26 §2.1): a SLICE manifest speaks the in-image `fixtures`; a
+/// COMPOSITION document (which has no image of its own) speaks
+/// `fixtures_inline`/`fixtures_host`. Each family is a named validation
+/// error in the other's context ([`Check::validate`] vs
+/// [`Check::validate_composition`]).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     /// Exec checks: the in-image executable — or `self` on a runtime
@@ -1254,6 +1261,19 @@ pub struct Check {
     /// payload's own raw-surface component, spec 26 §1). Exec-only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fixtures: Option<String>,
+    /// Composition-check fixture source (spec 26 §2.1): fixture name →
+    /// content, written into the scratch root. Valid ONLY in a
+    /// composition document's `checks:` block (a composition has no
+    /// image of its own); a slice manifest declaring it is a named
+    /// validation error — the fixture families are MECE.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub fixtures_inline: BTreeMap<String, String>,
+    /// Composition-check fixture source (spec 26 §2.1): a path relative
+    /// to the composition FILE (the org repo's checked-in fixtures),
+    /// copied to scratch. Valid ONLY in a composition document (the same
+    /// MECE rule as [`Check::fixtures_inline`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixtures_host: Option<String>,
     /// The assertions (absent = the default `exit: 0`).
     #[serde(default, skip_serializing_if = "CheckExpect::is_default")]
     pub expect: CheckExpect,
@@ -1273,8 +1293,10 @@ pub struct Check {
 
 /// The check-name grammar (spec 26 §1): names appear in report lines
 /// and scratch dir names — `[A-Za-z0-9][A-Za-z0-9._-]*`. Uniqueness is
-/// enforced by the map's own deserializer (see `checks_map`).
-fn check_check_name(name: &str) -> Result<(), ManifestError> {
+/// enforced by the map's own deserializer (see `checks_map`). Public so
+/// the composition-document model (spec 26 §2.1) validates its own
+/// check blocks with the same rule.
+pub fn check_check_name(name: &str) -> Result<(), ManifestError> {
     let ok = matches!(name.bytes().next(), Some(b) if b.is_ascii_alphanumeric())
         && name
             .bytes()
@@ -1291,7 +1313,10 @@ fn check_check_name(name: &str) -> Result<(), ManifestError> {
 /// authoring ambiguity is a named structural error, never a silent
 /// winner (the duplicate-alias discipline; serde_yml's plain map read
 /// is last-wins, so the refusal lives here, not in `validate`).
-mod checks_map {
+/// Public for the other `checks:`-block surface — the spec 26 §2.1
+/// composition document (tebako-cli's check engine) deserializes its
+/// map through the same refusal.
+pub mod checks_map {
     use super::Check;
     use serde::{de, Deserializer};
     use std::collections::BTreeMap;
@@ -1322,7 +1347,12 @@ mod checks_map {
 }
 
 impl Check {
-    fn validate(&self, kind: PayloadKind) -> Result<(), ManifestError> {
+    /// The check context the grammar is validated under (spec 26 §2.1's
+    /// MECE fixture rule): a SLICE check speaks the in-image `fixtures`;
+    /// a COMPOSITION check speaks `fixtures_inline`/`fixtures_host` (the
+    /// composition has no image of its own). Each family is a named
+    /// error in the other's context.
+    fn validate_in(&self, kind: PayloadKind, composition: bool) -> Result<(), ManifestError> {
         match &self.entry {
             Some(CheckEntry::SelfExe) => {
                 // §1.1: the reserved spelling names the runtime exe — a
@@ -1351,9 +1381,12 @@ impl Check {
                         "checks[].argv is exec-only — a structural check (no entry) declares none",
                     ));
                 }
-                if self.fixtures.is_some() {
+                if self.fixtures.is_some()
+                    || !self.fixtures_inline.is_empty()
+                    || self.fixtures_host.is_some()
+                {
                     return Err(ManifestError::Invalid(
-                        "checks[].fixtures is exec-only — a structural check (no entry) declares none",
+                        "checks[].fixtures/fixtures_inline/fixtures_host are exec-only — a structural check (no entry) declares none",
                     ));
                 }
                 if self.expect.image_files.is_empty() {
@@ -1378,6 +1411,55 @@ impl Check {
             if fixtures.split('/').any(|component| component == "..") {
                 return Err(ManifestError::Invalid(
                     "checks[].fixtures must not contain '..' components",
+                ));
+            }
+        }
+        // The fixture-family rule (spec 26 §2.1, MECE): `fixtures` is the
+        // slice family's in-image source; `fixtures_inline`/`fixtures_host`
+        // are the composition family's. Each is a named error in the
+        // other's context (never a silent ignore under the unknown-field
+        // rule — these keys are KNOWN, and refused here).
+        if composition {
+            if self.fixtures.is_some() {
+                return Err(ManifestError::Invalid(
+                    "checks[].fixtures names an in-image dir a composition does not have — a composition check declares fixtures_inline or fixtures_host (spec 26 §2.1)",
+                ));
+            }
+        } else if !self.fixtures_inline.is_empty() || self.fixtures_host.is_some() {
+            return Err(ManifestError::Invalid(
+                "checks[].fixtures_inline/fixtures_host belong to composition checks (spec 26 §2.1) — a slice check's fixtures are in-image (fixtures:)",
+            ));
+        }
+        for name in self.fixtures_inline.keys() {
+            if name.is_empty()
+                || name.starts_with('/')
+                || name.split('/').any(|c| c == "..")
+                || name.split('/').any(|c| c.is_empty())
+            {
+                return Err(ManifestError::Invalid(
+                    "checks[].fixtures_inline names must be non-empty scratch-relative file paths (never absolute, no '..' components)",
+                ));
+            }
+        }
+        if let Some(host) = &self.fixtures_host {
+            check_non_empty(
+                host,
+                "checks[].fixtures_host must not be empty (a path relative to the composition file)",
+            )?;
+            // The absolute spellings of EITHER platform family (POSIX
+            // `/…`, windows `X:…`/`\\…`) are refused everywhere — the
+            // path is relative to the composition file by contract, and
+            // a validator's answer never depends on the host OS.
+            let drive_qualified = host.len() >= 2
+                && host.as_bytes()[0].is_ascii_alphabetic()
+                && host.as_bytes()[1] == b':';
+            if host.starts_with('/')
+                || host.starts_with('\\')
+                || drive_qualified
+                || host.split(['/', '\\']).any(|c| c == "..")
+            {
+                return Err(ManifestError::Invalid(
+                    "checks[].fixtures_host must be relative to the composition file (never absolute, no '..' components)",
                 ));
             }
         }
@@ -1426,6 +1508,26 @@ impl Check {
             }
         }
         Ok(())
+    }
+
+    /// Slice-context validation (spec 26 §1 — the in-image manifest's
+    /// `checks:` block): the grammar with the in-image fixture family.
+    fn validate(&self, kind: PayloadKind) -> Result<(), ManifestError> {
+        self.validate_in(kind, false)
+    }
+
+    /// Composition-context validation (spec 26 §2.1 — a composition
+    /// document's `checks:` block): the slice grammar minus the in-image
+    /// `fixtures` (the composition has no image), with `entry: self`
+    /// still reserved for runtime slices (a composition check names a
+    /// mounted slice's executable). Structural composition checks are
+    /// legal: the engine asserts `expect.image_files` against the
+    /// mounted slice set.
+    pub fn validate_composition(&self) -> Result<(), ManifestError> {
+        // Any non-runtime kind keeps `self` reserved — the composition
+        // document is kind-less, so the runtime-only spelling never
+        // binds here.
+        self.validate_in(PayloadKind::App, true)
     }
 }
 
