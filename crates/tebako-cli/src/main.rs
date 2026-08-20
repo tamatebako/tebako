@@ -26,6 +26,11 @@ const USAGE: &str = "Usage:
                                        the escapes report (spec 25 §6, phase T3): outside
                                        touches under the prefix the inside stream never saw
                                        (exit 0 clean / 1 escapes / 2 error)
+  tebako trace import procmon <capture.csv>
+                                       the spec 25 §6.2 offline converter: a procmon CSV
+                                       export becomes the retrace-shaped JSON outside
+                                       stream cover consumes (exit 0 converted /
+                                       1 zero entries / 2 error)
   tebako check <name | image.tfs | package | tebako.yaml>
                [--check <c>] [--list] [--record] [--keep-scratch]
                [--runtime <exe> --runtime-image <env.tfs>]
@@ -92,11 +97,13 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     // stderr so stdout is the document alone. Every other call keeps the
     // banner on stdout (unchanged). `trace cover` is a machine contract
     // too: its stdout byte-compares against the retrace golden fixtures
-    // (spec 25 §6.3's parity clause).
+    // (spec 25 §6.3's parity clause). `trace import` likewise: its
+    // stdout is the converted retrace JSON document (spec 25 §6.2).
     let machine_stdout = (subcommand == "cache"
         && rest.first().map(|a| a.as_str()) == Some("list")
         && rest.iter().any(|a| a == "--json"))
-        || (subcommand == "trace" && rest.first().map(|a| a.as_str()) == Some("cover"));
+        || (subcommand == "trace"
+            && matches!(rest.first().map(|a| a.as_str()), Some("cover" | "import")));
     if machine_stdout {
         eprintln!("{VERSION_BANNER}");
     } else {
@@ -559,20 +566,22 @@ fn run_package(args: &[String]) -> Result<(), CliExit> {
     Err(CliExit::Error(err))
 }
 
-/// `tebako trace <run|cover> ...` — the spec 25 front-ends. `run` (§4,
-/// phase T1, discovery) runs the package under `TEBAKO_JAIL=record` with
-/// the interception bus armed, then synthesizes the capture into a
+/// `tebako trace <run|cover|import> ...` — the spec 25 front-ends. `run`
+/// (§4, phase T1, discovery) runs the package under `TEBAKO_JAIL=record`
+/// with the interception bus armed, then synthesizes the capture into a
 /// suggested-manifest draft; it never returns on success (the process
 /// exits with the payload's exit code). `cover` (§6, phase T3) is the
 /// escapes correlator; it never returns either (the exit code is the
 /// coverage verdict: 0 clean / 1 escapes / 2 usage-or-IO, the
-/// retrace-correlate parity codes). The spawn/resolve emission is T2
-/// (bus-side, landed); `import` (the procmon converter, the rest of T3)
-/// and `explain` (§5, T4) are later milestones.
+/// retrace-correlate parity codes). `import` (§6.2, the rest of T3) is
+/// the procmon converter; it never returns (0 converted / 1 zero
+/// entries / 2 usage-or-IO, procmon2retrace's codes). The spawn/resolve
+/// emission is T2 (bus-side, landed); `explain` (§5, T4) is a later
+/// milestone.
 fn run_trace(args: &[String]) -> Result<(), CliExit> {
     let Some(action) = args.first() else {
         return Err(CliExit::Usage(
-            "trace subcommand expected: run | cover (explain | import are later milestones)"
+            "trace subcommand expected: run | cover | import (explain is a later milestone)"
                 .to_string(),
         ));
     };
@@ -583,8 +592,9 @@ fn run_trace(args: &[String]) -> Result<(), CliExit> {
             Ok(())
         }
         "cover" => tebako_cli::trace::cover::trace_cover(&args[1..]),
-        other @ ("explain" | "import") => Err(CliExit::Usage(format!(
-            "'tebako trace {other}' is a later tebako-rs milestone (spec 25: import is the rest of T3, explain is T4)"
+        "import" => tebako_cli::trace::import::trace_import(&args[1..]),
+        other @ "explain" => Err(CliExit::Usage(format!(
+            "'tebako trace {other}' is a later tebako-rs milestone (spec 25: explain is T4)"
         ))),
         other => Err(CliExit::Usage(format!("unknown trace subcommand '{other}'"))),
     }
