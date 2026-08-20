@@ -19,13 +19,15 @@
 //! correlator, golden-parity with retrace-correlate on the shared
 //! fixtures. `import` (§6.2 — the rest of T3) ships in the `import`
 //! submodule: the procmon CSV → retrace JSON converter, byte-parity with
-//! upstream procmon2retrace. `explain` (§5, phase T4) is a later
-//! milestone; phase T2 was the spawn/resolve emission (the preload's
-//! posix_spawn surface and the driver's image-triple resolution — pure
-//! bus-side work, no consumer change needed here beyond the pinned spawn
-//! grammar below).
+//! upstream procmon2retrace. `explain` (§5, phase T4) ships in the
+//! `explain` submodule: the capture replay into the hop chain with the
+//! signature table in data (`explain-signatures.yaml`). Phase T2 was the
+//! spawn/resolve emission (the preload's posix_spawn surface and the
+//! driver's image-triple resolution — pure bus-side work, no consumer
+//! change needed here beyond the pinned spawn grammar below).
 
 pub mod cover;
+pub mod explain;
 pub mod import;
 
 use std::collections::BTreeMap;

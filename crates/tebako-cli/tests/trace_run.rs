@@ -189,7 +189,7 @@ fn trace_run_rejects_a_missing_package_and_bad_options() {
         r.stderr
     );
 
-    // Bare `trace` and the later-milestone subcommands name themselves.
+    // Bare `trace` names the subcommands.
     let r = tebako_trace(&[]);
     assert_eq!(r.rc, 1);
     assert!(
@@ -197,15 +197,21 @@ fn trace_run_rejects_a_missing_package_and_bad_options() {
         "stderr: {}",
         r.stderr
     );
-    for sub in ["explain", "import"] {
-        let r = tebako_trace(&[sub]);
-        assert_eq!(r.rc, 1);
-        assert!(
-            r.stderr.contains(&format!(
-                "'tebako trace {sub}' is a later tebako-rs milestone"
-            )),
-            "stderr: {}",
-            r.stderr
-        );
-    }
+    // The shipped verbs' own usage errors are exit 2 (the trace-verbs
+    // convention; their usage lines name themselves). trace_import.rs /
+    // trace_explain.rs carry the full surface pins.
+    let r = tebako_trace(&["import"]);
+    assert_eq!(r.rc, 2);
+    assert!(
+        r.stderr.contains("usage: tebako trace import procmon"),
+        "stderr: {}",
+        r.stderr
+    );
+    let r = tebako_trace(&["explain"]);
+    assert_eq!(r.rc, 2);
+    assert!(
+        r.stderr.contains("usage: tebako trace explain"),
+        "stderr: {}",
+        r.stderr
+    );
 }

@@ -1,0 +1,89 @@
+# =============================================================================
+# explain-signatures.yaml — the `tebako trace explain` signature table
+# (spec 25 §5, phase T4)
+#
+# The table lives in DATA, extended as incidents teach new signatures —
+# never hard-coded into the bus (spec 25 §5's placement law; the bus in
+# crates/tfs knows nothing of it). explain.rs's engine interprets the
+# `when.kind` discriminators below; an unknown kind is a named load error,
+# not a silent skip. Seeded from the incident corpus (the §5 table).
+# =============================================================================
+
+schema: trace-explain-signatures
+schema_version: 1 # additive-only within 1: new signatures, new when kinds
+
+# The hop chain the capture replays into (spec 25 §5's order) — printed
+# as the report's axis.
+hop_chain: [mount, manifest read, resolve, materialize, OS bind]
+
+signatures:
+  # §5 row 1 — incident 13's root cause class. The env image mounts
+  # FIRST (spec 25 §2's multi-mount order), so a live stream (at least
+  # min_events events) carrying NO `mount`/`ok` event means the env
+  # image never mounted. The "prelude-class child stderr" half of the
+  # §5 signature is out-of-band: the bus never sees the child's stderr;
+  # the operator corroborates with it (the report says so).
+  - name: env-image-never-mounted
+    hop: mount
+    diagnosis: env image never mounted (handoff env lost)
+    when:
+      kind: absent
+      op: mount
+      verdict: ok
+      min_events: 1
+    note: >-
+      A mount event with an error verdict does NOT suppress this
+      signature — a failed mount IS the never-mounted case.
+
+  # §5 row 2 — the dlopen verdict naming the OS loader's
+  # module-not-found (windows error 126; the POSIX dlopen ENOENT
+  # analogue) with every closure dep materialized|host-system: the
+  # closure RESOLVED, so the failure is the bind itself. The dep list
+  # prints as the bisect candidates. An empty walk (the cache-hit
+  # answer, format: null, deps: []) never fires — nothing was walked.
+  - name: os-bind-module-not-found
+    hop: OS bind
+    diagnosis: the OS bind itself — the closure resolved and the loader still refused
+    when:
+      kind: event
+      op: dlopen
+      verdict_prefix: "error:"
+      errno: [126, 2]
+      closure:
+        non_empty: true
+        dep_verdicts: [materialized, host-system]
+    note: >-
+      Incident 13's four eprintln rounds named this by hand; the closure
+      walk in the dlopen event's detail carries it as structure now.
+
+  # §5 row 3 — a jail deny immediately preceding a dependent open/stat
+  # error: the error event's path is the denied path or beneath it (a
+  # component boundary), and no non-deny jail event for the denied path
+  # intervened. A policy-gated decision emits BOTH events by design
+  # (trace-event.yaml's jail notes) — this signature joins the pair.
+  - name: policy-denial
+    hop: policy
+    diagnosis: policy denial (the EACCES class)
+    when:
+      kind: deny-then-error
+      deny:
+        op: jail
+        verdict_prefix: "deny:"
+      error:
+        ops: [open, stat]
+        verdict_prefixes: ["denied:", "error:"]
+    note: >-
+      The evidence line is the dependent error event; the deny is quoted
+      as the related line (rule label carried).
+
+  # §5 row 4.
+  - name: materialize-error
+    hop: materialize
+    diagnosis: exec-cache write failure
+    when:
+      kind: event
+      op: materialize
+      verdict_prefix: "error:"
+    note: >-
+      The exec cache (ENOSPC/EROFS/EACCES on the cache dir) is the
+      classic; the errno names it.
