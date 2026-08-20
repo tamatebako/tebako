@@ -43,7 +43,7 @@ signatures:
   # answer, format: null, deps: []) never fires — nothing was walked.
   - name: os-bind-module-not-found
     hop: OS bind
-    diagnosis: the OS bind itself — the closure resolved and the loader still refused
+    diagnosis: the closure resolved and the loader still refused
     when:
       kind: event
       op: dlopen
