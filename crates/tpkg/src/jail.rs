@@ -164,6 +164,13 @@ pub struct HostJail {
         default = "default_open_true"
     )]
     pub default_open: bool,
+    /// The spec 23 §8 `record` policy (allow-all + audit) — the discovery
+    /// instrument behind `tebako trace run`. **Env-grammar only**: a
+    /// manifest cannot ask to be observed, so serde skips the field and
+    /// the YAML block grammar stays byte-identical. Carries no grants
+    /// (inert under allow-all — `parse_env_spec` rejects them).
+    #[serde(skip)]
+    pub record: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mounts: Vec<JailMount>,
     #[serde(default, skip_serializing_if = "ArgumentFiles::is_empty")]
@@ -246,6 +253,7 @@ impl HostJail {
     pub const fn open() -> HostJail {
         HostJail {
             default_open: true,
+            record: false,
             mounts: Vec::new(),
             argument_files: ArgumentFiles {
                 auto: false,
@@ -258,6 +266,7 @@ impl HostJail {
     pub const fn deny() -> HostJail {
         HostJail {
             default_open: false,
+            record: false,
             mounts: Vec::new(),
             argument_files: ArgumentFiles {
                 auto: false,
@@ -272,9 +281,26 @@ impl HostJail {
     pub const fn deny_with_arg_files() -> HostJail {
         HostJail {
             default_open: false,
+            record: false,
             mounts: Vec::new(),
             argument_files: ArgumentFiles {
                 auto: true,
+                files: Vec::new(),
+            },
+        }
+    }
+
+    /// `record` (spec 23 §8): allow everything and journal each host
+    /// access — the observation mode `tebako trace run` drives. No
+    /// grants (inert under allow-all); the engine maps it to
+    /// `PolicyDefault::Record` at bind.
+    pub const fn record() -> HostJail {
+        HostJail {
+            default_open: true,
+            record: true,
+            mounts: Vec::new(),
+            argument_files: ArgumentFiles {
+                auto: false,
                 files: Vec::new(),
             },
         }
@@ -284,8 +310,13 @@ impl HostJail {
     /// (open default, no grants — `auto-allowed` under an open default
     /// grants nothing the default does not already allow). Surfaces skip
     /// exporting such a policy, keeping the no-policy path byte-identical.
+    /// `record` is NEVER trivially open: it must export so the engine
+    /// journals.
     pub fn is_trivially_open(&self) -> bool {
-        self.default_open && self.mounts.is_empty() && self.argument_files.files.is_empty()
+        !self.record
+            && self.default_open
+            && self.mounts.is_empty()
+            && self.argument_files.files.is_empty()
     }
 
     /// Parse and validate the YAML block form.
@@ -341,7 +372,9 @@ impl HostJail {
 
     /// Parse a `--jail` spec (press/run/shim surfaces): the profiles
     /// `open` | `deny` | `deny:arg`, a YAML file carrying the block form,
-    /// or the `TEBAKO_JAIL` env grammar itself (spec 08 §1).
+    /// or the `TEBAKO_JAIL` env grammar itself (spec 08 §1) — which
+    /// includes the spec 23 §8 `record` token, so `--jail record` works
+    /// on every surface that takes `--jail`.
     pub fn from_cli_spec(spec: &str) -> Result<HostJail, JailError> {
         match spec {
             "open" => return Ok(HostJail::open()),
@@ -382,27 +415,35 @@ impl HostJail {
         Ok(user)
     }
 
-    /// Parse the `TEBAKO_JAIL` env form (spec 08 §1):
+    /// Parse the `TEBAKO_JAIL` env form (spec 08 §1, extended by exactly
+    /// one token per spec 23 §8's last bullet: `record`):
     ///
     /// ```text
     /// jail      = directive *( ";" directive )
-    /// directive = "open" | "deny"          # namespace default (default: open)
-    ///           | host ":" mount ":" mode  # docker -v grant; mount absolute
-    ///           | "@" path                 # argument file (read-only grant)
+    /// directive = "open" | "deny" | "record" # namespace default (default: open)
+    ///           | host ":" mount ":" mode    # docker -v grant; mount absolute
+    ///           | "@" path                   # argument file (read-only grant)
     /// mode      = "ro" | "rw"
     /// ```
     ///
-    /// Errors on: empty spec, conflicting or duplicated `open`/`deny`,
-    /// unknown access modes, non-absolute mount points, empty
-    /// hosts/mounts/argument files, and unrecognised directive shapes. The
-    /// messages mirror the engine's `tfs::policy::JailSpec` parser — one
-    /// grammar, one message set.
+    /// `record` (spec 23 §8) is allow-all + audit: it journals every host
+    /// access so `tebako trace run` can draft a `needs:` block, so it takes
+    /// no grants — a spec mixing `record` with mounts or argument files is
+    /// a named error, not a silently inert combination.
+    ///
+    /// Errors on: empty spec, conflicting or duplicated
+    /// `open`/`deny`/`record`, unknown access modes, non-absolute mount
+    /// points, empty hosts/mounts/argument files, a `record` default
+    /// carrying grants, and unrecognised directive shapes. The messages
+    /// mirror the engine's `tfs::policy::JailSpec` parser — one grammar,
+    /// one message set.
     pub fn parse_env_spec(spec: &str) -> Result<HostJail, JailError> {
         let err = |msg: String| JailError::Spec(format!("{msg} in {spec:?}"));
         if spec.trim().is_empty() {
             return Err(JailError::Spec("empty spec".to_string()));
         }
         let mut default_open: Option<bool> = None;
+        let mut record = false;
         let mut mounts = Vec::new();
         let mut files = Vec::new();
         for token in spec.split(';') {
@@ -410,14 +451,17 @@ impl HostJail {
                 return Err(err("empty directive (stray ';')".to_string()));
             }
             match token {
-                "open" | "deny" => {
-                    let value = token == "open";
-                    if default_open.is_some() {
+                "open" | "deny" | "record" => {
+                    if default_open.is_some() || record {
                         return Err(err(format!(
                             "duplicate/conflicting default directive {token:?}"
                         )));
                     }
-                    default_open = Some(value);
+                    if token == "record" {
+                        record = true;
+                    } else {
+                        default_open = Some(token == "open");
+                    }
                 }
                 _ if token.starts_with('@') => {
                     let path = &token[1..];
@@ -431,8 +475,15 @@ impl HostJail {
                 }
             }
         }
+        if record && (!mounts.is_empty() || !files.is_empty()) {
+            return Err(err(
+                "record carries no grants: mounts and argument files are inert under it — drop them"
+                    .to_string(),
+            ));
+        }
         Ok(HostJail {
             default_open: default_open.unwrap_or(true),
+            record,
             mounts,
             argument_files: ArgumentFiles { auto: false, files },
         }
@@ -443,7 +494,13 @@ impl HostJail {
     /// the dispatch surface's resolution of `auto-allowed` (argv entries
     /// naming existing files — see [`resolve_argument_files`]); they are
     /// unioned with the explicit list, deduplicated, in first-seen order.
+    /// A `record` jail renders as the bare `record` token: grants and
+    /// argument files are inert under allow-all (parse rejects the mix,
+    /// so rendering them would produce a spec that cannot round-trip).
     pub fn to_env_spec(&self, resolved_arg_files: &[PathBuf]) -> String {
+        if self.record {
+            return "record".to_string();
+        }
         let mut out = String::from(if self.default_open { "open" } else { "deny" });
         for m in &self.mounts {
             out.push(';');
@@ -548,6 +605,11 @@ fn tighten_mount(m: &JailMount, q: &HostJail) -> Option<JailMount> {
 /// coalesce to the tighter access; argument files union and `auto-allowed`
 /// is honored when either side asks. Associative and idempotent, so a
 /// surface and the bootstrap may compose in sequence with no drift.
+///
+/// `record` never survives the intersection (`record: false` in the
+/// result): observation is not a policy a package's request can tighten
+/// into, and a record TIGHTENING dominates wholesale in [`effective`]
+/// instead — the request's grants are inert under allow-all.
 pub fn intersect(request: &HostJail, tightening: &HostJail) -> HostJail {
     let mut mounts: Vec<JailMount> = Vec::new();
     for m in &tightening.mounts {
@@ -575,6 +637,7 @@ pub fn intersect(request: &HostJail, tightening: &HostJail) -> HostJail {
     }
     HostJail {
         default_open: request.default_open && tightening.default_open,
+        record: false,
         mounts: coalesced,
         argument_files: ArgumentFiles {
             auto: request.argument_files.auto || tightening.argument_files.auto,
@@ -587,6 +650,11 @@ pub fn intersect(request: &HostJail, tightening: &HostJail) -> HostJail {
 /// package's manifest REQUEST and the user's tightening. Returns the
 /// effective jail and the audit source label (`manifest` / `user` /
 /// `manifest+user`) recorded as `TEBAKO_JAIL_SOURCE` and in the journal.
+///
+/// A `record` tightening dominates wholesale (spec 23 §8): the request's
+/// grants are inert under allow-all, so the composition IS the record
+/// policy, sourced `user` — never `manifest+user`, as nothing of the
+/// request survives to compose.
 pub fn effective(
     request: Option<&HostJail>,
     tightening: Option<&HostJail>,
@@ -595,6 +663,7 @@ pub fn effective(
         (None, None) => None,
         (Some(r), None) => Some((r.clone(), "manifest")),
         (None, Some(t)) => Some((t.clone(), "user")),
+        (Some(_), Some(t)) if t.record => Some((t.clone(), "user")),
         (Some(r), Some(t)) => Some((intersect(r, t), "manifest+user")),
     }
 }
@@ -808,6 +877,71 @@ mod tests {
         let j = HostJail::from_cli_spec("deny;/data:/data:ro").unwrap();
         assert_eq!(j.mounts, vec![mount("/data", "/data", JailAccess::Ro)]);
         assert!(HostJail::from_cli_spec("frob").is_err());
+    }
+
+    // ---------------------------------------------------------------
+    // The record token (spec 23 §8; the policy spec 25 T1's
+    // `tebako trace run` exports)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn env_spec_parses_record_and_renders_it_back() {
+        let j = HostJail::parse_env_spec("record").unwrap();
+        assert_eq!(j, HostJail::record());
+        assert!(j.record);
+        assert!(j.default_open, "record is allow-all underneath");
+        assert!(!j.is_trivially_open(), "record must export to journal");
+        assert_eq!(j.to_env_spec(&[]), "record");
+        // `--jail record` rides the same grammar on every cli surface.
+        assert_eq!(
+            HostJail::from_cli_spec("record").unwrap(),
+            HostJail::record()
+        );
+    }
+
+    #[test]
+    fn env_spec_record_rejections_mirror_the_engine() {
+        for (spec, frag) in [
+            ("record;record", "duplicate/conflicting"),
+            ("open;record", "duplicate/conflicting"),
+            ("record;deny", "duplicate/conflicting"),
+            ("record;/h:/w:ro", "record carries no grants"),
+            ("record;@/f", "record carries no grants"),
+        ] {
+            let e = HostJail::parse_env_spec(spec).unwrap_err();
+            assert!(
+                e.to_string().contains(frag),
+                "spec {spec:?}: error {e} should mention {frag:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn record_dominates_a_manifest_request_wholesale() {
+        // spec 23 §8: the package's grants are inert under allow-all, so
+        // the composition IS the record policy, sourced `user`.
+        let mut request = HostJail::deny();
+        request.mounts = vec![mount("/a", "/a", JailAccess::Ro)];
+        let (eff, source) = effective(Some(&request), Some(&HostJail::record())).unwrap();
+        assert_eq!(eff, HostJail::record());
+        assert_eq!(source, "user");
+        // Alone on the user side it flows unchanged; intersect never
+        // manufactures it.
+        let (eff, source) = effective(None, Some(&HostJail::record())).unwrap();
+        assert_eq!(eff, HostJail::record());
+        assert_eq!(source, "user");
+        assert!(!intersect(&request, &HostJail::record()).record);
+    }
+
+    #[test]
+    fn record_never_enters_the_yaml_block() {
+        // Serde skips the field: the block grammar is byte-identical, and
+        // a `record:` key in YAML is an unknown key — tolerated, inert
+        // (the manifest convention), never honored.
+        let yaml = HostJail::record().to_yaml().unwrap();
+        assert!(!yaml.contains("record"), "{yaml}");
+        let parsed = HostJail::from_yaml("default: open\nrecord: true\n").unwrap();
+        assert!(!parsed.record, "a manifest cannot ask to record");
     }
 
     // ---------------------------------------------------------------

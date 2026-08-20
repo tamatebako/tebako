@@ -37,6 +37,7 @@ fn reset() {
         .write()
         .unwrap()
         .set_host_policy(tfs::policy::HostPolicy::open(), None);
+    tfs::trace::disarm();
 }
 
 // ---------------------------------------------------------------------
@@ -215,6 +216,80 @@ fn a_boot_without_the_env_image_is_legal_and_mounts_nothing() {
     let out = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
     assert_eq!(out.argv, argv(&["ruby", "--version"]));
     assert!(!context().read().unwrap().is_mounted());
+}
+
+// ---------------------------------------------------------------------
+// the trace channel (spec 25 §2, phase T1)
+// ---------------------------------------------------------------------
+
+#[test]
+fn tebako_trace_env_arms_the_bus_before_any_mount() {
+    let g = guard("trace-env");
+    let env_image = write_env_image(g.path());
+    let capture = g.path().join("trace.jsonl");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("TEBAKO_TRACE", capture.display().to_string());
+
+    boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+
+    // The channel opened at boot, BEFORE the env image mounted — so the
+    // mount decision itself is in the capture.
+    let text = std::fs::read_to_string(&capture).expect("the boot opened the channel");
+    let mount = text
+        .lines()
+        .find(|l| l.contains("\"op\":\"mount\""))
+        .unwrap_or_else(|| panic!("a mount event was traced: {text}"));
+    assert!(mount.contains("\"verdict\":\"ok\""), "{mount}");
+    assert!(mount.contains("/__tfs__"), "{mount}");
+    assert!(tfs::trace::armed(), "the bus stays armed for the run");
+}
+
+#[test]
+fn tebako_trace_argument_wins_over_the_env() {
+    let g = guard("trace-arg");
+    let env_capture = g.path().join("env.jsonl");
+    let arg_capture = g.path().join("arg.jsonl");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_TRACE", env_capture.display().to_string());
+
+    let out = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-trace",
+            &arg_capture.display().to_string(),
+            "--version",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    assert!(arg_capture.is_file(), "the argument's channel opened");
+    assert!(
+        !env_capture.exists(),
+        "the env channel never opened — the argument wins"
+    );
+    // The consumed loader flag never leaks into the interpreter's argv.
+    assert_eq!(out.argv, argv(&["ruby", "--version"]));
+}
+
+#[test]
+fn a_broken_trace_channel_only_notes_and_the_boot_proceeds() {
+    let g = guard("trace-broken");
+    let blocker = g.path().join("blocker");
+    std::fs::write(&blocker, b"x").unwrap();
+    let mut env = MapEnv::new();
+    // The channel's parent is a regular FILE: arm() cannot open it —
+    // one loud stderr note, the run proceeds (observability never gates).
+    env.set(
+        "TEBAKO_TRACE",
+        blocker.join("t.jsonl").display().to_string(),
+    );
+
+    let out = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+    assert_eq!(out.argv, argv(&["ruby", "--version"]));
+    assert!(!tfs::trace::armed(), "the bus stayed disarmed");
 }
 
 #[test]

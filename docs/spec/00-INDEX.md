@@ -55,7 +55,7 @@ spec 02 §6).
 22. [22 — Runtime-native interposition](22-runtime-native-interposition.md) — the generalized hooks: loader/exec/resource interposition inside the runtime, the documented interface, and the death of per-gem adapters (the spec-18 contract's runtime-internal half)
 23. [23 — Declarative composition and needs resolution](23-declarative-composition.md) — the fully declarative slice stack: D1 needs / D2 composition doc / D3 press-baked union / D4-D5 operator surfaces; deny-safe by default, the needs-check law (PLANNED)
 24. [24 — Declarative overlays](24-declarative-overlays.md) — write areas and key bindings: the gated COW write gate, `TEBAKO_OVERLAYS` / `TEBAKO_DECRYPT`, the record-mode fold-in, exit 68 (PARTIAL)
-25. [25 — Trace observability](25-trace-observability.md) — the interception bus, `tebako trace run|explain|cover`, the escapes correlation (PLANNED)
+25. [25 — Trace observability](25-trace-observability.md) — the interception bus, `tebako trace run|explain|cover`, the escapes correlation (PARTIAL)
 26. [26 — Payload checks](26-payload-checks.md) — the in-image self-validation contract: the `checks:` manifest block, `tebako check` at press/install/discovery moments, SKIP discipline, exit 72 (PLANNED)
 
 ## Locked invariants (all specs subordinate to these)

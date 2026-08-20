@@ -757,6 +757,18 @@ pub fn boot_with_mount_modes(
     let runtime_root = effective.as_str();
     crate::ffi::set_mount_point(runtime_root);
     let mut h = Handoff::parse(argv)?;
+    // The trace bus (spec 25 §2): --tebako-trace wins over TEBAKO_TRACE.
+    // The channel opens BEFORE any mount — a path op is only safe this
+    // early (the journal/trace fd discipline) — and covers both boot
+    // shapes below. Arming never fails the boot: tfs::trace::arm notes
+    // loudly on stderr and proceeds disarmed (observability never gates).
+    let trace = h
+        .trace
+        .take()
+        .or_else(|| env_var(env, tfs::trace::TRACE_ENV));
+    if let Some(path) = trace {
+        tfs::trace::arm(Path::new(&path));
+    }
     // The exec cache (spec 22 §6) is named before anything can
     // materialize: both boot paths below export it to the handoff env.
     crate::exec_cache::export(env);
@@ -794,9 +806,17 @@ pub fn boot_with_mount_modes(
             // The standalone interpreter spawns too — arm its children
             // the same way (spec 22 §3).
             crate::injection::export(env, declaration.as_ref(), runtime_root)?;
-            Ok(BootOutcome {
-                argv: argv.to_vec(),
-            })
+            // argv[0] + the interpreter's own args — byte-identical to
+            // the incoming argv when no loader flags were present (the
+            // parse then fed every arg to interpreter_args), but the
+            // consumed --tebako-trace never leaks into the interpreter's
+            // argv (the image-boot paths below compose the same way).
+            let mut v = Vec::with_capacity(h.interpreter_args.len() + 1);
+            if let Some(program) = argv.first() {
+                v.push(program.clone());
+            }
+            v.extend(h.interpreter_args.iter().cloned());
+            Ok(BootOutcome { argv: v })
         })();
         if result.is_err() {
             context().write().unwrap().unmount();

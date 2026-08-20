@@ -99,7 +99,7 @@ pub fn needs_from_journal(
         let Some((path, write)) = parse_event_line(line) else {
             continue;
         };
-        if path.is_empty() || !std::path::Path::new(path).is_absolute() {
+        if path.is_empty() || !recorded_is_absolute(path) {
             omitted += 1;
             continue;
         }
@@ -212,6 +212,19 @@ fn parse_event_line(line: &str) -> Option<(&str, bool)> {
     Some((path, write))
 }
 
+/// A recorded journal path counts as absolute when it is `/`-rooted,
+/// drive-rooted (`C:/…`, `C:\…`), or UNC-rooted (`\\…`). Never the host's
+/// `Path::is_absolute`: on Windows that demands a drive prefix and
+/// rejects every `/`-spelled entry, silently dropping the whole journal
+/// (the tebako-cli trace tests exposed this on the windows-gnu leg).
+fn recorded_is_absolute(path: &str) -> bool {
+    if path.starts_with('/') || path.starts_with("\\\\") {
+        return true;
+    }
+    let b = path.as_bytes();
+    b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && (b[2] == b'/' || b[2] == b'\\')
+}
+
 /// Re-spell a recorded path with the longest matching (prefix, atom)
 /// substitution; identity when none matches.
 fn substitute(path: &str, substitutions: &[(PathBuf, &str)]) -> String {
@@ -225,7 +238,14 @@ fn substitute(path: &str, substitutions: &[(PathBuf, &str)]) -> String {
             out = if rest.as_os_str().is_empty() {
                 atom.to_string()
             } else {
-                format!("{atom}/{}", rest.display())
+                // Manifest paths join with `/` always (the MECE grammar);
+                // rest.display() would backslash the tail on Windows.
+                let tail = rest
+                    .iter()
+                    .map(|c| c.to_string_lossy())
+                    .collect::<Vec<_>>()
+                    .join("/");
+                format!("{atom}/{tail}")
             };
         }
     }
@@ -478,6 +498,38 @@ mod tests {
         assert_eq!(yaml.match_indices("$TMPDIR/data").count(), 1, "{yaml}");
         assert!(yaml.contains("access: rw"), "{yaml}");
         assert!(yaml.contains("observed: 1 read, 1 write"), "{yaml}");
+    }
+
+    #[test]
+    fn recorded_paths_are_absolute_by_spelling_not_host_platform() {
+        // The journal is written by the traced process, which may spell
+        // paths the other platform's way (an msys runtime on Windows
+        // records `/work/data`). Host `Path::is_absolute` would drop
+        // those on Windows; the spelling check keeps them everywhere.
+        for p in [
+            "/work/data",
+            "C:/work/data",
+            "C:\\work\\data",
+            "\\\\share\\x",
+        ] {
+            assert!(super::recorded_is_absolute(p), "{p}");
+        }
+        for p in ["", "rel/dir", "C:", "C:rel"] {
+            assert!(!super::recorded_is_absolute(p), "{p}");
+        }
+    }
+
+    #[test]
+    fn substitution_joins_with_forward_slashes_on_every_platform() {
+        // Manifest paths are `/`-joined by grammar (spec 23); the tail
+        // must never pick up the host separator.
+        let subs = [(PathBuf::from("/home/u"), "$HOME")];
+        assert_eq!(
+            super::substitute("/home/u/.config/app", &subs),
+            "$HOME/.config/app"
+        );
+        assert_eq!(super::substitute("/home/u", &subs), "$HOME");
+        assert_eq!(super::substitute("/other/place", &subs), "/other/place");
     }
 
     #[test]

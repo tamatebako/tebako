@@ -9,6 +9,7 @@ exact contract (roadmap 22's "add a language" playbook).
 
 ```
 <runtime> --tebako-image <self|image-path>:<slot|->:<mount> ...
+          [--tebako-trace <host-path>]
           --tebako-entry <argv0> <user args...>
 ```
 
@@ -80,6 +81,13 @@ exact contract (roadmap 22's "add a language" playbook).
   and drops the keyword (the deploy shims' re-entry form). With images
   but NO `--tebako-entry` at all, the boot mounts and starts the
   interpreter with its own args (the smoke form).
+- `--tebako-trace <host-path>` (spec 25 §2, additive): arm the
+  interception trace bus at boot, BEFORE any mount — the channel file is
+  opened once and appended for the process's life. The `TEBAKO_TRACE`
+  env names the same channel; the argument wins when both are set. A
+  channel that cannot be opened is a loud stderr note and a disarmed
+  bus, never a boot failure (spec 25 law 1: observability never gates).
+  The consumed flag never reaches the interpreter's argv.
 - The interpreter's own args are skipped (and `--tebako-extract` stays
   theirs); an unknown `--tebako-*` flag is a named error, never silently
   ignored.
@@ -99,6 +107,7 @@ exact contract (roadmap 22's "add a language" playbook).
 | `TEBAKO_JAIL` | jail policy env form (spec 08) — the driver/preload enforces it |
 | `TEBAKO_JAIL_SOURCE` | audit label of the policy's origin (`manifest` / `user` / `manifest+user`, or the exporting surface) — journaled with every denial (spec 08 §2) |
 | `TEBAKO_JAIL_JOURNAL` | explicit audit-journal path (default: `$TEBAKO_HOME/journal.log`) |
+| `TEBAKO_TRACE` | spec 25 §2: the interception trace bus's channel file (JSONL). Opened at boot before any mount, appended for the process's life, never policy-gated; children re-derive it from the inherited env. `--tebako-trace` wins when both are set |
 | `TEBAKO_EXEC_CACHE` | spec 22 §6: the boot's exec-cache root — materialized binaries/libraries live under it (per-process on POSIX; leave-in-place and content-keyed on windows, spec 22 §2.1); read-only to payloads |
 | `TEBAKO_RUNTIME_DLL` | spec 22 §2.1 (windows only): the runtime's own PE module basename (e.g. `x64-ucrt-ruby340.dll`), flowed from the factory record — the single owner — and exported by the driver at boot. The tfs PE closure walk excludes a bare import name matching it (case-insensitive, bare names only); POSIX legs never read it |
 | `TEBAKO_PRELOAD_SHIM` | spec 22 §3: the preload shim's in-VFS path, flowed from the env image's `preload_shim` layout grant — the interpreter's spawn hook reads it (never a hand-written copy); the driver additionally arms `LD_PRELOAD` (ELF) / `DYLD_INSERT_LIBRARIES` (macOS) with the materialized host copy |

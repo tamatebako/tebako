@@ -1,0 +1,198 @@
+# =============================================================================
+# trace-event.yaml — the trace bus event envelope (spec 25 §3, phase T1)
+#
+# One structured event per interception decision, one JSONL line per event,
+# appended to the channel named by TEBAKO_TRACE / --tebako-trace. This file
+# owns the wire grammar: the envelope fields, the op vocabulary, and the
+# per-op verdict/detail keys.
+#
+# SSOT: this file owns the grammar; crates/tfs/src/trace.rs (the emitter)
+# and crates/tebako-cli/src/trace.rs (the `tebako trace run` consumer)
+# mirror it — keep the three in sync in the same PR. The property test in
+# crates/tfs/src/trace.rs drives the op matrix against a mounted fixture
+# and validates every emitted event against this grammar.
+# =============================================================================
+
+schema: trace-event
+schema_version: 1 # MAJOR — the envelope's `v` field; additive-only, NEVER bumps
+schema_minor: 0 # MINOR — additive counter (unused while v1 grows by ops/keys)
+status: normative
+owner: crates/tfs (tfs::trace, the bus) in tamatebako/tebako
+edge: T1 (driver/context → trace channel), T1' (channel → tebako trace run generator)
+
+# The schema evolution law (spec 18 §3), specialized for an append-only
+# event stream: events are never re-read by their emitter, so evolution
+# serves DOWNSTREAM readers (trace explain/cover, external tooling).
+evolution:
+  major_minor: >-
+    The envelope's `v` is 1 forever. Extensions ride NEW ops and NEW detail
+    keys — never retyped fields, never renamed keys, never a version bump
+    (spec 25 §3: a consumer that understands v1 today understands every
+    future v1 event; one it doesn't recognize costs it exactly that event's
+    detail).
+  unknown_fields: >-
+    Readers ignore unknown detail keys and unknown ops within v1. A writer
+    never invents semantics a reader must know to parse the envelope.
+  unknown_major: >-
+    Not reachable: `v` never bumps. A consumer meeting v != 1 is reading a
+    non-tebako file and names that, never guesses.
+  type_changes: >-
+    Forbidden within v1. New shapes arrive as new keys.
+  lists_stay_lists: >-
+    Ordered/multiplicity data (the closure walk's deps) is a list of
+    entries carrying their identity fields — never keyed maps.
+
+channel:
+  named_by: TEBAKO_TRACE (env) or --tebako-trace <path> (driver argument wins)
+  opened: >-
+    At driver boot, BEFORE any mount (a path op is only safe that early —
+    the journal fd discipline, crates/tfs/src/journal.rs). Append-only,
+    never policy-gated.
+  children: >-
+    Re-derived at each child's own driver boot on both platforms —
+    TEBAKO_TRACE inherits across spawn/exec and the child re-opens for
+    append. (Spec 25 §2's POSIX fd-inheritance spelling is not the
+    mechanism: the bus forbids unsafe, and env re-derivation is uniform.)
+  failure: >-
+    Observability never gates: an unopenable channel is one loud stderr
+    note and a disarmed bus; the run proceeds. A dropped write drops the
+    event, never the run.
+  disarmed_cost: >-
+    One relaxed atomic load per interception point (tfs::trace::Start::now
+    returns None; no event is built).
+
+grammar:
+  envelope:
+    type: map
+    required: true
+    serialization: one JSON object per line (JSONL), keys in the listed order
+    fields:
+      v: {type: int, required: true, notes: "== 1; the envelope version"}
+      ts: {type: string, required: true, notes: "RFC 3339 UTC, microsecond precision: 2026-08-19T13:49:20.344123Z"}
+      pid: {type: int, required: true, notes: "the emitting OS process id (re-read per event — a forked child reports its own)"}
+      tid:
+        type: int
+        required: true
+        notes: >-
+          The bus's PER-PROCESS thread ordinal (1 for the first thread to
+          emit, then sequential) — deliberately not an OS thread id: the
+          bus is pure safe Rust and stable Rust exposes no OS tid. Grouping
+          by (pid, tid) regroups events by thread identically.
+      op: {type: string, required: true, notes: "one of the op vocabulary below"}
+      path:
+        type: string
+        required: true
+        notes: >-
+          The decision's subject: the normalized VFS path (open/stat/
+          dlopen/exec/materialize), the mount point (mount), the bare
+          library name (dlopen's alias surface), the host path (jail).
+          Empty for the whole-table mount clear.
+      verdict: {type: string, required: true, notes: "<word> or <word>:<payload>, per op below"}
+      detail: {type: map, required: true, notes: "per-op keys below; empty when none"}
+      dur_us: {type: int, required: true, notes: "the decision's wall time, microseconds"}
+      errno:
+        type: int
+        required: false
+        notes: >-
+          Present when the verdict carries an errno (error:<errno>,
+          denied:<rule>, deny:<rule>). The typed duplicate of the verdict
+          suffix, for filtering.
+
+  ops:
+    mount:
+      emitter: crates/tfs/src/context.rs (mount table decisions)
+      verdicts: [ok, "error:<errno>"]
+      detail_keys:
+        action: "init | insert | union | remove | clear"
+        handle: "int — the mount handle, on a successful init/insert/union/remove"
+        image: "string — the host image path, when file-backed"
+        count: "int — mounts cleared, on action: clear only"
+    open:
+      emitter: crates/tfs/src/context.rs (open; the fopen routing via dlmap2file_for_open)
+      verdicts: ["image:<mount>", "host", "denied:<rule>", "error:<errno>"]
+      detail_keys:
+        need: "read | write — on passthrough/denial decisions"
+        dlmap_redirect: "the memfs original, when the dlmap-prefix redirect served"
+        materialized: >-
+          The host path of the materialized copy a raw host fd answered
+          from (dlmap-prefix redirect; the preload's fopen routing) — the
+          spec 25 §4 materialize-candidate signal.
+        effective: "the memfs path, when the presented spelling was a dlmap-prefix path"
+        reason: "no-mounts — the degenerate passthrough with an empty mount table"
+        closure: "the closure-walk record (see dlopen), on the fopen surface"
+      notes: >-
+        denied:<rule> carries the policy source label, or `write-gate`
+        for the spec 24 §5 held-tree EROFS.
+    stat:
+      emitter: crates/tfs/src/context.rs (stat/fstat)
+      verdicts: ["image:<mount>", "host", "denied:<rule>", "error:<errno>"]
+      detail_keys:
+        dlmap_redirect: "as open's"
+        reason: "as open's"
+    dlopen:
+      emitter: crates/tfs/src/context.rs (dlmap2file, dlalias2file)
+      verdicts: ["materialized:<host-path>", "host", "error:<errno>"]
+      detail_keys:
+        closure:
+          format: "macho | elf | pe, or null when the header parse was unsupported (no dep walk ran)"
+          deps:
+            - name: "the dependency name as the image declares it"
+              resolved: "the in-image path it resolved to, or null for a host/system name"
+              verdict: "materialized | host-system | error:<errno>"
+        effective: "as open's"
+        alias: "bool — the windows bare-name surface (dlalias2file)"
+      notes: >-
+        The closure key is present on the dlopen surface (dlmap2file);
+        the alias surface carries `alias` instead. A cache-hit answer
+        reports an empty walk (format: null, deps: []) — the walk did not
+        re-run; the paired materialize event carries cache-hit.
+    exec:
+      emitter: crates/tfs/src/context.rs (exec_materialize — the preload's execve/posix_spawn routing)
+      verdicts: ["routed:<host-path>", "host", "error:<errno>"]
+      detail_keys:
+        route: "home-tree | dlmap-closure"
+      notes: >-
+        verdict `host` on the ENOENT fallthrough is the spec 25 §4
+        entrypoint/runtime-dep note signal (a spawned host-absolute
+        executable).
+    materialize:
+      emitter: crates/tfs/src/context.rs (extract_for_exec — dlopen/exec extractions and tebako install's store-side pass)
+      verdicts: ["ok:<host-path>", "cache-hit", "error:<errno>"]
+      detail_keys:
+        dest: "dlcache | store"
+        bytes: "int — bytes written, on ok"
+        host: "the cached host path, on cache-hit"
+      notes: >-
+        The ENOENT host-passthrough answers emit nothing here (no
+        materialization was decided); the caller's dlopen/exec event
+        carries the `host` verdict.
+    jail:
+      emitter: crates/tfs/src/context.rs (host_check — spec 23 §8's journal, formalized)
+      verdicts: ["allow:<rule>", "deny:<rule>", "record"]
+      detail_keys:
+        access: "read | write"
+      notes: >-
+        <rule> is the policy's source label (manifest / user /
+        manifest+user / TEBAKO_JAIL / …). `record` is the record-policy
+        allow (the observation trail `tebako trace run` turns into a
+        needs: draft); plain allows emit only when the policy can deny
+        (never under the open default — the op events carry those
+        passthroughs). A policy-gated decision yields BOTH its op event
+        and the jail event: two layers of one decision, by design.
+    spawn:
+      emitter: "none in phase T1 (T2: libtfs-preload's posix_spawn path)"
+      verdicts: ["routed:<entry>", "host", "error:<errno>"]
+      notes: Defined now so the vocabulary is stable; unemitted in T1.
+    resolve:
+      emitter: "none in phase T1 (T2+: tebako-resolve, the L3 layer)"
+      verdicts: [cache, fetched, "error:<errno>"]
+      notes: Defined now so the vocabulary is stable; unemitted in T1.
+
+notes: >-
+  Phase T1 emits mount/open/stat/dlopen/exec/materialize/jail from the
+  tfs context. The driver's class-R boot materialization
+  (crates/tebako-driver/src/materialize.rs — declared-manifest
+  resources, merkle-verified) is deliberately NOT instrumented in T1: it
+  is boot work outside the interception surface, and its failures already
+  abort the boot loudly. The TEBAKO_DEBUG_TFS eprintln gates remain as
+  the human-readable degraded view over the same emission points.

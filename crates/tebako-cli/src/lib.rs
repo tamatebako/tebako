@@ -76,6 +76,7 @@ pub mod scenario;
 pub mod sdk;
 pub mod strip;
 pub mod suite;
+pub mod trace;
 
 use std::fs;
 use std::path::{Path, PathBuf};
