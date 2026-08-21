@@ -1,22 +1,18 @@
 /* win-subject: the spec 25 windows libc-layer dogfood subject (built by
- * CI, never shipped). print-data's ucrt spelling: _stat + fopen + fread
- * + fwrite per argv file — the exact functions retrace's windows ucrt
- * inline hooks interpose (docs/windows.md: fopen, _open, _stat, ...).
+ * CI, never shipped). print-data's ucrt spelling minus the _stat prelude:
+ * fopen + fread + fwrite per argv file — the functions retrace's windows
+ * ucrt inline hooks interpose (docs/windows.md). The _stat→fopen pair
+ * trips CodeQL's TOCTOU rule and the leg's gates key on the fopen-driven
+ * read path, so the stat stays out.
  * POSIX-fixture reuse does not port here (print-data.c rides unistd.h);
  * this is the same shape against the CRT the preload-mingw backend hooks.
  *
  * Exit 0 when every file printed; the first failing errno otherwise. */
-#include <sys/stat.h>
 #include <stdio.h>
 #include <errno.h>
 #include <string.h>
 
 static int print_file(const char *path) {
-    struct _stat st;
-    if (_stat(path, &st) != 0) {
-        fprintf(stderr, "_stat: %s\n", strerror(errno));
-        return errno;
-    }
     FILE *f = fopen(path, "rb");
     if (!f) {
         fprintf(stderr, "fopen: %s\n", strerror(errno));

@@ -14,9 +14,12 @@
  *                the prefix does not exist on the host) is REPORTED on
  *                stdout, never fatal: this binary observes, the CI leg
  *                asserts.
- *   FILE ...     stat + open + read + write-to-stdout, print-data's
- *                libc-routed shape: served by the VFS when under the
- *                mount, a host passthrough otherwise.
+ *   FILE ...     open + read + write-to-stdout, print-data's
+ *                libc-routed shape minus the stat(2) prelude: retrace's
+ *                linux hook set carries no stat wrapper (the event would
+ *                never reach the outside capture), and the stat→open
+ *                pair trips CodeQL's TOCTOU rule. Served by the VFS when
+ *                under the mount, a host passthrough otherwise.
  *
  * Exit 0 when the work completed; 64 on usage; 70 if the go-file never
  * arrived (a stuck attach must fail the leg loudly, not hang it).
@@ -31,11 +34,6 @@
 #include <stdlib.h>
 
 static int print_file(const char *path) {
-    struct stat st;
-    if (stat(path, &st) != 0) {
-        dprintf(2, "stat: %s\n", strerror(errno));
-        return errno;
-    }
     int fd = open(path, O_RDONLY);
     if (fd < 0) {
         dprintf(2, "open: %s\n", strerror(errno));
