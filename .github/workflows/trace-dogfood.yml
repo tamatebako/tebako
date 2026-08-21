@@ -229,17 +229,19 @@ jobs:
       # released artifact is what payload teams would consume); the
       # sha256 sidecar is the trust anchor (store discipline, spec 25
       # §8's .sha256 rule).
+      # The sidecar names the asset (`sha256sum -c` resolves by name) —
+      # keep the release filename on disk.
       - name: Download libretrace (pinned release asset, sha256-verified)
         run: |
-          curl -fsSL -o libretrace.so \
+          curl -fsSLO \
             "https://github.com/riboseinc/retrace/releases/download/${{ env.RETRACE_REF }}/libretrace-linux-x86_64.so"
-          curl -fsSL -o libretrace.so.sha256 \
+          curl -fsSLO \
             "https://github.com/riboseinc/retrace/releases/download/${{ env.RETRACE_REF }}/libretrace-linux-x86_64.so.sha256"
-          sha256sum -c libretrace.so.sha256
+          sha256sum -c libretrace-linux-x86_64.so.sha256
 
       - name: Run the traced payload and correlate
         env:
-          RETRACE_LIB: ${{ github.workspace }}/libretrace.so
+          RETRACE_LIB: ${{ github.workspace }}/libretrace-linux-x86_64.so
           SHIM: ${{ github.workspace }}/tebako-rs/target/debug/libtfs_preload.so
           TEBAKO: ${{ github.workspace }}/tebako-rs/target/debug/tebako
           ARTIFACT_DIR: ${{ github.workspace }}/artifacts/libc-linux
