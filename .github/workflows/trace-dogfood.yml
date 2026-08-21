@@ -382,6 +382,14 @@ jobs:
       contents: read
       packages: write
     steps:
+      # The golden fixtures are BYTE-compared (outside.json vs the
+      # converter's output, expected.txt vs cover's stdout): the windows
+      # runner image's git system config (core.autocrlf=true) would
+      # CRLF-mangle them at checkout. Must precede every checkout step.
+      - name: Keep fixture checkouts byte-exact (autocrlf off)
+        shell: bash
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
         with:
           path: tebako-rs

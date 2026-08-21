@@ -71,9 +71,13 @@ rm -f "$WORK/img.zip"
 
 # --- 2. ptrace permission: attach targets a process that is NOT retrace's
 #        child, which yama's default ptrace_scope=1 denies (retrace's own
-#        cli.md prescribes the relax); root would do as well.
-if [ -w /proc/sys/kernel/yama/ptrace_scope ]; then
+#        cli.md prescribes the relax); root would do as well. The file is
+#        root-owned, so the relax must ride sudo unconditionally — a `-w`
+#        guard silently skips it on CI runners.
+if [ -e /proc/sys/kernel/yama/ptrace_scope ]; then
   echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope > /dev/null
+  [ "$(cat /proc/sys/kernel/yama/ptrace_scope)" = "0" ] \
+    || fail "could not relax yama ptrace_scope — attach will be denied"
 fi
 
 # --- 3. the traced run: shimmed subject + ptrace attach ------------------
@@ -115,10 +119,16 @@ grep -q '^raw:/tfs/data/raw-secret.txt:' "$WORK/subject.stdout" \
 # --- 4. the layer model, verified against the kernel capture -------------
 # (jsonl — one entry per line — so the grep names the ENTRY: the raw
 # touch must ride an openat-family syscall entry, not e.g. a write
-# payload echoing the probe's own stdout report.)
+# payload echoing the probe's own stdout report. retrace escapes '/' as
+# '\/' in JSON — the slash-free filename is the robust key. If the ptrace
+# backend ever stops dereferencing target strings this gate fails LOUDLY
+# with the capture dumped — the shape is asserted, never assumed.)
 grep 'raw-secret' "$OUTSIDE" | grep -q 'openat' \
   || fail "the KERNEL capture missed the raw-syscall openat — ptrace leg is vacuous"
-if grep -q 'data/secret\.txt' "$OUTSIDE"; then
+# Absence gate: a shim-served memfs read must leave NO kernel-layer trace.
+# Escape-tolerant on purpose ('\/' and '/') — a false PASS here would be
+# silent coverage theater.
+if grep -qE 'data(/|\\/)secret\.txt' "$OUTSIDE"; then
   fail "the shim-served VFS read reached the kernel — memfs reads must be syscall-free"
 fi
 
