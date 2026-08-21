@@ -18,6 +18,12 @@
 //!    (`open`/`deny`, docker-`-v` grants, `@` argument files; see
 //!    [`tfs::policy::JailSpec`]). Installed AFTER the mounts — the mount
 //!    family's image read is itself policy-gated once a policy is active.
+//! 3. `TEBAKO_TRACE=<capture path>` — arm the spec 25 §2 interception
+//!    bus BEFORE any mount (the driver is not the bus's only armer; the
+//!    preload delivery honors the same env contract). A failed arm is a
+//!    loud stderr note, never an init error (law 1: observability never
+//!    gates). A spawned/exec'd child re-arms from the inherited env at
+//!    its own constructor, appending to the same channel.
 //!
 //! Misformatted env values, or an image that will not mount, are named
 //! configuration errors: a clear stderr message naming the variable and
