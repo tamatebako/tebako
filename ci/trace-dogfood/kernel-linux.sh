@@ -22,18 +22,44 @@
 #                           pinned tag; attach needs no preload library)
 #                 SHIM   — libtfs_preload.so
 #                 TEBAKO — the tebako binary
-# Env (optional): WORK, ARTIFACT_DIR — as libc-linux.sh
+# Env (optional): RETRACE_LIB — libretrace.so for attach's dlopen
+#                               (derived from the build layout otherwise)
+#                 WORK, ARTIFACT_DIR — as libc-linux.sh
 set -euo pipefail
 
 : "${RETRACE:?set to the retrace CLI binary}"
 : "${SHIM:?set to libtfs_preload.so}"
 : "${TEBAKO:?set to the tebako binary}"
+# `retrace attach` dlopens libretrace.so (the ptrace backend lives in the
+# library) and fails closed without RETRACE_LIB when the lib is not beside
+# the CLI (retrace_cli.c: find_library). Derive it from the build layout
+# (build/src/cli/retrace → build/src/v2/libretrace.so) unless given.
+if [ -z "${RETRACE_LIB:-}" ]; then
+  RETRACE_LIB=$(find "$(cd "$(dirname "$RETRACE")/.." && pwd)" -name 'libretrace.so*' 2>/dev/null | sort | head -1)
+fi
+[ -n "$RETRACE_LIB" ] && [ -f "$RETRACE_LIB" ] \
+  || { echo "kernel-linux: FAIL: no libretrace.so near $RETRACE — set RETRACE_LIB" >&2; exit 1; }
 HERE=$(cd "$(dirname "$0")" && pwd)
 WORK="${WORK:-$(mktemp -d)}"
 mkdir -p "$WORK"
 echo "kernel-linux: work dir $WORK"
+# The escapes report is the artifact — land SOMETHING on every failure.
+mkdir -p "${ARTIFACT_DIR:-$WORK/artifacts}"
+ART="${ARTIFACT_DIR:-$WORK/artifacts}"
 
-fail() { echo "kernel-linux: FAIL: $*" >&2; exit 1; }
+fail() {
+  echo "kernel-linux: FAIL: $*" >&2
+  cp "$INSIDE" "$OUTSIDE" "$WORK/subject.stdout" "$WORK/attach.stderr" "$ART/" 2>/dev/null || :
+  [ -f "$OUTSIDE" ] && { echo "kernel-linux: outside capture head:" >&2; head -c 2000 "$OUTSIDE" >&2 || :; }
+  exit 1
+}
+
+# The capture config — the CLI's built-in default spelled out (see
+# libc-linux.sh; without it the engine logs NOTHING).
+CONF="$WORK/retrace-conf.json"
+cat > "$CONF" <<'JSON'
+{"intercept_scripts":[{"func_name":"*","actions":[{"action_name":"log_params"},{"action_name":"call_real"}]}]}
+JSON
 
 # --- 1. subject + image (identical shape to the libc leg) ----------------
 cc -O2 -o "$WORK/trace-subject" "$HERE/trace-subject.c" \
@@ -68,8 +94,8 @@ subject_pid=$!
 for _ in $(seq 1 100); do [ -f "$HS/ready" ] && break; sleep 0.1; done
 [ -f "$HS/ready" ] || fail "the subject never signalled ready"
 
-RETRACE_LOGGER_FMT=jsonl \
-  "$RETRACE" attach --log "$OUTSIDE" "$subject_pid" > "$WORK/attach.stdout" 2> "$WORK/attach.stderr" &
+RETRACE_LIB="$RETRACE_LIB" RETRACE_LOGGER_FMT=jsonl \
+  "$RETRACE" attach --config "$CONF" --log "$OUTSIDE" "$subject_pid" > "$WORK/attach.stdout" 2> "$WORK/attach.stderr" &
 attach_pid=$!
 # Let the attach land before releasing the subject (retrace prints its
 # "tracing pid" line when attached; fall through on a generous timeout —
@@ -97,8 +123,6 @@ if grep -q 'data/secret\.txt' "$OUTSIDE"; then
 fi
 
 # --- 5. cover --layer kernel: the escape MUST be caught ------------------
-mkdir -p "${ARTIFACT_DIR:-$WORK/artifacts}"
-ART="${ARTIFACT_DIR:-$WORK/artifacts}"
 rc=0
 "$TEBAKO" trace cover --inside "$INSIDE" --outside "$OUTSIDE" --prefix /tfs \
   --layer kernel > "$ART/cover.stdout" 2> "$ART/cover.stderr" || rc=$?

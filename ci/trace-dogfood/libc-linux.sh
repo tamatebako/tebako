@@ -35,8 +35,26 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 WORK="${WORK:-$(mktemp -d)}"
 mkdir -p "$WORK"
 echo "libc-linux: work dir $WORK"
+# The escapes report is the artifact — land SOMETHING on every failure,
+# never just a red log line.
+mkdir -p "${ARTIFACT_DIR:-$WORK/artifacts}"
+ART="${ARTIFACT_DIR:-$WORK/artifacts}"
 
-fail() { echo "libc-linux: FAIL: $*" >&2; exit 1; }
+fail() {
+  echo "libc-linux: FAIL: $*" >&2
+  cp "$INSIDE" "$OUTSIDE" "$WORK"/run*.stdout "$ART/" 2>/dev/null || :
+  [ -f "$OUTSIDE" ] && { echo "libc-linux: outside capture head:" >&2; head -c 2000 "$OUTSIDE" >&2 || :; }
+  exit 1
+}
+
+# The capture config: retrace's preload engine logs NOTHING without an
+# intercept_scripts array (engine.c: a missing array skips the action
+# runner entirely). This is the CLI's built-in default, spelled out
+# (config_builder.c): log_params + call_real for every function.
+CONF="$WORK/retrace-conf.json"
+cat > "$CONF" <<'JSON'
+{"intercept_scripts":[{"func_name":"*","actions":[{"action_name":"log_params"},{"action_name":"call_real"}]}]}
+JSON
 
 # --- 1. the subject + the payload image (the libtfs-preload e2e shape) --
 cc -O2 -o "$WORK/trace-subject" "$HERE/trace-subject.c" \
@@ -56,6 +74,7 @@ touch "$INSIDE" "$OUTSIDE"
 
 run_subject() {
   LD_PRELOAD="$RETRACE_LIB $SHIM" \
+  RETRACE_JSON_CONFIG="$CONF" \
   RETRACE_LOGGER_DEF_FN="$OUTSIDE" \
   RETRACE_LOGGER_DEF_STDOUT_ENA=0 \
   RETRACE_LOGGER_FMT=jsonl \
@@ -91,8 +110,6 @@ grep -q '"op":"open".*secret.txt\|secret.txt.*"op":"open"' "$INSIDE" \
   || fail "the inside stream has no open event for the memfs file"
 
 # --- 4. cover: the escapes report (the CI artifact) -----------------------
-mkdir -p "${ARTIFACT_DIR:-$WORK/artifacts}"
-ART="${ARTIFACT_DIR:-$WORK/artifacts}"
 rc=0
 "$TEBAKO" trace cover --inside "$INSIDE" --outside "$OUTSIDE" --prefix /tfs \
   > "$ART/cover.stdout" 2> "$ART/cover.stderr" || rc=$?

@@ -38,7 +38,21 @@ WORK="${WORK:-$PWD/.dogfood-work-libc}"
 mkdir -p "$WORK" "${ARTIFACT_DIR:-$WORK/artifacts}"
 ART="${ARTIFACT_DIR:-$WORK/artifacts}"
 
-fail() { echo "windows-libc: FAIL: $*" >&2; exit 1; }
+fail() {
+  echo "windows-libc: FAIL: $*" >&2
+  cp "$INSIDE" "$OUTSIDE" "$WORK/subject.stdout" "$WORK/subject.stderr" "$ART/" 2>/dev/null || :
+  [ -f "$OUTSIDE" ] && { echo "windows-libc: outside capture head:" >&2; head -c 2000 "$OUTSIDE" >&2 || :; }
+  exit 1
+}
+
+# The capture config — retrace's engine logs NOTHING without an
+# intercept_scripts array (engine.c); this is the CLI's built-in default
+# spelled out (config_builder.c): log_params + call_real for everything.
+# Same core on every platform, so the windows dll reads it too.
+CONF="$WORK/retrace-conf.json"
+cat > "$CONF" <<'JSON'
+{"intercept_scripts":[{"func_name":"*","actions":[{"action_name":"log_params"},{"action_name":"call_real"}]}]}
+JSON
 
 RT_DLL=$(find "$RETRACE_BUILD" -name 'retrace.dll' | head -1)
 [ -n "$RT_DLL" ] || fail "no retrace.dll under $RETRACE_BUILD"
@@ -63,6 +77,7 @@ OUTSIDE="$WORK/outside.json"
 touch "$INSIDE" "$OUTSIDE"
 rc=0
 RETRACE_V2_LIB="$(cygpath -m "$RT_DLL")" \
+RETRACE_JSON_CONFIG="$(cygpath -m "$CONF")" \
 RETRACE_LOGGER_DEF_FN="$(cygpath -m "$OUTSIDE")" \
 RETRACE_LOGGER_DEF_STDOUT_ENA=0 \
 RETRACE_LOGGER_FMT=jsonl \
