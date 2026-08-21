@@ -19,6 +19,12 @@
 //! Rename, never hide: hiding per-object breaks intra-archive
 //! references; renaming preserves them.
 //!
+//! Two ELF-only repairs ride the same pass (tebako#413): defined
+//! STB_GNU_UNIQUE symbols demote to STB_WEAK — the rewrite drops the
+//! SHT_GROUP the binding folds through, and binutils < 2.35 reads a
+//! group-less UNIQUE as a strong duplicate — and FILE bookkeeping
+//! symbols stay in the local symtab region the writer's layout expects.
+//!
 //! ```text
 //! tebako-arscope <in.a> <out.a> [--keep-prefix tebako_] [--prefix __tebako_internal_]
 //! ```
@@ -36,6 +42,11 @@ use object::{
 const KEEP_PREFIX: &str = "tebako_";
 /// The default internal prefix for scoped symbols.
 const SCOPE_PREFIX: &str = "__tebako_internal_";
+/// ELF st_info bindings (the object crate has no named constants for
+/// them): glibc-target g++'s vague-linkage binding and its demotion
+/// target (see the STB_GNU_UNIQUE neutralization in scope_object).
+const STB_GNU_UNIQUE: u8 = 10;
+const STB_WEAK: u8 = 2;
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -566,17 +577,57 @@ fn scope_object(
         // g++'s vague-linkage binding — template/inline statics;
         // libstdc++.a alone carries 154) to SymbolScope::Unknown, and its
         // writer asserts a defined symbol is scoped (write/mod.rs:434).
-        // Re-scope to Linkage for the write: the passthrough st_info
-        // flags keep the UNIQUE binding in the emitted symbol, so the
-        // output is byte-equivalent to what the pre-assert writer
-        // produced — the v0.1.0 gnu link unit shipped exactly this shape
-        // and the factory consumed it. Only the gnu legs carry such
+        // Re-scope to Linkage for the write. Only the gnu legs carry such
         // members (musl and Mach-O have no GNU_UNIQUE), which is why the
         // floor leg's scoper panic (run 30988106906) was the first time
         // a gnu release build reached this code.
+        //
+        // The same reader maps a FILE symbol's SHN_UNDEF to
+        // SymbolScope::Unknown too (the SHN_UNDEF short-circuit runs
+        // before the binding match — read/elf/symbol.rs:452). Left
+        // unscoped, the writer files it in the NON-LOCAL symtab region
+        // while the passthrough st_info keeps STB_LOCAL: an inconsistent
+        // symtab ("local symbol at index N (>= sh_info of N)") that
+        // binutils 2.34 rejects outright (tebako#413's floor). Re-scope
+        // FILE bookkeeping to Compilation — the writer's local region,
+        // where its binding belongs (rustc emits one FILE symbol per TU).
         let scope = match symbol.scope() {
+            SymbolScope::Unknown if symbol.kind() == object::SymbolKind::File => {
+                SymbolScope::Compilation
+            }
             SymbolScope::Unknown if !symbol.is_undefined() => SymbolScope::Linkage,
             scope => scope,
+        };
+        // STB_GNU_UNIQUE neutralization (tebako#413): the binding is a
+        // DYNAMIC-linking construct (an ld.so process-singleton across
+        // DSOs) and the scoped link unit is a STATIC archive set with no
+        // DSO boundary for it to govern. Worse, the rewrite cannot keep
+        // the SHT_GROUP COMDAT section the binding folds through (the
+        // object crate emits no .group — see the SHF_GROUP clear above),
+        // leaving a group-less GNU_UNIQUE that binutils ld 2.34 (the
+        // factory's ubuntu:20.04 floor) treats as a STRONG definition:
+        // the second archive member defining the same inline variable
+        // (libstdc++'s __to_chars_10_impl::__digits, std::ranges::
+        // __cust::*, nlohmann::json statics) is a "multiple definition"
+        // error (tebako-runtime-ruby#107; v0.1.9's libtfs.a carried
+        // 1356). Demote DEFINED GNU_UNIQUE symbols to WEAK: name-based
+        // coalescing at static link time is exactly the vague-linkage
+        // semantics minus the DSO property — the same object g++
+        // -fno-gnu-unique would have emitted. Undefined GNU_UNIQUE
+        // references stay strong: a reference must resolve, never
+        // silently zero.
+        let mut weak = symbol.is_weak();
+        let flags = match flags {
+            object::SymbolFlags::Elf { st_info, st_other }
+                if !symbol.is_undefined() && st_info >> 4 == STB_GNU_UNIQUE =>
+            {
+                weak = true;
+                object::SymbolFlags::Elf {
+                    st_info: (STB_WEAK << 4) | (st_info & 0x0f),
+                    st_other,
+                }
+            }
+            other => other,
         };
         let id = out.add_symbol(object::write::Symbol {
             name: renamed.into_bytes(),
@@ -584,7 +635,7 @@ fn scope_object(
             size: symbol.size(),
             kind: symbol.kind(),
             scope,
-            weak: symbol.is_weak(),
+            weak,
             section,
             flags,
         });
@@ -803,7 +854,12 @@ mod tests {
     /// them on the gnu legs) reads back as SymbolScope::Unknown; the
     /// rewrite must re-scope it for the writer instead of panicking on
     /// its defined-symbol assert (the floor leg's scoper panic, release
-    /// run 30988106906). ELF-only: Mach-O has no such binding.
+    /// run 30988106906) — and, since tebako#413, demote the binding to
+    /// STB_WEAK (the rewrite drops the SHT_GROUP the binding folds
+    /// through, and binutils 2.34 rejects group-less duplicates). The
+    /// second fixture symbol is an UNDEFINED GNU_UNIQUE reference: it
+    /// must stay strong (a reference must resolve, never silently zero).
+    /// ELF-only: Mach-O has no such binding.
     fn fixture_object_gnu_unique() -> Vec<u8> {
         let arch = if cfg!(target_arch = "aarch64") {
             object::Architecture::Aarch64
@@ -832,11 +888,44 @@ mod tests {
                 st_other: 0,
             },
         });
+        out.add_symbol(object::write::Symbol {
+            name: b"_ZN1WIiE1uE".to_vec(),
+            value: 0,
+            size: 0,
+            kind: object::SymbolKind::Unknown,
+            scope: object::SymbolScope::Unknown,
+            weak: false,
+            section: object::write::SymbolSection::Undefined,
+            // st_info = STB_GNU_UNIQUE (10) << 4 | STT_NOTYPE (0)
+            flags: object::SymbolFlags::Elf {
+                st_info: 10 << 4,
+                st_other: 0,
+            },
+        });
+        // The TU bookkeeping symbol every rustc/g++ object carries:
+        // STB_LOCAL | STT_FILE at SHN_UNDEF — object 0.37's reader maps
+        // the SHN_UNDEF to SymbolScope::Unknown, and without the re-scope
+        // in scope_object the writer would file it in the non-local
+        // symtab region (a symtab binutils 2.34 rejects as inconsistent).
+        out.add_symbol(object::write::Symbol {
+            name: b"fixture.c".to_vec(),
+            value: 0,
+            size: 0,
+            kind: object::SymbolKind::File,
+            scope: object::SymbolScope::Compilation,
+            weak: false,
+            section: object::write::SymbolSection::Undefined,
+            // st_info = STB_LOCAL (0) << 4 | STT_FILE (4)
+            flags: object::SymbolFlags::Elf {
+                st_info: 4,
+                st_other: 0,
+            },
+        });
         out.write().expect("fixture object")
     }
 
     #[test]
-    fn gnu_unique_symbols_survive_the_rewrite() {
+    fn gnu_unique_definitions_demote_to_weak_references_stay_strong() {
         let fixture = fixture_object_gnu_unique();
         let obj = File::parse(&fixture[..]).expect("parse the fixture");
         let sym = obj
@@ -859,11 +948,65 @@ mod tests {
         )
         .expect("scope the fixture");
         let obj = File::parse(&bytes[..]).expect("parse the rewritten object");
+
+        // The definition demotes to STB_WEAK, type (STT_OBJECT) intact.
         let sym = obj
             .symbols()
             .find(|s| s.name().ok() == Some("_ZN1HIiE1vE"))
             .expect("the unique symbol survives the rewrite");
         assert!(!sym.is_undefined());
+        assert!(
+            sym.is_weak(),
+            "a defined GNU_UNIQUE demotes to weak (tebako#413)"
+        );
+        match sym.flags() {
+            object::SymbolFlags::Elf { st_info, .. } => {
+                assert_eq!(st_info >> 4, STB_WEAK, "the emitted binding is WEAK");
+                assert_eq!(st_info & 0x0f, 1, "the symbol type is preserved");
+            }
+            other => panic!("expected ELF symbol flags, got {other:?}"),
+        }
+
+        // The undefined GNU_UNIQUE reference keeps its strong binding:
+        // demoting a reference to weak would let a missing definition
+        // resolve to zero instead of failing the link.
+        let sym = obj
+            .symbols()
+            .find(|s| s.name().ok() == Some("_ZN1WIiE1uE"))
+            .expect("the undefined reference survives the rewrite");
+        assert!(sym.is_undefined());
+        match sym.flags() {
+            object::SymbolFlags::Elf { st_info, .. } => {
+                assert_eq!(
+                    st_info >> 4,
+                    STB_GNU_UNIQUE,
+                    "an undefined reference stays GNU_UNIQUE (strong)"
+                );
+            }
+            other => panic!("expected ELF symbol flags, got {other:?}"),
+        }
+
+        // The FILE bookkeeping symbol must stay in the local symtab
+        // region: binutils 2.34 rejects a symtab whose local symbols
+        // are not all ahead of sh_info ("local symbol at index N (>=
+        // sh_info of N)"). Assert the ordering invariant directly: no
+        // STB_LOCAL symbol may follow the first non-local one.
+        let mut seen_nonlocal = false;
+        for s in obj.symbols() {
+            let local = matches!(
+                s.flags(),
+                object::SymbolFlags::Elf { st_info, .. } if st_info >> 4 == 0
+            );
+            if local {
+                assert!(
+                    !seen_nonlocal,
+                    "local symbol '{}' follows a non-local one — the rewritten symtab is inconsistent (binutils 2.34 rejects it)",
+                    s.name().unwrap_or("<unnamed>")
+                );
+            } else {
+                seen_nonlocal = true;
+            }
+        }
     }
 
     /// A fixture object with one defined global and two undefined
