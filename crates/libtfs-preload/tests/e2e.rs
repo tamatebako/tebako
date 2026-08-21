@@ -347,6 +347,78 @@ fn host_passthrough_open_policy() {
     assert!(!r.stdout.is_empty());
 }
 
+/// Spec 25 §2's arming contract holds for the preload delivery, not just
+/// the driver: `TEBAKO_TRACE` arms the interception bus at the shim's
+/// constructor, BEFORE any mount — the stream carries the mount decision,
+/// the dispatched stat+open of the memfs file, and (a second process
+/// appending to the same channel — §2's re-derivation clause) the host
+/// passthrough's `host` verdict.
+#[test]
+fn trace_bus_arms_from_tebako_trace_env() {
+    let Some(f) = fixtures() else { return };
+    let capture = f.dir.join("trace-capture.jsonl");
+    let _ = std::fs::remove_file(&capture);
+    let traced = |arg: &str| {
+        let mut cmd = Command::new(f.dir.join("bin").join("print-data"));
+        cmd.arg(arg)
+            .env(preload_var(), &f.shim)
+            .env("TEBAKO_TFS_MOUNTS", format!("{}:{MOUNT}", f.zip.display()))
+            .env(tfs::trace::TRACE_ENV, &capture)
+            .env_remove("DYLD_PRINT_LIBRARIES");
+        cmd.output().unwrap()
+    };
+
+    let out = traced(&format!("{MOUNT}/data/secret.txt"));
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(out.stdout, SECRET.as_bytes());
+    // A second process re-derives the channel from the inherited env and
+    // appends (§2's children clause; the channel is append-mode).
+    let out = traced("/etc/hosts");
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    let text = std::fs::read_to_string(&capture).expect("the armed bus wrote the capture");
+    let mount = text
+        .lines()
+        .find(|l| l.contains("\"op\":\"mount\""))
+        .unwrap_or_else(|| panic!("a mount event was traced: {text}"));
+    assert!(
+        mount.contains(&format!("\"path\":\"{MOUNT}\"")) && mount.contains("\"verdict\":\"ok\""),
+        "{mount}"
+    );
+    let open = text
+        .lines()
+        .find(|l| l.contains("\"op\":\"open\"") && l.contains("secret.txt"))
+        .unwrap_or_else(|| panic!("an open event was traced: {text}"));
+    assert!(open.contains("\"verdict\":\"image:/tfs\""), "{open}");
+    let stat = text
+        .lines()
+        .find(|l| l.contains("\"op\":\"stat\"") && l.contains("secret.txt"))
+        .unwrap_or_else(|| panic!("a stat event was traced: {text}"));
+    assert!(stat.contains("\"verdict\":\"image:/tfs\""), "{stat}");
+    let host = text
+        .lines()
+        .find(|l| l.contains("/etc/hosts"))
+        .unwrap_or_else(|| panic!("the host passthrough was traced: {text}"));
+    assert!(host.contains("\"verdict\":\"host\""), "{host}");
+    // Every line carries the schema's envelope keys (v, pid, tid).
+    for line in text.lines() {
+        assert!(
+            line.contains("\"v\":1") && line.contains("\"pid\":") && line.contains("\"tid\":"),
+            "{line}"
+        );
+    }
+}
+
 #[test]
 fn deny_jail_eperm_and_memfs_unaffected() {
     let Some(f) = fixtures() else { return };

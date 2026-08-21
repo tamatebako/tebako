@@ -343,6 +343,18 @@ pub fn initialize() -> Result<(), String> {
 }
 
 fn init_inner() -> Result<(), String> {
+    // The trace bus (spec 25 §2): `TEBAKO_TRACE` arms the channel for ANY
+    // tfs consumer — the preload delivery included; the driver is not the
+    // only armer. Arm FIRST, before any mount, so the mount decisions land
+    // on the stream. A failed arm is arm()'s loud-note disarm (law 1: the
+    // run proceeds), never an init error. A spawned/exec'd child re-arms
+    // from the inherited env at its own constructor (append-mode channel —
+    // §2's re-derivation clause).
+    if let Ok(path) = std::env::var(tfs::trace::TRACE_ENV) {
+        if !path.trim().is_empty() {
+            tfs::trace::arm(std::path::Path::new(&path));
+        }
+    }
     let mounts_spec = std::env::var("TEBAKO_TFS_MOUNTS").unwrap_or_default();
     if !mounts_spec.trim().is_empty() {
         let decls =
