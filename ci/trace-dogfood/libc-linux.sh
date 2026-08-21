@@ -101,7 +101,9 @@ run_subject /etc/hosts > "$WORK/run2.stdout" || rc=$?
 
 # --- 3. the captures say what the layer model predicts --------------------
 # jsonl: one compact entry per line — the greps name the ENTRY, not the doc.
-grep '/tfs/data/secret.txt' "$OUTSIDE" | grep -qE 'open|stat|fopen' \
+# NOTE: retrace's JSON emitter escapes '/' as '\/' (parson's default), so
+# path greps key on the SLASH-FREE filename, never the full path.
+grep -E '"func":"(open|openat|fopen)"' "$OUTSIDE" | grep -q 'secret\.txt' \
   || fail "the outside capture never saw the under-prefix calls (vacuous leg)"
 if grep -q 'raw-secret' "$OUTSIDE"; then
   fail "the raw-syscall touch leaked into the LIBC capture — the layer model is broken"
