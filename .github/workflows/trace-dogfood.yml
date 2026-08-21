@@ -1,0 +1,481 @@
+name: Trace dogfood (spec 25)
+
+# The spec 25 §8 phase-T3 dogfood column: the correlator parity leg
+# (§6.3 — the FORMAT is retrace's single source; the ALGORITHM has two
+# implementations that must agree), the libc-layer dogfood on linux +
+# windows, the kernel-layer leg on linux (retrace ptrace; the procmon
+# converter is the windows kernel-layer path, §6.2), and the escapes
+# reports uploaded as CI artifacts. All leg logic lives in
+# ci/trace-dogfood/ — never inline run-blocks.
+
+on:
+  push:
+    branches: [main, feat/*]
+  pull_request:
+
+# One run per branch/PR-head at a time (ci.yml's rule).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Must match ci.yml (the vendored dwarfs build needs vcpkg).
+  VCPKG_COMMIT: f14401ca0f2754347c3864da7488a9b955b4e47a
+  # The pinned upstream (riboseinc/retrace) — SSOT for the golden
+  # correlation fixtures, retrace-correlate, and the capture tooling.
+  # v2.14.0 = bfd09ab249ddd9e75c7cd7576f6413d33e3cc400 (2026-08-20):
+  # correlate + golden tree (v2.7.0), the v2.9.0 report format +
+  # procmon2retrace, the windows live hooks (v2.13.0), ptrace attach
+  # (v2.4.0). There is no v2.8.0 tag (the converter shipped in v2.9.0).
+  RETRACE_REF: v2.14.0
+
+jobs:
+  # ------------------------------------------------------------------
+  # §6.3 parity: both correlators over upstream's golden fixtures,
+  # byte-identical escapes reports (the fixtures come from the pinned
+  # clone — SSOT; tebako's vendored copy is the unit-level pin, this
+  # leg is the upstream-drift alarm).
+  # ------------------------------------------------------------------
+  parity:
+    name: parity (retrace-correlate vs tebako trace cover)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: tebako-rs
+
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - name: Checkout the pinned retrace (the golden fixtures' SSOT)
+        uses: actions/checkout@v4
+        with:
+          repository: riboseinc/retrace
+          ref: ${{ env.RETRACE_REF }}
+          path: retrace
+
+      - name: Restore the vcpkg baseline (dwarfs-t is the single writer)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
+            dwarfs-rs/dwarfs-t x64-linux-static \
+            || echo "baseline miss — ports build normally"
+
+      - name: Cache the cargo target dir
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            tebako-rs
+          key: test-x64-linux-static
+
+      - name: Install toolchain (rustup)
+        uses: dtolnay/rust-toolchain@1.94.1
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            autoconf automake autoconf-archive libtool \
+            curl zip unzip tar ca-certificates \
+            libbz2-dev mono-complete
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        env:
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
+
+      - name: Pre-install squashfs-tools-ng (serialized)
+        working-directory: tebako-rs
+        run: |
+          ../.vcpkg-root/vcpkg install \
+            --vcpkg-root "${{ github.workspace }}/.vcpkg-root" \
+            --x-wait-for-lock \
+            --x-manifest-root crates/sqfs-sys \
+            --x-install-root "${{ github.workspace }}/.sqfs-installed" \
+            --triplet x64-linux-static \
+            --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
+            --overlay-ports crates/sqfs-sys/vcpkg_ports
+          echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/x64-linux-static" >> "$GITHUB_ENV"
+
+      - name: cargo build (tebako-cli)
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: cargo build -p tebako-cli
+
+      - name: Build the pinned retrace (retrace-correlate)
+        run: bash tebako-rs/ci/trace-dogfood/retrace-build.sh retrace retrace/build
+
+      - name: Run both correlators over the golden fixtures
+        env:
+          ARTIFACT_DIR: ${{ github.workspace }}/artifacts/parity
+        run: |
+          bash tebako-rs/ci/trace-dogfood/parity.sh \
+            retrace \
+            retrace/build/tools/retrace-correlate \
+            tebako-rs/target/debug/tebako
+
+      - name: Upload the parity reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec25-parity-reports
+          path: artifacts/parity
+          if-no-files-found: warn
+
+  # ------------------------------------------------------------------
+  # §8-T3 libc layer, linux: the payload under BOTH interposers (one
+  # LD_PRELOAD chain — retrace observes at the libc boundary, the
+  # libtfs-preload shim serves the VFS), cover over the two streams.
+  # ------------------------------------------------------------------
+  dogfood-libc-linux:
+    name: dogfood (linux, libc layer)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: tebako-rs
+
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - name: Restore the vcpkg baseline (dwarfs-t is the single writer)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
+            dwarfs-rs/dwarfs-t x64-linux-static \
+            || echo "baseline miss — ports build normally"
+
+      - name: Cache the cargo target dir
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            tebako-rs
+          key: test-x64-linux-static
+
+      - name: Install toolchain (rustup)
+        uses: dtolnay/rust-toolchain@1.94.1
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            autoconf automake autoconf-archive libtool \
+            curl zip unzip tar ca-certificates \
+            libbz2-dev mono-complete
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        env:
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
+
+      - name: Pre-install squashfs-tools-ng (serialized)
+        working-directory: tebako-rs
+        run: |
+          ../.vcpkg-root/vcpkg install \
+            --vcpkg-root "${{ github.workspace }}/.vcpkg-root" \
+            --x-wait-for-lock \
+            --x-manifest-root crates/sqfs-sys \
+            --x-install-root "${{ github.workspace }}/.sqfs-installed" \
+            --triplet x64-linux-static \
+            --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
+            --overlay-ports crates/sqfs-sys/vcpkg_ports
+          echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/x64-linux-static" >> "$GITHUB_ENV"
+
+      - name: cargo build (tebako-cli + libtfs-preload)
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: cargo build -p tebako-cli -p libtfs-preload
+
+      # The outside observer is the PINNED RELEASE BINARY here (the
+      # released artifact is what payload teams would consume); the
+      # sha256 sidecar is the trust anchor (store discipline, spec 25
+      # §8's .sha256 rule).
+      - name: Download libretrace (pinned release asset, sha256-verified)
+        run: |
+          curl -fsSL -o libretrace.so \
+            "https://github.com/riboseinc/retrace/releases/download/${{ env.RETRACE_REF }}/libretrace-linux-x86_64.so"
+          curl -fsSL -o libretrace.so.sha256 \
+            "https://github.com/riboseinc/retrace/releases/download/${{ env.RETRACE_REF }}/libretrace-linux-x86_64.so.sha256"
+          sha256sum -c libretrace.so.sha256
+
+      - name: Run the traced payload and correlate
+        env:
+          RETRACE_LIB: ${{ github.workspace }}/libretrace.so
+          SHIM: ${{ github.workspace }}/tebako-rs/target/debug/libtfs_preload.so
+          TEBAKO: ${{ github.workspace }}/tebako-rs/target/debug/tebako
+          ARTIFACT_DIR: ${{ github.workspace }}/artifacts/libc-linux
+        run: bash tebako-rs/ci/trace-dogfood/libc-linux.sh
+
+      - name: Upload the escapes report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec25-escapes-libc-linux
+          path: artifacts/libc-linux
+          if-no-files-found: warn
+
+  # ------------------------------------------------------------------
+  # §8-T3 kernel layer, linux: retrace's ptrace backend (native since
+  # v2.4.0; the eBPF bridge stays future work per §6.4) observes the
+  # same subject — the raw-syscall probe MUST be caught here.
+  # ------------------------------------------------------------------
+  dogfood-kernel-linux:
+    name: dogfood (linux, kernel layer — ptrace)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          path: tebako-rs
+
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - name: Checkout the pinned retrace (the CLI's ptrace attach)
+        uses: actions/checkout@v4
+        with:
+          repository: riboseinc/retrace
+          ref: ${{ env.RETRACE_REF }}
+          path: retrace
+
+      - name: Restore the vcpkg baseline (dwarfs-t is the single writer)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
+            dwarfs-rs/dwarfs-t x64-linux-static \
+            || echo "baseline miss — ports build normally"
+
+      - name: Cache the cargo target dir
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            tebako-rs
+          key: test-x64-linux-static
+
+      - name: Install toolchain (rustup)
+        uses: dtolnay/rust-toolchain@1.94.1
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config \
+            autoconf automake autoconf-archive libtool \
+            curl zip unzip tar ca-certificates \
+            libbz2-dev mono-complete
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        env:
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
+
+      - name: Pre-install squashfs-tools-ng (serialized)
+        working-directory: tebako-rs
+        run: |
+          ../.vcpkg-root/vcpkg install \
+            --vcpkg-root "${{ github.workspace }}/.vcpkg-root" \
+            --x-wait-for-lock \
+            --x-manifest-root crates/sqfs-sys \
+            --x-install-root "${{ github.workspace }}/.sqfs-installed" \
+            --triplet x64-linux-static \
+            --overlay-triplets crates/sqfs-sys/vcpkg_triplets \
+            --overlay-ports crates/sqfs-sys/vcpkg_ports
+          echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/x64-linux-static" >> "$GITHUB_ENV"
+
+      - name: cargo build (tebako-cli + libtfs-preload)
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: cargo build -p tebako-cli -p libtfs-preload
+
+      - name: Build the pinned retrace (the CLI)
+        run: bash tebako-rs/ci/trace-dogfood/retrace-build.sh retrace retrace/build
+
+      - name: Run the traced payload under ptrace and correlate
+        env:
+          RETRACE: ${{ github.workspace }}/retrace/build/src/cli/retrace
+          SHIM: ${{ github.workspace }}/tebako-rs/target/debug/libtfs_preload.so
+          TEBAKO: ${{ github.workspace }}/tebako-rs/target/debug/tebako
+          ARTIFACT_DIR: ${{ github.workspace }}/artifacts/kernel-linux
+        run: bash tebako-rs/ci/trace-dogfood/kernel-linux.sh
+
+      - name: Upload the escapes report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec25-escapes-kernel-linux
+          path: artifacts/kernel-linux
+          if-no-files-found: warn
+
+  # ------------------------------------------------------------------
+  # §8-T3 on windows: the procmon-converter leg (§6.2 — the windows
+  # kernel-layer path, golden case 06 from the pinned clone) and the
+  # libc-layer leg (retrace.dll inline hooks via retrace-win-run — the
+  # HONEST-SCOPE leg: no tebako interposition ships on windows, so the
+  # leg proves the capture->correlate chain and the report's honesty,
+  # never coverage). tebako-cli builds on the shipped target
+  # (x86_64-pc-windows-gnu, ucrt64 — the test-windows-gnu-cli leg's
+  # shape).
+  # ------------------------------------------------------------------
+  dogfood-windows:
+    name: dogfood (windows — procmon chain + libc layer)
+    runs-on: windows-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tebako-rs
+
+      # The vendored dwarfs-t build needs the submodule content.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@v4
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: dwarfs-rs
+          submodules: recursive
+
+      - name: Checkout the pinned retrace (the procmon fixture's SSOT)
+        uses: actions/checkout@v4
+        with:
+          repository: riboseinc/retrace
+          ref: ${{ env.RETRACE_REF }}
+          path: retrace
+
+      - name: Restore the vcpkg baseline (dwarfs-t is the single writer)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash dwarfs-rs/dwarfs-t/ci/vcpkg-baseline-restore.sh \
+            dwarfs-rs/dwarfs-t x64-mingw-static \
+            || echo "baseline miss — ports build normally"
+
+      # ucrt64 gcc + cmake + ninja build BOTH tebako-cli (cargo, the
+      # vendored dwarfs/rnp chain) and retrace (cmake); setup-msys2's
+      # /usr/bin stays OFF PATH (the scripts carry the closed PATH).
+      - name: Set up MSys2 (ucrt64 toolchain + cmake/ninja)
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        with:
+          msystem: ucrt64
+          path-type: minimal
+          install: mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-make
+
+      - uses: dtolnay/rust-toolchain@1.94.1
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Set up vcpkg
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT }}
+          vcpkgDirectory: ${{ github.workspace }}/.vcpkg-root
+
+      # run-vcpkg's injected x-gha spec is zero binary cache since vcpkg
+      # 2025.06 removed the provider; the org's NuGet feed replaces it.
+      - name: Configure the vcpkg binary cache (GitHub Packages NuGet)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.TEBAKO_PACKAGES_PAT || secrets.GITHUB_TOKEN }}
+        run: bash ci/vcpkg-nuget-cache.sh
+
+      - name: Cache the cargo target dir
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: |
+            tebako-rs
+          key: windows-gnu-cli-x64-mingw-static
+
+      - name: Build tebako-cli (windows-gnu)
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+          VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: bash ci/trace-dogfood/windows-gnu-build.sh
+
+      - name: Build the pinned retrace (ucrt64)
+        shell: bash
+        run: bash tebako-rs/ci/trace-dogfood/retrace-build.sh retrace retrace/build
+
+      - name: Procmon-converter leg (the windows kernel-layer path, spec 25 section 6.2)
+        shell: bash
+        env:
+          RETRACE_SRC: retrace
+          TEBAKO: tebako-rs/target/x86_64-pc-windows-gnu/debug/tebako.exe
+          ARTIFACT_DIR: artifacts/procmon
+        run: bash tebako-rs/ci/trace-dogfood/windows-procmon.sh
+
+      - name: Libc-layer leg (retrace.dll inline hooks)
+        shell: bash
+        env:
+          RETRACE_BUILD: retrace/build
+          TEBAKO: tebako-rs/target/x86_64-pc-windows-gnu/debug/tebako.exe
+          ARTIFACT_DIR: artifacts/libc-windows
+        run: bash tebako-rs/ci/trace-dogfood/windows-libc.sh
+
+      - name: Upload the escapes reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spec25-escapes-windows
+          path: artifacts
+          if-no-files-found: warn
