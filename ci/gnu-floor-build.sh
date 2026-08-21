@@ -187,3 +187,9 @@ fi
 echo "== link unit (tebako-driver + tfs, scoped, + closure) =="
 cargo build --release --target "$TARGET" -p tfs -p tebako-driver -p libtfs-preload
 bash .github/workflows/lib/link-unit-stage.sh
+
+echo "== link unit floor link check (tebako#413) =="
+# The staged unit must fold under THIS container's binutils 2.34 with a
+# trivial consumer — the property the factory's re-pin relies on. Runs
+# in-leg so a scoper regression fails the release build, not the factory.
+bash .github/workflows/lib/link-unit-floor-link-check.sh

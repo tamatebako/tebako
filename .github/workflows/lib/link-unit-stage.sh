@@ -45,4 +45,24 @@ mkdir -p "out/link-unit-$PLATFORM"
 # bash 3.2 (the macOS runners' /bin/bash) calls an empty "${array[@]}"
 # unbound under set -u — the [@]+ guard expands to nothing instead.
 ruby tools/stage_link_unit "out/link-unit-$PLATFORM" ${target_args[@]+"${target_args[@]}"} --skip-build
+
+# tebako#413 floor gate: the two SCOPED archives must carry no
+# STB_GNU_UNIQUE definitions. The scoper's rewrite drops the SHT_GROUP
+# COMDAT the binding folds through, and binutils ld < 2.35 (the
+# factory's ubuntu:20.04 floor) reads a group-less UNIQUE as a STRONG
+# definition — every second archive member defining the same inline is a
+# "multiple definition" error (v0.1.9's libtfs.a carried 1356). arscope
+# demotes them to STB_WEAK; nm prints a unique symbol as "u", so any
+# survivor fails this gate before the unit ships. The closure archives
+# are NOT gated: their groups survive (nothing rewrites them) and fold
+# normally at any binutils. Mach-O/musl legs carry none by construction
+# (nm prints no "u" type there) — the gate is a no-op, kept fail-closed.
+for a in "out/link-unit-$PLATFORM/libtfs.a" "out/link-unit-$PLATFORM/libtebako_driver.a"; do
+  uniq_count=$(nm "$a" 2>/dev/null | grep -cE ' u [^ ]' || true)
+  if [ "$uniq_count" != "0" ]; then
+    echo "::error::link-unit-stage GATE-FAIL: $a carries $uniq_count STB_GNU_UNIQUE symbol(s) — binutils 2.34 reads group-less UNIQUE as strong (tebako#413); the scoper must demote them to weak" >&2
+    exit 65
+  fi
+done
+
 tar -czf "out/link-unit-${VERSION}-${PLATFORM}.tar.gz" -C out "link-unit-$PLATFORM"
