@@ -197,7 +197,7 @@ outside capture of the same run.
 |-------|-------|---------|-------------|
 | inside the VFS | the tfs bus (§2) | the tfs bus (§2) | tebako |
 | libc boundary | retrace preload | retrace inline hooks (preload-msvc / preload-mingw, retrace ADR-0009) | retrace — both platforms |
-| kernel syscall | retrace ptrace backend; eBPF bridge | ETW / procmon (via converter, §6.2) | kernel tracers |
+| kernel syscall | retrace ptrace backend; strace → strace2retrace (converter, §6.2); eBPF bridge | ETW / procmon (via converter, §6.2) | kernel tracers |
 
 Escapes split into two classes at the libc boundary:
 
@@ -309,6 +309,7 @@ block T1/T2:
 | ntdll-depth hooks (`NtCreateFile` / `NtOpenFile` / `LdrLoadDll`) + NT-path normalization (`\??\C:\…`) | ABSENT at v2.6.1 — the windows backends interpose at the ucrt layer; a native payload calling Win32 directly already escapes that layer TODAY (libsass's importer reads via raw `CreateFileW` with `\\?\` prefixes — invisible at ucrt) | windows sub-libc escapes stay invisible until both the hooks and a converter exist |
 | streaming / JSONL output | today one JSON array document per capture (leading-comma emission; a crashed tail invalidates the document) | the correlator tolerates a trailing partial record |
 | `retrace-correlate` (the set-difference tool) | SHIPPED (v2.7.0, with the shared golden tree incl. 06-libsass-importer; the report grammar stabilized in v2.9.0) | tebako ships its own (§6.3) and asserts byte-parity on the shared tree in CI — the parity hatch is exercised |
+| ptrace-backend param deref (arch_spec) | ABSENT at v2.14.0 — the ptrace backend ships no arch_spec of its own: aarch64 entries carry the syscall NAME with NIL params (`openat(AT_FDCWD, "/tmp/x", O_RDONLY)` arrives as `"path":"(nil)"`), and on x86_64 the wild frame deref SIGSEGVs on attach (tebako CI run 32451535675, job 96680888031) | the linux kernel-layer dogfood rides strace + upstream's OWN `strace2retrace` converter (the §6.2 normalizer pattern — same kernel truth, real paths) until this lands or the eBPF bridge ships |
 
 ## 7. Testing and gates
 

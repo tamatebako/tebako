@@ -2,8 +2,9 @@
 # ci/trace-dogfood/retrace-build.sh — build the pinned retrace from
 # source. One script, two platform shapes:
 #
-#   linux:  the full build (the `retrace` CLI for the ptrace attach leg
-#           and `retrace-correlate` for the parity leg); plain cmake +
+#   linux:  the full build (`retrace-correlate` for the parity leg and
+#           `retrace-strace2retrace` for the kernel leg's strace→retrace
+#           conversion); plain cmake +
 #           ninja + cc, no third-party deps (OpenSSL has been optional
 #           since v1's ssl.c was removed).
 #   windows (ucrt64): the ADR-0009 shape — retrace.dll (the inline-hook
@@ -31,6 +32,7 @@ cmake --build "$BUILD" --parallel
 if [ "$(uname -s)" = Linux ]; then
   [ -x "$BUILD/src/cli/retrace" ] || { echo "retrace-build: no CLI at $BUILD/src/cli/retrace" >&2; exit 1; }
   [ -x "$BUILD/tools/retrace-correlate" ] || { echo "retrace-build: no retrace-correlate under $BUILD/tools" >&2; exit 1; }
+  [ -x "$BUILD/tools/retrace-strace2retrace" ] || { echo "retrace-build: no retrace-strace2retrace under $BUILD/tools" >&2; exit 1; }
   echo "retrace-build: CLI + tools built ($BUILD)"
 else
   find "$BUILD" -name 'retrace.dll' | grep -q . || { echo "retrace-build: no retrace.dll under $BUILD" >&2; exit 1; }

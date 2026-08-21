@@ -256,12 +256,17 @@ jobs:
           if-no-files-found: warn
 
   # ------------------------------------------------------------------
-  # §8-T3 kernel layer, linux: retrace's ptrace backend (native since
-  # v2.4.0; the eBPF bridge stays future work per §6.4) observes the
-  # same subject — the raw-syscall probe MUST be caught here.
+  # §8-T3 kernel layer, linux: strace (the mature ptrace client)
+  # observes the same subject; upstream's OWN retrace-strace2retrace
+  # normalizes the capture into the retrace shape — §6.2's
+  # producer-converter pattern, the same one procmon rides on windows.
+  # retrace's own ptrace backend is unusable at the v2.14.0 pin (nil
+  # params on aarch64, SIGSEGV on x86_64 — §6.4's table), and strace
+  # dereferences REAL paths, so the raw-syscall probe MUST be caught
+  # here (§7's strong contract, no vacuity waiver).
   # ------------------------------------------------------------------
   dogfood-kernel-linux:
-    name: dogfood (linux, kernel layer — ptrace)
+    name: dogfood (linux, kernel layer — strace→retrace)
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
@@ -280,7 +285,7 @@ jobs:
           path: dwarfs-rs
           submodules: recursive
 
-      - name: Checkout the pinned retrace (the CLI's ptrace attach)
+      - name: Checkout the pinned retrace (the strace2retrace converter)
         uses: actions/checkout@v4
         with:
           repository: riboseinc/retrace
@@ -345,10 +350,10 @@ jobs:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: cargo build -p tebako-cli -p libtfs-preload
 
-      - name: Build the pinned retrace (the CLI)
+      - name: Build the pinned retrace (the strace2retrace converter)
         run: bash tebako-rs/ci/trace-dogfood/retrace-build.sh retrace retrace/build
 
-      - name: Run the traced payload under ptrace and correlate
+      - name: Run the traced payload under strace and correlate
         env:
           RETRACE: ${{ github.workspace }}/retrace/build/src/cli/retrace
           SHIM: ${{ github.workspace }}/tebako-rs/target/debug/libtfs_preload.so
