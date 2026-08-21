@@ -13,18 +13,18 @@ categories = ["filesystem", "command-line-utilities"]
 [dependencies]
 # mkimage stamps identity.digest.tree_hash into a source tree's payload
 # manifest (spec 03 §7) via tpkg's merkle construction.
-tpkg = { version = "0.1.0", path = "../tpkg" }
+tpkg = { version = "0.2.0", path = "../tpkg" }
 # Hardlink staging area for the stamped tree (the author's source is
 # never mutated).
 tempfile = "3"
 # The encryption verbs (spec 10, enc.rs): DEK grant envelopes via
 # tebako-signer's rnp PKESK; plaintext blocks zeroized in the staging
 # loop; `tfs decrypt` streams through the pure-Rust tar writer.
-tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+tebako-signer = { version = "0.2.0", path = "../tebako-signer" }
 zeroize = "1"
 tar = { version = "0.4", default-features = false }
-tebako-info = { version = "0.1.0", path = "../tebako-info" }
-tebako-json = { version = "0.1.0", path = "../tebako-json" }
+tebako-info = { version = "0.2.0", path = "../tebako-info" }
+tebako-json = { version = "0.2.0", path = "../tebako-json" }
 # `tfs exec --compose` reads authored YAML (invariant 6). serde_yaml 0.9 is
 # the cached, pure-Rust (unsafe-libyaml) parser — the shim's choice;
 # tpkg's manifest YAML rides serde_yml internally.
@@ -41,10 +41,10 @@ libc = "0.2"
 # POSIX/autotools-only — Windows gets a dwarfs-only tfs, the backend
 # degrading to a named ENOTSUP (TODO.v2-1/02).
 [target.'cfg(not(windows))'.dependencies]
-tfs = { version = "0.1.0", path = "../tfs" }
+tfs = { version = "0.2.0", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
-tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
+tfs = { version = "0.2.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 
 [[bin]]
 name = "tfs"
@@ -55,9 +55,9 @@ name = "tfs_cli"
 path = "src/lib.rs"
 
 [dev-dependencies]
-tebako-contract-tests = { version = "0.1.0", path = "../../tests/contract" }
+tebako-contract-tests = { version = "0.2.0", path = "../../tests/contract" }
 # The --verify signature tests mint a press-local key and detached .asc.
-tebako-signer = { version = "0.1.0", path = "../tebako-signer" }
+tebako-signer = { version = "0.2.0", path = "../tebako-signer" }
 rnp = { package = "rnp-rs", version = "=0.1.11", features = ["vendored"] }
 # Exec-proof image fixtures (zip backend).
 zip = { version = "2", default-features = false, features = ["deflate"] }

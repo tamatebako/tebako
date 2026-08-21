@@ -25,7 +25,7 @@ crate-type = ["cdylib", "rlib"]
 # image format is dwarfs-t, and a shim that cannot mount a payload
 # payload-side (ENOTSUP) is a shim that cannot do its job. squashfs
 # stays opt-in via the tfs crate's own features.
-tfs = { version = "0.1.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
+tfs = { version = "0.2.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 libc = "0.2"
 
 [dev-dependencies]
