@@ -375,9 +375,14 @@ jobs:
   # libc-layer leg (retrace.dll inline hooks via retrace-win-run — the
   # HONEST-SCOPE leg: no tebako interposition ships on windows, so the
   # leg proves the capture->correlate chain and the report's honesty,
-  # never coverage). tebako-cli builds on the shipped target
-  # (x86_64-pc-windows-gnu, ucrt64 — the test-windows-gnu-cli leg's
-  # shape).
+  # never coverage). The libc half is a PREREQUISITE PROBE (§6.4):
+  # upstream never smoke-tests live injection at v2.14.0 and round 4
+  # showed it failing on windows-latest — the leg runs a
+  # standalone-control + ring=0 candidate + evidence ladder, certifies
+  # the chain when the probe captures, and otherwise pins the documented
+  # broken signature (drift in either direction fails the leg).
+  # tebako-cli builds on the shipped target (x86_64-pc-windows-gnu,
+  # ucrt64 — the test-windows-gnu-cli leg's shape).
   # ------------------------------------------------------------------
   dogfood-windows:
     name: dogfood (windows — procmon chain + libc layer)
@@ -479,7 +484,7 @@ jobs:
           ARTIFACT_DIR: artifacts/procmon
         run: bash tebako-rs/ci/trace-dogfood/windows-procmon.sh
 
-      - name: Libc-layer leg (retrace.dll inline hooks)
+      - name: Libc-layer leg (retrace.dll inline hooks — §6.4 prerequisite probe)
         shell: bash
         env:
           RETRACE_BUILD: retrace/build
