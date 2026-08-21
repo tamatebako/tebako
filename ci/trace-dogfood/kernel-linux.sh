@@ -4,19 +4,31 @@
 # capture is retrace's ptrace backend (`retrace attach` — native and
 # shipped since retrace v2.4.0; the eBPF bridge stays future work per
 # §6.4). ptrace sees real syscalls only: the shim-served VFS reads never
-# reach the kernel (no event), while the raw-syscall probe's openat of an
-# under-prefix path DOES — and the inside stream has no event for it (the
-# shim was bypassed). cover must therefore CATCH it: §7's "a raw-syscall
-# fixture under a KERNEL-layer capture must be caught at 100%", with the
-# report naming the kernel layer (§6.1).
+# reach the kernel (no event), while the raw-syscall probe DOES — and the
+# inside stream has no event for it (the shim was bypassed).
+#
+# OBSERVED UPSTREAM SHAPE (pinned, v2.14.0 — revisited when the pin
+# bumps): ptrace entries carry the syscall NAME but nil params (the
+# ptrace backend ships no arch_spec; the frame reaches the engine through
+# the preload backend's — byte-verified on docker aarch64: openat logged
+# with "path":"(nil)"). §7's "a raw-syscall fixture under a KERNEL-layer
+# capture must be caught at 100%" therefore CANNOT be discharged by cover
+# on this channel — path attribution is impossible and asserting it would
+# be coverage theater. The leg pins the honest contract instead:
 #
 # Gates:
-#   * the attach produced a well-formed capture naming the raw path;
-#   * cover --layer kernel exits 1 and the escape line names the raw
-#     probe's path (the sub-libc escape, caught);
-#   * the shim-served under-prefix reads produced NO kernel-layer touch
-#     (memfs reads are invisible even to ptrace — the honest direction);
-#   * stderr names the kernel syscall layer.
+#   * the subject printed the VFS secret + the probe's report under
+#     ptrace observation (the compose works);
+#   * the capture contains `"func":"open"` — the raw probe's unique
+#     marker (SYS_open; glibc lowers every libc open to openat, so only
+#     the probe can emit `open`) — the kernel layer SAW the sub-libc
+#     touch the libc layer cannot certify;
+#   * the shim-served under-prefix reads left NO kernel-layer trace
+#     (escape-tolerant absence grep);
+#   * cover --layer kernel is honestly VACUOUS over the nil-param
+#     capture: rc 0, escapes=0, NO coverage block (a surface-coverage
+#     claim here would be theater), the kernel layer named (§6.1). An
+#     upstream deref fix flips this gate red on purpose.
 #
 # Env (required): RETRACE — the retrace CLI binary (built from the
 #                           pinned tag; attach needs no preload library)
@@ -117,31 +129,48 @@ grep -q '^raw:/tfs/data/raw-secret.txt:' "$WORK/subject.stdout" \
   || fail "the raw probe did not report"
 
 # --- 4. the layer model, verified against the kernel capture -------------
-# (jsonl — one entry per line — so the grep names the ENTRY: the raw
-# touch must ride an openat-family syscall entry, not e.g. a write
-# payload echoing the probe's own stdout report. retrace escapes '/' as
-# '\/' in JSON — the slash-free filename is the robust key. If the ptrace
-# backend ever stops dereferencing target strings this gate fails LOUDLY
-# with the capture dumped — the shape is asserted, never assumed.)
-grep 'raw-secret' "$OUTSIDE" | grep -q 'openat' \
-  || fail "the KERNEL capture missed the raw-syscall openat — ptrace leg is vacuous"
-# Absence gate: a shim-served memfs read must leave NO kernel-layer trace.
-# Escape-tolerant on purpose ('\/' and '/') — a false PASS here would be
-# silent coverage theater.
+# OBSERVED UPSTREAM SHAPE (pinned, v2.14.0): ptrace entries carry the
+# right syscall NAME but nil params — the ptrace backend ships no
+# arch_spec of its own, so the frame reaches the engine through the
+# preload backend's (a WrapperSystemVFrame cast of retrace_ptrace_frame;
+# verified byte-level on aarch64 docker: openat logged with
+# "dirfd":"0","path":"(nil)"). Path attribution is therefore IMPOSSIBLE
+# on this channel at v2.14.0, and the gates below key on the func NAME:
+# the raw probe rides SYS_open — a name no glibc process emits at the
+# syscall layer (libc open always lowers to openat) — so a `"func":"open"`
+# entry IS the probe. If upstream ever fixes the deref, gate (c) flips
+# red loudly and this pin gets revisited.
+#
+# (a) non-vacuity: the kernel layer saw the raw probe.
+grep -q '"func":"open"' "$OUTSIDE" \
+  || fail "the KERNEL capture missed the raw-syscall probe (func=open) — ptrace leg is vacuous"
+# (b) absence: a shim-served memfs read must leave NO kernel-layer trace.
+#     Escape-tolerant on purpose ('\/' and '/') — a false PASS here would
+#     be silent coverage theater.
 if grep -qE 'data(/|\\/)secret\.txt' "$OUTSIDE"; then
   fail "the shim-served VFS read reached the kernel — memfs reads must be syscall-free"
 fi
 
-# --- 5. cover --layer kernel: the escape MUST be caught ------------------
+# --- 5. cover --layer kernel: assert the capture's HONEST expressiveness --
+# Path-less entries are un-attributable by cover's design (paths are
+# path-like strings at any depth), so over a v2.14.0 ptrace capture cover
+# must report ZERO under-prefix touches — no coverage block at all — and
+# exit 0. Asserting a caught escape here would be theater; asserting the
+# vacuity keeps the leg fail-closed against silent regressions AND
+# against a future upstream fix (which would flip this red for review).
 rc=0
 "$TEBAKO" trace cover --inside "$INSIDE" --outside "$OUTSIDE" --prefix /tfs \
   --layer kernel > "$ART/cover.stdout" 2> "$ART/cover.stderr" || rc=$?
-[ "$rc" = 1 ] || { cat "$ART/cover.stdout" "$ART/cover.stderr" >&2; fail "cover rc=$rc — the raw-syscall escape was NOT caught at the kernel layer"; }
-grep -q '^escape /tfs/data/raw-secret.txt ' "$ART/cover.stdout" \
-  || fail "the escapes report does not name the raw-syscall path: $(cat "$ART/cover.stdout")"
+[ "$rc" = 0 ] || { cat "$ART/cover.stdout" "$ART/cover.stderr" >&2; fail "cover rc=$rc — the v2.14.0 pin says NO escape is attributable from a nil-param ptrace capture; investigate what changed"; }
+grep -q 'escapes=0' "$ART/cover.stderr" \
+  || fail "cover reported escapes over a nil-param capture: $(cat "$ART/cover.stderr")"
+if grep -q 'coverage by surface' "$ART/cover.stderr"; then
+  fail "cover claimed surface coverage over a path-less capture — that is coverage theater"
+fi
 grep -q 'outside capture layer:.*kernel syscall layer' "$ART/cover.stderr" \
   || fail "the report does not name the kernel layer (§6.1)"
 
 cp "$INSIDE" "$OUTSIDE" "$WORK/subject.stdout" "$WORK/attach.stderr" "$ART/" 2>/dev/null || :
-echo "kernel-linux: the sub-libc escape was caught — $(cat "$ART/cover.stdout")"
+echo "kernel-linux: the raw probe IS visible at the kernel layer (func=open marker);"
+echo "kernel-linux: path attribution UNCERTIFIABLE at retrace v2.14.0 (ptrace params nil) — cover's vacuity asserted, the func-level pin is the compensating control"
 echo "kernel-linux: escapes report + captures in $ART"
