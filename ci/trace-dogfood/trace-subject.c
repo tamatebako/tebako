@@ -7,13 +7,20 @@
  *                the launch-then-attach handshake the ptrace (kernel
  *                layer) leg needs: retrace attach(1) needs a live pid
  *                BEFORE the traced work happens.
- *   --raw PATH   one raw syscall(2) touch of PATH (SYS_openat, no libc
- *                wrapper) — the sub-libc probe of spec 25 §6.1: invisible
- *                to libc-boundary hooks by construction, visible to a
- *                kernel-layer tracer. The touch's own result (ENOENT —
- *                the prefix does not exist on the host) is REPORTED on
- *                stdout, never fatal: this binary observes, the CI leg
- *                asserts.
+ *   --raw PATH   one raw syscall(2) touch of PATH (no libc wrapper) —
+ *                the sub-libc probe of spec 25 §6.1: invisible to
+ *                libc-boundary hooks by construction, visible to a
+ *                kernel-layer tracer. The probe rides SYS_open where the
+ *                arch has it: glibc routes EVERY libc open through
+ *                openat(2), so `open` is a syscall name only the raw
+ *                probe can emit — retrace v2.14.0's ptrace entries carry
+ *                nil params (the frame reaches the engine through the
+ *                preload backend's arch_spec), so the func NAME is the
+ *                kernel-layer marker, never the path. (aarch64 has no
+ *                SYS_open; the openat fallback serves local probes.)
+ *                The touch's own result (ENOENT — the prefix does not
+ *                exist on the host) is REPORTED on stdout, never fatal:
+ *                this binary observes, the CI leg asserts.
  *   FILE ...     open + read + write-to-stdout, print-data's
  *                libc-routed shape minus the stat(2) prelude: retrace's
  *                linux hook set carries no stat wrapper (the event would
@@ -100,8 +107,15 @@ int main(int argc, char **argv) {
 
     if (raw) {
         /* The sub-libc touch: the syscall directly, no libc wrapper —
-         * libc-boundary observation (retrace preload) never sees it. */
+         * libc-boundary observation (retrace preload) never sees it.
+         * SYS_open over SYS_openat where available: glibc only ever
+         * issues openat, so `open` is the probe's unique kernel-layer
+         * name (see the header comment). */
+#ifdef SYS_open
+        long fd = syscall(SYS_open, raw, O_RDONLY, 0);
+#else
         long fd = syscall(SYS_openat, AT_FDCWD, raw, O_RDONLY, 0);
+#endif
         if (fd >= 0) {
             dprintf(1, "raw:%s:ok\n", raw);
             close((int)fd);
