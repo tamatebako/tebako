@@ -31,3 +31,8 @@ libc = "0.2"
 [dev-dependencies]
 # Test-image fixtures (exec proofs mount a zip through the shim).
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# The in-process DwarFS writer for the fork-exec fixture image (same path
+# form as tfs-cli's mkimage): the fork/exec regression needs a backend
+# with a worker pool — the zip backend has none and cannot distinguish
+# the guard from the bug.
+dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
