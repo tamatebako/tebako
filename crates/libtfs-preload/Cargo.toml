@@ -21,11 +21,11 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 # The engine, embedded in-process: the shim is a TFS consumer, never a
 # format. The pure-cargo backends (zip/tar) cover the fixture cases; the
-# vendored dwarfs backend is mandatory in production — the ecosystem's
-# image format is dwarfs-t, and a shim that cannot mount a payload
-# payload-side (ENOTSUP) is a shim that cannot do its job. squashfs
-# stays opt-in via the tfs crate's own features.
-tfs = { version = "0.2.1", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
+# vendored dwarfs backend is mandatory in production, and limnifs is the
+# ecosystem's DEFAULT image format (spec 20 §6) — a shim that cannot
+# mount a payload payload-side (ENOTSUP) is a shim that cannot do its
+# job. squashfs stays opt-in via the tfs crate's own features.
+tfs = { version = "0.2.1", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
 libc = "0.2"
 
 [dev-dependencies]

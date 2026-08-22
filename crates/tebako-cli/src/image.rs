@@ -70,10 +70,28 @@ fn write_dwarfs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
 /// exactly this shape). Dictionaries are disabled: a dictionary section
 /// would sit between the history section and the slab region (and tag
 /// drops with dictionary ids), neither of which the v1 backend
-/// resolves.
+/// resolves. Content drops ride lz4-or-store: the runtime-floor
+/// readers (every published runtime of the v0.16.x era) reject brotli
+/// streams beyond the small-buffer case, and the omnizip zstd decoder
+/// shipping in limnifs-core ≤ 0.2.51 mis-decodes some valid zstd frames
+/// (frame checksum mismatch on bytes libzstd itself accepts). The
+/// metadata blob rides lz4-HC (codec 0x13): every floor reader decodes
+/// it through the SAME fast-lz4 decoder (limnifs-core's
+/// `Lz4HcCodec::decompress` delegates), and the HC match finder keeps a
+/// realistic tree's blob under the inline ceiling — the
+/// native-extension e2e tree: 830 KiB lz4-hc vs 1049 KiB fast lz4,
+/// which overshoots the writer's 1000 KiB threshold; `store` (2.5 MB)
+/// overshoots the readers' 1 MiB hard ceiling outright. Spec 20 §5's
+/// floor rule pins the full recipe. The writer must also emit no
+/// shared-inline table (the floor readers reject the inode flag) and
+/// inline the metadata up to the readers' 1 MiB ceiling.
 fn write_limnifs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
     let mut config = limnifs_write::WriteConfig::default_v0_1();
     config.dictionaries.enabled = false;
+    config.defaults.metadata_codec = "lz4-hc".to_string();
+    config.defaults.text_codec = "lz4".to_string();
+    config.defaults.binary_codec = "lz4".to_string();
+    config.tournament.codecs = vec!["store".to_string(), "lz4".to_string()];
     let artifact = limnifs_write::write_directory_with_config(source, &config).map_err(|e| {
         plain_error(format!(
             "limnifs writer: scanning {}: {e}",
@@ -82,7 +100,7 @@ fn write_limnifs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
     })?;
     if let Some(sidecar) = &artifact.metadata_sidecar {
         return Err(plain_error(format!(
-            "limnifs writer: the tree's metadata externalized ({} bytes to '{}') — a self-contained tebako image inlines the metadata; the tree is too large for this format today",
+            "limnifs writer: the tree's metadata externalized ({} bytes to '{}') — a self-contained tebako image inlines the metadata; the tree is too large for this format today (press with --format dwarfs for trees this size)",
             sidecar.bytes.len(),
             sidecar.locator
         )));
@@ -148,9 +166,9 @@ mod tests {
     }
 
     /// The limnifs press path (spec 20 §6): the image detects as
-    /// limnifs and mounts through the tfs backend.
+    /// limnifs and mounts through the tfs backend — windows included
+    /// (the windows tfs ships dwarfs+limnifs).
     #[test]
-    #[cfg(not(windows))] // windows ships a dwarfs-only tfs (TODO.v2-1/02)
     fn limnifs_image_roundtrip_through_the_backend() {
         let (dir, src) = fixture_tree("limnifs");
         let out = dir.join("fs.tfs");

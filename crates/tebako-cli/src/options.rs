@@ -37,10 +37,10 @@ impl PressMode {
     }
 }
 
-/// The application image format (spec 20 §6, the PLANNED `--format`
-/// press flag): which writer the packager's image build runs and which
-/// `format_id` hint the app-image slots are stamped with. `dwarfs` is
-/// the default; the flag never changes anything else about press.
+/// The application image format (spec 20 §6): which writer the
+/// packager's image build runs and which `format_id` hint the app-image
+/// slots are stamped with. `limnifs` is the default (spec 20 §6); the
+/// flag never changes anything else about press.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PressImageFormat {
     Dwarfs,
@@ -121,7 +121,7 @@ pub struct PressOptions {
     /// default (installable on explicit request).
     pub no_install: bool,
     /// --format <dwarfs|limnifs> (spec 20 §6): the application image
-    /// format. Dwarfs by default.
+    /// format. Limnifs by default; `dwarfs` stays an explicit opt-in.
     pub format: PressImageFormat,
 }
 

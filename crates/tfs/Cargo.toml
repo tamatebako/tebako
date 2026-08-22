@@ -75,8 +75,9 @@ getrandom = "0.2"
 # `enc` (default): the ENC confidentiality transform via tebako-signer
 # (rnp). Windows (ucrt64) ships WITHOUT it for now — rnp's mingw build is
 # unproven (TODO.v2-1/08), so windows consumers take
-# default-features = false, features = ["vendored-dwarfs"] and an ENC
-# mount fails with named ENOTSUP.
+# default-features = false, features = ["vendored-dwarfs", "backend-limnifs"]
+# and an ENC mount fails with named ENOTSUP. squashfs is POSIX-only and
+# stays out of the windows set; limnifs is pure Rust and rides everywhere.
 # `backend-limnifs` (default): the LimniFS backend (spec 20) via the
 # pure-Rust limnifs-core — the first of the `backend-*` feature family;
 # the `vendored-*` features migrate to it as aliases per spec 20 §5.

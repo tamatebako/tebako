@@ -21,3 +21,24 @@ codegen-units = 1
 panic = "abort"
 strip = "symbols"
 
+
+# ⚠ TEMPORARY [patch] — DRAFT-ONLY STATE, MUST NOT REACH main AS-IS ⚠
+#
+# WHY: the LimniFS floor recipe (spec 20 §5) requires a limnifs-write that
+#   (1) skips the shared inline table — every reader on the floor
+#       (limnifs-core ≤ 0.2.51, tebako's own tfs included) rejects flag
+#       0x08 via its own reserved mask (upstream: limnifs#186), and
+#   (2) raises the metadata externalization threshold to 1000 KiB — the
+#       stock 768 KiB externalizes realistic trees' metadata to a sidecar,
+#       which the self-contained rule forbids (upstream: limnifs#187).
+# No crates.io release carries those fixes yet.
+#
+# LIFT CONDITION: repoint to a crates.io release as soon as upstream ships
+# a limnifs-write with #186/#187 fixed; this whole block then disappears.
+#
+# KNOWN BREAKAGE: the path below is machine-local — any other machine
+# (CI included) fails to resolve it, so CI stays RED while this lives.
+# That is deliberate: this branch is a draft PR, never merged in this
+# state (AGENTS.md hard rule).
+[patch.crates-io]
+limnifs-write = { path = "/Users/mulgogi/src/tamatebako/.scratch-53/limnifs-src/limnifs-write" }

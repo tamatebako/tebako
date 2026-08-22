@@ -10,7 +10,7 @@
 //! tfs stat [-v] <image> <path>
 //! tfs extract [-v] [-q|--quiet] [-d|--dest <dir>] <image> [files...]
 //! tfs find [-v] <image> <pattern>
-//! tfs mkimage --format dwarfs|limnifs <srcdir> -o <img> [-v]
+//! tfs mkimage [--format dwarfs|limnifs] <srcdir> -o <img> [-v]
 //! tfs exec <image>[:mount] [--image <image:mount>]...
 //!          [--jail <spec> | --compose <file.yaml>] -- <cmd> [args...]
 //! tfs needs --from-journal <journal.log>
@@ -405,13 +405,13 @@ fn cmd_mkimage_main(rest: &[String]) -> ExitCode {
     if let Err(e) = a.positional_count(
         1,
         1,
-        "tfs mkimage --format dwarfs|limnifs <srcdir> --output <img>",
+        "tfs mkimage [--format dwarfs|limnifs] <srcdir> --output <img>",
     ) {
         return fail(&format!("Error: {e}"));
     }
-    let Some(format) = a.format else {
-        return fail("Error: missing required option --format");
-    };
+    // spec 20 §6: limnifs is the default image format; --format dwarfs
+    // stays an explicit opt-in.
+    let format = a.format.unwrap_or_else(|| "limnifs".to_string());
     let Some(output) = a.output else {
         return fail("Error: missing required option --output");
     };

@@ -3,12 +3,14 @@
 Normative specification of the LimniFS image backend: the `format_id`
 allocation, the detection magic, the adapter contract against the spec 11
 backend seam, the compile-separation feature family, and the writer path.
-**Status: PLANNED** (post-v2.0.0; work queue `TODO.prepublish/09`) —
-nothing on this page is shipped. The page LOCKS the integration shape so
-the implementation lands once, in the owning crates, with no design
-re-litigation. Provenance: the LimniFS team's integration proposal
-(2026-08-01, `limnifs/docs/tebako-integration-proposal.md`), answered
-with a spec per spec 14's design-first order.
+**Status: SHIPPED** — the backend (reader + writer, `format_id` 5, the
+`LMFS` detection arm, the `backend-limnifs` feature) landed in tebako
+v0.2.0 (#371), and LimniFS is **the default image format** for
+`tfs mkimage` and `tebako press` (§6; dwarfs stays first-class as a read
+backend and an explicit `--format dwarfs` opt-in). Provenance: the LimniFS
+team's integration proposal (2026-08-01,
+`limnifs/docs/tebako-integration-proposal.md`), answered with a spec per
+spec 14's design-first order.
 
 LimniFS is a pure-Rust (`#![forbid(unsafe_code)]`), content-addressed
 image format: every chunk (a **drop**) is identified by
@@ -173,20 +175,114 @@ surfaces it as its own named error; a lean package pressed with
 `--format limnifs` run against a limnifs-less runtime fails closed with
 the backend named, not with a fallback mount.
 
+**Runtime floor for the limnifs default (locked 2026-08-22):** with
+limnifs the default writer format (§6), a default-pressed payload runs
+on any runtime whose driver ships `backend-limnifs` — every runtime
+built from the tebako product repo at or after the backend's merge
+(shipped in tebako v0.2.0). The published tebako-runtime-ruby POSIX
+assets meet the floor from the 2026-08-11 re-cut onward (v0.16.3 and
+v0.16.4 assets alike, probed end-to-end: press → stitch → cold run of a
+sha256-verified limnifs payload on a fresh store, entrypoint output
+correct on both) **provided the payload observes the writer constraints
+below**; windows-ucrt64 assets join with the first factory build whose
+product pin carries the windows per-target override's
+`backend-limnifs`. A runtime below the floor fails closed with the
+named `ENOTSUP` — by design; the loader never re-routes a limnifs
+payload to another format.
+
+**Writer constraints at the floor (locked 2026-08-22):** five defects
+in the limnifs 0.2.50/0.2.51 crates and their codec stack bound what
+tebako writers may emit while the floor spans 0.2.50-and-earlier
+readers. All five were pinned empirically against the published drivers
+(the named reason rides the `TEBAKO_DEBUG=trace` log; the errno channel
+carries EINVAL/EIO). The five map onto four constraints below — the
+fifth (the tournament coupling) shares constraint 4's remedy:
+
+1. **No shared inline table** (upstream: limnifs#186). limnifs-core
+   ≤ 0.2.51 declares `INODE_FLAG_SHARED_INLINE = 0x08` (its own parser
+   consumes the flag) yet sets `INODE_FLAG_RESERVED_MASK = 0xF8` —
+   covering bit 3 — so every reader of that line rejects any inode
+   using the writer's inline dedup ("reserved flag bits set"), tebako's
+   own tfs included. The dedup fires whenever two or more files at or
+   below the 4096-byte inline threshold share content — i.e. on every
+   realistic app tree. Tebako-written images therefore MUST NOT set
+   flag 0x08: the `limnifs-write` build tebako consumes skips the
+   shared inline table (the metadata blob is whole-blob compressed, so
+   re-inlined duplicate blobs cost nothing on the wire). The constraint
+   lifts when the floor's readers carry the corrected mask (`0xF0`).
+2. **The metadata blob is lz4-HC — never brotli, never zstd, never
+   store, and (for size) never fast lz4.** The 0.16.3-era reader's
+   brotli decode path fails on metadata blobs beyond the small-buffer
+   case ("invalid code-length code lengths (space not consumed)") —
+   small trees pass, which is exactly how the defect hid behind the
+   first probe. zstd is out too: the omnizip-zstd decoder shipping in
+   every limnifs-core line on the floor (≤ 0.2.51, tebako's own tfs
+   included) mis-decodes some valid frames — a deterministic
+   frame-checksum mismatch on bytes libzstd itself accepts, reproduced
+   by a 318-byte metadata blob at the Fastest/Fast/Default/Better
+   levels. lz4-HC (codec 0x13) is the safe high-ratio codec: its frames
+   are standard lz4 blocks, and every floor reader dispatches 0x13 to
+   the SAME fast-lz4 decoder (limnifs-core's `Lz4HcCodec::decompress`
+   delegates to the fast codec — no second decode path exists), while
+   the hash-chain match finder keeps a realistic tree's blob under the
+   readers' 1 MiB compressed-inline ceiling where fast lz4 does not
+   (the native-extension e2e tree: 830 KiB lz4-HC vs 1049 KiB fast lz4
+   vs 2.5 MB store; the fast-lz4 blob overshoots constraint 3's
+   threshold, the store blob overshoots the readers' hard ceiling).
+   Both writer entry points (`tfs mkimage`, `tebako press`) pin
+   `metadata_codec = "lz4-hc"`.
+3. **The writer inlines metadata up to the readers' 1 MiB ceiling**
+   (upstream: limnifs#187). Both floor readers bound the compressed
+   inline metadata at `DEFAULT_INLINE_METADATA_MAX_BYTES = 1 MiB`, but
+   limnifs-write ≤ 0.2.51 externalizes past its own 768 KiB threshold
+   with no `WriteConfig` override — which a realistic tree's lz4-HC
+   blob overshoots. The `limnifs-write` build tebako consumes raises the
+   externalization threshold to just under the readers' ceiling
+   (1000 KiB). A tree whose lz4-HC blob exceeds even that fails
+   press/mkimage with the named self-contained error — the documented
+   "too large for this format today" boundary.
+4. **Content drops ride lz4-or-store, never brotli, never zstd.** The
+   same two codec defects cover content drops, not only the metadata
+   blob: a brotli-compressed text drop beyond the small-buffer case
+   reads back EIO on the 0.16.3 driver (38–92 KB `.rb` files reproduce
+   it; v0.16.4's reader is unaffected), and any zstd drop can hit the
+   omnizip decode landmine on any reader. The fifth defect seals the
+   recipe from the other direction: removing lz4 from the compression
+   tournament while `binary_codec` stays lz4 makes the writer emit a
+   binary drop that every reader — tebako's own tfs included — reads
+   back as **zero bytes with a successful stat** (a 68 KB `.bundle`
+   reproduces it; the runtime symptom is a `LoadError` on the
+   dlmap2file path). Both writer entry points therefore pin
+   `text_codec`/`binary_codec` to lz4 and restrict the compression
+   tournament to `store` + `lz4` — lz4 present in the list, nothing
+   else beside store. lz4 decode is proven on the floor for both text
+   and binary drops (94 KB `.rb`, 68 KB `.bundle`).
+
+A payload written outside these constraints is not rejected by the
+tooling — it is simply below the floor's guarantee: it may mount on
+newer readers and fail closed (named EINVAL) on older ones.
+
 ## 6. The writer path
 
-- **`tfs mkimage --format limnifs <srcdir> -o <img>`** — in-process via
-  `limnifs-write` (`write_directory`), the same rule as the dwarfs-t
-  Writer: no `limni` binary, no PATH lookup, no shell-out. The spec 03 §7
-  `tree_hash` stamping is format-neutral (the staged hardlink mirror
-  ahead of writer selection) and applies unchanged; output replacement
-  keeps the mkdwarfs `--force` parity. `dwarfs` stays the default format;
-  the unsupported-format named error lists the new supported set.
-- **`tebako press --format limnifs`** (PLANNED flag; default `dwarfs`) —
-  routes the packager's image build (`crates/tebako-cli/src/image.rs`)
-  through the limnifs writer and stamps slot `format_id = 5` at the
-  stitch sites (single press, suite press, deploy) in place of
-  `TPKG_FORMAT_DWARFS`. Nothing else about press changes.
+- **`tfs mkimage [--format dwarfs|limnifs] <srcdir> -o <img>`** —
+  in-process via `limnifs-write` (`write_directory`) for limnifs, the
+  dwarfs-t `Writer` for dwarfs; the same rule for both: no `limni` /
+  `mkdwarfs` binary, no PATH lookup, no shell-out. **`limnifs` is the
+  default format** — the `--format` flag is optional and selects dwarfs
+  only when given explicitly. The spec 03 §7 `tree_hash` stamping is
+  format-neutral (the staged hardlink mirror ahead of writer selection)
+  and applies unchanged; output replacement keeps the mkdwarfs `--force`
+  parity. The unsupported-format named error lists the supported set
+  (`dwarfs, limnifs`).
+- **`tebako press [--format dwarfs|limnifs]`** (shipped in v0.2.0;
+  **default `limnifs`**) — routes the packager's image build
+  (`crates/tebako-cli/src/image.rs`) through the chosen writer and stamps
+  the app-image slots with the matching `format_id` hint (5 limnifs / 1
+  dwarfs) at the stitch sites (single press, suite press, deploy).
+  Nothing else about press changes. Dwarfs remains a first-class
+  explicit opt-in (`--format dwarfs`) and a supported read backend
+  forever — existing dwarfs packages, runtimes, and payload artifacts are
+  untouched.
 - **Format-neutrality of the manifest (orthogonality law):** the
   in-image payload manifest (spec 03) declares identity / provides /
   requires and NEVER names an image format; runtime-role stays out of
@@ -195,6 +291,45 @@ the backend named, not with a fallback mount.
   backend. Payload artifacts in the store stay `.tfs`-named and
   byte-identical with the registry artifact (spec 05) — `.lim` is the
   limnifs ecosystem's own extension, not the store's.
+
+## 6b. Rationale: why LimniFS is the default (normative)
+
+The default image format is the one every payload takes when the operator
+says nothing, so the default must be the format with the least toolchain
+exposure, the least build cost, and no loss of capability. LimniFS meets
+that bar and dwarfs-t does not; the reasons, in order of weight:
+
+1. **The default path is pure Rust** (`#![forbid(unsafe_code)]`, zero
+   system dependencies). Reading AND WRITING the default format needs no
+   C++ toolchain, no vcpkg, no cmake — spec 00 laws 1/3 in their
+   strongest form. The C++ toolchain exposure shrinks to opt-in formats:
+   dwarfs stays first-class via `--format dwarfs`, and the dwarfs-t
+   backend remains in every default feature set, so existing images read
+   everywhere they read today.
+2. **Build wall-clock and reproducibility.** The dwarfs-t vcpkg ports are
+   the CI cost driver (per-target C++ cross-compilation); `limnifs-core`
+   / `limnifs-write` compile everywhere Rust compiles and resolve from
+   crates.io with semver-pinned versions — the default path never
+   consumes an unpinned source tree. (TEMPORARY CARVE-OUT, lifts with
+   §5's constraints 1/3: until upstream ships a `limnifs-write` carrying
+   the limnifs#186/#187 fixes, the product workspace pins
+   `[patch.crates-io] limnifs-write` to the patched build — the crate
+   version stays semver-pinned; only the source is redirected.)
+3. **Content-addressed storage.** Every drop is `BLAKE3(plaintext)`:
+   image-internal integrity, dedup across and within images, and the
+   structural delta-update story (§7) come from the format, not from
+   bolted-on machinery.
+4. **Read efficiency.** Decompression is on-demand and per content class;
+   inline drops serve small files straight from the metadata blob with no
+   slab access (§4).
+5. **Unambiguous detection.** The strong `LMFS` magic is disjoint from
+   every existing probe arm (§3) — no heuristic, no misclassification.
+6. **Nothing else changes.** The orthogonality law holds (`format_id`
+   answers only "how do I read these bytes"); payload artifacts stay
+   `.tfs`-named and byte-identical with the registry artifact (spec 05);
+   existing dwarfs packages and runtimes are untouched; a limnifs payload
+   on a limnifs-less runtime fails closed with the named `ENOTSUP` (§5) —
+   never a silent re-route to another writer's format.
 
 ## 7. Roadmap hooks (recorded, NOT committed)
 

@@ -93,8 +93,8 @@ Layers:
   byte-specified, versioned, optionally signed (`docs/spec/02`).
 - **TFS** — the userland virtual filesystem (`tebako_fs_*` C ABI, Rust):
   multi-mount images with longest-prefix routing, backends
-  (dwarfs-t / zip / tar / squashfs), a Rust COW overlay, and the
-  enforcement point for jails (`docs/spec/11`).
+  (limnifs (the default) / dwarfs-t / zip / tar / squashfs), a Rust COW
+  overlay, and the enforcement point for jails (`docs/spec/11`).
 - **Manifests** — every payload is self-describing: `kind`
   (app/runtime/toolkit/data), `provides` (executables, libs, interpreter),
   `requires` (language/toolkit/data/executable deps with
@@ -166,7 +166,8 @@ jails, trust, encryption, TFS, comparisons, factories, distribution).
 
 - **Shipped**: the full Rust stack — packager, loader (macOS/Linux),
   runtime-as-image, opt-in signing + rotation, multi-mount TFS with
-  tar/zip/squashfs/dwarfs-t backends + COW overlay, host-access jails,
+  limnifs (the default image format)/dwarfs-t/zip/tar/squashfs backends +
+  COW overlay, host-access jails,
   the preload exec shim, payload manifests + registries + shims, suite
   packages, encryption (opt-in), and the ruby runtime factory line
   (ruby 3.1–4.0, 7 platforms).
