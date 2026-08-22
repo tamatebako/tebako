@@ -73,24 +73,29 @@ fn write_dwarfs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
 /// resolves. Content drops ride lz4-or-store: the runtime-floor
 /// readers (every published runtime of the v0.16.x era) reject brotli
 /// streams beyond the small-buffer case, and the omnizip zstd decoder
-/// shipping in limnifs-core ≤ 0.2.51 mis-decodes some valid zstd frames
-/// (frame checksum mismatch on bytes libzstd itself accepts). The
+/// shipping in limnifs-core ≤ 0.2.54 mis-decodes some valid zstd frames
+/// (omnizip-rs#315, still open; frame checksum mismatch on bytes libzstd
+/// itself accepts). The
 /// metadata blob rides lz4-HC (codec 0x13): every floor reader decodes
 /// it through the SAME fast-lz4 decoder (limnifs-core's
 /// `Lz4HcCodec::decompress` delegates), and the HC match finder keeps a
 /// realistic tree's blob under the inline ceiling — the
 /// native-extension e2e tree: 830 KiB lz4-hc vs 1049 KiB fast lz4,
 /// which overshoots the writer's 1000 KiB threshold; `store` (2.5 MB)
-/// overshoots the readers' 1 MiB hard ceiling outright. Spec 20 §5's
-/// floor rule pins the full recipe. The writer must also emit no
-/// shared-inline table (the floor readers reject the inode flag) and
-/// inline the metadata up to the readers' 1 MiB ceiling.
+/// overshoots the readers' 1 MiB hard ceiling outright. The
+/// shared-inline table stays off (`defaults.shared_inline = false`):
+/// every floor reader (limnifs-core < 0.2.53) rejects its inode flag
+/// 0x08 via its own reserved mask (limnifs#186; the knob rides the
+/// tebako-floor-gate fork until limnifs#189 ships). Spec 20 §5's
+/// floor rule pins the full recipe. The metadata is inlined up to the
+/// readers' 1 MiB ceiling.
 fn write_limnifs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
     let mut config = limnifs_write::WriteConfig::default_v0_1();
     config.dictionaries.enabled = false;
     config.defaults.metadata_codec = "lz4-hc".to_string();
     config.defaults.text_codec = "lz4".to_string();
     config.defaults.binary_codec = "lz4".to_string();
+    config.defaults.shared_inline = false;
     config.tournament.codecs = vec!["store".to_string(), "lz4".to_string()];
     let artifact = limnifs_write::write_directory_with_config(source, &config).map_err(|e| {
         plain_error(format!(
