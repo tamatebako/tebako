@@ -303,6 +303,13 @@ fn press_gemfile_fontist_modern_resolution_and_platform_gems() {
     };
     let package = env.work.join("fontist-app");
     let mut cmd = press_command(&env, "main.rb", &package);
+    // Press dwarfs explicitly: the fontist tree's lz4-HC metadata blob
+    // (~3 MiB) overshoots the limnifs inline ceiling, so the default
+    // format stops this tree at the spec 20 §5.3 "too large for this
+    // format today" named error. Resolution and platform gems are this
+    // test's subject, not the image format (the fontist feedstock's
+    // press must pass --format dwarfs the same way).
+    cmd.arg("--format").arg("dwarfs");
     cmd.env("VERBOSE", "yes"); // surface the deploy driver's bundle output
     let (code, log) = run(&mut cmd);
 
