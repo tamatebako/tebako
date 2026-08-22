@@ -48,7 +48,11 @@ sqfs-sys = { version = "0.2.1", path = "../sqfs-sys", optional = true }
 # The LimniFS backend (spec 20): the pure-Rust limnifs-core reader — no
 # system dependencies, `#![forbid(unsafe_code)]` upstream. Registry dep on
 # the published crates.io line (since 0.2.50; same standing as dwarfs-t).
-limnifs-core = { version = "0.2.50", optional = true }
+# 0.2.51 rides the omnizip-zstd 0.16.76 decoder defect (omnizip-rs#315):
+# unreachable for tebako-written images — spec 20 §5's floor recipe is
+# lz4-only (metadata lz4-hc, content lz4-or-store) — and foreign images
+# still fail closed on the named decode error, never silently.
+limnifs-core = { version = "0.2.51", optional = true }
 # The ENC stacking transform (spec 10, backends_enc): AES-256-GCM per-block
 # confidentiality with HKDF-SHA256 subtree keys, DEK grant envelopes via
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
