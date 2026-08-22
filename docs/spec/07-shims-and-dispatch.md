@@ -166,8 +166,19 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    of a HOST binary is not policy-gated (not an IO route
    in the policy's op classes — the child's own IO stays jailed via env
    propagation); SIP platform binaries strip `DYLD_*` and leave it; a
-   mount at `/` is refused (it would claim every host path and bypass
-   the jail); not interposed: fork, `openat2` (glibc exposes no wrapper
+   mount at `/` is legitimate under the union mount model (spec 03 §6 /
+   spec 17 §1 — the app payload mounts there): covered-but-not-held paths
+   fall through to the host with the jail consulted; fork is not
+   interposed but its child side is GUARDED — a `pthread_atfork` child
+   handler arms a process-global flag and every shim's engine entry
+   passes through to the real libc while it is set (the backends are not
+   fork-safe: dwarfs-t's block-cache worker pool dies at fork, so a
+   backend-touching call in the child — e.g. the execve materialization
+   probe under a `/` mount — would wait on threads that no longer exist;
+   the 2026-08-22 git-clone deadlock, runtime 0.16.4), and a fork child
+   that execs re-enters a fresh shim through the inherited preload env,
+   so the grandchild rule above is unaffected; not interposed: fork,
+   `openat2` (glibc exposes no wrapper
    or symbol on linux-gnu — nothing to interpose; a raw `syscall(2)`
    caller bypasses userland interposition by construction), fstatat64 on
    macOS (the legacy
