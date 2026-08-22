@@ -39,6 +39,9 @@ struct Fixtures {
     dir: PathBuf,
     /// The test image (zip backend).
     zip: PathBuf,
+    /// The fork-exec test image (DWARFS backend — the fork/exec
+    /// regression needs a backend with a worker pool; zip has none).
+    dwarfs: PathBuf,
     /// The built shim cdylib.
     shim: PathBuf,
     /// A host directory with one readable file (jail grant fixture).
@@ -139,6 +142,7 @@ fn build_fixtures() -> Option<Fixtures> {
         "dir-stream",
         "mmap-probe",
         "close-probe",
+        "fork-exec",
     ] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
@@ -236,9 +240,50 @@ fn build_fixtures() -> Option<Fixtures> {
         zw.finish().unwrap();
     }
 
+    // The fork-exec image (DWARFS backend — its block-cache worker pool is
+    // the fork hazard the guard exists for). Contents matter: an in-image
+    // `__tpkg__/manifest.yaml` WITHOUT the java_home annotation (the exec
+    // materialization probe reads exactly this file), plus one data file.
+    let dwarfs_path = dir.join("img.dwarfs");
+    {
+        let src = dir.join("dwarfs-src");
+        std::fs::create_dir_all(src.join("__tpkg__")).unwrap();
+        std::fs::create_dir_all(src.join("data")).unwrap();
+        // A minimal valid payload manifest WITHOUT the java_home
+        // annotation (the exec materialization probe reads exactly this
+        // file; the tolerant walk answers false → the closure walk).
+        let manifest = [
+            "schema_version: 1",
+            "identity:",
+            "  schema_version: 1",
+            "  kind: app",
+            "  name: fork-exec-e2e",
+            "  version: 0.0.1",
+            "  producer: {tool: libtfs-preload-e2e, tool_version: \"1\"}",
+            "  created: \"2026-08-22T00:00:00Z\"",
+            "  source:",
+            "    commit: \"0000000000000000000000000000000000000000\"",
+            "    builder: local",
+            "  digest:",
+            "    tree_hash: \"sha256:0000000000000000000000000000000000000000000000000000000000000000\"",
+            "    blob_sha256: \"0000000000000000000000000000000000000000000000000000000000000000\"",
+            "  signing: {state: unsigned}",
+            "  encryption: {state: none}",
+            "",
+        ]
+        .join("\n");
+        std::fs::write(src.join("__tpkg__/manifest.yaml"), manifest).unwrap();
+        std::fs::write(src.join("data/secret.txt"), SECRET.as_bytes()).unwrap();
+        let mut writer =
+            dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default()).expect("dwarfs writer");
+        writer.add_tree(&src, "/").expect("dwarfs writer: scan");
+        writer.write(&dwarfs_path).expect("dwarfs writer: write");
+    }
+
     Some(Fixtures {
         dir,
         zip: zip_path,
+        dwarfs: dwarfs_path,
         shim,
         work,
         rust_tool,
@@ -811,4 +856,50 @@ fn macos_plain_close_on_a_memfs_fd() {
     let r = run(f, "close-probe", &[path.as_str()], None);
     assert_eq!(r.rc, 0, "close-probe failed, stderr: {}", r.stderr);
     assert!(r.stdout.contains("close-probe:ok"), "stdout: {}", r.stdout);
+}
+
+/// The 2026-08-22 fork/exec deadlock regression pin (runtime 0.16.4: a
+/// payload mounted at `/` spawning `git clone` wedged git's pre-exec
+/// helper child). The fixture forks; the CHILD execve's a HOST binary
+/// whose path is covered by the root mount — the exec materialization
+/// probe reads the in-image manifest through dwarfs-t's block cache,
+/// whose worker pool did not survive the fork, and waits on a future no
+/// dead thread completes. The fork-child guard passes every engine entry
+/// in a fork child through to the real libc, so the exec completes.
+///
+/// Needs the DWARFS image: the zip backend has no worker pool, so a zip
+/// mount cannot distinguish the guard from the bug. The fixture is its
+/// own watchdog — a wedged child is SIGKILLed and reported as rc 124, so
+/// a regression FAILS here instead of hanging the suite.
+///
+/// The exec'd grandchild (print-data, a non-SIP host binary) re-enters a
+/// fresh, healthy shim through the inherited preload env and reads a host
+/// file covered by the root mount — proving the spec 22 §3
+/// child-namespace propagation survives the guard.
+#[test]
+fn fork_child_exec_under_root_mount_completes() {
+    let Some(f) = fixtures() else { return };
+    let mut cmd = Command::new(f.dir.join("bin").join("fork-exec"));
+    cmd.arg(f.dir.join("bin").join("print-data"))
+        .arg(f.work.join("hostfile.txt"))
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", format!("{}:/", f.dwarfs.display()))
+        .env_remove("DYLD_PRINT_LIBRARIES")
+        .env_remove("TEBAKO_JAIL");
+    let out = cmd.output().unwrap();
+    #[cfg(unix)]
+    let signal = std::os::unix::process::ExitStatusExt::signal(&out.status);
+    #[cfg(not(unix))]
+    let signal = None;
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "fork-exec failed (signal: {signal:?}, rc 124 = wedged child — the \
+         fork/exec deadlock regression), stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        out.stdout, b"HOST-FILE\n",
+        "the grandchild's host read under the root mount"
+    );
 }
