@@ -17,12 +17,12 @@ crate-type = ["staticlib", "rlib"]
 
 [dependencies]
 # The stack's one logging facility (mount/jail decisions at debug).
-tebako-log = { version = "0.2.0", path = "../tebako-log" }
+tebako-log = { version = "0.2.1", path = "../tebako-log" }
 # Trailer probing for `<self|package>:<slot>` resolution (spec 02).
-tpkg = { version = "0.2.0", path = "../tpkg" }
+tpkg = { version = "0.2.1", path = "../tpkg" }
 # The resolve trace events' detail values (spec 25 §7 blesses tebako-json
 # for trace emission; the envelope renderer lives in tfs::trace).
-tebako-json = { version = "0.2.0", path = "../tebako-json" }
+tebako-json = { version = "0.2.1", path = "../tebako-json" }
 # The env-image layout declaration (spec 18 C3) is authored YAML.
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0.12"
@@ -38,10 +38,10 @@ sha2 = "0.10"
 # Windows ships dwarfs-only (squashfs-tools-ng is POSIX/autotools-only,
 # TODO.v2-1/02; ENC needs rnp's mingw build, TODO.v2-1/08).
 [target.'cfg(not(windows))'.dependencies]
-tfs = { version = "0.2.0", path = "../tfs" }
+tfs = { version = "0.2.1", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
-tfs = { version = "0.2.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
+tfs = { version = "0.2.1", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 
 # build.rs compiles the interpose dylib for darwin targets only (its
 # TARGET check early-returns elsewhere), but it references the cc crate

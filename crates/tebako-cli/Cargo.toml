@@ -11,26 +11,26 @@ keywords = ["tebako", "packager", "ruby", "dwarfs", "cli"]
 categories = ["command-line-utilities"]
 
 [dependencies]
-tpkg = { version = "0.2.0", path = "../tpkg" }
-tebako-pkg = { version = "0.2.0", path = "../tebako-pkg" }
-tebako-http = { version = "0.2.0", path = "../tebako-http" }
+tpkg = { version = "0.2.1", path = "../tpkg" }
+tebako-pkg = { version = "0.2.1", path = "../tebako-pkg" }
+tebako-http = { version = "0.2.1", path = "../tebako-http" }
 # Registry/payload resolution for `tebako add-registry | install` (spec 04).
-tebako-resolve = { version = "0.2.0", path = "../tebako-resolve" }
+tebako-resolve = { version = "0.2.1", path = "../tebako-resolve" }
 # Release-API JSON for the publish upload leg (GitHub release documents).
-tebako-json = { version = "0.2.0", path = "../tebako-json" }
+tebako-json = { version = "0.2.1", path = "../tebako-json" }
 # The spec-15 introspection model (payload + package inspections, the
 # strict verify) — the `tebako inspect` surface renders through it.
-tebako-info = { version = "0.2.0", path = "../tebako-info" }
+tebako-info = { version = "0.2.1", path = "../tebako-info" }
 # Config writes (registries:), the manifest mirror and the shim link/unlink
 # — called as a library, never spawned (spec 14 §3: no shell-outs).
-tebako-shim = { version = "0.2.0", path = "../tebako-shim" }
+tebako-shim = { version = "0.2.1", path = "../tebako-shim" }
 # OpenPGP verification of signed registry entries (spec 09; strict when the
 # entry carries a signature, the v1-legacy warn when it does not).
-tebako-signer = { version = "0.2.0", path = "../tebako-signer" }
+tebako-signer = { version = "0.2.1", path = "../tebako-signer" }
 # The bootstrap's embedded artifact-info block (spec 18 §2.2/S38): the
 # `tebako inspect --contract` card reads it through the owner crate — the
 # marker grammar has exactly one home.
-tebako-bootstrap = { version = "0.2.0", path = "../tebako-bootstrap" }
+tebako-bootstrap = { version = "0.2.1", path = "../tebako-bootstrap" }
 # (the tfs dependency is per-target, below — squashfs is POSIX-only)
 # The suite file (--suite) is authored YAML (spec 00 invariant 6) — the
 # tpkg manifest convention (serde_yml), not serde_yaml.
@@ -65,10 +65,10 @@ regex = "1"
 # there (TODO.v2-1/02). The per-target split lives in the consumer (cargo
 # features cannot be target-conditional from inside tfs).
 [target.'cfg(not(windows))'.dependencies]
-tfs = { version = "0.2.0", path = "../tfs" }
+tfs = { version = "0.2.1", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
-tfs = { version = "0.2.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
+tfs = { version = "0.2.1", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
 # The runtime/SDK install locks (src/resolve.rs flock port): LockFileEx on
 # one byte at offset 0 — the tebako-shim runtime.rs shape. FFI is
 # quarantined in that one function.

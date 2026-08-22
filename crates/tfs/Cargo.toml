@@ -18,10 +18,10 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [dependencies]
 libc = "0.2"
 # The stack's one logging facility (TEBAKO_DEBUG; zero cost when off).
-tebako-log = { version = "0.2.0", path = "../tebako-log" }
+tebako-log = { version = "0.2.1", path = "../tebako-log" }
 # The spec 25 trace bus's JSONL emission (spec 25 §7 blesses tebako-json —
 # workspace-internal, zero deps of its own — for event serialization).
-tebako-json = { version = "0.2.0", path = "../tebako-json" }
+tebako-json = { version = "0.2.1", path = "../tebako-json" }
 # The `zip` crate (pure Rust) rather than libzip-sys: the C ABI contract is
 # behavioral, not library-level; a pure-Rust reader keeps consumers and CI
 # free of a native libzip build, and the v1 scope (read-only, no encryption)
@@ -44,7 +44,7 @@ ruzstd = "0.7"
 # features to stay pure-cargo (the dwarfs backend then returns ENOTSUP).
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs", optional = true }
 # libsquashfs (squashfs-tools-ng) via vcpkg for the SquashFS backend.
-sqfs-sys = { version = "0.2.0", path = "../sqfs-sys", optional = true }
+sqfs-sys = { version = "0.2.1", path = "../sqfs-sys", optional = true }
 # The LimniFS backend (spec 20): the pure-Rust limnifs-core reader — no
 # system dependencies, `#![forbid(unsafe_code)]` upstream. Registry dep on
 # the published crates.io line (since 0.2.50; same standing as dwarfs-t).
@@ -53,13 +53,13 @@ limnifs-core = { version = "0.2.50", optional = true }
 # confidentiality with HKDF-SHA256 subtree keys, DEK grant envelopes via
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
 # buffers. All pure-Rust RustCrypto crates — no shell-outs anywhere.
-tpkg = { version = "0.2.0", path = "../tpkg" }
+tpkg = { version = "0.2.1", path = "../tpkg" }
 # The exec probe's tolerant annotation read (exec_materialize): a value
 # walk of the in-image manifest — never the validating parse, which
 # would fail-closed a newer schema on an older runtime (spec 03's
 # compat rule: consumers ignore keys they predate). Same pin as tpkg.
 serde_yml = "0.0.12"
-tebako-signer = { version = "0.2.0", path = "../tebako-signer", optional = true }
+tebako-signer = { version = "0.2.1", path = "../tebako-signer", optional = true }
 aes-gcm = "0.10"
 hkdf = "0.12"
 sha2 = "0.10"
