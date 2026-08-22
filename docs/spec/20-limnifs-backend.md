@@ -215,12 +215,12 @@ fifth (the tournament coupling) shares constraint 4's remedy:
    brotli decode path fails on metadata blobs beyond the small-buffer
    case ("invalid code-length code lengths (space not consumed)") —
    small trees pass, which is exactly how the defect hid behind the
-   first probe. zstd is out too: the omnizip-zstd decoder shipping in
-   every limnifs-core line on the floor (≤ 0.2.51, tebako's own tfs
-   included) mis-decodes some valid frames — a deterministic
-   frame-checksum mismatch on bytes libzstd itself accepts, reproduced
-   by a 318-byte metadata blob at the Fastest/Fast/Default/Better
-   levels. lz4-HC (codec 0x13) is the safe high-ratio codec: its frames
+   first probe. zstd is out too (upstream: omnizip-rs#315): the
+   omnizip-zstd decoder shipping in every limnifs-core line on the floor
+   (≤ 0.2.51, tebako's own tfs included) mis-decodes some valid frames —
+   a deterministic frame-checksum mismatch on bytes libzstd itself
+   accepts, reproduced by a 318-byte metadata blob at the
+   Fastest/Fast/Default/Better levels. lz4-HC (codec 0x13) is the safe high-ratio codec: its frames
    are standard lz4 blocks, and every floor reader dispatches 0x13 to
    the SAME fast-lz4 decoder (limnifs-core's `Lz4HcCodec::decompress`
    delegates to the fast codec — no second decode path exists), while
@@ -247,8 +247,9 @@ fifth (the tournament coupling) shares constraint 4's remedy:
    reads back EIO on the 0.16.3 driver (38–92 KB `.rb` files reproduce
    it; v0.16.4's reader is unaffected), and any zstd drop can hit the
    omnizip decode landmine on any reader. The fifth defect seals the
-   recipe from the other direction: removing lz4 from the compression
-   tournament while `binary_codec` stays lz4 makes the writer emit a
+   recipe from the other direction (upstream: limnifs#188): removing lz4
+   from the compression tournament while `binary_codec` stays lz4 makes
+   the writer emit a
    binary drop that every reader — tebako's own tfs included — reads
    back as **zero bytes with a successful stat** (a 68 KB `.bundle`
    reproduces it; the runtime symptom is a `LoadError` on the
