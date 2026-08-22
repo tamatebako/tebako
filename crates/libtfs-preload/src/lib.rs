@@ -74,7 +74,21 @@
 //!   glibc exposes NO `openat2` wrapper/symbol, so there is nothing to
 //!   interpose on linux-gnu (a raw `syscall(2)` caller bypasses userland
 //!   interposition by construction).
-//! - Not interposed in v1: `fork`, `openat2` (glibc has no wrapper at
+//! - `fork` is not interposed, but its child side is GUARDED: a
+//!   `pthread_atfork` child handler arms a process-global flag, and every
+//!   shim's engine entry answers "pass through" while it is set. The
+//!   engine's backends are not fork-safe — dwarfs-t's block-cache worker
+//!   pool dies at `fork`, so a backend-touching call in the child (e.g.
+//!   the execve materialization probe under a `/` mount) would wait on
+//!   threads that no longer exist (the 2026-08-22 git-clone deadlock,
+//!   runtime 0.16.4). A fork child that goes on to `exec` re-enters a
+//!   fresh, healthy shim through the inherited preload env, so the
+//!   child-namespace propagation above is unaffected; a child that never
+//!   execs sees the host filesystem only — memfs fds it inherited answer
+//!   EIO, and an inherited memfs `DIR*` passed to the host dir family is
+//!   a caller bug (that path wedged before this guard).
+//! - Not interposed in v1: `fork` itself (its child side is guarded —
+//!   see above), `openat2` (glibc has no wrapper at
 //!   all — see above), `fstatat64` on macOS (the legacy 32-bit-inode
 //!   layout), the LFS `__xstat64`/`__lxstat64`/
 //!   `__fxstat64`/`__fxstatat64` versioned forms on Linux, `fdopendir`

@@ -24,11 +24,17 @@
 //! to the real implementation without touching the engine (correct: engine
 //! IO is host IO by definition, and the context lock would otherwise
 //! deadlock).
+//!
+//! Fork children: the engine's backends are not fork-safe (see the
+//! `IN_FORK_CHILD` guard below) — a `pthread_atfork` child handler arms a
+//! process-global flag, and every engine entry in a fork child gets `None`
+//! (the same "pass through to the real libc" answer re-entrancy gets).
 
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_void, CStr};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tfs::context::TebakoCDirent;
@@ -71,9 +77,71 @@ thread_local! {
     static IN_ENGINE: Cell<bool> = const { Cell::new(false) };
 }
 
+// ---------------------------------------------------------------------
+// Fork-child guard (the 2026-08-22 preload fork/exec deadlock)
+// ---------------------------------------------------------------------
+
+/// Set in the child side of every `fork` (see `register_fork_guard`).
+///
+/// WHY: the engine's backends are not fork-safe. dwarfs-t's block cache
+/// runs a worker pool whose threads die at `fork`; any backend-touching
+/// route in the child — e.g. the execve materialization probe's
+/// `__tpkg__/manifest.yaml` read behind a `/` mount — waits on a
+/// promise/future that no dead thread will ever complete, wedging the
+/// child permanently (proven against runtime 0.16.4: payload mounted at
+/// `/`, payload spawns `git clone` → git's pre-exec helper child hangs in
+/// `std::condition_variable::wait` inside the block-cache dispatch).
+///
+/// The guard makes every engine entry in a fork child answer `None`,
+/// which every shim already maps to "pass through to the real libc /
+/// fail safe". A fork child that goes on to `exec` therefore calls the
+/// REAL execve with the original arguments, and the exec'd image
+/// re-enters a fresh, healthy shim through the inherited preload env —
+/// the spec 22 §3 child-namespace propagation never depended on engine
+/// calls in the pre-exec window. A fork child that never execs sees the
+/// host only; memfs fds it inherited answer EIO (they would be stale
+/// copies of parent engine state even if served).
+static IN_FORK_CHILD: AtomicBool = AtomicBool::new(false);
+
+/// The atfork CHILD handler: arm the fork-child guard. Runs in the child,
+/// on the forking thread, before the child's `fork` caller resumes.
+///
+/// Declared `unsafe` purely for signature compatibility: it coerces to
+/// the (safe) `extern "C" fn()` slot some libc bindings declare.
+unsafe extern "C" fn mark_fork_child() {
+    // Relaxed is sufficient: the handler runs on the forking thread in
+    // the child's address space, and fork copies ONLY that thread — the
+    // store and every later load are same-thread program order.
+    IN_FORK_CHILD.store(true, Ordering::Relaxed);
+}
+
+/// Register the atfork child handler. Called ONCE from [`init`] (the
+/// library constructor's payload), unconditionally — cheap, and NOT
+/// behind `route::initialize`'s OnceLock: the guard must exist in every
+/// process that has the shim loaded, however it was configured.
+///
+/// A registration failure (ENOMEM) leaves the historical unguarded
+/// behavior; following the trace-arm precedent that is a loud stderr
+/// note, never an init error.
+pub(crate) fn register_fork_guard() {
+    // SAFETY: plain libc call; the handler is a valid extern "C" fn.
+    let rc = unsafe { libc::pthread_atfork(None, None, Some(mark_fork_child)) };
+    if rc != 0 {
+        eprintln!(
+            "libtfs-preload: pthread_atfork registration failed (rc={rc}); \
+             fork children keep the engine (deadlock risk)"
+        );
+    }
+}
+
 /// Run `f` (a route-layer engine call) unless this thread is already
 /// inside the engine: re-entrant calls (the engine's own host IO) get
 /// `None` and the shim passes them straight to the real implementation.
+///
+/// Fork children (between `fork` and any `exec`) get `None` first, for
+/// the fail-safe reason on `IN_FORK_CHILD` above: the backends' worker
+/// threads do not survive `fork`, so an engine call there would wait on
+/// dead threads.
 ///
 /// pub(crate) for the TEST seam: a test that calls the route layer
 /// directly must enter through this guard exactly like the shims do.
@@ -83,6 +151,17 @@ thread_local! {
 /// route_matrix ubuntu hang; macOS test binaries do not interpose
 /// in-process, so only Linux CI saw it).
 pub(crate) fn engine_call<T>(f: impl FnOnce() -> T) -> Option<T> {
+    engine_call_inner(IN_FORK_CHILD.load(Ordering::Relaxed), f)
+}
+
+/// The gate body with the fork-child flag as an explicit input, so the
+/// unit pin can exercise both arms without mutating process-global state
+/// (a global-flag test would race the sibling tests that enter through
+/// `engine_call`).
+fn engine_call_inner<T>(in_fork_child: bool, f: impl FnOnce() -> T) -> Option<T> {
+    if in_fork_child {
+        return None;
+    }
     IN_ENGINE.with(|c| {
         if c.get() {
             return None;
@@ -1422,9 +1501,70 @@ pub unsafe extern "C" fn posix_spawnp(
 /// not mount, is a named configuration error: a clear stderr message
 /// naming the variable and the offending token, then EX_CONFIG (78).
 pub fn init() {
+    // Arm the fork-child guard FIRST, before any mount can happen: a
+    // backend worker pool comes into existence at mount time, and the
+    // guard must already be registered before any later fork.
+    register_fork_guard();
     if let Err(msg) = route::initialize() {
         eprintln!("libtfs-preload: {msg}");
         // SAFETY: plain libc call.
         unsafe { libc::exit(crate::spec::EX_CONFIG) };
+    }
+}
+
+// ---------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The guard gate: a fork child never enters the engine (`None` is
+    /// every shim's "pass through to the real libc / fail safe" answer);
+    /// a normal thread enters, and re-entrancy still answers `None`. Both
+    /// arms are exercised through `engine_call_inner`'s explicit flag
+    /// input so this test never mutates process-global state (a global
+    /// flag set here would race the sibling route tests that enter
+    /// through `engine_call`).
+    #[test]
+    fn fork_child_gate_short_circuits_engine_call() {
+        assert_eq!(engine_call_inner(true, || 42), None);
+        assert_eq!(engine_call_inner(false, || 42), Some(42));
+    }
+
+    /// The atfork wiring, for real: register, `fork`, and have the CHILD
+    /// answer whether the handler armed the flag. The child's post-fork
+    /// work is one atomic load and `_exit` (async-signal-safe in
+    /// practice); the parent asserts the exit code. The flag is set
+    /// copy-on-write in the child's address space only — the parent's
+    /// flag stays clear, so no sibling test is affected. Repeated
+    /// registration across test runs is harmless (the handlers all set
+    /// the same flag, and nothing else in this process forks).
+    #[test]
+    fn atfork_child_handler_arms_the_flag() {
+        register_fork_guard();
+        // SAFETY: plain fork; the child's post-fork work is an atomic
+        // load + _exit, both safe after fork in a threaded process.
+        let pid = unsafe { libc::fork() };
+        assert!(pid >= 0, "fork failed: {}", std::io::Error::last_os_error());
+        if pid == 0 {
+            let rc = if IN_FORK_CHILD.load(Ordering::Relaxed) {
+                0
+            } else {
+                42
+            };
+            // SAFETY: plain libc call; never returns.
+            unsafe { libc::_exit(rc) };
+        }
+        let mut status = 0;
+        // SAFETY: pid is our child; status is a writable out-parameter.
+        assert_eq!(unsafe { libc::waitpid(pid, &mut status, 0) }, pid);
+        assert!(libc::WIFEXITED(status), "child did not exit normally");
+        assert_eq!(
+            libc::WEXITSTATUS(status),
+            0,
+            "fork child saw the guard flag clear"
+        );
     }
 }
