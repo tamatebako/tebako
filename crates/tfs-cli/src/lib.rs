@@ -1058,10 +1058,28 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
 /// in slab-ordinal order. Dictionaries are disabled: a dictionary
 /// section would sit between the history section and the slab region
 /// (and reference per-drop dictionary ids), neither of which the v1
-/// backend resolves.
+/// backend resolves. Content drops ride lz4-or-store: the
+/// runtime-floor readers (every published runtime of the v0.16.x era)
+/// reject brotli streams beyond the small-buffer case, and the omnizip
+/// zstd decoder shipping in limnifs-core ≤ 0.2.51 mis-decodes some
+/// valid zstd frames (frame checksum mismatch on bytes libzstd itself
+/// accepts). The metadata blob rides lz4-HC (codec 0x13): every floor
+/// reader decodes it through the SAME fast-lz4 decoder (limnifs-core's
+/// `Lz4HcCodec::decompress` delegates), and the HC match finder keeps a
+/// realistic tree's blob under the inline ceiling — the
+/// native-extension e2e tree: 830 KiB lz4-hc vs 1049 KiB fast lz4,
+/// which overshoots the writer's 1000 KiB threshold; `store` (2.5 MB)
+/// overshoots the readers' 1 MiB hard ceiling outright. Spec 20 §5's
+/// floor rule pins the full recipe. The writer must also emit no
+/// shared-inline table (the floor readers reject the inode flag) and
+/// inline the metadata up to the readers' 1 MiB ceiling.
 fn write_limnifs_image(source: &Path, output: &Path) -> Result<(), (String, i32)> {
     let mut config = limnifs_write::WriteConfig::default_v0_1();
     config.dictionaries.enabled = false;
+    config.defaults.metadata_codec = "lz4-hc".to_string();
+    config.defaults.text_codec = "lz4".to_string();
+    config.defaults.binary_codec = "lz4".to_string();
+    config.tournament.codecs = vec!["store".to_string(), "lz4".to_string()];
     let artifact = limnifs_write::write_directory_with_config(source, &config).map_err(|e| {
         (
             format!("limnifs writer: scanning {}: {e}", source.display()),
@@ -1071,7 +1089,7 @@ fn write_limnifs_image(source: &Path, output: &Path) -> Result<(), (String, i32)
     if let Some(sidecar) = &artifact.metadata_sidecar {
         return Err((
             format!(
-                "limnifs writer: the tree's metadata externalized ({} bytes to '{}') — a self-contained tebako image inlines the metadata; the tree is too large for this format today",
+                "limnifs writer: the tree's metadata externalized ({} bytes to '{}') — a self-contained tebako image inlines the metadata; the tree is too large for this format today (mkimage with --format dwarfs for trees this size)",
                 sidecar.bytes.len(),
                 sidecar.locator
             ),
@@ -1657,9 +1675,8 @@ mod tests {
     }
 
     /// `mkimage --format limnifs` (spec 20 §6): the image detects as
-    /// limnifs and the backend serves the tree back. Windows ships a
-    /// dwarfs-only tfs, so the mount half of the check is POSIX-only —
-    /// the unsupported-format named error is platform-independent.
+    /// limnifs and the backend serves the tree back — on windows too
+    /// (the windows tfs ships dwarfs+limnifs; squashfs stays POSIX-only).
     #[test]
     fn mkimage_limnifs_writes_a_mountable_image() {
         let dir = std::env::temp_dir().join(format!("tfs-cli-mkimage-{}", std::process::id()));
@@ -1670,7 +1687,6 @@ mod tests {
         let out = dir.join("fs.tfs");
         cmd_mkimage("limnifs", &src, &out).expect("mkimage limnifs");
 
-        #[cfg(not(windows))]
         {
             let mount = tfs::mount::build_from_file(&out.to_string_lossy(), "/mnt")
                 .expect("the written image mounts");

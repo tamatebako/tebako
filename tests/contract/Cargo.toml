@@ -12,11 +12,12 @@ publish = false
 [target.'cfg(not(windows))'.dependencies]
 tfs = { version = "0.2.1", path = "../../crates/tfs" }
 
-# Windows gets the dwarfs-only tfs (the consumer per-target split — the
-# SquashFS backend is POSIX/autotools-only and sqfs-sys's build script
-# refuses by design; the ENC transform is unproven on mingw).
+# Windows gets the dwarfs+limnifs tfs (the consumer per-target split —
+# the SquashFS backend is POSIX/autotools-only and sqfs-sys's build script
+# refuses by design; the ENC transform is unproven on mingw; limnifs is
+# pure Rust and rides everywhere).
 [target.'cfg(windows)'.dependencies]
-tfs = { version = "0.2.1", path = "../../crates/tfs", default-features = false, features = ["vendored-dwarfs"] }
+tfs = { version = "0.2.1", path = "../../crates/tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
 
 [dependencies]
 libc = "0.2"

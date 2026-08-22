@@ -91,9 +91,8 @@ fn mkimage_roundtrip_ls_cat_stat_extract() {
 
 /// The limnifs writer path (spec 20 §6): same tree in, same CLI
 /// answers out — `Type: LimniFS` comes off the mounted backend, never
-/// the extension.
+/// the extension. Runs on windows too (dwarfs+limnifs there).
 #[test]
-#[cfg(not(windows))] // windows ships a dwarfs-only tfs (TODO.v2-1/02)
 fn mkimage_limnifs_roundtrip_ls_cat_stat_extract() {
     let w = TempDir::new("mkimglim");
     let src = make_source(&w);
@@ -141,6 +140,116 @@ fn mkimage_limnifs_roundtrip_ls_cat_stat_extract() {
     assert_eq!(rc, 0);
     assert_eq!(std::fs::read(dest.join("one.txt")).unwrap(), b"one");
     assert_eq!(std::fs::read(dest.join("sub/two.txt")).unwrap(), b"two");
+}
+
+/// The default format is limnifs (spec 20 §6): a `--format`-less
+/// mkimage writes LMFS-magic bytes that mount through the limnifs
+/// backend. Dwarfs stays the explicit opt-in (`--format dwarfs`).
+#[test]
+fn mkimage_default_format_is_limnifs() {
+    let w = TempDir::new("mkimgdefault");
+    let src = make_source(&w);
+    let img = w.0.join("app.tfs");
+
+    let (rc, _, err) = run(
+        &[
+            "mkimage",
+            src.to_str().unwrap(),
+            "-o",
+            img.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "mkimage must succeed: {err}");
+
+    let bytes = std::fs::read(&img).unwrap();
+    assert_eq!(
+        &bytes[..4],
+        b"LMFS",
+        "the default image opens with the limnifs magic"
+    );
+
+    let (rc, out, _) = run(&["info", img.to_str().unwrap()], &w.0);
+    assert_eq!(rc, 0);
+    assert!(out.contains("Type: LimniFS"), "{out}");
+}
+
+/// The floor writer recipe (spec 20 §5) under the hazard shapes that
+/// pinned it: duplicate small files (the shared-inline-table trigger —
+/// the 0.2.50 reader mask rejects them, and a writer that skips the
+/// table must still serve every byte), a large compressible text file
+/// (the tournament's brotli pick that floor readers fail to decode),
+/// and a large incompressible binary (the tournament-list coupling
+/// that once mis-encoded binary drops to a zero-byte readback). Every
+/// file must read back byte-exact through the limnifs backend.
+#[test]
+fn mkimage_limnifs_floor_recipe_readback() {
+    let w = TempDir::new("mkimgfloor");
+    let src = w.0.join("app");
+    std::fs::create_dir_all(&src).unwrap();
+
+    let dup = b"duplicate inline content: the same 200-ish bytes in three files, so the writer's inline dedup fires on every realistic tree. Padding padding padding padding padding!";
+    assert!(dup.len() <= 4096);
+    std::fs::write(src.join("dup-a.txt"), dup).unwrap();
+    std::fs::write(src.join("dup-b.txt"), dup).unwrap();
+    std::fs::write(src.join("dup-c.txt"), dup).unwrap();
+
+    let text: Vec<u8> = (0..1400u32)
+        .flat_map(|i| format!("line {i}: the quick brown fox jumps over the lazy dog, pack my box with five dozen liquor jugs\n").into_bytes())
+        .collect();
+    assert!(text.len() > 64 * 1024);
+    std::fs::write(src.join("big-text.rb"), &text).unwrap();
+
+    // Deterministic incompressible bytes (a splitmix64 stream) — the
+    // store arm of the tournament.
+    let mut state = 0x9E3779B97F4A7C15u64;
+    let binary: Vec<u8> = (0..96 * 1024)
+        .map(|_| {
+            state = state.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = state;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            (z ^ (z >> 31)) as u8
+        })
+        .collect();
+    std::fs::write(src.join("big-binary.bundle"), &binary).unwrap();
+
+    let img = w.0.join("app.tfs");
+    let (rc, _, err) = run(
+        &[
+            "mkimage",
+            src.to_str().unwrap(),
+            "-o",
+            img.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "mkimage must succeed: {err}");
+
+    let dest = w.0.join("extracted");
+    std::fs::create_dir_all(&dest).unwrap();
+    let (rc, _, err) = run(
+        &[
+            "extract",
+            "-d",
+            dest.to_str().unwrap(),
+            img.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "extract must succeed: {err}");
+
+    for (name, want) in [
+        ("dup-a.txt", dup.as_slice()),
+        ("dup-b.txt", dup.as_slice()),
+        ("dup-c.txt", dup.as_slice()),
+        ("big-text.rb", text.as_slice()),
+        ("big-binary.bundle", binary.as_slice()),
+    ] {
+        let got = std::fs::read(dest.join(name)).unwrap_or_else(|e| panic!("read {name}: {e}"));
+        assert_eq!(got.len(), want.len(), "{name}: byte count must round-trip");
+        assert_eq!(got, want, "{name}: bytes must round-trip");
+    }
 }
 
 #[test]

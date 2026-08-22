@@ -6,9 +6,8 @@
 //! per-backend, semantics are shared. Plus the region/memory mount
 //! constructors and the named-error surfaces.
 //!
-//! Windows ships a dwarfs-only tfs (TODO.v2-1/02): the limnifs cases are
-//! POSIX-only.
-#![cfg(not(windows))]
+//! The limnifs cases run on windows too — the windows tfs ships
+//! dwarfs+limnifs (squashfs/enc stay POSIX-gated, TODO.v2-1/02).
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -201,8 +201,9 @@ fn full_report_unsigned_classic() {
     assert!(!out.contains("backend:"), "{out}");
 }
 
-// squashfs slots mount on POSIX only — the windows tfs is dwarfs-only,
-// where the probe renders the named mount-failure state (TODO.v2-1/02).
+// squashfs slots mount on POSIX only — the windows tfs ships no squashfs
+// backend, so the probe renders the named mount-failure state there
+// (TODO.v2-1/02).
 #[cfg(not(windows))]
 #[test]
 fn full_report_signed_lean_and_depths() {
@@ -389,8 +390,8 @@ fn slot_view_and_errors() {
     assert!(out.contains("      schema_version: 1\n"), "{out}");
 
     // A plain-image slot reports the named note. POSIX only — the
-    // windows tfs is dwarfs-only, the sqfs slot reports the named mount
-    // failure there (TODO.v2-1/02).
+    // windows tfs ships no squashfs backend; the sqfs slot reports the
+    // named mount failure there (TODO.v2-1/02).
     #[cfg(not(windows))]
     {
         let (rc, out, _) = run(&["info", "--slot", "1", pkg.to_str().unwrap()], &w.0, &home);
@@ -794,6 +795,37 @@ fn format_detection_per_slot() {
         out.contains("    [3] ") && out.contains("format: auto  "),
         "{out}"
     );
+}
+
+// ---------------------------------------------------------------------
+// LimniFS sniff (spec 20 §6): the bundle verb's magic sniff must stamp
+// the limnifs hint — the format_name catch-all rendered such slots as
+// "auto" before §6, and an auto hint on an LMFS image misinforms every
+// hint-only reader (depth-0 info, legacy dump). Mount detection stays
+// authoritative; the hint is a mirror.
+// ---------------------------------------------------------------------
+
+#[test]
+fn limnifs_magic_sniffs_the_limnifs_hint() {
+    let w = TempDir::new("plimsniff");
+    let home = test_home("plimsniff");
+    // A bare LMFS-magic file suffices: bundle is a container op (no
+    // mount), so the sniff alone decides the slot's format hint.
+    let img = w.0.join("payload.lim");
+    let mut bytes = b"LMFS".to_vec();
+    bytes.resize(512, 0);
+    std::fs::write(&img, bytes).unwrap();
+    let pkg = w.0.join("pkg");
+    bundle(&home, &w, &[], &[&img], &pkg);
+
+    let mut f = std::fs::File::open(&pkg).unwrap();
+    let trailer = tpkg::read_from(&mut f).unwrap();
+    assert_eq!(trailer.slots[0].format_id, tpkg::TPKG_FORMAT_LIMNIFS);
+
+    // The legacy dump names the hint (was "auto" via the catch-all).
+    let (rc, out, _) = run(&["info", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 0, "{out}");
+    assert!(out.contains("format=limnifs"), "{out}");
 }
 
 // ---------------------------------------------------------------------

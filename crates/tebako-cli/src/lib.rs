@@ -399,10 +399,10 @@ pub(crate) fn stitch(
                 Some(&format!("image not found: {}", path.display())),
             ));
         }
-        if *format_id > tpkg::TPKG_FORMAT_RUNTIME {
+        if *format_id > tpkg::TPKG_FORMAT_LIMNIFS {
             return Err(packaging_error(
                 126,
-                Some(&format!("invalid format_id {format_id} (0..4 expected)")),
+                Some(&format!("invalid format_id {format_id} (0..=5 expected)")),
             ));
         }
         if mount.len() >= tpkg::TPKG_MOUNT_POINT_LEN {

@@ -113,7 +113,8 @@ pub fn parse_image_spec(spec: &str) -> PackageImage {
     }
 }
 
-/// Sniff the image format from magic bytes (dwarfs/squashfs/zip, else auto).
+/// Sniff the image format from magic bytes (dwarfs/squashfs/zip/limnifs,
+/// else auto).
 pub fn sniff_format(path: &Path) -> u32 {
     let Ok(mut f) = fs::File::open(path) else {
         return tpkg::TPKG_FORMAT_AUTO;
@@ -129,6 +130,8 @@ pub fn sniff_format(path: &Path) -> u32 {
         tpkg::TPKG_FORMAT_SQUASHFS
     } else if magic.starts_with(b"PK\x03\x04") || magic.starts_with(b"PK\x05\x06") {
         tpkg::TPKG_FORMAT_ZIP
+    } else if magic.starts_with(b"LMFS") {
+        tpkg::TPKG_FORMAT_LIMNIFS
     } else {
         tpkg::TPKG_FORMAT_AUTO
     }
@@ -140,6 +143,7 @@ fn format_name(format_id: u32) -> &'static str {
         tpkg::TPKG_FORMAT_DWARFS => "dwarfs",
         tpkg::TPKG_FORMAT_SQUASHFS => "squashfs",
         tpkg::TPKG_FORMAT_ZIP => "zip",
+        tpkg::TPKG_FORMAT_LIMNIFS => "limnifs",
         _ => "auto",
     }
 }

@@ -689,7 +689,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut suite: Option<PathBuf> = None;
     let mut jail: Option<String> = None;
     let mut no_install = false;
-    let mut format = tebako_cli::options::PressImageFormat::Dwarfs;
+    let mut format = tebako_cli::options::PressImageFormat::Limnifs;
 
     let mut i = 0;
     while i < args.len() {

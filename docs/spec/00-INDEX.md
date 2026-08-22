@@ -50,7 +50,7 @@ spec 02 §6).
 15. [15 — The info surface](15-info-command.md) — payload and package introspection (`tfs info` / `tebako-pkg info`), verification exit codes, JSON contract
 16. [16 — Distribution and installation](16-distribution-and-installation.md) — personas, channels (brew/curl|sh/tebako install), slim/fat, trust per channel
 17. [17 — Runtime driver contract](17-runtime-driver-contract.md) — the language-agnostic loader↔runtime surface (argv, env, IO, exit codes)
-20. [20 — LimniFS backend](20-limnifs-backend.md) — image format 5: detection, the backend adapter contract, backend cargo features, the writer path (PLANNED)
+20. [20 — LimniFS backend](20-limnifs-backend.md) — image format 5: detection, the backend adapter contract, backend cargo features, the writer path; the DEFAULT image format for `tfs mkimage` and `tebako press` (SHIPPED, v0.2.0)
 21. [21 — Crypto consolidation](21-crypto-consolidation.md) — one crypto home per layer: OpenPGP keeps trust and identity, ENC keeps confidentiality, limnifs-native crypto is evidence, never anchor (PROPOSED DECISION)
 22. [22 — Runtime-native interposition](22-runtime-native-interposition.md) — the generalized hooks: loader/exec/resource interposition inside the runtime, the documented interface, and the death of per-gem adapters (the spec-18 contract's runtime-internal half)
 23. [23 — Declarative composition and needs resolution](23-declarative-composition.md) — the fully declarative slice stack: D1 needs / D2 composition doc / D3 press-baked union / D4-D5 operator surfaces; deny-safe by default, the needs-check law (PLANNED)

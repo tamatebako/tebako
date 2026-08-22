@@ -26,7 +26,7 @@ sha2 = "0.10"
 tfs = { version = "0.2.1", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
-tfs = { version = "0.2.1", path = "../tfs", default-features = false, features = ["vendored-dwarfs"] }
+tfs = { version = "0.2.1", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
 
 [dev-dependencies]
 tebako-contract-tests = { version = "0.2.1", path = "../../tests/contract" }

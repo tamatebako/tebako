@@ -226,6 +226,15 @@ fn press_simple_script_runs() {
         )),
         "unexpected press output:\n{log}"
     );
+    // Default press = limnifs (spec 20 §6): the app slot carries the
+    // format_id 5 hint.
+    let mut f = fs::File::open(&package).unwrap();
+    let trailer = tpkg::read_from(&mut f).unwrap();
+    assert_eq!(
+        trailer.slots[0].format_id,
+        tpkg::TPKG_FORMAT_LIMNIFS,
+        "the default press stamps the limnifs format hint"
+    );
     let (code, out) = run(&mut Command::new(&package));
     assert_eq!(code, 0, "packaged binary failed:\n{out}");
     assert_eq!(out, "Hello!  This is test-00 talking from inside DwarFS\n");
@@ -690,8 +699,11 @@ fn gem_press_command(gem: &GoldenGem, env: &PressEnv, entry: &str, output: &Path
 ///   an environment-state difference, not a behavioral one);
 /// - the image build lines: the gem shells out to mkdwarfs ("-- Running
 ///   mkdwarfs script" + the "   ... @ <mkdwarfs> ..." echo) while the CLI
-///   builds in-process ("-- Building DwarFS image ...") — the owner rule
-///   is no mkdwarfs anywhere on the Rust side;
+///   builds in-process ("-- Building dwarfs image ..." — the gem's
+///   capitalized "-- Building DwarFS image" spelling is the oracle's) —
+///   the owner rule is no mkdwarfs anywhere on the Rust side. The golden
+///   rs press pins `--format dwarfs` (like-for-like with the dwarfs-only
+///   gem; the CLI default is limnifs, spec 20 §6);
 /// - the bundler deploy ops the gem still emits but the CLI dropped
 ///   (roadmap 25 items 4–5): the `force_ruby_platform` config op and the
 ///   install op's `--prefer-local` (the retired dependency API / the
@@ -708,6 +720,7 @@ fn normalize_press_log(log: &str) -> String {
                 && !line.starts_with("   ... tfs-ruby-")
                 && !line.contains(" --tebako-extract ")
                 && !line.starts_with("-- Building DwarFS image")
+                && !line.starts_with("-- Building dwarfs image")
                 && !line.contains("bundle config set --local force_ruby_platform")
                 && !gem_image_build
         })
@@ -757,9 +770,13 @@ fn golden_scenario(gem: &GoldenGem, tag: &str, fixture: &str, entry: &str, expec
     assert_eq!(code, 0, "gem-pressed binary failed:\n{gem_out}");
 
     // The gem's press left its own version key; re-seed the CLI's so its
-    // cache guard stays silent as well.
+    // cache guard stays silent as well. The rs press pins `--format
+    // dwarfs`: the golden compares like-for-like against the dwarfs-only
+    // reference gem (the CLI default is limnifs, spec 20 §6).
     seed_rs_version_file(&env.prefix);
-    let (code, rs_log) = run(&mut press_command(&env, entry, &package));
+    let (code, rs_log) = run(press_command(&env, entry, &package)
+        .arg("--format")
+        .arg("dwarfs"));
     assert!(code == 0, "tebako-rs press failed:\n{rs_log}");
     let (code, rs_out) = run(&mut Command::new(&package));
     assert_eq!(code, 0, "tebako-rs-pressed binary failed:\n{rs_out}");
@@ -1431,7 +1448,11 @@ fn native_ext_press_builds_and_packages() {
     // The built extension sits in the app image at its gem-correct path
     // (a .gem install drops the built artifact into the gem's lib tree).
     let image = work.join("prefix").join("o").join("p").join("fs.tfs");
-    let fs_image = dwarfs_t::Filesystem::open(&image).unwrap();
+    // The default press writes limnifs (spec 20 §6): inspect the app
+    // image through the format-neutral backend, never a format-specific
+    // reader.
+    let mount = tfs::mount::build_from_file(&image.to_string_lossy(), "/mnt-native-ext")
+        .expect("the app image mounts");
     let ext = if cfg!(target_os = "macos") {
         "bundle"
     } else {
@@ -1439,7 +1460,7 @@ fn native_ext_press_builds_and_packages() {
     };
     let artifact = format!("lib/ruby/gems/3.3.0/gems/toyext-0.1.0/lib/toyext/toyext.{ext}");
     assert!(
-        fs_image.stat(&artifact).is_ok(),
+        mount.backend.stat(&artifact).is_ok(),
         "built extension missing from the app image at {artifact}"
     );
 
