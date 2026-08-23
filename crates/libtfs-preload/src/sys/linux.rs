@@ -33,9 +33,20 @@
 //! interposed too (the wrapper lives INSIDE libc and calls the syscall
 //! stub directly, so an interposed `read` never sees a fortified caller
 //! — the debian/temurin JDK's libjli imports exactly it for the jar
-//! END-record read). `__fxstatat64` remains a documented gap, as do
-//! `readv`/`preadv`/`sendfile`/`copy_file_range` and the write-side
-//! `pwrite64`/`ftruncate64`/`statvfs64` family on memfs fds. A
+//! END-record read), and the fortified `__openat_2` (the three-arg
+//! `openat`; its check is compile-time, so the runtime symbol is plain
+//! openat — the 0.16.6 runtime's vendored C++ imports it, tebako#439).
+//! `openat64` (Rust std's openat spelling under `_FILE_OFFSET_BITS=64`)
+//! and `fopen64` (tebako#439: libcrypto's `crypto/o_fopen.c` defines
+//! `_FILE_OFFSET_BITS=64` itself on linux, so `openssl_fopen` — the
+//! `BIO_new_file` / `X509_LOOKUP_load_file` choke point — binds
+//! `fopen64`, never `fopen`) are interposed as delegations to their
+//! plain-name bodies, as is `__fxstatat64` (to `__fxstatat` — the
+//! versioned stat family's last *64 form). Remaining documented gaps:
+//! the rest of the fortify open family (`__open_2`/`__open64_2`/
+//! `__openat64_2` — no importer observed in the 0.16.6 linux-gnu
+//! runtime), `readv`/`preadv`/`sendfile`/`copy_file_range`, and the
+//! write-side `pwrite64`/`ftruncate64`/`statvfs64` family on memfs fds. A
 //! pre-existing landmine OUTSIDE the JDK path: the plain
 //! `stat`/`lstat`/`fstat`/`stat64`/`lstat64`/`fstat64` host passthroughs
 //! resolve dynamic symbols glibc only exports ≥ 2.33 — on an older

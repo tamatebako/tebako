@@ -752,6 +752,37 @@ pub unsafe extern "C" fn open64(path: *const c_char, flags: c_int, mode: c_int) 
     unsafe { open(path, flags, mode) }
 }
 
+/// Linux: `openat64` (the LFS alias of `openat`). glibc's fcntl.h
+/// redirects `openat` to this DISTINCT symbol under `_FILE_OFFSET_BITS=64`
+/// — Rust std's dir-walk openat callers bind it directly (the 0.16.6
+/// linux-gnu runtime exe imports it — tebako#439). Same layout, same
+/// routing: delegate to the plain-name body, exactly like `open64`.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn openat64(
+    dirfd: c_int,
+    path: *const c_char,
+    flags: c_int,
+    mode: c_int,
+) -> c_int {
+    unsafe { openat(dirfd, path, flags, mode) }
+}
+
+/// Linux: `__openat_2` — the `_FORTIFY_SOURCE=2` three-argument `openat`.
+/// The check happens at COMPILE time (glibc's bits/fcntl2.h rejects
+/// O_CREAT/O_TMPFILE without a mode there); the runtime symbol IS plain
+/// openat, so the shim delegates exactly like the LFS aliases — the
+/// `__read_chk` precedent: the fortify entry is a DISTINCT exported symbol
+/// that an interposed plain name never sees (the 0.16.6 runtime's vendored
+/// C++ imports it — tebako#439).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __openat_2(dirfd: c_int, path: *const c_char, flags: c_int) -> c_int {
+    // The fortify contract guarantees flags carry no O_CREAT/O_TMPFILE
+    // (compile-time rejection), so the openat body's mode is unused.
+    unsafe { openat(dirfd, path, flags, 0) }
+}
+
 /// Linux: `stat64` (the LFS alias of `stat`).
 #[cfg(target_os = "linux")]
 #[no_mangle]
@@ -1049,6 +1080,21 @@ pub unsafe extern "C" fn fopen(path: *const c_char, mode: *const c_char) -> *mut
     }
 }
 
+/// Linux: `fopen64` (the LFS alias of `fopen`) — the tebako#439 hole.
+/// libcrypto's `crypto/o_fopen.c` defines `_FILE_OFFSET_BITS=64` ITSELF
+/// on linux ("aliases fopen to fopen64"), so `openssl_fopen` — every
+/// `BIO_new_file` / `X509_LOOKUP_load_file` (ruby's
+/// `X509::Store#add_file`/`set_default_paths`), `RAND_load_file`,
+/// config read — binds `fopen64`, never `fopen` (the 0.16.6 linux-gnu
+/// runtime exe: `openssl_fopen` is a tail-call to `fopen64@plt`; FLAC
+/// and libstdc++'s `__basic_file::open` bind it too). Same layout, same
+/// routing: delegate to the plain-name body (the `open64` precedent).
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn fopen64(path: *const c_char, mode: *const c_char) -> *mut libc::FILE {
+    unsafe { fopen(path, mode) }
+}
+
 /// macOS's `fopen$DARWIN_EXTSN` (the extended-signature export the 64-bit
 /// SDK binds) — the same body as `fopen`.
 #[cfg(target_os = "macos")]
@@ -1329,6 +1375,22 @@ pub unsafe extern "C" fn __lxstat64(ver: c_int, path: *const c_char, st: *mut li
 #[no_mangle]
 pub unsafe extern "C" fn __fxstat64(ver: c_int, fd: c_int, st: *mut libc::stat) -> c_int {
     unsafe { __fxstat(ver, fd, st) }
+}
+
+/// Linux: `__fxstatat64` (versioned LFS64 fstatat) — completes the
+/// versioned stat family's *64 forms (tebako#439: the 0.16.6 linux-gnu
+/// runtime exe imports it; previously the documented gap). Same
+/// delegation rationale as `__xstat64`.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __fxstatat64(
+    ver: c_int,
+    dirfd: c_int,
+    path: *const c_char,
+    st: *mut libc::stat,
+    flags: c_int,
+) -> c_int {
+    unsafe { __fxstatat(ver, dirfd, path, st, flags) }
 }
 
 /// Interposed `rewinddir` (roadmap 39): reset a memfs stream to its first
