@@ -20,22 +20,3 @@ lto = "fat"
 codegen-units = 1
 panic = "abort"
 strip = "symbols"
-
-
-# TEMPORARY [patch] — git fork carrying exactly one commit on top of
-# limni-v0.2.54: the `defaults.shared_inline` knob (proposed upstream as
-# limnifs#189; fork branch linked from the issue). The floor recipe
-# (spec 20 §5) needs `shared_inline = false`: published 0.16.3–0.16.5
-# drivers ship limnifs-core < 0.2.53, whose INODE_FLAG_RESERVED_MASK
-# (0xF8) covers the defined SHARED_INLINE bit 0x08 (limnifs#186), so any
-# image with the table is rejected at mount by every floor reader.
-#
-# Everything ELSE the floor recipe needs is stock 0.2.54: the #187
-# threshold knob (defaults to 1000 KiB), the #315 writer-side zstd
-# self-check, lz4-hc metadata. This patch carries NO other change.
-#
-# LIFT CONDITION: upstream ships a release with #189 merged → repoint to
-# crates.io and delete this block. The constraint itself dies when the
-# runtime floor embeds limnifs-core ≥ 0.2.53 (runtime ≥ 0.16.6).
-[patch.crates-io]
-limnifs-write = { git = "https://github.com/tamatebako/limnifs", branch = "tebako-floor-gate" }

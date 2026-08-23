@@ -252,6 +252,66 @@ fn mkimage_limnifs_floor_recipe_readback() {
     }
 }
 
+/// Spec 20 §5 constraint 1, structurally: the floor recipe keeps the
+/// shared-inline table OFF (`defaults.shared_inline = false`), so no
+/// inode in an emitted image carries the 0x08 flag — the bit every
+/// floor-era reader (limnifs-core < 0.2.53) rejects via its reserved
+/// mask (limnifs#186). Mirrors upstream's #189 regression shape
+/// (limnifs-write's shared_inline_round_trip.rs): three identical
+/// inline-sized files are exactly the dedup trigger, so a knob-on
+/// regression fails here loudly. The parse surface is the reader's:
+/// the 0x08 flag decodes to `ContentHandle::SharedInline`, so "no
+/// SharedInline handle" IS "no 0x08 on the wire".
+#[test]
+fn mkimage_limnifs_floor_recipe_emits_no_shared_inline() {
+    let w = TempDir::new("mkimgnosil");
+    let src = w.0.join("app");
+    std::fs::create_dir_all(&src).unwrap();
+    let dup =
+        b"identical inline bytes in three small files - the shared-inline dedup trigger shape";
+    assert!(dup.len() <= 4096);
+    for name in ["dup-a.txt", "dup-b.txt", "dup-c.txt"] {
+        std::fs::write(src.join(name), dup).unwrap();
+    }
+
+    let img = w.0.join("app.tfs");
+    let (rc, _, err) = run(
+        &[
+            "mkimage",
+            src.to_str().unwrap(),
+            "-o",
+            img.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "mkimage must succeed: {err}");
+
+    let bytes = std::fs::read(&img).unwrap();
+    let mut cursor = limnifs_core::ManifestCursor::new(&bytes);
+    limnifs_core::parse_manifest_header(&mut cursor).expect("header parses");
+    limnifs_core::parse_feature_flags_section(&mut cursor).expect("feature flags parse");
+    let reference =
+        limnifs_core::parse_metadata_reference(&mut cursor).expect("metadata reference parses");
+    let inline = reference
+        .inline_metadata
+        .as_deref()
+        .expect("a self-contained image inlines the metadata");
+    let blob = limnifs_core::parse_metadata_blob(&mut limnifs_core::ManifestCursor::new(inline))
+        .expect("metadata blob parses");
+
+    let mut dups = 0;
+    for inode in &blob.inodes {
+        match &inode.content_handle {
+            limnifs_core::ContentHandle::InlineData(d) if d.as_slice() == dup => dups += 1,
+            limnifs_core::ContentHandle::SharedInline(_) => {
+                panic!("the floor recipe must not emit SharedInline inodes")
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(dups, 3, "all three duplicates ride plain inline data");
+}
+
 #[test]
 fn mkimage_overwrites_existing_output() {
     let w = TempDir::new("mkimg3");
