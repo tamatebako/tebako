@@ -206,6 +206,24 @@ interposition point) and any process that escapes the shim — stated
 honestly in the manifest and docs. OS-level network confinement
 (seatbelt/seccomp/WFP) is a possible later layer, never claimed today.
 
+The shim's coverage is SYMBOL-level (tebako#439): a jail holds only for
+the libc entry points the shim interposes — the named list in
+`crates/libtfs-preload` (lib.rs "Interposed surface"), which includes
+the LFS64/fortify/versioned twins (`open64`/`openat64`/`fopen64`,
+`__read_chk`/`__openat_2`, the `__xstat` family through `__fxstatat64`)
+because glibc hands `_FILE_OFFSET_BITS=64`/`_FORTIFY_SOURCE`/pre-2.33
+callers DISTINCT symbols that never touch the plain names (the #439
+hole: OpenSSL's `o_fopen.c` defines `_FILE_OFFSET_BITS=64` itself, so
+every `BIO_new_file`/`X509_LOOKUP_load_file` bound `fopen64` straight to
+libc). Known-uncovered at this layer: the remaining fortify open family
+(`__open_2`/`__open64_2`/`__openat64_2` — no importer observed in the
+0.16.6 linux-gnu runtime) and raw `syscall(2)` IO. Separately, the
+runtime EXE's own statically-linked native libraries are gated only for
+symbols the exe itself defines (spec 22 §2: `dlopen`/`dlerror` today —
+defining the file-IO family in the exe is follow-up wiring in the
+runtime factory, tebako-runtime-ruby); an
+interpreter's patched IO and preload-delivered children are covered.
+
 ## 6. Executor-layer trust (locked 2026-07-27)
 
 Tebako is the EXECUTOR of everything it runs — the parent that spawns

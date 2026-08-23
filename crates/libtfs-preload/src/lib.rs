@@ -31,12 +31,18 @@
 //!
 //! Interposed surface: `open`, `openat`, `stat`, `lstat`, `fstat`,
 //! `fstatat` (+`fstatat64`/`__xstat`/`__lxstat`/`__fxstat`/`__fxstatat`/
-//! `statx`/`getdents64` and the LFS `open64`/`stat64`/`lstat64`/`fstat64`/
-//! `pread64` family on Linux — roadmap 39), `access`,
+//! `__xstat64`/`__lxstat64`/`__fxstat64`/`__fxstatat64`/`statx`/
+//! `getdents64` and the LFS `open64`/`openat64`/`stat64`/`lstat64`/
+//! `fstat64`/`pread64` family on Linux — roadmap 39; the fortified
+//! `__read_chk` and `__openat_2`, and `fopen64` — tebako#439:
+//! libcrypto's `o_fopen.c` defines `_FILE_OFFSET_BITS=64` itself on
+//! linux, so every `BIO_new_file`/`X509_LOOKUP_load_file` binds
+//! `fopen64`, never `fopen`), `access`,
 //! `faccessat`, `opendir`, `readdir` (+`readdir64` on Linux),
 //! `readdir_r`, `rewinddir`/`telldir`/`seekdir`, `dirfd`, `closedir`,
 //! `pread`, `read`, `lseek` (additive — stdio fseek on a memfs fd must
-//! stay on the VFS), `close`, `mkdir`, `unlink`, `rename`, `dlopen`, and
+//! stay on the VFS), `close`, `mkdir`, `unlink`, `rename`, `dlopen`,
+//! `fopen` (read modes), and
 //! `execve`/`posix_spawn`/`posix_spawnp` (memfs paths materialize through
 //! the `dlmap2file` host cache; roadmap 39). Memfs paths are served by
 //! the engine; host paths pass through, gated by the SAME `host_policy`
@@ -90,8 +96,9 @@
 //! - Not interposed in v1: `fork` itself (its child side is guarded —
 //!   see above), `openat2` (glibc has no wrapper at
 //!   all — see above), `fstatat64` on macOS (the legacy 32-bit-inode
-//!   layout), the LFS `__xstat64`/`__lxstat64`/
-//!   `__fxstat64`/`__fxstatat64` versioned forms on Linux, `fdopendir`
+//!   layout), the fortify open family beyond `__openat_2`
+//!   (`__open_2`/`__open64_2`/`__openat64_2` on Linux — no importer
+//!   observed in the 0.16.6 linux-gnu runtime), `fdopendir`
 //!   (a host fdopendir passes through whole; a memfs directory can never
 //!   be fd-opened, so it never arises), and syscall()-direct IO (raw
 //!   `syscall(2)` calls bypass userland interposition by construction —

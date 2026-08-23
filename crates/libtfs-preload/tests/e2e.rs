@@ -14,6 +14,10 @@
 //!   probe, __read_chk fortified read, __fxstat64, anonymous mmap with
 //!   the fd -1 bit-test lie, mmap64 CEN window on a flagged memfs fd —
 //!   spec 22 class E),
+//! - the tebako#439 alias surface (fopen64/openat64/__openat_2/
+//!   __fxstatat64 — the LFS64/fortify/versioned twins of already-covered
+//!   names, incl. OpenSSL 3.6's `openssl_fopen` → `fopen64`): the jail
+//!   gates each alias exactly like its plain-name twin,
 //! - named errors + EX_CONFIG (78) on misformatted env.
 //!
 //! Skip policy (documented in the crate README/spec): tests SKIP (pass
@@ -143,6 +147,7 @@ fn build_fixtures() -> Option<Fixtures> {
         "mmap-probe",
         "close-probe",
         "fork-exec",
+        "alias-probe",
     ] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
@@ -724,6 +729,64 @@ fn at_family_linux_extensions() {
     let r = run(f, "at-probe", &["getdents64-file", &secret], None);
     assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
     assert_eq!(r.stdout.trim(), format!("ERRNO:{}", libc::ENOTDIR));
+}
+
+/// tebako#439 — the LFS64/fortify/versioned ALIAS surface is the same
+/// jail. OpenSSL 3.6's BIO file path binds `fopen64` (crypto/o_fopen.c
+/// defines `_FILE_OFFSET_BITS=64` itself on linux, so `openssl_fopen` —
+/// the `BIO_new_file`/`X509_LOOKUP_load_file` choke point behind ruby's
+/// `X509::Store#add_file` — tail-calls `fopen64@plt`, never `fopen`);
+/// Rust std binds `openat64`, vendored fortify C++ binds `__openat_2`,
+/// and `__fxstatat64` completes the versioned stat family (all four
+/// imported by the 0.16.6 linux-gnu runtime exe). Each alias must serve
+/// the memfs, fail EPERM under a deny jail, and pass an ro grant —
+/// exactly like its plain-name twin.
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_alias_surface_jail_parity() {
+    let Some(f) = fixtures() else { return };
+    let secret = format!("{MOUNT}/data/secret.txt");
+
+    // The alias serves the memfs (fopen64 delegates to the fopen body:
+    // the Vfs answer materializes through dlmap2file like any stdio
+    // read) — and keeps working under a deny jail (spec 08 §3).
+    for jail in [None, Some("deny")] {
+        let r = run(f, "alias-probe", &["fopen64", &secret], jail);
+        assert_eq!(
+            r.rc, 0,
+            "fopen64 memfs, jail {jail:?}, stderr: {}",
+            r.stderr
+        );
+        assert_eq!(r.stdout, SECRET, "fopen64 memfs stdout");
+    }
+
+    // The hole's shape: a denied HOST path through each alias → EPERM.
+    for leg in ["fopen64", "openat64", "__openat_2", "__fxstatat64"] {
+        let r = run(f, "alias-probe", &[leg, "/etc/hosts"], Some("deny"));
+        assert_eq!(
+            r.rc,
+            libc::EPERM,
+            "{leg} of a denied host path must fail EPERM, stderr: {}",
+            r.stderr
+        );
+    }
+
+    // The allowed-path control: an ro grant passes every read alias.
+    let ro_jail = format!("deny;{}:/work:ro", f.work.display());
+    let host = f.work.join("hostfile.txt");
+    let host = host.to_str().unwrap();
+    for leg in ["fopen64", "openat64", "__openat_2"] {
+        let r = run(f, "alias-probe", &[leg, host], Some(&ro_jail));
+        assert_eq!(r.rc, 0, "{leg} under the ro grant, stderr: {}", r.stderr);
+        assert_eq!(r.stdout, "HOST-FILE\n", "{leg} stdout");
+    }
+    let r = run(f, "alias-probe", &["__fxstatat64", host], Some(&ro_jail));
+    assert_eq!(
+        r.rc, 0,
+        "__fxstatat64 under the ro grant, stderr: {}",
+        r.stderr
+    );
+    assert_eq!(r.stdout.trim(), "SIZE:10");
 }
 
 #[test]
