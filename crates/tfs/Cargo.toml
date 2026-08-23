@@ -54,7 +54,7 @@ sqfs-sys = { version = "0.2.1", path = "../sqfs-sys", optional = true }
 # §5's floor recipe is lz4-only (metadata lz4-hc, content lz4-or-store),
 # and the 0.2.54 writer self-check refuses to emit un-decodable zstd
 # frames regardless.
-limnifs-core = { version = "0.2.54", optional = true }
+limnifs-core = { version = "0.2.57", optional = true }
 # The ENC stacking transform (spec 10, backends_enc): AES-256-GCM per-block
 # confidentiality with HKDF-SHA256 subtree keys, DEK grant envelopes via
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
@@ -102,5 +102,5 @@ rnp = { package = "rnp-rs", version = "=0.1.11", features = ["vendored"] }
 crc32fast = "1"
 # LimniFS golden fixtures are written in-process (never a limni binary) —
 # test-only, never linked into the shipped library.
-limnifs-write = "0.2.54"
+limnifs-write = "0.2.57"
 

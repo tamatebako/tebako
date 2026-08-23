@@ -218,12 +218,15 @@ shares constraint 4's remedy:
    MUST NOT set flag 0x08 while they are the floor: both writer entry
    points run with `defaults.shared_inline = false` (the metadata blob
    is whole-blob compressed, so re-inlined duplicate blobs cost nothing
-   on the wire). The knob is limnifs#189 — filed; until it ships in a
-   release it rides the `tamatebako/limnifs` `tebako-floor-gate` fork
-   branch via the workspace `[patch.crates-io]` (a single
-   upstream-shaped commit on `limni-v0.2.54`). **Lift condition:** the
-   floor's readers embed limnifs-core ≥ 0.2.53 (runtime ≥ 0.16.6) AND
-   the knob ships in a crates.io release.
+   on the wire). The knob is limnifs#189 — SHIPPED in limnifs 0.2.57
+   (`WriteConfig::defaults.shared_inline`, serde-defaulted true); the
+   limnifs pins ride crates.io semver and the workspace
+   `[patch.crates-io]` fork block is deleted. **Lift condition:** the
+   floor's readers embed limnifs-core ≥ 0.2.53 — i.e. a factory
+   runtime cut built on tebako ≥ v0.2.2, the tebako release whose link
+   unit first carries limnifs-core ≥ 0.2.53 (runtime 0.16.6 does NOT
+   lift anything: its link unit comes from tebako v0.2.1, which embeds
+   limnifs-core 0.2.51).
 2. **The metadata blob is lz4-HC — never brotli, never zstd, never
    store, and (for size) never fast lz4.** The 0.16.3-era reader's
    brotli decode path fails on metadata blobs beyond the small-buffer
@@ -343,13 +346,11 @@ that bar and dwarfs-t does not; the reasons, in order of weight:
    the CI cost driver (per-target C++ cross-compilation); `limnifs-core`
    / `limnifs-write` compile everywhere Rust compiles and resolve from
    crates.io with semver-pinned versions — the default path never
-   consumes an unpinned source tree. (TEMPORARY CARVE-OUT, lifts with
-   §5's constraint 1: until the limnifs#189 `shared_inline` knob ships
-   in a crates.io release, the product workspace pins
-   `[patch.crates-io] limnifs-write` to the `tamatebako/limnifs`
-   `tebako-floor-gate` branch — a single upstream-shaped commit on the
-   `limni-v0.2.54` tag, version-pinned at 0.2.54; only the source is
-   redirected, and git-based so CI resolves it like any machine.)
+   consumes an unpinned source tree. (CARVE-OUT LIFTED 2026-08-23: the
+   limnifs#189 `shared_inline` knob shipped in limnifs 0.2.57, the
+   limnifs deps resolve from crates.io semver-pinned at 0.2.57, and the
+   workspace `[patch.crates-io]` block that redirected `limnifs-write`
+   to the `tamatebako/limnifs` `tebako-floor-gate` fork is deleted.)
 3. **Content-addressed storage.** Every drop is `BLAKE3(plaintext)`:
    image-internal integrity, dedup across and within images, and the
    structural delta-update story (§7) come from the format, not from

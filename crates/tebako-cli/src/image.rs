@@ -85,8 +85,8 @@ fn write_dwarfs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
 /// overshoots the readers' 1 MiB hard ceiling outright. The
 /// shared-inline table stays off (`defaults.shared_inline = false`):
 /// every floor reader (limnifs-core < 0.2.53) rejects its inode flag
-/// 0x08 via its own reserved mask (limnifs#186; the knob rides the
-/// tebako-floor-gate fork until limnifs#189 ships). Spec 20 §5's
+/// 0x08 via its own reserved mask (limnifs#186; the knob is stock
+/// since limnifs 0.2.57 — limnifs#189). Spec 20 §5's
 /// floor rule pins the full recipe. The metadata is inlined up to the
 /// readers' 1 MiB ceiling.
 fn write_limnifs_image(out: &Path, source: &Path) -> Result<(), TebakoError> {
