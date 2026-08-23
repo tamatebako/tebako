@@ -757,7 +757,7 @@ pub(crate) fn join_mount(mount_point: &str, entry: &str) -> String {
 
 /// The VFS drive of a runtime root: `A:/t` → `Some("A:")`;
 /// `/__tfs__` → `None` (POSIX — no drive qualification).
-fn vfs_drive(runtime_root: &str) -> Option<&str> {
+pub(crate) fn vfs_drive(runtime_root: &str) -> Option<&str> {
     let b = runtime_root.as_bytes();
     if b.len() >= 2 && b[0].is_ascii_alphabetic() && b[1] == b':' {
         Some(&runtime_root[..2])

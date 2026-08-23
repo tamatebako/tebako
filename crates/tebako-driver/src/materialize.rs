@@ -7,6 +7,18 @@
 //! the interpreter handoff — in both boot shapes (the standalone
 //! env-image boot and the `--tebako-image` grammar).
 //!
+//! A declared cert (the `ssl/cert.pem` convention — the runtime env
+//! image's OpenSSL trust store) additionally rides the handoff env: the
+//! driver, the single owner of the materialized host path, exports
+//! `SSL_CERT_FILE` pointing at the host copy (issue #437). The export is
+//! deliberate, never a stomp: an unset/empty value is set, a stale
+//! in-VFS spelling under the effective runtime mount root (inherited
+//! from an outer tebako process — ruby's patched IO resolves it,
+//! libcrypto's native CRT IO cannot) is rewritten, and a real host path
+//! is the user's own configuration, which always wins. POSIX images
+//! declare no cert, so nothing is set there — the platform default
+//! store keeps flowing through the jail.
+//!
 //! Each declared path `P` lands at
 //! `<TEBAKO_EXEC_CACHE>/resources/<image-key>/<P>` (the §6 convention):
 //! the exec cache is the namespace every materialization of this boot
@@ -67,11 +79,21 @@ fn io(message: impl Into<String>) -> DriverError {
     DriverError::new(EX_TEBAKO_IO, message.into())
 }
 
+/// The handoff env variable the cert convention exports (issue #437).
+const CERT_ENV: &str = "SSL_CERT_FILE";
+
+/// The cert convention: a declared `materialize:` entry naming the
+/// image's OpenSSL trust store ends with this path (component-aligned —
+/// `/ssl/cert.pem` itself or any deeper spelling such as
+/// `/foo/ssl/cert.pem`).
+const CERT_SUFFIX: &str = "ssl/cert.pem";
+
 /// Materialize every mounted image's declared `materialize:` paths (see
 /// the module doc). Called per boot after the mounts and the jail,
 /// before the interpreter handoff. The env image's own declarations
 /// come first (the runtime's resources — the cert case), then each
-/// payload triple's in order.
+/// payload triple's in order. When a declared cert materialized, its
+/// host path is exported to the handoff env ([`export_cert`]).
 pub fn extract(images: &[ImageSpec], env: &dyn Env, runtime_root: &str) -> Result<(), DriverError> {
     let Some(cache) = env_var(env, crate::exec_cache::VAR) else {
         // Unreachable through boot() — exec_cache::export runs first on
@@ -81,8 +103,11 @@ pub fn extract(images: &[ImageSpec], env: &dyn Env, runtime_root: &str) -> Resul
             crate::exec_cache::VAR
         )));
     };
+    // The first declared cert wins: the env image's (the runtime's own
+    // trust store) ahead of any payload's, then triple order.
+    let mut cert = None;
     if let Some(image) = env_var(env, "TEBAKO_RUNTIME_IMAGE") {
-        extract_image(&cache, Path::new(&image), runtime_root)?;
+        cert = extract_image(&cache, Path::new(&image), runtime_root)?;
     }
     for spec in images {
         let host = match &spec.source {
@@ -90,7 +115,10 @@ pub fn extract(images: &[ImageSpec], env: &dyn Env, runtime_root: &str) -> Resul
             ImageSource::OwnSlot(_) => std::env::current_exe()
                 .map_err(|e| io(format!("cannot determine own executable path: {e}")))?,
         };
-        extract_image(&cache, &host, &spec.mount)?;
+        cert = cert.or(extract_image(&cache, &host, &spec.mount)?);
+    }
+    if let Some(cert) = cert {
+        export_cert(env, runtime_root, &cert);
     }
     Ok(())
 }
@@ -98,21 +126,77 @@ pub fn extract(images: &[ImageSpec], env: &dyn Env, runtime_root: &str) -> Resul
 /// One mounted image's declarations. No manifest declares nothing
 /// (plain images mount fine — the pre-manifest era and the boot-smoke
 /// fixture case); a corrupt one is the image lying about its
-/// self-description (the shared named 65).
-fn extract_image(cache: &str, image: &Path, mount: &str) -> Result<(), DriverError> {
+/// self-description (the shared named 65). Returns the host path of the
+/// image's first declared cert when one materialized.
+fn extract_image(cache: &str, image: &Path, mount: &str) -> Result<Option<PathBuf>, DriverError> {
     let Some(manifest) = crate::driver::mounted_manifest_at(mount)? else {
-        return Ok(());
+        return Ok(None);
     };
     if manifest.materialize.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     let dir = Path::new(cache)
         .join("resources")
         .join(crate::exec_cache::image_key(image));
+    let mut cert = None;
     for declared in &manifest.materialize {
-        extract_one(&dir, mount, declared)?;
+        let target = extract_one(&dir, mount, declared)?;
+        if cert.is_none() && is_cert(declared) {
+            cert = Some(target);
+        }
     }
-    Ok(())
+    Ok(cert)
+}
+
+/// The cert convention's name check (see [`CERT_SUFFIX`]).
+fn is_cert(declared: &str) -> bool {
+    let path = declared.trim_start_matches('/');
+    path == CERT_SUFFIX || path.ends_with(&format!("/{CERT_SUFFIX}"))
+}
+
+/// Is `value` lexically under `root` (the stale in-VFS spelling check)?
+/// Separator-insensitive (`\` reads as `/`); a drive-qualified root (the
+/// windows spelling) compares ASCII-case-insensitively — the windows
+/// filesystem's own rule — a POSIX root exactly.
+fn under_root(value: &str, root: &str) -> bool {
+    let value = value.replace('\\', "/");
+    let root = root.replace('\\', "/");
+    let root = root.trim_end_matches('/');
+    if root.is_empty() {
+        return false;
+    }
+    let (value, root) = match crate::driver::vfs_drive(root) {
+        Some(_) => (value.to_ascii_lowercase(), root.to_ascii_lowercase()),
+        None => (value, root.to_string()),
+    };
+    value == root || value.starts_with(&format!("{root}/"))
+}
+
+/// The `SSL_CERT_FILE` decision, pure (issue #437): the materialized
+/// host path when the incoming value is absent (empty reads as absent —
+/// the `env_var` filter) or points under the effective runtime mount
+/// root (a stale in-VFS spelling); `None` — leave untouched — when the
+/// incoming value is a real host path (the user's own configuration
+/// always wins).
+fn cert_env(current: Option<String>, cert_host: &str, effective_root: &str) -> Option<String> {
+    match current {
+        None => Some(cert_host.to_string()),
+        Some(value) if under_root(&value, effective_root) => Some(cert_host.to_string()),
+        Some(_) => None,
+    }
+}
+
+/// Export the materialized cert's host path per [`cert_env`]'s decision.
+fn export_cert(env: &dyn Env, runtime_root: &str, cert_host: &Path) {
+    let cert_host = cert_host.to_string_lossy();
+    if let Some(value) = cert_env(env_var(env, CERT_ENV), &cert_host, runtime_root) {
+        tebako_log::log!(
+            tebako_log::Level::Debug,
+            "driver",
+            "exported {CERT_ENV}={value}"
+        );
+        env.set_var(CERT_ENV, &value);
+    }
 }
 
 /// The record path of an extraction target (`<target>.tfs-digest`).
@@ -176,7 +260,8 @@ fn stream_out(vfs: &str, tmp: &Path) -> Result<MerkleDigest, DriverError> {
 
 /// Extract one declared path: whole-file, read-only, verified (the
 /// module doc's protocol). `dir` is the image's resources namespace.
-fn extract_one(dir: &Path, mount: &str, declared: &str) -> Result<(), DriverError> {
+/// Returns the materialized host path (fresh or verified cache hit).
+fn extract_one(dir: &Path, mount: &str, declared: &str) -> Result<PathBuf, DriverError> {
     let vfs = join_mount(mount, declared);
     // Whole files only: a declared-but-absent or non-file path is the
     // manifest lying (Rule R3) — a named 65, never a skipped entry.
@@ -198,7 +283,8 @@ fn extract_one(dir: &Path, mount: &str, declared: &str) -> Result<(), DriverErro
     // components) makes this join namespace-safe by construction.
     let target = dir.join(declared.trim_start_matches('/'));
     if target.exists() {
-        return verify_recorded(&target, dir, declared);
+        verify_recorded(&target, dir, declared)?;
+        return Ok(target);
     }
     let parent = target.parent().ok_or_else(|| {
         io(format!(
@@ -282,7 +368,7 @@ fn extract_one(dir: &Path, mount: &str, declared: &str) -> Result<(), DriverErro
         "materialized declared={declared} at={}",
         target.display()
     );
-    Ok(())
+    Ok(target)
 }
 
 /// The write-once case: serve an earlier boot's copy only after it
@@ -420,9 +506,110 @@ mod tests {
             dir.to_string_lossy().into_owned(),
         )])));
         // No env image, no payload images: nothing to consult, nothing
-        // created.
+        // created — and no cert declared, so the env stays untouched
+        // (the POSIX no-op).
         extract(&[], &env, "/__tfs__").unwrap();
         assert!(!dir.join("resources").exists());
+        assert!(!env.0.borrow().contains_key(CERT_ENV));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn env_with(pairs: &[(&str, &str)]) -> MapEnv {
+        MapEnv(RefCell::new(
+            pairs
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
+        ))
+    }
+
+    #[test]
+    fn the_cert_convention_names_component_aligned_paths() {
+        assert!(is_cert("/ssl/cert.pem"));
+        assert!(is_cert("ssl/cert.pem"));
+        assert!(is_cert("/foo/ssl/cert.pem"));
+        // Not component-aligned — no false positive on a prefix.
+        assert!(!is_cert("/my-ssl/cert.pem"));
+        assert!(!is_cert("/ssl/cert.pem.bak"));
+        assert!(!is_cert("/lib/libcrypto.so"));
+    }
+
+    #[test]
+    fn under_root_is_separator_and_drive_case_insensitive() {
+        // POSIX spellings compare exactly.
+        assert!(under_root("/__tfs__/ssl/cert.pem", "/__tfs__"));
+        assert!(!under_root("/__TFS__/ssl/cert.pem", "/__tfs__"));
+        assert!(!under_root("/etc/ssl/cert.pem", "/__tfs__"));
+        // A drive-qualified root (the windows spelling) compares
+        // ASCII-case-insensitively and reads `\` as `/`.
+        assert!(under_root("A:/t/ssl/cert.pem", "A:/t"));
+        assert!(under_root("a:/t/ssl/cert.pem", "A:/t"));
+        assert!(under_root("A:\\t\\ssl\\cert.pem", "A:/t"));
+        assert!(!under_root("C:/Users/x/cert.pem", "A:/t"));
+        // Boundary discipline: the root itself is under itself; a
+        // sibling with a shared prefix is not.
+        assert!(under_root("A:/t", "A:/t"));
+        assert!(!under_root("/__tfs__x/ssl/cert.pem", "/__tfs__"));
+        assert!(!under_root("A:/tx/ssl/cert.pem", "A:/t"));
+    }
+
+    #[test]
+    fn cert_env_sets_rewrites_or_defers() {
+        let host = "/tmp/tebako-exec-k/resources/i/ssl/cert.pem";
+        // Unset → set to the materialized host path.
+        assert_eq!(cert_env(None, host, "/__tfs__").as_deref(), Some(host));
+        // Under the effective root → the stale in-VFS spelling rewrites,
+        // POSIX and windows spellings alike.
+        assert_eq!(
+            cert_env(Some("/__tfs__/ssl/cert.pem".to_string()), host, "/__tfs__").as_deref(),
+            Some(host)
+        );
+        assert_eq!(
+            cert_env(Some("A:/t/ssl/cert.pem".to_string()), host, "A:/t").as_deref(),
+            Some(host)
+        );
+        // A real host path outside the root is the user's own setting —
+        // untouched.
+        assert_eq!(
+            cert_env(Some("/etc/ssl/cert.pem".to_string()), host, "/__tfs__"),
+            None
+        );
+        assert_eq!(
+            cert_env(Some("C:/Users/x/cert.pem".to_string()), host, "A:/t"),
+            None
+        );
+    }
+
+    #[test]
+    fn export_cert_applies_the_decision_to_the_env() {
+        // Unset → set.
+        let env = env_with(&[]);
+        export_cert(&env, "/__tfs__", Path::new("/cache/ssl/cert.pem"));
+        assert_eq!(
+            env.0.borrow().get(CERT_ENV).map(String::as_str),
+            Some("/cache/ssl/cert.pem")
+        );
+        // Empty reads as unset (the env_var filter) → set.
+        let env = env_with(&[(CERT_ENV, "")]);
+        export_cert(&env, "/__tfs__", Path::new("/cache/ssl/cert.pem"));
+        assert_eq!(
+            env.0.borrow().get(CERT_ENV).map(String::as_str),
+            Some("/cache/ssl/cert.pem")
+        );
+        // A stale in-VFS spelling inherited from an outer tebako process
+        // rewrites to this boot's materialized copy.
+        let env = env_with(&[(CERT_ENV, "A:/t/ssl/cert.pem")]);
+        export_cert(&env, "A:/t", Path::new("C:/cache/ssl/cert.pem"));
+        assert_eq!(
+            env.0.borrow().get(CERT_ENV).map(String::as_str),
+            Some("C:/cache/ssl/cert.pem")
+        );
+        // A real host path wins.
+        let env = env_with(&[(CERT_ENV, "/etc/ssl/cert.pem")]);
+        export_cert(&env, "/__tfs__", Path::new("/cache/ssl/cert.pem"));
+        assert_eq!(
+            env.0.borrow().get(CERT_ENV).map(String::as_str),
+            Some("/etc/ssl/cert.pem")
+        );
     }
 }
