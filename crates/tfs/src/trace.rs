@@ -616,6 +616,40 @@ mod tests {
         assert_eq!(text.lines().count(), 1, "the disarmed emit never lands");
     }
 
+    /// The capture rows one thread emitted, in capture order — the join
+    /// key for every decision pairing below (tebako#438). The bus is
+    /// process-global (one channel per process, spec 25 §2): while a
+    /// test holds the bus armed, a concurrent test's context decisions
+    /// interleave into the capture, carrying THAT thread's bus ordinal.
+    /// The schema names the thread key: "grouping by (pid, tid)
+    /// regroups events by thread identically" (trace-event.yaml `tid`).
+    fn rows_of_thread(rows: &[Value], pid: u64, tid: u64) -> Vec<&Value> {
+        rows.iter()
+            .filter(|row| {
+                row.find("pid").and_then(Value::as_u64) == Some(pid)
+                    && row.find("tid").and_then(Value::as_u64) == Some(tid)
+            })
+            .collect()
+    }
+
+    /// The detail object of the first row of `op` whose verdict starts
+    /// with `prefix`. First-match WITHIN one thread's rows is sound: a
+    /// thread's decisions append in program order.
+    fn detail_of<'a>(rows: &[&'a Value], op: &str, prefix: &str) -> &'a Value {
+        rows.iter()
+            .copied()
+            .find(|row| {
+                row.find("op").and_then(Value::as_string).as_deref() == Some(op)
+                    && row
+                        .find("verdict")
+                        .and_then(Value::as_string)
+                        .is_some_and(|v| v.starts_with(prefix))
+            })
+            .unwrap_or_else(|| panic!("a {op} {prefix} event among the thread's rows"))
+            .find("detail")
+            .expect("detail present (schema-validated)")
+    }
+
     /// The spec 25 §3/§7 property: driving the public tfs op matrix
     /// through the process-global context emits exactly one schema-valid
     /// event per decision. Every line of the capture is validated against
@@ -634,6 +668,9 @@ mod tests {
         let capture = tmp.path().join("nested").join("capture.jsonl");
         let (_guard, armed) = ArmedGuard::arm(&capture);
         assert!(armed);
+        // This thread's bus ordinal — the (pid, tid) join key the
+        // decision assertions below scope by (tebako#438).
+        let my_tid = tid();
 
         // The one-file zip fixture (context.rs's shape).
         let image = tmp.path().join("img.zip");
@@ -732,6 +769,14 @@ mod tests {
         let text = std::fs::read_to_string(&capture).expect("read capture");
         let lines: Vec<&str> = text.lines().collect();
         assert!(lines.len() >= 15, "the matrix's decisions: {text}");
+        let rows: Vec<Value> = lines
+            .iter()
+            .enumerate()
+            .map(|(i, line)| {
+                tebako_json::parse(line)
+                    .unwrap_or_else(|e| panic!("line {} parses as JSON: {e}: {line}", i + 1))
+            })
+            .collect();
 
         // -----------------------------------------------------------
         // Every line validates against the schema contract.
@@ -796,10 +841,8 @@ mod tests {
                 _ => false,
             }
         };
-        let mut seen: Vec<(String, String)> = Vec::new();
-        for (i, line) in lines.iter().enumerate() {
-            let doc = tebako_json::parse(line)
-                .unwrap_or_else(|e| panic!("line {} parses as JSON: {e}: {line}", i + 1));
+        for (i, doc) in rows.iter().enumerate() {
+            let line = lines[i];
             let get = |key: &str| {
                 doc.find(key)
                     .unwrap_or_else(|| panic!("line {}: `{key}` present: {line}", i + 1))
@@ -863,12 +906,30 @@ mod tests {
                     i + 1
                 ),
             }
-            seen.push((op, verdict));
         }
 
         // -----------------------------------------------------------
-        // The expected decisions are all present.
+        // The expected decisions are all present — among THIS thread's
+        // rows. The bus is process-global: a concurrent test's decisions
+        // can interleave into this capture (schema-valid, so the loop
+        // above validates them too), but only this thread's rows are
+        // this matrix's decisions — the schema's (pid, tid) pair is the
+        // thread key (trace-event.yaml's `tid` notes; tebako#438).
         // -----------------------------------------------------------
+        let own = rows_of_thread(&rows, u64::from(std::process::id()), my_tid);
+        let seen: Vec<(String, String)> = own
+            .iter()
+            .map(|row| {
+                (
+                    row.find("op")
+                        .and_then(Value::as_string)
+                        .expect("op string"),
+                    row.find("verdict")
+                        .and_then(Value::as_string)
+                        .expect("verdict string"),
+                )
+            })
+            .collect();
         let has = |op: &str, prefix: &str| {
             seen.iter()
                 .any(|(o, v)| o == op && (prefix.is_empty() || v.starts_with(prefix)))
@@ -889,15 +950,7 @@ mod tests {
         assert!(has("materialize", "cache-hit"), "materialize hit: {seen:?}");
 
         // The decision-level details (schema's per-op detail grammar).
-        let detail_of = |op: &str, prefix: &str| {
-            let line = lines[seen
-                .iter()
-                .position(|(o, v)| o == op && v.starts_with(prefix))
-                .unwrap_or_else(|| panic!("a {op} {prefix} event in {seen:?}"))];
-            let doc = tebako_json::parse(line).unwrap();
-            doc.find("detail").unwrap().clone()
-        };
-        let insert = detail_of("mount", "ok");
+        let insert = detail_of(&own, "mount", "ok");
         assert_eq!(
             insert.find("action").and_then(Value::as_string).as_deref(),
             Some("insert")
@@ -906,9 +959,9 @@ mod tests {
             insert.find("image").and_then(Value::as_string).as_deref(),
             Some(image.to_str().unwrap())
         );
-        let clear = lines
+        let clear = own
             .iter()
-            .map(|l| tebako_json::parse(l).unwrap())
+            .copied()
             .find(|d| {
                 d.find("detail")
                     .and_then(|dt| dt.find("action"))
@@ -929,7 +982,7 @@ mod tests {
                 == Some(1),
             "the clear reports its mount count: {clear:?}"
         );
-        let passthrough = detail_of("open", "host");
+        let passthrough = detail_of(&own, "open", "host");
         assert_eq!(
             passthrough
                 .find("need")
@@ -937,34 +990,34 @@ mod tests {
                 .as_deref(),
             Some("read")
         );
-        let jail = detail_of("jail", "record");
+        let jail = detail_of(&own, "jail", "record");
         assert_eq!(
             jail.find("access").and_then(Value::as_string).as_deref(),
             Some("read")
         );
-        let exec = detail_of("exec", "routed:");
+        let exec = detail_of(&own, "exec", "routed:");
         assert_eq!(
             exec.find("route").and_then(Value::as_string).as_deref(),
             Some("dlmap-closure")
         );
         // The spawn event is the exec row's grammar on the child-creating
         // surface — the op token is the only difference.
-        let spawn = detail_of("spawn", "routed:");
+        let spawn = detail_of(&own, "spawn", "routed:");
         assert_eq!(
             spawn.find("route").and_then(Value::as_string).as_deref(),
             Some("dlmap-closure")
         );
         // The dlopen event carries the closure walk (schema §2): a
         // non-binary fixture parses no header — format null, deps [].
-        let dl = detail_of("dlopen", "materialized:");
+        let dl = detail_of(&own, "dlopen", "materialized:");
         let closure = dl.find("closure").expect("closure detail");
         assert!(matches!(closure.find("format"), Some(Value::Null)));
         assert!(matches!(closure.find("deps"), Some(Value::Array(d)) if d.is_empty()));
         // The dlmap redirect: the open verdict names the mount and the
         // details carry the tail + the materialized host path.
-        let redirect = lines
+        let redirect = own
             .iter()
-            .map(|l| tebako_json::parse(l).unwrap())
+            .copied()
             .find(|d| {
                 d.find("op").and_then(Value::as_string).as_deref() == Some("open")
                     && d.find("detail")
@@ -988,6 +1041,41 @@ mod tests {
                 .and_then(Value::as_string)
                 .as_deref(),
             Some(materialized.to_str().unwrap())
+        );
+    }
+
+    /// tebako#438: the bus is process-global — while the op-matrix test
+    /// holds it armed, a CONCURRENT test's context decisions interleave
+    /// into its capture (the dlalias2file/dlmap2file unit tests run on
+    /// local contexts and share no lock with the matrix test). The
+    /// dlopen grammar has two surfaces (trace-event.yaml's dlopen
+    /// notes): dlmap2file rows carry `closure`; dlalias2file rows carry
+    /// `alias` instead. A first-match pairing over the whole capture
+    /// can therefore join an interleaved alias row — no `closure` — and
+    /// panic at `expect("closure detail")` (main b6f984b7, run
+    /// 32628470588). The join keys on the schema's (pid, tid) thread
+    /// pair: "grouping by (pid, tid) regroups events by thread
+    /// identically".
+    #[test]
+    fn the_row_pairing_scopes_to_the_emitting_thread() {
+        // A concurrent dlalias2file test's row (tid 98): the alias
+        // surface — `alias: true`, no closure — interleaved BEFORE this
+        // thread's dlmap2file row (tid 99), which carries the closure.
+        let foreign = r#"{"v":1,"ts":"2026-08-19T01:00:09.000000Z","pid":4242,"tid":98,"op":"dlopen","path":"libfoo-3.dll","verdict":"materialized:/tmp/tebako-dl-x/libfoo-3.dll","detail":{"alias":true},"dur_us":3}"#;
+        let own = r#"{"v":1,"ts":"2026-08-19T01:00:09.000001Z","pid":4242,"tid":99,"op":"dlopen","path":"/tfs/lib/libx.so","verdict":"materialized:/tmp/tebako-dl-x/tfs/lib/libx.so","detail":{"closure":{"format":null,"deps":[]}},"dur_us":4}"#;
+        let rows: Vec<Value> = [foreign, own]
+            .iter()
+            .map(|line| tebako_json::parse(line).expect("fixture parses"))
+            .collect();
+        // First-match over the whole capture joins the alias row (the
+        // CI panic); scoping to the emitting thread first — the same
+        // helpers the op-matrix test pairs with — joins the
+        // closure-carrying row.
+        let mine = rows_of_thread(&rows, 4242, 99);
+        let joined = detail_of(&mine, "dlopen", "materialized:");
+        assert!(
+            joined.find("closure").is_some(),
+            "the interleaved alias row must not win the join: {joined:?}"
         );
     }
 }
