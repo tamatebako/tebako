@@ -585,7 +585,12 @@ the image that ships a resource also ships the configuration pointing
 at its materialized location (the runtime env image's own OpenSSL cert
 default is the first entry). Payloads needing host-visible resources
 declare them in their own manifests; a consumer reads the materialized
-path through the documented cache-root convention (§6).
+path through the documented cache-root convention (§6). The one
+env-surface exception is the cert convention (`ssl/cert.pem`): the
+driver — the single owner of where the materialized copy landed —
+exports `SSL_CERT_FILE` at boot per spec 17 §2's table (an image-side
+default pointing at the in-VFS spelling is unreadable by libcrypto's
+native CRT IO on the store-less boot, the #437 failure).
 
 **Rule R3.** Materialization is whole-file, read-only, and verified.
 The mechanics (locked):
