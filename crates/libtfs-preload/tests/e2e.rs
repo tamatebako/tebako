@@ -966,3 +966,175 @@ fn fork_child_exec_under_root_mount_completes() {
         "the grandchild's host read under the root mount"
     );
 }
+
+// ---------------------------------------------------------------------
+// tebako#448: the macOS insertion guard (arm64e / Rosetta exec targets)
+// ---------------------------------------------------------------------
+
+/// Compile the insert-probe for one `-arch`. None — with a stderr note,
+/// the suite's documented skip idiom — when the toolchain cannot build
+/// that arch at all (the absent-prerequisite arm; the standard-fixture
+/// "a cc that fails is a hard failure" rule does not cover optional arch
+/// slices).
+#[cfg(target_os = "macos")]
+fn compile_arch_probe(f: &Fixtures, arch: &str) -> Option<PathBuf> {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/insert-probe.c");
+    let out = f.dir.join("bin").join(format!("insert-probe-{arch}"));
+    let o = Command::new("cc")
+        .arg("-O2")
+        .arg("-arch")
+        .arg(arch)
+        .arg("-o")
+        .arg(&out)
+        .arg(&src)
+        .output()
+        .unwrap();
+    if !o.status.success() {
+        eprintln!(
+            "skip: cc -arch {arch} unsupported: {}",
+            String::from_utf8_lossy(&o.stderr)
+        );
+        return None;
+    }
+    Some(out)
+}
+
+/// Preflight: does the probe RUN here unarmed (no insertion, no mounts)?
+/// Distinguishes a usable arch leg from a host that cannot run the arch
+/// at all — Rosetta absent, or a kernel refusing third-party arm64e
+/// (macOS 14.1: "not running binary built against preview arm64e ABI").
+#[cfg(target_os = "macos")]
+fn arch_probe_runs(probe: &Path) -> bool {
+    Command::new(probe)
+        .env_remove("DYLD_INSERT_LIBRARIES")
+        .env_remove("TEBAKO_TFS_MOUNTS")
+        .output()
+        .map(|o| o.status.code() == Some(42))
+        .unwrap_or(false)
+}
+
+/// Launch the inserted spawn-helper so its INTERPOSED exec/spawn surface
+/// execs the probe with the inherited env — the guard's decision point.
+/// `path_override` arms the spawnp bare-name leg's PATH search; `debug`
+/// sets TEBAKO_DEBUG_TFS so the guard's own strip note lands on stderr.
+#[cfg(target_os = "macos")]
+fn run_guarded(f: &Fixtures, mode: &str, target: &str, path: Option<&Path>, debug: bool) -> Run {
+    let mut cmd = Command::new(f.dir.join("bin").join("spawn-helper"));
+    cmd.arg(mode)
+        .arg(target)
+        .arg("x")
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", "")
+        .env_remove("TEBAKO_JAIL")
+        .env_remove("DYLD_PRINT_LIBRARIES");
+    if let Some(p) = path {
+        cmd.env("PATH", p);
+    }
+    if debug {
+        cmd.env("TEBAKO_DEBUG_TFS", "1");
+    }
+    let out = cmd.output().unwrap();
+    let signal = std::os::unix::process::ExitStatusExt::signal(&out.status);
+    Run {
+        rc: out.status.code().unwrap_or(-1),
+        signal,
+        stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
+    }
+}
+
+/// tebako#448 — the macOS insertion guard. A virtualized parent (the
+/// shim loaded via DYLD_INSERT_LIBRARIES) execs a child whose Mach-O the
+/// arm64-only interpose dylib cannot load: before the fix the forwarded
+/// insertion made dyld TERMINATE the child ("mach-o file, but is an
+/// incompatible architecture (have 'arm64', need 'arm64e')" — the 0.16.7
+/// native_ext leg on macos-14). The interposed execve/posix_spawn/
+/// posix_spawnp must strip DYLD_INSERT_LIBRARIES for exactly those
+/// targets and keep it otherwise.
+///
+/// Three legs: an arm64 CONTROL (insertion kept — the child reports the
+/// var and exits 42), an x86_64-only probe under Rosetta (no arm64 slice
+/// → stripped; runs all three exec surfaces incl. spawnp's bare-name PATH
+/// resolution), and an arm64e probe — the issue's exact shape — which
+/// skips loudly on hosts whose kernel refuses third-party arm64e
+/// binaries (macOS 14.1's "preview arm64e ABI" refusal; the macos-14 CI
+/// runners run them, and that is where the bug bit).
+#[cfg(target_os = "macos")]
+#[test]
+fn exec_strips_insertion_when_the_target_cannot_load_the_dylib() {
+    let Some(f) = fixtures() else { return };
+
+    // The arm64 control: the guard must NOT strip what dyld can load —
+    // the inserted child reports the inherited var and exits 42. (cc must
+    // build the host's own arch — a hard failure otherwise, per the
+    // suite's skip policy.)
+    let arm64 = compile_arch_probe(f, "arm64").expect("the host arch compiles");
+    let r = run_guarded(f, "execve", arm64.to_str().unwrap(), None, false);
+    assert_eq!(
+        r.rc, 42,
+        "arm64 control (signal: {:?}), stderr: {}",
+        r.signal, r.stderr
+    );
+    assert_eq!(r.stdout, "INSERT:set\n", "the control keeps insertion");
+
+    // The x86_64-only leg: no arm64 slice → the arm64 dylib cannot load
+    // (dyld's own words on this host, pre-fix: "incompatible architecture
+    // (have 'arm64', need 'x86_64')" + SIGABRT). Stripped, the child runs.
+    if let Some(x64) = compile_arch_probe(f, "x86_64") {
+        if arch_probe_runs(&x64) {
+            for mode in ["execve", "posix_spawn"] {
+                let r = run_guarded(f, mode, x64.to_str().unwrap(), None, true);
+                assert_eq!(
+                    r.rc, 42,
+                    "x86_64 {mode} (signal: {:?} — pre-fix dyld aborts here), stderr: {}",
+                    r.signal, r.stderr
+                );
+                assert_eq!(r.stdout, "INSERT:unset\n", "x86_64 {mode} kept the var");
+                // The guard's own note on the crate's debug channel —
+                // proof the strip fired, not that dyld relented.
+                assert!(
+                    r.stderr.contains("[preload] strip DYLD_INSERT_LIBRARIES"),
+                    "x86_64 {mode}: the guard note, stderr: {}",
+                    r.stderr
+                );
+            }
+            // spawnp of a BARE name: the guard resolves it through the
+            // caller's PATH, then strips by the resolved file's slices.
+            let r = run_guarded(
+                f,
+                "posix_spawnp",
+                "insert-probe-x86_64",
+                Some(&f.dir.join("bin")),
+                false,
+            );
+            assert_eq!(
+                r.rc, 42,
+                "x86_64 posix_spawnp (signal: {:?}), stderr: {}",
+                r.signal, r.stderr
+            );
+            assert_eq!(r.stdout, "INSERT:unset\n", "spawnp bare-name strip");
+        } else {
+            eprintln!("skip: the x86_64 probe does not run here (Rosetta absent)");
+        }
+    }
+
+    // The arm64e leg — the issue's exact dyld kill.
+    if let Some(arm64e) = compile_arch_probe(f, "arm64e") {
+        if arch_probe_runs(&arm64e) {
+            for mode in ["execve", "posix_spawn"] {
+                let r = run_guarded(f, mode, arm64e.to_str().unwrap(), None, false);
+                assert_eq!(
+                    r.rc, 42,
+                    "arm64e {mode} (signal: {:?} — the tebako#448 kill), stderr: {}",
+                    r.signal, r.stderr
+                );
+                assert_eq!(r.stdout, "INSERT:unset\n", "arm64e {mode} kept the var");
+            }
+        } else {
+            eprintln!(
+                "skip: this host's kernel refuses third-party arm64e binaries \
+                 (preview ABI) — the arm64e leg proves out on macos-14 CI"
+            );
+        }
+    }
+}
