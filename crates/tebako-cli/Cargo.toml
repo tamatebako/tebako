@@ -41,7 +41,7 @@ serde_yml = "0.0.12"
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 # The in-process LimniFS writer for `press --format limnifs` (spec 20 §6)
 # — pure Rust, no `limni` binary anywhere.
-limnifs-write = "0.2.57"
+limnifs-write = "0.2.61"
 libc = "0.2"
 sha2 = "0.10"
 # RuntimeSdk provisioning extracts the ruby src release in-process (no tar
