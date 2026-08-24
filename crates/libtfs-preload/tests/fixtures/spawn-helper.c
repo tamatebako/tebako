@@ -35,6 +35,19 @@ int main(int argc, char **argv) {
         waitpid(pid, &status, 0);
         return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
     }
+    if (strcmp(argv[1], "posix_spawnp") == 0) {
+        /* argv[2] may be a bare name: the caller's PATH (in environ)
+         * resolves it — the tebako#448 guard's spawnp leg. */
+        pid_t pid;
+        int s = posix_spawnp(&pid, argv[2], NULL, NULL, child_argv, environ);
+        if (s != 0) {
+            dprintf(2, "posix_spawnp %s: %s\n", argv[2], strerror(s));
+            return s;
+        }
+        int status;
+        waitpid(pid, &status, 0);
+        return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+    }
     dprintf(2, "spawn-helper: unknown mode %s\n", argv[1]);
     return 64;
 }

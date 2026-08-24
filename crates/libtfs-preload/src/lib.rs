@@ -66,7 +66,11 @@
 //!   binary is NOT policy-gated (it is not an IO route in the policy's op
 //!   classes — the child's own IO stays jailed via env propagation).
 //!   Platform binaries under SIP (macOS) strip `DYLD_*` — they leave the
-//!   VFS, as does any statically linked child.
+//!   VFS, as does any statically linked child. A macOS exec/spawn target
+//!   whose Mach-O cannot load this (per-arch) dylib — an arm64e slice
+//!   dyld would prefer, or no host-arch slice at all — gets a rebuilt
+//!   env WITHOUT `DYLD_INSERT_LIBRARIES` for that one exec (tebako#448):
+//!   dyld TERMINATES a child over an incompatible insertion otherwise.
 //! - A mount at `/` is legitimate (the app payload mounts there, spec
 //!   17): covered-but-not-held paths fall through to the host with the
 //!   policy gate consulted, exactly like any other mount. Non-UTF-8 paths

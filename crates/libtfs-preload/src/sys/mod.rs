@@ -44,6 +44,8 @@ use crate::route::{self, PathRoute};
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "macos")]
+mod macho_arch;
+#[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "linux")]
 pub(crate) mod statx_abi;
@@ -1476,6 +1478,12 @@ pub unsafe extern "C" fn readdir_r(
 /// copy (execve needs a host path); a host path execs the original
 /// ungated — exec of a host binary is not an IO route in the policy's op
 /// classes, and the child's own IO stays jailed via env propagation.
+///
+/// macOS: envp crosses the arm64e insertion gate (tebako#448,
+/// `macho_arch`): a target whose Mach-O slices cannot load this dylib
+/// (an arm64e slice dyld would prefer, or no host-arch slice at all) gets
+/// a rebuilt envp WITHOUT `DYLD_INSERT_LIBRARIES` — dyld would TERMINATE
+/// the child over the incompatible insertion otherwise.
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn execve(
     path: *const c_char,
@@ -1486,20 +1494,39 @@ pub unsafe extern "C" fn execve(
         return unsafe { plat::real_execve()(path, argv, envp) };
     };
     match engine_call(|| route::vfs_materialize_exec(p)) {
-        // SAFETY: `host` outlives the call; argv/envp forward verbatim.
-        Some(PathRoute::Vfs(host)) => unsafe { plat::real_execve()(host.as_ptr(), argv, envp) },
+        // SAFETY: `host` and the gate's rebuilt envp outlive the call;
+        // argv forwards verbatim.
+        Some(PathRoute::Vfs(host)) => {
+            #[cfg(target_os = "macos")]
+            let gate = host
+                .to_str()
+                .ok()
+                .and_then(|h| unsafe { macho_arch::strip_for_path_target(h, envp) });
+            #[cfg(target_os = "macos")]
+            let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
+            unsafe { plat::real_execve()(host.as_ptr(), argv, envp) }
+        }
         Some(PathRoute::Denied(e)) => {
             set_errno(e);
             -1
         }
-        Some(PathRoute::Host) | None => unsafe { plat::real_execve()(path, argv, envp) },
+        Some(PathRoute::Host) | None => {
+            #[cfg(target_os = "macos")]
+            let gate = unsafe { macho_arch::strip_for_path_target(p, envp) };
+            #[cfg(target_os = "macos")]
+            let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
+            unsafe { plat::real_execve()(path, argv, envp) }
+        }
     }
 }
 
 /// Interposed `posix_spawn` (roadmap 39): the execve routing with the
 /// spawn contract — the return IS the errno (never -1). The trace op is
 /// `spawn` (spec 25 §2: a child is created — the stream's process-tree
-/// signal), never `exec`.
+/// signal), never `exec`. envp crosses the same macOS insertion gate as
+/// execve (tebako#448); the gate's rebuilt envp is dropped after the
+/// spawn returns — posix_spawn copies the environment into the child
+/// before returning, so the buffer's drop is safe.
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn posix_spawn(
     pid: *mut libc::pid_t,
@@ -1513,13 +1540,24 @@ pub unsafe extern "C" fn posix_spawn(
         return unsafe { plat::real_posix_spawn()(pid, path, file_actions, attrp, argv, envp) };
     };
     match engine_call(|| route::vfs_materialize_spawn(p)) {
-        Some(PathRoute::Vfs(host)) => unsafe {
-            plat::real_posix_spawn()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
-        },
+        Some(PathRoute::Vfs(host)) => {
+            #[cfg(target_os = "macos")]
+            let gate = host
+                .to_str()
+                .ok()
+                .and_then(|h| unsafe { macho_arch::strip_for_path_target(h, envp) });
+            #[cfg(target_os = "macos")]
+            let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
+            unsafe { plat::real_posix_spawn()(pid, host.as_ptr(), file_actions, attrp, argv, envp) }
+        }
         Some(PathRoute::Denied(e)) => e,
-        Some(PathRoute::Host) | None => unsafe {
-            plat::real_posix_spawn()(pid, path, file_actions, attrp, argv, envp)
-        },
+        Some(PathRoute::Host) | None => {
+            #[cfg(target_os = "macos")]
+            let gate = unsafe { macho_arch::strip_for_path_target(p, envp) };
+            #[cfg(target_os = "macos")]
+            let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
+            unsafe { plat::real_posix_spawn()(pid, path, file_actions, attrp, argv, envp) }
+        }
     }
 }
 
@@ -1527,7 +1565,10 @@ pub unsafe extern "C" fn posix_spawn(
 /// posix_spawn (the `spawn` trace op, spec 25 §2); a bare name is a host
 /// PATH search (memfs dirs are not in the host PATH — pass through,
 /// stated honestly in the crate docs; no VFS decision exists, so no
-/// trace event).
+/// trace event). The macOS insertion gate (tebako#448) resolves a bare
+/// name through the caller's PATH for its Mach-O probe (first readable
+/// hit; unresolvable → passthrough unchanged) — the real spawnp's own
+/// search still answers for the exec itself.
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn posix_spawnp(
     pid: *mut libc::pid_t,
@@ -1541,16 +1582,33 @@ pub unsafe extern "C" fn posix_spawnp(
         return unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) };
     };
     if !p.contains('/') {
+        #[cfg(target_os = "macos")]
+        let gate = unsafe { macho_arch::strip_for_spawnp_target(p, envp) };
+        #[cfg(target_os = "macos")]
+        let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
         return unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) };
     }
     match engine_call(|| route::vfs_materialize_spawn(p)) {
-        Some(PathRoute::Vfs(host)) => unsafe {
-            plat::real_posix_spawnp()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
-        },
+        Some(PathRoute::Vfs(host)) => {
+            #[cfg(target_os = "macos")]
+            let gate = host
+                .to_str()
+                .ok()
+                .and_then(|h| unsafe { macho_arch::strip_for_path_target(h, envp) });
+            #[cfg(target_os = "macos")]
+            let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
+            unsafe {
+                plat::real_posix_spawnp()(pid, host.as_ptr(), file_actions, attrp, argv, envp)
+            }
+        }
         Some(PathRoute::Denied(e)) => e,
-        Some(PathRoute::Host) | None => unsafe {
-            plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp)
-        },
+        Some(PathRoute::Host) | None => {
+            #[cfg(target_os = "macos")]
+            let gate = unsafe { macho_arch::strip_for_path_target(p, envp) };
+            #[cfg(target_os = "macos")]
+            let envp = gate.as_ref().map_or(envp, macho_arch::StrippedEnv::as_envp);
+            unsafe { plat::real_posix_spawnp()(pid, file, file_actions, attrp, argv, envp) }
+        }
     }
 }
 
