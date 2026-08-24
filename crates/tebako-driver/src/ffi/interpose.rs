@@ -13,6 +13,14 @@
 //!    `TEBAKO_LOADER_INTERPOSED` sentinel,
 //! 3. `execv`s itself with the original argv and environ.
 //!
+//! The re-exec'd child (4.) scrubs the micro dylib's entry and the
+//! sentinel back OUT of the env before the boot proceeds: the dylib is
+//! bound to this exe's own `tebako_fs_*` exports — meaningless in any
+//! spawned child and LETHAL in one whose Mach-O slice cannot load it
+//! (dyld terminates an arm64e target over an inherited arm64-only
+//! insertion; tebako#448). The already-loaded dylib stays live in THIS
+//! process — dyld only consults the var at exec.
+//!
 //! The sentinel makes the re-exec fire exactly once; because it precedes
 //! all mounting there is no double boot, no partial-mount window, and no
 //! launcher-ABI change. ANY failure warns loudly on stderr and the boot
@@ -30,8 +38,8 @@ use std::path::{Path, PathBuf};
 
 use libc::c_char;
 
-/// The once-per-process sentinel: set by the inserting parent, seen by
-/// the re-exec'd child (which skips this whole path).
+/// The once-per-process sentinel: set by the inserting parent, seen and
+/// scrubbed by the re-exec'd child (which skips the insertion itself).
 pub(crate) const SENTINEL: &str = "TEBAKO_LOADER_INTERPOSED";
 
 /// The dyld insertion variable the dylib path rides.
@@ -90,6 +98,66 @@ fn compose_insert_libraries(dylib: &Path, existing: Option<OsString>) -> OsStrin
 /// are the re-exec'd child — skip entirely.
 fn should_insert(sentinel: Option<&OsStr>) -> bool {
     sentinel.is_none()
+}
+
+/// The cache-dir marker every inserted micro-dylib path carries
+/// (`<temp>/tebako-interpose/<sha256>.dylib`). Any tebako version's entry
+/// matches — an ancestor runtime's micro is as foreign to a child as ours.
+fn is_micro_dylib_entry(entry: &OsStr) -> bool {
+    let bytes = entry.as_bytes();
+    bytes
+        .windows(b"tebako-interpose/".len())
+        .any(|w| w == b"tebako-interpose/")
+        && bytes.ends_with(b".dylib")
+}
+
+/// The re-exec'd child's env cleanup (tebako#448's root fix): the micro
+/// dylib is bound to THIS exe's own `tebako_fs_*` exports — meaningless
+/// in any child (dynamic_lookup finds nothing there) and LETHAL in one
+/// whose selected Mach-O slice cannot load it: dyld TERMINATES an arm64e
+/// target over an inherited arm64-only insertion, and the interpreter of
+/// an exec'd SCRIPT is exactly such a target (deploy's `o/p/ruby` shim
+/// script execs /bin/sh — fat x86_64+arm64e — under the armed var).
+///
+/// dyld consults DYLD_INSERT_LIBRARIES only at exec: pruning it here
+/// unloads nothing in THIS process (the dylib stays loaded, the tuples
+/// stay live) but keeps the micro out of every child's env. Any
+/// non-tebako entries ride through verbatim. The sentinel is cleared with
+/// it — a respawned tebako child self-inserts at its own boot head
+/// instead of inheriting a dylib bound to the wrong exe's symbols.
+/// Injection (spec 22 §3) later points the var at the self-contained
+/// preload shim when the env image declares one — that delivery is
+/// unaffected.
+fn scrub_insertion_for_children() {
+    match scrub_insert_value(std::env::var_os(INSERT_VAR)) {
+        Some(v) => std::env::set_var(INSERT_VAR, v),
+        None => std::env::remove_var(INSERT_VAR),
+    }
+    std::env::remove_var(SENTINEL);
+}
+
+/// The scrub's pure decision: the insert list minus every micro-dylib
+/// entry, or `None` when nothing (else) is listed — the var then comes
+/// out of the env entirely rather than riding on as an empty string.
+fn scrub_insert_value(existing: Option<OsString>) -> Option<OsString> {
+    let v = existing?;
+    let entries: Vec<OsString> = v
+        .as_bytes()
+        .split(|b| *b == b':')
+        .filter(|e| !e.is_empty())
+        .map(OsStr::from_bytes)
+        .filter(|e| !is_micro_dylib_entry(e))
+        .map(OsString::from)
+        .collect();
+    if entries.is_empty() {
+        return None;
+    }
+    let mut out = entries[0].clone();
+    for e in &entries[1..] {
+        out.push(":");
+        out.push(e);
+    }
+    Some(out)
 }
 
 /// Install the dylib at its content-keyed path. A present file IS the
@@ -178,7 +246,11 @@ fn try_insert(cache_base: &Path, c_argv: *const *const c_char) -> Result<(), Str
 /// boot entries in [`crate::ffi`]).
 pub(crate) fn self_insert(c_argv: *mut *mut c_char) {
     if !should_insert(std::env::var_os(SENTINEL).as_deref()) {
-        return; // we are the re-exec'd child — the insertion fired exactly once
+        // We are the re-exec'd child — the insertion fired exactly once.
+        // The dylib is bound to THIS exe's exports; it must not ride the
+        // env into any child we spawn (tebako#448).
+        scrub_insertion_for_children();
+        return;
     }
     if let Err(reason) = try_insert(&std::env::temp_dir(), c_argv as *const *const c_char) {
         eprintln!("tebako: loader interposition unavailable: {reason}");
@@ -240,6 +312,62 @@ mod tests {
         assert!(should_insert(None));
         assert!(!should_insert(Some(OsStr::new("1"))));
         assert!(!should_insert(Some(OsStr::new(""))));
+    }
+
+    #[test]
+    fn the_micro_entry_marker_matches_only_the_cached_dylib_shape() {
+        assert!(is_micro_dylib_entry(OsStr::new(
+            "/tmp/tebako-interpose/ab12cd.dylib"
+        )));
+        assert!(is_micro_dylib_entry(OsStr::new(
+            "/var/folders/x/T/tebako-interpose/00ff.dylib"
+        )));
+        assert!(!is_micro_dylib_entry(OsStr::new("/a/x.dylib")));
+        assert!(!is_micro_dylib_entry(OsStr::new(
+            // the marker substring alone is not enough — no .dylib tail
+            "/tmp/tebako-interpose/README"
+        )));
+        assert!(!is_micro_dylib_entry(OsStr::new(
+            // a .dylib whose dir merely ends in the marker word
+            "/opt/tebako-interpose-other/x.dylib"
+        )));
+        assert!(!is_micro_dylib_entry(OsStr::new("")));
+    }
+
+    #[test]
+    fn the_scrub_drops_only_the_micro_entries() {
+        let micro = "/var/folders/x/T/tebako-interpose/ab12cd.dylib";
+        // No var at all → still no var.
+        assert_eq!(scrub_insert_value(None), None);
+        // Only the micro → the var comes out entirely.
+        assert_eq!(scrub_insert_value(Some(OsString::from(micro))), None);
+        // Micro first (the self-insertion shape) → the rest rides through.
+        assert_eq!(
+            scrub_insert_value(Some(OsString::from(format!(
+                "{micro}:/a/x.dylib:/b/y.dylib"
+            )))),
+            Some(OsString::from("/a/x.dylib:/b/y.dylib"))
+        );
+        // Micros from several ancestor runtimes all go (any cache root,
+        // any content key); order of the survivors is preserved.
+        let older = "/tmp/tebako-interpose/00ff11.dylib";
+        assert_eq!(
+            scrub_insert_value(Some(OsString::from(format!(
+                "/a/x.dylib:{micro}:{older}:/b/y.dylib"
+            )))),
+            Some(OsString::from("/a/x.dylib:/b/y.dylib"))
+        );
+        // An unrelated list is byte-identical on the far side.
+        assert_eq!(
+            scrub_insert_value(Some(OsString::from("/a/x.dylib:/b/y.dylib"))),
+            Some(OsString::from("/a/x.dylib:/b/y.dylib"))
+        );
+        // Empty segments carry nothing (the compose side never emits
+        // them, but an inherited foreign value might).
+        assert_eq!(
+            scrub_insert_value(Some(OsString::from(format!("{micro}::/a/x.dylib")))),
+            Some(OsString::from("/a/x.dylib"))
+        );
     }
 
     #[test]
