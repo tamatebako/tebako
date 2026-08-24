@@ -55,8 +55,18 @@ pub use transport::{HttpTransport, Transport};
 /// layout and are NOT served (no old contract, no compat readers). From
 /// 0.16.3 the runtimes carry the union-aware driver (the L2 `mounts:`
 /// block the press writes, spec 03 §6) and the io.c zero-copy guard
-/// (the linux deploy fix).
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.3";
+/// (the linux deploy fix). From 0.16.7 the runtimes link the v0.2.2
+/// driver unit (#433/#441/#443: the preload openssl BIO IO cover, the
+/// gnu link-unit floor, the LFS64/fortify alias surface) on ruby source
+/// v0.2.27, with the driver-owned SSL_CERT_FILE and the CRL_CHECK_ALL
+/// removal (the tebako#437 TLS family) — verified end-to-end by the
+/// factory's per-leg https_handshake boot smoke. From 0.16.9 the
+/// runtimes link the v0.2.4 driver unit (#448/#449/#451: neither the
+/// preload interpose dylib nor the driver's micro dylib reaches a
+/// child process — dyld's arm64e insertion termination can no longer
+/// kill runtime-spawned children; the 0.16.7/0.16.8 native-ext press
+/// regression).
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.9";
 
 /// Fetch `reference` (pin-verified at the fetch boundary) and install it
 /// as `payloads/<name>/<version>.tfs` — or return the existing entry.
