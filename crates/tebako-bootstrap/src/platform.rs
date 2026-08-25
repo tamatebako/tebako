@@ -320,7 +320,7 @@ pub fn lock_release(lock: EntryLock) {
 pub fn spawn_handoff(
     runtime: &Path,
     args: &[String],
-    image: Option<&Path>,
+    image: Option<&str>,
     jail: Option<&crate::JailEnv>,
 ) -> io::Error {
     install_ctrl_swallow();
@@ -329,7 +329,9 @@ pub fn spawn_handoff(
     if let Some(image) = image {
         // item 30b: the runtime image rides the environment; image-era
         // drivers mount it instead of an embedded image, v1 drivers
-        // ignore it. The handoff options themselves are unchanged.
+        // ignore it. The handoff options themselves are unchanged. The
+        // value is a wire form: a bare path, or `<package>:<slot>` for a
+        // carried env image (spec 17 §2.1, spec 19 §6.1).
         cmd.env("TEBAKO_RUNTIME_IMAGE", image);
     }
     if let Some(jail) = jail {

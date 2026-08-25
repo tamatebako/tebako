@@ -222,6 +222,8 @@ fn handoff_mounts_only_the_selected_entrys_slot() {
         &m.with_package_manifest(&pm),
         selection.as_ref(),
         &["mn2pdf".to_string(), "in.xml".to_string()],
+        None,
+        &[],
     );
     assert_eq!(
         argv,
@@ -244,6 +246,8 @@ fn handoff_mounts_only_the_selected_entrys_slot() {
         &m.with_package_manifest(&pm),
         selection.as_ref(),
         &["metanorma".to_string()],
+        None,
+        &[],
     );
     assert_eq!(
         argv,
@@ -266,6 +270,8 @@ fn handoff_without_a_package_manifest_is_byte_identical_to_v1() {
         &m,
         None,
         &["./app".to_string(), "go".to_string()],
+        None,
+        &[],
     );
     assert_eq!(
         argv,

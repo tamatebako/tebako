@@ -14,6 +14,10 @@ categories = ["filesystem", "no-std"]
 tpkg = { version = "0.2.1", path = "../tpkg" }
 tebako-signer = { version = "0.2.1", path = "../tebako-signer", optional = true }
 tebako-http = { version = "0.2.1", path = "../tebako-http" }
+# Shared-slice resolution + cache seeding (spec 23 §13, spec 05 §4):
+# default-features = false drops the git adapter (gix/reqwest) — the
+# bootstrap resolves `tfs:`/`https:`/`file://` lock sources only.
+tebako-resolve = { version = "0.2.1", path = "../tebako-resolve", default-features = false }
 tebako-term = { version = "0.2.1", path = "../tebako-term" }
 # OpenPGP trailer verification is OPTIONAL (feature `openpgp-verify`,
 # default OFF): the shipped bootstrap runs unverified-first — every
