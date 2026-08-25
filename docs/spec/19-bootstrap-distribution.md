@@ -187,18 +187,34 @@ change. When a new bootstrap ships, old packages keep their old
 bootstrap — that is by design (a package is a reproducible artifact, not
 a living install).
 
-If you want the new bootstrap on an existing package, there are two
-honest paths:
+If you want the new bootstrap on an existing package there is one honest
+path: **re-press** from the payload. The payload images are the durable
+part; stitching is cheap. The `tebako-pkg set-runtime` in-place region
+swap is retired: with the runtime carried as ordinary package slots
+(§6.1) a region swap would have to re-layout the whole file — which is
+re-pressing by another name. The decision stays explicit, and
+`tebako inspect <package>` always tells you which bootstrap era and
+version a package carries.
 
-- **Re-press** from the payload (the recommended path — the payload
-  images are the durable part; stitching is cheap).
-- **`tebako-pkg set-runtime`**, which swaps only the bootstrap region of
-  the package in place. The swap **verifies the contract card first**: a
-  new bootstrap that would refuse the package (era mismatch) is rejected
-  at swap time, not at the user's run time.
+### 6.1 The carried runtime: two ordinary slots (tebako#458)
 
-Either way, the decision is explicit, and `tebako inspect <package>`
-always tells you which bootstrap era and version a package carries.
+A self-contained package (spec 23 §13.2) carries the runtime as TWO
+ordinary trailer slots: the interpreter exe and the env image — never
+the legacy single `format_id = 4` runtime slot (spec 02 §6). At first
+run the bootstrap:
+
+1. stages the exe slot into the runtime cache — tmp + rename under the
+   entry lock, verified against the trailer slot digest (signed v2) or
+   the computed digest (unsigned), exactly the lazy-seed rule of
+   spec 05 §4;
+2. hands the env-image slot to the driver through the ordinary
+   `<self>:<slot>:<mount>` grammar (spec 17 §1) — embedding changes byte
+   placement, never semantics.
+
+The staged exe IS the cache entry: a later shared-runtime package
+resolving the same runtime version finds it already cached — the seed
+converges the two presets onto one cache. The legacy single-slot form
+keeps READING as before; presses never emit it.
 
 ## 7. The contract card inside every bootstrap
 

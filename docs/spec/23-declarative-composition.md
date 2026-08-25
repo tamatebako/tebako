@@ -7,6 +7,10 @@ layer (`TEBAKO_JAIL=record`, `tfs needs --from-journal`, `tfs exec
 --compose` — tfs crate + tfs-cli); the D1–D5 manifest/shim/press wiring
 is Phase-R. Dogfooded 2026-08-14: a JVM boot recorded, drafted, and
 replayed under deny with zero hand edits and zero unexpected denials.
+**Amended 2026-08-25 (owner-locked, tebako#460): §13 — the composition
+spectrum: per-slice `carry`, the `self-contained`/`shared-runtime`
+presets, and the `platforms:` coverage assertion. PLANNED; lands with
+the implementation PR (spec 14 order).**
 
 A tebako run is a composition of one runtime (exe + env image) and N
 payload slices, executed under one host-access policy. This spec makes
@@ -111,14 +115,26 @@ the cwd (evolving `.tebako-tools.yaml`; version pins ride here as
 
 ```yaml
 version: 1
+preset: shared-runtime        # self-contained | shared-runtime (§13);
+                              # DEFAULT shared-runtime; presets set carry
+                              # defaults, per-slice carry: overrides them
 runtime:                      # the runtime slice reference + requirement
-  name: ruby
+  name: ruby                  # … or the shorthand: ref: "ruby@~> 3.3"
   requirement: "~> 3.3"
+  carry: false                # §13 — share the runtime (machine cache);
+                              # true = the two-slot carried shape (spec 19)
+  platforms: [macos-arm64, linux-gnu-x86_64]   # OPTIONAL coverage
+                              # ASSERTION (§13.3): narrows, never extends
 slices:                       # executable + data payload slices
-  - name: metanorma
+  - name: metanorma           # … or ref: "metanorma@>= 2.1"
     requirement: ">= 2.1"
+    carry: true               # §13 — bytes ride in the package
   - name: openjdk
     requirement: "21"
+    carry: true
+  - ref: "ourorg-templates@3"
+    carry: false              # resolved per machine/org at first run
+    platforms: universal      # assertion: fail at press if not universal
 entrypoint: mnconvert         # which declared entrypoint runs
 policy: deny                  # deny (DEFAULT here) | open — see §5
 mounts:                       # operator bind-mounts (docker -v)
@@ -130,11 +146,25 @@ needs:                        # composition-level additions, D1 grammar
     - { path: "$HOME/.fontist", access: rw, why: "fontist cache" }
 ```
 
+`ref:` is the shorthand spelling of `name:` + `requirement:` —
+`name@constraint` where the constraint is the requirement grammar; one
+semantics, two spellings (the expanded form wins when both are present —
+a conflict is a named validation error). `carry:` and `platforms:` are
+the §13 axes; both are OPTIONAL, both default to the payload's own
+declaration and the preset.
+
 D5 (CLI) is this document written inline: `tebako run` accepts
 `--image/--slice name@req`, `--runtime`, `--entrypoint`, `--mount
 host:mount:ro|rw` (repeatable), `--policy open|deny`, `--need
 path:ro` (repeatable). Every flag maps 1:1 onto a D2 key; `-f` and
 flags compose, flags win (documented precedence, spec 07 amendment).
+Press gains the §13 surface: `--mode=self-contained|shared-runtime`
+(the preset; `lean|fat` accepted as deprecated aliases with a named
+warning, never silent), `--carry=all|none|<name,…>` and
+`--share=<name,…>` (per-slice overrides of the authored `carry:` —
+explicit invocation beats authored defaults, spec 07's precedence).
+`--carry=none` (even the app payload shared) is the extreme pointer
+package — legal, documented as requiring a registry at first run.
 
 ## 4. D3 — the press-baked union
 
@@ -146,6 +176,15 @@ run time, composes it with the operator env (spec 08 §4), runs the
 needs-check, and hands off. Lean packages additionally union the
 fetched runtime's release-manifest needs at resolve time — the same
 grammar, the same code path.
+
+**The lock (§13).** Press ALWAYS resolves the full composition closure
+at build time — the runtime ref plus every payload ref, transitively —
+and locks, per slice, into the L2 manifest: the concrete version, the
+`carry` verdict, and the digest pin — the single `universal` digest OR
+the per-target-triplet digest map (§13.3). What press tested is what
+runs, always: a shared slice resolves at run time BY THE LOCKED DIGEST,
+never by fresh semver (fail-closed on mismatch). Carry changes where
+the bytes come from, never WHAT runs.
 
 ## 5. The default policy — jail-safe by default
 
@@ -285,10 +324,10 @@ therefore swappable at run time:
   hit wins: `--compose <path>` (argv before `--`), then
   `TEBAKO_COMPOSE=<path>`, then a sidecar `<package>.tebako.yaml` next
   to the package file. The override REPLACES the baked
-  policy/mounts/needs/entrypoint (and, for lean packages, the slice
-  requirements); a fat package's slice SET is physical (trailer slots)
-  — an override naming a slice the trailer does not carry is a named
-  error, never a silent skip.
+  policy/mounts/needs/entrypoint and the requirements of SHARED slices;
+  the CARRIED slice set is physical (trailer slots) — an override naming
+  a carried slice the trailer does not carry is a named error, never a
+  silent skip (§13).
 - **Validation**: the override is the same D2 document with the same
   versioned schema; the bootstrap parses it (fail-closed, sysexits
   `EX_CONFIG`), resolves, needs-checks (§6.4), and only then execs.
@@ -375,3 +414,107 @@ and becomes relevant only when java is a package's ENTRY language.
 - The grammar is YAML with versioned JSON Schemas (invariant 6); the
   env serialization stays the spec 08 form (authored only — §6 step 5),
   extended by exactly one token: `record` as a policy default (§8).
+
+## 13. The composition spectrum — carried and shared (owner-locked 2026-08-25, tebako#460)
+
+**Status: PLANNED** — lands with the implementation PR (spec 14 order).
+Fat and lean are the same architecture: ONE composition pipeline whose
+only dial is which resolved slices are physically embedded as trailer
+slots. "Fat" meant *fully resolved with no hanging dependencies*;
+"lean" was a range. The locked words make the dial obvious.
+
+### 13.1 The two per-slice words
+
+Every resolved slice (the runtime pair or a payload) is either:
+
+- **carried** — its bytes ride inside the package (a trailer slot), or
+- **shared** — resolved at first run into the machine cache
+  (`~/.tebako`), verified against the press-time locked digest (§4's
+  lock), and shared with every other package that carries or needs the
+  same slice.
+
+Carried slices seed the same cache lazily (the scoped spec 05 §4
+exception: best-effort, tmp+rename, journaled, idempotent same-sha
+skip, never blocks or fails the run), so both paths converge — a
+self-contained download is a cache prime with a runnable side effect.
+The runtime pair seeds the runtime cache the same way (spec 19's
+two-slot shape).
+
+### 13.2 The two package presets
+
+- **self-contained** — carries its full closure: runtime exe + env
+  image + every payload slice. Zero network, empty cache, one file.
+  (Replaces "fat".)
+- **shared-runtime** — carries the app payload(s), shares the runtime
+  and any slices marked shared. (Today's packed-mn "lean"; the DEFAULT
+  preset.)
+
+`lean`/`fat` remain accepted as deprecated aliases (a named warning,
+never silent) mapping to `shared-runtime`/`self-contained`. A preset
+sets the DEFAULT carry verdict for every slice; a slice's authored
+`carry:` overrides it; D5's `--carry`/`--share` override the document.
+
+### 13.3 The `platforms:` coverage assertion
+
+The truth lives in exactly two places, and the composition is not one
+of them:
+
+- **The payload declares** its own coverage (spec 03 §3, already
+  locked): `platforms: universal` OR an explicit triplet list.
+  "Universal" = pure-language/data bytes, one artifact for every
+  triplet. Partial independence (arch-free, libc-free) is expressed by
+  ENUMERATION — list every triplet the bytes serve; honest and dumb.
+- **The registry mirrors** concrete rows only (spec 04): a `universal:`
+  row OR per-triplet rows — never patterns, never both. Wildcard
+  pattern rows (`linux-*-*`) are REJECTED; expansion belongs to
+  authored manifests at publish time.
+
+The composition's per-slice `platforms:` key is an ASSERTION, checked
+fail-closed against the payload's declared/mirrored coverage:
+
+- Omitted = the payload's declaration rules (the common case: runtimes
+  and native payloads are triplet-bound by nature).
+- Present = press/dispatch verifies the assertion is COVERED by the
+  declaration. A lack of coverage — for the assertion or for the host
+  triplet — is a named error naming the slice, the triplet, and the
+  declared coverage. Never a silent nearest-platform fallback
+  (spec 00 §9). The assertion narrows; it NEVER extends.
+
+The lock (§4) records the outcome: per slice, the single `universal`
+digest or the per-target-triplet digest map. Run-time resolution is
+then: host triplet → locked digest → carried-slot verify /
+shared fetch+verify. Carry/shared stays orthogonal: a slice of any
+coverage class may be carried or shared.
+
+**The honesty proof.** A `universal` claim with native bytes inside is
+a lie that only fails on someone's machine — unless checked. The
+spec-26 payload-check framework is the proof: feedstock CI runs a
+universal slice's in-image acceptance check on EVERY target triplet;
+native bytes in a "universal" image fail there, before publication.
+
+### 13.4 Rules that make this safe
+
+- The L2 lock records the digest of every slice, carried or shared —
+  run-time resolution verifies against it, fail-closed. Carry/shared
+  never changes WHAT runs, only where the bytes come from.
+- Jail defaults are unaffected by carry/shared: mount points and
+  permissions are declared identically either way (§2/§5).
+- Trust is uniform across both paths: the same sha256 anchors, the same
+  unsigned-is-loud + journal rules, the same `TEBAKO_REQUIRE_SIGNED=1`
+  fail-closed; verification at fetch/install — never per run.
+- Transitive payload DEPENDS (payloads needing payloads) resolve
+  through the same registry path with cycle detection (spec 18 §5.6);
+  mount-point arbitration and jail-by-default are this spec's §5–§7
+  unchanged.
+
+### 13.5 SSOT and error additions
+
+| Value | Owner |
+|---|---|
+| `carry` / preset / `platforms:` assertion grammar | THIS section (D2 §3 mirrors it) |
+| The lock's digest-map shape | the L2 package-manifest schema (spec 02 §5b type-2 block; `schema/tebako-compose-v1.schema.json` stays the D2 document's) |
+| Coverage declaration | spec 03 §3 (unchanged — the assertion references it) |
+| Registry row shape (concrete only) | spec 04 (amended: one sentence) |
+| Lazy-seed mechanics | spec 05 §4 (amended: the scoped exception) |
+| Two-slot carried runtime | spec 19 (amended) + tebako#458 |
+| Lean/fat alias warning | the named-warning vocabulary (invariant 9); exit codes unchanged — carry choices never gate a run |
