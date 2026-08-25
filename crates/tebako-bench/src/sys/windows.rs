@@ -22,7 +22,7 @@
 
 use std::fs::OpenOptions;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{
@@ -282,9 +282,8 @@ fn create_armed_job() -> Result<HANDLE, BenchError> {
             std::io::Error::last_os_error()
         )));
     }
-    set_job_kill_on_close(job, true).map_err(|e| {
+    set_job_kill_on_close(job, true).inspect_err(|_| {
         close_handle_quiet(job);
-        e
     })?;
     Ok(job)
 }
