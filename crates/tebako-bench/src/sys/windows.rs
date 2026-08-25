@@ -24,8 +24,9 @@ use std::fs::OpenOptions;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use windows_sys::core::BOOL;
 use windows_sys::Win32::Foundation::{
-    CloseHandle, BOOL, FILETIME, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+    CloseHandle, FILETIME, HANDLE, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
 };
 use windows_sys::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
