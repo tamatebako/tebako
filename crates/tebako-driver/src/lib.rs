@@ -8,8 +8,10 @@
 //!           --tebako-entry <argv0> <user args...>
 //! ```
 //!
-//! - the **env image** (`TEBAKO_RUNTIME_IMAGE`, a bare `.tfs`) mounts whole
-//!   at the runtime root the interpreter was compiled against;
+//! - the **env image** (`TEBAKO_RUNTIME_IMAGE`) mounts whole at the
+//!   runtime root the interpreter was compiled against — a bare `.tfs`,
+//!   or the slot form `<package-path>:<slot>` (spec 23 §13.1: the carried
+//!   pair's env image riding INSIDE the stitched package);
 //! - each **payload triple** mounts its image: a bare file whole (slot `0`
 //!   ≡ `-`), or a package file's trailer-described slot region;
 //! - `TEBAKO_JAIL` is parsed and installed (after the mounts — the mount

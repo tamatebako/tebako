@@ -219,6 +219,101 @@ fn a_boot_without_the_env_image_is_legal_and_mounts_nothing() {
 }
 
 // ---------------------------------------------------------------------
+// the env-image slot form (spec 23 §13.1 — the two-slot carried pair)
+// ---------------------------------------------------------------------
+
+/// The carried pair's wire shape: dummy bootstrap bytes at slot 0, the
+/// env image at slot 1 (both format AUTO — the orthogonality law), then
+/// the trailer.
+fn write_two_slot_package(dir: &Path) -> PathBuf {
+    let env_image = write_env_image(dir);
+    let env_bytes = std::fs::read(&env_image).unwrap();
+    let exe = b"dummy bootstrap bytes (not an executable)";
+    let p = dir.join("app.tpkg");
+    let mut m = tpkg::Manifest {
+        package_flags: 0,
+        launcher_abi: 1,
+        ..Default::default()
+    };
+    m.slots.push(tpkg::Slot::new(
+        0,
+        exe.len() as u64,
+        tpkg::TPKG_FORMAT_AUTO,
+        "",
+    ));
+    m.slots.push(tpkg::Slot::new(
+        exe.len() as u64,
+        env_bytes.len() as u64,
+        tpkg::TPKG_FORMAT_AUTO,
+        "",
+    ));
+    m.validate().unwrap();
+    let mut f = std::fs::File::create(&p).unwrap();
+    f.write_all(exe).unwrap();
+    f.write_all(&env_bytes).unwrap();
+    tpkg::write_to(&mut f, &m).unwrap();
+    p
+}
+
+#[test]
+fn the_env_image_slot_form_mounts_the_package_region() {
+    let g = guard("env-slot");
+    let pkg = write_two_slot_package(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", format!("{}:1", pkg.display()));
+
+    let out = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+    assert_eq!(out.argv, argv(&["ruby", "--version"]));
+    let bytes = read_file("/__tfs__/lib/ruby/rubygems.rb");
+    assert_eq!(bytes, b"# rubygems core\n");
+    // The slot identity rides the mount: a spawned child's
+    // TEBAKO_TFS_MOUNTS re-mounts this REGION, never the whole package
+    // (spec 17 §2.1's emit rule).
+    let mounts = context().read().unwrap().mounts_env().unwrap();
+    let mounts = mounts.to_string_lossy().into_owned();
+    assert!(
+        mounts.contains(&format!("{}:1:/__tfs__", pkg.display())),
+        "{mounts}"
+    );
+}
+
+#[test]
+fn the_slot_form_names_an_out_of_range_slot() {
+    let g = guard("env-slot-range");
+    let pkg = write_two_slot_package(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", format!("{}:5", pkg.display()));
+    let err = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(err.message.contains("out of range"), "{}", err.message);
+    assert!(!context().read().unwrap().is_mounted());
+}
+
+#[test]
+fn the_slot_form_refuses_a_runtime_slot_by_name() {
+    let g = guard("env-slot-runtime");
+    let image = write_env_image(g.path());
+    package_in_place(&image, tpkg::TPKG_FORMAT_RUNTIME);
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", format!("{}:0", image.display()));
+    let err = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap_err();
+    assert_eq!(err.code, 65, "{}", err.message);
+    assert!(err.message.contains("runtime payload slot"), "{}", err.message);
+}
+
+#[test]
+fn a_bare_image_spelled_with_slot_zero_mounts_whole() {
+    let g = guard("env-slot-zero");
+    let image = write_env_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", format!("{}:0", image.display()));
+    let out = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap();
+    assert_eq!(out.argv, argv(&["ruby", "--version"]));
+    let bytes = read_file("/__tfs__/lib/ruby/rubygems.rb");
+    assert_eq!(bytes, b"# rubygems core\n");
+}
+
+// ---------------------------------------------------------------------
 // the trace channel (spec 25 §2, phase T1)
 // ---------------------------------------------------------------------
 

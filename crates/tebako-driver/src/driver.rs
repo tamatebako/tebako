@@ -517,12 +517,31 @@ fn mount_at_point(
     }
 }
 
+/// The `TEBAKO_RUNTIME_IMAGE` value split: `<path>[:<slot>]` — the tail
+/// after the LAST ':' counts as the slot only when it parses as u32 (a
+/// windows drive colon never does; `<file>:0` on a bare image ≡ whole —
+/// the spec 17 grammar's bare rule). The pure half of the slot form
+/// (spec 23 §13.1), unit-tested without a mount.
+fn env_image_ref(image: &str) -> (&str, Option<u32>) {
+    match image.rfind(':') {
+        Some(i) if i > 0 => match image[i + 1..].parse::<u32>() {
+            Ok(n) => (&image[..i], Some(n)),
+            Err(_) => (image, None),
+        },
+        _ => (image, None),
+    }
+}
+
 /// The env image (`TEBAKO_RUNTIME_IMAGE`): a bare `.tfs`, mounted whole
-/// at the runtime root. Records `runtime_root` in `mounted`. A boot
-/// without it is a legal shape (bare interpreter) but in managed mode a
-/// missing handoff otherwise surfaces much later as load errors with no
-/// obvious cause (incident 13 round 5) — so the absence is named on
-/// stderr (stdout is the payload's, never the log's).
+/// at the runtime root — OR the slot form `<package-path>:<slot>` (spec 23
+/// §13.1: the two-slot carried pair, where the env image rides INSIDE the
+/// stitched package). The tail splits at the LAST ':' and only counts as
+/// a slot when it parses as u32 (a windows drive colon never does).
+/// Records `runtime_root` in `mounted`. A boot without it is a legal
+/// shape (bare interpreter) but in managed mode a missing handoff
+/// otherwise surfaces much later as load errors with no obvious cause
+/// (incident 13 round 5) — so the absence is named on stderr (stdout is
+/// the payload's, never the log's).
 fn mount_env_image(
     env: &dyn Env,
     runtime_root: &str,
@@ -536,15 +555,36 @@ fn mount_env_image(
         );
         return Ok(());
     };
+    let (path, slot) = env_image_ref(&image);
     let desc = format!("env image '{image}'");
-    mount_exclusive(
-        build_error(
-            tfs::mount::build_from_file(&image, runtime_root),
-            &format!("failed to mount the runtime filesystem image from '{image}'"),
-        )?,
-        &format!("failed to mount the runtime filesystem image from '{image}'"),
-        &desc,
-    )?;
+    let what = format!("failed to mount the runtime filesystem image from '{image}'");
+    let mount = match slot {
+        None => build_error(tfs::mount::build_from_file(&image, runtime_root), &what)?,
+        Some(n) => {
+            let resolved = resolve_image(Path::new(path), SlotRef::Slot(n), path, runtime_root)?;
+            match resolved.region {
+                // A bare image spelled '<file>:0' — slot 0 ≡ the whole
+                // bare file (the spec 17 grammar's bare rule).
+                ResolvedRegion::Whole => {
+                    build_error(tfs::mount::build_from_file(path, runtime_root), &what)?
+                }
+                ResolvedRegion::Region(offset, size) => {
+                    let mut mount = build_error(
+                        tfs::mount::build_from_file_at(path, offset, size, runtime_root),
+                        &what,
+                    )?;
+                    // A slot-mounted package region carries its slot
+                    // identity so a spawned child's TEBAKO_TFS_MOUNTS
+                    // re-mounts this region — never the whole package
+                    // (spec 17 §2.1's emit rule; the env image obeys it
+                    // exactly like a payload slot).
+                    mount.slot = Some(n);
+                    mount
+                }
+            }
+        }
+    };
+    mount_exclusive(mount, &what, &desc)?;
     mounted.push(MountedMember {
         point: runtime_root.to_string(),
         desc,
@@ -1093,6 +1133,35 @@ mod tests {
         assert_eq!(vfs_drive("//share/x"), None);
         assert_eq!(vfs_drive("1:/x"), None);
         assert_eq!(vfs_drive(""), None);
+    }
+
+    #[test]
+    fn env_image_ref_splits_only_a_u32_tail() {
+        // the plain bare form
+        assert_eq!(env_image_ref("/cache/env.tfs"), ("/cache/env.tfs", None));
+        // the slot form (spec 23 §13.1)
+        assert_eq!(env_image_ref("/pkg/app.tpkg:2"), ("/pkg/app.tpkg", Some(2)));
+        assert_eq!(env_image_ref("/pkg/app.tpkg:0"), ("/pkg/app.tpkg", Some(0)));
+        // a windows drive colon never parses as a slot
+        assert_eq!(
+            env_image_ref("C:/cache/env.tfs"),
+            ("C:/cache/env.tfs", None)
+        );
+        assert_eq!(
+            env_image_ref("C:\\cache\\env.tfs"),
+            ("C:\\cache\\env.tfs", None)
+        );
+        // …but a windows package path with a slot tail splits
+        assert_eq!(
+            env_image_ref("C:/pkg/app.tpkg:2"),
+            ("C:/pkg/app.tpkg", Some(2))
+        );
+        // an empty path before the colon is no slot form
+        assert_eq!(env_image_ref(":2"), (":2", None));
+        // a trailing colon is no slot form
+        assert_eq!(env_image_ref("/pkg/x:"), ("/pkg/x:", None));
+        // a colon inside the name stays part of the path
+        assert_eq!(env_image_ref("/p:with/img.tfs"), ("/p:with/img.tfs", None));
     }
 
     #[test]
