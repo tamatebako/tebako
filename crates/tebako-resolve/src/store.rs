@@ -9,10 +9,12 @@
 //! - a brand-new store is born at the current version (nothing to say).
 //!
 //! One owner, every consumer flows: tebako-shim and tebako-cli call
-//! [`check_once`] at their store entry points (the size-capped
-//! tebako-bootstrap cannot link this crate and mirrors the semantics —
+//! [`check_once`] at their store entry points; tebako-bootstrap links
+//! this crate with default-features = false, so its payload install/seed
+//! paths flow [`check_once`] through [`crate::cache::PayloadCache`] while
+//! its older runtime-cache paths keep their mirrored check.
 //! [`STORE_LAYOUT_VERSION`] is the canonical value, pinned identical by
-//! both sides' tests).
+//! both sides' tests.
 
 use std::fmt;
 use std::path::{Path, PathBuf};

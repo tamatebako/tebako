@@ -16,17 +16,18 @@
 //!   a reason to invent a value.
 //!
 //! The fail-closed gate ([`gate`]) returns the declared set on success;
-//! the refusal classes are [`ContractError`]'s. The size-capped
-//! tebako-bootstrap cannot link this crate (gix/reqwest would blow its
-//! 3 MiB gate), so it mirrors these semantics with its own string-scan
-//! reader — [`SPOKEN_ERA`]/[`SPOKEN_CONTRACT`] are the canonical values,
-//! and both sides pin the mirror with refusal-message tests.
+//! the refusal classes are [`ContractError]'s. tebako-bootstrap links this
+//! crate with default-features = false (the gix/reqwest git stack stays
+//! outside its 3 MiB gate) for the payload-cache layer, but keeps reading
+//! the release card with its own string-scan reader — [`SPOKEN_ERA`]/
+//! [`SPOKEN_CONTRACT`] are the canonical values, and both sides pin the
+//! mirror with refusal-message tests.
 
 use std::fmt;
 
 /// The contract era this tebako speaks (spec 18: era 1 is the undeclared
-/// pre-era). Mirrored by tebako-bootstrap (which cannot link this crate
-/// — see the module docs); keep the values identical.
+/// pre-era). Mirrored by tebako-bootstrap's own release-card reader (see
+/// the module docs); keep the values identical.
 pub const SPOKEN_ERA: u32 = 2;
 
 /// The bootstrap↔runtime handoff contract this loader speaks (spec 17's
@@ -35,9 +36,8 @@ pub const SPOKEN_ERA: u32 = 2;
 /// the roadmap-45 interim numbering is superseded and the factory
 /// declares 2 from v0.16.0). A different declared contract is another
 /// generation — refused either direction, both numbers named. Canonical
-/// value — tebako-bootstrap's `SUPPORTED_CONTRACT` mirrors it (the
-/// size-capped bootstrap cannot link this crate; pinned identical by
-/// both sides' refusal-message tests).
+/// value — tebako-bootstrap's `SUPPORTED_CONTRACT` mirrors it (pinned
+/// identical by both sides' refusal-message tests).
 pub const SPOKEN_CONTRACT: u32 = 2;
 
 /// The contract fields of one release-manifest entry, in refusal-message

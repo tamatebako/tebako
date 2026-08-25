@@ -19,6 +19,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use sha2::Digest as _;
+
 use crate::error::ResolveError;
 use crate::fetch::FetchedPayload;
 
@@ -57,6 +59,21 @@ pub fn offline() -> bool {
 pub enum InstallStatus {
     Hit,
     Installed,
+}
+
+/// The outcome of [`PayloadCache::seed`] (the lazy-seed verb, spec 23
+/// §13.4): never an overwrite, always loud on divergence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SeedOutcome {
+    /// The bytes verified against the pin and were placed (markers too).
+    Seeded,
+    /// The entry already existed with the SAME trust anchor — nothing to
+    /// do (idempotent re-seed).
+    AlreadySame,
+    /// The entry already exists with a DIFFERENT trust anchor — reported,
+    /// never overwritten (the cache holds registry bytes; the existing
+    /// anchor stays authoritative).
+    Conflict { existing_sha256: String },
 }
 
 /// A cached payload entry (artifact + trust anchor).
@@ -261,33 +278,137 @@ impl PayloadCache {
         })
     }
 
-    /// tmp + rename (a partial install is invisible), then the markers —
-    /// the same order as tebako-cli's `place`.
-    fn place(&self, file: &Path, fetched: &FetchedPayload) -> Result<(), ResolveError> {
+    /// The lazy-seed verb (spec 23 §13.4): place payload bytes the caller
+    /// already holds (a carried slice read out of the running package)
+    /// into the cache — sha256-verified against `expected_sha256` BEFORE
+    /// anything lands, tmp+rename under the per-entry lock. NO offline
+    /// gate: seeding moves local bytes, never the network. Never an
+    /// overwrite: an existing entry with the same anchor is
+    /// [`SeedOutcome::AlreadySame`] (idempotent), a different anchor is
+    /// [`SeedOutcome::Conflict`] — the cached bytes win and the caller
+    /// journals the divergence.
+    pub fn seed(
+        &self,
+        name: &str,
+        version: &str,
+        expected_sha256: &str,
+        origin: &str,
+        mut reader: impl std::io::Read,
+    ) -> Result<SeedOutcome, ResolveError> {
+        let file = self.entry_file(name, version)?;
+        let expected = expected_sha256.to_ascii_lowercase();
+        if expected.len() != 64 || !expected.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(ResolveError::InvalidCacheKey {
+                key: format!("{name}@{version}"),
+                reason: "the seed pin must be 64 hex".to_string(),
+            });
+        }
+        if let Some(entry) = self.get(name, version)? {
+            return Ok(if entry.sha256 == expected {
+                SeedOutcome::AlreadySame
+            } else {
+                SeedOutcome::Conflict {
+                    existing_sha256: entry.sha256,
+                }
+            });
+        }
+        // The same defense-in-depth store gate as install (spec 18 C13).
+        crate::store::check_once(&self.root).map_err(|e| ResolveError::CacheIo {
+            op: "checking the store layout of",
+            path: self.root.clone(),
+            reason: e.to_string(),
+        })?;
+        let lock_path = self.lock_file(name, version);
+        let origin = origin.to_string();
+        self.with_entry_lock(&lock_path, || {
+            if let Some(entry) = self.get(name, version)? {
+                return Ok(if entry.sha256 == expected {
+                    SeedOutcome::AlreadySame
+                } else {
+                    SeedOutcome::Conflict {
+                        existing_sha256: entry.sha256,
+                    }
+                });
+            }
+            let (tmp, file_name) = self.tmp_path(&file)?;
+            let result = (|| {
+                let mut hasher = sha2::Sha256::new();
+                {
+                    let mut out =
+                        fs::File::create(&tmp).map_err(|e| cache_io("writing", &tmp, e))?;
+                    let mut buf = [0u8; 65536];
+                    loop {
+                        let n = std::io::Read::read(&mut reader, &mut buf)
+                            .map_err(|e| cache_io("streaming the seed bytes into", &tmp, e))?;
+                        if n == 0 {
+                            break;
+                        }
+                        sha2::Digest::update(&mut hasher, &buf[..n]);
+                        std::io::Write::write_all(&mut out, &buf[..n])
+                            .map_err(|e| cache_io("writing", &tmp, e))?;
+                    }
+                }
+                let actual = crate::fetch::hex_digest(&sha2::Digest::finalize(hasher));
+                if actual != expected {
+                    return Err(ResolveError::Sha256Mismatch {
+                        origin: origin.clone(),
+                        expected,
+                        actual,
+                    });
+                }
+                self.finish_place(&tmp, &file, &file_name, &expected, &origin)
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(&tmp);
+            }
+            result.map(|_| SeedOutcome::Seeded)
+        })
+    }
+
+    /// tmp path + the entry's file name (the place/seed prelude).
+    fn tmp_path(&self, file: &Path) -> Result<(PathBuf, String), ResolveError> {
         let tmp_dir = self.root.join(TMP_DIR);
         fs::create_dir_all(&tmp_dir).map_err(|e| cache_io("creating", &tmp_dir, e))?;
         let file_name = file
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "payload".to_string());
-        let tmp = tmp_dir.join(format!("{file_name}.{}.part", std::process::id()));
+        Ok((
+            tmp_dir.join(format!("{file_name}.{}.part", std::process::id())),
+            file_name,
+        ))
+    }
+
+    /// tmp + rename (a partial install is invisible), then the markers —
+    /// the same order as tebako-cli's `place`.
+    fn place(&self, file: &Path, fetched: &FetchedPayload) -> Result<(), ResolveError> {
+        let (tmp, file_name) = self.tmp_path(file)?;
         let result = (|| {
             fs::write(&tmp, &fetched.bytes).map_err(|e| cache_io("writing", &tmp, e))?;
-            make_readonly(&tmp).map_err(|e| cache_io("chmod", &tmp, e))?;
-            fs::rename(&tmp, file).map_err(|e| cache_io("installing", file, e))?;
-            fs::write(
-                sha_marker(file),
-                format!("{}  {file_name}\n", fetched.sha256),
-            )
-            .map_err(|e| cache_io("marking", &sha_marker(file), e))?;
-            fs::write(origin_marker(file), format!("{}\n", fetched.origin))
-                .map_err(|e| cache_io("marking", &origin_marker(file), e))?;
-            Ok(())
+            self.finish_place(&tmp, file, &file_name, &fetched.sha256, &fetched.origin)
         })();
         if result.is_err() {
             let _ = fs::remove_file(&tmp);
         }
         result
+    }
+
+    /// Readonly → rename → markers: the shared tail of place/seed.
+    fn finish_place(
+        &self,
+        tmp: &Path,
+        file: &Path,
+        file_name: &str,
+        sha256: &str,
+        origin: &str,
+    ) -> Result<(), ResolveError> {
+        make_readonly(tmp).map_err(|e| cache_io("chmod", tmp, e))?;
+        fs::rename(tmp, file).map_err(|e| cache_io("installing", file, e))?;
+        fs::write(sha_marker(file), format!("{sha256}  {file_name}\n"))
+            .map_err(|e| cache_io("marking", &sha_marker(file), e))?;
+        fs::write(origin_marker(file), format!("{origin}\n"))
+            .map_err(|e| cache_io("marking", &origin_marker(file), e))?;
+        Ok(())
     }
 
     /// The per-entry flock (spec 05 §4): LOCK_EX|LOCK_NB retried for
@@ -448,9 +569,10 @@ mod tests {
     use super::*;
 
     /// Every test in this module touches the machine-cache env knobs
-    /// (TEBAKO_OFFLINE is read on each install), so they serialize on one
-    /// mutex — the default parallel test runner would otherwise race them.
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    /// (TEBAKO_OFFLINE is read on each install), so they serialize on the
+    /// crate-wide test-env mutex — the default parallel test runner would
+    /// otherwise race them.
+    use crate::TEST_ENV_LOCK as ENV_LOCK;
 
     fn scratch() -> PathBuf {
         let dir = std::env::temp_dir().join(format!("tebako-resolve-cache-{}", std::process::id()));
@@ -628,6 +750,93 @@ mod tests {
         assert!(matches!(err, ResolveError::LockTimeout { .. }));
         let msg = err.to_string();
         assert!(msg.contains("lockfile") && msg.contains("remove it if the holder crashed"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn seed_places_verified_bytes_and_reseeds_idempotently() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        let pin = crate::fetch::sha256_hex(b"carried-slice");
+        let origin = "seeded-from:/tmp/pkg.tpkg#slot2";
+        let outcome = cache
+            .seed("tool", "1.0", &pin, origin, b"carried-slice".as_slice())
+            .unwrap();
+        assert_eq!(outcome, SeedOutcome::Seeded);
+        // the seeded entry is a full cache citizen: 0444 + both markers
+        let entry = cache.get("tool", "1.0").unwrap().unwrap();
+        assert_eq!(entry.sha256, pin);
+        assert_eq!(entry.origin.as_deref(), Some(origin));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&entry.path).unwrap().permissions().mode();
+            assert_eq!(mode & 0o777, 0o444);
+        }
+        // re-seed with the same pin: idempotent
+        let outcome = cache
+            .seed("tool", "1.0", &pin, origin, b"carried-slice".as_slice())
+            .unwrap();
+        assert_eq!(outcome, SeedOutcome::AlreadySame);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn seed_conflict_never_overwrites() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        cache
+            .install("tool", "1.0", None, || Ok(fetched(b"registry-bytes")))
+            .unwrap();
+        let other = crate::fetch::sha256_hex(b"carried-slice");
+        let outcome = cache
+            .seed("tool", "1.0", &other, "seeded", b"carried-slice".as_slice())
+            .unwrap();
+        let SeedOutcome::Conflict { existing_sha256 } = outcome else {
+            panic!("expected Conflict, got {outcome:?}")
+        };
+        assert_eq!(existing_sha256, crate::fetch::sha256_hex(b"registry-bytes"));
+        // the cached bytes are the registry's, untouched
+        assert_eq!(
+            fs::read(root.join("payloads/tool/1.0.tfs")).unwrap(),
+            b"registry-bytes"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn seed_verifies_before_place_and_caches_nothing_on_mismatch() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        let err = cache
+            .seed("tool", "1.0", &"f".repeat(64), "seeded", b"carried-slice".as_slice())
+            .unwrap_err();
+        assert!(matches!(err, ResolveError::Sha256Mismatch { .. }));
+        assert!(!root.join("payloads/tool/1.0.tfs").exists());
+        assert!(!root.join("payloads/tool/1.0.tfs.sha256").exists());
+        // tmp is cleaned up too
+        assert_eq!(
+            fs::read_dir(root.join("tmp")).map(|d| d.count()).unwrap_or(0),
+            0
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn seed_has_no_offline_gate() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        std::env::set_var("TEBAKO_OFFLINE", "1");
+        let pin = crate::fetch::sha256_hex(b"carried-slice");
+        let outcome = cache
+            .seed("tool", "1.0", &pin, "seeded", b"carried-slice".as_slice())
+            .unwrap();
+        std::env::remove_var("TEBAKO_OFFLINE");
+        assert_eq!(outcome, SeedOutcome::Seeded);
         let _ = fs::remove_dir_all(&root);
     }
 }

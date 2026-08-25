@@ -10,6 +10,7 @@ use tebako_http::FetchError;
 
 use crate::adapters::adapter_for;
 use crate::error::ResolveError;
+#[cfg(feature = "git")]
 use crate::git;
 use crate::reference::{Reference, Service};
 use crate::transport::{HttpTransport, Transport};
@@ -29,9 +30,13 @@ pub struct FetchedPayload {
 pub fn sha256_hex(bytes: &[u8]) -> String {
     let mut hasher = sha2::Sha256::new();
     hasher.update(bytes);
-    let digest = hasher.finalize();
+    hex_digest(&hasher.finalize())
+}
+
+/// Lowercase hex of a digest (the seed path streams its hash).
+pub(crate) fn hex_digest(digest: &[u8]) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(64);
+    let mut out = String::with_capacity(digest.len() * 2);
     for b in digest {
         out.push(HEX[(b >> 4) as usize] as char);
         out.push(HEX[(b & 0xf) as usize] as char);
@@ -89,8 +94,19 @@ impl<T: Transport> Fetcher<T> {
                 let Some(path) = path else {
                     return Err(ResolveError::GitPathRequired { url: url.clone() });
                 };
-                let bytes = git::fetch_blob(url, git_ref.as_deref(), path)?;
-                (bytes, reference.to_string())
+                #[cfg(feature = "git")]
+                {
+                    let bytes = git::fetch_blob(url, git_ref.as_deref(), path)?;
+                    (bytes, reference.to_string())
+                }
+                #[cfg(not(feature = "git"))]
+                {
+                    let _ = (git_ref, path);
+                    return Err(ResolveError::Git {
+                        url: url.clone(),
+                        reason: "this build was compiled without the 'git' feature — tfs+git: references are unsupported".to_string(),
+                    });
+                }
             }
         };
         let sha256 = sha256_hex(&bytes);
