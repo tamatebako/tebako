@@ -216,7 +216,8 @@ grammar:
           notes: >-
             The spec-18 C11 contract field (feature/toolkit payloads): a C
             ABI name + version at an in-image path. Consumers bind only on
-            match, both versions printed on mismatch (exit 79 reserved).
+            match, both versions printed on mismatch (named refusal; exit
+            code unallocated, spec 18 §7 — 79 is spec 26's CHECK).
           entry:
             name: {type: string, required: true}
             version: {type: string, required: true}
@@ -319,7 +320,7 @@ refusals:
   - case: entrypoint's runtime_requirement unsatisfiable at dispatch (S26/C10)
     behavior: named error naming the entrypoint and the requirement — never a segfault
   - case: provides_abi mismatch at bind (C11)
-    behavior: named refusal, both versions printed (exit 79 reserved)
+    behavior: named refusal, both versions printed (exit code unallocated — spec 18 §7; 79 is spec 26's CHECK)
   - case: a materialize entry absent from the image, or not a regular file (schema_minor 1)
     behavior: the manifest lies — boot fails with a named error (exit 65), never a skipped entry
   - case: a materialized copy failing digest verification at boot (schema_minor 1)
@@ -336,7 +337,7 @@ refusals:
     behavior: named validation error at parse (exit 65) — exec-only keys on a structural check are a grammar violation
   - case: a slice manifest declaring fixtures_inline/fixtures_host, or a composition check declaring fixtures (schema_minor 3)
     behavior: named validation error at parse (exit 65) — the fixture families are MECE per context (spec 26 §2.1); a composition check is validated by the engine at document load, a slice check at press/`tfs validate`
-  - case: a duplicate check name within one checks: block (schema_minor 3)
+  - case: "a duplicate check name within one checks: block (schema_minor 3)"
     behavior: named structural error at parse — an authoring ambiguity, never a silent winner (the map's own deserializer refuses)
   - case: a malformed checks block otherwise (bad name grammar, relative entry, absolute expect.files, '..' components, non-positive timeout, a when value outside windows/macos/linux) (schema_minor 3)
     behavior: named validation error at press/`tfs validate` (exit 65), never discovered at run time (spec 26 §7)

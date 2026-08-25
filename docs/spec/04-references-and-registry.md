@@ -102,6 +102,13 @@ payloads:
 - **Host-triplet selection happens HERE, declaratively**: the dispatcher
   reads `platforms[host_triplet].artifact` (or `universal`), fetches THAT
   artifact from the named release. Never adapter-side guessing.
+- **Concrete rows only (locked 2026-08-25, tebako#460).** A version
+  carries a `universal:` row OR per-triplet rows — never patterns
+  (`linux-*-*` is rejected at validation), never both. Identical bytes
+  under multiple rows dedup naturally (content-addressed cache). A
+  composition's `platforms:` assertion (spec 23 §13.3) CONSTRAINS the
+  mirrored coverage — checked fail-closed against it — and NEVER
+  extends it.
 - `tebako add-registry <ref>` registers one; shipped config has ZERO
   registries (explicit only — spec 16).
 - Install = resolve the registry → select the host entry → download →

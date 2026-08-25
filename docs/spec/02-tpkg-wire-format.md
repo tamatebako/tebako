@@ -31,6 +31,15 @@ container itself stays byte-identical either way.
 
 `TPKG_MAGIC_PREFIX_LEN` = 4 (`"TEBA"`) discriminates absent vs corrupt.
 
+Bit0's *name* is the only deprecated thing about it (locked 2026-08-25,
+tebako#460): read **LEAN = 1** as "the package does not carry its
+runtime pair" and LEAN = 0 as "the runtime pair is carried as ordinary
+slots" — the *shared-runtime* and *self-contained* presets of spec 23
+§13.2 (whose `lean`/`fat` aliases exist only so older documents stay
+readable). The BIT itself stays load-bearing exactly as spec 18 S4
+requires: flags are never skipped, and an unknown set bit is a named
+refusal.
+
 ## 3. Slot record — 280 bytes
 
 | offset | size | field |
@@ -60,9 +69,13 @@ everything except the signature and its length field.
 ## 5. The installability flag (bit2 `NO_INSTALL`; TODO.v2-1/12)
 
 A run is a run — a plain execution never writes payload slices into the
-local store. Installation is the EXPLICIT verb (`tebako install <path>`;
-the bootstrap's `--tebako-install` refuses or guides, spec 06 §4 exit
-76). `NO_INSTALL` marks a publisher-frozen package: it RUNS standalone
+local store, with exactly one scoped exception: the lazy seed of spec 05
+§4 (a self-contained package MAY seed the cache with the artifacts it
+carries — best-effort, never blocking the run). `NO_INSTALL` packages
+never seed. Installation is otherwise the EXPLICIT verb
+(`tebako install <path>`; the bootstrap's `--tebako-install` refuses or
+guides, spec 06 §4 exit 76). `NO_INSTALL` marks a publisher-frozen
+package: it RUNS standalone
 but every install attempt is refused with a named error. Absence means
 installable-on-request, including packages pressed before the verb
 existed — pass-through like every flag.
@@ -75,7 +88,10 @@ Whether a slot is a runtime, and which payload carries the entrypoint, are
 the format axis. The v1 `format_id = 4 (TPKG_FORMAT_RUNTIME)` marks the fat
 runtime slot so v1 loaders skip handing it over as a mount; it is a role
 riding in the format field, kept only for backward compatibility. The
-cleanup path: slot role moves to slot flags / package manifest, and
+two-slot era makes the wart obsolete in practice: a self-contained
+package carries its runtime as ordinary exe + env-image slots
+(spec 19 §6.1), and presses never emit format 4 anymore. The cleanup
+path: slot role moves to slot flags / package manifest, and
 `format_id` returns to pure image-format semantics. New semantics must
 never again be smuggled into the format axis.
 

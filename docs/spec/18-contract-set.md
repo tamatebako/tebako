@@ -372,6 +372,14 @@ behavior. (S-numbers are the e2e/test ids to implement.)
   resolution filters, then named error if nothing remains.
 - **S37** data payload version requiring newer registry schema → C8's
   refusal.
+- **S62** shared slice unresolvable at run time (uncached + offline, or
+  no compatible artifact) → the loader's named resolution error BEFORE
+  the handoff; the boot never starts (carried slices have no such case).
+- **S63** locked-digest mismatch on a shared slice (registry bytes ≠ the
+  press-time lock) → fail-closed trust refusal (exit 70 class): the lock
+  is the pin, never fresh semver (spec 23 §4/§13).
+- **S64** crash mid-lazy-seed → tmp+rename keeps the partial seed
+  invisible; the run is unaffected; the next run re-seeds (spec 05 §4).
 
 ### 5.7 Press × inputs
 - **S38** `TEBAKO_BOOTSTRAP` override with an era-1 bootstrap binary →
@@ -478,7 +486,8 @@ tebako publish
 | 75 | runtime contract mismatch / pre-era runtime | loader, pre-download |
 | 77 | package/payload contract-era mismatch (either direction) | any trailer/manifest reader |
 | 78 | env image layout mismatch | driver |
-| 79 | reserved: ABI mismatch (C11 provides_abi, C20 FFI) | binder |
+| 79 | payload check FAIL aggregate (`EX_TEBAKO_CHECK`, spec 26 §2) | tebako check |
+| — | ABI mismatch (C11 provides_abi, C20 FFI): named refusal, both versions printed; exit code unallocated — pinned at implementation | binder |
 | 73 | jail malformed | driver |
 | 132 | pre-era/corrupt source tarball | runtime factory |
 

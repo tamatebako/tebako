@@ -70,6 +70,17 @@ exact contract (roadmap 22's "add a language" playbook).
   refuse a union package loudly (EEXIST), never silently. Payloads
   handed over without a package manifest (shim dispatch, bare images)
   are always exclusive.
+- **Carried and shared payloads are indistinguishable on this wire**
+  (spec 23 §13, additive 2026-08-25): a SHARED slice the loader resolved
+  into the machine cache is handed over as an ordinary
+  `<image-path>:-:<mount>` triple — a bare cache file, mounted whole; a
+  CARRIED slice is the `<self>:<slot>:<mount>` form. Mount order,
+  longest-prefix dispatch, union/exclusive modes, and
+  unmount-all-on-failure apply identically — the driver neither knows
+  nor cares where the bytes physically live. Resolution is loader-side
+  (spec 05 §5): an unresolvable shared slice is the loader's named error
+  BEFORE the handoff, never a driver case; and resolution follows the
+  press-time lock (spec 23 §4) by locked digest, never fresh semver.
 - `--tebako-entry` separates loader args from user args; `argv0` is the
   entrypoint inside the mounted tree, resolved against the FIRST
   `--tebako-image` mount (the app payload) — or against the runtime root

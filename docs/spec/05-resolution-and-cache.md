@@ -92,6 +92,25 @@ installs, pre-identity manifests).
   content is never overwritten (loud warning + journal). Shims link only
   via the explicit `--shims` (spec 07). `TPKG_FLAG_NO_INSTALL` packages
   refuse (spec 02 §5).
+- **Lazy seeding (the scoped exception, locked 2026-08-25, tebako#460):**
+  a package that CARRIES artifacts (the self-contained preset — spec 23
+  §13) MAY seed the machine cache with them at run time: the runtime
+  pair (exe + env image) and each carried payload slice, so later
+  packages share them. The exception is exactly this wide and no wider:
+  - best-effort — a seed that cannot complete NEVER blocks or fails the
+    run; the carried artifacts keep serving from the package;
+  - tmp + rename under the entry lock — a partial seed is invisible and
+    the next run re-seeds;
+  - idempotent — a same-sha entry skips;
+  - trust anchors exactly as `tebako install`: trailer slot digests for
+    signed (v2) packages, the computed digest for unsigned ones — the
+    run's own enforcement strength, never upgraded;
+  - journaled (`event=lazy-seed`), and shown by `tebako cache list`
+    with the seeding package as origin;
+  - `TEBAKO_OFFLINE=1` does not block seeding (no network is involved);
+  - `TPKG_FLAG_NO_INSTALL` packages never seed (spec 02 §5).
+  The shared-runtime preset needs no exception: its artifacts arrive
+  through the ordinary resolve-download-verify-install path.
 
 ## 5. Resolution chains
 
@@ -100,11 +119,20 @@ installs, pre-identity manifests).
 download) → else download the newest compatible from the runtime releases
 → verify → cache. Swapping runtimes never touches the payload.
 
-**Runtime for a lean package (first run):** trailer runtime_ref → cache
-hit → use; miss → download from the index (manifest.json primary,
-SHA256SUMS fallback) → sha256-verify → flock'd atomic install. Fat: the
-runtime payload slot is extracted from the package itself and verified
-against `;sha256=`.
+**Runtime for a shared-runtime package (first run):** trailer
+runtime_ref → cache hit → use; miss → download from the index
+(manifest.json primary, SHA256SUMS fallback) → sha256-verify → flock'd
+atomic install. (Preset names per spec 23 §13.2: *shared-runtime* is
+the default preset and the successor of the deprecated name *lean*;
+*self-contained* succeeds *fat*.) Self-contained: the runtime pair is
+carried as two package slots — the interpreter exe and the env image
+(spec 19 §6.1): the exe stages into the runtime cache, the env image
+mounts from the package file through the ordinary
+`<self>:<slot>:<mount>` grammar, both verified against the trailer slot
+digests, and both seed the cache per §4's lazy-seed rule. (Pre-#458
+packages carry the runtime as one legacy `format_id = 4` slot, extracted
+and verified against `;sha256=` — readers keep serving that form;
+presses never emit it.)
 
 **Compatibility model:** pure-language payloads take a range (`>= 3.3,
 < 5.0`) — any newer runtime works; native-extension payloads lock to the
