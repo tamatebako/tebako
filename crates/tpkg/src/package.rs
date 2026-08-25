@@ -102,12 +102,21 @@ pub struct PackageIdentity {
 /// for simple apps, N entries for suites). `slot` names the payload image,
 /// `entrypoint` the PROVIDES entrypoint inside it, and `runtime_ref` the
 /// per-entry runtime reference (no 128-byte cap — suites/multi-runtime).
+///
+/// `slot` is `None` for a pointer-package entry (spec 23 §13): the entry's
+/// slice is SHARED — resolved at run time from the machine cache by the
+/// [`PackageLock`] under the entry's own name (entry name == lock slice
+/// name). Every package pressed before the composition spectrum has
+/// `Some(slot)`; the key stays absent in the YAML exactly when `None`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PackageEntry {
     /// The command name (the shim registers under this).
     pub name: String,
-    /// Which payload slot carries the entrypoint's image.
-    pub slot: u32,
+    /// Which payload slot carries the entrypoint's image; `None` = the
+    /// entry's slice is shared (a lock slice named `name` must exist and
+    /// be `carry: false`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u32>,
     /// Which PROVIDES entrypoint inside that image.
     pub entrypoint: String,
     /// Per-entry runtime reference (`type@version;tebako=<abi>[;params]`).
@@ -200,6 +209,284 @@ pub struct PackageMount {
     pub precedence: Option<Precedence>,
 }
 
+// ---------------------------------------------------------------------
+// The press-time lock (spec 23 §4/§13 — the composition spectrum)
+// ---------------------------------------------------------------------
+
+/// A slice's digest pin (spec 23 §13.3): the single digest — the carried
+/// form (the bytes are fixed at stitch) or a `universal`-coverage slice —
+/// OR the per-target-triplet digest map. The map keys are release-asset
+/// platform names (`macos-arm64`, … — the registry row spelling, spec 04).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DigestPin {
+    /// One digest regardless of triplet.
+    One(String),
+    /// Per-triplet digests; the run-time lookup keys on the host triplet.
+    PerTriplet(BTreeMap<String, String>),
+}
+
+impl Serialize for DigestPin {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            DigestPin::One(digest) => serializer.serialize_str(digest),
+            DigestPin::PerTriplet(map) => map.serialize(serializer),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for DigestPin {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            One(String),
+            Map(BTreeMap<String, String>),
+        }
+        match Repr::deserialize(deserializer)? {
+            Repr::One(digest) => Ok(DigestPin::One(digest)),
+            Repr::Map(map) => Ok(DigestPin::PerTriplet(map)),
+        }
+    }
+}
+
+fn check_sha256_hex(digest: &str, what: &'static str) -> Result<(), PackageManifestError> {
+    if digest.len() == 64
+        && digest
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        Ok(())
+    } else {
+        Err(PackageManifestError::Invalid(what))
+    }
+}
+
+impl DigestPin {
+    /// The digest locked for `host` (release-asset-name keyed map lookup);
+    /// `None` when the map does not cover the host (a coverage gap the
+    /// caller turns into the spec 23 §13.3 named error).
+    pub fn for_host(&self, host: crate::Platform) -> Option<&str> {
+        match self {
+            DigestPin::One(digest) => Some(digest),
+            DigestPin::PerTriplet(map) => map.get(host.release_asset_name()).map(String::as_str),
+        }
+    }
+
+    fn validate(&self, what: &'static str) -> Result<(), PackageManifestError> {
+        match self {
+            DigestPin::One(digest) => check_sha256_hex(digest, what),
+            DigestPin::PerTriplet(map) => {
+                if map.is_empty() {
+                    return Err(PackageManifestError::Invalid(what));
+                }
+                for (triplet, digest) in map {
+                    if crate::Platform::from_release_asset_name(triplet).is_none() {
+                        return Err(PackageManifestError::Invalid(
+                            "lock digest map key is not a known platform release-asset name",
+                        ));
+                    }
+                    check_sha256_hex(digest, what)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
+/// One carried artifact of the runtime pair (spec 19 §6.1): the slot the
+/// bytes ride in plus the press-time digest pin.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockedArtifact {
+    /// The trailer slot carrying the bytes.
+    pub slot: u32,
+    pub sha256: DigestPin,
+}
+
+/// The locked runtime (spec 23 §4): the concrete version, the carry
+/// verdict, and — when carried (the self-contained preset, spec 19 §6.1) —
+/// the exe / env-image / (windows) dll slots with their digest pins. A
+/// shared runtime (`carry: false`) records only the version: run-time
+/// resolution and verification then ride the ordinary spec 05 §5 chain
+/// (runtime_ref → cache/index anchors), never the lock.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockedRuntime {
+    /// The concrete runtime version the press resolved.
+    pub version: String,
+    pub carry: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exe: Option<LockedArtifact>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<LockedArtifact>,
+    /// The windows dll-era facet (tebako-runtime-ruby#40): carried as a
+    /// third slot when the resolved release declares it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dll: Option<LockedArtifact>,
+}
+
+/// One locked payload slice (spec 23 §4/§13): the concrete version, the
+/// carry verdict, the digest pin, the declared mount when a consumer edge
+/// declares one (spec 03 §2.3's mount rule), and — for a shared slice —
+/// the fetch coordinates (a spec 04 reference) the press resolved from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockedSlice {
+    pub name: String,
+    pub version: String,
+    pub carry: bool,
+    /// The trailer slot (carried slices only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u32>,
+    /// The declared mount point; absent = the slice is carried/shared as
+    /// a cache prime with no mount (no consumer edge declared one).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mount: Option<String>,
+    pub sha256: DigestPin,
+    /// The fetch coordinates (shared slices only — required there; on a
+    /// carried slice it is provenance, never a fallback fetch path).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
+/// The `lock:` block of the L2 package manifest (spec 23 §4/§13): what
+/// press resolved is what runs — the full composition closure locked per
+/// slice. Run-time resolution follows the lock by locked digest, never
+/// fresh semver (fail-closed on mismatch — spec 18 S63).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackageLock {
+    /// The locked runtime pair; absent on packages pressed before the
+    /// composition spectrum (and on suites, whose per-entry refs ride
+    /// `entries[].runtime_ref` unchanged).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<LockedRuntime>,
+    /// Every resolved payload slice, in mount order: the app payload
+    /// first, then its dependency closure.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub slices: Vec<LockedSlice>,
+}
+
+impl PackageLock {
+    /// The slice named `name`, when the lock carries one.
+    pub fn slice(&self, name: &str) -> Option<&LockedSlice> {
+        self.slices.iter().find(|s| s.name == name)
+    }
+
+    /// The trailer slots the lock claims (the carried runtime pair plus
+    /// every carried slice) — the set the bootstrap must never hand to
+    /// the driver as payload mounts.
+    pub fn claimed_slots(&self) -> Vec<u32> {
+        let mut out = Vec::new();
+        if let Some(runtime) = &self.runtime {
+            for artifact in [&runtime.exe, &runtime.image, &runtime.dll]
+                .into_iter()
+                .flatten()
+            {
+                out.push(artifact.slot);
+            }
+        }
+        for slice in &self.slices {
+            if let Some(slot) = slice.slot {
+                out.push(slot);
+            }
+        }
+        out
+    }
+
+    /// The shared slices (carry: false) in declaration order.
+    pub fn shared_slices(&self) -> impl Iterator<Item = &LockedSlice> {
+        self.slices.iter().filter(|s| !s.carry)
+    }
+
+    fn validate(&self) -> Result<(), PackageManifestError> {
+        if let Some(runtime) = &self.runtime {
+            check_non_empty(&runtime.version, "lock.runtime.version must not be empty")?;
+            match runtime.carry {
+                true => {
+                    if runtime.exe.is_none() || runtime.image.is_none() {
+                        return Err(PackageManifestError::Invalid(
+                            "lock.runtime with carry: true requires the exe and image slots (the two-slot carried pair, spec 19 §6.1)",
+                        ));
+                    }
+                }
+                false => {
+                    if runtime.exe.is_some() || runtime.image.is_some() || runtime.dll.is_some() {
+                        return Err(PackageManifestError::Invalid(
+                            "lock.runtime with carry: false declares no slots — a shared runtime resolves through the ordinary spec 05 §5 chain",
+                        ));
+                    }
+                }
+            }
+            for artifact in [&runtime.exe, &runtime.image, &runtime.dll]
+                .into_iter()
+                .flatten()
+            {
+                if artifact.slot >= TPKG_MAX_SLOTS {
+                    return Err(PackageManifestError::Invalid(
+                        "lock.runtime slot is outside the container's slot capacity (0..TPKG_MAX_SLOTS-1)",
+                    ));
+                }
+                artifact
+                    .sha256
+                    .validate("lock.runtime sha256 pins must be 64 lowercase hex")?;
+            }
+        }
+        let mut names: Vec<&str> = Vec::new();
+        for slice in &self.slices {
+            check_non_empty(&slice.name, "lock.slices[].name must not be empty")?;
+            check_non_empty(&slice.version, "lock.slices[].version must not be empty")?;
+            names.push(slice.name.as_str());
+            slice
+                .sha256
+                .validate("lock.slices[].sha256 pins must be 64 lowercase hex")?;
+            match (slice.carry, slice.slot) {
+                (true, Some(slot)) => {
+                    if slot >= TPKG_MAX_SLOTS {
+                        return Err(PackageManifestError::Invalid(
+                            "lock.slices[].slot is outside the container's slot capacity (0..TPKG_MAX_SLOTS-1)",
+                        ));
+                    }
+                }
+                (true, None) => {
+                    return Err(PackageManifestError::Invalid(
+                        "lock.slices[] with carry: true requires its trailer slot",
+                    ));
+                }
+                (false, Some(_)) => {
+                    return Err(PackageManifestError::Invalid(
+                        "lock.slices[] with carry: false declares no slot — a shared slice rides the machine cache",
+                    ));
+                }
+                (false, None) => {
+                    if slice.source.as_deref().map_or(true, |s| s.is_empty()) {
+                        return Err(PackageManifestError::Invalid(
+                            "lock.slices[] with carry: false requires its fetch coordinates (source:)",
+                        ));
+                    }
+                }
+            }
+            if let Some(mount) = &slice.mount {
+                if mount.is_empty() || !mount.starts_with('/') {
+                    return Err(PackageManifestError::Invalid(
+                        "lock.slices[].mount must be a declared (POSIX-absolute) mount point",
+                    ));
+                }
+            }
+        }
+        names.sort_unstable();
+        if names.windows(2).any(|w| w[0] == w[1]) {
+            return Err(PackageManifestError::Invalid(
+                "duplicate lock.slices[].name (one lock row per slice)",
+            ));
+        }
+        let mut slots = self.claimed_slots();
+        slots.sort_unstable();
+        if slots.windows(2).any(|w| w[0] == w[1]) {
+            return Err(PackageManifestError::Invalid(
+                "two locked artifacts claim the same trailer slot",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// The L2 package manifest (spec 03 §6).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PackageManifest {
@@ -223,6 +510,10 @@ pub struct PackageManifest {
     /// exclusive.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mounts: Vec<PackageMount>,
+    /// The press-time composition lock (spec 23 §4/§13). Absent on
+    /// pre-spectrum packages — they resolve exactly as before.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lock: Option<PackageLock>,
 }
 
 impl PackageManifest {
@@ -273,10 +564,28 @@ impl PackageManifest {
                 &entry.runtime_ref,
                 "entries[].runtime_ref must not be empty",
             )?;
-            if entry.slot >= TPKG_MAX_SLOTS {
-                return Err(PackageManifestError::Invalid(
-                    "entries[].slot is outside the container's slot capacity (0..TPKG_MAX_SLOTS-1)",
-                ));
+            match entry.slot {
+                Some(slot) if slot >= TPKG_MAX_SLOTS => {
+                    return Err(PackageManifestError::Invalid(
+                        "entries[].slot is outside the container's slot capacity (0..TPKG_MAX_SLOTS-1)",
+                    ));
+                }
+                // A slot-less entry is the pointer-package form (spec 23
+                // §13): the lock must carry the entry's slice as shared,
+                // under the entry's own name.
+                None => {
+                    let backed = self
+                        .lock
+                        .as_ref()
+                        .and_then(|lock| lock.slice(&entry.name))
+                        .is_some_and(|slice| !slice.carry);
+                    if !backed {
+                        return Err(PackageManifestError::Invalid(
+                            "entries[].slot is absent (a shared entry slice) but no lock slice with the entry's name and carry: false backs it",
+                        ));
+                    }
+                }
+                _ => {}
             }
         }
         let mut names: Vec<&str> = self.entries.iter().map(|e| e.name.as_str()).collect();
@@ -344,6 +653,26 @@ impl PackageManifest {
                 ));
             }
         }
+        if let Some(lock) = &self.lock {
+            lock.validate()?;
+            // Entry ↔ slice consistency: an entry whose name a lock slice
+            // carries must agree on the physical placement — carried slice
+            // slot == entry slot, shared slice ⇔ slot-less entry.
+            for entry in &self.entries {
+                let Some(slice) = lock.slice(&entry.name) else {
+                    continue;
+                };
+                match (slice.carry, slice.slot, entry.slot) {
+                    (true, Some(slice_slot), Some(entry_slot)) if slice_slot == entry_slot => {}
+                    (false, None, None) => {}
+                    _ => {
+                        return Err(PackageManifestError::Invalid(
+                            "entries[] and the lock disagree on the slice's placement (carry verdict / slot)",
+                        ));
+                    }
+                }
+            }
+        }
         if let Some(jail) = &self.jail {
             jail.validate().map_err(PackageManifestError::Jail)?;
         }
@@ -369,13 +698,14 @@ mod tests {
             },
             entries: vec![PackageEntry {
                 name: "metanorma".to_string(),
-                slot: 0,
+                slot: Some(0),
                 entrypoint: "metanorma".to_string(),
                 runtime_ref: "ruby@3.4.2;tebako=0.15.9".to_string(),
             }],
             jail: None,
             env: BTreeMap::new(),
             mounts: Vec::new(),
+            lock: None,
         }
     }
 
@@ -409,7 +739,11 @@ mod tests {
         assert!(bad(&m));
 
         let mut m = minimal();
-        m.entries[0].slot = TPKG_MAX_SLOTS;
+        m.entries[0].slot = Some(TPKG_MAX_SLOTS);
+        assert!(bad(&m));
+
+        let mut m = minimal();
+        m.entries[0].slot = None; // a shared entry slice with no lock backing
         assert!(bad(&m));
 
         let mut m = minimal();
@@ -422,7 +756,7 @@ mod tests {
 
         let mut m = minimal();
         m.entries.push(m.entries[0].clone()); // duplicate name
-        m.entries[1].slot = 1;
+        m.entries[1].slot = Some(1);
         assert!(bad(&m));
 
         let mut m = minimal();
@@ -586,5 +920,191 @@ mod tests {
         assert!(bad(
             "  - {slot: 0, point: /x, mode: union, precedence: first}\n"
         ));
+    }
+
+    // ---------------------------------------------------------------
+    // The press-time lock (spec 23 §4/§13)
+    // ---------------------------------------------------------------
+
+    fn sha(byte: char) -> String {
+        byte.to_string().repeat(64)
+    }
+
+    fn carried_slice() -> LockedSlice {
+        LockedSlice {
+            name: "metanorma".to_string(),
+            version: "2.1.4".to_string(),
+            carry: true,
+            slot: Some(0),
+            mount: Some("/__tfs__".to_string()),
+            sha256: DigestPin::One(sha('a')),
+            source: Some(
+                "tfs:github:tebako-packages/metanorma-feedstock:2.1.4#metanorma-2.1.4.tfs"
+                    .to_string(),
+            ),
+        }
+    }
+
+    fn shared_slice() -> LockedSlice {
+        LockedSlice {
+            name: "openjdk".to_string(),
+            version: "21.0.5".to_string(),
+            carry: false,
+            slot: None,
+            mount: Some("/opt/openjdk".to_string()),
+            sha256: DigestPin::PerTriplet(BTreeMap::from([(
+                "macos-arm64".to_string(),
+                sha('b'),
+            )])),
+            source: Some(
+                "tfs:github:tebako-packages/openjdk-feedstock:21.0.5#openjdk-21.0.5-macos-arm64.tfs"
+                    .to_string(),
+            ),
+        }
+    }
+
+    fn carried_lock() -> PackageLock {
+        PackageLock {
+            runtime: Some(LockedRuntime {
+                version: "3.3.7".to_string(),
+                carry: true,
+                exe: Some(LockedArtifact {
+                    slot: 1,
+                    sha256: DigestPin::PerTriplet(BTreeMap::from([(
+                        "macos-arm64".to_string(),
+                        sha('c'),
+                    )])),
+                }),
+                image: Some(LockedArtifact {
+                    slot: 2,
+                    sha256: DigestPin::PerTriplet(BTreeMap::from([(
+                        "macos-arm64".to_string(),
+                        sha('d'),
+                    )])),
+                }),
+                dll: None,
+            }),
+            slices: vec![carried_slice(), shared_slice()],
+        }
+    }
+
+    #[test]
+    fn lock_round_trips_and_stays_absent_when_none() {
+        // absent lock: the v1 shape, byte-stable
+        let m = minimal();
+        let text = m.to_yaml().unwrap();
+        assert!(!text.contains("lock"), "{text}");
+
+        let mut m = minimal();
+        m.lock = Some(carried_lock());
+        let text = m.to_yaml().unwrap();
+        let back = PackageManifest::from_yaml(&text).unwrap();
+        assert_eq!(back, m);
+    }
+
+    #[test]
+    fn lock_validation_is_fail_closed() {
+        let bad = |lock: PackageLock| {
+            let mut m = minimal();
+            m.lock = Some(lock);
+            m.validate().is_err()
+        };
+
+        // carried runtime without the pair slots
+        let mut lock = carried_lock();
+        lock.runtime.as_mut().unwrap().image = None;
+        assert!(bad(lock));
+
+        // shared runtime carrying slots
+        let mut lock = carried_lock();
+        let rt = lock.runtime.as_mut().unwrap();
+        rt.carry = false;
+        assert!(bad(lock));
+
+        // carried slice without a slot
+        let mut lock = carried_lock();
+        lock.slices[0].slot = None;
+        assert!(bad(lock));
+
+        // shared slice with a slot
+        let mut lock = carried_lock();
+        lock.slices[1].slot = Some(3);
+        assert!(bad(lock));
+
+        // shared slice without fetch coordinates
+        let mut lock = carried_lock();
+        lock.slices[1].source = None;
+        assert!(bad(lock));
+
+        // duplicate slice names
+        let mut lock = carried_lock();
+        lock.slices.push(lock.slices[1].clone());
+        assert!(bad(lock));
+
+        // two artifacts claiming one slot (the app slice and the exe)
+        let mut lock = carried_lock();
+        lock.runtime.as_mut().unwrap().exe.as_mut().unwrap().slot = 0;
+        assert!(bad(lock));
+
+        // slot outside the container's capacity
+        let mut lock = carried_lock();
+        lock.runtime.as_mut().unwrap().image.as_mut().unwrap().slot = TPKG_MAX_SLOTS;
+        assert!(bad(lock));
+
+        // a malformed digest
+        let mut lock = carried_lock();
+        lock.slices[0].sha256 = DigestPin::One("not-hex".to_string());
+        assert!(bad(lock));
+
+        // an unknown triplet key in the digest map
+        let mut lock = carried_lock();
+        lock.slices[1].sha256 =
+            DigestPin::PerTriplet(BTreeMap::from([("plan9-mips".to_string(), sha('b'))]));
+        assert!(bad(lock));
+
+        // a relative mount point
+        let mut lock = carried_lock();
+        lock.slices[0].mount = Some("relative".to_string());
+        assert!(bad(lock));
+    }
+
+    #[test]
+    fn lock_entry_slice_agreement_is_checked() {
+        // entry slot and the carried slice's slot must agree
+        let mut m = minimal();
+        m.lock = Some(carried_lock());
+        m.entries[0].slot = Some(3);
+        assert!(m.validate().is_err());
+
+        // a slot-less entry backed by a shared lock slice of the same name
+        let mut m = minimal();
+        m.entries[0].name = "openjdk".to_string();
+        m.entries[0].slot = None;
+        m.lock = Some(PackageLock {
+            runtime: None,
+            slices: vec![shared_slice()],
+        });
+        m.validate().unwrap();
+
+        // ... but a CARRIED slice of the entry's name refuses the slot-less entry
+        let mut m = minimal();
+        m.entries[0].slot = None;
+        m.lock = Some(PackageLock {
+            runtime: None,
+            slices: vec![carried_slice()],
+        });
+        assert!(m.validate().is_err());
+    }
+
+    #[test]
+    fn digest_pin_host_lookup() {
+        let one = DigestPin::One(sha('a'));
+        assert_eq!(one.for_host(crate::Platform::Aarch64Macos), Some(sha('a').as_str()));
+        let map = DigestPin::PerTriplet(BTreeMap::from([("macos-arm64".to_string(), sha('b'))]));
+        assert_eq!(
+            map.for_host(crate::Platform::Aarch64Macos),
+            Some(sha('b').as_str())
+        );
+        assert_eq!(map.for_host(crate::Platform::X86_64LinuxGnu), None);
     }
 }

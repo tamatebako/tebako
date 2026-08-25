@@ -333,16 +333,20 @@ fn assemble(
         }
     }
     // The L2 package manifest (ext block type 2, spec 03 §6) references
-    // slots by index — every entry must point at a real slot.
+    // slots by index — every entry must point at a real slot. A slot-less
+    // entry is the pointer form (spec 23 §4): it is backed by a shared
+    // lock slice of the same name, not by a container slot.
     if let Some(pm) = &options.package_manifest {
         for (i, entry) in pm.entries.iter().enumerate() {
-            if entry.slot as usize >= slots.len() {
-                return Err(format!(
-                    "package manifest entry {i} ({}) references slot {} but the package has {} slot(s)",
-                    entry.name,
-                    entry.slot,
-                    slots.len()
-                ));
+            if let Some(slot) = entry.slot {
+                if slot as usize >= slots.len() {
+                    return Err(format!(
+                        "package manifest entry {i} ({}) references slot {} but the package has {} slot(s)",
+                        entry.name,
+                        slot,
+                        slots.len()
+                    ));
+                }
             }
         }
     }
@@ -1194,9 +1198,13 @@ fn package_manifest_section(m: &Manifest) -> String {
             ));
             out.push_str(&format!("  entries: {}\n", pm.entries.len()));
             for (i, e) in pm.entries.iter().enumerate() {
+                let slot = match e.slot {
+                    Some(s) => format!("slot {s}"),
+                    None => "shared slice (pointer entry)".to_string(),
+                };
                 out.push_str(&format!(
-                    "    [{i}] {} -> slot {}, entrypoint {}, runtime {}\n",
-                    e.name, e.slot, e.entrypoint, e.runtime_ref
+                    "    [{i}] {} -> {slot}, entrypoint {}, runtime {}\n",
+                    e.name, e.entrypoint, e.runtime_ref
                 ));
             }
             if !pm.env.is_empty() {

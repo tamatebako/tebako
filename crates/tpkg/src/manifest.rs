@@ -241,6 +241,17 @@ impl Platforms {
         }
         Ok(())
     }
+
+    /// True when this coverage declaration covers `platform` (universal
+    /// covers everything). The compose document's `platforms:` coverage
+    /// assertion (spec 23 §13.3) and the lock's per-host digest-pin lookup
+    /// both phrase their checks in terms of this.
+    pub fn covers(&self, platform: Platform) -> bool {
+        match self {
+            Platforms::Universal => true,
+            Platforms::Triplets(ts) => ts.contains(&platform),
+        }
+    }
 }
 
 /// Shared triplet-list checks (app `platforms`, toolkit-dep `triplets`).

@@ -533,12 +533,13 @@ fn press_package_manifest(
         },
         entries: vec![tpkg::PackageEntry {
             name: stem.clone(),
-            slot: 0,
+            slot: Some(0),
             entrypoint: "/local/stub.rb".to_string(),
             runtime_ref: runtime_ref.to_string(),
         }],
         jail,
         env: Default::default(),
+        lock: None,
         mounts: vec![tpkg::PackageMount {
             slot: 0,
             point: mount_point.to_string(),
@@ -870,7 +871,7 @@ mod tests {
         assert_eq!(m.package.name, "hello");
         assert_eq!(m.package.producer.tool, "tebako-cli");
         assert_eq!(m.entries.len(), 1);
-        assert_eq!(m.entries[0].slot, 0);
+        assert_eq!(m.entries[0].slot, Some(0));
         // The entry is the in-image dispatcher, mount-relative (the
         // driver joins mount+entry — spec 17 §1).
         assert_eq!(m.entries[0].entrypoint, "/local/stub.rb");

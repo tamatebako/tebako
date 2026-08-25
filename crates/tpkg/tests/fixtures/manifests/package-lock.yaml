@@ -1,0 +1,43 @@
+# The spec 23 §4/§13 lock shape (the composition spectrum): a
+# self-contained package — the carried app slice (slot 0), the two-slot
+# carried runtime pair (slots 1+2, spec 19 §6.1), a shared toolkit slice
+# resolved at run time by locked digest, and a pointer entry (slot-less)
+# backed by that shared slice under its own name.
+schema_version: 1
+package:
+  name: mnconvert
+  version: 2.1.0
+  producer: { tool: tebako-cli, tool_version: 0.17.0 }
+  created: 2026-08-25T00:00:00Z
+entries:
+  - name: mnconvert
+    slot: 0
+    entrypoint: mnconvert
+    runtime_ref: ruby@3.4.5;tebako=0.17.0;image
+  - name: mn2pdf
+    entrypoint: mn2pdf
+    runtime_ref: ruby@3.4.5;tebako=0.17.0;image
+mounts:
+  - { slot: 0, point: /__tfs__, mode: union, precedence: after-env }
+lock:
+  runtime:
+    version: 3.4.5
+    carry: true
+    exe: { slot: 1, sha256: "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a" }
+    image: { slot: 2, sha256: "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b" }
+  slices:
+    - name: mnconvert
+      version: 2.1.0
+      carry: true
+      slot: 0
+      mount: /__tfs__
+      sha256: "1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+      source: https://github.com/tebako-packages/metanorma-feedstock/releases/download/mnconvert-v2.1.0/mnconvert-2.1.0-universal.tfs
+    - name: mn2pdf
+      version: 1.9.2
+      carry: false
+      mount: /__tfs__/mnt/mn2pdf
+      sha256:
+        macos-arm64: "2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d"
+        linux-gnu-x86_64: "3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e"
+      source: gh:tebako-packages/mn2pdf-feedstock@mn2pdf-v1.9.2

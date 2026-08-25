@@ -125,11 +125,11 @@ fn package_manifest_carries_per_entry_refs_and_slots() {
     assert_eq!(pm.package.version, "1.2.3");
     assert_eq!(pm.entries.len(), 2);
     assert_eq!(pm.entries[0].name, "metanorma");
-    assert_eq!(pm.entries[0].slot, 0);
+    assert_eq!(pm.entries[0].slot, Some(0));
     assert_eq!(pm.entries[0].entrypoint, "metanorma");
     assert_eq!(pm.entries[0].runtime_ref, refs[0]);
     assert_eq!(pm.entries[1].name, "mn2pdf");
-    assert_eq!(pm.entries[1].slot, 1);
+    assert_eq!(pm.entries[1].slot, Some(1));
     assert_eq!(pm.entries[1].runtime_ref, refs[1]);
     // the block validates + round-trips (set_package_manifest re-validates)
     let yaml = pm.to_yaml().unwrap();

@@ -205,12 +205,13 @@ impl RuntimeDeployer {
                 },
                 entries: vec![tpkg::PackageEntry {
                     name: "tebako-deploy-driver".to_string(),
-                    slot: 0,
+                    slot: Some(0),
                     entrypoint: "/local/stub.rb".to_string(),
                     runtime_ref,
                 }],
                 jail: None,
                 env: Default::default(),
+                lock: None,
                 mounts: vec![tpkg::PackageMount {
                     slot: 0,
                     point: declared.to_string(),

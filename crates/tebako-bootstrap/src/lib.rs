@@ -301,7 +301,9 @@ pub fn select_entry<'a>(pm: &'a tpkg::PackageManifest, argv0: &str) -> &'a tpkg:
 /// package carries no type-2 block (v1 behavior, byte-identical), else
 /// the parsed manifest and the entry `argv0` selects. A corrupt block is
 /// a named error; an entry naming a slot the container does not carry is
-/// a named error (the package is internally inconsistent).
+/// a named error (the package is internally inconsistent). A slot-less
+/// entry (`slot: None`) is the pointer form — backed by a shared lock
+/// slice of the same name, guaranteed by the manifest's own validation.
 pub fn package_selection(
     m: &tpkg::Manifest,
     argv0: &str,
@@ -309,16 +311,18 @@ pub fn package_selection(
     match m.package_manifest() {
         Ok(Some(pm)) => {
             let entry = select_entry(&pm, argv0).clone();
-            if entry.slot as usize >= m.slots.len() {
-                return fail(
-                    EX_TEBAKO_MANIFEST,
-                    format!(
-                        "package manifest entry \"{}\" names slot {} but the package carries {} slot(s) — the package is internally inconsistent, re-stitch it",
-                        entry.name,
-                        entry.slot,
-                        m.slots.len()
-                    ),
-                );
+            if let Some(slot) = entry.slot {
+                if slot as usize >= m.slots.len() {
+                    return fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "package manifest entry \"{}\" names slot {} but the package carries {} slot(s) — the package is internally inconsistent, re-stitch it",
+                            entry.name,
+                            slot,
+                            m.slots.len()
+                        ),
+                    );
+                }
             }
             Ok(Some((pm, entry.clone())))
         }
@@ -2739,7 +2743,9 @@ pub fn handoff_argv(
             continue; // runtime payload: installed into the cache, never mounted
         }
         if let Some((pm, selected)) = selection {
-            if s != selected.slot as usize && pm.entries.iter().any(|e| e.slot as usize == s) {
+            if selected.slot != Some(s as u32)
+                && pm.entries.iter().any(|e| e.slot == Some(s as u32))
+            {
                 continue; // another suite member's image — not mounted
             }
         }

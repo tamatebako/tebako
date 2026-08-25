@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tebako.org/schemas/tebako-compose-v1.schema.json",
+  "title": "tebako composition document v1",
+  "description": "The D2 composition document (spec 23 §3/§13) — the press-time subset read by `tebako press --compose`: one runtime requirement plus N payload slice references, the per-slice carry verdicts (the composition spectrum), and the platforms: coverage assertions (§13.3). This schema is the STRUCTURAL contract; the tpkg crate's parse_compose() is the semantic gate (the constraint grammar, the ref:/expanded agreement rule, slice-name uniqueness, the host-triplet coverage checks). The Phase-R jail keys (policy:, mounts:, needs:) are REFUSED structurally — fail-closed: a compose document that looks jail-declaring but is pressed without its policy would be a silent security downgrade. Truly unknown keys stay tolerated (forward compatibility).",
+  "type": "object",
+  "required": ["version", "runtime"],
+  "not": {
+    "anyOf": [
+      { "required": ["policy"] },
+      { "required": ["mounts"] },
+      { "required": ["needs"] }
+    ]
+  },
+  "properties": {
+    "version": { "const": 1 },
+    "preset": {
+      "enum": ["self-contained", "shared-runtime", "lean", "fat"],
+      "description": "The package preset (spec 23 §13.2); default shared-runtime. lean/fat are the deprecated aliases — they parse with a named warning each, never silently (invariant 9)."
+    },
+    "runtime": { "$ref": "#/$defs/sliceRef" },
+    "slices": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/sliceRef" },
+      "description": "The payload slices, in document order (= mount order in the baked lock: the app payload first, then its dependency closure)."
+    },
+    "entrypoint": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The pointer-package form's entry selector — a PROVIDES entrypoint name of one of the slices. Absent when the press packages a local root (the app's own entry governs)."
+    }
+  },
+  "$defs": {
+    "sliceRef": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The `name@constraint` shorthand (the name is everything before the FIRST '@') — one semantics, two spellings; a conflict with the expanded name:/requirement: keys is a named validation error (semantic)."
+        },
+        "requirement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The version constraint (the spec 03 §4 grammar — only non-emptiness is structural here). Required on the runtime; optional on payload slices."
+        },
+        "carry": {
+          "type": "boolean",
+          "description": "The authored carry verdict; absent = the preset decides (self-contained carries everything; shared-runtime shares the runtime and carries the payload slices)."
+        },
+        "platforms": {
+          "description": "The coverage assertion (spec 23 §13.3): narrows, never extends the payload's declared coverage (the narrowing and host-coverage checks are semantic — press-side, fail-closed).",
+          "anyOf": [
+            { "const": "universal" },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": { "$ref": "#/$defs/releaseAssetName" }
+            }
+          ]
+        }
+      }
+    },
+    "releaseAssetName": {
+      "type": "string",
+      "enum": ["macos-arm64", "macos-x86_64", "linux-gnu-x86_64", "linux-gnu-arm64", "linux-musl-x86_64", "linux-musl-arm64", "windows-ucrt64", "windows-ucrt-arm64"],
+      "description": "The registry-row platform spelling (spec 04) — the triplet ↔ release-asset-name mapping's single owner is the tpkg crate's Platform."
+    }
+  }
+}

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://tebako.org/schemas/tpkg-package-manifest-v1.schema.json",
   "title": "tpkg package manifest v1",
-  "description": "The L2 package manifest (spec 03 §6), carried as tpkg extension block type 2 (spec 02 §5b) — YAML in the container, OUTSIDE every payload image, readable without backend knowledge. It owns composition (identity, entrypoint/suite entries, package-level jail + env, per-entry runtime refs); payload manifests stay inside images and own self-description. This schema is the STRUCTURAL contract; the tpkg crate's PackageManifest::validate() is the semantic gate (unique entry names, slot-capacity bound, non-empty fields, the spec 08 jail block's own validation). Unknown keys are tolerated at every level for forward compatibility.",
+  "description": "The L2 package manifest (spec 03 §6), carried as tpkg extension block type 2 (spec 02 §5b) — YAML in the container, OUTSIDE every payload image, readable without backend knowledge. It owns composition (identity, entrypoint/suite entries, package-level jail + env, per-entry runtime refs); payload manifests stay inside images and own self-description. The optional `lock` block (spec 23 §4/§13 — the composition spectrum) is the press-time closure lock: the concrete runtime pair plus every resolved payload slice with carry verdicts, digest pins, and (shared slices) fetch coordinates; run-time resolution follows the lock by locked digest, never fresh semver. This schema is the STRUCTURAL contract; the tpkg crate's PackageManifest::validate() is the semantic gate (unique entry names, slot-capacity bound, non-empty fields, the carry⇔slot agreements, the spec 08 jail block's own validation). Unknown keys are tolerated at every level for forward compatibility.",
   "type": "object",
   "required": ["schema_version", "package", "entries"],
   "properties": {
@@ -21,6 +21,9 @@
       "type": "object",
       "additionalProperties": { "type": "string" },
       "description": "Package-level environment (composition rules: spec 07)."
+    },
+    "lock": {
+      "$ref": "#/$defs/packageLock"
     }
   },
   "$defs": {
@@ -77,7 +80,7 @@
     },
     "packageEntry": {
       "type": "object",
-      "required": ["name", "slot", "entrypoint", "runtime_ref"],
+      "required": ["name", "entrypoint", "runtime_ref"],
       "properties": {
         "name": {
           "type": "string",
@@ -88,7 +91,7 @@
           "type": "integer",
           "minimum": 0,
           "maximum": 7,
-          "description": "Which payload slot carries the entrypoint's image (0..TPKG_MAX_SLOTS-1; the bound against the concrete package's slot count happens at embed time)."
+          "description": "Which payload slot carries the entrypoint's image (0..TPKG_MAX_SLOTS-1; the bound against the concrete package's slot count happens at embed time). ABSENT for a pointer-package entry (spec 23 §13): the entry's slice is then SHARED — backed by a lock.slices[] row of the same name with carry: false (the agreement is semantic, the crate's validate())."
         },
         "entrypoint": {
           "type": "string",
@@ -101,6 +104,95 @@
           "description": "Per-entry runtime reference (type@version;tebako=<abi>[;params]) — kills the trailer's 128-byte single-field limit for suites and multi-runtime packages."
         }
       }
+    },
+    "sha256hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "releaseAssetName": {
+      "type": "string",
+      "enum": ["macos-arm64", "macos-x86_64", "linux-gnu-x86_64", "linux-gnu-arm64", "linux-musl-x86_64", "linux-musl-arm64", "windows-ucrt64", "windows-ucrt-arm64"],
+      "description": "The registry-row platform spelling (spec 04) — the triplet ↔ release-asset-name mapping's single owner is the tpkg crate's Platform."
+    },
+    "digestPin": {
+      "description": "A slice's digest pin (spec 23 §13.3): EITHER the single digest (the carried form — the bytes are fixed at stitch — or a universal-coverage slice) OR the per-triplet digest map keyed by release-asset names (the run-time lookup keys on the host triplet; a coverage gap is the consumer's named error).",
+      "anyOf": [
+        { "$ref": "#/$defs/sha256hex" },
+        {
+          "type": "object",
+          "minProperties": 1,
+          "propertyNames": { "$ref": "#/$defs/releaseAssetName" },
+          "additionalProperties": { "$ref": "#/$defs/sha256hex" }
+        }
+      ]
+    },
+    "lockedArtifact": {
+      "type": "object",
+      "required": ["slot", "sha256"],
+      "properties": {
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7,
+          "description": "The trailer slot carrying the bytes (0..TPKG_MAX_SLOTS-1)."
+        },
+        "sha256": { "$ref": "#/$defs/digestPin" }
+      },
+      "description": "One carried artifact of the runtime pair (spec 19 §6.1): the slot the bytes ride in plus the press-time digest pin."
+    },
+    "lockedRuntime": {
+      "type": "object",
+      "required": ["version", "carry"],
+      "properties": {
+        "version": { "type": "string", "minLength": 1 },
+        "carry": { "type": "boolean" },
+        "exe": { "$ref": "#/$defs/lockedArtifact" },
+        "image": { "$ref": "#/$defs/lockedArtifact" },
+        "dll": {
+          "$ref": "#/$defs/lockedArtifact",
+          "description": "The windows dll-era facet (tebako-runtime-ruby#40): carried as a third slot when the resolved release declares it."
+        }
+      },
+      "description": "The locked runtime (spec 23 §4). carry: true requires the exe and image slots (the two-slot carried pair, spec 19 §6.1); carry: false declares NO slots — a shared runtime resolves and verifies through the ordinary spec 05 §5 chain, never the lock. The carry⇔slots agreement is semantic (the crate's validate())."
+    },
+    "lockedSlice": {
+      "type": "object",
+      "required": ["name", "version", "carry", "sha256"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 },
+        "carry": { "type": "boolean" },
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7,
+          "description": "The trailer slot (carried slices only — the carry⇔slot agreement is semantic: carry: true requires it, carry: false forbids it)."
+        },
+        "mount": {
+          "type": "string",
+          "pattern": "^/",
+          "description": "The declared mount point, sourced only from a consumer edge's mount: (spec 03 §2.3 — the provider never dictates); absent = the slice is a cache prime with no mount."
+        },
+        "sha256": { "$ref": "#/$defs/digestPin" },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The fetch coordinates (a spec 04 reference) the press resolved from — required on a shared slice; on a carried slice it is provenance, never a fallback fetch path."
+        }
+      },
+      "description": "One locked payload slice (spec 23 §4/§13)."
+    },
+    "packageLock": {
+      "type": "object",
+      "properties": {
+        "runtime": { "$ref": "#/$defs/lockedRuntime" },
+        "slices": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/lockedSlice" },
+          "description": "Every resolved payload slice, in mount order: the app payload first, then its dependency closure. Slice-name uniqueness and the no-two-artifacts-per-slot rule are semantic (the crate's validate())."
+        }
+      },
+      "description": "The press-time lock (spec 23 §4/§13): what press resolved is what runs — the full composition closure locked per slice."
     }
   }
 }

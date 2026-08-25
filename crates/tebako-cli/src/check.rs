@@ -1528,7 +1528,7 @@ fn plan_exec(
             // through the owning slice's own manifest (the name's one
             // authority), then compare paths.
             let package_entry = entries.iter().find(|e| {
-                Some(e.slot) == owner.slot
+                e.slot == owner.slot
                     && owner
                         .dispatchables
                         .iter()
@@ -1540,7 +1540,13 @@ fn plan_exec(
                     owner.slot.unwrap_or(0),
                     entries
                         .iter()
-                        .map(|e| format!("{}→slot {}:{}", e.name, e.slot, e.entrypoint))
+                        .map(|e| {
+                            let slot = match e.slot {
+                                Some(s) => s.to_string(),
+                                None => "shared".to_string(),
+                            };
+                            format!("{}→slot {}:{}", e.name, slot, e.entrypoint)
+                        })
                         .collect::<Vec<_>>()
                         .join(", ")
                 )));
