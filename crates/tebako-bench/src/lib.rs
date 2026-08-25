@@ -22,7 +22,9 @@
 pub mod error;
 pub mod platforms;
 pub mod result;
+pub mod sampler;
 pub mod suite;
+mod sys;
 pub mod validate;
 
 pub use error::BenchError;
@@ -30,6 +32,12 @@ pub use platforms::{PlatformFile, Triplet};
 pub use result::{ResultFile, RunRecord, StatRecord};
 pub use suite::{RunPolicy, SuiteFile, Target, TargetKind, Workload};
 pub use validate::{validate_file, validate_text, DocKind};
+
+/// Total physical RAM of the runner in bytes (`runner.ram_bytes`, spec 27
+/// §6). The platform mechanics live in `crate::sys` (FFI-quarantined).
+pub fn ram_total_bytes() -> Result<u64, BenchError> {
+    sys::ram_total_bytes()
+}
 
 /// The process exit codes (spec 27 §8).
 pub mod exit {

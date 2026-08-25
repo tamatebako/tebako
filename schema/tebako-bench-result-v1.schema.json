@@ -63,7 +63,7 @@
           "description": "ok: expectation met, all metrics present. failed: ran, expectation missed — never enters statistics. timeout: killed at the workload's timeout_s. unavailable: the named-gap record — the arm was never attempted on this triplet; reason is mandatory."
         },
         "wall_s": { "type": "number", "minimum": 0, "description": "Instant-elapsed seconds around spawn→wait." },
-        "cpu_user_s": { "type": "number", "minimum": 0, "description": "POSIX: getrusage(RUSAGE_CHILDREN) delta; Windows: GetProcessTimes user. spec 27 §4." },
+        "cpu_user_s": { "type": "number", "minimum": 0, "description": "POSIX: wait4 rusage of the reaped child; Windows: GetProcessTimes user. spec 27 §4." },
         "cpu_sys_s": { "type": "number", "minimum": 0, "description": "Same span, system CPU." },
         "peak_rss_bytes": {
           "type": "integer",

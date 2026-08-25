@@ -204,20 +204,26 @@ rule (unsafe only inside FFI boundary modules).
 - **Wall time** — `std::time::Instant` around the spawn→wait span.
   Unit: seconds, f64, recorded as `wall_s`.
 - **CPU time** —
-  - POSIX: `libc::getrusage(RUSAGE_CHILDREN)` sampled immediately
-    before the spawn and immediately after the `wait` returns; the
-    recorded user/sys CPU is the DELTA. **`RUSAGE_CHILDREN` is
-    cumulative over all waited-on children of the process** — therefore
-    the sampler runs exactly ONE measured child at a time, and no
-    unrelated child of the harness may be reaped between the two
-    samples. This discipline is the whole accuracy story; concurrent
-    measured runs are forbidden even when workloads are independent.
+  - POSIX: `libc::wait4(pid, …)` reaps the measured child itself, so
+    the returned `rusage` is the child's OWN (utime/stime exact).
+    This replaces the originally drafted `getrusage(RUSAGE_CHILDREN)`
+    delta — **amended 2026-08-25, when the sampler landed**: that
+    counter's `ru_maxrss` is a *running maximum* over every child the
+    process has ever reaped, so after one big child the
+    (after − before) RSS delta is 0 forever and runs 2..N would record
+    garbage peak RSS. `wait4` has no such contamination and still
+    gives exact per-child CPU. The sampler polls `wait4(WNOHANG)` on a
+    ~2 ms tick against the deadline. The one-measured-child-at-a-time
+    discipline still stands (it keeps wall/timeout semantics clean and
+    matches the Windows handle model), even though wait4 makes
+    cross-child CPU/RSS contamination impossible by construction.
   - Windows: `CreateProcessW` + `GetProcessTimes` on the child's
     process handle after wait; user/kernel 100-ns FILETIME intervals
     converted to seconds. Recorded as `cpu_user_s` / `cpu_sys_s`;
     statistics use their sum as `cpu_s`.
 - **Peak RSS** —
-  - POSIX: `ru_maxrss` from the same getrusage delta span. **Unit
+  - POSIX: `ru_maxrss` from the same `wait4` reap (the measured
+    child's own high-water mark). **Unit
     normalization at record time**: Linux/musl report KiB, macOS
     reports bytes — the sampler multiplies the Linux value by 1024 and
     every run record carries `peak_rss_bytes`, bytes, always. A result

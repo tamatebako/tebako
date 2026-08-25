@@ -70,8 +70,8 @@ pub struct RunRecord {
     /// Instant-elapsed seconds around spawn→wait.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub wall_s: Option<f64>,
-    /// POSIX getrusage(RUSAGE_CHILDREN) delta / Windows GetProcessTimes
-    /// (spec 27 §4 — one measured child at a time, the delta is exact).
+    /// POSIX wait4 rusage of the reaped child / Windows GetProcessTimes
+    /// (spec 27 §4 — one measured child at a time, attributed exactly).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cpu_user_s: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
