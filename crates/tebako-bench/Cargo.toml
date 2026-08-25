@@ -17,7 +17,11 @@ categories = ["development-tools"]
 # manifest convention); result documents are machine-written JSON.
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0.12"
-serde_json = "1"
+# float_roundtrip: results.json is machine-merged by `report` — an emitted
+# f64 (a measured wall, a computed stat) must parse back bit-exact, or the
+# report's re-derived stats could drift 1 ulp from the leg's (spec 27 §7's
+# merge rule). serde_json's default float parse does not guarantee it.
+serde_json = { version = "1", features = ["float_roundtrip"] }
 # SHA-256 for artifact verification (the acquisition slice); spec 00's
 # trust-anchor rule applies to every downloaded byte.
 sha2 = "0.10"

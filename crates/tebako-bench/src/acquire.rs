@@ -749,6 +749,36 @@ pub fn prime_runtime(
     read_runtime_entry(layout, triplet, &payload.mirror)
 }
 
+/// The dispatcher path for the payload's first entrypoint — the managed
+/// arm's measured program (the engine re-runs it after `prime_runtime`
+/// staged the store).
+pub fn shim_path(
+    layout: &BenchLayout,
+    triplet: &str,
+    payload: &PayloadHome,
+) -> Result<PathBuf, BenchError> {
+    let entrypoint = app_entrypoints(&payload.mirror)
+        .first()
+        .map(|e| e.name.clone())
+        .ok_or_else(|| {
+            BenchError::operational(format!(
+                "acquire: the {} {} manifest declares no entrypoints — nothing to dispatch",
+                payload.name, payload.version
+            ))
+        })?;
+    let shim = layout
+        .store()
+        .join("shims")
+        .join(format!("{entrypoint}{}", exe_suffix(triplet)));
+    if !shim.is_file() {
+        return Err(BenchError::operational(format!(
+            "acquire: the install left no dispatcher {} in the store",
+            shim.display()
+        )));
+    }
+    Ok(shim)
+}
+
 /// Scan `runtimes/<engine>-<lv>-<ver>-<triplet>/` for THE cached runtime.
 /// Zero entries (the priming failed) or several (ambiguity) are named
 /// errors — never a guess (invariant 9).
