@@ -105,12 +105,26 @@ pub fn fake_runtime_path() -> PathBuf {
 
 impl Harness {
     pub fn new(bootstrap: PathBuf) -> Harness {
+        let plat = platform();
+        let exe = tebako_bootstrap::platform::exe_suffix();
+        Self::new_with_exe_asset(
+            bootstrap,
+            &format!("tebako-runtime-{TEBAKO_VER}-{RUBY_VER}-{plat}{exe}"),
+        )
+    }
+
+    /// [`new`] with an explicit exe asset spelling: the release index's
+    /// `filename` is the ONLY authoritative asset spelling (spec 05 §2
+    /// SSOT; tebako#456) — the factory publishes windows exe assets
+    /// SUFFIX-LESS, so the harness must carry any spelling the index
+    /// declares. The image keeps the exe's stem plus `.tfs`.
+    pub fn new_with_exe_asset(bootstrap: PathBuf, exe_name: &str) -> Harness {
         let tmp = TempDir::new("boot");
         let fake_runtime = fake_runtime_path();
 
         let plat = platform();
         let exe = tebako_bootstrap::platform::exe_suffix();
-        let asset = format!("tebako-runtime-{TEBAKO_VER}-{RUBY_VER}-{plat}{exe}");
+        let asset = exe_name.to_string();
         let entry = format!("ruby-{RUBY_VER}-{TEBAKO_VER}-{plat}");
         let runtime_ref = format!("ruby@{RUBY_VER};tebako={TEBAKO_VER}");
 

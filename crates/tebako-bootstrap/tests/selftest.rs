@@ -816,3 +816,91 @@ fn s18_a_run_never_seeds_the_store() {
         "a plain run seeded the payloads store"
     );
 }
+
+// ---------------------------------------------------------------------
+// tebako#456: the release index's `filename` is the ONLY authoritative
+// asset spelling (spec 05 §2 SSOT) — the factory publishes windows exe
+// assets SUFFIX-LESS; the bootstrap matches the identity triple and
+// flows the declared names into the URL, the cache layout and the gate.
+// ---------------------------------------------------------------------
+
+#[test]
+fn s19_index_filename_is_the_authoritative_spelling() {
+    let plat = harness::platform();
+    // Two spellings: the real windows factory shape (suffix-less — equal
+    // to the synthesized name on posix) and one that diverges from the
+    // synthesized spelling on EVERY host.
+    for exe_name in [
+        format!("tebako-runtime-{TEBAKO_VER}-{RUBY_VER}-{plat}"),
+        format!("tebako-runtime-{TEBAKO_VER}-{RUBY_VER}-{plat}-renamed"),
+    ] {
+        let h = Harness::new_with_exe_asset(rust_bootstrap(), &exe_name);
+        let pkg = h.lean_pkg_image("imgapp");
+        let home = h.home("home");
+        let (rc, out, err) = h.run(&pkg, &home, &[], &["hello"]);
+        assert_eq!((rc, err.as_str()), (0, ""), "{exe_name}: {err}");
+        assert!(out.contains("FAKE-RUNTIME"), "{exe_name}: {out}");
+
+        // The cache holds the entry under the INDEX spelling, verbatim.
+        let entry_dir = home.join("runtimes").join(&h.entry);
+        let cached = entry_dir.join(&exe_name);
+        assert!(
+            cached.is_file(),
+            "{exe_name}: runtime not cached under the index spelling"
+        );
+        let sha_meta = std::fs::read_to_string(entry_dir.join("sha256")).unwrap();
+        assert_eq!(sha_meta, format!("{}  {exe_name}\n", h.sha), "{exe_name}");
+        assert!(
+            h.cache_image(&home).is_file(),
+            "{exe_name}: image not cached under the flowed spelling"
+        );
+
+        // The cached index flows on the hit path too: mirror gone +
+        // offline, the cache still serves (the exe found by identity).
+        std::fs::rename(&h.mirror_root, h.tmp.0.join("mirror-gone")).unwrap();
+        let (rc, out, err) = h.run(&pkg, &home, &[("TEBAKO_OFFLINE", "1")], &["hello"]);
+        assert_eq!(rc, 0, "{exe_name}: {err}");
+        assert!(out.contains("FAKE-RUNTIME"), "{exe_name}: {out}");
+    }
+}
+
+#[test]
+fn s20_missing_entry_names_the_identity() {
+    // No manifest entry matches the identity triple: the pre-era refusal
+    // names the triple alongside the spelling tried (exit 75, before any
+    // download — spec 05 §2's honest fallback error).
+    let h = h();
+    let manifest = h
+        .mirror_root
+        .join(format!("v{TEBAKO_VER}"))
+        .join("manifest.json");
+    let renamed = std::fs::read_to_string(&manifest)
+        .unwrap()
+        .replace(
+            &format!("\"ruby_version\": \"{RUBY_VER}\""),
+            "\"ruby_version\": \"0.0.0\"",
+        )
+        .replace(
+            &format!("\"filename\": \"{}\"", h.asset),
+            "\"filename\": \"tebako-runtime-9.9.9-0.0.0-nowhere\"",
+        );
+    std::fs::write(&manifest, renamed).unwrap();
+    let pkg = h.lean_pkg("myapp");
+    let home = h.home("home-no-entry");
+    let (rc, _, err) = h.run_raw(&pkg, &home, &[], &[]);
+    assert_eq!(rc, 75, "{err}");
+    assert!(err.contains("no entry"), "{err}");
+    assert!(err.contains(&format!("ruby_version={RUBY_VER}")), "{err}");
+    assert!(
+        err.contains(&format!("platform={}", harness::platform())),
+        "{err}"
+    );
+    assert!(
+        !err.contains("downloading "),
+        "the refusal must precede any download: {err}"
+    );
+    assert!(
+        !home.join("runtimes").join(&h.entry).exists(),
+        "a refused runtime entered the cache"
+    );
+}

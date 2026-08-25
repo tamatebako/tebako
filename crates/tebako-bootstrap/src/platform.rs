@@ -23,13 +23,19 @@ use windows_sys::Win32::System::Console::{SetConsoleCtrlHandler, CTRL_BREAK_EVEN
 #[cfg(windows)]
 use windows_sys::Win32::System::IO::OVERLAPPED;
 
-/// Runtime-package platform string for asset-name construction.
-/// `tpkg::Platform` owns the vocabulary and host detection (spec 03 §3);
-/// this is the `&'static str` convenience over it.
+/// Runtime-package platform string — the `platform` leg of the release
+/// index's identity triple (spec 05 §2) and the fallback asset-name
+/// construction. `tpkg::Platform` owns the vocabulary and host detection
+/// (spec 03 §3); this is the `&'static str` convenience over it.
 pub fn platform_string() -> &'static str {
     tpkg::Platform::host().release_asset_name()
 }
 
+/// The platform executable suffix (`.exe` on Windows). Only for the
+/// SYNTHESIZED FALLBACK asset spelling — the release index entry's
+/// `filename` is the authoritative spelling, flowed verbatim whenever an
+/// identity-matched entry is in hand (spec 05 §2, tebako#456; the
+/// factory publishes the windows exe suffix-less).
 pub fn exe_suffix() -> &'static str {
     #[cfg(windows)]
     return ".exe";

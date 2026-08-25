@@ -210,6 +210,105 @@ fn download_installs_verified_readonly_image_and_markers() {
 }
 
 #[test]
+fn the_index_filename_is_the_authoritative_spelling() {
+    // tebako#456 (spec 05 §2 SSOT): the exe/image spellings flow from the
+    // release index entry matched by the identity triple — the factory
+    // publishes windows exe assets SUFFIX-LESS, so a synthesized
+    // `{name}.exe` lookup misses them. A spelling that diverges from the
+    // synthesized name on EVERY host proves the flow.
+    let tmp = TempDir::new("index-spelling");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    let exe_name = format!("tebako-runtime-0.16.0-4.0.6-{}-renamed", platform());
+    write_release_index_renamed(&mirror, "0.16.0", "4.0.6", &exe_name);
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 4.0.6\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+
+    let rt = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "4.0.6");
+    assert_eq!(
+        rt.exe.file_name().unwrap().to_string_lossy(),
+        exe_name,
+        "the cache holds the entry under the index spelling, verbatim"
+    );
+    assert!(rt.exe.is_file());
+    let image = rt.image.clone().expect("image-era runtime");
+    assert_eq!(
+        image.file_name().unwrap().to_string_lossy(),
+        format!("{exe_name}.tfs"),
+        "the image spelling flows from the entry's image facet"
+    );
+    assert!(image.is_file());
+
+    // Second resolution is a cache hit under the flowed spelling: the
+    // mirror is gone, still Ready (scan_cached flows the cached index).
+    std::fs::remove_dir_all(&mirror).unwrap();
+    let rt2 = ready(runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap());
+    assert_eq!(rt2.exe, rt.exe);
+    assert_eq!(rt2.image, rt.image);
+}
+
+#[test]
+fn a_missing_index_entry_names_the_identity() {
+    // spec 05 §2's honest fallback error: the index entry carries no
+    // `tebako_version` (a pre-identity index — the availability probe
+    // selects it on `ruby_version` + `platform` alone), so the identity
+    // match misses at download time and the pre-era refusal names the
+    // triple alongside the synthesized spelling tried.
+    let tmp = TempDir::new("missing-entry");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    let dir = mirror.join("v0.16.0");
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    std::fs::write(
+        dir.join("manifest.json"),
+        format!(
+            "[{{\"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"ruby_version\": \"4.0.6\", \"platform\": \"{plat}\", \"filename\": \"tebako-runtime-0.16.0-4.0.6-{plat}-other\", \"sha256\": \"{}\"}}]\n",
+            "a".repeat(64),
+            plat = platform()
+        ),
+    )
+    .expect("manifest.json");
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 4.0.6\n    tebako: 0.16.0\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), true, &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT);
+    assert!(
+        err.message
+            .contains("no entry for tebako_version=0.16.0 ruby_version=4.0.6"),
+        "{}",
+        err.message
+    );
+    assert!(
+        err.message.contains(&format!("platform={}", platform())),
+        "{}",
+        err.message
+    );
+    assert!(
+        !home
+            .join("runtimes")
+            .join(format!("ruby-4.0.6-0.16.0-{}", platform()))
+            .exists(),
+        "a refused runtime entered the cache"
+    );
+}
+
+#[test]
 fn sha_mismatch_is_exit_70_and_nothing_enters_the_cache() {
     let tmp = TempDir::new("sha-mismatch");
     let home = tmp.path().join("home");
