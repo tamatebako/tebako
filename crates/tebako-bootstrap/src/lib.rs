@@ -1986,37 +1986,50 @@ pub fn verify_chain_with_home(
 // runtime resolution
 // ---------------------------------------------------------------------
 
-fn resolve_runtime(
-    runtime_ref: &str,
-    rr: &RuntimeRef,
-    self_path: &Path,
-    m: &tpkg::Manifest,
-) -> Result<(PathBuf, Option<PathBuf>), BootError> {
+/// The cache layout for one runtime entry (spec 05 §2, tebako#456): the
+/// exe spelling flows from the entry's cached release index when one
+/// exists — the identity-matched entry's `filename` — and falls back to
+/// the synthesized `<asset_base><exe_suffix>` otherwise (a fat/carried
+/// install never fetched an index).
+fn cache_layout(rr: &RuntimeRef) -> Result<CacheLayout, BootError> {
     let platform = platform_string();
     let id = ReleaseIdentity::of(rr, platform);
     let asset_base = format!("tebako-runtime-{}-{}-{platform}", rr.abi, rr.version);
     let entry = format!("{}-{}-{}-{platform}", rr.r#type, rr.version, rr.abi);
     let root = cache_root()?;
     let entry_dir = root.join("runtimes").join(&entry);
-    // spec 05 §2 (tebako#456): the cache entry's exe file keeps the index
-    // entry's `filename` spelling (windows runtimes publish SUFFIX-LESS).
-    // A cached entry carries the verified index the lean install left
-    // behind — flow it. No cached index (a fat-payload install) → the
-    // synthesized fallback spelling.
     let asset = std::fs::read_to_string(entry_dir.join("manifest.json"))
         .ok()
         .and_then(|text| id.entry(&text).map(|e| e.filename))
         .unwrap_or_else(|| format!("{asset_base}{}", exe_suffix()));
-    let layout = CacheLayout {
+    Ok(CacheLayout {
         exe_path: entry_dir.join(&asset),
         asset,
         root,
         entry_dir,
         asset_base,
         entry,
-    };
+    })
+}
 
+fn resolve_runtime(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    carried: Option<&tpkg::LockedRuntime>,
+) -> Result<(PathBuf, Option<String>), BootError> {
+    let layout = cache_layout(rr)?;
     let mut ux = BootUx::new();
+
+    // spec 19 §6.1 / spec 23 §13.2: a self-contained package carries the
+    // runtime pair as ordinary trailer slots — the exe (+ windows dll)
+    // stages into the runtime cache, the env image stays IN the package
+    // and reaches the driver as the `<package>:<slot>` form (spec 17
+    // §2.1). The lock's digest pins anchor every staged byte.
+    if let Some(lr) = carried {
+        return stage_carried_runtime(runtime_ref, rr, self_path, m, &layout, lr, &mut ux);
+    }
 
     // The interpreter: cache hit / fat payload slot / download+verify.
     let exe = if file_exists(&layout.exe_path) {
@@ -2058,7 +2071,9 @@ fn resolve_runtime(
     if runtime_ref_wants_image(runtime_ref) {
         resolve_dll(runtime_ref, rr, &layout, &mut ux)?;
     }
-    Ok((exe, image))
+    // The image value is a wire form, not necessarily a bare path: the
+    // carried branch spells it `<package>:<slot>` (spec 17 §2.1).
+    Ok((exe, image.map(|p| p.to_string_lossy().into_owned())))
 }
 
 fn download_executable(
@@ -2716,6 +2731,584 @@ fn resolve_dll(
 }
 
 // ---------------------------------------------------------------------
+// the composition spectrum (spec 23 §13, spec 19 §6.1, tebako#458):
+// carried two-slot runtime staging, shared-slice resolution, lazy seed
+// ---------------------------------------------------------------------
+
+/// The trailer slot `slot`, bounds-checked — a lock naming a slot the
+/// container does not carry is internally inconsistent (re-press).
+fn slot_at<'a>(
+    m: &'a tpkg::Manifest,
+    slot: u32,
+    self_path: &Path,
+) -> Result<&'a tpkg::Slot, BootError> {
+    m.slots.get(slot as usize).ok_or_else(|| {
+        BootError::new(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the lock names slot {slot} but {} carries {} slot(s) — the package is internally inconsistent, re-press it",
+                self_path.display(),
+                m.slots.len()
+            ),
+        )
+    })
+}
+
+/// The lock's digest pin for this host (spec 23 §13.3): a per-triplet
+/// map that does not cover the host is a named coverage error, never a
+/// nearest-platform guess.
+fn pin_for_host<'a>(
+    pin: &'a tpkg::DigestPin,
+    what: &str,
+    self_path: &Path,
+) -> Result<&'a str, BootError> {
+    let host = tpkg::Platform::host();
+    pin.for_host(host).ok_or_else(|| {
+        BootError::new(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the lock's {what} digest map does not cover this platform ({}) — {} was not pressed for it\n  the assertion narrows, never extends (spec 23 §13.3)",
+                host.release_asset_name(),
+                self_path.display()
+            ),
+        )
+    })
+}
+
+/// Stage one carried artifact's slot region into `dst`, verified against
+/// the lock's pin. Mirrors install_payload's extract→hash→compare; the
+/// caller owns tmp/lock cleanup on the error paths.
+fn stage_locked_slot(
+    self_path: &Path,
+    slot: &tpkg::Slot,
+    expected: &str,
+    dst: &Path,
+    what: &str,
+) -> Result<String, BootError> {
+    if let Err(rc) = extract_payload(self_path, slot.offset, slot.size, dst) {
+        return if rc == -2 {
+            fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "corrupt tebako manifest trailer in {} (the lock's {what} slot is outside file bounds) — re-press the package",
+                    self_path.display()
+                ),
+            )
+        } else {
+            io_fail(format!(
+                "cannot extract the {what} from {}",
+                self_path.display()
+            ))
+        };
+    }
+    let actual = sha256_file_hex(dst).map_err(|e| {
+        BootError::new(
+            EX_TEBAKO_IO,
+            format!("cannot hash extracted {what} ({}): {e}", dst.display()),
+        )
+    })?;
+    if actual != expected {
+        return fail(
+            EX_TEBAKO_SHA,
+            format!(
+                "SHA256 mismatch for the carried {what} of {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin, spec 23 §13.4)\n  actual:   {actual}\n  the cache was not touched",
+                self_path.display()
+            ),
+        );
+    }
+    Ok(actual)
+}
+
+/// spec 19 §6.1: the carried two-slot runtime. The exe stages into the
+/// runtime cache exactly like a fat payload install (tmp + rename under
+/// the entry lock) — pinned to the lock's digest rather than a
+/// `;sha256=` ref segment — and the env image stays IN the package: the
+/// return's image value is the `<package>:<slot>` wire form the driver
+/// mounts as a slot region (spec 17 §2.1). The staged exe IS the cache
+/// entry: a later shared-runtime package resolving the same version
+/// finds it cached (the seed converges the presets onto one cache).
+fn stage_carried_runtime(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    layout: &CacheLayout,
+    lr: &tpkg::LockedRuntime,
+    ux: &mut BootUx,
+) -> Result<(PathBuf, Option<String>), BootError> {
+    // carry: true without the exe/image pair fails the lock's own
+    // validation at manifest parse; guard anyway — never an unwrap on
+    // this path (spec 14).
+    let (Some(exe_art), Some(image_art)) = (&lr.exe, &lr.image) else {
+        return fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the lock of {} declares a carried runtime without its exe/image slots — re-press the package",
+                self_path.display()
+            ),
+        );
+    };
+
+    let exe = if file_exists(&layout.exe_path) {
+        ux.cached(rr);
+        layout.exe_path.clone()
+    } else {
+        let expected = pin_for_host(&exe_art.sha256, "runtime executable", self_path)?;
+        let slot = slot_at(m, exe_art.slot, self_path)?;
+        let Some(ins) = begin_entry_install(
+            &layout.root,
+            &layout.entry,
+            &layout.exe_path,
+            &layout.asset,
+            runtime_ref,
+        )?
+        else {
+            ux.cached(rr);
+            // A concurrent install won the race; the dll check below
+            // still runs (the winner may be a pre-dll-era lean install).
+            stage_carried_dll(self_path, m, layout, lr)?;
+            return Ok((
+                layout.exe_path.clone(),
+                Some(format!("{}:{}", self_path.display(), image_art.slot)),
+            ));
+        };
+        match stage_locked_slot(self_path, slot, expected, &ins.tmp_asset, "runtime executable") {
+            Ok(actual) => {
+                let origin = format!(
+                    "runtime_ref={runtime_ref}\ncarried={} slot {}\nsha256={actual}\n",
+                    self_path.display(),
+                    exe_art.slot
+                );
+                publish_entry(
+                    ins,
+                    &layout.entry_dir,
+                    &layout.exe_path,
+                    &layout.asset,
+                    &actual,
+                    &origin,
+                )?
+            }
+            Err(e) => {
+                cleanup_tmp_entry(&ins.tmp_dir, &layout.asset);
+                lock_release(ins.lock);
+                return Err(e);
+            }
+        }
+    };
+
+    // tebako-runtime-ruby#40: the windows dll-era facet rides a third
+    // slot; the PE loader resolves it next to the exe.
+    stage_carried_dll(self_path, m, layout, lr)?;
+
+    Ok((
+        exe,
+        Some(format!("{}:{}", self_path.display(), image_art.slot)),
+    ))
+}
+
+/// Stage the carried windows dll (tebako-runtime-ruby#40) next to the
+/// exe under its PE import name — single-file install into the
+/// (existing) entry dir, the same lock discipline as resolve_dll.
+/// A no-op when the lock declares no dll facet (every POSIX package).
+fn stage_carried_dll(
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    layout: &CacheLayout,
+    lr: &tpkg::LockedRuntime,
+) -> Result<(), BootError> {
+    let Some(dll_art) = &lr.dll else {
+        return Ok(());
+    };
+    let Some(install_as) = dll_art.install_as.as_deref() else {
+        return fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the lock of {} carries a dll slot without its install_as (the PE import name) — re-press with a current tebako",
+                self_path.display()
+            ),
+        );
+    };
+    let dll_path = layout.entry_dir.join(install_as);
+    let marker = layout.entry_dir.join(format!("{install_as}.sha256"));
+    if file_exists(&dll_path) && file_exists(&marker) {
+        return Ok(());
+    }
+    let expected = pin_for_host(&dll_art.sha256, "runtime dll", self_path)?;
+    let slot = slot_at(m, dll_art.slot, self_path)?;
+
+    let locks = layout.root.join("locks");
+    mkdir_p(&locks).map_err(|e| {
+        BootError::new(
+            EX_TEBAKO_IO,
+            format!(
+                "cannot create tebako cache directories under {}: {e}",
+                layout.root.display()
+            ),
+        )
+    })?;
+    let lock_path = locks.join(format!("{}.lock", layout.entry));
+    let lock = flock_acquire(&lock_path, LOCK_TIMEOUT_MS).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::TimedOut {
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "timed out after {}s waiting for another tebako bootstrap to finish installing \"{}\"\n  lock: {}\n  if no other tebako process is running, remove the stale lock file",
+                    LOCK_TIMEOUT_MS / 1000,
+                    layout.entry,
+                    lock_path.display()
+                ),
+            )
+        } else {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot acquire install lock {}: {e}", lock_path.display()),
+            )
+        }
+    })?;
+    if file_exists(&dll_path) && file_exists(&marker) {
+        lock_release(lock);
+        return Ok(());
+    }
+    let tmp_dir = layout
+        .root
+        .join("tmp")
+        .join(format!("{}.{}.dll", layout.entry, std::process::id()));
+    cleanup_tmp_entry(&tmp_dir, install_as);
+    let result = (|| -> Result<(), BootError> {
+        std::fs::create_dir(&tmp_dir).map_err(|e| {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot create {}: {e}", tmp_dir.display()),
+            )
+        })?;
+        let tmp_dll = tmp_dir.join(install_as);
+        let actual = stage_locked_slot(self_path, slot, expected, &tmp_dll, "runtime dll")?;
+        make_readonly(&tmp_dll);
+        os_rename(&tmp_dll, &dll_path).map_err(|e| {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot install the runtime dll into the cache ({} -> {}): {e}",
+                    tmp_dll.display(),
+                    dll_path.display()
+                ),
+            )
+        })?;
+        let _ = write_small_file(&marker, &format!("{actual}  {install_as}\n"));
+        let _ = write_small_file(
+            &layout.entry_dir.join(format!("{install_as}.origin")),
+            &format!(
+                "carried={} slot {}\nsha256={actual}\n",
+                self_path.display(),
+                dll_art.slot
+            ),
+        );
+        Ok(())
+    })();
+    cleanup_tmp_entry(&tmp_dir, install_as);
+    lock_release(lock);
+    result
+}
+
+/// spec 23 §13.1: the shared slices resolve at first run into the
+/// machine payload cache BY THE LOCKED DIGEST (never fresh semver —
+/// spec 23 §4) and mount from the cache file. Returns `(slice name,
+/// cache path)` pairs in lock order; a coverage gap, an offline miss, or
+/// a digest mismatch is a named error (fail-closed, spec 23 §13.4).
+fn resolve_shared_slices(
+    lock: &tpkg::PackageLock,
+    self_path: &Path,
+) -> Result<Vec<(String, PathBuf)>, BootError> {
+    let mut out = Vec::new();
+    if lock.shared_slices().next().is_none() {
+        return Ok(out);
+    }
+    let cache = tebako_resolve::PayloadCache::with_root(cache_root()?);
+    for slice in lock.shared_slices() {
+        let pin = pin_for_host(
+            &slice.sha256,
+            &format!("shared slice \"{}\"", slice.name),
+            self_path,
+        )?;
+        let Some(source) = slice.source.as_deref() else {
+            return fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "shared slice \"{}\" of {} carries no source reference — re-press the package with a current tebako",
+                    slice.name,
+                    self_path.display()
+                ),
+            );
+        };
+        let reference = tebako_resolve::Reference::parse(source).map_err(|e| {
+            BootError::new(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "shared slice \"{}\" of {} carries an unparsable source reference \"{source}\" ({e}) — re-press the package",
+                    slice.name,
+                    self_path.display()
+                ),
+            )
+        })?;
+        let entry = tebako_resolve::resolve_locked_slice(
+            &cache,
+            &slice.name,
+            &slice.version,
+            pin,
+            &reference,
+        )
+        .map_err(|e| match e {
+            tebako_resolve::ResolveError::Sha256Mismatch {
+                expected, actual, ..
+            } => BootError::new(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for shared slice \"{}\" {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin, spec 23 §13.4)\n  actual:   {actual}\n  the cache was not touched",
+                    slice.name, slice.version
+                ),
+            ),
+            other => BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve shared slice \"{}\" {} of {}: {other}\n  the lock's fetch coordinates: {source}",
+                    slice.name,
+                    slice.version,
+                    self_path.display()
+                ),
+            ),
+        })?;
+        out.push((slice.name.clone(), entry.path));
+    }
+    Ok(out)
+}
+
+/// spec 05 §4's scoped lazy-seed exception (locked 2026-08-25,
+/// tebako#460): a package that CARRIES artifacts seeds the machine cache
+/// with them at run time, so later packages share them. Best-effort — a
+/// seed that cannot complete NEVER blocks or fails the run; the carried
+/// bytes keep serving from the package. tmp + rename under the entry
+/// lock; idempotent same-sha skip; never an overwrite; journaled
+/// (`event=lazy-seed`). `TEBAKO_OFFLINE=1` does not block seeding (no
+/// network is involved); `TPKG_FLAG_NO_INSTALL` packages never seed.
+///
+/// The exe (and the windows dll) need no seeding here — the run itself
+/// staged them into the runtime cache. What seeds: the env image (into
+/// the runtime cache entry) and every carried payload slice (into the
+/// payload cache).
+fn lazy_seed(
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    lock: &tpkg::PackageLock,
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+) {
+    if m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL != 0 {
+        return;
+    }
+    let Ok(root) = cache_root() else {
+        return;
+    };
+    let host = tpkg::Platform::host();
+
+    // The carried env image → the runtime cache entry.
+    if let Some(image_art) = lock
+        .runtime
+        .as_ref()
+        .filter(|r| r.carry)
+        .and_then(|r| r.image.as_ref())
+    {
+        seed_carried_image(&root, self_path, m, image_art, runtime_ref, rr);
+    }
+
+    // Every carried payload slice → the payload cache.
+    let cache = tebako_resolve::PayloadCache::with_root(&root);
+    for slice in lock.slices.iter().filter(|s| s.carry) {
+        let seeded = (|| -> Result<&str, String> {
+            let slot_ix = slice
+                .slot
+                .ok_or_else(|| "a carried slice without its slot".to_string())?;
+            let pin = slice
+                .sha256
+                .for_host(host)
+                .ok_or_else(|| format!("no digest pin for {host:?}"))?;
+            let slot = m
+                .slots
+                .get(slot_ix as usize)
+                .ok_or_else(|| format!("slot {slot_ix} outside the container"))?;
+            let mut f = std::fs::File::open(self_path).map_err(|e| e.to_string())?;
+            f.seek(SeekFrom::Start(slot.offset)).map_err(|e| e.to_string())?;
+            let origin = format!("{} slot {slot_ix}", self_path.display());
+            cache
+                .seed(
+                    &slice.name,
+                    &slice.version,
+                    pin,
+                    &origin,
+                    std::io::Read::take(f, slot.size),
+                )
+                .map_err(|e| e.to_string())
+                .and_then(|outcome| match outcome {
+                    tebako_resolve::SeedOutcome::Seeded => Ok("seeded"),
+                    tebako_resolve::SeedOutcome::AlreadySame => Ok("already-cached"),
+                    tebako_resolve::SeedOutcome::Conflict { existing_sha256 } => Err(format!(
+                        "the cache holds {name}@{version} under a DIFFERENT digest ({existing_sha256}) — the cached bytes win, the package's copy was not installed",
+                        name = slice.name,
+                        version = slice.version
+                    )),
+                })
+        })();
+        match seeded {
+            Ok("seeded") => journal(
+                &root,
+                &format!(
+                    "event=lazy-seed artifact={}@{} origin={} slot={}",
+                    slice.name,
+                    slice.version,
+                    self_path.display(),
+                    slice.slot.unwrap_or(0)
+                ),
+            ),
+            Ok(_) => {}
+            Err(reason) => {
+                eprintln!(
+                    "tebako-bootstrap: WARNING: lazy seed of {}@{} from {} skipped: {reason}\n  the run is unaffected — the carried bytes serve from the package",
+                    slice.name,
+                    slice.version,
+                    self_path.display()
+                );
+                journal(
+                    &root,
+                    &format!(
+                        "event=lazy-seed artifact={}@{} outcome=skipped reason=\"{reason}\"",
+                        slice.name,
+                        slice.version
+                    ),
+                );
+            }
+        }
+    }
+}
+
+/// The env-image half of the runtime-pair seed (spec 05 §4, spec 19
+/// §6.1): extract the image slot into the runtime cache entry, verified
+/// against the lock pin BEFORE anything lands, tmp + rename under the
+/// entry lock. Same-sha entry skips; a different-sha entry is never
+/// overwritten (loud + journaled). Every failure journals and returns —
+/// the run mounts the package's own copy regardless.
+fn seed_carried_image(
+    root: &Path,
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    image_art: &tpkg::LockedArtifact,
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+) {
+    let skip = |reason: &str| {
+        journal(
+            root,
+            &format!(
+                "event=lazy-seed artifact=runtime-image outcome=skipped reason=\"{reason}\""
+            ),
+        );
+    };
+    let host = tpkg::Platform::host();
+    let Some(pin) = image_art.sha256.for_host(host) else {
+        return skip("no digest pin for this platform");
+    };
+    let Some(slot) = m.slots.get(image_art.slot as usize) else {
+        return skip("the image slot is outside the container");
+    };
+    let layout = match cache_layout(rr) {
+        Ok(l) => l,
+        Err(e) => return skip(&e.message),
+    };
+    // The entry's image spelling flows from its cached release index when
+    // one exists (spec 05 §2) — the same derivation resolve_image applies.
+    let id = ReleaseIdentity::of(rr, platform_string());
+    let cached_index = std::fs::read_to_string(layout.entry_dir.join("manifest.json")).ok();
+    let image_asset = cached_index
+        .as_deref()
+        .and_then(|text| id.entry(text))
+        .and_then(|e| manifest_entry_facet_filename(&e, "image"))
+        .unwrap_or_else(|| format!("{}.tfs", layout.asset_base));
+    let image_path = layout.entry_dir.join(&image_asset);
+    let marker = layout.entry_dir.join(format!("{image_asset}.sha256"));
+    let marker_sha = || {
+        std::fs::read_to_string(&marker)
+            .ok()
+            .and_then(|text| text.split_whitespace().next().map(str::to_string))
+    };
+    if file_exists(&image_path) && marker_sha().as_deref() == Some(pin) {
+        return; // idempotent same-sha skip
+    }
+    if file_exists(&image_path) && file_exists(&marker) {
+        let existing = marker_sha().unwrap_or_else(|| "unreadable".to_string());
+        eprintln!(
+            "tebako-bootstrap: WARNING: the runtime cache holds {image_asset} under a DIFFERENT digest ({existing}) than {}'s lock pin ({pin})\n  the cached image wins — the package's copy was not installed; the run is unaffected",
+            self_path.display()
+        );
+        return skip("a different-sha cache entry exists (never overwritten)");
+    }
+
+    let locks = root.join("locks");
+    if mkdir_p(&locks).is_err() || mkdir_p(&root.join("tmp")).is_err() {
+        return skip("cannot create the cache directories");
+    }
+    let lock_path = locks.join(format!("{}.lock", layout.entry));
+    let Ok(lock) = flock_acquire(&lock_path, LOCK_TIMEOUT_MS) else {
+        return skip("the entry lock is held by another bootstrap");
+    };
+    let result = (|| -> Result<(), String> {
+        if file_exists(&image_path) && file_exists(&marker) {
+            return Ok(()); // a concurrent seed won the race
+        }
+        mkdir_p(&layout.entry_dir).map_err(|e| e.to_string())?;
+        let tmp_dir = root
+            .join("tmp")
+            .join(format!("{}.{}.image-seed", layout.entry, std::process::id()));
+        cleanup_tmp_entry(&tmp_dir, &image_asset);
+        std::fs::create_dir(&tmp_dir).map_err(|e| e.to_string())?;
+        let inner = (|| -> Result<(), String> {
+            let tmp_image = tmp_dir.join(&image_asset);
+            let actual = stage_locked_slot(self_path, slot, pin, &tmp_image, "runtime image")
+                .map_err(|e| e.message)?;
+            make_readonly(&tmp_image);
+            os_rename(&tmp_image, &image_path).map_err(|e| e.to_string())?;
+            let _ = write_small_file(&marker, &format!("{actual}  {image_asset}\n"));
+            let _ = write_small_file(
+                &layout.entry_dir.join(format!("{image_asset}.origin")),
+                &format!(
+                    "runtime_ref={runtime_ref}\ncarried={} slot {}\nsha256={actual}\n",
+                    self_path.display(),
+                    image_art.slot
+                ),
+            );
+            Ok(())
+        })();
+        cleanup_tmp_entry(&tmp_dir, &image_asset);
+        inner
+    })();
+    lock_release(lock);
+    match result {
+        Ok(()) => journal(
+            root,
+            &format!(
+                "event=lazy-seed artifact={image_asset} origin={} slot={}",
+                self_path.display(),
+                image_art.slot
+            ),
+        ),
+        Err(reason) => {
+            eprintln!(
+                "tebako-bootstrap: WARNING: lazy seed of the runtime image from {} skipped: {reason}\n  the run is unaffected — the image serves from the package",
+                self_path.display()
+            );
+            skip(&reason);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
 // exec handoff (launcher ABI v1)
 // ---------------------------------------------------------------------
 
@@ -2729,32 +3322,110 @@ fn resolve_dll(
 /// construction), and slots no entry references (extra `--image` payloads)
 /// mount as always. Without a package manifest every non-runtime slot
 /// mounts and `--tebako-entry` is argv0 verbatim — the v1 behavior.
+///
+/// Locked packages (spec 23 §4/§13): `lock.slices` order IS the mount
+/// order — the app payload first, then its dependency closure — so a
+/// pointer entry's shared slice leads the image list (the entry resolves
+/// against the FIRST `--tebako-image` mount, spec 17 §1). A carried slice
+/// mounts its trailer slot; a shared slice mounts its cache file as
+/// `<path>:-:<mount>` (a bare image, slot `-` ≡ whole file); a slice
+/// without a declared mount is a cache prime and emits no triple. Slots
+/// the lock claims (the carried runtime pair) never mount; slots the
+/// lock does not describe (extra `--image` payloads) mount as always,
+/// after the locked slices.
 /// Public for the integration tests; the flow uses it once per run.
+#[allow(clippy::too_many_arguments)]
 pub fn handoff_argv(
     runtime: &Path,
     self_path: &Path,
     m: &tpkg::Manifest,
     selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
     argv: &[String],
+    lock: Option<&tpkg::PackageLock>,
+    shared: &[(String, PathBuf)],
 ) -> Vec<String> {
     let mut nargv: Vec<String> = vec![runtime.to_string_lossy().into_owned()];
-    for (s, slot) in m.slots.iter().enumerate() {
-        if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
-            continue; // runtime payload: installed into the cache, never mounted
+    // Another suite member's slot (spec 03 §6) — skipped under both forms.
+    let suite_skip = |s: u32| -> bool {
+        match selection {
+            Some((pm, selected)) => {
+                selected.slot != Some(s) && pm.entries.iter().any(|e| e.slot == Some(s))
+            }
+            None => false,
         }
-        if let Some((pm, selected)) = selection {
-            if selected.slot != Some(s as u32)
-                && pm.entries.iter().any(|e| e.slot == Some(s as u32))
-            {
-                continue; // another suite member's image — not mounted
+    };
+    match lock {
+        None => {
+            for (s, slot) in m.slots.iter().enumerate() {
+                if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
+                    continue; // runtime payload: installed into the cache, never mounted
+                }
+                if suite_skip(s as u32) {
+                    continue; // another suite member's image — not mounted
+                }
+                nargv.push("--tebako-image".to_string());
+                nargv.push(format!(
+                    "{}:{s}:{}",
+                    self_path.display(),
+                    slot.mount_point_str().unwrap_or_default()
+                ));
             }
         }
-        nargv.push("--tebako-image".to_string());
-        nargv.push(format!(
-            "{}:{s}:{}",
-            self_path.display(),
-            slot.mount_point_str().unwrap_or_default()
-        ));
+        Some(lock) => {
+            let claimed: std::collections::BTreeSet<u32> =
+                lock.claimed_slots().into_iter().collect();
+            let mut emitted: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+            for slice in &lock.slices {
+                match slice.slot {
+                    Some(s) => {
+                        if suite_skip(s) {
+                            continue; // another suite member's carried image
+                        }
+                        let Some(slot) = m.slots.get(s as usize) else {
+                            continue; // the selection gate already bounds-checks
+                        };
+                        nargv.push("--tebako-image".to_string());
+                        nargv.push(format!(
+                            "{}:{s}:{}",
+                            self_path.display(),
+                            slot.mount_point_str().unwrap_or_default()
+                        ));
+                        emitted.insert(s);
+                    }
+                    None => {
+                        // A shared slice with no declared mount is a cache
+                        // prime — no triple (spec 23 §13.1).
+                        let Some(mount) = slice.mount.as_deref() else {
+                            continue;
+                        };
+                        let Some((_, path)) = shared.iter().find(|(n, _)| n == &slice.name)
+                        else {
+                            continue; // resolution failed closed before this point
+                        };
+                        nargv.push("--tebako-image".to_string());
+                        nargv.push(format!("{}:-:{mount}", path.display()));
+                    }
+                }
+            }
+            // Slots the lock does not describe (extra `--image` payloads)
+            // mount as always, after the locked slices.
+            for (s, slot) in m.slots.iter().enumerate() {
+                let s = s as u32;
+                if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME
+                    || claimed.contains(&s)
+                    || emitted.contains(&s)
+                    || suite_skip(s)
+                {
+                    continue;
+                }
+                nargv.push("--tebako-image".to_string());
+                nargv.push(format!(
+                    "{}:{s}:{}",
+                    self_path.display(),
+                    slot.mount_point_str().unwrap_or_default()
+                ));
+            }
+        }
     }
     nargv.push("--tebako-entry".to_string());
     nargv.push(match selection {
@@ -2770,24 +3441,29 @@ pub fn handoff_argv(
 
 /// Unix: execv(3) replaces the bootstrap — never returns on success.
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 fn exec_runtime(
     runtime: &Path,
-    image: Option<&Path>,
+    image: Option<&str>,
     self_path: &Path,
     m: &tpkg::Manifest,
     selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
     argv: &[String],
     jail: Option<&JailEnv>,
+    lock: Option<&tpkg::PackageLock>,
+    shared: &[(String, PathBuf)],
 ) -> BootError {
     use std::os::unix::process::CommandExt;
 
-    let nargv = handoff_argv(runtime, self_path, m, selection, argv);
+    let nargv = handoff_argv(runtime, self_path, m, selection, argv, lock, shared);
     let mut cmd = std::process::Command::new(runtime);
     cmd.args(&nargv[1..]);
     if let Some(image) = image {
         // item 30b: the runtime image rides the environment; image-era
         // drivers mount it instead of an embedded image, v1 drivers
-        // ignore it. The handoff options themselves are unchanged.
+        // ignore it. The handoff options themselves are unchanged. The
+        // value is a wire form: a bare path, or `<package>:<slot>` for a
+        // carried env image (spec 17 §2.1, spec 19 §6.1).
         cmd.env("TEBAKO_RUNTIME_IMAGE", image);
     }
     if let Some(jail) = jail {
@@ -2813,16 +3489,19 @@ fn exec_runtime(
 /// the spawn/wait failure maps onto the same EX_TEBAKO_IO message body
 /// as the unix exec failure.
 #[cfg(windows)]
+#[allow(clippy::too_many_arguments)]
 fn exec_runtime(
     runtime: &Path,
-    image: Option<&Path>,
+    image: Option<&str>,
     self_path: &Path,
     m: &tpkg::Manifest,
     selection: Option<&(tpkg::PackageManifest, tpkg::PackageEntry)>,
     argv: &[String],
     jail: Option<&JailEnv>,
+    lock: Option<&tpkg::PackageLock>,
+    shared: &[(String, PathBuf)],
 ) -> BootError {
-    let nargv = handoff_argv(runtime, self_path, m, selection, argv);
+    let nargv = handoff_argv(runtime, self_path, m, selection, argv, lock, shared);
     let err = platform::spawn_handoff(runtime, &nargv[1..], image, jail);
     BootError::new(
         EX_TEBAKO_IO,
@@ -2940,7 +3619,26 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         prepare_jail(&m, user.as_ref(), argv, &home)?
     };
 
-    let (runtime, image) = resolve_runtime(&runtime_ref, &rr, &self_path, &m)?;
+    // The composition spectrum (spec 23 §13, tebako#458): the L2 lock
+    // rides the package manifest. A carried runtime (`lock.runtime.carry`)
+    // stages its exe from its trailer slot and hands the env image to the
+    // driver as `<package>:<slot>` — keyed on the lock, never on the
+    // (deprecated) LEAN flag; the legacy format-4 slot scan below keeps
+    // serving pre-#458 fat packages.
+    let pm_lock = selection.as_ref().and_then(|(pm, _)| pm.lock.as_ref());
+    let carried = pm_lock
+        .and_then(|l| l.runtime.as_ref())
+        .filter(|r| r.carry);
+    let (runtime, image) = resolve_runtime(&runtime_ref, &rr, &self_path, &m, carried)?;
+    let shared = match pm_lock {
+        Some(lock) => resolve_shared_slices(lock, &self_path)?,
+        None => Vec::new(),
+    };
+    // spec 05 §4's scoped exception: carried artifacts seed the machine
+    // cache — best-effort, journaled, never blocking the run.
+    if let Some(lock) = pm_lock {
+        lazy_seed(&self_path, &m, lock, &runtime_ref, &rr);
+    }
     Err(exec_runtime(
         &runtime,
         image.as_deref(),
@@ -2949,6 +3647,8 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         selection.as_ref(),
         argv,
         jail.as_ref(),
+        pm_lock,
+        &shared,
     ))
 }
 
