@@ -27,6 +27,18 @@ clap = { version = "4", features = ["derive"] }
 # `validate`'s schema gate (the same jsonschema the tpkg cross-checks use).
 jsonschema = "0.30"
 
+# Acquisition (slice 4): downloads ride the workspace's HTTP crate
+# (in-process ureq+rustls, webpki-roots bundled — the no-shell-out rule);
+# the fat tpkg assembles through tpkg, the L0 wire-format owner (pure
+# Rust, forbid(unsafe)); the packed-mn .tgz and the git source archives
+# extract in-process via flate2 (rust backend) + tar (the workspace's
+# established versions — tebako-cli's RuntimeSdk provisioning uses the
+# same pair).
+tebako-http = { version = "0.2.1", path = "../tebako-http" }
+tpkg = { version = "0.2.1", path = "../tpkg" }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+tar = { version = "0.4", default-features = false }
+
 # The sampler's POSIX backend (sys/posix.rs): wait4 rusage, killpg,
 # sysconf — FFI quarantined in that one module (workspace unsafe rule).
 [target.'cfg(unix)'.dependencies]

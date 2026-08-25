@@ -19,6 +19,7 @@
 //!   spec 27 §8 — 0 success/valid, 1 invalid/all-arms-failed, 2 operational
 //!   (including the not-implemented stubs).
 
+pub mod acquire;
 pub mod error;
 pub mod platforms;
 pub mod result;
