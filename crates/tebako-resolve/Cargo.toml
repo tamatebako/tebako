@@ -10,6 +10,15 @@ homepage.workspace = true
 keywords = ["tebako", "resolve", "reference", "cache", "registry"]
 categories = ["data-structures", "filesystem", "parser-implementations"]
 
+[features]
+default = ["git"]
+# `tfs+git:` payload references via gitoxide (spec 04 §3) — the ONLY
+# consumer of gix/reqwest (and of this crate's own rustls provider
+# selection; tebako-http always brings its own). tebako-bootstrap links
+# this crate with default-features = false: the loader never fetches git
+# references, and keeping the git stack out holds its 3 MiB size gate.
+git = ["dep:gix", "dep:reqwest", "dep:rustls"]
+
 [dependencies]
 tebako-http = { version = "0.2.1", path = "../tebako-http" }
 # Release-API JSON responses are parsed with the workspace's own minimal
@@ -34,21 +43,22 @@ libc = "0.2"
 # EXCEPT windows-gnu — ring 0.17 has no windows-gnu support (its C fails
 # to compile under mingw), so the gnu target rides aws-lc-rs instead (a
 # vendored crate exactly like ring; no native-tls, no schannel, no
-# behavior change).
-gix = { version = "0.86", default-features = false, features = [
+# behavior change). All three are the `git` feature's — off for the
+# bootstrap's link.
+gix = { version = "0.86", default-features = false, optional = true, features = [
     "sha1",
     "blocking-network-client",
     "blocking-http-transport-reqwest",
     "revision",
     "tree-editor",
 ] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider"] }
+reqwest = { version = "0.13", default-features = false, optional = true, features = ["rustls-no-provider"] }
 
 [target.'cfg(not(all(windows, target_env = "gnu")))'.dependencies]
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls = { version = "0.23", default-features = false, optional = true, features = ["ring", "std", "tls12", "logging"] }
 
 [target.'cfg(all(windows, target_env = "gnu"))'.dependencies]
-rustls = { version = "0.23", default-features = false, features = [
+rustls = { version = "0.23", default-features = false, optional = true, features = [
     "aws_lc_rs",
     "std",
     "tls12",

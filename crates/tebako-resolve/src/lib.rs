@@ -8,10 +8,13 @@
 //!   never host-triplet guessing).
 //! - [`Fetcher`] — reference → bytes over an injected [`Transport`]
 //!   (tebako-http in production, mocks and `file://` mirrors in tests);
-//!   `tfs+git:` via gitoxide, never the git CLI.
+//!   `tfs+git:` via gitoxide, never the git CLI (the default `git`
+//!   feature — off in the size-capped bootstrap's link).
 //! - [`PayloadCache`] — the shared `~/.tebako/payloads` store (spec 05
 //!   §3–4): per-entry flock, tmp+rename atomic installs, `.sha256` trust
-//!   anchor + `.origin` marker, `TEBAKO_OFFLINE` hard errors.
+//!   anchor + `.origin` marker, `TEBAKO_OFFLINE` hard errors — plus the
+//!   spec 23 §13.4 lazy-[`seed`](cache::PayloadCache::seed) verb and the
+//!   lock-pinned [`resolve_locked_slice`].
 //! - [`Registry`] / [`RegistryRef`] — the developer-hosted
 //!   `tpkg-registry.yaml` model and its resolution (spec 04 §2): exactly
 //!   one location per form, declarative host-triplet selection.
@@ -25,13 +28,14 @@ pub mod cache;
 pub mod contract;
 pub mod error;
 pub mod fetch;
+#[cfg(feature = "git")]
 pub mod git;
 pub mod reference;
 pub mod registry;
 pub mod store;
 pub mod transport;
 
-pub use cache::{default_cache_root, CacheEntry, InstallStatus, PayloadCache};
+pub use cache::{default_cache_root, CacheEntry, InstallStatus, PayloadCache, SeedOutcome};
 pub use contract::{ContractError, ContractSet};
 pub use error::{ReferenceError, RegistryError, ResolveError};
 pub use fetch::{sha256_hex, FetchedPayload, Fetcher};
@@ -81,4 +85,163 @@ pub fn fetch_and_cache(
 ) -> Result<(CacheEntry, InstallStatus), ResolveError> {
     let fetcher = Fetcher::new();
     cache.install(name, version, expected_sha256, || fetcher.fetch(reference))
+}
+
+/// Resolve a lock-pinned shared slice (spec 23 §4/§13 — the composition
+/// spectrum): a cache hit requires the trust anchor to EQUAL the lock's
+/// pin — a different anchor is the spec 18 S63 digest mismatch,
+/// fail-closed, never a silent re-resolve by semver. A miss fetches the
+/// lock's `source` reference with the pin as the trust anchor
+/// (`TEBAKO_OFFLINE=1` → the named offline error; a pin mismatch at the
+/// fetch boundary deletes the download and caches nothing).
+pub fn resolve_locked_slice(
+    cache: &PayloadCache,
+    name: &str,
+    version: &str,
+    pin: &str,
+    source: &Reference,
+) -> Result<CacheEntry, ResolveError> {
+    let pin = pin.to_ascii_lowercase();
+    let check = |entry: CacheEntry| -> Result<CacheEntry, ResolveError> {
+        if entry.sha256 == pin {
+            Ok(entry)
+        } else {
+            Err(ResolveError::Sha256Mismatch {
+                origin: entry
+                    .origin
+                    .clone()
+                    .unwrap_or_else(|| format!("cached payload {}@{}", entry.name, entry.version)),
+                expected: pin.clone(),
+                actual: entry.sha256.clone(),
+            })
+        }
+    };
+    if let Some(entry) = cache.get(name, version)? {
+        return check(entry);
+    }
+    // The entry may land between the miss check and the install lock (a
+    // concurrent process) — install returns it as a hit UNVERIFIED
+    // against the pin, so the anchor check applies to its outcome too.
+    let (entry, _) = fetch_and_cache(cache, source, name, version, Some(&pin))?;
+    check(entry)
+}
+
+/// Every env-mutating test in this crate (TEBAKO_OFFLINE & friends)
+/// serializes on this one mutex — the test modules share one process.
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch() -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("tebako-resolve-locked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn file_reference(path: &std::path::Path) -> Reference {
+        Reference::File {
+            path: path.to_string_lossy().into_owned(),
+            sha256: None,
+        }
+    }
+
+    #[test]
+    fn locked_slice_hit_requires_the_anchor_to_equal_the_pin() {
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        let pin = sha256_hex(b"payload");
+        cache
+            .install("tool", "1.0", None, || {
+                Ok(FetchedPayload {
+                    bytes: b"payload".to_vec(),
+                    origin: "https://cdn.example.com/tool.tfs".to_string(),
+                    sha256: pin.clone(),
+                })
+            })
+            .unwrap();
+        // The source does not exist — a fetch would fail; a hit never fetches.
+        let missing = file_reference(&root.join("definitely-not-there.tfs"));
+        let entry = resolve_locked_slice(&cache, "tool", "1.0", &pin, &missing).unwrap();
+        assert_eq!(entry.sha256, pin);
+
+        let err =
+            resolve_locked_slice(&cache, "tool", "1.0", &"f".repeat(64), &missing).unwrap_err();
+        let ResolveError::Sha256Mismatch {
+            expected, actual, ..
+        } = &err
+        else {
+            panic!("expected Sha256Mismatch, got {err:?}")
+        };
+        assert_eq!(expected, &"f".repeat(64));
+        assert_eq!(actual, &pin);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn locked_slice_miss_fetches_with_the_pin_as_anchor() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        std::env::remove_var("TEBAKO_OFFLINE");
+        let root = scratch();
+        let mirror = root.join("mirror");
+        std::fs::create_dir_all(&mirror).unwrap();
+        let file = mirror.join("tool-1.0.tfs");
+        std::fs::write(&file, b"payload").unwrap();
+        let cache = PayloadCache::with_root(&root);
+        let pin = sha256_hex(b"payload");
+        let entry =
+            resolve_locked_slice(&cache, "tool", "1.0", &pin, &file_reference(&file)).unwrap();
+        assert_eq!(entry.sha256, pin);
+        assert_eq!(std::fs::read(&entry.path).unwrap(), b"payload");
+        // The second resolution is a cache hit — the mirror can go away.
+        std::fs::remove_file(&file).unwrap();
+        let entry =
+            resolve_locked_slice(&cache, "tool", "1.0", &pin, &file_reference(&file)).unwrap();
+        assert_eq!(entry.sha256, pin);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn locked_slice_offline_miss_is_the_named_offline_error() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        std::env::set_var("TEBAKO_OFFLINE", "1");
+        let err = resolve_locked_slice(
+            &cache,
+            "tool",
+            "1.0",
+            &"a".repeat(64),
+            &file_reference(&root.join("x.tfs")),
+        )
+        .unwrap_err();
+        std::env::remove_var("TEBAKO_OFFLINE");
+        assert!(matches!(err, ResolveError::Offline { .. }));
+        assert!(err.to_string().contains("tool@1.0"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn locked_slice_pin_mismatch_at_the_boundary_caches_nothing() {
+        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        std::env::remove_var("TEBAKO_OFFLINE");
+        let root = scratch();
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("tool-1.0.tfs");
+        std::fs::write(&file, b"payload").unwrap();
+        let cache = PayloadCache::with_root(&root);
+        let err = resolve_locked_slice(
+            &cache,
+            "tool",
+            "1.0",
+            &"f".repeat(64),
+            &file_reference(&file),
+        )
+        .unwrap_err();
+        assert!(matches!(err, ResolveError::Sha256Mismatch { .. }));
+        assert!(!root.join("payloads/tool/1.0.tfs").exists());
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }
