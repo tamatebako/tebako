@@ -277,13 +277,14 @@ pub fn suite_package_manifest(
             .enumerate()
             .map(|(i, e)| tpkg::PackageEntry {
                 name: e.name.clone(),
-                slot: i as u32,
+                slot: Some(i as u32),
                 entrypoint: e.name.clone(),
                 runtime_ref: runtime_refs[i].clone(),
             })
             .collect(),
         jail: None,
         env: BTreeMap::new(),
+        lock: None,
         // Suite members keep exclusive mounts for now: their shared
         // point collides with the env image's runtime root exactly like
         // the plain press's app slot did — the union rows for suites

@@ -46,12 +46,13 @@ fn package_manifest(jail: tpkg::HostJail) -> tpkg::PackageManifest {
         },
         entries: vec![tpkg::PackageEntry {
             name: "probe".to_string(),
-            slot: 0,
+            slot: Some(0),
             entrypoint: "probe".to_string(),
             runtime_ref: "ruby@9.9.9;tebako=9.9.9".to_string(),
         }],
         jail: Some(jail),
         env: Default::default(),
+        lock: None,
         mounts: Vec::new(),
     }
 }

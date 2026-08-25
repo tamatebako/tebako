@@ -32,7 +32,7 @@ fn package_manifest(entries: &[(&str, u32, &str, &str)]) -> tpkg::PackageManifes
             .map(
                 |&(name, slot, entrypoint, runtime_ref)| tpkg::PackageEntry {
                     name: name.to_string(),
-                    slot,
+                    slot: Some(slot),
                     entrypoint: entrypoint.to_string(),
                     runtime_ref: runtime_ref.to_string(),
                 },
@@ -40,6 +40,7 @@ fn package_manifest(entries: &[(&str, u32, &str, &str)]) -> tpkg::PackageManifes
             .collect(),
         jail: None,
         env: Default::default(),
+        lock: None,
         mounts: Vec::new(),
     }
 }

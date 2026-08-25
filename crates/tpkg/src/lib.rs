@@ -142,6 +142,7 @@
 
 pub mod atoms;
 mod codec;
+pub mod compose;
 mod contract;
 mod crc32;
 mod envelope;
@@ -159,6 +160,10 @@ mod region;
 pub use codec::{
     encode_ext_blocks, encode_trailer, parse_ext_blocks, parse_trailer, trailer_len,
     v2_signed_region,
+};
+pub use compose::{
+    check_platforms_assertion, parse_compose, ComposeDoc, ComposeError, ComposePreset,
+    ComposeSliceRef, COMPOSE_SCHEMA_VERSION,
 };
 pub use contract::{ContractError, PackageContract};
 pub use crc32::{crc32, Crc32};
@@ -183,8 +188,9 @@ pub use merkle::{
 };
 pub use model::{Manifest, Slot, V2Extension};
 pub use package::{
-    MountMode, PackageEntry, PackageIdentity, PackageManifest, PackageManifestError, PackageMount,
-    Precedence, PACKAGE_SCHEMA_VERSION,
+    DigestPin, LockedArtifact, LockedRuntime, LockedSlice, MountMode, PackageEntry,
+    PackageIdentity, PackageLock, PackageManifest, PackageManifestError, PackageMount, Precedence,
+    PACKAGE_SCHEMA_VERSION,
 };
 pub use region::{resolve_slot_region, SlotRegion, SlotRegionError};
 

@@ -93,11 +93,11 @@ fn fixture_shape_is_the_spec_example() {
     assert_eq!(m.package.producer.tool, "tebako-cli");
     assert_eq!(m.entries.len(), 2);
     assert_eq!(m.entries[0].name, "metanorma");
-    assert_eq!(m.entries[0].slot, 0);
+    assert_eq!(m.entries[0].slot, Some(0));
     assert_eq!(m.entries[0].entrypoint, "metanorma");
     assert_eq!(m.entries[0].runtime_ref, "ruby@3.4.2;tebako=0.15.9");
     assert_eq!(m.entries[1].name, "mn2pdf");
-    assert_eq!(m.entries[1].slot, 1);
+    assert_eq!(m.entries[1].slot, Some(1));
     assert_eq!(m.entries[1].runtime_ref, "ruby@3.3.7;tebako=0.15.9");
     assert!(m.jail.is_some());
     assert_eq!(
@@ -116,4 +116,50 @@ fn per_entry_runtime_refs_exceed_the_trailer_field_limit() {
     m.entries[0].runtime_ref = long_ref.clone();
     let back = PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
     assert_eq!(back.entries[0].runtime_ref, long_ref);
+}
+
+#[test]
+fn lock_fixture_parses_validates_and_round_trips() {
+    let text = read(&fixture_path("package-lock"));
+    let m = PackageManifest::from_yaml(&text).unwrap_or_else(|e| panic!("fixture: {e}"));
+    assert_eq!(m.entries[0].slot, Some(0));
+    assert_eq!(m.entries[1].slot, None); // the pointer entry
+    let lock = m.lock.as_ref().expect("the lock block");
+    let runtime = lock.runtime.as_ref().expect("the locked runtime");
+    assert!(runtime.carry);
+    assert_eq!(runtime.exe.as_ref().unwrap().slot, 1);
+    assert_eq!(runtime.image.as_ref().unwrap().slot, 2);
+    assert!(runtime.dll.is_none());
+    assert_eq!(lock.slices.len(), 2);
+    // Mount order: the app payload first, then the closure.
+    assert!(lock.slices[0].carry);
+    assert_eq!(lock.slices[0].slot, Some(0));
+    assert!(!lock.slices[1].carry);
+    assert_eq!(lock.slices[1].slot, None);
+    assert!(lock.slices[1].source.is_some());
+    // The per-triplet pin answers by host; the single pin regardless.
+    let host = Platform::Aarch64Macos;
+    assert_eq!(
+        lock.slices[1].sha256.for_host(host),
+        Some("2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d")
+    );
+    assert_eq!(
+        lock.slices[0].sha256.for_host(Platform::X86_64WindowsUcrt).map(str::len),
+        Some(64)
+    );
+    assert_eq!(lock.claimed_slots(), vec![1, 2, 0]);
+    let back = PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, m);
+}
+
+#[test]
+fn lock_fixture_validates_against_the_json_schema() {
+    let schema: serde_json::Value =
+        serde_json::from_str(&read(&schema_path())).expect("schema json");
+    let validator = jsonschema::validator_for(&schema).expect("the schema itself compiles");
+    let value: serde_yml::Value =
+        serde_yml::from_str(&read(&fixture_path("package-lock"))).expect("yaml parses");
+    validator
+        .validate(&yaml_to_json(&value))
+        .unwrap_or_else(|e| panic!("lock fixture against the JSON schema: {e}"));
 }

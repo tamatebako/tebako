@@ -567,7 +567,7 @@ fn package_with_checks(dir: &Path) -> PathBuf {
         },
         entries: vec![tpkg::PackageEntry {
             name: "acme".to_string(),
-            slot: 0,
+            slot: Some(0),
             // The entry table names the PROVIDES entrypoint BY NAME; the
             // engine resolves it to the in-image path through the slot
             // manifest.
@@ -576,6 +576,7 @@ fn package_with_checks(dir: &Path) -> PathBuf {
         }],
         jail: None,
         env: Default::default(),
+        lock: None,
         mounts: Vec::new(),
     })
     .unwrap();

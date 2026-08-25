@@ -39,12 +39,13 @@ fn package_manifest(runtime_ref: &str, jail: tpkg::HostJail) -> tpkg::PackageMan
         },
         entries: vec![tpkg::PackageEntry {
             name: "jailtest".to_string(),
-            slot: 0,
+            slot: Some(0),
             entrypoint: "jailtest".to_string(),
             runtime_ref: runtime_ref.to_string(),
         }],
         jail: Some(jail),
         env: Default::default(),
+        lock: None,
         mounts: Vec::new(),
     }
 }

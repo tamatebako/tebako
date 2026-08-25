@@ -929,12 +929,13 @@ pub fn assemble_fat_package(
         },
         entries: vec![tpkg::PackageEntry {
             name: entrypoint.name.clone(),
-            slot: 0,
+            slot: Some(0),
             entrypoint: entrypoint.path.clone(),
             runtime_ref: runtime_ref.clone(),
         }],
         jail: None,
         env: Default::default(),
+        lock: None,
         mounts: vec![tpkg::PackageMount {
             slot: 0,
             point: "/".to_string(),
