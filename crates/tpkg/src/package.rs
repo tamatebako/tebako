@@ -300,6 +300,13 @@ pub struct LockedArtifact {
     /// The trailer slot carrying the bytes.
     pub slot: u32,
     pub sha256: DigestPin,
+    /// The PE install name (the windows dll-era facet only,
+    /// tebako-runtime-ruby#40): the DLL is staged next to the exe under
+    /// THIS name — the name the exe's imports reference — never the
+    /// release-asset spelling. Flowed from the release manifest's
+    /// `dll.install_as` at press; absent on every other artifact.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_as: Option<String>,
 }
 
 /// The locked runtime (spec 23 §4): the concrete version, the carry
@@ -426,6 +433,16 @@ impl PackageLock {
                 artifact
                     .sha256
                     .validate("lock.runtime sha256 pins must be 64 lowercase hex")?;
+                if let Some(install_as) = &artifact.install_as {
+                    if install_as.is_empty()
+                        || install_as.contains('/')
+                        || install_as.contains('\\')
+                    {
+                        return Err(PackageManifestError::Invalid(
+                            "lock.runtime install_as must be a bare file name (the PE import name)",
+                        ));
+                    }
+                }
             }
         }
         let mut names: Vec<&str> = Vec::new();
@@ -974,6 +991,7 @@ mod tests {
                         "macos-arm64".to_string(),
                         sha('c'),
                     )])),
+                    install_as: None,
                 }),
                 image: Some(LockedArtifact {
                     slot: 2,
@@ -981,6 +999,7 @@ mod tests {
                         "macos-arm64".to_string(),
                         sha('d'),
                     )])),
+                    install_as: None,
                 }),
                 dll: None,
             }),

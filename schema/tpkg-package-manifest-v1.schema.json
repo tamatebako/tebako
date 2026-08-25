@@ -136,7 +136,13 @@
           "maximum": 7,
           "description": "The trailer slot carrying the bytes (0..TPKG_MAX_SLOTS-1)."
         },
-        "sha256": { "$ref": "#/$defs/digestPin" }
+        "sha256": { "$ref": "#/$defs/digestPin" },
+        "install_as": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\\\]+$",
+          "description": "The PE install name (the windows dll-era facet only, tebako-runtime-ruby#40): a bare file name, flowed from the release manifest's dll.install_as at press."
+        }
       },
       "description": "One carried artifact of the runtime pair (spec 19 §6.1): the slot the bytes ride in plus the press-time digest pin."
     },
