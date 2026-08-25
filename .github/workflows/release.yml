@@ -2,6 +2,14 @@
 # binaries (tebako-bootstrap, tfs, tebako-pkg, tebako) per release
 # platform, with the size-gate table, SHA256SUMS and manifest.json.
 #
+# Triggers: a `v*` tag push IS the release event — `prepare` creates the
+# Release object itself (the v0.2.5 lesson: release:published alone left
+# a bare tag with no assets, the tag having been pushed before any
+# Release existed). `release: published` is deliberately absent: the
+# pipeline owns the release's lifecycle, and a self-created release would
+# double-fire it. `workflow_dispatch` stays a build+gate dry run (every
+# upload gates on the prepared upload_url).
+#
 # Shape: parsanol-rs's release-binary.yml — prepare (get_release →
 # upload_url) → native runners per OS → `gh release upload` per artifact
 # (the archived actions/upload-release-asset was retired 2026-08-01) —
@@ -43,12 +51,21 @@
 name: Release
 
 on:
-  release:
-    types:
-      # 'published' fires for final releases AND prereleases (the
-      # 'prereleased' type would double-trigger for the latter).
-      - published
+  push:
+    tags:
+      # A tag push IS the release event (the v0.2.5 lesson: a tag alone
+      # built nothing when only release:published triggered — the tag was
+      # pushed, no Release object existed, no run fired). prepare creates
+      # the Release itself; every leg uploads against it.
+      - "v*"
   workflow_dispatch:
+
+concurrency:
+  # One run per ref: a re-pushed tag serializes behind its in-flight run
+  # instead of racing the same release's asset set (uploads clobber, the
+  # completeness gate counts — a twin run's interleave would flake both).
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -65,6 +82,9 @@ env:
 jobs:
   prepare:
     name: Prepare
+    permissions:
+      # The tag-push leg creates the Release object itself.
+      contents: write
     runs-on: ubuntu-24.04
     outputs:
       tag_name: ${{ steps.vars.outputs.tag_name }}
@@ -72,13 +92,27 @@ jobs:
       upload_url: ${{ steps.get_release.outputs.upload_url }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Create the release when the tag has none
+        # A tag push arrives BEFORE any Release object exists (and the
+        # GITHUB_TOKEN's own create would not re-trigger this workflow,
+        # so there is exactly one run per tag either way). Idempotent: a
+        # re-pushed tag whose release already exists is a no-op.
+        if: github.event_name == 'push'
+        run: |
+          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || \
+            gh release create "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --notes "tebako ${{ github.ref_name }} — built by the Release pipeline ($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)"
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Get release
         id: get_release
         uses: bruceadams/get-release@v1.3.2
         # workflow_dispatch has no release to get: tolerate the miss so a
         # dispatch is a build+gate dry run (every upload/publish step is
-        # already gated on upload_url != ''). Real release events stay
-        # strict — a get-release failure there must fail the pipeline.
+        # already gated on upload_url != ''). Tag-push events stay strict
+        # — the create step above guarantees the object, so a get-release
+        # failure there must fail the pipeline.
         continue-on-error: ${{ github.event_name == 'workflow_dispatch' }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
