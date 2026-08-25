@@ -167,7 +167,13 @@ impl Resolver {
         tebako_version: &str,
     ) -> Result<Resolved, TebakoError> {
         let dir = self.entry_dir(ruby_version, platform, tebako_version);
-        let executable = dir.join(self.filename(ruby_version, platform, tebako_version));
+        // The entry's own cached index flows the asset spelling verbatim
+        // when it names this runtime (spec 05 §2 SSOT; tebako#456 — the
+        // factory publishes windows exe assets SUFFIX-LESS, and the
+        // bootstrap/shim install them under that spelling); the
+        // pre-identity fallback synthesizes `{name}[.exe]`.
+        let executable =
+            dir.join(self.cached_exe_name(&dir, ruby_version, platform, tebako_version));
         let image_marker = || self.read_image_marker(&dir, ruby_version, platform, tebako_version);
         if executable.is_file() && image_marker().is_some() {
             return Ok(Resolved {
@@ -180,8 +186,7 @@ impl Resolver {
             &self.entry_ref(ruby_version, platform, tebako_version),
             || {
                 if !executable.is_file() {
-                    let entry =
-                        self.install(&executable, ruby_version, platform, tebako_version)?;
+                    let entry = self.install(&dir, ruby_version, platform, tebako_version)?;
                     if let Some(image) = entry.image.clone() {
                         self.install_image(&dir, &image, tebako_version)?;
                     }
@@ -210,6 +215,10 @@ impl Resolver {
                 Ok(())
             },
         )?;
+        // The install placed the exe under the index spelling and the
+        // index rode into the entry — the name flows from it now.
+        let executable =
+            dir.join(self.cached_exe_name(&dir, ruby_version, platform, tebako_version));
         Ok(Resolved {
             executable,
             image: image_marker(),
@@ -233,7 +242,7 @@ impl Resolver {
         platform: &str,
         tebako_version: &str,
     ) -> Option<ImageRef> {
-        let filename = self.image_filename(ruby_version, platform, tebako_version);
+        let filename = self.cached_image_name(dir, ruby_version, platform, tebako_version);
         if !dir.join(&filename).is_file() {
             return None;
         }
@@ -484,6 +493,58 @@ impl Resolver {
         format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}{suffix}")
     }
 
+    /// The entry of the cache's own copy of the release index
+    /// (`manifest.json`) matching this (ruby, platform) — `None` when the
+    /// entry predates the cached index or never carried one (the
+    /// SHA256SUMS-era fallback spells the names instead, spec 05 §2).
+    fn cached_index_entry(
+        &self,
+        dir: &Path,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+    ) -> Option<IndexEntry> {
+        let body = fs::read_to_string(dir.join("manifest.json")).ok()?;
+        let index = self.parse_manifest(&body, tebako_version).ok()?;
+        index.into_iter().find(|c| {
+            c.ruby_version.as_deref() == Some(ruby_version)
+                && c.platform.as_deref() == Some(platform)
+        })
+    }
+
+    /// The exe asset name of a cache entry: the cached release index's
+    /// `filename` flowed verbatim when the entry carries its index
+    /// (spec 05 §2 SSOT; tebako#456 — the factory publishes windows exe
+    /// assets SUFFIX-LESS), else the synthesized fallback.
+    fn cached_exe_name(
+        &self,
+        dir: &Path,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+    ) -> String {
+        self.cached_index_entry(dir, ruby_version, platform, tebako_version)
+            .map(|e| e.filename)
+            .filter(|f| !f.is_empty())
+            .unwrap_or_else(|| self.filename(ruby_version, platform, tebako_version))
+    }
+
+    /// Same for the env image: the cached entry's `image.filename`
+    /// flowed verbatim, else the synthesized `<asset-minus-suffix>.tfs`.
+    fn cached_image_name(
+        &self,
+        dir: &Path,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+    ) -> String {
+        self.cached_index_entry(dir, ruby_version, platform, tebako_version)
+            .and_then(|e| e.image)
+            .map(|i| i.filename)
+            .filter(|f| !f.is_empty())
+            .unwrap_or_else(|| self.image_filename(ruby_version, platform, tebako_version))
+    }
+
     fn entry_ref(&self, ruby_version: &str, platform: &str, tebako_version: &str) -> String {
         format!("ruby@{ruby_version} (tebako {tebako_version}, {platform})")
     }
@@ -492,7 +553,7 @@ impl Resolver {
 
     fn install(
         &self,
-        executable: &Path,
+        dir: &Path,
         ruby_version: &str,
         platform: &str,
         tebako_version: &str,
@@ -506,7 +567,18 @@ impl Resolver {
         let url = self.package_url(&entry.filename, tebako_version);
         let tmp = self.download(&url, &entry.filename)?;
         self.verify(&tmp, entry)?;
-        self.place(&tmp, executable, entry, &url)?;
+        // The exe installs under the index entry's `filename` verbatim
+        // (spec 05 §2 SSOT; tebako#456 — the factory publishes windows
+        // exe assets SUFFIX-LESS), and the index rides into the cache
+        // entry so every consumer flows the spelling from it.
+        let executable = dir.join(&entry.filename);
+        self.place(&tmp, &executable, entry, &url)?;
+        if let Some(card) = &card {
+            let card_path = dir.join("manifest.json");
+            fs::write(&card_path, card).map_err(|e| {
+                crate::error::plain_error(format!("{e} installing {}", card_path.display()))
+            })?;
+        }
         Ok(entry.clone())
     }
 
@@ -1710,6 +1782,67 @@ mod tests {
         r.resolve_runtime("3.3.12", "windows-ucrt64", "0.16.3")
             .unwrap();
         let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_flows_the_index_spelling() {
+        // tebako#456 (spec 05 §2 SSOT): the exe installs under the index
+        // entry's `filename` VERBATIM — the factory publishes the windows
+        // exe SUFFIX-LESS — the index rides into the cache entry, and a
+        // cache hit (mirror gone) finds the runtime by the flowed
+        // spelling again.
+        let dir = std::env::temp_dir().join(format!("tebako-resolve-flow-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = dir.join("home");
+        let mirror = dir.join("mirror");
+        let release = mirror.join("v0.16.9");
+        fs::create_dir_all(&release).unwrap();
+        let exe = "tebako-runtime-0.16.9-3.3.12-windows-ucrt64";
+        let image = "tebako-runtime-0.16.9-3.3.12-windows-ucrt64.tfs";
+        fs::write(release.join(exe), b"fake runtime exe\n").unwrap();
+        fs::write(release.join(image), b"fake env image\n").unwrap();
+        fs::write(
+            release.join("manifest.json"),
+            format!(
+                "[{{\"tebako_version\":\"0.16.9\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"A:/t\",\"ruby_version\":\"3.3.12\",\"platform\":\"windows-ucrt64\",\"filename\":\"{exe}\",\"sha256\":\"{}\",\"image\":{{\"filename\":\"{image}\",\"sha256\":\"{}\"}}}}]\n",
+                sha256_file_hex(&release.join(exe)).unwrap(),
+                sha256_file_hex(&release.join(image)).unwrap(),
+            ),
+        )
+        .unwrap();
+        let r = Resolver {
+            cache_root: cache.clone(),
+            mirror: format!("file://{}", mirror.display()),
+            lock_timeout: LOCK_TIMEOUT,
+        };
+
+        let resolved = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.9")
+            .unwrap();
+        assert_eq!(
+            resolved.executable.file_name().unwrap().to_string_lossy(),
+            exe,
+            "the cache holds the exe under the index spelling, verbatim"
+        );
+        let entry_dir = cache
+            .join("runtimes")
+            .join("ruby-3.3.12-0.16.9-windows-ucrt64");
+        assert!(entry_dir.join(exe).is_file());
+        assert!(entry_dir.join(image).is_file());
+        assert!(
+            entry_dir.join("manifest.json").is_file(),
+            "the index rides into the cache entry"
+        );
+
+        // a cache hit flows the cached index: the mirror is gone, the
+        // exe is found under the flowed spelling (no re-download).
+        fs::remove_dir_all(&mirror).unwrap();
+        let hit = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.9")
+            .unwrap();
+        assert_eq!(hit.executable, resolved.executable);
+        assert!(hit.image.is_some());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -280,6 +280,37 @@ pub fn write_release_index(root: &Path, ver: &str, lvs: &[&str]) -> PathBuf {
     root.to_path_buf()
 }
 
+/// `write_release_index` with an explicit exe asset spelling (spec 05 §2
+/// SSOT; tebako#456): the release index's `filename` is the ONLY
+/// authoritative asset spelling — the factory publishes windows exe
+/// assets SUFFIX-LESS, so the fixture must carry any spelling the index
+/// declares. The image keeps the exe's stem plus `.tfs`.
+pub fn write_release_index_renamed(root: &Path, ver: &str, lv: &str, exe_name: &str) -> PathBuf {
+    let platform = platform();
+    let dir = root.join(format!("v{ver}"));
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    let stem = exe_name
+        .strip_suffix(tebako_shim::runtime::exe_suffix())
+        .unwrap_or(exe_name);
+    let image_name = format!("{stem}.tfs");
+    let exe_bytes = format!("mirrored runtime exe {lv}\n");
+    let image_bytes = format!("mirrored runtime image {lv}\n");
+    std::fs::write(dir.join(exe_name), &exe_bytes).expect("exe");
+    std::fs::write(dir.join(&image_name), &image_bytes).expect("image");
+    std::fs::write(
+        dir.join("manifest.json"),
+        // The era-2 factory shape (spec 18 C2) with the identity triple
+        // the matcher reads (spec 05 §2) — `filename` verbatim.
+        format!(
+            "[{{\"tebako_version\": \"{ver}\", \"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"ruby_version\": \"{lv}\", \"platform\": \"{platform}\", \"filename\": \"{exe_name}\", \"sha256\": \"{}\", \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{}\"}}}}]\n",
+            sha256_hex(exe_bytes.as_bytes()),
+            sha256_hex(image_bytes.as_bytes())
+        ),
+    )
+    .expect("manifest.json");
+    root.to_path_buf()
+}
+
 /// `write_runtime` plus a release index manifest carrying the runtime's
 /// own `abi` string (spec 13's per-package `abi` key) — the field the
 /// abi-line filter reads.

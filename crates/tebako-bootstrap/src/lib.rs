@@ -164,6 +164,40 @@ pub struct RuntimeRef {
     pub abi: String,
 }
 
+/// The identity triple a release-index entry is matched by (spec 05 §2):
+/// the runtime_ref's tebako abi + language version + the host platform.
+/// The authoritative asset spellings flow from the matched entry, never
+/// from consumer-side synthesis (tebako#456).
+pub struct ReleaseIdentity<'a> {
+    pub runtime_type: &'a str,
+    pub lang_version: &'a str,
+    pub tebako_version: &'a str,
+    pub platform: &'a str,
+}
+
+impl<'a> ReleaseIdentity<'a> {
+    /// The identity of the runtime `rr` on this host.
+    pub fn of(rr: &'a RuntimeRef, platform: &'a str) -> ReleaseIdentity<'a> {
+        ReleaseIdentity {
+            runtime_type: &rr.r#type,
+            lang_version: &rr.version,
+            tebako_version: &rr.abi,
+            platform,
+        }
+    }
+
+    /// The matching release-index entry, when the index declares one.
+    fn entry<'m>(&self, manifest_text: &'m str) -> Option<ManifestEntry<'m>> {
+        manifest_entry_for_runtime(
+            manifest_text,
+            self.runtime_type,
+            self.lang_version,
+            self.tebako_version,
+            self.platform,
+        )
+    }
+}
+
 /// Parse a runtime_ref (exact C++ `parse_runtime_ref` semantics; the
 /// components become path/URL parts, so `/\\ \t\r\n` are refused).
 pub fn parse_runtime_ref(ref_: &str) -> Result<RuntimeRef, BootError> {
@@ -701,6 +735,37 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
     }
 }
 
+/// fetch_url's in-memory sibling for the small index documents
+/// (manifest.json): the same local/remote rules and the same
+/// retry/throttle budget, no staging file.
+#[allow(clippy::result_unit_err)] // C-style -1 error by design
+fn fetch_text(url: &str, local: bool) -> Result<String, ()> {
+    if local {
+        return std::fs::read_to_string(Path::new(url)).map_err(|_| ());
+    }
+    let mut attempts = 0;
+    let mut throttles = 0;
+    loop {
+        match tebako_http::get(url) {
+            Ok(bytes) => return String::from_utf8(bytes).map_err(|_| ()),
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => return Err(()),
+            Err(tebako_http::FetchError::Throttled { retry_after, .. }) => {
+                throttles += 1;
+                if throttles >= tebako_http::THROTTLE_ROUNDS {
+                    return Err(());
+                }
+                std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
+            }
+            Err(tebako_http::FetchError::DownloadFailed(_)) => {
+                attempts += 1;
+                if attempts >= 3 {
+                    return Err(());
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------
 // progress UX (spec 06 §5, locked): phases + bar on stderr, never stdout
 // ---------------------------------------------------------------------
@@ -934,7 +999,18 @@ fn contract_mismatch_error(runtime_ref: &str, declared: u32) -> BootError {
 /// A declared era or contract_version newer than this bootstrap speaks
 /// is refused with both numbers named. Returns the negotiation error to
 /// propagate, or `None` when the entry is acceptable.
-fn contract_gate(runtime_ref: &str, manifest_text: &str, asset: &str) -> Option<BootError> {
+///
+/// `asset` is the resolved spelling — the identity-matched entry's
+/// `filename` when the index declares one (spec 05 §2), the synthesized
+/// fallback otherwise; `id` names the identity triple the entry was
+/// matched by, so the no-entry refusal diagnoses the mis-lookup as what
+/// it is (tebako#456) instead of parroting a hand-invented name.
+fn contract_gate(
+    runtime_ref: &str,
+    manifest_text: &str,
+    asset: &str,
+    id: &ReleaseIdentity,
+) -> Option<BootError> {
     let pre_era = |detail: &str| {
         BootError::new(
             EX_TEBAKO_CONTRACT,
@@ -944,7 +1020,10 @@ fn contract_gate(runtime_ref: &str, manifest_text: &str, asset: &str) -> Option<
         )
     };
     if !contract_entry_present(manifest_text, asset) {
-        return Some(pre_era(&format!("no entry for {asset}")));
+        return Some(pre_era(&format!(
+            "no entry for tebako_version={} {}_version={} platform={} (asset spelling {asset})",
+            id.tebako_version, id.runtime_type, id.lang_version, id.platform
+        )));
     }
     let era = era_from_manifest_json(manifest_text, asset);
     let contract = contract_from_manifest_json(manifest_text, asset);
@@ -1049,6 +1128,224 @@ pub fn dll_install_as_from_manifest(text: &str, dll_asset: &str) -> Result<Strin
 }
 
 // ---------------------------------------------------------------------
+// release index: entry matching by the identity triple (spec 05 §2)
+// ---------------------------------------------------------------------
+
+/// A release-index entry located by the identity triple: the verbatim
+/// `filename` (the ONLY authoritative asset spelling — flowed into the
+/// download URL, the cache layout, and the contract gate, never
+/// synthesized) plus the entry's object body for the facet readers.
+pub struct ManifestEntry<'a> {
+    pub filename: String,
+    body: &'a str,
+}
+
+/// The index of the closing quote of the JSON string opening at `open`
+/// (`b[open] == b'"'`); `\\` and `\"` are the only escapes the factory
+/// spellings can carry.
+fn json_string_end(b: &[u8], open: usize) -> Option<usize> {
+    let mut i = open + 1;
+    while i < b.len() {
+        match b[i] {
+            b'\\' => i += 2,
+            b'"' => return Some(i),
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// The top-level `{…}` object bodies of a JSON array (the release index
+/// shape), depth-tracked with string literals skipped. Malformed input
+/// yields fewer bodies — the caller's no-match fallback covers it.
+fn top_level_object_bodies(text: &str) -> Vec<&str> {
+    let b = text.as_bytes();
+    let mut bodies = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    let mut i = 0usize;
+    while i < b.len() {
+        match b[i] {
+            b'"' => {
+                let Some(end) = json_string_end(b, i) else {
+                    break;
+                };
+                i = end + 1;
+            }
+            b'{' => {
+                if depth == 0 {
+                    start = i + 1;
+                }
+                depth += 1;
+                i += 1;
+            }
+            b'}' => {
+                if depth == 0 {
+                    break; // unbalanced — stop, yield what we have
+                }
+                depth -= 1;
+                if depth == 0 {
+                    bodies.push(&text[start..i]);
+                }
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    bodies
+}
+
+/// The depth-1 `"key": "string"` fields of a JSON object body (non-string
+/// and deeper-nested values are skipped). A string token is a key when a
+/// `:` follows it, else the pending key's value.
+fn depth1_string_fields(body: &str) -> Vec<(&str, &str)> {
+    let b = body.as_bytes();
+    let mut fields = Vec::new();
+    let mut depth = 0usize;
+    let mut pending: Option<&str> = None;
+    let mut i = 0usize;
+    while i < b.len() {
+        match b[i] {
+            b'"' => {
+                let Some(end) = json_string_end(b, i) else {
+                    break;
+                };
+                let s = &body[i + 1..end];
+                if depth == 0 {
+                    let mut j = end + 1;
+                    while j < b.len() && b[j].is_ascii_whitespace() {
+                        j += 1;
+                    }
+                    if j < b.len() && b[j] == b':' {
+                        pending = Some(s);
+                    } else if let Some(k) = pending.take() {
+                        fields.push((k, s));
+                    }
+                }
+                i = end + 1;
+            }
+            b'{' | b'[' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' | b']' => {
+                depth = depth.saturating_sub(1);
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    fields
+}
+
+/// The body of the object value of a depth-1 key (`"image": { … }` → the
+/// inner `…`) — an entry's additive facets (`image`, `dll`).
+fn depth1_object_body<'a>(body: &'a str, key: &str) -> Option<&'a str> {
+    let b = body.as_bytes();
+    let mut depth = 0usize;
+    let mut i = 0usize;
+    while i < b.len() {
+        match b[i] {
+            b'"' => {
+                let end = json_string_end(b, i)?;
+                if depth == 0 && &body[i + 1..end] == key {
+                    let mut j = end + 1;
+                    while j < b.len() && b[j].is_ascii_whitespace() {
+                        j += 1;
+                    }
+                    if j < b.len() && b[j] == b':' {
+                        j += 1;
+                        while j < b.len() && b[j].is_ascii_whitespace() {
+                            j += 1;
+                        }
+                        if j < b.len() && b[j] == b'{' {
+                            let mut d = 1usize;
+                            let mut k = j + 1;
+                            while k < b.len() {
+                                match b[k] {
+                                    b'"' => {
+                                        k = json_string_end(b, k)? + 1;
+                                    }
+                                    b'{' => {
+                                        d += 1;
+                                        k += 1;
+                                    }
+                                    b'}' => {
+                                        d -= 1;
+                                        if d == 0 {
+                                            return Some(&body[j + 1..k]);
+                                        }
+                                        k += 1;
+                                    }
+                                    _ => k += 1,
+                                }
+                            }
+                            return None;
+                        }
+                    }
+                }
+                i = end + 1;
+            }
+            b'{' | b'[' => {
+                depth += 1;
+                i += 1;
+            }
+            b'}' | b']' => {
+                depth = depth.saturating_sub(1);
+                i += 1;
+            }
+            _ => i += 1,
+        }
+    }
+    None
+}
+
+/// spec 05 §2 (SSOT, tebako#456): the release-index entry is matched by
+/// the identity triple (`tebako_version`, `<type>_version`, `platform`)
+/// — never by a synthesized asset name. The matched entry's `filename`
+/// is the authoritative exe spelling (the factory publishes the windows
+/// exe SUFFIX-LESS). `None` when no entry carries the triple (a
+/// pre-identity index) or none matches — the caller falls back to the
+/// synthesized spelling (the SHA256SUMS-only era) and names the triple
+/// in its refusal.
+pub fn manifest_entry_for_runtime<'a>(
+    text: &'a str,
+    runtime_type: &str,
+    lang_version: &str,
+    tebako_version: &str,
+    platform: &str,
+) -> Option<ManifestEntry<'a>> {
+    let lang_key = format!("{runtime_type}_version");
+    for body in top_level_object_bodies(text) {
+        let fields = depth1_string_fields(body);
+        let get = |key: &str| fields.iter().find(|(k, _)| *k == key).map(|(_, v)| *v);
+        let matches = get("tebako_version") == Some(tebako_version)
+            && get(&lang_key) == Some(lang_version)
+            && get("platform") == Some(platform);
+        if matches {
+            if let Some(filename) = get("filename") {
+                return Some(ManifestEntry {
+                    filename: filename.to_string(),
+                    body,
+                });
+            }
+        }
+    }
+    None
+}
+
+/// The verbatim `filename` of an entry's additive facet (`image`, `dll`)
+/// — the authoritative spelling of that facet's asset (spec 05 §2).
+/// `None` when the entry declares no such facet or no filename in it.
+pub fn manifest_entry_facet_filename(entry: &ManifestEntry, facet: &str) -> Option<String> {
+    let body = depth1_object_body(entry.body, facet)?;
+    depth1_string_fields(body)
+        .into_iter()
+        .find(|(k, _)| *k == "filename")
+        .map(|(_, v)| v.to_string())
+}
+
+// ---------------------------------------------------------------------
 // fat package: install the runtime payload slot
 // ---------------------------------------------------------------------
 
@@ -1087,9 +1384,15 @@ struct CacheLayout {
     root: PathBuf,
     entry_dir: PathBuf,
     exe_path: PathBuf,
+    /// The resolved exe spelling: the identity-matched index entry's
+    /// `filename` when one is known (the cached index on the hit path —
+    /// spec 05 §2), the synthesized `<asset_base><exe_suffix>` fallback
+    /// otherwise.
     asset: String,
-    /// The asset name without the platform executable suffix; the runtime
-    /// image is `<asset_base>.tfs` (item 30b).
+    /// The asset name without the platform executable suffix; the
+    /// synthesized fallback spellings (`<asset_base>.tfs`,
+    /// `<asset_base>.dll`) derive from it when no index entry declares
+    /// the facet (item 30b, tebako-runtime-ruby#40).
     asset_base: String,
     entry: String,
 }
@@ -1686,23 +1989,27 @@ fn resolve_runtime(
     m: &tpkg::Manifest,
 ) -> Result<(PathBuf, Option<PathBuf>), BootError> {
     let platform = platform_string();
+    let id = ReleaseIdentity::of(rr, platform);
     let asset_base = format!("tebako-runtime-{}-{}-{platform}", rr.abi, rr.version);
+    let entry = format!("{}-{}-{}-{platform}", rr.r#type, rr.version, rr.abi);
+    let root = cache_root()?;
+    let entry_dir = root.join("runtimes").join(&entry);
+    // spec 05 §2 (tebako#456): the cache entry's exe file keeps the index
+    // entry's `filename` spelling (windows runtimes publish SUFFIX-LESS).
+    // A cached entry carries the verified index the lean install left
+    // behind — flow it. No cached index (a fat-payload install) → the
+    // synthesized fallback spelling.
+    let asset = std::fs::read_to_string(entry_dir.join("manifest.json"))
+        .ok()
+        .and_then(|text| id.entry(&text).map(|e| e.filename))
+        .unwrap_or_else(|| format!("{asset_base}{}", exe_suffix()));
     let layout = CacheLayout {
-        root: cache_root()?,
-        entry_dir: PathBuf::new(),
-        exe_path: PathBuf::new(),
-        asset: format!("{asset_base}{}", exe_suffix()),
+        exe_path: entry_dir.join(&asset),
+        asset,
+        root,
+        entry_dir,
         asset_base,
-        entry: format!("{}-{}-{}-{platform}", rr.r#type, rr.version, rr.abi),
-    };
-    let layout = CacheLayout {
-        entry_dir: layout.root.join("runtimes").join(&layout.entry),
-        exe_path: layout
-            .root
-            .join("runtimes")
-            .join(&layout.entry)
-            .join(&layout.asset),
-        ..layout
+        entry,
     };
 
     let mut ux = BootUx::new();
@@ -1756,18 +2063,11 @@ fn download_executable(
     layout: &CacheLayout,
     ux: &mut BootUx,
 ) -> Result<PathBuf, BootError> {
-    let (root, entry_dir, asset, entry) = (
-        &layout.root,
-        &layout.entry_dir,
-        &layout.asset,
-        &layout.entry,
-    );
+    let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
 
-    let exe_path = &layout.exe_path;
     let base_raw = releases_base();
     let base = skip_file_scheme(&base_raw).to_string();
     let local = base_is_local(&base_raw);
-    let asset_url = format!("{base}/v{}/{asset}", rr.abi);
     let manifest_url = format!("{base}/v{}/manifest.json", rr.abi);
     let sums_url = format!("{base}/v{}/SHA256SUMS.txt", rr.abi);
 
@@ -1775,32 +2075,24 @@ fn download_executable(
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "cannot resolve runtime \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {asset_url}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
-                entry_dir.display()
+                "cannot resolve runtime \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {base}/v{}/{}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
+                entry_dir.display(),
+                rr.abi,
+                layout.asset
             ),
         );
     }
 
     ux.resolving(runtime_ref);
 
-    let Some(ins) = begin_entry_install(root, entry, exe_path, asset, runtime_ref)? else {
-        ux.cached(rr);
-        return Ok(exe_path.clone());
-    };
-
-    // spec 18 C2: the release card gates BEFORE any asset download —
-    // a contract refusal never downloads a byte of the runtime. No
-    // readable manifest at all is the same pre-era signal (no old-path
-    // readers; the SHA256SUMS fallback covers checksums only).
-    let manifest_tmp = ins.tmp_dir.join("manifest.json");
-    let manifest_text = if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
-        std::fs::read_to_string(&manifest_tmp).ok()
-    } else {
-        None
-    };
-    let Some(manifest_text) = manifest_text else {
-        cleanup_tmp_entry(&ins.tmp_dir, asset);
-        lock_release(ins.lock);
+    // spec 05 §2 (tebako#456): the index entry — matched by the identity
+    // triple, never by a synthesized name — carries the authoritative
+    // asset spelling, flowed verbatim into the URL, the cache layout, and
+    // the contract gate below. Fetched ahead of the install lock (a pure
+    // mirror read): the spelling decides the staging and cache paths. No
+    // readable manifest at all is the pre-era signal (spec 18 C2; the
+    // SHA256SUMS fallback covers checksums only, never the gate).
+    let Ok(manifest_text) = fetch_text(&manifest_url, local) else {
         return fail(
             EX_TEBAKO_CONTRACT,
             format!(
@@ -1808,14 +2100,44 @@ fn download_executable(
             ),
         );
     };
-    if let Some(e) = contract_gate(runtime_ref, &manifest_text, asset) {
-        cleanup_tmp_entry(&ins.tmp_dir, asset);
+    let id = ReleaseIdentity::of(rr, platform_string());
+    let asset = id
+        .entry(&manifest_text)
+        .map(|e| e.filename)
+        .unwrap_or_else(|| layout.asset.clone());
+    let exe_path = entry_dir.join(&asset);
+    let asset_url = format!("{base}/v{}/{asset}", rr.abi);
+
+    let Some(ins) = begin_entry_install(root, entry, &exe_path, &asset, runtime_ref)? else {
+        ux.cached(rr);
+        return Ok(exe_path);
+    };
+
+    // The gated index rides the install into the cache entry: the image /
+    // dll facets re-resolve from it offline (tebako-runtime-ruby#40), and
+    // the next run's cache-hit path flows its spellings (spec 05 §2).
+    if let Err(e) = write_small_file(&ins.tmp_dir.join("manifest.json"), &manifest_text) {
+        cleanup_tmp_entry(&ins.tmp_dir, &asset);
+        lock_release(ins.lock);
+        return Err(BootError::new(
+            EX_TEBAKO_IO,
+            format!(
+                "cannot stage the release manifest into {}: {e}",
+                ins.tmp_dir.display()
+            ),
+        ));
+    }
+
+    // spec 18 C2: the release card gates BEFORE any asset download —
+    // a contract refusal never downloads a byte of the runtime.
+    if let Some(e) = contract_gate(runtime_ref, &manifest_text, &asset, &id) {
+        cleanup_tmp_entry(&ins.tmp_dir, &asset);
         lock_release(ins.lock);
         return Err(e);
     }
 
-    if fetch_asset(&asset_url, local, &ins.tmp_asset, asset, &mut ux.prog).is_err() {
-        cleanup_tmp_entry(&ins.tmp_dir, asset);
+    if fetch_asset(&asset_url, local, &ins.tmp_asset, &asset, &mut ux.prog).is_err() {
+        cleanup_tmp_entry(&ins.tmp_dir, &asset);
         lock_release(ins.lock);
         return fail(
             EX_TEBAKO_UNAVAILABLE,
@@ -1838,7 +2160,7 @@ fn download_executable(
     ];
     let mut expected: Option<String> = None;
     let mut diag_manifest = 3;
-    if let Ok(sha) = sha_from_manifest_json(&manifest_text, asset) {
+    if let Ok(sha) = sha_from_manifest_json(&manifest_text, &asset) {
         diag_manifest = 4;
         expected = Some(sha);
     }
@@ -1850,7 +2172,7 @@ fn download_executable(
             diag_sums = 2;
             if let Ok(text) = std::fs::read_to_string(&sums_tmp) {
                 diag_sums = 3;
-                if let Ok(sha) = sha_from_sums(&text, asset) {
+                if let Ok(sha) = sha_from_sums(&text, &asset) {
                     diag_sums = 4;
                     expected = Some(sha);
                 }
@@ -1858,7 +2180,7 @@ fn download_executable(
         }
     }
     let Some(expected) = expected else {
-        cleanup_tmp_entry(&ins.tmp_dir, asset);
+        cleanup_tmp_entry(&ins.tmp_dir, &asset);
         lock_release(ins.lock);
         return fail(
             EX_TEBAKO_UNAVAILABLE,
@@ -1872,7 +2194,7 @@ fn download_executable(
     let actual = match sha256_file_hex(&ins.tmp_asset) {
         Ok(a) => a,
         Err(e) => {
-            cleanup_tmp_entry(&ins.tmp_dir, asset);
+            cleanup_tmp_entry(&ins.tmp_dir, &asset);
             lock_release(ins.lock);
             return Err(BootError::new(
                 EX_TEBAKO_IO,
@@ -1886,7 +2208,7 @@ fn download_executable(
 
     let expected = expected.to_lowercase();
     if expected != actual {
-        cleanup_tmp_entry(&ins.tmp_dir, asset);
+        cleanup_tmp_entry(&ins.tmp_dir, &asset);
         lock_release(ins.lock);
         return fail(
             EX_TEBAKO_SHA,
@@ -1898,7 +2220,7 @@ fn download_executable(
 
     let origin = format!("runtime_ref={runtime_ref}\nurl={asset_url}\nsha256={actual}\n");
     ux.prog.phase("installing (locked)");
-    let installed = publish_entry(ins, entry_dir, exe_path, asset, &actual, &origin)?;
+    let installed = publish_entry(ins, entry_dir, &exe_path, &asset, &actual, &origin)?;
     let size = std::fs::metadata(&installed).map(|m| m.len()).unwrap_or(0);
     ux.prog.line(&installed_line(entry, size, entry_dir));
     Ok(installed)
@@ -1908,11 +2230,18 @@ fn download_executable(
 // runtime image resolution (item 30b, the `;image` flag)
 // ---------------------------------------------------------------------
 
-/// Resolve the runtime image (`<asset_base>.tfs`) into the executable's
-/// cache entry: download (same mirror/offline rules), verify against the
-/// release index (manifest.json `image` key primary, SHA256SUMS line
-/// fallback), install read-only with `<image>.sha256`/`<image>.origin`
-/// trusted markers. The image is never extracted into the cache.
+/// Resolve the runtime image into the executable's cache entry: download
+/// (same mirror/offline rules), verify against the release index
+/// (manifest.json `image` key primary, SHA256SUMS line fallback),
+/// install read-only with `<image>.sha256`/`<image>.origin` trusted
+/// markers. The image is never extracted into the cache.
+///
+/// The image's spelling is the identity-matched entry's `image.filename`
+/// (spec 05 §2, flowed verbatim — from the entry's cached index on the
+/// fast path, from the fresh index on the download path); the
+/// synthesized `<asset_base>.tfs` is the fallback for index-less entries
+/// (a fat-payload install never fetches an index into the entry — its
+/// fast path derives the fallback spelling per run).
 fn resolve_image(
     runtime_ref: &str,
     rr: &RuntimeRef,
@@ -1920,9 +2249,15 @@ fn resolve_image(
     ux: &mut BootUx,
 ) -> Result<PathBuf, BootError> {
     let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
-    let image_asset = format!("{}.tfs", layout.asset_base);
-    let image_path = entry_dir.join(&image_asset);
-    let marker = entry_dir.join(format!("{image_asset}.sha256"));
+    let id = ReleaseIdentity::of(rr, platform_string());
+    let cached_index = std::fs::read_to_string(entry_dir.join("manifest.json")).ok();
+    let mut image_asset = cached_index
+        .as_deref()
+        .and_then(|text| id.entry(text))
+        .and_then(|e| manifest_entry_facet_filename(&e, "image"))
+        .unwrap_or_else(|| format!("{}.tfs", layout.asset_base));
+    let mut image_path = entry_dir.join(&image_asset);
+    let mut marker = entry_dir.join(format!("{image_asset}.sha256"));
 
     if file_exists(&image_path) && file_exists(&marker) {
         return Ok(image_path);
@@ -1931,7 +2266,6 @@ fn resolve_image(
     let base_raw = releases_base();
     let base = skip_file_scheme(&base_raw).to_string();
     let local = base_is_local(&base_raw);
-    let image_url = format!("{base}/v{}/{image_asset}", rr.abi);
     let manifest_url = format!("{base}/v{}/manifest.json", rr.abi);
     let sums_url = format!("{base}/v{}/SHA256SUMS.txt", rr.abi);
 
@@ -1939,8 +2273,9 @@ fn resolve_image(
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "cannot resolve runtime image \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {image_url}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
-                entry_dir.display()
+                "cannot resolve runtime image \"{runtime_ref}\": not present in the cache and TEBAKO_OFFLINE is set\n  cache entry: {}\n  would fetch: {base}/v{}/{image_asset}\n  unset TEBAKO_OFFLINE, or set TEBAKO_RUNTIME_MIRROR to a reachable mirror",
+                entry_dir.display(),
+                rr.abi
             ),
         );
     }
@@ -1987,7 +2322,6 @@ fn resolve_image(
     let tmp_dir = root
         .join("tmp")
         .join(format!("{entry}.{}.image", std::process::id()));
-    let tmp_image = tmp_dir.join(&image_asset);
     cleanup_tmp_entry(&tmp_dir, &image_asset);
     if let Err(e) = std::fs::create_dir(&tmp_dir) {
         lock_release(lock);
@@ -1997,8 +2331,8 @@ fn resolve_image(
         ));
     }
 
-    let fail_image = |lock: EntryLock, e: BootError| -> BootError {
-        cleanup_tmp_entry(&tmp_dir, &image_asset);
+    let fail_image = |lock: EntryLock, asset: &str, e: BootError| -> BootError {
+        cleanup_tmp_entry(&tmp_dir, asset);
         lock_release(lock);
         e
     };
@@ -2017,6 +2351,7 @@ fn resolve_image(
     let Some(manifest_text) = manifest_text else {
         return Err(fail_image(
             lock,
+            &image_asset,
             BootError::new(
                 EX_TEBAKO_CONTRACT,
                 format!(
@@ -2025,13 +2360,41 @@ fn resolve_image(
             ),
         ));
     };
-    if let Some(e) = contract_gate(runtime_ref, &manifest_text, &layout.asset) {
-        return Err(fail_image(lock, e));
+
+    // spec 05 §2: the identity-matched entry anchors the gate by ITS
+    // filename and carries the image's authoritative spelling — the fresh
+    // index wins over the cached/fast-path spelling.
+    let entry_match = id.entry(&manifest_text);
+    let gate_asset = entry_match
+        .as_ref()
+        .map(|e| e.filename.clone())
+        .unwrap_or_else(|| layout.asset.clone());
+    if let Some(e) = contract_gate(runtime_ref, &manifest_text, &gate_asset, &id) {
+        return Err(fail_image(lock, &image_asset, e));
     }
+    if let Some(flowed) = entry_match
+        .as_ref()
+        .and_then(|e| manifest_entry_facet_filename(e, "image"))
+    {
+        if flowed != image_asset {
+            image_asset = flowed;
+            image_path = entry_dir.join(&image_asset);
+            marker = entry_dir.join(format!("{image_asset}.sha256"));
+            // a raced install under the flowed spelling
+            if file_exists(&image_path) && file_exists(&marker) {
+                cleanup_tmp_entry(&tmp_dir, &image_asset);
+                lock_release(lock);
+                return Ok(image_path);
+            }
+        }
+    }
+    let image_url = format!("{base}/v{}/{image_asset}", rr.abi);
+    let tmp_image = tmp_dir.join(&image_asset);
 
     if fetch_asset(&image_url, local, &tmp_image, &image_asset, &mut ux.prog).is_err() {
         return Err(fail_image(
             lock,
+            &image_asset,
             BootError::new(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
@@ -2077,6 +2440,7 @@ fn resolve_image(
     let Some(expected) = expected else {
         return Err(fail_image(
             lock,
+            &image_asset,
             BootError::new(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
@@ -2092,6 +2456,7 @@ fn resolve_image(
         Err(e) => {
             return Err(fail_image(
                 lock,
+                &image_asset,
                 BootError::new(
                     EX_TEBAKO_IO,
                     format!("cannot hash downloaded file {}: {e}", tmp_image.display()),
@@ -2104,6 +2469,7 @@ fn resolve_image(
     if expected != actual {
         return Err(fail_image(
             lock,
+            &image_asset,
             BootError::new(
                 EX_TEBAKO_SHA,
                 format!(
@@ -2119,6 +2485,7 @@ fn resolve_image(
     if let Err(e) = os_rename(&tmp_image, &image_path) {
         return Err(fail_image(
             lock,
+            &image_asset,
             BootError::new(
                 EX_TEBAKO_IO,
                 format!(
@@ -2169,11 +2536,18 @@ fn resolve_dll(
     ux: &mut BootUx,
 ) -> Result<Option<PathBuf>, BootError> {
     let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
-    let dll_asset = format!("{}.dll", layout.asset_base);
 
     let Ok(manifest_text) = std::fs::read_to_string(entry_dir.join("manifest.json")) else {
         return Ok(None);
     };
+    // spec 05 §2: the identity-matched entry's `dll.filename` is the
+    // authoritative facet spelling (flowed verbatim); the synthesized
+    // `<asset_base>.dll` is the fallback for a pre-identity index.
+    let id = ReleaseIdentity::of(rr, platform_string());
+    let dll_asset = id
+        .entry(&manifest_text)
+        .and_then(|e| manifest_entry_facet_filename(&e, "dll"))
+        .unwrap_or_else(|| format!("{}.dll", layout.asset_base));
     let Ok(install_as) = dll_install_as_from_manifest(&manifest_text, &dll_asset) else {
         return Ok(None);
     };
@@ -2845,5 +3219,112 @@ mod dll_tests {
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&home2);
         let _ = std::fs::remove_dir_all(&home3);
+    }
+}
+
+#[cfg(test)]
+mod manifest_identity_tests {
+    use super::*;
+
+    /// A multi-entry era-2 index: nested `image`/`dll`/`built_from`
+    /// objects, a non-string field (`contract_era: 2`), reordered keys —
+    /// the windows entry carries the factory's SUFFIX-LESS exe spelling
+    /// (tebako#456).
+    const INDEX: &str = r#"[
+  {
+    "tebako_version": "0.16.9",
+    "contract_era": 2,
+    "contract_version": 2,
+    "mount_root": "/__tfs__",
+    "ruby_version": "3.3.12",
+    "platform": "macos-arm64",
+    "filename": "tebako-runtime-0.16.9-3.3.12-macos-arm64",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "size_bytes": 24191976,
+    "built_from": {"scenario": "default", "toolchain": "clang"},
+    "image": {"filename": "tebako-runtime-0.16.9-3.3.12-macos-arm64.tfs", "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "size_bytes": 20410208}
+  },
+  {
+    "filename": "tebako-runtime-0.16.9-3.3.12-windows-ucrt64",
+    "platform": "windows-ucrt64",
+    "ruby_version": "3.3.12",
+    "tebako_version": "0.16.9",
+    "contract_era": 2,
+    "contract_version": 2,
+    "mount_root": "A:/t",
+    "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "size_bytes": 30000000,
+    "image": {"size_bytes": 40000000, "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd", "filename": "tebako-runtime-0.16.9-3.3.12-windows-ucrt64.tfs"},
+    "dll": {"filename": "tebako-runtime-0.16.9-3.3.12-windows-ucrt64.dll", "install_as": "x64-ucrt-ruby330.dll", "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "size_bytes": 5000000}
+  }
+]"#;
+
+    #[test]
+    fn the_identity_triple_selects_the_entry_not_the_spelling() {
+        let win = manifest_entry_for_runtime(INDEX, "ruby", "3.3.12", "0.16.9", "windows-ucrt64")
+            .expect("the windows entry matches its identity triple");
+        // The flowed spelling is verbatim — NO synthesized `.exe`.
+        assert_eq!(win.filename, "tebako-runtime-0.16.9-3.3.12-windows-ucrt64");
+
+        let mac = manifest_entry_for_runtime(INDEX, "ruby", "3.3.12", "0.16.9", "macos-arm64")
+            .expect("the posix entry matches");
+        assert_eq!(mac.filename, "tebako-runtime-0.16.9-3.3.12-macos-arm64");
+    }
+
+    #[test]
+    fn a_wrong_triple_leg_is_no_match() {
+        assert!(
+            manifest_entry_for_runtime(INDEX, "ruby", "3.3.12", "0.16.9", "linux-x86_64").is_none()
+        );
+        assert!(
+            manifest_entry_for_runtime(INDEX, "ruby", "3.4.1", "0.16.9", "windows-ucrt64")
+                .is_none()
+        );
+        assert!(
+            manifest_entry_for_runtime(INDEX, "ruby", "3.3.12", "0.16.8", "windows-ucrt64")
+                .is_none()
+        );
+        // The language key composes from the runtime type.
+        assert!(
+            manifest_entry_for_runtime(INDEX, "python", "3.3.12", "0.16.9", "windows-ucrt64")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn facet_filenames_flow_verbatim() {
+        let win = manifest_entry_for_runtime(INDEX, "ruby", "3.3.12", "0.16.9", "windows-ucrt64")
+            .unwrap();
+        assert_eq!(
+            manifest_entry_facet_filename(&win, "image").as_deref(),
+            Some("tebako-runtime-0.16.9-3.3.12-windows-ucrt64.tfs")
+        );
+        assert_eq!(
+            manifest_entry_facet_filename(&win, "dll").as_deref(),
+            Some("tebako-runtime-0.16.9-3.3.12-windows-ucrt64.dll")
+        );
+        // A facet the entry does not declare is no answer.
+        let mac =
+            manifest_entry_for_runtime(INDEX, "ruby", "3.3.12", "0.16.9", "macos-arm64").unwrap();
+        assert!(manifest_entry_facet_filename(&mac, "dll").is_none());
+    }
+
+    #[test]
+    fn an_entry_without_filename_is_no_match() {
+        let text = r#"[{"tebako_version": "0.16.9", "ruby_version": "3.3.12", "platform": "macos-arm64", "sha256": "aaaa"}]"#;
+        assert!(
+            manifest_entry_for_runtime(text, "ruby", "3.3.12", "0.16.9", "macos-arm64").is_none()
+        );
+    }
+
+    #[test]
+    fn malformed_and_empty_indexes_are_no_match() {
+        for text in ["", "[]", "not json", "[{\"tebako_version\": ", "{}"] {
+            assert!(
+                manifest_entry_for_runtime(text, "ruby", "3.3.12", "0.16.9", "macos-arm64")
+                    .is_none(),
+                "{text:?} must be no match"
+            );
+        }
     }
 }

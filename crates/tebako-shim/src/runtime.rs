@@ -92,6 +92,78 @@ fn entry_exe_name(lv: &str, ver: &str, platform: &str) -> String {
     format!("tebako-runtime-{ver}-{lv}-{platform}{}", exe_suffix())
 }
 
+/// Synthesized env-image name (spec 05 §3's fallback spelling).
+fn synthesized_image_base(lv: &str, ver: &str, platform: &str) -> String {
+    format!("tebako-runtime-{ver}-{lv}-{platform}.tfs")
+}
+
+/// Match a release-index entry by the identity triple (spec 05 §2):
+/// `tebako_version` + `{engine}_version` + `platform` as strings.
+/// The runtime factory publishes windows exe assets SUFFIX-LESS, so the
+/// entry's `filename` is the ONLY authoritative asset spelling (spec 00
+/// §10 SSOT; tebako#456).
+fn release_index_entry<'m>(
+    manifest: &'m tebako_json::Value,
+    engine: &str,
+    lang_version: &str,
+    tebako_version: &str,
+    platform: &str,
+) -> Option<&'m tebako_json::Value> {
+    let tebako_json::Value::Array(entries) = manifest else {
+        return None;
+    };
+    let lang_key = format!("{engine}_version");
+    entries.iter().find(|e| {
+        [
+            ("tebako_version", tebako_version),
+            (lang_key.as_str(), lang_version),
+            ("platform", platform),
+        ]
+        .iter()
+        .all(|(k, want)| e.find(k).and_then(|v| v.as_string()).as_deref() == Some(*want))
+    })
+}
+
+/// `filename` of the entry itself (`facet: None`) or of a facet object
+/// (`image` / `dll`) — verbatim, including any platform suffix.
+fn entry_filename(entry: &tebako_json::Value, facet: Option<&str>) -> Option<String> {
+    let node = match facet {
+        Some(f) => entry.find(f)?,
+        None => entry,
+    };
+    node.find("filename")
+        .and_then(|v| v.as_string())
+        .filter(|s| !s.is_empty())
+}
+
+/// The exe / env-image names for a cache entry: flow the cached release
+/// index verbatim when it names this identity, else the synthesized
+/// fallback (`{name}.exe` on windows, `{name}` on posix — spec 05 §2's
+/// pre-identity fallback).
+fn entry_asset_names(
+    entry_dir: &Path,
+    engine: &str,
+    lv: &str,
+    ver: &str,
+    platform: &str,
+) -> (String, String) {
+    let flowed = std::fs::read_to_string(entry_dir.join("manifest.json"))
+        .ok()
+        .and_then(|text| {
+            let parsed = tebako_json::parse(&text).ok()?;
+            let e = release_index_entry(&parsed, engine, lv, ver, platform)?;
+            Some((entry_filename(e, None), entry_filename(e, Some("image"))))
+        });
+    let exe = flowed
+        .as_ref()
+        .and_then(|(f, _)| f.clone())
+        .unwrap_or_else(|| entry_exe_name(lv, ver, platform));
+    let image = flowed
+        .and_then(|(_, i)| i)
+        .unwrap_or_else(|| synthesized_image_base(lv, ver, platform));
+    (exe, image)
+}
+
 /// The runtime's own `abi` string from the cached release index (the
 /// manifest.json entry whose `filename` is the exe): `None` when the
 /// entry or the key is absent (pre-abi releases — the compat window).
@@ -134,12 +206,11 @@ pub fn scan_cached(home: &Path, engine: &str) -> Vec<CachedRuntime> {
         if lang != engine {
             continue;
         }
-        let exe_name = entry_exe_name(&lv, &ver, platform);
+        let (exe_name, image_base) = entry_asset_names(&entry_dir, &lang, &lv, &ver, platform);
         let exe = entry_dir.join(&exe_name);
         if !exe.is_file() {
             continue;
         }
-        let image_base = format!("tebako-runtime-{ver}-{lv}-{platform}.tfs");
         let image = entry_dir.join(&image_base);
         let image = if image.is_file() && entry_dir.join(format!("{image_base}.sha256")).is_file() {
             Some(image)
@@ -179,12 +250,11 @@ pub fn scan_all_cached(home: &Path) -> Vec<CachedRuntime> {
         let Some((lang, lv, ver)) = parse_entry_name(&name, platform) else {
             continue;
         };
-        let exe_name = entry_exe_name(&lv, &ver, platform);
+        let (exe_name, image_base) = entry_asset_names(&entry_dir, &lang, &lv, &ver, platform);
         let exe = entry_dir.join(&exe_name);
         if !exe.is_file() {
             continue;
         }
-        let image_base = format!("tebako-runtime-{ver}-{lv}-{platform}.tfs");
         let image = entry_dir.join(&image_base);
         let image = if image.is_file() && entry_dir.join(format!("{image_base}.sha256")).is_file() {
             Some(image)
@@ -696,13 +766,6 @@ fn lock_release(lock: EntryLock) {
     }
 }
 
-fn cleanup_tmp_entry(dir: &Path, asset: &str) {
-    let _ = std::fs::remove_file(dir.join(asset));
-    let _ = std::fs::remove_file(dir.join("manifest.json"));
-    let _ = std::fs::remove_file(dir.join("SHA256SUMS.txt"));
-    let _ = std::fs::remove_dir(dir);
-}
-
 /// Fetch one URL (in-process HTTP; `file://`/local mirrors are copies).
 /// curl --retry 3 parity: transient failures get three attempts.
 #[allow(clippy::result_unit_err)]
@@ -834,14 +897,24 @@ fn fetch_manifest_text(base: &str, local: bool, abi: &str, tmp_dir: &Path) -> Op
 /// for the runtime exe must declare its contract set — tebako-resolve's
 /// reader owns the semantics (the shim links it); the refusal is exit 75
 /// with both sides named. An entry-less asset is undeclared by
-/// definition (no old-path readers).
-fn contract_gate(runtime_ref: &str, manifest_text: &str, asset: &str) -> Result<(), ShimError> {
+/// definition (no old-path readers) — the refusal names the identity
+/// triple alongside the asset spelling tried (spec 05 §2; tebako#456).
+#[allow(clippy::too_many_arguments)]
+fn contract_gate(
+    runtime_ref: &str,
+    manifest_text: &str,
+    asset: &str,
+    engine: &str,
+    lang_version: &str,
+    tebako_version: &str,
+    platform: &str,
+) -> Result<(), ShimError> {
     match tebako_resolve::contract::gate(manifest_text, asset) {
         Ok(Some(_)) => Ok(()),
         Ok(None) => fail(
             EX_TEBAKO_CONTRACT,
             format!(
-                "runtime \"{runtime_ref}\" is pre-era — its release manifest entry declares no contract set (no entry for {asset}) — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                "runtime \"{runtime_ref}\" is pre-era — its release manifest entry declares no contract set (no entry for tebako_version={tebako_version} {engine}_version={lang_version} platform={platform} (asset spelling {asset})) — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
             ),
         ),
         Err(e) => fail(
@@ -957,6 +1030,22 @@ fn install_asset(
     Ok(actual)
 }
 
+/// What the staging step produced: a fresh install (the staged names)
+/// or the discovery that another installer published the entry under
+/// the flowed spelling while the index was being fetched (use the
+/// cache as-is).
+enum StageOutcome {
+    Raced {
+        asset: String,
+        image_asset: String,
+    },
+    Installed {
+        has_image: bool,
+        asset: String,
+        image_asset: String,
+    },
+}
+
 /// Download the preferred runtime into the shared cache with the
 /// bootstrap's install discipline: per-entry flock (120 s), re-check
 /// under the lock, tmp staging, sha256-verified, tmp + rename publish,
@@ -971,12 +1060,13 @@ fn download_runtime(
     let runtime_ref = format!("{engine}@{};tebako={};image", pref.version, pref.tebako);
     let root = ctx.home.clone();
     let entry_dir = root.join("runtimes").join(&entry);
-    let asset = entry_exe_name(&pref.version, &pref.tebako, platform);
+    // The entry's own cached release index flows the asset spellings
+    // verbatim when it names this identity (spec 05 §2 SSOT; tebako#456
+    // — the factory publishes windows exe assets SUFFIX-LESS); the
+    // pre-identity fallback synthesizes `{name}.exe` / `{name}.tfs`.
+    let (asset, image_asset) =
+        entry_asset_names(&entry_dir, engine, &pref.version, &pref.tebako, platform);
     let exe_path = entry_dir.join(&asset);
-    let image_asset = format!(
-        "tebako-runtime-{}-{}-{platform}.tfs",
-        pref.tebako, pref.version
-    );
 
     if file_exists(&exe_path) {
         // Raced with another installer; use the cache.
@@ -1059,14 +1149,16 @@ fn download_runtime(
     let tmp_dir = root
         .join("tmp")
         .join(format!("{entry}.{}", std::process::id()));
-    cleanup_tmp_entry(&tmp_dir, &asset);
+    let _ = std::fs::remove_dir_all(&tmp_dir);
     let result = std::fs::create_dir(&tmp_dir).map_err(|e| {
         ShimError::new(
             EX_TEBAKO_IO,
             format!("cannot create {}: {e}", tmp_dir.display()),
         )
     });
-    let result = result.and_then(|()| {
+    let fallback_asset = asset.clone();
+    let fallback_image = image_asset.clone();
+    let result: Result<StageOutcome, ShimError> = result.and_then(|()| {
         // spec 18 C2: the release card gates BEFORE any asset download —
         // a contract refusal never downloads a byte of the runtime. No
         // readable manifest is the same pre-era signal (no old-path
@@ -1080,7 +1172,35 @@ fn download_runtime(
                 ),
             )
         })?;
-        contract_gate(&runtime_ref, &manifest_text, &asset)?;
+        // The entry's `filename` is the ONLY authoritative asset
+        // spelling (spec 05 §2 SSOT; tebako#456): match the identity
+        // triple (`tebako_version` + `{engine}_version` + `platform`)
+        // and flow `filename` / `image.filename` verbatim; the
+        // pre-identity fallback keeps the synthesized spelling.
+        let parsed = tebako_json::parse(&manifest_text).ok();
+        let entry_match = parsed
+            .as_ref()
+            .and_then(|m| release_index_entry(m, engine, &pref.version, &pref.tebako, platform));
+        let asset = entry_match
+            .and_then(|e| entry_filename(e, None))
+            .unwrap_or(fallback_asset);
+        let image_asset = entry_match
+            .and_then(|e| entry_filename(e, Some("image")))
+            .unwrap_or(fallback_image);
+        // Late re-check under the flowed spelling: another installer may
+        // have published the entry while the index was being fetched.
+        if file_exists(&entry_dir.join(&asset)) {
+            return Ok(StageOutcome::Raced { asset, image_asset });
+        }
+        contract_gate(
+            &runtime_ref,
+            &manifest_text,
+            &asset,
+            engine,
+            &pref.version,
+            &pref.tebako,
+            platform,
+        )?;
 
         // executable
         let exe_url = format!("{base}/v{}/{asset}", pref.tebako);
@@ -1117,7 +1237,15 @@ fn download_runtime(
         // serves and it installs alone — the s14 sums-fallback shape).
         // The contract gate is the same one (the exe entry governs its
         // additive image too).
-        contract_gate(&runtime_ref, &manifest_text, &asset)?;
+        contract_gate(
+            &runtime_ref,
+            &manifest_text,
+            &asset,
+            engine,
+            &pref.version,
+            &pref.tebako,
+            platform,
+        )?;
         let (image_sha, _) = expected_checksum(
             &base,
             local,
@@ -1179,13 +1307,37 @@ fn download_runtime(
             tmp_dir.join("origin"),
             format!("runtime_ref={runtime_ref}\nurl={exe_url}\nsha256={actual}\n"),
         );
-        Ok((actual, has_image))
+        Ok(StageOutcome::Installed {
+            has_image,
+            asset,
+            image_asset,
+        })
     });
 
     match result {
-        Ok((_, has_image)) => {
+        Ok(StageOutcome::Raced { asset, image_asset }) => {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            lock_release(lock);
+            Ok(CachedRuntime {
+                engine: engine.to_string(),
+                lang_version: pref.version.clone(),
+                tebako_version: pref.tebako.clone(),
+                exe: entry_dir.join(&asset),
+                image: entry_dir
+                    .join(&image_asset)
+                    .is_file()
+                    .then(|| entry_dir.join(&image_asset)),
+                abi: entry_abi(&entry_dir, &asset),
+                dir: entry_dir,
+            })
+        }
+        Ok(StageOutcome::Installed {
+            has_image,
+            asset,
+            image_asset,
+        }) => {
             if file_exists(&entry_dir) {
-                cleanup_tmp_entry(&tmp_dir, &asset);
+                let _ = std::fs::remove_dir_all(&tmp_dir);
                 lock_release(lock);
                 return fail(
                     EX_TEBAKO_IO,
@@ -1196,7 +1348,7 @@ fn download_runtime(
                 );
             }
             if let Err(e) = std::fs::rename(&tmp_dir, &entry_dir) {
-                cleanup_tmp_entry(&tmp_dir, &asset);
+                let _ = std::fs::remove_dir_all(&tmp_dir);
                 lock_release(lock);
                 return fail(
                     EX_TEBAKO_IO,
@@ -1212,14 +1364,14 @@ fn download_runtime(
                 engine: engine.to_string(),
                 lang_version: pref.version.clone(),
                 tebako_version: pref.tebako.clone(),
-                exe: exe_path,
+                exe: entry_dir.join(&asset),
                 image: has_image.then(|| entry_dir.join(&image_asset)),
                 abi: entry_abi(&entry_dir, &asset),
                 dir: entry_dir,
             })
         }
         Err(e) => {
-            cleanup_tmp_entry(&tmp_dir, &asset);
+            let _ = std::fs::remove_dir_all(&tmp_dir);
             lock_release(lock);
             Err(e)
         }

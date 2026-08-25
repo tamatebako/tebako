@@ -24,6 +24,20 @@ machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL
 - `manifest.json` — machine index; per-asset entries plus the additive
   image-era key `image: {filename, sha256, size_bytes}` and the additive
   `contract_version` key (bootstrap↔runtime contract, spec 06 §6).
+- **The entry's `filename` is the ONLY authoritative asset spelling**
+  (spec 00 §10 SSOT; tebako#456). A consumer matches the entry by the
+  identity triple (`tebako_version`, `<lang>_version`, `platform`) —
+  never by a synthesized name — and flows `filename` /
+  `image.filename` / `dll.filename`+`install_as` verbatim into the
+  download URL, the cache layout, and the pre-download contract gate.
+  The `tebako-runtime-<ver>-<lv>-<triplet>[.exe]` grammar is the
+  factory's to declare, not the consumer's to derive (the factory
+  publishes the windows exe SUFFIX-LESS). When no entry matches the
+  identity triple (a pre-identity index), the synthesized spelling
+  remains the fallback for the SHA256SUMS-only era, and the
+  missing-entry refusal names the identity triple — the mis-lookup is
+  diagnosed as what it is, never as a contract refusal of a
+  hand-invented name.
 - `SHA256SUMS.txt` — line-index fallback (`<sha>  <file>`), carries the
   `<asset>.tfs` lines in the image era.
 - Base URL:
@@ -47,6 +61,13 @@ shims/                                        # spec 07
 config.yaml                                   # spec 07 (YAML — never JSON)
 keys/                                         # press-local signing keys (spec 09)
 ```
+
+The interpreter/image file names in a cache entry keep the index entry's
+`filename` / `image.filename` spellings verbatim (§2 — on windows the exe
+is suffix-less; the loader execs by full path and CreateProcess needs no
+`.exe`). The `[.exe]` diagram notation marks the synthesized fallback
+spelling, used only when no index entry is available (fat-payload
+installs, pre-identity manifests).
 
 ## 4. Install and trust rules (locked)
 
