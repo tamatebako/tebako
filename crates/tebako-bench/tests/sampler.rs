@@ -1,11 +1,14 @@
 //! Golden tests for the spec 27 §4 sampler: the measured child is the
 //! crate's own `tebako-bench-child` helper (one identical child on every
 //! triplet — no platform `time`/`sleep` flavor divergence). Assertions:
-//! wall/cpu/rss nonzero, ordered (a busy child burns more CPU than a
-//! sleeping one), unit-consistent (`peak_rss_bytes` is BYTES everywhere —
-//! a KiB-confused Linux value fails the floors below by three orders of
-//! magnitude), the timeout kill records 137, and the child's cwd/env/log
-//! plumbing works (the run engine's expectation checks ride on it).
+//! wall/rss nonzero, cpu nonzero on POSIX (windows charges CPU in
+//! timer-tick quanta — a sleeping child can legitimately read exactly 0
+//! there; the busy child carries the attribution claim on every
+//! platform), ordered (a busy child burns more CPU than a sleeping one),
+//! unit-consistent (`peak_rss_bytes` is BYTES everywhere — a KiB-confused
+//! Linux value fails the floors below by three orders of magnitude), the
+//! timeout kill records 137, and the child's cwd/env/log plumbing works
+//! (the run engine's expectation checks ride on it).
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -64,6 +67,14 @@ fn sleep_child_measures_wall_cpu_rss() {
         sample.wall_s
     );
     let cpu = sample.cpu_user_s + sample.cpu_sys_s;
+    // Windows charges process CPU in timer-tick quanta: a sleeping child
+    // whose whole on-core life fits between ticks legitimately reports
+    // exactly 0 (observed on windows-latest, run 32884882108 —
+    // GetProcessTimes returned 0/0 with the 100-ns→s conversion verified
+    // correct in sys/windows.rs). The attribution-nonzero claim is carried
+    // by the BUSY child below, whose 1500ms spin cannot round to zero on
+    // any platform.
+    #[cfg(not(windows))]
     assert!(cpu > 0.0, "cpu must be attributed, got 0");
     assert!(
         cpu < sample.wall_s,
