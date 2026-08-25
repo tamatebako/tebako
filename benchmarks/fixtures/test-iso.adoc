@@ -1,0 +1,6 @@
+= Document title
+Author
+:docfile: test-iso.adoc
+:nodoc:
+:novalid:
+:no-isobib:

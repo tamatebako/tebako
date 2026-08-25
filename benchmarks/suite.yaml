@@ -1,0 +1,67 @@
+# Benchmark suite — metanorma compile: v2 tebako vs v1 packed-mn (spec 27 §2).
+# Authored SSOT for WHAT runs; the triplet → runner/asset mapping lives in
+# platforms.yaml. Validate with: tebako-bench validate --kind suite benchmarks/suite.yaml
+schema_version: 1
+name: metanorma-v1-vs-v2
+
+workloads:
+  # Small: the feedstock's CI-proven six-line ISO doc (public fonts only —
+  # vendored byte-identical from metanorma-feedstock fixtures/test-iso.adoc
+  # @ 79bddb4a6507ca4814ce7b25c2a81bf7586e51bc).
+  - id: compile-small-iso
+    source: { kind: vendored, path: benchmarks/fixtures/test-iso.adoc }
+    argv: ["compile", "{doc}", "--type", "iso", "--agree-to-terms"]
+    expect: { exit: 0, files: ["test-iso.xml"] }
+    timeout_s: 600
+
+  # Medium: the ISO 17301 rice document from mn-samples-iso (public fonts,
+  # so CI needs no private fontist-formulas access — decision 4). Pinned to
+  # the commit whose tree the harness fetches as an in-process HTTPS archive.
+  - id: compile-medium-rice
+    source:
+      kind: git
+      url: https://github.com/metanorma/mn-samples-iso
+      ref: eeec963ac6c58db6aeb194c758517f56fa66b845 # main @ 2026-08-11
+      path: sources/international-standard/rice-2016/document-en.adoc
+    argv: ["compile", "{doc}", "--agree-to-terms"]
+    expect: { exit: 0, files: ["document-en.xml"] }
+    timeout_s: 900
+
+  # Opt-in: the OIML r060 part-1 document — needs Futura PT from the PRIVATE
+  # fontist-formulas repo. Skipped unless the run opts in (spec 27 §2); never
+  # a gap row when skipped, because nothing was asked.
+  - id: compile-medium-oiml-r060
+    opt_in: true
+    source:
+      kind: git
+      url: https://github.com/metanorma/mn-samples-oiml
+      ref: ba74c74390d0ac22f9a89e4b4d448680a2d92122 # main @ 2026-07-29
+      path: sources/r060/1/document.adoc
+    argv: ["compile", "{doc}", "--agree-to-terms"]
+    expect: { exit: 0, files: ["document.xml"] }
+    timeout_s: 900
+
+targets:
+  # Old world: the packed-mn release executable (per-triplet asset from
+  # platforms.yaml). Frozen at metanorma-cli 1.14.4 — the version skew
+  # against the v2 payload (1.16.9) is accepted and reported (spec 27 §1).
+  - id: v1-packed-mn
+    kind: v1-exe
+
+  # New world, primary form: managed install + shim dispatch, warm store.
+  - id: v2-shim
+    kind: v2-managed
+    payload: "metanorma@1.16.9"
+    registries: ["tfs:github:tebako-packages/metanorma"]
+
+  # New world, one-file contract: a fat tpkg carrying the payload image +
+  # the runtime slot. Built in-leg from sha256-verified published artifacts;
+  # dwarfs-format images until the limnifs writer can carry the tree
+  # (spec 27 §9 spike b).
+  - id: v2-fat
+    kind: v2-press
+    payload: "metanorma@1.16.9"
+    fat: true
+    registries: ["tfs:github:tebako-packages/metanorma"]
+
+run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

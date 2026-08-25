@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tebako.org/schemas/tebako-bench-result-v1.schema.json",
+  "title": "tebako-bench result v1",
+  "description": "One benchmark leg's result document (spec 27 §6): runner metadata + resolved versions + per-run records + per-(workload × target × mode) statistics. Machine-written by `tebako-bench run`, machine-merged by `tebako-bench report`. This schema is the STRUCTURAL contract; the crate's serde model is the same shape (MECE cross-check in unit tests). Unknown keys are tolerated at every level for forward compatibility; schema_version pins the version.",
+  "type": "object",
+  "required": ["schema_version", "suite", "triplet", "runner", "versions", "runs", "stats"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "suite": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The suite document's `name` — the report merges only same-suite results."
+    },
+    "triplet": {
+      "enum": ["linux-gnu-x86_64", "linux-gnu-arm64", "linux-musl-x86_64", "linux-musl-arm64", "macos-arm64", "macos-x86_64", "windows-ucrt64"],
+      "description": "The release workflow's platform vocabulary — a result row joins against a release row without a translation table."
+    },
+    "runner": {
+      "type": "object",
+      "required": ["runs_on", "arch", "cpus", "ram_bytes"],
+      "properties": {
+        "runs_on": { "type": "string", "minLength": 1, "description": "The CI runner label (e.g. ubuntu-24.04, macos-14, windows-latest)." },
+        "arch": { "type": "string", "minLength": 1 },
+        "cpus": { "type": "integer", "minimum": 1 },
+        "ram_bytes": { "type": "integer", "minimum": 1 }
+      },
+      "description": "Mandatory environment metadata — numbers without their environment are not numbers."
+    },
+    "versions": {
+      "type": "object",
+      "properties": {
+        "tebako": { "type": "string", "minLength": 1 },
+        "runtime": { "type": "string", "minLength": 1, "description": "The RESOLVED runtime (e.g. 0.16.9-3.3.12), never the requested line." },
+        "payload": { "type": "string", "minLength": 1, "description": "The resolved payload release (e.g. 1.16.9-3)." },
+        "packed_mn": { "type": "string", "minLength": 1, "description": "e.g. \"v1.14.4 (metanorma-cli 1.14.4)\" — the version-skew record." },
+        "image_format": { "enum": ["dwarfs", "limnifs"], "description": "The v2 arms' image backend; numbers across formats never mix in one statistic." }
+      },
+      "description": "What actually ran. Fields may be absent when no arm of that world ran on the triplet (all-gap results stay honest)."
+    },
+    "runs": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/run" },
+      "description": "One record per attempted run AND one per named gap. Gaps are explicit data — silent omission is a schema violation (invariant 9)."
+    },
+    "stats": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/stats" },
+      "description": "Per (workload × target × mode) statistics over status \"ok\" runs only. Absent for arms with zero ok runs."
+    }
+  },
+  "$defs": {
+    "run": {
+      "type": "object",
+      "required": ["workload", "target", "status"],
+      "properties": {
+        "workload": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "target": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "mode": { "enum": ["warm", "cold"] },
+        "iteration": { "type": "integer", "minimum": 0 },
+        "status": {
+          "enum": ["ok", "failed", "timeout", "unavailable"],
+          "description": "ok: expectation met, all metrics present. failed: ran, expectation missed — never enters statistics. timeout: killed at the workload's timeout_s. unavailable: the named-gap record — the arm was never attempted on this triplet; reason is mandatory."
+        },
+        "wall_s": { "type": "number", "minimum": 0, "description": "Instant-elapsed seconds around spawn→wait." },
+        "cpu_user_s": { "type": "number", "minimum": 0, "description": "POSIX: getrusage(RUSAGE_CHILDREN) delta; Windows: GetProcessTimes user. spec 27 §4." },
+        "cpu_sys_s": { "type": "number", "minimum": 0, "description": "Same span, system CPU." },
+        "peak_rss_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Bytes, ALWAYS — the sampler normalizes ru_maxrss's KiB (Linux/musl) vs bytes (macOS) at record time. Windows: PeakWorkingSetSize."
+        },
+        "exit": { "type": "integer", "description": "The child's process exit status." },
+        "error": { "type": "string", "minLength": 1, "description": "failed runs: names the missed expectation." },
+        "reason": { "type": "string", "minLength": 1, "description": "unavailable rows: the human-readable gap reason." }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "ok" } }, "required": ["status"] },
+          "then": { "required": ["mode", "iteration", "wall_s", "cpu_user_s", "cpu_sys_s", "peak_rss_bytes", "exit"] }
+        },
+        {
+          "if": { "properties": { "status": { "const": "failed" } }, "required": ["status"] },
+          "then": { "required": ["mode", "iteration", "exit", "error"] }
+        },
+        {
+          "if": { "properties": { "status": { "const": "timeout" } }, "required": ["status"] },
+          "then": { "required": ["mode", "iteration", "wall_s"] }
+        },
+        {
+          "if": { "properties": { "status": { "const": "unavailable" } }, "required": ["status"] },
+          "then": { "required": ["reason"] }
+        }
+      ]
+    },
+    "stats": {
+      "type": "object",
+      "required": ["workload", "target", "mode", "n", "median_wall_s", "min_wall_s", "max_wall_s", "mean_wall_s", "median_cpu_s", "median_peak_rss_bytes"],
+      "properties": {
+        "workload": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "target": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "mode": { "enum": ["warm", "cold"] },
+        "n": { "type": "integer", "minimum": 1, "description": "Count of status \"ok\" runs in this cell." },
+        "median_wall_s": { "type": "number", "minimum": 0, "description": "The headline figure." },
+        "min_wall_s": { "type": "number", "minimum": 0, "description": "The cross-noise-comparable figure on shared runners (noise inflates, never deflates)." },
+        "max_wall_s": { "type": "number", "minimum": 0 },
+        "stdev_wall_s": { "type": "number", "minimum": 0, "description": "Sample standard deviation (n−1); absent when n < 2." },
+        "mean_wall_s": { "type": "number", "minimum": 0 },
+        "median_cpu_s": { "type": "number", "minimum": 0, "description": "Median of (cpu_user_s + cpu_sys_s)." },
+        "median_peak_rss_bytes": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

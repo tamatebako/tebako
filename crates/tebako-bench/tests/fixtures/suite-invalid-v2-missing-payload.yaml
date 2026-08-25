@@ -1,0 +1,16 @@
+# INVALID: a v2-managed target without payload + registries — the arm has
+# nothing to resolve (spec 27 §2's target contract).
+schema_version: 1
+name: golden-fixture-suite
+workloads:
+  - id: compile-small-iso
+    source: { kind: vendored, path: benchmarks/fixtures/test-iso.adoc }
+    argv: ["compile", "{doc}", "--type", "iso", "--agree-to-terms"]
+    expect: { exit: 0, files: ["test-iso.xml"] }
+    timeout_s: 600
+targets:
+  - id: v1-packed-mn
+    kind: v1-exe
+  - id: v2-shim
+    kind: v2-managed
+run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

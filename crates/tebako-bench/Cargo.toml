@@ -1,0 +1,31 @@
+[package]
+name = "tebako-bench"
+description = "The spec 27 benchmark harness (v2 tebako vs v1 packed-mn): suite/platform/result models, schema validate, run + report. CI tooling — never shipped, never in release.yml's binary set"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "benchmark", "ci", "metrics"]
+categories = ["development-tools"]
+
+[dependencies]
+# Pure Rust ONLY — no vcpkg, no tfs/dwarfs/sqfs/rnp: the crate rides the
+# pure-Rust CI legs (incl. test-windows) and must build where the product
+# stack cannot. Authored configs are YAML (serde_yml, the workspace
+# manifest convention); result documents are machine-written JSON.
+serde = { version = "1", features = ["derive"] }
+serde_yml = "0.0.12"
+serde_json = "1"
+# SHA-256 for artifact verification (the acquisition slice); spec 00's
+# trust-anchor rule applies to every downloaded byte.
+sha2 = "0.10"
+# Subcommand dispatch. NOTE: the product CLIs hand-roll their parsers; clap
+# is confined to this never-shipped crate deliberately.
+clap = { version = "4", features = ["derive"] }
+# `validate`'s schema gate (the same jsonschema the tpkg cross-checks use).
+jsonschema = "0.30"
+
+[dev-dependencies]
+tempfile = "3"

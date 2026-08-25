@@ -283,11 +283,11 @@ jobs:
 
       - name: cargo test (pure-Rust crates)
         working-directory: tebako-rs
-        run: cargo test -p tebako-bootstrap -p tebako-shim -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg
+        run: cargo test -p tebako-bootstrap -p tebako-shim -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg -p tebako-bench
 
       - name: clippy (pure-Rust crates)
         working-directory: tebako-rs
-        run: cargo clippy -p tebako-bootstrap -p tebako-shim -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg --all-targets -- -D warnings
+        run: cargo clippy -p tebako-bootstrap -p tebako-shim -p tebako-resolve -p tebako-http -p tebako-term -p tebako-json -p tpkg -p tebako-bench --all-targets -- -D warnings
 
   # The bootstrap on the target the release binaries actually ship on
   # (x86_64-pc-windows-gnu, ucrt64 — TODO.prepublish/03). ring does not

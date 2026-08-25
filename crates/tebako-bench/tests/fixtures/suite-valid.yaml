@@ -1,0 +1,31 @@
+schema_version: 1
+name: golden-fixture-suite
+workloads:
+  - id: compile-small-iso
+    source: { kind: vendored, path: benchmarks/fixtures/test-iso.adoc }
+    argv: ["compile", "{doc}", "--type", "iso", "--agree-to-terms"]
+    expect: { exit: 0, files: ["test-iso.xml"] }
+    timeout_s: 600
+  - id: compile-medium-rice
+    opt_in: true
+    source:
+      kind: git
+      url: https://github.com/metanorma/mn-samples-iso
+      ref: eeec963ac6c58db6aeb194c758517f56fa66b845
+      path: sources/international-standard/rice-2016/document-en.adoc
+    argv: ["compile", "{doc}", "--agree-to-terms"]
+    expect: { exit: 0, files: ["document-en.xml"] }
+    timeout_s: 900
+targets:
+  - id: v1-packed-mn
+    kind: v1-exe
+  - id: v2-shim
+    kind: v2-managed
+    payload: "metanorma@1.16.9"
+    registries: ["tfs:github:tebako-packages/metanorma"]
+  - id: v2-fat
+    kind: v2-press
+    payload: "metanorma@1.16.9"
+    fat: true
+    registries: ["tfs:github:tebako-packages/metanorma"]
+run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

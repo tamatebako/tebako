@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "suite": "golden-fixture-suite",
+  "triplet": "linux-musl-arm64",
+  "runner": { "runs_on": "ubuntu-24.04-arm", "arch": "aarch64", "cpus": 4, "ram_bytes": 8388608000 },
+  "versions": { "tebako": "0.2.4" },
+  "runs": [
+    {
+      "workload": "compile-small-iso", "target": "v1-packed-mn",
+      "status": "unavailable"
+    }
+  ],
+  "stats": []
+}

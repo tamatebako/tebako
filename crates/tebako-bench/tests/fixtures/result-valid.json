@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "suite": "golden-fixture-suite",
+  "triplet": "macos-arm64",
+  "runner": { "runs_on": "macos-14", "arch": "arm64", "cpus": 8, "ram_bytes": 16777216000 },
+  "versions": {
+    "tebako": "0.2.4",
+    "runtime": "0.16.9-3.3.12",
+    "payload": "1.16.9-3",
+    "packed_mn": "v1.14.4 (metanorma-cli 1.14.4)",
+    "image_format": "dwarfs"
+  },
+  "runs": [
+    {
+      "workload": "compile-small-iso", "target": "v2-shim", "mode": "warm",
+      "iteration": 3, "status": "ok",
+      "wall_s": 12.34, "cpu_user_s": 11.8, "cpu_sys_s": 0.4,
+      "peak_rss_bytes": 123456789, "exit": 0
+    },
+    {
+      "workload": "compile-small-iso", "target": "v1-packed-mn", "mode": "cold",
+      "iteration": 0, "status": "ok",
+      "wall_s": 45.6, "cpu_user_s": 30.1, "cpu_sys_s": 2.2,
+      "peak_rss_bytes": 234567890, "exit": 0
+    },
+    {
+      "workload": "compile-small-iso", "target": "v2-fat", "mode": "warm",
+      "iteration": 0, "status": "failed", "exit": 1,
+      "error": "expect.files: test-iso.xml missing"
+    },
+    {
+      "workload": "compile-medium-rice", "target": "v1-packed-mn", "mode": "warm",
+      "iteration": 1, "status": "timeout", "wall_s": 900.0
+    },
+    {
+      "workload": "compile-small-iso", "target": "v2-shim",
+      "status": "unavailable",
+      "reason": "no published payload for this triplet (metanorma 1.16.9-3 ships 3 of 7)"
+    }
+  ],
+  "stats": [
+    {
+      "workload": "compile-small-iso", "target": "v2-shim", "mode": "warm", "n": 5,
+      "median_wall_s": 12.3, "min_wall_s": 11.9, "max_wall_s": 13.1,
+      "stdev_wall_s": 0.4, "mean_wall_s": 12.4,
+      "median_cpu_s": 12.1, "median_peak_rss_bytes": 123000000
+    },
+    {
+      "workload": "compile-small-iso", "target": "v1-packed-mn", "mode": "cold", "n": 2,
+      "median_wall_s": 44.0, "min_wall_s": 43.0, "max_wall_s": 45.0,
+      "stdev_wall_s": 1.0, "mean_wall_s": 44.0,
+      "median_cpu_s": 32.0, "median_peak_rss_bytes": 230000000
+    },
+    {
+      "workload": "compile-small-iso", "target": "v2-shim", "mode": "cold", "n": 1,
+      "median_wall_s": 50.0, "min_wall_s": 50.0, "max_wall_s": 50.0,
+      "mean_wall_s": 50.0,
+      "median_cpu_s": 33.0, "median_peak_rss_bytes": 231000000
+    }
+  ]
+}
