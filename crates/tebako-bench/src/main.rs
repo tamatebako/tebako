@@ -32,8 +32,8 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Execute the benchmark matrix for one triplet (planned: the sampler,
-    /// acquisition, and run-engine slices of the spec 27 plan).
+    /// Execute the benchmark matrix for one triplet (spec 27 §5–§7:
+    /// acquire, warmup → warm interleaved → cold-with-wipe, results.json).
     Run {
         /// The suite document (benchmarks/suite.yaml).
         #[arg(long)]
@@ -50,6 +50,13 @@ enum Command {
         /// Opt an opt-in workload in (repeatable; e.g. --opt-in compile-medium-oiml-r060).
         #[arg(long = "opt-in")]
         opt_in: Vec<String>,
+        /// Pin the tebako tools release (default: the latest release; the
+        /// resolved version is learned from the release's SHA256SUMS).
+        #[arg(long = "tebako-release")]
+        tebako_release: Option<String>,
+        /// Vendored source paths resolve against this root (the repo root).
+        #[arg(long = "repo-root", default_value = ".")]
+        repo_root: PathBuf,
     },
     /// Merge N triplet result files into a markdown report + dashboard JSON
     /// (planned: the report-renderer slice).
@@ -105,10 +112,38 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
                 Ok(exit::INVALID)
             }
         }
-        Command::Run { .. } => Err(BenchError::not_implemented(
-            "run",
-            "slices 3–5 (sampler, acquisition, run engine)",
-        )),
+        Command::Run {
+            suite,
+            platforms,
+            triplet,
+            out,
+            opt_in,
+            tebako_release,
+            repo_root,
+        } => {
+            let suite_text = std::fs::read_to_string(&suite).map_err(|e| {
+                BenchError::operational(format!("cannot read {}: {e}", suite.display()))
+            })?;
+            let suite = tebako_bench::SuiteFile::from_yaml(&suite_text).map_err(|e| {
+                BenchError::operational(format!("cannot parse {}: {e}", suite.display()))
+            })?;
+            let platforms_text = std::fs::read_to_string(&platforms).map_err(|e| {
+                BenchError::operational(format!("cannot read {}: {e}", platforms.display()))
+            })?;
+            let platforms =
+                tebako_bench::PlatformFile::from_yaml(&platforms_text).map_err(|e| {
+                    BenchError::operational(format!("cannot parse {}: {e}", platforms.display()))
+                })?;
+            tebako_bench::engine::run(&tebako_bench::engine::RunRequest {
+                suite,
+                platforms,
+                triplet,
+                out,
+                opt_in,
+                tebako_release,
+                repo_root,
+            })
+        }
         Command::Report { .. } => Err(BenchError::not_implemented(
             "report",
             "slice 6 (report renderer)",

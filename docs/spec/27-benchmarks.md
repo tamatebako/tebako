@@ -2,9 +2,9 @@
 
 Status: PLANNED (spec-first per spec 14; slice 0 spikes executed
 2026-08-25 — §9 records the evidence; the suite/platforms documents,
-schemas, and the `tebako-bench validate` surface land with this spec's
-implementation slice; the sampler, acquisition, run engine, report
-renderer, and workflow are later slices)
+schemas, the `tebako-bench validate` surface, the sampler, the
+acquisition slice, and the run engine have landed; the report renderer
+and workflow are later slices)
 Depends on: 00 (locked invariants), 02 (tpkg wire format), 05
 (resolution and cache), 14 (engineering process), 16 (distribution —
 slim/fat), 17 (runtime driver contract), 19 (bootstrap distribution),

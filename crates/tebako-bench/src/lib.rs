@@ -20,6 +20,7 @@
 //!   (including the not-implemented stubs).
 
 pub mod acquire;
+pub mod engine;
 pub mod error;
 pub mod platforms;
 pub mod result;
