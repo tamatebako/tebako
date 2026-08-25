@@ -27,5 +27,22 @@ clap = { version = "4", features = ["derive"] }
 # `validate`'s schema gate (the same jsonschema the tpkg cross-checks use).
 jsonschema = "0.30"
 
+# The sampler's POSIX backend (sys/posix.rs): wait4 rusage, killpg,
+# sysconf — FFI quarantined in that one module (workspace unsafe rule).
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# The sampler's Windows backend (sys/windows.rs): OpenProcess +
+# WaitForSingleObject polling, GetProcessTimes / K32GetProcessMemoryInfo,
+# the timeout job object, GlobalMemoryStatusEx.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_JobObjects",
+    "Win32_System_SystemInformation",
+] }
+
 [dev-dependencies]
 tempfile = "3"
