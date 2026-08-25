@@ -342,6 +342,47 @@ pub fn initialize() -> Result<(), String> {
     RESULT.get_or_init(init_inner).clone()
 }
 
+/// Build the mount for one `TEBAKO_TFS_MOUNTS` declaration. The slot form
+/// (`image:slot:mount`, spec 17 §2.1) resolves the slot's byte region
+/// against the file's tpkg trailer first, so a packaged payload mounts its
+/// region — never the whole package file (whose trailer the format sniff
+/// would reject). The established mount carries the slot identity so a
+/// re-export to a spawned child keeps the slot form.
+fn build_decl(d: &spec::MountDecl) -> Result<tfs::context::Mount, String> {
+    let mount_error = |e: i32| {
+        format!(
+            "TEBAKO_TFS_MOUNTS: cannot mount {} at {}: {}",
+            d.image,
+            d.mount,
+            errno_text(e)
+        )
+    };
+    let Some(slot) = d.slot else {
+        return tfs::mount::build_from_file(&d.image, &d.mount).map_err(mount_error);
+    };
+    let mut file = std::fs::File::open(&d.image)
+        .map_err(|e| mount_error(e.raw_os_error().unwrap_or(libc::EIO)))?;
+    match tpkg::resolve_slot_region(&mut file, slot).map_err(|e| {
+        format!(
+            "TEBAKO_TFS_MOUNTS: cannot mount slot {slot} of {} at {}: {e}",
+            d.image, d.mount
+        )
+    })? {
+        // Slot 0 on a bare image IS the whole file; the mount stays
+        // slot-less, so the re-exported form is the two-field spelling
+        // (spec 17 §2.1's emit rule).
+        tpkg::SlotRegion::Whole => {
+            tfs::mount::build_from_file(&d.image, &d.mount).map_err(mount_error)
+        }
+        tpkg::SlotRegion::Region { offset, len } => {
+            let mut mount = tfs::mount::build_from_file_at(&d.image, offset, len, &d.mount)
+                .map_err(mount_error)?;
+            mount.slot = Some(slot);
+            Ok(mount)
+        }
+    }
+}
+
 fn init_inner() -> Result<(), String> {
     // The trace bus (spec 25 §2): `TEBAKO_TRACE` arms the channel for ANY
     // tfs consumer — the preload delivery included; the driver is not the
@@ -360,14 +401,7 @@ fn init_inner() -> Result<(), String> {
         let decls =
             spec::parse_mounts(&mounts_spec).map_err(|e| format!("TEBAKO_TFS_MOUNTS: {e}"))?;
         for d in &decls {
-            let mount = tfs::mount::build_from_file(&d.image, &d.mount).map_err(|e| {
-                format!(
-                    "TEBAKO_TFS_MOUNTS: cannot mount {} at {}: {}",
-                    d.image,
-                    d.mount,
-                    errno_text(e)
-                )
-            })?;
+            let mount = build_decl(d)?;
             context()
                 .write()
                 .unwrap()

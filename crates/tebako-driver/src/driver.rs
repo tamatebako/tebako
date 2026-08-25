@@ -669,10 +669,14 @@ fn mount_image(
                 }
                 ResolvedRegion::Region(offset, size) => {
                     let what = format!("failed to mount own slot {n} at '{}'", spec.mount);
-                    let mount = build_error(
+                    let mut mount = build_error(
                         tfs::mount::build_from_file_at(&display, offset, size, &spec.mount),
                         &what,
                     )?;
+                    // The slot identity rides the mount so a spawned
+                    // child's TEBAKO_TFS_MOUNTS re-mounts this region —
+                    // never the whole package (spec 17 §2.1's emit rule).
+                    mount.slot = Some(*n);
                     mount_at_point(
                         mount,
                         spec,
@@ -689,7 +693,7 @@ fn mount_image(
             let display = path.display().to_string();
             let resolved = resolve_image(path, *slot, &display, &spec.mount)?;
             let what = format!("failed to mount image '{display}' at '{}'", spec.mount);
-            let mount = match resolved.region {
+            let mut mount = match resolved.region {
                 ResolvedRegion::Whole => {
                     build_error(tfs::mount::build_from_file(&display, &spec.mount), &what)?
                 }
@@ -698,6 +702,11 @@ fn mount_image(
                     &what,
                 )?,
             };
+            // A slot-mounted package region carries its slot identity so
+            // the respawn env keeps the slot form (spec 17 §2.1).
+            if let (SlotRef::Slot(n), Some(_)) = (slot, &resolved.trailer) {
+                mount.slot = Some(*n);
+            }
             mount_at_point(
                 mount,
                 spec,

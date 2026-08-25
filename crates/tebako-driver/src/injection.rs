@@ -53,7 +53,7 @@ pub const PRELOAD_SHIM_VAR: &str = "TEBAKO_PRELOAD_SHIM";
 /// exclusion (spec 22 §2.1; spec 17 §2's handoff-env row).
 pub const RUNTIME_DLL_VAR: &str = "TEBAKO_RUNTIME_DLL";
 
-/// The mounts list the shim rebuilds the namespace from (spec 17 §2).
+/// The mounts list the shim rebuilds the namespace from (spec 17 §2.1).
 const MOUNTS_VAR: &str = "TEBAKO_TFS_MOUNTS";
 
 /// The platform's injection variable (ELF / macOS; none elsewhere).

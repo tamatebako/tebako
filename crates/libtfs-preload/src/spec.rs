@@ -32,6 +32,7 @@ mod tests {
         let _ = MountSpecError("x".to_string());
         let _ = MountDecl {
             image: "/a".to_string(),
+            slot: None,
             mount: "/t".to_string(),
         };
     }

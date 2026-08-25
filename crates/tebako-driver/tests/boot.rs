@@ -682,6 +682,36 @@ fn packaged_file_mounts_the_slot_region() {
 }
 
 #[test]
+fn a_slot_mounts_respawn_env_carries_the_slot_form() {
+    // spec 17 §2.1's emit rule (tebako#455): a mount established from a
+    // package slot serializes as image:slot:mount in TEBAKO_TFS_MOUNTS,
+    // so a spawned child re-mounts the region — never the whole package
+    // file (whose trailer the child's format sniff would hit).
+    let g = guard("pkg-slot-env");
+    let payload = write_payload_image(g.path());
+    package_in_place(&payload, tpkg::TPKG_FORMAT_ZIP);
+    let env = MapEnv::new();
+
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", payload.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    let mounts = context().read().unwrap().mounts_env().unwrap();
+    assert_eq!(
+        mounts.to_string_lossy(),
+        format!("{}:0:/", payload.display())
+    );
+}
+
+#[test]
 fn no_entry_starts_the_interpreter_with_its_own_args() {
     let g = guard("no-entry");
     let payload = write_payload_image(g.path());

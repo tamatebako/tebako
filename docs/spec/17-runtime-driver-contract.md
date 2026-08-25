@@ -103,7 +103,7 @@ exact contract (roadmap 22's "add a language" playbook).
 | var | meaning |
 |-----|---------|
 | `TEBAKO_RUNTIME_IMAGE` | image-era: absolute path of the runtime's own `.tfs` (driver mounts it instead of any embedded image) |
-| `TEBAKO_TFS_MOUNTS` | `image:mount,…` — mounts to establish (preload-shim path) |
+| `TEBAKO_TFS_MOUNTS` | `image[:slot]:mount,…` — mounts to establish (preload-shim path); grammar in §2.1 |
 | `TEBAKO_JAIL` | jail policy env form (spec 08) — the driver/preload enforces it |
 | `TEBAKO_JAIL_SOURCE` | audit label of the policy's origin (`manifest` / `user` / `manifest+user`, or the exporting surface) — journaled with every denial (spec 08 §2) |
 | `TEBAKO_JAIL_JOURNAL` | explicit audit-journal path (default: `$TEBAKO_HOME/journal.log`) |
@@ -114,6 +114,44 @@ exact contract (roadmap 22's "add a language" playbook).
 | `TEBAKO_MOUNT_<SLUG>` | spec 22 §6 + v2-1/20: per co-mounted payload image, its physical mount point (drive-qualified on windows). SLUG is the mount's mechanical uppercase form: `/tools/inkscape` → `TEBAKO_MOUNT_TOOLS_INKSCAPE`; two mounts slugging alike is a named boot error (65). The root mount `/` exports nothing — `TEBAKO_MOUNT_ROOT` stays the mount-root override (§1) |
 | `PATH` | spec 22 §3.2: led by the launcher dir (`<exec-cache-leaf>/wrap-bin/`) when the env image delivers the preload shim — every declared dependency executable materialized as a self-injecting wrapper (unix; the SIP-strip answer) — then every co-mounted DEPENDENCY image's declared bin dirs (the dirname of each `provides.entrypoints[].path` / `provides.executables[].path` in the image's own `/__tpkg__/manifest.yaml`, joined under its mount, in triple order). The first triple (the app payload) never contributes; an image without a readable manifest declares no bins; a corrupt manifest or an unmaterializable declared executable is a named 65. On windows the boot-materialized library-alias directories complete the same lead (spec 22 §2.1's bare-name rule) — every co-mounted image contributing, the env image and the app payload included; the lead order is locked: launcher dir → dependency bin dirs → alias dirs → the inherited `PATH` |
 | `SSL_CERT_FILE` | spec 22 §4 (the cert convention's env surface — driver-owned, the driver being the single owner of the materialized host path): when a mounted image declares a `materialize:` entry ending `ssl/cert.pem`, the driver exports the cert's materialized HOST path at boot, in both boot shapes. An unset/empty value is set; a value lexically under the effective runtime mount root (a stale in-VFS spelling — `A:/t/ssl/cert.pem` — resolved by the patched IO but unreadable by libcrypto's native CRT IO) is rewritten; a real host path is the user's own configuration and always wins. No declared cert → nothing is set (the POSIX no-op) |
+
+### 2.1 The `TEBAKO_TFS_MOUNTS` grammar (the preload re-mount wire form)
+
+```
+mounts     = entry *( "," entry )
+entry      = image-ref ":" mount
+image-ref  = image-path [ ":" slot ]
+image-path = absolute host path (may itself contain colons)
+slot       = 1*DIGIT / "-"
+mount      = "/" *path-char              ; a VFS-absolute mount point
+```
+
+- **Parse from the right.** Per entry: the mount is the field after the
+  last `:` (it MUST start with `/`); the slot is recognized ONLY when the
+  remainder's rightmost field is all digits or exactly `-` — then the
+  image path is what is left. Anything else after a colon stays part of
+  the image path: host paths may contain colons, and the grammar never
+  rejects them.
+- **Slot meaning.** Absent ≡ `-` ≡ the whole file (a bare image — the
+  pre-slot behavior, unchanged). A numeric slot names a package slot: the
+  consumer resolves slot → byte region against the file's tpkg trailer
+  (spec 04). On a trailer-less file a numeric slot is a named error; a
+  slot out of range is a named error; a runtime-role slot
+  (`format_id == 4`) is never mounted — a named error.
+- **Windows.** Right-parsing keeps drive colons intact:
+  `C:\pkg.tebako:0:/__tfs__` is package `C:\pkg.tebako`, slot 0, mount
+  `/__tfs__`; `C:\image.tfs:/data` is the bare image `C:\image.tfs`,
+  whole file, mount `/data`.
+- **No `<self>`.** The CLI triple form's `<self>` token (§1) is NOT
+  meaningful in the env form — the consuming process is a different
+  executable from the one that was stitched. The emit side always spells
+  the package's absolute host path.
+- **Emit rule.** A mount established from a whole bare image serializes
+  as `image:mount`; a mount established from a package slot serializes as
+  `image:slot:mount`. Consumers re-exporting their mount table to a
+  spawned child MUST preserve the slot form, so the child mounts the same
+  region — never the whole package file (mounting a packaged file whole
+  sniffs the trailer and fails; spec 22's spawn re-entry is the victim).
 
 ## 3. File IO semantics
 

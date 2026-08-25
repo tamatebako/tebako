@@ -11,9 +11,10 @@
 //!
 //! On init (library constructor, before the program's `main`):
 //!
-//! 1. `TEBAKO_TFS_MOUNTS=image:mount,image:mount,…` — mount each image
-//!    through the engine (see [`spec`] for the grammar). Absent/empty →
-//!    the shim is fully inert.
+//! 1. `TEBAKO_TFS_MOUNTS=image[:slot]:mount,image[:slot]:mount,…` — mount
+//!    each image through the engine (see [`spec`] for the grammar; the
+//!    slot form mounts a package slot's region, spec 17 §2.1).
+//!    Absent/empty → the shim is fully inert.
 //! 2. `TEBAKO_JAIL=<spec 08 env form>` — install the `host_policy`
 //!    (`open`/`deny`, docker-`-v` grants, `@` argument files; see
 //!    [`tfs::policy::JailSpec`]). Installed AFTER the mounts — the mount

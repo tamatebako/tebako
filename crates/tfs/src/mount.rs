@@ -110,6 +110,7 @@ fn make_mount(
         mount_point: mount_point.to_string(),
         mount_point_c: cstring(mount_point),
         archive_path: archive_path.map(cstring),
+        slot: None,
         backend,
         mode,
     }

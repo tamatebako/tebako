@@ -26,6 +26,10 @@ crate-type = ["cdylib", "rlib"]
 # mount a payload payload-side (ENOTSUP) is a shim that cannot do its
 # job. squashfs stays opt-in via the tfs crate's own features.
 tfs = { version = "0.2.1", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+# The slot form of TEBAKO_TFS_MOUNTS (spec 17 §2.1) resolves slot → byte
+# region against the tpkg trailer — the wire format's owner crate (pure
+# safe Rust, no engine dependency).
+tpkg = { version = "0.2.5", path = "../tpkg" }
 libc = "0.2"
 
 [dev-dependencies]
