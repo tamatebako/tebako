@@ -1,0 +1,22 @@
+# INVALID: the git source's ref floats ("main" is not a pinned 40-hex
+# commit) — reproducibility is the point of the pin (spec 27 §2).
+schema_version: 1
+name: golden-fixture-suite
+workloads:
+  - id: compile-medium-rice
+    source:
+      kind: git
+      url: https://github.com/metanorma/mn-samples-iso
+      ref: main
+      path: sources/international-standard/rice-2016/document-en.adoc
+    argv: ["compile", "{doc}", "--agree-to-terms"]
+    expect: { exit: 0, files: ["document-en.xml"] }
+    timeout_s: 900
+targets:
+  - id: v1-packed-mn
+    kind: v1-exe
+  - id: v2-shim
+    kind: v2-managed
+    payload: "metanorma@1.16.9"
+    registries: ["tfs:github:tebako-packages/metanorma"]
+run_policy: { warmup: 1, repetitions: 5, cold_repetitions: 2, interleave: true }

@@ -57,6 +57,7 @@ spec 02 §6).
 24. [24 — Declarative overlays](24-declarative-overlays.md) — write areas and key bindings: the gated COW write gate, `TEBAKO_OVERLAYS` / `TEBAKO_DECRYPT`, the record-mode fold-in, exit 68 (PARTIAL)
 25. [25 — Trace observability](25-trace-observability.md) — the interception bus, `tebako trace run|explain|cover|import`, the escapes correlation (PARTIAL — all four phases' code shipped: the bus + `trace run` (T1), the spawn/resolve emission (T2), `trace cover` + the procmon converter `trace import` (T3), `trace explain` (T4); the remainder is the §8 dogfood legs, not code)
 26. [26 — Payload checks](26-payload-checks.md) — the in-image self-validation contract: the `checks:` manifest block, `tebako check` at press/install/discovery moments, SKIP discipline, exit 79 (PARTIAL — the block + the engine shipped; the §3 press/install gate wiring remains)
+27. [27 — Benchmarks](27-benchmarks.md) — the tebako-bench harness contract: the three arms (v1-exe / v2-press / v2-managed), suite/platforms/result documents + versioned schemas, the in-process sampler semantics (RUSAGE_CHILDREN discipline, ru_maxrss normalization), warm/cold modes and the cache-wipe set, named-gap records, statistical rules; CI tooling, never shipped (PLANNED)
 
 ## Locked invariants (all specs subordinate to these)
 

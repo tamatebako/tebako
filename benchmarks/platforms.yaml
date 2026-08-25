@@ -1,0 +1,47 @@
+# Benchmark platform matrix (spec 27 §3) — the workflow's matrix is generated
+# FROM this document. Triplet spellings are the release workflow's platform
+# vocabulary. v1_asset: null and/or v2_payload: false are named gaps
+# (explicit {"status": "unavailable", "reason": …} rows), never silent skips.
+schema_version: 1
+
+# Old world: the packed-mn release the v1-exe arm downloads (+ .sha256.txt
+# sidecar, bare-hash format — spec 27 §9 spike c). packed-mn tags track
+# metanorma-cli: this tag IS the v1 arm's metanorma version (1.14.4).
+packed_mn: { repo: metanorma/packed-mn, tag: v1.14.4 }
+
+# v2_payload: whether the metanorma payload (suite targets' metanorma@1.16.9)
+# is published for the triplet. Payload 1.16.9-3 ships 3 of 7 triplets
+# (2026-08-24 release); the runtime catalog covers all 7.
+triplets:
+  linux-gnu-x86_64:
+    runner: ubuntu-24.04
+    v1_asset: metanorma-linux-x86_64.tgz
+    v2_payload: true
+  linux-gnu-arm64:
+    runner: ubuntu-24.04-arm
+    v1_asset: metanorma-linux-aarch64.tgz
+    v2_payload: false # no published payload — v2 arms are named gaps here
+  linux-musl-x86_64:
+    runner: ubuntu-24.04
+    container: alpine:3.21
+    v1_asset: metanorma-linux-musl-x86_64.tgz
+    v2_payload: false
+  linux-musl-arm64:
+    runner: ubuntu-24.04-arm
+    container: alpine:3.21
+    v1_asset: null # packed-mn never shipped musl-arm64 — gap both sides
+    v2_payload: false
+  macos-arm64:
+    runner: macos-14
+    v1_asset: metanorma-darwin-arm64.tgz # NOTE: AMFI-killed on a local macOS
+      # 14.1.1 machine (spec 27 §9 spike c); the leg records the outcome.
+    v2_payload: true
+  macos-x86_64:
+    runner: macos-15-intel
+    v1_asset: null # packed-mn dropped darwin-x86_64 after ~v1.13 — gap both sides
+    v2_payload: false
+  windows-ucrt64:
+    runner: windows-latest
+    v1_asset: metanorma-windows-x86_64.exe
+    v2_payload: true
+    v1_note: aibika-packed # old world on Windows is aibika, not tebako-v1

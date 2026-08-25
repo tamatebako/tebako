@@ -1,0 +1,155 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tebako.org/schemas/tebako-bench-suite-v1.schema.json",
+  "title": "tebako-bench suite v1",
+  "description": "The benchmark suite document (spec 27 §2): workloads + targets + run_policy. This schema is the STRUCTURAL contract; the tebako-bench crate's serde model is the same shape (kept MECE by the unit-test cross-check). Semantic rules beyond shape — {doc} arity, git ref pinning to a 40-hex commit (pattern-checked here), registries being spec-04 references — are the model's/run engine's. Unknown keys are tolerated at every level for forward compatibility; schema_version pins the version.",
+  "type": "object",
+  "required": ["schema_version", "name", "workloads", "targets", "run_policy"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "workloads": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/workload" },
+      "description": "The documents to compile. Order is not semantic; ids are unique (checked semantically)."
+    },
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/target" },
+      "description": "The arms under test (spec 27 §1). A full suite declares one target of each kind unless an arm is genuinely meaningless."
+    },
+    "run_policy": { "$ref": "#/$defs/runPolicy" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "description": "DNS-label-ish identifier, used as a key in result records."
+    },
+    "workload": {
+      "type": "object",
+      "required": ["id", "source", "argv", "expect", "timeout_s"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "opt_in": {
+          "type": "boolean",
+          "default": false,
+          "description": "When true the workload runs only on explicit opt-in (e.g. needs credentials — the OIML r060 private-fonts case). A skipped opt-in workload emits NO result rows."
+        },
+        "source": { "$ref": "#/$defs/source" },
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The argument vector passed to the target's entrypoint. '{doc}' is the ONE substitution — the workload document's path in the run scratch; every other token is literal."
+        },
+        "expect": { "$ref": "#/$defs/expect" },
+        "timeout_s": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Per-run timeout in seconds. Expiry kills the child tree and records status \"timeout\" — a benchmark may be slow, never hung."
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": { "enum": ["vendored", "git"] },
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "vendored: file path relative to the repo root. git: the document's path inside the pinned tree."
+        },
+        "url": { "type": "string", "minLength": 1 },
+        "ref": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$",
+          "description": "The pinned 40-hex commit. Floating refs (branches, tags) are invalid: reproducibility is the point of the pin. Fetched as the host's in-process HTTPS archive — never a git shell-out."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "git" } }, "required": ["kind"] },
+          "then": { "required": ["url", "ref"] }
+        }
+      ]
+    },
+    "expect": {
+      "type": "object",
+      "required": ["files"],
+      "properties": {
+        "exit": {
+          "type": "integer",
+          "default": 0,
+          "description": "Expected process exit status (the spec 26 §1 expect rule)."
+        },
+        "files": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Scratch-relative output paths that must exist and be non-empty after the run."
+        }
+      }
+    },
+    "target": {
+      "type": "object",
+      "required": ["id", "kind"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": {
+          "enum": ["v1-exe", "v2-managed", "v2-press"],
+          "description": "v1-exe: the packed-mn release asset (asset from platforms.yaml). v2-managed: registry install + shim dispatch, warm store. v2-press: fat tpkg assembled in-leg from verified published artifacts."
+        },
+        "payload": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]*@\\S+$",
+          "description": "name@version — the registry payload reference (v2 kinds)."
+        },
+        "registries": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "spec 04 registry references the v2 arms resolve the payload through."
+        },
+        "fat": {
+          "type": "boolean",
+          "description": "v2-press: carry the runtime as a slot (the one-file contract). v2 packages are fat in this harness by definition; the flag exists for the suite author's explicitness."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "enum": ["v2-managed", "v2-press"] } }, "required": ["kind"] },
+          "then": { "required": ["payload", "registries"] }
+        }
+      ]
+    },
+    "runPolicy": {
+      "type": "object",
+      "required": ["warmup", "repetitions", "cold_repetitions", "interleave"],
+      "properties": {
+        "warmup": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Unmeasured runs per (workload × target) priming the fontist/relaton/OS caches before measurement."
+        },
+        "repetitions": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Measured warm runs per (workload × target). The statistics live or die on this N."
+        },
+        "cold_repetitions": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Measured cold runs — each preceded by the spec 27 §5 cache wipe; reported separately as install/first-boot metrics, never mixed into warm statistics."
+        },
+        "interleave": {
+          "type": "boolean",
+          "description": "true: rotate targets A/B/C per iteration to decorrelate runner drift. false: each target to completion in turn (debugging only)."
+        }
+      }
+    }
+  }
+}
