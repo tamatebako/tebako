@@ -271,8 +271,11 @@ Owner: `tpkg::jail` + the driver. Malformed → exit 73 (unchanged);
 unknown jail directive → named error (no silent drops).
 
 ### C18 · preload shim ↔ driver (spawn re-entry)
-Owner: the driver (`TEBAKO_TFS_MOUNTS` grammar). Verify: unparseable →
-fail closed, never a half-mounted child.
+Owner: the driver (`TEBAKO_TFS_MOUNTS` grammar — the slot form included,
+spec 17 §2.1; the trailer data source is `tpkg::read_from`). Verify:
+unparseable → fail closed, never a half-mounted child; a packaged
+payload's slot survives the hand-off (the child mounts the slot region,
+never the whole package file).
 
 ### C19 · vcpkg baseline → consumers
 Owner: dwarfs-t. Grammar: tag + canonical-root map (the restore script

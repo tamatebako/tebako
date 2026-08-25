@@ -1258,6 +1258,7 @@ pub fn cmd_exec(opts: &ExecOptions) -> Result<(), (String, i32)> {
         }
         decls.push(tfs::mount_spec::MountDecl {
             image: canon.to_string_lossy().into_owned(),
+            slot: d.slot,
             mount: d.mount,
         });
     }

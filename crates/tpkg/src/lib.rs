@@ -154,6 +154,7 @@ pub mod merkle;
 pub mod merkle_host;
 mod model;
 mod package;
+mod region;
 
 pub use codec::{
     encode_ext_blocks, encode_trailer, parse_ext_blocks, parse_trailer, trailer_len,
@@ -185,6 +186,7 @@ pub use package::{
     MountMode, PackageEntry, PackageIdentity, PackageManifest, PackageManifestError, PackageMount,
     Precedence, PACKAGE_SCHEMA_VERSION,
 };
+pub use region::{resolve_slot_region, SlotRegion, SlotRegionError};
 
 /// Manifest format version (stays 1: the chain-of-trust extension is
 /// flagged via `TPKG_FLAG_SIGNED_V2`, not a version bump, so v1-era

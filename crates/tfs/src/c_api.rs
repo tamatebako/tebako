@@ -1129,10 +1129,11 @@ pub unsafe extern "C" fn tebako_fs_mount_of(path: *const c_char) -> *mut c_char 
 }
 
 /// `tebako_fs_mounts`: the mount table in the `TEBAKO_TFS_MOUNTS`
-/// grammar ("image:mount,image:mount,…"), heap-allocated with libc
-/// malloc (the caller `free()`s it); NULL when nothing file-backed is
-/// mounted. A spawned child re-establishes the namespace from this —
-/// the spawn hook writes it into the child's environment.
+/// grammar ("image[:slot]:mount,image[:slot]:mount,…" — spec 17 §2.1),
+/// heap-allocated with libc malloc (the caller `free()`s it); NULL when
+/// nothing file-backed is mounted. A spawned child re-establishes the
+/// namespace from this — the spawn hook writes it into the child's
+/// environment.
 ///
 /// # Safety
 /// C ABI entry point; the returned string must be freed with libc

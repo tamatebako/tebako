@@ -131,7 +131,7 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    `DYLD_INSERT_LIBRARIES` (Mach-O), or DLL injection (Windows), mapping
    the libc/dyld file-IO family (open/stat/opendir/pread/dlopen…) onto
    `tebako_fs_*`. The launcher seeds the mount table via env
-   (`TEBAKO_TFS_MOUNTS=image:mount,…`); the binary AND its whole dynamic
+   (`TEBAKO_TFS_MOUNTS=image[:slot]:mount,…` — grammar in spec 17 §2.1); the binary AND its whole dynamic
    chain see the mounted image — **no extraction, no chain problem**.
    retrace (in-family: linux/macOS/windows CI, v2 config-driven
    interception) is the reference technique. Bonus: interposed IO flows

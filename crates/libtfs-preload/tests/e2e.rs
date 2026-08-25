@@ -9,6 +9,9 @@
 //! - the spec 08 jail (deny → EPERM; memfs unaffected; ro grant → EROFS
 //!   on writes; rw grant passes),
 //! - the grandchild staying in the VFS (env propagation),
+//! - the slot form of `TEBAKO_TFS_MOUNTS` (spec 17 §2.1): a packaged
+//!   payload's slot mounts its region, the child hand-off preserves it,
+//!   and resolution failures are named EX_CONFIG errors,
 //! - dlopen of a memfs library via the dlmap2file host cache,
 //! - the linux LFS64+fortify surface the JDK needs (lseek64 SEEK_END
 //!   probe, __read_chk fortified read, __fxstat64, anonymous mmap with
@@ -43,6 +46,9 @@ struct Fixtures {
     dir: PathBuf,
     /// The test image (zip backend).
     zip: PathBuf,
+    /// The stitched package: the zip image as slot 0 plus a tpkg trailer
+    /// (spec 17 §2.1's slot-form proofs).
+    pkg: PathBuf,
     /// The fork-exec test image (DWARFS backend — the fork/exec
     /// regression needs a backend with a worker pool; zip has none).
     dwarfs: PathBuf,
@@ -245,6 +251,24 @@ fn build_fixtures() -> Option<Fixtures> {
         zw.finish().unwrap();
     }
 
+    // The stitched-package fixture (spec 17 §2.1): the zip image bytes as
+    // slot 0 of a tpkg package. The slot form mounts the region — the
+    // whole-file spelling would leave the trailer inside the sniffed
+    // bytes (tebako#455).
+    let pkg_path = dir.join("pkg.tebako");
+    {
+        let zip_len = std::fs::copy(&zip_path, &pkg_path).unwrap();
+        let mut file = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&pkg_path)
+            .unwrap();
+        let manifest = tpkg::Manifest {
+            slots: vec![tpkg::Slot::new(0, zip_len, tpkg::TPKG_FORMAT_ZIP, "/tfs")],
+            ..Default::default()
+        };
+        tpkg::write_to(&mut file, &manifest).unwrap();
+    }
+
     // The fork-exec image (DWARFS backend — its block-cache worker pool is
     // the fork hazard the guard exists for). Contents matter: an in-image
     // `__tpkg__/manifest.yaml` WITHOUT the java_home annotation (the exec
@@ -288,6 +312,7 @@ fn build_fixtures() -> Option<Fixtures> {
     Some(Fixtures {
         dir,
         zip: zip_path,
+        pkg: pkg_path,
         dwarfs: dwarfs_path,
         shim,
         work,
@@ -320,10 +345,23 @@ struct Run {
 /// Run a fixture tool under the shim. `jail` is the TEBAKO_JAIL value
 /// (None = unset). The preload/mount env is set ONLY on the child.
 fn run(f: &Fixtures, tool: &str, args: &[&str], jail: Option<&str>) -> Run {
+    let mounts = format!("{}:{MOUNT}", f.zip.display());
+    run_with_mounts(f, tool, args, &mounts, jail)
+}
+
+/// [`run`] with an explicit `TEBAKO_TFS_MOUNTS` value (the slot-form
+/// proofs).
+fn run_with_mounts(
+    f: &Fixtures,
+    tool: &str,
+    args: &[&str],
+    mounts: &str,
+    jail: Option<&str>,
+) -> Run {
     let mut cmd = Command::new(f.dir.join("bin").join(tool));
     cmd.args(args)
         .env(preload_var(), &f.shim)
-        .env("TEBAKO_TFS_MOUNTS", format!("{}:{MOUNT}", f.zip.display()))
+        .env("TEBAKO_TFS_MOUNTS", mounts)
         // Determinism: no inherited preload env from the test harness.
         .env_remove("DYLD_PRINT_LIBRARIES");
     match jail {
@@ -553,6 +591,67 @@ fn grandchild_stays_in_vfs() {
     // …and the preload env propagated (the process tree stays in the VFS).
     assert!(r.stdout.contains("CHILD-ENV:ok"), "stdout: {}", r.stdout);
     assert!(r.stdout.contains("SPAWN-RC:0"), "stdout: {}", r.stdout);
+}
+
+// ---------------------------------------------------------------------
+// spec 17 §2.1: the slot form of TEBAKO_TFS_MOUNTS (tebako#455)
+// ---------------------------------------------------------------------
+
+/// The consume side: a packaged payload's slot mounts its REGION. (The
+/// whole-file spelling of a package leaves the appended trailer inside
+/// the sniffed bytes — the packed-mn PDF leg's EINVAL/78.)
+#[test]
+fn slot_form_mounts_the_package_region() {
+    let Some(f) = fixtures() else { return };
+    let mounts = format!("{}:0:{MOUNT}", f.pkg.display());
+    let r = run_with_mounts(
+        f,
+        "print-data",
+        &[&format!("{MOUNT}/data/secret.txt")],
+        &mounts,
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.matches(SECRET).count(), 1, "stdout: {}", r.stdout);
+}
+
+/// The issue's acceptance shape: a process holding a slot mount spawns a
+/// child that reads a file through the mount — the slot form survives the
+/// hand-off, so the child mounts the same region, never the whole
+/// package file.
+#[test]
+fn slot_form_grandchild_reads_through_the_mount() {
+    let Some(f) = fixtures() else { return };
+    let mounts = format!("{}:0:{MOUNT}", f.pkg.display());
+    let r = run_with_mounts(
+        f,
+        "spawn-self",
+        &[&format!("{MOUNT}/data/secret.txt")],
+        &mounts,
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.matches(SECRET).count(), 2, "stdout: {}", r.stdout);
+    assert!(r.stdout.contains("CHILD-ENV:ok"), "stdout: {}", r.stdout);
+    assert!(r.stdout.contains("SPAWN-RC:0"), "stdout: {}", r.stdout);
+}
+
+/// Slot-resolution failures are named errors (spec 17 §2.1), exit 78 —
+/// never a silent whole-file fallback.
+#[test]
+fn slot_form_failures_are_named_errors() {
+    let Some(f) = fixtures() else { return };
+    // Out of range on a packaged file.
+    let mounts = format!("{}:1:{MOUNT}", f.pkg.display());
+    let r = run_with_mounts(f, "print-data", &["/etc/hosts"], &mounts, None);
+    assert_eq!(r.rc, tfs_preload::spec::EX_CONFIG, "stderr: {}", r.stderr);
+    assert!(r.stderr.contains("slot 1"), "stderr: {}", r.stderr);
+    assert!(r.stderr.contains("out of range"), "stderr: {}", r.stderr);
+    // A non-zero slot on a bare image (no slot table).
+    let mounts = format!("{}:3:{MOUNT}", f.zip.display());
+    let r = run_with_mounts(f, "print-data", &["/etc/hosts"], &mounts, None);
+    assert_eq!(r.rc, tfs_preload::spec::EX_CONFIG, "stderr: {}", r.stderr);
+    assert!(r.stderr.contains("no slot table"), "stderr: {}", r.stderr);
 }
 
 #[test]

@@ -78,6 +78,11 @@ pub struct Mount {
     pub mount_point_c: Box<std::ffi::CString>,
     /// Archive path on disk, when mounted from a file.
     pub archive_path: Option<Box<std::ffi::CString>>,
+    /// The package slot the mount was established from, when the archive
+    /// is a stitched tpkg package and a slot region was mounted (spec 17
+    /// §2.1); `None` for a whole-file mount. Serialized into
+    /// `TEBAKO_TFS_MOUNTS` so a spawned child re-mounts the same region.
+    pub slot: Option<u32>,
     /// The backend.
     pub backend: Box<dyn Backend>,
     /// Mount mode (spec 11 §3; writes on RO mounts fail with EROFS).
@@ -1288,27 +1293,32 @@ impl FsContext {
     }
 
     /// The mount table in the `TEBAKO_TFS_MOUNTS` grammar
-    /// ("image:mount,image:mount,…") — the env a spawned child needs to
-    /// re-establish this namespace through the preload shim. Only
-    /// file-backed mounts serialize; memory mounts have no image path
-    /// and are skipped (a child cannot remount them anyway).
+    /// ("image[:slot]:mount,image[:slot]:mount,…" — spec 17 §2.1) — the
+    /// env a spawned child needs to re-establish this namespace through
+    /// the preload shim. Only file-backed mounts serialize; memory mounts
+    /// have no image path and are skipped (a child cannot remount them
+    /// anyway). A mount established from a package slot carries its slot
+    /// field, so the child mounts the same region — never the whole
+    /// package file.
     pub fn mounts_env(&self) -> Option<std::ffi::CString> {
-        let mut out = String::new();
-        for mount in self.mounts.values() {
-            let Some(archive) = &mount.archive_path else {
-                continue;
-            };
-            if !out.is_empty() {
-                out.push(',');
-            }
-            out.push_str(&archive.to_string_lossy());
-            out.push(':');
-            out.push_str(&mount.mount_point);
-        }
-        if out.is_empty() {
+        let decls: Vec<crate::mount_spec::MountDecl> = self
+            .mounts
+            .values()
+            .filter_map(|mount| {
+                mount
+                    .archive_path
+                    .as_ref()
+                    .map(|archive| crate::mount_spec::MountDecl {
+                        image: archive.to_string_lossy().into_owned(),
+                        slot: mount.slot,
+                        mount: mount.mount_point.clone(),
+                    })
+            })
+            .collect();
+        if decls.is_empty() {
             None
         } else {
-            std::ffi::CString::new(out).ok()
+            std::ffi::CString::new(crate::mount_spec::to_env_spec(&decls)).ok()
         }
     }
 
@@ -2707,6 +2717,7 @@ mod tests {
             mount_point: "/tfs".to_string(),
             mount_point_c: Box::new(std::ffi::CString::new("/tfs").unwrap()),
             archive_path: None,
+            slot: None,
             backend: Box::new(backend),
             mode: crate::mount::MountMode::ReadOnly,
         };
@@ -3148,10 +3159,47 @@ mod tests {
             mount_point: point.to_string(),
             mount_point_c: Box::new(std::ffi::CString::new(point).unwrap()),
             archive_path: None,
+            slot: None,
             backend: Box::new(backend),
             mode: crate::mount::MountMode::ReadOnly,
         };
         ctx.mount_checked(mount).unwrap();
+    }
+
+    #[test]
+    fn mounts_env_carries_the_slot_field_for_package_slot_mounts() {
+        // spec 17 §2.1's emit rule: a mount established from a package
+        // slot serializes as image:slot:mount; a whole-file mount stays
+        // image:mount. The child re-mounts the same region, never the
+        // whole package file.
+        let dir = std::env::temp_dir().join(format!("tfs-mounts-env-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let pkg = dir.join("pkg.tebako");
+        let img = dir.join("img.tfs");
+        let mut ctx = FsContext::new();
+        for (archive, slot, point) in [(pkg.clone(), Some(0), "/app"), (img.clone(), None, "/data")]
+        {
+            let backend = crate::backends_hostdir::HostDirBackend::new(&dir).unwrap();
+            let mount = Mount {
+                handle: 0,
+                mount_point: point.to_string(),
+                mount_point_c: Box::new(std::ffi::CString::new(point).unwrap()),
+                archive_path: Some(Box::new(
+                    std::ffi::CString::new(archive.to_string_lossy().into_owned()).unwrap(),
+                )),
+                slot,
+                backend: Box::new(backend),
+                mode: crate::mount::MountMode::ReadOnly,
+            };
+            ctx.mount_checked(mount).unwrap();
+        }
+        let env = ctx.mounts_env().unwrap();
+        assert_eq!(
+            env.to_string_lossy(),
+            format!("{}:0:/app,{}:/data", pkg.display(), img.display())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
