@@ -249,20 +249,40 @@ rule (unsafe only inside FFI boundary modules).
   the compile statistics.
 - **cold** — the first-boot experience: before EACH cold run the
   harness wipes the per-stack caches and measures the whole thing
-  (acquisition included). The wipe set:
-  - `~/.tebako` — the v2 store (runtimes, payloads, registries).
+  (acquisition included).
+- **The hermetic bench home** (amended 2026-08-25 from the original
+  host-home wording — same wipe set, hermetic location): every spawned
+  child runs with `HOME` (and `USERPROFILE` on Windows) set to
+  `<out>/home`, `TEBAKO_HOME` set to `<out>/home/.tebako`, and
+  `TMPDIR` (plus `TEMP`/`TMP` on Windows) set to a per-target
+  `<out>/tmp/<target>`. "The caches" below therefore mean the named
+  directories UNDER the bench home: a cold run never evicts the host's
+  real store, a developer's caches, or a sibling job's files, and the
+  run needs no privilege to touch them. The wipe set:
+  - `<bench-home>/.tebako` — the v2 store (runtimes, payloads,
+    registries).
     Wiping it forces re-download + re-verification; that cost IS the
     cold metric for the v2 arms. (v2-managed only — v2-press fat
     packages carry their runtime and never touch the store; v1-exe
     never either.)
-  - The v1 stack's host extraction root (the v1 memfs unpacks under
-    `$TMPDIR` — observed 2026-08-25 as `$TMPDIR/<content-hash>/` plus
-    `tebako-runtime-*` staging dirs): v1's analog of the store, wiped
-    for v1 cold runs so "cold" means first-boot on both stacks.
-  - `~/.metanorma` and `~/.relaton` — the payload-side caches (fontist
+  - The v1 stack's extraction root, `<bench-tmp>/<target>/` (the v1
+    memfs unpacks under its `TMPDIR` — observed 2026-08-25 as
+    `<content-hash>/` plus `tebako-runtime-*` staging dirs): v1's
+    analog of the store, wiped per-target for v1 cold runs so "cold"
+    means first-boot on both stacks.
+  - `<bench-home>/.metanorma` and `<bench-home>/.relaton` — the
+    payload-side caches (fontist
     fonts, relaton bibliographic cache), present for BOTH stacks, wiped
     for every cold run of every target. Same paths both stacks: parity
     holds.
+- **The cold flow per arm**: v2-managed = wipe → UNMEASURED
+  `tebako install` (payload acquisition is excluded from the metric;
+  install does not fetch the runtime) → measured compile run (the
+  runtime download lands inside the measured span); v2-press = wipe →
+  measured package run (the fat package carries the runtime exe but
+  NOT the env image — §9 spike a — so the env-image download lands
+  inside the measured span); v1-exe = wipe → measured exe run
+  (re-extraction inside the span).
 - Cold results are reported SEPARATELY as install/first-boot metrics
   and are never mixed into warm medians. `mode` on every run record is
   `"warm"` or `"cold"` (§6), and statistics are computed per mode.
