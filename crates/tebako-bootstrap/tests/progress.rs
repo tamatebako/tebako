@@ -106,11 +106,8 @@ fn image_era_fetches_report_per_artifact() {
 
 #[test]
 fn opt_out_envs_keep_the_plain_two_line_mode() {
-    for (k, v) in [
-        ("TEBAKO_NO_PROGRESS", "1"),
-        ("NO_COLOR", "1"),
-        ("TERM", "dumb"),
-    ] {
+    // NO_COLOR / TERM=dumb degrade the rendering to the plain lines…
+    for (k, v) in [("NO_COLOR", "1"), ("TERM", "dumb")] {
         let h = h();
         let pkg = h.lean_pkg("myapp");
         let home = h.home("home");
@@ -120,6 +117,26 @@ fn opt_out_envs_keep_the_plain_two_line_mode() {
         let size = std::fs::metadata(h.cache_exe(&home)).unwrap().len();
         assert_eq!(err, expected_fetch_lines(&h, &home, size), "{k}={v}: {err}");
     }
+}
+
+#[test]
+fn no_progress_silences_the_informational_lines() {
+    // …while TEBAKO_NO_PROGRESS=1 goes further (tebako#400): every
+    // Progress::line — the downloading header, the installed benefit
+    // line, the cache-hit line — is progress, not results, and silences.
+    let h = h();
+    let pkg = h.lean_pkg("myapp");
+    let home = h.home("home");
+    let (rc, _, err) = h.run_raw(&pkg, &home, &[("TEBAKO_NO_PROGRESS", "1")], &[]);
+    assert_eq!(rc, 0, "{err}");
+    assert_eq!(clean(err), "", "TEBAKO_NO_PROGRESS=1 silences all progress");
+    let size = std::fs::metadata(h.cache_exe(&home)).unwrap().len();
+    assert!(size > 0, "the fetch still happened — silence, not skip");
+
+    // …and a warm-cache run is equally silent (the report's main pain).
+    let (rc, _, err) = h.run_raw(&pkg, &home, &[("TEBAKO_NO_PROGRESS", "1")], &[]);
+    assert_eq!(rc, 0, "{err}");
+    assert_eq!(clean(err), "", "cache-hit line silenced too");
 }
 
 #[test]

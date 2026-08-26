@@ -214,6 +214,45 @@ fn v1_legacy_accepted_with_journal_record() {
 }
 
 #[test]
+fn v1_legacy_warns_once_per_package_per_machine() {
+    // tebako#400: the warning was unconditional on every invocation with
+    // no user-side remedy short of signing. Now: first acceptance per
+    // package (path|size|mtime key) warns + marks; later ones are silent
+    // in stderr but journaled as before.
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let dir = scratch("legacy-once");
+    let home = dir.join("home");
+    let (pkg, m) = make_package(&dir, &home, b"the app image payload", true);
+
+    assert!(tebako_bootstrap::legacy_warn_due(&home, &pkg));
+    assert_eq!(
+        std::fs::read_dir(home.join("warned-legacy"))
+            .unwrap()
+            .count(),
+        1,
+        "first acceptance leaves exactly one marker"
+    );
+    assert!(!tebako_bootstrap::legacy_warn_due(&home, &pkg));
+
+    // Through the public path: both runs accepted and journaled; the
+    // marker decision has already been made above, so both are silent.
+    verify_chain_with_home(&pkg, &m, &home).expect("legacy accepted");
+    verify_chain_with_home(&pkg, &m, &home).expect("legacy accepted again");
+    assert_eq!(
+        journal(&home).matches("event=legacy-v1-accepted").count(),
+        2,
+        "every acceptance is journaled"
+    );
+    assert_eq!(
+        std::fs::read_dir(home.join("warned-legacy"))
+            .unwrap()
+            .count(),
+        1,
+        "no duplicate markers"
+    );
+}
+
+#[test]
 fn v1_require_signed_is_hard_fail() {
     let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("require");

@@ -4,8 +4,11 @@
 //! - full rendering iff stderr is a TTY and `TERM != dumb`; opt-outs
 //!   `NO_COLOR` (present at all) and `TEBAKO_NO_PROGRESS` (set, non-empty,
 //!   not "0") force the plain mode;
-//! - plain mode (pipe, CI, opt-out): exactly the start + done single
+//! - plain mode (pipe, CI): exactly the start + done single
 //!   lines, no terminal control sequences;
+//! - `TEBAKO_NO_PROGRESS` additionally QUIETS every [`Progress::line`]
+//!   output (the downloading/installed/cache-hit lines) — progress is
+//!   informational, never results (tebako#400);
 //! - TTY mode: phase lines plus a hand-rolled ANSI bar
 //!   `[=====>    ] 62%  14.2/23.0 MB  3.1 MB/s` throttled to
 //!   ≤ 10 redraws/s; unknown content-length → spinner frames + byte count;
@@ -56,14 +59,19 @@ pub fn detect_mode_with(tty: bool, env: impl Fn(&str) -> Option<OsString>) -> Mo
         Some(v) => v != "dumb",
         None => true,
     };
-    let no_progress = match env("TEBAKO_NO_PROGRESS") {
-        Some(v) => !v.is_empty() && v != "0",
-        None => false,
-    };
-    if tty && term_ok && env("NO_COLOR").is_none() && !no_progress {
+    if tty && term_ok && env("NO_COLOR").is_none() && !no_progress_env(&env) {
         Mode::Tty
     } else {
         Mode::Plain
+    }
+}
+
+/// The `TEBAKO_NO_PROGRESS` opt-out predicate: set, non-empty, not `"0"`.
+/// Shared by mode detection and the quiet gate on [`Progress::line`].
+fn no_progress_env(env: &impl Fn(&str) -> Option<OsString>) -> bool {
+    match env("TEBAKO_NO_PROGRESS") {
+        Some(v) => !v.is_empty() && v != "0",
+        None => false,
     }
 }
 
@@ -128,6 +136,10 @@ fn bar_frame(so_far: u64, total: u64, elapsed: Duration) -> String {
 pub struct Progress<W: Write> {
     out: W,
     mode: Mode,
+    /// `TEBAKO_NO_PROGRESS` gate: when set, [`Progress::line`] prints
+    /// nothing at all (tebako#400 — the cache-hit and installed lines
+    /// were unconditional noise on every invocation).
+    quiet: bool,
     asset: String,
     header_printed: bool,
     line_open: bool,
@@ -141,9 +153,13 @@ pub struct Progress<W: Write> {
 
 impl Progress<io::Stderr> {
     /// A renderer over the real stderr; the mode is auto-detected
-    /// ([`detect_mode`]).
+    /// ([`detect_mode`]) and the quiet gate rides `TEBAKO_NO_PROGRESS`.
     pub fn stderr() -> Progress<io::Stderr> {
-        Progress::with_mode(io::stderr(), detect_mode())
+        Progress::with_mode_and_quiet(
+            io::stderr(),
+            detect_mode(),
+            no_progress_env(&|name| std::env::var_os(name)),
+        )
     }
 }
 
@@ -156,9 +172,15 @@ impl<W: Write> Progress<W> {
 
     /// A renderer over `out` in the given mode.
     pub fn with_mode(out: W, mode: Mode) -> Progress<W> {
+        Progress::with_mode_and_quiet(out, mode, false)
+    }
+
+    /// A renderer over `out` with the quiet gate explicit.
+    pub fn with_mode_and_quiet(out: W, mode: Mode, quiet: bool) -> Progress<W> {
         Progress {
             out,
             mode,
+            quiet,
             asset: String::new(),
             header_printed: false,
             line_open: false,
@@ -208,9 +230,14 @@ impl<W: Write> Progress<W> {
         self.write_str("\n");
     }
 
-    /// An always-printed line (the `downloading` start line, the
-    /// `installed …` benefit line, the quiet cache-hit line).
+    /// A printed line (the `downloading` start line, the `installed …`
+    /// benefit line, the quiet cache-hit line) — in both modes, but
+    /// suppressed entirely when the quiet gate is set
+    /// (`TEBAKO_NO_PROGRESS=1`, tebako#400).
     pub fn line(&mut self, text: &str) {
+        if self.quiet {
+            return;
+        }
         self.close_line();
         self.write_str(text);
         self.write_str("\n");
@@ -552,6 +579,27 @@ mod tests {
             let mut p = Progress::new(Vec::new(), tty);
             p.line("runtime ruby-3.3.7 (cached)");
             assert_eq!(sink_text(p), "runtime ruby-3.3.7 (cached)\n");
+        }
+    }
+
+    #[test]
+    fn quiet_gate_suppresses_lines_and_the_download_header() {
+        // tebako#400: the cache-hit / installed / downloading header lines
+        // are progress, not results — the quiet gate silences them all.
+        for mode in [Mode::Tty, Mode::Plain] {
+            let mut p = Progress::with_mode_and_quiet(Vec::new(), mode, true);
+            p.line("runtime ruby-3.3.7 (cached)");
+            p.download_begin("asset");
+            p.download_tick_at(500, Some(1000), Instant::now());
+            p.download_end();
+            p.line("installed entry (1.0 KB)");
+            let text = sink_text(p);
+            assert!(!text.contains("downloading asset"), "{text:?}");
+            assert!(!text.contains("(cached)"), "{text:?}");
+            assert!(!text.contains("installed entry"), "{text:?}");
+            if mode == Mode::Plain {
+                assert_eq!(text, "");
+            }
         }
     }
 }

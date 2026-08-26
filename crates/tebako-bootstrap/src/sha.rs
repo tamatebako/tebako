@@ -21,7 +21,8 @@ pub fn sha256_file_hex(path: &Path) -> io::Result<String> {
     Ok(hex(&h.finalize()))
 }
 
-fn hex(bytes: &[u8]) -> String {
+/// Lowercase hex (64 chars for a SHA-256 digest).
+pub fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
     let mut s = String::with_capacity(bytes.len() * 2);
     for &b in bytes {

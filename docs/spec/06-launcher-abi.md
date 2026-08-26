@@ -102,6 +102,9 @@ the benefit. Rules:
   `installed ruby-3.4.2-0.15.9-linux-gnu-x86_64 (23.0 MB) — cached at
   ~/.tebako/runtimes/… and shared by every tebako app on this machine`.
   A cache HIT prints one quiet line: `runtime ruby-3.4.2 (cached)`.
+  `TEBAKO_NO_PROGRESS=1` silences these informational lines entirely
+  (the cache-hit, `installed …`, and `downloading …` lines — progress is
+  not results; tebako#400); the mode selection rule above still applies.
 - Progress output goes to **stderr**, never stdout (stdout belongs to
   the payload).
 - Implementation: a tiny `tebako-term` micro-crate (TTY detect, bar,
