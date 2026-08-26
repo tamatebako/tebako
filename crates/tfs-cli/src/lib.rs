@@ -1057,24 +1057,19 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
 /// §4) — the writer's manifest bytes verbatim, then every slab appended
 /// in slab-ordinal order. Dictionaries are disabled: a dictionary
 /// section would sit between the history section and the slab region
-/// (and reference per-drop dictionary ids), neither of which the v1
-/// backend resolves. Content drops ride lz4-or-store: the
-/// runtime-floor readers (every published runtime of the v0.16.x era)
-/// reject brotli streams beyond the small-buffer case, and the omnizip
-/// zstd decoder shipping in limnifs-core ≤ 0.2.54 mis-decodes some
-/// valid zstd frames (omnizip-rs#315, still open; frame checksum
-/// mismatch on bytes libzstd itself accepts). The metadata blob rides lz4-HC (codec 0x13): every floor
-/// reader decodes it through the SAME fast-lz4 decoder (limnifs-core's
-/// `Lz4HcCodec::decompress` delegates), and the HC match finder keeps a
-/// realistic tree's blob under the inline ceiling — the
-/// native-extension e2e tree: 830 KiB lz4-hc vs 1049 KiB fast lz4,
-/// which overshoots the writer's 1000 KiB threshold; `store` (2.5 MB)
-/// overshoots the readers' 1 MiB hard ceiling outright. The
-/// shared-inline table stays off (`defaults.shared_inline = false`):
-/// every floor reader (limnifs-core < 0.2.53) rejects its inode flag
-/// 0x08 via its own reserved mask (limnifs#186; the knob is stock
-/// since limnifs 0.2.57 — limnifs#189). Spec 20 §5's
-/// floor rule pins the full recipe. The metadata is inlined up to the
+/// (and reference per-drop dictionary ids), neither of which the
+/// backend resolves. Content drops ride lz4-or-store and the metadata
+/// blob rides lz4-HC (codec 0x13 — every reader dispatches it to the
+/// SAME fast-lz4 decoder, and the HC match finder keeps a realistic
+/// tree's blob under the inline ceiling: the native-extension e2e tree
+/// is 830 KiB lz4-hc vs 1049 KiB fast lz4, which overshoots the
+/// writer's 1000 KiB threshold; `store` (2.5 MB) overshoots the
+/// readers' 1 MiB hard ceiling outright). The shared-inline table stays
+/// off (`defaults.shared_inline = false`) — one handle kind, nil wire
+/// cost (spec 20 §5 constraint 1). This recipe emits NO seekable
+/// containers (the categorizer-less chunk path never sets the flag —
+/// limnifs#195); tebako#464's bounded cost comes from the reader's
+/// SIEVE drop cache instead. The metadata is inlined up to the
 /// readers' 1 MiB ceiling.
 fn write_limnifs_image(source: &Path, output: &Path) -> Result<(), (String, i32)> {
     let mut config = limnifs_write::WriteConfig::default_v0_1();
