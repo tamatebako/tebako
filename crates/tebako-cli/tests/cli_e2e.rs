@@ -89,7 +89,7 @@ fn run(cmd: &mut Command) -> (i32, String) {
     text.push_str(&String::from_utf8_lossy(&out.stderr));
     (
         out.status.code().unwrap_or(-1),
-        strip_progress(&strip_legacy_warning(&text)),
+        strip_progress(&strip_legacy_warning(&strip_lazy_seed_warning(&text))),
     )
 }
 
@@ -131,6 +131,32 @@ fn strip_legacy_warning(text: &str) -> String {
         if line.starts_with("tebako-bootstrap: WARNING: ")
             && line.contains("unsigned v1 (legacy) tpkg trailer")
         {
+            skip_next = true;
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+/// Spec 23 §13's lazy seed: when the cache already holds a
+/// same-name@version payload under a DIFFERENT digest than the package's
+/// carried copy (digest drift — this harness's press phase primes the
+/// cache, the package then carries its own build), the bootstrap prints a
+/// loud skip warning on stderr BY DESIGN (two lines; the run serves the
+/// carried bytes, unaffected). Strip it for output comparison — the
+/// warning's emission and text are pinned by tebako-bootstrap's compose
+/// tests (src/lib.rs's two seed sites).
+fn strip_lazy_seed_warning(text: &str) -> String {
+    let mut out = String::new();
+    let mut skip_next = false;
+    for line in text.lines() {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if line.starts_with("tebako-bootstrap: WARNING: lazy seed of ") {
             skip_next = true;
             continue;
         }

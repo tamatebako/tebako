@@ -10,10 +10,12 @@ use tebako_cli::{cache_list, cache_list_json, cache_prune, press, VERSION_BANNER
 
 const USAGE: &str = "Usage:
   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>] [-c <cwd>]
-               [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
+               [-R <ruby>] [-m self-contained|shared-runtime] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local] [--jail <spec>]
-               [--format dwarfs|limnifs]
+               [--format dwarfs|limnifs] [--compose <tebako.yaml>]
+               [--carry all|none|<name,...>] [--share <name,...>]
+               (lean/fat stay accepted as deprecated aliases, spec 23 §13.2)
   tebako press --suite <suite.yaml> [-o <output>] [-p <prefix>] [-R <ruby>]
                one package, N commands (spec 03 §6: per-entry slots + type-2 manifest)
   tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
@@ -680,6 +682,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut cwd: Option<String> = None;
     let mut ruby: Option<String> = None;
     let mut mode = PressMode::Lean;
+    let mut mode_explicit = false;
     let mut log_level = "error".to_string();
     let mut image_specs: Vec<String> = Vec::new();
     let mut bootstrap: Option<PathBuf> = None;
@@ -690,6 +693,9 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut jail: Option<String> = None;
     let mut no_install = false;
     let mut format = tebako_cli::options::PressImageFormat::Limnifs;
+    let mut compose: Option<PathBuf> = None;
+    let mut carry: Option<String> = None;
+    let mut share: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -716,7 +722,12 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "-R" | "--Ruby" => ruby = Some(take_value(&mut i)?),
             "-m" | "--mode" => {
                 let v = take_value(&mut i)?;
-                mode = PressMode::parse(&v).map_err(CliExit::Usage)?;
+                let (m, warning) = PressMode::parse_named(&v).map_err(CliExit::Usage)?;
+                if let Some(w) = warning {
+                    eprintln!("tebako: WARNING: {w}");
+                }
+                mode = m;
+                mode_explicit = true;
             }
             "-l" | "--log-level" => log_level = take_value(&mut i)?,
             "--image" => image_specs.push(take_value(&mut i)?),
@@ -732,6 +743,9 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
                     tebako_cli::options::PressImageFormat::parse(&v).map_err(CliExit::Usage)?;
             }
             "-D" | "--devmode" => devmode = true,
+            "--compose" => compose = Some(PathBuf::from(take_value(&mut i)?)),
+            "--carry" => carry = Some(take_value(&mut i)?),
+            "--share" => share = Some(take_value(&mut i)?),
             "-t" | "--tebafile" => {
                 let _ = take_value(&mut i)?;
                 return Err(CliExit::Usage(
@@ -797,5 +811,9 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         jail,
         no_install,
         format,
+        compose,
+        carry,
+        share,
+        mode_explicit,
     })
 }

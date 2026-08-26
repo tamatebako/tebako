@@ -1013,6 +1013,42 @@ fn install_walks_the_requires_closure_and_installs_the_deps() {
 }
 
 #[test]
+fn dep_walk_requires_cycle_is_a_named_error() {
+    // spec 18 §5.6 S32: A requires B and B requires A — the named cycle
+    // error at install, never the cache check's silent short-circuit.
+    let fx = Fixture::new("depcycle");
+    let appa_image = app_image_with_requires(
+        "appa",
+        "1.0",
+        "  - kind: toolkit\n    name: appb\n    constraint: \">= 1.0\"\n    mount: /opt/appb\n",
+    );
+    let appb_image = app_image_with_requires(
+        "appb",
+        "1.0",
+        "  - kind: toolkit\n    name: appa\n    constraint: \">= 1.0\"\n    mount: /opt/appa\n",
+    );
+    let appa_ref = fx.payload("appa-1.0.tfs", &appa_image);
+    let appb_ref = fx.payload("appb-1.0.tfs", &appb_image);
+    let appa_reg = fx.registry(
+        "appa-registry.yaml",
+        &registry_yaml("appa", "1.0", &appa_ref, Some("1.0")),
+    );
+    let appb_reg = fx.registry(
+        "appb-registry.yaml",
+        &registry_yaml("appb", "1.0", &appb_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &appa_reg).unwrap();
+    install::add_registry(&fx.home, &appb_reg).unwrap();
+
+    let err = install::install(&fx.home, "appa", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 65, "{err:?}");
+    assert!(
+        err.message.contains("dependency cycle: appa → appb → appa"),
+        "{err}"
+    );
+}
+
+#[test]
 fn dep_walk_prefers_a_cached_satisfying_version_over_a_newer_registry_one() {
     let fx = Fixture::new("depcached");
     let i143 = fx.payload("inkscape-1.4.3.tfs", &toolkit_image("inkscape", "1.4.3"));

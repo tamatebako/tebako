@@ -2,7 +2,8 @@
 //! the reference gem's lean press (tebako-chainwt lib/tebako):
 //!
 //!   tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>]
-//!                [--cwd <dir>] [-R <ruby>] [-m lean|fat]
+//!                [--cwd <dir>] [-R <ruby>] [-m self-contained|shared-runtime]
+//!                [--compose <tebako.yaml>] [--carry ...] [--share ...]
 //!                [--image <path>:<mount>]... [--bootstrap <path>]
 //!                [--tebako-version <v>]
 //!   tebako press --suite <suite.yaml>   (one package, N commands —
@@ -62,6 +63,7 @@
 //! - .tebako.yml is not read.
 
 pub mod check;
+pub mod compose;
 pub mod contract;
 pub mod deploy;
 pub mod error;
@@ -141,6 +143,12 @@ const WARN2: &str = "
 pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // --suite: one package, N entries (spec 03 §6 — src/suite.rs).
     if let Some(suite_path) = &opts.suite {
+        if opts.compose.is_some() || opts.carry.is_some() || opts.share.is_some() {
+            return Err(packaging_error(
+                130,
+                Some("--compose/--carry/--share do not apply to a suite press (the suite's entries carry their own refs, spec 03 §6)"),
+            ));
+        }
         let yaml = fs::read_to_string(suite_path).map_err(|e| {
             plain_error(format!(
                 "cannot read the suite file {}: {e}",
@@ -159,7 +167,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     }
     if opts.mode == PressMode::Classic {
         return Err(plain_error(
-            "the 'classic' press mode is a later tebako-rs milestone (use --mode=lean or --mode=fat)",
+            "the 'classic' press mode is a later tebako-rs milestone (use --mode=shared-runtime or --mode=self-contained)",
         ));
     }
 
@@ -184,6 +192,30 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         None => None,
     };
 
+    // spec 23 §3/§13: the composition document parses before any heavy
+    // work (a bad document must not cost a runtime download); the
+    // closure resolves below, once the ruby version is known. The D5
+    // overrides (--carry/--share) refine a composition — they require
+    // --compose.
+    let compose_doc = match &opts.compose {
+        Some(path) => {
+            let (doc, warnings) = compose::load(path)?;
+            for warning in &warnings {
+                eprintln!("tebako: WARNING: {warning}");
+            }
+            Some(doc)
+        }
+        None => {
+            if opts.carry.is_some() || opts.share.is_some() {
+                return Err(packaging_error(
+                    130,
+                    Some("--carry/--share refine a composition (spec 23 §13) and require --compose <tebako.yaml>"),
+                ));
+            }
+            None
+        }
+    };
+
     // Cli#bootstrap: the cache version guard runs before the press
     // (skipped in devmode, like the gem).
     if !opts.devmode {
@@ -204,6 +236,12 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     check_warnings(opts);
     println!("{}", opts.press_announce(&ruby_ver));
 
+    let package = format!("{}{}", opts.package(), scenario.exe_suffix);
+    let stem = Path::new(&package)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| package.clone());
+
     let platform = host_platform()?;
     // The bootstrap is resolved BEFORE the runtime download: the local
     // sources first, else the spec 19 §4 store flow (the CLI's own
@@ -214,28 +252,164 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     let runtime_resolver = Resolver::new();
     let resolved = runtime_resolver.resolve_runtime(&ruby_ver, &platform, &opts.tebako_version)?;
     let runtime_path = resolved.executable.clone();
+    // The windows dll-era facet (tebako-runtime-ruby#40), when the
+    // resolved release carries one — a carried runtime's third slot.
+    let resolved_dll = runtime_resolver.resolved_dll(&ruby_ver, &platform, &opts.tebako_version);
 
     let app_image = packager::build_app_image(opts, &mut scenario, &resolved, &ruby_ver)?;
 
+    // The composition (spec 23 §13): the document's preset governs the
+    // carry defaults; an explicit --mode OVERRIDES it (the invocation
+    // beats authored defaults); --carry/--share rewrite the per-slice
+    // verdicts. The FULL closure resolves at press time — the lock bakes
+    // exactly what press tested (spec 23 §4).
+    let mut compose_slices: Vec<compose::ComposeSlice> = Vec::new();
+    let mut runtime_carried = opts.mode == PressMode::Fat;
+    if let Some(doc) = &compose_doc {
+        let mut doc = doc.clone();
+        let preset = if opts.mode_explicit {
+            match opts.mode {
+                PressMode::Fat => tpkg::ComposePreset::SelfContained,
+                // Classic/Runtime are gated above; Lean is the shared
+                // preset.
+                _ => tpkg::ComposePreset::SharedRuntime,
+            }
+        } else {
+            doc.preset
+        };
+        compose::check_runtime_row(&doc, &ruby_ver)?;
+        compose::check_entrypoint(&doc, &stem)?;
+        compose::apply_overrides(&mut doc, opts.carry.as_deref(), opts.share.as_deref(), &stem)?;
+        let home = compose::tebako_home()?;
+        let host = install::host_platform()?;
+        compose_slices = compose::resolve_closure(&home, &tebako_resolve::Fetcher::new(), &doc, preset, host)?;
+        runtime_carried = doc
+            .runtime
+            .carry
+            .unwrap_or_else(|| preset.default_carry(true));
+    }
+
     let mut images: Vec<(PathBuf, String, u32)> = vec![(
-        app_image,
+        app_image.clone(),
         declared_mount(&scenario.fs_mount_point).to_string(),
         opts.format.tpkg_format_id(),
     )];
     for (path, mount) in opts.images()? {
         images.push((PathBuf::from(path), mount, tpkg::TPKG_FORMAT_DWARFS));
     }
-    let payload_sha256 = if opts.mode == PressMode::Fat {
-        let sha = resolve::sha256_file_hex(&runtime_path)
+    // Carried compose slices ride as ordinary slots (spec 23 §13.1) with
+    // the AUTO format hint — press did not author the bytes, detection
+    // stays authoritative (the §4 orthogonality law). The mount is the
+    // requiring edge's, else "" (a cache prime).
+    let mut carried_slots: Vec<(String, u32)> = Vec::new();
+    for s in &compose_slices {
+        if s.carry {
+            carried_slots.push((s.name.clone(), images.len() as u32));
+            images.push((
+                s.cache_path.clone(),
+                s.mount.clone().unwrap_or_default(),
+                tpkg::TPKG_FORMAT_AUTO,
+            ));
+        }
+    }
+
+    // The lock's runtime row (spec 23 §4/§13): EVERY press locks the
+    // runtime it resolved. Carried = the two-slot self-contained shape
+    // (spec 19 §6.1: exe + env image, + the windows dll facet when the
+    // release declares one) with the press-time digest pins; shared =
+    // the version alone, resolved at run time through the ordinary
+    // spec 05 §5 chain.
+    let lock_runtime = if runtime_carried {
+        let Some(image_ref) = &resolved.image else {
+            return Err(packaging_error(
+                130,
+                Some("self-contained press requires an image-era runtime (the resolved runtime carries no env image)"),
+            ));
+        };
+        let exe_sha = resolve::sha256_file_hex(&runtime_path)
             .ok_or_else(|| plain_error(format!("cannot hash {}", runtime_path.display())))?;
+        let exe_slot = images.len() as u32;
         images.push((
             runtime_path.clone(),
             String::new(),
-            tpkg::TPKG_FORMAT_RUNTIME,
+            tpkg::TPKG_FORMAT_AUTO,
         ));
-        Some(sha)
+        let image_path = runtime_path
+            .parent()
+            .map(|dir| dir.join(&image_ref.filename))
+            .unwrap_or_else(|| PathBuf::from(&image_ref.filename));
+        let image_slot = images.len() as u32;
+        images.push((image_path, String::new(), tpkg::TPKG_FORMAT_DWARFS));
+        let dll = match &resolved_dll {
+            Some(d) => {
+                let slot = images.len() as u32;
+                images.push((d.path.clone(), String::new(), tpkg::TPKG_FORMAT_AUTO));
+                Some(tpkg::LockedArtifact {
+                    slot,
+                    sha256: tpkg::DigestPin::One(d.sha256.clone()),
+                    install_as: Some(d.install_as.clone()),
+                })
+            }
+            None => None,
+        };
+        tpkg::LockedRuntime {
+            version: ruby_ver.clone(),
+            carry: true,
+            exe: Some(tpkg::LockedArtifact {
+                slot: exe_slot,
+                sha256: tpkg::DigestPin::One(exe_sha),
+                install_as: None,
+            }),
+            image: Some(tpkg::LockedArtifact {
+                slot: image_slot,
+                sha256: tpkg::DigestPin::One(image_ref.sha256.clone()),
+                install_as: None,
+            }),
+            dll,
+        }
     } else {
-        None
+        tpkg::LockedRuntime {
+            version: ruby_ver.clone(),
+            carry: false,
+            exe: None,
+            image: None,
+            dll: None,
+        }
+    };
+
+    // The lock's slice rows, in mount order: the app payload first
+    // (always carried — slot 0), then the resolved composition closure.
+    let app_sha = resolve::sha256_file_hex(&app_image)
+        .ok_or_else(|| plain_error(format!("cannot hash {}", app_image.display())))?;
+    let mut lock_slices = vec![tpkg::LockedSlice {
+        name: stem.clone(),
+        version: "0.0.0".to_string(),
+        carry: true,
+        slot: Some(0),
+        mount: Some(declared_mount(&scenario.fs_mount_point).to_string()),
+        sha256: tpkg::DigestPin::One(app_sha),
+        source: None,
+    }];
+    for s in &compose_slices {
+        let slot = carried_slots
+            .iter()
+            .find(|(name, _)| name == &s.name)
+            .map(|(_, slot)| *slot);
+        lock_slices.push(tpkg::LockedSlice {
+            name: s.name.clone(),
+            version: s.version.clone(),
+            carry: s.carry,
+            slot,
+            mount: s.mount.clone(),
+            sha256: s.pin.clone(),
+            // Carried: provenance; shared: the fetch coordinates the
+            // bootstrap resolves from (spec 23 §13.4).
+            source: Some(s.source.clone()),
+        });
+    }
+    let lock = tpkg::PackageLock {
+        runtime: Some(lock_runtime),
+        slices: lock_slices,
     };
 
     let mut runtime_ref = format!("ruby@{ruby_ver};tebako={}", opts.tebako_version);
@@ -244,11 +418,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         // the .tfs alongside the interpreter at first run.
         runtime_ref.push_str(";image");
     }
-    if let Some(sha) = &payload_sha256 {
-        runtime_ref.push_str(&format!(";sha256={sha}"));
-    }
 
-    let package = format!("{}{}", opts.package(), scenario.exe_suffix);
     // The L2 package manifest rides EVERY runnable press (spec 03 §6):
     // entries[0] names the in-image dispatcher entry (mount-relative —
     // the driver joins mount+entry, spec 17 §1) and the mounts block
@@ -256,12 +426,14 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // root (the image-era mount model — the env image owns the root,
     // the app image merges over it). A --jail press composes the policy
     // into the SAME block (spec 08 §4 — one manifest, never two paths).
+    // The lock (spec 23 §4) rides the same manifest.
     let package_manifest = press_package_manifest(
         &package,
         &runtime_ref,
         &opts.tebako_version,
         declared_mount(&scenario.fs_mount_point),
         jail,
+        Some(lock),
     );
     stitch(
         &bootstrap_path,
@@ -269,6 +441,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         &package,
         &runtime_ref,
         Some(&package_manifest),
+        !runtime_carried,
         opts.no_install,
     )?;
     println!("Created tebako package at \"{package}\"");
@@ -364,13 +537,17 @@ pub(crate) fn press_bootstrap_with(
 /// refs, spec 02 §5b / spec 03 §6). `package_manifest`, when present, is
 /// embedded as extension block type 2 (every runnable press writes one —
 /// the union mount model, spec 03 §6); `None` keeps the package
-/// block-less (the v1 shape — bare payload stitching, tests).
+/// block-less (the v1 shape — bare payload stitching, tests). `lean` is
+/// the TPKG_FLAG_LEAN verdict: CLEAR only for a self-contained press
+/// (the runtime rides as the two carried slots, spec 19 §6.1 / spec 23
+/// §13.2) — every other package resolves the runtime at run time.
 pub(crate) fn stitch(
     bootstrap_path: &Path,
     images: &[(PathBuf, String, u32)],
     package: &str,
     runtime_ref: &str,
     package_manifest: Option<&tpkg::PackageManifest>,
+    lean: bool,
     no_install: bool,
 ) -> Result<(), TebakoError> {
     if images.is_empty() {
@@ -459,12 +636,14 @@ pub(crate) fn stitch(
         .collect();
     let pkg_options = tebako_pkg::PackageOptions {
         runtime_ref: runtime_ref.to_string(),
-        // TPKG_FLAG_LEAN always; TPKG_FLAG_NO_INSTALL when the press
-        // froze the package (--no-install, TODO.v2-1/12).
-        package_flags: if no_install {
-            tpkg::TPKG_FLAG_LEAN | tpkg::TPKG_FLAG_NO_INSTALL
-        } else {
-            tpkg::TPKG_FLAG_LEAN
+        // TPKG_FLAG_LEAN unless the press is self-contained;
+        // TPKG_FLAG_NO_INSTALL when the press froze the package
+        // (--no-install, TODO.v2-1/12).
+        package_flags: match (lean, no_install) {
+            (true, true) => tpkg::TPKG_FLAG_LEAN | tpkg::TPKG_FLAG_NO_INSTALL,
+            (true, false) => tpkg::TPKG_FLAG_LEAN,
+            (false, true) => tpkg::TPKG_FLAG_NO_INSTALL,
+            (false, false) => 0,
         },
         launcher_abi: LAUNCHER_ABI,
         // The L2 package manifest rides along when the caller declares
@@ -508,13 +687,15 @@ pub(crate) fn declared_mount(mount_point: &str) -> &str {
 /// declared form: `/__tfs__` on POSIX, `/t` on windows — so the two stay
 /// consistent by construction). A --jail press composes the policy into
 /// the same block — the package's host-access REQUEST the bootstrap
-/// tightens at handoff (spec 08 §2).
+/// tightens at handoff (spec 08 §2). `lock` is the press-time
+/// composition lock (spec 23 §4/§13) — baked by every runnable press.
 fn press_package_manifest(
     package: &str,
     runtime_ref: &str,
     tebako_version: &str,
     mount_point: &str,
     jail: Option<tpkg::HostJail>,
+    lock: Option<tpkg::PackageLock>,
 ) -> tpkg::PackageManifest {
     let stem = Path::new(package)
         .file_stem()
@@ -539,7 +720,7 @@ fn press_package_manifest(
         }],
         jail,
         env: Default::default(),
-        lock: None,
+        lock,
         mounts: vec![tpkg::PackageMount {
             slot: 0,
             point: mount_point.to_string(),
@@ -864,6 +1045,7 @@ mod tests {
             "0.15.9",
             "/__tfs__",
             Some(jail),
+            None,
         );
         // Valid per the tpkg discipline (schema version, N>=1 entries, the
         // jail block's own validation, the mounts block's rules).
@@ -899,6 +1081,7 @@ mod tests {
             "0.15.9",
             "/__tfs__",
             None,
+            None,
         );
         m.validate().unwrap();
         assert!(m.jail.is_none());
@@ -929,6 +1112,7 @@ mod tests {
             "ruby@3.3.7;tebako=9.9.9",
             None,
             true,
+            true,
         )
         .unwrap();
         let mut f = std::fs::File::open(&frozen).unwrap();
@@ -943,12 +1127,133 @@ mod tests {
             plain.to_str().unwrap(),
             "ruby@3.3.7;tebako=9.9.9",
             None,
+            true,
             false,
         )
         .unwrap();
         let mut f = std::fs::File::open(&plain).unwrap();
         let m = tpkg::read_from(&mut f).unwrap();
         assert_eq!(m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL, 0);
+    }
+
+    #[test]
+    fn press_package_manifest_bakes_the_lock() {
+        // spec 23 §4/§13: the lock rides the type-2 manifest — the
+        // carried runtime pair's slots + pins and the app slice row.
+        let hex = |c: char| c.to_string().repeat(64);
+        let lock = tpkg::PackageLock {
+            runtime: Some(tpkg::LockedRuntime {
+                version: "3.3.7".to_string(),
+                carry: true,
+                exe: Some(tpkg::LockedArtifact {
+                    slot: 1,
+                    sha256: tpkg::DigestPin::One(hex('a')),
+                    install_as: None,
+                }),
+                image: Some(tpkg::LockedArtifact {
+                    slot: 2,
+                    sha256: tpkg::DigestPin::One(hex('b')),
+                    install_as: None,
+                }),
+                dll: None,
+            }),
+            slices: vec![
+                tpkg::LockedSlice {
+                    name: "hello".to_string(),
+                    version: "0.0.0".to_string(),
+                    carry: true,
+                    slot: Some(0),
+                    mount: Some("/__tfs__".to_string()),
+                    sha256: tpkg::DigestPin::One(hex('c')),
+                    source: None,
+                },
+                tpkg::LockedSlice {
+                    name: "templates".to_string(),
+                    version: "3.2".to_string(),
+                    carry: false,
+                    slot: None,
+                    mount: None,
+                    sha256: tpkg::DigestPin::One(hex('d')),
+                    source: Some("tfs:github:acme/templates:3.2".to_string()),
+                },
+            ],
+        };
+        let m = press_package_manifest(
+            "/tmp/out/hello",
+            "ruby@3.3.7;tebako=0.15.9;image",
+            "0.15.9",
+            "/__tfs__",
+            None,
+            Some(lock.clone()),
+        );
+        m.validate().unwrap();
+        assert_eq!(m.lock.as_ref(), Some(&lock));
+        // the claimed slots: the carried runtime pair + the app slice
+        let mut claimed = lock.claimed_slots();
+        claimed.sort_unstable();
+        assert_eq!(claimed, vec![0, 1, 2]);
+        // the YAML round trip preserves the lock (the bootstrap reads it)
+        let back = tpkg::PackageManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+        assert_eq!(back, m);
+        assert_eq!(
+            back.lock
+                .as_ref()
+                .unwrap()
+                .runtime
+                .as_ref()
+                .unwrap()
+                .image
+                .as_ref()
+                .unwrap()
+                .slot,
+            2
+        );
+    }
+
+    #[test]
+    fn stitch_clears_the_lean_flag_only_when_self_contained() {
+        // spec 23 §13.2: a self-contained press resolves nothing at run
+        // time — TPKG_FLAG_LEAN stays CLEAR; every other press sets it.
+        let dir = std::env::temp_dir().join(format!("tebako-cli-stitch-lean-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let base = dir.join("bootstrap");
+        std::fs::write(&base, b"BASE").unwrap();
+        let img = dir.join("img.tfs");
+        std::fs::write(&img, b"IMG").unwrap();
+
+        let contained = dir.join("contained");
+        stitch(
+            &base,
+            &[(img.clone(), "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            contained.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            false,
+            false,
+        )
+        .unwrap();
+        let mut f = std::fs::File::open(&contained).unwrap();
+        let m = tpkg::read_from(&mut f).unwrap();
+        assert_eq!(m.package_flags & tpkg::TPKG_FLAG_LEAN, 0);
+        assert_eq!(m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL, 0);
+
+        let shared = dir.join("shared");
+        stitch(
+            &base,
+            &[(img, "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            shared.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            true,
+            false,
+        )
+        .unwrap();
+        let mut f = std::fs::File::open(&shared).unwrap();
+        let m = tpkg::read_from(&mut f).unwrap();
+        assert!(m.package_flags & tpkg::TPKG_FLAG_LEAN != 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn press_opts(bootstrap: Option<PathBuf>) -> PressOptions {
@@ -972,6 +1277,10 @@ mod tests {
             jail: None,
             no_install: false,
             format: options::PressImageFormat::Dwarfs,
+            compose: None,
+            carry: None,
+            share: None,
+            mode_explicit: false,
         }
     }
 

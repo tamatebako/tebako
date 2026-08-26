@@ -58,7 +58,7 @@ fn err(code: i32, message: impl Into<String>) -> TebakoError {
     TebakoError::new(message, code)
 }
 
-fn map_resolve(e: ResolveError) -> TebakoError {
+pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
     let code = match &e {
         ResolveError::Reference(_) | ResolveError::GitPathRequired { .. } => EX_USAGE,
         ResolveError::Sha256Mismatch { .. } => EX_TEBAKO_SHA,
@@ -75,7 +75,7 @@ fn map_resolve(e: ResolveError) -> TebakoError {
     TebakoError::new(e.to_string(), code)
 }
 
-fn map_shim(e: ShimError) -> TebakoError {
+pub(crate) fn map_shim(e: ShimError) -> TebakoError {
     TebakoError::new(e.message, i32::from(e.code))
 }
 
@@ -199,21 +199,24 @@ pub struct InstallOutcome {
 }
 
 /// Everything needed to place one payload — the two install forms
-/// converge on this.
-struct InstallPlan {
-    name: String,
-    version: String,
+/// converge on this. `pub(crate)` for the compose press path (spec 23
+/// §13): it resolves through the same registry selection, then stops
+/// before the install verbs (mirror/shims/materialize are install's,
+/// never press's).
+pub(crate) struct InstallPlan {
+    pub(crate) name: String,
+    pub(crate) version: String,
     /// The payload kind (the registry declares it; the ref form assumes
     /// app — its mirror falls back to the entrypoint convention).
-    kind: tpkg::PayloadKind,
-    reference: Reference,
+    pub(crate) kind: tpkg::PayloadKind,
+    pub(crate) reference: Reference,
     /// The registry per-triplet sha256 anchor (the cache's expected
     /// digest; the reference's own pin is verified at the fetch boundary).
-    expected_sha256: Option<String>,
+    pub(crate) expected_sha256: Option<String>,
     signature: Option<SignaturePin>,
     /// Registry-declared entrypoint names (the ref form has none and
     /// falls back to the payload name).
-    entrypoints: Vec<String>,
+    pub(crate) entrypoints: Vec<String>,
     /// engine + constraint + the optional abi line (native-extension
     /// payloads, spec 05 §5)
     runtime_requirement: Option<(String, String, Option<String>)>,
@@ -245,10 +248,10 @@ pub fn install_with<T: Transport>(
 ) -> Result<InstallOutcome, TebakoError> {
     if looks_like_reference(target) {
         let plan = plan_from_reference(target)?;
-        finish_install(home, fetcher, plan, shim_binary)
+        finish_install(home, fetcher, plan, shim_binary, &mut Vec::new())
     } else {
         let plan = plan_from_nickname(home, fetcher, target, host)?;
-        finish_install(home, fetcher, plan, shim_binary)
+        finish_install(home, fetcher, plan, shim_binary, &mut Vec::new())
     }
 }
 
@@ -326,6 +329,29 @@ pub fn install_local(
         ));
     }
     let abs = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+    // The two-slot era (spec 19 §6.1 / spec 23 §13): the lock's runtime
+    // artifacts (exe / env image / windows dll) are not payload slices —
+    // they seed the runtime cache on first run, never the payload store.
+    let pm = m.package_manifest().map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "invalid package manifest (extension block type 2) in {}: {e}",
+                path.display()
+            ),
+        )
+    })?;
+    let runtime_slots: BTreeSet<usize> = pm
+        .and_then(|pm| pm.lock)
+        .and_then(|lock| lock.runtime)
+        .map(|runtime| {
+            [&runtime.exe, &runtime.image, &runtime.dll]
+                .into_iter()
+                .flatten()
+                .map(|a| a.slot as usize)
+                .collect()
+        })
+        .unwrap_or_default();
     let cache = PayloadCache::with_root(home);
     let mut outcome = LocalInstallOutcome {
         installed: Vec::new(),
@@ -345,6 +371,13 @@ pub fn install_local(
             if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
                 outcome.notes.push(
                     "the runtime slot is not store-installed; it resolves into the runtime cache on first run (unchanged)"
+                        .to_string(),
+                );
+                continue;
+            }
+            if runtime_slots.contains(&i) {
+                outcome.notes.push(
+                    "the carried runtime artifacts seed the runtime cache on first run (spec 05 §4) — not store-installed"
                         .to_string(),
                 );
                 continue;
@@ -688,7 +721,7 @@ fn plan_from_nickname<T: Transport>(
 /// Every registered registry carrying `name`, as (registry ref, payload)
 /// pairs — the one search both the nickname form and dependency edges
 /// run (spec 04 §2: the registered set is the whole namespace).
-fn find_in_registries<T: Transport>(
+pub(crate) fn find_in_registries<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     name: &str,
@@ -796,7 +829,7 @@ fn plan_from_dependency_edge<T: Transport>(
     }
 }
 
-fn plan_from_registry_entry(
+pub(crate) fn plan_from_registry_entry(
     reg_ref: &str,
     payload: &RegistryPayload,
     version_req: Option<&str>,
@@ -884,7 +917,7 @@ fn plan_from_registry_entry(
 
 /// The host platform as a tpkg [`Platform`] (spec 03 §3: ONE type owns
 /// the mapping — the CLI's host form is the release-asset name).
-fn host_platform() -> Result<Platform, TebakoError> {
+pub(crate) fn host_platform() -> Result<Platform, TebakoError> {
     let host = crate::options::host_platform()?;
     Platform::from_release_asset_name(&host).ok_or_else(|| {
         err(
@@ -896,11 +929,17 @@ fn host_platform() -> Result<Platform, TebakoError> {
 
 // ---- the shared tail: fetch → verify → cache → mirror → shims → deps --------
 
+/// `chain` is the dependency path from the top-level install down to
+/// this plan (spec 18 §5.6 S32): the closure walk pushes each payload's
+/// name before walking its edges and pops after — a `requires:` edge
+/// naming a payload already on the path is a dependency CYCLE, a named
+/// error instead of the cache check's silent short-circuit.
 fn finish_install<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     plan: InstallPlan,
     shim_binary: Option<&Path>,
+    chain: &mut Vec<String>,
 ) -> Result<InstallOutcome, TebakoError> {
     let cache = PayloadCache::with_root(home);
     let mut notes = Vec::new();
@@ -972,9 +1011,12 @@ fn finish_install<T: Transport>(
     // The dependency closure (spec 03 §2.3): the mirror's toolkit/data
     // edges resolve to cached-or-registry installs, recursively. Every
     // payload is cached BEFORE its own edges walk, so a re-encountered
-    // name short-circuits on the cache check — no cycle guard, and the
-    // finite registry set bounds the recursion.
-    install_dependency_closure(home, fetcher, &mirror, shim_binary)?;
+    // name short-circuits on the cache check — the chain guard (S32)
+    // turns a true cycle into the named error first.
+    chain.push(plan.name.clone());
+    let closure = install_dependency_closure(home, fetcher, &mirror, shim_binary, chain);
+    chain.pop();
+    closure?;
 
     Ok(InstallOutcome {
         name: plan.name,
@@ -995,12 +1037,15 @@ fn finish_install<T: Transport>(
 /// failing that, the newest registry version satisfying the edge's
 /// constraint, installed through the same fetch → verify → cache → walk
 /// tail. `kind: language` edges are the runtime axis — the dispatcher
-/// resolves them at run time, never here.
+/// resolves them at run time, never here. An edge naming a payload
+/// already on `chain` is a requires CYCLE (spec 18 §5.6 S32) — a named
+/// error, never the cache check's silent short-circuit.
 fn install_dependency_closure<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     mirror: &Manifest,
     shim_binary: Option<&Path>,
+    chain: &mut Vec<String>,
 ) -> Result<(), TebakoError> {
     for req in mirror.requires() {
         let (kind, name, constraint) = match req {
@@ -1012,13 +1057,28 @@ fn install_dependency_closure<T: Transport>(
                 name, constraint, ..
             } => ("data", name, constraint),
         };
+        if chain.iter().any(|n| n == name) {
+            let start = chain
+                .iter()
+                .position(|n| n == name)
+                .expect("membership checked");
+            let mut cycle: Vec<String> = chain[start..].to_vec();
+            cycle.push(name.clone());
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "dependency cycle: {} (spec 18 §5.6 S32) — break the cycle in the payloads' requires: declarations",
+                    cycle.join(" → ")
+                ),
+            ));
+        }
         let eval = versions::from_validated(constraint);
         let installed = tebako_shim::resolve::installed_versions(home, name).map_err(map_shim)?;
         if installed.iter().any(|v| eval.matches(v)) {
             continue;
         }
         let plan = plan_from_dependency_edge(home, fetcher, mirror, kind, name, constraint)?;
-        finish_install(home, fetcher, plan, shim_binary)?;
+        finish_install(home, fetcher, plan, shim_binary, chain)?;
     }
     Ok(())
 }
