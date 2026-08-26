@@ -916,23 +916,21 @@ mod tests {
         // with an LMSK footer. A small window must decode ~1 frame, not
         // the whole drop — tebako#464's actual fix. This pins the
         // READER side: foreign images carry containers and the backend
-        // must serve them bounded and byte-exact. (tebako's own writer
-        // recipe emits no containers today — the chunk path never sets
-        // the flag, limnifs#195 — so the fixture forces the whole-file
-        // path via the built-in ExecutableCategorizer.)
+        // must serve them bounded and byte-exact. (The fixture forces
+        // the whole-file path for a deterministic single drop; tebako's
+        // own writer recipe also emits containers since limnifs 0.3.1 —
+        // the chunk path flags chunks ≥ 256 KiB, limnifs#195 fixed.)
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
-        // 3 MiB, COMPRESSIBLE (the whole-file tournament lets Brotli
-        // win — a seekable codec — over the categorizer's BCJ pick)
-        // and below the 4 MiB max_drop_size so the categorizer path
-        // emits one whole-file drop.
+        // 3 MiB, COMPRESSIBLE, and below the 4 MiB max_drop_size so the
+        // categorizer path emits one whole-file drop.
         let mut want: Vec<u8> = (0..3 * 1024 * 1024u32).map(|i| (i % 251) as u8).collect();
-        // ELF64 x86_64 header: the static default registry's
-        // ExecutableCategorizer claims the file and routes it to the
-        // whole-file path. The pushed config entry below is a no-op
-        // beyond flipping `use_categorizers` on — the directory write
-        // path consults only the static registry, never config
-        // categorizer entries (limnifs#195).
+        // ELF64 x86_64 header plus the live `.bin` config entry below:
+        // limnifs ≥ 0.3.1 evaluates config categorizers ahead of the
+        // static registry (limnifs#196 fixed), so the entry claims the
+        // file and routes it to one whole-file lz4 drop — a seekable
+        // codec, hence a container. The ELF magic stays as a
+        // belt-and-braces static-registry claim.
         want[0..4].copy_from_slice(&[0x7F, b'E', b'L', b'F']);
         want[4] = 2; // EI_CLASS = ELFCLASS64
         want[5] = 1; // EI_DATA = ELFDATA2LSB
@@ -981,7 +979,7 @@ mod tests {
         let total_frames = 3 * 1024 * 1024 / (256 * 1024); // 12 if one drop
         assert!(
             frames_one_window >= 1,
-            "the fixture must exercise the seekable path (a 3 MiB whole-file Brotli drop emits a container)"
+            "the fixture must exercise the seekable path (a 3 MiB whole-file drop on a seekable codec emits a container)"
         );
         assert!(
             frames_one_window <= 2,

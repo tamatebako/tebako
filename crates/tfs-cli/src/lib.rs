@@ -1066,11 +1066,11 @@ pub fn cmd_mkimage(format: &str, source_dir: &Path, output: &Path) -> Result<(),
 /// writer's 1000 KiB threshold; `store` (2.5 MB) overshoots the
 /// readers' 1 MiB hard ceiling outright). The shared-inline table stays
 /// off (`defaults.shared_inline = false`) — one handle kind, nil wire
-/// cost (spec 20 §5 constraint 1). This recipe emits NO seekable
-/// containers (the categorizer-less chunk path never sets the flag —
-/// limnifs#195); tebako#464's bounded cost comes from the reader's
-/// SIEVE drop cache instead. The metadata is inlined up to the
-/// readers' 1 MiB ceiling.
+/// cost (spec 20 §5 constraint 1). Content chunks at or above the
+/// 256 KiB frame size ride flagged seekable containers (limnifs 0.3.1 —
+/// #195 fixed the chunk-path flag), so a large single file also reads
+/// back bounded; the reader's SIEVE drop cache bounds everything below.
+/// The metadata is inlined up to the readers' 1 MiB ceiling.
 fn write_limnifs_image(source: &Path, output: &Path) -> Result<(), (String, i32)> {
     let mut config = limnifs_write::WriteConfig::default_v0_1();
     config.dictionaries.enabled = false;
