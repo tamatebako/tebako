@@ -115,6 +115,17 @@ pub struct Resolved {
     pub image: Option<ImageRef>,
 }
 
+/// The resolved windows dll facet of a runtime entry
+/// (tebako-runtime-ruby#40): the installed path, its PE name
+/// (`install_as`), and the verified sha256 — the pin a press lock
+/// carries.
+#[derive(Debug, Clone)]
+pub struct ResolvedDll {
+    pub path: PathBuf,
+    pub install_as: String,
+    pub sha256: String,
+}
+
 #[derive(Debug)]
 pub struct Resolver {
     pub cache_root: PathBuf,
@@ -222,6 +233,40 @@ impl Resolver {
         Ok(Resolved {
             executable,
             image: image_marker(),
+        })
+    }
+
+    /// The dll facet of an ALREADY-RESOLVED runtime entry (windows,
+    /// tebako-runtime-ruby#40), for press's lock: the installed path
+    /// (under the PE name), the `install_as`, and the pin — the entry
+    /// marker's first token (the verified sha of the installed file),
+    /// else the index facet's sha256. `None` for every POSIX entry, for
+    /// entries without the facet, and for a facet that never
+    /// materialized (a sums-derived ref carries no PE name).
+    pub fn resolved_dll(
+        &self,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+    ) -> Option<ResolvedDll> {
+        let dir = self.entry_dir(ruby_version, platform, tebako_version);
+        let dll = self
+            .cached_index_entry(&dir, ruby_version, platform, tebako_version)?
+            .dll?;
+        let install_as = dll.install_as?;
+        let path = dir.join(&install_as);
+        if !path.is_file() {
+            return None;
+        }
+        let sha256 = fs::read_to_string(dir.join(format!("{install_as}.sha256")))
+            .ok()
+            .and_then(|body| body.split_whitespace().next().map(str::to_string))
+            .filter(|s| !s.is_empty())
+            .unwrap_or(dll.sha256);
+        Some(ResolvedDll {
+            path,
+            install_as,
+            sha256,
         })
     }
 

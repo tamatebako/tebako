@@ -16,13 +16,35 @@ pub enum PressMode {
 
 impl PressMode {
     pub fn parse(s: &str) -> Result<PressMode, String> {
+        Self::parse_named(s).map(|(mode, _)| mode)
+    }
+
+    /// The spec 23 §13.2 vocabulary: `self-contained`/`shared-runtime`
+    /// are the locked preset names; `lean`/`fat` stay accepted as
+    /// deprecated aliases and return a named warning for the caller to
+    /// print (never silent). `classic`/`runtime` are unchanged.
+    pub fn parse_named(s: &str) -> Result<(PressMode, Option<String>), String> {
         match s {
-            "lean" => Ok(PressMode::Lean),
-            "fat" => Ok(PressMode::Fat),
-            "classic" => Ok(PressMode::Classic),
-            "runtime" => Ok(PressMode::Runtime),
+            "shared-runtime" => Ok((PressMode::Lean, None)),
+            "self-contained" => Ok((PressMode::Fat, None)),
+            "lean" => Ok((
+                PressMode::Lean,
+                Some(
+                    "`--mode lean` is deprecated: the preset is now named `shared-runtime` (spec 23 §13.2)"
+                        .to_string(),
+                ),
+            )),
+            "fat" => Ok((
+                PressMode::Fat,
+                Some(
+                    "`--mode fat` is deprecated: the preset is now named `self-contained` — the runtime travels as two carried slots (spec 23 §13.2)"
+                        .to_string(),
+                ),
+            )),
+            "classic" => Ok((PressMode::Classic, None)),
+            "runtime" => Ok((PressMode::Runtime, None)),
             _ => Err(format!(
-                "invalid mode '{s}' (lean/fat/classic/runtime expected)"
+                "invalid mode '{s}' (self-contained/shared-runtime/classic/runtime expected; lean/fat accepted as deprecated aliases)"
             )),
         }
     }
@@ -123,6 +145,19 @@ pub struct PressOptions {
     /// --format <dwarfs|limnifs> (spec 20 §6): the application image
     /// format. Limnifs by default; `dwarfs` stays an explicit opt-in.
     pub format: PressImageFormat,
+    /// --compose <tebako.yaml> (spec 23 §3 D2): the composition document
+    /// naming the payload slices pressed around the local app.
+    pub compose: Option<PathBuf>,
+    /// --carry <all|none|name,…> (spec 23 §13.2): per-slice carry
+    /// override; requires --compose.
+    pub carry: Option<String>,
+    /// --share <name,…> (spec 23 §13.2): per-slice share override;
+    /// requires --compose.
+    pub share: Option<String>,
+    /// True when -m/--mode was passed explicitly (spec 23 §13.2: an
+    /// explicit --mode OVERRIDES the compose document's preset — the
+    /// invocation beats authored defaults; a defaulted mode never does).
+    pub mode_explicit: bool,
 }
 
 impl PressOptions {
@@ -305,3 +340,52 @@ fn join_path(base: &str, rel: &str) -> String {
 pub fn host_platform() -> Result<String, TebakoError> {
     Ok(tpkg::Platform::host().release_asset_name().to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_named_speaks_the_locked_vocabulary() {
+        assert_eq!(
+            PressMode::parse_named("self-contained").unwrap(),
+            (PressMode::Fat, None)
+        );
+        assert_eq!(
+            PressMode::parse_named("shared-runtime").unwrap(),
+            (PressMode::Lean, None)
+        );
+        assert_eq!(
+            PressMode::parse_named("classic").unwrap(),
+            (PressMode::Classic, None)
+        );
+        assert_eq!(
+            PressMode::parse_named("runtime").unwrap(),
+            (PressMode::Runtime, None)
+        );
+    }
+
+    #[test]
+    fn parse_named_aliases_warn_never_silent() {
+        let (mode, warning) = PressMode::parse_named("lean").unwrap();
+        assert_eq!(mode, PressMode::Lean);
+        let warning = warning.expect("the alias warns");
+        assert!(warning.contains("deprecated"), "{warning}");
+        assert!(warning.contains("shared-runtime"), "{warning}");
+
+        let (mode, warning) = PressMode::parse_named("fat").unwrap();
+        assert_eq!(mode, PressMode::Fat);
+        let warning = warning.expect("the alias warns");
+        assert!(warning.contains("deprecated"), "{warning}");
+        assert!(warning.contains("self-contained"), "{warning}");
+
+        // the quiet parse (non-CLI callers) keeps the alias mapping
+        assert_eq!(PressMode::parse("fat").unwrap(), PressMode::Fat);
+        assert_eq!(PressMode::parse("shared-runtime").unwrap(), PressMode::Lean);
+
+        let err = PressMode::parse_named("chunky").unwrap_err();
+        assert!(err.contains("self-contained/shared-runtime"), "{err}");
+        assert!(err.contains("lean/fat"), "{err}");
+    }
+}
+

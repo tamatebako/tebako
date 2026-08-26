@@ -766,6 +766,10 @@ mod tests {
             jail: None,
             no_install: false,
             format: crate::options::PressImageFormat::Dwarfs,
+            compose: None,
+            carry: None,
+            share: None,
+            mode_explicit: false,
         }
     }
 

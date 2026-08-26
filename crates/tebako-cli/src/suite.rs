@@ -397,6 +397,9 @@ pub fn press_suite(
         &package,
         &runtime_refs[0],
         Some(&package_manifest),
+        // Suites never carry the runtime (press_suite refuses the
+        // self-contained mode) — the LEAN flag stands.
+        true,
         opts.no_install,
     )?;
     println!("Created tebako suite package at \"{package}\"");

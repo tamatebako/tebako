@@ -629,6 +629,10 @@ fn load_image(path: &Path, parsed: &CheckArgs) -> Result<CheckTarget, TebakoErro
 /// runtime slot is never mounted, spec 17 §1 — its checks belong to the
 /// factory/gate, not the package surface). A multi-slice package groups
 /// the report by slice; a single-slice package keeps the bare form.
+/// The two-slot era (spec 19 §6.1 / spec 23 §13): the lock's runtime
+/// artifacts (exe / env image / windows dll) are skipped by slot number
+/// — the exe and dll are not images at all, and the env image's checks
+/// belong to the factory like the format-4 slot's always did.
 fn load_package(path: &Path) -> Result<CheckTarget, TebakoError> {
     let mut f = std::fs::File::open(path)
         .map_err(|e| plain_error(format!("cannot open the package {}: {e}", path.display())))?;
@@ -646,10 +650,25 @@ fn load_package(path: &Path) -> Result<CheckTarget, TebakoError> {
         ))
     })?;
 
+    // The lock-claimed runtime artifact slots (the two-slot carried
+    // runtime) — never payload surfaces.
+    let runtime_slots: BTreeSet<u32> = pm
+        .as_ref()
+        .and_then(|pm| pm.lock.as_ref())
+        .and_then(|lock| lock.runtime.as_ref())
+        .map(|runtime| {
+            [&runtime.exe, &runtime.image, &runtime.dll]
+                .into_iter()
+                .flatten()
+                .map(|a| a.slot)
+                .collect()
+        })
+        .unwrap_or_default();
+
     let mut owners = Vec::new();
     let mut caps = BTreeSet::new();
     for (index, slot) in m.slots.iter().enumerate() {
-        if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME {
+        if slot.format_id == tpkg::TPKG_FORMAT_RUNTIME || runtime_slots.contains(&(index as u32)) {
             continue;
         }
         let image = ImageRef::Region(path.to_path_buf(), slot.offset, slot.size);

@@ -6,9 +6,12 @@ design): a port of the reference Ruby gem's lean/fat press
 
 ```console
 $ tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>]
-               [-c <cwd>] [-R <ruby>] [-m lean|fat] [-l error|warn|debug|trace]
+               [-c <cwd>] [-R <ruby>] [-m self-contained|shared-runtime]
+               [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local] [--jail <spec>]
+               [--compose <tebako.yaml>] [--carry all|none|<name,...>]
+               [--share <name,...>]
 $ tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
                [--] [<args>...]
 $ tebako cache list
@@ -52,14 +55,21 @@ audit journal (`$TEBAKO_HOME/journal.log`, spec 08 §2).
 4. **strip** build artefacts, align the arch layout to the runtime, write
    the entry dispatcher at `/local/stub.rb`;
 5. **image** the app (in-process dwarfs-t Writer → `fs.tfs`) and
-   **stitch** the three-part package:
-   bootstrap + image slot(s) + tpkg trailer (LEAN flag, launcher ABI 1,
-   runtime_ref `ruby@<rv>;tebako=<v>`; `fat` mode adds the runtime as a
-   FORMAT_RUNTIME payload slot and appends `;sha256=<hex>`).
+   **stitch** the package:
+   bootstrap + image slot(s) + tpkg trailer (launcher ABI 1, runtime_ref
+   `ruby@<rv>;tebako=<v>[;image]`) + the L2 manifest's composition lock
+   (spec 23 §4 — EVERY press locks the resolved runtime and slice
+   digests; `--compose <tebako.yaml>` adds the composition's payload
+   slices as carried slots or locked shared references, spec 23 §13).
+   `--mode=self-contained` (the `fat` successor) carries the runtime as
+   TWO ordinary slots — the interpreter exe + the env image, plus the
+   windows dll facet when the release declares one (spec 19 §6.1) —
+   pinned by the lock, never the retired `;sha256=` runtime_ref form.
 
 At first run the packaged binary's bootstrap resolves the runtime into
-the shared cache (fat: installs the payload instead) and hands over via
-the launcher ABI.
+the shared cache (self-contained: stages the carried pair into the same
+cache, verified against the lock's digest pins) and hands over via the
+launcher ABI.
 
 ## Scenarios
 
