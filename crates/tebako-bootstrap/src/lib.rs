@@ -57,6 +57,7 @@
 //! stderr — `resolving` → `downloading` + live bar → `verifying sha256` →
 //! `installing (locked)` → `installed … and shared by every tebako app on
 //! this machine`; a cache hit is one quiet `runtime <ref> (cached)` line.
+//! `TEBAKO_NO_PROGRESS=1` silences these lines entirely (tebako#400).
 //! stdout is the payload's and is never touched.
 
 pub mod artifact_info;
@@ -71,6 +72,7 @@ use platform::{
     make_readonly, mkdir_p, os_rename, platform_string, remove_file, write_small_file, EntryLock,
 };
 use sha::sha256_file_hex;
+use sha2::Digest;
 
 /// The launcher ABI this bootstrap speaks.
 pub const LAUNCHER_ABI: u32 = 1;
@@ -1707,8 +1709,12 @@ fn sha256_hex(bytes: &[u8]) -> String {
 ///   (`EX_TEBAKO_SHA` on mismatch, streaming one pass at install; a
 ///   trusted-cache marker avoids re-hashing unchanged packages).
 /// - v1 (legacy unsigned) trailer: accepted with a loud stderr warning
-///   and an audit-journal record — unless TEBAKO_REQUIRE_SIGNED=1, which
-///   turns it into a hard `EX_TEBAKO_SIGNATURE` failure.
+///   on first acceptance per machine (tebako#400; marker under
+///   `~/.tebako/warned-legacy/`, keyed on path|size|mtime) and an
+///   audit-journal record on every acceptance — unless
+///   TEBAKO_REQUIRE_SIGNED=1, which turns it into a hard
+///   `EX_TEBAKO_SIGNATURE` failure. The durable remedy is
+///   `tebako press --sign`: v2-signed trailers never warn.
 pub fn verify_chain(self_path: &Path, m: &tpkg::Manifest) -> Result<(), BootError> {
     let home = cache_root()?;
     verify_chain_with_home(self_path, m, &home)
@@ -1819,6 +1825,42 @@ fn verify_v2_signature(
     Ok(())
 }
 
+/// The v1-legacy warning cadence (tebako#400): loud on the FIRST
+/// acceptance of a given package per machine, silent afterwards — the
+/// audit journal still records every acceptance. Returns true exactly
+/// once per marker key. Best effort: when the marker cannot be written
+/// the warning simply re-prints next run — bookkeeping never breaks a
+/// boot.
+#[doc(hidden)]
+pub fn legacy_warn_due(home: &Path, self_path: &Path) -> bool {
+    let marker = legacy_warn_marker(home, self_path);
+    if marker.exists() {
+        return false;
+    }
+    if let Some(parent) = marker.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(&marker, b"");
+    true
+}
+
+/// `~/.tebako/warned-legacy/<sha256(path|size|mtime)>` — the key rides
+/// path + size + mtime so a re-pressed or replaced binary warns again.
+fn legacy_warn_marker(home: &Path, self_path: &Path) -> PathBuf {
+    let mut h = sha2::Sha256::new();
+    h.update(self_path.as_os_str().as_encoded_bytes());
+    if let Ok(md) = std::fs::metadata(self_path) {
+        h.update(md.len().to_be_bytes());
+        if let Ok(mtime) = md.modified() {
+            if let Ok(d) = mtime.duration_since(std::time::UNIX_EPOCH) {
+                h.update(d.as_secs().to_be_bytes());
+                h.update(d.subsec_nanos().to_be_bytes());
+            }
+        }
+    }
+    home.join("warned-legacy").join(sha::hex(&h.finalize()))
+}
+
 /// The home-parameterized core of [`verify_chain`] (tests inject a temp
 /// home; production resolves it through `cache_root()`).
 pub fn verify_chain_with_home(
@@ -1837,10 +1879,12 @@ pub fn verify_chain_with_home(
                 ),
             );
         }
-        eprintln!(
-            "tebako-bootstrap: WARNING: {} carries an unsigned v1 (legacy) tpkg trailer\n  — accepted for compatibility; re-bundle the package for integrity protection",
-            self_path.display()
-        );
+        if legacy_warn_due(home, self_path) {
+            eprintln!(
+                "tebako-bootstrap: WARNING: {} carries an unsigned v1 (legacy) tpkg trailer\n  — accepted for compatibility; re-bundle the package for integrity protection",
+                self_path.display()
+            );
+        }
         journal(
             home,
             &format!("event=legacy-v1-accepted package={}", self_path.display()),

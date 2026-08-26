@@ -57,8 +57,13 @@ tebako validates below it — see spec 12 §5.
 - **Only the presence of a signature is optional — verification of signed
   packages is always strict** (exits 71/72, spec 06 §4).
 - **v1-legacy rule:** unsigned v1 packages exist in the wild and stay
-  runnable — accepted as LEGACY with a loud stderr warning + audit
-  journal entry. `TEBAKO_REQUIRE_SIGNED=1` is the explicit opt-in
+  runnable — accepted as LEGACY with a loud stderr warning **on first
+  acceptance per machine** (marker
+  `$TEBAKO_HOME/warned-legacy/<sha256(path|size|mtime)>`; a re-pressed or
+  replaced binary warns again) plus an audit-journal entry on **every**
+  acceptance (tebako#400: the per-run repetition was unactionable noise;
+  the durable remedy is `tebako press --sign` — v2-signed trailers never
+  warn). `TEBAKO_REQUIRE_SIGNED=1` is the explicit opt-in
   hard-fail for hardened environments — never the default.
 - **Fail closed everywhere:** no insecure-skip flag.
 - Encryption is likewise per-image opt-in (spec 10).
