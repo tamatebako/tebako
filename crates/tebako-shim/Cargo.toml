@@ -17,18 +17,18 @@ categories = ["command-line-utilities"]
 # spec 08 jail model (the mirror's capabilities.host, composed with the
 # dispatch flags into TEBAKO_JAIL — the engine stays out of the
 # dispatcher).
-tpkg = { version = "0.2.1", path = "../tpkg" }
+tpkg = { version = "0.3.0", path = "../tpkg" }
 # The release manifest index (spec 13) parses as DATA, never by string
 # scan: tebako-json's small parser — the substring-scan era read the next
 # entry's sha256 for image assets.
-tebako-json = { version = "0.2.1", path = "../tebako-json" }
+tebako-json = { version = "0.3.0", path = "../tebako-json" }
 # The stack's one logging facility (resolution decisions at debug).
-tebako-log = { version = "0.2.1", path = "../tebako-log" }
+tebako-log = { version = "0.3.0", path = "../tebako-log" }
 # Remote registry resolution at dispatch time (spec 04 §2 — item 33):
 # every registry form (service contents API, pinned release artifact, git
 # blob, file) behind the per-ref dispatch cache in src/regcache.rs. The
 # shim links tebako-resolve, never tebako-cli.
-tebako-resolve = { version = "0.2.1", path = "../tebako-resolve" }
+tebako-resolve = { version = "0.3.0", path = "../tebako-resolve" }
 # The authored config / disabled state / project pins are YAML (spec 00
 # invariant 6). serde_yaml 0.9 is the cached, pure-Rust (unsafe-libyaml)
 # choice — no native build, no async, no clap. (The manifest mirror's
@@ -37,7 +37,7 @@ serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 # In-process HTTP for runtime downloads (spec 00 invariant 1) — the same
 # crate the bootstrap resolves through.
-tebako-http = { version = "0.2.1", path = "../tebako-http" }
+tebako-http = { version = "0.3.0", path = "../tebako-http" }
 libc = "0.2"
 sha2 = "0.10"
 

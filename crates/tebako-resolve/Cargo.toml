@@ -20,17 +20,17 @@ default = ["git"]
 git = ["dep:gix", "dep:reqwest", "dep:rustls"]
 
 [dependencies]
-tebako-http = { version = "0.2.1", path = "../tebako-http" }
+tebako-http = { version = "0.3.0", path = "../tebako-http" }
 # Release-API JSON responses are parsed with the workspace's own minimal
 # JSON parser — no serde in the release-API stack, no native deps
 # (tebako-pkg proper pulls the imaging stack; the parser alone lives in
 # tebako-json).
-tebako-json = { version = "0.2.1", path = "../tebako-json" }
+tebako-json = { version = "0.3.0", path = "../tebako-json" }
 # The registry model (spec 04 §2) is authored YAML (owner rule): serde +
 # serde_yml, the tpkg manifest convention. The Platform/PayloadKind
 # vocabulary comes from tpkg itself — the single owner of the triplet ↔
 # release-asset-name mapping (spec 03 §3).
-tpkg = { version = "0.2.1", path = "../tpkg" }
+tpkg = { version = "0.3.0", path = "../tpkg" }
 serde = { version = "1", features = ["derive"] }
 serde_yml = "0.0.12"
 sha2 = "0.10"

@@ -11,10 +11,10 @@ keywords = ["tebako", "tpkg", "package", "cli"]
 categories = ["filesystem", "command-line-utilities"]
 
 [dependencies]
-tpkg = { version = "0.2.1", path = "../tpkg" }
-tebako-json = { version = "0.2.1", path = "../tebako-json" }
-tebako-info = { version = "0.2.1", path = "../tebako-info" }
-tebako-signer = { version = "0.2.1", path = "../tebako-signer" }
+tpkg = { version = "0.3.0", path = "../tpkg" }
+tebako-json = { version = "0.3.0", path = "../tebako-json" }
+tebako-info = { version = "0.3.0", path = "../tebako-info" }
+tebako-signer = { version = "0.3.0", path = "../tebako-signer" }
 rnp = { package = "rnp-rs", version = "=0.1.11", features = ["vendored"] }
 libc = "0.2"
 sha2 = "0.10"
@@ -23,15 +23,15 @@ sha2 = "0.10"
 # POSIX/autotools-only — Windows gets a dwarfs-only tfs, the backend
 # degrading to a named ENOTSUP (TODO.v2-1/02).
 [target.'cfg(not(windows))'.dependencies]
-tfs = { version = "0.2.1", path = "../tfs" }
+tfs = { version = "0.3.0", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
-tfs = { version = "0.2.1", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+tfs = { version = "0.3.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
 
 [dev-dependencies]
-tebako-contract-tests = { version = "0.2.1", path = "../../tests/contract" }
-tebako-bootstrap = { version = "0.2.1", path = "../tebako-bootstrap" }
-tebako-signer = { version = "0.2.1", path = "../tebako-signer" }
+tebako-contract-tests = { version = "0.3.0", path = "../../tests/contract" }
+tebako-bootstrap = { version = "0.3.0", path = "../tebako-bootstrap" }
+tebako-signer = { version = "0.3.0", path = "../tebako-signer" }
 # In-process dwarfs-t writer for manifest-carrying image fixtures.
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 
