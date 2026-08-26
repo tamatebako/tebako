@@ -765,6 +765,7 @@ mod tests {
             suite: None,
             jail: None,
             no_install: false,
+            quiet_notices: None,
             format: crate::options::PressImageFormat::Dwarfs,
             compose: None,
             carry: None,

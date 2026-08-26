@@ -253,6 +253,67 @@ fn v1_legacy_warns_once_per_package_per_machine() {
 }
 
 #[test]
+fn v1_quiet_notices_bit_suppresses_the_warning_but_journals_and_require_signed_wins() {
+    // tebako#400 / spec 23 §14: TPKG_FLAG_QUIET_NOTICES (bit 3) keeps the
+    // legacy warning silent on EVERY run — the developer's press-time
+    // declaration rides the trailer, not the machine. Acceptance stays
+    // journaled; TEBAKO_REQUIRE_SIGNED=1 (user policy) is checked FIRST
+    // and outranks the bit.
+    let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
+    let dir = scratch("legacy-quiet");
+    let home = dir.join("home");
+
+    // A v1 (unsigned, no v2 extension) package with the quiet bit baked.
+    let bootstrap = b"BOOTSTRAP-BYTES";
+    let image = b"the app image payload";
+    let mut bytes = bootstrap.to_vec();
+    bytes.extend_from_slice(image);
+    let mut m = tpkg::Manifest {
+        version: tpkg::TPKG_VERSION,
+        package_flags: tpkg::TPKG_FLAG_QUIET_NOTICES,
+        launcher_abi: 1,
+        ..Default::default()
+    };
+    m.slots.push(tpkg::Slot::new(
+        bootstrap.len() as u64,
+        image.len() as u64,
+        tpkg::TPKG_FORMAT_ZIP,
+        "/app",
+    ));
+    bytes.extend_from_slice(&tpkg::encode_trailer(&m, bytes.len() as u64).unwrap());
+    let pkg = dir.join("package.bin");
+    std::fs::write(&pkg, &bytes).unwrap();
+    let mut f = std::fs::File::open(&pkg).unwrap();
+    let m = tpkg::read_from(&mut f).expect("parse own package");
+    assert!(m.is_quiet_notices());
+
+    // Accepted and journaled — and NO warn marker ever lands (the bit
+    // short-circuits before the warn-once decision).
+    verify_chain_with_home(&pkg, &m, &home).expect("quiet legacy accepted");
+    verify_chain_with_home(&pkg, &m, &home).expect("quiet legacy accepted again");
+    assert_eq!(
+        journal(&home).matches("event=legacy-v1-accepted").count(),
+        2,
+        "every acceptance is journaled, bit or no bit"
+    );
+    assert!(
+        !home.join("warned-legacy").exists(),
+        "the quiet bit never consults the warn-once marker"
+    );
+
+    // User policy outranks the publisher's bit.
+    std::env::set_var("TEBAKO_REQUIRE_SIGNED", "1");
+    let err = verify_chain_with_home(&pkg, &m, &home).unwrap_err();
+    std::env::remove_var("TEBAKO_REQUIRE_SIGNED");
+    assert_eq!(err.code, EX_TEBAKO_SIGNATURE);
+    assert!(
+        err.message.contains("TEBAKO_REQUIRE_SIGNED=1"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
 fn v1_require_signed_is_hard_fail() {
     let _guard = ENV_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap();
     let dir = scratch("require");

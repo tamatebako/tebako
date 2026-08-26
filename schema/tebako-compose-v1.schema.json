@@ -28,6 +28,10 @@
       "type": "string",
       "minLength": 1,
       "description": "The pointer-package form's entry selector — a PROVIDES entrypoint name of one of the slices. Absent when the press packages a local root (the app's own entry governs)."
+    },
+    "quiet_notices": {
+      "type": "boolean",
+      "description": "The config channel of the quiet_notices registry setting (spec 23 §14): bake TPKG_FLAG_QUIET_NOTICES (bit 3) — every run suppresses the unsigned-legacy-trailer warning and the progress lines. Tri-state: absent lets the CLI (--quiet-notices) and env (TEBAKO_QUIET_NOTICES) channels rule; CLI > env > this key > default(false)."
     }
   },
   "$defs": {

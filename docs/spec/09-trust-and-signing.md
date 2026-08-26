@@ -63,8 +63,14 @@ tebako validates below it — see spec 12 §5.
   replaced binary warns again) plus an audit-journal entry on **every**
   acceptance (tebako#400: the per-run repetition was unactionable noise;
   the durable remedy is `tebako press --sign` — v2-signed trailers never
-  warn). `TEBAKO_REQUIRE_SIGNED=1` is the explicit opt-in
-  hard-fail for hardened environments — never the default.
+  warn). A package whose developer declared `quiet_notices` (spec 23
+  §14) carries `TPKG_FLAG_QUIET_NOTICES` (bit 3) and suppresses this
+  warning and the spec 06 §5 progress lines on every run — the bit
+  rides inside the signed region, so it cannot be forged onto a signed
+  package, and the journal entry is written regardless.
+  `TEBAKO_REQUIRE_SIGNED=1` is the explicit opt-in
+  hard-fail for hardened environments — never the default; it is
+  checked FIRST and outranks the quiet bit.
 - **Fail closed everywhere:** no insecure-skip flag.
 - Encryption is likewise per-image opt-in (spec 10).
 

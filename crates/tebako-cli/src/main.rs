@@ -13,6 +13,7 @@ const USAGE: &str = "Usage:
                [-R <ruby>] [-m self-contained|shared-runtime] [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local] [--jail <spec>]
+               [--no-install] [--quiet-notices]
                [--format dwarfs|limnifs] [--compose <tebako.yaml>]
                [--carry all|none|<name,...>] [--share <name,...>]
                (lean/fat stay accepted as deprecated aliases, spec 23 §13.2)
@@ -692,6 +693,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
     let mut suite: Option<PathBuf> = None;
     let mut jail: Option<String> = None;
     let mut no_install = false;
+    let mut quiet_notices: Option<bool> = None;
     let mut format = tebako_cli::options::PressImageFormat::Limnifs;
     let mut compose: Option<PathBuf> = None;
     let mut carry: Option<String> = None;
@@ -737,6 +739,8 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
             "--suite" => suite = Some(PathBuf::from(take_value(&mut i)?)),
             "--jail" => jail = Some(take_value(&mut i)?),
             "--no-install" => no_install = true,
+            "--quiet-notices" => quiet_notices = Some(true),
+            "--no-quiet-notices" => quiet_notices = Some(false),
             "--format" => {
                 let v = take_value(&mut i)?;
                 format =
@@ -810,6 +814,7 @@ fn parse_press(args: &[String]) -> Result<PressOptions, CliExit> {
         suite,
         jail,
         no_install,
+        quiet_notices,
         format,
         compose,
         carry,

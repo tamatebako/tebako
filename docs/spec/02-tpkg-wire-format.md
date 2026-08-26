@@ -22,7 +22,7 @@ container itself stays byte-identical either way.
 |-------:|-----:|-------|
 | 0   | 10  | magic `"TEBAKOTFS\0"` |
 | 10  | 4   | u32 version = **1** (extensions ride flags, not version bumps) |
-| 14  | 4   | u32 package_flags (bit0 LEAN, bit1 SIGNED_V2, bit2 NO_INSTALL) |
+| 14  | 4   | u32 package_flags (bit0 LEAN, bit1 SIGNED_V2, bit2 NO_INSTALL, bit3 QUIET_NOTICES) |
 | 18  | 4   | u32 slot_count (1..=8) |
 | 22  | 8   | u64 slot_table_offset (absolute file offset of slot 0) |
 | 30  | 128 | char runtime_ref[128] — resolution hint (spec 05 §1); empty = classic |
@@ -79,6 +79,19 @@ package: it RUNS standalone
 but every install attempt is refused with a named error. Absence means
 installable-on-request, including packages pressed before the verb
 existed — pass-through like every flag.
+
+## 5a. The quiet-notices flag (bit3 `QUIET_NOTICES`; tebako#400, spec 23 §14)
+
+The developer's declaration that the package's runs suppress the
+unsigned-legacy-trailer warning (spec 09 §v1-legacy) and the progress
+lines (spec 06 §5) — declared through any registry channel (CLI
+`--quiet-notices`, env `TEBAKO_QUIET_NOTICES`, compose key
+`quiet_notices:`), resolved once at press, baked here. Run-time reads
+only the bit: the package behaves identically on every machine. The bit
+rides inside the signed region, so it cannot be forged onto a signed
+package; `TEBAKO_REQUIRE_SIGNED=1` is checked FIRST and outranks it,
+and the audit-journal entry is written regardless. Absence means the
+default notice behavior — pass-through like every flag.
 
 ## 6. Orthogonality note (normative)
 

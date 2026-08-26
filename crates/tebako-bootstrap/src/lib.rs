@@ -1879,7 +1879,12 @@ pub fn verify_chain_with_home(
                 ),
             );
         }
-        if legacy_warn_due(home, self_path) {
+        // tebako#400: the publisher may bake the notice off
+        // (TPKG_FLAG_QUIET_NOTICES — the fat-binary distribution model,
+        // where the user's trust decision happened at download). User
+        // policy (REQUIRE_SIGNED above) outranks the bit; the acceptance
+        // is journaled either way.
+        if !m.is_quiet_notices() && legacy_warn_due(home, self_path) {
             eprintln!(
                 "tebako-bootstrap: WARNING: {} carries an unsigned v1 (legacy) tpkg trailer\n  — accepted for compatibility; re-bundle the package for integrity protection",
                 self_path.display()
@@ -2065,6 +2070,9 @@ fn resolve_runtime(
 ) -> Result<(PathBuf, Option<String>), BootError> {
     let layout = cache_layout(rr)?;
     let mut ux = BootUx::new();
+    // tebako#400: the package-baked quiet bit silences the same progress
+    // lines TEBAKO_NO_PROGRESS does (OR'd into the gate, never cleared).
+    ux.prog.set_quiet(m.is_quiet_notices());
 
     // spec 19 §6.1 / spec 23 §13.2: a self-contained package carries the
     // runtime pair as ordinary trailer slots — the exe (+ windows dll)

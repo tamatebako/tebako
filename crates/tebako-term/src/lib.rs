@@ -193,6 +193,14 @@ impl<W: Write> Progress<W> {
         }
     }
 
+    /// OR `quiet` into the gate (tebako#400): the package-baked
+    /// `TPKG_FLAG_QUIET_NOTICES` bit silences the same notices
+    /// `TEBAKO_NO_PROGRESS` does, after construction (the trailer is
+    /// read after the renderer exists).
+    pub fn set_quiet(&mut self, quiet: bool) {
+        self.quiet |= quiet;
+    }
+
     /// The mode in effect.
     pub fn mode(&self) -> Mode {
         self.mode

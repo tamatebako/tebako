@@ -15,7 +15,7 @@
 //!   offset  size  field
 //!      0    10    magic "TEBAKOTFS\0" (10 bytes, NUL-terminated)
 //!     10     4    u32 version (TPKG_VERSION = 1)
-//!     14     4    u32 package_flags (bit 0: TPKG_FLAG_LEAN, bit 1: TPKG_FLAG_SIGNED_V2, bit 2: TPKG_FLAG_NO_INSTALL)
+//!     14     4    u32 package_flags (bit 0: TPKG_FLAG_LEAN, bit 1: TPKG_FLAG_SIGNED_V2, bit 2: TPKG_FLAG_NO_INSTALL, bit 3: TPKG_FLAG_QUIET_NOTICES)
 //!     18     4    u32 slot_count (1..TPKG_MAX_SLOTS)
 //!     22     8    u64 slot_table_offset (absolute file offset of slot 0 record)
 //!     30   128    char runtime_ref[128] (UTF-8, NUL-padded; empty = classic bundle)
@@ -156,6 +156,7 @@ pub mod merkle_host;
 mod model;
 mod package;
 mod region;
+pub mod settings;
 
 pub use codec::{
     encode_ext_blocks, encode_trailer, parse_ext_blocks, parse_trailer, trailer_len,
@@ -229,6 +230,16 @@ pub const TPKG_FLAG_SIGNED_V2: u32 = 0x2;
 /// Absence means installable-on-request, including packages written
 /// before the install verb existed — pass-through like every flag.
 pub const TPKG_FLAG_NO_INSTALL: u32 = 0x4;
+/// `package_flags` bit 3 (tebako#400): the publisher baked the run-time
+/// notices off — the bootstrap suppresses the unsigned-v1 legacy
+/// warning and the progress/phase lines FOR THIS PACKAGE (the fat-binary
+/// distribution model: the user's trust decision happened at download,
+/// the per-run notice is unactionable for them). User policy still
+/// outranks the bit: `TEBAKO_REQUIRE_SIGNED=1` fails closed regardless,
+/// signed-package verification stays strict, and the acceptance is
+/// journaled as before. Pass-through like every flag — and forging it
+/// onto a signed package breaks the signature.
+pub const TPKG_FLAG_QUIET_NOTICES: u32 = 0x8;
 
 /// `format_id`: auto-detect from image magic.
 pub const TPKG_FORMAT_AUTO: u32 = 0;

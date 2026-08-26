@@ -29,6 +29,8 @@
 //!   - ref: "openjdk@21"
 //!     platforms: universal      # assertion: fails the press when not universal
 //! entrypoint: mnconvert         # the pointer-package form's entry selector
+//! quiet_notices: true           # optional: bake TPKG_FLAG_QUIET_NOTICES
+//!                               # (registry setting, spec 23 §14 — CLI/env override)
 //! ```
 
 use serde::Deserialize;
@@ -288,6 +290,12 @@ pub struct ComposeDoc {
     /// name of one of the slices). Absent when the press packages a local
     /// root (the app's own entry governs).
     pub entrypoint: Option<String>,
+    /// The config channel of the `quiet_notices` registry setting
+    /// (spec 23 §14): `Some(v)` declares the package's notice policy in
+    /// the repo-carried document — environment-independent, git-
+    /// shareable. CLI and env channels override it at press; the
+    /// resolved value bakes `TPKG_FLAG_QUIET_NOTICES`.
+    pub quiet_notices: Option<bool>,
 }
 
 impl ComposeDoc {
@@ -308,6 +316,9 @@ struct RawDoc {
     #[serde(default)]
     slices: Vec<RawSlice>,
     entrypoint: Option<String>,
+    // The config channel of the `quiet_notices` registry setting
+    // (spec 23 §14) — tri-state; absent lets the CLI/env channels rule.
+    quiet_notices: Option<bool>,
     // Phase-R keys — present ⇒ the named refusal, never a silent drop.
     policy: Option<serde_yml::Value>,
     mounts: Option<serde_yml::Value>,
@@ -371,6 +382,7 @@ pub fn parse_compose(yaml: &str) -> Result<(ComposeDoc, Vec<String>), ComposeErr
             runtime,
             slices,
             entrypoint,
+            quiet_notices: raw.quiet_notices,
         },
         warnings,
     ))
@@ -492,6 +504,25 @@ entrypoint: mnconvert
         assert_eq!(doc.slices[2].carry, Some(false));
         assert_eq!(doc.slices[2].platforms, Some(Platforms::Universal));
         assert_eq!(doc.entrypoint.as_deref(), Some("mnconvert"));
+    }
+
+    #[test]
+    fn quiet_notices_parses_tri_state() {
+        // spec 23 §14: the compose key is the config channel of the
+        // registry setting — present-true, present-false, and absent
+        // (the CLI/env channels then rule) are three distinct states.
+        let yes = parse("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nquiet_notices: true\n")
+            .unwrap()
+            .0;
+        assert_eq!(yes.quiet_notices, Some(true));
+        let no = parse("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nquiet_notices: false\n")
+            .unwrap()
+            .0;
+        assert_eq!(no.quiet_notices, Some(false));
+        let absent = parse("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\n")
+            .unwrap()
+            .0;
+        assert_eq!(absent.quiet_notices, None);
     }
 
     #[test]

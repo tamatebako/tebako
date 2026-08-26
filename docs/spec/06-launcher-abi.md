@@ -90,7 +90,8 @@ the benefit. Rules:
 
 - **TTY-only:** full progress rendering iff stderr is a TTY and
   `TERM != dumb`; otherwise exactly two single lines (start + done), CI/
-  log-safe. Opt-outs: `NO_COLOR`, `TEBAKO_NO_PROGRESS=1`.
+  log-safe. Opt-outs: `NO_COLOR`, `TEBAKO_NO_PROGRESS=1`, and the
+  package's baked `TPKG_FLAG_QUIET_NOTICES` (bit 3 — spec 23 §14).
 - **Phases, one line each:** `resolving <runtime_ref>` →
   `downloading <asset> (<size>)` with the live bar →
   `verifying sha256` → `installing (locked)` → done.
@@ -105,6 +106,9 @@ the benefit. Rules:
   `TEBAKO_NO_PROGRESS=1` silences these informational lines entirely
   (the cache-hit, `installed …`, and `downloading …` lines — progress is
   not results; tebako#400); the mode selection rule above still applies.
+  `TPKG_FLAG_QUIET_NOTICES` (bit 3 — the developer's press-time
+  declaration via the spec 23 §14 registry) applies the same silence to
+  every run of the package, on every machine.
 - Progress output goes to **stderr**, never stdout (stdout belongs to
   the payload).
 - Implementation: a tiny `tebako-term` micro-crate (TTY detect, bar,
