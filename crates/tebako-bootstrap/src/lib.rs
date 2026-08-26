@@ -2872,7 +2872,13 @@ fn stage_carried_runtime(
                 Some(format!("{}:{}", self_path.display(), image_art.slot)),
             ));
         };
-        match stage_locked_slot(self_path, slot, expected, &ins.tmp_asset, "runtime executable") {
+        match stage_locked_slot(
+            self_path,
+            slot,
+            expected,
+            &ins.tmp_asset,
+            "runtime executable",
+        ) {
             Ok(actual) => {
                 let origin = format!(
                     "runtime_ref={runtime_ref}\ncarried={} slot {}\nsha256={actual}\n",
@@ -2969,10 +2975,11 @@ fn stage_carried_dll(
         lock_release(lock);
         return Ok(());
     }
-    let tmp_dir = layout
-        .root
-        .join("tmp")
-        .join(format!("{}.{}.dll", layout.entry, std::process::id()));
+    let tmp_dir =
+        layout
+            .root
+            .join("tmp")
+            .join(format!("{}.{}.dll", layout.entry, std::process::id()));
     cleanup_tmp_entry(&tmp_dir, install_as);
     let result = (|| -> Result<(), BootError> {
         std::fs::create_dir(&tmp_dir).map_err(|e| {
@@ -3136,7 +3143,8 @@ fn lazy_seed(
                 .get(slot_ix as usize)
                 .ok_or_else(|| format!("slot {slot_ix} outside the container"))?;
             let mut f = std::fs::File::open(self_path).map_err(|e| e.to_string())?;
-            f.seek(SeekFrom::Start(slot.offset)).map_err(|e| e.to_string())?;
+            f.seek(SeekFrom::Start(slot.offset))
+                .map_err(|e| e.to_string())?;
             let origin = format!("{} slot {slot_ix}", self_path.display());
             cache
                 .seed(
@@ -3180,8 +3188,7 @@ fn lazy_seed(
                     &root,
                     &format!(
                         "event=lazy-seed artifact={}@{} outcome=skipped reason=\"{reason}\"",
-                        slice.name,
-                        slice.version
+                        slice.name, slice.version
                     ),
                 );
             }
@@ -3206,9 +3213,7 @@ fn seed_carried_image(
     let skip = |reason: &str| {
         journal(
             root,
-            &format!(
-                "event=lazy-seed artifact=runtime-image outcome=skipped reason=\"{reason}\""
-            ),
+            &format!("event=lazy-seed artifact=runtime-image outcome=skipped reason=\"{reason}\""),
         );
     };
     let host = tpkg::Platform::host();
@@ -3263,9 +3268,11 @@ fn seed_carried_image(
             return Ok(()); // a concurrent seed won the race
         }
         mkdir_p(&layout.entry_dir).map_err(|e| e.to_string())?;
-        let tmp_dir = root
-            .join("tmp")
-            .join(format!("{}.{}.image-seed", layout.entry, std::process::id()));
+        let tmp_dir = root.join("tmp").join(format!(
+            "{}.{}.image-seed",
+            layout.entry,
+            std::process::id()
+        ));
         cleanup_tmp_entry(&tmp_dir, &image_asset);
         std::fs::create_dir(&tmp_dir).map_err(|e| e.to_string())?;
         let inner = (|| -> Result<(), String> {
@@ -3398,8 +3405,7 @@ pub fn handoff_argv(
                         let Some(mount) = slice.mount.as_deref() else {
                             continue;
                         };
-                        let Some((_, path)) = shared.iter().find(|(n, _)| n == &slice.name)
-                        else {
+                        let Some((_, path)) = shared.iter().find(|(n, _)| n == &slice.name) else {
                             continue; // resolution failed closed before this point
                         };
                         nargv.push("--tebako-image".to_string());
@@ -3626,9 +3632,7 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
     // (deprecated) LEAN flag; the legacy format-4 slot scan below keeps
     // serving pre-#458 fat packages.
     let pm_lock = selection.as_ref().and_then(|(pm, _)| pm.lock.as_ref());
-    let carried = pm_lock
-        .and_then(|l| l.runtime.as_ref())
-        .filter(|r| r.carry);
+    let carried = pm_lock.and_then(|l| l.runtime.as_ref()).filter(|r| r.carry);
     let (runtime, image) = resolve_runtime(&runtime_ref, &rr, &self_path, &m, carried)?;
     let shared = match pm_lock {
         Some(lock) => resolve_shared_slices(lock, &self_path)?,

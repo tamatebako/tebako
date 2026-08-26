@@ -104,7 +104,12 @@ fn image(kind: &str, name: &str, version: &str, requires: &str) -> Vec<u8> {
 
 /// A registry carrying one payload at the given versions; every ref must
 /// already be written to the mirror.
-fn registry_yaml(name: &str, kind: &str, versions: &[(&str, &str)], default: Option<&str>) -> String {
+fn registry_yaml(
+    name: &str,
+    kind: &str,
+    versions: &[(&str, &str)],
+    default: Option<&str>,
+) -> String {
     let mut yaml = format!(
         "schema_version: 1\npayloads:\n  - name: {name}\n    kind: {kind}\n    versions:\n"
     );
@@ -132,7 +137,10 @@ fn doc(yaml_tail: &str) -> String {
 
 fn parse(yaml: &str) -> tpkg::ComposeDoc {
     let (doc, warnings) = tpkg::parse_compose(yaml).expect("the document parses");
-    assert!(warnings.is_empty(), "no aliases in these fixtures: {warnings:?}");
+    assert!(
+        warnings.is_empty(),
+        "no aliases in these fixtures: {warnings:?}"
+    );
     doc
 }
 
@@ -157,11 +165,17 @@ fn load_parses_the_document_and_surfaces_alias_warnings() {
     let (parsed, warnings) = compose::load(&path).unwrap();
     assert_eq!(parsed.preset, ComposePreset::SelfContained);
     assert_eq!(warnings.len(), 1);
-    assert!(warnings[0].contains("'fat' preset is deprecated"), "{warnings:?}");
+    assert!(
+        warnings[0].contains("'fat' preset is deprecated"),
+        "{warnings:?}"
+    );
 
     let err = compose::load(&fx.dir.join("missing.yaml")).unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
-    assert!(err.message.contains("cannot read the compose document"), "{err}");
+    assert!(
+        err.message.contains("cannot read the compose document"),
+        "{err}"
+    );
 
     fs::write(&path, doc("policy: deny\n")).unwrap();
     let err = compose::load(&path).unwrap_err();
@@ -177,12 +191,20 @@ fn check_runtime_row_gates_the_engine_and_the_version() {
     let mismatch = parse("version: 1\nruntime: {name: ruby, requirement: \"~> 3.4\"}\n");
     let err = compose::check_runtime_row(&mismatch, "3.3.7").unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
-    assert!(err.message.contains("does not cover the pressed ruby 3.3.7"), "{err}");
+    assert!(
+        err.message
+            .contains("does not cover the pressed ruby 3.3.7"),
+        "{err}"
+    );
 
     let python = parse("version: 1\nruntime: {ref: \"python@>= 3\"}\n");
     let err = compose::check_runtime_row(&python, "3.3.7").unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
-    assert!(err.message.contains("ruby is the only runtime engine today"), "{err}");
+    assert!(
+        err.message
+            .contains("ruby is the only runtime engine today"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -238,8 +260,8 @@ fn apply_overrides_rewrite_the_carry_verdicts() {
 
     // one slice in both flags is a conflict
     let mut d = base();
-    let err =
-        compose::apply_overrides(&mut d, Some("metanorma"), Some("metanorma"), "hello").unwrap_err();
+    let err = compose::apply_overrides(&mut d, Some("metanorma"), Some("metanorma"), "hello")
+        .unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
     assert!(err.message.contains("either carried or shared"), "{err}");
 }
@@ -464,7 +486,10 @@ fn resolve_closure_mount_conflicts_are_named() {
     )
     .unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
-    assert!(err.message.contains("mounted at both '/x' and '/y'"), "{err}");
+    assert!(
+        err.message.contains("mounted at both '/x' and '/y'"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -492,7 +517,10 @@ fn resolve_closure_the_platforms_assertion_is_fail_closed() {
     )
     .unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
-    assert!(err.message.contains("does not cover the host triplet"), "{err}");
+    assert!(
+        err.message.contains("does not cover the host triplet"),
+        "{err}"
+    );
     assert!(err.message.contains("templates"), "{err}");
 }
 
@@ -542,7 +570,10 @@ fn resolve_closure_refuses_a_runtime_kind_slice() {
     )
     .unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
-    assert!(err.message.contains("runtime: row owns the engine"), "{err}");
+    assert!(
+        err.message.contains("runtime: row owns the engine"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -558,7 +589,11 @@ fn resolve_closure_requires_a_registered_registry() {
     )
     .unwrap_err();
     assert_eq!(err.code, 65, "{err:?}");
-    assert!(err.message.contains("not carried by any registered registry"), "{err}");
+    assert!(
+        err.message
+            .contains("not carried by any registered registry"),
+        "{err}"
+    );
     assert!(err.message.contains("tebako add-registry"), "{err}");
 }
 

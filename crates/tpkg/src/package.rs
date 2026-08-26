@@ -1118,7 +1118,10 @@ mod tests {
     #[test]
     fn digest_pin_host_lookup() {
         let one = DigestPin::One(sha('a'));
-        assert_eq!(one.for_host(crate::Platform::Aarch64Macos), Some(sha('a').as_str()));
+        assert_eq!(
+            one.for_host(crate::Platform::Aarch64Macos),
+            Some(sha('a').as_str())
+        );
         let map = DigestPin::PerTriplet(BTreeMap::from([("macos-arm64".to_string(), sha('b'))]));
         assert_eq!(
             map.for_host(crate::Platform::Aarch64Macos),

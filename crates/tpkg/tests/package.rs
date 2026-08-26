@@ -144,7 +144,10 @@ fn lock_fixture_parses_validates_and_round_trips() {
         Some("2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d")
     );
     assert_eq!(
-        lock.slices[0].sha256.for_host(Platform::X86_64WindowsUcrt).map(str::len),
+        lock.slices[0]
+            .sha256
+            .for_host(Platform::X86_64WindowsUcrt)
+            .map(str::len),
         Some(64)
     );
     assert_eq!(lock.claimed_slots(), vec![1, 2, 0]);

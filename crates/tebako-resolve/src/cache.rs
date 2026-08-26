@@ -812,14 +812,22 @@ mod tests {
         let root = scratch();
         let cache = PayloadCache::with_root(&root);
         let err = cache
-            .seed("tool", "1.0", &"f".repeat(64), "seeded", b"carried-slice".as_slice())
+            .seed(
+                "tool",
+                "1.0",
+                &"f".repeat(64),
+                "seeded",
+                b"carried-slice".as_slice(),
+            )
             .unwrap_err();
         assert!(matches!(err, ResolveError::Sha256Mismatch { .. }));
         assert!(!root.join("payloads/tool/1.0.tfs").exists());
         assert!(!root.join("payloads/tool/1.0.tfs.sha256").exists());
         // tmp is cleaned up too
         assert_eq!(
-            fs::read_dir(root.join("tmp")).map(|d| d.count()).unwrap_or(0),
+            fs::read_dir(root.join("tmp"))
+                .map(|d| d.count())
+                .unwrap_or(0),
             0
         );
         let _ = fs::remove_dir_all(&root);

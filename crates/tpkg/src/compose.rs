@@ -227,17 +227,15 @@ fn resolve_slice_ref(raw: &RawSlice, what: &str) -> Result<ComposeSliceRef, Comp
         .requirement
         .as_deref()
         .map(|r| {
-            Constraint::new(r).map_err(|e| {
-                invalid(format!("{what}: unparseable requirement '{r}': {e}"))
-            })
+            Constraint::new(r)
+                .map_err(|e| invalid(format!("{what}: unparseable requirement '{r}': {e}")))
         })
         .transpose()?;
     let (name, requirement) = match (shorthand, expanded_name, expanded_req) {
         (Some((ref_name, ref_req)), Some(name), req) => {
             // Both spellings present: they must AGREE — a conflict is a
             // named error (spec 23 §3); agreement = the expanded form.
-            let conflict = ref_name != name
-                || req.as_ref().is_some_and(|r| *r != ref_req);
+            let conflict = ref_name != name || req.as_ref().is_some_and(|r| *r != ref_req);
             if conflict {
                 return Err(invalid(format!(
                     "{what}: ref '{ref_name}@{}' conflicts with the expanded name/requirement — one semantics, two spellings, never two meanings",
@@ -296,7 +294,9 @@ impl ComposeDoc {
     /// The carry verdict of one slice: authored `carry:` wins, else the
     /// preset's default (spec 23 §13.2).
     pub fn carry_of(&self, slice: &ComposeSliceRef, is_runtime: bool) -> bool {
-        slice.carry.unwrap_or_else(|| self.preset.default_carry(is_runtime))
+        slice
+            .carry
+            .unwrap_or_else(|| self.preset.default_carry(is_runtime))
     }
 }
 
@@ -528,11 +528,13 @@ entrypoint: mnconvert
         assert!(bad("runtime: {ref: \"ruby@~> 3.3\"}\n")); // no version
         assert!(bad("version: 2\nruntime: {ref: \"ruby@~> 3.3\"}\n"));
         assert!(bad("version: 1\n")); // no runtime
-        assert!(bad("version: 1\npreset: chunky\nruntime: {ref: \"ruby@~> 3.3\"}\n"));
+        assert!(bad(
+            "version: 1\npreset: chunky\nruntime: {ref: \"ruby@~> 3.3\"}\n"
+        ));
         assert!(bad("version: 1\nruntime: {name: ruby}\n")); // no requirement
         assert!(bad("version: 1\nruntime: {ref: \"ruby\"}\n")); // shorthand without constraint
         assert!(bad("version: 1\nruntime: {ref: \"@~> 3.3\"}\n")); // empty name
-        // a ref/expanded conflict
+                                                                   // a ref/expanded conflict
         assert!(bad(
             "version: 1\nruntime: {name: ruby, requirement: \"~> 3.3\", ref: \"ruby@>= 3.4\"}\n"
         ));
@@ -541,9 +543,15 @@ entrypoint: mnconvert
             "version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nslices:\n  - {name: a, requirement: \"1\"}\n  - {ref: \"a@2\"}\n"
         ));
         // the Phase-R keys refuse by name
-        assert!(bad("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\npolicy: deny\n"));
-        assert!(bad("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nmounts: []\n"));
-        assert!(bad("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nneeds: {}\n"));
+        assert!(bad(
+            "version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\npolicy: deny\n"
+        ));
+        assert!(bad(
+            "version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nmounts: []\n"
+        ));
+        assert!(bad(
+            "version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nneeds: {}\n"
+        ));
         // unknown platforms spellings
         assert!(bad(
             "version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nslices:\n  - {name: a, platforms: [plan9]}\n"
@@ -613,7 +621,10 @@ entrypoint: mnconvert
             check_platforms_assertion("my-slice", &declared, None, Platform::X86_64WindowsUcrt)
                 .unwrap_err();
         let msg = err.to_string();
-        assert!(msg.contains("my-slice") && msg.contains("x86_64-windows-ucrt"), "{msg}");
+        assert!(
+            msg.contains("my-slice") && msg.contains("x86_64-windows-ucrt"),
+            "{msg}"
+        );
         // universal declares everything
         check_platforms_assertion(
             "s",
