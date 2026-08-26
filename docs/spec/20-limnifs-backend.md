@@ -407,6 +407,15 @@ is per-backend, semantics are shared (the backend-pair parity class of
   fall through, policy-gated).
 - Mount modes: RO default; COW stacks (backend-agnostic composite);
   RW → `ENOTSUP`.
+- **Format-evolution proof:** limnifs is prerelease — the format evolves
+  in place (slab v2 lands as "the v1", no format-version bump). The
+  committed golden fixture `crates/tfs/tests/fixtures/limnifs-slab-v1.lmfs`
+  — written by the pinned writer's `WriteConfig::default_v0_1()` with
+  pinned mtimes — is the back-read anchor: every reader change MUST keep
+  mounting it with identical `stat`/`readdir`/`pread` answers. The
+  fixture regenerates only while `default_v0_1()` still emits the
+  slab-v1 layout; the trust anchor for any artifact is its sha256
+  sidecar, never format stability.
 
 **Done means** (one stacked change set, in the owning crates only):
 
