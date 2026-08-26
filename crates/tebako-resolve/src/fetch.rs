@@ -102,10 +102,7 @@ impl<T: Transport> Fetcher<T> {
                 #[cfg(not(feature = "git"))]
                 {
                     let _ = (git_ref, path);
-                    return Err(ResolveError::Git {
-                        url: url.clone(),
-                        reason: "this build was compiled without the 'git' feature — tfs+git: references are unsupported".to_string(),
-                    });
+                    return Err(ResolveError::GitAdapterDisabled { url: url.clone() });
                 }
             }
         };

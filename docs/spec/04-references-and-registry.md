@@ -125,6 +125,15 @@ payloads:
   tests and air-gapped sites.
 - Git protocol via `gix` (gitoxide) when `tfs+git:` needs smart-protocol
   fetch — never the git CLI.
+- The capability is per-binary, not per-ecosystem. The shipped
+  `tebako-bootstrap` (the 3 MiB-gated loader) links tebako-resolve with
+  the `git` feature OFF: `tfs+git:` lock sources fail closed with the
+  named `GitAdapterDisabled` error (steer to managed mode — `tebako
+  install` / the shim — or mirror to `tfs+https:`). The toolchain
+  (tebako CLI, tebako-shim, tfs CLI) always carries the full surface.
+  General rule: an optional capability is a cargo feature on the owning
+  crate — default ON for the toolchain, OFF for the bootstrap, named
+  error when compiled out.
 - Atomic fetch: download to tmp, verify digest, rename; concurrent
   fetchers coordinate via the cache lock (spec 05); a partial fetch is
   invisible. `TEBAKO_OFFLINE=1`: cache hit or hard error.

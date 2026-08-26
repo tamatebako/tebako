@@ -129,8 +129,13 @@ export DWARFS_RS_VCPKG_ROOT="$WS/.vcpkg-musl"
 export DWARFS_RS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_TRIPLET="$TRIPLET"
 export SQFS_SYS_VCPKG_INSTALLED_DIR="$WS/.sqfs-musl/$TRIPLET"
+# tebako-bootstrap builds in its OWN invocation — cargo feature
+# unification with tebako-cli/tebako-shim would re-enable tebako-resolve's
+# `git` feature (gix/reqwest/rustls) inside the size-gated loader
+# (run 32940980101 failed the 3 MiB gate on every leg for this reason).
+cargo build --release -p tebako-bootstrap
 cargo build --release \
-  -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
+  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
 
 echo "== stage / strip / size-gate =="
 export TARGET

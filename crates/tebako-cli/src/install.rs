@@ -68,6 +68,7 @@ pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
         | ResolveError::AmbiguousAssets { .. }
         | ResolveError::ServiceFailed { .. }
         | ResolveError::Git { .. }
+        | ResolveError::GitAdapterDisabled { .. }
         | ResolveError::Offline { .. } => EX_TEBAKO_UNAVAILABLE,
         ResolveError::Registry(_) | ResolveError::InvalidCacheKey { .. } => EX_TEBAKO_MANIFEST,
         ResolveError::LockTimeout { .. } | ResolveError::CacheIo { .. } => EX_TEBAKO_IO,

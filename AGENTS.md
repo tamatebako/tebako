@@ -23,6 +23,10 @@ These rules are owner-locked (2026-07-27). They apply to humans and agents alike
   (`git worktree add <path> -b <branch> origin/main`). **Never share the
   main checkout** — agents checking out branches in it clobber each
   other (this caused real bugs: commits landing on the wrong branch).
+- **Never grep/patch against the main checkout assuming it is the
+  head** — it may be arbitrarily behind `origin/main`. Investigate in a
+  fresh worktree. A stale-tree grep once "proved" a load-bearing
+  dependency unused.
 - `GIT_EDITOR=true` for every git operation (no interactive editors).
 - Before pushing in a shared repo, check `git branch --show-current` and
   `git fetch origin`; push the intended ref (`git push origin <sha>:refs/heads/main`
@@ -37,6 +41,18 @@ These rules are owner-locked (2026-07-27). They apply to humans and agents alike
   HTTP (ureq+rustls+webpki-roots bundled), in-process imaging (dwarfs-t
   Writer), in-process crypto (rnp-rs vendored). No curl/git/mkdwarfs/PATH
   lookups at runtime.
+- **Optional capability = cargo feature on the owning crate** — default ON
+  for the toolchain, OFF for the size-gated `tebako-bootstrap`, and a
+  NAMED error when compiled out (first instance: tebako-resolve's `git` →
+  `GitAdapterDisabled`). Consequence: **the bootstrap always builds in its
+  own `cargo build` invocation** — cargo unifies features within one
+  invocation, and building the bootstrap beside tebako-cli/tebako-shim
+  silently re-enables opted-out features in it (v0.2.7 release run
+  32940980101 failed the 3 MiB gate on every leg for this reason).
+- **The workspace `Cargo.lock` is gitignored — resolutions float.**
+  Dependencies that evolve incompatibly inside one semver line get an
+  explicit upper bound on stable branches; the bump branch raises the
+  floor and drops the bound in the same change.
 - **YAML for all authored config/manifests**, with versioned JSON Schemas.
 - **MECE reference syntax, no default service**: `tfs:github:/tfs:gitlab:/
   tfs:bb:` / `tfs+git://` / `tfs+https://` / `file://`, `?sha256=` pins.

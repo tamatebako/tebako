@@ -129,6 +129,10 @@ pub enum ResolveError {
     /// A `tfs+git:` reference without `#path` names a registry repo, not a
     /// payload file (spec 04 §1) — fetching payload bytes needs the path.
     GitPathRequired { url: String },
+    /// A `tfs+git:` reference reached a build without the git adapter
+    /// (feature `git` off — the size-capped tebako-bootstrap, spec 04 §3):
+    /// a named refusal, never a silent skip.
+    GitAdapterDisabled { url: String },
     /// TEBAKO_OFFLINE is set and the entry is not cached (spec 05 §4:
     /// cache hit or hard error).
     Offline { what: String },
@@ -200,6 +204,11 @@ impl fmt::Display for ResolveError {
             ResolveError::GitPathRequired { url } => write!(
                 f,
                 "tfs+git://{url} names a repository, not a payload: add #path to select the image file"
+            ),
+            ResolveError::GitAdapterDisabled { url } => write!(
+                f,
+                "tfs+git://{url} needs the git adapter, which is not compiled into this build: \
+                 fetch it in managed mode (tebako install / the shim) or mirror the payload to tfs+https"
             ),
             ResolveError::Offline { what } => write!(
                 f,
