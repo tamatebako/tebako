@@ -224,9 +224,17 @@ jobs:
         # --skip-build — they must be explicit -p packages or no .a/cdylib
         # is emitted (run 30742821370). tebako-cli already unifies tfs's
         # default features on POSIX, so one invocation serves both.
+        # tebako-bootstrap builds in its OWN invocation: cargo unifies
+        # features within one invocation, and sharing one with
+        # tebako-cli/tebako-shim re-enables tebako-resolve's `git`
+        # feature (gix/reqwest/rustls) inside the size-gated loader —
+        # run 32940980101 failed the 3 MiB gate on every leg for exactly
+        # this reason. A separate invocation = separate feature
+        # resolution = the bootstrap's `default-features = false` holds.
         run: |
+          cargo build --release --target ${{ matrix.target }} -p tebako-bootstrap
           cargo build --release --target ${{ matrix.target }} \
-            -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim \
+            -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim \
             -p tfs -p tebako-driver -p libtfs-preload
 
       - name: Stage, strip, size-gate

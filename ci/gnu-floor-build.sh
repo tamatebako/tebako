@@ -163,8 +163,13 @@ export CARGO_NET_GIT_FETCH_WITH_CLI=true
 # one mechanism for both). The release leg's ship gate (the ldd
 # whitelist in .github/workflows/lib/ship-gate.sh) is the enforcement.
 export RUSTFLAGS="-C linker=$WS/tebako-rs/ci/linux-link-wrap.sh"
+# tebako-bootstrap builds in its OWN invocation — cargo feature
+# unification with tebako-cli/tebako-shim would re-enable tebako-resolve's
+# `git` feature (gix/reqwest/rustls) inside the size-gated loader
+# (run 32940980101 failed the 3 MiB gate on every leg for this reason).
+cargo build --release --target "$TARGET" -p tebako-bootstrap
 cargo build --release --target "$TARGET" \
-  -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
+  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
 
 echo "== stage / strip / size-gate =="
 export TARGET
