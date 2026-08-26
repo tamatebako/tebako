@@ -216,6 +216,11 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         }
     };
 
+    // spec 23 §14: the `quiet_notices` registry setting resolves across
+    // the three channels — CLI > env > compose document > default; a
+    // malformed env value is a named error, never a silent default.
+    let quiet_notices = effective_quiet_notices(opts, compose_doc.as_ref())?;
+
     // Cli#bootstrap: the cache version guard runs before the press
     // (skipped in devmode, like the gem).
     if !opts.devmode {
@@ -443,8 +448,11 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         &package,
         &runtime_ref,
         Some(&package_manifest),
-        !runtime_carried,
-        opts.no_install,
+        StitchFlags {
+            lean: !runtime_carried,
+            no_install: opts.no_install,
+            quiet_notices,
+        },
     )?;
     println!("Created tebako package at \"{package}\"");
     ensure_version_file(opts);
@@ -530,6 +538,35 @@ pub(crate) fn press_bootstrap_with(
     store.resolve(platform)
 }
 
+/// spec 23 §14: the `quiet_notices` registry setting resolved across the
+/// three channels — CLI > env > compose document > default (a suite
+/// press rides no document and passes `None`). A malformed env value is
+/// a named error, never a silent default.
+pub(crate) fn effective_quiet_notices(
+    opts: &PressOptions,
+    compose: Option<&tpkg::ComposeDoc>,
+) -> Result<bool, TebakoError> {
+    tpkg::settings::resolve_bool(
+        &tpkg::settings::QUIET_NOTICES,
+        opts.quiet_notices,
+        tpkg::settings::QUIET_NOTICES.env_value(),
+        compose.and_then(|d| d.quiet_notices),
+    )
+    .map_err(|e| packaging_error(65, Some(&e.to_string())))
+}
+
+/// The trailer flag inputs to [`stitch`] (spec 02): `lean` — the runtime
+/// resolves at run time (TPKG_FLAG_LEAN; CLEAR only for a self-contained
+/// press); `no_install` — publisher-frozen (TPKG_FLAG_NO_INSTALL);
+/// `quiet_notices` — the resolved registry setting (TPKG_FLAG_QUIET_NOTICES,
+/// spec 23 §14).
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct StitchFlags {
+    pub lean: bool,
+    pub no_install: bool,
+    pub quiet_notices: bool,
+}
+
 /// Stitcher.stitch (lean three-part): validate per the gem's error codes,
 /// then assemble with tebako-pkg (dense image layout — tpkg slots carry
 /// absolute offsets, so the gem's 8-byte padding is not required), chmod,
@@ -549,8 +586,7 @@ pub(crate) fn stitch(
     package: &str,
     runtime_ref: &str,
     package_manifest: Option<&tpkg::PackageManifest>,
-    lean: bool,
-    no_install: bool,
+    flags: StitchFlags,
 ) -> Result<(), TebakoError> {
     if images.is_empty() {
         return Err(packaging_error(126, Some("at least one image is required")));
@@ -640,12 +676,19 @@ pub(crate) fn stitch(
         runtime_ref: runtime_ref.to_string(),
         // TPKG_FLAG_LEAN unless the press is self-contained;
         // TPKG_FLAG_NO_INSTALL when the press froze the package
-        // (--no-install, TODO.v2-1/12).
-        package_flags: match (lean, no_install) {
-            (true, true) => tpkg::TPKG_FLAG_LEAN | tpkg::TPKG_FLAG_NO_INSTALL,
-            (true, false) => tpkg::TPKG_FLAG_LEAN,
-            (false, true) => tpkg::TPKG_FLAG_NO_INSTALL,
-            (false, false) => 0,
+        // (--no-install, TODO.v2-1/12); TPKG_FLAG_QUIET_NOTICES when
+        // the registry setting resolved true (spec 23 §14).
+        package_flags: {
+            let mut pf = match (flags.lean, flags.no_install) {
+                (true, true) => tpkg::TPKG_FLAG_LEAN | tpkg::TPKG_FLAG_NO_INSTALL,
+                (true, false) => tpkg::TPKG_FLAG_LEAN,
+                (false, true) => tpkg::TPKG_FLAG_NO_INSTALL,
+                (false, false) => 0,
+            };
+            if flags.quiet_notices {
+                pf |= tpkg::TPKG_FLAG_QUIET_NOTICES;
+            }
+            pf
         },
         launcher_abi: LAUNCHER_ABI,
         // The L2 package manifest rides along when the caller declares
@@ -1113,8 +1156,11 @@ mod tests {
             frozen.to_str().unwrap(),
             "ruby@3.3.7;tebako=9.9.9",
             None,
-            true,
-            true,
+            StitchFlags {
+                lean: true,
+                no_install: true,
+                quiet_notices: false,
+            },
         )
         .unwrap();
         let mut f = std::fs::File::open(&frozen).unwrap();
@@ -1129,13 +1175,71 @@ mod tests {
             plain.to_str().unwrap(),
             "ruby@3.3.7;tebako=9.9.9",
             None,
-            true,
-            false,
+            StitchFlags {
+                lean: true,
+                no_install: false,
+                quiet_notices: false,
+            },
         )
         .unwrap();
         let mut f = std::fs::File::open(&plain).unwrap();
         let m = tpkg::read_from(&mut f).unwrap();
         assert_eq!(m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL, 0);
+    }
+
+    #[test]
+    fn stitch_bakes_the_quiet_notices_flag_only_when_asked() {
+        // tebako#400 / spec 23 §14: the resolved `quiet_notices` setting
+        // bakes TPKG_FLAG_QUIET_NOTICES (bit 3); the default press leaves
+        // it clear (the legacy warning + progress lines stand).
+        let dir = std::env::temp_dir().join(format!("tebako-cli-stitch-q-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let base = dir.join("bootstrap");
+        std::fs::write(&base, b"BASE").unwrap();
+        let img = dir.join("img.tfs");
+        std::fs::write(&img, b"IMG").unwrap();
+
+        let quiet = dir.join("quiet");
+        stitch(
+            &base,
+            &[(img.clone(), "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            quiet.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            StitchFlags {
+                lean: true,
+                no_install: false,
+                quiet_notices: true,
+            },
+        )
+        .unwrap();
+        let mut f = std::fs::File::open(&quiet).unwrap();
+        let m = tpkg::read_from(&mut f).unwrap();
+        assert!(m.package_flags & tpkg::TPKG_FLAG_QUIET_NOTICES != 0);
+        assert!(m.is_quiet_notices());
+        // The bit composes with the others, never clobbers them.
+        assert!(m.package_flags & tpkg::TPKG_FLAG_LEAN != 0);
+        assert_eq!(m.package_flags & tpkg::TPKG_FLAG_NO_INSTALL, 0);
+
+        let loud = dir.join("loud");
+        stitch(
+            &base,
+            &[(img, "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            loud.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            StitchFlags {
+                lean: true,
+                no_install: false,
+                quiet_notices: false,
+            },
+        )
+        .unwrap();
+        let mut f = std::fs::File::open(&loud).unwrap();
+        let m = tpkg::read_from(&mut f).unwrap();
+        assert_eq!(m.package_flags & tpkg::TPKG_FLAG_QUIET_NOTICES, 0);
+        assert!(!m.is_quiet_notices());
     }
 
     #[test]
@@ -1232,8 +1336,7 @@ mod tests {
             contained.to_str().unwrap(),
             "ruby@3.3.7;tebako=9.9.9",
             None,
-            false,
-            false,
+            StitchFlags::default(),
         )
         .unwrap();
         let mut f = std::fs::File::open(&contained).unwrap();
@@ -1248,8 +1351,10 @@ mod tests {
             shared.to_str().unwrap(),
             "ruby@3.3.7;tebako=9.9.9",
             None,
-            true,
-            false,
+            StitchFlags {
+                lean: true,
+                ..Default::default()
+            },
         )
         .unwrap();
         let mut f = std::fs::File::open(&shared).unwrap();
@@ -1279,6 +1384,7 @@ mod tests {
             suite: None,
             jail: None,
             no_install: false,
+            quiet_notices: None,
             format: options::PressImageFormat::Dwarfs,
             compose: None,
             carry: None,

@@ -391,6 +391,9 @@ pub fn press_suite(
     );
     let package_manifest = suite_package_manifest(spec, &runtime_refs, &created)?;
     let package = suite_package_path(opts, spec);
+    // spec 23 §14: a suite rides no compose document — the CLI and env
+    // channels decide `quiet_notices` (the registry's precedence holds).
+    let quiet_notices = crate::effective_quiet_notices(opts, None)?;
     crate::stitch(
         &bootstrap_path,
         &images,
@@ -399,8 +402,11 @@ pub fn press_suite(
         Some(&package_manifest),
         // Suites never carry the runtime (press_suite refuses the
         // self-contained mode) — the LEAN flag stands.
-        true,
-        opts.no_install,
+        crate::StitchFlags {
+            lean: true,
+            no_install: opts.no_install,
+            quiet_notices,
+        },
     )?;
     println!("Created tebako suite package at \"{package}\"");
     crate::ensure_version_file(opts);

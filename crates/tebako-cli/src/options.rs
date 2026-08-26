@@ -142,6 +142,13 @@ pub struct PressOptions {
     /// `tebako install <path>`) is refused with a named error. Off by
     /// default (installable on explicit request).
     pub no_install: bool,
+    /// --quiet-notices / --no-quiet-notices (spec 23 §14): the CLI channel
+    /// of the `quiet_notices` registry setting — bake
+    /// TPKG_FLAG_QUIET_NOTICES, suppressing the unsigned-legacy-trailer
+    /// warning and the progress lines on every run. Tri-state: `None`
+    /// leaves the env (`TEBAKO_QUIET_NOTICES`) and compose-document
+    /// (`quiet_notices:`) channels to decide.
+    pub quiet_notices: Option<bool>,
     /// --format <dwarfs|limnifs> (spec 20 §6): the application image
     /// format. Limnifs by default; `dwarfs` stays an explicit opt-in.
     pub format: PressImageFormat,

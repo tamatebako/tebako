@@ -518,3 +518,40 @@ native bytes in a "universal" image fail there, before publication.
 | Lazy-seed mechanics | spec 05 §4 (amended: the scoped exception) |
 | Two-slot carried runtime | spec 19 (amended) + tebako#458 |
 | Lean/fat alias warning | the named-warning vocabulary (invariant 9); exit codes unchanged — carry choices never gate a run |
+
+## 14. The settings registry — one setting, three channels, one SSOT (owner-directed 2026-08-26, tebako#400)
+
+Every user-facing setting is declarable through up to THREE channels:
+the CLI flag, the environment variable, and the compose-document key.
+Ad-hoc per-channel wiring is how the channels drift into two meanings,
+so declaration and resolution each live in exactly one place:
+
+- **Declaration:** `tpkg::settings` (the registry) names each setting
+  ONCE — config key, env spelling, CLI flag, default, one doc line —
+  and declares WHICH channels carry it. A machine-level knob (a cache
+  root) has no business in a git-shared document; a package-policy bit
+  the press bakes MUST be declarable in the repo-carried document.
+  `--help`, the schema, and the docs render from the registry; a
+  setting present on a channel but absent from the registry is a bug on
+  arrival (invariant 10).
+- **Resolution:** `tpkg::settings::resolve_bool`, fixed precedence
+  **CLI → environment → compose document → default**. Every channel is
+  tri-state (present-true / present-false / absent), so a repo-declared
+  `quiet_notices: true` stays overridable per invocation
+  (`--no-quiet-notices`, `TEBAKO_QUIET_NOTICES=0`). An env value that
+  does not parse is a NAMED error, never a silent default
+  (invariant 9).
+- **Baking:** settings whose semantics belong to the PACKAGE (not the
+  machine) bake into the trailer at press; run-time reads the trailer,
+  never the channels — a pressed package behaves identically on every
+  machine (the developer's declaration is environment-independent by
+  construction, and the repo carries it).
+
+The registry's first citizen:
+
+| setting | CLI | env | compose key | baked form |
+|---|---|---|---|---|
+| `quiet_notices` | `--quiet-notices` / `--no-quiet-notices` | `TEBAKO_QUIET_NOTICES` | `quiet_notices:` | `TPKG_FLAG_QUIET_NOTICES` (bit 3, spec 02 §5a) — suppress the unsigned-legacy-trailer warning (spec 09) and the progress lines (spec 06 §5) on every run |
+
+Every NEW setting declares its channels in the registry first; existing
+channels migrate into the registry as they are touched.

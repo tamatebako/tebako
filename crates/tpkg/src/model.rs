@@ -171,6 +171,15 @@ impl Manifest {
         self.package_flags & crate::TPKG_FLAG_LEAN != 0
     }
 
+    /// True when `TPKG_FLAG_QUIET_NOTICES` is set (tebako#400): the
+    /// publisher baked the run-time notices off — the bootstrap
+    /// suppresses the unsigned-v1 legacy warning and the progress lines
+    /// for this package. User policy (`TEBAKO_REQUIRE_SIGNED=1`) still
+    /// outranks the bit.
+    pub fn is_quiet_notices(&self) -> bool {
+        self.package_flags & crate::TPKG_FLAG_QUIET_NOTICES != 0
+    }
+
     /// Magic-independent structural checks, mirroring the C `tpkg_validate()`:
     /// version supported, `1..=TPKG_MAX_SLOTS` slots, `offset+size`
     /// non-overflowing, `format_id <= TPKG_FORMAT_LIMNIFS` (spec 20 raised

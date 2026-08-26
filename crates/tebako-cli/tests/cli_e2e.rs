@@ -435,6 +435,66 @@ fn press_missing_entry_point_is_106() {
     assert!(log.contains("[106]"), "expected the 106 tag:\n{log}");
 }
 
+/// tebako#400 / spec 23 §14: the `quiet_notices` registry setting bakes
+/// TPKG_FLAG_QUIET_NOTICES from ANY channel — CLI flag, env var, compose
+/// key — the CLI's explicit negation outranks the document, and the
+/// default press leaves the bit clear. (Run-side behavior — the
+/// suppressed warning/progress, REQUIRE_SIGNED's precedence — is pinned
+/// by tebako-bootstrap's chain tests.)
+#[test]
+fn press_quiet_notices_bakes_the_bit_from_any_channel() {
+    let _guard = press_lock().lock().unwrap();
+    let Some(env) = press_env("quiet", "test-00") else {
+        return;
+    };
+    let bit = |pkg: &Path| {
+        let mut f = fs::File::open(pkg).unwrap();
+        tpkg::read_from(&mut f).unwrap().package_flags & tpkg::TPKG_FLAG_QUIET_NOTICES != 0
+    };
+
+    // Default: clear.
+    let plain = env.work.join("plain-app");
+    let (code, log) = run(&mut press_command(&env, "test.rb", &plain));
+    assert!(code == 0, "press failed:\n{log}");
+    assert!(!bit(&plain), "default press leaves the bit clear");
+
+    // CLI channel.
+    let cli = env.work.join("quiet-cli");
+    let (code, log) = run(press_command(&env, "test.rb", &cli).arg("--quiet-notices"));
+    assert!(code == 0, "press failed:\n{log}");
+    assert!(bit(&cli), "--quiet-notices bakes the bit");
+
+    // ENV channel.
+    let env_pkg = env.work.join("quiet-env");
+    let (code, log) =
+        run(press_command(&env, "test.rb", &env_pkg).env("TEBAKO_QUIET_NOTICES", "1"));
+    assert!(code == 0, "press failed:\n{log}");
+    assert!(bit(&env_pkg), "TEBAKO_QUIET_NOTICES=1 bakes the bit");
+
+    // Config channel: the compose document's `quiet_notices: true`.
+    let compose = env.work.join("tebako.yaml");
+    fs::write(
+        &compose,
+        "version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nquiet_notices: true\n",
+    )
+    .unwrap();
+    let cfg = env.work.join("quiet-cfg");
+    let (code, log) = run(press_command(&env, "test.rb", &cfg)
+        .arg("--compose")
+        .arg(&compose));
+    assert!(code == 0, "compose press failed:\n{log}");
+    assert!(bit(&cfg), "the compose key bakes the bit");
+
+    // The CLI's explicit negation outranks the document (precedence).
+    let neg = env.work.join("loud-cfg");
+    let (code, log) = run(press_command(&env, "test.rb", &neg)
+        .arg("--compose")
+        .arg(&compose)
+        .arg("--no-quiet-notices"));
+    assert!(code == 0, "press failed:\n{log}");
+    assert!(!bit(&neg), "--no-quiet-notices overrides the document");
+}
+
 #[test]
 fn cache_list_and_prune() {
     let work = workdir("cache");
