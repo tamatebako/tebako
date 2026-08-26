@@ -45,12 +45,11 @@ libc = "0.2"
 # vendored crate exactly like ring; no native-tls, no schannel, no
 # behavior change). All three are the `git` feature's — off for the
 # bootstrap's link.
-gix = { version = "0.86", default-features = false, optional = true, features = [
+gix = { version = "0.87", default-features = false, optional = true, features = [
     "sha1",
     "blocking-network-client",
     "blocking-http-transport-reqwest",
     "revision",
-    "tree-editor",
 ] }
 reqwest = { version = "0.13", default-features = false, optional = true, features = ["rustls-no-provider"] }
 
@@ -73,7 +72,7 @@ path = "src/lib.rs"
 proptest = "1"
 # The git fixtures are built with gix itself — no git CLI anywhere, tests
 # included (spec 14 §3).
-gix = { version = "0.86", default-features = false, features = ["sha1", "tree-editor"] }
+gix = { version = "0.87", default-features = false, features = ["sha1"] }
 
 # The per-entry cache flock on Windows (cache.rs — LockFileEx on one byte
 # at offset 0, the tebako-bootstrap platform.rs shape). Unix uses libc's
