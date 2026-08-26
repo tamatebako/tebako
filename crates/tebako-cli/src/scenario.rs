@@ -16,11 +16,15 @@ pub const DEFAULT_RUBY_VERSION: &str = "3.3.7";
 pub const MIN_RUBY_VERSION_WINDOWS: &str = "3.1.6";
 
 /// Ruby versions the CLI can press packages for (the prebuilt runtime
-/// packages published by tebako-runtime-ruby are the operative constraint).
+/// packages published by tebako-runtime-ruby are the operative constraint:
+/// this is the UNION across the published release lines — the 0.16.9 line
+/// ships the full matrix, the 0.16.10 slim line ships 3.1.6/3.2.11/3.3.12/
+/// 3.4.10/4.0.6; a line without the requested version fails at resolution
+/// with the available set named).
 pub const RUBY_VERSIONS: &[&str] = &[
-    "2.7.8", "3.0.7", "3.1.6", "3.2.4", "3.2.5", "3.2.6", "3.2.7", "3.3.3", "3.3.4", "3.3.5",
-    "3.3.6", "3.3.7", "3.4.1", "3.4.2", "4.0.0", "4.0.1", "4.0.2", "4.0.3", "4.0.4", "4.0.5",
-    "4.0.6",
+    "2.7.8", "3.0.7", "3.1.6", "3.2.4", "3.2.5", "3.2.6", "3.2.7", "3.2.11", "3.3.3", "3.3.4",
+    "3.3.5", "3.3.6", "3.3.7", "3.3.12", "3.4.1", "3.4.2", "3.4.10", "4.0.0", "4.0.1", "4.0.2",
+    "4.0.3", "4.0.4", "4.0.5", "4.0.6",
 ];
 
 // ---------------------------------------------------------------------
