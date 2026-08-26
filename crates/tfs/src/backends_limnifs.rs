@@ -597,6 +597,100 @@ mod tests {
         (tmp, image)
     }
 
+    // -----------------------------------------------------------------
+    // Committed slab-v1 golden fixture — the transition proof for the
+    // limnifs format evolution (slab v2 lands as "the v1" without a
+    // format-version bump; spec 20 §3). The committed bytes were written
+    // by the pinned limnifs-write with `WriteConfig::default_v0_1()`;
+    // every future reader MUST mount them and answer identically.
+    // Regenerate (only while `default_v0_1()` still emits the slab-v1
+    // layout) with:
+    //   cargo test -p tfs write_slab_v1_golden_fixture -- --ignored
+    // and commit the result.
+    // -----------------------------------------------------------------
+
+    /// Fixed mtime for the golden tree (2026-01-01T00:00:00Z) so the
+    /// committed image bytes are deterministic.
+    const GOLDEN_MTIME_SECS: u64 = 1_767_225_600;
+
+    fn golden_mtime() -> std::time::SystemTime {
+        std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(GOLDEN_MTIME_SECS)
+    }
+
+    const GOLDEN_FIXTURE_PATH: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/limnifs-slab-v1.lmfs"
+    );
+
+    /// Regenerate `tests/fixtures/limnifs-slab-v1.lmfs` with the pinned
+    /// writer. Ignored by default — run explicitly (see above) and
+    /// commit the result.
+    #[test]
+    #[ignore = "fixture generator — run explicitly"]
+    fn write_slab_v1_golden_fixture() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("sub")).unwrap();
+        std::fs::write(root.join("hello.txt"), b"hello, limnifs\n").unwrap();
+        std::fs::write(root.join("sub").join("nested.txt"), b"nested content here").unwrap();
+        std::fs::write(root.join("big.bin"), big_payload()).unwrap();
+        // Pin every mtime (the writer records the host file's real
+        // mtime) so the image bytes are deterministic.
+        for path in ["sub", "hello.txt", "sub/nested.txt", "big.bin"] {
+            std::fs::File::open(root.join(path))
+                .unwrap()
+                .set_modified(golden_mtime())
+                .unwrap();
+        }
+        let image = build_image(root);
+        std::fs::write(GOLDEN_FIXTURE_PATH, &image).unwrap();
+        eprintln!("wrote {} bytes to {GOLDEN_FIXTURE_PATH}", image.len());
+    }
+
+    #[test]
+    fn slab_v1_golden_fixture_mounts_and_answers() {
+        let image: &[u8] = include_bytes!("../tests/fixtures/limnifs-slab-v1.lmfs");
+        assert_eq!(detect_format(image), ImageFormat::Limnifs);
+        let backend = LimnifsBackend::from_image(image.to_vec()).expect("v1 golden mounts");
+        assert_eq!(backend.name().to_str().unwrap(), "LimniFS");
+
+        let mut root = backend.read_dir("").expect("root lists");
+        root.sort_by(|a, b| a.name.cmp(&b.name));
+        let names: Vec<(&str, bool)> = root.iter().map(|e| (e.name.as_str(), e.is_dir)).collect();
+        assert_eq!(
+            names,
+            vec![("big.bin", false), ("hello.txt", false), ("sub", true)]
+        );
+
+        let hello = backend.stat("hello.txt").expect("file stats");
+        assert_eq!(hello.entry_type, EntryType::File);
+        assert_eq!(hello.perms, 0o644);
+        assert_eq!(hello.size, 15);
+        assert_eq!(hello.mtime, GOLDEN_MTIME_SECS as i64);
+        let mut buf = [0u8; 15];
+        assert_eq!(backend.pread("hello.txt", &mut buf, 0).unwrap(), 15);
+        assert_eq!(&buf, b"hello, limnifs\n");
+
+        let mut buf = [0u8; 19];
+        assert_eq!(backend.pread("sub/nested.txt", &mut buf, 0).unwrap(), 19);
+        assert_eq!(&buf, b"nested content here");
+
+        let big = backend.stat("big.bin").expect("big stats");
+        assert_eq!(big.size, 200_000);
+        assert_eq!(big.mtime, GOLDEN_MTIME_SECS as i64);
+        let want = big_payload();
+        let mut got = vec![0u8; want.len()];
+        let mut off = 0u64;
+        while (off as usize) < want.len() {
+            let n = backend
+                .pread("big.bin", &mut got[off as usize..], off)
+                .expect("read");
+            assert!(n > 0);
+            off += n as u64;
+        }
+        assert_eq!(got, want);
+    }
+
     #[test]
     fn lmfs_magic_detects_limnifs() {
         let mut magic = [0u8; 512];
