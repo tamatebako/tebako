@@ -964,6 +964,13 @@ fn image_era_fixture(tag: &str) -> Option<(PathBuf, String, String, String)> {
         .map(PathBuf::from)?;
     let plat = tebako_cli::options::host_platform().ok()?;
     let ver = tebako_cli::DEFAULT_TEBAKO_VERSION;
+    if !runtime_line_is_post_flip(ver) {
+        eprintln!(
+            "skipping {tag}: runtime line {ver} predates the post-flip floor {}.{}.{} — the fixture runtime's embedded driver cannot read this CLI's payloads yet",
+            POST_FLIP_RUNTIME_FLOOR.0, POST_FLIP_RUNTIME_FLOOR.1, POST_FLIP_RUNTIME_FLOOR.2
+        );
+        return None;
+    }
     let ruby = "3.3.7";
     let asset = format!("tebako-runtime-{ver}-{ruby}-{plat}");
     let exe_src = dir.join(&asset);
@@ -1172,6 +1179,27 @@ fn image_era_press_and_cold_run() {
     );
 }
 
+/// The first runtime line whose embedded driver reads post-flip
+/// limnifs payloads (the limnifs 0.3.0 flip, spec 20 §8). The driver
+/// lives INSIDE the published runtime exe, so its limnifs reader is
+/// only as new as that exe's own build: a pre-flip runtime EINVALs
+/// the post-flip payloads this CLI presses — fail-closed by design.
+/// The official-pair e2es re-activate by themselves once
+/// DEFAULT_TEBAKO_VERSION names a post-flip runtime line. (Interim
+/// floor: the runtime manifest's declared format floor replaces this
+/// version check — spec 20 §8 negotiation.)
+const POST_FLIP_RUNTIME_FLOOR: (u64, u64, u64) = (0, 16, 11);
+
+fn runtime_line_is_post_flip(ver: &str) -> bool {
+    let mut parts = ver.split('.').map(|p| p.parse::<u64>().unwrap_or(0));
+    let v = (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    );
+    v >= POST_FLIP_RUNTIME_FLOOR
+}
+
 /// Build an image-era mirror from the OFFICIAL released runtime pair:
 /// the released exe and its factory-imaged `.tfs` counterpart, carried
 /// byte-for-byte — resolution (item 30b) installs the image as the exe's
@@ -1179,6 +1207,13 @@ fn image_era_press_and_cold_run() {
 fn official_pair_fixture(tag: &str) -> Option<(PathBuf, String, String, String)> {
     let plat = tebako_cli::options::host_platform().ok()?;
     let ver = tebako_cli::DEFAULT_TEBAKO_VERSION;
+    if !runtime_line_is_post_flip(ver) {
+        eprintln!(
+            "skipping official-pair fixture: runtime line {ver} predates the post-flip floor {}.{}.{} — the published runtime's embedded driver cannot read this CLI's payloads yet",
+            POST_FLIP_RUNTIME_FLOOR.0, POST_FLIP_RUNTIME_FLOOR.1, POST_FLIP_RUNTIME_FLOOR.2
+        );
+        return None;
+    }
     let ruby = "3.3.7";
     let asset = format!("tebako-runtime-{ver}-{ruby}-{plat}");
     let image_name = format!("{asset}.tfs");
