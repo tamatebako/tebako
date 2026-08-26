@@ -33,9 +33,9 @@ serde_yaml = "0.9"
 # The in-process DwarFS writer for mkimage (dwarfs-t-rs).
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 # The in-process LimniFS writer for `mkimage --format limnifs` (spec 20
-# §6) — pure Rust, no `limni` binary anywhere. Upper bound: pre-flip
-# line stays below 0.2.65's incompatible format flip (see crates/tfs).
-limnifs-write = "0.2.62, < 0.2.65"
+# §6) — pure Rust, no `limni` binary anywhere. Floor: post-flip line
+# rides 0.2.65's format (see crates/tfs).
+limnifs-write = "0.3.0"
 libc = "0.2"
 
 # tfs per-target: the SquashFS backend (squashfs-tools-ng) is
@@ -64,6 +64,6 @@ rnp = { package = "rnp-rs", version = "=0.1.11", features = ["vendored"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 # The floor-recipe structural test parses the emitted metadata through
 # the reader (spec 20 §5 constraint 1: no SharedInline handle anywhere)
-# — test-only, never linked into the shipped binary. Upper bound: see
-# the limnifs-write pin above (pre-flip line stays below 0.2.65).
-limnifs-core = "0.2.62, < 0.2.65"
+# — test-only, never linked into the shipped binary. Floor: see the
+# limnifs-write pin above (post-flip line is >= 0.3.0).
+limnifs-core = "0.3.0"

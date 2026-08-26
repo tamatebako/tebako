@@ -20,8 +20,11 @@
 //! `ManifestCursor` → `parse_manifest_header` → `parse_metadata_reference`
 //! → `parse_metadata_blob` (inline metadata is REQUIRED — a `file:`
 //! metadata sidecar would be a second artifact) → `parse_slab_index` →
-//! `parse_history` → `parse_slab` per appended slab (index only — no
-//! upfront decompression; drops materialize per read window).
+//! `parse_history` → per-slab header validation; the slab regions are
+//! then handed to `SlabStore` behind `CachedSlabStore` (limnifs#192's
+//! read path: SIEVE drop cache + seekable-frame cache). Drops
+//! materialize per read window — a seekable drop decodes only the
+//! covering 256 KiB container frames (tebako#464's fix).
 //!
 //! `LIM1` is a SECTION magic inside the image, never an offset-0 image
 //! magic — detection keys on `LMFS` only (spec 20 §3).
@@ -39,8 +42,10 @@ use std::collections::HashMap;
 
 use limnifs_core::{
     parse_feature_flags_section, parse_history, parse_manifest_header, parse_metadata_blob,
-    parse_metadata_reference, parse_slab, parse_slab_header, parse_slab_index, ContentHandle,
-    CoreError, DropRecord, Inode, ManifestCursor, ManifestHeader, MetadataBlob, SLAB_HEADER_LEN,
+    parse_metadata_reference, parse_slab, parse_slab_header, parse_slab_index,
+    slab_cache::CachedSlabStore,
+    slab_store::{SlabSource, SlabStore},
+    ContentHandle, CoreError, Inode, ManifestCursor, ManifestHeader, MetadataBlob, SLAB_HEADER_LEN,
 };
 
 use crate::backend::{Backend, EntryType, RawDirEntry, RawStat};
@@ -54,10 +59,7 @@ const SLAB_MAGIC: &[u8; 4] = b"LIM1";
 const NANOS_PER_SEC: u64 = 1_000_000_000;
 
 /// A mounted LimniFS image.
-#[derive(Debug)]
 pub struct LimnifsBackend {
-    /// The whole image (manifest + appended slabs), owned.
-    image: Vec<u8>,
     /// Parsed manifest header (versions for the info surface).
     header: ManifestHeader,
     /// The parsed metadata blob (inodes + directory nodes).
@@ -67,27 +69,33 @@ pub struct LimnifsBackend {
     paths: HashMap<String, u64>,
     /// The root directory's inode number.
     root: u64,
-    /// One entry per appended slab: the absolute offset of its solid
-    /// window inside `image`.
-    slab_windows: Vec<usize>,
-    /// Drop id → (slab ordinal, drop record), built once at open.
-    drops: HashMap<[u8; 32], (usize, DropRecord)>,
+    /// The appended slabs behind limnifs-core's `CachedSlabStore`
+    /// (limnifs#192): a SIEVE-evicted decoded-drop cache (64 MiB /
+    /// 1024 entries) plus a 32 MiB seekable-frame cache. A windowed
+    /// read of a seekable drop decodes only the covering 256 KiB
+    /// container frames; a monolithic drop decodes once and caches
+    /// whole. Replaces the pre-flip one-drop memo: tebako#464's 19.5
+    /// MiB shim-in-8-KiB-windows read went from ~48 GiB of lz4 work
+    /// (~19 s) to ~640 MiB worst case, cache hits thereafter.
+    store: CachedSlabStore,
     /// Section spans for `image_info_json` (`tfs info --backend-json`).
     sections: Vec<(&'static str, usize)>,
     /// Per-slab drop counts (the info surface).
     slab_drop_counts: Vec<usize>,
-    /// The last served drop's plaintext, keyed by drop id (tebako#464).
-    /// Sequential chunked readers (the dlmap extraction walks a file in
-    /// 8 KiB windows) hit the same drop for hundreds of consecutive
-    /// preads; without the memo each call re-decompresses the WHOLE drop
-    /// — a 19.5 MiB shim read that way cost ~48 GiB of lz4 work (~19 s,
-    /// the reported ~1 MiB/s). Bounded at one drop: random access never
-    /// holds more than the current drop's plaintext.
-    last_drop: std::sync::Mutex<Option<([u8; 32], Vec<u8>)>>,
-    /// Test-only decompress counter — the memo's proof: one decompress
-    /// per distinct drop, not per pread window.
-    #[cfg(test)]
-    decompress_calls: std::sync::Mutex<usize>,
+    /// Whole-image byte length at open (the info surface; the slab
+    /// bytes themselves are owned by `store` after open).
+    image_bytes: usize,
+}
+
+/// `CachedSlabStore` carries no `Debug` impl; the test suite's
+/// `unwrap_err()` needs one, so spell out a minimal surface.
+impl std::fmt::Debug for LimnifsBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LimnifsBackend")
+            .field("root", &self.root)
+            .field("image_bytes", &self.image_bytes)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Mount-open mapping (spec 20 §4): `TooShort`/`BadMagic`/`Corrupt` →
@@ -207,9 +215,8 @@ impl LimnifsBackend {
             ("HISTORY", history_end - slab_index_end),
         ];
 
-        let mut slab_windows: Vec<usize> = Vec::with_capacity(slab_index.len());
         let mut slab_drop_counts: Vec<usize> = Vec::with_capacity(slab_index.len());
-        let mut drops: HashMap<[u8; 32], (usize, DropRecord)> = HashMap::new();
+        let mut sources: Vec<SlabSource> = Vec::with_capacity(slab_index.len());
         let mut pos = history_end;
         if slab_index.is_empty() {
             if pos != data.len() {
@@ -266,10 +273,11 @@ impl LimnifsBackend {
                 }
                 let view = parse_slab(&data[pos..end]).map_err(open_error)?;
                 slab_drop_counts.push(view.drop_records().len());
-                for record in view.drop_records() {
-                    drops.insert(*record.drop_id.as_bytes(), (slab_windows.len(), *record));
-                }
-                slab_windows.push(pos + view.solid_window_offset());
+                // The slab region moves into the slab store (owned — the
+                // mount sources all arrive as one in-memory image, so the
+                // store's `Memory` source is a same-size move, and the
+                // image Vec itself is dropped at the end of open).
+                sources.push(SlabSource::Memory(data[pos..end].to_vec()));
                 pos = end;
             }
             if pos != data.len() {
@@ -282,19 +290,28 @@ impl LimnifsBackend {
             }
         }
 
+        // The read path (limnifs#192): the store parses each slab once,
+        // then serves drops through the SIEVE drop cache and the
+        // seekable-frame cache — a windowed pread of a seekable drop
+        // decodes only the covering 256 KiB frames, never the whole drop.
+        let image_bytes = data.len();
+        let store = SlabStore::from_sources(sources).map_err(open_error)?;
+        let store = CachedSlabStore::with_frame_budget(
+            store,
+            limnifs_core::slab_cache::DEFAULT_CACHE_CAPACITY,
+            limnifs_core::slab_cache::DEFAULT_CACHE_BYTES,
+            limnifs_core::slab_cache::DEFAULT_FRAME_CACHE_BYTES,
+        );
+
         Ok(LimnifsBackend {
-            image: data,
             header,
             blob,
             paths,
             root,
-            slab_windows,
-            drops,
+            store,
             sections,
             slab_drop_counts,
-            last_drop: std::sync::Mutex::new(None),
-            #[cfg(test)]
-            decompress_calls: std::sync::Mutex::new(0),
+            image_bytes,
         })
     }
 
@@ -315,71 +332,27 @@ impl LimnifsBackend {
         })
     }
 
-    /// The materialized plaintext of one drop (on-demand, per-class
-    /// decompression — spec 20 §4; no slab access for inline drops ever
-    /// reaches here).
-    fn drop_plaintext(&self, drop_id: &[u8; 32]) -> Result<Vec<u8>, i32> {
-        let Some((slab, record)) = self.drops.get(drop_id) else {
+    /// The `[start, start + len)` window of one drop's plaintext, served
+    /// by the cached slab store (limnifs#192): a seekable drop decodes
+    /// only the covering container frames; anything else decodes whole
+    /// once and caches. Decode-side refusals (AEAD/dict/multi-window
+    /// drops — the tebako writer path emits none of them) surface from
+    /// the store as `UnsupportedFeature` → ENOTSUP, the same named
+    /// refusal the pre-flip adapter made itself.
+    fn drop_window(&self, drop_id: &[u8; 32], start: usize, len: usize) -> Result<Vec<u8>, i32> {
+        self.store
+            .decoded_range(drop_id, start as u64, len)
             // A slice references a drop no slab carries: a broken
             // cross-reference, i.e. corruption while serving.
-            return Err(libc::EIO);
-        };
-        if record.representation.aead != 0x00 {
-            return Err(unsupported(format!(
-                "drop AEAD 0x{:02X} (only plaintext drops are mounted)",
-                record.representation.aead
-            )));
-        }
-        if record.solid_window_index != 0 {
-            return Err(unsupported(format!(
-                "solid_window_index {} (single-window slabs only)",
-                record.solid_window_index
-            )));
-        }
-        if record.dict_id != limnifs_core::drop_record::NO_DICT {
-            return Err(unsupported(
-                "dictionary-compressed drop (the tebako writer path emits no dictionaries)"
-                    .to_string(),
-            ));
-        }
-        let start = self.slab_windows[*slab]
-            .saturating_add(usize::try_from(record.offset_in_window).map_err(|_| libc::EIO)?);
-        let end =
-            start.saturating_add(usize::try_from(record.len_in_window).map_err(|_| libc::EIO)?);
-        if end > self.image.len() {
-            return Err(libc::EIO);
-        }
-        limnifs_core::codec::decompress(
-            record.representation.codec,
-            &self.image[start..end],
-            record.plaintext_len,
-        )
-        .map_err(serve_error)
-    }
-
-    /// The `[start, end)` window of one drop's plaintext, memoized
-    /// against the last drop served (the field note carries the
-    /// tebako#464 math). The lock is held across the decompress so
-    /// concurrent readers never duplicate the work; the copy out is the
-    /// window only.
-    fn drop_window(&self, drop_id: &[u8; 32], start: usize, end: usize) -> Result<Vec<u8>, i32> {
-        let mut memo = self.last_drop.lock().map_err(|_| libc::EIO)?;
-        let hit = matches!(memo.as_ref(), Some((id, _)) if id == drop_id);
-        if !hit {
-            let plain = self.drop_plaintext(drop_id)?;
-            #[cfg(test)]
-            {
-                *self.decompress_calls.lock().unwrap() += 1;
-            }
-            *memo = Some((*drop_id, plain));
-        }
-        let Some((_, plain)) = memo.as_ref() else {
-            return Err(libc::EIO); // unreachable: the miss arm just filled it
-        };
-        if end > plain.len() {
-            return Err(libc::EIO);
-        }
-        Ok(plain[start..end].to_vec())
+            .ok_or(libc::EIO)?
+            .map_err(|e| {
+                tebako_log::log!(
+                    tebako_log::Level::Trace,
+                    "tfs",
+                    "limnifs: drop decode refused: {e}"
+                );
+                serve_error(e)
+            })
     }
 
     /// The byte length a stat reports for a regular file's content
@@ -473,7 +446,7 @@ impl Backend for LimnifsBackend {
                         (u64::from(slice.drop_byte_start) + (lo - slice.file_byte_start)) as usize;
                     let de =
                         (u64::from(slice.drop_byte_start) + (hi - slice.file_byte_start)) as usize;
-                    let window = self.drop_window(slice.drop_id.as_bytes(), ds, de)?;
+                    let window = self.drop_window(slice.drop_id.as_bytes(), ds, de - ds)?;
                     let at = (lo - win_start) as usize;
                     buf[at..at + (hi - lo) as usize].copy_from_slice(&window);
                     done += (hi - lo) as usize;
@@ -521,9 +494,9 @@ impl Backend for LimnifsBackend {
             self.header.manifest_version,
             self.blob.inodes.len(),
             self.blob.dir_nodes.len(),
-            self.slab_windows.len(),
-            self.drops.len(),
-            self.image.len(),
+            self.store.slab_count(),
+            self.store.drop_count(),
+            self.image_bytes,
         );
         let mut first = true;
         for (name, size) in &self.sections {
@@ -598,18 +571,28 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // Committed slab-v1 golden fixture — the transition proof for the
-    // limnifs format evolution (slab v2 lands as "the v1" without a
-    // format-version bump; spec 20 §3). The committed bytes were written
-    // by the pinned limnifs-write with `WriteConfig::default_v0_1()`;
-    // every future reader MUST mount them and answer identically.
-    // Regenerate (only while `default_v0_1()` still emits the slab-v1
-    // layout) with:
-    //   cargo test -p tfs write_slab_v1_golden_fixture -- --ignored
-    // and commit the result.
+    // Committed golden fixtures — the limnifs format-flip proofs
+    // (limnifs#192; spec 20 §8). The 0.3.0 line replaced the image
+    // format incompatibly WITHOUT a format-version bump: the
+    // seekable-container layout IS the v1 format now, and readers on
+    // the new line reject pre-flip bytes. There is no "v2" — the new
+    // layout replaced the old as v1.
+    //
+    // - `limnifs-preflip.lmfs` — the PRE-FLIP layout, FROZEN (written by
+    //   limnifs-write 0.2.64 with `WriteConfig::default_v0_1()` +
+    //   dictionaries off; deterministic via GOLDEN_MTIME_SECS). It can
+    //   no longer be regenerated — the pinned writer emits the v1
+    //   format — so its generator is retired. The flip test below pins
+    //   the fail-closed contract: the v1 reader refuses these bytes at
+    //   mount-open with EINVAL, never a mis-read.
+    // - `limnifs-slab-v1.lmfs` — THE v1 layout, regenerated with the
+    //   pinned writer via:
+    //     cargo test -p tfs write_slab_v1_golden_fixture -- --ignored
+    //   and committed. Every future reader MUST mount it and answer
+    //   identically.
     // -----------------------------------------------------------------
 
-    /// Fixed mtime for the golden tree (2026-01-01T00:00:00Z) so the
+    /// Fixed mtime for the golden trees (2026-01-01T00:00:00Z) so the
     /// committed image bytes are deterministic.
     const GOLDEN_MTIME_SECS: u64 = 1_767_225_600;
 
@@ -622,12 +605,9 @@ mod tests {
         "/tests/fixtures/limnifs-slab-v1.lmfs"
     );
 
-    /// Regenerate `tests/fixtures/limnifs-slab-v1.lmfs` with the pinned
-    /// writer. Ignored by default — run explicitly (see above) and
-    /// commit the result.
-    #[test]
-    #[ignore = "fixture generator — run explicitly"]
-    fn write_slab_v1_golden_fixture() {
+    /// Build the golden tree (same shape for both eras): an inline file,
+    /// a nested inline file, a slab-backed file, mtimes pinned.
+    fn golden_tree() -> tempfile::TempDir {
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
         std::fs::create_dir_all(root.join("sub")).unwrap();
@@ -642,16 +622,44 @@ mod tests {
                 .set_modified(golden_mtime())
                 .unwrap();
         }
-        let image = build_image(root);
+        tmp
+    }
+
+    /// Regenerate `tests/fixtures/limnifs-slab-v1.lmfs` with the pinned
+    /// writer. Ignored by default — run explicitly (see above) and
+    /// commit the result.
+    #[test]
+    #[ignore = "fixture generator — run explicitly"]
+    fn write_slab_v1_golden_fixture() {
+        let tmp = golden_tree();
+        let image = build_image(tmp.path());
         std::fs::write(GOLDEN_FIXTURE_PATH, &image).unwrap();
         eprintln!("wrote {} bytes to {GOLDEN_FIXTURE_PATH}", image.len());
     }
 
     #[test]
-    fn slab_v1_golden_fixture_mounts_and_answers() {
-        let image: &[u8] = include_bytes!("../tests/fixtures/limnifs-slab-v1.lmfs");
+    fn preflip_fixture_fails_closed_at_open() {
+        // The flip contract (limnifs#192; spec 20 §8): pre-flip bytes
+        // still DETECT as limnifs (the LMFS magic is unchanged), but
+        // the v1 reader refuses them at mount-open — EINVAL, never a
+        // mis-read. Verified against limnifs-core 0.2.65/0.3.0.
+        let image: &[u8] = include_bytes!("../tests/fixtures/limnifs-preflip.lmfs");
         assert_eq!(detect_format(image), ImageFormat::Limnifs);
-        let backend = LimnifsBackend::from_image(image.to_vec()).expect("v1 golden mounts");
+        assert_eq!(
+            LimnifsBackend::from_image(image.to_vec()).unwrap_err(),
+            libc::EINVAL,
+            "pre-flip bytes must fail closed at mount-open"
+        );
+    }
+
+    #[test]
+    fn slab_v1_golden_fixture_mounts_and_answers() {
+        // Runtime read (not `include_bytes!`): the fixture regenerates
+        // with the pinned writer, and a compile-time include would make
+        // the generator itself unbuildable on a missing/stale fixture.
+        let image = std::fs::read(GOLDEN_FIXTURE_PATH).expect("committed v1 golden fixture");
+        assert_eq!(detect_format(&image), ImageFormat::Limnifs);
+        let backend = LimnifsBackend::from_image(image).expect("v1 golden mounts");
         assert_eq!(backend.name().to_str().unwrap(), "LimniFS");
 
         let mut root = backend.read_dir("").expect("root lists");
@@ -777,8 +785,8 @@ mod tests {
         std::fs::write(tmp.path().join("a.txt"), b"alpha").unwrap();
         std::fs::write(tmp.path().join("b.txt"), b"beta").unwrap();
         let backend = LimnifsBackend::from_image(build_image(tmp.path())).expect("mounts");
-        assert!(backend.drops.is_empty());
-        assert!(backend.slab_windows.is_empty());
+        assert_eq!(backend.store.drop_count(), 0);
+        assert_eq!(backend.store.slab_count(), 0);
         let mut buf = [0u8; 8];
         assert_eq!(backend.pread("a.txt", &mut buf, 0).unwrap(), 5);
         assert_eq!(&buf[..5], b"alpha");
@@ -816,7 +824,10 @@ mod tests {
     fn pread_slab_drop_materializes_per_window() {
         let (_tmp, image) = fixture_tree();
         let backend = LimnifsBackend::from_image(image).expect("mounts");
-        assert!(!backend.drops.is_empty(), "big.bin must be slab-backed");
+        assert!(
+            backend.store.drop_count() > 0,
+            "big.bin must be slab-backed"
+        );
         let want = big_payload();
 
         // Whole-file read in one buffer.
@@ -845,11 +856,12 @@ mod tests {
     }
 
     #[test]
-    fn sequential_chunked_reads_decompress_each_drop_once() {
+    fn sequential_chunked_reads_decode_each_drop_once() {
         // tebako#464: the dlmap extraction reads a file in 8 KiB windows.
-        // The last-drop memo must collapse the per-window decompressions
-        // to one per DISTINCT drop — before it, a 19.5 MiB shim read that
-        // way ran ~48 GiB of lz4 work (~19 s, the reported ~1 MiB/s).
+        // The cached slab store (limnifs#192) must collapse the
+        // per-window decodes to one per DISTINCT drop — before it, a
+        // 19.5 MiB shim read that way ran ~48 GiB of lz4 work (~19 s,
+        // the reported ~1 MiB/s).
         let (_tmp, image) = fixture_tree();
         let backend = LimnifsBackend::from_image(image).expect("mounts");
         let want = big_payload();
@@ -863,7 +875,7 @@ mod tests {
             acc.extend_from_slice(&buf[..n]);
             offset += n as u64;
         }
-        assert_eq!(acc, want, "the memo serves the same bytes");
+        assert_eq!(acc, want, "the cache serves the same bytes");
 
         let inode = backend.inode_for("big.bin").expect("statted above");
         let ContentHandle::SliceMap(slices) = &inode.content_handle else {
@@ -874,24 +886,110 @@ mod tests {
             .map(|s| *s.drop_id.as_bytes())
             .collect::<std::collections::BTreeSet<_>>()
             .len();
-        let calls = *backend.decompress_calls.lock().unwrap();
-        assert_eq!(
-            calls, distinct,
-            "one decompress per distinct drop ({distinct}), not per 8 KiB window (25)"
+        let stats = backend.store.cache_stats();
+        assert!(
+            stats.misses as usize <= 2 * distinct,
+            "bounded decode work: {} cache misses for {distinct} distinct drops — the regression class is one miss per 8 KiB window (25)",
+            stats.misses
         );
-        // A re-read never re-decompresses per window: a fully warm memo
-        // (a single-drop file) hits outright; a multi-drop file re-misses
-        // at most once per drop (the memo carries only the last).
+        // A re-read never re-decodes: every window lands on a cached
+        // drop (the 64 MiB budget holds this fixture's whole file).
         let mut offset = 0u64;
         while (offset as usize) < want.len() {
             let n = backend.pread("big.bin", &mut buf, offset).expect("re-read");
             assert!(n > 0, "forward progress at {offset}");
             offset += n as u64;
         }
-        let calls = *backend.decompress_calls.lock().unwrap();
+        let after = backend.store.cache_stats();
+        assert_eq!(
+            after.misses, stats.misses,
+            "the second sweep is all cache hits (misses {} → {})",
+            stats.misses, after.misses
+        );
+        assert!(after.hits > 0, "the second sweep recorded hits");
+    }
+
+    #[test]
+    fn windowed_reads_of_a_seekable_drop_decode_only_covering_frames() {
+        // The limnifs#192 seekable container: a drop above the 1 MiB
+        // emission threshold is a sequence of independent 256 KiB frames
+        // with an LMSK footer. A small window must decode ~1 frame, not
+        // the whole drop — tebako#464's actual fix. This pins the
+        // READER side: foreign images carry containers and the backend
+        // must serve them bounded and byte-exact. (tebako's own writer
+        // recipe emits no containers today — the chunk path never sets
+        // the flag, limnifs#195 — so the fixture forces the whole-file
+        // path via the built-in ExecutableCategorizer.)
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        // 3 MiB, COMPRESSIBLE (the whole-file tournament lets Brotli
+        // win — a seekable codec — over the categorizer's BCJ pick)
+        // and below the 4 MiB max_drop_size so the categorizer path
+        // emits one whole-file drop.
+        let mut want: Vec<u8> = (0..3 * 1024 * 1024u32).map(|i| (i % 251) as u8).collect();
+        // ELF64 x86_64 header: the static default registry's
+        // ExecutableCategorizer claims the file and routes it to the
+        // whole-file path. The pushed config entry below is a no-op
+        // beyond flipping `use_categorizers` on — the directory write
+        // path consults only the static registry, never config
+        // categorizer entries (limnifs#195).
+        want[0..4].copy_from_slice(&[0x7F, b'E', b'L', b'F']);
+        want[4] = 2; // EI_CLASS = ELFCLASS64
+        want[5] = 1; // EI_DATA = ELFDATA2LSB
+        want[18..20].copy_from_slice(&0x3Eu16.to_le_bytes()); // e_machine = x86_64
+        std::fs::write(root.join("large.bin"), &want).unwrap();
+        let mut config = limnifs_write::WriteConfig::default_v0_1();
+        config.dictionaries.enabled = false;
+        config
+            .categorizers
+            .push(limnifs_write::config::CategorizerConfig {
+                name: "bin-whole-file".to_string(),
+                extensions: vec!["bin".to_string()],
+                magic_bytes: Vec::new(),
+                codec: "lz4".to_string(),
+                max_size: None,
+                enabled: true,
+            });
+        let artifact =
+            limnifs_write::write_directory_with_config(root, &config).expect("write succeeds");
         assert!(
-            calls <= 2 * distinct,
-            "two sweeps cost at most two decompressions per drop ({calls} > 2×{distinct})"
+            artifact.metadata_sidecar.is_none(),
+            "the fixture tree must keep its metadata inline"
+        );
+        let mut image = artifact.bytes;
+        for slab in &artifact.slabs {
+            image.extend_from_slice(&slab.bytes);
+        }
+        let backend = LimnifsBackend::from_image(image).expect("mounts");
+
+        let frames_before = limnifs_core::seekable::frames_decoded();
+        let mut buf = [0u8; 8192];
+        let n = backend
+            .pread("large.bin", &mut buf, 1_500_000)
+            .expect("read");
+        assert_eq!(&buf[..n], &want[1_500_000..1_500_000 + n]);
+        let frames_one_window = limnifs_core::seekable::frames_decoded() - frames_before;
+
+        // A second, adjacent window (same 256 KiB frame) must be a
+        // frame-cache hit: zero new decodes.
+        let n2 = backend
+            .pread("large.bin", &mut buf, 1_500_000 + 4096)
+            .expect("read");
+        assert_eq!(&buf[..n2], &want[1_504_096..1_504_096 + n2]);
+        let frames_two_windows = limnifs_core::seekable::frames_decoded() - frames_before;
+
+        let total_frames = 3 * 1024 * 1024 / (256 * 1024); // 12 if one drop
+        assert!(
+            frames_one_window >= 1,
+            "the fixture must exercise the seekable path (a 3 MiB whole-file Brotli drop emits a container)"
+        );
+        assert!(
+            frames_one_window <= 2,
+            "one 8 KiB window decoded {frames_one_window} frames — the whole-drop decode would be ~{total_frames}"
+        );
+        assert_eq!(
+            frames_two_windows, frames_one_window,
+            "the adjacent window hit the frame cache"
         );
     }
 

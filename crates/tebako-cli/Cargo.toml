@@ -40,9 +40,9 @@ serde_yml = "0.0.12"
 # driver images are built without any mkdwarfs binary.
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 # The in-process LimniFS writer for `press --format limnifs` (spec 20 §6)
-# — pure Rust, no `limni` binary anywhere. Upper bound: pre-flip line
-# stays below 0.2.65's incompatible format flip (see crates/tfs).
-limnifs-write = "0.2.62, < 0.2.65"
+# — pure Rust, no `limni` binary anywhere. Floor: post-flip line rides
+# 0.2.65's format (see crates/tfs).
+limnifs-write = "0.3.0"
 libc = "0.2"
 sha2 = "0.10"
 # RuntimeSdk provisioning extracts the ruby src release in-process (no tar

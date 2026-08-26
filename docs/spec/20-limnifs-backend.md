@@ -105,8 +105,11 @@ all serve one `&[u8]` core):
 2. `parse_metadata_reference` → the metadata locator;
 3. `parse_metadata_blob` → `MetadataBlob` (path → `Inode` resolution,
    explicit directory entries);
-4. `SlabView` over the slab region (`parse_slab`) — index only, no
-   upfront decompression.
+4. per-slab header validation (`parse_slab_header` — magic, seal state,
+   ordinal match); the slab regions are then handed to `SlabStore`
+   behind `CachedSlabStore` (limnifs#192: SIEVE drop cache, 64 MiB /
+   1024 entries, plus a 32 MiB seekable-frame cache) — index only at
+   open, no upfront decompression.
 
 Trait mapping (errno-valued errors, the C ABI convention):
 
@@ -115,7 +118,7 @@ Trait mapping (errno-valued errors, the C ABI convention):
 | `name()` | `c"LimniFS"` |
 | `stat(path)` | `MetadataBlob` path resolution → `Inode` (mode/type/mtime/size). `ContentHandle` size: inline length for `InlineData`/`SharedInline`, summed `SliceRef` spans for `SliceMap` |
 | `has_entry_or_children(path)` | the trait DEFAULT (the stat answer) — limnifs carries explicit directory entries like dwarfs/squashfs/tar, so the write gate's held-tree check (spec 11 §11) and the jail's covered-vs-held fallthrough (spec 11 §2, spec 08) behave identically to the dwarfs backend |
-| `pread(path, buf, off)` | **inline drops** (`InlineData`, `SharedInline`): served straight from the metadata blob — no slab access, no decompression. **Slab drops** (`SliceMap`): only the drops intersecting the requested window are materialized, via `SlabView::plaintext_for` — on-demand, per-class decompression. Callers clamp to EOF; short reads allowed |
+| `pread(path, buf, off)` | **inline drops** (`InlineData`, `SharedInline`): served straight from the metadata blob — no slab access, no decompression. **Slab drops** (`SliceMap`): only the drops intersecting the requested window are materialized, via `CachedSlabStore::decoded_range` — a seekable-container drop decodes only the covering 256 KiB frames; any other drop decodes whole once and caches (SIEVE, scan-resistant). tebako#464: a 19.5 MiB shim read in 8 KiB windows drove ~48 GiB of whole-drop re-decode pre-flip; post-flip each drop decodes at most once and the cache serves the rest. Callers clamp to EOF; short reads allowed |
 | `read_dir(path)` | the inode's directory handle → `parse_directory_node` → direct children (never `.`/`..`); `ENOTDIR` on a non-directory |
 | `read_link(path)` | the `Symlink` content handle's target (limnifs has symlink inodes) — spec 11 §9 router semantics apply unchanged |
 | `image_info_json()` | the backend metadata surface (sections, drop counts) — feeds `tfs info --backend-json` like the dwarfs backend |
@@ -175,128 +178,74 @@ surfaces it as its own named error; a lean package pressed with
 `--format limnifs` run against a limnifs-less runtime fails closed with
 the backend named, not with a fallback mount.
 
-**Runtime floor for the limnifs default (locked 2026-08-22):** with
-limnifs the default writer format (§6), a default-pressed payload runs
-on any runtime whose driver ships `backend-limnifs` — every runtime
-built from the tebako product repo at or after the backend's merge
-(shipped in tebako v0.2.0). The published tebako-runtime-ruby POSIX
-assets meet the floor from the 2026-08-11 re-cut onward (v0.16.3 and
-v0.16.4 assets alike, probed end-to-end: press → stitch → cold run of a
-sha256-verified limnifs payload on a fresh store, entrypoint output
-correct on both) **provided the payload observes the writer constraints
-below**; windows-ucrt64 assets join with the first factory build whose
-product pin carries the windows per-target override's
-`backend-limnifs`. A runtime below the floor fails closed with the
-named `ENOTSUP` — by design; the loader never re-routes a limnifs
-payload to another format.
+**Runtime floor for the limnifs default (the flip line, tebako v0.3.0):**
+with limnifs the default writer format (§6), a default-pressed payload
+runs on any runtime whose driver ships the post-flip limnifs reader —
+limnifs-core ≥ 0.3.0, i.e. a runtime built on tebako ≥ v0.3.0. The flip
+is **atomic and incompatible** (limnifs#192; §8's format-evolution
+proof): the 0.2.65/0.3.0 line replaced the image format without a
+format-version bump, so the compatibility matrix is binary —
 
-**Writer constraints at the floor (locked 2026-08-22; upstream state
-verified at tag `limni-v0.2.54`):** five defects in the limnifs crates
-and their codec stack bound what tebako writers may emit while the
-floor spans pre-0.2.53 readers. All five were pinned empirically
-against the published drivers (the named reason rides the
-`TEBAKO_DEBUG=trace` log; the errno channel carries EINVAL/EIO). Since
-the lock: **#186 and #187 are FIXED upstream in 0.2.53** (verified in
-the 0.2.54 source), **#315 is mitigated writer-side** in 0.2.53 (the
-decoder defect itself is still open on omnizip 0.16.78), and **#188 is
-not reproducible on stock 0.2.54** (retest below). The constraints stay
-verbatim while the floor's readers predate the fixes — the recipe is
-cheap, and every constraint's lift condition is named. The five map
-onto four constraints below — the fifth (the tournament coupling)
-shares constraint 4's remedy:
+| writer \ reader | pre-flip reader (< 0.2.65) | post-flip reader (≥ 0.3.0) |
+|---|---|---|
+| pre-flip image (≤ tebako v0.2.x) | mounts | **EINVAL at mount-open** |
+| post-flip image (≥ tebako v0.3.0) | **EINVAL at mount-open** | mounts |
 
-1. **No shared inline table** (upstream: limnifs#186 — FIXED in limnifs
-   0.2.53: `INODE_FLAG_RESERVED_MASK = 0xF0`, bit 3 documented as the
-   defined `SHARED_INLINE`). limnifs-core < 0.2.53 declares
-   `INODE_FLAG_SHARED_INLINE = 0x08` (its own parser consumes the flag)
-   yet sets the reserved mask to `0xF8` — covering bit 3 — so every
-   reader of that line rejects any inode using the writer's inline
-   dedup ("reserved flag bits set"). The dedup fires whenever two or
-   more files at or below the 4096-byte inline threshold share content
-   — i.e. on every realistic app tree. The published 0.16.3–0.16.5
-   drivers all embed limnifs-core < 0.2.53, so tebako-written images
-   MUST NOT set flag 0x08 while they are the floor: both writer entry
-   points run with `defaults.shared_inline = false` (the metadata blob
-   is whole-blob compressed, so re-inlined duplicate blobs cost nothing
-   on the wire). The knob is limnifs#189 — SHIPPED in limnifs 0.2.57
-   (`WriteConfig::defaults.shared_inline`, serde-defaulted true); the
-   limnifs pins ride crates.io semver and the workspace
-   `[patch.crates-io]` fork block is deleted. **Lift condition:** the
-   floor's readers embed limnifs-core ≥ 0.2.53 — i.e. a factory
-   runtime cut built on tebako ≥ v0.2.2, the tebako release whose link
-   unit first carries limnifs-core ≥ 0.2.53 (runtime 0.16.6 does NOT
-   lift anything: its link unit comes from tebako v0.2.1, which embeds
-   limnifs-core 0.2.51).
-2. **The metadata blob is lz4-HC — never brotli, never zstd, never
-   store, and (for size) never fast lz4.** The 0.16.3-era reader's
-   brotli decode path fails on metadata blobs beyond the small-buffer
-   case ("invalid code-length code lengths (space not consumed)") —
-   small trees pass, which is exactly how the defect hid behind the
-   first probe. zstd is out too (upstream: omnizip-rs#315, STILL OPEN
-   on omnizip 0.16.78): the omnizip-zstd decoder shipping in every
-   limnifs-core line on the floor (≤ 0.2.54, tebako's own tfs included)
-   mis-decodes some valid frames — a deterministic frame-checksum
-   mismatch on bytes libzstd itself accepts, reproduced by a 318-byte
-   metadata blob at the Fastest/Fast/Default/Better levels. Writer-side
-   this is mitigated since limnifs 0.2.53: `codec::zstd`'s
-   `verify_roundtrip` decompress-verifies every encoded frame and
-   refuses to emit one its decoder can't read (the tournament falls
-   through), so a ≥ 0.2.53 writer never ships the landmine; the recipe
-   keeps zstd banned regardless — every floor READER still carries the
-   broken decoder for foreign or pre-fix frames, and lz4-HC already
-   meets the size budget. lz4-HC (codec 0x13) is the safe high-ratio
-   codec: its frames are standard lz4 blocks, and every floor reader
-   dispatches 0x13 to the SAME fast-lz4 decoder (limnifs-core's
-   `Lz4HcCodec::decompress` delegates to the fast codec — no second
-   decode path exists), while the hash-chain match finder keeps a
-   realistic tree's blob under the readers' 1 MiB compressed-inline
-   ceiling where fast lz4 does not (the native-extension e2e tree:
-   830 KiB lz4-HC vs 1049 KiB fast lz4 vs 2.5 MB store; the fast-lz4
-   blob overshoots constraint 3's threshold, the store blob overshoots
-   the readers' hard ceiling). Both writer entry points (`tfs mkimage`,
-   `tebako press`) pin `metadata_codec = "lz4-hc"`.
-3. **The writer inlines metadata up to the readers' 1 MiB ceiling**
-   (upstream: limnifs#187 — FIXED in limnifs 0.2.53: the
-   `defaults.metadata_externalize_threshold` knob, serde-defaulted to
-   just under the reader ceiling (1000 KiB = 1 MiB − 24 KiB) and
-   clamped at assembly). Both floor readers bound the compressed
-   inline metadata at `DEFAULT_INLINE_METADATA_MAX_BYTES = 1 MiB`;
-   limnifs-write ≤ 0.2.51 externalized past its own 768 KiB threshold
-   with no `WriteConfig` override. On ≥ 0.2.53 the stock default IS the
-   floor-safe value, so the recipe sets no override. A tree whose
-   lz4-HC blob exceeds even the ceiling fails press/mkimage with the
-   named self-contained error — the documented "too large for this
-   format today" boundary.
-4. **Content drops ride lz4-or-store, never brotli, never zstd.** The
-   same two codec defects cover content drops, not only the metadata
-   blob: a brotli-compressed text drop beyond the small-buffer case
-   reads back EIO on the 0.16.3 driver (38–92 KB `.rb` files reproduce
-   it; v0.16.4's reader is unaffected), and any zstd drop can hit the
-   omnizip decode landmine on a floor reader (a stock-0.2.54
-   zstd-binary probe image EIOs on the v0.16.3 driver — retest
-   artifact, limnifs#188 comment). The fifth defect sealed the recipe
-   from the other direction (upstream: limnifs#188): on 0.2.51,
-   removing lz4 from the compression tournament while `binary_codec`
-   stayed lz4 made the writer emit a binary drop that every reader —
-   tebako's own tfs included — read back as **zero bytes with a
-   successful stat** (a 68 KB `.bundle` reproduced it; the runtime
-   symptom was a `LoadError` on the dlmap2file path). **Retest
-   2026-08-22 on stock, unpatched 0.2.54 — both exact trigger configs,
-   three readers (0.2.54 tfs, both published drivers): NOT
-   REPRODUCIBLE, every readback byte-exact** (reported on limnifs#188;
-   fixed-where unbisected — the 0.2.53 zstd self-check and the omnizip
-   0.16.78 OF-table fix are the candidates). The tournament restriction
-   stays regardless: the decode defects above already forbid every
-   non-lz4 codec on the floor, and the pin costs nothing until #188
-   closes with a named root cause. Both writer entry points pin
-   `text_codec`/`binary_codec` to lz4 and restrict the compression
-   tournament to `store` + `lz4` — lz4 present in the list, nothing
-   else beside store. lz4 decode is proven on the floor for both text
-   and binary drops (94 KB `.rb`, 68 KB `.bundle`).
+Both directions fail CLOSED (named EINVAL, verified — never a
+mis-read). The store resolves the right artifact by sha256, so a
+stale-format cache entry is re-fetched by digest, never patched.
+A runtime without `backend-limnifs` at all keeps the older named
+`ENOTSUP`; the loader never re-routes a limnifs payload to another
+format.
+
+**Writer constraints (recipe pinned post-flip; the four historical
+floor constraints LIFTED):** the pre-flip recipe (below) was shaped by
+four defects in readers embedding limnifs-core < 0.2.53 / omnizip ≤
+0.16.78 (limnifs#186/#187/#188, omnizip-rs#315 — all fixed or mitigated
+upstream long before the flip). The post-flip reader floor (limnifs-core
+≥ 0.3.0) clears every one of them. The recipe stays pinned regardless —
+not from reader defects but for fleet uniformity and boot-time decode
+cost (lz4 is the fastest-decoding codec in the stack), each item with
+its retention reason; widening any of them is a measured decision of
+its own, not a side effect of a dep bump:
+
+1. **No shared inline table** — `defaults.shared_inline = false` at
+   both writer entry points. Historical: pre-0.2.53 readers rejected
+   inode flag 0x08 via their reserved mask (limnifs#186, fixed in
+   0.2.53; the knob shipped in 0.2.57 as limnifs#189). Retained: one
+   handle kind keeps the structural test trivial and the wire cost is
+   nil (the metadata blob is whole-blob compressed, so duplicate
+   inline blobs compress away). **Lifted**, i.e. safe to enable
+   against any post-flip reader, when a measured tree shows the dedup
+   win matters.
+2. **The metadata blob is lz4-HC** — `metadata_codec = "lz4-hc"`.
+   Historical: a 0.16.3-era reader's brotli path failed beyond the
+   small-buffer case; the omnizip-zstd decoder (≤ 0.16.78) mis-decoded
+   valid frames (omnizip-rs#315). lz4-HC (codec 0x13) dispatches to the
+   same fast-lz4 decoder on every reader while the hash-chain match
+   finder keeps a realistic tree's blob under the 1 MiB inline ceiling
+   (fast lz4 and store both overshoot). Retained on its own merits.
+3. **The writer inlines metadata up to the readers' 1 MiB ceiling** —
+   stock since limnifs 0.2.53 (the
+   `defaults.metadata_externalize_threshold` default, 1000 KiB, is the
+   floor-safe value; limnifs#187). A tree whose lz4-HC blob exceeds the
+   ceiling fails press/mkimage with the named self-contained error —
+   the documented "too large for this format today" boundary.
+4. **Content drops ride lz4-or-store** — `text_codec`/`binary_codec`
+   pinned lz4, the compression tournament restricted to `store` +
+   `lz4`. Historical: the two codec defects above (plus limnifs#188's
+   tournament coupling, not reproducible since 0.2.54). Retained: lz4
+   decode is the fastest in the stack, which is what a boot-path reader
+   wants. Tebako-pressed images carry NO seekable containers today:
+   the recipe's categorizer-less chunk path never sets the seekable
+   flag (limnifs#195). The reader serves foreign containers
+   frame-bounded; tebako#464's bounded cost on tebako-written images
+   comes from the SIEVE drop cache (each drop decodes whole once and
+   is cached — the repeated re-decode is gone; the per-drop cold
+   window waits on the upstream chunk-path fix).
 
 A payload written outside these constraints is not rejected by the
-tooling — it is simply below the floor's guarantee: it may mount on
-newer readers and fail closed (named EINVAL) on older ones.
+tooling — it is simply below the recipe's guarantee.
 
 ## 6. The writer path
 
@@ -407,15 +356,23 @@ is per-backend, semantics are shared (the backend-pair parity class of
   fall through, policy-gated).
 - Mount modes: RO default; COW stacks (backend-agnostic composite);
   RW → `ENOTSUP`.
-- **Format-evolution proof:** limnifs is prerelease — the format evolves
-  in place (slab v2 lands as "the v1", no format-version bump). The
-  committed golden fixture `crates/tfs/tests/fixtures/limnifs-slab-v1.lmfs`
-  — written by the pinned writer's `WriteConfig::default_v0_1()` with
-  pinned mtimes — is the back-read anchor: every reader change MUST keep
-  mounting it with identical `stat`/`readdir`/`pread` answers. The
-  fixture regenerates only while `default_v0_1()` still emits the
-  slab-v1 layout; the trust anchor for any artifact is its sha256
-  sidecar, never format stability.
+- **Format-evolution proof:** limnifs 0.3.0 evolved the image format
+  **incompatibly in place** (limnifs#192 — the seekable-container
+  layout IS the v1 format now; there is no "v2". Readers on the new
+  line reject pre-flip bytes at mount-open, verified EINVAL, never a
+  mis-read). Tebako rides the flip **atomically**: one release (v0.3.0)
+  moves the reader and both writers to the new line together, and every
+  cached artifact's trust anchor stays its sha256 sidecar — a
+  stale-format cache entry fails closed at mount and is re-fetched by
+  digest, never mis-read. The committed fixture pair pins both sides:
+  `limnifs-preflip.lmfs` (FROZEN pre-flip bytes; the test asserts
+  fail-closed at mount-open — its generator is retired because the
+  pinned writer can no longer emit the old layout) and
+  `limnifs-slab-v1.lmfs` (the v1 layout; regenerates with the pinned
+  writer, and every reader change MUST keep mounting it with identical
+  `stat`/`readdir`/`pread` answers). A future incompatible evolution
+  repeats this doctrine: frozen old fixture + fail-closed test + new
+  live fixture + atomic release.
 
 **Done means** (one stacked change set, in the owning crates only):
 
