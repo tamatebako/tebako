@@ -261,9 +261,11 @@ fn press_simple_script_runs() {
         tpkg::TPKG_FORMAT_LIMNIFS,
         "the default press stamps the limnifs format hint"
     );
-    let (code, out) = run(&mut Command::new(&package));
-    assert_eq!(code, 0, "packaged binary failed:\n{out}");
-    assert_eq!(out, "Hello!  This is test-00 talking from inside DwarFS\n");
+    if published_runtime_reads_default_payloads() {
+        let (code, out) = run(&mut Command::new(&package));
+        assert_eq!(code, 0, "packaged binary failed:\n{out}");
+        assert_eq!(out, "Hello!  This is test-00 talking from inside DwarFS\n");
+    }
 }
 
 #[test]
@@ -275,12 +277,14 @@ fn press_gemfile_runs() {
     let package = env.work.join("gemfile-app");
     let (code, log) = run(&mut press_command(&env, "main.rb", &package));
     assert!(code == 0, "press failed:\n{log}");
-    let (code, out) = run(&mut Command::new(&package));
-    assert_eq!(code, 0, "packaged binary failed:\n{out}");
-    assert!(
-        out.starts_with("Hello from gemfile app with rake "),
-        "unexpected output: {out}"
-    );
+    if published_runtime_reads_default_payloads() {
+        let (code, out) = run(&mut Command::new(&package));
+        assert_eq!(code, 0, "packaged binary failed:\n{out}");
+        assert!(
+            out.starts_with("Hello from gemfile app with rake "),
+            "unexpected output: {out}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------
@@ -412,9 +416,11 @@ fn press_gemfile_nokogiri_precompiled_runs() {
     );
     assert!(!log.contains("force_ruby_platform"), "{log}");
 
-    let (code, out) = run(&mut Command::new(&package));
-    assert_eq!(code, 0, "packaged binary failed:\n{out}");
-    assert_eq!(out, "Hello from nokogiri app with nokogiri 1.19.4\n");
+    if published_runtime_reads_default_payloads() {
+        let (code, out) = run(&mut Command::new(&package));
+        assert_eq!(code, 0, "packaged binary failed:\n{out}");
+        assert_eq!(out, "Hello from nokogiri app with nokogiri 1.19.4\n");
+    }
 }
 
 #[test]
@@ -1198,6 +1204,26 @@ fn runtime_line_is_post_flip(ver: &str) -> bool {
         parts.next().unwrap_or(0),
     );
     v >= POST_FLIP_RUNTIME_FLOOR
+}
+
+/// True when the published runtime line can execute this CLI's DEFAULT
+/// (limnifs) payloads. The packaged-run half of the default-press e2es
+/// gates on this: pressing never involves a runtime, but running the
+/// package resolves the PUBLISHED runtime — whose embedded driver is
+/// only as new as that release. Pre-flip that driver EINVALs the
+/// limnifs slots (fail-closed by design, spec 20 §8), so execution
+/// skips until DEFAULT_TEBAKO_VERSION names a post-flip line. The press
+/// half — format hint included — asserts regardless.
+fn published_runtime_reads_default_payloads() -> bool {
+    let ver = tebako_cli::DEFAULT_TEBAKO_VERSION;
+    if runtime_line_is_post_flip(ver) {
+        return true;
+    }
+    eprintln!(
+        "skipping the packaged run: runtime line {ver} predates the post-flip floor {}.{}.{} — the published runtime's embedded driver cannot read this CLI's limnifs payloads yet",
+        POST_FLIP_RUNTIME_FLOOR.0, POST_FLIP_RUNTIME_FLOOR.1, POST_FLIP_RUNTIME_FLOOR.2
+    );
+    false
 }
 
 /// Build an image-era mirror from the OFFICIAL released runtime pair:
