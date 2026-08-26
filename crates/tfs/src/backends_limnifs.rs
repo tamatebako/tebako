@@ -76,6 +76,18 @@ pub struct LimnifsBackend {
     sections: Vec<(&'static str, usize)>,
     /// Per-slab drop counts (the info surface).
     slab_drop_counts: Vec<usize>,
+    /// The last served drop's plaintext, keyed by drop id (tebako#464).
+    /// Sequential chunked readers (the dlmap extraction walks a file in
+    /// 8 KiB windows) hit the same drop for hundreds of consecutive
+    /// preads; without the memo each call re-decompresses the WHOLE drop
+    /// — a 19.5 MiB shim read that way cost ~48 GiB of lz4 work (~19 s,
+    /// the reported ~1 MiB/s). Bounded at one drop: random access never
+    /// holds more than the current drop's plaintext.
+    last_drop: std::sync::Mutex<Option<([u8; 32], Vec<u8>)>>,
+    /// Test-only decompress counter — the memo's proof: one decompress
+    /// per distinct drop, not per pread window.
+    #[cfg(test)]
+    decompress_calls: std::sync::Mutex<usize>,
 }
 
 /// Mount-open mapping (spec 20 §4): `TooShort`/`BadMagic`/`Corrupt` →
@@ -280,6 +292,9 @@ impl LimnifsBackend {
             drops,
             sections,
             slab_drop_counts,
+            last_drop: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            decompress_calls: std::sync::Mutex::new(0),
         })
     }
 
@@ -340,6 +355,31 @@ impl LimnifsBackend {
             record.plaintext_len,
         )
         .map_err(serve_error)
+    }
+
+    /// The `[start, end)` window of one drop's plaintext, memoized
+    /// against the last drop served (the field note carries the
+    /// tebako#464 math). The lock is held across the decompress so
+    /// concurrent readers never duplicate the work; the copy out is the
+    /// window only.
+    fn drop_window(&self, drop_id: &[u8; 32], start: usize, end: usize) -> Result<Vec<u8>, i32> {
+        let mut memo = self.last_drop.lock().map_err(|_| libc::EIO)?;
+        let hit = matches!(memo.as_ref(), Some((id, _)) if id == drop_id);
+        if !hit {
+            let plain = self.drop_plaintext(drop_id)?;
+            #[cfg(test)]
+            {
+                *self.decompress_calls.lock().unwrap() += 1;
+            }
+            *memo = Some((*drop_id, plain));
+        }
+        let Some((_, plain)) = memo.as_ref() else {
+            return Err(libc::EIO); // unreachable: the miss arm just filled it
+        };
+        if end > plain.len() {
+            return Err(libc::EIO);
+        }
+        Ok(plain[start..end].to_vec())
     }
 
     /// The byte length a stat reports for a regular file's content
@@ -429,16 +469,13 @@ impl Backend for LimnifsBackend {
                     if lo >= hi {
                         continue;
                     }
-                    let plain = self.drop_plaintext(slice.drop_id.as_bytes())?;
                     let ds =
                         (u64::from(slice.drop_byte_start) + (lo - slice.file_byte_start)) as usize;
                     let de =
                         (u64::from(slice.drop_byte_start) + (hi - slice.file_byte_start)) as usize;
-                    if de > plain.len() {
-                        return Err(libc::EIO);
-                    }
+                    let window = self.drop_window(slice.drop_id.as_bytes(), ds, de)?;
                     let at = (lo - win_start) as usize;
-                    buf[at..at + (hi - lo) as usize].copy_from_slice(&plain[ds..de]);
+                    buf[at..at + (hi - lo) as usize].copy_from_slice(&window);
                     done += (hi - lo) as usize;
                     pos = hi;
                 }
@@ -711,6 +748,57 @@ mod tests {
         assert_eq!(n, 50);
         assert_eq!(&tail[..n], &want[199_950..]);
         assert_eq!(backend.pread("big.bin", &mut tail, 200_000).unwrap(), 0);
+    }
+
+    #[test]
+    fn sequential_chunked_reads_decompress_each_drop_once() {
+        // tebako#464: the dlmap extraction reads a file in 8 KiB windows.
+        // The last-drop memo must collapse the per-window decompressions
+        // to one per DISTINCT drop — before it, a 19.5 MiB shim read that
+        // way ran ~48 GiB of lz4 work (~19 s, the reported ~1 MiB/s).
+        let (_tmp, image) = fixture_tree();
+        let backend = LimnifsBackend::from_image(image).expect("mounts");
+        let want = big_payload();
+
+        let mut acc = Vec::with_capacity(want.len());
+        let mut buf = [0u8; 8192];
+        let mut offset = 0u64;
+        while (offset as usize) < want.len() {
+            let n = backend.pread("big.bin", &mut buf, offset).expect("read");
+            assert!(n > 0, "forward progress at {offset}");
+            acc.extend_from_slice(&buf[..n]);
+            offset += n as u64;
+        }
+        assert_eq!(acc, want, "the memo serves the same bytes");
+
+        let inode = backend.inode_for("big.bin").expect("statted above");
+        let ContentHandle::SliceMap(slices) = &inode.content_handle else {
+            panic!("big.bin must be slab-backed");
+        };
+        let distinct = slices
+            .iter()
+            .map(|s| *s.drop_id.as_bytes())
+            .collect::<std::collections::BTreeSet<_>>()
+            .len();
+        let calls = *backend.decompress_calls.lock().unwrap();
+        assert_eq!(
+            calls, distinct,
+            "one decompress per distinct drop ({distinct}), not per 8 KiB window (25)"
+        );
+        // A re-read never re-decompresses per window: a fully warm memo
+        // (a single-drop file) hits outright; a multi-drop file re-misses
+        // at most once per drop (the memo carries only the last).
+        let mut offset = 0u64;
+        while (offset as usize) < want.len() {
+            let n = backend.pread("big.bin", &mut buf, offset).expect("re-read");
+            assert!(n > 0, "forward progress at {offset}");
+            offset += n as u64;
+        }
+        let calls = *backend.decompress_calls.lock().unwrap();
+        assert!(
+            calls <= 2 * distinct,
+            "two sweeps cost at most two decompressions per drop ({calls} > 2×{distinct})"
+        );
     }
 
     #[test]
