@@ -136,7 +136,15 @@ mod tests {
     use super::*;
 
     fn scratch() -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("tebako-resolve-locked-{}", std::process::id()));
+        // Unique per test, not just per process: the tests run threaded,
+        // and a shared pid-only dir means one test's remove_dir_all wipes
+        // a sibling's mirror mid-fetch (the ubuntu CI NotFound flake).
+        static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-resolve-locked-{}-{}",
+            std::process::id(),
+            N.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+        ));
         let _ = std::fs::remove_dir_all(&dir);
         dir
     }
@@ -182,7 +190,7 @@ mod tests {
 
     #[test]
     fn locked_slice_miss_fetches_with_the_pin_as_anchor() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("TEBAKO_OFFLINE");
         let root = scratch();
         let mirror = root.join("mirror");
@@ -205,7 +213,7 @@ mod tests {
 
     #[test]
     fn locked_slice_offline_miss_is_the_named_offline_error() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let root = scratch();
         let cache = PayloadCache::with_root(&root);
         std::env::set_var("TEBAKO_OFFLINE", "1");
@@ -225,7 +233,7 @@ mod tests {
 
     #[test]
     fn locked_slice_pin_mismatch_at_the_boundary_caches_nothing() {
-        let _guard = TEST_ENV_LOCK.lock().unwrap();
+        let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         std::env::remove_var("TEBAKO_OFFLINE");
         let root = scratch();
         std::fs::create_dir_all(&root).unwrap();

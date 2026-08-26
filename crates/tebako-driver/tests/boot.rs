@@ -298,7 +298,11 @@ fn the_slot_form_refuses_a_runtime_slot_by_name() {
     env.set("TEBAKO_RUNTIME_IMAGE", format!("{}:0", image.display()));
     let err = boot(&argv(&["ruby", "--version"]), "/__tfs__", &env).unwrap_err();
     assert_eq!(err.code, 65, "{}", err.message);
-    assert!(err.message.contains("runtime payload slot"), "{}", err.message);
+    assert!(
+        err.message.contains("runtime payload slot"),
+        "{}",
+        err.message
+    );
 }
 
 #[test]

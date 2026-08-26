@@ -279,10 +279,16 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         };
         compose::check_runtime_row(&doc, &ruby_ver)?;
         compose::check_entrypoint(&doc, &stem)?;
-        compose::apply_overrides(&mut doc, opts.carry.as_deref(), opts.share.as_deref(), &stem)?;
+        compose::apply_overrides(
+            &mut doc,
+            opts.carry.as_deref(),
+            opts.share.as_deref(),
+            &stem,
+        )?;
         let home = compose::tebako_home()?;
         let host = install::host_platform()?;
-        compose_slices = compose::resolve_closure(&home, &tebako_resolve::Fetcher::new(), &doc, preset, host)?;
+        compose_slices =
+            compose::resolve_closure(&home, &tebako_resolve::Fetcher::new(), &doc, preset, host)?;
         runtime_carried = doc
             .runtime
             .carry
@@ -329,11 +335,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         let exe_sha = resolve::sha256_file_hex(&runtime_path)
             .ok_or_else(|| plain_error(format!("cannot hash {}", runtime_path.display())))?;
         let exe_slot = images.len() as u32;
-        images.push((
-            runtime_path.clone(),
-            String::new(),
-            tpkg::TPKG_FORMAT_AUTO,
-        ));
+        images.push((runtime_path.clone(), String::new(), tpkg::TPKG_FORMAT_AUTO));
         let image_path = runtime_path
             .parent()
             .map(|dir| dir.join(&image_ref.filename))
@@ -1214,7 +1216,8 @@ mod tests {
     fn stitch_clears_the_lean_flag_only_when_self_contained() {
         // spec 23 §13.2: a self-contained press resolves nothing at run
         // time — TPKG_FLAG_LEAN stays CLEAR; every other press sets it.
-        let dir = std::env::temp_dir().join(format!("tebako-cli-stitch-lean-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("tebako-cli-stitch-lean-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let base = dir.join("bootstrap");

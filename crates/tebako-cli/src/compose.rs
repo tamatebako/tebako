@@ -333,20 +333,19 @@ pub fn resolve_closure<T: Transport>(
                 Platforms::Triplets(map.keys().copied().collect())
             }
         };
-        tpkg::check_platforms_assertion(
-            &pending.name,
-            &declared,
-            pending.platforms.as_ref(),
-            host,
-        )
-        .map_err(|e| err(e.to_string()))?;
+        tpkg::check_platforms_assertion(&pending.name, &declared, pending.platforms.as_ref(), host)
+            .map_err(|e| err(e.to_string()))?;
 
-        let plan = install::plan_from_registry_entry(&reg_ref, &payload, Some(&version), Some(host))?;
+        let plan =
+            install::plan_from_registry_entry(&reg_ref, &payload, Some(&version), Some(host))?;
 
         // Fetch → verify → cache: a hit stands on its trust anchor
         // (spec 05 §4); a miss fetches and verifies BEFORE anything
         // enters the cache. No mirrors/shims — press is not install.
-        let cached = match cache.get(&plan.name, &plan.version).map_err(install::map_resolve)? {
+        let cached = match cache
+            .get(&plan.name, &plan.version)
+            .map_err(install::map_resolve)?
+        {
             Some(cached) => cached,
             None => {
                 if tebako_resolve::cache::offline() {
@@ -354,7 +353,9 @@ pub fn resolve_closure<T: Transport>(
                         what: format!("payload {}@{}", plan.name, plan.version),
                     }));
                 }
-                let fetched = fetcher.fetch(&plan.reference).map_err(install::map_resolve)?;
+                let fetched = fetcher
+                    .fetch(&plan.reference)
+                    .map_err(install::map_resolve)?;
                 let (cached, _status) = cache
                     .install(
                         &plan.name,

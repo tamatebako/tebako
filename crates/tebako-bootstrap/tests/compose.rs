@@ -77,7 +77,8 @@ fn stitch_composed(
     let mut outf = std::fs::File::create(&out).unwrap();
     {
         use std::io::Write as _;
-        outf.write_all(&std::fs::read(&h.bootstrap).unwrap()).unwrap();
+        outf.write_all(&std::fs::read(&h.bootstrap).unwrap())
+            .unwrap();
         for (p, _, _) in parts {
             outf.write_all(&std::fs::read(p).unwrap()).unwrap();
         }
@@ -165,7 +166,12 @@ fn the_carried_package_boots_offline_and_seeds_the_cache() {
     let (pkg, env_image, app) = self_contained_pkg(&h, "mnconvert-sc", 0);
     let home = h.home("home");
 
-    let (rc, out, _err) = h.run(&pkg, &home, &[("TEBAKO_OFFLINE", "1")], &["mnconvert", "doc.xml"]);
+    let (rc, out, _err) = h.run(
+        &pkg,
+        &home,
+        &[("TEBAKO_OFFLINE", "1")],
+        &["mnconvert", "doc.xml"],
+    );
     assert_eq!(rc, 0, "stdout:\n{out}");
     assert!(out.contains("FAKE-RUNTIME"), "stdout:\n{out}");
     // The bootstrap canonicalizes its own path (run()'s current_exe).
@@ -191,7 +197,10 @@ fn the_carried_package_boots_offline_and_seeds_the_cache() {
     assert!(h.cache_image(&home).is_file());
     let marker = std::fs::read_to_string(format!("{}.sha256", h.cache_image(&home).display()))
         .expect("the seeded image carries its trust anchor");
-    assert!(marker.starts_with(&sha256_of(&env_image)), "marker: {marker}");
+    assert!(
+        marker.starts_with(&sha256_of(&env_image)),
+        "marker: {marker}"
+    );
     let seeded = cached_slice(&home, "mnconvert", APP_VER);
     assert!(seeded.is_file());
     let anchor =
@@ -202,7 +211,10 @@ fn the_carried_package_boots_offline_and_seeds_the_cache() {
         journal.contains("event=lazy-seed artifact=mnconvert@1.2.3"),
         "journal:\n{journal}"
     );
-    assert!(journal.contains("event=lazy-seed artifact="), "journal:\n{journal}");
+    assert!(
+        journal.contains("event=lazy-seed artifact="),
+        "journal:\n{journal}"
+    );
 }
 
 /// spec 23 §13.1: a shared slice resolves at first run BY THE LOCKED
@@ -240,7 +252,7 @@ fn the_shared_slice_resolves_mid_run_by_its_locked_digest() {
                 slot: None,
                 mount: Some("/__tfs__/mnt/mn2pdf".to_string()),
                 sha256: pin(&shared_file),
-                source: Some(format!("file://{}", shared_file.display())),
+                source: Some(tebako_http::file_url(&shared_file)),
             },
         ],
     };
@@ -401,7 +413,7 @@ fn a_shared_slice_mismatching_its_lock_pin_fails_closed_with_70() {
                 slot: None,
                 mount: Some("/__tfs__/mnt/mn2pdf".to_string()),
                 sha256: pin(&app), // wrong on purpose
-                source: Some(format!("file://{}", shared_file.display())),
+                source: Some(tebako_http::file_url(&shared_file)),
             },
         ],
     };
@@ -479,7 +491,10 @@ fn a_lock_without_host_coverage_is_a_named_65() {
 
     let (rc, out, err) = h.run(&pkg, &home, &[], &["mnconvert"]);
     assert_eq!(rc, 65, "stdout:\n{out}\nstderr:\n{err}");
-    assert!(err.contains("does not cover this platform"), "stderr:\n{err}");
+    assert!(
+        err.contains("does not cover this platform"),
+        "stderr:\n{err}"
+    );
     assert!(
         err.contains(tpkg::Platform::host().release_asset_name()),
         "stderr:\n{err}"
@@ -517,8 +532,10 @@ fn the_pointer_entrys_shared_slice_leads_the_image_list() {
         tpkg::TPKG_FORMAT_DWARFS,
         "/__tfs__",
     ));
-    m.slots.push(tpkg::Slot::new(100, 50, tpkg::TPKG_FORMAT_AUTO, ""));
-    m.slots.push(tpkg::Slot::new(150, 60, tpkg::TPKG_FORMAT_DWARFS, ""));
+    m.slots
+        .push(tpkg::Slot::new(100, 50, tpkg::TPKG_FORMAT_AUTO, ""));
+    m.slots
+        .push(tpkg::Slot::new(150, 60, tpkg::TPKG_FORMAT_DWARFS, ""));
     let runtime_ref = "ruby@3.3.7;tebako=9.9.9;image";
     let sha = |c: char| c.to_string().repeat(64);
     let lock = tpkg::PackageLock {
