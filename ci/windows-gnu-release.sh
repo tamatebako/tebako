@@ -77,8 +77,15 @@ export BINDGEN_EXTRA_CLANG_ARGS="--target=x86_64-w64-mingw32 -isystem $(cygpath 
 TARGET=x86_64-pc-windows-gnu
 
 # --- 1. release build -------------------------------------------------------
+# tebako-bootstrap builds in its OWN invocation — cargo feature
+# unification with tebako-cli/tebako-shim would re-enable tebako-resolve's
+# `git` feature (gix/reqwest/rustls, aws-lc-rs on mingw) inside the
+# size-gated loader (v0.3.0 release run 32975547796 failed the 3 MiB gate
+# on this leg at 5,449,216 B for exactly this reason; #475 fixed the
+# other three build sites and missed this one).
+cargo build --release --target "$TARGET" -p tebako-bootstrap
 cargo build --release --target "$TARGET" \
-  -p tebako-bootstrap -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
+  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
 
 # --- 2. stage (strip, size gate, fragments) ---------------------------------
 # stage.sh strips, enforces the bootstrap size budget and writes the
