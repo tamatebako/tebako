@@ -39,7 +39,14 @@ use crate::error::{packaging_error, plain_error, TebakoError};
 use crate::fetch::{fetch_bytes, fetch_text, FetchError};
 use crate::options::host_platform;
 
-pub const DEFAULT_SRC_RELEASE: &str = "v0.2.1";
+// The tamatebako/ruby source-factory release the SDK's ruby src tarball
+// comes from. Must carry the src tarball for every ruby version on the
+// current runtime matrix: v0.2.1 (the historic pin) stops at 3.3.7/3.4.2,
+// so presses against the 0.16.11 line (3.3.12/3.4.10) failed closed at
+// exit 135 (tebako#482). v0.2.27 carries the full matrix. Rolling-release
+// tarballs are NOT content-stable (tamatebako/ruby#100); the durable SSOT
+// fix is resolving the pointer from the runtime manifest's built_from.
+pub const DEFAULT_SRC_RELEASE: &str = "v0.2.27";
 pub const DEFAULT_MIRROR: &str = "https://github.com/tamatebako/ruby/releases/download";
 const SUMS_FILE: &str = "SHA256SUMS";
 const MARKER_FILE: &str = ".sdk-complete";
@@ -851,7 +858,7 @@ mod tests {
             host_tag().unwrap()
         ));
         assert!(root.starts_with(deps));
-        assert!(root.to_string_lossy().contains("3.3.7-v0.2.1-"));
+        assert!(root.to_string_lossy().contains("3.3.7-v0.2.27-"));
     }
 
     #[test]

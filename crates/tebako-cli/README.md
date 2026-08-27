@@ -102,7 +102,10 @@ flock'd, `.sdk-complete` marker — never the runtime cache):
 
 1. the pre-patched ruby src release the runtime was built from
    (`tfs-ruby-<ver>-src.tar.gz` from `tamatebako/ruby` releases,
-   `TEBAKO_SDK_SRC_RELEASE` default `v0.2.1`,
+   `TEBAKO_SDK_SRC_RELEASE` default `v0.2.27` (the pin must carry the
+   src tarball for every ruby on the current runtime matrix — v0.2.1
+   stops at 3.3.7/3.4.2, so 3.3.12/3.4.10 presses failed closed at
+   exit 135, tebako#482),
    `TEBAKO_SDK_SRC_MIRROR` for mirrors — `file://` works offline) is
    downloaded in-process and sha256-verified against the release's
    SHA256SUMS;
