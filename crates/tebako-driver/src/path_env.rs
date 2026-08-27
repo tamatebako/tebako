@@ -30,6 +30,15 @@
 //! strip). First triple order wins on a basename collision; a declared
 //! executable that cannot be materialized is the image lying — a named
 //! 65, never a skipped entry.
+//!
+//! The windows host tier (armed unconditionally — no preload shim
+//! exists on the platform): each declared dependency executable is
+//! materialized through the exec cache's exec routing — whole-tree for
+//! a home-layout mount (the in-image `java_home` annotation), the file
+//! itself otherwise — and the materialized parent dirs LEAD the PATH
+//! prepend, so the child's own CreateProcess search resolves the bare
+//! name with no interception. The materialized child runs plain-host:
+//! its home tree is present by declaration, never through the VFS.
 
 use std::ffi::OsStr;
 use std::ffi::OsString;
@@ -40,7 +49,6 @@ use crate::handoff::ImageSpec;
 #[cfg(unix)]
 use crate::EX_TEBAKO_IO;
 use crate::EX_TEBAKO_MANIFEST;
-#[cfg(unix)]
 use tfs::context::context;
 use tpkg::{PayloadManifest, Provides};
 
@@ -69,8 +77,15 @@ pub fn export(
             dirs.push(dir);
         }
     }
-    #[cfg(not(unix))]
-    let _ = shim_host;
+    #[cfg(windows)]
+    {
+        // No preload shim exists on the platform — the host tier IS the
+        // delivery (spec 22 §3.2): the materialized bins LEAD the §3.2
+        // bin dirs, so CreateProcess's own PATH search resolves a bare
+        // name with no interception at all.
+        let _ = shim_host;
+        dirs.extend(materialize_host_bins(&deps)?);
+    }
     for (mount, manifest) in &deps {
         for declared in bin_dirs(&manifest.provides) {
             let dir = join_mount(mount, &declared);
@@ -125,10 +140,10 @@ fn bin_dirs(provides: &Provides) -> Vec<String> {
 }
 
 /// The declared executable paths of one image's PROVIDES, in-image
-/// absolute — the launcher tier's materialization set (the same
+/// absolute — the materialization set of both host tiers (the same
 /// declarations `bin_dirs` flows: app entrypoints and toolkit
 /// executables).
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 fn executable_paths(provides: &Provides) -> Vec<String> {
     let paths: Vec<&str> = match provides {
         Provides::App(p) => p.entrypoints.iter().map(|e| e.path.as_str()).collect(),
@@ -208,6 +223,60 @@ fn materialize_launchers(
         chmod(&wrap, 0o755)?;
     }
     Ok(Some(wrap_dir.to_string_lossy().into_owned()))
+}
+
+/// The windows host tier (spec 22 §3.2): materialize each declared
+/// dependency executable through the exec cache's own exec routing —
+/// a home-layout mount (the in-image `java_home` annotation) extracts
+/// WHOLE once per boot and answers the executable's in-tree host twin
+/// (a JVM's lib/modules and jmods never ride a linked-library closure);
+/// any other mount answers the file itself, whose DLL bare-name loads
+/// then resolve through §2.1's alias dirs already on PATH. Each
+/// materialized executable's parent dir leads the §3.2 PATH prepend —
+/// the bare name resolves in the child's own CreateProcess search, no
+/// wrapper, nothing to re-arm. The child runs plain-host: its tree is
+/// present by declaration, never through the VFS (the named boundary).
+#[cfg(windows)]
+fn materialize_host_bins(deps: &[(String, PayloadManifest)]) -> Result<Vec<String>, DriverError> {
+    // (basename, VFS path) in triple order, first basename wins — the
+    // PATH lookup's own rule (the unix launcher tier's shape).
+    let mut launches: Vec<(String, String)> = Vec::new();
+    for (mount, manifest) in deps {
+        for path in executable_paths(&manifest.provides) {
+            let Some(base) = Path::new(&path).file_name() else {
+                continue;
+            };
+            let base = base.to_string_lossy().into_owned();
+            if launches.iter().any(|(b, _)| *b == base) {
+                continue;
+            }
+            launches.push((base, join_mount(mount, &path)));
+        }
+    }
+    let mut dirs: Vec<String> = Vec::new();
+    if launches.is_empty() {
+        return Ok(dirs);
+    }
+    let mut ctx = context().write().unwrap();
+    for (_base, vfs) in &launches {
+        let host = ctx.exec_materialize_for_spawn(vfs).map_err(|e| {
+            DriverError::new(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "the image declares executable '{vfs}' but it cannot be materialized ({}) — the payload's self-description lies",
+                    crate::driver::errno_text(e)
+                ),
+            )
+        })?;
+        let host = PathBuf::from(host.to_string_lossy().into_owned());
+        if let Some(parent) = host.parent() {
+            let dir = parent.to_string_lossy().into_owned();
+            if !dirs.contains(&dir) {
+                dirs.push(dir);
+            }
+        }
+    }
+    Ok(dirs)
 }
 
 /// The launcher: re-arm the platform's injection var EXPLICITLY (an
