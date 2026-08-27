@@ -237,9 +237,7 @@ fn materialize_launchers(
 /// wrapper, nothing to re-arm. The child runs plain-host: its tree is
 /// present by declaration, never through the VFS (the named boundary).
 #[cfg(windows)]
-fn materialize_host_bins(
-    deps: &[(String, PayloadManifest)],
-) -> Result<Vec<String>, DriverError> {
+fn materialize_host_bins(deps: &[(String, PayloadManifest)]) -> Result<Vec<String>, DriverError> {
     // (basename, VFS path) in triple order, first basename wins — the
     // PATH lookup's own rule (the unix launcher tier's shape).
     let mut launches: Vec<(String, String)> = Vec::new();
