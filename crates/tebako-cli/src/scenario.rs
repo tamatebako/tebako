@@ -325,6 +325,14 @@ pub enum Scenario {
     GemspecAndGemfile,
 }
 
+/// The runtime's compiled-in entry point: the press writes the entry
+/// dispatcher to this in-image path (`<data_src>/local/stub.rb`) and the
+/// runtime hands it control; the dispatcher `load`s the real entry. An
+/// app entry that reduces to this same path is clobbered by the
+/// dispatcher, whose `load` then resolves to itself — infinite recursion
+/// with no error (issue #483). `configure_scenario` refuses the press.
+pub const DISPATCHER_ENTRY_POINT: &str = "/local/stub.rb";
+
 #[derive(Debug)]
 pub struct ScenarioManager {
     pub fs_root: String,
@@ -427,6 +435,14 @@ impl ScenarioManager {
             0 => {
                 if self.with_gemfile || g_length == 0 {
                     self.fs_entry_point = format!("/local/{}", self.fs_entrance);
+                    // #483: fail closed — never press a package whose entry
+                    // the dispatcher would clobber into self-recursion.
+                    if self.fs_entry_point == DISPATCHER_ENTRY_POINT {
+                        return Err(packaging_error(
+                            143,
+                            Some("rename the entry file (e.g. main.rb); /local/stub.rb is the reserved in-image path of the tebako entry dispatcher"),
+                        ));
+                    }
                 }
                 self.scenario = if self.with_gemfile {
                     Scenario::Gemfile
@@ -774,5 +790,37 @@ mod tests {
     fn api_version_mapping() {
         assert_eq!(api_version("3.3.7"), "3.3.0");
         assert_eq!(api_version("4.0.6"), "4.0.0");
+    }
+
+    #[test]
+    fn entry_named_stub_rb_is_refused() {
+        // #483: an entry whose in-image path IS the dispatcher's reserved
+        // slot (/local/stub.rb) must fail closed at press with the named
+        // error — never ship a package that hangs in `load` self-recursion.
+        let root = std::env::temp_dir().join(format!("tebako-483-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("stub.rb"), "puts 'hi'\n").unwrap();
+        std::fs::write(root.join("main.rb"), "puts 'hi'\n").unwrap();
+        let root_str = root.to_string_lossy().into_owned();
+
+        let mut bad = ScenarioManager::new(&root_str, "stub.rb").unwrap();
+        let err = bad.configure_scenario().unwrap_err();
+        assert_eq!(err.code, 143);
+        assert!(err.message.contains(DISPATCHER_ENTRY_POINT));
+
+        // Control: any other filename at the same root presses fine.
+        let mut good = ScenarioManager::new(&root_str, "main.rb").unwrap();
+        good.configure_scenario().unwrap();
+        assert_eq!(good.fs_entry_point, "/local/main.rb");
+
+        // Control: the same filename under a subdirectory does not collide
+        // (its in-image path is /local/bin/stub.rb, not the reserved slot).
+        std::fs::create_dir_all(root.join("bin")).unwrap();
+        std::fs::write(root.join("bin").join("stub.rb"), "puts 'hi'\n").unwrap();
+        let mut nested = ScenarioManager::new(&root_str, "bin/stub.rb").unwrap();
+        nested.configure_scenario().unwrap();
+        assert_eq!(nested.fs_entry_point, "/local/bin/stub.rb");
+
+        std::fs::remove_dir_all(&root).ok();
     }
 }

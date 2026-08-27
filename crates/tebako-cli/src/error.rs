@@ -82,6 +82,10 @@ pub fn packaging_message(code: i32) -> Option<&'static str> {
         140 => "Failed to download the tebako-bootstrap",
         141 => "The tebako release carries no usable tebako-bootstrap index",
         142 => "Timed out waiting for the tebako-bootstrap cache lock",
+        // 143: the #483 collision guard — an app entry whose in-image path
+        // IS the dispatcher's reserved slot would be clobbered by it and
+        // then re-`load` itself forever; refuse at press, never hang.
+        143 => "Entry point collides with the tebako entry dispatcher path (/local/stub.rb)",
         201 => "Warning. Could not create cache version file",
         _ => return None,
     })
