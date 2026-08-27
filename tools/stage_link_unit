@@ -15,7 +15,7 @@
 #   dwarfs-t-sys-*/out/dwarfs-build/                    the dwarfs-t libraries
 #   dwarfs-t-sys-*/out/dwarfs-build/vcpkg_installed/…   their vcpkg closure
 #   sqfs-sys-*/out/                                      the squashfs pair
-#   rnp-src-*/out/install/                               the rnp family
+#   rnp-sys-*/out/install/                               the rnp family
 #
 # No shell-outs to anything but cargo (dev-side tooling, never a shipped
 # artifact).
@@ -154,13 +154,18 @@ else
   sqfs = newest_out(File.join(script_out, "sqfs-sys-*", "out"))
   die "no sqfs-sys build under #{script_out}" unless sqfs
 
-  # rnp-src variants multiply in a reused target dir (a non-vendored
-  # graph leaves an EMPTY out dir): newest-by-mtime alone picks the
-  # stub. Only an out dir with the vendored install tree qualifies.
-  rnp = Dir.glob(File.join(script_out, "rnp-src-*", "out"))
+  # rnp-sys variants multiply in a reused target dir (a non-vendored
+  # graph leaves an out dir WITHOUT the install tree): newest-by-mtime
+  # alone picks the stub. Only an out dir with the vendored install tree
+  # qualifies. (rnp-rs >= 0.1.12 has no build script: its build.rs moved
+  # to rnp-sys, which calls rnp_src::build() — the install tree lands in
+  # rnp-sys's OUT_DIR, per the botan-src caller-owns-OUT_DIR pattern.
+  # rnp-src itself is build=false since 0.2.1, so no rnp-src-*/out ever
+  # exists in this graph.)
+  rnp = Dir.glob(File.join(script_out, "rnp-sys-*", "out"))
            .select { |d| File.file?(File.join(d, "install", "rnp", "lib", "librnp.a")) }
            .max_by { |d| File.mtime(d) }
-  die "no rnp-src build with an install tree under #{script_out} (rnp with the vendored feature)" unless rnp
+  die "no rnp-sys build with an install tree under #{script_out} (rnp with the vendored feature)" unless rnp
 
   # their vcpkg closure (codecs, boost, crypto — the static triplet):
   # every archive the dwarfs-t link emits, the same rule as the mingw
@@ -187,12 +192,13 @@ else
   die "no vcpkg static lib dir under #{sqfs}" unless sqfs_vlib
   harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
 
-  # the rnp family (rnp-src's own install tree — never a prebuilt download)
+  # the rnp family (rnp-sys's install tree, built from rnp-src sources —
+  # never a prebuilt download)
   {
-    "rnp/lib/librnp.a" => "librnp (rnp-src)",
-    "rnp/lib/libsexpp.a" => "libsexpp (rnp-src)",
-    "json-c/lib/libjson-c.a" => "json-c (rnp-src)",
-    "botan/lib/libbotan-3.a" => "botan (botan-src via rnp-src)",
+    "rnp/lib/librnp.a" => "librnp (rnp-sys)",
+    "rnp/lib/libsexpp.a" => "libsexpp (rnp-sys)",
+    "json-c/lib/libjson-c.a" => "json-c (rnp-sys)",
+    "botan/lib/libbotan-3.a" => "botan (rnp-src via rnp-sys)",
   }.each do |rel, note|
     harvest(out, File.join(rnp, "install", rel), note)
   end
