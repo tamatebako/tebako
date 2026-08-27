@@ -441,7 +441,7 @@ pinned empirically in §3.1.
 |---|---|---|---|
 | **ELF (gnu/musl)** | exe-defined Class-L symbols; the runtime itself is never preload-injected | the spawn hook materializes and injects the child (`LD_PRELOAD` + `TEBAKO_TFS_MOUNTS` in its env) | **works unmodified** — the handoff env's `LD_PRELOAD` injects every child at its exec, `/bin/sh` included; the shell's PATH search and `execvp` loop route through the interposed surface |
 | **macOS** | the driver's self-inserted interpose dylib (§2 phase 1) | the same hook; the materialized child is a non-Apple binary, so `DYLD_INSERT_LIBRARIES` is honored | **named boundary, enforced by the spawn hook** — an inherited `DYLD_INSERT_LIBRARIES` is FATAL to Apple platform binaries on darwin24 (dyld TERMINATES `/bin/sh` and `/usr/bin/cc` under a foreign insertion — factory run 31699651270; darwin23 stripped the variable instead), so the interpreter's spawn hook DROPS the variable per spawn whose target is restricted (any shell form; anything resolving into Apple's system binary dirs). The JVM behind a shell string then answers its own `Unable to access jarfile` — an honest host failure, never a tebako-intercepted one. darwin24 x86_64 CI runners HONOR the insertion into sh's exec child (runs 31685052887/31692800485) — a relaxed-SIP artifact the scrub deliberately erases: every host behaves like the strictest one |
-| **windows** | — | the §3.2 host tier materializes the target through the exec cache (whole-tree for a home-layout mount, the file itself otherwise) and the host copy execs — no injection exists on the platform, so the child runs plain-host against its declared tree | **works through the §3.2 host tier's `PATH` lead** — `CreateProcess`'s own PATH search finds the materialized host copy (a home-layout tool's tree came with it by declaration); nothing re-arms, there is no injection var |
+| **windows** | — | the §3.2 host tier materializes the target through the exec cache (whole-tree for a home-layout mount, the file itself otherwise) and the host copy execs — no injection exists on the platform, so the child runs plain-host against its declared tree; **argument tokens naming embedded paths are bridged to their host twins by the interpreter's spawn hook (§3.2's argv bridge)** | **works through the §3.2 host tier's `PATH` lead** — `CreateProcess`'s own PATH search finds the materialized host copy (a home-layout tool's tree came with it by declaration); nothing re-arms, there is no injection var; argument tokens naming embedded paths ride the same argv bridge |
 
 Where the launcher tier (§3.2) is armed, the shell-string form works
 on every macOS host — the launcher's explicit re-arm passes the hook's
@@ -555,6 +555,39 @@ windows child runs plain-host — no VFS re-entry exists on the
 platform. Its own home tree is present BY DECLARATION; host resources
 beyond that (a document tree, a fonts dir) reach it only through spec
 23's declared host binds, never through the VFS.
+
+**The windows argv bridge** (the boundary's other half, delivered in
+the interpreter's spawn hook — tamatebako/ruby's
+`process_c_tebako_spawn*.patch`, the `_WIN32` branch; ruby#102/#103,
+locked 2026-08-27): a host-tier child runs plain-host, so it cannot see
+VFS paths handed to it as ARGUMENTS (ruby-jing / mn2pdf:
+`java -jar <payload-resident jar>` — the jar string resolves through
+ruby's VFS and the host `java.exe` cannot read it; the packed-mn
+windows acceptance died on exactly that, `Unable to access jarfile
+A:/__tfs__/…`). The hook therefore bridges parent-side, before the
+spawn: any argument token naming an embedded path
+(`tebako_path_is_embedded`) is materialized through
+`tebako_fs_exec_materialize` — the exec-target hook's own primitive, so
+a home-layout mount extracts whole-tree and any other mount answers the
+file from the dlmap cache — and the token is rewritten to the host
+twin. Array form rebuilds `invoke.cmd.argv_buf` (NUL-separated) and the
+`argv_str` pointer vector exactly as `rb_exec_fillarg` built them;
+shell form tokenizes the command line on unquoted blanks honoring
+double-quoted regions and rewrites only when some token bridges, with
+separators preserved byte-for-byte. One wrapping layer of double quotes
+is stripped for the probe; a bridged token is always re-quoted (a
+materialized path may carry spaces). Non-embedded tokens pass through
+byte-identical; a token naming a covered path the mounts do not hold
+keeps its spelling and the child answers honestly — the exec-target
+hook's own pass-through discipline, never a silent rewrite. **Patch
+twinning (the silent-shadowing trap, ruby#103):** tamatebako/ruby's
+PatchSelection drops a base patch when an `_msys` sibling targets the
+same file, so every `process.c` spawn patch MUST ship an `_msys` twin
+while any `_msys` patch family touches `process.c` (today:
+`process_c_clock_guard_msys` on 3.2/3.3/3.4) — a missing twin compiles
+a windows runtime WITHOUT the bridge and no build step fails; the
+packed-mn acceptance is the tripwire and a selection lint gate is
+tracked debt.
 
 ### 3.3 The class-E proof fixture
 
@@ -770,6 +803,13 @@ runtime releases.
   per-gem adapters (the fontist payload is exactly this).
 - A payload binary spawning another payload's binary by shell string
   works with no adapter (the metanorma → openjdk java case).
+- Windows argv bridge (§3.2): on the msys legs, a payload spawning a
+  host-tier dependency with an EMBEDDED-path argument works in both
+  forms with no adapter — metanorma → jing (`java -jar <payload jar>`,
+  array form) and mn2pdf's shell form; the packed-mn windows acceptance
+  (a real document compile to PDF) is the gate, and an un-bridged
+  runtime fails it with the host's own `Unable to access jarfile`,
+  never a tebako error.
 - The runtime gem's require maps are empty; its remaining content is
   the memfs cache helpers.
 - The v2 dogfood suite is green with the maps empty on every
