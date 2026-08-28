@@ -534,7 +534,9 @@ so declaration and resolution each live in exactly one place:
   `--help`, the schema, and the docs render from the registry; a
   setting present on a channel but absent from the registry is a bug on
   arrival (invariant 10).
-- **Resolution:** `tpkg::settings::resolve_bool`, fixed precedence
+- **Resolution:** `tpkg::settings::resolve_bool` (boolean settings) and
+  `tpkg::settings::resolve_sign` (the `sign` setting — its CLI channel
+  carries an optional `=<keyid>`), fixed precedence
   **CLI → environment → compose document → default**. Every channel is
   tri-state (present-true / present-false / absent), so a repo-declared
   `quiet_notices: true` stays overridable per invocation
@@ -547,11 +549,12 @@ so declaration and resolution each live in exactly one place:
   machine (the developer's declaration is environment-independent by
   construction, and the repo carries it).
 
-The registry's first citizen:
+The registry's citizens:
 
 | setting | CLI | env | compose key | baked form |
 |---|---|---|---|---|
 | `quiet_notices` | `--quiet-notices` / `--no-quiet-notices` | `TEBAKO_QUIET_NOTICES` | `quiet_notices:` | `TPKG_FLAG_QUIET_NOTICES` (bit 3, spec 02 §5a) — suppress the unsigned-legacy-trailer warning (spec 09) and the progress lines (spec 06 §5) on every run |
+| `sign` | `--sign[=<keyid>]` / `--no-sign` | `TEBAKO_SIGN` | `sign:` | `TPKG_FLAG_SIGNED_V2` (bit 1) + the v2 chain-of-trust extension (spec 02 §4) — sign the package trailer at press (spec 09 §9); unsigned v1 stays the default, an opt-out that overrides a lower channel is loud (warning + audit journal) |
 
 Every NEW setting declares its channels in the registry first; existing
 channels migrate into the registry as they are touched.

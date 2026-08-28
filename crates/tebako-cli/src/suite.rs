@@ -326,6 +326,12 @@ pub fn press_suite(
     for entry in &spec.entries {
         check_entry_abi(entry, opts)?;
     }
+    // spec 09 §9: the `sign` registry setting resolves BEFORE any heavy
+    // work — a keyid naming no key in $TEBAKO_HOME/keys is the named
+    // error here, not after the per-entry imaging. A suite rides no
+    // compose document: the CLI and env channels decide (the registry's
+    // precedence holds).
+    let sign = crate::effective_sign(opts, None)?;
     if !opts.devmode {
         crate::version_cache_check(opts);
     }
@@ -406,6 +412,7 @@ pub fn press_suite(
             lean: true,
             no_install: opts.no_install,
             quiet_notices,
+            sign,
         },
     )?;
     println!("Created tebako suite package at \"{package}\"");

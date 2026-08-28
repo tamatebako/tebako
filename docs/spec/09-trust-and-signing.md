@@ -184,11 +184,56 @@ automatically after displaying the chain proof, re-pinning the new key.
   OS-codesign with their own Developer ID — Apple/Microsoft gates then
   vouch at execution time, orthogonally and complementarily (spec 12 §5).
 
+**The two distribution models decide what a warning is worth
+(tebako#400).** Who made the trust decision, and when, differs by
+package shape — the notice policy follows from it:
+
+- **Fat binary (bootstrap + payload downloaded as ONE artifact).** The
+  user's trust decision is explicit and happens ONCE, at download time —
+  fetching the binary from a location they chose, like any binary
+  download. A per-run signature warning on such a package is
+  unactionable noise: the user cannot re-verify at run time what they
+  already decided to fetch and run. The developer may therefore
+  declaratively suppress it for every run of the package
+  (`quiet_notices`, spec 23 §14 — shipped; the bit rides inside the
+  signed region, and `TEBAKO_REQUIRE_SIGNED=1` still outranks it).
+- **Separately-resolved lean payloads.** The package names its runtime
+  and slices; the loader RESOLVES them at first run from whatever the
+  registries serve at that moment. The download-time decision no longer
+  covers the payload bytes — here the signature IS the trust mechanism
+  (§4's verification points), and the warnings on unsigned resolutions
+  stay justified and loud.
+
+**Press signing (shipped — tebako#400 S1).** Signing stays per-package
+OPT-IN (§3): a press with no signing declaration on any channel produces
+the v1-unsigned trailer, byte-identical to pre-signing output, and never
+touches key material. The declaration rides the `sign` registry setting
+(spec 23 §14) through three channels, resolved **CLI → env → compose
+document → default (unsigned)** — auto-sign must never surprise:
+
+- `tebako press --sign` signs the produced package with the press-local
+  key (generated and cached under `$TEBAKO_HOME/keys` on first explicit
+  use, auto-registered into the local trusted keyring);
+  `--sign=<keyid>` signs with the named secret key from
+  `$TEBAKO_HOME/keys` — a keyid matching no key is a NAMED error raised
+  before any heavy work, never a silent fallback to the default key.
+- `TEBAKO_SIGN=1` is the machine-wide declaration and the compose
+  document's `sign: true` the repo-carried one; both sign with the
+  press-local key (a keyid is per-machine material and never rides a
+  git-shared document).
+- `--no-sign` (or `TEBAKO_SIGN=0`) wins over every lower channel. An
+  opt-out that overrides a lower channel's `sign` declaration is LOUD —
+  a stderr warning plus an audit-journal entry (`event=press-sign-opt-out`)
+  — because silently dropping an authored signature declaration would be
+  a quiet trust downgrade (invariant 9).
+
 **Developer ergonomics (target UX; status in braces).** `tebako keygen`
 creates a keypair in `$TEBAKO_HOME/keys/` and prints the fingerprint
 with the exact text to paste into docs + the well-known location
-[partial: key creation exists]; `tebako press` signs automatically when
-a default key exists, `--no-sign` to opt out [partial]; `tebako publish`
+[partial: key creation exists]; `tebako press --sign[=<keyid>]` signs
+the produced package, with `TEBAKO_SIGN` / the compose `sign:` key as
+the machine-wide and repo-carried declarations and `--no-sign` as the
+loud opt-out [shipped]; `tebako publish`
 signs every artifact + the index and writes the `signing:` block into
 the registry index automatically [shipped in install-UX]; `tebako key
 rotate` creates + signs + publishes a successor statement in one command
