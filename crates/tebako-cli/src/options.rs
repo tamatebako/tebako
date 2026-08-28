@@ -149,6 +149,14 @@ pub struct PressOptions {
     /// leaves the env (`TEBAKO_QUIET_NOTICES`) and compose-document
     /// (`quiet_notices:`) channels to decide.
     pub quiet_notices: Option<bool>,
+    /// --sign[=<keyid>] / --no-sign (spec 09 §9, spec 23 §14): the CLI
+    /// channel of the `sign` registry setting — sign the package trailer
+    /// at press (TPKG_FLAG_SIGNED_V2 + the v2 chain-of-trust extension).
+    /// Bare `--sign` takes the press-local key; `--sign=<keyid>` names a
+    /// secret key from $TEBAKO_HOME/keys. Tri-state: `None` leaves the
+    /// env (`TEBAKO_SIGN`) and compose-document (`sign:`) channels to
+    /// decide.
+    pub sign: Option<tpkg::settings::SignCli>,
     /// --format <dwarfs|limnifs> (spec 20 §6): the application image
     /// format. Limnifs by default; `dwarfs` stays an explicit opt-in.
     pub format: PressImageFormat,

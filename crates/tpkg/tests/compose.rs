@@ -95,6 +95,25 @@ fn the_schema_refuses_the_phase_r_keys_too() {
 }
 
 #[test]
+fn the_sign_key_is_schema_and_crate_aligned() {
+    // spec 09 §9 / spec 23 §14: the `sign` compose key rides both the
+    // versioned JSON Schema and the serde model (this cross-check keeps
+    // them MECE) — boolean only, a keyid never rides the document.
+    let schema: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(schema_path()).expect("read schema"))
+            .expect("schema json");
+    let validator = jsonschema::validator_for(&schema).expect("the schema itself compiles");
+    let yaml = "version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nsign: true\n";
+    let value: serde_yml::Value = serde_yml::from_str(yaml).expect("yaml parses");
+    validator
+        .validate(&yaml_to_json(&value))
+        .unwrap_or_else(|e| panic!("sign: true against the JSON schema: {e}"));
+    let (doc, warnings) = parse_compose(yaml).expect("the crate parses it");
+    assert!(warnings.is_empty());
+    assert_eq!(doc.sign, Some(true));
+}
+
+#[test]
 fn schema_and_crate_agree_on_the_example() {
     let (doc, warnings) = parse_compose(SPEC_EXAMPLE).expect("the crate parses the example");
     assert!(warnings.is_empty());

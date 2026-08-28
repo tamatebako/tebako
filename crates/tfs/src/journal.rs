@@ -66,6 +66,12 @@ pub const DECRYPT_EVENT: &str = "decrypt";
 /// §8's record-mode idiom).
 pub const LIB_LOAD_EVENT: &str = "lib-load";
 
+/// The event name of the press-side signing opt-out record (spec 09 §9):
+/// an explicit `--no-sign` / `TEBAKO_SIGN=0` overrode a lower channel's
+/// `sign` declaration — a trust downgrade must never be silent, so the
+/// drop is journaled (and warned on stderr) at press-time resolution.
+pub const PRESS_SIGN_OPT_OUT_EVENT: &str = "press-sign-opt-out";
+
 /// Resolve and open the journal file for append (creating the tebako home
 /// if needed). Call it at POLICY-INSTALL time, BEFORE the context guard is
 /// taken — never from inside a `host_check` (see the module docs). `None`
@@ -206,6 +212,19 @@ pub fn journal_decrypt(file: &std::fs::File, mount: &str, recipient: &str, grant
     journal_fields(
         file,
         &format!("event={DECRYPT_EVENT} mount={mount} recipient={recipient} grants={grants}"),
+    );
+}
+
+/// Append one press-side signing opt-out line (spec 09 §9): `<ts>
+/// event=press-sign-opt-out by=<cli|env> overridden=<env|compose>` — the
+/// channel carrying the winning opt-out and the highest lower channel
+/// whose `sign` declaration it dropped. Emitted where the decision is
+/// MADE (the press's settings resolution), never at run time; same
+/// best-effort discipline as [`journal_deny`].
+pub fn journal_press_sign_opt_out(file: &std::fs::File, by: &str, overridden: &str) {
+    journal_fields(
+        file,
+        &format!("event={PRESS_SIGN_OPT_OUT_EVENT} by={by} overridden={overridden}"),
     );
 }
 
@@ -414,6 +433,35 @@ mod tests {
                 "event=vfs-write path=/app/var/cache/y mount=/app",
                 "event=overlay mount=/app store=/tmp/ov/app source=ephemeral",
                 "event=decrypt mount=/data recipient=pgp:3c8dba971d2b4f01 grants=g1,g2",
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn press_sign_opt_out_line_shape() {
+        // spec 09 §9: the loud opt-out's audit record — who opted out and
+        // whose declaration was dropped. No env mutation — the file is
+        // handed in directly.
+        let dir =
+            std::env::temp_dir().join(format!("tfs-journal-optout-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let log = dir.join("journal.log");
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+        journal_press_sign_opt_out(&file, "cli", "env");
+        journal_press_sign_opt_out(&file, "env", "compose");
+        drop(file);
+        let text = std::fs::read_to_string(&log).unwrap();
+        let bodies: Vec<&str> = text.lines().map(|l| l.split_once(' ').unwrap().1).collect();
+        assert_eq!(
+            bodies,
+            vec![
+                "event=press-sign-opt-out by=cli overridden=env",
+                "event=press-sign-opt-out by=env overridden=compose",
             ]
         );
         let _ = std::fs::remove_dir_all(&dir);

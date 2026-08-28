@@ -104,8 +104,8 @@ backend-limnifs = ["dep:limnifs-core"]
 [dev-dependencies]
 # Tempdir scaffolding for backend tests (large-archive RSS fixtures).
 tempfile = "3"
-# ENC tests mint recipient key pairs in-memory (same pin as tebako-signer).
-rnp = { package = "rnp-rs", version = "=0.1.12", features = ["vendored"] }
+# ENC tests mint recipient key pairs in-memory (same floor as tebako-signer).
+rnp = { package = "rnp-rs", version = "0.1.15", features = ["vendored"] }
 # gzip trailer checksums in tar-backend test fixtures.
 crc32fast = "1"
 # LimniFS golden fixtures are written in-process (never a limni binary) —

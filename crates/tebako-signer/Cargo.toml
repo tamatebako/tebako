@@ -9,9 +9,10 @@ repository.workspace = true
 homepage.workspace = true
 
 [dependencies]
-rnp = { package = "rnp-rs", version = "=0.1.12", features = ["vendored"] }
-# rnp-rs 0.1.12's vendored mode delegates through rnp-sys to rnp-src 0.2.x,
-# which builds librnp + Botan + json-c + zlib + bzip2 from source — nothing
-# external to link. (0.1.12 is the pair for rnp-src 0.2.1: 0.2.1 dropped
-# links::lib_dir_env_var, which breaks 0.1.11's build script.)
+rnp = { package = "rnp-rs", version = "0.1.15", features = ["vendored"] }
+# rnp-rs's vendored mode delegates through rnp-sys to rnp-src 0.2.x, which
+# builds librnp + Botan + json-c + zlib + bzip2 from source — nothing
+# external to link. Floor 0.1.15 is the pair for rnp-src 0.2.3 (Botan
+# unpinned to 3.13.0 with the RSA short-MPI padding backport,
+# rnpgp/rnp#2465); older rnp-rs build scripts break against it.
 sha2 = "0.10"

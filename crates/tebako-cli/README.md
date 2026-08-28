@@ -10,6 +10,7 @@ $ tebako press -r <root> -e <entry> [-o <output>] [-p <prefix>]
                [-l error|warn|debug|trace]
                [--image <path>:<mount>]... [--bootstrap <path>]
                [--tebako-version <v>] [--prefer-local] [--jail <spec>]
+               [--sign[=<keyid>] | --no-sign]
                [--compose <tebako.yaml>] [--carry all|none|<name,...>]
                [--share <name,...>]
 $ tebako run <pkg> [--jail <spec>] [--mount <host:mount:ro|rw>]... [--no-host]
@@ -36,6 +37,27 @@ never loosens (a `--no-host` drops request grants; asking for `open`
 against a `deny` request stays denied). The effective policy rides
 TEBAKO_JAIL to the package's bootstrap; violations journal to the tebako
 audit journal (`$TEBAKO_HOME/journal.log`, spec 08 §2).
+
+## Press signing (spec 09 §9)
+
+Signing is per-package OPT-IN: a press with no signing declaration on any
+channel produces the v1-unsigned trailer, byte-identical to pre-signing
+output, and never touches key material. The declaration is the `sign`
+registry setting (spec 23 §14), resolved **CLI → env → compose document
+→ default (unsigned)**:
+
+- `tebako press --sign` signs the package trailer with the press-local
+  key (generated and cached under `$TEBAKO_HOME/keys` on first explicit
+  use, auto-registered into the local trusted keyring);
+  `--sign=<keyid>` signs with the named secret key from
+  `$TEBAKO_HOME/keys` — a keyid matching no key is a named error (71)
+  raised before any heavy work, never a silent fallback.
+- `TEBAKO_SIGN=1` (machine-wide) and the compose document's `sign: true`
+  (repo-carried) both sign with the press-local key — a keyid is
+  per-machine material and never rides a git-shared document.
+- `--no-sign` / `TEBAKO_SIGN=0` wins over every lower channel; an
+  opt-out that drops a lower channel's declaration is LOUD (a stderr
+  warning plus the audit journal's `event=press-sign-opt-out`).
 
 ## Lean press flow
 

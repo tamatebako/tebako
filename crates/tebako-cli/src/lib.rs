@@ -221,6 +221,14 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // malformed env value is a named error, never a silent default.
     let quiet_notices = effective_quiet_notices(opts, compose_doc.as_ref())?;
 
+    // spec 09 §9 / spec 23 §14: the `sign` registry setting resolves
+    // through the same channels (CLI > env > compose > default
+    // unsigned). A keyid naming no key in $TEBAKO_HOME/keys is a named
+    // error raised HERE, before any heavy work (runtime download,
+    // imaging) — never a fallback; an opt-out dropping a lower channel's
+    // declaration is loud (stderr + the audit journal).
+    let sign = effective_sign(opts, compose_doc.as_ref())?;
+
     // Cli#bootstrap: the cache version guard runs before the press
     // (skipped in devmode, like the gem).
     if !opts.devmode {
@@ -452,6 +460,7 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
             lean: !runtime_carried,
             no_install: opts.no_install,
             quiet_notices,
+            sign,
         },
     )?;
     println!("Created tebako package at \"{package}\"");
@@ -555,16 +564,76 @@ pub(crate) fn effective_quiet_notices(
     .map_err(|e| packaging_error(65, Some(&e.to_string())))
 }
 
+/// The signature failure exit (the trust family's 71, shared with the
+/// loader and the install/publish surfaces).
+const EX_TEBAKO_SIGNATURE: i32 = 71;
+
+/// spec 09 §9 / spec 23 §14: the `sign` registry setting resolved across
+/// the three channels — CLI > env > compose document > default unsigned
+/// (a suite press rides no document and passes `None`). An opt-out that
+/// drops a lower channel's `sign` declaration is LOUD: a stderr warning
+/// plus the audit journal's `event=press-sign-opt-out`. A `--sign=<keyid>`
+/// naming no key in $TEBAKO_HOME/keys is a NAMED error here — before any
+/// heavy work — never a silent fallback to the press-local key.
+pub(crate) fn effective_sign(
+    opts: &PressOptions,
+    compose: Option<&tpkg::ComposeDoc>,
+) -> Result<tebako_pkg::SignRequest, TebakoError> {
+    let resolved = tpkg::settings::resolve_sign(
+        &tpkg::settings::SIGN,
+        opts.sign.clone(),
+        tpkg::settings::SIGN.env_value(),
+        compose.and_then(|d| d.sign),
+    )
+    .map_err(|e| packaging_error(65, Some(&e.to_string())))?;
+    if let Some(opt_out) = &resolved.opt_out {
+        eprintln!(
+            "tebako: WARNING: the {} channel's sign opt-out overrides the {} channel's sign declaration — the package will be UNSIGNED (journaled: event=press-sign-opt-out)",
+            opt_out.by, opt_out.overridden
+        );
+        // Best-effort, like every journal write: a press that cannot
+        // open the journal still presses (unsigned, as declared).
+        if let Some(journal) = tfs::journal::open_journal() {
+            tfs::journal::journal_press_sign_opt_out(&journal, opt_out.by, opt_out.overridden);
+        }
+    }
+    match resolved.decision {
+        tpkg::settings::SignDecision::Unsigned => Ok(tebako_pkg::SignRequest::None),
+        tpkg::settings::SignDecision::PressLocal => Ok(tebako_pkg::SignRequest::PressLocal),
+        tpkg::settings::SignDecision::Keyid(keyid) => {
+            // Fail fast, before the runtime download and the imaging: a
+            // keyid naming no key in $TEBAKO_HOME/keys is a named error,
+            // never a fallback to the press-local key (spec 09 §9).
+            let home = tebako_signer::default_home()
+                .map_err(|e| TebakoError::new(e.to_string(), EX_TEBAKO_SIGNATURE))?;
+            match tebako_signer::secret_key_by_keyid(&home, &keyid) {
+                Ok(Some(_)) => Ok(tebako_pkg::SignRequest::Keyid(keyid)),
+                Ok(None) => Err(TebakoError::new(
+                    format!(
+                        "no secret key with keyid {keyid} under {}/keys — generate one, or use bare --sign for the press-local key",
+                        home.display()
+                    ),
+                    EX_TEBAKO_SIGNATURE,
+                )),
+                Err(e) => Err(TebakoError::new(e.to_string(), EX_TEBAKO_SIGNATURE)),
+            }
+        }
+    }
+}
+
 /// The trailer flag inputs to [`stitch`] (spec 02): `lean` — the runtime
 /// resolves at run time (TPKG_FLAG_LEAN; CLEAR only for a self-contained
 /// press); `no_install` — publisher-frozen (TPKG_FLAG_NO_INSTALL);
 /// `quiet_notices` — the resolved registry setting (TPKG_FLAG_QUIET_NOTICES,
-/// spec 23 §14).
-#[derive(Debug, Clone, Copy, Default)]
+/// spec 23 §14); `sign` — the resolved `sign` registry setting (spec 09
+/// §9: `None` is the exact v1-unsigned shape, byte-identical to
+/// pre-signing output).
+#[derive(Debug, Clone, Default)]
 pub(crate) struct StitchFlags {
     pub lean: bool,
     pub no_install: bool,
     pub quiet_notices: bool,
+    pub sign: tebako_pkg::SignRequest,
 }
 
 /// Stitcher.stitch (lean three-part): validate per the gem's error codes,
@@ -697,6 +766,9 @@ pub(crate) fn stitch(
         // entry's runtime_ref mirrors the trailer's, so old and new
         // loaders resolve identically (spec 02 §5b).
         package_manifest: package_manifest.cloned(),
+        // spec 09 §9: the resolved `sign` setting. `None` never touches
+        // key material and produces the exact v1-unsigned shape.
+        sign: flags.sign,
         ..Default::default()
     };
     tebako_pkg::bundle_exact(bootstrap_path, &pkg_images, output, &pkg_options)
@@ -1160,6 +1232,7 @@ mod tests {
                 lean: true,
                 no_install: true,
                 quiet_notices: false,
+                sign: tebako_pkg::SignRequest::None,
             },
         )
         .unwrap();
@@ -1179,6 +1252,7 @@ mod tests {
                 lean: true,
                 no_install: false,
                 quiet_notices: false,
+                sign: tebako_pkg::SignRequest::None,
             },
         )
         .unwrap();
@@ -1211,6 +1285,7 @@ mod tests {
                 lean: true,
                 no_install: false,
                 quiet_notices: true,
+                sign: tebako_pkg::SignRequest::None,
             },
         )
         .unwrap();
@@ -1233,6 +1308,7 @@ mod tests {
                 lean: true,
                 no_install: false,
                 quiet_notices: false,
+                sign: tebako_pkg::SignRequest::None,
             },
         )
         .unwrap();
@@ -1240,6 +1316,283 @@ mod tests {
         let m = tpkg::read_from(&mut f).unwrap();
         assert_eq!(m.package_flags & tpkg::TPKG_FLAG_QUIET_NOTICES, 0);
         assert!(!m.is_quiet_notices());
+    }
+
+    // ---- press signing (spec 09 §9, spec 23 §14) ----
+
+    /// Serializes the signing tests: they mutate the process env
+    /// (TEBAKO_HOME / TEBAKO_SIGN / TEBAKO_JAIL_JOURNAL /
+    /// TEBAKO_REQUIRE_SIGNED), saved and restored by [`SignEnv`].
+    static SIGN_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// Pins the signing-relevant env to a temp home and restores the
+    /// prior values on drop.
+    struct SignEnv {
+        saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+    }
+
+    impl SignEnv {
+        fn set(home: &Path, journal: &Path) -> SignEnv {
+            let saved = [
+                "TEBAKO_HOME",
+                "TEBAKO_SIGN",
+                "TEBAKO_JAIL_JOURNAL",
+                "TEBAKO_REQUIRE_SIGNED",
+            ]
+            .into_iter()
+            .map(|k| (k, std::env::var_os(k)))
+            .collect::<Vec<_>>();
+            std::env::set_var("TEBAKO_HOME", home);
+            std::env::set_var("TEBAKO_JAIL_JOURNAL", journal);
+            std::env::remove_var("TEBAKO_SIGN");
+            std::env::remove_var("TEBAKO_REQUIRE_SIGNED");
+            SignEnv { saved }
+        }
+    }
+
+    impl Drop for SignEnv {
+        fn drop(&mut self) {
+            for (k, v) in self.saved.drain(..) {
+                match v {
+                    Some(v) => std::env::set_var(k, v),
+                    None => std::env::remove_var(k),
+                }
+            }
+        }
+    }
+
+    fn sign_scratch(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-cli-sign-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn effective_sign_resolves_channels_and_names_an_unknown_keyid() {
+        let _guard = SIGN_ENV_LOCK.lock().unwrap();
+        let dir = sign_scratch("resolve");
+        let home = dir.join("home");
+        let journal = dir.join("journal.log");
+        let _env = SignEnv::set(&home, &journal);
+        let compose_signed = tpkg::compose::parse_compose(
+            "version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nsign: true\n",
+        )
+        .unwrap()
+        .0;
+
+        // No declaration on any channel: unsigned, no key material.
+        let mut opts = press_opts(None);
+        assert_eq!(
+            effective_sign(&opts, None).unwrap(),
+            tebako_pkg::SignRequest::None
+        );
+
+        // The compose document declares: the press-local key.
+        assert_eq!(
+            effective_sign(&opts, Some(&compose_signed)).unwrap(),
+            tebako_pkg::SignRequest::PressLocal
+        );
+
+        // TEBAKO_SIGN=0 overriding the document is the LOUD opt-out:
+        // the decision is unsigned and the journal records the drop.
+        std::env::set_var("TEBAKO_SIGN", "0");
+        assert_eq!(
+            effective_sign(&opts, Some(&compose_signed)).unwrap(),
+            tebako_pkg::SignRequest::None
+        );
+        let j = std::fs::read_to_string(&journal).unwrap();
+        assert!(
+            j.contains("event=press-sign-opt-out by=env overridden=compose"),
+            "{j}"
+        );
+
+        // TEBAKO_SIGN=1 is the machine-wide declaration (press-local key).
+        std::env::set_var("TEBAKO_SIGN", "1");
+        assert_eq!(
+            effective_sign(&opts, None).unwrap(),
+            tebako_pkg::SignRequest::PressLocal
+        );
+
+        // The CLI beats the env: --no-sign over TEBAKO_SIGN=1 is loud…
+        opts.sign = Some(tpkg::settings::SignCli::NoSign);
+        assert_eq!(
+            effective_sign(&opts, Some(&compose_signed)).unwrap(),
+            tebako_pkg::SignRequest::None
+        );
+        let j = std::fs::read_to_string(&journal).unwrap();
+        assert!(
+            j.contains("event=press-sign-opt-out by=cli overridden=env"),
+            "{j}"
+        );
+        // …and bare --sign over TEBAKO_SIGN=0 signs.
+        std::env::set_var("TEBAKO_SIGN", "0");
+        opts.sign = Some(tpkg::settings::SignCli::PressLocal);
+        assert_eq!(
+            effective_sign(&opts, None).unwrap(),
+            tebako_pkg::SignRequest::PressLocal
+        );
+        // An opt-out over silence stays quiet (no new journal lines).
+        let before = std::fs::read_to_string(&journal).unwrap();
+        opts.sign = Some(tpkg::settings::SignCli::NoSign);
+        std::env::remove_var("TEBAKO_SIGN");
+        effective_sign(&opts, None).unwrap();
+        assert_eq!(std::fs::read_to_string(&journal).unwrap(), before);
+
+        // A malformed env value is a named error, never a silent default.
+        std::env::set_var("TEBAKO_SIGN", "maybe");
+        opts.sign = None;
+        let err = effective_sign(&opts, None).unwrap_err();
+        assert_eq!(err.code, 65);
+        assert!(err.message.contains("TEBAKO_SIGN"), "{}", err.message);
+        std::env::remove_var("TEBAKO_SIGN");
+
+        // --sign=<keyid> naming no key in $TEBAKO_HOME/keys is a NAMED
+        // error (71), raised here — before any heavy work — never a
+        // fallback to the press-local key.
+        opts.sign = Some(tpkg::settings::SignCli::Keyid("0000000000000000".into()));
+        let err = effective_sign(&opts, None).unwrap_err();
+        assert_eq!(err.code, 71);
+        assert!(
+            err.message
+                .contains("no secret key with keyid 0000000000000000"),
+            "{}",
+            err.message
+        );
+        opts.sign = Some(tpkg::settings::SignCli::Keyid("zz".into()));
+        let err = effective_sign(&opts, None).unwrap_err();
+        assert_eq!(err.code, 71);
+        assert!(err.message.contains("invalid keyid"), "{}", err.message);
+
+        // A keyid naming a real key resolves to it.
+        let press = tebako_signer::press_local_key(&home).unwrap();
+        opts.sign = Some(tpkg::settings::SignCli::Keyid(press.keyid_hex()));
+        assert_eq!(
+            effective_sign(&opts, None).unwrap(),
+            tebako_pkg::SignRequest::Keyid(press.keyid_hex())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stitch_unsigned_is_byte_identical_and_touches_no_key_material() {
+        // spec 09 §9: a press with no sign declaration on any channel
+        // produces the v1-unsigned trailer — byte-identical to the
+        // pre-signing shape — and never touches key material.
+        let _guard = SIGN_ENV_LOCK.lock().unwrap();
+        let dir = sign_scratch("parity");
+        let home = dir.join("home");
+        let _env = SignEnv::set(&home, &dir.join("journal.log"));
+        let base = dir.join("bootstrap");
+        std::fs::write(&base, b"BASE").unwrap();
+        let img = dir.join("img.tfs");
+        std::fs::write(&img, b"IMG").unwrap();
+
+        let pre_change = dir.join("pre-change");
+        stitch(
+            &base,
+            &[(img.clone(), "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            pre_change.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            StitchFlags {
+                lean: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        // The resolved-unsigned request (what press now computes with no
+        // channel declaring sign)…
+        let resolved = dir.join("resolved");
+        stitch(
+            &base,
+            &[(img, "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            resolved.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            StitchFlags {
+                lean: true,
+                sign: tebako_pkg::SignRequest::None,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        // …is byte-identical to the pre-change shape…
+        assert_eq!(
+            std::fs::read(&pre_change).unwrap(),
+            std::fs::read(&resolved).unwrap(),
+            "resolved-unsigned must equal the pre-signing output"
+        );
+        // …a plain v1 trailer (no SIGNED_V2, no v2 extension)…
+        let m = tpkg::read_from(&mut std::fs::File::open(&resolved).unwrap()).unwrap();
+        assert_eq!(m.package_flags & tpkg::TPKG_FLAG_SIGNED_V2, 0);
+        assert!(m.v2.is_none());
+        // …and no key material was generated, loaded, or prompted for.
+        assert!(!home.join("keys").exists(), "no keys dir may be created");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn stitch_signed_round_trips_through_the_verifier() {
+        // spec 09 §9: a signed press carries TPKG_FLAG_SIGNED_V2 + the v2
+        // chain-of-trust extension; the bootstrap's verifier path accepts
+        // it and the signature cryptographically verifies against the
+        // auto-registered trusted keyring.
+        use std::io::{Read as _, Seek as _, SeekFrom};
+
+        let _guard = SIGN_ENV_LOCK.lock().unwrap();
+        let dir = sign_scratch("roundtrip");
+        let home = dir.join("home");
+        let _env = SignEnv::set(&home, &dir.join("journal.log"));
+        let base = dir.join("bootstrap");
+        std::fs::write(&base, b"BASE").unwrap();
+        let img = dir.join("img.tfs");
+        std::fs::write(&img, b"IMG").unwrap();
+
+        let out = dir.join("signed");
+        stitch(
+            &base,
+            &[(img, "/".to_string(), tpkg::TPKG_FORMAT_DWARFS)],
+            out.to_str().unwrap(),
+            "ruby@3.3.7;tebako=9.9.9",
+            None,
+            StitchFlags {
+                lean: true,
+                sign: tebako_pkg::SignRequest::PressLocal,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        // First explicit use generates + caches the press-local key.
+        assert!(home.join("keys/press-local.key").exists());
+
+        let m = tpkg::read_from(&mut std::fs::File::open(&out).unwrap()).unwrap();
+        assert!(m.package_flags & tpkg::TPKG_FLAG_SIGNED_V2 != 0);
+        let v2 =
+            m.v2.as_ref()
+                .expect("the v2 extension rides a signed press");
+
+        // The bootstrap's chain-of-trust verifier (the run-time path).
+        tebako_bootstrap::verify_chain_with_home(&out, &m, &home).expect("chain verifies");
+
+        // The signature itself verifies against the trusted keyring the
+        // press auto-registered (the strict, cryptographic check).
+        let mut f = std::fs::File::open(&out).unwrap();
+        let tlen = tpkg::trailer_len(&m);
+        f.seek(SeekFrom::End(-(tlen as i64))).unwrap();
+        let mut trailer = vec![0u8; tlen as usize];
+        f.read_exact(&mut trailer).unwrap();
+        let region = tpkg::v2_signed_region(&trailer).unwrap();
+        let keyring = tebako_signer::trusted_keyring_bytes(&home).unwrap();
+        let outcome =
+            tebako_signer::verify_detached(&keyring, &region, &v2.signature, &v2.signer_keyid)
+                .unwrap();
+        assert!(
+            matches!(outcome, tebako_signer::VerifyOutcome::Trusted(_)),
+            "{outcome:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1385,6 +1738,7 @@ mod tests {
             jail: None,
             no_install: false,
             quiet_notices: None,
+            sign: None,
             format: options::PressImageFormat::Dwarfs,
             compose: None,
             carry: None,

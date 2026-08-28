@@ -32,6 +32,10 @@
     "quiet_notices": {
       "type": "boolean",
       "description": "The config channel of the quiet_notices registry setting (spec 23 §14): bake TPKG_FLAG_QUIET_NOTICES (bit 3) — every run suppresses the unsigned-legacy-trailer warning and the progress lines. Tri-state: absent lets the CLI (--quiet-notices) and env (TEBAKO_QUIET_NOTICES) channels rule; CLI > env > this key > default(false)."
+    },
+    "sign": {
+      "type": "boolean",
+      "description": "The config channel of the sign registry setting (spec 23 §14, spec 09 §9): sign the package trailer at press with the press-local key (TPKG_FLAG_SIGNED_V2 + the v2 chain-of-trust extension). Boolean only — a keyid is per-machine material and never rides a git-shared document (the CLI's --sign=<keyid> names one). Tri-state: absent lets the CLI (--sign/--no-sign) and env (TEBAKO_SIGN) channels rule; CLI > env > this key > default(false = v1-unsigned, byte-identical to pre-signing)."
     }
   },
   "$defs": {

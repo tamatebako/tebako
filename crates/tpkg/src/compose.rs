@@ -31,6 +31,8 @@
 //! entrypoint: mnconvert         # the pointer-package form's entry selector
 //! quiet_notices: true           # optional: bake TPKG_FLAG_QUIET_NOTICES
 //!                               # (registry setting, spec 23 §14 — CLI/env override)
+//! sign: true                    # optional: sign the trailer at press (spec 09 §9
+//!                               # — registry setting; the press-local key, CLI/env override)
 //! ```
 
 use serde::Deserialize;
@@ -296,6 +298,13 @@ pub struct ComposeDoc {
     /// shareable. CLI and env channels override it at press; the
     /// resolved value bakes `TPKG_FLAG_QUIET_NOTICES`.
     pub quiet_notices: Option<bool>,
+    /// The config channel of the `sign` registry setting (spec 23 §14,
+    /// spec 09 §9): `Some(true)` declares the press signs the package
+    /// trailer — with the press-local key (boolean only; a keyid is
+    /// per-machine material and never rides a git-shared document, the
+    /// CLI's `--sign=<keyid>` names one). CLI and env channels override
+    /// it at press; unsigned v1 stays the default.
+    pub sign: Option<bool>,
 }
 
 impl ComposeDoc {
@@ -319,6 +328,9 @@ struct RawDoc {
     // The config channel of the `quiet_notices` registry setting
     // (spec 23 §14) — tri-state; absent lets the CLI/env channels rule.
     quiet_notices: Option<bool>,
+    // The config channel of the `sign` registry setting (spec 23 §14,
+    // spec 09 §9) — tri-state, boolean only (never a keyid).
+    sign: Option<bool>,
     // Phase-R keys — present ⇒ the named refusal, never a silent drop.
     policy: Option<serde_yml::Value>,
     mounts: Option<serde_yml::Value>,
@@ -383,6 +395,7 @@ pub fn parse_compose(yaml: &str) -> Result<(ComposeDoc, Vec<String>), ComposeErr
             slices,
             entrypoint,
             quiet_notices: raw.quiet_notices,
+            sign: raw.sign,
         },
         warnings,
     ))
@@ -523,6 +536,25 @@ entrypoint: mnconvert
             .unwrap()
             .0;
         assert_eq!(absent.quiet_notices, None);
+    }
+
+    #[test]
+    fn sign_parses_tri_state() {
+        // spec 09 §9 / spec 23 §14: the compose key is the config channel
+        // of the `sign` registry setting — boolean only (a keyid never
+        // rides the git-shared document), tri-state like every channel.
+        let yes = parse("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nsign: true\n")
+            .unwrap()
+            .0;
+        assert_eq!(yes.sign, Some(true));
+        let no = parse("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\nsign: false\n")
+            .unwrap()
+            .0;
+        assert_eq!(no.sign, Some(false));
+        let absent = parse("version: 1\nruntime: {ref: \"ruby@~> 3.3\"}\n")
+            .unwrap()
+            .0;
+        assert_eq!(absent.sign, None);
     }
 
     #[test]
