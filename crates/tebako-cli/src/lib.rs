@@ -769,7 +769,6 @@ pub(crate) fn stitch(
         // spec 09 §9: the resolved `sign` setting. `None` never touches
         // key material and produces the exact v1-unsigned shape.
         sign: flags.sign,
-        ..Default::default()
     };
     tebako_pkg::bundle_exact(bootstrap_path, &pkg_images, output, &pkg_options)
         .map_err(plain_error)?;
