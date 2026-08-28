@@ -470,6 +470,27 @@ covers the array-form chain and the runtime's own surface covers
 in-process exec callers. Children of materialized binaries keep the
 VFS view — never a silent host fallback.
 
+**Rule E4 (the data-file sibling rule).** A covered materialization
+target that parses as NO load module (no Mach-O/ELF/PE magic — a
+genuine data file: a schema, a keystore, a native tool's resource) has
+no dependency closure to walk, but its consumer can address sibling
+resources RELATIVE to the materialized host path — a JVM resolving a
+RelaxNG `<include href="other.rng">` against the schema's directory
+(the packed-mn#251 jing failure: the bridged schema landed alone and
+its same-dir include chain never did) — on the HOST, where the VFS
+view does not reach (§3.1's named boundary). The parent in-image
+directory's FILES therefore materialize alongside the target into the
+same mirrored host tree: non-recursive (subdirectories never sweep —
+no proven consumer; the §3.2 whole-tree answer already exists for
+that shape), capped (512 files / 64 MiB per sweep, each cap noted
+under `TEBAKO_DEBUG_TFS`), and never fatal to the target's own
+materialization (a sibling's extraction failure is noted, not raised
+— the consumer's own error stands). A file WITH load-module magic
+that fails to parse is a malformed module, not a data file: it rides
+alone exactly as before this rule — its consumer is the OS loader,
+which raises its own honest error (the exec-side analogue of §2.1's
+truncated-header contract).
+
 ### 3.2 Bare-name resolution — the composition layer wires PATH
 
 A bare command name (`system("java …")`, mnconvert's form) resolves

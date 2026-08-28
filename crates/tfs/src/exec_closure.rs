@@ -68,6 +68,26 @@ pub fn parse(bytes: &[u8]) -> Option<ImageDeps> {
         .or_else(|| parse_pe(bytes))
 }
 
+/// Cheap magic-number answer: does this file CLAIM to be a load module?
+/// Mirrors exactly the magics parse() recognizes (MZ, ELF, Mach-O fat
+/// big-endian and thin little-endian). Used to split parse() failures
+/// into "malformed load module" (its consumer is a platform loader that
+/// raises its own error — the module rides alone, no sibling sweep) and
+/// "genuine data file" (whose consumer can address sibling resources
+/// relative to it, so the directory's files materialize with it).
+pub fn sniffs_load_module(head: &[u8]) -> bool {
+    let Some(magic) = head.get(..4) else {
+        return false;
+    };
+    if magic.starts_with(b"MZ") || magic == b"\x7FELF" {
+        return true;
+    }
+    if u32be(magic).is_some_and(|m| m == FAT_MAGIC || m == FAT_MAGIC_64) {
+        return true;
+    }
+    u32le(magic).is_some_and(|m| m == MH_MAGIC || m == MH_MAGIC_64)
+}
+
 // ---------------------------------------------------------------------
 // Mach-O
 // ---------------------------------------------------------------------

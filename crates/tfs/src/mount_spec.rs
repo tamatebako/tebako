@@ -4,6 +4,12 @@
 //! validates and re-serializes it for the exec'd child). One grammar, one
 //! parser, one serializer.
 //!
+//! A REPEATED mount point declares union members in shadow order — the
+//! serialization of a spec 17 §1 union mount is the incumbent's
+//! declaration followed by each member's at the same point. Consumers
+//! that can union (the preload shim) layer each later declaration over
+//! the earlier; consumers that cannot fail closed.
+//!
 //! Pure safe Rust; named errors on malformed input (spec 14 §3).
 
 use std::fmt;
