@@ -2202,7 +2202,9 @@ impl FsContext {
                 .unwrap_or([0u8; 4]);
             if exec_closure::sniffs_load_module(&magic) {
                 if debug {
-                    eprintln!("[tfs] closure: {path} — load-module magic but malformed, rides alone");
+                    eprintln!(
+                        "[tfs] closure: {path} — load-module magic but malformed, rides alone"
+                    );
                 }
             } else {
                 self.materialize_data_siblings(path, owner, &root);
@@ -3245,7 +3247,9 @@ mod tests {
             writer
                 .start_file("schemas/nested/deep.rng", options)
                 .unwrap();
-            writer.write_all(b"<grammar><!-- nested --></grammar>\n").unwrap();
+            writer
+                .write_all(b"<grammar><!-- nested --></grammar>\n")
+                .unwrap();
             let bytes = writer.finish().unwrap().into_inner();
             std::fs::write(&image, bytes).unwrap();
         }
@@ -3263,8 +3267,7 @@ mod tests {
             "the same-dir include resolves against the host twin"
         );
         assert!(
-            !host_dir.join("nested/deep.rng").exists()
-                && !host_dir.join("nested").exists(),
+            !host_dir.join("nested/deep.rng").exists() && !host_dir.join("nested").exists(),
             "non-recursive: a nested subdirectory stays image-only"
         );
 
