@@ -522,7 +522,13 @@ the launcher, and the shim loads into the final binary exactly as on
 ELF (probe 2026-08-13: `/bin/sh -c <launcher>` loads the dylib past
 the strip; the bare-name and shell-string forms both work). On ELF the
 launchers ride over the inherited `LD_PRELOAD` (harmless — the same
-dir leads `PATH`).
+dir leads `PATH`). The tier's materialization routes through the SAME
+`exec_materialize` home-tree decision the spawn surface and the windows
+host tier use: a home-annotated mount's executable execs from its
+materialized whole-tree home, never the closure mirror — the mirror
+strands a self-locating prefix (a materialized JVM's `java.home` without
+`conf/` dies at JCE boot listing `conf/security/policy`; the packed-mn
+ISO leg, 2026-08-28).
 
 **The windows host tier** (armed unconditionally on windows — there is
 no preload shim to deliver and no injection var to re-arm, so the tier
