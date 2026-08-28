@@ -128,6 +128,20 @@ def harvest(out, src, note)
   puts format("  closure %-28s <= %s", File.basename(src), src.sub(%r{^.*/build/}, "build/"))
 end
 
+# The librnp install prefix inside an rnp-sys out dir, or nil. The prefix
+# is KEYED by rnp-src: plain `rnp` up to 0.2.2, `rnp-0.18.1-b1` from
+# 0.2.3 (the RSA short-MPI backport level — a backport bump renames the
+# prefix so a stale cached librnp never mixes with new headers);
+# `rnp-flavored` under pqc/crypto-refresh (never in this graph). Match
+# `rnp*` and take the newest dir carrying librnp.a. (v0.3.3 release run
+# 33145385769 died here: a floating resolve pulled rnp-src 0.2.3
+# mid-flight.)
+def rnp_prefix_of(out_dir)
+  Dir.glob(File.join(out_dir, "install", "rnp*"))
+     .select { |d| File.file?(File.join(d, "lib", "librnp.a")) }
+     .max_by { |d| File.mtime(d) }
+end
+
 dwarfs = newest_out(File.join(script_out, "dwarfs-t-sys-*", "out"))
 die "no dwarfs-t-sys build under #{script_out}" unless dwarfs
 
@@ -157,15 +171,17 @@ else
   # rnp-sys variants multiply in a reused target dir (a non-vendored
   # graph leaves an out dir WITHOUT the install tree): newest-by-mtime
   # alone picks the stub. Only an out dir with the vendored install tree
-  # qualifies. (rnp-rs >= 0.1.12 has no build script: its build.rs moved
-  # to rnp-sys, which calls rnp_src::build() — the install tree lands in
-  # rnp-sys's OUT_DIR, per the botan-src caller-owns-OUT_DIR pattern.
-  # rnp-src itself is build=false since 0.2.1, so no rnp-src-*/out ever
-  # exists in this graph.)
+  # qualifies — via rnp_prefix_of, so the keyed librnp prefix counts.
+  # (rnp-rs >= 0.1.12 has no build script: its build.rs moved to rnp-sys,
+  # which calls rnp_src::build() — the install tree lands in rnp-sys's
+  # OUT_DIR, per the botan-src caller-owns-OUT_DIR pattern. rnp-src
+  # itself is build=false since 0.2.1, so no rnp-src-*/out ever exists in
+  # this graph.)
   rnp = Dir.glob(File.join(script_out, "rnp-sys-*", "out"))
-           .select { |d| File.file?(File.join(d, "install", "rnp", "lib", "librnp.a")) }
+           .select { |d| rnp_prefix_of(d) }
            .max_by { |d| File.mtime(d) }
   die "no rnp-sys build with an install tree under #{script_out} (rnp with the vendored feature)" unless rnp
+  rnp_prefix = rnp_prefix_of(rnp)
 
   # their vcpkg closure (codecs, boost, crypto — the static triplet):
   # every archive the dwarfs-t link emits, the same rule as the mingw
@@ -193,14 +209,15 @@ else
   harvest(out, File.join(sqfs_vlib, "libsquashfs.a"), "squashfs-tools-ng")
 
   # the rnp family (rnp-sys's install tree, built from rnp-src sources —
-  # never a prebuilt download)
+  # never a prebuilt download; librnp+sexpp ride the keyed rnp prefix,
+  # json-c and botan keep their plain ones)
   {
-    "rnp/lib/librnp.a" => "librnp (rnp-sys)",
-    "rnp/lib/libsexpp.a" => "libsexpp (rnp-sys)",
-    "json-c/lib/libjson-c.a" => "json-c (rnp-sys)",
-    "botan/lib/libbotan-3.a" => "botan (rnp-src via rnp-sys)",
-  }.each do |rel, note|
-    harvest(out, File.join(rnp, "install", rel), note)
+    File.join(rnp_prefix, "lib", "librnp.a") => "librnp (rnp-sys)",
+    File.join(rnp_prefix, "lib", "libsexpp.a") => "libsexpp (rnp-sys)",
+    File.join(rnp, "install", "json-c", "lib", "libjson-c.a") => "json-c (rnp-sys)",
+    File.join(rnp, "install", "botan", "lib", "libbotan-3.a") => "botan (rnp-src via rnp-sys)",
+  }.each do |src, note|
+    harvest(out, src, note)
   end
 end
 
