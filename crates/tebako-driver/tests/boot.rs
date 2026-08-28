@@ -1999,6 +1999,42 @@ fn write_toolkit_image_with_java(dir: &Path, java: &[u8]) -> PathBuf {
     p
 }
 
+/// The HOME-annotated toolkit fixture (the openjdk shape exactly:
+/// `identity.annotations.java_home` plus a `conf/` data tree the
+/// linked-library closure walk would never carry — the JCE policy
+/// layout). The launcher tier must route its exec materialization
+/// through the whole-tree home, not the closure mirror.
+#[cfg(unix)]
+fn write_home_toolkit_image(dir: &Path) -> PathBuf {
+    let manifest = payload_manifest(
+        "toolkit",
+        "  annotations: {java_home: /}\n\
+         provides:\n  executables:\n    - {name: java, path: /bin/java}\n  \
+         platforms: [aarch64-macos]\n  capabilities: {exec: true, read: true}",
+    );
+    let p = dir.join("home-toolkit.tfs");
+    build_zip(
+        &p,
+        &[
+            "bin/",
+            "conf/",
+            "conf/security/",
+            "conf/security/policy/",
+            "conf/security/policy/unlimited/",
+            "__tpkg__/",
+        ],
+        &[
+            ("bin/java", b"#!/bin/sh\n"),
+            (
+                "conf/security/policy/unlimited/default_local.policy",
+                b"// test\n",
+            ),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    p
+}
+
 fn joined_path(dirs: &[&str]) -> String {
     std::env::join_paths(dirs.iter().map(std::path::PathBuf::from))
         .unwrap()
@@ -2243,6 +2279,70 @@ fn dependency_executables_materialize_as_self_injecting_launchers() {
     assert_ne!(
         std::fs::metadata(&target).unwrap().permissions().mode() & 0o111,
         0
+    );
+}
+
+/// The home-mount case (Rule E2 / §3.2, the packed-mn JCE regression):
+/// a home-annotated dependency's launcher execs the WHOLE-TREE home
+/// copy — `<dl-root>/tebako-home-<N>/bin/java` — never the closure
+/// mirror, whose self-located prefix would lack the image's data tree
+/// (a materialized JVM's java.home without conf/ dies at JCE boot
+/// listing conf/security/policy).
+#[cfg(unix)]
+#[test]
+fn a_home_mounts_launcher_execs_the_whole_tree_home() {
+    let g = guard("path-env-home");
+    let env_image = write_env_image_with_shim(g.path());
+    let payload = write_payload_image(g.path());
+    let toolkit = write_home_toolkit_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    env.set("PATH", "/usr/bin:/bin");
+    boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:-:/app", payload.display()),
+            "--tebako-image",
+            &format!("{}:-:/opt/openjdk", toolkit.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    let path = env.var("PATH").unwrap();
+    let wrap_dir = std::env::split_paths(std::ffi::OsStr::new(&path))
+        .next()
+        .unwrap();
+    let text = std::fs::read_to_string(wrap_dir.join("java")).unwrap();
+    let target = text
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix("exec '")
+                .and_then(|r| r.strip_suffix("' \"$@\""))
+        })
+        .expect("the wrapper's exec line");
+    let target = PathBuf::from(target);
+    let home = target.parent().and_then(|p| p.parent()).unwrap();
+    assert!(
+        home.file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("tebako-home-"),
+        "the launcher execs the home-tree copy, not the closure mirror: {}",
+        target.display()
+    );
+    // The whole tree came with it — the closure walk would carry only
+    // the binary.
+    assert!(target.is_file(), "{}", target.display());
+    assert!(
+        home.join("conf/security/policy/unlimited/default_local.policy")
+            .is_file(),
+        "the home tree carries the image's data tree: {}",
+        home.display()
     );
 }
 

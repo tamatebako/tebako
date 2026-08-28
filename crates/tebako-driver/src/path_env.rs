@@ -202,7 +202,14 @@ fn materialize_launchers(
         )
     })?;
     for (base, vfs) in &launches {
-        let host = ctx.dlmap2file(vfs).map_err(|e| {
+        // The SAME home-tree routing decision a spawn makes (Rule E2 /
+        // §3.2 — the windows host tier's call): a home-annotated mount
+        // (the JDK shape, `annotations.java_home`) materializes its
+        // whole tree and the wrapper execs the home copy. The closure
+        // mirror would strand the binary's self-located prefix — a
+        // materialized JVM's java.home without conf/ dies at JCE boot
+        // listing conf/security/policy (the packed-mn ISO leg).
+        let host = ctx.exec_materialize_for_spawn(vfs).map_err(|e| {
             DriverError::new(
                 EX_TEBAKO_MANIFEST,
                 format!(
