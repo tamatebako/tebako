@@ -163,6 +163,17 @@ mount      = "/" *path-char              ; a VFS-absolute mount point
   spawned child MUST preserve the slot form, so the child mounts the same
   region — never the whole package file (mounting a packaged file whole
   sniffs the trailer and fails; spec 22's spawn re-entry is the victim).
+- **Union serialization.** A union mount (§1's `mode: union`) serializes
+  as MULTIPLE entries at the same mount point: the incumbent first, then
+  each member in shadow order (the order they were unioned on). A
+  consumer that can union (the preload shim) MUST treat a repeated mount
+  point as a union member — layered over the earlier declaration with
+  this spec's §1 semantics — never as a duplicate-point error. A
+  consumer that cannot union MUST fail closed with a named error.
+  Serializing only the incumbent is a wire bug: the child boots with
+  half the tree (the packed-mn POSIX failure — the app payload unioned
+  over the env image at the runtime root never reached spawned
+  children).
 
 ## 3. File IO semantics
 

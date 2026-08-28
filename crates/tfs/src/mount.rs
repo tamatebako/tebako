@@ -111,6 +111,7 @@ fn make_mount(
         mount_point_c: cstring(mount_point),
         archive_path: archive_path.map(cstring),
         slot: None,
+        union_tail: Vec::new(),
         backend,
         mode,
     }

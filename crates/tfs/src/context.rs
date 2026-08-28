@@ -83,10 +83,29 @@ pub struct Mount {
     /// §2.1); `None` for a whole-file mount. Serialized into
     /// `TEBAKO_TFS_MOUNTS` so a spawned child re-mounts the same region.
     pub slot: Option<u32>,
+    /// Union members layered OVER this mount's incumbent (spec 17 §1's
+    /// union mode), in shadow order — each member shadows the ones before
+    /// it. Retained for `mounts_env`: the child rebuilds the union from
+    /// the member list, incumbent first — a union that serialized only
+    /// its incumbent would boot children with half the tree (the
+    /// packed-mn POSIX jing failure: the app payload, unioned over the
+    /// env image at the runtime root, never reached the java child).
+    pub union_tail: Vec<UnionMember>,
     /// The backend.
     pub backend: Box<dyn Backend>,
     /// Mount mode (spec 11 §3; writes on RO mounts fail with EROFS).
     pub mode: MountMode,
+}
+
+/// One union member layered over a mount's incumbent: its serialization
+/// identity (the member's backend moved into the `UnionBackend`
+/// composite; only the rebuild coordinates remain here).
+pub struct UnionMember {
+    /// Archive path on disk (union members in the driver's composition
+    /// are file-backed; optional for parity with `Mount`).
+    pub archive_path: Option<Box<std::ffi::CString>>,
+    /// The package slot the member mounts, when any (spec 17 §2.1).
+    pub slot: Option<u32>,
 }
 
 /// One open file descriptor.
@@ -405,6 +424,14 @@ impl FsContext {
             return Err(libc::ENODEV);
         };
         let mut incumbent = self.mounts.remove(&handle).ok_or(libc::ENODEV)?;
+        // The member's serialization identity outlives its backend (which
+        // moves into the composite): mounts_env hands the child the full
+        // member list — incumbent first, then members in shadow order —
+        // so the union is rebuilt, not halved (spec 17 §2.1).
+        let member = UnionMember {
+            archive_path: mount.archive_path,
+            slot: mount.slot,
+        };
         let union = match crate::backends_union::UnionBackend::new(vec![
             incumbent.backend,
             mount.backend,
@@ -417,6 +444,7 @@ impl FsContext {
                 return Err(e);
             }
         };
+        incumbent.union_tail.push(member);
         incumbent.backend = Box::new(union);
         self.mounts.insert(handle, incumbent);
         if let Some((point, image)) = &subject {
@@ -1301,20 +1329,29 @@ impl FsContext {
     /// field, so the child mounts the same region — never the whole
     /// package file.
     pub fn mounts_env(&self) -> Option<std::ffi::CString> {
-        let decls: Vec<crate::mount_spec::MountDecl> = self
-            .mounts
-            .values()
-            .filter_map(|mount| {
-                mount
-                    .archive_path
-                    .as_ref()
-                    .map(|archive| crate::mount_spec::MountDecl {
+        // Establishment order (handles ascend in mount order); a union's
+        // members follow their incumbent in shadow order, so the child's
+        // repeated-point-as-union rebuild (spec 17 §2.1) layers exactly
+        // this union.
+        let mut decls: Vec<crate::mount_spec::MountDecl> = Vec::new();
+        for mount in self.mounts.values() {
+            if let Some(archive) = mount.archive_path.as_ref() {
+                decls.push(crate::mount_spec::MountDecl {
+                    image: archive.to_string_lossy().into_owned(),
+                    slot: mount.slot,
+                    mount: mount.mount_point.clone(),
+                });
+            }
+            for member in &mount.union_tail {
+                if let Some(archive) = member.archive_path.as_ref() {
+                    decls.push(crate::mount_spec::MountDecl {
                         image: archive.to_string_lossy().into_owned(),
-                        slot: mount.slot,
+                        slot: member.slot,
                         mount: mount.mount_point.clone(),
-                    })
-            })
-            .collect();
+                    });
+                }
+            }
+        }
         if decls.is_empty() {
             None
         } else {
@@ -1845,6 +1882,99 @@ impl FsContext {
     /// materialization was decided). `closure_trace`, when Some, records
     /// the walk — format + per-dep verdicts — for the top frame's
     /// dlopen event (recursion passes None; only the top frame records).
+    /// The data-file companion rule: a bridged data file carries no
+    /// parseable dependency closure, but its consumer can resolve
+    /// sibling resources by RELATIVE path — a RelaxNG `<include
+    /// href="other.rng">` against the schema's directory (the
+    /// packed-mn#251 jing failure: `isostandard-compile.rng` materialized
+    /// alone, its same-dir includes absent, jing answered `fatal: file
+    /// not found`). Materialize the parent directory's FILES into the
+    /// same mirrored host tree so relative resolution lands.
+    /// Non-recursive, count/byte-capped; an over-cap dir or a failing
+    /// sibling is a debug note, never the token's failure — the primary
+    /// file already landed and the consumer's own error stands.
+    fn materialize_data_siblings(&self, path: &str, owner: i32, root: &std::path::Path) {
+        const MAX_DATA_SIBLINGS: usize = 512;
+        const MAX_DATA_SIBLING_BYTES: u64 = 64 * 1024 * 1024;
+        let debug = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
+        let parent = memfs_dirname(path);
+        let Some(mount) = self.mounts.get(&owner) else {
+            return;
+        };
+        let parent_rel = Self::relative_path(mount, &parent);
+        let entries = match mount.backend.read_dir(parent_rel) {
+            Ok(entries) => entries,
+            Err(e) => {
+                if debug {
+                    eprintln!(
+                        "[tfs] siblings: {parent} — readdir failed errno={e}, the data file rides alone"
+                    );
+                }
+                return;
+            }
+        };
+        let own = path.rsplit('/').next().unwrap_or("");
+        let mut written = 0usize;
+        let mut bytes = 0u64;
+        for entry in entries {
+            if entry.is_dir || entry.name == own {
+                continue;
+            }
+            if written >= MAX_DATA_SIBLINGS {
+                if debug {
+                    eprintln!(
+                        "[tfs] siblings: {parent} — count cap ({MAX_DATA_SIBLINGS}); the rest stay image-only"
+                    );
+                }
+                break;
+            }
+            let sib_rel = if parent_rel.is_empty() {
+                entry.name.clone()
+            } else {
+                format!("{parent_rel}/{}", entry.name)
+            };
+            let size = mount
+                .backend
+                .stat(&sib_rel)
+                .map(|st| st.size.max(0) as u64)
+                .unwrap_or(0);
+            if bytes.saturating_add(size) > MAX_DATA_SIBLING_BYTES {
+                if debug {
+                    eprintln!(
+                        "[tfs] siblings: {parent}/{} — {size} bytes over the {MAX_DATA_SIBLING_BYTES}-byte cap, skipped",
+                        entry.name
+                    );
+                }
+                continue;
+            }
+            let sib_vfs = format!("{parent}/{}", entry.name);
+            let host = root.join(Self::host_tail(&sib_vfs));
+            let dir_ok = host
+                .parent()
+                .is_some_and(|dir| std::fs::create_dir_all(dir).is_ok());
+            if !dir_ok {
+                continue;
+            }
+            match extract_file(mount.backend.as_ref(), &sib_rel, &host) {
+                Ok(ExtractStep::Written) => {
+                    written += 1;
+                    bytes += size;
+                    if debug {
+                        eprintln!("[tfs] siblings: {sib_vfs} -> {}", host.display());
+                    }
+                }
+                Ok(ExtractStep::SkippedSymlink) => {}
+                Err(e) => {
+                    if debug {
+                        eprintln!(
+                            "[tfs] siblings: {sib_vfs} — extraction failed errno={e} (the consumer's own error stands)"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
     fn extract_for_exec(
         &mut self,
         path: &str,
@@ -2049,8 +2179,33 @@ impl FsContext {
             }
             exec_closure::parse(&head)
         })() else {
-            if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+            let debug = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
+            if debug {
                 eprintln!("[tfs] closure: {path} — header parse unsupported, no dep walk");
+            }
+            // A file the parser REJECTS splits two ways on its magic
+            // (spec 22 Rule E4 — the data-file sibling rule): a genuine data file has no parseable
+            // closure, but its consumer can address sibling resources
+            // RELATIVE to it (a RelaxNG `<include href="other.rng">`
+            // against the schema's dir — the packed-mn#251 jing
+            // failure), so the parent directory's files materialize
+            // into the same mirrored host tree. A file WITH load-module
+            // magic that failed to parse is a malformed module — its
+            // consumer is a platform loader that raises its own error;
+            // it rides alone exactly as before the sibling rule.
+            let magic = std::fs::File::open(&host_path)
+                .and_then(|mut f| {
+                    use std::io::Read as _;
+                    let mut b = [0u8; 4];
+                    f.read_exact(&mut b).map(|()| b)
+                })
+                .unwrap_or([0u8; 4]);
+            if exec_closure::sniffs_load_module(&magic) {
+                if debug {
+                    eprintln!("[tfs] closure: {path} — load-module magic but malformed, rides alone");
+                }
+            } else {
+                self.materialize_data_siblings(path, owner, &root);
             }
             return Ok(host_path);
         };
@@ -2718,6 +2873,7 @@ mod tests {
             mount_point_c: Box::new(std::ffi::CString::new("/tfs").unwrap()),
             archive_path: None,
             slot: None,
+            union_tail: Vec::new(),
             backend: Box::new(backend),
             mode: crate::mount::MountMode::ReadOnly,
         };
@@ -3063,6 +3219,58 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The data-file companion rule: a bridged data file's consumer can
+    /// resolve sibling resources relative to it (RelaxNG `<include
+    /// href>` — the packed-mn#251 jing failure), so materialization
+    /// brings the parent directory's files along into the mirrored host
+    /// tree. Non-recursive: a nested subdirectory stays image-only.
+    #[test]
+    fn exec_materialize_brings_a_data_files_siblings() {
+        let dir = std::env::temp_dir().join(format!("tfs-data-sib-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = dir.join("data.zip");
+        {
+            let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+            let options = zip::write::SimpleFileOptions::default();
+            for d in ["schemas/", "schemas/nested/"] {
+                writer.add_directory(d, options).unwrap();
+            }
+            writer.start_file("schemas/main.rng", options).unwrap();
+            writer
+                .write_all(b"<grammar><include href=\"included.rng\"/></grammar>\n")
+                .unwrap();
+            writer.start_file("schemas/included.rng", options).unwrap();
+            writer.write_all(b"<grammar/>\n").unwrap();
+            writer
+                .start_file("schemas/nested/deep.rng", options)
+                .unwrap();
+            writer.write_all(b"<grammar><!-- nested --></grammar>\n").unwrap();
+            let bytes = writer.finish().unwrap().into_inner();
+            std::fs::write(&image, bytes).unwrap();
+        }
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/tfs/schemas/main.rng").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(host.is_file(), "the data twin lands: {host:?}");
+        let host_dir = host.parent().unwrap();
+        assert_eq!(
+            std::fs::read(host_dir.join("included.rng")).unwrap(),
+            b"<grammar/>\n",
+            "the same-dir include resolves against the host twin"
+        );
+        assert!(
+            !host_dir.join("nested/deep.rng").exists()
+                && !host_dir.join("nested").exists(),
+            "non-recursive: a nested subdirectory stays image-only"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // ---------------------------------------------------------------
     // PE exec-closure walk (spec 22 §2.1)
     // ---------------------------------------------------------------
@@ -3160,6 +3368,7 @@ mod tests {
             mount_point_c: Box::new(std::ffi::CString::new(point).unwrap()),
             archive_path: None,
             slot: None,
+            union_tail: Vec::new(),
             backend: Box::new(backend),
             mode: crate::mount::MountMode::ReadOnly,
         };
@@ -3189,6 +3398,7 @@ mod tests {
                     std::ffi::CString::new(archive.to_string_lossy().into_owned()).unwrap(),
                 )),
                 slot,
+                union_tail: Vec::new(),
                 backend: Box::new(backend),
                 mode: crate::mount::MountMode::ReadOnly,
             };
@@ -3198,6 +3408,55 @@ mod tests {
         assert_eq!(
             env.to_string_lossy(),
             format!("{}:0:/app,{}:/data", pkg.display(), img.display())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn mounts_env_serializes_a_union_in_shadow_order() {
+        // spec 17 §1/§2.1: the runtime root's union — the env image with
+        // the app payload layered over it — serializes as BOTH members at
+        // the same point, incumbent first (the child's shim rebuilds the
+        // union from the member list; the packed-mn POSIX jing failure
+        // was the payload half never reaching the child).
+        let dir = std::env::temp_dir().join(format!("tfs-mounts-env-u-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let env_img = dir.join("env.tfs");
+        let pkg = dir.join("pkg.tebako");
+        let mut ctx = FsContext::new();
+        let file_mount = |archive: &std::path::Path, slot: Option<u32>, point: &str| {
+            let backend = crate::backends_hostdir::HostDirBackend::new(&dir).unwrap();
+            Mount {
+                handle: 0,
+                mount_point: point.to_string(),
+                mount_point_c: Box::new(std::ffi::CString::new(point).unwrap()),
+                archive_path: Some(Box::new(
+                    std::ffi::CString::new(archive.to_string_lossy().into_owned()).unwrap(),
+                )),
+                slot,
+                union_tail: Vec::new(),
+                backend: Box::new(backend),
+                mode: crate::mount::MountMode::ReadOnly,
+            }
+        };
+        ctx.mount_checked(file_mount(&env_img, None, "/__tfs__"))
+            .unwrap();
+        ctx.mount_union(file_mount(&pkg, Some(0), "/__tfs__"))
+            .unwrap();
+        // A plain exclusive mount elsewhere keeps its single declaration.
+        ctx.mount_checked(file_mount(&pkg, Some(1), "/opt/jdk"))
+            .unwrap();
+
+        let env = ctx.mounts_env().unwrap();
+        assert_eq!(
+            env.to_string_lossy(),
+            format!(
+                "{}:/__tfs__,{}:0:/__tfs__,{}:1:/opt/jdk",
+                env_img.display(),
+                pkg.display(),
+                pkg.display()
+            )
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

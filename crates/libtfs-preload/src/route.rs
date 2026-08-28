@@ -402,18 +402,25 @@ fn init_inner() -> Result<(), String> {
             spec::parse_mounts(&mounts_spec).map_err(|e| format!("TEBAKO_TFS_MOUNTS: {e}"))?;
         for d in &decls {
             let mount = build_decl(d)?;
-            context()
-                .write()
-                .unwrap()
-                .mount_checked(mount)
-                .map_err(|e| {
-                    format!(
-                        "TEBAKO_TFS_MOUNTS: cannot mount {} at {}: {}",
-                        d.image,
-                        d.mount,
-                        errno_text(e)
-                    )
-                })?;
+            let mut guard = context().write().unwrap();
+            // A repeated mount point is a UNION member, not an error:
+            // the driver serializes a union as the incumbent followed by
+            // its members at the same point (spec 17 §2.1) — layer the
+            // later declaration over the incumbent exactly as the
+            // parent's mount_union did.
+            match guard.mount_checked(mount) {
+                Ok(_) => Ok(()),
+                Err(e) if e == libc::EEXIST => guard.mount_union(build_decl(d)?).map(|_| ()),
+                Err(e) => Err(e),
+            }
+            .map_err(|e| {
+                format!(
+                    "TEBAKO_TFS_MOUNTS: cannot mount {} at {}: {}",
+                    d.image,
+                    d.mount,
+                    errno_text(e)
+                )
+            })?;
         }
     }
     let jail_spec = std::env::var("TEBAKO_JAIL").unwrap_or_default();
