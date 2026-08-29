@@ -1625,7 +1625,20 @@ pub fn init() {
     // backend worker pool comes into existence at mount time, and the
     // guard must already be registered before any later fork.
     register_fork_guard();
-    if let Err(msg) = route::initialize() {
+    // Enter through engine_call so the whole constructor mount pass runs
+    // with IN_ENGINE set: the route layer's own host IO (opening the
+    // package file, backend metadata reads) then passes through to the
+    // real libc instead of re-entering the route layer and its context
+    // lock — the unguarded direct entry self-deadlocked on ELF targets
+    // when a mount pass under the guard did its own host IO (the
+    // packed-mn linux-gnu hang, 2026-08-29). A fork child or a
+    // re-entrant entry answers None and falls through to the direct
+    // call.
+    let result = match engine_call(route::initialize) {
+        Some(r) => r,
+        None => route::initialize(),
+    };
+    if let Err(msg) = result {
         eprintln!("libtfs-preload: {msg}");
         // SAFETY: plain libc call.
         unsafe { libc::exit(crate::spec::EX_CONFIG) };
