@@ -11,14 +11,14 @@ keywords = ["tebako", "bootstrap", "launcher", "tpkg"]
 categories = ["filesystem", "no-std"]
 
 [dependencies]
-tpkg = { version = "0.3.0", path = "../tpkg" }
-tebako-signer = { version = "0.3.0", path = "../tebako-signer", optional = true }
-tebako-http = { version = "0.3.0", path = "../tebako-http" }
+tpkg = { version = "2.0.0", path = "../tpkg" }
+tebako-signer = { version = "2.0.0", path = "../tebako-signer", optional = true }
+tebako-http = { version = "2.0.0", path = "../tebako-http" }
 # Shared-slice resolution + cache seeding (spec 23 §13, spec 05 §4):
 # default-features = false drops the git adapter (gix/reqwest) — the
 # bootstrap resolves `tfs:`/`https:`/`file://` lock sources only.
-tebako-resolve = { version = "0.3.0", path = "../tebako-resolve", default-features = false }
-tebako-term = { version = "0.3.0", path = "../tebako-term" }
+tebako-resolve = { version = "2.0.0", path = "../tebako-resolve", default-features = false }
+tebako-term = { version = "2.0.0", path = "../tebako-term" }
 # OpenPGP trailer verification is OPTIONAL (feature `openpgp-verify`,
 # default OFF): the shipped bootstrap runs unverified-first — every
 # package loads with a loud warning, and TEBAKO_REQUIRE_SIGNED=1 fails
@@ -59,5 +59,5 @@ path = "src/lib.rs"
 # cfg-gated to match. The shipped bootstrap stays unverified-first on
 # every platform (the feature above is unaffected).
 [target.'cfg(not(windows))'.dev-dependencies]
-tebako-signer = { version = "0.3.0", path = "../tebako-signer" }
+tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
 rnp = { package = "rnp-rs", version = "0.1.15", features = ["vendored"] }

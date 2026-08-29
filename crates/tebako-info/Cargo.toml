@@ -11,9 +11,9 @@ keywords = ["tebako", "tpkg", "tfs", "info", "introspection"]
 categories = ["filesystem", "parser-implementations"]
 
 [dependencies]
-tpkg = { version = "0.3.0", path = "../tpkg" }
-tebako-json = { version = "0.3.0", path = "../tebako-json" }
-tebako-signer = { version = "0.3.0", path = "../tebako-signer" }
+tpkg = { version = "2.0.0", path = "../tpkg" }
+tebako-json = { version = "2.0.0", path = "../tebako-json" }
+tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
 sha2 = "0.10"
 # errno values for the tree-hash walker's named skip reasons (verify.rs).
 libc = "0.2"
@@ -25,10 +25,10 @@ serde_yml = "0.0.12"
 # POSIX/autotools-only — Windows gets a dwarfs-only tfs, the backend
 # degrading to a named ENOTSUP (TODO.v2-1/02).
 [target.'cfg(not(windows))'.dependencies]
-tfs = { version = "0.3.0", path = "../tfs" }
+tfs = { version = "2.0.0", path = "../tfs" }
 
 [target.'cfg(windows)'.dependencies]
-tfs = { version = "0.3.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
+tfs = { version = "2.0.0", path = "../tfs", default-features = false, features = ["vendored-dwarfs", "backend-limnifs"] }
 
 [dev-dependencies]
 # In-process dwarfs-t writer for manifest-carrying image fixtures.
