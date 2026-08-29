@@ -108,6 +108,54 @@ fn disable_and_enable_roundtrip_through_run() {
 }
 
 #[test]
+fn enable_links_a_declared_but_unlinked_command() {
+    // spec 03 §2.2's `active: false` shape: the command is declared in the
+    // mirror, install linked nothing for it; `enable` materializes the
+    // link (the dispatcher links itself) and clears the gate.
+    let tmp = TempDir::new("enable-links");
+    let home = tmp.path().join("home");
+    seed(&home);
+    let ctx = pinned_ctx(&home, tmp.path());
+
+    let link = home
+        .join("shims")
+        .join(if cfg!(windows) { "metanorma.exe" } else { "metanorma" });
+    assert!(!link.exists(), "seed links nothing");
+
+    let (text, code) = printed(run_ok(
+        &["tebako-shim".into(), "enable".into(), "metanorma".into()],
+        &ctx,
+    ));
+    assert_eq!(code, 0);
+    assert!(text.contains("linked"), "{text}");
+    assert!(link.exists(), "enable materialized the link");
+
+    // idempotent: a second enable finds the link present — no relink note
+    let (text, _) = printed(run_ok(
+        &["tebako-shim".into(), "enable".into(), "metanorma".into()],
+        &ctx,
+    ));
+    assert!(!text.contains("linked"), "{text}");
+}
+
+#[test]
+fn enable_an_undeclared_command_is_the_named_error_and_links_nothing() {
+    let tmp = TempDir::new("enable-undeclared");
+    let home = tmp.path().join("home");
+    seed(&home);
+    let ctx = pinned_ctx(&home, tmp.path());
+
+    let err = tebako_shim::run(&["tebako-shim".into(), "enable".into(), "phantom".into()], &ctx)
+        .unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(err.message.contains("phantom"), "{}", err.message);
+    let link = home
+        .join("shims")
+        .join(if cfg!(windows) { "phantom.exe" } else { "phantom" });
+    assert!(!link.exists(), "no dangling link for an undeclared command");
+}
+
+#[test]
 fn which_reports_the_full_resolution() {
     let tmp = TempDir::new("which");
     let home = tmp.path().join("home");

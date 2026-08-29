@@ -484,7 +484,13 @@ fn install_local_slot(
         }
         let record: PayloadRecord = manifest::payload_record(home, &name, &version);
         let commands = Manifest::load(&record.manifest_mirror)
-            .map(|m| m.entrypoints().iter().map(|e| e.name.clone()).collect())
+            .map(|m| {
+                m.entrypoints()
+                    .iter()
+                    .filter(|e| e.is_active())
+                    .map(|e| e.name.clone())
+                    .collect()
+            })
             .unwrap_or_default();
         return Ok(LocalInstalled {
             name,
@@ -525,6 +531,7 @@ fn install_local_slot(
     let commands: Vec<String> = mirror
         .entrypoints()
         .iter()
+        .filter(|e| e.is_active())
         .map(|e| e.name.clone())
         .collect();
 
@@ -982,11 +989,15 @@ fn finish_install<T: Transport>(
     // install is the explicit verb, spec 07 §2).
     materialize_zero_runtime(home, &entry, &mirror)?;
 
-    // Register every shim the payload PROVIDES declares (spec 07 §1):
-    // app entrypoints ∪ toolkit executables, one dispatchable view.
+    // Register the shims the payload PROVIDES declares ACTIVE (spec 07 §1
+    // + spec 03 §2.2 `active`): app entrypoints ∪ toolkit executables, one
+    // dispatchable view. The FULL declared set rides the manifest mirror;
+    // an inactive-by-default command links on demand (`tebako shim
+    // enable <name>`).
     let commands: Vec<String> = mirror
         .dispatchables()
         .iter()
+        .filter(|e| e.active)
         .map(|e| e.name.clone())
         .collect();
     let shims = if commands.is_empty() {
@@ -1233,6 +1244,7 @@ fn synthesize_manifest(
                         name: n,
                         args_default: Vec::new(),
                         runtime_requirement: requirement.clone(),
+                        active: None,
                     })
                     .collect(),
                 platforms: tpkg::Platforms::Universal,

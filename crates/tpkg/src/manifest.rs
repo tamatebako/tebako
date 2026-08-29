@@ -746,6 +746,20 @@ pub struct Entrypoint {
     /// payloads). Omit the key entirely on the wire for those.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runtime_requirement: Option<RuntimeRequirement>,
+    /// The payload's default PATH exposure (spec 03 §2.2 completeness):
+    /// `Some(false)` = declared and dispatchable (`tebako shim enable`
+    /// links it on demand) but NOT registered at install. Absent/true =
+    /// registered. Additive: pre-flag readers ignore the key and register
+    /// every entrypoint (the pre-flag behavior).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<bool>,
+}
+
+impl Entrypoint {
+    /// Whether install registers this command by default (spec 03 §2.2).
+    pub fn is_active(&self) -> bool {
+        self.active != Some(false)
+    }
 }
 
 /// PROVIDES of kind `app`.
@@ -1746,6 +1760,36 @@ mod tests {
     }
 
     #[test]
+    fn entrypoint_active_flag_defaults_true_and_roundtrips() {
+        // spec 03 §2.2: absent/true = registered at install; explicit
+        // false = declared-but-inactive. The key is additive on the wire
+        // (a pre-flag reader ignores it — serde's unknown-field default).
+        let text = format!(
+            "identity:\n  schema_version: 1\n  kind: app\n  name: x\n  version: 1.0.0\n\
+             \x20 producer: {{tool: t, tool_version: 1}}\n  created: now\n\
+             \x20 digest: {{tree_hash: \"sha256:{}\", blob_sha256: {}}}\n\
+             \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+             provides:\n  entrypoints:\n    - name: metanorma\n      path: /bin/metanorma\n\
+             \x20   - name: fontist\n      path: /bin/fontist\n      active: false\n\
+             \x20 platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+            sha(1),
+            sha(2),
+        );
+        let m = PayloadManifest::from_yaml(&text).unwrap();
+        let Provides::App(app) = &m.provides else {
+            panic!("expected app provides");
+        };
+        assert!(app.entrypoints[0].is_active());
+        assert!(!app.entrypoints[1].is_active());
+        assert_eq!(app.entrypoints[1].active, Some(false));
+
+        // the wire form omits the key unless explicitly false
+        let out = serde_yml::to_string(app).unwrap();
+        assert!(!out.contains("active: true"), "{out}");
+        assert!(out.contains("active: false"), "{out}");
+    }
+
+    #[test]
     fn platform_release_asset_name_roundtrip() {
         for p in Platform::ALL {
             assert_eq!(
@@ -1971,6 +2015,7 @@ mod tests {
                     constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
                     abi: None,
                 }),
+                active: None,
             }],
             platforms: Platforms::Universal,
             capabilities: c,
@@ -1994,6 +2039,7 @@ mod tests {
                     constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
                     abi: None,
                 }),
+                active: None,
             }],
             platforms: Platforms::Universal,
             capabilities: Capabilities {
