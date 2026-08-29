@@ -654,6 +654,31 @@ fn slot_form_failures_are_named_errors() {
     assert!(r.stderr.contains("no slot table"), "stderr: {}", r.stderr);
 }
 
+/// Regression (the packed-mn linux-gnu constructor hang, 2026-08-29): a
+/// union member layered over an incumbent at the SAME mount point must
+/// not deadlock the shim's constructor. Pre-fix, the EEXIST arm ran a
+/// second `build_decl` (host IO that re-enters the interposed libc on
+/// ELF targets) under the context write lock — a same-thread RwLock
+/// self-deadlock; the payload compile parked forever before java ever
+/// spawned. The union here is content-identical (slot 0 IS the zip
+/// bytes), so the read still answers SECRET once. macOS passes either
+/// way (dyld interpose doesn't rebind the shim's own calls); the linux
+/// CI leg is the pin.
+#[test]
+fn union_member_remount_does_not_deadlock() {
+    let Some(f) = fixtures() else { return };
+    let mounts = format!("{}:{MOUNT},{}:0:{MOUNT}", f.zip.display(), f.pkg.display());
+    let r = run_with_mounts(
+        f,
+        "print-data",
+        &[&format!("{MOUNT}/data/secret.txt")],
+        &mounts,
+        None,
+    );
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout.matches(SECRET).count(), 1, "stdout: {}", r.stdout);
+}
+
 #[test]
 fn dlopen_memfs_library_via_dlmap2file() {
     let Some(f) = fixtures() else { return };

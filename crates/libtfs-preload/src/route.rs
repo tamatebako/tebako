@@ -407,13 +407,21 @@ fn init_inner() -> Result<(), String> {
             // the driver serializes a union as the incumbent followed by
             // its members at the same point (spec 17 §2.1) — layer the
             // later declaration over the incumbent exactly as the
-            // parent's mount_union did.
-            match guard.mount_checked(mount) {
-                Ok(_) => Ok(()),
-                Err(e) if e == libc::EEXIST => guard.mount_union(build_decl(d)?).map(|_| ()),
-                Err(e) => Err(e),
-            }
-            .map_err(|e| {
+            // parent's mount_union did. Decide union-vs-exclusive BEFORE
+            // building: build_decl does host IO (the slot form opens the
+            // package and the backend reader parses the region), and on
+            // ELF targets the shim's own IO re-enters the interposed libc
+            // symbols → the route layer → this same context lock, so a
+            // second build_decl under the guard self-deadlocked the
+            // constructor (the packed-mn linux-gnu hang, 2026-08-29).
+            // mount_union/mount_checked are pure in-memory composition —
+            // no IO — safe under the guard.
+            let result = if guard.mount_point_taken(&mount.mount_point) {
+                guard.mount_union(mount).map(|_| ())
+            } else {
+                guard.mount_checked(mount).map(|_| ())
+            };
+            result.map_err(|e| {
                 format!(
                     "TEBAKO_TFS_MOUNTS: cannot mount {} at {}: {}",
                     d.image,
