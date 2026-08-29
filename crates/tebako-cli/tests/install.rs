@@ -871,6 +871,37 @@ fn suite_install_registers_every_entry_shim() {
     assert_eq!(b.path, "/app/bin/mn2pdf");
 }
 
+#[test]
+fn install_links_only_the_active_entrypoints() {
+    // spec 03 §2.2's `active`: the declaration is the complete inventory,
+    // install PATH-registers only the active subset — the mirror still
+    // carries every declared command (enable links the rest on demand).
+    let fx = Fixture::new("activeset");
+    let manifest = "identity:\n  schema_version: 1\n  kind: app\n  name: metasuite\n  version: 2.0.0\n  producer: {tool: tebako, tool_version: 0.15.9}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n    blob_sha256: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"\n  signing: {state: unsigned}\n  encryption: {state: none}\nprovides:\n  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\"}\n    - name: fontist\n      path: /app/bin/fontist\n      active: false\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\"}\n  platforms: universal\n  capabilities: {exec: true, read: true}\n";
+    let image = zip_image_with_manifest(manifest);
+    let payload_ref = fx.payload("metasuite-2.0.0.tfs", &image);
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: metasuite\n    kind: app\n    versions:\n      - version: 2.0.0\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        entrypoints: [metanorma, fontist]\n    default: 2.0.0\n"
+    );
+    install::add_registry(&fx.home, &fx.registry("tpkg-registry.yaml", &yaml)).unwrap();
+
+    let out = install::install(&fx.home, "metasuite", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["metanorma"]);
+    assert_eq!(out.shims.len(), 1);
+    assert!(shim_path(&fx.home, "metanorma").exists());
+    assert!(!shim_path(&fx.home, "fontist").exists());
+
+    // the mirror still declares BOTH commands, with the exposure flag
+    let mirror = tebako_shim::manifest::Manifest::load(
+        &fx.payloads_dir().join("metasuite/2.0.0.manifest.yaml"),
+    )
+    .unwrap();
+    assert!(mirror.entrypoint("metanorma").is_some());
+    let inactive = mirror.entrypoint("fontist").unwrap();
+    assert!(!inactive.active);
+    assert_eq!(inactive.path, "/app/bin/fontist");
+}
+
 // ---------------------------------------------------------------------
 // uninstall
 // ---------------------------------------------------------------------

@@ -239,6 +239,30 @@ fn cmd_enable(args: &[String], ctx: &Ctx, enable: bool) -> Result<Action, ShimEr
         (false, true) => format!("disabled {target_desc}\n"),
         (false, false) => format!("{target_desc} was already disabled\n"),
     };
+    // Enabling a DECLARED-but-unlinked command (spec 03 §2.2's
+    // `active: false` — install registered nothing for it) materializes
+    // the link now: the dispatcher links ITSELF (the argv0 model admits
+    // real links/copies only, spec 07 §1). The declaration check is the
+    // suite scan — an undeclared command earns resolve's named error,
+    // never a dangling link.
+    let text = if enable {
+        let link = shims_dir(&ctx.home).join(shim_file_name(&tool));
+        if link.exists() {
+            text
+        } else {
+            resolve::resolve(&tool, ctx)?;
+            let binary = std::env::current_exe().map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot locate the dispatcher binary: {e}"),
+                )
+            })?;
+            let (_shims, _notes) = link_shims(&ctx.home, &binary, &[tool.clone()])?;
+            format!("{text}linked {}", link.display())
+        }
+    } else {
+        text
+    };
     Ok(Action::Print { text, code: 0 })
 }
 

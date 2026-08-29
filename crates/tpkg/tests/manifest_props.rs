@@ -279,6 +279,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
                 constraint: c,
                 abi: None,
             }),
+            active: None,
         });
     let app = (prop::collection::vec(entrypoint, 1..=3), arb_platforms()).prop_map(
         |(entrypoints, platforms)| {

@@ -78,11 +78,26 @@ requirement (spec 07).
 the image carries that a user may invoke directly — it is the payload's
 command declaration, not a primary-executable field. A bundled CLI (a
 font manager, a bibliography tool) is as much a provided command as the
-app's namesake. Each declared name becomes a registered command at
-install (spec 07 §1) and is the only set a self-contained package's
-`entries[]` may draw from (§6): the L2 entry names mirror the L1
-declaration — one SSOT, cross-checked by `tebako-pkg validate`
-(tebako#494).
+app's namesake. The declaration is the COMPLETE inventory; exposure is
+an orthogonal per-entrypoint key:
+
+```yaml
+  - name: fontist
+    path: /bin/fontist
+    active: false     # OPTIONAL (default true) — declared but NOT
+                      # PATH-registered at install
+```
+
+`active` is the payload author's default exposure. Install registers only
+the active set (spec 07 §1); an inactive-but-declared command stays
+dispatchable — `tebako shim enable <name>` links it on demand, `tebako
+run <name>` reaches it directly, and the user's per-machine
+enable/disable always overrides the manifest default (spec 07 §3).
+Additive on the wire: pre-flag readers ignore the key and register every
+entrypoint (the pre-flag behavior). The declared names are also the only
+set a self-contained package's `entries[]` may draw from (§6): the L2
+entry names mirror the L1 declaration — one SSOT, cross-checked by
+`tebako-pkg validate` (tebako#494).
 
 **runtime** (provides an interpreter):
 ```yaml

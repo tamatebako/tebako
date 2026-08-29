@@ -38,8 +38,10 @@ in `config.yaml` as the exact ref).
 
 Tebako manages shims for **every executable every installed payload
 provides** (spec 03 `entrypoints`). One payload may carry MULTIPLE
-executables — each becomes a registered command. Four artifacts, four
-jobs:
+executables — each is dispatchable; the ACTIVE subset (spec 03 §2.2's
+per-entrypoint `active`, default true) is PATH-registered at install,
+and an inactive-but-declared command links on demand (`tebako shim
+enable <name>`). Four artifacts, four jobs:
 
 - **payload** — a signed `.tfs` image (versioned, runtime-independent).
 - **runtime** — a signed runtime payload (versioned, cached,
@@ -97,6 +99,13 @@ per declared entrypoint name — never as re-exec wrappers.
   itself (the mise model, not the rbenv `eval "$(… init -)"` model).
 - `tebako use / disable / list / doctor` manage shims
   (link/remove/inspect/diagnose); enable/disable specific versions.
+  **Enable links on demand** (locked 2026-08-29): `enable <tool>` whose
+  command is declared by an installed payload but was never linked
+  (spec 03 §2.2's `active: false` default) materializes the shim link
+  then — the dispatcher links ITSELF (argv0 integrity above); enabling an
+  undeclared command is the suite scan's named error, never a dangling
+  link. `disable` gates per version (`.disabled.yaml`) without removing
+  the link.
 
 ## 4. Configuration
 

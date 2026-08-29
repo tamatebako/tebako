@@ -27,6 +27,10 @@ pub struct Dispatchable {
     pub path: String,
     pub args_default: Vec<String>,
     pub runtime_requirement: Option<tpkg::RuntimeRequirement>,
+    /// The payload's default PATH exposure (spec 03 §2.2 `active`):
+    /// install links only active dispatchables; an inactive one is still
+    /// declared — `tebako shim enable <name>` links it on demand.
+    pub active: bool,
 }
 
 /// The dispatcher-visible half of an installed payload record: the parsed
@@ -69,6 +73,7 @@ impl Manifest {
                     path: e.path.clone(),
                     args_default: e.args_default.clone(),
                     runtime_requirement: e.runtime_requirement.clone(),
+                    active: e.is_active(),
                 })
                 .collect(),
             Provides::Toolkit(tk) => tk
@@ -79,6 +84,7 @@ impl Manifest {
                     path: e.path.clone(),
                     args_default: Vec::new(),
                     runtime_requirement: None,
+                    active: true,
                 })
                 .collect(),
             _ => Vec::new(),
