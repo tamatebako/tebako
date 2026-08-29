@@ -257,7 +257,7 @@ fn cmd_enable(args: &[String], ctx: &Ctx, enable: bool) -> Result<Action, ShimEr
                     format!("cannot locate the dispatcher binary: {e}"),
                 )
             })?;
-            let (_shims, _notes) = link_shims(&ctx.home, &binary, &[tool.clone()])?;
+            let (_shims, _notes) = link_shims(&ctx.home, &binary, std::slice::from_ref(&tool))?;
             format!("{text}linked {}", link.display())
         }
     } else {
