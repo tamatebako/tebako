@@ -92,6 +92,31 @@ open/closed, DRY; specs for public behavior.
 - Patches in tamatebako/ruby must compile before they release
   (compile-smoke gate; the v0.2.8 lesson).
 
+## Releases and tag eras (owner-locked 2026-08-29)
+
+- **Tag eras.** `legacy-v1/*` — the v1 archive (2022–2025 tags plus the
+  July-2026 v2-bootstrap dev tags v0.15.x), preserved for archaeology;
+  the v1 release records live in tamatebako/tebako-v1. `v0.1.0`–`v0.3.4`
+  — the v2 development line: published releases with assets, pinned by
+  name downstream (factory `contract.yml`, feedstock `versions.yaml`) —
+  **never move or rename a published tag**. `v2.0.0` and up — the v2 era
+  line; the tag major matches the architecture era. Tags move forward
+  only; the v2 line never reuses a number the v1 era already occupied
+  (the v0.3.5–v0.15.9 wraparound is why the era tag exists).
+- **The release event is a tag push** matching `v*` (release.yml). A
+  tag under any other prefix fires nothing — that is exactly why the
+  archive namespace is `legacy-v1/` and not `v1-legacy/`. Check every
+  workflow's tag triggers before inventing a tag prefix.
+- **A boundary-crossing version bump must move the intra-workspace
+  caret pins in the same commit** (63 pins across 12 Cargo.tomls);
+  `^0.x.y` rejects the next boundary, red-ing every release leg at
+  dependency resolution (two strikes: v0.3.0 run 32973403836, v2.0.0
+  run 33227365834).
+- **Never delete a remote tag without deleting its release object** —
+  the orphaned release becomes an invisible draft, the next run's
+  `get-release` then 404s (run 33228299426). Recovery: delete the draft,
+  re-push the tag; prepare creates a fresh published release.
+
 ## The spec set
 
 Normative behavior lives in `docs/spec/00-INDEX.md` (00–17). Contract
