@@ -117,9 +117,11 @@ fn enable_links_a_declared_but_unlinked_command() {
     seed(&home);
     let ctx = pinned_ctx(&home, tmp.path());
 
-    let link = home
-        .join("shims")
-        .join(if cfg!(windows) { "metanorma.exe" } else { "metanorma" });
+    let link = home.join("shims").join(if cfg!(windows) {
+        "metanorma.exe"
+    } else {
+        "metanorma"
+    });
     assert!(!link.exists(), "seed links nothing");
 
     let (text, code) = printed(run_ok(
@@ -145,13 +147,18 @@ fn enable_an_undeclared_command_is_the_named_error_and_links_nothing() {
     seed(&home);
     let ctx = pinned_ctx(&home, tmp.path());
 
-    let err = tebako_shim::run(&["tebako-shim".into(), "enable".into(), "phantom".into()], &ctx)
-        .unwrap_err();
+    let err = tebako_shim::run(
+        &["tebako-shim".into(), "enable".into(), "phantom".into()],
+        &ctx,
+    )
+    .unwrap_err();
     assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
     assert!(err.message.contains("phantom"), "{}", err.message);
-    let link = home
-        .join("shims")
-        .join(if cfg!(windows) { "phantom.exe" } else { "phantom" });
+    let link = home.join("shims").join(if cfg!(windows) {
+        "phantom.exe"
+    } else {
+        "phantom"
+    });
     assert!(!link.exists(), "no dangling link for an undeclared command");
 }
 
