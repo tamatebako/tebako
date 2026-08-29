@@ -49,6 +49,16 @@ jobs:
   the thing on PATH that picks version + runtime per invocation and hands
   off.
 
+**argv0 integrity (locked 2026-08-29):** command selection rides argv0 —
+the invoked name must reach the process as its own argv[0]. Symlinks,
+hardlinks, and byte copies preserve it. Wrapper generators that spawn the
+target under the TARGET's own path (chocolatey's shimgen —
+`Install-BinFile`; a shell wrapper that `exec`s the real path) silently
+defeat selection: every invocation then falls back to the primary entry
+(`entries[0]`) and the other declared commands are unreachable. A
+distributor exposes a multi-command package as real links or copies, one
+per declared entrypoint name — never as re-exec wrappers.
+
 ## 2. The dispatch chain (per invocation of `~/.tebako/shims/<tool>`)
 
 0. **argv0 is the selector.** One tebako-shim binary, linked per command

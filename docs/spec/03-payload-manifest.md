@@ -74,6 +74,16 @@ A SUITE is one package with N entrypoints — the shim layer exposes one
 command per entry, each dispatching to its own image and its own runtime
 requirement (spec 07).
 
+**Completeness (locked 2026-08-29):** `entrypoints` declares EVERY command
+the image carries that a user may invoke directly — it is the payload's
+command declaration, not a primary-executable field. A bundled CLI (a
+font manager, a bibliography tool) is as much a provided command as the
+app's namesake. Each declared name becomes a registered command at
+install (spec 07 §1) and is the only set a self-contained package's
+`entries[]` may draw from (§6): the L2 entry names mirror the L1
+declaration — one SSOT, cross-checked by `tebako-pkg validate`
+(tebako#494).
+
 **runtime** (provides an interpreter):
 ```yaml
 provides: {engine: ruby, version: 4.0.6, abi_line: "4.0", platform: x86_64-linux-gnu}
@@ -271,6 +281,12 @@ mounts:                           # per-slot mount semantics (locked 2026-08-04)
 
 - `runtime_ref` per entry kills the 128-byte single-field limit (suites,
   multi-runtime packages); the trailer's v1 field stays for v1 loaders.
+- `entries[].name` / `entries[].entrypoint` mirror the slot payload's L1
+  `provides.entrypoints[]` (§2.2 completeness — one SSOT): every L2 entry
+  names a DECLARED L1 entrypoint of its slot, enforced by `tebako-pkg
+  validate` (tebako#494). Two entries MAY share one slot — same image,
+  different in-image entrypoints: the multi-command single-payload form
+  (one app slice carrying several CLIs, e.g. metanorma + fontist).
 - v1-era packages without the block behave exactly as today (stub.rb /
   local conventions); the block is additive.
 - `mounts` is optional; a slot without a `mounts` row mounts
