@@ -393,7 +393,161 @@ pub fn verify_package(
         }
     }
 
+    // 6. L2 entries[] ↔ the slot payloads' L1 entrypoints (tebako#494):
+    //    every entries[].entrypoint path must EXIST in the referenced
+    //    slot's image, and every entries[].name must be a DECLARED
+    //    entrypoint of that payload (the name facet is unchecked, never
+    //    failing, when the slot carries no usable L1 manifest —
+    //    pre-manifest packages stay valid).
+    match trailer.package_manifest() {
+        Err(e) => checks.push(Check::fail(
+            "package manifest",
+            format!("extension block: {e}"),
+            exit_code::MALFORMED,
+        )),
+        Ok(None) => {}
+        Ok(Some(pm)) => entry_checks(binary, &pm, &inspection, &mut checks)?,
+    }
+
     Ok((checks, Some(inspection)))
+}
+
+/// The entries cross-check of [`verify_package`] (one check per L2 entry,
+/// named `entry[<name>]`). Entry paths stat in one mount per referenced
+/// slot; a slot whose image already failed to mount skips (its manifest
+/// check carries the failure — no double jeopardy).
+fn entry_checks(
+    binary: &Path,
+    pm: &tpkg::PackageManifest,
+    inspection: &PackageInspection,
+    checks: &mut Vec<Check>,
+) -> Result<(), InfoError> {
+    use std::collections::{BTreeMap, HashMap};
+
+    // Batch the path stats: one mount per referenced, mountable slot.
+    let mut paths_by_slot: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    for e in &pm.entries {
+        let Some(slot) = e.slot else { continue };
+        let i = slot as usize;
+        let mountable = inspection.slots.get(i).is_some_and(|s| {
+            s.format_hint != tpkg::TPKG_FORMAT_RUNTIME
+                && s.payload.as_ref().is_some_and(|p| p.mount_error.is_none())
+        });
+        if mountable {
+            paths_by_slot
+                .entry(i)
+                .or_default()
+                .push(e.entrypoint.clone());
+        }
+    }
+    let mut exists: HashMap<(usize, String), bool> = HashMap::new();
+    for (i, paths) in &paths_by_slot {
+        let s = &inspection.slots[*i];
+        let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
+        let found = payload::region_paths_exist(binary, s.offset, s.size, &refs)?;
+        for (p, ok) in paths.iter().zip(found) {
+            exists.insert((*i, p.clone()), ok);
+        }
+    }
+
+    for e in &pm.entries {
+        let name = format!("entry[{}]", e.name);
+        let Some(slot) = e.slot else {
+            checks.push(Check::skip(
+                name,
+                "shared slice — resolved and checked at run time (spec 23 §13)",
+            ));
+            continue;
+        };
+        let i = slot as usize;
+        let Some(s) = inspection.slots.get(i) else {
+            checks.push(Check::fail(
+                name,
+                format!(
+                    "names slot {slot} but the package carries {} slot(s)",
+                    inspection.slots.len()
+                ),
+                exit_code::MALFORMED,
+            ));
+            continue;
+        };
+        if s.format_hint == tpkg::TPKG_FORMAT_RUNTIME {
+            checks.push(Check::fail(
+                name,
+                format!(
+                    "slot {slot} is a runtime (legacy role) slot — a launcher, never an entrypoint image"
+                ),
+                exit_code::MALFORMED,
+            ));
+            continue;
+        }
+        let p = s
+            .payload
+            .as_ref()
+            .ok_or_else(|| err("internal error: slot payload missing at depth 1"))?;
+        if let Some(merr) = &p.mount_error {
+            checks.push(Check::skip(
+                name,
+                format!("slot {slot} unreadable (see slot[{slot}] manifest: {merr})"),
+            ));
+            continue;
+        }
+        if !exists
+            .get(&(i, e.entrypoint.clone()))
+            .copied()
+            .unwrap_or(false)
+        {
+            checks.push(Check::fail(
+                name,
+                format!(
+                    "entrypoint path '{}' does not exist in slot {slot}'s image",
+                    e.entrypoint
+                ),
+                exit_code::MALFORMED,
+            ));
+            continue;
+        }
+        match (&p.manifest, &p.manifest_validation) {
+            (Some(m), None) => {
+                let declared: Vec<&str> = match &m.provides {
+                    tpkg::Provides::App(a) => {
+                        a.entrypoints.iter().map(|ep| ep.name.as_str()).collect()
+                    }
+                    tpkg::Provides::Toolkit(t) => {
+                        t.executables.iter().map(|x| x.name.as_str()).collect()
+                    }
+                    _ => Vec::new(),
+                };
+                if declared.is_empty() {
+                    checks.push(Check::fail(
+                        name,
+                        format!("slot {slot}'s payload declares no entrypoints"),
+                        exit_code::MALFORMED,
+                    ));
+                } else if declared.contains(&e.name.as_str()) {
+                    checks.push(Check::pass(
+                        name,
+                        format!("path exists in slot {slot}; name declared"),
+                    ));
+                } else {
+                    checks.push(Check::fail(
+                        name,
+                        format!(
+                            "'{}' is not a declared entrypoint of slot {slot}'s payload (declared: {})",
+                            e.name,
+                            declared.join(", ")
+                        ),
+                        exit_code::MALFORMED,
+                    ));
+                }
+            }
+            _ => checks.push(Check::pass(
+                name,
+                format!("path exists in slot {slot}; name unchecked (no usable L1 manifest)"),
+            )),
+        }
+    }
+    Ok(())
 }
 
 /// Re-read the raw trailer bytes (the v2 signed region is computed over

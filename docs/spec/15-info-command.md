@@ -151,7 +151,18 @@ Two verbs on the product CLI (both SHIPPED; `--json` on every view,
 
 Checks: tpkg structural validation (spec 02 §6) → per-slot sha256 (v2) →
 signature (v2) → manifest schema validation per slot → digest agreement
-(manifest blob_sha256 vs image bytes when declared).
+(manifest blob_sha256 vs image bytes when declared) → **entries
+cross-check** (the L2 package manifest's `entries[]` against the
+referenced slot payload: every `entries[].entrypoint` path must exist in
+the slot's image — one read-only mount per referenced slot — and every
+`entries[].name` must match a DECLARED entrypoint of that payload's L1
+`provides.entrypoints[]` / toolkit `provides.executables[]`; the name
+facet is reported "unchecked", never failing, when the slot carries no
+usable L1 manifest — pre-manifest packages stay valid. A slot-less entry
+(the spec 23 §13 pointer-package form) skips: its shared slice is
+resolved and checked at run time. Exit 65 on a dangling path, an
+undeclared name, a slot index beyond the container's slots, or an entry
+naming a runtime-role slot).
 
 > **Digest-agreement note (implementation finding).** The agreement check
 > compares the declared `blob_sha256` against the actual image bytes. A

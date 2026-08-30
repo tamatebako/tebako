@@ -51,13 +51,45 @@ const DATA_MANIFEST: &str = include_str!("../../tpkg/tests/fixtures/manifests/da
 
 /// A dwarfs-t image built in-process (optionally carrying a manifest).
 fn mk_image(w: &TempDir, name: &str, manifest: Option<&str>) -> PathBuf {
+    mk_image_files(w, name, manifest, &[])
+}
+
+/// mk_image plus extra files (`(path, bytes)` pairs, parent dirs created).
+fn mk_image_files(
+    w: &TempDir,
+    name: &str,
+    manifest: Option<&str>,
+    files: &[(&str, &[u8])],
+) -> PathBuf {
     let src = w.0.join(format!("src-{name}"));
     std::fs::create_dir_all(&src).unwrap();
     std::fs::write(src.join("hello.txt"), b"hi").unwrap();
+    for (rel, bytes) in files {
+        let p = src.join(rel);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, bytes).unwrap();
+    }
     if let Some(text) = manifest {
         std::fs::create_dir_all(src.join("__tpkg__")).unwrap();
         std::fs::write(src.join("__tpkg__/manifest.yaml"), text).unwrap();
     }
+    let img = w.0.join(name);
+    let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default()).unwrap();
+    writer.add_tree(&src, "/").unwrap();
+    writer.write(&img).unwrap();
+    img
+}
+
+/// The app-suite image (APP_MANIFEST declares the `metanorma` and
+/// `metanorma-nokogiri` entrypoints) WITH both entry files present — the
+/// shape the entries cross-check (tebako#494) can fully pass on.
+fn mk_suite_image(w: &TempDir, name: &str) -> PathBuf {
+    let src = w.0.join(format!("src-{name}"));
+    std::fs::create_dir_all(src.join("bin")).unwrap();
+    std::fs::write(src.join("bin/metanorma"), b"#!/bin/sh\n").unwrap();
+    std::fs::write(src.join("bin/metanorma-nokogiri"), b"#!/bin/sh\n").unwrap();
+    std::fs::create_dir_all(src.join("__tpkg__")).unwrap();
+    std::fs::write(src.join("__tpkg__/manifest.yaml"), APP_MANIFEST).unwrap();
     let img = w.0.join(name);
     let mut writer = dwarfs_t::Writer::new(dwarfs_t::WriterOptions::default()).unwrap();
     writer.add_tree(&src, "/").unwrap();
@@ -293,7 +325,9 @@ fn full_report_signed_lean_and_depths() {
 #[test]
 fn full_report_runtime_legacy_role_slot() {
     let w = TempDir::new("pfat");
-    let app = mk_image(&w, "app.tfs", None);
+    // Slot 0 carries the `probe` file the package manifest's entry names
+    // (the entries cross-check stats it — tebako#494).
+    let app = mk_image_files(&w, "app.tfs", None, &[("probe", b"#!/bin/sh\n")]);
     let rt = mk_image(&w, "runtime.tfs", None);
     let boot = bootstrap(&w);
     let pkg = w.0.join("fat");
@@ -515,7 +549,11 @@ fn validate_signed_plain_slots_passes() {
     let w = TempDir::new("pok");
     let home = test_home("pok");
     let z = w.0.join("z.zip");
-    tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    tebako_contract_tests::build_zip(
+        &z,
+        &["content/"],
+        &[("content/a.txt", b"a"), ("probe", b"#!/bin/sh\n")],
+    );
     let sqfs = fixture("simple.sqfs");
     let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
@@ -544,6 +582,14 @@ fn validate_signed_plain_slots_passes() {
     assert!(out.contains("  signature: ok — trusted, signer "), "{out}");
     assert!(out.contains("  slot[0] manifest: skip"), "{out}");
     assert!(out.contains("  slot[1] manifest: skip"), "{out}");
+    // The entries cross-check (tebako#494): `probe` stats in slot 0's zip;
+    // the name facet is unchecked (the plain image carries no L1 manifest).
+    assert!(
+        out.contains(
+            "  entry[probe]: ok — path exists in slot 0; name unchecked (no usable L1 manifest)\n"
+        ),
+        "{out}"
+    );
     assert!(out.contains("result: PASS\n"), "{out}");
 
     // info --verify is the same machinery with the same code.
@@ -577,7 +623,11 @@ fn validate_tampered_slot_is_70() {
     let w = TempDir::new("p70");
     let home = test_home("p70");
     let z = w.0.join("z.zip");
-    tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    tebako_contract_tests::build_zip(
+        &z,
+        &["content/"],
+        &[("content/a.txt", b"a"), ("probe", b"#!/bin/sh\n")],
+    );
     let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
     bundle(
@@ -610,7 +660,11 @@ fn validate_unsigned_require_signed_is_71() {
     let w = TempDir::new("p71");
     let home = test_home("p71");
     let z = w.0.join("z.zip");
-    tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    tebako_contract_tests::build_zip(
+        &z,
+        &["content/"],
+        &[("content/a.txt", b"a"), ("probe", b"#!/bin/sh\n")],
+    );
     let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
     bundle(
@@ -648,7 +702,11 @@ fn validate_unknown_signer_is_72() {
     let w = TempDir::new("p72");
     let home_a = test_home("p72a");
     let z = w.0.join("z.zip");
-    tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    tebako_contract_tests::build_zip(
+        &z,
+        &["content/"],
+        &[("content/a.txt", b"a"), ("probe", b"#!/bin/sh\n")],
+    );
     let pm = package_manifest_file(&w);
     let pkg = w.0.join("pkg");
     bundle(
@@ -682,7 +740,11 @@ fn validate_malformed_is_65() {
 
     // Corrupt trailer (magic ok, crc bad).
     let z = w.0.join("z.zip");
-    tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    tebako_contract_tests::build_zip(
+        &z,
+        &["content/"],
+        &[("content/a.txt", b"a"), ("probe", b"#!/bin/sh\n")],
+    );
     let pkg = w.0.join("pkg");
     bundle(&home, &w, &[], &[&z], &pkg);
     let mut bytes = std::fs::read(&pkg).unwrap();
@@ -739,6 +801,192 @@ fn validate_digest_agreement_is_70() {
 }
 
 // ---------------------------------------------------------------------
+// validate: the L2 entries[] ↔ L1 entrypoints cross-check (tebako#494)
+// ---------------------------------------------------------------------
+
+/// Write `text` as the package-manifest file of a test.
+fn pm_file(w: &TempDir, text: &str) -> PathBuf {
+    let f = w.0.join(format!(
+        "pm-{}.yaml",
+        COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    std::fs::write(&f, text).unwrap();
+    f
+}
+
+/// A valid L2 manifest whose two entries mirror the app-suite L1 (names
+/// declared, paths present in the suite image).
+const SUITE_PACKAGE_MANIFEST_YAML: &str = "schema_version: 1\n\
+     package: {name: mn, version: 1.0.0, producer: {tool: tebako-pkg, tool_version: 0.1.0}, created: 2026-08-01T00:00:00Z}\n\
+     entries:\n  - {name: metanorma, slot: 0, entrypoint: bin/metanorma, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n  - {name: metanorma-nokogiri, slot: 0, entrypoint: bin/metanorma-nokogiri, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n";
+
+// The app-suite manifest's blob_sha256 can never name the image that
+// embeds it (the check-5 note in verify.rs), so the suite packages below
+// exit 70 on digest agreement — the entry checks are asserted by their
+// report lines.
+
+#[test]
+fn validate_entries_crosscheck_name_and_path() {
+    let w = TempDir::new("pxc");
+    let home = test_home("pxc");
+    let app = mk_suite_image(&w, "suite.tfs");
+    let pm = pm_file(&w, SUITE_PACKAGE_MANIFEST_YAML);
+    let pkg = w.0.join("mn");
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement (check 5), see above
+    assert!(
+        out.contains("  entry[metanorma]: ok — path exists in slot 0; name declared\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("  entry[metanorma-nokogiri]: ok — path exists in slot 0; name declared\n"),
+        "{out}"
+    );
+}
+
+#[test]
+fn validate_entries_dangling_path_is_65() {
+    let w = TempDir::new("pxd");
+    let home = test_home("pxd");
+    // No L1 manifest: the name facet skips; the path facet still decides.
+    // PACKAGE_MANIFEST_YAML's entry `probe` has no `probe` file here.
+    let app = mk_image(&w, "plain.tfs", None);
+    let pm = package_manifest_file(&w);
+    let pkg = w.0.join("pkg");
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 65, "{out}");
+    assert!(
+        out.contains(
+            "  entry[probe]: FAILED — entrypoint path 'probe' does not exist in slot 0's image\n"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("result: FAILED (exit 65)\n"), "{out}");
+}
+
+#[test]
+fn validate_entries_dangling_name_fails() {
+    let w = TempDir::new("pxn");
+    let home = test_home("pxn");
+    let app = mk_suite_image(&w, "suite.tfs");
+    // `fontist`'s path exists (bin/metanorma is in the image) but no
+    // declared entrypoint of the suite payload carries the name.
+    let pm = pm_file(
+        &w,
+        "schema_version: 1\n\
+         package: {name: mn, version: 1.0.0, producer: {tool: tebako-pkg, tool_version: 0.1.0}, created: 2026-08-01T00:00:00Z}\n\
+         entries:\n  - {name: fontist, slot: 0, entrypoint: bin/metanorma, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n",
+    );
+    let pkg = w.0.join("mn");
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement precedes the entry check
+    assert!(
+        out.contains(
+            "  entry[fontist]: FAILED — 'fontist' is not a declared entrypoint of slot 0's payload (declared: metanorma, metanorma-nokogiri)\n"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn press_refuses_an_entry_slot_beyond_the_container() {
+    let w = TempDir::new("pxs");
+    let home = test_home("pxs");
+    let app = mk_suite_image(&w, "suite.tfs");
+    // The PRESS refuses an entry slot beyond the container's slots with a
+    // named error; the verify-side range check (verify.rs entry_checks) is
+    // the backstop for hand-built containers that bypass the press.
+    let pm = pm_file(
+        &w,
+        "schema_version: 1\n\
+         package: {name: mn, version: 1.0.0, producer: {tool: tebako-pkg, tool_version: 0.1.0}, created: 2026-08-01T00:00:00Z}\n\
+         entries:\n  - {name: ghost, slot: 3, entrypoint: bin/metanorma, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n",
+    );
+    let boot = bootstrap(&w);
+    let pkg = w.0.join("mn");
+    let (rc, _, err) = run(
+        &[
+            "bundle",
+            "--bootstrap",
+            boot.to_str().unwrap(),
+            "--image",
+            app.to_str().unwrap(),
+            "-o",
+            pkg.to_str().unwrap(),
+            "--package-manifest",
+            pm.to_str().unwrap(),
+        ],
+        &w.0,
+        &home,
+    );
+    assert_eq!(rc, 1, "{err}");
+    assert!(
+        err.contains(
+            "package manifest entry 0 (ghost) references slot 3 but the package has 1 slot(s)"
+        ),
+        "{err}"
+    );
+}
+
+#[test]
+fn validate_entries_shared_slice_skips() {
+    let w = TempDir::new("pxl");
+    let home = test_home("pxl");
+    let app = mk_image(&w, "plain.tfs", None);
+    // A slot-less entry (spec 23 §13 — the pointer-package form): the
+    // slice is shared, so there is nothing local to cross-check.
+    let pm = pm_file(
+        &w,
+        "schema_version: 1\n\
+         package: {name: ptr, version: 1.0.0, producer: {tool: tebako-pkg, tool_version: 0.1.0}, created: 2026-08-01T00:00:00Z}\n\
+         entries:\n  - {name: probe, entrypoint: bin/probe, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n\
+         lock:\n  slices:\n    - {name: probe, version: 1.0.0, carry: false, sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef, source: \"tfs:github:acme/probe@1.0.0\"}\n",
+    );
+    let pkg = w.0.join("ptr");
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 0, "{out}");
+    assert!(
+        out.contains(
+            "  entry[probe]: skip — shared slice — resolved and checked at run time (spec 23 §13)\n"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("result: PASS\n"), "{out}");
+}
+
+// ---------------------------------------------------------------------
 // Format detection per slot (never trusting format_id alone)
 // ---------------------------------------------------------------------
 
@@ -752,7 +1000,11 @@ fn format_detection_per_slot() {
     let dwarfs = mk_image(&w, "app.tfs", Some(DATA_MANIFEST));
     let sqfs = fixture("simple.sqfs");
     let z = w.0.join("z.zip");
-    tebako_contract_tests::build_zip(&z, &["content/"], &[("content/a.txt", b"a")]);
+    tebako_contract_tests::build_zip(
+        &z,
+        &["content/"],
+        &[("content/a.txt", b"a"), ("probe", b"#!/bin/sh\n")],
+    );
     let t = w.0.join("t.tar");
     build_tar(&t, "hello.txt", b"hi from tar");
     let pkg = w.0.join("pkg");
