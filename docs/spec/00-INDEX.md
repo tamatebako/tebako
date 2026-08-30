@@ -59,6 +59,7 @@ spec 02 §6).
 26. [26 — Payload checks](26-payload-checks.md) — the in-image self-validation contract: the `checks:` manifest block, `tebako check` at press/install/discovery moments, SKIP discipline, exit 79 (PARTIAL — the block + the engine shipped; the §3 press/install gate wiring remains)
 27. [27 — Benchmarks](27-benchmarks.md) — the tebako-bench harness contract: the three arms (v1-exe / v2-press / v2-managed), suite/platforms/result documents + versioned schemas, the in-process sampler semantics (RUSAGE_CHILDREN discipline, ru_maxrss normalization), warm/cold modes and the cache-wipe set, named-gap records, statistical rules; CI tooling, never shipped (PLANNED)
 28. [28 — Runtime variants](28-runtime-variants.md) — one payload version, N builds keyed by `runtime_requirement`: the selector grammar on six surfaces (CLI/env/pins/composition/config/registry), the variant id derivation, the registry `variants:` grammar, the store layout, multi-engine `any_of`, the D2 key alignment (PLANNED)
+29. [29 — The wrapper-exe driver pattern](29-wrapper-exe-driver.md) — the spec-17 driver as a standalone tebako-owned exe for repacked runtimes (openjdk, truffleruby): the wire-identical wrapper, the `layout.interpreter` declaration, the kernel-visibility menu (exec-cache / preload / fuse), failure and size discipline (PLANNED)
 
 ## Locked invariants (all specs subordinate to these)
 
