@@ -32,6 +32,16 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # dwarfs-rs is a sibling path dependency until it has a release —
+      # cargo must LOAD every workspace member's manifest (tfs → dwarfs-t
+      # at ../dwarfs-rs) even though tebako-bench itself is pure Rust.
+      # Same pattern as ci.yml.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: ../dwarfs-rs
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@1.94.1
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
       - name: Run the matrix leg
@@ -91,6 +101,14 @@ jobs:
       contents: write # the bench-history append (release runs)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Same sibling path dep as the run legs: cargo loads the whole
+      # workspace's manifests even for `-p tebako-bench`.
+      - name: Checkout dwarfs-rs (sibling path dep)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: tamatebako/dwarfs-rs
+          path: ../dwarfs-rs
+          submodules: recursive
       - uses: dtolnay/rust-toolchain@1.94.1
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
       - name: Build the harness
