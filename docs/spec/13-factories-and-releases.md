@@ -20,7 +20,11 @@ SOURCE FACTORY: tamatebako/ruby
 RUNTIME FACTORY: tebako-runtime-ruby
    pin-bump PR (DEFAULT_RELEASE) → matrix build per (version × triplet) →
    release: tebako-runtime-<ver>-<lang>-<triplet>[.exe] + .tfs (image era)
-            + manifest.json + SHA256SUMS (+ signatures, spec 09)
+            + per-asset <asset>.sha256 sidecars + per-package
+              <stem>.manifest.json shards (the sidecar-era authority,
+              spec 05 §2)
+            + manifest.json + SHA256SUMS (derived monoliths, forever)
+            (+ signatures, spec 09)
    │  consumed by
    ▼
 PRODUCT: tebako-rs
@@ -44,7 +48,21 @@ dwarfs-t (C++ format lib) → releases → dwarfs-rs (FFI crate) → tebako-rs
 
 ## 2a. The release-index entry (manifest.json, locked)
 
-One entry per runtime PACKAGE (the executable), additive forever:
+One entry per runtime PACKAGE (the executable), additive forever.
+**Publish shape (tebako#493, locked 2026-08-30):** each platform's
+publish invocation writes ONLY its own payload assets plus the metadata
+that describes them — the per-asset `<asset>.sha256` sidecar (coreutils
+`<sha>  <file>`, hashed from the local bytes) and the per-package
+`<stem>.manifest.json` shard (the entry below, served standalone, every
+sha field re-anchored to the served bytes). The monoliths
+(`manifest.json`, `SHA256SUMS.txt`) and the release notes are DERIVED
+conveniences written by a single finalize pass from the release's own
+shards plus the asset listing's server-computed digests — never a job's
+local merge (the 2026-08-29 incident: four platform jobs racing the two
+shared monoliths wedged an asset name server-side). Payload assets stay
+byte-immutable; metadata is derivable and converges (digest-match skip,
+loud replace on drift). Sidecars and shards are the authority; the
+resolver reads them first (spec 05 §2).
 
 ```json
 {

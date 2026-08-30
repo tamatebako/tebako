@@ -53,7 +53,10 @@ const MIRROR_ENV_VAR: &str = "TEBAKO_RUNTIME_MIRROR";
 /// The cache subdirectory and release identity this resolver consumes.
 const CACHE_SUBDIR: &str = "runtimes";
 const RELEASE_NAME: &str = "tebako-runtime-ruby";
-/// The release index files, in preference order.
+/// The release index's DERIVED monoliths, in preference order — the
+/// fallback chain behind the per-package shard (`<stem>.manifest.json`,
+/// tebako#493), consulted for pre-shard releases and kept forever
+/// (invariant 7).
 const INDEX_FILES: &[&str] = &["manifest.json", "SHA256SUMS.txt"];
 
 /// $TEBAKO_HOME or ~/.tebako (LOCALAPPDATA\tebako on Windows).
@@ -106,6 +109,12 @@ pub struct DllRef {
     pub install_as: Option<String>,
     pub sha256: String,
 }
+
+/// The release index plus its raw card text — the entries and, when the
+/// index parsed from a JSON card (the per-package shard or the
+/// monolithic manifest.json), the card the spec 18 contract gate reads
+/// (tebako#493).
+type IndexAndCard = (Vec<IndexEntry>, Option<String>);
 
 /// The outcome of resolving a runtime: the interpreter plus, when the
 /// release is image-era, its runtime image reference.
@@ -213,7 +222,7 @@ impl Resolver {
                 if image_marker().is_none() {
                     let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
                     self.offline_check(&entry_ref, tebako_version)?;
-                    let (index, card) = self.fetch_index(tebako_version)?;
+                    let (index, card) = self.fetch_index(ruby_version, platform, tebako_version)?;
                     let entry = self.find_entry(&index, ruby_version, platform, tebako_version)?;
                     contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
                     if let Some(image) = entry.image.clone() {
@@ -605,7 +614,7 @@ impl Resolver {
     ) -> Result<IndexEntry, TebakoError> {
         let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
         self.offline_check(&entry_ref, tebako_version)?;
-        let (index, card) = self.fetch_index(tebako_version)?;
+        let (index, card) = self.fetch_index(ruby_version, platform, tebako_version)?;
         let entry = self.find_entry(&index, ruby_version, platform, tebako_version)?;
         // spec 18 C2: the release card gates BEFORE the runtime download.
         contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
@@ -714,14 +723,27 @@ impl Resolver {
         Ok(())
     }
 
-    /// The release index plus, when it parsed from manifest.json, the
-    /// raw card text (the spec 18 contract gate reads it ahead of the
-    /// download — no second fetch of the index).
+    /// The release index plus, when it parsed from a JSON card (the
+    /// per-package shard or the monolithic manifest.json), the raw card
+    /// text (the spec 18 contract gate reads it ahead of the download —
+    /// no second fetch of the index).
+    ///
+    /// Preference order (tebako#493; spec 05 §2): the per-package shard
+    /// `<stem>.manifest.json` — the sidecar-era authority, one small
+    /// object carrying exactly this triple's entry — then the derived
+    /// monoliths (`manifest.json`, then `SHA256SUMS.txt`). The fallbacks
+    /// stay forever: pre-shard releases are immutable and remain
+    /// installable (invariant 7).
     fn fetch_index(
         &self,
+        ruby_version: &str,
+        platform: &str,
         tebako_version: &str,
-    ) -> Result<(Vec<IndexEntry>, Option<String>), TebakoError> {
+    ) -> Result<IndexAndCard, TebakoError> {
         let mut tried: Vec<String> = Vec::new();
+        if let Some(pair) = self.fetch_shard(ruby_version, platform, tebako_version, &mut tried)? {
+            return Ok(pair);
+        }
         for name in INDEX_FILES {
             let url = self.index_url(name, tebako_version);
             match fetch_text(&url) {
@@ -793,45 +815,100 @@ impl Resolver {
                     .and_then(|v| v.as_string())
                     .as_deref()
                     == Some(tebako_version)
-                    && e.find("sha256").and_then(|v| v.as_string()).is_some()
-                    && e.find("filename").and_then(|v| v.as_string()).is_some()
             })
-            .map(|e| IndexEntry {
-                ruby_version: e.find("ruby_version").and_then(|v| v.as_string()),
-                platform: e.find("platform").and_then(|v| v.as_string()),
-                filename: e
-                    .find("filename")
-                    .and_then(|v| v.as_string())
-                    .unwrap_or_default(),
-                sha256: e
-                    .find("sha256")
-                    .and_then(|v| v.as_string())
-                    .unwrap_or_default()
-                    .to_ascii_lowercase(),
-                image: e.find("image").and_then(|img| {
-                    Some(ImageRef {
-                        filename: img.find("filename").and_then(|v| v.as_string())?,
-                        sha256: img
-                            .find("sha256")
-                            .and_then(|v| v.as_string())?
-                            .to_ascii_lowercase(),
-                    })
-                }),
-                // tebako-runtime-ruby#40: the additive `dll` key
-                // (windows packages only) — absent on every POSIX
-                // entry, ignored by consumers that predate it.
-                dll: e.find("dll").and_then(|d| {
-                    Some(DllRef {
-                        filename: d.find("filename").and_then(|v| v.as_string())?,
-                        install_as: d.find("install_as").and_then(|v| v.as_string()),
-                        sha256: d
-                            .find("sha256")
-                            .and_then(|v| v.as_string())?
-                            .to_ascii_lowercase(),
-                    })
-                }),
-            })
+            .filter_map(entry_from_json)
             .collect())
+    }
+
+    /// Preference 1 of the sidecar era (tebako#493): the per-package
+    /// shard `<stem>.manifest.json`, the stem being the exe asset name
+    /// (`tebako-runtime-<tv>-<rv>-<platform>` — suffix-less, the factory
+    /// spelling locked by tebako#456, on windows too). `Ok(None)` when
+    /// the release carries no usable shard for the triple (a pre-shard
+    /// release, or a shard that cannot serve it) — the caller falls
+    /// through to the monoliths with the shard URL recorded in `tried`.
+    fn fetch_shard(
+        &self,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+        tried: &mut Vec<String>,
+    ) -> Result<Option<IndexAndCard>, TebakoError> {
+        let stem = format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}");
+        let url = self.index_url(&format!("{stem}.manifest.json"), tebako_version);
+        let body = match fetch_text(&url) {
+            Ok(body) => body,
+            Err(FetchError::IndexUnavailable(_)) => {
+                tried.push(url);
+                return Ok(None);
+            }
+            Err(e @ FetchError::Throttled { .. }) => {
+                return Err(packaging_error(122, Some(&e.to_string())));
+            }
+            Err(FetchError::DownloadFailed(msg)) => {
+                return Err(packaging_error(122, Some(&msg)));
+            }
+        };
+        match self.parse_shard(&body, ruby_version, platform, tebako_version) {
+            Ok(entry) => {
+                // The card the contract gate reads: the shard normalized
+                // to the manifest.json array shape — tebako-resolve owns
+                // the release-card reader semantics and expects the
+                // array (spec 05 §2: the shard is the same entry, served
+                // standalone).
+                let card = format!("[{body}]");
+                Ok(Some((vec![entry], Some(card))))
+            }
+            Err(FetchError::IndexUnavailable(_)) => {
+                tried.push(url);
+                Ok(None)
+            }
+            Err(e @ FetchError::Throttled { .. }) => {
+                Err(packaging_error(122, Some(&e.to_string())))
+            }
+            Err(FetchError::DownloadFailed(msg)) => Err(packaging_error(122, Some(&msg))),
+        }
+    }
+
+    /// A per-package shard is ONE manifest-entry object (the owning
+    /// platform's publish serves its own entry as its own asset, spec 13
+    /// §3). The shard was fetched under the name derived from the
+    /// requested triple — a shard declaring a different triple cannot
+    /// serve this request (IndexUnavailable: fall through to the
+    /// monoliths with the URL recorded).
+    fn parse_shard(
+        &self,
+        body: &str,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+    ) -> Result<IndexEntry, FetchError> {
+        let data = json_parse(body).map_err(|_| {
+            FetchError::IndexUnavailable("the package shard is not valid JSON".to_string())
+        })?;
+        if !matches!(data, JsonValue::Object(_)) {
+            return Err(FetchError::IndexUnavailable(
+                "the package shard is not an object".to_string(),
+            ));
+        }
+        let declares = |key: &str| data.find(key).and_then(|v| v.as_string());
+        if declares("tebako_version").as_deref() != Some(tebako_version)
+            || declares("ruby_version").as_deref() != Some(ruby_version)
+            || declares("platform").as_deref() != Some(platform)
+        {
+            return Err(FetchError::IndexUnavailable(format!(
+                "the package shard declares {}/{}/{} — requested {}/{}/{}",
+                declares("tebako_version").as_deref().unwrap_or("?"),
+                declares("ruby_version").as_deref().unwrap_or("?"),
+                declares("platform").as_deref().unwrap_or("?"),
+                tebako_version,
+                ruby_version,
+                platform
+            )));
+        }
+        entry_from_json(&data).ok_or_else(|| {
+            FetchError::IndexUnavailable("the package shard carries no filename/sha256".to_string())
+        })
     }
 
     /// `<sha256>  <filename>` lines; filenames may carry a `*` prefix.
@@ -980,6 +1057,45 @@ impl Resolver {
     }
 }
 
+/// One manifest entry's JSON → the resolver's index entry: the exe
+/// identity (`filename`, `sha256` — both mandatory, anything less is no
+/// entry) plus the additive facets (the env image; the windows ruby DLL,
+/// tebako-runtime-ruby#40 — absent on every POSIX entry, ignored by
+/// consumers that predate it). Shared by the monolithic manifest's array
+/// items and the per-package shard (tebako#493).
+fn entry_from_json(e: &JsonValue) -> Option<IndexEntry> {
+    let filename = e.find("filename").and_then(|v| v.as_string())?;
+    let sha256 = e
+        .find("sha256")
+        .and_then(|v| v.as_string())?
+        .to_ascii_lowercase();
+    Some(IndexEntry {
+        ruby_version: e.find("ruby_version").and_then(|v| v.as_string()),
+        platform: e.find("platform").and_then(|v| v.as_string()),
+        filename,
+        sha256,
+        image: e.find("image").and_then(|img| {
+            Some(ImageRef {
+                filename: img.find("filename").and_then(|v| v.as_string())?,
+                sha256: img
+                    .find("sha256")
+                    .and_then(|v| v.as_string())?
+                    .to_ascii_lowercase(),
+            })
+        }),
+        dll: e.find("dll").and_then(|d| {
+            Some(DllRef {
+                filename: d.find("filename").and_then(|v| v.as_string())?,
+                install_as: d.find("install_as").and_then(|v| v.as_string()),
+                sha256: d
+                    .find("sha256")
+                    .and_then(|v| v.as_string())?
+                    .to_ascii_lowercase(),
+            })
+        }),
+    })
+}
+
 // ---------------------------------------------------------------------
 // The Rust bootstrap store (spec 19 §4)
 // ---------------------------------------------------------------------
@@ -992,9 +1108,12 @@ const BOOTSTRAP_MIRROR_ENV_VAR: &str = "TEBAKO_BOOTSTRAP_MIRROR";
 /// The store subdirectory the bootstrap resolves into
 /// (`bootstraps/<version>-<triplet>/`, spec 19 §4).
 const BOOTSTRAP_CACHE_SUBDIR: &str = "bootstraps";
-/// The product release's index files, in preference order. The
-/// manifest's top-level `assets` array is exactly the bootstrap set and
-/// SHA256SUMS carries one line per tool asset (both authored by
+/// The product release's DERIVED monoliths, in preference order — the
+/// fallback chain behind the per-asset sidecar
+/// (`tebako-bootstrap-<version>-<platform>[.exe].sha256`, tebako#493),
+/// consulted for pre-sidecar releases and kept forever (invariant 7).
+/// The manifest's top-level `assets` array is exactly the bootstrap set
+/// and SHA256SUMS carries one line per tool asset (both authored by
 /// .github/workflows/lib/finalize.sh).
 const BOOTSTRAP_INDEX_FILES: &[&str] = &["manifest.json", "SHA256SUMS"];
 
@@ -1099,7 +1218,7 @@ impl BootstrapResolver {
     fn install(&self, binary: &Path, platform: &str) -> Result<(), TebakoError> {
         let entry_ref = self.entry_ref(platform);
         self.offline_check(&entry_ref)?;
-        let index = self.fetch_index()?;
+        let index = self.fetch_index(platform)?;
         let entry = self.find_entry(&index, platform)?;
         let url = self.asset_url(&entry.filename);
         let tmp = self.download(&url, &entry.filename)?;
@@ -1178,8 +1297,18 @@ impl BootstrapResolver {
         Ok(())
     }
 
-    fn fetch_index(&self) -> Result<Vec<BootstrapEntry>, TebakoError> {
+    /// The release index for `platform`, in preference order
+    /// (tebako#493; spec 05 §2): the per-asset sidecar
+    /// `tebako-bootstrap-<version>-<platform>[.exe].sha256` — the
+    /// sidecar-era authority, one small file carrying exactly this
+    /// platform's pin — then the derived monoliths (`manifest.json`,
+    /// then `SHA256SUMS`). The fallbacks stay forever: pre-sidecar
+    /// releases are immutable and remain installable (invariant 7).
+    fn fetch_index(&self, platform: &str) -> Result<Vec<BootstrapEntry>, TebakoError> {
         let mut tried: Vec<String> = Vec::new();
+        if let Some(entry) = self.fetch_sidecar(platform, &mut tried)? {
+            return Ok(vec![entry]);
+        }
         for name in BOOTSTRAP_INDEX_FILES {
             let url = self.index_url(name);
             match fetch_text(&url) {
@@ -1218,6 +1347,84 @@ impl BootstrapResolver {
         } else {
             Ok(self.parse_sha256sums(body))
         }
+    }
+
+    /// Preference 1 of the sidecar era (tebako#493): the per-asset
+    /// sidecar `tebako-bootstrap-<version>-<platform>[.exe].sha256`
+    /// (authored by finalize.sh — the same frag sha that feeds
+    /// SHA256SUMS). Windows assets carry `.exe` (the product's real
+    /// spelling — that candidate goes first there; the suffix-less
+    /// variant is the defensive second). `Ok(None)` when the release
+    /// carries no usable sidecar for the platform (a pre-sidecar
+    /// release, or one that cannot serve it) — the caller falls through
+    /// to the monoliths with the sidecar URL recorded in `tried`.
+    fn fetch_sidecar(
+        &self,
+        platform: &str,
+        tried: &mut Vec<String>,
+    ) -> Result<Option<BootstrapEntry>, TebakoError> {
+        let stem = format!("tebako-bootstrap-{}-{platform}", self.version);
+        let mut names = vec![format!("{stem}.sha256")];
+        if platform.starts_with("windows") {
+            names.insert(0, format!("{stem}.exe.sha256"));
+        }
+        for name in names {
+            let url = self.index_url(&name);
+            match fetch_text(&url) {
+                Ok(body) => match self.parse_sidecar(&body, platform) {
+                    Ok(entry) => return Ok(Some(entry)),
+                    Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                    Err(e @ FetchError::Throttled { .. }) => {
+                        return Err(packaging_error(140, Some(&e.to_string())));
+                    }
+                    Err(FetchError::DownloadFailed(msg)) => {
+                        return Err(packaging_error(140, Some(&msg)));
+                    }
+                },
+                Err(FetchError::IndexUnavailable(_)) => tried.push(url),
+                Err(e @ FetchError::Throttled { .. }) => {
+                    return Err(packaging_error(140, Some(&e.to_string())));
+                }
+                Err(FetchError::DownloadFailed(msg)) => {
+                    return Err(packaging_error(140, Some(&msg)));
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// A per-asset sidecar is one coreutils line, `"<sha256>
+    /// <filename>"` (a `*` prefix rides along). The filename is the
+    /// asset's authoritative spelling. The sidecar was fetched under the
+    /// name derived from the requested platform — one naming a different
+    /// asset or platform cannot serve this request (IndexUnavailable:
+    /// fall through to the monoliths with the URL recorded).
+    fn parse_sidecar(&self, body: &str, platform: &str) -> Result<BootstrapEntry, FetchError> {
+        let unusable = || {
+            FetchError::IndexUnavailable(
+                "the bootstrap sidecar is not a \"<sha256>  <filename>\" line".to_string(),
+            )
+        };
+        let mut lines = body.lines().filter(|l| !l.trim().is_empty());
+        let (Some(line), None) = (lines.next(), lines.next()) else {
+            return Err(unusable());
+        };
+        let mut parts = line.trim().splitn(2, char::is_whitespace);
+        let (Some(sha256), Some(file)) = (parts.next(), parts.next()) else {
+            return Err(unusable());
+        };
+        let file = file.trim().trim_start_matches('*');
+        let stem = format!("tebako-bootstrap-{}-{platform}", self.version);
+        if file != stem && file != format!("{stem}.exe") {
+            return Err(FetchError::IndexUnavailable(format!(
+                "the bootstrap sidecar names {file} — requested {stem}"
+            )));
+        };
+        Ok(BootstrapEntry {
+            platform: platform.to_string(),
+            filename: file.to_string(),
+            sha256: sha256.to_ascii_lowercase(),
+        })
     }
 
     /// The product release's manifest.json is an object whose top-level
@@ -1951,6 +2158,208 @@ mod tests {
         let _ = fs::remove_dir_all(cache.parent().unwrap());
     }
 
+    // ---- tebako#493: the sidecar-era index (shard-first) ---------------
+
+    /// A scratch (cache root, release mirror) pair in the sidecar era's
+    /// shape: the suffix-less windows exe + image + dll payload assets
+    /// and the per-package shard `<stem>.manifest.json` — no monoliths.
+    /// `tamper_manifest` additionally writes a derived manifest.json
+    /// whose declared exe sha is POISONED (the shard must win).
+    fn shard_mirror(tag: &str, tamper_manifest: bool) -> (PathBuf, PathBuf) {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-resolve-shard-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = dir.join("home");
+        let release = dir.join("mirror").join("v0.16.17");
+        fs::create_dir_all(&release).unwrap();
+        let exe = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64";
+        let image = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64.tfs";
+        let dll = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64.dll";
+        fs::write(release.join(exe), b"fake runtime exe\n").unwrap();
+        fs::write(release.join(image), b"fake env image\n").unwrap();
+        fs::write(release.join(dll), b"fake ruby dll\n").unwrap();
+        let shard = format!(
+            "{{\"tebako_version\":\"0.16.17\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"A:/t\",\"ruby_version\":\"3.3.12\",\"platform\":\"windows-ucrt64\",\"filename\":\"{exe}\",\"sha256\":\"{}\",\"image\":{{\"filename\":\"{image}\",\"sha256\":\"{}\"}},\"dll\":{{\"filename\":\"{dll}\",\"install_as\":\"x64-ucrt-ruby330.dll\",\"sha256\":\"{}\"}}}}\n",
+            sha256_file_hex(&release.join(exe)).unwrap(),
+            sha256_file_hex(&release.join(image)).unwrap(),
+            sha256_file_hex(&release.join(dll)).unwrap(),
+        );
+        fs::write(release.join(format!("{exe}.manifest.json")), shard).unwrap();
+        if tamper_manifest {
+            let manifest = format!(
+                "[{{\"tebako_version\":\"0.16.17\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"A:/t\",\"ruby_version\":\"3.3.12\",\"platform\":\"windows-ucrt64\",\"filename\":\"{exe}\",\"sha256\":\"{}\"}}]\n",
+                "f".repeat(64)
+            );
+            fs::write(release.join("manifest.json"), manifest).unwrap();
+        }
+        (cache, dir.join("mirror"))
+    }
+
+    fn shard_entry_dir(cache: &Path) -> PathBuf {
+        cache
+            .join("runtimes")
+            .join("ruby-3.3.12-0.16.17-windows-ucrt64")
+    }
+
+    #[test]
+    fn shard_parses_the_single_entry_object() {
+        let r = Resolver::new();
+        let body = r#"{"tebako_version":"0.16.17","contract_era":2,"contract_version":2,"mount_root":"A:/t","ruby_version":"3.3.12","platform":"windows-ucrt64","filename":"tebako-runtime-0.16.17-3.3.12-windows-ucrt64","sha256":"ABC","image":{"filename":"i.tfs","sha256":"DEF"},"dll":{"filename":"d.dll","install_as":"x.dll","sha256":"012"}}"#;
+        let e = r
+            .parse_shard(body, "3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        assert_eq!(e.filename, "tebako-runtime-0.16.17-3.3.12-windows-ucrt64");
+        assert_eq!(e.sha256, "abc");
+        assert_eq!(e.image.as_ref().map(|i| i.sha256.as_str()), Some("def"));
+        assert_eq!(
+            e.dll.as_ref().and_then(|d| d.install_as.as_deref()),
+            Some("x.dll")
+        );
+        // an array is the monolith's shape — rejected as a shard
+        let err = r
+            .parse_shard("[{}]", "3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap_err();
+        assert!(matches!(err, FetchError::IndexUnavailable(_)));
+        // a triple mismatch cannot serve the request
+        let err = r
+            .parse_shard(body, "3.4.10", "windows-ucrt64", "0.16.17")
+            .unwrap_err();
+        assert!(matches!(err, FetchError::IndexUnavailable(_)));
+        // unparseable
+        let err = r
+            .parse_shard("{", "3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap_err();
+        assert!(matches!(err, FetchError::IndexUnavailable(_)));
+    }
+
+    #[test]
+    fn resolve_runtime_installs_from_the_shard_without_a_monolith() {
+        let (cache, mirror) = shard_mirror("only", false);
+        let r = dll_resolver(&cache, &mirror);
+        let resolved = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        let dir = shard_entry_dir(&cache);
+        // the suffix-less exe spelling flows from the shard verbatim
+        assert_eq!(
+            resolved.executable.file_name().unwrap().to_string_lossy(),
+            "tebako-runtime-0.16.17-3.3.12-windows-ucrt64"
+        );
+        assert!(dir
+            .join("tebako-runtime-0.16.17-3.3.12-windows-ucrt64.tfs")
+            .is_file());
+        assert!(dir.join("x64-ucrt-ruby330.dll").is_file());
+        // the wrapped shard rode into the cache entry as the card — the
+        // manifest array shape, readable by parse_manifest
+        let card = fs::read_to_string(dir.join("manifest.json")).unwrap();
+        assert!(
+            card.starts_with('['),
+            "the cached card is the wrapped shard (the array shape)"
+        );
+        let entry = r
+            .cached_index_entry(&dir, "3.3.12", "windows-ucrt64", "0.16.17")
+            .expect("the cached card re-reads");
+        assert_eq!(
+            entry.filename,
+            resolved.executable.file_name().unwrap().to_string_lossy()
+        );
+        // a cache hit needs no mirror at all (a run is a run)
+        fs::remove_dir_all(&mirror).unwrap();
+        r.resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_the_shard_wins_over_a_tampered_monolith() {
+        // the monolith's poisoned exe sha would fail the install with
+        // 121 — the shard is read FIRST, so the honest sha gates
+        let (cache, mirror) = shard_mirror("precedence", true);
+        let r = dll_resolver(&cache, &mirror);
+        r.resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        assert!(shard_entry_dir(&cache)
+            .join("tebako-runtime-0.16.17-3.3.12-windows-ucrt64")
+            .is_file());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_a_mismatched_shard_falls_through_to_the_monolith() {
+        let (cache, mirror) = shard_mirror("mismatch", false);
+        let release = mirror.join("v0.16.17");
+        let exe = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64";
+        let shard_path = release.join(format!("{exe}.manifest.json"));
+        let text = fs::read_to_string(&shard_path)
+            .unwrap()
+            .replace("\"ruby_version\":\"3.3.12\"", "\"ruby_version\":\"3.4.10\"");
+        fs::write(&shard_path, text).unwrap();
+        // the honest derived monolith names the requested triple
+        let image = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64.tfs";
+        let dll = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64.dll";
+        fs::write(
+            release.join("manifest.json"),
+            format!(
+                "[{{\"tebako_version\":\"0.16.17\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"A:/t\",\"ruby_version\":\"3.3.12\",\"platform\":\"windows-ucrt64\",\"filename\":\"{exe}\",\"sha256\":\"{}\",\"image\":{{\"filename\":\"{image}\",\"sha256\":\"{}\"}},\"dll\":{{\"filename\":\"{dll}\",\"install_as\":\"x64-ucrt-ruby330.dll\",\"sha256\":\"{}\"}}}}]\n",
+                sha256_file_hex(&release.join(exe)).unwrap(),
+                sha256_file_hex(&release.join(image)).unwrap(),
+                sha256_file_hex(&release.join(dll)).unwrap(),
+            ),
+        )
+        .unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        r.resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        assert!(shard_entry_dir(&cache).join(exe).is_file());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_a_corrupt_shard_falls_through_to_the_monolith() {
+        let (cache, mirror) = shard_mirror("corrupt", false);
+        let release = mirror.join("v0.16.17");
+        let exe = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64";
+        fs::write(release.join(format!("{exe}.manifest.json")), "{").unwrap();
+        let image = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64.tfs";
+        fs::write(
+            release.join("manifest.json"),
+            format!(
+                "[{{\"tebako_version\":\"0.16.17\",\"contract_era\":2,\"contract_version\":2,\"mount_root\":\"A:/t\",\"ruby_version\":\"3.3.12\",\"platform\":\"windows-ucrt64\",\"filename\":\"{exe}\",\"sha256\":\"{}\",\"image\":{{\"filename\":\"{image}\",\"sha256\":\"{}\"}}}}]\n",
+                sha256_file_hex(&release.join(exe)).unwrap(),
+                sha256_file_hex(&release.join(image)).unwrap(),
+            ),
+        )
+        .unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        r.resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap();
+        assert!(shard_entry_dir(&cache).join(exe).is_file());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_runtime_without_any_index_names_every_tried_url() {
+        let (cache, mirror) = shard_mirror("noindex", false);
+        let release = mirror.join("v0.16.17");
+        let exe = "tebako-runtime-0.16.17-3.3.12-windows-ucrt64";
+        fs::remove_file(release.join(format!("{exe}.manifest.json"))).unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        let err = r
+            .resolve_runtime("3.3.12", "windows-ucrt64", "0.16.17")
+            .unwrap_err();
+        assert_eq!(err.code, 124);
+        // the shard URL is named first, then the monoliths
+        assert!(
+            err.message
+                .contains("tebako-runtime-0.16.17-3.3.12-windows-ucrt64.manifest.json"),
+            "{}",
+            err.message
+        );
+        assert!(err.message.contains("manifest.json"), "{}", err.message);
+        assert!(err.message.contains("SHA256SUMS.txt"), "{}", err.message);
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
     // ---- spec 19 §4: the Rust bootstrap store ---------------------------
 
     /// A scratch (cache root, release mirror) pair in the product
@@ -2131,6 +2540,120 @@ mod tests {
             "{}",
             err.message
         );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    // ---- tebako#493: the sidecar-era index (sidecar-first) --------------
+
+    #[test]
+    fn sidecar_parses_one_coreutils_line() {
+        let r = BootstrapResolver {
+            cache_root: PathBuf::new(),
+            mirror: String::new(),
+            version: "0.1.8".to_string(),
+            offline: false,
+            lock_timeout: LOCK_TIMEOUT,
+        };
+        let e = r
+            .parse_sidecar(
+                "ABC123  tebako-bootstrap-0.1.8-macos-arm64\n",
+                "macos-arm64",
+            )
+            .unwrap();
+        assert_eq!(e.filename, "tebako-bootstrap-0.1.8-macos-arm64");
+        assert_eq!(e.sha256, "abc123");
+        assert_eq!(e.platform, "macos-arm64");
+        // a `*` prefix rides along (coreutils binary marker)
+        let e = r
+            .parse_sidecar(
+                "abc123  *tebako-bootstrap-0.1.8-macos-arm64\n",
+                "macos-arm64",
+            )
+            .unwrap();
+        assert_eq!(e.filename, "tebako-bootstrap-0.1.8-macos-arm64");
+        // the .exe spelling validates against the windows platform
+        let e = r
+            .parse_sidecar(
+                "abc  tebako-bootstrap-0.1.8-windows-ucrt64.exe\n",
+                "windows-ucrt64",
+            )
+            .unwrap();
+        assert_eq!(e.filename, "tebako-bootstrap-0.1.8-windows-ucrt64.exe");
+        // a different asset or platform cannot serve the request
+        for body in [
+            "abc  tebako-bootstrap-0.1.8-linux-gnu-x86_64\n",
+            "abc  tfs-0.1.8-macos-arm64\n",
+            "abc  tebako-bootstrap-0.1.7-macos-arm64\n",
+            "garbage\n",
+            "abc  tebako-bootstrap-0.1.8-macos-arm64\ndef  tebako-bootstrap-0.1.8-macos-arm64\n",
+            "\n",
+        ] {
+            assert!(
+                matches!(
+                    r.parse_sidecar(body, "macos-arm64"),
+                    Err(FetchError::IndexUnavailable(_))
+                ),
+                "{body:?}"
+            );
+        }
+    }
+
+    /// Write the per-asset sidecar into a boot_mirror release (the
+    /// finalize.sh shape: `"<sha>  <asset>\n"`).
+    fn write_sidecar(release: &Path, asset: &str) {
+        let sha = sha256_file_hex(&release.join(asset)).unwrap();
+        fs::write(
+            release.join(format!("{asset}.sha256")),
+            format!("{sha}  {asset}\n"),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn resolve_bootstrap_installs_from_the_sidecar_without_a_monolith() {
+        let (cache, mirror) = boot_mirror("sidecar-only", false);
+        let release = mirror.join("v0.1.8");
+        fs::remove_file(release.join("manifest.json")).unwrap();
+        fs::remove_file(release.join("SHA256SUMS")).unwrap();
+        write_sidecar(&release, "tebako-bootstrap-0.1.8-macos-arm64");
+        let r = boot_resolver(&cache, &mirror, false);
+        let path = r.resolve("macos-arm64").unwrap();
+        assert!(path.is_file());
+        assert_eq!(
+            fs::read_to_string(boot_entry_dir(&cache).join("sha256")).unwrap(),
+            format!("{}\n", sha256_file_hex(&path).unwrap())
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_bootstrap_the_sidecar_wins_over_a_tampered_monolith() {
+        // boot_mirror(tamper=true) poisons the monoliths' declared sha —
+        // the sidecar is read FIRST, so the honest sha gates
+        let (cache, mirror) = boot_mirror("sidecar-precedence", true);
+        write_sidecar(&mirror.join("v0.1.8"), "tebako-bootstrap-0.1.8-macos-arm64");
+        let r = boot_resolver(&cache, &mirror, false);
+        let path = r.resolve("macos-arm64").unwrap();
+        assert!(path.is_file());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn resolve_bootstrap_a_mismatched_sidecar_falls_through_to_the_monolith() {
+        let (cache, mirror) = boot_mirror("sidecar-mismatch", false);
+        let release = mirror.join("v0.1.8");
+        // the sidecar names a DIFFERENT platform's asset
+        fs::write(
+            release.join("tebako-bootstrap-0.1.8-macos-arm64.sha256"),
+            format!(
+                "{}  tebako-bootstrap-0.1.8-linux-gnu-x86_64\n",
+                "0".repeat(64)
+            ),
+        )
+        .unwrap();
+        let r = boot_resolver(&cache, &mirror, false);
+        let path = r.resolve("macos-arm64").unwrap();
+        assert!(path.is_file());
         let _ = fs::remove_dir_all(cache.parent().unwrap());
     }
 }
