@@ -3,7 +3,11 @@
 Normative contract between a tebako runtime (the interpreter binary a
 runtime payload provides) and the tebako loader/dispatcher. Language-
 agnostic: ruby is the first implementation; python/julia follow this
-exact contract (roadmap 22's "add a language" playbook).
+exact contract (roadmap 22's "add a language" playbook). The driver
+executes LINKED into the interpreter exe (factory-built runtimes) or as
+the WRAPPER exe of spec 29 (repacked runtimes — upstream bytes tebako
+does not compile); the wire is identical, and the launcher ABI never
+learns which pattern a runtime uses.
 
 ## 1. Invocation surface
 
@@ -200,9 +204,13 @@ compatibility check consumes exactly these fields.
 ## 6. Implementation and contract version
 
 The reference implementation is `crates/tebako-driver` (Rust, staticlib
-+ rlib) — the v1 C++ `tebako-main` driver is retired. Runtimes whose
-driver implements this document's widened grammar (image-path triples,
-bare-file slot tokens, env-image-first multi-mount, direct
-`--tebako-entry` execution) declare **`contract_version` 2** in their
-release manifest (spec 06 §6); the compiled-in constant
-(`tebako_driver_contract_version()`) and the manifest must agree.
++ rlib) — the v1 C++ `tebako-main` driver is retired. The driver
+executes in one of two patterns: LINKED into the interpreter exe
+(factory-built runtimes — the reference form) or as the WRAPPER exe
+defined in spec 29 (repacked runtimes); both patterns declare the same
+contract. Runtimes whose driver implements this document's widened
+grammar (image-path triples, bare-file slot tokens, env-image-first
+multi-mount, direct `--tebako-entry` execution) declare
+**`contract_version` 2** in their release manifest (spec 06 §6); the
+compiled-in constant (`tebako_driver_contract_version()`) and the
+manifest must agree.
