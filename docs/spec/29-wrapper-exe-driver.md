@@ -73,7 +73,7 @@ The env image's in-image manifest declares the interpreter under the
 ```yaml
 layout:
   interpreter: /bin/java          # in-image path, the spec-17 §1 uniform namespace
-  visibility: exec-cache          # OPTIONAL; default below (§3)
+  visibility: preload             # OPTIONAL; absent = the locked default order (§3)
   mount_root_override: true       # unchanged
 ```
 
@@ -96,36 +96,42 @@ mount is invisible to the kernel. The wrapper therefore cannot exec the
 interpreter out of the mount directly; the interpreter's own reads of
 its home tree (jmods, `libjvm`, gem homes) need a defined answer; and
 the interpreter's CHILDREN never see in-process mounts at all (the
-PROGRESS/19 spawn class). The sanctioned mechanisms are exactly three;
-a runtime declares ONE in its env-image manifest (`layout.visibility`);
-the boot honors it or fails closed — never a silent fallback
-(invariant 9):
+PROGRESS/19 spawn class). The mechanisms are spec 07 §8's locked tiers,
+applied to the runtime's own interpreter — **interposition-first, never
+FUSE** (spec 07 §8's locked law stands: FUSE stays the `tfs mount`
+human convenience, never on the exec path). A runtime declares ONE
+mechanism in its env-image manifest (`layout.visibility`); the boot
+honors it or fails closed — never a silent fallback (invariant 9):
 
-| mechanism | what the wrapper does | platform reach |
+| mechanism (spec 07 §8 tier) | what the wrapper does | platform reach / default |
 |---|---|---|
-| `exec-cache` (THE DEFAULT, every platform) | materialize the interpreter home tree from the mounted env image into the content-addressed exec cache (spec 22 §6), then exec/spawn the host copy | universal — no kernel facility, no interposition |
-| `preload` (POSIX only) | materialize only the interpreter exe's load closure (spec 22 §2.1's walk); exec it with `LD_PRELOAD`/`DYLD_INSERT_LIBRARIES` armed on libtfs-preload + `TEBAKO_TFS_MOUNTS` (spec 22 §3) so the unmodified interpreter's libc IO resolves through the VFS | linux + macOS dynamic binaries |
-| `fuse` (opt-in) | serve the env-image mount through limnifs's feature-gated FUSE read path — the mount is kernel-visible, so exec and every descendant see it natively | linux (`/dev/fuse`); macOS/windows only where the user installed macFUSE/WinFsp — never REQUIRED (the audience rule: a user running packages needs no system installs) |
+| `preload` (tier 1 — THE POSIX DEFAULT) | materialize only the interpreter exe's load closure (spec 22 §2.1's walk); exec it with `LD_PRELOAD`/`DYLD_INSERT_LIBRARIES` armed on libtfs-preload + `TEBAKO_TFS_MOUNTS` (spec 22 §3) so the unmodified interpreter's libc IO resolves through the VFS — the env image stays MOUNTED, never extracted | linux + macOS dynamic interpreters (the JVM's libjava/libjli/libzip are in spec 07 §8's shipped coverage list) |
+| `seccomp-notify` (tier 2a) | the wrapper-as-executor installs the `SECCOMP_RET_USER_NOTIF` filter at spawn and serves the static interpreter's file syscalls from the mounts, enforcing the same `host_policy` | linux only; statically-linked interpreters |
+| `exec-cache` (tier 2b — THE windows DEFAULT, universal fallback) | materialize the interpreter home tree from the mounted env image into the content-addressed exec cache (spec 22 §6), then spawn the host copy (a JVM needs no VFS once its home is materialized) | universal; the only windows answer (no interposition API) and the POSIX answer for statics without tier 2a |
 
 - The store artifact stays pristine in every mechanism: the exec cache
   is DERIVED, content-keyed, disposable (the spec 22 §6 exception —
   execution materialization is not extraction of the store image).
-- The choice is journaled at boot (`event=visibility mechanism=…
-  image=…`). A declared mechanism unavailable on the host (`preload` on
-  windows; `fuse` without the kernel facility) is a named boot error
-  (65) naming mechanism + facility — the runtime factory's declaration
-  is validated against the runtime's platform list at press.
+- Absent a declaration, the locked default order applies — tier 1 for
+  dynamic interpreters on POSIX, tier 2b on windows and for statics
+  without tier 2a — journaled at boot (`event=visibility mechanism=…
+  image=…`). A DECLARED mechanism unusable on the host (`preload` on
+  windows or under a SIP-stripped context, `seccomp-notify` off linux)
+  is a named boot error (65) naming mechanism + fact — the factory
+  validates the declaration against the runtime's platform list at
+  press.
 - The user-side override rides the composition/config surfaces (spec 23
   §3's runtime row gains the optional `visibility:` key, validated
   against the manifest's declared support — a narrowing only, never a
   mechanism the runtime wasn't built for).
-- Grandchildren: under `exec-cache`/`fuse` the interpreter's children
-  are ordinary host processes; VFS-resident tools they spawn reach them
+- Grandchildren: under `exec-cache` the interpreter's children are
+  ordinary host processes; VFS-resident tools they spawn reach them
   through the spec 17 §2 PATH composition (launcher dir → dependency bin
-  dirs → alias dirs) plus the spec 23 declarative materialization that
-  shipped for ruby-windows (PROGRESS/19's option (b)) — the wrapper
-  performs both identically to the linked driver. Under `preload`,
-  descendants re-enter the VFS per spec 22 §3.
+  dirs → alias dirs) plus the declarative materialization that shipped
+  for ruby-windows (PROGRESS/19's option (b)). Under `preload`/
+  `seccomp-notify`, descendants re-enter the VFS per spec 22 §3 / the
+  tier-2a env propagation — the wrapper arms the machinery identically
+  to the linked driver.
 
 ## 4. Failure semantics
 
@@ -133,7 +139,7 @@ the boot honors it or fails closed — never a silent fallback
   spec 17 §4: mount failure → unmount everything + named error, never a
   partial mount; jail parse/bind failures → 73; a malformed/missing
   interpreter declaration, an unresolvable interpreter path, or an
-  unavailable declared visibility → 65 naming the key/path/mechanism.
+  unusable declared visibility → 65 naming the key/path/mechanism.
 - Runtime-side failures are the interpreter's own codes, unmodified:
   POSIX exec makes this literal; the windows wrapper exits with the
   child's exit code and never manufactures codes of its own. A spawn
@@ -171,6 +177,8 @@ which pattern a runtime uses.
 - No new L1 grammar beyond the additive `layout.interpreter` +
   `layout.visibility` keys (schema_minor — the `mount_root_override`
   class).
+- FUSE on the exec path — spec 07 §8's locked law stands
+  (interposition-first; FUSE stays the `tfs mount` human convenience).
 - No per-runtime code in the wrapper crate: a runtime's particulars
   live in its env-image manifest (interpreter path, visibility,
   entrypoint `args_default`).
