@@ -95,24 +95,62 @@ fn run_report(dir: &Path, results: &[std::path::PathBuf]) -> (Result<u8, String>
 fn standard_runs() -> Vec<RunRecord> {
     let mut v = Vec::new();
     for (i, w) in [9.0, 10.0, 11.0].iter().enumerate() {
-        v.push(ok_run("compile-small-iso", "v1-packed-mn", RunMode::Warm, i as u32 + 1, *w));
+        v.push(ok_run(
+            "compile-small-iso",
+            "v1-packed-mn",
+            RunMode::Warm,
+            i as u32 + 1,
+            *w,
+        ));
     }
     for (i, w) in [4.0, 5.0, 6.0].iter().enumerate() {
-        v.push(ok_run("compile-small-iso", "v2-fat", RunMode::Warm, i as u32 + 1, *w));
+        v.push(ok_run(
+            "compile-small-iso",
+            "v2-fat",
+            RunMode::Warm,
+            i as u32 + 1,
+            *w,
+        ));
     }
     for (i, w) in [2.0, 2.5, 3.0].iter().enumerate() {
-        v.push(ok_run("compile-small-iso", "v2-shim", RunMode::Warm, i as u32 + 1, *w));
+        v.push(ok_run(
+            "compile-small-iso",
+            "v2-shim",
+            RunMode::Warm,
+            i as u32 + 1,
+            *w,
+        ));
     }
-    v.push(ok_run("compile-small-iso", "v1-packed-mn", RunMode::Cold, 1, 20.0));
-    v.push(ok_run("compile-small-iso", "v2-shim", RunMode::Cold, 1, 8.0));
+    v.push(ok_run(
+        "compile-small-iso",
+        "v1-packed-mn",
+        RunMode::Cold,
+        1,
+        20.0,
+    ));
+    v.push(ok_run(
+        "compile-small-iso",
+        "v2-shim",
+        RunMode::Cold,
+        1,
+        8.0,
+    ));
     v
 }
 
 #[test]
 fn merges_triplets_re_deriving_stats_and_speedups() {
     let dir = tempfile::tempdir().unwrap();
-    let a = write_result(dir.path(), "a.json", &triplet_file("linux-gnu-x86_64", standard_runs()));
-    let b = write_result(dir.path(), "b.json", &triplet_file("macos-arm64", standard_runs()));
+    let a = write_result(
+        dir.path(),
+        "a.json",
+        &triplet_file("linux-gnu-x86_64", standard_runs()),
+    );
+    let b = write_result(
+        dir.path(),
+        "b.json",
+        &triplet_file("macos-arm64", standard_runs()),
+    );
     let (rc, md, json) = run_report(dir.path(), &[a, b]);
     assert_eq!(rc, Ok(0));
     // re-derived, never carried: the 999.0 garbage stats must not appear
@@ -142,7 +180,11 @@ fn merges_triplets_re_deriving_stats_and_speedups() {
 #[test]
 fn suite_mismatch_is_operational() {
     let dir = tempfile::tempdir().unwrap();
-    let a = write_result(dir.path(), "a.json", &triplet_file("linux-gnu-x86_64", standard_runs()));
+    let a = write_result(
+        dir.path(),
+        "a.json",
+        &triplet_file("linux-gnu-x86_64", standard_runs()),
+    );
     let mut other = triplet_file("macos-arm64", standard_runs());
     other.suite = "another-suite".to_string();
     let b = write_result(dir.path(), "b.json", &other);
@@ -154,8 +196,16 @@ fn suite_mismatch_is_operational() {
 #[test]
 fn duplicate_triplet_is_operational() {
     let dir = tempfile::tempdir().unwrap();
-    let a = write_result(dir.path(), "a.json", &triplet_file("linux-gnu-x86_64", standard_runs()));
-    let b = write_result(dir.path(), "b.json", &triplet_file("linux-gnu-x86_64", standard_runs()));
+    let a = write_result(
+        dir.path(),
+        "a.json",
+        &triplet_file("linux-gnu-x86_64", standard_runs()),
+    );
+    let b = write_result(
+        dir.path(),
+        "b.json",
+        &triplet_file("linux-gnu-x86_64", standard_runs()),
+    );
     let (rc, _, _) = run_report(dir.path(), &[a, b]);
     let msg = rc.expect_err("one result file per triplet");
     assert!(msg.contains("linux-gnu-x86_64"), "{msg}");
@@ -178,18 +228,35 @@ fn every_arm_unavailable_writes_artifacts_and_exits_1() {
         error: None,
         reason: Some("no packed-mn asset for this triplet".to_string()),
     };
-    let a = write_result(dir.path(), "a.json", &triplet_file("linux-gnu-x86_64", vec![gap]));
+    let a = write_result(
+        dir.path(),
+        "a.json",
+        &triplet_file("linux-gnu-x86_64", vec![gap]),
+    );
     let (rc, md, json) = run_report(dir.path(), &[a]);
     assert_eq!(rc, Ok(1), "a red matrix is a deliverable, exit 1");
-    assert!(md.contains("unavailable — no packed-mn asset for this triplet"), "{md}");
+    assert!(
+        md.contains("unavailable — no packed-mn asset for this triplet"),
+        "{md}"
+    );
     assert!(json.contains("no packed-mn asset"), "{json}");
 }
 
 #[test]
 fn missing_v1_arm_renders_dash_never_an_invented_ratio() {
     let dir = tempfile::tempdir().unwrap();
-    let runs = vec![ok_run("compile-small-iso", "v2-shim", RunMode::Warm, 1, 2.5)];
-    let a = write_result(dir.path(), "a.json", &triplet_file("linux-gnu-x86_64", runs));
+    let runs = vec![ok_run(
+        "compile-small-iso",
+        "v2-shim",
+        RunMode::Warm,
+        1,
+        2.5,
+    )];
+    let a = write_result(
+        dir.path(),
+        "a.json",
+        &triplet_file("linux-gnu-x86_64", runs),
+    );
     let (rc, md, _) = run_report(dir.path(), &[a]);
     assert_eq!(rc, Ok(0));
     assert!(md.contains("| v2-shim | 1 | 2.500 |"), "{md}");
@@ -202,7 +269,11 @@ fn semantically_invalid_input_is_operational() {
     let dir = tempfile::tempdir().unwrap();
     let mut bad = ok_run("compile-small-iso", "v2-shim", RunMode::Warm, 1, 2.5);
     bad.wall_s = None; // an ok run without its wall violates the §6 rules
-    let a = write_result(dir.path(), "a.json", &triplet_file("linux-gnu-x86_64", vec![bad]));
+    let a = write_result(
+        dir.path(),
+        "a.json",
+        &triplet_file("linux-gnu-x86_64", vec![bad]),
+    );
     let (rc, _, _) = run_report(dir.path(), &[a]);
     let msg = rc.expect_err("invalid input must be an operational error");
     assert!(msg.contains("wall_s"), "{msg}");
