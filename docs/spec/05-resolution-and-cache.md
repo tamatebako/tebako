@@ -115,9 +115,10 @@ installs, pre-identity manifests).
 ## 5. Resolution chains
 
 **Runtime for a payload (dispatch time):** payload's declared requirement
-(engine + constraint) → newest COMPATIBLE runtime already cached (no
-download) → else download the newest compatible from the runtime releases
-→ verify → cache. Swapping runtimes never touches the payload.
+(engine + optional implementation + constraint) → newest COMPATIBLE
+runtime already cached (no download) → else download the newest
+compatible from the runtime releases → verify → cache. Swapping runtimes
+never touches the payload.
 
 **Runtime for a shared-runtime package (first run):** trailer
 runtime_ref → cache hit → use; miss → download from the index
@@ -146,3 +147,19 @@ their platform string as the per-package `abi` key in the release index
 (spec 13); cached runtimes installed before the field existed stay
 eligible (the compat window — a payload's abi check never fails against
 an unknown line).
+
+**The implementation axis (spec 28 §8):** `engine` names the LANGUAGE —
+mri, jruby and truffleruby are all `engine: ruby`, told apart by the
+runtime's `provides.implementation`. A requirement WITHOUT
+`implementation` matches any cached runtime of the engine whose
+`language_version` satisfies the constraint (the pure-language case: one
+build, any implementation — jruby 9.4 declares `language_version:
+"3.1"`, so a `>= 3.3` requirement does not match it and a `>= 3.1` one
+does). A requirement WITH `implementation` reads its constraint against
+that implementation's OWN version line (`{engine: ruby, implementation:
+jruby, constraint: "~> 9.4"}`) and matches no other implementation. An
+`abi:` in force requires `implementation` — ABI and platform lines are
+per-implementation by construction; a native requirement naming no
+implementation is a named manifest error (spec 03 §2.2). Compatibility
+never crosses implementations silently: the chosen runtime's
+implementation is journaled with the resolution event.
