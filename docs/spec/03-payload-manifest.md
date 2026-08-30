@@ -49,12 +49,17 @@ entrypoints:                          # ARRAY — multi-entry suites; N=1 for si
     args_default: []
     runtime_requirement: {engine: ruby, constraint: ">= 3.3, < 5.0"}
       # OPTIONAL — omit entirely for native entrypoints (see below);
-      # range for pure-language; abi-line "~> 3.3.0" for native-extension payloads
-    # native-extension entrypoints ALSO pin the platform line:
-    runtime_requirement: {engine: ruby, constraint: "~> 3.3.0", abi: "arm64-darwin-23"}
+      # range for pure-language; abi-line "~> 3.3.0" for native-extension payloads.
+      # engine names the LANGUAGE — mri/jruby/truffleruby are all `ruby`;
+      # the OPTIONAL `implementation:` narrows to one (spec 28 §8).
+    # native-extension entrypoints ALSO pin the implementation and the
+    # platform line:
+    runtime_requirement: {engine: ruby, implementation: mri, constraint: "~> 3.3.0", abi: "arm64-darwin-23"}
       # abi = the runtime's own platform string the extensions were built
       # against (ruby: Gem::Platform.local.to_s). The version line and the
       # platform line are ORTHOGONAL — resolution checks both (spec 05 §5).
+      # an `abi:` in force REQUIRES `implementation:` — an ABI is
+      # per-implementation by construction (spec 28 §8).
   platforms: [x86_64-linux-gnu, aarch64-macos]  # native-ext apps are triplet-bound;
                                                 # universal only for pure-language
 capabilities: {exec: true, read: true}
@@ -101,7 +106,12 @@ entry names mirror the L1 declaration — one SSOT, cross-checked by
 
 **runtime** (provides an interpreter):
 ```yaml
-provides: {engine: ruby, version: 4.0.6, abi_line: "4.0", platform: x86_64-linux-gnu}
+provides: {engine: ruby, implementation: mri, version: 4.0.6, language_version: "4.0", abi_line: "4.0", platform: x86_64-linux-gnu}
+  # engine = the LANGUAGE; implementation (REQUIRED for kind: runtime) =
+  # which ruby this is (mri/jruby/truffleruby — spec 28 §8).
+  # version = the implementation's OWN version line (jruby: 9.4.8);
+  # language_version = the language level it implements (jruby 9.4 → "3.1";
+  # for mri the two are identical). spec 05 §5 matches on both.
 built_from: {src_sha256: "…", patch_set: "v0.2.8"}
 env: {GEM_PATH: …}
 capabilities: {exec: true, read: true, runtime: true}
@@ -123,6 +133,9 @@ contract; PROVIDES names libraries/tools other payloads DEPEND on.
 requires:
   - kind: language            # a language runtime edge
     engine: ruby
+    implementation: jruby     # OPTIONAL — absent: any implementation of the
+                              # engine whose language_version satisfies the
+                              # constraint (spec 28 §8)
     constraint: "~> 3.3.0"
   - kind: toolkit             # a native toolkit layer
     name: gtk-layer
