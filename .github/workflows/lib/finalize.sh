@@ -14,13 +14,20 @@ FRAG=fragments
 # ---- SHA256SUMS (sorted, "<sha>  <file>") ------------------------------
 # Windows platform ids carry the .exe suffix on the uploaded asset name
 # (the frag files themselves are suffix-free).
+# tebako#493: each line also lands as the per-asset sidecar
+# out/sidecars/<asset>.sha256 — the sidecar-era authority the resolver
+# reads FIRST; the monoliths (SHA256SUMS, manifest.json) become
+# derived-only conveniences for old resolvers.
+mkdir -p out/sidecars
 : > out/SHA256SUMS
 for platform_dir in "$FRAG"/frag-*; do
   platform="${platform_dir##*/frag-}"
   exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
   for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim; do
     sha=$(cat "$platform_dir/${tool}-${platform}.sha256")
-    echo "$sha  ${tool}-${VERSION}-${platform}${exe}" >> out/SHA256SUMS
+    name="${tool}-${VERSION}-${platform}${exe}"
+    echo "$sha  $name" >> out/SHA256SUMS
+    echo "$sha  $name" > "out/sidecars/${name}.sha256"
   done
 done
 sort -k2 -o out/SHA256SUMS out/SHA256SUMS

@@ -606,6 +606,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # tebako#493: the per-asset sidecars — the resolver's
+      # first-preference index from this release on.
+      - name: Upload per-asset sha256 sidecars
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" out/sidecars/*.sha256 --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # item 11's completeness gate: the release job fails unless every
       # expected asset actually landed (partial-upload race class).
       - name: Completeness gate
@@ -614,7 +622,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          EXPECTED=$(( 5 * 7 + 7 + 2 ))   # 5 tools x 7 platforms (incl. windows-ucrt64) + 7 link-unit tarballs + SHA256SUMS + manifest.json
+          EXPECTED=$(( 5 * 7 + 7 + 2 + 5 * 7 ))   # 5 tools x 7 platforms (incl. windows-ucrt64) + 7 link-unit tarballs + SHA256SUMS + manifest.json + 35 per-asset sidecars (tebako#493)
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort

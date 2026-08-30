@@ -21,7 +21,25 @@ machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL
 
 ## 2. Release index (runtime factory releases)
 
-- `manifest.json` — machine index; per-asset entries plus the additive
+The index is **per-package first** (tebako#493): the resolver's
+preference order is the per-package shard → the derived monolith → the
+line index. The fallbacks stay forever — pre-shard releases are
+immutable and remain installable (invariant 7); a missing, unreadable,
+or triple-mismatched shard falls through to the next form with the URL
+recorded for the failure message.
+
+- `<stem>.manifest.json` — the **per-package shard**, the sidecar-era
+  authority. The stem is the exe asset's own name
+  (`tebako-runtime-<ver>-<lv>-<triplet>` — suffix-less, §2's spelling
+  rule below, on windows too). The shard is ONE manifest-entry object
+  (the same fields the monolith's array items carry: the identity
+  triple, `filename`, `sha256`, the additive `image` / `dll` /
+  contract-set keys). The resolver derives the stem from the requested
+  triple, fetches exactly one small object, and reads the contract gate
+  from it (normalized to the array shape at the resolver boundary —
+  tebako-resolve owns the release-card reader semantics).
+- `manifest.json` — derived monolith; the same per-asset entries as an
+  array, plus the additive
   image-era key `image: {filename, sha256, size_bytes}` and the additive
   `contract_version` key (bootstrap↔runtime contract, spec 06 §6).
 - **The entry's `filename` is the ONLY authoritative asset spelling**
@@ -40,6 +58,10 @@ machine cache. Status: SHIPPED for runtimes (M6–M8); payload cache PARTIAL
   hand-invented name.
 - `SHA256SUMS.txt` — line-index fallback (`<sha>  <file>`), carries the
   `<asset>.tfs` lines in the image era.
+- Every payload asset also carries its own `<asset>.sha256` sidecar
+  (coreutils `<sha>  <file>` — the store marker's exact shape). The
+  sidecar is the per-asset pin; the shard's sha fields are re-anchored
+  to the served bytes at publish time.
 - Base URL:
   `https://github.com/tamatebako/tebako-runtime-ruby/releases/download`;
   override `TEBAKO_RUNTIME_MIRROR` (https or file://).
@@ -122,7 +144,8 @@ never touches the payload.
 
 **Runtime for a shared-runtime package (first run):** trailer
 runtime_ref → cache hit → use; miss → download from the index
-(manifest.json primary, SHA256SUMS fallback) → sha256-verify → flock'd
+(per-package shard primary, manifest.json next, SHA256SUMS fallback —
+§2's order) → sha256-verify → flock'd
 atomic install. (Preset names per spec 23 §13.2: *shared-runtime* is
 the default preset and the successor of the deprecated name *lean*;
 *self-contained* succeeds *fat*.) Self-contained: the runtime pair is
