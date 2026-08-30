@@ -1,10 +1,10 @@
 # Spec 27 — Benchmarks: the tebako-bench harness contract
 
-Status: PLANNED (spec-first per spec 14; slice 0 spikes executed
+Status: IMPLEMENTED (spec-first per spec 14; slice 0 spikes executed
 2026-08-25 — §9 records the evidence; the suite/platforms documents,
 schemas, the `tebako-bench validate` surface, the sampler, the
-acquisition slice, and the run engine have landed; the report renderer
-and workflow are later slices)
+acquisition slice, the run engine, the report renderer, and
+`.github/workflows/benchmark.yml` have landed)
 Depends on: 00 (locked invariants), 02 (tpkg wire format), 05
 (resolution and cache), 14 (engineering process), 16 (distribution —
 slim/fat), 17 (runtime driver contract), 19 (bootstrap distribution),
