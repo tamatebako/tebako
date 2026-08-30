@@ -170,6 +170,33 @@ pub fn inspect_region(
     inspect_mounted(path, Some((offset, size)), size, display)
 }
 
+/// Stat `relpaths` inside the image region in ONE mount (the verify
+/// entry cross-check, tebako#494): entry `i` of the result is true when
+/// `relpaths[i]` stats. Paths are image-relative (a leading `/` is
+/// stripped — an L2 `entries[].entrypoint` resolves against the slot's
+/// mount root, i.e. the image root). A mount failure is the InfoError —
+/// the caller renders its named error.
+pub fn region_paths_exist(
+    path: &Path,
+    offset: u64,
+    size: u64,
+    relpaths: &[&str],
+) -> Result<Vec<bool>, InfoError> {
+    let mounted = tfs::mount::build_from_file_at(&path.to_string_lossy(), offset, size, "/mnt")
+        .map_err(|errno| {
+            let message = std::ffi::CStr::from_bytes_until_nul(tfs::errno::strerror(errno))
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| "unknown error".to_string());
+            err(format!(
+                "cannot mount the image region (errno {errno}): {message}"
+            ))
+        })?;
+    Ok(relpaths
+        .iter()
+        .map(|p| mounted.backend.stat(p.trim_start_matches('/')).is_ok())
+        .collect())
+}
+
 // ---------------------------------------------------------------------
 // JSON document (spec 15 §6)
 // ---------------------------------------------------------------------
