@@ -1,0 +1,136 @@
+name: benchmark
+
+# Spec 27: benchmarks run on manual dispatch and on release publishes ONLY —
+# never per-PR (shared-runner noise + cost, and the harness never sits on
+# the merge critical path). The matrix is GENERATED from
+# benchmarks/platforms.yaml by lib/bench-matrix.rb — no triplet, runner, or
+# container is named in this file (the YAML documents are the SSOT).
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  matrix:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.gen.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - id: gen
+        run: ruby .github/workflows/lib/bench-matrix.rb benchmarks/platforms.yaml >> "$GITHUB_OUTPUT"
+
+  run:
+    needs: matrix
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - name: Run the matrix leg
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          args=(--suite benchmarks/suite.yaml
+                --platforms benchmarks/platforms.yaml
+                --triplet "${{ matrix.triplet }}"
+                --out out
+                --repo-root .)
+          # A release run benchmarks the release that fired it (never the
+          # floating "latest"); dispatch runs take the latest release.
+          if [ "${{ github.event_name }}" = "release" ]; then
+            args+=(--tebako-release "${{ github.event.release.tag_name }}")
+          fi
+          set +e
+          if [ -n "${{ matrix.container }}" ]; then
+            # musl leg: the harness is pure Rust, so it cross-builds to a
+            # static musl binary with no vcpkg and runs the workloads
+            # inside the pinned alpine container (node actions cannot run
+            # on musl — the container is entered via docker run only).
+            target="$(rustc -vV | sed -n 's/^host: //p' | sed 's/-gnu/-musl/')"
+            rustup target add "$target"
+            cargo build -p tebako-bench --target "$target"
+            docker run --rm -v "$PWD:$PWD" -w "$PWD" \
+              -e GITHUB_TOKEN "$GITHUB_TOKEN" \
+              "${{ matrix.container }}" \
+              "./target/$target/debug/tebako-bench" run "${args[@]}"
+            rc=$?
+          else
+            cargo build -p tebako-bench
+            bin="./target/debug/tebako-bench"
+            [ -f "$bin.exe" ] && bin="$bin.exe"
+            "$bin" run "${args[@]}"
+            rc=$?
+          fi
+          set -e
+          # spec 27 §8: 0 ok · 1 red-matrix deliverable (artifacts written,
+          # the leg still succeeds) · 2 operational (harness fault — red leg).
+          if [ "$rc" -eq 2 ]; then exit 2; fi
+          echo "tebako-bench run exit $rc (0 ok / 1 red-matrix deliverable)"
+      - name: Upload the leg's results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-${{ matrix.triplet }}
+          path: out/
+          if-no-files-found: error
+
+  report:
+    needs: run
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # the bench-history append (release runs)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@1.94.1
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+      - name: Build the harness
+        run: cargo build -p tebako-bench
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: bench-*
+          path: legs/
+      - name: Merge into the report
+        run: |
+          set +e
+          ./target/debug/tebako-bench report legs/bench-*/out/results.json \
+            --md report.md --json dashboard.json
+          rc=$?
+          set -e
+          if [ "$rc" -eq 2 ]; then exit 2; fi
+          echo "tebako-bench report exit $rc"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bench-report
+          path: |
+            report.md
+            dashboard.json
+          if-no-files-found: error
+      - name: Append to the bench-history branch (release runs only)
+        if: github.event_name == 'release'
+        run: |
+          set -e
+          tag="${{ github.event.release.tag_name }}"
+          git config user.name tebako-ci
+          git config user.email tebako@ribose.com
+          git fetch origin bench-history || true
+          if git show-ref --verify --quiet refs/remotes/origin/bench-history; then
+            git worktree add .bench-history -B bench-history origin/bench-history
+          else
+            git worktree add --orphan bench-history .bench-history
+          fi
+          dest=".bench-history/$tag"
+          mkdir -p "$dest"
+          cp report.md dashboard.json "$dest/"
+          git -C .bench-history add "$tag"
+          git -C .bench-history commit -m "bench: $tag (run ${{ github.run_id }})"
+          git -C .bench-history push origin bench-history
