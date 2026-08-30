@@ -59,7 +59,7 @@ enum Command {
         repo_root: PathBuf,
     },
     /// Merge N triplet result files into a markdown report + dashboard JSON
-    /// (planned: the report-renderer slice).
+    /// (spec 27 §7: stats re-derived from the merged run records).
     Report {
         /// The per-triplet results.json files to merge.
         #[arg(required = true)]
@@ -144,9 +144,8 @@ fn run(cli: Cli) -> Result<u8, BenchError> {
                 repo_root,
             })
         }
-        Command::Report { .. } => Err(BenchError::not_implemented(
-            "report",
-            "slice 6 (report renderer)",
-        )),
+        Command::Report { results, md, json } => {
+            tebako_bench::report::report(&tebako_bench::report::ReportRequest { results, md, json })
+        }
     }
 }

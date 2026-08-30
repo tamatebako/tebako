@@ -23,6 +23,7 @@ pub mod acquire;
 pub mod engine;
 pub mod error;
 pub mod platforms;
+pub mod report;
 pub mod result;
 pub mod sampler;
 pub mod suite;
