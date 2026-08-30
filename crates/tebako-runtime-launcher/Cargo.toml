@@ -14,8 +14,10 @@ categories = ["filesystem"]
 # wrapper profile — opt-level="z", fat LTO, one codegen unit,
 # panic="abort", stripped symbols (the same discipline the size-gated
 # tebako-bootstrap builds under; the < 3 MB loader gate itself does NOT
-# apply to the wrapper — its budget is single-digit MB, measured on the
-# CI legs' "wrapper size" step). The crate carries no per-runtime
+# apply to the wrapper — its budget is single-digit MB per platform
+# artifact: gated on the native ship forms in the CI legs' "Wrapper
+# size" step, with the static-musl linux ship form landing its gate
+# with TODO.java/04's musl build). The crate carries no per-runtime
 # knowledge (spec 29 §7): the interpreter path, the visibility
 # mechanism, and the entrypoint's args_default all flow from the
 # images' own manifests.
