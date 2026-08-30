@@ -11,7 +11,12 @@
 //! that its rbconfig follows `TEBAKO_MOUNT_ROOT`, gating the driver's
 //! run-time root override (spec 17 §1); `preload_shim` (schema_minor 2)
 //! and `runtime_dll` (schema_minor 3) — flowed into the handoff env by
-//! the boot (see `crate::injection`).
+//! the boot (see `crate::injection`); `interpreter` and `visibility`
+//! (schema_minor 4, spec 29 §2/§3) — the wrapper-exe pattern's
+//! declaration: parsed and flowed verbatim here, consumed and
+//! grammar-checked by `crate::wrapper` (the keys are wrapper-only — the
+//! linked driver never gates on them, and spec 29 §4 assigns the
+//! wrapper's refusals exit 65, not this module's 78s).
 
 use serde::Deserialize;
 
@@ -72,6 +77,18 @@ pub struct ImageLayout {
     /// Absent ⇒ no export (an older image — the exclusion is simply
     /// off).
     pub runtime_dll: Option<String>,
+    /// The interpreter's in-image path (additive, schema_minor 4 —
+    /// spec 29 §2): POSIX-absolute, resolved against the env image's
+    /// mount by the wrapper exe. Absent ⇒ the linked pattern (this
+    /// driver compiled into the interpreter). Flowed verbatim — the
+    /// wrapper ([`crate::wrapper`]) validates form and resolution with
+    /// the spec 29 §4 exit-65 refusals.
+    pub interpreter: Option<String>,
+    /// The wrapper's kernel-visibility mechanism (additive,
+    /// schema_minor 4 — spec 29 §3): `preload` / `seccomp-notify` /
+    /// `exec-cache`. Absent ⇒ the spec's locked default order. Flowed
+    /// verbatim; the wrapper maps and honors it (or fails closed).
+    pub visibility: Option<String>,
 }
 
 /// The tolerant serde view: every field optional so the checks below can
@@ -87,6 +104,8 @@ struct LayoutView {
     mount_root_override: Option<bool>,
     preload_shim: Option<String>,
     runtime_dll: Option<String>,
+    interpreter: Option<String>,
+    visibility: Option<String>,
 }
 
 impl ImageLayout {
@@ -168,6 +187,8 @@ impl ImageLayout {
             mount_root_override: view.mount_root_override.unwrap_or(false),
             preload_shim: view.preload_shim.filter(|s| !s.is_empty()),
             runtime_dll,
+            interpreter: view.interpreter.filter(|s| !s.is_empty()),
+            visibility: view.visibility.filter(|s| !s.is_empty()),
         })
     }
 }
@@ -192,6 +213,8 @@ mod tests {
                 mount_root_override: false,
                 preload_shim: None,
                 runtime_dll: None,
+                interpreter: None,
+                visibility: None,
             }
         );
         // unknown keys within the MAJOR are tolerated (spec 18 §3.2 / S57)
@@ -284,6 +307,27 @@ mod tests {
             assert!(err.message.contains(bad), "{err}");
             assert!(err.message.contains("/rt/ruby.tfs"), "{err}");
         }
+    }
+
+    #[test]
+    fn the_wrapper_keys_are_additive_and_flow_verbatim() {
+        // absent (linked-pattern images) ⇒ None on both — the wrapper
+        // refuses by name downstream (spec 29 §2), the linked driver
+        // never reads them
+        let plain = ImageLayout::check(GOOD, "/__tfs__", "/rt/ruby.tfs").unwrap();
+        assert_eq!(plain.interpreter, None);
+        assert_eq!(plain.visibility, None);
+        // declared ⇒ flowed verbatim (the wrapper grammar-checks — spec
+        // 29 §4's refusals are exit 65, not this module's 78)
+        let declared = format!("{GOOD}interpreter: /bin/java\nvisibility: preload\n");
+        let l = ImageLayout::check(&declared, "/__tfs__", "/rt/java.tfs").unwrap();
+        assert_eq!(l.interpreter.as_deref(), Some("/bin/java"));
+        assert_eq!(l.visibility.as_deref(), Some("preload"));
+        // an empty declaration is no declaration
+        let empty = format!("{GOOD}interpreter: \"\"\nvisibility: \"\"\n");
+        let l = ImageLayout::check(&empty, "/__tfs__", "/rt/java.tfs").unwrap();
+        assert_eq!(l.interpreter, None);
+        assert_eq!(l.visibility, None);
     }
 
     #[test]

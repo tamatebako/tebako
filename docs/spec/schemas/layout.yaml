@@ -15,7 +15,7 @@
 
 schema: layout
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 3 # MINOR — additive changes only (1: mount_root_override; 2: preload_shim; 3: runtime_dll)
+schema_minor: 4 # MINOR — additive changes only (1: mount_root_override; 2: preload_shim; 3: runtime_dll; 4: interpreter + visibility)
 status: normative
 owner: tebako-runtime-ruby (writer) + crates/tebako-driver (reader); grammar owned here
 edge: C3 (runtime exe ↔ env image)
@@ -130,6 +130,45 @@ grammar:
       build time (the built tree's bin/<name> is THE file the build
       produced) and flows it; nothing downstream recomputes it. Absent
       ⇒ no export (an older image — the exclusion is simply off).
+  interpreter:
+    type: string
+    required: false
+    since: schema_minor 4
+    notes: >-
+      The interpreter's in-image path (POSIX-absolute on every platform,
+      e.g. /bin/java) — the spec-29 wrapper-exe pattern: a runtime whose
+      exe artifact is the tebako-owned wrapper (repacked upstream bytes
+      the driver cannot be linked into) declares the real interpreter
+      here; the wrapper resolves it against the env image's mount,
+      drive-qualified onto the runtime root per spec 17 §1. Absent ⇒ the
+      linked pattern (the driver is compiled into the interpreter exe;
+      era-2 ruby images) — the key is wrapper-consumed, so the linked
+      driver parses but never gates on it. The WRAPPER fails closed:
+      absent under the wrapper pattern, a malformed value (not
+      POSIX-absolute, '..' components), or a path that does not resolve
+      inside the env mount is a named boot error — exit 65 naming the
+      key / the path and the mount (spec 29 §2/§4). SSOT: the runtime's
+      factory authors the path once (the image's own manifest owns it —
+      the wrapper crate carries no per-runtime knowledge, spec 29 §7).
+  visibility:
+    type: string
+    required: false
+    since: schema_minor 4
+    notes: >-
+      The kernel-visibility mechanism the wrapper honors for the
+      interpreter and its children (spec 29 §3 — spec 07 §8's locked
+      tiers applied to the runtime's own interpreter, interposition-
+      first, never FUSE): 'preload' (tier 1 — the POSIX default for
+      dynamic interpreters; requires the preload_shim grant, schema_minor
+      2), 'seccomp-notify' (tier 2a — linux statics), 'exec-cache' (tier
+      2b — the windows default, universal fallback; the interpreter home
+      tree materializes into the spec 22 §6 exec cache). Absent ⇒ the
+      locked default order (tier 1 on POSIX, tier 2b on windows and for
+      statics without tier 2a), journaled at boot. Wrapper-consumed like
+      `interpreter`; an unknown value, or a declared mechanism unusable
+      on the host, is the wrapper's named boot error — exit 65 naming
+      the mechanism and the fact (spec 29 §3/§4); the factory validates
+      the declaration against the runtime's platform list at press.
   interpreter_api_version:
     type: string
     required: true
@@ -153,5 +192,9 @@ refusals:
     behavior: exit 78 — the declaration lies; rebuild the runtime with the current factory
   - case: runtime_dll declared with a path separator or drive qualifier
     behavior: exit 78 — a basename owns no path; the declaration lies
+  - case: interpreter absent under the wrapper pattern, malformed, or not resolving inside the env mount (spec 29 §2)
+    behavior: exit 65 naming the key / the path and the mount — the wrapper's boot error, never a silent linked-pattern guess
+  - case: visibility unknown, or declared but unusable on the host (spec 29 §3)
+    behavior: exit 65 naming the mechanism and the fact — fail closed, never a silent fallback
 
 deprecated: [] # no field is in a deprecation window

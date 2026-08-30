@@ -1,0 +1,36 @@
+[package]
+name = "tebako-runtime-launcher"
+description = "The spec-29 wrapper exe — the standalone tebako driver for repacked runtimes: mounts the env image + payloads on the exact spec-17 wire, then execs the interpreter the env image declares (layout.interpreter)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["tebako", "runtime", "driver", "wrapper", "tfs"]
+categories = ["filesystem"]
+
+# Size discipline (spec 29 §5): the workspace release profile IS the
+# wrapper profile — opt-level="z", fat LTO, one codegen unit,
+# panic="abort", stripped symbols (the same discipline the size-gated
+# tebako-bootstrap builds under; the < 3 MB loader gate itself does NOT
+# apply to the wrapper — its budget is single-digit MB, measured on the
+# CI legs' "wrapper size" step). The crate carries no per-runtime
+# knowledge (spec 29 §7): the interpreter path, the visibility
+# mechanism, and the entrypoint's args_default all flow from the
+# images' own manifests.
+
+[dependencies]
+# The whole pattern lives in the driver's spec-29 module — this binary
+# is its thin process layer (argv collection, exec/spawn, exit codes).
+tebako-driver = { version = "2.0.0", path = "../tebako-driver" }
+
+[[bin]]
+name = "tebako-runtime-launcher"
+path = "src/main.rs"
+
+[dev-dependencies]
+# The contract fixtures are tar images written in-code (tar — not zip —
+# because the zip backend pins files to 0o644 and the stub interpreter
+# must materialize with its exec bit).
+tar = { version = "0.4", default-features = false }

@@ -157,6 +157,8 @@ mod tests {
             mount_root_override: false,
             preload_shim: None,
             runtime_dll: runtime_dll.map(str::to_string),
+            interpreter: None,
+            visibility: None,
         }
     }
 
