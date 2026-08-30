@@ -91,9 +91,8 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
     let mut triplets: Vec<TripletReport> = Vec::new();
     let mut suite: Option<String> = None;
     for path in &req.results {
-        let text = std::fs::read_to_string(path).map_err(|e| {
-            BenchError::operational(format!("cannot read {}: {e}", path.display()))
-        })?;
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| BenchError::operational(format!("cannot read {}: {e}", path.display())))?;
         let file = ResultFile::from_json(&text).map_err(|e| {
             BenchError::operational(format!("cannot parse {}: {e}", path.display()))
         })?;
@@ -116,7 +115,10 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
                 )))
             }
         }
-        if triplets.iter().any(|t: &TripletReport| t.file.triplet == file.triplet) {
+        if triplets
+            .iter()
+            .any(|t: &TripletReport| t.file.triplet == file.triplet)
+        {
             return Err(BenchError::operational(format!(
                 "one result file per triplet (§7): '{}' given twice ({})",
                 file.triplet,
@@ -130,9 +132,8 @@ pub fn report(req: &ReportRequest) -> Result<u8, BenchError> {
     let suite = suite.unwrap_or_default();
 
     let md = render_markdown(&suite, &triplets);
-    std::fs::write(&req.md, md).map_err(|e| {
-        BenchError::operational(format!("cannot write {}: {e}", req.md.display()))
-    })?;
+    std::fs::write(&req.md, md)
+        .map_err(|e| BenchError::operational(format!("cannot write {}: {e}", req.md.display())))?;
     let dash = dashboard(&suite, &triplets);
     let json = serde_json::to_string_pretty(&dash)
         .map_err(|e| BenchError::operational(format!("dashboard serialize: {e}")))?;
