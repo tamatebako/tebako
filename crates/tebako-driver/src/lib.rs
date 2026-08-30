@@ -28,6 +28,13 @@
 //! This crate is the Rust successor of the v1 C++ `tebako-main` driver:
 //! no embedded-image knowledge (the image era), no `/local/stub.rb`
 //! convention, multi-mount by construction.
+//!
+//! The driver executes in one of two patterns (spec 17 §6, spec 29):
+//! LINKED into the interpreter exe (factory-built runtimes — [`ffi`]
+//! entries) or as the WRAPPER exe for repacked runtimes ([`wrapper`] —
+//! the `tebako-runtime-launcher` binary crate is the pattern's one
+//! home). The wire and the boot are identical; only the handoff target
+//! differs (an in-process interpreter vs an exec'd one).
 
 #![deny(unsafe_code)]
 
@@ -40,11 +47,13 @@ pub mod injection;
 pub mod layout;
 pub mod materialize;
 pub mod path_env;
+pub mod wrapper;
 
 pub use driver::{
     boot, boot_with_mount_modes, BootOutcome, DriverError, Env, MountModes, OwnTrailer, ProcessEnv,
 };
 pub use handoff::{Handoff, ImageSource, ImageSpec, SlotRef};
+pub use wrapper::{BootAction, Launch};
 
 /// The bootstrap↔runtime contract semantics this driver implements
 /// (spec 06 §6): spec 17's widened grammar — image-path triples,

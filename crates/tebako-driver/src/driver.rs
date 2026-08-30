@@ -123,10 +123,17 @@ pub(crate) fn env_var(env: &dyn Env, key: &str) -> Option<String> {
 /// (`[<original argv0>, <entry resolved in the VFS>, <user args…>]`,
 /// or the input argv unchanged for a plain boot). The program name
 /// stays at index 0: the interpreter parses its argv conventionally
-/// and takes the entry as the script.
+/// and takes the entry as the script. `layout` is the env image's
+/// verified layout declaration (spec 18 C3) when an env image mounted —
+/// the linked driver ignores it past the boot; the wrapper exe
+/// (spec 29) consumes its `interpreter`/`visibility` grants.
+/// `runtime_root` is the EFFECTIVE root this boot established (the
+/// compiled-in default or its `TEBAKO_MOUNT_ROOT` override).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BootOutcome {
     pub argv: Vec<String>,
+    pub layout: Option<crate::layout::ImageLayout>,
+    pub runtime_root: String,
 }
 
 /// The mount-mode source (spec 17 §1, locked 2026-08-04): mount
@@ -825,8 +832,10 @@ pub(crate) fn vfs_drive(runtime_root: &str) -> Option<&str> {
 /// drive-qualified paths are stable across expansion, so qualifying is
 /// what keeps payload paths inside the VFS. POSIX roots carry no
 /// drive: the mount is used as declared. A relative mount (the grammar
-/// admits it) is never qualified.
-fn qualify_mount(mount: &str, runtime_root: &str) -> String {
+/// admits it) is never qualified. pub(crate): the spec-29 wrapper
+/// (`crate::wrapper`) qualifies the app payload's mount for its manifest
+/// read by the same rule.
+pub(crate) fn qualify_mount(mount: &str, runtime_root: &str) -> String {
     match vfs_drive(runtime_root) {
         Some(drive) if mount.starts_with('/') => format!("{drive}{mount}"),
         _ => mount.to_string(),
@@ -1027,7 +1036,11 @@ pub fn boot_with_mount_modes(
                 v.push(program.clone());
             }
             v.extend(h.interpreter_args.iter().cloned());
-            Ok(BootOutcome { argv: v })
+            Ok(BootOutcome {
+                argv: v,
+                layout: declaration,
+                runtime_root: runtime_root.to_string(),
+            })
         })();
         if result.is_err() {
             context().write().unwrap().unmount();
@@ -1110,7 +1123,11 @@ pub fn boot_with_mount_modes(
                 v
             }
         };
-        Ok(BootOutcome { argv: rewritten })
+        Ok(BootOutcome {
+            argv: rewritten,
+            layout: declaration,
+            runtime_root: runtime_root.to_string(),
+        })
     })();
     if result.is_err() {
         // Never a partial mount (spec 17 §1): one bad slot aborts the
