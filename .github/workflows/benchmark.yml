@@ -31,21 +31,25 @@ jobs:
       matrix: ${{ fromJSON(needs.matrix.outputs.matrix) }}
     runs-on: ${{ matrix.runner }}
     steps:
+      # ci.yml's layout: the repo lands in tebako-rs/ and its sibling path
+      # dependency dwarfs-rs in dwarfs-rs/ — cargo must LOAD every workspace
+      # member's manifest (tfs → dwarfs-t at ../dwarfs-rs) even though
+      # tebako-bench itself is pure Rust. actions/checkout refuses paths
+      # OUTSIDE the workspace, so both go under it (run 33343013677).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # dwarfs-rs is a sibling path dependency until it has a release —
-      # cargo must LOAD every workspace member's manifest (tfs → dwarfs-t
-      # at ../dwarfs-rs) even though tebako-bench itself is pure Rust.
-      # Same pattern as ci.yml.
+        with:
+          path: tebako-rs
       - name: Checkout dwarfs-rs (sibling path dep)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tamatebako/dwarfs-rs
-          path: ../dwarfs-rs
+          path: dwarfs-rs
           submodules: recursive
       - uses: dtolnay/rust-toolchain@1.94.1
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
       - name: Run the matrix leg
         shell: bash
+        working-directory: tebako-rs
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -90,7 +94,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: bench-${{ matrix.triplet }}
-          path: out/
+          path: tebako-rs/out/
           if-no-files-found: error
 
   report:
@@ -101,17 +105,20 @@ jobs:
       contents: write # the bench-history append (release runs)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tebako-rs
       # Same sibling path dep as the run legs: cargo loads the whole
       # workspace's manifests even for `-p tebako-bench`.
       - name: Checkout dwarfs-rs (sibling path dep)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: tamatebako/dwarfs-rs
-          path: ../dwarfs-rs
+          path: dwarfs-rs
           submodules: recursive
       - uses: dtolnay/rust-toolchain@1.94.1
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
       - name: Build the harness
+        working-directory: tebako-rs
         run: cargo build -p tebako-bench
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -120,7 +127,7 @@ jobs:
       - name: Merge into the report
         run: |
           set +e
-          ./target/debug/tebako-bench report legs/bench-*/out/results.json \
+          tebako-rs/target/debug/tebako-bench report legs/bench-*/out/results.json \
             --md report.md --json dashboard.json
           rc=$?
           set -e
@@ -135,6 +142,7 @@ jobs:
           if-no-files-found: error
       - name: Append to the bench-history branch (release runs only)
         if: github.event_name == 'release'
+        working-directory: tebako-rs
         run: |
           set -e
           tag="${{ github.event.release.tag_name }}"
@@ -148,7 +156,7 @@ jobs:
           fi
           dest=".bench-history/$tag"
           mkdir -p "$dest"
-          cp report.md dashboard.json "$dest/"
+          cp ../report.md ../dashboard.json "$dest/"
           git -C .bench-history add "$tag"
           git -C .bench-history commit -m "bench: $tag (run ${{ github.run_id }})"
           git -C .bench-history push origin bench-history
