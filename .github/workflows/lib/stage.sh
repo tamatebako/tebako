@@ -1,5 +1,5 @@
 #!/bin/bash
-# stage.sh — stage the five release binaries for one platform, strip
+# stage.sh — stage the six release binaries for one platform, strip
 # them, publish the size table, gate the bootstrap size, and write the
 # sha/size fragments the finalize job merges into SHA256SUMS +
 # manifest.json.
@@ -23,7 +23,9 @@ SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
 # Tool list: binary names equal the artifact tool names (no mapping
 # table — this script must also run under bash 3.2 / POSIX sh, which
 # have no `declare -A`). tebako-shim is the dispatcher (TODO.testing/07).
-TOOLS="tebako-bootstrap tfs tebako-pkg tebako tebako-shim"
+# tebako-runtime-launcher is the spec-29 wrapper exe (the repacked-
+# runtime ship form — tebako-packages/openjdk#23's download).
+TOOLS="tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher"
 
 mkdir -p out "fragments/frag-$PLATFORM"
 

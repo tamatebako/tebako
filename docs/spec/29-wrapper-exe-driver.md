@@ -157,9 +157,12 @@ honors it or fails closed — never a silent fallback (invariant 9):
   loader gate (spec 00 invariant 2). A budget is declared and measured
   in CI: single-digit MB per platform artifact, reported on every
   release; a regression past the budget fails the release build. The
-  wrapper embeds the driver plus the TFS backends; it is static-musl on
-  linux targets, platform-native elsewhere — the audience rule is
-  unchanged (nothing of ours compiles on a user's machine).
+  wrapper embeds the driver plus the TFS backends; the release ships it
+  per-platform like the other tools — static-musl and the gnu-floor
+  build on linux targets, platform-native elsewhere (the openjdk
+  promotion, TODO.java/04, consumes the per-platform assets) — the
+  audience rule is unchanged (nothing of ours compiles on a user's
+  machine).
 - Rust discipline per spec 14: `#![forbid(unsafe_code)]` outside the FFI
   boundary modules; named errors on every mount/exec/materialize path
   (no unwraps there); the bootstrap size profile (`opt-level="z"`, fat

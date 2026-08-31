@@ -86,6 +86,11 @@ bad() {
 expected_rc() {
   case $1 in
     tebako-bootstrap*) echo 65 ;;  # named bare-trailer error (EX_TEBAKO_MANIFEST)
+    # The spec-29 wrapper exe with no handoff answers its named
+    # no-env-image error (spec 29 §2) — pinned: bare AND --version both
+    # exit 65 (the interpreter lives in the env image; there is no
+    # --version without one). Must precede the tebako-* catch-all.
+    tebako-runtime-launcher*) echo 65 ;;
     tebako-shim*)      echo 0 ;;   # --help
     tebako-pkg*)       echo 0 ;;   # --help
     tebako-*)          echo 0 ;;   # --version
@@ -99,6 +104,7 @@ expected_rc() {
 smoke_args() {
   case $1 in
     tebako-bootstrap*) echo "" ;;
+    tebako-runtime-launcher*) echo "" ;;
     tebako-shim*)      echo "--help" ;;
     tebako-pkg*)       echo "--help" ;;
     tebako-*)          echo "--version" ;;

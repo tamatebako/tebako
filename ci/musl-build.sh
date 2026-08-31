@@ -135,7 +135,7 @@ export SQFS_SYS_VCPKG_INSTALLED_DIR="$WS/.sqfs-musl/$TRIPLET"
 # (run 32940980101 failed the 3 MiB gate on every leg for this reason).
 cargo build --release -p tebako-bootstrap
 cargo build --release \
-  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
+  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim -p tebako-runtime-launcher
 
 echo "== stage / strip / size-gate =="
 export TARGET

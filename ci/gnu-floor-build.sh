@@ -169,7 +169,7 @@ export RUSTFLAGS="-C linker=$WS/tebako-rs/ci/linux-link-wrap.sh"
 # (run 32940980101 failed the 3 MiB gate on every leg for this reason).
 cargo build --release --target "$TARGET" -p tebako-bootstrap
 cargo build --release --target "$TARGET" \
-  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
+  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim -p tebako-runtime-launcher
 
 echo "== stage / strip / size-gate =="
 export TARGET

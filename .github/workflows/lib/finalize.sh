@@ -23,7 +23,7 @@ mkdir -p out/sidecars
 for platform_dir in "$FRAG"/frag-*; do
   platform="${platform_dir##*/frag-}"
   exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
-  for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim; do
+  for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
     sha=$(cat "$platform_dir/${tool}-${platform}.sha256")
     name="${tool}-${VERSION}-${platform}${exe}"
     echo "$sha  $name" >> out/SHA256SUMS
@@ -37,7 +37,8 @@ sort -k2 -o out/SHA256SUMS out/SHA256SUMS
 #   "name": "tebako-rs",
 #   "version": "<VERSION>",
 #   "assets": [ {platform, file, sha256, size_bytes}, ... ],   # tebako-bootstrap
-#   "tools": { "tfs": [...], "tebako-pkg": [...], "tebako": [...], "tebako-shim": [...] }
+#   "tools": { "tfs": [...], "tebako-pkg": [...], "tebako": [...],
+#              "tebako-shim": [...], "tebako-runtime-launcher": [...] }
 # }
 # The `assets` array is exactly the BootstrapManager's consumed shape, so
 # the gem/tebako-cli resolve the Rust bootstrap unchanged. Windows asset
@@ -64,6 +65,7 @@ tfs_json=$(jq_entries tfs | jq -s 'sort_by(.platform)')
 pkg_json=$(jq_entries tebako-pkg | jq -s 'sort_by(.platform)')
 cli_json=$(jq_entries tebako | jq -s 'sort_by(.platform)')
 shim_json=$(jq_entries tebako-shim | jq -s 'sort_by(.platform)')
+launcher_json=$(jq_entries tebako-runtime-launcher | jq -s 'sort_by(.platform)')
 
 jq -n \
   --arg version "$VERSION" \
@@ -72,6 +74,7 @@ jq -n \
   --argjson pkg "$pkg_json" \
   --argjson cli "$cli_json" \
   --argjson shim "$shim_json" \
+  --argjson launcher "$launcher_json" \
   '{
     name: "tebako-rs",
     version: $version,
@@ -80,7 +83,8 @@ jq -n \
       "tfs": $tfs,
       "tebako-pkg": $pkg,
       "tebako": $cli,
-      "tebako-shim": $shim
+      "tebako-shim": $shim,
+      "tebako-runtime-launcher": $launcher
     }
   }' > out/manifest.json
 
@@ -98,7 +102,7 @@ cat out/manifest.json
   echo "|---|---|---|"
   for platform_dir in $(ls -d "$FRAG"/frag-* | sort); do
     platform="${platform_dir##*/frag-}"
-    for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim; do
+    for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
       size=$(cat "$platform_dir/${tool}-${platform}.size")
       echo "| $platform | $tool | $size |"
     done
