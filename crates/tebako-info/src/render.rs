@@ -235,6 +235,22 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 out.push_str(&line);
                 out.push('\n');
             }
+            Requirement::Runtime {
+                engine,
+                implementation,
+                constraint,
+                expose,
+            } => {
+                let mut line = format!("    runtime:{engine}:{constraint}");
+                if let Some(imp) = implementation {
+                    line.push_str(&format!(" (implementation: {imp})"));
+                }
+                if !expose.is_empty() {
+                    line.push_str(&format!(" exposes: {}", expose.join(", ")));
+                }
+                out.push_str(&line);
+                out.push('\n');
+            }
         }
     }
 }
