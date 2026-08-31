@@ -205,8 +205,11 @@ the bytes come from, never WHAT runs.
      surface, our declaration, in code — never a payload's burden. The
      load-time materialization writes (spec 22's dlmap surfaces,
      windows' leave-in-place dll map included, spec 22 §2.1) are
-     process-internal and never policy-gated — the cache stays
-     read-only to payload IO;
+     process-internal and never policy-gated — and neither are the
+     reads-back of that same tree (a materialized interpreter's own
+     home reads; tebako#502, 2026-08-30 — the per-process hex leaf is
+     unauthorable as a grant, and the tree's content is image content
+     by construction); the cache stays read-only to payload IO;
   4. the union of declared needs (§2), symbolic atoms resolved;
   5. the composition's `mounts:`/`needs:` (D2/D5) and operator config;
   6. `argument_files: auto` — payload arguments naming existing host
@@ -288,7 +291,9 @@ guess:
   per observed path, aggregated on the atom-SUBSTITUTED form so raw
   variants of one path (`/T/x` vs `/T//x`) merge; access = the
   strongest observed op (any write ⇒ `rw`); floor, store, and
-  exec-cache paths EXCLUDED (they are automatic — never declared);
+  exec-cache paths EXCLUDED (they are automatic — never declared; since
+  tebako#502 the exec-cache tree is not even journaled — the exclusion
+  covers pre-fix journals);
   symbolic atoms re-substituted (`/Users/alice/…` → `$HOME/…`,
   longest prefix wins); relative and empty paths (cwd- or
   dirfd-relative probes — not declarable) OMITTED and counted in the

@@ -709,6 +709,26 @@ impl FsContext {
                 };
             }
         }
+        // tebako#502: a dlmap spelling the image did not answer above
+        // names our own per-process materialized tree (the home-tree
+        // layout `tebako-home-<handle>/…` or a flattened drive-letter
+        // tail). Those bytes are process-internal — they rode in
+        // through the extraction writes, which are likewise ungated —
+        // and the per-process hex leaf is unauthorable as a grant
+        // (bind canonicalizes; the path does not exist at bind time).
+        // The host copy answers without the policy gate; the routing
+        // below could only gate-and-ENOENT it (a tmpdir host path
+        // matches no VFS mount point).
+        if Self::dlmap_tail(path).is_some() {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Open, path, "host")
+                        .detail("reason", Value::String("dlmap-tree".to_string()))
+                        .dur(start),
+                );
+            }
+            return Err(libc::ENOENT);
+        }
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08): the policy gates the
             // consumer's fall-through to the host fs, for reads AND writes
@@ -966,6 +986,11 @@ impl FsContext {
         if self.mounts.is_empty() {
             return Err(libc::ENODEV);
         }
+        // tebako#502 (see open()): a dlmap spelling names our own
+        // materialized tree — the host directory answers, ungated.
+        if Self::dlmap_tail(path).is_some() {
+            return Err(libc::ENOENT);
+        }
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08), see open().
             self.host_check(path, HostAccess::Ro)?;
@@ -1100,6 +1125,19 @@ impl FsContext {
                     return Ok(st);
                 }
             }
+        }
+        // tebako#502 (see open()): a dlmap spelling the image did not
+        // answer is our own materialized tree — the host copy answers,
+        // ungated.
+        if Self::dlmap_tail(path).is_some() {
+            if let Some(start) = trace_start {
+                trace::emit(
+                    trace::Event::new(trace::Op::Stat, path, "host")
+                        .detail("reason", Value::String("dlmap-tree".to_string()))
+                        .dur(start),
+                );
+            }
+            return Err(libc::ENOENT);
         }
         let Some(mount) = self.find_mount(path) else {
             // Host-passthrough decision (spec 08), see open().
@@ -1564,14 +1602,25 @@ impl FsContext {
             eprintln!("[tfs] dlmap2file: {path} (effective {effective})");
         }
         let mut visited = std::collections::HashSet::new();
-        let result = self.extract_for_exec(
-            effective,
-            effective,
-            &ClosureDest::Dlcache,
-            &[],
-            &mut visited,
-            closure.as_mut(),
-        );
+        // tebako#502: a dlmap spelling whose tail the mounts do not
+        // hold IS the materialized host copy already (the home-tree
+        // layout or a flattened drive-letter tail) — the consumer's
+        // fallback answers it from the host. Never gated:
+        // extract_for_exec's host_check exists for GENUINE host paths
+        // (spec 08 §3), and the per-process hex leaf is unauthorable
+        // as a grant.
+        let result = if tail.is_some() && self.find_mount(effective).is_none() {
+            Err(libc::ENOENT)
+        } else {
+            self.extract_for_exec(
+                effective,
+                effective,
+                &ClosureDest::Dlcache,
+                &[],
+                &mut visited,
+                closure.as_mut(),
+            )
+        };
         if let Ok(host) = &result {
             if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
                 eprintln!("[tfs] dlmap2file: {effective} -> {}", host.display());
@@ -3217,6 +3266,99 @@ mod tests {
         // No whole-tree: the home's data file never materializes.
         let root = host.parent().unwrap().parent().unwrap();
         assert!(!root.join("lib/modules").exists());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// tebako#502: the per-process dl tree (dlmap-marker paths) is
+    /// process-internal storage — the policy NEVER gates it. A deny
+    /// jail cannot name the tree (the hex leaf is per-process and bind
+    /// canonicalizes a not-yet-existing path), and the tree's content
+    /// rode in through the ungated extraction writes. The
+    /// wrapper-runtime pattern (a home-layout mount's materialized
+    /// interpreter reading its own `lib/jvm.cfg` by the host spelling)
+    /// therefore composes with a deny jail — the spec 22 §3.4 authored
+    /// JRE grant is the spelling for an operator-HOST JRE, not for the
+    /// runtime's own materialized home.
+    #[test]
+    fn deny_jail_never_gates_the_dlmap_tree() {
+        let dir = std::env::temp_dir().join(format!("tfs-dlmap-jail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_home_zip(&dir, false);
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+        ctx.set_host_policy(
+            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Deny, vec![], vec![])
+                .unwrap(),
+            None,
+        );
+
+        // The java/04 dogfood's failing read: the materialized
+        // interpreter's own data file by its host spelling. "Not ours,
+        // pass through" — never a policy verdict.
+        let jvm_cfg = "/tmp/tebako-dl-abcd1234/tebako-home-0/lib/jvm.cfg";
+        assert_eq!(ctx.open(jvm_cfg, libc::O_RDONLY), Err(libc::ENOENT));
+        assert_eq!(ctx.open(jvm_cfg, libc::O_WRONLY), Err(libc::ENOENT));
+        assert_eq!(ctx.stat(jvm_cfg).unwrap_err(), libc::ENOENT);
+        assert_eq!(ctx.opendir(jvm_cfg).unwrap_err(), libc::ENOENT);
+        // The dlopen/fopen route respells to the tail — same verdict.
+        assert_eq!(ctx.dlmap2file(jvm_cfg).unwrap_err(), libc::ENOENT);
+
+        // A genuine host path stays gated under the same policy.
+        assert_eq!(ctx.open("/etc/passwd", libc::O_RDONLY), Err(libc::EPERM));
+        // And a HELD tail still answers from the image under deny — the
+        // dlmap-prefix redirect itself is untouched. The redirect serves
+        // a RAW host fd (mmap-capable — dyld maps what it opens), not a
+        // token fd, so the engine's close() does not own it; process
+        // exit reaps it.
+        ctx.open("/tmp/tebako-dl-abcd1234/tfs/bin/tool", libc::O_RDONLY)
+            .expect("a held tail materializes and serves a real fd");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// tebako#502 × spec 23 §8: under a record policy the journal is the
+    /// `tfs needs` generator's input — it records what the PAYLOAD
+    /// touched on the host. Our own materialized tree is not a need, so
+    /// a dlmap-marker path leaves no journal line.
+    #[test]
+    fn record_policy_does_not_journal_the_dlmap_tree() {
+        let dir = std::env::temp_dir().join(format!("tfs-dlmap-rec-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_home_zip(&dir, false);
+        let log = dir.join("journal.log");
+        let journal = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+        ctx.set_host_policy(
+            crate::policy::HostPolicy::bind(crate::policy::PolicyDefault::Record, vec![], vec![])
+                .unwrap(),
+            Some(journal),
+        );
+
+        let jvm_cfg = "/tmp/tebako-dl-abcd1234/tebako-home-0/lib/jvm.cfg";
+        assert_eq!(ctx.open(jvm_cfg, libc::O_RDONLY), Err(libc::ENOENT));
+        // Control: a genuine host read journals as today.
+        assert_eq!(ctx.open("/etc/hosts", libc::O_RDONLY), Err(libc::ENOENT));
+        drop(ctx);
+
+        let text = std::fs::read_to_string(&log).unwrap();
+        assert!(
+            text.contains("event=jail-allow path=/etc/hosts op=read"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("tebako-dl"),
+            "the dl tree is not a host need: {text}"
+        );
 
         let _ = std::fs::remove_dir_all(&dir);
     }
