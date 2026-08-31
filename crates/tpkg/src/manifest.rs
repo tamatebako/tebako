@@ -40,6 +40,10 @@ pub enum ManifestError {
     Yaml(serde_yml::Error),
     /// Semantic validation failure (`validate()`).
     Invalid(&'static str),
+    /// Semantic validation failure carrying a formatted reason (the
+    /// constraint-grammar errors name the offending source string —
+    /// versions.rs is the only producer).
+    InvalidOwned(String),
     /// The `capabilities.host` jail block failed its own validation
     /// (spec 08 §4 — the reason travels with the jail error).
     Jail(crate::jail::JailError),
@@ -50,6 +54,7 @@ impl fmt::Display for ManifestError {
         match self {
             ManifestError::Yaml(e) => write!(f, "payload manifest yaml error: {e}"),
             ManifestError::Invalid(m) => write!(f, "invalid payload manifest: {m}"),
+            ManifestError::InvalidOwned(m) => write!(f, "invalid payload manifest: {m}"),
             ManifestError::Jail(e) => write!(f, "invalid payload manifest capabilities.host: {e}"),
         }
     }
@@ -59,7 +64,7 @@ impl std::error::Error for ManifestError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             ManifestError::Yaml(e) => Some(e),
-            ManifestError::Invalid(_) => None,
+            ManifestError::Invalid(_) | ManifestError::InvalidOwned(_) => None,
             ManifestError::Jail(e) => Some(e),
         }
     }
@@ -770,7 +775,8 @@ pub struct AppProvides {
     pub capabilities: Capabilities,
 }
 
-/// One engine a runtime provides (`{engine, version, abi_line, platform}`).
+/// One engine a runtime provides (`{engine, version, abi_line,
+/// platform, implementation?}`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EngineProvides {
     pub engine: String,
@@ -779,6 +785,14 @@ pub struct EngineProvides {
     /// native-extension payloads match their `"~> x.y.z"` against.
     pub abi_line: String,
     pub platform: Platform,
+    /// The engine implementation this build is (spec 28 §8 — e.g. `mri`
+    /// / `jruby` / `truffleruby` for engine `ruby`): what a spawned
+    /// dependency edge's `implementation` filter matches. Additive —
+    /// absent on single-implementation engines and on manifests that
+    /// predate the field (the compat window: eligible, never a match
+    /// failure of its own).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<String>,
 }
 
 /// Runtime provenance (`built_from: {src_sha256, patch_set}`).
@@ -802,6 +816,14 @@ pub struct RuntimeProvides {
     /// Environment defaults the dispatcher composes into the mount stack.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// The spawn surface (spec 30 §2): the commands this runtime boots as
+    /// a separate process for a consumer payload's `runtime` edge
+    /// `expose` list. The app-entrypoint grammar minus
+    /// `runtime_requirement` (a runtime runs on itself). Additive —
+    /// absent/empty = the runtime exposes no spawn commands and serves
+    /// only as the primary co-mounted runtime.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entrypoints: Vec<Entrypoint>,
     pub capabilities: Capabilities,
 }
 
@@ -976,9 +998,27 @@ impl RuntimeProvides {
                 &ep.abi_line,
                 "provides.provides[].abi_line must not be empty",
             )?;
+            if let Some(implementation) = &ep.implementation {
+                check_non_empty(
+                    implementation,
+                    "provides.provides[].implementation must not be empty when present",
+                )?;
+            }
             if ep.platform.is_reserved() {
                 return Err(ManifestError::Invalid(
                     "provides.provides[].platform must not be the reserved triplet",
+                ));
+            }
+        }
+        for ep in &self.entrypoints {
+            check_non_empty(&ep.name, "provides.entrypoints[].name must not be empty")?;
+            check_abs_path(
+                &ep.path,
+                "provides.entrypoints[].path must be absolute (inside the image)",
+            )?;
+            if ep.runtime_requirement.is_some() {
+                return Err(ManifestError::Invalid(
+                    "provides.entrypoints[].runtime_requirement is meaningless on a runtime (it runs on itself)",
                 ));
             }
         }
@@ -1089,6 +1129,22 @@ pub enum Requirement {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mount: Option<String>,
     },
+    /// A spawned-runtime edge (`{kind: runtime, engine,
+    /// implementation?, constraint, expose?}`) — spec 30 §1
+    /// (schema_minor 4): the depended runtime resolves through the
+    /// RUNTIME index into the store's runtimes/ area and is NEVER
+    /// co-mounted; its exposed entrypoints are spawned through the §2
+    /// dispatch. `implementation` narrows the engine axis (spec 28 §8);
+    /// `expose` names the depended entries the payload surfaces (the §3
+    /// shim surface) — bare command names, like library_aliases names.
+    Runtime {
+        engine: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        implementation: Option<String>,
+        constraint: Constraint,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        expose: Vec<String>,
+    },
 }
 
 impl Requirement {
@@ -1120,6 +1176,37 @@ impl Requirement {
                 check_non_empty(name, "requires[].name must not be empty")?;
                 if let Some(m) = mount {
                     check_abs_path(m, "requires[].mount must be absolute (consumer-declared)")?;
+                }
+            }
+            Requirement::Runtime {
+                engine,
+                implementation,
+                expose,
+                ..
+            } => {
+                check_non_empty(engine, "requires[].engine must not be empty")?;
+                if let Some(imp) = implementation {
+                    check_non_empty(
+                        imp,
+                        "requires[].implementation must not be empty when present",
+                    )?;
+                }
+                // spec 30 §1/§3: exposed entries are bare command names
+                // (no path separator, no drive qualifier — the
+                // library_aliases grammar), never repeated.
+                let mut seen = std::collections::HashSet::new();
+                for e in expose {
+                    check_non_empty(e, "requires[].expose[] must not be empty")?;
+                    if e.bytes().any(|b| b == b'/' || b == b'\\' || b == b':') {
+                        return Err(ManifestError::Invalid(
+                            "requires[].expose[] must be a bare command name — no path separator, no drive qualifier (spec 30 §1)",
+                        ));
+                    }
+                    if !seen.insert(e) {
+                        return Err(ManifestError::Invalid(
+                            "requires[].expose[] must not repeat a command name",
+                        ));
+                    }
                 }
             }
         }
@@ -1685,6 +1772,24 @@ impl PayloadManifest {
         self.provides.validate()?;
         for req in &self.requires {
             req.validate()?;
+        }
+        // spec 30 §3: an exposed depended-entry name never collides with
+        // the payload's OWN entrypoints — a named error at press (this
+        // cross-field rule is the model's; the JSON Schema cannot
+        // express the set intersection).
+        if let Provides::App(app) = &self.provides {
+            for req in &self.requires {
+                let Requirement::Runtime { expose, .. } = req else {
+                    continue;
+                };
+                for e in expose {
+                    if app.entrypoints.iter().any(|ep| &ep.name == e) {
+                        return Err(ManifestError::Invalid(
+                            "requires[].expose[] collides with the payload's own entrypoint name (spec 30 §3)",
+                        ));
+                    }
+                }
+            }
         }
         for p in &self.materialize {
             check_abs_path(p, "materialize[] must be absolute (inside the image)")?;

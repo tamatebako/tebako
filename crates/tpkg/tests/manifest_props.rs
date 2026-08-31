@@ -300,6 +300,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
         version: "4.0.6".to_string(),
         abi_line: "4.0".to_string(),
         platform,
+        implementation: None,
     });
     let runtime = (
         prop::collection::vec(engine, 1..=3),
@@ -314,6 +315,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
                     patch_set: "v0.2.8".to_string(),
                 },
                 env,
+                entrypoints: Vec::new(),
                 capabilities: Capabilities {
                     exec: true,
                     read: true,

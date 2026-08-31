@@ -156,7 +156,9 @@ pub mod merkle_host;
 mod model;
 mod package;
 mod region;
+pub mod runtime_store;
 pub mod settings;
+pub mod versions;
 
 pub use codec::{
     encode_ext_blocks, encode_trailer, parse_ext_blocks, parse_trailer, trailer_len,
