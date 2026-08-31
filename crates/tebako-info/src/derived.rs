@@ -181,6 +181,9 @@ pub fn derive(m: &PayloadManifest) -> Derived {
             Requirement::Language { engine, .. } => engine,
             Requirement::Toolkit { name, .. } => name,
             Requirement::Data { name, .. } => name,
+            // The spawned-runtime axis (spec 30) resolves through the
+            // runtime index — the dependency list names the engine.
+            Requirement::Runtime { engine, .. } => engine,
         };
         if !dependency_names.contains(name) {
             dependency_names.push(name.clone());

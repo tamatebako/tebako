@@ -382,6 +382,28 @@ fn requirement_json(r: &Requirement) -> Json {
             }
             Json::Object(out)
         }
+        Requirement::Runtime {
+            engine,
+            implementation,
+            constraint,
+            expose,
+        } => {
+            let mut out = vec![
+                ("kind".to_string(), s("runtime")),
+                ("engine".to_string(), s(engine)),
+                ("constraint".to_string(), s(constraint.as_str())),
+            ];
+            if let Some(imp) = implementation {
+                out.push(("implementation".to_string(), s(imp)));
+            }
+            if !expose.is_empty() {
+                out.push((
+                    "expose".to_string(),
+                    Json::Array(expose.iter().map(|e| s(e)).collect()),
+                ));
+            }
+            Json::Object(out)
+        }
     }
 }
 
