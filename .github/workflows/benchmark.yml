@@ -141,7 +141,10 @@ jobs:
       - name: Merge into the report
         run: |
           set +e
-          tebako-rs/target/debug/tebako-bench report legs/bench-*/out/results.json \
+          # upload-artifact places the uploaded directory's CONTENTS at the
+          # artifact root, so each leg lands as legs/bench-<triplet>/results.json
+          # (no out/ level — first-run bug, run 33351849756).
+          tebako-rs/target/debug/tebako-bench report legs/bench-*/results.json \
             --md report.md --json dashboard.json
           rc=$?
           set -e
