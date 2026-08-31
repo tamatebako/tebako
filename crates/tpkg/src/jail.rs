@@ -64,6 +64,15 @@ impl JailAccess {
             _ => JailAccess::Rw,
         }
     }
+
+    /// The looser of two grants (rw wins) — [`union`]'s merge: a child
+    /// needing what EITHER side declares gets the wider grant.
+    fn looser(self, other: JailAccess) -> JailAccess {
+        match (self, other) {
+            (JailAccess::Rw, _) | (_, JailAccess::Rw) => JailAccess::Rw,
+            _ => JailAccess::Ro,
+        }
+    }
 }
 
 impl Serialize for JailAccess {
@@ -646,6 +655,49 @@ pub fn intersect(request: &HostJail, tightening: &HostJail) -> HostJail {
     }
 }
 
+/// The UNION of two declared needs sets (spec 30 §4 — the spawned
+/// runtime's child must satisfy what the RUNTIME declares AND what the
+/// PAYLOAD declares; neither set is a tightening of the other). The
+/// mirror composition of [`intersect`]: the default is open when either
+/// side needs open; every grant of both sides survives, coalescing to
+/// the LOOSER access at an identical (host, mount) pair; argument files
+/// union and `auto-allowed` is honored when either side asks. `record`
+/// never survives (observation is env-only, never a declared need).
+///
+/// This is NOT a user-tightening path — the spawn bridge composes the
+/// child jail fresh from the two manifests (the parent's own jail env
+/// is replaced, never inherited; spec 30 §4).
+pub fn union(runtime_needs: &HostJail, payload_needs: &HostJail) -> HostJail {
+    // Grants key on the (host, mount) pair: the same host prefix exposed
+    // at two virtual points keeps BOTH spellings — coalescing on the
+    // host alone would drop one side's view.
+    let mut mounts: Vec<JailMount> = Vec::new();
+    for m in runtime_needs.mounts.iter().chain(&payload_needs.mounts) {
+        match mounts
+            .iter_mut()
+            .find(|c| c.host == m.host && c.mount == m.mount)
+        {
+            Some(c) => c.access = c.access.looser(m.access),
+            None => mounts.push(m.clone()),
+        }
+    }
+    let mut files = runtime_needs.argument_files.files.clone();
+    for f in &payload_needs.argument_files.files {
+        if !files.contains(f) {
+            files.push(f.clone());
+        }
+    }
+    HostJail {
+        default_open: runtime_needs.default_open || payload_needs.default_open,
+        record: false,
+        mounts,
+        argument_files: ArgumentFiles {
+            auto: runtime_needs.argument_files.auto || payload_needs.argument_files.auto,
+            files,
+        },
+    }
+}
+
 /// The locked composition of the two policy sources (spec 08 §2): the
 /// package's manifest REQUEST and the user's tightening. Returns the
 /// effective jail and the audit source label (`manifest` / `user` /
@@ -1048,6 +1100,101 @@ mod tests {
         let twice = intersect(&request, &once);
         assert_eq!(once, twice);
         assert_eq!(intersect(&once, &once), once);
+    }
+
+    // ---------------------------------------------------------------
+    // union — the spawned-runtime child's two needs sets (spec 30 §4)
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn union_open_wins_either_side() {
+        let open = HostJail::open();
+        let deny = HostJail::deny();
+        // The child must satisfy what EITHER side needs: an open need
+        // cannot be met under a deny default.
+        assert!(union(&open, &deny).default_open);
+        assert!(union(&deny, &open).default_open);
+        assert!(!union(&deny, &deny).default_open);
+    }
+
+    #[test]
+    fn union_keeps_both_sides_grants() {
+        let mut runtime = HostJail::deny();
+        runtime.mounts = vec![mount("/tmp", "/tmp", JailAccess::Rw)];
+        let mut payload = HostJail::deny();
+        payload.mounts = vec![mount(
+            "/home/u/.fontist",
+            "/home/u/.fontist",
+            JailAccess::Rw,
+        )];
+        let u = union(&runtime, &payload);
+        assert_eq!(
+            u.mounts,
+            vec![
+                mount("/tmp", "/tmp", JailAccess::Rw),
+                mount("/home/u/.fontist", "/home/u/.fontist", JailAccess::Rw),
+            ]
+        );
+    }
+
+    #[test]
+    fn union_coalesces_a_shared_grant_to_the_looser_access() {
+        // Both sides expose the same (host, mount): the child gets the
+        // wider grant (rw wins — the mirror of intersect's sticky ro).
+        let mut runtime = HostJail::deny();
+        runtime.mounts = vec![mount("/a", "/a", JailAccess::Ro)];
+        let mut payload = HostJail::deny();
+        payload.mounts = vec![mount("/a", "/a", JailAccess::Rw)];
+        assert_eq!(
+            union(&runtime, &payload).mounts,
+            vec![mount("/a", "/a", JailAccess::Rw)]
+        );
+        assert_eq!(
+            union(&payload, &runtime).mounts,
+            vec![mount("/a", "/a", JailAccess::Rw)]
+        );
+    }
+
+    #[test]
+    fn union_keeps_one_host_at_two_virtual_points_as_two_grants() {
+        // The same host dir exposed at two points is two exposures —
+        // coalescing on the host alone would silently drop one side's
+        // view of it.
+        let mut runtime = HostJail::deny();
+        runtime.mounts = vec![mount("/h", "/runtime/view", JailAccess::Ro)];
+        let mut payload = HostJail::deny();
+        payload.mounts = vec![mount("/h", "/payload/view", JailAccess::Rw)];
+        let u = union(&runtime, &payload);
+        assert_eq!(
+            u.mounts,
+            vec![
+                mount("/h", "/runtime/view", JailAccess::Ro),
+                mount("/h", "/payload/view", JailAccess::Rw),
+            ]
+        );
+    }
+
+    #[test]
+    fn union_argument_files_union_and_auto_either_side() {
+        let mut runtime = HostJail::deny_with_arg_files();
+        runtime.argument_files.files = vec!["/r".to_string()];
+        let mut payload = HostJail::deny();
+        payload.argument_files.files = vec!["/p".to_string(), "/r".to_string()];
+        let u = union(&runtime, &payload);
+        assert!(u.argument_files.auto);
+        assert_eq!(
+            u.argument_files.files,
+            vec!["/r".to_string(), "/p".to_string()]
+        );
+    }
+
+    #[test]
+    fn union_never_produces_a_record_policy() {
+        // record is env-only (serde-skipped), so no manifest can declare
+        // it — pin the property anyway: the spawn bridge composes a
+        // policy, never an observation.
+        let record = HostJail::parse_env_spec("record").unwrap();
+        assert!(!union(&record, &HostJail::deny()).record);
     }
 
     #[test]

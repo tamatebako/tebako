@@ -21,6 +21,10 @@ serde_yml = "0.0.12"
 # The payload tree hash (merkle.rs, spec 03 §7): SHA-256 over the
 # length-prefixed domain-separated tfs-merkle-1 serialization.
 sha2 = "0.10"
+# The runtime store's cached release-index mirror (runtime_store.rs,
+# spec 05 §3) is MACHINE JSON — the workspace's own minimal parser, no
+# serde, no native deps (the authored-YAML rule is untouched).
+tebako-json = { version = "2.0.0", path = "../tebako-json" }
 
 [dev-dependencies]
 proptest = "1"

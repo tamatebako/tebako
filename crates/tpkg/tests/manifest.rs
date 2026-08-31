@@ -302,6 +302,212 @@ fn library_aliases_key_is_schema_legal() {
 }
 
 #[test]
+fn runtime_edge_is_schema_legal() {
+    // spec 30 §1 (schema_minor 4): the additive `{kind: runtime}`
+    // requires edge — the depended runtime resolves through the RUNTIME
+    // index into the store's runtimes/ area and is NEVER co-mounted;
+    // `expose` names the depended entries the payload surfaces (the §3
+    // shim surface). The versioned JSON Schema admits it and the model
+    // round-trips it.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-31T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires:\n  - {kind: language, engine: ruby, constraint: \"~> 3.3.0\"}\n\
+        \x20 - {kind: runtime, engine: java, implementation: temurin, constraint: \">= 21, < 26\", expose: [java, keytool]}\n";
+    let m = PayloadManifest::from_yaml(text).unwrap();
+    let Some(Requirement::Runtime {
+        engine,
+        implementation,
+        expose,
+        ..
+    }) = m.requires.get(1)
+    else {
+        panic!("runtime edge, got {:?}", m.requires);
+    };
+    assert_eq!(engine, "java");
+    assert_eq!(implementation.as_deref(), Some("temurin"));
+    assert_eq!(expose, &["java".to_string(), "keytool".to_string()]);
+    // …and the schema agrees (MECE cross-check).
+    let validator = schema_validator();
+    validator
+        .validate(&yaml_text_to_json(text))
+        .expect("the kind-runtime requires edge is schema-legal");
+    let back = PayloadManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, m);
+
+    // The minimal form: implementation and expose omitted — and omitted
+    // on the wire (never null / empty-list spellings).
+    let minimal = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-31T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires: [{kind: runtime, engine: java, constraint: \">= 21\"}]\n";
+    let m = PayloadManifest::from_yaml(minimal).unwrap();
+    let Some(Requirement::Runtime {
+        implementation,
+        expose,
+        ..
+    }) = m.requires.first()
+    else {
+        panic!("runtime edge, got {:?}", m.requires);
+    };
+    assert!(implementation.is_none());
+    assert!(expose.is_empty());
+    let yaml = m.to_yaml().unwrap();
+    assert!(!yaml.contains("expose"), "omitted on the wire: {yaml}");
+    assert!(
+        !yaml.contains("implementation"),
+        "omitted on the wire: {yaml}"
+    );
+    validator
+        .validate(&yaml_text_to_json(minimal))
+        .expect("the minimal runtime edge is schema-legal");
+    let back = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(back, m);
+}
+
+#[test]
+fn runtime_edge_expose_never_collides_with_own_entrypoints() {
+    // spec 30 §3: an exposed depended-entry name colliding with the
+    // payload's OWN entrypoint is a named error at parse/validate.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-31T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: java, path: /bin/java}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires: [{kind: runtime, engine: java, constraint: \">= 21\", expose: [java]}]\n";
+    let err = PayloadManifest::from_yaml(text).unwrap_err();
+    assert!(
+        err.to_string().contains("collides"),
+        "the expose x own-entrypoint collision is a named error: {err}"
+    );
+    // …but the schema stays silent — cross-field set intersection is
+    // not JSON-Schema-expressible; the model owns this refusal.
+    assert!(schema_validator().is_valid(&yaml_text_to_json(text)));
+}
+
+#[test]
+fn runtime_spawn_surface_is_schema_legal() {
+    // spec 30 §2 (schema_minor 4): the additive spawn surface on the
+    // runtime's own PROVIDES — `provides.entrypoints` (the app-entrypoint
+    // grammar minus runtime_requirement: the commands this runtime boots
+    // for a consumer's expose list) and `provides.provides[].implementation`
+    // (spec 28 §8 — the engine implementation the edge's filter matches).
+    // The versioned JSON Schema admits both and the model round-trips.
+    let text = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-java\n  version: \"21.0.8\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-31T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: java, version: \"21.0.8\", abi_line: \"21\", platform: aarch64-macos, implementation: temurin}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 entrypoints:\n    - {name: java, path: /bin/java}\n    - {name: keytool, path: /bin/keytool, args_default: [--help]}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n";
+    let m = PayloadManifest::from_yaml(text).unwrap();
+    let Provides::Runtime(rt) = &m.provides else {
+        panic!("runtime provides, got {:?}", m.provides);
+    };
+    assert_eq!(rt.provides[0].implementation.as_deref(), Some("temurin"));
+    assert_eq!(rt.entrypoints.len(), 2);
+    assert_eq!(rt.entrypoints[0].name, "java");
+    assert_eq!(rt.entrypoints[1].args_default, vec!["--help".to_string()]);
+    assert!(rt
+        .entrypoints
+        .iter()
+        .all(|ep| ep.runtime_requirement.is_none()));
+    // …and the schema agrees (MECE cross-check).
+    let validator = schema_validator();
+    validator
+        .validate(&yaml_text_to_json(text))
+        .expect("the runtime spawn surface is schema-legal");
+    let back = PayloadManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, m);
+
+    // The pre-surface shape stays legal — no entrypoints key, no
+    // implementation key — and both stay omitted on the wire (never
+    // null / empty-list spellings).
+    let bare = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-ruby\n  version: 4.0.6\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-31T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: ruby, version: 4.0.6, abi_line: \"4.0\", platform: aarch64-macos}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n";
+    let m = PayloadManifest::from_yaml(bare).unwrap();
+    let Provides::Runtime(rt) = &m.provides else {
+        panic!("runtime provides, got {:?}", m.provides);
+    };
+    assert!(rt.entrypoints.is_empty());
+    assert!(rt.provides[0].implementation.is_none());
+    let yaml = m.to_yaml().unwrap();
+    assert!(!yaml.contains("entrypoints"), "omitted on the wire: {yaml}");
+    assert!(
+        !yaml.contains("implementation"),
+        "omitted on the wire: {yaml}"
+    );
+    validator
+        .validate(&yaml_text_to_json(bare))
+        .expect("the pre-surface runtime provides stays schema-legal");
+    let back = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(back, m);
+}
+
+#[test]
+fn runtime_spawn_entrypoint_rejects_runtime_requirement() {
+    // spec 30 §2: a runtime runs on ITSELF — a spawn-surface entrypoint
+    // carrying runtime_requirement is a named manifest error (the model
+    // owns this refusal; the item grammar is not JSON-Schema-expressible
+    // per-kind without duplicating the entrypoint def).
+    let text = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-java\n  version: \"21.0.8\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-31T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: java, version: \"21.0.8\", abi_line: \"21\", platform: aarch64-macos}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 entrypoints:\n    - {name: java, path: /bin/java, runtime_requirement: {engine: ruby, constraint: \">= 3.3\"}}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n";
+    let err = PayloadManifest::from_yaml(text).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("runtime_requirement is meaningless on a runtime"),
+        "a spawn-surface runtime_requirement is a named error: {err}"
+    );
+}
+
+#[test]
+fn runtime_provides_rejects_empty_implementation() {
+    // spec 28 §8 / spec 30 §2: `implementation` is optional but never
+    // empty — both layers refuse (the schema's minLength and the model's
+    // check agree here).
+    let text = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-java\n  version: \"21.0.8\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-08-31T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: java, version: \"21.0.8\", abi_line: \"21\", platform: aarch64-macos, implementation: \"\"}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n";
+    let err = PayloadManifest::from_yaml(text).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("provides.provides[].implementation must not be empty"),
+        "an empty implementation is a named error: {err}"
+    );
+    assert!(!schema_validator().is_valid(&yaml_text_to_json(text)));
+}
+
+#[test]
 fn checks_key_is_schema_legal() {
     // spec 26 §1 (schema_minor 3): the additive `checks:` key — the
     // versioned JSON Schema admits it and the model round-trips it.
@@ -490,7 +696,7 @@ fn unknown_keys_are_tolerated_annotations_preserved() {
 #[test]
 fn model_and_schema_agree_on_rejections() {
     let validator = schema_validator();
-    let cases: [(&str, &str); 6] = [
+    let cases: [(&str, &str); 10] = [
         // kind app with a data-shaped provides
         (
             "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
@@ -556,6 +762,55 @@ fn model_and_schema_agree_on_rejections() {
              capabilities: {exec: true, read: true}}\n\
              checks: {c: {entry: /bin/x, when: [solaris]}}\n",
             "bad when value",
+        ),
+        // spec 30 §1: expose entries are bare command names — no path
+        // separator (schema pattern + model, MECE)
+        (
+            "identity: {schema_version: 1, kind: data, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {mount_semantics: {suggested: /x}, capabilities: {exec: false, read: true}}\n\
+             requires: [{kind: runtime, engine: java, constraint: \">= 21\", \
+             expose: [/usr/bin/java]}]\n",
+            "expose entry with a path separator",
+        ),
+        // an empty expose entry
+        (
+            "identity: {schema_version: 1, kind: data, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {mount_semantics: {suggested: /x}, capabilities: {exec: false, read: true}}\n\
+             requires: [{kind: runtime, engine: java, constraint: \">= 21\", \
+             expose: [\"\"]}]\n",
+            "empty expose entry",
+        ),
+        // a repeated expose entry
+        (
+            "identity: {schema_version: 1, kind: data, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {mount_semantics: {suggested: /x}, capabilities: {exec: false, read: true}}\n\
+             requires: [{kind: runtime, engine: java, constraint: \">= 21\", \
+             expose: [java, java]}]\n",
+            "duplicate expose entry",
+        ),
+        // implementation present but empty
+        (
+            "identity: {schema_version: 1, kind: data, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {mount_semantics: {suggested: /x}, capabilities: {exec: false, read: true}}\n\
+             requires: [{kind: runtime, engine: java, implementation: \"\", \
+             constraint: \">= 21\"}]\n",
+            "empty implementation",
         ),
     ];
     for (text, what) in cases {

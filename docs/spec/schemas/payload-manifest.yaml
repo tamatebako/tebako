@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 3 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks)
+schema_minor: 4 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -168,6 +168,7 @@ grammar:
             version: {type: string, required: true}
             abi_line: {type: string, required: true, notes: "the abi line this build satisfies (e.g. \"4.0\")"}
             platform: {type: vcpkg triplet, required: true}
+            implementation: {type: string, required: false, notes: "the engine implementation this build is (spec 28 §8 — mri / jruby / truffleruby); the spawn edge's implementation filter"}
         built_from:
           type: map
           required: true
@@ -175,6 +176,14 @@ grammar:
             src_sha256: {type: string, required: true, notes: 64 lowercase hex}
             patch_set: {type: string, required: true}
         env: {type: map, required: false, notes: environment defaults the dispatcher composes}
+        entrypoints:
+          type: list
+          required: false
+          notes: "the spawn surface (spec 30 §2) — commands this runtime boots for a consumer's runtime-edge expose list; app-entrypoint grammar minus runtime_requirement (a runtime runs on itself)"
+          entry:
+            name: {type: string, required: true, notes: the command name a consumer's expose list names}
+            path: {type: string, required: true, notes: absolute in-image path}
+            args_default: {type: list of string, required: false}
         capabilities:
           type: map
           required: true
@@ -229,10 +238,11 @@ grammar:
     required: false
     notes: the MOUNT RULE — mount is declared HERE, in the consumer's manifest
     entry:
-      kind: {type: enum, values: [language, toolkit, data], required: true}
+      kind: {type: enum, values: [language, toolkit, data, runtime], required: true}
       "language": {engine: "string, required", constraint: "string, required"}
       "toolkit": {name: "string, required", constraint: "string, required", triplets: "list of vcpkg triplets, optional", mount: "absolute path, optional"}
       "data": {name: "string, required", constraint: "string, required", mount: "absolute path, optional"}
+      "runtime": {engine: "string, required", implementation: "string, optional", constraint: "string, required", expose: "list of bare command names (no path separator, no drive qualifier; never repeated), optional", notes: "spec 30 §1 (since schema_minor 4) — the spawned-runtime edge: the depended runtime resolves through the RUNTIME index into the store's runtimes/ area and is NEVER co-mounted (NO mount key exists on this edge); its exposed entries are spawned through spec 30 §2's dispatch. The expose x own-entrypoint collision refusal (spec 30 §3) is semantic (the tpkg validator) — not schema-expressible"}
   materialize:
     type: list of absolute in-image paths
     required: false
