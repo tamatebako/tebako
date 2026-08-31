@@ -18,7 +18,7 @@ fn req(constraint: &str) -> RuntimeRequirement {
 
 fn ready(res: RuntimeResolution) -> runtime::CachedRuntime {
     match res {
-        RuntimeResolution::Ready(rt) => rt,
+        RuntimeResolution::Ready(rt) => *rt,
         RuntimeResolution::Zero => panic!("expected a resolved runtime"),
     }
 }
