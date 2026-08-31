@@ -117,35 +117,13 @@ impl Ctx {
     }
 }
 
-/// The tebako home resolution (mirrors the bootstrap's cache_root):
-/// `$TEBAKO_HOME` > platform default.
+/// The tebako home resolution: `$TEBAKO_HOME` > platform default. The
+/// grammar's single owner is `tpkg::runtime_store::tebako_home` (spec 00
+/// §8/§10 — the store root is the store grammar's concern; the driver
+/// resolves through the same function at spawn).
 pub fn tebako_home(env: &BTreeMap<String, String>) -> Result<PathBuf, ShimError> {
-    if let Some(home) = env.get("TEBAKO_HOME").filter(|v| !v.is_empty()) {
-        return Ok(PathBuf::from(home));
-    }
-    #[cfg(windows)]
-    {
-        if let Some(home) = env.get("LOCALAPPDATA").filter(|v| !v.is_empty()) {
-            return Ok(PathBuf::from(home).join("tebako"));
-        }
-        if let Some(home) = env.get("USERPROFILE").filter(|v| !v.is_empty()) {
-            return Ok(PathBuf::from(home).join(".tebako"));
-        }
-        fail(
-            EX_TEBAKO_IO,
-            "cannot determine tebako home (set TEBAKO_HOME)",
-        )
-    }
-    #[cfg(not(windows))]
-    {
-        match env.get("HOME").filter(|v| !v.is_empty()) {
-            Some(home) => Ok(PathBuf::from(home).join(".tebako")),
-            None => fail(
-                EX_TEBAKO_IO,
-                "cannot determine tebako home (set TEBAKO_HOME)",
-            ),
-        }
-    }
+    tpkg::runtime_store::tebako_home(|k| env.get(k).cloned())
+        .map_err(|m| ShimError::new(EX_TEBAKO_IO, m))
 }
 
 /// What a run produced: either a hand-off to exec (dispatch) or text to

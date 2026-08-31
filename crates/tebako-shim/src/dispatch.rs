@@ -73,7 +73,9 @@ pub fn compose_mounts(res: &Resolution, ctx: &Ctx) -> Result<Vec<MountSpec>, Shi
 
 /// A `requires:` edge → a cached payload image at the consumer-declared
 /// mount point. `kind: language` edges are the runtime axis (resolved via
-/// the entrypoint's `runtime_requirement`) and are never mounted; edges
+/// the entrypoint's `runtime_requirement`) and are never mounted; a
+/// `runtime` edge (spec 30) is a SPAWNED dependency — resolved at
+/// dispatch into the spawn lock, never co-mounted into this stack; edges
 /// without a `mount` declare no mount in v1.
 fn dependency_mount(
     req: &Requirement,
@@ -81,7 +83,7 @@ fn dependency_mount(
     ctx: &Ctx,
 ) -> Result<Option<MountSpec>, ShimError> {
     let (kind, name, constraint, mount) = match req {
-        Requirement::Language { .. } => return Ok(None),
+        Requirement::Language { .. } | Requirement::Runtime { .. } => return Ok(None),
         Requirement::Toolkit {
             name,
             constraint,
@@ -148,6 +150,50 @@ pub fn plan(
     allow_download: bool,
     jail_env: Vec<(String, String)>,
 ) -> Result<ExecPlan, ShimError> {
+    // spec 30 §3: an exposed name dispatches the RUNTIME's own boot. The
+    // consumer payload is never mounted (nothing of it exists in the
+    // child's VFS); the bare entry name resolves against the runtime's
+    // own embedded manifest (spec 17 §1's bare-name rule), so its
+    // args_default compose child-side.
+    if let Some(Requirement::Runtime {
+        engine,
+        implementation,
+        constraint,
+        ..
+    }) = &res.exposed
+    {
+        let rt = runtime::resolve_runtime_edge(
+            engine,
+            implementation.as_deref(),
+            constraint,
+            allow_download,
+            ctx,
+        )?;
+        let image = rt
+            .image
+            .clone()
+            .expect("resolve_runtime_edge post-asserts the env image");
+        let mut argv = vec![
+            rt.exe.to_string_lossy().into_owned(),
+            "--tebako-entry".to_string(),
+            res.tool.clone(),
+        ];
+        argv.extend(user_args.iter().cloned());
+        let mut env = vec![(
+            "TEBAKO_RUNTIME_IMAGE".to_string(),
+            image.to_string_lossy().into_owned(),
+        )];
+        // The dispatcher's jail (the consumer payload's needs ∩ the
+        // user's tightening) always wins (spec 08 §2).
+        env.extend(jail_env);
+        return Ok(ExecPlan {
+            program: rt.exe.clone(),
+            argv,
+            env,
+            mounts: Vec::new(),
+            runtime: RuntimeResolution::Ready(rt),
+        });
+    }
     let entry = res.manifest.entrypoint(&res.tool).ok_or_else(|| {
         ShimError::new(
             EX_TEBAKO_MANIFEST,
@@ -233,6 +279,39 @@ pub fn plan(
         }
     };
     argv.extend(user_args.iter().cloned());
+
+    // spec 30 §4: the payload's spawned-runtime edges resolve at
+    // dispatch (download per the caller) and pin the driver's spawn-time
+    // pick via TEBAKO_SPAWN_LOCK (`engine=lang_version:tebako_version`,
+    // `;`-joined, manifest order). A payload without runtime edges
+    // exports nothing.
+    let mut spawn_lock = Vec::new();
+    for edge in res.manifest.requires() {
+        let Requirement::Runtime {
+            engine,
+            implementation,
+            constraint,
+            ..
+        } = edge
+        else {
+            continue;
+        };
+        let rt = runtime::resolve_runtime_edge(
+            engine,
+            implementation.as_deref(),
+            constraint,
+            allow_download,
+            ctx,
+        )?;
+        spawn_lock.push(tpkg::runtime_store::spawn_lock_entry(
+            engine,
+            &rt.lang_version,
+            &rt.tebako_version,
+        ));
+    }
+    if !spawn_lock.is_empty() {
+        env.push(("TEBAKO_SPAWN_LOCK".to_string(), spawn_lock.join(";")));
+    }
 
     // spec 08: the dispatcher's computed jail env always wins over every
     // manifest/host value (spec 07 §9 env composition).

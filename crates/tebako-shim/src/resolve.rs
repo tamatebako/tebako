@@ -50,6 +50,11 @@ pub struct Resolution {
     pub source: VersionSource,
     pub record: PayloadRecord,
     pub manifest: Manifest,
+    /// spec 30 §3: when the command resolved through the payload's
+    /// `expose` list rather than its own entrypoints, the runtime edge it
+    /// came through. plan() dispatches the RUNTIME's own boot for these
+    /// (the consumer payload is never mounted).
+    pub exposed: Option<tpkg::Requirement>,
 }
 
 /// The env var that pins a tool's version: `TEBAKO_<TOOL>_VERSION`
@@ -93,13 +98,23 @@ pub fn installed_versions(home: &Path, payload_name: &str) -> Result<Vec<String>
     Ok(versions)
 }
 
+/// Who provides `tool`: a payload declaring it as an entrypoint (the own
+/// claim always wins), else — spec 30 §3 — a payload EXPOSING it through
+/// a spawned-runtime edge's `expose` list.
+enum Provider {
+    Own(String),
+    Exposed(String),
+}
+
 /// Command name → payload name. Fast path: a payload of the same name.
 /// Suite path: scan every installed payload's manifest mirror for an
-/// entrypoint of this name (spec 07 §2.0 multi-command suites).
-fn providing_payload(home: &Path, tool: &str) -> Result<String, ShimError> {
+/// entrypoint of this name (spec 07 §2.0 multi-command suites). Only when
+/// NO payload declares the entrypoint does the expose surface answer
+/// (spec 30 §3).
+fn providing_payload(home: &Path, tool: &str) -> Result<Provider, ShimError> {
     manifest::check_path_component("command name", tool)?;
     if home.join("payloads").join(tool).is_dir() {
-        return Ok(tool.to_string());
+        return Ok(Provider::Own(tool.to_string()));
     }
     let payloads_dir = home.join("payloads");
     let rd = match std::fs::read_dir(&payloads_dir) {
@@ -113,6 +128,7 @@ fn providing_payload(home: &Path, tool: &str) -> Result<String, ShimError> {
         }
     };
     let mut providers = Vec::new();
+    let mut exposers = Vec::new();
     for entry in rd.flatten() {
         if !entry.path().is_dir() {
             continue;
@@ -125,27 +141,55 @@ fn providing_payload(home: &Path, tool: &str) -> Result<String, ShimError> {
                     providers.push(name.clone());
                     break;
                 }
+                if !exposers.contains(&name) && exposes(&m, tool) {
+                    exposers.push(name.clone());
+                    break;
+                }
             }
         }
     }
     match providers.len() {
+        1 => return Ok(Provider::Own(providers.pop().unwrap_or_default())),
+        n if n > 1 => {
+            return fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "command \"{tool}\" is provided by more than one installed payload ({}) — remove one, or pin the payload with .tebako-tools.yaml",
+                    providers.join(", ")
+                ),
+            )
+        }
+        _ => {}
+    }
+    match exposers.len() {
         0 => Err(no_provider(home, tool)),
-        1 => Ok(providers.pop().unwrap_or_default()),
+        1 => Ok(Provider::Exposed(exposers.pop().unwrap_or_default())),
         _ => fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "command \"{tool}\" is provided by more than one installed payload ({}) — remove one, or pin the payload with .tebako-tools.yaml",
-                providers.join(", ")
+                "command \"{tool}\" is exposed by more than one installed payload ({}) — remove one, or pin the payload with .tebako-tools.yaml",
+                exposers.join(", ")
             ),
         ),
     }
+}
+
+/// spec 30 §3: does the manifest's DEPENDS expose `tool` through a
+/// spawned-runtime edge?
+fn exposes(m: &Manifest, tool: &str) -> bool {
+    m.requires().iter().any(|r| {
+        matches!(
+            r,
+            tpkg::Requirement::Runtime { expose, .. } if expose.iter().any(|e| e == tool)
+        )
+    })
 }
 
 fn no_provider(home: &Path, tool: &str) -> ShimError {
     ShimError::new(
         EX_TEBAKO_MANIFEST,
         format!(
-            "no installed payload provides the command \"{tool}\" (looked in {})\n  install the payload, or run `tebako-shim doctor` to diagnose the shim layer",
+            "no installed payload provides or exposes the command \"{tool}\" (looked in {})\n  install the payload, or run `tebako-shim doctor` to diagnose the shim layer",
             home.join("payloads").display()
         ),
     )
@@ -187,19 +231,53 @@ fn project_pin(start: &Path, tool: &str) -> Result<Option<(String, PathBuf)>, Sh
 
 /// Resolve the dispatch target for `tool` through the full chain.
 pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
-    let payload_name = providing_payload(&ctx.home, tool)?;
-    let res = resolve_named(tool, &payload_name, ctx)?;
-    if res.manifest.entrypoint(tool).is_none() {
-        return fail(
-            EX_TEBAKO_MANIFEST,
-            format!(
-                "payload \"{payload_name}\" {version} declares no entrypoint \"{tool}\" in {mirror}\n  the shim link is stale; run `tebako-shim doctor`",
-                version = res.version,
-                mirror = res.record.manifest_mirror.display()
-            ),
-        );
+    match providing_payload(&ctx.home, tool)? {
+        Provider::Own(payload_name) => {
+            let res = resolve_named(tool, &payload_name, ctx)?;
+            if res.manifest.entrypoint(tool).is_none() {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "payload \"{payload_name}\" {version} declares no entrypoint \"{tool}\" in {mirror}\n  the shim link is stale; run `tebako-shim doctor`",
+                        version = res.version,
+                        mirror = res.record.manifest_mirror.display()
+                    ),
+                );
+            }
+            Ok(res)
+        }
+        Provider::Exposed(payload_name) => {
+            let mut res = resolve_named(tool, &payload_name, ctx)?;
+            // The edge comes from the PICKED version's manifest — the
+            // exposing scan established the payload, not the version.
+            let edge = res
+                .manifest
+                .requires()
+                .iter()
+                .find(|r| {
+                    matches!(
+                        r,
+                        tpkg::Requirement::Runtime { expose, .. } if expose.iter().any(|e| e == tool)
+                    )
+                })
+                .cloned();
+            match edge {
+                Some(edge) => {
+                    res.exposed = Some(edge);
+                    Ok(res)
+                }
+                None => fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "payload \"{payload_name}\" {version} does not expose \"{tool}\" (another installed version does)\n  pin the exposing version with .tebako-tools.yaml or {}",
+                        version_env_var(tool),
+                        payload_name = res.payload_name,
+                        version = res.version,
+                    ),
+                ),
+            }
+        }
     }
-    Ok(res)
 }
 
 /// The payload-addressed resolution (spec 26 §2's check engine): the name
@@ -314,5 +392,6 @@ fn resolve_named(tool: &str, payload_name: &str, ctx: &Ctx) -> Result<Resolution
         source,
         record,
         manifest,
+        exposed: None,
     })
 }
