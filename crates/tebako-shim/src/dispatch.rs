@@ -191,7 +191,7 @@ pub fn plan(
             argv,
             env,
             mounts: Vec::new(),
-            runtime: RuntimeResolution::Ready(rt),
+            runtime: RuntimeResolution::Ready(Box::new(rt)),
         });
     }
     let entry = res.manifest.entrypoint(&res.tool).ok_or_else(|| {

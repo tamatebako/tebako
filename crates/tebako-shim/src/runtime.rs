@@ -52,7 +52,10 @@ pub enum RuntimeResolution {
     /// The entrypoint declares no `runtime_requirement` (native /
     /// self-contained): zero runtime payloads mounted.
     Zero,
-    Ready(CachedRuntime),
+    // Boxed: `CachedRuntime` is 216 bytes on Windows (Wtf8Buf's extra
+    // flag word inflates every PathBuf past clippy's
+    // large_enum_variant threshold against the data-less `Zero`).
+    Ready(Box<CachedRuntime>),
 }
 
 pub fn resolve_runtime(
@@ -84,7 +87,7 @@ pub fn resolve_runtime(
             .collect::<Vec<_>>(),
         &constraint,
     ) {
-        return Ok(RuntimeResolution::Ready(hit));
+        return Ok(RuntimeResolution::Ready(Box::new(hit)));
     }
     let abi_note = match &req.abi {
         Some(want)
@@ -219,7 +222,7 @@ pub fn resolve_runtime(
             );
         }
     }
-    Ok(RuntimeResolution::Ready(rt))
+    Ok(RuntimeResolution::Ready(Box::new(rt)))
 }
 
 /// A spawned-runtime dependency edge's dispatch-time pick (spec 30 §4):
@@ -307,7 +310,7 @@ pub fn resolve_runtime_edge(
             );
         }
     }
-    Ok(rt)
+    Ok(*rt)
 }
 
 /// The release index's availability facet for `platform` (spec 13 §2a —
