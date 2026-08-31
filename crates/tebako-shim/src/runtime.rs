@@ -20,7 +20,7 @@
 //! shim stays pure-Rust + tebako-http.
 
 use std::io::Read;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use tpkg::RuntimeRequirement;
 
@@ -35,264 +35,13 @@ const DEFAULT_RELEASES_BASE: &str =
 const LOCK_TIMEOUT_MS: u64 = 120_000;
 const LOCK_POLL_MS: u64 = 200;
 
-/// Runtime-package platform string for asset-name construction.
-/// `tpkg::Platform` owns the vocabulary and host detection (spec 03 §3);
-/// this is the `&'static str` convenience over it.
-pub fn platform_string() -> &'static str {
-    tpkg::Platform::host().release_asset_name()
-}
-
-pub fn exe_suffix() -> &'static str {
-    #[cfg(windows)]
-    return ".exe";
-    #[cfg(not(windows))]
-    return "";
-}
-
-// ---------------------------------------------------------------------
-// the machine cache scan (spec 05 §3)
-// ---------------------------------------------------------------------
-
-/// A cached runtime entry
-/// `runtimes/<lang>-<lv>-<ver>-<triplet>/tebako-runtime-<ver>-<lv>-<triplet>[.exe]`.
-#[derive(Debug, Clone)]
-pub struct CachedRuntime {
-    pub engine: String,
-    /// Language version (`<lv>`), e.g. `4.0.6`.
-    pub lang_version: String,
-    /// Tebako (launcher abi) version (`<ver>`), e.g. `0.16.0`.
-    pub tebako_version: String,
-    pub dir: PathBuf,
-    pub exe: PathBuf,
-    /// The image-era runtime image, present iff both the `.tfs` and its
-    /// `.sha256` trust marker are cached.
-    pub image: Option<PathBuf>,
-    /// The runtime's own platform string (ruby: `Gem::Platform.local` —
-    /// from the release index's `abi` key); `None` for releases that
-    /// predate the field (the compat window — eligible, never a match
-    /// failure of its own).
-    pub abi: Option<String>,
-}
-
-/// Parse a cache entry directory name `<lang>-<lv>-<ver>-<triplet>`:
-/// the triplet is the known platform suffix, `<lang>` the first segment,
-/// `<ver>` the last, `<lv>` everything between (language versions may
-/// carry dashes, e.g. prereleases).
-fn parse_entry_name(name: &str, platform: &str) -> Option<(String, String, String)> {
-    let rest = name.strip_suffix(platform)?.strip_suffix('-')?;
-    let (engine, tail) = rest.split_once('-')?;
-    let (lv, ver) = tail.rsplit_once('-')?;
-    if engine.is_empty() || lv.is_empty() || ver.is_empty() {
-        return None;
-    }
-    Some((engine.to_string(), lv.to_string(), ver.to_string()))
-}
-
-fn entry_exe_name(lv: &str, ver: &str, platform: &str) -> String {
-    format!("tebako-runtime-{ver}-{lv}-{platform}{}", exe_suffix())
-}
-
-/// Synthesized env-image name (spec 05 §3's fallback spelling).
-fn synthesized_image_base(lv: &str, ver: &str, platform: &str) -> String {
-    format!("tebako-runtime-{ver}-{lv}-{platform}.tfs")
-}
-
-/// Match a release-index entry by the identity triple (spec 05 §2):
-/// `tebako_version` + `{engine}_version` + `platform` as strings.
-/// The runtime factory publishes windows exe assets SUFFIX-LESS, so the
-/// entry's `filename` is the ONLY authoritative asset spelling (spec 00
-/// §10 SSOT; tebako#456).
-fn release_index_entry<'m>(
-    manifest: &'m tebako_json::Value,
-    engine: &str,
-    lang_version: &str,
-    tebako_version: &str,
-    platform: &str,
-) -> Option<&'m tebako_json::Value> {
-    let tebako_json::Value::Array(entries) = manifest else {
-        return None;
-    };
-    let lang_key = format!("{engine}_version");
-    entries.iter().find(|e| {
-        [
-            ("tebako_version", tebako_version),
-            (lang_key.as_str(), lang_version),
-            ("platform", platform),
-        ]
-        .iter()
-        .all(|(k, want)| e.find(k).and_then(|v| v.as_string()).as_deref() == Some(*want))
-    })
-}
-
-/// `filename` of the entry itself (`facet: None`) or of a facet object
-/// (`image` / `dll`) — verbatim, including any platform suffix.
-fn entry_filename(entry: &tebako_json::Value, facet: Option<&str>) -> Option<String> {
-    let node = match facet {
-        Some(f) => entry.find(f)?,
-        None => entry,
-    };
-    node.find("filename")
-        .and_then(|v| v.as_string())
-        .filter(|s| !s.is_empty())
-}
-
-/// The exe / env-image names for a cache entry: flow the cached release
-/// index verbatim when it names this identity, else the synthesized
-/// fallback (`{name}.exe` on windows, `{name}` on posix — spec 05 §2's
-/// pre-identity fallback).
-fn entry_asset_names(
-    entry_dir: &Path,
-    engine: &str,
-    lv: &str,
-    ver: &str,
-    platform: &str,
-) -> (String, String) {
-    let flowed = std::fs::read_to_string(entry_dir.join("manifest.json"))
-        .ok()
-        .and_then(|text| {
-            let parsed = tebako_json::parse(&text).ok()?;
-            let e = release_index_entry(&parsed, engine, lv, ver, platform)?;
-            Some((entry_filename(e, None), entry_filename(e, Some("image"))))
-        });
-    let exe = flowed
-        .as_ref()
-        .and_then(|(f, _)| f.clone())
-        .unwrap_or_else(|| entry_exe_name(lv, ver, platform));
-    let image = flowed
-        .and_then(|(_, i)| i)
-        .unwrap_or_else(|| synthesized_image_base(lv, ver, platform));
-    (exe, image)
-}
-
-/// The runtime's own `abi` string from the cached release index (the
-/// manifest.json entry whose `filename` is the exe): `None` when the
-/// entry or the key is absent (pre-abi releases — the compat window).
-fn entry_abi(entry_dir: &Path, exe_name: &str) -> Option<String> {
-    let text = std::fs::read_to_string(entry_dir.join("manifest.json")).ok()?;
-    let parsed = tebako_json::parse(&text).ok()?;
-    let tebako_json::Value::Array(entries) = &parsed else {
-        return None;
-    };
-    entries.iter().find_map(|entry| {
-        (entry
-            .find("filename")
-            .and_then(|f| f.as_string())
-            .as_deref()
-            == Some(exe_name))
-        .then(|| entry.find("abi").and_then(|a| a.as_string()))
-        .flatten()
-    })
-}
-
-/// Scan `~/.tebako/runtimes/` for cached runtimes of `engine` on this
-/// platform. Lenient by design: malformed entries are invisible to
-/// resolution (doctor reports them).
-pub fn scan_cached(home: &Path, engine: &str) -> Vec<CachedRuntime> {
-    let platform = platform_string();
-    let dir = home.join("runtimes");
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for entry in rd.flatten() {
-        let entry_dir = entry.path();
-        if !entry_dir.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Some((lang, lv, ver)) = parse_entry_name(&name, platform) else {
-            continue;
-        };
-        if lang != engine {
-            continue;
-        }
-        let (exe_name, image_base) = entry_asset_names(&entry_dir, &lang, &lv, &ver, platform);
-        let exe = entry_dir.join(&exe_name);
-        if !exe.is_file() {
-            continue;
-        }
-        let image = entry_dir.join(&image_base);
-        let image = if image.is_file() && entry_dir.join(format!("{image_base}.sha256")).is_file() {
-            Some(image)
-        } else {
-            None
-        };
-        let abi = entry_abi(&entry_dir, &exe_name);
-        out.push(CachedRuntime {
-            engine: lang,
-            lang_version: lv,
-            tebako_version: ver,
-            dir: entry_dir,
-            exe,
-            image,
-            abi,
-        });
-    }
-    out
-}
-
-/// Scan `~/.tebako/runtimes/` for cached runtimes of EVERY engine on
-/// this platform — the info surface's machine view (resolution itself
-/// always asks per engine).
-pub fn scan_all_cached(home: &Path) -> Vec<CachedRuntime> {
-    let platform = platform_string();
-    let dir = home.join("runtimes");
-    let Ok(rd) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
-    let mut out = Vec::new();
-    for entry in rd.flatten() {
-        let entry_dir = entry.path();
-        if !entry_dir.is_dir() {
-            continue;
-        }
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Some((lang, lv, ver)) = parse_entry_name(&name, platform) else {
-            continue;
-        };
-        let (exe_name, image_base) = entry_asset_names(&entry_dir, &lang, &lv, &ver, platform);
-        let exe = entry_dir.join(&exe_name);
-        if !exe.is_file() {
-            continue;
-        }
-        let image = entry_dir.join(&image_base);
-        let image = if image.is_file() && entry_dir.join(format!("{image_base}.sha256")).is_file() {
-            Some(image)
-        } else {
-            None
-        };
-        let abi = entry_abi(&entry_dir, &exe_name);
-        out.push(CachedRuntime {
-            engine: lang,
-            lang_version: lv,
-            tebako_version: ver,
-            dir: entry_dir,
-            exe,
-            image,
-            abi,
-        });
-    }
-    out
-}
-
-/// The newest cached runtime satisfying `constraint` (spec 05 §5:
-/// range → any newer within range; abi-line `~>` → the locked line).
-/// Two cache entries may share the language version (different tebako
-/// builds): the tie breaks on the tebako version, newer first — an
-/// arbitrary pick would let a stale runtime shadow a fresh one.
-pub fn newest_compatible(
-    cached: &[CachedRuntime],
-    constraint: &Constraint,
-) -> Option<CachedRuntime> {
-    cached
-        .iter()
-        .filter(|c| constraint.matches(&c.lang_version))
-        .max_by(|a, b| {
-            versions::compare(&a.lang_version, &b.lang_version)
-                .then_with(|| versions::compare(&a.tebako_version, &b.tebako_version))
-        })
-        .cloned()
-}
+// The store grammar, the cache scan, and the version machinery moved to
+// tpkg (spec 00 §10 — one owner, every consumer flows): the shim's
+// resolution/download layers below build on these re-exports.
+use tpkg::runtime_store::{entry_asset_names, entry_filename, entry_meta, release_index_entry};
+pub use tpkg::runtime_store::{
+    exe_suffix, newest_compatible, platform_string, scan_all_cached, scan_cached, CachedRuntime,
+};
 
 // ---------------------------------------------------------------------
 // resolution
@@ -473,23 +222,116 @@ pub fn resolve_runtime(
     Ok(RuntimeResolution::Ready(rt))
 }
 
+/// A spawned-runtime dependency edge's dispatch-time pick (spec 30 §4):
+/// engine + the optional implementation axis + constraint against the
+/// store, the env image REQUIRED (the spawned boot mounts it — a pre-era
+/// or partial entry can never serve a spawn). Cache first; on a miss the
+/// download rides the primary runtime's machinery (the engine's config
+/// preference / the default line), and the edge's own filters re-assert
+/// on the downloaded pick — a mismatch is a named error, never a guess.
+pub fn resolve_runtime_edge(
+    engine: &str,
+    implementation: Option<&str>,
+    constraint: &tpkg::Constraint,
+    allow_download: bool,
+    ctx: &Ctx,
+) -> Result<CachedRuntime, ShimError> {
+    let evaluable = versions::from_validated(constraint);
+    if let Some(hit) =
+        tpkg::runtime_store::resolve_spawned(&ctx.home, engine, implementation, &evaluable)
+    {
+        return Ok(hit);
+    }
+    if !allow_download {
+        // Name WHY the version-matching cache entries are ineligible —
+        // "do not satisfy the constraint" would send the operator chasing
+        // the wrong axis (tebako's named-error law).
+        let version_ok: Vec<CachedRuntime> = scan_cached(&ctx.home, engine)
+            .into_iter()
+            .filter(|c| evaluable.matches(&c.lang_version))
+            .collect();
+        if !version_ok.is_empty() {
+            let reasons = version_ok
+                .iter()
+                .map(|c| {
+                    let mut why = Vec::new();
+                    if c.image.is_none() {
+                        why.push("no verified env image");
+                    }
+                    if !tpkg::runtime_store::implementation_matches(c, implementation) {
+                        why.push("implementation mismatch");
+                    }
+                    format!(
+                        "{} (tebako {}): {}",
+                        c.lang_version,
+                        c.tebako_version,
+                        why.join(", ")
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            return fail(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "no cached {engine} runtime can serve the spawned edge \"{}\": version-matching entries are ineligible — {reasons}\n  install a satisfying runtime, or loosen the edge",
+                    evaluable.source()
+                ),
+            );
+        }
+    }
+    let req = RuntimeRequirement {
+        engine: engine.to_string(),
+        constraint: constraint.clone(),
+        abi: None,
+    };
+    let RuntimeResolution::Ready(rt) = resolve_runtime(Some(&req), allow_download, ctx)? else {
+        unreachable!("a requirement was passed — never Zero");
+    };
+    if rt.image.is_none() {
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "the resolved {engine} runtime {} (tebako {}) carries no verified env image — a spawned runtime needs the image pair; re-install it with `tebako install`",
+                rt.lang_version, rt.tebako_version
+            ),
+        );
+    }
+    if let (Some(want), Some(have)) = (implementation, rt.implementation.as_deref()) {
+        if have != want {
+            return fail(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "the resolved {engine} runtime {} (tebako {}) is implementation \"{have}\" but the payload requires \"{want}\" — pin a {want} runtime or rebuild the payload",
+                    rt.lang_version, rt.tebako_version
+                ),
+            );
+        }
+    }
+    Ok(rt)
+}
+
 /// The release index's availability facet for `platform` (spec 13 §2a —
-/// the locked entry shape declares `ruby_version` + `platform` +
-/// `tebako_version`): the `(ruby_version, tebako_version)` of every
+/// the locked entry shape declares `{engine}_version` + `platform` +
+/// `tebako_version`): the `(lang_version, tebako_version)` of every
 /// entry released for this platform. `None` when NO entry declares the
 /// availability keys at all — an index that predates them is
 /// uninformative (the config pin stays the target), never an
 /// availability verdict.
-fn released_versions(text: &str, platform: &str) -> Option<Vec<(String, Option<String>)>> {
+fn released_versions(
+    text: &str,
+    engine: &str,
+    platform: &str,
+) -> Option<Vec<(String, Option<String>)>> {
     let parsed = tebako_json::parse(text).ok()?;
     let tebako_json::Value::Array(entries) = &parsed else {
         return None;
     };
+    let lang_key = format!("{engine}_version");
     let mut keyed = false;
     let mut released = Vec::new();
     for entry in entries {
-        let (Some(ruby_version), Some(entry_platform)) = (
-            entry.find("ruby_version").and_then(|v| v.as_string()),
+        let (Some(lang_version), Some(entry_platform)) = (
+            entry.find(&lang_key).and_then(|v| v.as_string()),
             entry.find("platform").and_then(|v| v.as_string()),
         ) else {
             continue;
@@ -497,7 +339,7 @@ fn released_versions(text: &str, platform: &str) -> Option<Vec<(String, Option<S
         keyed = true;
         if entry_platform == platform {
             released.push((
-                ruby_version,
+                lang_version,
                 entry.find("tebako_version").and_then(|v| v.as_string()),
             ));
         }
@@ -547,7 +389,7 @@ fn index_selected_target(
     let Some(text) = text else {
         return Ok(None);
     };
-    let Some(released) = released_versions(&text, platform) else {
+    let Some(released) = released_versions(&text, &req.engine, platform) else {
         return Ok(None);
     };
     if let Some((version, tebako)) = released
@@ -1080,7 +922,8 @@ fn download_runtime(
                 .join(&image_asset)
                 .is_file()
                 .then(|| entry_dir.join(&image_asset)),
-            abi: entry_abi(&entry_dir, &asset),
+            abi: entry_meta(&entry_dir, &asset, "abi"),
+            implementation: entry_meta(&entry_dir, &asset, "implementation"),
         });
     }
 
@@ -1142,7 +985,8 @@ fn download_runtime(
                 .join(&image_asset)
                 .is_file()
                 .then(|| entry_dir.join(&image_asset)),
-            abi: entry_abi(&entry_dir, &asset),
+            abi: entry_meta(&entry_dir, &asset, "abi"),
+            implementation: entry_meta(&entry_dir, &asset, "implementation"),
         });
     }
 
@@ -1327,7 +1171,8 @@ fn download_runtime(
                     .join(&image_asset)
                     .is_file()
                     .then(|| entry_dir.join(&image_asset)),
-                abi: entry_abi(&entry_dir, &asset),
+                abi: entry_meta(&entry_dir, &asset, "abi"),
+                implementation: entry_meta(&entry_dir, &asset, "implementation"),
                 dir: entry_dir,
             })
         }
@@ -1366,7 +1211,8 @@ fn download_runtime(
                 tebako_version: pref.tebako.clone(),
                 exe: entry_dir.join(&asset),
                 image: has_image.then(|| entry_dir.join(&image_asset)),
-                abi: entry_abi(&entry_dir, &asset),
+                abi: entry_meta(&entry_dir, &asset, "abi"),
+                implementation: entry_meta(&entry_dir, &asset, "implementation"),
                 dir: entry_dir,
             })
         }

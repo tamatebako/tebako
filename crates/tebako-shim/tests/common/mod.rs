@@ -128,11 +128,23 @@ pub fn platform() -> &'static str {
 /// — the resolver looks the asset up by its platform name, suffix
 /// included (spec: `exe_suffix()` on Windows).
 pub fn write_runtime(home: &Path, lv: &str, ver: &str, with_image: bool) -> PathBuf {
+    write_runtime_engine(home, "ruby", lv, ver, with_image)
+}
+
+/// `write_runtime` generalized over the engine (spec 30 fixtures: a
+/// cached java runtime for the spawned-edge tests).
+pub fn write_runtime_engine(
+    home: &Path,
+    engine: &str,
+    lv: &str,
+    ver: &str,
+    with_image: bool,
+) -> PathBuf {
     let platform = platform();
     let suffix = tebako_shim::runtime::exe_suffix();
     let dir = home
         .join("runtimes")
-        .join(format!("ruby-{lv}-{ver}-{platform}"));
+        .join(format!("{engine}-{lv}-{ver}-{platform}"));
     std::fs::create_dir_all(&dir).expect("runtime dir");
     let exe = dir.join(format!("tebako-runtime-{ver}-{lv}-{platform}{suffix}"));
     let exe_bytes = b"fake runtime exe\n";
@@ -311,7 +323,7 @@ pub fn write_release_index_renamed(root: &Path, ver: &str, lv: &str, exe_name: &
     root.to_path_buf()
 }
 
-/// `write_runtime` plus a release index manifest carrying the runtime's
+/// `write_runtime_abi` plus a release index manifest carrying the runtime's
 /// own `abi` string (spec 13's per-package `abi` key) — the field the
 /// abi-line filter reads.
 pub fn write_runtime_abi(home: &Path, lv: &str, ver: &str, abi: Option<&str>) -> PathBuf {
@@ -325,5 +337,34 @@ pub fn write_runtime_abi(home: &Path, lv: &str, ver: &str, abi: Option<&str>) ->
         )
         .expect("manifest.json");
     }
+    exe
+}
+
+/// `write_runtime_engine` (with the env image — spawn edges require it)
+/// plus a release-index mirror carrying the per-entry `abi` /
+/// `implementation` keys the spawned-edge filters read (spec 30 §1).
+pub fn write_runtime_engine_meta(
+    home: &Path,
+    engine: &str,
+    lv: &str,
+    ver: &str,
+    abi: Option<&str>,
+    implementation: Option<&str>,
+) -> PathBuf {
+    let exe = write_runtime_engine(home, engine, lv, ver, true);
+    let dir = exe.parent().expect("runtime entry dir").to_path_buf();
+    let exe_name = exe.file_name().expect("exe name").to_string_lossy();
+    let mut keys = String::new();
+    if let Some(abi) = abi {
+        keys.push_str(&format!(", \"abi\": \"{abi}\""));
+    }
+    if let Some(imp) = implementation {
+        keys.push_str(&format!(", \"implementation\": \"{imp}\""));
+    }
+    std::fs::write(
+        dir.join("manifest.json"),
+        format!("[{{\"filename\": \"{exe_name}\"{keys}}}]\n"),
+    )
+    .expect("manifest.json");
     exe
 }

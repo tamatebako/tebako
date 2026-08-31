@@ -509,3 +509,182 @@ fn dispatch_malformed_jail_flag_is_a_usage_error() {
     assert_eq!(err.code, tebako_shim::EX_USAGE);
     assert!(err.message.contains("invalid jail spec"), "{}", err.message);
 }
+
+// ---------------------------------------------------------------------
+// spec 30: spawned-runtime edges — the dispatch-time lock (§4) and the
+// expose-name dispatch (§3)
+// ---------------------------------------------------------------------
+
+const SPAWN_EDGE: &str =
+    "requires:\n  - {kind: runtime, engine: java, constraint: \">= 21\", expose: [java, keytool]}\n";
+
+#[test]
+fn runtime_edge_is_never_co_mounted_and_exports_the_spawn_lock() {
+    // spec 30 §1/§4: the edge rides the manifest, resolves at dispatch,
+    // and pins the driver's spawn-time pick via TEBAKO_SPAWN_LOCK — the
+    // mount set stays the payload alone.
+    let tmp = TempDir::new("spawn-lock");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            SPAWN_EDGE,
+        ),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    write_runtime_engine(&home, "java", "21.0.8", "0.3.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap();
+
+    // The edge is never a mount; the payload alone rides.
+    assert_eq!(plan.mounts.len(), 1);
+    assert_eq!(plan.mounts[0].mount, "/");
+    // The lock pins engine=lang_version:tebako_version.
+    assert_eq!(
+        env_get(&plan, "TEBAKO_SPAWN_LOCK"),
+        Some("java=21.0.8:0.3.0")
+    );
+}
+
+#[test]
+fn exposed_name_dispatches_the_runtime_boot() {
+    // spec 30 §3: invoking an EXPOSED name boots the depended runtime
+    // directly — no payload mounts, the bare entry name resolves through
+    // the runtime's own manifest child-side (spec 17 §1's bare-name rule).
+    let tmp = TempDir::new("expose-dispatch");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            SPAWN_EDGE,
+        ),
+    );
+    let java = write_runtime_engine(&home, "java", "21.0.8", "0.3.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    // The exposed name keys the version chain on the CONSUMER payload
+    // (spec 07's argv0 model — TEBAKO_JAVA_VERSION pins metanorma here).
+    pin_env(&mut ctx, "java", "1.2.3");
+
+    let plan = dispatch::dispatch("java", &["-version".into()], &ctx).unwrap();
+
+    assert_eq!(plan.program, java);
+    let expected: Vec<String> = vec![
+        java.to_string_lossy().into_owned(),
+        "--tebako-entry".into(),
+        "java".into(),
+        "-version".into(),
+    ];
+    assert_eq!(plan.argv, expected);
+    assert!(plan.mounts.is_empty(), "the consumer payload never mounts");
+    let image = env_get(&plan, "TEBAKO_RUNTIME_IMAGE").expect("the env image rides");
+    assert!(image.ends_with(".tfs"), "the env image: {image}");
+    assert!(matches!(plan.runtime, RuntimeResolution::Ready(_)));
+    assert!(
+        env_get(&plan, "TEBAKO_SPAWN_LOCK").is_none(),
+        "the expose boot carries no lock — the child IS the runtime"
+    );
+}
+
+#[test]
+fn expose_ambiguity_is_a_named_error() {
+    // spec 30 §3: two installed payloads exposing the same name is the
+    // suite-ambiguity class — named, never a coin flip.
+    let tmp = TempDir::new("expose-ambig");
+    let home = tmp.path().join("home");
+    for (name, version) in [("metanorma", "1.2.3"), ("mn2pdf", "2.0")] {
+        write_payload(
+            &home,
+            name,
+            version,
+            &app_manifest_requires(
+                name,
+                version,
+                &entrypoint_yaml(RUBY_ENTRY, name),
+                SPAWN_EDGE,
+            ),
+        );
+    }
+    let ctx = ctx(&home, tmp.path());
+    let err = dispatch::dispatch("java", &[], &ctx).unwrap_err();
+    assert!(
+        err.message.contains("exposed by more than one"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn spawn_edge_implementation_mismatch_is_a_named_error() {
+    // spec 28 §8 × spec 30 §1: the edge's implementation axis filters the
+    // cache; a version-matching runtime of the WRONG implementation is
+    // ineligible — and the error says so (never "version not satisfied").
+    let tmp = TempDir::new("spawn-impl");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            "requires:\n  - {kind: runtime, engine: java, implementation: corretto, constraint: \">= 21\", expose: [java]}\n",
+        ),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    write_runtime_engine_meta(&home, "java", "21.0.8", "0.3.0", None, Some("temurin"));
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let res = tebako_shim::resolve::resolve("metanorma", &ctx).unwrap();
+    // allow_download=false (the `which` surface): no network in tests.
+    let err = dispatch::plan(&res, &[], &ctx, false, Vec::new()).unwrap_err();
+    assert!(
+        err.message.contains("implementation mismatch"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn spawn_edge_requires_the_env_image_pair() {
+    // spec 30 §4: a cached runtime WITHOUT the verified image pair can
+    // never serve a spawn — named error, never a silent skip.
+    let tmp = TempDir::new("spawn-noimg");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            SPAWN_EDGE,
+        ),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    write_runtime_engine(&home, "java", "21.0.8", "0.3.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let res = tebako_shim::resolve::resolve("metanorma", &ctx).unwrap();
+    let err = dispatch::plan(&res, &[], &ctx, false, Vec::new()).unwrap_err();
+    assert!(
+        err.message.contains("no verified env image"),
+        "{}",
+        err.message
+    );
+}
