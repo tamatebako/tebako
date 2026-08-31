@@ -72,9 +72,15 @@ pub fn export(
     }
     let mut dirs: Vec<String> = Vec::new();
     #[cfg(unix)]
-    if let Some(shim) = shim_host {
-        if let Some(dir) = materialize_launchers(&deps, shim)? {
-            dirs.push(dir);
+    {
+        // The expose tier (spec 30 §3) rides with or without a preload
+        // shim: its launchers exec the spawned runtime exe, which boots
+        // its own driver fresh — nothing to re-arm.
+        let exposes = crate::spawn::expose_names();
+        if shim_host.is_some() || !exposes.is_empty() {
+            if let Some(dir) = materialize_launchers(&deps, shim_host, &exposes)? {
+                dirs.push(dir);
+            }
         }
     }
     #[cfg(windows)]
@@ -156,31 +162,56 @@ fn executable_paths(provides: &Provides) -> Vec<String> {
 /// The host-launcher tier (see the module doc): materialize each
 /// declared dependency executable through the exec cache and mirror it
 /// as a self-injecting wrapper under `<dl-root>/wrap-bin/`, whose PATH
-/// spelling is the tier's answer. `None` when nothing is declared — no
-/// wrapper dir rides PATH then.
+/// spelling is the tier's answer. The expose tier (spec 30 §3) adds one
+/// launcher per spawned-runtime command the app payload surfaces: the
+/// resolved plan's full child boot, or a fail-closed script carrying
+/// the named error (exit 69) when the edge cannot resolve at boot —
+/// never a fall-through to a host binary of the same name. `None` when
+/// nothing is declared — no wrapper dir rides PATH then.
 #[cfg(unix)]
 fn materialize_launchers(
     deps: &[(String, PayloadManifest)],
-    shim_host: &str,
+    shim_host: Option<&str>,
+    exposes: &[String],
 ) -> Result<Option<String>, DriverError> {
     // (basename, VFS path) in triple order, first basename wins — the
     // PATH lookup's own rule.
     let mut launches: Vec<(String, String)> = Vec::new();
-    for (mount, manifest) in deps {
-        for path in executable_paths(&manifest.provides) {
-            let Some(base) = Path::new(&path).file_name() else {
-                continue;
-            };
-            let base = base.to_string_lossy().into_owned();
-            if launches.iter().any(|(b, _)| *b == base) {
-                continue;
+    if shim_host.is_some() {
+        for (mount, manifest) in deps {
+            for path in executable_paths(&manifest.provides) {
+                let Some(base) = Path::new(&path).file_name() else {
+                    continue;
+                };
+                let base = base.to_string_lossy().into_owned();
+                if launches.iter().any(|(b, _)| *b == base) {
+                    continue;
+                }
+                launches.push((base, join_mount(mount, &path)));
             }
-            launches.push((base, join_mount(mount, &path)));
         }
     }
-    if launches.is_empty() {
+    if launches.is_empty() && exposes.is_empty() {
         return Ok(None);
     }
+    // The expose tier plans BEFORE the mount-table write guard is taken
+    // (spec 30 §3): plan_launcher's runtime_facts scratch-mounts through
+    // the SAME context, and std's RwLock is not re-entrant — acquiring
+    // the write here first deadlocks the boot (the spawn integration
+    // hang). Planning needs no mount-table state. The dep launchers'
+    // basenames keep first-wins: an expose colliding with a declared
+    // dependency bin is skipped (the PATH lookup's rule, unchanged).
+    let expose_texts: Vec<(&String, String)> = exposes
+        .iter()
+        .filter(|name| !launches.iter().any(|(b, _)| b == *name))
+        .map(|name| {
+            let text = match crate::spawn::plan_launcher(name) {
+                Ok(plan) => expose_launcher_text(&plan),
+                Err(message) => expose_failure_text(&message),
+            };
+            (name, text)
+        })
+        .collect();
     let mut ctx = context().write().unwrap();
     let root = ctx.ensure_dl_tmpdir().map_err(|e| {
         DriverError::new(
@@ -201,27 +232,39 @@ fn materialize_launchers(
             ),
         )
     })?;
-    for (base, vfs) in &launches {
-        // The SAME home-tree routing decision a spawn makes (Rule E2 /
-        // §3.2 — the windows host tier's call): a home-annotated mount
-        // (the JDK shape, `annotations.java_home`) materializes its
-        // whole tree and the wrapper execs the home copy. The closure
-        // mirror would strand the binary's self-located prefix — a
-        // materialized JVM's java.home without conf/ dies at JCE boot
-        // listing conf/security/policy (the packed-mn ISO leg).
-        let host = ctx.exec_materialize_for_spawn(vfs).map_err(|e| {
-            DriverError::new(
-                EX_TEBAKO_MANIFEST,
-                format!(
-                    "the image declares executable '{vfs}' but it cannot be materialized ({}) — the payload's self-description lies",
-                    crate::driver::errno_text(e)
-                ),
-            )
-        })?;
-        let host = host.to_string_lossy().into_owned();
-        force_exec_bit(Path::new(&host))?;
-        let wrap = wrap_dir.join(base);
-        std::fs::write(&wrap, wrapper_text(shim_host, &host)).map_err(|e| {
+    if let Some(shim) = shim_host {
+        for (base, vfs) in &launches {
+            // The SAME home-tree routing decision a spawn makes (Rule E2 /
+            // §3.2 — the windows host tier's call): a home-annotated mount
+            // (the JDK shape, `annotations.java_home`) materializes its
+            // whole tree and the wrapper execs the home copy. The closure
+            // mirror would strand the binary's self-located prefix — a
+            // materialized JVM's java.home without conf/ dies at JCE boot
+            // listing conf/security/policy (the packed-mn ISO leg).
+            let host = ctx.exec_materialize_for_spawn(vfs).map_err(|e| {
+                DriverError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "the image declares executable '{vfs}' but it cannot be materialized ({}) — the payload's self-description lies",
+                        crate::driver::errno_text(e)
+                    ),
+                )
+            })?;
+            let host = host.to_string_lossy().into_owned();
+            force_exec_bit(Path::new(&host))?;
+            let wrap = wrap_dir.join(base);
+            std::fs::write(&wrap, wrapper_text(shim, &host)).map_err(|e| {
+                DriverError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot write the launcher '{}': {e}", wrap.display()),
+                )
+            })?;
+            chmod(&wrap, 0o755)?;
+        }
+    }
+    for (name, text) in &expose_texts {
+        let wrap = wrap_dir.join(name);
+        std::fs::write(&wrap, text).map_err(|e| {
             DriverError::new(
                 EX_TEBAKO_IO,
                 format!("cannot write the launcher '{}': {e}", wrap.display()),
@@ -230,6 +273,48 @@ fn materialize_launchers(
         chmod(&wrap, 0o755)?;
     }
     Ok(Some(wrap_dir.to_string_lossy().into_owned()))
+}
+
+/// The expose launcher (spec 30 §3): drop the parent's runtime wiring
+/// (the plan's deletes), set the child's own (the plan's sets — its
+/// TEBAKO_RUNTIME_IMAGE, the jail trio when non-trivial), then exec the
+/// resolved runtime exe with the planned argv and the user's `"$@"`.
+/// Composed FROM the plan so the FFI wire and the launcher never drift.
+#[cfg(unix)]
+fn expose_launcher_text(plan: &crate::spawn::SpawnPlan) -> String {
+    let mut text = String::from("#!/bin/sh\n");
+    let deletes: Vec<&str> = plan
+        .env_ops
+        .iter()
+        .filter(|(_, v)| v.is_none())
+        .map(|(k, _)| k.as_str())
+        .collect();
+    if !deletes.is_empty() {
+        text.push_str(&format!("unset {}\n", deletes.join(" ")));
+    }
+    for (key, value) in &plan.env_ops {
+        if let Some(value) = value {
+            text.push_str(&format!("{key}={}\nexport {key}\n", shell_quote(value)));
+        }
+    }
+    let args: Vec<String> = plan.argv[1..].iter().map(|a| shell_quote(a)).collect();
+    text.push_str(&format!(
+        "exec {} {} \"$@\"\n",
+        shell_quote(&plan.exe),
+        args.join(" ")
+    ));
+    text
+}
+
+/// The fail-closed launcher (spec 30 §3): the expose exists but cannot
+/// resolve at boot — the command answers with the named error, never a
+/// host fall-through.
+#[cfg(unix)]
+fn expose_failure_text(message: &str) -> String {
+    format!(
+        "#!/bin/sh\necho 'tebako: spawn launcher cannot plan: {}' >&2\nexit 69\n",
+        message.replace('\'', "'\\''")
+    )
 }
 
 /// The windows host tier (spec 22 §3.2): materialize each declared
@@ -497,5 +582,51 @@ mod tests {
     fn shell_quote_escapes_a_literal_quote() {
         assert_eq!(shell_quote("/a/b"), "'/a/b'");
         assert_eq!(shell_quote("/a'b"), "'/a'\\''b'");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_expose_launcher_execs_the_planned_child_boot() {
+        // Composed FROM the plan (spec 30 §3): deletes ride one unset
+        // line, sets export, then the exec carries the full child argv
+        // plus the user's "$@".
+        let plan = crate::spawn::SpawnPlan {
+            exe: "/store/runtimes/j/tebako-runtime".to_string(),
+            argv: vec![
+                "/store/runtimes/j/tebako-runtime".to_string(),
+                "--tebako-image".to_string(),
+                "/p/app.tfs:-:/".to_string(),
+                "--tebako-entry".to_string(),
+                "java".to_string(),
+            ],
+            env_ops: vec![
+                ("TEBAKO_JAIL".to_string(), None),
+                ("TEBAKO_MOUNT_TOOLS".to_string(), None),
+                (
+                    "TEBAKO_RUNTIME_IMAGE".to_string(),
+                    Some("/store/runtimes/j/image.tfs".to_string()),
+                ),
+            ],
+        };
+        let got = expose_launcher_text(&plan);
+        let want = "#!/bin/sh\n\
+                    unset TEBAKO_JAIL TEBAKO_MOUNT_TOOLS\n\
+                    TEBAKO_RUNTIME_IMAGE='/store/runtimes/j/image.tfs'\n\
+                    export TEBAKO_RUNTIME_IMAGE\n\
+                    exec '/store/runtimes/j/tebako-runtime' '--tebako-image' '/p/app.tfs:-:/' '--tebako-entry' 'java' \"$@\"\n";
+        assert_eq!(got, want);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_fail_closed_launcher_carries_the_named_error() {
+        let got = expose_failure_text("no cached runtime satisfies engine 'java'");
+        assert!(got.starts_with("#!/bin/sh\n"), "{got}");
+        // The message rides the single-quote escape, byte-exact.
+        assert!(got.contains("engine '\\''java'\\''"), "{got}");
+        assert!(got.ends_with("exit 69\n"), "{got}");
+        // A literal quote in the message survives the shell single-quote.
+        let got = expose_failure_text("it's torn");
+        assert!(got.contains("it'\\''s torn"), "{got}");
     }
 }

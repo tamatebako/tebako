@@ -260,3 +260,149 @@ fn boot_impl(argc: *mut c_int, argv: *mut *mut *mut c_char, runtime_root: *const
         }
     }
 }
+
+/// The spawned-runtime planner (spec 30 §2) — the interpreter's spawn
+/// hook calls this at the head of a spawn: a bare `command` name the app
+/// payload's `requires[].expose` surfaces is resolved against the
+/// store's runtimes (the dispatch lock pins, never a download) and
+/// planned into a full child boot; anything else passes through.
+///
+/// `args_packed`/`args_len` carry the user arguments as a NUL-packed
+/// block (ruby's `argv_str` wire). Returns:
+///
+/// - `0` — pass-through: not a bare name, or no edge exposes it. The
+///   out pointers are untouched; the caller runs its own spawn.
+/// - `1` — planned: `*out_exe` is the runtime exe (a NUL-terminated
+///   string), `*out_argv`/`*out_argv_len` the NUL-packed child argv
+///   (argv[0] included), `*out_env`/`*out_env_len` the NUL-packed env
+///   operations (`KEY=VALUE` sets, bare `KEY` deletes — in application
+///   order). Every out block is libc-`malloc`'d; the caller frees.
+/// - `-1` — a NAMED error: `*out_error` is the malloc'd message; the
+///   spawn must NOT fall through to a host binary of the same name.
+///
+/// # Safety
+/// C ABI entry point: `command` must be a valid NUL-terminated string,
+/// `args_packed` readable for `args_len` bytes (may be null when
+/// `args_len == 0`), and every out pointer valid for one write.
+#[no_mangle]
+pub unsafe extern "C" fn tebako_spawn_runtime_plan(
+    command: *const c_char,
+    args_packed: *const c_char,
+    args_len: usize,
+    out_exe: *mut *mut c_char,
+    out_argv: *mut *mut c_char,
+    out_argv_len: *mut usize,
+    out_env: *mut *mut c_char,
+    out_env_len: *mut usize,
+    out_error: *mut *mut c_char,
+) -> c_int {
+    if command.is_null()
+        || out_exe.is_null()
+        || out_argv.is_null()
+        || out_argv_len.is_null()
+        || out_env.is_null()
+        || out_env_len.is_null()
+        || out_error.is_null()
+    {
+        return -1;
+    }
+    if args_len > 0 && args_packed.is_null() {
+        return -1;
+    }
+    let command = unsafe { CStr::from_ptr(command) }
+        .to_string_lossy()
+        .into_owned();
+    let raw: &[u8] = if args_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(args_packed as *const u8, args_len) }
+    };
+    let args: Vec<String> = raw
+        .split(|b| *b == 0)
+        .filter(|e| !e.is_empty())
+        .map(|e| String::from_utf8_lossy(e).into_owned())
+        .collect();
+    let mount_var_keys: Vec<String> = std::env::vars()
+        .map(|(k, _)| k)
+        .filter(|k| k.starts_with("TEBAKO_MOUNT_"))
+        .collect();
+    match crate::spawn::plan(&command, &args, &mount_var_keys) {
+        Ok(None) => 0,
+        Ok(Some(plan)) => {
+            let exe = plan.argv[0].clone();
+            let argv_block = pack_nul(plan.argv.iter());
+            let env_block = pack_nul(plan.env_ops.iter().map(|(k, v)| match v {
+                Some(value) => format!("{k}={value}"),
+                None => k.clone(),
+            }));
+            let (Some(exe_p), Some(argv_p), Some(env_p)) = (
+                malloc_cstr(&exe),
+                malloc_bytes(&argv_block),
+                malloc_bytes(&env_block),
+            ) else {
+                return spawn_ffi_error(out_error, "out of memory packing the spawn plan");
+            };
+            unsafe {
+                *out_exe = exe_p;
+                *out_argv = argv_p;
+                *out_argv_len = argv_block.len();
+                *out_env = env_p;
+                *out_env_len = env_block.len();
+            }
+            1
+        }
+        Err(message) => spawn_ffi_error(out_error, &message),
+    }
+}
+
+/// Join strings into the NUL-packed wire block (each element
+/// NUL-terminated — the receiver splits on NUL).
+fn pack_nul(items: impl IntoIterator<Item = impl AsRef<[u8]>>) -> Vec<u8> {
+    let mut out = Vec::new();
+    for item in items {
+        out.extend_from_slice(item.as_ref());
+        out.push(0);
+    }
+    out
+}
+
+/// libc-`malloc` a byte copy (the caller frees). `None` on allocation
+/// failure. The NUL-packed wire blocks carry NUL bytes BY DESIGN — the
+/// interior-NUL refusal lives in `malloc_cstr` (single strings only).
+fn malloc_bytes(bytes: &[u8]) -> Option<*mut c_char> {
+    let len = bytes.len().max(1);
+    let p = unsafe { libc::malloc(len) } as *mut c_char;
+    if p.is_null() {
+        return None;
+    }
+    if !bytes.is_empty() {
+        unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), p as *mut u8, bytes.len()) };
+    }
+    Some(p)
+}
+
+/// libc-`malloc` a NUL-terminated string copy (the caller frees).
+/// `None` on allocation failure or an interior NUL.
+fn malloc_cstr(s: &str) -> Option<*mut c_char> {
+    let c = CString::new(s).ok()?;
+    let bytes = c.as_bytes_with_nul();
+    let p = unsafe { libc::malloc(bytes.len()) } as *mut c_char;
+    if p.is_null() {
+        return None;
+    }
+    unsafe { std::ptr::copy_nonoverlapping(bytes.as_ptr(), p as *mut u8, bytes.len()) };
+    Some(p)
+}
+
+/// Fill `*out_error` with the named message and answer `-1`.
+fn spawn_ffi_error(out_error: *mut *mut c_char, message: &str) -> c_int {
+    match malloc_cstr(message) {
+        Some(p) => unsafe {
+            *out_error = p;
+        },
+        None => unsafe {
+            *out_error = std::ptr::null_mut();
+        },
+    }
+    -1
+}

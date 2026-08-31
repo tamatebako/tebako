@@ -54,7 +54,9 @@ pub const PRELOAD_SHIM_VAR: &str = "TEBAKO_PRELOAD_SHIM";
 pub const RUNTIME_DLL_VAR: &str = "TEBAKO_RUNTIME_DLL";
 
 /// The mounts list the shim rebuilds the namespace from (spec 17 §2.1).
-const MOUNTS_VAR: &str = "TEBAKO_TFS_MOUNTS";
+/// pub(crate): the spec-30 spawn surface deletes it from a spawned
+/// runtime child's env (the child rebuilds from its own boot).
+pub(crate) const MOUNTS_VAR: &str = "TEBAKO_TFS_MOUNTS";
 
 /// The platform's injection variable (ELF / macOS; none elsewhere).
 /// pub(crate) for the PATH launchers (spec 22 §3.2): the wrapper

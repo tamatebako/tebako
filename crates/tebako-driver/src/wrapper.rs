@@ -389,6 +389,35 @@ pub fn run(argv: &[String], runtime_root: &str, env: &dyn Env) -> Result<BootAct
     }
 }
 
+/// The env image's own runtime entrypoint declaration (spec 30 §2's
+/// wrapper case): the bare-name lookup against `runtimeProvides.
+/// entrypoints`. The shared boot already refused an undeclared name
+/// with a named 65 before this tail runs — a miss here is the same
+/// refusal, kept defensive (the tail must never guess around a
+/// declaration gap).
+fn runtime_entrypoint(runtime_root: &str, name: &str) -> Result<tpkg::Entrypoint, DriverError> {
+    let manifest_doc = mounted_manifest_at(runtime_root)?.ok_or_else(|| {
+        manifest(format!(
+            "--tebako-entry '{name}' names a runtime entrypoint but no env image is mounted (TEBAKO_RUNTIME_IMAGE unset) — spec 30 §2"
+        ))
+    })?;
+    let tpkg::Provides::Runtime(runtime) = &manifest_doc.provides else {
+        return Err(manifest(format!(
+            "--tebako-entry '{name}' names a runtime entrypoint but the image mounted at '{runtime_root}' is not a runtime payload (spec 30 §2)"
+        )));
+    };
+    runtime
+        .entrypoints
+        .iter()
+        .find(|e| e.name == name)
+        .cloned()
+        .ok_or_else(|| {
+            manifest(format!(
+                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name (spec 30 §2)"
+            ))
+        })
+}
+
 /// The boot-tail proper (everything after the shared boot): extract,
 /// interpreter declaration, visibility, materialization, composition.
 /// Split from [`run`] so the unmount-on-failure rule lives in exactly
@@ -424,6 +453,29 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
     let image = env_var(env, "TEBAKO_RUNTIME_IMAGE").unwrap_or_else(|| "-".to_string());
     let vfs = interpreter_vfs_path(&layout, &outcome.runtime_root, &image)?;
     let mech = mechanism(&layout, &image)?;
+    // spec 30 §2's wrapper case: a bare entry name (never a path, never
+    // the reserved `self` keyword) names the env image's OWN runtime
+    // entrypoint — the spawned-runtime child execs the materialized
+    // program DIRECTLY with the declaration's args_default between the
+    // program and the user args, bypassing the layout.interpreter
+    // default and the boot's resolved-entry token entirely (the
+    // declaration is the single owner; the linked pattern's boot arm
+    // already composed the same resolution for the in-process case).
+    if let Some(name) = h.entry.as_deref() {
+        if !name.contains('/') && name != "self" {
+            let ep = runtime_entrypoint(&outcome.runtime_root, name)?;
+            let program = materialize(
+                &join_mount(&outcome.runtime_root, &ep.path),
+                mech,
+                &outcome.runtime_root,
+            )?;
+            let mut argv = Vec::with_capacity(1 + ep.args_default.len() + h.user_args.len());
+            argv.push(program.clone());
+            argv.extend(ep.args_default.iter().cloned());
+            argv.extend(h.user_args.iter().cloned());
+            return Ok(BootAction::Launch(Launch { program, argv }));
+        }
+    }
     let program = materialize(&vfs, mech, &outcome.runtime_root)?;
     let defaults = args_default(h, &outcome.runtime_root)?;
     let entry_index = if h.entry.as_deref().is_some_and(|e| e.contains('/')) {

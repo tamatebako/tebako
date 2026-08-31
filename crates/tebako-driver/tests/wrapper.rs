@@ -325,7 +325,7 @@ fn the_default_order_picks_preload_when_the_image_delivers_the_shim() {
 }
 
 #[test]
-fn the_interpreter_keyword_composes_without_an_entry_or_defaults() {
+fn the_self_keyword_composes_without_an_entry_or_defaults() {
     let g = guard("keyword");
     let env_image = write_env_image(g.path(), EXEC_CACHE, false);
     let app = write_app_image(g.path());
@@ -339,7 +339,7 @@ fn the_interpreter_keyword_composes_without_an_entry_or_defaults() {
                 "--tebako-image",
                 &format!("{}:-:/", app.display()),
                 "--tebako-entry",
-                "java",
+                "self",
                 "-version",
             ]),
             WRAPPER_RUNTIME_ROOT,
@@ -347,12 +347,97 @@ fn the_interpreter_keyword_composes_without_an_entry_or_defaults() {
         )
         .unwrap(),
     );
-    // The keyword is the interpreter itself (the deploy shims' re-entry
-    // form, spec 17 §1): dropped, no entry, no args_default.
+    // `self` is the reserved keyword (the deploy self-check's re-entry
+    // form, spec 17 §1): dropped, no entry, no args_default. Any OTHER
+    // bare name resolves against the env image's runtime entrypoints
+    // (spec 30 §2 — the_runtime_entrypoint_execs_directly below).
     assert_eq!(
         launch.argv,
         vec![launch.program.clone(), "-version".to_string()]
     );
+}
+
+#[test]
+fn the_runtime_entrypoint_execs_directly() {
+    let g = guard("rt-entry");
+    // The env image IS the runtime payload: a manifest declaring the
+    // spawn surface (spec 30 §2) rides next to the layout — `jing` is a
+    // declared runtime entrypoint at /bin/stub with its own
+    // args_default.
+    let layout = format!("{GOOD_LAYOUT}{EXEC_CACHE}");
+    let manifest = payload_manifest(
+        "runtime",
+        "provides:\n  \
+         provides: [{engine: java, version: \"21\", abi_line: \"21\", platform: aarch64-macos}]\n  \
+         built_from: {src_sha256: 0000000000000000000000000000000000000000000000000000000000000000, patch_set: base}\n  \
+         entrypoints: [{name: jing, path: /bin/stub, args_default: [\"-jar\"]}]\n  \
+         capabilities: {exec: true, read: true, runtime: true}",
+    );
+    let env_image = g.path().join("env.tfs");
+    build_zip(
+        &env_image,
+        &["bin/", "lib/", "lib/tebako/", "__tpkg__/"],
+        &[
+            ("lib/tebako/layout.yaml", layout.as_bytes()),
+            ("bin/stub", STUB),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "jing",
+                "input.xml",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+    // The declared program is materialized and exec'd DIRECTLY — the
+    // declaration's args_default between the program and the user args,
+    // no resolved-entry token, no bridge (spec 30 §2's wrapper case).
+    assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
+    assert_eq!(
+        launch.argv,
+        vec![
+            launch.program.clone(),
+            "-jar".to_string(),
+            "input.xml".to_string()
+        ]
+    );
+}
+
+#[test]
+fn an_undeclared_runtime_entrypoint_is_a_named_65() {
+    let g = guard("rt-entry-65");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = run(
+        &argv(&[
+            "tebako-runtime-launcher",
+            "--tebako-image",
+            &format!("{}:-:/", app.display()),
+            "--tebako-entry",
+            "jing",
+        ]),
+        WRAPPER_RUNTIME_ROOT,
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err}");
+    assert!(err.message.contains("'jing'"), "{err}");
 }
 
 #[test]
