@@ -67,6 +67,16 @@ no wrapper-specific argv grammar. The linked driver composes
 identically (tebako#503): args_default's single owner is the runtime
 side — loaders (the shim, the bootstrap) never carry it.
 
+**The bare-name entry (spec 30 §2).** When the entry token is a bare
+non-`self` NAME (spec 17 §1's keyword form), the composition changes
+shape: the env image's own `provides.entrypoints` declares the program
+(a JVM tool, a helper exe); the wrapper execs the DECLARED program
+directly — materialized per §3 when the kernel needs a host path —
+with the declared `args_default` composed and the interpreter token
+dropped entirely (no bridge entry, no script position). The spawned
+process IS the declared program:
+`[<program>, <args_default…>, <user args…>]`.
+
 ## 2. The interpreter-path declaration
 
 The env image's in-image manifest declares the interpreter under the

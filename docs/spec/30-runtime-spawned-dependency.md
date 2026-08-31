@@ -1,7 +1,13 @@
 # Spec 30 — Runtime as a spawned dependency
 
-**Status: PLANNED (drafted 2026-08-30).** Amends spec 03 §2.3 (DEPENDS
-gains the kind-runtime edge), spec 07 §1/§8 (the spawn surface and shim
+**Status: NORMATIVE (drafted 2026-08-30; implemented 2026-08-31 —
+`tpkg` (the `kind: runtime` edge + schema_minor 4 + the runtime-store
+scan), `tebako-shim` (dispatch-time edge resolution + the
+`TEBAKO_SPAWN_LOCK` export), `tebako-cli` (install/compose arms + the
+expose shim registration), `tebako-info` (render arms),
+`tebako-driver` (the spawn map, the plan FFI, the PATH launchers, the
+jail union)).** Amends spec 03 §2.3 (DEPENDS
+gains the kind-runtime edge), spec 07 §1/§2 (the spawn surface and shim
 registration), spec 23 §11 (the java question re-settled: java promotes
 to a runtime). No wire-format change; no trailer change. Requires
 spec 29: the depended runtime's exe is the wrapper — a host-resident
@@ -78,6 +84,52 @@ Two spellings, one semantics; both live:
 Both spellings dispatch through tebako — NEVER a raw VFS path, NEVER a
 host PATH fallback (§5).
 
+**Resolution placement (locked).** The two resolve moments are
+different actors, never conflated. At DISPATCH the loader (the shim;
+the bootstrap for a self-contained package) resolves every
+`kind: runtime` edge of the payload being dispatched — cache hit or
+download per spec 05 §5 — and exports the pins as `TEBAKO_SPAWN_LOCK`
+= `engine=language_version:tebako_version`, `;`-joined in manifest
+order (spec 17 §2). At SPAWN the driver resolves CACHE-ONLY and never
+downloads: a locked edge resolves to exactly the pinned pair (a pinned
+runtime gone from the store is a named error, never a silent re-pick);
+an UNLOCKED edge (a hand-rolled dispatch, a test harness) resolves the
+newest compatible CACHED runtime and the pick is journaled.
+
+**The plan FFI (the runtime ↔ driver wire).** The runtime-side spawn
+interception (spec 22's hooks) recognizes the exposed command, then
+asks the in-process driver for a plan through the exported C ABI
+`tebako_spawn_runtime_plan(command, args, …) → 0 | 1 | -1`: **0** =
+not ours — pass through to the host PATH (the §2 undeclared-name rule,
+journaled as a host spawn); **1** = planned — the driver hands back
+the child exe (the store-resident wrapper, executed FROM the store),
+the full child argv, and an env-op block; **-1** = a named spawn error
+(a malloc'd message the runtime surfaces as the spawn failure). argv
+and env ops travel NUL-packed; an env op is `KEY=VALUE` (set) or a
+bare `KEY` (delete). The runtime's own spawn mechanism then execs the
+plan (POSIX fork/exec with the block applied; the windows argv bridge
+composes the process directly).
+
+**The child entry.** The planned argv ends
+`… --tebako-entry <name> <user args…>` with `<name>` the exposed
+command name, BARE. The child boot resolves a bare non-`self` name
+against its OWN env image's `provides.entrypoints` (spec 17 §1's
+bare-name rule): the declared `args_default` composes, the declared
+path is verified against the child boot's own mounts, and an
+undeclared name is the named error 65 — the runtime-side plan already
+checked the declaration against the store image's manifest, so a 65
+here means the store entry changed under a lock (§5).
+
+**The child environment (locked).** The parent's whole
+runtime-injection surface is stripped from the child's env:
+`TEBAKO_TFS_MOUNTS`, `TEBAKO_PRELOAD_SHIM`, `TEBAKO_RUNTIME_DLL`,
+`TEBAKO_MOUNT_ROOT`, `TEBAKO_SPAWN_LOCK`, every exported
+`TEBAKO_MOUNT_*` key, the platform preload vars (`LD_PRELOAD` /
+`DYLD_INSERT_LIBRARIES`), and the jail trio (§4 recomputes them). The
+plan then sets `TEBAKO_RUNTIME_IMAGE` to the resolved runtime's env
+image. A foreign preload in the child would bind the PARENT's shim
+symbols — the strip is not optional.
+
 ## 3. Shim registration (compose, don't invent)
 
 A depended runtime's entrypoints surface on PATH ONLY through the
@@ -92,14 +144,33 @@ exposed depended entries is a named manifest error at press; a
 collision between two installed payloads stays spec 07's existing
 first-wins/disabled-state model.
 
+**The PATH launcher tier (locked).** Inside a booted parent, exposed
+names also surface as generated launchers in the driver's PATH-front
+directory (spec 22 §3's wrap-bin), planned ONCE at the parent's boot:
+a plan that succeeds bakes a script that `exec`s the planned child exe
+with the planned argv and env block; a name that fails to plan (the §5
+outruns case) bakes a fail-closed stub — stderr names the failure,
+exit 69 — never a host-PATH fallback. The launchers append AFTER the
+preload shim's dependency wrappers (a dep wrapper wins a basename tie)
+and exist whether or not the preload shim armed: the launcher execs
+the child wrapper exe fresh and needs no interposition. Windows has no
+launcher tier — the §2 argv bridge is the whole surface there.
+
 ## 4. Jail interaction (union-of-needs, never inheritance)
 
 The child dispatch computes its jail from ITS OWN declared needs — the
 depended runtime's manifest plus the payload carrying the spawned
 command, per spec 23 §5/§6 — and never inherits the parent's grants
-verbatim. The spawn bridge passes NO jail env to the child;
-`TEBAKO_JAIL_SOURCE` journals the child's own composition. Default deny
-stands: a need nobody declared is a denial with the needs-check record
+verbatim. The DRIVER computes the union at plan time
+(`tpkg::jail::union` of the runtime's needs and the payload's needs):
+the parent's `TEBAKO_JAIL` / `TEBAKO_JAIL_SOURCE` /
+`TEBAKO_JAIL_JOURNAL` are deleted from the child env (the deletes ride
+the plan's env-op block), and when the union is not trivially open the
+plan sets the trio fresh, with `TEBAKO_JAIL_SOURCE` =
+`spawn-edge:<payload>`. When NEITHER side declares needs the child
+carries no jail env at all — the child boot then installs no policy,
+identical to an unjailed dispatch (spec 08). Default deny stands: a
+need nobody declared is a denial with the needs-check record
 (spec 23 §8's record mode covers the discovery loop for spawned edges
 identically).
 
@@ -120,6 +191,17 @@ identically).
 - The depended runtime's `contract_version` is negotiated fail-closed
   by the dispatcher exactly as for a primary runtime (spec 06 §6;
   exit 75).
+- Spawn-time resolution is CACHE-ONLY (§2): a payload whose edge was
+  never resolved by a loader (a hand-rolled `--tebako-image`
+  invocation, a test harness) and finds no compatible runtime in the
+  store fails with the resolver's named error — the driver never
+  downloads, and `TEBAKO_OFFLINE` changes nothing (there is nothing to
+  offline against).
+- An exposed name that OUTRUNS the runtime map — declared in the
+  payload's `expose:` but not declared as an entrypoint by the runtime
+  the edge resolved to — is a named spawn error naming the payload and
+  the command (the PATH launcher tier bakes the same failure as the
+  exit-69 stub at boot).
 
 ## 6. What this settles and retires
 

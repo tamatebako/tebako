@@ -91,11 +91,16 @@ learns which pattern a runtime uses.
   when no image spec is given. The driver verifies the entry's presence
   against the mounts the boot itself established (named error 65 when
   absent); an entry outside them belongs to the interpreter's own
-  startup. A bare NAME (no `/` — e.g. `ruby`) is the interpreter
-  keyword: the boot starts the interpreter itself with the user's args
-  and drops the keyword (the deploy shims' re-entry form). With images
-  but NO `--tebako-entry` at all, the boot mounts and starts the
-  interpreter with its own args (the smoke form).
+  startup. A bare NAME (no `/`) is the keyword form. `self` is the
+  reserved interpreter keyword: the boot starts the interpreter itself
+  with the user's args and drops the keyword (the deploy shims' re-entry
+  form). Any OTHER bare name (spec 30 §2's spawned-dependency dispatch)
+  resolves against the ENV image's own `provides.entrypoints` (spec 03
+  §2.2's runtime block): the declared `args_default` composes exactly as
+  an app entry's would and the declared path is verified against the
+  mounts THIS boot established; an undeclared name is the named error 65.
+  With images but NO `--tebako-entry` at all, the boot mounts and starts
+  the interpreter with its own args (the smoke form).
 - `--tebako-trace <host-path>` (spec 25 §2, additive): arm the
   interception trace bus at boot, BEFORE any mount — the channel file is
   opened once and appended for the process's life. The `TEBAKO_TRACE`
@@ -125,6 +130,7 @@ learns which pattern a runtime uses.
 | var | meaning |
 |-----|---------|
 | `TEBAKO_RUNTIME_IMAGE` | image-era: absolute path of the runtime's own `.tfs` (driver mounts it instead of any embedded image) |
+| `TEBAKO_SPAWN_LOCK` | spec 30 §2: the dispatcher's spawn-time pins for the payload's `kind: runtime` edges — `engine=language_version:tebako_version`, `;`-joined in manifest order. The driver consumes it at spawn (cache-only resolution to the pinned pair) and never propagates it to a spawned child |
 | `TEBAKO_TFS_MOUNTS` | `image[:slot]:mount,…` — mounts to establish (preload-shim path); grammar in §2.1 |
 | `TEBAKO_JAIL` | jail policy env form (spec 08) — the driver/preload enforces it |
 | `TEBAKO_JAIL_SOURCE` | audit label of the policy's origin (`manifest` / `user` / `manifest+user`, or the exporting surface) — journaled with every denial (spec 08 §2) |

@@ -118,6 +118,13 @@ provides: {engine: ruby, implementation: mri, version: 4.0.6, language_version: 
   # for mri the two are identical). spec 05 §5 matches on both.
 built_from: {src_sha256: "…", patch_set: "v0.2.8"}
 env: {GEM_PATH: …}
+entrypoints:                          # OPTIONAL (additive — schema_minor 4, spec 30 §2):
+  - name: jing                        # the commands this runtime boots as a SEPARATE
+    path: /bin/jing.jar               # process for a consumer's `kind: runtime` edge
+    args_default: ["-jar"]            # `expose:` list — the app-entrypoint grammar minus
+                                      # runtime_requirement (a runtime runs on itself).
+                                      # Absent/empty = the runtime serves only as a
+                                      # primary co-mounted runtime.
 capabilities: {exec: true, read: true, runtime: true}
 ```
 
@@ -150,12 +157,24 @@ requires:
     name: iso-codes
     constraint: ">= 2024.1"
     mount: /__app__/share/iso-codes
+  - kind: runtime             # a SPAWNED runtime edge (additive — schema_minor 4,
+    engine: java              # spec 30): resolves through the RUNTIME index into the
+    implementation: temurin   # OPTIONAL (spec 28 §8)
+    constraint: ">= 21"       # store's runtimes/ area and is NEVER co-mounted — its
+                              # wrapper exe executes FROM THE STORE.
+    expose: [java, keytool]   # OPTIONAL — the depended entries this payload surfaces
+                              # (spec 30 §3's shim surface)
 ```
 
 - Dependency edges may also name **provided executables** (e.g. an app
   requiring the `inkscape` command resolves against the PROVIDES of the
   inkscape payload) — the provides/requires graph resolves capabilities,
   not just payload names.
+- A **`kind: runtime`** edge is spec 30's spawned dependency: the
+  depended runtime is dispatched as a CHILD process through its
+  store-resident wrapper (never co-mounted, never materialized);
+  resolution placement, the spawn wire, the jail union, and the shim
+  surface are spec 30 §2–§5's.
 - **MOUNT RULE (locked):** the mount point is declared in the CONSUMER's
   manifest (docker-compose volume semantics): the consumer's code knows
   where it looks for things; the provider never dictates its mount
