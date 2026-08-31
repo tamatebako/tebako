@@ -45,7 +45,7 @@ impl std::fmt::Display for DriverError {
 
 impl std::error::Error for DriverError {}
 
-fn manifest(message: impl Into<String>) -> DriverError {
+pub(crate) fn manifest(message: impl Into<String>) -> DriverError {
     DriverError::new(EX_TEBAKO_MANIFEST, message.into())
 }
 
@@ -882,8 +882,9 @@ fn mount_slug(mount: &str) -> String {
 /// §1) — exporting it would make every child runtime read an override.
 /// The app-at-/ flow needs no discovery var by construction (the
 /// rewritten entry + `__dir__` qualify automatically — v2-1/20).
-fn export_mount_vars(images: &[ImageSpec], env: &dyn Env) -> Result<(), DriverError> {
+fn export_mount_vars(images: &[ImageSpec], env: &dyn Env) -> Result<Vec<String>, DriverError> {
     let mut seen: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut keys: Vec<String> = Vec::new();
     for spec in images {
         let slug = mount_slug(&spec.mount);
         if slug == "ROOT" {
@@ -899,11 +900,13 @@ fn export_mount_vars(images: &[ImageSpec], env: &dyn Env) -> Result<(), DriverEr
             Some(_) => continue,
             None => {
                 seen.insert(slug.clone(), spec.mount.clone());
-                env.set_var(&format!("TEBAKO_MOUNT_{slug}"), &spec.mount);
+                let key = format!("TEBAKO_MOUNT_{slug}");
+                env.set_var(&key, &spec.mount);
+                keys.push(key);
             }
         }
     }
-    Ok(())
+    Ok(keys)
 }
 
 /// Resolve the entry against the first image's mount (the app payload —
@@ -939,6 +942,58 @@ fn resolve_entry(
         }
     }
     Ok(resolved)
+}
+
+/// spec 30 §2 (spec 17 §1's bare-name rule): a bare `--tebako-entry
+/// <name>` other than the reserved `self` keyword names an entrypoint
+/// the ENV image's `runtimeProvides.entrypoints` declares. Resolved
+/// against the runtime root (never the first image's mount — the
+/// spawned-runtime child owns its own surface), verified to exist in
+/// this boot's mounts, and composed with the declaration's
+/// `args_default`. Returns `(resolved vfs path, args_default)`. Every
+/// miss is a named 65: no env image mounted, a non-runtime env image,
+/// an undeclared name, or a declared path absent from the tree — the
+/// image lying about its spawn surface.
+fn resolve_runtime_entrypoint(
+    name: &str,
+    runtime_root: &str,
+    mounted: &[MountedMember],
+) -> Result<(String, Vec<String>), DriverError> {
+    let manifest_doc = mounted_manifest_at(runtime_root)?.ok_or_else(|| {
+        manifest(format!(
+            "--tebako-entry '{name}' names a runtime entrypoint but no env image manifest is readable at '{runtime_root}' (TEBAKO_RUNTIME_IMAGE unset, or the image carries no {}) — a runtime's spawn surface is declared in its env image manifest (spec 30 §2)",
+            tpkg::PAYLOAD_MANIFEST_PATH
+        ))
+    })?;
+    let tpkg::Provides::Runtime(runtime) = &manifest_doc.provides else {
+        return Err(manifest(format!(
+            "--tebako-entry '{name}' names a runtime entrypoint but the image mounted at '{runtime_root}' is not a runtime payload (spec 30 §2)"
+        )));
+    };
+    let ep = runtime
+        .entrypoints
+        .iter()
+        .find(|e| e.name == name)
+        .ok_or_else(|| {
+            manifest(format!(
+                "--tebako-entry '{name}': the env image declares no runtime entrypoint of that name — the parent's expose list outruns the runtime's spawn surface (spec 30 §2)"
+            ))
+        })?;
+    let resolved = join_mount(runtime_root, &ep.path);
+    if mounted.iter().any(|m| in_mount(&resolved, &m.point)) {
+        let mut ctx = context().write().unwrap();
+        match ctx.open(&resolved, libc::O_RDONLY) {
+            Ok(fd) => {
+                let _ = ctx.close(fd);
+            }
+            Err(_) => {
+                return Err(manifest(format!(
+                    "runtime entrypoint '{name}' resolves to '{resolved}' but the path is absent from the mounted tree — the env image's declaration lies (spec 30 §2)"
+                )));
+            }
+        }
+    }
+    Ok((resolved, ep.args_default.clone()))
 }
 
 /// The boot (spec 17 §1–§3). `argv` is the process argv WITHOUT argv[0]
@@ -1077,11 +1132,14 @@ pub fn boot_with_mount_modes(
             crate::alias::export_path(env, &alias_boot.dirs);
         }
         // The mounts are established — publish the discovery surface
-        // (spec 22 §6; v2-1/20), arm the children (spec 22 §3), and wire
+        // (spec 22 §6; v2-1/20), capture the spawned-runtime edges
+        // (spec 30 §2 — the expose map the FFI planner and the §3
+        // launcher tier read), arm the children (spec 22 §3), and wire
         // the dependency bins onto PATH (spec 22 §3.2 — the launcher
         // tier embeds the shim's materialized copy when one is
         // delivered, so injection runs first).
-        export_mount_vars(&h.images, env)?;
+        let mount_keys = export_mount_vars(&h.images, env)?;
+        crate::spawn::capture(&h.images, env, runtime_root, mount_keys)?;
         let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
         crate::path_env::export(&h.images, env, shim_host.as_deref())?;
         let rewritten = match h.entry.as_deref() {
@@ -1096,16 +1154,35 @@ pub fn boot_with_mount_modes(
                 v.extend(h.interpreter_args.iter().cloned());
                 v
             }
-            // The interpreter keyword (a bare name, never a path): the
-            // CLI's deploy shims re-enter the interpreter itself
-            // (`--tebako-entry ruby`); the keyword is dropped.
+            // A bare name (never a path): the reserved `self` keyword is
+            // dropped (the deploy self-check re-enters the interpreter
+            // with its own args). Any OTHER bare name names an
+            // entrypoint the ENV image's runtimeProvides declares
+            // (spec 17 §1's bare-name rule / spec 30 §2 — the
+            // spawned-runtime child boot: the parent's planner sends
+            // `--tebako-entry <name>` and the child resolves the
+            // declaration against its own env image, args_default
+            // included — the declaration is the single owner).
             Some(keyword) if !keyword.contains('/') => {
-                let mut v = Vec::with_capacity(h.user_args.len() + 1);
-                if let Some(program) = argv.first() {
-                    v.push(program.clone());
+                if keyword == "self" {
+                    let mut v = Vec::with_capacity(h.user_args.len() + 1);
+                    if let Some(program) = argv.first() {
+                        v.push(program.clone());
+                    }
+                    v.extend(h.user_args.iter().cloned());
+                    v
+                } else {
+                    let (resolved, defaults) =
+                        resolve_runtime_entrypoint(keyword, runtime_root, &mounted)?;
+                    let mut v = Vec::with_capacity(h.user_args.len() + defaults.len() + 2);
+                    if let Some(program) = argv.first() {
+                        v.push(program.clone());
+                    }
+                    v.extend(defaults);
+                    v.push(resolved);
+                    v.extend(h.user_args.iter().cloned());
+                    v
                 }
-                v.extend(h.user_args.iter().cloned());
-                v
             }
             Some(_) => {
                 let resolved = resolve_entry(&h, runtime_root, &mounted)?;

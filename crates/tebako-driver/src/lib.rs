@@ -47,6 +47,7 @@ pub mod injection;
 pub mod layout;
 pub mod materialize;
 pub mod path_env;
+pub mod spawn;
 pub mod wrapper;
 
 pub use driver::{

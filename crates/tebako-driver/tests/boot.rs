@@ -835,7 +835,7 @@ fn no_entry_starts_the_interpreter_with_its_own_args() {
 }
 
 #[test]
-fn the_interpreter_keyword_is_dropped() {
+fn the_self_keyword_is_dropped() {
     let g = guard("keyword");
     let payload = write_payload_image(g.path());
     let env = MapEnv::new();
@@ -846,7 +846,7 @@ fn the_interpreter_keyword_is_dropped() {
             "--tebako-image",
             &format!("{}:0:/", payload.display()),
             "--tebako-entry",
-            "ruby",
+            "self",
             "-e",
             "puts 1",
         ]),
@@ -854,8 +854,10 @@ fn the_interpreter_keyword_is_dropped() {
         &env,
     )
     .unwrap();
-    // `--tebako-entry ruby` (the CLI's deploy shims): the keyword is
-    // dropped; the interpreter starts with the user's args.
+    // `--tebako-entry self` (the reserved keyword — the deploy
+    // self-check): the keyword is dropped; the interpreter starts with
+    // the user's args. Any OTHER bare name resolves against the env
+    // image's runtime entrypoints (spec 30 §2 — see spawn.rs's tests).
     assert_eq!(out.argv, argv(&["ruby", "-e", "puts 1"]));
     let bytes = read_file("/bin/app");
     assert_eq!(bytes, b"#!/usr/bin/env ruby\nputs 'hi'\n");

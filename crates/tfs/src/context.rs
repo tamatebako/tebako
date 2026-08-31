@@ -1358,19 +1358,11 @@ impl FsContext {
         }
     }
 
-    /// The mount table in the `TEBAKO_TFS_MOUNTS` grammar
-    /// ("image[:slot]:mount,image[:slot]:mount,…" — spec 17 §2.1) — the
-    /// env a spawned child needs to re-establish this namespace through
-    /// the preload shim. Only file-backed mounts serialize; memory mounts
-    /// have no image path and are skipped (a child cannot remount them
-    /// anyway). A mount established from a package slot carries its slot
-    /// field, so the child mounts the same region — never the whole
-    /// package file.
-    pub fn mounts_env(&self) -> Option<std::ffi::CString> {
-        // Establishment order (handles ascend in mount order); a union's
-        // members follow their incumbent in shadow order, so the child's
-        // repeated-point-as-union rebuild (spec 17 §2.1) layers exactly
-        // this union.
+    /// The mount table as structured decls (spec 17 §2.1) — the same
+    /// establishment order [`mounts_env`](Self::mounts_env) serializes.
+    /// Spec 30's spawn planner composes child `--tebako-image` triples
+    /// from these directly.
+    pub fn mount_decls(&self) -> Vec<crate::mount_spec::MountDecl> {
         let mut decls: Vec<crate::mount_spec::MountDecl> = Vec::new();
         for mount in self.mounts.values() {
             if let Some(archive) = mount.archive_path.as_ref() {
@@ -1390,6 +1382,23 @@ impl FsContext {
                 }
             }
         }
+        decls
+    }
+
+    /// The mount table in the `TEBAKO_TFS_MOUNTS` grammar
+    /// ("image[:slot]:mount,image[:slot]:mount,…" — spec 17 §2.1) — the
+    /// env a spawned child needs to re-establish this namespace through
+    /// the preload shim. Only file-backed mounts serialize; memory mounts
+    /// have no image path and are skipped (a child cannot remount them
+    /// anyway). A mount established from a package slot carries its slot
+    /// field, so the child mounts the same region — never the whole
+    /// package file.
+    pub fn mounts_env(&self) -> Option<std::ffi::CString> {
+        // Establishment order (handles ascend in mount order); a union's
+        // members follow their incumbent in shadow order, so the child's
+        // repeated-point-as-union rebuild (spec 17 §2.1) layers exactly
+        // this union.
+        let decls = self.mount_decls();
         if decls.is_empty() {
             None
         } else {

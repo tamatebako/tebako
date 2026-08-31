@@ -43,4 +43,5 @@ tebako_main
 tebako_mount_point
 tebako_original_pwd
 tebako_path_is_embedded
+tebako_spawn_runtime_plan
 tebako_strerror
