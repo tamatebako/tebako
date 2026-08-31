@@ -1060,8 +1060,32 @@ fn install_dependency_closure<T: Transport>(
     chain: &mut Vec<String>,
 ) -> Result<(), TebakoError> {
     for req in mirror.requires() {
+        // spec 30 §1/§3: a spawned-runtime edge installs the RUNTIME into
+        // the store (never a payload in the closure walk), verifies the
+        // expose list against the runtime's own spawn surface, and
+        // registers one shim per exposed name.
+        if let tpkg::Requirement::Runtime {
+            engine,
+            implementation,
+            constraint,
+            expose,
+        } = req
+        {
+            install_runtime_edge(
+                home,
+                engine,
+                implementation.as_deref(),
+                constraint,
+                expose,
+                shim_binary,
+            )?;
+            continue;
+        }
         let (kind, name, constraint) = match req {
             tpkg::Requirement::Language { .. } => continue,
+            tpkg::Requirement::Runtime { .. } => {
+                unreachable!("runtime edges install above the tuple match")
+            }
             tpkg::Requirement::Toolkit {
                 name, constraint, ..
             } => ("toolkit", name, constraint),
@@ -1091,6 +1115,108 @@ fn install_dependency_closure<T: Transport>(
         }
         let plan = plan_from_dependency_edge(home, fetcher, mirror, kind, name, constraint)?;
         finish_install(home, fetcher, plan, shim_binary, chain)?;
+    }
+    Ok(())
+}
+
+/// Install one spawned-runtime edge (spec 30 §1/§3): resolve + download
+/// the RUNTIME into the store's runtimes/ area (never a payload in the
+/// closure walk), then — when the edge exposes names — verify the list
+/// against the runtime's own spawn surface (the embedded manifest's
+/// entrypoints; the install-time cross-check class of spec 26 §5, since
+/// the shim layer deliberately cannot read images) and register one shim
+/// per exposed name (spec 07's argv0 model; the runtime entrypoint's
+/// `active` flag applies).
+fn install_runtime_edge(
+    home: &Path,
+    engine: &str,
+    implementation: Option<&str>,
+    constraint: &tpkg::Constraint,
+    expose: &[String],
+    shim_binary: Option<&Path>,
+) -> Result<(), TebakoError> {
+    let ctx = tebako_shim::Ctx {
+        home: home.to_path_buf(),
+        cwd: std::env::current_dir().map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?,
+        env: std::env::vars().collect(),
+    };
+    // Pre-staging the runtime IS install's job (the dispatch would
+    // download it otherwise); expose only drives the cross-check + shims.
+    let rt =
+        tebako_shim::runtime::resolve_runtime_edge(engine, implementation, constraint, true, &ctx)
+            .map_err(map_shim)?;
+    journal(
+        home,
+        &format!(
+            "event=runtime-edge-resolved engine={engine} lang_version={} tebako_version={}",
+            rt.lang_version, rt.tebako_version
+        ),
+    );
+    if expose.is_empty() {
+        return Ok(());
+    }
+    let image = rt
+        .image
+        .as_ref()
+        .expect("edge resolution post-asserts the env image");
+    let text = image_manifest::read_embedded_manifest(image)?.ok_or_else(|| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the {engine} runtime image {} carries no embedded manifest — the expose list cannot be verified",
+                image.display()
+            ),
+        )
+    })?;
+    let manifest = tpkg::PayloadManifest::from_yaml(&text).map_err(|e| {
+        err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the embedded manifest of {} does not parse: {e}",
+                image.display()
+            ),
+        )
+    })?;
+    let tpkg::Provides::Runtime(rt_provides) = &manifest.provides else {
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "{} is not a runtime payload — a spawn edge can only expose a runtime's entrypoints",
+                image.display()
+            ),
+        ));
+    };
+    let mut names = Vec::new();
+    for name in expose {
+        let Some(ep) = rt_provides.entrypoints.iter().find(|e| &e.name == name) else {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "expose: the {engine} runtime {} declares no entrypoint \"{name}\" (declared: {}) — fix the payload's expose list or the runtime's spawn surface",
+                    rt.lang_version,
+                    rt_provides
+                        .entrypoints
+                        .iter()
+                        .map(|e| e.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        };
+        if ep.is_active() {
+            names.push(name.clone());
+        }
+    }
+    if names.is_empty() {
+        return Ok(());
+    }
+    let binary = resolve_shim_binary(shim_binary)?;
+    let (_links, shim_notes) = manage::link_shims(home, &binary, &names).map_err(map_shim)?;
+    for note in shim_notes {
+        journal(
+            home,
+            &format!("event=spawn-shim-note engine={engine} note={note}"),
+        );
     }
     Ok(())
 }

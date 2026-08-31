@@ -1219,3 +1219,104 @@ fn language_requires_edges_are_the_runtime_axis_never_payload_installs() {
     let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
     assert_eq!(out.commands, vec!["app"]);
 }
+
+// ---------------------------------------------------------------------
+// the spawned-runtime edge (spec 30 §1/§3)
+// ---------------------------------------------------------------------
+
+/// A cached java runtime store entry whose env image is a REAL zip image
+/// carrying a kind:runtime manifest with the given spawn entrypoints
+/// (the install-time expose cross-check reads it through the VFS).
+fn cached_java_runtime(fx: &Fixture, entrypoints: &[&str]) {
+    let platform = tebako_shim::runtime::platform_string();
+    let dir = fx
+        .home
+        .join("runtimes")
+        .join(format!("java-21.0.8-0.3.0-{platform}"));
+    fs::create_dir_all(&dir).unwrap();
+    let exe = format!(
+        "tebako-runtime-0.3.0-21.0.8-{platform}{}",
+        tebako_shim::runtime::exe_suffix()
+    );
+    fs::write(dir.join(&exe), b"fake java runtime exe\n").unwrap();
+    let eps: String = entrypoints
+        .iter()
+        .map(|e| format!("    - {{name: {e}, path: /bin/{e}}}\n"))
+        .collect();
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-java\n  version: \"21.0.8\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-08-31T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides: {{engine: java, version: \"21.0.8\", abi_line: \"21\", platform: aarch64-macos}}\n  built_from: {{src_sha256: {}, patch_set: v1}}\n  entrypoints:\n{eps}  capabilities: {{exec: true, read: true, runtime: true}}\n",
+        sha(b'a'),
+        sha(b'b'),
+        sha(b'c')
+    );
+    let image = zip_image_with_manifest(&manifest);
+    let image_name = format!("tebako-runtime-0.3.0-21.0.8-{platform}.tfs");
+    fs::write(dir.join(&image_name), &image).unwrap();
+    fs::write(
+        dir.join(format!("{image_name}.sha256")),
+        format!("{}  {image_name}\n", sha256_hex(&image)),
+    )
+    .unwrap();
+}
+
+#[test]
+fn install_runtime_edge_preseeds_the_store_and_registers_the_expose_shims() {
+    // spec 30 §1/§3: a payload's runtime edge installs the RUNTIME into
+    // runtimes/ (never payloads/), verifies expose against the runtime's
+    // own spawn surface, and registers one shim per exposed name.
+    let fx = Fixture::new("spawnedge");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: runtime\n    engine: java\n    constraint: \">= 21\"\n    expose: [java]\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    cached_java_runtime(&fx, &["java", "keytool"]);
+
+    install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+
+    // the exposed command is on PATH; the runtime never became a payload
+    assert!(shim_path(&fx.home, "java").exists());
+    assert!(!shim_path(&fx.home, "keytool").exists(), "not exposed");
+    assert!(
+        !fx.payloads_dir().join("java").exists(),
+        "a runtime edge never lands in payloads/"
+    );
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains(
+            "event=runtime-edge-resolved engine=java lang_version=21.0.8 tebako_version=0.3.0"
+        ),
+        "{journal}"
+    );
+}
+
+#[test]
+fn install_runtime_edge_expose_outside_the_spawn_surface_is_a_named_error() {
+    // spec 30 §3: exposing a name the runtime never declares is the
+    // payload author's error — caught at install, before any user hits it.
+    let fx = Fixture::new("spawnedge-bad");
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: runtime\n    engine: java\n    constraint: \">= 21\"\n    expose: [javac]\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    cached_java_runtime(&fx, &["java"]);
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(
+        err.message.contains("declares no entrypoint \"javac\""),
+        "{err:?}"
+    );
+}

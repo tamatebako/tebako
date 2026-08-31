@@ -398,9 +398,14 @@ pub fn resolve_closure<T: Transport>(
             }
             for requirement in &manifest.requires {
                 let (name, constraint, mount) = match requirement {
-                    // The runtime axis: the composition's runtime: row
-                    // owns it — never walked here.
-                    tpkg::Requirement::Language { .. } => continue,
+                    // The runtime axes: the composition's runtime: row
+                    // owns the language edge; a spawned-runtime edge
+                    // (spec 30) is NEVER co-mounted — it rides the
+                    // embedded manifest verbatim and resolves at
+                    // dispatch/spawn, not at compose.
+                    tpkg::Requirement::Language { .. } | tpkg::Requirement::Runtime { .. } => {
+                        continue
+                    }
                     tpkg::Requirement::Toolkit {
                         name,
                         constraint,
