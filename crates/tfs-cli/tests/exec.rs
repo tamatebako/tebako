@@ -410,9 +410,13 @@ fn exec_usage_and_named_errors() {
 
     // A mount at "/" is legitimate (spec 17's app-payload mount — the
     // exec proceeds; here it fails at the entrypoint the fixture image
-    // does not carry, never at the mount point).
+    // does not carry, never at the mount point). The shim rides the
+    // explicit override — the ambient sibling-of-exe default (absent in
+    // a fresh worktree, where the cdylib lives only in deps/) is not
+    // what's under test.
     let out = Command::new(bin().unwrap())
         .args(["exec", &format!("{}:/", f.zip.display()), "--", "/bin/true"])
+        .env("TEBAKO_TFS_PRELOAD", &f.shim)
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
