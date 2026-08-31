@@ -45,14 +45,16 @@ fn runtime_entrypoint_composes_the_abi_v1_handoff() {
 
     assert_eq!(plan.program, exe);
     assert!(matches!(plan.runtime, RuntimeResolution::Ready(_)));
-    // <runtime> --tebako-image <image>:0:/ --tebako-entry <path> <defaults> <user args>
+    // <runtime> --tebako-image <image>:0:/ --tebako-entry <path> <user args>
+    // tebako#503: args_default does NOT ride the handoff — the runtime
+    // side composes it (spec 29 §1 / spec 17 §1); the shim carrying it
+    // doubled the composition on the wrapper path.
     let expected: Vec<String> = vec![
         exe.to_string_lossy().into_owned(),
         "--tebako-image".into(),
         format!("{}:0:/", image.display()),
         "--tebako-entry".into(),
         "/app/bin/metanorma".into(),
-        "--safe".into(),
         "compile".into(),
         "doc.xml".into(),
     ];
@@ -108,6 +110,41 @@ fn zero_runtime_entrypoint_skips_runtime_resolution() {
         "TEBAKO_TFS_MOUNTS must NOT be exported for zero-runtime"
     );
     assert_eq!(plan.mounts.len(), 1);
+}
+
+#[test]
+fn zero_runtime_entrypoint_keeps_args_default_in_the_argv() {
+    // tebako#503: a zero-runtime entry HAS no runtime side to compose
+    // args_default — the shim owns them (the program's leading args).
+    // For a runtime entry the shim appends nothing (the driver
+    // composes, spec 29 §1).
+    let tmp = TempDir::new("zero-runtime-defaults");
+    let home = tmp.path().join("home");
+    let _image = seed_tool(
+        &home,
+        "inkview",
+        "  entrypoints:\n    - name: inkview\n      path: /app/bin/inkview\n      args_default: [\"--batch\"]\n",
+        "8.1.0",
+    );
+    let entry_host = home
+        .join("payloads")
+        .join("inkview")
+        .join("8.1.0.tree")
+        .join("app/bin/inkview");
+    std::fs::create_dir_all(entry_host.parent().unwrap()).unwrap();
+    std::fs::write(&entry_host, b"#!/bin/sh\n").unwrap();
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "inkview", "8.1.0");
+
+    let plan = dispatch::dispatch("inkview", &["file.svg".into()], &ctx).unwrap();
+
+    assert!(matches!(plan.runtime, RuntimeResolution::Zero));
+    let expected: Vec<String> = vec![
+        entry_host.to_string_lossy().into_owned(),
+        "--batch".into(),
+        "file.svg".into(),
+    ];
+    assert_eq!(plan.argv, expected);
 }
 
 #[test]

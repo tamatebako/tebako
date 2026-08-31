@@ -109,9 +109,16 @@ learns which pattern a runtime uses.
 - Everything before the first `--tebako-*` is the loader's; everything
   after `--tebako-entry` is the user's, verbatim. On success the driver
   replaces the process argv with
-  `[<original argv0>, <entry resolved in the VFS>, <user args…>]` — the
-  program name stays at index 0 so the interpreter parses its argv
-  conventionally and takes the entry as its script.
+  `[<original argv0>, <args_default…>, <entry resolved in the VFS>, <user args…>]`
+  — the entrypoint's declared `args_default` (spec 03 §2.2), read from
+  the app payload's own manifest, composes between the interpreter and
+  the entry, and the program name stays at index 0 so the interpreter
+  parses its argv conventionally and takes the entry as its script.
+  args_default has ONE owner (tebako#503, 2026-08-31): the runtime side
+  — this rewrite, linked and wrapper patterns alike (spec 29 §1).
+  Loaders (the shim's dispatch, the bootstrap's handoff) never carry
+  it; a zero-runtime entrypoint (no driver exists) is the exception —
+  there the shim appends them as the program's leading args.
 
 ## 2. Environment
 

@@ -223,10 +223,15 @@ pub fn plan(
                 );
             }
             argv.push(entry_host.to_string_lossy().into_owned());
+            // tebako#503: with no runtime there is no driver, so the shim
+            // stays the sole composer of the entrypoint's declared
+            // `args_default` here — as leading args after the entry host
+            // path. The runtime path's driver composes them between the
+            // interpreter and the entry instead (spec 17 §1).
+            argv.extend(entry.args_default.iter().cloned());
             entry_host
         }
     };
-    argv.extend(entry.args_default.iter().cloned());
     argv.extend(user_args.iter().cloned());
 
     // spec 08: the dispatcher's computed jail env always wins over every
