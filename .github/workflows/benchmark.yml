@@ -81,10 +81,13 @@ jobs:
             cargo build -p tebako-bench --target "$target"
             [ $? -ne 0 ] && exit 2   # harness build fault, not a workload red
             docker run --rm -v "$PWD:$PWD" -w "$PWD" \
-              -e GITHUB_TOKEN "$GITHUB_TOKEN" \
+              -e "GITHUB_TOKEN=$GITHUB_TOKEN" \
               "${{ matrix.container }}" \
               "./target/$target/debug/tebako-bench" run "${args[@]}"
             rc=$?
+            # docker's own failures are 125/126/127 (daemon/run/exec) — a
+            # harness fault, never a workload verdict.
+            [ "$rc" -ge 125 ] && exit 2
           else
             cargo build -p tebako-bench
             [ $? -ne 0 ] && exit 2   # harness build fault, not a workload red
