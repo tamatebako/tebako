@@ -63,7 +63,9 @@ the entrypoint's declared `args_default` (spec 03 §2.2) composed
 between, so a jar entry `{path: /app/jing.jar, args_default: ["-jar"]}`
 execs `java -jar <entry> <user args…>`. Entrypoints whose interpreter
 takes the entry positionally declare an empty `args_default`. There is
-no wrapper-specific argv grammar.
+no wrapper-specific argv grammar. The linked driver composes
+identically (tebako#503): args_default's single owner is the runtime
+side — loaders (the shim, the bootstrap) never carry it.
 
 ## 2. The interpreter-path declaration
 

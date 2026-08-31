@@ -2533,6 +2533,48 @@ fn boot_materializes_a_declared_payload_resource() {
     let _ = std::fs::remove_dir_all(&resources);
 }
 
+/// tebako#503: args_default has ONE owner — the runtime side. The
+/// linked driver composes the entrypoint's declared `args_default`
+/// (spec 03 §2.2) between argv[0] and the resolved entry — spec 29 §1's
+/// composition, which the spec-17 §1 rewrite shares ("no
+/// wrapper-specific argv grammar"), read from the app payload's own
+/// manifest.
+#[test]
+fn boot_composes_args_default_between_program_and_entry() {
+    let g = guard("args-default");
+    let manifest = payload_manifest(
+        "app",
+        "provides:\n  entrypoints: [{name: app, path: /bin/app, args_default: [\"-jar\"]}]\n  \
+         platforms: universal\n  capabilities: {exec: true, read: true}",
+    );
+    let p = g.path().join("app.tfs");
+    build_zip(
+        &p,
+        &["bin/", "__tpkg__/"],
+        &[
+            ("bin/app", b"#!/usr/bin/env ruby\n".as_slice()),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    let env = MapEnv::new();
+
+    let out = boot(
+        &argv(&[
+            "ruby",
+            "--tebako-image",
+            &format!("{}:0:/", p.display()),
+            "--tebako-entry",
+            "/bin/app",
+            "user-arg",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    assert_eq!(out.argv, argv(&["ruby", "-jar", "/bin/app", "user-arg"]));
+}
+
 #[test]
 fn a_listed_but_absent_path_is_a_named_boot_error() {
     let g = guard("mat-absent");

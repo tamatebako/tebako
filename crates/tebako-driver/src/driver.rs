@@ -1109,15 +1109,22 @@ pub fn boot_with_mount_modes(
             }
             Some(_) => {
                 let resolved = resolve_entry(&h, runtime_root, &mounted)?;
-                // The rewritten argv keeps the interpreter's convention:
-                // argv[0] (the program name) first, then the resolved
-                // entry as the script, then the user's args verbatim.
-                // Dropping argv[0] makes the interpreter treat the entry
-                // as its own name and the first user arg as the script.
-                let mut v = Vec::with_capacity(h.user_args.len() + 2);
+                // spec 17 §1 / tebako#503: the entrypoint's declared
+                // `args_default` composes between the interpreter and the
+                // resolved entry — the runtime side is its single owner
+                // (the shim appends it only in the zero-runtime case,
+                // where no driver exists). The rewritten argv keeps the
+                // interpreter's convention: argv[0] (the program name)
+                // first, then the defaults, then the resolved entry as
+                // the script, then the user's args verbatim. Dropping
+                // argv[0] makes the interpreter treat the entry as its
+                // own name and the first user arg as the script.
+                let defaults = crate::wrapper::args_default(&h, runtime_root)?;
+                let mut v = Vec::with_capacity(h.user_args.len() + defaults.len() + 2);
                 if let Some(program) = argv.first() {
                     v.push(program.clone());
                 }
+                v.extend(defaults);
                 v.push(resolved);
                 v.extend(h.user_args.iter().cloned());
                 v

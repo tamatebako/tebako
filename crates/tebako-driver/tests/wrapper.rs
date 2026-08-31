@@ -692,12 +692,13 @@ fn linked_and_wrapper_boots_compose_identically() {
     let launch = launch_of(run(&wire, WRAPPER_RUNTIME_ROOT, &wrapper_env).unwrap());
 
     // Parity: the handoff env the two boots produce is byte-identical,
-    // and the wrapper's argv tail past the interpreter + args_default is
-    // the linked argv minus its program name (the interpreter stands at
-    // index 0 in the wrapper's composition, spec 29 §1).
+    // and the wrapper's argv tail past the materialized interpreter is
+    // the linked argv minus its program name — BOTH carry the
+    // entrypoint's args_default between the program and the entry (the
+    // boot's single ownership, spec 17 §1 / tebako#503).
     assert_eq!(linked_env.map(), wrapper_env.map(), "the handoff envs");
     let linked_tail: Vec<String> = linked.argv.iter().skip(1).cloned().collect();
-    let wrapper_tail: Vec<String> = launch.argv.iter().skip(2).cloned().collect();
+    let wrapper_tail: Vec<String> = launch.argv.iter().skip(1).cloned().collect();
     assert_eq!(wrapper_tail, linked_tail, "the rewritten argv tails");
     assert_eq!(launch.argv[1], "-jar", "the entrypoint's args_default");
 }

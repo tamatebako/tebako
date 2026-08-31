@@ -46,7 +46,11 @@ annotations: {…}                      # free-form; unknown keys preserved
 entrypoints:                          # ARRAY — multi-entry suites; N=1 for simple apps
   - name: metanorma                   # the command name (shim registers under this)
     path: /app/bin/metanorma          # inside the image
-    args_default: []
+    args_default: []                    # interpreter-side defaults composed BETWEEN interpreter
+                                        # and entry by the runtime driver (spec 17 §1 — the single
+                                        # owner, tebako#503) — java: ["-jar"]. A ZERO-runtime entry
+                                        # has no driver: the shim appends them as the program's
+                                        # leading args.
     runtime_requirement: {engine: ruby, constraint: ">= 3.3, < 5.0"}
       # OPTIONAL — omit entirely for native entrypoints (see below);
       # range for pure-language; abi-line "~> 3.3.0" for native-extension payloads.

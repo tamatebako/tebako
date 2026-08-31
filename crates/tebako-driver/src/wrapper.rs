@@ -247,13 +247,13 @@ fn interpreter_vfs_path(
 /// entrypoint declaring this path all mean an empty list — the
 /// positional-entry form — never an error; a corrupt manifest stays the
 /// named 65 it is everywhere (the image lying).
-fn args_default(h: &Handoff, outcome: &BootOutcome) -> Result<Vec<String>, DriverError> {
+pub(crate) fn args_default(h: &Handoff, runtime_root: &str) -> Result<Vec<String>, DriverError> {
     let entry_case = h.entry.as_deref().is_some_and(|e| e.contains('/'));
     let (Some(first), Some(entry), true) = (h.images.first(), h.entry.as_deref(), entry_case)
     else {
         return Ok(Vec::new());
     };
-    let mount = qualify_mount(&first.mount, &outcome.runtime_root);
+    let mount = qualify_mount(&first.mount, runtime_root);
     let Some(manifest_doc) = mounted_manifest_at(&mount)? else {
         return Ok(Vec::new());
     };
@@ -267,16 +267,17 @@ fn args_default(h: &Handoff, outcome: &BootOutcome) -> Result<Vec<String>, Drive
 }
 
 /// The composition (spec 29 §1): the interpreter at index 0, then the
-/// entrypoint's `args_default`, then the boot's rewritten argv sans the
-/// original program name — `[entry resolved, user args…]` in the entry
-/// case, the interpreter's own args in the bare/smoke forms, the user
-/// args in the interpreter-keyword form (the keyword itself was dropped
-/// by the boot, spec 17 §1).
-fn compose(program: String, defaults: Vec<String>, outcome: &BootOutcome) -> Launch {
+/// boot's rewritten argv sans the original program name. The boot
+/// already composed the entrypoint's declared `args_default` between
+/// argv0 and the resolved entry (spec 17 §1, tebako#503 — single
+/// owner), so `rest` is `[args_default…, entry resolved, user args…]`
+/// in the entry case, the interpreter's own args in the bare/smoke
+/// forms, the user args in the interpreter-keyword form (the keyword
+/// itself was dropped by the boot).
+fn compose(program: String, outcome: &BootOutcome) -> Launch {
     let rest = outcome.argv.get(1..).unwrap_or(&[]);
-    let mut argv = Vec::with_capacity(1 + defaults.len() + rest.len());
+    let mut argv = Vec::with_capacity(1 + rest.len());
     argv.push(program.clone());
-    argv.extend(defaults);
     argv.extend(rest.iter().cloned());
     Launch { program, argv }
 }
@@ -424,14 +425,16 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
     let vfs = interpreter_vfs_path(&layout, &outcome.runtime_root, &image)?;
     let mech = mechanism(&layout, &image)?;
     let program = materialize(&vfs, mech, &outcome.runtime_root)?;
-    let defaults = args_default(h, outcome)?;
+    let defaults = args_default(h, &outcome.runtime_root)?;
     let entry_index = if h.entry.as_deref().is_some_and(|e| e.contains('/')) {
-        // [program, defaults…, ENTRY, user args…] — fixed at composition.
+        // [program, defaults…, ENTRY, user args…] — the boot composed
+        // the defaults into outcome.argv (tebako#503); the entry's
+        // index is fixed at composition.
         Some(1 + defaults.len())
     } else {
         None
     };
-    let mut launch = compose(program, defaults, outcome);
+    let mut launch = compose(program, outcome);
     bridge_entry(&mut launch, mech, entry_index)?;
     Ok(BootAction::Launch(launch))
 }
@@ -543,20 +546,20 @@ mod tests {
 
     #[test]
     fn compose_puts_the_interpreter_at_index_zero() {
+        // the boot's rewritten argv already carries the entrypoint's
+        // args_default between argv0 and the entry (spec 17 §1,
+        // tebako#503) — compose only swaps in the interpreter program
         let outcome = BootOutcome {
             argv: vec![
                 "wrapper".to_string(),
+                "-jar".to_string(),
                 "/bin/app".to_string(),
                 "-x".to_string(),
             ],
             layout: None,
             runtime_root: "/__tfs__".to_string(),
         };
-        let launch = compose(
-            "/cache/java".to_string(),
-            vec!["-jar".to_string()],
-            &outcome,
-        );
+        let launch = compose("/cache/java".to_string(), &outcome);
         assert_eq!(launch.program, "/cache/java");
         assert_eq!(launch.argv, vec!["/cache/java", "-jar", "/bin/app", "-x"]);
         // no defaults, no entry (the bare form): the interpreter's own args
@@ -565,7 +568,7 @@ mod tests {
             layout: None,
             runtime_root: "/__tfs__".to_string(),
         };
-        let launch = compose("/cache/java".to_string(), vec![], &outcome);
+        let launch = compose("/cache/java".to_string(), &outcome);
         assert_eq!(launch.argv, vec!["/cache/java", "--version"]);
     }
 
