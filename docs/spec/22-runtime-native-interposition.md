@@ -646,6 +646,17 @@ The floor's promise is the end of the segfault class: every missing
 grant surfaces as the workload's own named error, pinned in the audit
 journal — never a crash in someone else's library.
 
+Amended 2026-08-30 (tebako#502): the acceptance shape above predates
+the wrapper-runtime pattern. A home-annotated runtime payload
+materializes the interpreter's home INTO the per-process dl tree (§3's
+exec cache), and the booted JVM's own reads then name
+`…/tebako-dl-<hex>/tebako-home-<n>/…` — process-internal storage that
+never reaches the gate (spec 08 §3's exemption). A wrapper runtime
+therefore composes with a `deny` jail with NO tool-tree grant at all;
+the authored `<jre>:ro` ingredient remains the spelling for an
+operator-INSTALLED host JRE (the non-wrapper pattern this section was
+locked on).
+
 ## 4. Class R — declarative boot materialization
 
 **Rule R1.** An image manifest MAY declare `materialize: [paths]`

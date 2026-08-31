@@ -119,7 +119,7 @@ grammar:
           from (dlmap-prefix redirect; the preload's fopen routing) — the
           spec 25 §4 materialize-candidate signal.
         effective: "the memfs path, when the presented spelling was a dlmap-prefix path"
-        reason: "no-mounts — the degenerate passthrough with an empty mount table"
+        reason: "no-mounts — the degenerate passthrough with an empty mount table; dlmap-tree — a dlmap-marker path the image did not answer: the runtime's own materialization tree, passed through ungated (spec 08 §3, tebako#502)"
         closure: "the closure-walk record (see dlopen), on the fopen surface"
       notes: >-
         denied:<rule> carries the policy source label, or `write-gate`

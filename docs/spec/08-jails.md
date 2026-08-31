@@ -145,6 +145,17 @@ int tebako_fs_host_policy(int default_open /* 0 = deny */,
   not EROFS, so the consumer's pass-through can perform the write
   (profile 1: "cwd + writes pass through"). Held memfs content is
   byte-for-byte unchanged (write opens on it stay EROFS).
+- The per-process materialization tree is NOT a host path for policy
+  purposes (tebako#502, 2026-08-30): a dlmap-marker path
+  (`…/tebako-dl-<hex>/…` — closure copies and the home-layout
+  whole-tree roots `tebako-home-<handle>/…`) the image does not answer
+  is the runtime's own extraction served by its host copy. Every route
+  (`open`/`stat`/`opendir`/`dlmap2file`) answers it ENOENT without
+  consulting the policy: the hex leaf is per-process (unauthorable at
+  bind — the path does not exist to canonicalize), the content rode in
+  through the ungated extraction writes, and the tree is removed at
+  process exit. This is what lets a wrapper-pattern runtime (spec 22
+  §3's exec cache) compose with a `deny` jail.
 - "Host path" means **any path the mounts do not hold** — outside every
   mount, or covered by a mount but absent from its image (spec 11 §2):
   the app payload mounts at `/` and the host filesystem stays
