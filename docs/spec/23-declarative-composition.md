@@ -407,12 +407,13 @@ interpreter exe + env image, launcher ABI) would slot into this spec
 unchanged — its manifest would declare the JVM's needs symbolically —
 and becomes relevant only when java is a package's ENTRY language.
 
-(Amended 2026-08-30 by spec 30: the java runtime slice now EXISTS per
-spec 29's wrapper pattern; the spawn-a-JVM case routes through spec 30's
-spawned-dependency edge — a `kind: runtime` DEPENDS, dispatch through
-the store-resident wrapper, never a co-mounted VFS java. The
-toolkit-slice form above stays legal for library-layer cases; the
-needs-declaration point of this paragraph stands unchanged.)
+(Amended 2026-08-30 by spec 30 — normative and implemented: the java
+runtime slice now EXISTS per spec 29's wrapper pattern; the spawn-a-JVM
+case routes through spec 30's spawned-dependency edge — a
+`kind: runtime` DEPENDS, dispatch through the store-resident wrapper,
+never a co-mounted VFS java. The toolkit-slice form above stays legal
+for library-layer cases; the needs-declaration point of this paragraph
+stands unchanged.)
 
 ## 12. Error discipline
 

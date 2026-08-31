@@ -41,7 +41,13 @@ provides** (spec 03 `entrypoints`). One payload may carry MULTIPLE
 executables — each is dispatchable; the ACTIVE subset (spec 03 §2.2's
 per-entrypoint `active`, default true) is PATH-registered at install,
 and an inactive-but-declared command links on demand (`tebako shim
-enable <name>`). Four artifacts, four jobs:
+enable <name>`). A payload's `kind: runtime` edge (spec 30) adds one
+more source of names: the edge's `expose:` list registers one shim per
+exposed depended-runtime entry under the same active-flag and
+enable-on-demand rules — dispatch of such a shim IS spec 30 §2's
+spawned dispatch (argv0 → the payload's version chain → the depended
+runtime's resolution), never a direct store-path exec. Four artifacts,
+four jobs:
 
 - **payload** — a signed `.tfs` image (versioned, runtime-independent).
 - **runtime** — a signed runtime payload (versioned, cached,
@@ -81,7 +87,12 @@ per declared entrypoint name — never as re-exec wrappers.
 3. **Hand-off:** mount payload + ZERO OR MORE runtime payloads (native
    entrypoints need none — spec 03) + declared dependency mounts
    (spec 03 §2.3), apply the jail view (spec 08), exec the entrypoint.
-   Signed payloads are verified at install time, not per run.
+   Signed payloads are verified at install time, not per run. When the
+   payload declares `kind: runtime` edges (spec 30), the dispatcher
+   resolves each edge NOW (cache or download per spec 05 §5) and exports
+   the pins as `TEBAKO_SPAWN_LOCK` (spec 17 §2) — the driver's
+   spawn-time picks are locked to the dispatch-time resolution and a
+   store GC cannot re-pick mid-process.
 
 ## 3. Shell integration (no per-shell magic)
 
