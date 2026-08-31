@@ -215,7 +215,7 @@ jobs:
             --overlay-ports crates/sqfs-sys/vcpkg_ports
           echo "SQFS_SYS_VCPKG_INSTALLED_DIR=${{ github.workspace }}/.sqfs-installed/${{ matrix.triplet }}" >> "$GITHUB_ENV"
 
-      - name: Build the five binaries + the link-unit libs (release)
+      - name: Build the six binaries + the link-unit libs (release)
         working-directory: tebako-rs
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
@@ -224,6 +224,8 @@ jobs:
         # --skip-build — they must be explicit -p packages or no .a/cdylib
         # is emitted (run 30742821370). tebako-cli already unifies tfs's
         # default features on POSIX, so one invocation serves both.
+        # tebako-runtime-launcher (the spec-29 wrapper exe) rides the
+        # same invocation — it links tebako-driver anyway.
         # tebako-bootstrap builds in its OWN invocation: cargo unifies
         # features within one invocation, and sharing one with
         # tebako-cli/tebako-shim re-enables tebako-resolve's `git`
@@ -235,6 +237,7 @@ jobs:
           cargo build --release --target ${{ matrix.target }} -p tebako-bootstrap
           cargo build --release --target ${{ matrix.target }} \
             -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim \
+            -p tebako-runtime-launcher \
             -p tfs -p tebako-driver -p libtfs-preload
 
       - name: Stage, strip, size-gate
@@ -303,6 +306,12 @@ jobs:
       - name: Upload tebako-shim
         if: needs.prepare.outputs.upload_url != ''
         run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tebako-runtime-launcher
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -437,6 +446,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload tebako-runtime-launcher
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   # ==========================================================================
   # Linux musl (Alpine container via docker run from the glibc host —
   # node actions cannot run on musl; the proven native-musl path:
@@ -561,6 +576,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Upload tebako-runtime-launcher
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Upload link-unit
         if: needs.prepare.outputs.upload_url != ''
         run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/link-unit-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.tar.gz" --clobber
@@ -622,7 +643,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
         run: |
-          EXPECTED=$(( 5 * 7 + 7 + 2 + 5 * 7 ))   # 5 tools x 7 platforms (incl. windows-ucrt64) + 7 link-unit tarballs + SHA256SUMS + manifest.json + 35 per-asset sidecars (tebako#493)
+          EXPECTED=$(( 6 * 7 + 7 + 2 + 6 * 7 ))   # 6 tools x 7 platforms (incl. windows-ucrt64; +tebako-runtime-launcher, the spec-29 wrapper exe) + 7 link-unit tarballs + SHA256SUMS + manifest.json + 42 per-asset sidecars (tebako#493)
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort
@@ -897,5 +918,11 @@ jobs:
       - name: Upload tebako-shim
         if: needs.prepare.outputs.upload_url != ''
         run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-shim-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload tebako-runtime-launcher
+        if: needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

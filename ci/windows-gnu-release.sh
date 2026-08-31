@@ -85,7 +85,7 @@ TARGET=x86_64-pc-windows-gnu
 # other three build sites and missed this one).
 cargo build --release --target "$TARGET" -p tebako-bootstrap
 cargo build --release --target "$TARGET" \
-  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim
+  -p tfs-cli -p tebako-pkg -p tebako-cli -p tebako-shim -p tebako-runtime-launcher
 
 # --- 2. stage (strip, size gate, fragments) ---------------------------------
 # stage.sh strips, enforces the bootstrap size budget and writes the
