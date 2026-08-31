@@ -47,6 +47,8 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@1.94.1
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: tebako-rs
       - name: Run the matrix leg
         shell: bash
         working-directory: tebako-rs
@@ -65,13 +67,19 @@ jobs:
           fi
           set +e
           if [ -n "${{ matrix.container }}" ]; then
-            # musl leg: the harness is pure Rust, so it cross-builds to a
-            # static musl binary with no vcpkg and runs the workloads
-            # inside the pinned alpine container (node actions cannot run
-            # on musl — the container is entered via docker run only).
+            # musl leg: the harness cross-builds to a static musl binary
+            # (no vcpkg) and runs the workloads inside the pinned alpine
+            # container (node actions cannot run on musl — the container
+            # is entered via docker run only). NOT std-only: ring's
+            # build script needs a musl-target C compiler — musl-tools'
+            # musl-gcc (host-arch musl on both x86_64 and arm64 runners),
+            # pointed at via CC_<target> (cc-rs convention).
             target="$(rustc -vV | sed -n 's/^host: //p' | sed 's/-gnu/-musl/')"
             rustup target add "$target"
+            sudo apt-get update && sudo apt-get install -y musl-tools
+            export "CC_$(echo "$target" | tr '-' '_')=musl-gcc"
             cargo build -p tebako-bench --target "$target"
+            [ $? -ne 0 ] && exit 2   # harness build fault, not a workload red
             docker run --rm -v "$PWD:$PWD" -w "$PWD" \
               -e GITHUB_TOKEN "$GITHUB_TOKEN" \
               "${{ matrix.container }}" \
@@ -79,6 +87,7 @@ jobs:
             rc=$?
           else
             cargo build -p tebako-bench
+            [ $? -ne 0 ] && exit 2   # harness build fault, not a workload red
             bin="./target/debug/tebako-bench"
             [ -f "$bin.exe" ] && bin="$bin.exe"
             "$bin" run "${args[@]}"
@@ -117,6 +126,8 @@ jobs:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@1.94.1
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2.9.1
+        with:
+          workspaces: tebako-rs
       - name: Build the harness
         working-directory: tebako-rs
         run: cargo build -p tebako-bench
