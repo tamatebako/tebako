@@ -69,8 +69,13 @@ pub use transport::{HttpTransport, Transport};
 /// preload interpose dylib nor the driver's micro dylib reaches a
 /// child process — dyld's arm64e insertion termination can no longer
 /// kill runtime-spawned children; the 0.16.7/0.16.8 native-ext press
-/// regression).
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.9";
+/// regression). From 0.16.18 the runtimes link the v2.1.0 driver unit
+/// (the spec-30 spawn FFI): the driver's manifest grammar accepts the
+/// `kind: runtime` DEPENDS edge — a pref-less resolution landing on an
+/// older line fails closed at the payload's first dispatch with the
+/// driver's named manifest error, so the default line must never trail
+/// the newest published factory line.
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.18";
 
 /// Fetch `reference` (pin-verified at the fetch boundary) and install it
 /// as `payloads/<name>/<version>.tfs` — or return the existing entry.
