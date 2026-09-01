@@ -137,8 +137,11 @@ tebako use metanorma@1.2.2                # instant rollback
   registry pin) → upload to the referenced GitHub release (in-process
   HTTP; file:// mirrors for rehearsal/tests) → `tpkg-registry.yaml`
   upsert → tap formula render from the vendored template → built-in
-  clean-cache `tebako install` proof. The GitLab/Bitbucket write legs
-  are their adapters' milestone.
+  clean-cache `tebako install` proof. The proof home inherits the
+  publisher's registered registries AND its `runtimes:` preferences
+  (spec 30: the install pre-stages `kind: runtime` edges; a pref-less
+  edge on a non-default engine line can never resolve). The
+  GitLab/Bitbucket write legs are their adapters' milestone.
 - `tamatebako/homebrew-tap` formula + the app-tap template (the template
   is vendored and rendered by `tebako publish --tap`; the tap repos
   themselves stay manual).
