@@ -42,8 +42,12 @@ requires:
 ```
 
 Resolution treats the edge like any dependency — but the artifact
-resolves through the RUNTIME index and lands in the store's `runtimes/`
-area (share-once, spec 05 §3). The depended runtime is **NOT co-mounted**
+resolves through the RUNTIME index (whose download base resolves
+PER-ENGINE through spec 05 §2's four-channel chain: config `source:`
+pin → `TEBAKO_RUNTIME_MIRROR` → registry-derived from a matching
+`kind: runtime` entry → the product default) and lands in the store's
+`runtimes/` area (share-once, spec 05 §3). The depended runtime is
+**NOT co-mounted**
 into the parent's VFS: its wrapper exe executes FROM THE STORE (a host
 path, 0755 — kernel-visible by construction; the exe itself is never
 materialized) and mounts its own env image per spec 29. The edge is

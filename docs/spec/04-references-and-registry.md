@@ -109,6 +109,14 @@ payloads:
   composition's `platforms:` assertion (spec 23 §13.3) CONSTRAINS the
   mirrored coverage — checked fail-closed against it — and NEVER
   extends it.
+- **`kind: runtime` entries are edge-discoverable** (schema MINOR 1;
+  PLANNED — TODO.v2-1/30): the entry carries `engine:` (+ optional
+  `implementation:`), and a payload's `kind: runtime` DEPENDS edge
+  (spec 30 §1) discovers it by (engine, implementation?, constraint);
+  the matched version's `release.ref` derives the download base
+  (spec 05 §2's per-engine chain, the zero-config path for third-party
+  runtimes). Runtime entries predating MINOR 1 carry no `engine:` and
+  stay invisible to edges.
 - `tebako add-registry <ref>` registers one; shipped config has ZERO
   registries (explicit only — spec 16).
 - Install = resolve the registry → select the host entry → download →

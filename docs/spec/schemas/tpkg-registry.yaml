@@ -15,7 +15,7 @@
 
 schema: tpkg-registry
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 0 # MINOR — additive changes only
+schema_minor: 1 # MINOR — additive changes only (1: engine/implementation on kind:runtime entries)
 status: normative
 owner: crates/tebako-resolve (the model) in tamatebako/tebako
 edge: C8 (loader → registry), C12 (everything → registries)
@@ -68,6 +68,8 @@ grammar:
     entry:
       name: {type: string, required: true, notes: single non-empty path component (a cache key)}
       kind: {type: enum, values: [app, data, toolkit, runtime, language], required: true}
+      engine: {type: string, required: false, notes: "REQUIRED when kind: runtime (MINOR 1) — the edge-discovery key (spec 30 §1): kind:runtime edges resolve by (engine, implementation?, constraint); a runtime entry without engine: is pre-discovery legacy and invisible to edges"}
+      implementation: {type: string, required: false, notes: "spec 28 §8's implementation axis (e.g. temurin); an edge naming an implementation matches only entries carrying the same value"}
       versions:
         type: list
         required: true
@@ -87,7 +89,7 @@ grammar:
             type: map
             required: true
             fields:
-              ref: {type: string, required: true, notes: "a spec 04 §1 reference (any class)"}
+              ref: {type: string, required: true, notes: "a spec 04 §1 reference (any class); for kind: runtime entries it ALSO derives the per-engine download base (spec 05 §2's chain, registry-derived step)"}
           signature:
             type: map
             required: false
