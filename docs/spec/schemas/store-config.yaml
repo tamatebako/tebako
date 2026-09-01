@@ -16,7 +16,7 @@
 
 schema: store-config
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 0 # MINOR — additive changes only
+schema_minor: 1 # MINOR — additive changes only (1: runtimes.*.source)
 status: normative
 owner: crates/tebako-shim (the config model of record) in tamatebako/tebako
 edge: C13 (everything local → store)
@@ -67,7 +67,7 @@ grammar:
     required: false
     notes: spec 04 §2 registry refs; shipped config has ZERO registries (explicit only — no default service)
   runtimes:
-    type: map(engine → {version, tebako})
+    type: map(engine → {version, tebako, source?})
     required: false
     notes: >-
       Per-engine runtime preference (the download fallback of spec 05 §5
@@ -75,6 +75,9 @@ grammar:
       version = the language version (e.g. "4.0.6"); tebako = the tebako
       (launcher) abi version the runtime was built with — the <ver> of the
       cache layout runtimes/<lang>-<lv>-<ver>-<triplet>/.
+      source (MINOR 1, PLANNED — TODO.v2-1/30) = the per-engine download
+      base override (https or file://), the first channel of spec 05 §2's
+      per-engine base chain; absent → the chain's lower channels answer.
 
 store_layout_marker:
   path: ~/.tebako/layout-version

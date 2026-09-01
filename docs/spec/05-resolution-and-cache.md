@@ -62,9 +62,31 @@ recorded for the failure message.
   (coreutils `<sha>  <file>` — the store marker's exact shape). The
   sidecar is the per-asset pin; the shard's sha fields are re-anchored
   to the served bytes at publish time.
-- Base URL:
-  `https://github.com/tamatebako/tebako-runtime-ruby/releases/download`;
-  override `TEBAKO_RUNTIME_MIRROR` (https or file://).
+- **The download base is PER-ENGINE** (the chain below is PLANNED —
+  TODO.v2-1/30; today a single base serves all engines, with
+  `TEBAKO_RUNTIME_MIRROR` as the only override). First hit wins, and
+  every download journals the base AND the channel that supplied it:
+  1. `runtimes: {<engine>: {source: <base>}}` — the authored config pin
+     (spec 07 §0; most specific: an operator who pins an engine's
+     source means exactly that base for that engine).
+  2. `TEBAKO_RUNTIME_MIRROR` (https or file://) — the operator's global
+     override, applying to every engine WITHOUT a `source:` pin. When a
+     pin shadows a differing mirror value the shadowing is journaled,
+     loud — never silent precedence.
+  3. **Registry-derived** — a registered registry (spec 04 §2) carrying
+     a `kind: runtime` entry whose `engine:` (+ `implementation:` when
+     the edge names one) matches, with a version satisfying the
+     edge's constraint: the base derives from that version's
+     `release.ref`. This is the zero-config path — a third-party
+     runtime becomes resolvable from `tebako add-registry <its
+     feedstock>` alone, no authored config required.
+  4. The product default base
+     `https://github.com/tamatebako/tebako-runtime-ruby/releases/download`
+     (the ruby factory line — the back-compat floor every pre-chain
+     consumer already speaks).
+  An edge no channel answers is a NAMED error enumerating the channels
+  tried (never a silent query of a base that hosts no such engine — a
+  wrong-line 404 is diagnosed as what it is).
 - Signing of the index itself: spec 09 §5 (signed manifest closes the
   same-channel-MITM gap).
 

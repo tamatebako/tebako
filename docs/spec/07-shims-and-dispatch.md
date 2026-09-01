@@ -22,7 +22,9 @@ in `config.yaml` as the exact ref).
   does not shadow a farther one that does.
 - **`~/.tebako/config.yaml` keys:** `defaults:` (command → version),
   `registries:` (spec 04 refs), `runtimes:` (engine → `{version,
-  tebako}` runtime preference). The shim never writes this file.
+  tebako, source?}` runtime preference; `source:` pins the engine's
+  download base — spec 05 §2's per-engine chain, PLANNED TODO.v2-1/30).
+  The shim never writes this file.
 - **Disabled state** is shim-managed state, not authored config:
   `~/.tebako/shims/.disabled.yaml` (command → `[versions] | [all]`).
 - **Installed payload record** (the dispatcher-visible manifest mirror,
