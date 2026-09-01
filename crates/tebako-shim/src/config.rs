@@ -40,7 +40,7 @@ pub struct UserConfig {
     pub runtimes: BTreeMap<String, RuntimePref>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
 pub struct RuntimePref {
     /// Language version, e.g. `4.0.6`.
     pub version: String,
@@ -152,6 +152,83 @@ pub fn add_registry(home: &Path, reg_ref: &str) -> Result<AddRegistryOutcome, Sh
     Ok(AddRegistryOutcome::Added)
 }
 
+/// Merge engine → runtime preferences into `~/.tebako/config.yaml`,
+/// preserving every other key (the same structural-surgery discipline as
+/// [`add_registry`]). A preference for an already-present engine is
+/// REPLACED — the caller is the authority (publish's built-in verify
+/// re-anchors the proof home to the publisher's picks, spec 16 §5).
+/// This is the second authored-config write the toolchain performs;
+/// the dispatcher itself still never writes this file.
+pub fn set_runtime_prefs(
+    home: &Path,
+    prefs: &BTreeMap<String, RuntimePref>,
+) -> Result<(), ShimError> {
+    let path = config_path(home);
+    let mut root: serde_yaml::Value = match std::fs::read_to_string(&path) {
+        Ok(t) => serde_yaml::from_str(&t).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "cannot parse {} ({e}) — fix or remove it; run `tebako-shim doctor`",
+                    path.display()
+                ),
+            )
+        })?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+        }
+        Err(e) => return fail(EX_TEBAKO_IO, format!("cannot read {}: {e}", path.display())),
+    };
+    let mapping = root.as_mapping_mut().ok_or_else(|| {
+        ShimError::new(
+            EX_TEBAKO_MANIFEST,
+            format!("{} must be a YAML mapping", path.display()),
+        )
+    })?;
+    let key = serde_yaml::Value::String("runtimes".to_string());
+    let entry = mapping
+        .entry(key)
+        .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+    let rt_map = entry.as_mapping_mut().ok_or_else(|| {
+        ShimError::new(
+            EX_TEBAKO_MANIFEST,
+            format!("{}: `runtimes` must be a mapping", path.display()),
+        )
+    })?;
+    for (engine, pref) in prefs {
+        let value = serde_yaml::to_value(pref).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_IO,
+                format!("cannot serialize the runtime preference for {engine}: {e}"),
+            )
+        })?;
+        rt_map.insert(serde_yaml::Value::String(engine.clone()), value);
+    }
+    let text = serde_yaml::to_string(&root).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot serialize {}: {e}", path.display()),
+        )
+    })?;
+    std::fs::create_dir_all(home).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot create {}: {e}", home.display()),
+        )
+    })?;
+    let tmp = home.join(format!("config.yaml.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, text).map_err(|e| {
+        ShimError::new(EX_TEBAKO_IO, format!("cannot write {}: {e}", tmp.display()))
+    })?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot install {}: {e}", path.display()),
+        )
+    })?;
+    Ok(())
+}
+
 // ---------------------------------------------------------------------
 // the registry-default chain link (spec 07 §2.1, last resort)
 // ---------------------------------------------------------------------
@@ -234,4 +311,70 @@ pub fn is_disabled(disabled: &Disabled, tool: &str, version: &str) -> bool {
     disabled
         .get(tool)
         .is_some_and(|selectors| selectors.iter().any(|s| s == "all" || s == version))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh_home(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-shim-config-test-{}-{}",
+            tag,
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn pref(version: &str, tebako: &str) -> RuntimePref {
+        RuntimePref {
+            version: version.to_string(),
+            tebako: tebako.to_string(),
+        }
+    }
+
+    #[test]
+    fn set_runtime_prefs_writes_a_fresh_config() {
+        let home = fresh_home("fresh");
+        let mut prefs = BTreeMap::new();
+        prefs.insert("java".to_string(), pref("21.0.12", "2.1.0"));
+        set_runtime_prefs(&home, &prefs).unwrap();
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(cfg.runtimes.get("java"), Some(&pref("21.0.12", "2.1.0")));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn set_runtime_prefs_preserves_other_keys_and_replaces_the_engine() {
+        let home = fresh_home("merge");
+        add_registry(&home, "tfs:github:acme/app").unwrap();
+        let mut first = BTreeMap::new();
+        first.insert("java".to_string(), pref("21.0.12", "2.1.0"));
+        set_runtime_prefs(&home, &first).unwrap();
+        let mut second = BTreeMap::new();
+        second.insert("java".to_string(), pref("21.0.13", "2.1.0"));
+        second.insert("ruby".to_string(), pref("3.3.12", "0.16.18"));
+        set_runtime_prefs(&home, &second).unwrap();
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(cfg.runtimes.get("java"), Some(&pref("21.0.13", "2.1.0")));
+        assert_eq!(cfg.runtimes.get("ruby"), Some(&pref("3.3.12", "0.16.18")));
+        assert_eq!(cfg.registries, vec!["tfs:github:acme/app".to_string()]);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn set_runtime_prefs_rejects_a_non_mapping_runtimes_key() {
+        let home = fresh_home("badshape");
+        std::fs::write(config_path(&home), "runtimes: [nope]\n").unwrap();
+        let mut prefs = BTreeMap::new();
+        prefs.insert("java".to_string(), pref("21.0.12", "2.1.0"));
+        let err = set_runtime_prefs(&home, &prefs).unwrap_err();
+        assert!(
+            err.message.contains("`runtimes` must be a mapping"),
+            "{err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
 }

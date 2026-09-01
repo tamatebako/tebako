@@ -1245,6 +1245,7 @@ fn verify_with<T: Transport>(
     fetcher: &Fetcher<T>,
 ) -> Result<String, TebakoError> {
     crate::install::add_registry_with(home, registry_ref, fetcher)?;
+    let prefs_inherited = inherit_runtime_prefs(home, publisher_home)?;
     let mut inherited = 0usize;
     let mut unreachable: Vec<String> = Vec::new();
     if let Ok(cfg) = tebako_shim::config::load_config(publisher_home) {
@@ -1274,15 +1275,43 @@ fn verify_with<T: Transport>(
             unreachable.join(", ")
         ),
     };
+    let prefs = match prefs_inherited {
+        0 => String::new(),
+        n => format!(", {n} publisher runtime pref(s) inherited"),
+    };
     Ok(format!(
-        "verified: clean-cache install of {} {} ({} shim(s): {}{}{})",
+        "verified: clean-cache install of {} {} ({} shim(s): {}{}{}{})",
         opts.name,
         version,
         outcome.commands.len(),
         outcome.commands.join(", "),
         signed,
-        registries
+        registries,
+        prefs
     ))
+}
+
+/// The publisher's runtime preferences (`config.yaml runtimes:`) join the
+/// verify home the same way its registries do (spec 30): the install
+/// proof pre-stages a payload's `kind: runtime` edges, and a pref-less
+/// edge on a non-default engine line can never resolve — the default
+/// runtime line hosts no such engine. A missing/unreadable publisher
+/// config inherits nothing (same posture as the registry join).
+fn inherit_runtime_prefs(home: &Path, publisher_home: &Path) -> Result<usize, TebakoError> {
+    let Ok(cfg) = tebako_shim::config::load_config(publisher_home) else {
+        return Ok(0);
+    };
+    if cfg.runtimes.is_empty() {
+        return Ok(0);
+    }
+    let n = cfg.runtimes.len();
+    tebako_shim::config::set_runtime_prefs(home, &cfg.runtimes).map_err(|e| {
+        err(
+            EX_TEBAKO_IO,
+            format!("the verify home's runtime preferences: {}", e.message),
+        )
+    })?;
+    Ok(n)
 }
 
 #[cfg(test)]
@@ -1371,5 +1400,32 @@ mod tests {
         // a name with dashes keeps the version intact
         let p = Path::new("/tmp/my-app-2.0-linux-gnu-x86_64.tfs");
         assert_eq!(version_from_artifact("my-app", p).as_deref(), Some("2.0"));
+    }
+
+    #[test]
+    fn inherit_runtime_prefs_joins_the_publishers_engines() {
+        let root =
+            std::env::temp_dir().join(format!("tebako-publish-prefs-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let publisher = root.join("publisher");
+        let verify = root.join("verify");
+        std::fs::create_dir_all(&publisher).unwrap();
+        std::fs::create_dir_all(&verify).unwrap();
+        std::fs::write(
+            publisher.join("config.yaml"),
+            "registries: []\nruntimes:\n  java:\n    version: \"21.0.12\"\n    tebako: \"2.1.0\"\n",
+        )
+        .unwrap();
+        let n = inherit_runtime_prefs(&verify, &publisher).unwrap();
+        assert_eq!(n, 1);
+        let cfg = tebako_shim::config::load_config(&verify).unwrap();
+        let pref = cfg.runtimes.get("java").expect("the java pref joined");
+        assert_eq!(pref.version, "21.0.12");
+        assert_eq!(pref.tebako, "2.1.0");
+        // no prefs on the publisher = no write, no error
+        let bare = root.join("bare");
+        std::fs::create_dir_all(&bare).unwrap();
+        assert_eq!(inherit_runtime_prefs(&verify, &bare).unwrap(), 0);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }
