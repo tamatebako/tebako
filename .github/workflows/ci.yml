@@ -240,22 +240,11 @@ jobs:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: cargo build --workspace
 
-      - name: cargo test
-        working-directory: tebako-rs
-        env:
-          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-        run: cargo test --workspace
-
-      - name: clippy
-        working-directory: tebako-rs
-        env:
-          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-        run: cargo clippy --workspace --all-targets -- -D warnings
-
       # The built preload shim as a downloadable artifact (linux-gnu):
       # the container-proof path for preload changes — a foreign-libc
       # repro rig (usrmerge, Rosetta, …) downloads exactly this .so
-      # instead of needing a local cross toolchain.
+      # instead of needing a local cross toolchain. Uploaded BEFORE the
+      # test step: a hung test must not withhold the proof artifact.
       - name: Upload the preload shim (linux-gnu proof artifact)
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -263,6 +252,43 @@ jobs:
           name: libtfs_preload-linux-gnu-x86_64-debug
           path: tebako-rs/target/debug/libtfs_preload.so
           if-no-files-found: error
+
+      # Split so a hang names itself: the workspace sweep is wrapped in a
+      # hard timeout (norm ~20 min; a wedge otherwise burns the 6 h job
+      # limit and live logs are unfetchable mid-run), and libtfs-preload
+      # — where preload interposes can deadlock a fixture — runs
+      # test-by-test with a per-test watchdog so the log's last START
+      # line IS the culprit.
+      - name: cargo test (workspace sweep)
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: timeout 2400 cargo test --workspace --exclude libtfs-preload
+
+      - name: cargo test (libtfs-preload, per-test watchdog)
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: |
+          set -e
+          mapfile -t TESTS < <(cargo test -p libtfs-preload -- --list 2>/dev/null | sed -n 's/: test$//p')
+          echo "discovered ${#TESTS[@]} libtfs-preload tests"
+          for t in "${TESTS[@]}"; do
+            echo "=== START $t"
+            timeout 180 cargo test -p libtfs-preload -- --exact "$t" --nocapture || {
+              rc=$?
+              echo "=== FAIL/HANG (rc=$rc) $t"
+              ps auxf || true
+              exit "$rc"
+            }
+          done
+          timeout 300 cargo test -p libtfs-preload --doc
+
+      - name: clippy
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
   test-pure-cargo:
     name: test (--no-default-features, ubuntu)
