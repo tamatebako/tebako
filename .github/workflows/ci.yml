@@ -240,6 +240,14 @@ jobs:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: cargo build --workspace
 
+      # Test binaries too, so the proof artifacts below are runnable
+      # (cargo build alone leaves them unbuilt).
+      - name: cargo build (libtfs-preload test binaries)
+        working-directory: tebako-rs
+        env:
+          DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
+        run: cargo test -p libtfs-preload --no-run
+
       # The built preload shim as a downloadable artifact (linux-gnu):
       # the container-proof path for preload changes — a foreign-libc
       # repro rig (usrmerge, Rosetta, …) downloads exactly this .so
@@ -251,6 +259,21 @@ jobs:
         with:
           name: libtfs_preload-linux-gnu-x86_64-debug
           path: tebako-rs/target/debug/libtfs_preload.so
+          if-no-files-found: error
+
+      # The libtfs-preload unit-test binary as a runnable artifact: a
+      # hang repro rig then iterates at container speed (TEBAKO_DEBUG_TFS
+      # traces, env variations) instead of 10-minute CI cycles. Short
+      # retention — a diagnostic aid, not a product artifact.
+      - name: Upload the libtfs-preload test binaries (linux-gnu diagnosis)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: libtfs-preload-tests-linux-gnu-x86_64-debug
+          retention-days: 1
+          path: |
+            tebako-rs/target/debug/deps/libtfs_preload-*
+            !tebako-rs/target/debug/deps/*.d
           if-no-files-found: error
 
       # Split so a hang names itself: the workspace sweep is wrapped in a
@@ -271,16 +294,44 @@ jobs:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: |
           set -e
-          mapfile -t TESTS < <(cargo test -p libtfs-preload -- --list 2>/dev/null | sed -n 's/: test$//p')
-          echo "discovered ${#TESTS[@]} libtfs-preload tests"
-          for t in "${TESTS[@]}"; do
-            echo "=== START $t"
-            timeout 180 cargo test -p libtfs-preload -- --exact "$t" --nocapture || {
-              rc=$?
-              echo "=== FAIL/HANG (rc=$rc) $t"
-              ps auxf || true
-              exit "$rc"
-            }
+          shopt -s nullglob
+          # Run the test BINARIES directly (unit + e2e), not via cargo:
+          # a wedged test must stay alive past its 180 s budget so gdb
+          # can dump every thread BEFORE the kill — the log then carries
+          # the deadlock's lock graph, not just a name. (cargo forwards
+          # SIGTERM to the test child, so `timeout cargo test …` reaps
+          # the very process we need to inspect.)
+          BINS=()
+          for b in target/debug/deps/libtfs_preload-* target/debug/deps/e2e-*; do
+            case "$b" in *.d) continue;; esac
+            [ -x "$b" ] && BINS+=("$b")
+          done
+          for BIN in "${BINS[@]}"; do
+            mapfile -t TESTS < <("$BIN" --list 2>/dev/null | sed -n 's/: test$//p')
+            echo "== $BIN: ${#TESTS[@]} tests"
+            for t in "${TESTS[@]}"; do
+              echo "=== START $BIN :: $t"
+              "$BIN" --exact "$t" --nocapture &
+              TPID=$!
+              (
+                sleep 180
+                if kill -0 "$TPID" 2>/dev/null; then
+                  echo "=== HANG $BIN :: $t — full thread dump:"
+                  gdb -p "$TPID" -batch -ex 'set pagination off' -ex 'thread apply all bt' || true
+                  kill -9 "$TPID" 2>/dev/null
+                fi
+              ) &
+              WDOG=$!
+              wait "$TPID" && rc=0 || rc=$?
+              kill "$WDOG" 2>/dev/null || true
+              wait "$WDOG" 2>/dev/null || true
+              if [ "$rc" -gt 128 ]; then
+                echo "=== HANG/SIGNAL (rc=$rc) $BIN :: $t"
+                ps auxf || true
+                exit 124
+              fi
+              [ "$rc" = 0 ] || { echo "=== FAIL (rc=$rc) $BIN :: $t"; exit "$rc"; }
+            done
           done
           timeout 300 cargo test -p libtfs-preload --doc
 
