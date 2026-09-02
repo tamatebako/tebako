@@ -646,6 +646,55 @@ The floor's promise is the end of the segfault class: every missing
 grant surfaces as the workload's own named error, pinned in the audit
 journal — never a crash in someone else's library.
 
+### 3.5 The exec'd child's libc process surface — internal walks and vfork (locked 2026-09-03)
+
+A class-E-delivered child runs the preload shim inside a binary tebako
+did not compile, so its guarantees must hold against libc behaviors that
+no path-prefix routing table reaches. Two surfaced in the 2026-09-03
+dogfood repro (the metanorma → jing java exec on linux-gnu); both are
+pinned in libtfs-preload's e2e suite.
+
+**The internal-walk hazard (realpath).** glibc's `realpath(3)` — the
+JDK's `File.getCanonicalFile` → `JDK_Canonicalize` path — walks the
+path with libc-INTERNAL stat/readlink aliases that PLT/symbol
+interposition never sees. A covered path answered by the host resolver
+therefore leaks the HOST-canonicalized spelling: on a usrmerge host
+(`/lib` → `usr/lib`, the ubuntu:24.04 dogfood container) the jar URL
+the JDK's `URLClassPath` built named `/usr/lib/ruby/…`, the lookup
+missed, and the user saw `ClassNotFoundException` on a byte-perfect
+jar. The shim therefore interposes the realpath family (spec 07 §8's
+surface) and answers a covered path with the MOUNT spelling, lexically
+normalized (`.`/`..` resolved textually — the VFS is already canonical;
+host symlinks in the mount spelling are the payload's own spelling and
+MUST survive). A covered-but-not-held path still passes to the host
+realpath (the §3.4 `/etc/localtime` discipline); a denied path answers
+the jail's errno. The same hazard class — libc functions whose path
+walks ride internal aliases — covers `glob`/`nftw`/`ftw`/`wordexp`:
+UNAUDITED today (no importer observed on the JDK/ruby boot paths),
+pinned as debt, never silently assumed covered.
+
+**The vfork gap.** The fork-child guard arms through `pthread_atfork`,
+but glibc runs NO atfork handlers for `vfork(2)` — and a vfork child
+shares the parent's whole address space with the parent's calling
+thread suspended in the kernel, so an engine entry there is not merely
+a wait on fork-dead threads: it races live backend state in memory the
+suspended parent owns (dash's `execvp` PATH search in the dogfood
+repro: parent in `kernel_clone`, child in `futex_wait` — deterministic
+under Rosetta, latent corruption natively). The guard's backstop is
+therefore a PID gate, not the atfork flag alone: the constructor
+records the initializing pid, and an engine entry whose `getpid`
+differs is a fork/vfork child in its pre-exec window and passes
+through to the host libc. `exec` preserves the pid, so the exec'd
+image's constructor re-stores the same value and the gate re-opens
+exactly at exec — the §3.1 grandchild rule is unaffected. The gated
+pass-through's own residual: the shim's real-symbol slots resolve
+lazily (dlsym on first use), and a FIRST call inside a vfork child's
+shared address space would be its own hazard — POSIX already bounds
+the vfork child to async-signal-safe work before exec, so a gated
+first-call dlsym is a corner the parent's own prior IO covers in
+practice; eagerly warming the pass-through slots at constructor is the
+tracked hardening, pinned as debt with the glob/nftw audit above.
+
 Amended 2026-08-30 (tebako#502): the acceptance shape above predates
 the wrapper-runtime pattern. A home-annotated runtime payload
 materializes the interpreter's home INTO the per-process dl tree (§3's

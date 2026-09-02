@@ -136,6 +136,73 @@ pub fn vfs_fopen(path: &str) -> PathRoute<std::ffi::CString> {
     route_answer(answer, path, HostAccess::Ro)
 }
 
+/// realpath routing (spec 07 §8). glibc's realpath(3) walks the path
+/// with libc-INTERNAL stat/readlink aliases that LD_PRELOAD cannot
+/// interpose, so an un-interposed realpath canonicalizes a VFS path
+/// against the HOST root: on usrmerge hosts (`/lib -> usr/lib`) a
+/// root-mounted payload's `/lib/…` comes back as `/usr/lib/…`, a spelling
+/// the VFS cannot serve — the JDK's `File.getCanonicalFile` canonicalizes
+/// every `-jar`/`-cp` classpath entry exactly this way, which dropped the
+/// payload's jing jar from the classpath (the dogfood linux-gnu
+/// ClassNotFoundException, 2026-09-03; PROGRESS/31).
+///
+/// The discipline: a path that EXISTS in the VFS is answered with its
+/// lexically normalized VFS spelling — the host walk never runs, so no
+/// host symlink prefix can leak into it. A path the VFS lacks (a legit
+/// host file sitting under a `/` mount, `/etc/…` style) forwards to the
+/// real realpath, exactly like the open/stat passthrough. VFS symlink
+/// resolution: none (memfs has no symlink duality, and image backends
+/// resolve in-image links at lookup), so the normalized spelling IS the
+/// honest VFS canonical form.
+pub fn vfs_realpath(path: &str) -> PathRoute<std::ffi::CString> {
+    // realpath(3) on an empty path answers ENOENT.
+    if path.is_empty() {
+        return PathRoute::Denied(libc::ENOENT);
+    }
+    // realpath is absolute-only: a relative input resolves against the
+    // cwd first. The kernel never lets a process chdir into the VFS (the
+    // VFS has no host directory entries), so the cwd is always host.
+    let absolute = if path.starts_with('/') {
+        path.to_string()
+    } else {
+        match std::env::current_dir() {
+            Ok(cwd) => format!("{}/{}", cwd.to_string_lossy(), path),
+            Err(e) => return PathRoute::Denied(e.raw_os_error().unwrap_or(libc::EIO)),
+        }
+    };
+    let normalized = normalize_lexical(&absolute);
+    let st = { context().read().unwrap().stat(&normalized) };
+    match route_answer(st, &normalized, HostAccess::Ro) {
+        PathRoute::Vfs(_) => match std::ffi::CString::new(normalized) {
+            Ok(c) => PathRoute::Vfs(c),
+            // Unreachable: `normalized` derives from a NUL-free C string
+            // and the transform never introduces one.
+            Err(_) => PathRoute::Denied(libc::EINVAL),
+        },
+        PathRoute::Host => PathRoute::Host,
+        PathRoute::Denied(e) => PathRoute::Denied(e),
+    }
+}
+
+/// The lexical normalizer for the realpath answer — the same discipline
+/// as `tfs::context`'s private `normalize` (`.` dropped, `a/..` resolved
+/// lexically, `..` at the root clamped, duplicate slashes collapsed). The
+/// input is absolute by construction (see the caller), so the result
+/// always keeps its leading `/`.
+fn normalize_lexical(path: &str) -> String {
+    let mut out: Vec<&str> = Vec::new();
+    for component in path.split('/') {
+        match component {
+            "" | "." => {}
+            ".." => {
+                out.pop();
+            }
+            c => out.push(c),
+        }
+    }
+    format!("/{}", out.join("/"))
+}
+
 /// Write-class routing (mkdir/unlink/rename). A path a mount HOLDS is
 /// EROFS (payload images are always ro; path-level writes would route
 /// through a COW overlay, which the shim never mounts). A path merely
@@ -549,6 +616,38 @@ mod tests {
             vfs_access(&secret, libc::X_OK),
             PathRoute::Denied(libc::EACCES)
         );
+
+        // ---- realpath routing (spec 07 §8 — the JDK
+        // canonicalization gate; the dogfood linux-gnu jing
+        // ClassNotFound). A path the VFS HAS answers with its normalized
+        // VFS spelling — never the host walk, whose symlink prefixes
+        // (usrmerge /lib→usr/lib) are the leak.
+        let PathRoute::Vfs(rp) = vfs_realpath(&secret) else {
+            panic!("memfs realpath should route Vfs");
+        };
+        assert_eq!(rp.to_str().unwrap(), secret);
+        // Lexical normalization rides (`.`/`..`/duplicate slashes).
+        let PathRoute::Vfs(rp) = vfs_realpath(&format!("{mp}//data/./sub/../secret.txt")) else {
+            panic!("memfs realpath with dot components should route Vfs");
+        };
+        assert_eq!(rp.to_str().unwrap(), secret);
+        // A mount root itself canonicalizes to its own spelling.
+        let PathRoute::Vfs(rp) = vfs_realpath(&format!("{mp}/")) else {
+            panic!("the mount root's realpath should route Vfs");
+        };
+        assert_eq!(rp.to_str().unwrap(), mp);
+        // Covered-but-missing stays Host (a legit host file under a `/`
+        // mount must still reach the host realpath — /etc/localtime
+        // discipline).
+        assert_eq!(
+            vfs_realpath(&format!("{mp}/data/nope.txt")),
+            PathRoute::Host
+        );
+        // Uncovered spellings forward, and the empty path is glibc's
+        // ENOENT.
+        assert_eq!(vfs_realpath("/etc"), PathRoute::Host);
+        assert_eq!(vfs_realpath(""), PathRoute::Denied(libc::ENOENT));
+
         let PathRoute::Vfs(dir_id) = vfs_opendir(&format!("{mp}/dir")) else {
             panic!("memfs opendir should route Vfs");
         };

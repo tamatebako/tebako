@@ -43,7 +43,13 @@
 //! `readdir_r`, `rewinddir`/`telldir`/`seekdir`, `dirfd`, `closedir`,
 //! `pread`, `read`, `lseek` (additive — stdio fseek on a memfs fd must
 //! stay on the VFS), `close`, `mkdir`, `unlink`, `rename`, `dlopen`,
-//! `fopen` (read modes), and
+//! `fopen` (read modes), the `realpath` family (`realpath` + macOS's
+//! `realpath$DARWIN_EXTSN`; linux's `canonicalize_file_name` and
+//! `__realpath_chk` — spec 07 §8: glibc's realpath walks the path
+//! with libc-INTERNAL aliases no PLT interpose sees, so covered paths
+//! are answered by the shim with the MOUNT spelling, lexically
+//! normalized — a host canonicalization must never rewrite a VFS path,
+//! the 2026-09-03 dogfood jing ClassNotFound), and
 //! `execve`/`posix_spawn`/`posix_spawnp` (memfs paths materialize through
 //! the `dlmap2file` host cache; roadmap 39). Memfs paths are served by
 //! the engine; host paths pass through, gated by the SAME `host_policy`
@@ -92,7 +98,16 @@
 //!   pool dies at `fork`, so a backend-touching call in the child (e.g.
 //!   the execve materialization probe under a `/` mount) would wait on
 //!   threads that no longer exist (the 2026-08-22 git-clone deadlock,
-//!   runtime 0.16.4). A fork child that goes on to `exec` re-enters a
+//!   runtime 0.16.4). glibc runs NO atfork handlers for `vfork(2)`, and a
+//!   vfork child shares the parent's whole address space with the parent
+//!   thread suspended in the kernel — so the guard carries a PID backstop
+//!   (`INIT_PID`, stored by the constructor): an engine entry whose
+//!   `getpid` differs from the initializing pid is a fork/vfork child in
+//!   its pre-exec window and passes through (the 2026-09-03 dash
+//!   vfork+lazy-init deadlock in the dogfood repro). `exec` preserves the
+//!   pid, so the exec'd image's constructor re-stores the same value and
+//!   the gate re-opens exactly at exec. A fork child that goes on to
+//!   `exec` re-enters a
 //!   fresh, healthy shim through the inherited preload env, so the
 //!   child-namespace propagation above is unaffected; a child that never
 //!   execs sees the host filesystem only — memfs fds it inherited answer

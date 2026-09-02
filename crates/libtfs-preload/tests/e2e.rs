@@ -21,6 +21,15 @@
 //!   __fxstatat64 — the LFS64/fortify/versioned twins of already-covered
 //!   names, incl. OpenSSL 3.6's `openssl_fopen` → `fopen64`): the jail
 //!   gates each alias exactly like its plain-name twin,
+//! - the realpath family (spec 07 §8): glibc's realpath walks the
+//!   path with libc-internal aliases no PLT interpose sees, so covered
+//!   paths must be answered by the shim with the MOUNT spelling — never
+//!   the host-canonicalized one (the dogfood linux-gnu jing
+//!   ClassNotFound: usrmerge /lib→usr/lib leaked into the JDK's
+//!   URLClassPath on a root-mounted payload),
+//! - the vfork arm of the fork guard: atfork handlers never run for
+//!   vfork(2), so the pid gate passes a vfork child's engine entries to
+//!   the host libc (the dash vfork+lazy-init deadlock),
 //! - named errors + EX_CONFIG (78) on misformatted env.
 //!
 //! Skip policy (documented in the crate README/spec): tests SKIP (pass
@@ -154,6 +163,8 @@ fn build_fixtures() -> Option<Fixtures> {
         "close-probe",
         "fork-exec",
         "alias-probe",
+        "realpath-probe",
+        "vfork-probe",
     ] {
         let src = src_dir.join(format!("{name}.c"));
         let out = dir.join("bin").join(name);
@@ -1088,6 +1099,109 @@ fn fork_child_exec_under_root_mount_completes() {
     assert_eq!(
         out.stdout, b"HOST-FILE\n",
         "the grandchild's host read under the root mount"
+    );
+}
+
+// ---------------------------------------------------------------------
+// The 2026-09-03 dogfood linux-gnu pair: realpath + vfork (spec 07 §8)
+// ---------------------------------------------------------------------
+
+/// glibc realpath(3) walks the path with libc-INTERNAL stat/readlink
+/// aliases that PLT interposition never sees — so before the shim
+/// interposed the realpath family, realpath under a VFS mount fell
+/// through to the host resolver. On a root-mounted payload whose
+/// spelling crosses a host symlink (usrmerge /lib → usr/lib on the
+/// ubuntu:24.04 dogfood container) the JDK's File.getCanonicalFile
+/// leaked the RESOLVED spelling into URLClassPath, the jar lookup then
+/// missed, and the user saw ClassNotFoundException on a byte-perfect
+/// jar. The shim now answers covered paths with the MOUNT spelling
+/// (lexically normalized — the VFS is already canonical; host symlink
+/// resolution must never rewrite a VFS path).
+///
+/// The red state is portable (macOS + linux): pre-fix there was no
+/// realpath interpose at all, so the probe below fell through to the
+/// host realpath — which resolved the symlinked mount point and then
+/// ENOENT'd on the in-image file.
+#[test]
+fn realpath_under_symlinked_mount_keeps_the_vfs_spelling() {
+    let Some(f) = fixtures() else { return };
+    // A symlinked mount spelling: vlink → vtarget. The image mounts at
+    // the LINK; realpath must answer with the link spelling, not the
+    // host-resolved target.
+    let target = f.dir.join("vtarget");
+    std::fs::create_dir_all(&target).unwrap();
+    let link = f.dir.join("vlink");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    let want = format!("{}/data/secret.txt", link.display());
+    let mounts = format!("{}:{}", f.zip.display(), link.display());
+
+    // Caller-buffer arm (the JDK's canonicalize_md.c shape).
+    let r = run_with_mounts(f, "realpath-probe", &[&want], &mounts, None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(
+        r.stdout,
+        format!("{want}\n"),
+        "the VFS spelling, not the host-canonicalized one"
+    );
+
+    // NULL-buffer arm (glibc canonicalize_file_name semantics).
+    let r = run_with_mounts(f, "realpath-probe", &[&want, "null"], &mounts, None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, format!("{want}\n"), "NULL-buffer arm");
+
+    // Host control: an uncovered host path still gets the HOST realpath
+    // (f.dir is canonicalized at fixture build, so the host canonical
+    // form is exactly this spelling).
+    let host = f.work.join("hostfile.txt").display().to_string();
+    let r = run_with_mounts(f, "realpath-probe", &[&host], &mounts, None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, format!("{host}\n"), "host passthrough");
+}
+
+/// The vfork arm of the fork guard: pthread_atfork handlers do NOT run
+/// for vfork(2), so the atfork guard alone never armed in a vfork child
+/// — and a vfork child shares the parent's whole address space with the
+/// parent's calling thread suspended in the kernel. dash's execvp PATH
+/// search hit exactly this in the dogfood repro (parent in kernel_clone,
+/// child in futex_wait). The pid gate (INIT_PID) catches what atfork
+/// cannot: the child's getpid differs from the init pid even though the
+/// address space is shared, so every engine entry in the child passes
+/// through to the host libc — the same semantics as the fork guard.
+///
+/// The fixture stats a path that exists IN THE IMAGE (root-mounted
+/// DWARFS — the zip backend has no worker pool, so it cannot
+/// distinguish the guard from the bug) but not on the host: the gated
+/// child must answer the HOST's ENOENT ('E'). Ungated, the child either
+/// wedges in the engine (the fixture's sibling watchdog SIGKILLs the
+/// probe's process group after a grace window — a wedged vfork child
+/// suspends the parent, so the parent cannot be its own watchdog) or
+/// answers the image's 'H'. Both fail here; a regression can never hang
+/// the suite.
+#[test]
+fn vfork_child_stat_answers_from_the_host() {
+    let Some(f) = fixtures() else { return };
+    let mut cmd = Command::new(f.dir.join("bin").join("vfork-probe"));
+    cmd.arg("/data/secret.txt")
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", format!("{}:/", f.dwarfs.display()))
+        .env_remove("DYLD_PRINT_LIBRARIES")
+        .env_remove("TEBAKO_JAIL");
+    let out = cmd.output().unwrap();
+    #[cfg(unix)]
+    let signal = std::os::unix::process::ExitStatusExt::signal(&out.status);
+    #[cfg(not(unix))]
+    let signal = None;
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "vfork-probe failed (signal: {signal:?} — SIGKILL here means the \
+         watchdog fired: the vfork child wedged in the engine, the \
+         pid-gate regression), stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        out.stdout, b"E\n",
+        "the vfork child answered the HOST stat (ENOENT), not the image"
     );
 }
 

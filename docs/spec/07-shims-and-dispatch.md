@@ -184,7 +184,18 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    close(+the plain and $NOCANCEL spellings on x86_64 darwin — the libc
    crate maps `libc::close` to `close$NOCANCEL` there, C binaries
    (the JVM's libjava/libjli/libzip) import plain `close`; both route
-   to the shim)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp;
+   to the shim)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
+   + the realpath family (realpath, plus macOS's realpath$DARWIN_EXTSN;
+   canonicalize_file_name and the fortified __realpath_chk on linux):
+   glibc's realpath(3) walks the path with libc-INTERNAL stat/readlink
+   aliases no PLT interpose sees, so a covered path MUST be answered by
+   the shim with the MOUNT spelling, lexically normalized — the host
+   resolver's canonicalization must never rewrite a VFS path (the
+   2026-09-03 dogfood linux-gnu jing ClassNotFound: usrmerge
+   /lib→usr/lib leaked into the JDK's URLClassPath on a root-mounted
+   payload, and the jar lookup silently dropped a byte-perfect jar);
+   covered-but-not-held paths still pass to the host realpath (the
+   /etc/localtime discipline);
    `TEBAKO_JAIL` carries the spec 08 §1 env form (`open|deny` +
    `host:mount:ro|rw` grants + `@` argument files); the ENTRYPOINT (when
    in-image) is materialized through `dlmap2file` (execve needs a host
@@ -207,7 +218,16 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    fork-safe: dwarfs-t's block-cache worker pool dies at fork, so a
    backend-touching call in the child — e.g. the execve materialization
    probe under a `/` mount — would wait on threads that no longer exist;
-   the 2026-08-22 git-clone deadlock, runtime 0.16.4), and a fork child
+   the 2026-08-22 git-clone deadlock, runtime 0.16.4); glibc runs NO
+   atfork handlers for vfork(2), and a vfork child shares the parent's
+   whole address space with the parent thread suspended in the kernel,
+   so the guard carries a PID backstop — the constructor records the
+   initializing pid, and an engine entry under a different pid is a
+   fork/vfork child in its pre-exec window and passes through exactly
+   like the atfork flag's child (the 2026-09-03 dash vfork deadlock in
+   the dogfood repro; exec preserves the pid, so the exec'd image's
+   constructor re-stores the same value and the gate re-opens at exec);
+   and a fork child
    that execs re-enters a fresh shim through the inherited preload env,
    so the grandchild rule above is unaffected; not interposed: fork,
    `openat2` (glibc exposes no wrapper
@@ -217,7 +237,11 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    32-bit-inode layout), `__fxstatat64` and the write-side
    pwrite64/ftruncate64/statvfs64 family plus
    readv/preadv/sendfile/copy_file_range on memfs fds on linux,
-   fdopendir (memfs directories are never fd-opened), and
+   fdopendir (memfs directories are never fd-opened), the
+   internal-walk family glob/nftw/ftw/wordexp (UNAUDITED — their path
+   walks ride libc-internal aliases, the same bypass class as realpath;
+   no importer observed on the JDK/ruby boot paths, so this is pinned
+   debt, never silently assumed covered), and
    syscall()-direct IO (raw syscalls bypass userland interposition by
    construction); `dirfd` of a memfs stream answers -1/ENOTSUP;
    `getdents64` on a memfs fd answers ENOTDIR (VFS directories enumerate
