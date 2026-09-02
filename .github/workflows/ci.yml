@@ -252,6 +252,18 @@ jobs:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # The built preload shim as a downloadable artifact (linux-gnu):
+      # the container-proof path for preload changes — a foreign-libc
+      # repro rig (usrmerge, Rosetta, …) downloads exactly this .so
+      # instead of needing a local cross toolchain.
+      - name: Upload the preload shim (linux-gnu proof artifact)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: libtfs_preload-linux-gnu-x86_64-debug
+          path: tebako-rs/target/debug/libtfs_preload.so
+          if-no-files-found: error
+
   test-pure-cargo:
     name: test (--no-default-features, ubuntu)
     runs-on: ubuntu-24.04
