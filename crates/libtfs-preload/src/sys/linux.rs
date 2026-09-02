@@ -42,11 +42,23 @@
 //! `BIO_new_file` / `X509_LOOKUP_load_file` choke point — binds
 //! `fopen64`, never `fopen`) are interposed as delegations to their
 //! plain-name bodies, as is `__fxstatat64` (to `__fxstatat` — the
-//! versioned stat family's last *64 form). Remaining documented gaps:
+//! versioned stat family's last *64 form). The realpath family is
+//! interposed too (`realpath`, `canonicalize_file_name`, and the fortified
+//! `__realpath_chk` — spec 07 §8): glibc's realpath walks the path
+//! with libc-INTERNAL stat/readlink aliases that no PLT interpose sees,
+//! so a covered path answered by the host resolver leaked the
+//! HOST-canonicalized spelling (usrmerge /lib → usr/lib) into the JDK's
+//! URLClassPath — the 2026-09-03 dogfood linux-gnu jing ClassNotFound.
+//! The shim answers covered paths with the mount spelling, lexically
+//! normalized (the VFS is already canonical), and passes everything else
+//! to the host. Remaining documented gaps:
 //! the rest of the fortify open family (`__open_2`/`__open64_2`/
 //! `__openat64_2` — no importer observed in the 0.16.6 linux-gnu
-//! runtime), `readv`/`preadv`/`sendfile`/`copy_file_range`, and the
-//! write-side `pwrite64`/`ftruncate64`/`statvfs64` family on memfs fds. A
+//! runtime), `readv`/`preadv`/`sendfile`/`copy_file_range`, the
+//! write-side `pwrite64`/`ftruncate64`/`statvfs64` family on memfs fds,
+//! and the internal-walk family `glob`/`nftw`/`ftw`/`wordexp` (the same
+//! libc-internal-alias bypass class as realpath — UNAUDITED, no observed
+//! importer; pinned debt). A
 //! pre-existing landmine OUTSIDE the JDK path: the plain
 //! `stat`/`lstat`/`fstat`/`stat64`/`lstat64`/`fstat64` host passthroughs
 //! resolve dynamic symbols glibc only exports ≥ 2.33 — on an older
@@ -282,6 +294,15 @@ real_fn!(
     unsafe extern "C" fn(c_int, *mut c_void, usize, usize) -> libc::ssize_t
 );
 real_fn!(real___chk_fail, c"__chk_fail", unsafe extern "C" fn() -> !);
+// realpath(3) itself: the JDK's libjava canonicalization calls it through
+// the PLT (the spec 22 class-F dogfood jing ClassNotFound) — the walk
+// INSIDE glibc is unreachable, so the shim answers VFS paths itself and
+// forwards host paths here.
+real_fn!(
+    real_realpath,
+    c"realpath",
+    unsafe extern "C" fn(*const c_char, *mut c_char) -> *mut c_char
+);
 real_fn!(
     real_rewinddir,
     c"rewinddir",

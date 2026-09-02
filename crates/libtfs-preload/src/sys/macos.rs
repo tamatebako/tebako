@@ -341,6 +341,33 @@ interpose!(
         *const *mut c_char,
     ) -> c_int
 );
+// realpath + realpath$DARWIN_EXTSN (spec 07 §8): xnu's realpath(3)
+// walks the path with internal syscalls the interpose tuples never see —
+// the same host-leak class as glibc (a payload path under a host symlink
+// prefix, `/tmp`/`/etc`/`/var` on macOS, canonicalizes to the host
+// spelling). The JDK's `File.getCanonicalFile` calls it through the PLT,
+// which the tuple DOES redirect; the VFS answer lives in the shim body.
+interpose!(
+    INTERPOSE_REALPATH,
+    real_realpath,
+    super::realpath,
+    libc::realpath,
+    unsafe extern "C" fn(*const c_char, *mut c_char) -> *mut c_char
+);
+// `realpath$DARWIN_EXTSN`: the SDK's stdlib.h maps `realpath` here under
+// _DARWIN_C_FULL_SOURCE (the default) — no libc crate binding, declared
+// so its address can seed the tuple (the fopen$DARWIN_EXTSN pattern).
+unsafe extern "C" {
+    #[link_name = "realpath$DARWIN_EXTSN"]
+    fn realpath_extsn(path: *const c_char, resolved: *mut c_char) -> *mut c_char;
+}
+interpose!(
+    INTERPOSE_REALPATH_EXTSN,
+    real_realpath_extsn,
+    super::realpath_darwin_extsn,
+    realpath_extsn,
+    unsafe extern "C" fn(*const c_char, *mut c_char) -> *mut c_char
+);
 
 /// Library constructor: establish the namespace before the program's main.
 #[used]

@@ -34,7 +34,7 @@ use std::cell::Cell;
 use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_void, CStr};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
 use std::sync::Mutex;
 
 use tfs::context::TebakoCDirent;
@@ -105,6 +105,33 @@ thread_local! {
 /// copies of parent engine state even if served).
 static IN_FORK_CHILD: AtomicBool = AtomicBool::new(false);
 
+/// The pid the shim initialized in (stored by [`init`], the library
+/// constructor). An interposed call carrying a DIFFERENT pid belongs to a
+/// fork/vfork child in its pre-exec window. `pthread_atfork` covers
+/// `fork(2)` (the `IN_FORK_CHILD` guard above) but glibc runs NO atfork
+/// handlers for `vfork(2)` — and a vfork child shares the parent's whole
+/// address space, so an engine entry there does not merely wait on dead
+/// worker threads: its lazy initialization MUTATES memory the blocked
+/// parent still owns. dash's `execvp` PATH search hits exactly this (the
+/// 2026-09-03 dogfood-repro deadlock: the parent dash slept in
+/// `kernel_clone`, the vfork child in `futex_wait` — deterministic under
+/// Rosetta, a latent corruption/wedge natively). The pid gate is the
+/// vfork backstop: one `getpid` per engine entry, truthful in a vfork
+/// child because glibc ≥ 2.25 keeps no TLS pid cache. `exec` preserves
+/// the pid, so the exec'd image's constructor re-stores the SAME value
+/// and the gate re-opens exactly at exec.
+static INIT_PID: AtomicI32 = AtomicI32::new(0);
+
+/// True when the current process is not the one the shim initialized in
+/// (a fork/vfork child before its exec). The `p != 0` arm keeps calls
+/// made BEFORE the constructor ran (an early-loading dependency's own
+/// constructor) on the historical ungated path.
+fn in_foreign_process() -> bool {
+    let p = INIT_PID.load(Ordering::Relaxed);
+    // SAFETY: plain libc call; no glibc pid cache exists to go stale.
+    p != 0 && unsafe { libc::getpid() } != p
+}
+
 /// The atfork CHILD handler: arm the fork-child guard. Runs in the child,
 /// on the forking thread, before the child's `fork` caller resumes.
 ///
@@ -153,7 +180,10 @@ pub(crate) fn register_fork_guard() {
 /// route_matrix ubuntu hang; macOS test binaries do not interpose
 /// in-process, so only Linux CI saw it).
 pub(crate) fn engine_call<T>(f: impl FnOnce() -> T) -> Option<T> {
-    engine_call_inner(IN_FORK_CHILD.load(Ordering::Relaxed), f)
+    engine_call_inner(
+        IN_FORK_CHILD.load(Ordering::Relaxed) || in_foreign_process(),
+        f,
+    )
 }
 
 /// The gate body with the fork-child flag as an explicit input, so the
@@ -966,6 +996,113 @@ pub unsafe extern "C" fn mmap64(
     unsafe { mmap_memfs_or_host(addr, len, prot, flags, fd, offset) }
 }
 
+// ---------------------------------------------------------------------
+// realpath family (spec 07 §8). glibc's realpath(3) walks the path
+// with libc-INTERNAL stat/readlink aliases — invisible to LD_PRELOAD —
+// so an un-interposed realpath canonicalizes a VFS path against the HOST
+// root and leaks host symlink prefixes into the result (usrmerge
+// `/lib -> usr/lib` turned a root-mounted payload's `/lib/…` jing jar
+// into `/usr/lib/…`, which the VFS then could not serve — the JDK's
+// `File.getCanonicalFile` canonicalizes every -jar/-cp classpath entry
+// exactly this way: the dogfood linux-gnu ClassNotFoundException,
+// 2026-09-03). The caller-side call from libjava.so rides the PLT, so
+// this export DOES win for it; only libc's own internal realpath users
+// stay uncovered. Semantics live in `route::vfs_realpath`: a path the
+// VFS has is answered with its normalized VFS spelling; anything else
+// forwards to the real call.
+// ---------------------------------------------------------------------
+
+/// The shared realpath body (macOS's `realpath$DARWIN_EXTSN` delegates
+/// here; linux's `canonicalize_file_name` and `__realpath_chk` too).
+///
+/// # Safety
+/// `path`/`resolved` follow the intercepted-call contract; a non-NULL
+/// `resolved` must name a caller buffer of `PATH_MAX` bytes (the
+/// realpath(3) contract).
+unsafe fn realpath_impl(path: *const c_char, resolved: *mut c_char) -> *mut c_char {
+    if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+        eprintln!("[preload] realpath");
+    }
+    let Some(p) = (unsafe { c_path(path) }) else {
+        return unsafe { plat::real_realpath()(path, resolved) };
+    };
+    match engine_call(|| route::vfs_realpath(p)) {
+        Some(PathRoute::Vfs(c)) => {
+            let bytes = c.as_bytes_with_nul();
+            if bytes.len() > libc::PATH_MAX as usize {
+                set_errno(libc::ENAMETOOLONG);
+                return std::ptr::null_mut();
+            }
+            if resolved.is_null() {
+                // The glibc extension: a NULL buffer gets a malloc'd
+                // result. `strdup` allocates from libc's malloc, so the
+                // caller's `free(3)` is honored.
+                unsafe { libc::strdup(c.as_ptr()) }
+            } else {
+                // SAFETY: `resolved` is the caller's PATH_MAX buffer and
+                // `bytes` fits (checked above).
+                unsafe {
+                    std::ptr::copy_nonoverlapping(
+                        bytes.as_ptr().cast::<c_char>(),
+                        resolved,
+                        bytes.len(),
+                    )
+                };
+                resolved
+            }
+        }
+        Some(PathRoute::Denied(e)) => {
+            set_errno(e);
+            std::ptr::null_mut()
+        }
+        Some(PathRoute::Host) | None => unsafe { plat::real_realpath()(path, resolved) },
+    }
+}
+
+/// Interposed `realpath`.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn realpath(path: *const c_char, resolved: *mut c_char) -> *mut c_char {
+    unsafe { realpath_impl(path, resolved) }
+}
+
+/// macOS: `realpath$DARWIN_EXTSN` — the extended-variant twin the SDK's
+/// stdio.h routes modern builds to (same contract as `realpath`; the
+/// `$DARWIN_EXTSN` difference lives in the UNIX03 legacy behavior the
+/// VFS answer never had). Delegates exactly like the LFS aliases.
+#[cfg(target_os = "macos")]
+pub unsafe extern "C" fn realpath_darwin_extsn(
+    path: *const c_char,
+    resolved: *mut c_char,
+) -> *mut c_char {
+    unsafe { realpath_impl(path, resolved) }
+}
+
+/// Linux: `canonicalize_file_name` — the always-allocating realpath
+/// spelling (glibc). Delegates; the NULL-buffer arm of `realpath_impl`
+/// does the allocation.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn canonicalize_file_name(path: *const c_char) -> *mut c_char {
+    unsafe { realpath_impl(path, std::ptr::null_mut()) }
+}
+
+/// Linux: `__realpath_chk` — the `_FORTIFY_SOURCE` realpath. glibc's
+/// check is runtime-only: a destination object known smaller than
+/// PATH_MAX aborts; ours is the same test, then the plain body.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn __realpath_chk(
+    path: *const c_char,
+    resolved: *mut c_char,
+    resolvedlen: usize,
+) -> *mut c_char {
+    if resolvedlen < libc::PATH_MAX as usize {
+        // glibc's __realpath_chk calls __chk_fail here; it never returns.
+        unsafe { plat::real___chk_fail()() }
+    }
+    unsafe { realpath_impl(path, resolved) }
+}
+
 /// Interposed `close` (fd-flag dispatch; a memfs fd never reaches the
 /// real close).
 #[cfg_attr(target_os = "linux", no_mangle)]
@@ -1621,6 +1758,10 @@ pub unsafe extern "C" fn posix_spawnp(
 /// not mount, is a named configuration error: a clear stderr message
 /// naming the variable and the offending token, then EX_CONFIG (78).
 pub fn init() {
+    // Record the initializing pid FIRST, before anything can fork/vfork:
+    // the pid gate (see `INIT_PID`) is the only guard that reaches vfork
+    // children — glibc runs no atfork handlers for vfork(2).
+    INIT_PID.store(unsafe { libc::getpid() }, Ordering::Relaxed);
     // Arm the fork-child guard FIRST, before any mount can happen: a
     // backend worker pool comes into existence at mount time, and the
     // guard must already be registered before any later fork.
