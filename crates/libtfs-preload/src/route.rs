@@ -621,32 +621,38 @@ mod tests {
         // canonicalization gate; the dogfood linux-gnu jing
         // ClassNotFound). A path the VFS HAS answers with its normalized
         // VFS spelling — never the host walk, whose symlink prefixes
-        // (usrmerge /lib→usr/lib) are the leak.
-        let PathRoute::Vfs(rp) = vfs_realpath(&secret) else {
+        // (usrmerge /lib→usr/lib) are the leak. Enter through the
+        // production seam (engine_call) exactly like the interposed
+        // realpath shim does: a direct unguarded entry leaves IN_ENGINE
+        // unset, and the policy layer's realpath re-validation
+        // (canonicalize_lenient, policy.rs) then re-enters the
+        // INTERPOSED realpath in-process — under a held write lock that
+        // self-deadlocks the context lock on glibc (the 2026-09-02
+        // ubuntu CI hang of this test; only linux test binaries
+        // interpose in-process, so macOS runs never saw it).
+        let guarded_rp = |p: &str| crate::sys::engine_call(|| vfs_realpath(p)).unwrap();
+        let PathRoute::Vfs(rp) = guarded_rp(&secret) else {
             panic!("memfs realpath should route Vfs");
         };
         assert_eq!(rp.to_str().unwrap(), secret);
         // Lexical normalization rides (`.`/`..`/duplicate slashes).
-        let PathRoute::Vfs(rp) = vfs_realpath(&format!("{mp}//data/./sub/../secret.txt")) else {
+        let PathRoute::Vfs(rp) = guarded_rp(&format!("{mp}//data/./sub/../secret.txt")) else {
             panic!("memfs realpath with dot components should route Vfs");
         };
         assert_eq!(rp.to_str().unwrap(), secret);
         // A mount root itself canonicalizes to its own spelling.
-        let PathRoute::Vfs(rp) = vfs_realpath(&format!("{mp}/")) else {
+        let PathRoute::Vfs(rp) = guarded_rp(&format!("{mp}/")) else {
             panic!("the mount root's realpath should route Vfs");
         };
         assert_eq!(rp.to_str().unwrap(), mp);
         // Covered-but-missing stays Host (a legit host file under a `/`
         // mount must still reach the host realpath — /etc/localtime
         // discipline).
-        assert_eq!(
-            vfs_realpath(&format!("{mp}/data/nope.txt")),
-            PathRoute::Host
-        );
+        assert_eq!(guarded_rp(&format!("{mp}/data/nope.txt")), PathRoute::Host);
         // Uncovered spellings forward, and the empty path is glibc's
         // ENOENT.
-        assert_eq!(vfs_realpath("/etc"), PathRoute::Host);
-        assert_eq!(vfs_realpath(""), PathRoute::Denied(libc::ENOENT));
+        assert_eq!(guarded_rp("/etc"), PathRoute::Host);
+        assert_eq!(guarded_rp(""), PathRoute::Denied(libc::ENOENT));
 
         let PathRoute::Vfs(dir_id) = vfs_opendir(&format!("{mp}/dir")) else {
             panic!("memfs opendir should route Vfs");
@@ -671,17 +677,27 @@ mod tests {
         assert!(!dir_is_embedded(dir_id));
 
         // ---- host passthrough (open policy), incl. mount-claimed-missing ----
+        // These hold the context lock while the policy layer realpath
+        // re-validates the host path — with realpath interposed that
+        // re-enters this crate in-process, so they must ride the
+        // production guard (see guarded_rp above) or glibc deadlocks.
         assert_eq!(
-            vfs_open("/etc/definitely-host", libc::O_RDONLY),
+            crate::sys::engine_call(|| vfs_open("/etc/definitely-host", libc::O_RDONLY)).unwrap(),
             PathRoute::Host
         );
-        assert_eq!(vfs_stat("/etc/definitely-host"), PathRoute::Host);
         assert_eq!(
-            vfs_open(&format!("{mp}/missing"), libc::O_RDONLY),
+            crate::sys::engine_call(|| vfs_stat("/etc/definitely-host")).unwrap(),
+            PathRoute::Host
+        );
+        assert_eq!(
+            crate::sys::engine_call(|| vfs_open(&format!("{mp}/missing"), libc::O_RDONLY)).unwrap(),
             PathRoute::Host,
             "a mount-claimed path absent from the image keeps the ENOENT pass-through"
         );
-        assert_eq!(vfs_write_path("/tmp/libtfs-preload-route-write"), Ok(()));
+        assert_eq!(
+            crate::sys::engine_call(|| vfs_write_path("/tmp/libtfs-preload-route-write")).unwrap(),
+            Ok(())
+        );
 
         // ---- exec/spawn trace surfaces (spec 25 §2, phase T2) ----
         // execve and posix_spawn share the engine's routing answer; the
