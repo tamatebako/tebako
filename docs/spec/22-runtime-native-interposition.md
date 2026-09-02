@@ -682,11 +682,20 @@ EINVALs a NULL buffer, and the default-version dlsym lookup lands on it
 at least on glibc 2.31 (ubuntu-20.04 — the factory build container;
 the 0.16.19 re-cut's linux-gnu x86_64 legs died at the child
 constructor's policy bind, 2026-09-02). The arm therefore reroutes to
-`canonicalize_file_name` — a single-versioned symbol since glibc 2.3,
-present in musl — which IS the always-allocating spelling. The
-caller-buffer arm keeps the plain realpath resolution (the compat twin
-forwards non-NULL buffers correctly), so the reroute costs nothing on
-the JDK's own canonicalization shape.
+`canonicalize_file_name` — a single-versioned symbol since glibc 2.3 —
+which IS the always-allocating spelling. The caller-buffer arm keeps
+the plain realpath resolution (the compat twin forwards non-NULL
+buffers correctly), so the reroute costs nothing on the JDK's own
+canonicalization shape.
+
+**The reroute is glibc-scoped.** `canonicalize_file_name` is a
+glibc-only spelling: musl has no such symbol at all (verified against
+musl 1.2.5's dynamic table, alpine 3.21.7 — the 0.16.19 musl boot-smoke
+legs aborted on the RTLD_NEXT lookup, same day), and musl needs no
+reroute: without symbol versioning there is no compat twin, so its
+plain-`dlsym` realpath is unambiguous and NULL-safe (the v2.1.3 musl
+shim binds jails correctly). The NULL-arm reroute compiles only for
+`target_env = "gnu"`; musl's NULL arm stays on plain realpath.
 
 **The vfork gap.** The fork-child guard arms through `pthread_atfork`,
 but glibc runs NO atfork handlers for `vfork(2)` — and a vfork child

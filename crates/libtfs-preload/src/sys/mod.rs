@@ -1068,8 +1068,13 @@ unsafe fn realpath_impl(path: *const c_char, resolved: *mut c_char) -> *mut c_ch
             // NULL arm, so every host canonicalize died there on
             // glibc 2.31 (the 0.16.19 boot-smoke legs, 2026-09-02).
             // canonicalize_file_name has no versioned twin and is exactly
-            // the always-allocating spelling (see sys/linux.rs).
-            #[cfg(target_os = "linux")]
+            // the always-allocating spelling (see sys/linux.rs). The
+            // reroute is glibc-SCOPED: musl has no canonicalize_file_name
+            // at all (the RTLD_NEXT lookup panics — the 0.16.19 musl
+            // smoke legs, same day) and no versioned-twin hazard to dodge
+            // (no symbol versioning), so musl's NULL arm stays on the
+            // plain realpath dlsym.
+            #[cfg(all(target_os = "linux", target_env = "gnu"))]
             if resolved.is_null() {
                 return unsafe { plat::real_canonicalize_file_name()(path) };
             }
