@@ -1060,7 +1060,21 @@ unsafe fn realpath_impl(path: *const c_char, resolved: *mut c_char) -> *mut c_ch
             set_errno(e);
             std::ptr::null_mut()
         }
-        Some(PathRoute::Host) | None => unsafe { plat::real_realpath()(path, resolved) },
+        Some(PathRoute::Host) | None => {
+            // The NULL-buffer arm must NOT ride the plain-dlsym realpath
+            // on glibc: the default-version lookup can land on the
+            // GLIBC_2.0 compat twin (`__old_realpath`), which EINVALs a
+            // NULL buffer — Rust std's canonicalize only ever uses the
+            // NULL arm, so every host canonicalize died there on
+            // glibc 2.31 (the 0.16.19 boot-smoke legs, 2026-09-02).
+            // canonicalize_file_name has no versioned twin and is exactly
+            // the always-allocating spelling (see sys/linux.rs).
+            #[cfg(target_os = "linux")]
+            if resolved.is_null() {
+                return unsafe { plat::real_canonicalize_file_name()(path) };
+            }
+            unsafe { plat::real_realpath()(path, resolved) }
+        }
     }
 }
 

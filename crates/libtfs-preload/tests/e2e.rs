@@ -1156,6 +1156,18 @@ fn realpath_under_symlinked_mount_keeps_the_vfs_spelling() {
     let r = run_with_mounts(f, "realpath-probe", &[&host], &mounts, None);
     assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
     assert_eq!(r.stdout, format!("{host}\n"), "host passthrough");
+
+    // The NULL-arm host pass-through — Rust std::fs::canonicalize's only
+    // shape, and the jail bind's canonicalize rides it. A plain-dlsym
+    // realpath on glibc ≤ 2.31 lands on the GLIBC_2.0 compat twin
+    // (__old_realpath), which EINVALs a NULL buffer: the 0.16.19 factory
+    // re-cut's linux-gnu x86_64 legs (ubuntu-20.04) died at the child
+    // constructor's policy bind with exactly that (2026-09-02). The
+    // pass-through reroutes the arm to canonicalize_file_name; this pin
+    // keeps the arm exercised on every CI host glibc.
+    let r = run_with_mounts(f, "realpath-probe", &[&host, "null"], &mounts, None);
+    assert_eq!(r.rc, 0, "stderr: {}", r.stderr);
+    assert_eq!(r.stdout, format!("{host}\n"), "NULL-arm host passthrough");
 }
 
 /// The vfork arm of the fork guard: pthread_atfork handlers do NOT run

@@ -673,6 +673,21 @@ walks ride internal aliases — covers `glob`/`nftw`/`ftw`/`wordexp`:
 UNAUDITED today (no importer observed on the JDK/ruby boot paths),
 pinned as debt, never silently assumed covered.
 
+**The versioned-twin hazard (realpath NULL arm).** The pass-through's
+NULL-buffer arm (the only shape Rust std's `std::fs::canonicalize`
+uses — so the jail bind's own grant canonicalization rides it) must not
+target a plain `dlsym(RTLD_NEXT, "realpath")`: glibc carries a
+versioned compat twin `realpath@GLIBC_2.0` whose `__old_realpath`
+EINVALs a NULL buffer, and the default-version dlsym lookup lands on it
+at least on glibc 2.31 (ubuntu-20.04 — the factory build container;
+the 0.16.19 re-cut's linux-gnu x86_64 legs died at the child
+constructor's policy bind, 2026-09-02). The arm therefore reroutes to
+`canonicalize_file_name` — a single-versioned symbol since glibc 2.3,
+present in musl — which IS the always-allocating spelling. The
+caller-buffer arm keeps the plain realpath resolution (the compat twin
+forwards non-NULL buffers correctly), so the reroute costs nothing on
+the JDK's own canonicalization shape.
+
 **The vfork gap.** The fork-child guard arms through `pthread_atfork`,
 but glibc runs NO atfork handlers for `vfork(2)` — and a vfork child
 shares the parent's whole address space with the parent's calling

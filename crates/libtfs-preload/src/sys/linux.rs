@@ -303,6 +303,22 @@ real_fn!(
     c"realpath",
     unsafe extern "C" fn(*const c_char, *mut c_char) -> *mut c_char
 );
+// The always-allocating realpath spelling — the NULL-buffer pass-through
+// arm's target. A plain `dlsym(RTLD_NEXT, "realpath")` is NOT safe for
+// that arm: glibc carries a versioned compat twin `realpath@GLIBC_2.0`
+// (`__old_realpath`, stdlib/canonicalize.c) that EINVALs a NULL buffer,
+// and the default-version lookup lands on it at least on glibc 2.31
+// (ubuntu-20.04 — the 0.16.19 factory re-cut's linux-gnu x86_64 boot
+// smoke died there: Rust std's canonicalize always rides the NULL arm,
+// so the jail bind's canonicalize of every grant path returned EINVAL,
+// 2026-09-02). `canonicalize_file_name` entered glibc at 2.3 with no
+// versioned history, so the resolution is unambiguous; musl ships it
+// too (≥ 1.1.9), so one code path serves both libcs.
+real_fn!(
+    real_canonicalize_file_name,
+    c"canonicalize_file_name",
+    unsafe extern "C" fn(*const c_char) -> *mut c_char
+);
 real_fn!(
     real_rewinddir,
     c"rewinddir",
