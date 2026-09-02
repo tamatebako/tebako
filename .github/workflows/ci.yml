@@ -272,7 +272,7 @@ jobs:
           name: libtfs-preload-tests-linux-gnu-x86_64-debug
           retention-days: 1
           path: |
-            tebako-rs/target/debug/deps/libtfs_preload-*
+            tebako-rs/target/debug/deps/tfs_preload-*
             !tebako-rs/target/debug/deps/*.d
           if-no-files-found: error
 
@@ -286,7 +286,14 @@ jobs:
         working-directory: tebako-rs
         env:
           DWARFS_RS_VCPKG_ROOT: ${{ github.workspace }}/.vcpkg-root
-        run: timeout 2400 cargo test --workspace --exclude libtfs-preload
+        # timeout(1) is GNU-only — macOS runners lack it (the sweep's
+        # 40 min backstop simply degrades to the job timeout there).
+        run: |
+          if command -v timeout >/dev/null; then
+            timeout 2400 cargo test --workspace --exclude libtfs-preload
+          else
+            cargo test --workspace --exclude libtfs-preload
+          fi
 
       - name: cargo test (libtfs-preload, per-test watchdog)
         working-directory: tebako-rs
@@ -302,12 +309,15 @@ jobs:
           # SIGTERM to the test child, so `timeout cargo test …` reaps
           # the very process we need to inspect.)
           BINS=()
-          for b in target/debug/deps/libtfs_preload-* target/debug/deps/e2e-*; do
+          for b in target/debug/deps/tfs_preload-* target/debug/deps/e2e-*; do
             case "$b" in *.d) continue;; esac
             [ -x "$b" ] && BINS+=("$b")
           done
           for BIN in "${BINS[@]}"; do
-            mapfile -t TESTS < <("$BIN" --list 2>/dev/null | sed -n 's/: test$//p')
+            # (3.2-portable read loop — macOS runners ship bash 3.2,
+            # which has no mapfile)
+            TESTS=()
+            while IFS= read -r line; do TESTS+=("$line"); done < <("$BIN" --list 2>/dev/null | sed -n 's/: test$//p')
             echo "== $BIN: ${#TESTS[@]} tests"
             for t in "${TESTS[@]}"; do
               echo "=== START $BIN :: $t"
@@ -333,7 +343,11 @@ jobs:
               [ "$rc" = 0 ] || { echo "=== FAIL (rc=$rc) $BIN :: $t"; exit "$rc"; }
             done
           done
-          timeout 300 cargo test -p libtfs-preload --doc
+          if command -v timeout >/dev/null; then
+            timeout 300 cargo test -p libtfs-preload --doc
+          else
+            cargo test -p libtfs-preload --doc
+          fi
 
       - name: clippy
         working-directory: tebako-rs
