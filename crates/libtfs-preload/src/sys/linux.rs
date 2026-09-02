@@ -295,7 +295,7 @@ real_fn!(
 );
 real_fn!(real___chk_fail, c"__chk_fail", unsafe extern "C" fn() -> !);
 // realpath(3) itself: the JDK's libjava canonicalization calls it through
-// the PLT (the spec 22 class-F dogfood jing ClassNotFound) — the walk
+// the PLT (the spec 07 §8 dogfood jing ClassNotFound) — the walk
 // INSIDE glibc is unreachable, so the shim answers VFS paths itself and
 // forwards host paths here.
 real_fn!(
