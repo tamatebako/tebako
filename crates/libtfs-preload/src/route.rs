@@ -155,6 +155,11 @@ pub fn vfs_fopen(path: &str) -> PathRoute<std::ffi::CString> {
 /// resolve in-image links at lookup), so the normalized spelling IS the
 /// honest VFS canonical form.
 pub fn vfs_realpath(path: &str) -> PathRoute<std::ffi::CString> {
+    // Temporary wedge forensics (2026-09-02): stage prints, TEBAKO_DEBUG_TFS.
+    let dbg = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
+    if dbg {
+        eprintln!("[route] vfs_realpath enter path={path}");
+    }
     // realpath(3) on an empty path answers ENOENT.
     if path.is_empty() {
         return PathRoute::Denied(libc::ENOENT);
@@ -171,7 +176,13 @@ pub fn vfs_realpath(path: &str) -> PathRoute<std::ffi::CString> {
         }
     };
     let normalized = normalize_lexical(&absolute);
+    if dbg {
+        eprintln!("[route] vfs_realpath stat({normalized}) — taking context read");
+    }
     let st = { context().read().unwrap().stat(&normalized) };
+    if dbg {
+        eprintln!("[route] vfs_realpath stat answered");
+    }
     match route_answer(st, &normalized, HostAccess::Ro) {
         PathRoute::Vfs(_) => match std::ffi::CString::new(normalized) {
             Ok(c) => PathRoute::Vfs(c),

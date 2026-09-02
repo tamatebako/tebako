@@ -1020,13 +1020,30 @@ pub unsafe extern "C" fn mmap64(
 /// `resolved` must name a caller buffer of `PATH_MAX` bytes (the
 /// realpath(3) contract).
 unsafe fn realpath_impl(path: *const c_char, resolved: *mut c_char) -> *mut c_char {
-    if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-        eprintln!("[preload] realpath");
+    // Temporary wedge forensics (2026-09-02, route_matrix ubuntu hang):
+    // the debug lines name the path, the IN_ENGINE state, and each stage
+    // boundary, so a wedge's last printed line IS the wedged stage.
+    let dbg = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
+    if dbg {
+        let p = if path.is_null() {
+            std::ffi::CString::default()
+        } else {
+            unsafe { CStr::from_ptr(path) }.to_owned()
+        };
+        eprintln!(
+            "[preload] realpath enter path={p:?} in_engine={} foreign={}",
+            IN_ENGINE.with(|c| c.get()),
+            in_foreign_process()
+        );
     }
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_realpath()(path, resolved) };
     };
-    match engine_call(|| route::vfs_realpath(p)) {
+    let routed = engine_call(|| route::vfs_realpath(p));
+    if dbg {
+        eprintln!("[preload] realpath routed={}", routed.is_some());
+    }
+    match routed {
         Some(PathRoute::Vfs(c)) => {
             let bytes = c.as_bytes_with_nul();
             if bytes.len() > libc::PATH_MAX as usize {
@@ -1055,7 +1072,16 @@ unsafe fn realpath_impl(path: *const c_char, resolved: *mut c_char) -> *mut c_ch
             set_errno(e);
             std::ptr::null_mut()
         }
-        Some(PathRoute::Host) | None => unsafe { plat::real_realpath()(path, resolved) },
+        Some(PathRoute::Host) | None => {
+            if dbg {
+                eprintln!("[preload] realpath forwarding to host");
+            }
+            let out = unsafe { plat::real_realpath()(path, resolved) };
+            if dbg {
+                eprintln!("[preload] realpath host answered null={}", out.is_null());
+            }
+            out
+        }
     }
 }
 
