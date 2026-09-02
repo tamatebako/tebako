@@ -304,16 +304,22 @@ real_fn!(
     unsafe extern "C" fn(*const c_char, *mut c_char) -> *mut c_char
 );
 // The always-allocating realpath spelling — the NULL-buffer pass-through
-// arm's target. A plain `dlsym(RTLD_NEXT, "realpath")` is NOT safe for
-// that arm: glibc carries a versioned compat twin `realpath@GLIBC_2.0`
+// arm's target on glibc. A plain `dlsym(RTLD_NEXT, "realpath")` is NOT safe
+// for that arm: glibc carries a versioned compat twin `realpath@GLIBC_2.0`
 // (`__old_realpath`, stdlib/canonicalize.c) that EINVALs a NULL buffer,
 // and the default-version lookup lands on it at least on glibc 2.31
 // (ubuntu-20.04 — the 0.16.19 factory re-cut's linux-gnu x86_64 boot
 // smoke died there: Rust std's canonicalize always rides the NULL arm,
 // so the jail bind's canonicalize of every grant path returned EINVAL,
 // 2026-09-02). `canonicalize_file_name` entered glibc at 2.3 with no
-// versioned history, so the resolution is unambiguous; musl ships it
-// too (≥ 1.1.9), so one code path serves both libcs.
+// versioned history, so the resolution is unambiguous. glibc-ONLY:
+// musl has no `canonicalize_file_name` at all (verified: zero symbols
+// matching 'canonicalize' in musl 1.2.5's dynamic table, alpine
+// 3.21.7 — the 0.16.19 musl boot smoke aborted on this very lookup,
+// 2026-09-02) and needs no reroute anyway: with no symbol versioning
+// there is no compat twin, so musl's plain realpath dlsym is already
+// unambiguous.
+#[cfg(target_env = "gnu")]
 real_fn!(
     real_canonicalize_file_name,
     c"canonicalize_file_name",
