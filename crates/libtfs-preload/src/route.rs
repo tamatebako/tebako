@@ -155,11 +155,6 @@ pub fn vfs_fopen(path: &str) -> PathRoute<std::ffi::CString> {
 /// resolve in-image links at lookup), so the normalized spelling IS the
 /// honest VFS canonical form.
 pub fn vfs_realpath(path: &str) -> PathRoute<std::ffi::CString> {
-    // Temporary wedge forensics (2026-09-02): stage prints, TEBAKO_DEBUG_TFS.
-    let dbg = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
-    if dbg {
-        eprintln!("[route] vfs_realpath enter path={path}");
-    }
     // realpath(3) on an empty path answers ENOENT.
     if path.is_empty() {
         return PathRoute::Denied(libc::ENOENT);
@@ -176,13 +171,7 @@ pub fn vfs_realpath(path: &str) -> PathRoute<std::ffi::CString> {
         }
     };
     let normalized = normalize_lexical(&absolute);
-    if dbg {
-        eprintln!("[route] vfs_realpath stat({normalized}) — taking context read");
-    }
     let st = { context().read().unwrap().stat(&normalized) };
-    if dbg {
-        eprintln!("[route] vfs_realpath stat answered");
-    }
     match route_answer(st, &normalized, HostAccess::Ro) {
         PathRoute::Vfs(_) => match std::ffi::CString::new(normalized) {
             Ok(c) => PathRoute::Vfs(c),
@@ -549,6 +538,21 @@ mod tests {
     /// must not race parallel tests.
     #[test]
     fn route_matrix() {
+        // The 2026-09-02 discipline (supersedes the 08-21 per-call wraps):
+        // the WHOLE matrix runs inside ONE engine_call — the production
+        // re-entrancy guard. Route calls inside then behave exactly like a
+        // production shim entry: the engine's own host IO (mount reads,
+        // extraction writes, the policy layer's realpath re-validation —
+        // canonicalize_lenient, policy.rs) re-enters the interposed symbols
+        // in-process on linux, sees IN_ENGINE armed, and forwards to the
+        // host. Unguarded direct entries self-deadlock the context RwLock
+        // (write held → canonicalize → interposed realpath → vfs_realpath →
+        // read request) — the 08-21 and 09-02 ubuntu CI hangs; macOS test
+        // binaries do not interpose in-process, so only ubuntu CI saw them.
+        crate::sys::engine_call(route_matrix_body);
+    }
+
+    fn route_matrix_body() {
         // ---- fixture: a zip image in a private temp dir ----
         let dir = std::env::temp_dir().join(format!("libtfs-preload-route-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
@@ -632,38 +636,35 @@ mod tests {
         // canonicalization gate; the dogfood linux-gnu jing
         // ClassNotFound). A path the VFS HAS answers with its normalized
         // VFS spelling — never the host walk, whose symlink prefixes
-        // (usrmerge /lib→usr/lib) are the leak. Enter through the
-        // production seam (engine_call) exactly like the interposed
-        // realpath shim does: a direct unguarded entry leaves IN_ENGINE
-        // unset, and the policy layer's realpath re-validation
-        // (canonicalize_lenient, policy.rs) then re-enters the
-        // INTERPOSED realpath in-process — under a held write lock that
-        // self-deadlocks the context lock on glibc (the 2026-09-02
-        // ubuntu CI hang of this test; only linux test binaries
-        // interpose in-process, so macOS runs never saw it).
-        let guarded_rp = |p: &str| crate::sys::engine_call(|| vfs_realpath(p)).unwrap();
-        let PathRoute::Vfs(rp) = guarded_rp(&secret) else {
+        // (usrmerge /lib→usr/lib) are the leak. The re-entrancy guard
+        // discipline lives at the top of route_matrix now (one
+        // engine_call for the whole body); these calls are plain route
+        // entries, exactly what a production shim does inside its guard.
+        let PathRoute::Vfs(rp) = vfs_realpath(&secret) else {
             panic!("memfs realpath should route Vfs");
         };
         assert_eq!(rp.to_str().unwrap(), secret);
         // Lexical normalization rides (`.`/`..`/duplicate slashes).
-        let PathRoute::Vfs(rp) = guarded_rp(&format!("{mp}//data/./sub/../secret.txt")) else {
+        let PathRoute::Vfs(rp) = vfs_realpath(&format!("{mp}//data/./sub/../secret.txt")) else {
             panic!("memfs realpath with dot components should route Vfs");
         };
         assert_eq!(rp.to_str().unwrap(), secret);
         // A mount root itself canonicalizes to its own spelling.
-        let PathRoute::Vfs(rp) = guarded_rp(&format!("{mp}/")) else {
+        let PathRoute::Vfs(rp) = vfs_realpath(&format!("{mp}/")) else {
             panic!("the mount root's realpath should route Vfs");
         };
         assert_eq!(rp.to_str().unwrap(), mp);
         // Covered-but-missing stays Host (a legit host file under a `/`
         // mount must still reach the host realpath — /etc/localtime
         // discipline).
-        assert_eq!(guarded_rp(&format!("{mp}/data/nope.txt")), PathRoute::Host);
+        assert_eq!(
+            vfs_realpath(&format!("{mp}/data/nope.txt")),
+            PathRoute::Host
+        );
         // Uncovered spellings forward, and the empty path is glibc's
         // ENOENT.
-        assert_eq!(guarded_rp("/etc"), PathRoute::Host);
-        assert_eq!(guarded_rp(""), PathRoute::Denied(libc::ENOENT));
+        assert_eq!(vfs_realpath("/etc"), PathRoute::Host);
+        assert_eq!(vfs_realpath(""), PathRoute::Denied(libc::ENOENT));
 
         let PathRoute::Vfs(dir_id) = vfs_opendir(&format!("{mp}/dir")) else {
             panic!("memfs opendir should route Vfs");
@@ -689,26 +690,21 @@ mod tests {
 
         // ---- host passthrough (open policy), incl. mount-claimed-missing ----
         // These hold the context lock while the policy layer realpath
-        // re-validates the host path — with realpath interposed that
-        // re-enters this crate in-process, so they must ride the
-        // production guard (see guarded_rp above) or glibc deadlocks.
+        // re-validates the host path — with realpath interposed, that
+        // re-enters this crate in-process; the whole-test engine_call
+        // (top of route_matrix) is what forwards that re-entry to the
+        // host instead of self-deadlocking the context lock.
         assert_eq!(
-            crate::sys::engine_call(|| vfs_open("/etc/definitely-host", libc::O_RDONLY)).unwrap(),
+            vfs_open("/etc/definitely-host", libc::O_RDONLY),
             PathRoute::Host
         );
+        assert_eq!(vfs_stat("/etc/definitely-host"), PathRoute::Host);
         assert_eq!(
-            crate::sys::engine_call(|| vfs_stat("/etc/definitely-host")).unwrap(),
-            PathRoute::Host
-        );
-        assert_eq!(
-            crate::sys::engine_call(|| vfs_open(&format!("{mp}/missing"), libc::O_RDONLY)).unwrap(),
+            vfs_open(&format!("{mp}/missing"), libc::O_RDONLY),
             PathRoute::Host,
             "a mount-claimed path absent from the image keeps the ENOENT pass-through"
         );
-        assert_eq!(
-            crate::sys::engine_call(|| vfs_write_path("/tmp/libtfs-preload-route-write")).unwrap(),
-            Ok(())
-        );
+        assert_eq!(vfs_write_path("/tmp/libtfs-preload-route-write"), Ok(()));
 
         // ---- exec/spawn trace surfaces (spec 25 §2, phase T2) ----
         // execve and posix_spawn share the engine's routing answer; the
@@ -716,24 +712,19 @@ mod tests {
         // armed for this block only, disarmed right after.
         let capture = dir.join("trace.jsonl");
         assert!(tfs::trace::arm(&capture), "the bus arms");
-        // Enter through the production seam (engine_call — the shims'
-        // re-entrancy guard): a direct unguarded route call leaves
-        // IN_ENGINE unset, and the extraction's host writes then
-        // re-enter the shims and deadlock the context lock on glibc
-        // (the 2026-08-21 ubuntu CI hang of this test).
-        let PathRoute::Vfs(exec_host) =
-            crate::sys::engine_call(|| vfs_materialize_exec(&tool)).unwrap()
-        else {
+        // The extraction's host writes re-enter the shims in-process on
+        // linux — safe here because the whole test rides the one
+        // engine_call at the top of route_matrix (the 2026-08-21 ubuntu
+        // CI hang was the unguarded form of exactly this entry).
+        let PathRoute::Vfs(exec_host) = vfs_materialize_exec(&tool) else {
             panic!("memfs exec should route Vfs");
         };
-        let PathRoute::Vfs(spawn_host) =
-            crate::sys::engine_call(|| vfs_materialize_spawn(&tool)).unwrap()
-        else {
+        let PathRoute::Vfs(spawn_host) = vfs_materialize_spawn(&tool) else {
             panic!("memfs spawn should route Vfs");
         };
         assert_eq!(exec_host, spawn_host, "one routing answer, two surfaces");
         assert_eq!(
-            crate::sys::engine_call(|| vfs_materialize_spawn("/etc/definitely-host")).unwrap(),
+            vfs_materialize_spawn("/etc/definitely-host"),
             PathRoute::Host
         );
         tfs::trace::disarm();

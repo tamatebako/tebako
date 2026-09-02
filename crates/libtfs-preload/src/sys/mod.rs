@@ -173,12 +173,17 @@ pub(crate) fn register_fork_guard() {
 /// dead threads.
 ///
 /// pub(crate) for the TEST seam: a test that calls the route layer
-/// directly must enter through this guard exactly like the shims do.
-/// Unguarded direct entry leaves IN_ENGINE unset, so the engine's own
-/// host IO (the extraction writes under the context lock) re-enters the
-/// shims and deadlocks the context lock on glibc (the 2026-08-21
-/// route_matrix ubuntu hang; macOS test binaries do not interpose
-/// in-process, so only Linux CI saw it).
+/// directly must enter through this guard exactly like the shims do —
+/// and it must wrap its WHOLE body in ONE engine_call (route_matrix is
+/// the exemplar), not wrap each call. A nested engine_call returns
+/// `None` (IN_ENGINE is already armed), so per-call wraps inside the
+/// body would panic on unwrap; plain inner calls behave exactly like a
+/// production shim re-entry under the armed guard. Unguarded direct
+/// entry leaves IN_ENGINE unset, so the engine's own host IO (mount
+/// reads, extraction writes, the policy layer's realpath re-validation)
+/// re-enters the shims and self-deadlocks the context RwLock on glibc
+/// (the 2026-08-21 and 2026-09-02 route_matrix ubuntu hangs; macOS test
+/// binaries do not interpose in-process, so only Linux CI saw them).
 pub(crate) fn engine_call<T>(f: impl FnOnce() -> T) -> Option<T> {
     engine_call_inner(
         IN_FORK_CHILD.load(Ordering::Relaxed) || in_foreign_process(),
@@ -1020,30 +1025,13 @@ pub unsafe extern "C" fn mmap64(
 /// `resolved` must name a caller buffer of `PATH_MAX` bytes (the
 /// realpath(3) contract).
 unsafe fn realpath_impl(path: *const c_char, resolved: *mut c_char) -> *mut c_char {
-    // Temporary wedge forensics (2026-09-02, route_matrix ubuntu hang):
-    // the debug lines name the path, the IN_ENGINE state, and each stage
-    // boundary, so a wedge's last printed line IS the wedged stage.
-    let dbg = std::env::var_os("TEBAKO_DEBUG_TFS").is_some();
-    if dbg {
-        let p = if path.is_null() {
-            std::ffi::CString::default()
-        } else {
-            unsafe { CStr::from_ptr(path) }.to_owned()
-        };
-        eprintln!(
-            "[preload] realpath enter path={p:?} in_engine={} foreign={}",
-            IN_ENGINE.with(|c| c.get()),
-            in_foreign_process()
-        );
+    if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
+        eprintln!("[preload] realpath");
     }
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_realpath()(path, resolved) };
     };
-    let routed = engine_call(|| route::vfs_realpath(p));
-    if dbg {
-        eprintln!("[preload] realpath routed={}", routed.is_some());
-    }
-    match routed {
+    match engine_call(|| route::vfs_realpath(p)) {
         Some(PathRoute::Vfs(c)) => {
             let bytes = c.as_bytes_with_nul();
             if bytes.len() > libc::PATH_MAX as usize {
@@ -1072,16 +1060,7 @@ unsafe fn realpath_impl(path: *const c_char, resolved: *mut c_char) -> *mut c_ch
             set_errno(e);
             std::ptr::null_mut()
         }
-        Some(PathRoute::Host) | None => {
-            if dbg {
-                eprintln!("[preload] realpath forwarding to host");
-            }
-            let out = unsafe { plat::real_realpath()(path, resolved) };
-            if dbg {
-                eprintln!("[preload] realpath host answered null={}", out.is_null());
-            }
-            out
-        }
+        Some(PathRoute::Host) | None => unsafe { plat::real_realpath()(path, resolved) },
     }
 }
 
