@@ -1,13 +1,17 @@
 name: CI
 
 on:
+  # Push runs on main only. A feat/* push with an open PR double-fires
+  # (push + pull_request share one concurrency group via head_ref), the
+  # PR run cancels the push run, and branch protection's rollup then
+  # keeps the CANCELLED check runs beside the SUCCESS ones on the same
+  # SHA — mergeStateStatus BLOCKED (the rerun-the-cancelled-run dance on
+  # #519/#520/#521). PR branches get CI from the pull_request event.
   push:
-    branches: [main, feat/*]
+    branches: [main]
   pull_request:
 
-# One run per branch/PR-head at a time: pushing to a branch with an open
-# PR would otherwise run every job twice (push + pull_request events);
-# a new run cancels the stale one.
+# One run per branch/PR-head at a time: a new push cancels the stale run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
