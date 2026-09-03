@@ -109,6 +109,13 @@ it: the patched load path journals every bare-name verdict, so the
 author discovers the spelling to declare from the journal rather than
 guessing.
 
+A second non-host sibling is `signing:` (grammar spec 31 §2): the
+slice's macOS entitlement declarations. Like `library_aliases:` it never
+widens host surface; unlike it, nothing rewrites anything at run time —
+press merges the union into the publisher's signing profile (spec 31
+§3/§4). The declaration law applies unchanged: no entitlement enters a
+signed profile that no slice declared (the §31.3 derivation aside).
+
 ## 3. D2 — the composition document (the docker-compose analogue)
 
 `tebako.yaml` — YAML, versioned JSON Schema, discovered walking up from
