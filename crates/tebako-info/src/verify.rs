@@ -337,11 +337,41 @@ pub fn verify_package(
     // 4 + 5. Per-slot manifest schema validation and digest agreement.
     // Runtime payload slots (the v1 legacy role) are launchers, not image
     // payloads: never mounted, no manifest checks (spec 15 §3).
+    //
+    // The L2 package manifest parses once — the raw-slot set below and
+    // the section-6 cross-checks share it. Slots a lock.spawned[] row
+    // claims as `exe`/`dll` carry RAW BYTES (a wrapper exe / a PE dll —
+    // never an image): no mount, no manifest check (spec 23 §13.6,
+    // spec 30 §2). The byte identity rides the trailer slot digest
+    // (check 2) and the lock's digest pin.
+    let pm_result = trailer.package_manifest();
+    let raw_slots: std::collections::BTreeSet<usize> = match &pm_result {
+        Ok(Some(pm)) => pm
+            .lock
+            .iter()
+            .flat_map(|lock| lock.spawned.iter())
+            .flat_map(|row| {
+                row.exe
+                    .slot
+                    .into_iter()
+                    .chain(row.dll.as_ref().and_then(|d| d.slot))
+            })
+            .map(|s| s as usize)
+            .collect(),
+        _ => Default::default(),
+    };
     let inspection = package::inspect_package(binary, package::Depth::Manifests, None)?;
     for slot in &inspection.slots {
         let name = format!("slot[{}] manifest", slot.index);
         if slot.format_hint == tpkg::TPKG_FORMAT_RUNTIME {
             checks.push(Check::skip(name, "runtime (legacy role) — never mounted"));
+            continue;
+        }
+        if raw_slots.contains(&slot.index) {
+            checks.push(Check::skip(
+                name,
+                "spawned runtime artifact (raw bytes — never mounted; the trailer digest and the lock pin carry its identity)",
+            ));
             continue;
         }
         let p = slot
@@ -399,7 +429,7 @@ pub fn verify_package(
     //    entrypoint of that payload (the name facet is unchecked, never
     //    failing, when the slot carries no usable L1 manifest —
     //    pre-manifest packages stay valid).
-    match trailer.package_manifest() {
+    match pm_result {
         Err(e) => checks.push(Check::fail(
             "package manifest",
             format!("extension block: {e}"),

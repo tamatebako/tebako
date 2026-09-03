@@ -1241,3 +1241,58 @@ fn validate_spawned_mirror_mismatches_are_65() {
         "{out}"
     );
 }
+
+/// The CARRIED spawned-runtime layout (packed-mn's 4-slot shape, spec 30
+/// §1/§2): slot 1 is the RAW wrapper exe — never an image. validate must
+/// skip its manifest check (the packed-mn#254 gate failure: slot[1]
+/// manifest FAILED with "cannot mount the image (errno 22)").
+#[test]
+fn validate_spawned_carried_raw_exe_slot_skips_the_manifest_check() {
+    use sha2::{Digest, Sha256};
+    let sha256_hex = |p: &Path| format!("{:x}", Sha256::digest(std::fs::read(p).unwrap()));
+
+    let w = TempDir::new("psp-raw");
+    let home = test_home("psp-raw");
+    let app = mk_image_files(
+        &w,
+        "spawned.tfs",
+        Some(SPAWNED_APP_MANIFEST),
+        &[("probe", b"#!/bin/sh\n")],
+    );
+    let exe = w.0.join("java-exe");
+    std::fs::write(&exe, b"\x7fELF raw wrapper bytes - never an image").unwrap();
+    let env = mk_image(&w, "java-env.tfs", None);
+
+    let pm_yaml = spawned_pm(&format!(
+        "lock:\n  spawned:\n   - engine: java\n     constraint: \">= 21, < 26\"\n     expose: [java]\n     version: \"21.0.12\"\n     tebako: \"2.1.6\"\n     carry: true\n     exe: {{slot: 1, sha256: \"{}\"}}\n     image: {{slot: 2, sha256: \"{}\"}}\n",
+        sha256_hex(&exe),
+        sha256_hex(&env)
+    ));
+    let pm = pm_file(&w, &pm_yaml);
+    let pkg =
+        w.0.join(format!("pkg-{}", COUNTER.fetch_add(1, Ordering::Relaxed)));
+    bundle(
+        &home,
+        &w,
+        &["--package-manifest", pm.to_str().unwrap(), "--exact-mounts"],
+        &[&app, &exe, &env],
+        &pkg,
+    );
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // slot 0 digest agreement, see above
+    assert!(
+        out.contains(
+            "  slot[1] manifest: skip — spawned runtime artifact (raw bytes — never mounted; the trailer digest and the lock pin carry its identity)\n"
+        ),
+        "{out}"
+    );
+    assert!(!out.contains("slot[1] manifest: FAILED"), "{out}");
+    // The lock row still mirrors the L1 edge — the cross-check stands.
+    assert!(
+        out.contains(
+            "  spawned[java]: ok — mirrors the L1 edge; the locked version 21.0.12 satisfies \">= 21, < 26\"\n"
+        ),
+        "{out}"
+    );
+}
