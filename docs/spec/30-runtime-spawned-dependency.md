@@ -164,7 +164,14 @@ exit 69 — never a host-PATH fallback. The launchers append AFTER the
 preload shim's dependency wrappers (a dep wrapper wins a basename tie)
 and exist whether or not the preload shim armed: the launcher execs
 the child wrapper exe fresh and needs no interposition. Windows has no
-launcher tier — the §2 argv bridge is the whole surface there.
+launcher tier — the §2 argv bridge is the whole surface there, and a
+SHELL-form spawn plans its first-token command inline through the §2
+plan FFI (the string is rebuilt as the quoted store exe plus the plan
+argv plus the span-bridged remainder, cmd.exe's separators and
+redirections preserved). POSIX shell form is the mirror image: the
+command token is never planned — the shell stays the exec target, the
+launcher tier resolves it, and only the operand tokens bridge
+(spec 22 §3.1's shell-form argument-bridging paragraph).
 
 ## 4. Jail interaction (union-of-needs, never inheritance)
 
