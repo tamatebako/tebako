@@ -353,6 +353,65 @@ pub struct LockedSlice {
     pub source: Option<String>,
 }
 
+/// One artifact of a locked spawned-runtime pair (spec 23 §13.6): the
+/// digest pin ALWAYS (spec 23 §13.4 records the digest carried or
+/// shared), the trailer slot when carried, and — the windows dll-era
+/// facet only — the PE install name (tebako-runtime-ruby#40, the same
+/// rule as [`LockedArtifact`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockedSpawnedArtifact {
+    /// The trailer slot carrying the bytes (carried rows only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<u32>,
+    pub sha256: DigestPin,
+    /// The PE install name (the windows dll facet only): a bare file
+    /// name, never the release-asset spelling.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_as: Option<String>,
+}
+
+/// One locked spawned-runtime edge (spec 23 §13.6, spec 30 §2): the app
+/// payload's L1 `requires[].kind: runtime` edge mirrored (engine /
+/// implementation / constraint / expose), the press-time pick's version
+/// pair (`version` = the runtime's language version, `tebako` = its own
+/// tebako line), the carry verdict, and the pair's digest pins. The
+/// loader (the bootstrap for a self-contained package) resolves each row
+/// into the store's `runtimes/` area at dispatch and exports the pin via
+/// `TEBAKO_SPAWN_LOCK`; the edge is NEVER co-mounted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LockedSpawned {
+    /// The L1 edge's engine (`java`, …).
+    pub engine: String,
+    /// The L1 edge's implementation axis (spec 28 §8), when named.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<String>,
+    /// The L1 edge's constraint, mirrored verbatim (the validate
+    /// cross-check asserts the mirror and that `version` satisfies it).
+    pub constraint: crate::manifest::Constraint,
+    /// The L1 edge's exposed command names (bare names), mirrored.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub expose: Vec<String>,
+    /// The press-time pick: the runtime's language version.
+    pub version: String,
+    /// The press-time pick: the runtime's own tebako line.
+    pub tebako: String,
+    pub carry: bool,
+    /// The wrapper exe — always present (the digest pin stands either
+    /// way); `slot` exactly when carried.
+    pub exe: LockedSpawnedArtifact,
+    /// The env image — always present; `slot` exactly when carried.
+    pub image: LockedSpawnedArtifact,
+    /// The windows dll-era facet, when the resolved release declares it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dll: Option<LockedSpawnedArtifact>,
+    /// The fetch coordinates (shared rows only — required there): the
+    /// press-resolved release download base (the `{base}/v<tebako>/…`
+    /// root the loader replays verbatim, spec 23 §13.6). On a carried
+    /// row it is provenance, never a fallback fetch path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
+}
+
 /// The `lock:` block of the L2 package manifest (spec 23 §4/§13): what
 /// press resolved is what runs — the full composition closure locked per
 /// slice. Run-time resolution follows the lock by locked digest, never
@@ -368,6 +427,12 @@ pub struct PackageLock {
     /// first, then its dependency closure.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub slices: Vec<LockedSlice>,
+    /// Every spawned-runtime edge (spec 30) of the app payload, in
+    /// manifest order, press-locked (spec 23 §13.6): the L1 edge mirror
+    /// (engine/implementation/constraint/expose), the pick's version
+    /// pair, the carry verdict, and the pair's digest pins.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub spawned: Vec<LockedSpawned>,
 }
 
 impl PackageLock {
@@ -377,8 +442,8 @@ impl PackageLock {
     }
 
     /// The trailer slots the lock claims (the carried runtime pair plus
-    /// every carried slice) — the set the bootstrap must never hand to
-    /// the driver as payload mounts.
+    /// every carried slice plus every carried spawned pair) — the set the
+    /// bootstrap must never hand to the driver as payload mounts.
     pub fn claimed_slots(&self) -> Vec<u32> {
         let mut out = Vec::new();
         if let Some(runtime) = &self.runtime {
@@ -392,6 +457,17 @@ impl PackageLock {
         for slice in &self.slices {
             if let Some(slot) = slice.slot {
                 out.push(slot);
+            }
+        }
+        for spawned in &self.spawned {
+            let mut artifacts = vec![&spawned.exe, &spawned.image];
+            if let Some(dll) = &spawned.dll {
+                artifacts.push(dll);
+            }
+            for artifact in artifacts {
+                if let Some(slot) = artifact.slot {
+                    out.push(slot);
+                }
             }
         }
         out
@@ -492,6 +568,83 @@ impl PackageLock {
             return Err(PackageManifestError::Invalid(
                 "duplicate lock.slices[].name (one lock row per slice)",
             ));
+        }
+        let mut edges: Vec<(&str, Option<&str>)> = Vec::new();
+        for spawned in &self.spawned {
+            check_non_empty(&spawned.engine, "lock.spawned[].engine must not be empty")?;
+            check_non_empty(&spawned.version, "lock.spawned[].version must not be empty")?;
+            check_non_empty(&spawned.tebako, "lock.spawned[].tebako must not be empty")?;
+            if let Some(implementation) = &spawned.implementation {
+                check_non_empty(
+                    implementation,
+                    "lock.spawned[].implementation, when present, must not be empty",
+                )?;
+            }
+            for name in &spawned.expose {
+                if name.is_empty()
+                    || name.contains('/')
+                    || name.contains('\\')
+                    || name.contains(':')
+                {
+                    return Err(PackageManifestError::Invalid(
+                        "lock.spawned[].expose names must be bare command names",
+                    ));
+                }
+            }
+            let mut artifacts = vec![(&spawned.exe, "exe"), (&spawned.image, "image")];
+            if let Some(dll) = &spawned.dll {
+                artifacts.push((dll, "dll"));
+            }
+            for (artifact, which) in artifacts {
+                artifact
+                    .sha256
+                    .validate("lock.spawned[] sha256 pins must be 64 lowercase hex")?;
+                match (spawned.carry, artifact.slot) {
+                    (true, Some(slot)) => {
+                        if slot >= TPKG_MAX_SLOTS {
+                            return Err(PackageManifestError::Invalid(
+                                "lock.spawned[] slot is outside the container's slot capacity (0..TPKG_MAX_SLOTS-1)",
+                            ));
+                        }
+                    }
+                    (true, None) => {
+                        return Err(PackageManifestError::Invalid(
+                            match which {
+                                "dll" => "lock.spawned[].dll with carry: true requires its trailer slot",
+                                _ => "lock.spawned[] with carry: true requires the exe and image slots (the carried pair)",
+                            },
+                        ));
+                    }
+                    (false, Some(_)) => {
+                        return Err(PackageManifestError::Invalid(
+                            "lock.spawned[] with carry: false declares no slots — a shared spawned runtime rides the machine cache",
+                        ));
+                    }
+                    (false, None) => {}
+                }
+                if let Some(install_as) = &artifact.install_as {
+                    if install_as.is_empty()
+                        || install_as.contains('/')
+                        || install_as.contains('\\')
+                    {
+                        return Err(PackageManifestError::Invalid(
+                            "lock.spawned[] install_as must be a bare file name (the PE import name)",
+                        ));
+                    }
+                }
+            }
+            if !spawned.carry && spawned.source.as_deref().map_or(true, |s| s.is_empty()) {
+                return Err(PackageManifestError::Invalid(
+                    "lock.spawned[] with carry: false requires its fetch coordinates (source:)",
+                ));
+            }
+            let edge = (spawned.engine.as_str(), spawned.implementation.as_deref());
+            if edges.contains(&edge) {
+                return Err(PackageManifestError::Invalid(
+                    "duplicate lock.spawned[] edge (one lock row per engine+implementation)",
+                ));
+            }
+            edges.push(edge);
         }
         let mut slots = self.claimed_slots();
         slots.sort_unstable();
@@ -1004,6 +1157,7 @@ mod tests {
                 dll: None,
             }),
             slices: vec![carried_slice(), shared_slice()],
+            spawned: vec![],
         }
     }
 
@@ -1019,6 +1173,118 @@ mod tests {
         let text = m.to_yaml().unwrap();
         let back = PackageManifest::from_yaml(&text).unwrap();
         assert_eq!(back, m);
+    }
+
+    /// A carried spawned-runtime row (spec 23 §13.6): the java pair.
+    fn spawned_java() -> LockedSpawned {
+        LockedSpawned {
+            engine: "java".to_string(),
+            implementation: None,
+            constraint: crate::manifest::Constraint::new(">= 21, < 26").unwrap(),
+            expose: vec!["java".to_string()],
+            version: "21.0.12".to_string(),
+            tebako: "2.1.5".to_string(),
+            carry: true,
+            exe: LockedSpawnedArtifact {
+                slot: Some(3),
+                sha256: DigestPin::PerTriplet(BTreeMap::from([(
+                    "macos-arm64".to_string(),
+                    sha('e'),
+                )])),
+                install_as: None,
+            },
+            image: LockedSpawnedArtifact {
+                slot: Some(4),
+                sha256: DigestPin::PerTriplet(BTreeMap::from([(
+                    "macos-arm64".to_string(),
+                    sha('f'),
+                )])),
+                install_as: None,
+            },
+            dll: None,
+            source: Some(
+                "tfs:github:tebako-packages/openjdk:2.1.5#tebako-runtime-2.1.5-21.0.12-macos-arm64.tfs"
+                    .to_string(),
+            ),
+        }
+    }
+
+    #[test]
+    fn spawned_rows_round_trip_and_claim_their_slots() {
+        let mut lock = carried_lock();
+        lock.spawned.push(spawned_java());
+        let mut m = minimal();
+        m.lock = Some(lock);
+        let text = m.to_yaml().unwrap();
+        let back = PackageManifest::from_yaml(&text).unwrap();
+        assert_eq!(back, m);
+
+        // the carried pair's slots join the claimed set (never mounted)
+        let claimed = m.lock.as_ref().unwrap().claimed_slots();
+        assert!(claimed.contains(&3) && claimed.contains(&4), "{claimed:?}");
+    }
+
+    #[test]
+    fn spawned_row_validation_is_fail_closed() {
+        let bad = |lock: PackageLock| {
+            let mut m = minimal();
+            m.lock = Some(lock);
+            m.validate().is_err()
+        };
+
+        // carried row without the pair slots
+        let mut lock = carried_lock();
+        lock.spawned.push(spawned_java());
+        lock.spawned[0].image.slot = None;
+        assert!(bad(lock));
+
+        // shared row declaring a slot
+        let mut lock = carried_lock();
+        let mut row = spawned_java();
+        row.carry = false;
+        row.exe.slot = None;
+        row.image.slot = None;
+        row.dll = None;
+        lock.spawned.push(row);
+        lock.spawned[0].exe.slot = Some(5);
+        assert!(bad(lock));
+
+        // shared row without fetch coordinates
+        let mut lock = carried_lock();
+        let mut row = spawned_java();
+        row.carry = false;
+        row.exe.slot = None;
+        row.image.slot = None;
+        row.source = None;
+        lock.spawned.push(row);
+        assert!(bad(lock));
+
+        // duplicate engine edge
+        let mut lock = carried_lock();
+        lock.spawned.push(spawned_java());
+        lock.spawned.push(spawned_java());
+        assert!(bad(lock));
+
+        // a non-bare expose name
+        let mut lock = carried_lock();
+        let mut row = spawned_java();
+        row.expose = vec!["/usr/bin/java".to_string()];
+        lock.spawned.push(row);
+        assert!(bad(lock));
+
+        // a carried pair slot colliding with a carried slice slot
+        let mut lock = carried_lock();
+        let mut row = spawned_java();
+        row.exe.slot = Some(0);
+        lock.spawned.push(row);
+        assert!(bad(lock));
+
+        // an empty engine
+        let mut lock = carried_lock();
+        let mut row = spawned_java();
+        row.engine = String::new();
+        lock.spawned.push(row);
+        assert!(bad(lock));
     }
 
     #[test]
@@ -1102,6 +1368,7 @@ mod tests {
         m.lock = Some(PackageLock {
             runtime: None,
             slices: vec![shared_slice()],
+            spawned: vec![],
         });
         m.validate().unwrap();
 
@@ -1111,6 +1378,7 @@ mod tests {
         m.lock = Some(PackageLock {
             runtime: None,
             slices: vec![carried_slice()],
+            spawned: vec![],
         });
         assert!(m.validate().is_err());
     }

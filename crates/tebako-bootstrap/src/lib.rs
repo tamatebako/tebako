@@ -2084,6 +2084,7 @@ fn resolve_runtime(
     }
 
     // The interpreter: cache hit / fat payload slot / download+verify.
+    let base_raw = releases_base();
     let exe = if file_exists(&layout.exe_path) {
         ux.cached(rr);
         layout.exe_path.clone()
@@ -2105,13 +2106,13 @@ fn resolve_runtime(
         }
         match payload_exe {
             Some(exe) => exe,
-            None => download_executable(runtime_ref, rr, &layout, &mut ux)?,
+            None => download_executable(runtime_ref, rr, &layout, &mut ux, &base_raw)?,
         }
     };
 
     // item 30b: the `;image` flag resolves the runtime image alongside.
     let image = if runtime_ref_wants_image(runtime_ref) {
-        Some(resolve_image(runtime_ref, rr, &layout, &mut ux)?)
+        Some(resolve_image(runtime_ref, rr, &layout, &mut ux, &base_raw)?)
     } else {
         None
     };
@@ -2121,7 +2122,7 @@ fn resolve_runtime(
     // declares no dll facet (every POSIX release, pre-#40 windows
     // releases). No handoff: the PE loader finds the DLL on its own.
     if runtime_ref_wants_image(runtime_ref) {
-        resolve_dll(runtime_ref, rr, &layout, &mut ux)?;
+        resolve_dll(runtime_ref, rr, &layout, &mut ux, &base_raw)?;
     }
     // The image value is a wire form, not necessarily a bare path: the
     // carried branch spells it `<package>:<slot>` (spec 17 §2.1).
@@ -2133,12 +2134,12 @@ fn download_executable(
     rr: &RuntimeRef,
     layout: &CacheLayout,
     ux: &mut BootUx,
+    base_raw: &str,
 ) -> Result<PathBuf, BootError> {
     let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
 
-    let base_raw = releases_base();
-    let base = skip_file_scheme(&base_raw).to_string();
-    let local = base_is_local(&base_raw);
+    let base = skip_file_scheme(base_raw).to_string();
+    let local = base_is_local(base_raw);
     let manifest_url = format!("{base}/v{}/manifest.json", rr.abi);
     let sums_url = format!("{base}/v{}/SHA256SUMS.txt", rr.abi);
 
@@ -2318,6 +2319,7 @@ fn resolve_image(
     rr: &RuntimeRef,
     layout: &CacheLayout,
     ux: &mut BootUx,
+    base_raw: &str,
 ) -> Result<PathBuf, BootError> {
     let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
     let id = ReleaseIdentity::of(rr, platform_string());
@@ -2334,9 +2336,8 @@ fn resolve_image(
         return Ok(image_path);
     }
 
-    let base_raw = releases_base();
-    let base = skip_file_scheme(&base_raw).to_string();
-    let local = base_is_local(&base_raw);
+    let base = skip_file_scheme(base_raw).to_string();
+    let local = base_is_local(base_raw);
     let manifest_url = format!("{base}/v{}/manifest.json", rr.abi);
     let sums_url = format!("{base}/v{}/SHA256SUMS.txt", rr.abi);
 
@@ -2605,6 +2606,7 @@ fn resolve_dll(
     rr: &RuntimeRef,
     layout: &CacheLayout,
     ux: &mut BootUx,
+    base_raw: &str,
 ) -> Result<Option<PathBuf>, BootError> {
     let (root, entry_dir, entry) = (&layout.root, &layout.entry_dir, &layout.entry);
 
@@ -2640,9 +2642,8 @@ fn resolve_dll(
         );
     }
 
-    let base_raw = releases_base();
-    let base = skip_file_scheme(&base_raw).to_string();
-    let local = base_is_local(&base_raw);
+    let base = skip_file_scheme(base_raw).to_string();
+    let local = base_is_local(base_raw);
     let dll_url = format!("{base}/v{}/{dll_asset}", rr.abi);
 
     if offline_mode() {
@@ -3141,6 +3142,473 @@ fn resolve_shared_slices(
     Ok(out)
 }
 
+// ---------------------------------------------------------------------
+// spawned runtime edges (spec 30 §2's dispatch half, spec 23 §13.6)
+// ---------------------------------------------------------------------
+
+/// The recorded digest of an installed artifact: the first whitespace
+/// token of its marker file, lowercased. `None` when the marker is
+/// missing or empty — the caller's incomplete-entry signal.
+fn recorded_digest(marker: &Path) -> Option<String> {
+    std::fs::read_to_string(marker)
+        .ok()?
+        .split_whitespace()
+        .next()
+        .map(str::to_lowercase)
+}
+
+/// One spawned artifact's cache state against its lock pin.
+enum SpawnedArtifactState {
+    /// The bytes are absent — the caller installs.
+    Missing,
+    /// Bytes + recorded digest present and agreeing with the pin.
+    Present,
+}
+
+/// The fail-closed pin discipline of a spawned row (spec 23 §13.4): an
+/// artifact present WITHOUT its digest marker is an incomplete cache
+/// entry (named — publish_entry's stance: never delete user state
+/// behind its back); a recorded digest DISAGREEING with the lock pin
+/// means the entry was installed from different bytes (a release re-cut
+/// under the same version) — named, never a silent re-fetch.
+fn spawned_artifact_state(
+    path: &Path,
+    marker: &Path,
+    pin: &str,
+    entry_dir: &Path,
+    what: &str,
+) -> Result<SpawnedArtifactState, BootError> {
+    if !file_exists(path) {
+        return Ok(SpawnedArtifactState::Missing);
+    }
+    let Some(recorded) = recorded_digest(marker) else {
+        return fail(
+            EX_TEBAKO_IO,
+            format!(
+                "cache entry {} exists but is incomplete (the {what} is present but its digest marker is missing)\n  remove that directory and run again",
+                entry_dir.display()
+            ),
+        );
+    };
+    if recorded != pin {
+        return fail(
+            EX_TEBAKO_SHA,
+            format!(
+                "SHA256 mismatch for the {what} — refusing to execute\n  expected: {pin} (the press-time lock pin, spec 23 §13.4)\n  recorded: {recorded} ({})\n  the cache entry {} holds bytes a different press pinned — remove that directory and run again",
+                marker.display(),
+                entry_dir.display()
+            ),
+        );
+    }
+    Ok(SpawnedArtifactState::Present)
+}
+
+/// The spawned entry's env-image spelling: the cached release index's
+/// verbatim `image.filename` when it names this identity, else the
+/// synthesized fallback — the same derivation resolve_image applies, so
+/// the completeness check and the carried staging agree on the name.
+fn spawned_image_asset(rr: &RuntimeRef, layout: &CacheLayout) -> String {
+    let id = ReleaseIdentity::of(rr, platform_string());
+    let cached_index = std::fs::read_to_string(layout.entry_dir.join("manifest.json")).ok();
+    cached_index
+        .as_deref()
+        .and_then(|text| id.entry(text))
+        .and_then(|e| manifest_entry_facet_filename(&e, "image"))
+        .unwrap_or_else(|| format!("{}.tfs", layout.asset_base))
+}
+
+/// The dispatch cache hit (spec 30 §2): the row's exe + image (+
+/// host-covered dll facet) all present with recorded digests agreeing
+/// with the lock pins. Any missing byte is simply `false` (the caller
+/// installs); a present-but-unmarked or disagreeing artifact is the
+/// named fail-closed error, never a guess.
+fn spawned_entry_complete(
+    rr: &RuntimeRef,
+    layout: &CacheLayout,
+    row: &tpkg::LockedSpawned,
+    self_path: &Path,
+) -> Result<bool, BootError> {
+    let what = format!("spawned runtime \"{}\" executable", row.engine);
+    let exe_pin = pin_for_host(&row.exe.sha256, &what, self_path)?;
+    match spawned_artifact_state(
+        &layout.exe_path,
+        &layout.entry_dir.join("sha256"),
+        exe_pin,
+        &layout.entry_dir,
+        &what,
+    )? {
+        SpawnedArtifactState::Missing => return Ok(false),
+        SpawnedArtifactState::Present => {}
+    }
+
+    let what = format!("spawned runtime \"{}\" image", row.engine);
+    let image_pin = pin_for_host(&row.image.sha256, &what, self_path)?;
+    let image_asset = spawned_image_asset(rr, layout);
+    match spawned_artifact_state(
+        &layout.entry_dir.join(&image_asset),
+        &layout.entry_dir.join(format!("{image_asset}.sha256")),
+        image_pin,
+        &layout.entry_dir,
+        &what,
+    )? {
+        SpawnedArtifactState::Missing => return Ok(false),
+        SpawnedArtifactState::Present => {}
+    }
+
+    // The dll facet is the windows PE era's (tebako-runtime-ruby#40): a
+    // row whose pin map does not cover this host carries no facet here.
+    if let Some(dll) = &row.dll {
+        if dll.sha256.for_host(tpkg::Platform::host()).is_some() {
+            let what = format!("spawned runtime \"{}\" dll", row.engine);
+            let Some(install_as) = dll.install_as.as_deref() else {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "the lock's spawned runtime \"{}\" carries a dll pin without its install_as (the PE import name) — re-press with a current tebako",
+                        row.engine
+                    ),
+                );
+            };
+            let dll_pin = pin_for_host(&dll.sha256, &what, self_path)?;
+            match spawned_artifact_state(
+                &layout.entry_dir.join(install_as),
+                &layout.entry_dir.join(format!("{install_as}.sha256")),
+                dll_pin,
+                &layout.entry_dir,
+                &what,
+            )? {
+                SpawnedArtifactState::Missing => return Ok(false),
+                SpawnedArtifactState::Present => {}
+            }
+        }
+    }
+    Ok(true)
+}
+
+/// Stage one carried spawned-runtime file (the env image; the windows
+/// dll facet) into the existing cache entry dir — the stage_carried_dll
+/// pattern: entry lock, re-check, tmp staging, the lock's digest pin,
+/// trust markers, atomic rename. Present bytes with their marker are
+/// never overwritten (the caller's completeness check owns the pin
+/// comparison).
+#[allow(clippy::too_many_arguments)]
+fn stage_carried_spawned_file(
+    self_path: &Path,
+    slot_index: u32,
+    slot: &tpkg::Slot,
+    pin: &tpkg::DigestPin,
+    install_name: &str,
+    layout: &CacheLayout,
+    what: &str,
+) -> Result<(), BootError> {
+    let dst = layout.entry_dir.join(install_name);
+    let marker = layout.entry_dir.join(format!("{install_name}.sha256"));
+    if file_exists(&dst) && file_exists(&marker) {
+        return Ok(());
+    }
+    let expected = pin_for_host(pin, what, self_path)?;
+
+    // Serialize against other bootstraps installing this entry (the
+    // same lock file the exe/image/dll installs use).
+    let locks = layout.root.join("locks");
+    mkdir_p(&locks).map_err(|e| {
+        BootError::new(
+            EX_TEBAKO_IO,
+            format!(
+                "cannot create tebako cache directories under {}: {e}",
+                layout.root.display()
+            ),
+        )
+    })?;
+    let lock_path = locks.join(format!("{}.lock", layout.entry));
+    let lock = flock_acquire(&lock_path, LOCK_TIMEOUT_MS).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::TimedOut {
+            BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "timed out after {}s waiting for another tebako bootstrap to finish installing \"{}\"\n  lock: {}\n  if no other tebako process is running, remove the stale lock file",
+                    LOCK_TIMEOUT_MS / 1000,
+                    layout.entry,
+                    lock_path.display()
+                ),
+            )
+        } else {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot acquire install lock {}: {e}", lock_path.display()),
+            )
+        }
+    })?;
+    if file_exists(&dst) && file_exists(&marker) {
+        lock_release(lock);
+        return Ok(());
+    }
+    let tmp_dir =
+        layout
+            .root
+            .join("tmp")
+            .join(format!("{}.{}.spawned", layout.entry, std::process::id()));
+    cleanup_tmp_entry(&tmp_dir, install_name);
+    let result = (|| -> Result<(), BootError> {
+        std::fs::create_dir(&tmp_dir).map_err(|e| {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot create {}: {e}", tmp_dir.display()),
+            )
+        })?;
+        let tmp = tmp_dir.join(install_name);
+        let actual = stage_locked_slot(self_path, slot, expected, &tmp, what)?;
+        make_readonly(&tmp);
+        os_rename(&tmp, &dst).map_err(|e| {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot install the {what} into the cache ({} -> {}): {e}",
+                    tmp.display(),
+                    dst.display()
+                ),
+            )
+        })?;
+        let _ = write_small_file(&marker, &format!("{actual}  {install_name}\n"));
+        let _ = write_small_file(
+            &layout.entry_dir.join(format!("{install_name}.origin")),
+            &format!(
+                "carried={} slot {slot_index}\nsha256={actual}\n",
+                self_path.display()
+            ),
+        );
+        Ok(())
+    })();
+    cleanup_tmp_entry(&tmp_dir, install_name);
+    lock_release(lock);
+    result
+}
+
+/// The carried spawned row's image (+ host-covered dll) facets — the
+/// single-file staging shared by the fresh-publish and the
+/// concurrent-winner paths.
+fn stage_carried_spawned_facets(
+    rr: &RuntimeRef,
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    layout: &CacheLayout,
+    row: &tpkg::LockedSpawned,
+) -> Result<(), BootError> {
+    // carry: true without the exe/image slots fails the lock's own
+    // validation at manifest parse; guard anyway — never an unwrap on
+    // this path (spec 14).
+    let Some(image_slot) = row.image.slot else {
+        return fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the lock of {} declares a carried spawned runtime \"{}\" without its image slot — re-press the package",
+                self_path.display(),
+                row.engine
+            ),
+        );
+    };
+    let image_asset = spawned_image_asset(rr, layout);
+    stage_carried_spawned_file(
+        self_path,
+        image_slot,
+        slot_at(m, image_slot, self_path)?,
+        &row.image.sha256,
+        &image_asset,
+        layout,
+        &format!("spawned runtime \"{}\" image", row.engine),
+    )?;
+    if let Some(dll) = &row.dll {
+        if dll.sha256.for_host(tpkg::Platform::host()).is_some() {
+            let Some(dll_slot) = dll.slot else {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "the lock of {} declares a carried spawned runtime \"{}\" dll without its slot — re-press the package",
+                        self_path.display(),
+                        row.engine
+                    ),
+                );
+            };
+            let Some(install_as) = dll.install_as.as_deref() else {
+                return fail(
+                    EX_TEBAKO_MANIFEST,
+                    format!(
+                        "the lock's spawned runtime \"{}\" carries a dll slot without its install_as (the PE import name) — re-press with a current tebako",
+                        row.engine
+                    ),
+                );
+            };
+            stage_carried_spawned_file(
+                self_path,
+                dll_slot,
+                slot_at(m, dll_slot, self_path)?,
+                &dll.sha256,
+                install_as,
+                layout,
+                &format!("spawned runtime \"{}\" dll", row.engine),
+            )?;
+        }
+    }
+    Ok(())
+}
+
+/// The carried spawned-runtime row (spec 30 §2, spec 23 §13.6): exe +
+/// image (+ host-covered dll) stage from their trailer slots into the
+/// machine runtime cache under the entry lock, digest-pinned by the
+/// lock. UNLIKE the primary carried runtime — whose env image mounts
+/// from the package as `<package>:<slot>` (spec 17 §2.1) — the spawned
+/// image lands as a real cache file: the driver's spawn planner
+/// resolves the entry from the store, never from this package.
+fn stage_carried_spawned(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    layout: &CacheLayout,
+    row: &tpkg::LockedSpawned,
+    ux: &mut BootUx,
+) -> Result<(), BootError> {
+    // The exe stages as a whole-entry publish — the primary carried
+    // runtime's staging (stage_carried_runtime's exe branch).
+    if !file_exists(&layout.exe_path) {
+        let Some(exe_slot) = row.exe.slot else {
+            return fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "the lock of {} declares a carried spawned runtime \"{}\" without its exe slot — re-press the package",
+                    self_path.display(),
+                    row.engine
+                ),
+            );
+        };
+        let what = format!("spawned runtime \"{}\" executable", row.engine);
+        let expected = pin_for_host(&row.exe.sha256, &what, self_path)?;
+        let slot = slot_at(m, exe_slot, self_path)?;
+        let Some(ins) = begin_entry_install(
+            &layout.root,
+            &layout.entry,
+            &layout.exe_path,
+            &layout.asset,
+            runtime_ref,
+        )?
+        else {
+            // A concurrent install won the race; the facets still run.
+            ux.cached(rr);
+            return stage_carried_spawned_facets(rr, self_path, m, layout, row);
+        };
+        match stage_locked_slot(self_path, slot, expected, &ins.tmp_asset, &what) {
+            Ok(actual) => {
+                let origin = format!(
+                    "runtime_ref={runtime_ref}\ncarried={} slot {}\nsha256={actual}\n",
+                    self_path.display(),
+                    exe_slot
+                );
+                publish_entry(
+                    ins,
+                    &layout.entry_dir,
+                    &layout.exe_path,
+                    &layout.asset,
+                    &actual,
+                    &origin,
+                )?;
+            }
+            Err(e) => {
+                cleanup_tmp_entry(&ins.tmp_dir, &layout.asset);
+                lock_release(ins.lock);
+                return Err(e);
+            }
+        }
+    }
+    stage_carried_spawned_facets(rr, self_path, m, layout, row)
+}
+
+/// The shared spawned-runtime row (carry: false): the pair lands from
+/// the lock's recorded fetch coordinates — `source` is the
+/// press-resolved release download base, replayed verbatim through the
+/// same shard/manifest.json machinery the primary runtime uses (spec 05
+/// §2) — then the caller's completeness re-assert fails closed if the
+/// release moved under the lock pins (spec 23 §13.4), never a silent
+/// drift.
+fn download_spawned(
+    runtime_ref: &str,
+    rr: &RuntimeRef,
+    layout: &CacheLayout,
+    row: &tpkg::LockedSpawned,
+    ux: &mut BootUx,
+) -> Result<(), BootError> {
+    // validate() already rejects a shared row without fetch
+    // coordinates; guard anyway — never an unwrap on this path.
+    let Some(base_raw) = row.source.as_deref().filter(|s| !s.is_empty()) else {
+        return fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the lock's spawned runtime \"{}\" rides the machine cache but carries no fetch coordinates (source:) — re-press the package with a current tebako",
+                row.engine
+            ),
+        );
+    };
+    download_executable(runtime_ref, rr, layout, ux, base_raw)?;
+    resolve_image(runtime_ref, rr, layout, ux, base_raw)?;
+    resolve_dll(runtime_ref, rr, layout, ux, base_raw)?;
+    Ok(())
+}
+
+/// spec 30 §2's dispatch half for a self-contained package: every
+/// `lock.spawned[]` edge resolves into the machine runtime cache BEFORE
+/// handoff — a cache hit by recorded digest, the carried pair staged
+/// from its trailer slots, or the shared pair fetched from the lock's
+/// recorded coordinates — and the pins reach the driver as
+/// `TEBAKO_SPAWN_LOCK` (`;`-joined `engine=lang_version:tebako_version`
+/// entries, manifest order). The driver's spawn planner then resolves
+/// cache-only: a spawn NEVER downloads. `TEBAKO_OFFLINE=1` blocks only
+/// the fetch path (cache hits and carried staging move no network
+/// bytes).
+fn resolve_spawned_edges(
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    lock: &tpkg::PackageLock,
+) -> Result<Vec<String>, BootError> {
+    let mut out = Vec::new();
+    for row in &lock.spawned {
+        // The synthesized ref reuses the whole runtime-resolution
+        // grammar (store layout, index identity, contract gate):
+        // `engine@lang_version;tebako=<line>;image`.
+        let runtime_ref = format!("{}@{};tebako={};image", row.engine, row.version, row.tebako);
+        let rr = parse_runtime_ref(&runtime_ref)?;
+        let layout = cache_layout(&rr)?;
+        let mut ux = BootUx::new();
+        ux.prog.set_quiet(m.is_quiet_notices());
+        if spawned_entry_complete(&rr, &layout, row, self_path)? {
+            ux.cached(&rr);
+        } else {
+            if row.carry {
+                stage_carried_spawned(&runtime_ref, &rr, self_path, m, &layout, row, &mut ux)?;
+            } else {
+                download_spawned(&runtime_ref, &rr, &layout, row, &mut ux)?;
+            }
+            // Fail closed when the install left the entry short of the
+            // lock's pins (a moved release, a partial publish) — never
+            // hand the driver a spawn lock the store cannot honor.
+            if !spawned_entry_complete(&rr, &layout, row, self_path)? {
+                return fail(
+                    EX_TEBAKO_IO,
+                    format!(
+                        "the spawned runtime \"{}\" installed into {} but the entry is still incomplete against the lock's pins — remove that directory and run again; if it persists, the release moved under the press-time pins (re-press the package)",
+                        row.engine,
+                        layout.entry_dir.display()
+                    ),
+                );
+            }
+        }
+        out.push(tpkg::runtime_store::spawn_lock_entry(
+            &row.engine,
+            &row.version,
+            &row.tebako,
+        ));
+    }
+    Ok(out)
+}
+
 /// spec 05 §4's scoped lazy-seed exception (locked 2026-08-25,
 /// tebako#460): a package that CARRIES artifacts seeds the machine cache
 /// with them at run time, so later packages share them. Best-effort — a
@@ -3510,6 +3978,7 @@ fn exec_runtime(
     jail: Option<&JailEnv>,
     lock: Option<&tpkg::PackageLock>,
     shared: &[(String, PathBuf)],
+    spawn_lock: Option<&str>,
 ) -> BootError {
     use std::os::unix::process::CommandExt;
 
@@ -3531,6 +4000,11 @@ fn exec_runtime(
         cmd.env("TEBAKO_JAIL", &jail.spec);
         cmd.env("TEBAKO_JAIL_SOURCE", jail.source);
         cmd.env("TEBAKO_JAIL_JOURNAL", &jail.journal);
+    }
+    if let Some(lock) = spawn_lock {
+        // spec 30 §3: the dispatch-time spawn pin — the driver's spawn
+        // planner resolves exactly these version pairs, cache-only.
+        cmd.env(tpkg::runtime_store::SPAWN_LOCK_VAR, lock);
     }
     let err = cmd.exec();
     BootError::new(
@@ -3558,9 +4032,10 @@ fn exec_runtime(
     jail: Option<&JailEnv>,
     lock: Option<&tpkg::PackageLock>,
     shared: &[(String, PathBuf)],
+    spawn_lock: Option<&str>,
 ) -> BootError {
     let nargv = handoff_argv(runtime, self_path, m, selection, argv, lock, shared);
-    let err = platform::spawn_handoff(runtime, &nargv[1..], image, jail);
+    let err = platform::spawn_handoff(runtime, &nargv[1..], image, jail, spawn_lock);
     BootError::new(
         EX_TEBAKO_IO,
         format!("cannot execute runtime {}: {err}", runtime.display()),
@@ -3690,11 +4165,21 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         Some(lock) => resolve_shared_slices(lock, &self_path)?,
         None => Vec::new(),
     };
+    // spec 30 §2's dispatch half: the app payload's spawned-runtime
+    // edges resolve into the machine cache BEFORE handoff (cache hit by
+    // recorded digest / carried staging / locked-coordinate fetch), and
+    // the pins ride to the driver as TEBAKO_SPAWN_LOCK — a spawn NEVER
+    // downloads.
+    let spawn_lock = match pm_lock {
+        Some(lock) => resolve_spawned_edges(&self_path, &m, lock)?,
+        None => Vec::new(),
+    };
     // spec 05 §4's scoped exception: carried artifacts seed the machine
     // cache — best-effort, journaled, never blocking the run.
     if let Some(lock) = pm_lock {
         lazy_seed(&self_path, &m, lock, &runtime_ref, &rr);
     }
+    let spawn_lock_value = (!spawn_lock.is_empty()).then(|| spawn_lock.join(";"));
     Err(exec_runtime(
         &runtime,
         image.as_deref(),
@@ -3705,6 +4190,7 @@ pub fn run(argv: &[String]) -> Result<std::convert::Infallible, BootError> {
         jail.as_ref(),
         pm_lock,
         &shared,
+        spawn_lock_value.as_deref(),
     ))
 }
 
@@ -3873,8 +4359,11 @@ mod dll_tests {
         assert_eq!(dll_install_as_from_manifest(&text, DLL), Err(()));
     }
 
-    /// The env-using flow (TEBAKO_RUNTIME_MIRROR / TEBAKO_OFFLINE) lives
-    /// in ONE test so the process-wide variables never race a sibling.
+    /// The env-using flow (TEBAKO_OFFLINE) lives in ONE test so the
+    /// process-wide variable never races a sibling; the mirror base is
+    /// the explicit parameter every caller resolves (resolve_runtime's
+    /// TEBAKO_RUNTIME_MIRROR consultation; the spawned-edge replay of
+    /// the lock row's `source`).
     #[test]
     fn resolve_dll_flow() {
         let home = dir("flow");
@@ -3884,14 +4373,11 @@ mod dll_tests {
         let dll_sha = sha256_file_hex(&mirror.join(DLL)).unwrap();
         let text = manifest(&dll_key(INSTALL_AS, &dll_sha));
         let (layout, rr) = dll_layout(&home, Some(&text));
-        std::env::set_var(
-            "TEBAKO_RUNTIME_MIRROR",
-            format!("file://{}", home.join("mirror").display()),
-        );
+        let base = format!("file://{}", home.join("mirror").display());
 
         // fresh install: the dll lands AS install_as with trusted markers
         let mut ux = BootUx::new();
-        let got = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap();
+        let got = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux, &base).unwrap();
         let dll_path = layout.entry_dir.join(INSTALL_AS);
         assert_eq!(got, Some(dll_path.clone()));
         assert!(dll_path.is_file());
@@ -3917,7 +4403,7 @@ mod dll_tests {
         // a cached run needs no mirror at all (offline-safe re-resolution)
         std::fs::remove_dir_all(home.join("mirror")).unwrap();
         let mut ux = BootUx::new();
-        let got = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap();
+        let got = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux, &base).unwrap();
         assert_eq!(got, Some(dll_path.clone()));
 
         // a declared-but-missing dll under TEBAKO_OFFLINE is the named error
@@ -3925,7 +4411,7 @@ mod dll_tests {
         std::fs::remove_file(layout.entry_dir.join(format!("{INSTALL_AS}.sha256"))).unwrap();
         std::env::set_var("TEBAKO_OFFLINE", "1");
         let mut ux = BootUx::new();
-        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap_err();
+        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux, &base).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         assert!(err.message.contains("TEBAKO_OFFLINE"), "{}", err.message);
         std::env::remove_var("TEBAKO_OFFLINE");
@@ -3939,7 +4425,7 @@ mod dll_tests {
         )
         .unwrap();
         let mut ux = BootUx::new();
-        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap_err();
+        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux, &base).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_SHA);
         assert!(!dll_path.exists());
         assert!(
@@ -3957,7 +4443,7 @@ mod dll_tests {
         )
         .unwrap();
         let mut ux = BootUx::new();
-        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux).unwrap_err();
+        let err = resolve_dll(RUNTIME_REF, &rr, &layout, &mut ux, &base).unwrap_err();
         assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
         assert!(err.message.contains("bare file name"), "{}", err.message);
         assert!(!home.join("runtimes").join("evil.dll").exists());
@@ -3966,18 +4452,17 @@ mod dll_tests {
         let home2 = dir("nofacet");
         let (layout2, rr2) = dll_layout(&home2, Some(&manifest("")));
         let mut ux = BootUx::new();
-        assert!(resolve_dll(RUNTIME_REF, &rr2, &layout2, &mut ux)
+        assert!(resolve_dll(RUNTIME_REF, &rr2, &layout2, &mut ux, &base)
             .unwrap()
             .is_none());
         // no cached release index at all (the fat-payload path): a no-op
         let home3 = dir("nomanifest");
         let (layout3, rr3) = dll_layout(&home3, None);
         let mut ux = BootUx::new();
-        assert!(resolve_dll(RUNTIME_REF, &rr3, &layout3, &mut ux)
+        assert!(resolve_dll(RUNTIME_REF, &rr3, &layout3, &mut ux, &base)
             .unwrap()
             .is_none());
 
-        std::env::remove_var("TEBAKO_RUNTIME_MIRROR");
         let _ = std::fs::remove_dir_all(&home);
         let _ = std::fs::remove_dir_all(&home2);
         let _ = std::fs::remove_dir_all(&home3);
@@ -4088,5 +4573,313 @@ mod manifest_identity_tests {
                 "{text:?} must be no match"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod spawned_tests {
+    use super::*;
+
+    const EXE_BYTES: &[u8] = b"fake spawned java exe\n";
+    const IMAGE_BYTES: &[u8] = b"fake spawned java image\n";
+
+    fn dir(tag: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-boot-spawned-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    fn sha_of(home: &Path, name: &str, bytes: &[u8]) -> String {
+        let path = home.join(name);
+        std::fs::write(&path, bytes).unwrap();
+        sha256_file_hex(&path).unwrap()
+    }
+
+    /// The row under test: a carried java edge, pins covering every host
+    /// (DigestPin::One) — the triplet-map coverage rule itself is pinned
+    /// by tpkg's package tests.
+    fn java_row(exe_sha: &str, image_sha: &str) -> tpkg::LockedSpawned {
+        tpkg::LockedSpawned {
+            engine: "java".to_string(),
+            implementation: None,
+            constraint: tpkg::Constraint::new(">= 21, < 26").unwrap(),
+            expose: vec!["java".to_string()],
+            version: "21.0.12".to_string(),
+            tebako: "2.1.5".to_string(),
+            carry: true,
+            exe: tpkg::LockedSpawnedArtifact {
+                slot: Some(1),
+                sha256: tpkg::DigestPin::One(exe_sha.to_string()),
+                install_as: None,
+            },
+            image: tpkg::LockedSpawnedArtifact {
+                slot: Some(2),
+                sha256: tpkg::DigestPin::One(image_sha.to_string()),
+                install_as: None,
+            },
+            dll: None,
+            source: None,
+        }
+    }
+
+    /// A hand-built cache layout for the java row (the dll_tests
+    /// pattern) — no env, no cache_root consultation.
+    fn java_layout(home: &Path) -> (CacheLayout, RuntimeRef) {
+        let platform = platform_string();
+        let entry = format!("java-21.0.12-2.1.5-{platform}");
+        let asset_base = format!("tebako-runtime-2.1.5-21.0.12-{platform}");
+        let asset = format!("{asset_base}{}", exe_suffix());
+        let entry_dir = home.join("runtimes").join(&entry);
+        let exe_path = entry_dir.join(&asset);
+        (
+            CacheLayout {
+                root: home.to_path_buf(),
+                entry_dir,
+                exe_path,
+                asset,
+                asset_base,
+                entry,
+            },
+            RuntimeRef {
+                r#type: "java".to_string(),
+                version: "21.0.12".to_string(),
+                abi: "2.1.5".to_string(),
+            },
+        )
+    }
+
+    /// The fake package: padding + the exe bytes + the image bytes, with
+    /// the manifest's slots 1/2 naming those regions (slot 0 is the app
+    /// payload, never touched by the spawned path).
+    fn fake_package(home: &Path) -> (PathBuf, tpkg::Manifest) {
+        let pkg_path = home.join("fake-package");
+        let mut bytes = vec![0u8; 64];
+        bytes.extend_from_slice(EXE_BYTES);
+        let exe_offset = 64u64;
+        let image_offset = exe_offset + EXE_BYTES.len() as u64;
+        bytes.extend_from_slice(IMAGE_BYTES);
+        std::fs::write(&pkg_path, &bytes).unwrap();
+        let m = tpkg::Manifest {
+            slots: vec![
+                tpkg::Slot::default(),
+                tpkg::Slot {
+                    offset: exe_offset,
+                    size: EXE_BYTES.len() as u64,
+                    ..Default::default()
+                },
+                tpkg::Slot {
+                    offset: image_offset,
+                    size: IMAGE_BYTES.len() as u64,
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        (pkg_path, m)
+    }
+
+    #[test]
+    fn recorded_digest_reads_the_first_token() {
+        let home = dir("recorded");
+        std::fs::create_dir_all(&home).unwrap();
+        let marker = home.join("x.sha256");
+        assert_eq!(recorded_digest(&marker), None);
+        std::fs::write(&marker, b"").unwrap();
+        assert_eq!(recorded_digest(&marker), None);
+        std::fs::write(&marker, b"AABBcc00  x.exe\n").unwrap();
+        assert_eq!(recorded_digest(&marker), Some("aabbcc00".to_string()));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn completeness_is_fail_closed() {
+        let home = dir("complete");
+        std::fs::create_dir_all(&home).unwrap();
+        let exe_sha = sha_of(&home, "exe-bytes", EXE_BYTES);
+        let image_sha = sha_of(&home, "image-bytes", IMAGE_BYTES);
+        let (layout, rr) = java_layout(&home);
+        std::fs::create_dir_all(&layout.entry_dir).unwrap();
+        let row = java_row(&exe_sha, &image_sha);
+        let self_path = home.join("fake-package");
+
+        // nothing there: simply incomplete (the caller installs)
+        assert!(!spawned_entry_complete(&rr, &layout, &row, &self_path).unwrap());
+
+        // exe present without its digest marker: the named
+        // incomplete-entry error, never a silent re-fetch
+        std::fs::write(&layout.exe_path, EXE_BYTES).unwrap();
+        let err = spawned_entry_complete(&rr, &layout, &row, &self_path).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_IO);
+        assert!(err.message.contains("incomplete"), "{}", err.message);
+
+        // marked but disagreeing with the lock pin: exit 70
+        std::fs::write(
+            layout.entry_dir.join("sha256"),
+            format!("{}  {}\n", "f".repeat(64), layout.asset),
+        )
+        .unwrap();
+        let err = spawned_entry_complete(&rr, &layout, &row, &self_path).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_SHA);
+        assert!(err.message.contains(&exe_sha), "{}", err.message);
+
+        // exe agreeing, image still missing: incomplete again
+        std::fs::write(
+            layout.entry_dir.join("sha256"),
+            format!("{exe_sha}  {}\n", layout.asset),
+        )
+        .unwrap();
+        assert!(!spawned_entry_complete(&rr, &layout, &row, &self_path).unwrap());
+
+        // the image lands with its marker: complete
+        let image_asset = format!("{}.tfs", layout.asset_base);
+        std::fs::write(layout.entry_dir.join(&image_asset), IMAGE_BYTES).unwrap();
+        std::fs::write(
+            layout.entry_dir.join(format!("{image_asset}.sha256")),
+            format!("{image_sha}  {image_asset}\n"),
+        )
+        .unwrap();
+        assert!(spawned_entry_complete(&rr, &layout, &row, &self_path).unwrap());
+
+        // a dll pin that does not cover this host carries no facet here
+        let mut row = row;
+        row.dll = Some(tpkg::LockedSpawnedArtifact {
+            slot: Some(3),
+            sha256: tpkg::DigestPin::PerTriplet(std::collections::BTreeMap::from([(
+                "a-triplet-that-is-never-the-host".to_string(),
+                "c".repeat(64),
+            )])),
+            install_as: Some("jvm.dll".to_string()),
+        });
+        assert!(spawned_entry_complete(&rr, &layout, &row, &self_path).unwrap());
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// The carried row stages exe + image into the runtime cache — and
+    /// the staged entry is EXACTLY what the driver's spawn planner picks
+    /// (tpkg::runtime_store::resolve_locked, the spec 30 §3 consumer).
+    #[test]
+    fn carried_row_stages_into_a_driver_resolvable_entry() {
+        let home = dir("carried");
+        std::fs::create_dir_all(&home).unwrap();
+        let exe_sha = sha_of(&home, "exe-bytes", EXE_BYTES);
+        let image_sha = sha_of(&home, "image-bytes", IMAGE_BYTES);
+        let (layout, rr) = java_layout(&home);
+        let (pkg, m) = fake_package(&home);
+        let row = java_row(&exe_sha, &image_sha);
+
+        let mut ux = BootUx::new();
+        stage_carried_spawned(
+            "java@21.0.12;tebako=2.1.5;image",
+            &rr,
+            &pkg,
+            &m,
+            &layout,
+            &row,
+            &mut ux,
+        )
+        .unwrap();
+
+        assert!(layout.exe_path.is_file());
+        let image_asset = format!("{}.tfs", layout.asset_base);
+        let image_path = layout.entry_dir.join(&image_asset);
+        assert!(image_path.is_file());
+        assert_eq!(
+            std::fs::read_to_string(layout.entry_dir.join("sha256")).unwrap(),
+            format!("{exe_sha}  {}\n", layout.asset)
+        );
+        assert_eq!(
+            std::fs::read_to_string(layout.entry_dir.join(format!("{image_asset}.sha256")))
+                .unwrap(),
+            format!("{image_sha}  {image_asset}\n")
+        );
+        let origin = std::fs::read_to_string(layout.entry_dir.join("origin")).unwrap();
+        assert!(origin.contains("carried="), "{origin}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            assert_eq!(
+                layout.exe_path.metadata().unwrap().permissions().mode() & 0o777,
+                0o755
+            );
+            assert_eq!(
+                image_path.metadata().unwrap().permissions().mode() & 0o777,
+                0o444
+            );
+        }
+
+        // the completeness check agrees, and the driver's locked pick
+        // finds exe + verified image (spec 30 §3's contract)
+        assert!(spawned_entry_complete(&rr, &layout, &row, &pkg).unwrap());
+        let picked = tpkg::runtime_store::resolve_locked(&home, "java", None, "21.0.12", "2.1.5")
+            .expect("the staged entry is the driver's spawn pick");
+        assert_eq!(picked.exe, layout.exe_path);
+        assert_eq!(picked.image.as_deref(), Some(image_path.as_path()));
+
+        // idempotent: a second staging over present bytes is a quiet hit
+        let mut ux = BootUx::new();
+        stage_carried_spawned(
+            "java@21.0.12;tebako=2.1.5;image",
+            &rr,
+            &pkg,
+            &m,
+            &layout,
+            &row,
+            &mut ux,
+        )
+        .unwrap();
+
+        // a tampered slot region under the same pin fails closed
+        // (nothing installed, exit 70)
+        let home2 = dir("carried-sha");
+        std::fs::create_dir_all(&home2).unwrap();
+        let (layout2, rr2) = java_layout(&home2);
+        let row2 = java_row(&"f".repeat(64), &image_sha);
+        let mut ux = BootUx::new();
+        let err = stage_carried_spawned(
+            "java@21.0.12;tebako=2.1.5;image",
+            &rr2,
+            &pkg,
+            &m,
+            &layout2,
+            &row2,
+            &mut ux,
+        )
+        .unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_SHA);
+        assert!(!layout2.exe_path.exists());
+
+        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&home2);
+    }
+
+    /// The env user (TEBAKO_HOME) is ONE test so the process-wide
+    /// variable never races a sibling: the full dispatch loop — carried
+    /// staging through resolve_spawned_edges — exports the spec 30 §3
+    /// wire form in manifest order.
+    #[test]
+    fn resolve_spawned_edges_exports_the_spawn_lock() {
+        let home = dir("lock-export");
+        std::fs::create_dir_all(&home).unwrap();
+        std::env::set_var("TEBAKO_HOME", &home);
+        let exe_sha = sha_of(&home, "exe-bytes", EXE_BYTES);
+        let image_sha = sha_of(&home, "image-bytes", IMAGE_BYTES);
+        let (pkg, m) = fake_package(&home);
+        let lock = tpkg::PackageLock {
+            runtime: None,
+            slices: vec![],
+            spawned: vec![java_row(&exe_sha, &image_sha)],
+        };
+
+        let entries = resolve_spawned_edges(&pkg, &m, &lock).unwrap();
+        assert_eq!(entries, vec!["java=21.0.12:2.1.5".to_string()]);
+
+        // a cache-hit run re-exports the same pin without touching bytes
+        let entries = resolve_spawned_edges(&pkg, &m, &lock).unwrap();
+        assert_eq!(entries, vec!["java=21.0.12:2.1.5".to_string()]);
+
+        std::env::remove_var("TEBAKO_HOME");
+        let _ = std::fs::remove_dir_all(&home);
     }
 }

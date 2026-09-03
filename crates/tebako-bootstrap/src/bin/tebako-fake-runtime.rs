@@ -21,6 +21,9 @@ fn main() {
     println!("JAIL={}", env_or_unset("TEBAKO_JAIL"));
     println!("JAIL-SOURCE={}", env_or_unset("TEBAKO_JAIL_SOURCE"));
     println!("JAIL-JOURNAL={}", env_or_unset("TEBAKO_JAIL_JOURNAL"));
+    // The spawned-edge probe's contract (tests/compose.rs): UNSET when
+    // the loader exported no spawn lock (spec 30 §3).
+    println!("SPAWN-LOCK={}", env_or_unset("TEBAKO_SPAWN_LOCK"));
     for (i, arg) in std::env::args().skip(1).enumerate() {
         println!("argv[{i}]={arg}");
     }

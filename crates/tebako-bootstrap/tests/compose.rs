@@ -127,6 +127,7 @@ fn self_contained_pkg(h: &Harness, name: &str, package_flags: u32) -> (PathBuf, 
             sha256: pin(&app),
             source: None,
         }],
+        spawned: vec![],
     };
     let pm = composed_pm(&runtime_ref, lock);
     let pkg = stitch_composed(
@@ -255,6 +256,7 @@ fn the_shared_slice_resolves_mid_run_by_its_locked_digest() {
                 source: Some(tebako_http::file_url(&shared_file)),
             },
         ],
+        spawned: vec![],
     };
     let pm = composed_pm(&runtime_ref, lock);
     let pkg = stitch_composed(
@@ -356,6 +358,7 @@ fn a_tampered_carried_exe_fails_closed_with_70() {
             dll: None,
         }),
         slices: vec![],
+        spawned: vec![],
     };
     let pm = composed_pm(&runtime_ref, lock);
     let pkg = stitch_composed(
@@ -416,6 +419,7 @@ fn a_shared_slice_mismatching_its_lock_pin_fails_closed_with_70() {
                 source: Some(tebako_http::file_url(&shared_file)),
             },
         ],
+        spawned: vec![],
     };
     let pm = composed_pm(&runtime_ref, lock);
     let pkg = stitch_composed(
@@ -477,6 +481,7 @@ fn a_lock_without_host_coverage_is_a_named_65() {
                 source: Some("file:///nonexistent.tfs".to_string()),
             },
         ],
+        spawned: vec![],
     };
     let pm = composed_pm(&runtime_ref, lock);
     let pkg = stitch_composed(
@@ -574,6 +579,7 @@ fn the_pointer_entrys_shared_slice_leads_the_image_list() {
                 source: Some("tfs:github:tebako-packages/mn2pdf-feedstock:2.0.0".to_string()),
             },
         ],
+        spawned: vec![],
     };
     let pm = tpkg::PackageManifest {
         schema_version: tpkg::PACKAGE_SCHEMA_VERSION,
@@ -658,5 +664,135 @@ fn the_pointer_entrys_shared_slice_leads_the_image_list() {
             "--tebako-entry".to_string(),
             "mnconvert".to_string(),
         ]
+    );
+}
+
+/// spec 30 §2's dispatch half (spec 23 §13.6): a self-contained package
+/// whose lock carries a spawned-runtime edge stages the carried pair
+/// into the machine runtime cache and hands the driver the spawn lock —
+/// `TEBAKO_SPAWN_LOCK=java=21.0.12:2.1.5` — echoed here by the fake
+/// runtime. The second run is the cache hit; both run under
+/// TEBAKO_OFFLINE (carried staging moves no network bytes). The staged
+/// entry is EXACTLY what the driver's spawn planner picks
+/// (tpkg::runtime_store::resolve_locked, the spec 30 §3 consumer).
+#[test]
+fn a_carried_spawned_runtime_dispatches_and_exports_the_lock() {
+    let h = Harness::new(rust_bootstrap());
+    let app = h.fake_image();
+    let env_image = h.tmp.0.join("java-edge-env.tfs");
+    std::fs::write(&env_image, b"FAKE RUNTIME ENV IMAGE").unwrap();
+    let java_exe = h.tmp.0.join("java-exe");
+    std::fs::write(&java_exe, b"FAKE SPAWNED JAVA EXE").unwrap();
+    let java_image = h.tmp.0.join("java-image.tfs");
+    std::fs::write(&java_image, b"FAKE SPAWNED JAVA IMAGE").unwrap();
+    let runtime_ref = format!("{};image", h.runtime_ref);
+    let lock = tpkg::PackageLock {
+        runtime: Some(tpkg::LockedRuntime {
+            version: harness::RUBY_VER.to_string(),
+            carry: true,
+            exe: Some(tpkg::LockedArtifact {
+                slot: 1,
+                sha256: pin(&h.fake_runtime),
+                install_as: None,
+            }),
+            image: Some(tpkg::LockedArtifact {
+                slot: 2,
+                sha256: pin(&env_image),
+                install_as: None,
+            }),
+            dll: None,
+        }),
+        slices: vec![tpkg::LockedSlice {
+            name: "mnconvert".to_string(),
+            version: APP_VER.to_string(),
+            carry: true,
+            slot: Some(0),
+            mount: Some("/__tfs__".to_string()),
+            sha256: pin(&app),
+            source: None,
+        }],
+        spawned: vec![tpkg::LockedSpawned {
+            engine: "java".to_string(),
+            implementation: None,
+            constraint: tpkg::Constraint::new(">= 21, < 26").unwrap(),
+            expose: vec!["java".to_string()],
+            version: "21.0.12".to_string(),
+            tebako: "2.1.5".to_string(),
+            carry: true,
+            exe: tpkg::LockedSpawnedArtifact {
+                slot: Some(3),
+                sha256: pin(&java_exe),
+                install_as: None,
+            },
+            image: tpkg::LockedSpawnedArtifact {
+                slot: Some(4),
+                sha256: pin(&java_image),
+                install_as: None,
+            },
+            dll: None,
+            source: None,
+        }],
+    };
+    let pm = composed_pm(&runtime_ref, lock);
+    let pkg = stitch_composed(
+        &h,
+        "mnconvert-java",
+        &[
+            (app.clone(), tpkg::TPKG_FORMAT_DWARFS, "/__tfs__"),
+            (h.fake_runtime.clone(), tpkg::TPKG_FORMAT_AUTO, ""),
+            (env_image.clone(), tpkg::TPKG_FORMAT_DWARFS, ""),
+            (java_exe.clone(), tpkg::TPKG_FORMAT_AUTO, ""),
+            (java_image.clone(), tpkg::TPKG_FORMAT_DWARFS, ""),
+        ],
+        &runtime_ref,
+        &pm,
+        0,
+    );
+    let home = h.home("home");
+
+    for attempt in 0..2 {
+        let (rc, out, err) = h.run(
+            &pkg,
+            &home,
+            &[("TEBAKO_OFFLINE", "1")],
+            &["mnconvert", "doc.xml"],
+        );
+        assert_eq!(rc, 0, "run {attempt} stdout:\n{out}\nstderr:\n{err}");
+        assert!(
+            out.contains("SPAWN-LOCK=java=21.0.12:2.1.5\n"),
+            "run {attempt} stdout:\n{out}"
+        );
+    }
+
+    // The carried pair landed in the runtime cache, in the store
+    // grammar the driver's resolve_locked scans — and the driver's
+    // locked pick finds exe + verified image.
+    let plat = harness::platform();
+    let exe = tebako_bootstrap::platform::exe_suffix();
+    let entry = home
+        .join("runtimes")
+        .join(format!("java-21.0.12-2.1.5-{plat}"));
+    assert!(
+        entry
+            .join(format!("tebako-runtime-2.1.5-21.0.12-{plat}{exe}"))
+            .is_file(),
+        "the staged exe: {}",
+        entry.display()
+    );
+    let image = entry.join(format!("tebako-runtime-2.1.5-21.0.12-{plat}.tfs"));
+    assert!(image.is_file(), "the staged image: {}", entry.display());
+    assert!(
+        entry
+            .join(format!("tebako-runtime-2.1.5-21.0.12-{plat}.tfs.sha256"))
+            .is_file(),
+        "the image trust marker: {}",
+        entry.display()
+    );
+    let picked = tpkg::runtime_store::resolve_locked(&home, "java", None, "21.0.12", "2.1.5")
+        .expect("the staged entry is the driver's spawn pick");
+    assert_eq!(
+        picked.image.as_deref(),
+        Some(image.as_path()),
+        "the driver's pick carries the verified image"
     );
 }

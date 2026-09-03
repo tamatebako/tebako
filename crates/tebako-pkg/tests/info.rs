@@ -1101,3 +1101,143 @@ fn default_output_is_the_legacy_trailer_dump() {
     assert!(out.contains("Trailer: valid (magic and crc32 ok)"), "{out}");
     assert!(!out.contains("kind: app"), "{out}");
 }
+
+// ---------------------------------------------------------------------
+// validate: the L2 lock.spawned[] ↔ L1 requires[].kind: runtime
+// cross-check (spec 30 §2, spec 23 §13.6)
+// ---------------------------------------------------------------------
+
+/// The L1 shape shared by the spawned cross-check tests: the java edge
+/// plus the `probe` entrypoint the L2 entries mirror. Its digest block
+/// can never name the image that embeds it (the check-5 note in
+/// verify.rs), so these packages exit 70 on digest agreement — the
+/// spawned checks are asserted by their report lines (the suite tests'
+/// rule).
+const SPAWNED_APP_MANIFEST: &str = "identity:\n\
+     \x20 schema_version: 1\n\
+     \x20 kind: app\n\
+     \x20 name: mn\n\
+     \x20 version: 1.0.0\n\
+     \x20 producer: {tool: tebako-pkg, tool_version: 0.1.0}\n\
+     \x20 created: \"2026-08-01T00:00:00Z\"\n\
+     \x20 source:\n\
+     \x20   commit: 4f3c2b1a9d8e7f605a4b3c2d1e0f9a8b7c6d5e4f\n\
+     \x20   builder: gha:run:20260721-1042\n\
+     \x20 sbom: {ref: sbom/mn-1.0.0.spdx.json}\n\
+     \x20 digest:\n\
+     \x20   tree_hash: sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\n\
+     \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+     \x20 signing: {state: unsigned}\n\
+     \x20 encryption: {state: none}\n\
+     provides:\n\
+     \x20 entrypoints:\n\
+     \x20   - name: probe\n\
+     \x20     path: /probe\n\
+     \x20     runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n\
+     \x20 platforms: [aarch64-macos, x86_64-linux-gnu]\n\
+     \x20 capabilities: {exec: true, read: true}\n\
+     requires:\n\
+     \x20 - kind: runtime\n\
+     \x20   engine: java\n\
+     \x20   constraint: \">= 21, < 26\"\n\
+     \x20   expose: [java]\n";
+
+/// The L2 shape shared by the spawned cross-check tests: the entries
+/// row plus whatever lock the test names.
+fn spawned_pm(lock_yaml: &str) -> String {
+    format!(
+        "schema_version: 1\n\
+         package: {{name: mn, version: 1.0.0, producer: {{tool: tebako-pkg, tool_version: 0.1.0}}, created: 2026-08-01T00:00:00Z}}\n\
+         entries:\n  - {{name: probe, slot: 0, entrypoint: probe, runtime_ref: ruby@3.4.2;tebako=0.15.9}}\n\
+         {lock_yaml}"
+    )
+}
+
+/// The lock block mirroring the L1 java edge (a shared row: no slots,
+/// the press-resolved coordinates + pins).
+const SPAWNED_LOCK_YAML: &str = "lock:\n\
+     \x20 spawned:\n\
+     \x20   - engine: java\n\
+     \x20     constraint: \">= 21, < 26\"\n\
+     \x20     expose: [java]\n\
+     \x20     version: \"21.0.12\"\n\
+     \x20     tebako: \"2.1.5\"\n\
+     \x20     carry: false\n\
+     \x20     exe: {sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n\
+     \x20     image: {sha256: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n\
+     \x20     source: \"https://github.com/tebako-packages/openjdk/releases/download\"\n";
+
+fn bundle_spawned_app(w: &TempDir, home: &Path, pm_yaml: &str) -> PathBuf {
+    let app = mk_image_files(
+        w,
+        "spawned.tfs",
+        Some(SPAWNED_APP_MANIFEST),
+        &[("probe", b"#!/bin/sh\n")],
+    );
+    let pm = pm_file(w, pm_yaml);
+    let pkg =
+        w.0.join(format!("pkg-{}", COUNTER.fetch_add(1, Ordering::Relaxed)));
+    bundle(
+        home,
+        w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
+    pkg
+}
+
+#[test]
+fn validate_spawned_mirror_passes_when_the_lock_mirrors_the_edge() {
+    let w = TempDir::new("psp-ok");
+    let home = test_home("psp-ok");
+    let pkg = bundle_spawned_app(&w, &home, &spawned_pm(SPAWNED_LOCK_YAML));
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement (check 5), see above
+    assert!(
+        out.contains(
+            "  spawned[java]: ok — mirrors the L1 edge; the locked version 21.0.12 satisfies \">= 21, < 26\"\n"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn validate_spawned_unmirrored_edge_is_65() {
+    let w = TempDir::new("psp-miss");
+    let home = test_home("psp-miss");
+    // The lock without the spawned row: the L1 java edge would never
+    // resolve on the standalone path — named, fail-closed.
+    let pkg = bundle_spawned_app(&w, &home, &spawned_pm(""));
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert!(
+        out.contains(
+            "  spawned[java]: FAILED — the app payload's L1 manifest declares this spawned-runtime edge but the lock carries no row"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn validate_spawned_mirror_mismatches_are_65() {
+    let w = TempDir::new("psp-bad");
+    let home = test_home("psp-bad");
+    // The row's locked version does not satisfy the mirrored constraint.
+    let pkg = bundle_spawned_app(
+        &w,
+        &home,
+        &spawned_pm(&SPAWNED_LOCK_YAML.replace("version: \"21.0.12\"", "version: \"20.0.2\"")),
+    );
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert!(
+        out.contains(
+            "  spawned[java]: FAILED — the locked version 20.0.2 does not satisfy the mirrored constraint \">= 21, < 26\""
+        ),
+        "{out}"
+    );
+}

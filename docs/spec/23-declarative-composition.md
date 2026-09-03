@@ -9,8 +9,10 @@ is Phase-R. Dogfooded 2026-08-14: a JVM boot recorded, drafted, and
 replayed under deny with zero hand edits and zero unexpected denials.
 **Amended 2026-08-25 (owner-locked, tebako#460): §13 — the composition
 spectrum: per-slice `carry`, the `self-contained`/`shared-runtime`
-presets, and the `platforms:` coverage assertion. PLANNED; lands with
-the implementation PR (spec 14 order).**
+presets, and the `platforms:` coverage assertion. The lock substrate
+(§4's rows, §13.1's carry verdicts, `claimed_slots`, shared-slice
+resolution, lazy-seed) is IMPLEMENTED; §13.6's spawned-runtime rows land
+with the standalone-dispatch PR (spec 30 §2's bootstrap half).**
 
 A tebako run is a composition of one runtime (exe + env image) and N
 payload slices, executed under one host-access policy. This spec makes
@@ -184,7 +186,9 @@ and locks, per slice, into the L2 manifest: the concrete version, the
 the per-target-triplet digest map (§13.3). What press tested is what
 runs, always: a shared slice resolves at run time BY THE LOCKED DIGEST,
 never by fresh semver (fail-closed on mismatch). Carry changes where
-the bytes come from, never WHAT runs.
+the bytes come from, never WHAT runs. Spawned-runtime edges (spec 30)
+lock the same way, as `lock.spawned[]` rows (§13.6) — the press-time
+pick's version pair and digest pins, exactly like any DEPENDS.
 
 ## 5. The default policy — jail-safe by default
 
@@ -430,7 +434,10 @@ stands unchanged.)
 
 ## 13. The composition spectrum — carried and shared (owner-locked 2026-08-25, tebako#460)
 
-**Status: PLANNED** — lands with the implementation PR (spec 14 order).
+**Status: the lock substrate is IMPLEMENTED** (the `lock:` L2 block,
+`carry` verdicts, `claimed_slots`, shared-slice resolution, lazy-seed —
+and, with §13.6, the spawned-runtime rows). The compose-document presets
+(§13.2's D2 surface) land with their own PR.
 Fat and lean are the same architecture: ONE composition pipeline whose
 only dial is which resolved slices are physically embedded as trailer
 slots. "Fat" meant *fully resolved with no hanging dependencies*;
@@ -526,11 +533,53 @@ native bytes in a "universal" image fail there, before publication.
 |---|---|
 | `carry` / preset / `platforms:` assertion grammar | THIS section (D2 §3 mirrors it) |
 | The lock's digest-map shape | the L2 package-manifest schema (spec 02 §5b type-2 block; `schema/tebako-compose-v1.schema.json` stays the D2 document's) |
+| The lock's spawned-row shape (`lock.spawned[]`) | §13.6 (the L2 schema mirrors it; spec 30 §2 consumes it) |
 | Coverage declaration | spec 03 §3 (unchanged — the assertion references it) |
 | Registry row shape (concrete only) | spec 04 (amended: one sentence) |
 | Lazy-seed mechanics | spec 05 §4 (amended: the scoped exception) |
 | Two-slot carried runtime | spec 19 (amended) + tebako#458 |
 | Lean/fat alias warning | the named-warning vocabulary (invariant 9); exit codes unchanged — carry choices never gate a run |
+
+### 13.6 The spawned-runtime rows (`lock.spawned[]`)
+
+A payload's `kind: runtime` edge (spec 30) joins the lock like any
+resolved slice — press version-locks the edge (spec 30 §1) and records
+the dispatch channel. One row per edge:
+
+```yaml
+lock:
+  spawned:
+    - engine: java                  # the L1 edge's engine (+ `implementation:` when the edge names one)
+      constraint: ">= 21, < 26"     # mirrored from the L1 edge (press validate cross-checks)
+      expose: [java]                # mirrored from the L1 edge
+      version: "21.0.12"            # the press-time pick (the runtime's language version)
+      tebako: "2.1.5"               # the pick's own tebako line
+      carry: true                   # the same two words as §13.1
+      exe:   {slot: 1, sha256: …}   # carried: the pair's trailer slots + digest pins
+      image: {slot: 2, sha256: …}   # (`dll:` rides too on the windows dll facet)
+      # carry: false instead: no slots — `source:` records the
+      # press-resolved release download base (the `{base}/v<tebako>/…`
+      # root, replayed verbatim like TEBAKO_RUNTIME_MIRROR's value);
+      # the digest pins stand, per §13.3's universal-or-triplet-map
+      # shape.
+```
+
+Run time reads ONE block: the loader resolves each row into the store's
+`runtimes/` area — carried → slot extract + digest-verify + install;
+shared → cache hit on the locked identity + digest, else fetch the pair
+from the row's `source` + verify + install — and exports the dispatch
+lock (`TEBAKO_SPAWN_LOCK`, spec 30 §2). A carried spawned pair is never
+mounted: its slots ride the lock's claimed-slot set, invisible to the
+driver's mount composition. Offline discipline is spec 05's: carried
+installs and cache hits never touch the network; a shared miss offline
+is the named error. A locked spawn row whose pinned runtime later
+vanishes from the store is the driver's named error, never a silent
+re-pick (spec 30 §2).
+
+The per-engine download base chain (spec 05 §2) is not a prerequisite:
+the shared row's `source:` is the press-resolved release download base,
+replayed verbatim — the same dodge shared slices already use, and the
+answer until the per-engine chain lands.
 
 ## 14. The settings registry — one setting, three channels, one SSOT (owner-directed 2026-08-26, tebako#400)
 

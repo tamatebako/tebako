@@ -191,9 +191,9 @@ pub use merkle::{
 };
 pub use model::{Manifest, Slot, V2Extension};
 pub use package::{
-    DigestPin, LockedArtifact, LockedRuntime, LockedSlice, MountMode, PackageEntry,
-    PackageIdentity, PackageLock, PackageManifest, PackageManifestError, PackageMount, Precedence,
-    PACKAGE_SCHEMA_VERSION,
+    DigestPin, LockedArtifact, LockedRuntime, LockedSlice, LockedSpawned, LockedSpawnedArtifact,
+    MountMode, PackageEntry, PackageIdentity, PackageLock, PackageManifest, PackageManifestError,
+    PackageMount, Precedence, PACKAGE_SCHEMA_VERSION,
 };
 pub use region::{resolve_slot_region, SlotRegion, SlotRegionError};
 

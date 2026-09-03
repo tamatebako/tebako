@@ -8,7 +8,7 @@
 //! tebako-pkg info [--full|--slot N|--json|--verify|--depth N|--require-signed] <archive>
 //! tebako-pkg validate [--require-signed] <binary>
 //! tebako-pkg bundle --bootstrap <exe> --image <img[:mountpoint]>... -o <file>
-//!                    [--runtime-ref <ref>] [--lean] [--launcher-abi <n>]
+//!                    [--runtime-ref <ref>] [--lean] [--exact-mounts] [--launcher-abi <n>]
 //!                    [--package-manifest <file.yaml>]
 //! tebako-pkg unbundle <binary> -o <dir>
 //! tebako-pkg reassemble <dir> -o <file>
@@ -27,9 +27,9 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use tebako_pkg::{
-    bundle, default_mount, info, info_rich, insert_image, parse_image_spec, reassemble,
-    remove_image, set_runtime, unbundle, validate, InfoOptions, PackageImage, PackageOptions,
-    SignRequest,
+    bundle, bundle_exact, default_mount, info, info_rich, insert_image, parse_image_spec,
+    reassemble, remove_image, set_runtime, unbundle, validate, InfoOptions, PackageImage,
+    PackageOptions, SignRequest,
 };
 
 fn main() -> ExitCode {
@@ -78,6 +78,7 @@ struct Args {
     runtime_ref: Option<String>,
     package_manifest: Option<String>,
     lean: bool,
+    exact_mounts: bool,
     launcher_abi: Option<i64>,
     verbose: bool,
     sign: Option<SignRequest>,
@@ -113,6 +114,7 @@ impl Args {
             match name {
                 "-v" | "--verbose" => a.verbose = true,
                 "--lean" => a.lean = true,
+                "--exact-mounts" => a.exact_mounts = true,
                 "--full" => a.full = true,
                 "--json" => a.json = true,
                 "--verify" => a.verify = true,
@@ -339,7 +341,18 @@ fn cmd_bundle(rest: &[String]) -> ExitCode {
         sign: a.sign.unwrap_or_default(),
         package_manifest,
     };
-    match bundle(Path::new(&bootstrap), &images, Path::new(&output), &opts) {
+    // --exact-mounts (spec 30 §1 / spec 23 §13.6): mount points are used
+    // exactly as given — an <img> with no `:mount` carries an EMPTY mount
+    // point. Required when the press carries lock-claimed slots (a carried
+    // runtime pair, a carried spawned-runtime pair): those slots are never
+    // mounted, and recording the default `/__tfs_N__` spelling would lie in
+    // the trailer.
+    let result = if a.exact_mounts {
+        bundle_exact(Path::new(&bootstrap), &images, Path::new(&output), &opts)
+    } else {
+        bundle(Path::new(&bootstrap), &images, Path::new(&output), &opts)
+    };
+    match result {
         Ok(()) => {
             if a.verbose {
                 println!("Wrote package: {output} ({} image slot(s))", images.len());

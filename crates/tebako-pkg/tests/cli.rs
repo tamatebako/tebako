@@ -333,3 +333,59 @@ fn flag_forms() {
     assert!(out.contains("Flags: 0x3 (LEAN|SIGNED_V2)"), "{out}");
     assert!(out.contains("Signature: OpenPGP v2"), "{out}");
 }
+
+/// spec 30 §1 / spec 23 §13.6: `--exact-mounts` keeps an `<img>` with no
+/// `:mount` at an EMPTY mount point (the lock-claimed slot shape — a
+/// carried runtime/spawned-runtime slot is never mounted, so the trailer
+/// must not record a fabricated `/__tfs_N__`); without the flag the
+/// default-mount behavior is untouched (the C++ contract).
+#[test]
+fn exact_mounts_flag_keeps_bare_image_mounts_empty() {
+    let w = TempDir::new("cli-exact");
+    let boot = w.0.join("boot.bin");
+    std::fs::write(&boot, patterned_bytes(512, 0x5a)).unwrap();
+
+    // Default: the bare second image takes default_mount(1).
+    let pkg = w.0.join("pkg-default");
+    let (rc, _, err) = run(
+        &[
+            "bundle",
+            "--bootstrap",
+            boot.to_str().unwrap(),
+            "--image",
+            fixture("simple.dwarfs").to_str().unwrap(),
+            "--image",
+            fixture("simple.sqfs").to_str().unwrap(),
+            "-o",
+            pkg.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "default bundle");
+    let mut f = std::fs::File::open(&pkg).unwrap();
+    let m = tpkg::read_from(&mut f).unwrap();
+    assert_eq!(m.slots[1].mount_point_str().unwrap(), "/__tfs_1__");
+
+    // --exact-mounts: the bare second image stays mount-less.
+    let pkg = w.0.join("pkg-exact");
+    let (rc, _, err) = run(
+        &[
+            "bundle",
+            "--exact-mounts",
+            "--bootstrap",
+            boot.to_str().unwrap(),
+            "--image",
+            &format!("{}:/__tfs__", fixture("simple.dwarfs").display()),
+            "--image",
+            fixture("simple.sqfs").to_str().unwrap(),
+            "-o",
+            pkg.to_str().unwrap(),
+        ],
+        &w.0,
+    );
+    assert_eq!((rc, err.as_str()), (0, ""), "bundle --exact-mounts");
+    let mut f = std::fs::File::open(&pkg).unwrap();
+    let m = tpkg::read_from(&mut f).unwrap();
+    assert_eq!(m.slots[0].mount_point_str().unwrap(), "/__tfs__");
+    assert_eq!(m.slots[1].mount_point_str().unwrap(), "");
+}
