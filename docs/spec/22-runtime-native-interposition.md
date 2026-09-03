@@ -456,6 +456,29 @@ strictest one.) A shell string whose operands are all host paths
 behaves exactly as on any host — the boundary is the VFS-operand case
 only.
 
+**Shell-form argument bridging (locked 2026-09-03; ruby#107, the
+packed-mn#254 jing failure is its tripwire).** A shell string's
+OPERANDS bridge parent-side on every platform, by the interpreter's
+spawn hook: the command line is tokenized on unquoted blanks (both
+quote characters honored), one wrapping quote layer is stripped for
+the probe, and any token naming an embedded path
+(`tebako_path_is_embedded`) is materialized through
+`tebako_fs_exec_materialize` and the token rewritten to the host twin
+— the windows argv bridge's own primitive and pass-through discipline
+(byte-identical when nothing bridges; a covered path the mounts do not
+hold keeps its spelling and the child answers honestly). The COMMAND
+token is never planned on POSIX: the shell stays the exec target so a
+composite string (redirections, pipes, `&&`) keeps its semantics, and
+the command's own PATH resolution rides spec 30 §3's launcher tier.
+On windows the first-token command IS offered to the §3.2/spec-30 plan
+FFI; when planned, the string is rebuilt as the quoted store exe plus
+the plan argv plus the span-bridged remainder, cmd.exe's separators
+and redirections preserved. (Before this lock the matrix's shell
+columns covered the COMMAND's resolution only; an embedded OPERAND —
+jing's `/__tfs__/…/jing-….jar` — passed through verbatim and the child
+answered `Unable to access jarfile`, and on windows the bare command
+itself was never planned.)
+
 **Rule E2.** Exec of a VFS-resident binary materializes the binary plus
 its loader closure (the same exec cache as Class L —
 `TEBAKO_EXEC_CACHE`, §6) and execs the real path with the original
