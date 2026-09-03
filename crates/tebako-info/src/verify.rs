@@ -406,7 +406,10 @@ pub fn verify_package(
             exit_code::MALFORMED,
         )),
         Ok(None) => {}
-        Ok(Some(pm)) => entry_checks(binary, &pm, &inspection, &mut checks)?,
+        Ok(Some(pm)) => {
+            entry_checks(binary, &pm, &inspection, &mut checks)?;
+            spawned_checks(&pm, &inspection, &mut checks);
+        }
     }
 
     Ok((checks, Some(inspection)))
@@ -548,6 +551,147 @@ fn entry_checks(
         }
     }
     Ok(())
+}
+
+/// The spawned-edge cross-check of [`verify_package`] (spec 30 §2, spec
+/// 23 §13.6; one check per L2 lock row plus one per unmirrored L1 edge,
+/// named `spawned[<engine>]`). The lock's `spawned[]` rows are the
+/// bootstrap's ONLY edge source (the size gate bars in-image reads), so
+/// press mirrors the app payload's L1 `requires[].kind: runtime` edges
+/// into them and this check pins the mirror both ways: every row mirrors
+/// an L1 edge (engine + implementation parity, the constraint verbatim,
+/// the locked version satisfying it, the expose set verbatim) and every
+/// L1 edge has its row. The mirror source is the PRIMARY entry's slot
+/// image; a package whose app slot carries no usable L1 manifest skips —
+/// pre-manifest packages stay valid (the entry cross-check's rule).
+fn spawned_checks(
+    pm: &tpkg::PackageManifest,
+    inspection: &PackageInspection,
+    checks: &mut Vec<Check>,
+) {
+    let rows: &[tpkg::LockedSpawned] = match pm.lock.as_ref() {
+        Some(lock) => &lock.spawned,
+        None => &[],
+    };
+    let app_l1 = pm
+        .entries
+        .first()
+        .and_then(|e| e.slot)
+        .and_then(|slot| inspection.slots.get(slot as usize))
+        .and_then(|s| s.payload.as_ref())
+        .filter(|p| p.mount_error.is_none());
+    let usable = match app_l1 {
+        Some(p) => match (&p.manifest, &p.manifest_validation) {
+            (Some(m), None) => Some(m),
+            _ => None,
+        },
+        None => None,
+    };
+    let Some(l1) = usable else {
+        for row in rows {
+            checks.push(Check::skip(
+                format!("spawned[{}]", row.engine),
+                "the app payload carries no usable L1 manifest — the spawned-edge mirror is unchecked"
+                    .to_string(),
+            ));
+        }
+        return;
+    };
+
+    let edges: Vec<(&str, Option<&str>, &tpkg::Constraint, &[String])> = l1
+        .requires
+        .iter()
+        .filter_map(|r| match r {
+            tpkg::Requirement::Runtime {
+                engine,
+                implementation,
+                constraint,
+                expose,
+            } => Some((
+                engine.as_str(),
+                implementation.as_deref(),
+                constraint,
+                expose.as_slice(),
+            )),
+            _ => None,
+        })
+        .collect();
+
+    for row in rows {
+        let name = format!("spawned[{}]", row.engine);
+        let edge = edges.iter().find(|(engine, implementation, ..)| {
+            *engine == row.engine.as_str() && *implementation == row.implementation.as_deref()
+        });
+        let Some((_, _, constraint, expose)) = edge else {
+            checks.push(Check::fail(
+                name,
+                "the lock's spawned row mirrors no `kind: runtime` edge of the app payload's L1 manifest — re-press with a current tebako".to_string(),
+                exit_code::MALFORMED,
+            ));
+            continue;
+        };
+        if constraint.as_str() != row.constraint.as_str() {
+            checks.push(Check::fail(
+                name,
+                format!(
+                    "the constraint mirror differs — L1 declares \"{}\", the lock carries \"{}\" — re-press with a current tebako",
+                    constraint.as_str(),
+                    row.constraint.as_str()
+                ),
+                exit_code::MALFORMED,
+            ));
+            continue;
+        }
+        if !tpkg::versions::from_validated(&row.constraint).matches(&row.version) {
+            checks.push(Check::fail(
+                name,
+                format!(
+                    "the locked version {} does not satisfy the mirrored constraint \"{}\" — re-press with a current tebako",
+                    row.version,
+                    row.constraint.as_str()
+                ),
+                exit_code::MALFORMED,
+            ));
+            continue;
+        }
+        let declared: std::collections::BTreeSet<&str> =
+            expose.iter().map(String::as_str).collect();
+        let mirrored: std::collections::BTreeSet<&str> =
+            row.expose.iter().map(String::as_str).collect();
+        if declared != mirrored {
+            checks.push(Check::fail(
+                name,
+                format!(
+                    "the expose mirror differs — L1 declares [{}], the lock carries [{}] — re-press with a current tebako",
+                    declared.into_iter().collect::<Vec<_>>().join(", "),
+                    mirrored.into_iter().collect::<Vec<_>>().join(", ")
+                ),
+                exit_code::MALFORMED,
+            ));
+            continue;
+        }
+        checks.push(Check::pass(
+            name,
+            format!(
+                "mirrors the L1 edge; the locked version {} satisfies \"{}\"",
+                row.version,
+                row.constraint.as_str()
+            ),
+        ));
+    }
+
+    for (engine, implementation, ..) in &edges {
+        let mirrored = rows.iter().any(|row| {
+            row.engine.as_str() == *engine && row.implementation.as_deref() == *implementation
+        });
+        if !mirrored {
+            checks.push(Check::fail(
+                format!("spawned[{engine}]"),
+                "the app payload's L1 manifest declares this spawned-runtime edge but the lock carries no row — a standalone package would never resolve it; re-press with a current tebako".to_string(),
+                exit_code::MALFORMED,
+            ));
+        }
+    }
 }
 
 /// Re-read the raw trailer bytes (the v2 signed region is computed over

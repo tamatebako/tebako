@@ -328,6 +328,18 @@ mounts:                           # per-slot mount semantics (locked 2026-08-04)
     point: /__tfs__
     mode: union                   # exclusive (default) | union; cow/enc reserved
     precedence: after-env         # union only: this image shadows the env image
+lock:                             # the press-time composition lock (spec 23 §4/§13)
+  runtime: {version: 0.16.19, carry: false}
+  slices: [{name: metanorma, version: 1.2.3, carry: true, slot: 0, sha256: …}]
+  spawned:                        # spec 30 edges, press-locked (spec 23 §13.6)
+    - engine: java
+      constraint: ">= 21, < 26"   # mirrored from slot 0's L1 requires
+      expose: [java]              # mirrored from slot 0's L1 requires
+      version: "21.0.12"          # the press-time pick
+      tebako: "2.1.5"
+      carry: true
+      exe:   {slot: 1, sha256: …} # carried pair — never mounted
+      image: {slot: 2, sha256: …}
 ```
 
 - `runtime_ref` per entry kills the 128-byte single-field limit (suites,
@@ -351,6 +363,14 @@ mounts:                           # per-slot mount semantics (locked 2026-08-04)
   (spec 17 §1). `cow`/`enc` are RESERVED mode spellings on the same
   axis (the transforms law: overlays exist only in the Rust TFS) and
   are named errors until their specs land.
+- `lock` is optional (absent on pre-spectrum packages — they resolve
+  exactly as before). `lock.spawned[]` mirrors the app payload's L1
+  `requires[].kind: runtime` edges (engine/implementation/constraint/
+  expose) plus the press-time pick and carry verdict (spec 23 §13.6);
+  `tebako-pkg validate` cross-checks the mirror against slot 0's L1
+  (the tebako#494 class), and the bootstrap resolves the rows at
+  dispatch into the store's `runtimes/` area + `TEBAKO_SPAWN_LOCK`
+  (spec 30 §2).
 
 **toolkit** (native layer, e.g. inkscape/gtk — the distro-ports model,
 spec 13 §9):

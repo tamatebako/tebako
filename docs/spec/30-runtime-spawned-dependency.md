@@ -94,7 +94,13 @@ the bootstrap for a self-contained package) resolves every
 `kind: runtime` edge of the payload being dispatched — cache hit or
 download per spec 05 §5 — and exports the pins as `TEBAKO_SPAWN_LOCK`
 = `engine=language_version:tebako_version`, `;`-joined in manifest
-order (spec 17 §2). At SPAWN the driver resolves CACHE-ONLY and never
+order (spec 17 §2). The edge SOURCE differs per loader, one spelling
+each: the shim reads the installed payload's L1 manifest mirror; the
+bootstrap reads the L2 lock's `spawned[]` rows (spec 23 §13.6) — the
+payload's L1 manifest is in-image, and the bootstrap's size class
+carries no image reader, so press mirrors the edges into the lock and
+`tebako-pkg validate` cross-checks the mirror against slot 0's L1
+(the tebako#494 class). At SPAWN the driver resolves CACHE-ONLY and never
 downloads: a locked edge resolves to exactly the pinned pair (a pinned
 runtime gone from the store is a named error, never a silent re-pick);
 an UNLOCKED edge (a hand-rolled dispatch, a test harness) resolves the

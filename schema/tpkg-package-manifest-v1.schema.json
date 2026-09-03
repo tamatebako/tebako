@@ -188,6 +188,54 @@
       },
       "description": "One locked payload slice (spec 23 §4/§13)."
     },
+    "lockedSpawnedArtifact": {
+      "type": "object",
+      "required": ["sha256"],
+      "properties": {
+        "slot": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 7,
+          "description": "The trailer slot carrying the bytes (carried rows only — the carry⇔slot agreement is semantic: carry: true requires it, carry: false forbids it)."
+        },
+        "sha256": { "$ref": "#/$defs/digestPin" },
+        "install_as": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[^/\\\\]+$",
+          "description": "The PE install name (the windows dll-era facet only): a bare file name, flowed from the release manifest's dll.install_as at press."
+        }
+      },
+      "description": "One artifact of a locked spawned-runtime pair (spec 23 §13.6): the digest pin always (§13.4 records the digest carried or shared), the trailer slot when carried."
+    },
+    "lockedSpawned": {
+      "type": "object",
+      "required": ["engine", "constraint", "version", "tebako", "carry", "exe", "image"],
+      "properties": {
+        "engine": { "type": "string", "minLength": 1 },
+        "implementation": { "type": "string", "minLength": 1 },
+        "constraint": { "type": "string", "minLength": 1 },
+        "expose": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1, "pattern": "^[^/\\\\:]+$" }
+        },
+        "version": { "type": "string", "minLength": 1 },
+        "tebako": { "type": "string", "minLength": 1 },
+        "carry": { "type": "boolean" },
+        "exe": { "$ref": "#/$defs/lockedSpawnedArtifact" },
+        "image": { "$ref": "#/$defs/lockedSpawnedArtifact" },
+        "dll": {
+          "$ref": "#/$defs/lockedSpawnedArtifact",
+          "description": "The windows dll-era facet, when the resolved release declares it."
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The fetch coordinates (a spec 04 reference) the press resolved from — required on a shared row; on a carried row it is provenance, never a fallback fetch path."
+        }
+      },
+      "description": "One locked spawned-runtime edge (spec 23 §13.6, spec 30 §2): the app payload's L1 requires[].kind: runtime edge mirrored (engine/implementation/constraint/expose), the press-time pick's version pair, the carry verdict, and the pair's digest pins. The L1-mirror parity, the locked-version-satisfies-constraint rule, and the one-row-per-edge uniqueness are semantic (the crate's validate() and the tebako-pkg validate cross-check)."
+    },
     "packageLock": {
       "type": "object",
       "properties": {
@@ -196,6 +244,11 @@
           "type": "array",
           "items": { "$ref": "#/$defs/lockedSlice" },
           "description": "Every resolved payload slice, in mount order: the app payload first, then its dependency closure. Slice-name uniqueness and the no-two-artifacts-per-slot rule are semantic (the crate's validate())."
+        },
+        "spawned": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/lockedSpawned" },
+          "description": "Every spawned-runtime edge (spec 30) of the app payload, in manifest order, press-locked (spec 23 §13.6). The bootstrap resolves each row into the store's runtimes/ area at dispatch and exports TEBAKO_SPAWN_LOCK; carried pairs are never mounted."
         }
       },
       "description": "The press-time lock (spec 23 §4/§13): what press resolved is what runs — the full composition closure locked per slice."

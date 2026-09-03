@@ -425,6 +425,13 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     let lock = tpkg::PackageLock {
         runtime: Some(lock_runtime),
         slices: lock_slices,
+        // The D2 press does not yet mirror the app payload's L1
+        // `requires[].kind: runtime` edges (spec 30 §1) into lock rows —
+        // packages declaring spawned edges hand-author the lock's
+        // `spawned[]` block (packed-mn) and `tebako-pkg validate`
+        // cross-checks the mirror. Auto-mirroring (press-time runtime
+        // resolution for the pick + pins) is the follow-up.
+        spawned: Vec::new(),
     };
 
     let mut runtime_ref = format!("ruby@{ruby_ver};tebako={}", opts.tebako_version);
@@ -1635,6 +1642,7 @@ mod tests {
                     source: Some("tfs:github:acme/templates:3.2".to_string()),
                 },
             ],
+            spawned: vec![],
         };
         let m = press_package_manifest(
             "/tmp/out/hello",

@@ -322,6 +322,7 @@ pub fn spawn_handoff(
     args: &[String],
     image: Option<&str>,
     jail: Option<&crate::JailEnv>,
+    spawn_lock: Option<&str>,
 ) -> io::Error {
     install_ctrl_swallow();
     let mut cmd = std::process::Command::new(runtime);
@@ -340,6 +341,12 @@ pub fn spawn_handoff(
         cmd.env("TEBAKO_JAIL", &jail.spec);
         cmd.env("TEBAKO_JAIL_SOURCE", jail.source);
         cmd.env("TEBAKO_JAIL_JOURNAL", &jail.journal);
+    }
+    if let Some(lock) = spawn_lock {
+        // spec 30 §3: the dispatch-time spawn pin (the unix exec path
+        // exports the same variable) — the driver's spawn planner
+        // resolves exactly these version pairs, cache-only.
+        cmd.env(tpkg::runtime_store::SPAWN_LOCK_VAR, lock);
     }
     let status = match cmd.spawn().and_then(|mut child| child.wait()) {
         Ok(status) => status,
