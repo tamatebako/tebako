@@ -61,6 +61,7 @@ spec 02 §6).
 28. [28 — Runtime variants](28-runtime-variants.md) — one payload version, N builds keyed by `runtime_requirement`: the selector grammar on six surfaces (CLI/env/pins/composition/config/registry), the variant id derivation, the registry `variants:` grammar, the store layout, multi-engine `any_of`, the D2 key alignment (PLANNED)
 29. [29 — The wrapper-exe driver pattern](29-wrapper-exe-driver.md) — the spec-17 driver as a standalone tebako-owned exe for repacked runtimes (openjdk, truffleruby): the wire-identical wrapper, the `layout.interpreter` declaration, kernel visibility via spec 07 §8's locked tiers (preload / seccomp-notify / exec-cache — never FUSE), failure and size discipline (PLANNED)
 30. [30 — Runtime as a spawned dependency](30-runtime-spawned-dependency.md) — the kind-runtime DEPENDS edge: a payload spawns another runtime's entries through the dispatcher (never a co-mounted VFS java, never a host fallback): the store-resident wrapper dispatch, argument carry-over by re-mount, the `expose:` shim surface, union-of-needs jails (NORMATIVE)
+31. [31 — macOS signing and notarization](31-macos-signing-notarization.md) — the Gatekeeper artifact plane: payloads are data (never assessed), stitch-then-sign, the derived entitlement vocabulary + press merge, sign-then-hash, the tebako-org and publisher pipelines (PLANNED)
 
 ## Locked invariants (all specs subordinate to these)
 
