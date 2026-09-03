@@ -9,8 +9,10 @@ name: Trace dogfood (spec 25)
 # ci/trace-dogfood/ — never inline run-blocks.
 
 on:
+  # Push runs on main only — see ci.yml's trigger note (the feat/* double-
+  # fire poisoned the merge rollup with cancelled check runs).
   push:
-    branches: [main, feat/*]
+    branches: [main]
   pull_request:
 
 # One run per branch/PR-head at a time (ci.yml's rule).
