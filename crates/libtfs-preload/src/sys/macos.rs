@@ -98,7 +98,10 @@ unsafe extern "C" {
 #[cfg(not(target_arch = "aarch64"))]
 use {super::fcntl as shim_fcntl, super::open as shim_open, super::openat as shim_openat};
 #[cfg(target_arch = "aarch64")]
-use {tebako_tramp_fcntl as shim_fcntl, tebako_tramp_open as shim_open, tebako_tramp_openat as shim_openat};
+use {
+    tebako_tramp_fcntl as shim_fcntl, tebako_tramp_open as shim_open,
+    tebako_tramp_openat as shim_openat,
+};
 
 interpose!(
     INTERPOSE_OPEN,
