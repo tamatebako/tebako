@@ -188,6 +188,11 @@ real_fn!(
 );
 real_fn!(real_close, c"close", unsafe extern "C" fn(c_int) -> c_int);
 real_fn!(
+    real_fcntl,
+    c"fcntl",
+    unsafe extern "C" fn(c_int, c_int, ...) -> c_int
+);
+real_fn!(
     real_mkdir,
     c"mkdir",
     unsafe extern "C" fn(*const c_char, libc::mode_t) -> c_int
