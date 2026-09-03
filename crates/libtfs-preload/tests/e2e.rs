@@ -161,6 +161,7 @@ fn build_fixtures() -> Option<Fixtures> {
         "dir-stream",
         "mmap-probe",
         "close-probe",
+        "fcntl-probe",
         "fork-exec",
         "alias-probe",
         "realpath-probe",
@@ -1054,6 +1055,25 @@ fn macos_plain_close_on_a_memfs_fd() {
     let r = run(f, "close-probe", &[path.as_str()], None);
     assert_eq!(r.rc, 0, "close-probe failed, stderr: {}", r.stderr);
     assert!(r.stdout.contains("close-probe:ok"), "stdout: {}", r.stdout);
+}
+
+/// CPython's FileIO boot path (the python runtime factory dogfood,
+/// TODO.python/02): `FileIO.__init__` runs `_Py_set_inheritable` →
+/// `get_inheritable` → `fcntl(F_GETFD)` on the freshly opened flagged
+/// memfs fd with raise=1 (Modules/_io/fileio.c:451) — unpatched, the
+/// real fcntl answered EBADF and every source open died importing
+/// `encodings`, before any user code. The probe replays the exact
+/// sequence: O_CLOEXEC open → F_GETFD (bit set) → F_SETFD clear/set →
+/// F_GETFL (truthful read-only) → F_SETFL accepted no-op → read →
+/// close → EBADF on the dead fd → host-fd passthrough. Cross-platform:
+/// fcntl's descriptor commands are plain POSIX.
+#[test]
+fn fcntl_on_a_memfs_fd() {
+    let Some(f) = fixtures() else { return };
+    let path = format!("{MOUNT}/data/secret.txt");
+    let r = run(f, "fcntl-probe", &[path.as_str()], None);
+    assert_eq!(r.rc, 0, "fcntl-probe failed, stderr: {}", r.stderr);
+    assert!(r.stdout.contains("fcntl-probe:ok"), "stdout: {}", r.stdout);
 }
 
 /// The 2026-08-22 fork/exec deadlock regression pin (runtime 0.16.4: a

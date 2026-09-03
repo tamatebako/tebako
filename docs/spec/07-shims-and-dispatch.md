@@ -184,7 +184,14 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    close(+the plain and $NOCANCEL spellings on x86_64 darwin — the libc
    crate maps `libc::close` to `close$NOCANCEL` there, C binaries
    (the JVM's libjava/libjli/libzip) import plain `close`; both route
-   to the shim)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
+   to the shim)/fcntl(the descriptor commands on a memfs fd are served
+   from the shim's own fd table — open/openat seed the close-on-exec
+   bit from O_CLOEXEC, F_GETFD/F_SETFD read/write it, F_GETFL answers
+   the truthful read-only status word, F_SETFL is an accepted no-op, a
+   flagged-but-closed fd is EBADF, the dup class (F_DUPFD and kin) is
+   EINVAL, host fds pass through untouched — CPython's io.FileIO boot
+   path fcntls every fresh source fd with raise=1, so unshimmed the
+   interpreter died importing `encodings` before any user code)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
    + the realpath family (realpath, plus macOS's realpath$DARWIN_EXTSN;
    canonicalize_file_name and the fortified __realpath_chk on linux):
    glibc's realpath(3) walks the path with libc-INTERNAL stat/readlink

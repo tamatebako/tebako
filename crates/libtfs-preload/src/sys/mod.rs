@@ -304,6 +304,36 @@ unsafe fn fill_stat(raw: &tfs::backend::RawStat) -> Result<libc::stat, i32> {
 /// until the next readdir/closedir on the same stream).
 static DIRENT_CACHE: Mutex<Option<HashMap<usize, Box<libc::dirent>>>> = Mutex::new(None);
 
+/// The memfs-fd descriptor table: presence = the fd is OPEN (the shim's
+/// liveness truth for the fd-verb commands), value = its close-on-exec
+/// bit. A memfs fd is a shim-side flag-bit integer with NO kernel state,
+/// so FD_CLOEXEC — set with O_CLOEXEC at open or with fcntl(F_SETFD) —
+/// must live here: the real fcntl would EBADF on the fake fd. That is
+/// the CPython io.FileIO boot blocker (the python runtime factory
+/// dogfood, TODO.python/02): FileIO.__init__ runs _Py_set_inheritable →
+/// fcntl(F_GETFD) on the freshly opened fd with raise=1
+/// (Modules/_io/fileio.c:451 → Python/fileutils.c get_inheritable), so
+/// EVERY source open of the unpatched interpreter died before user code.
+/// open/openat insert, close purges; fcntl reads/writes.
+static FD_TABLE: Mutex<Option<HashMap<c_int, bool>>> = Mutex::new(None);
+
+/// Record a freshly opened memfs fd with its close-on-exec state.
+fn fd_table_note(fd: c_int, cloexec: bool) {
+    FD_TABLE
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .insert(fd, cloexec);
+}
+
+/// Drop a closed memfs fd: a flagged fd the table lacks is DEAD, and a
+/// later fcntl on it is EBADF — exactly the kernel's answer.
+fn fd_table_purge(fd: c_int) {
+    if let Some(m) = FD_TABLE.lock().unwrap().as_mut() {
+        m.remove(&fd);
+    }
+}
+
 /// Translate a TebakoCDirent into the native `struct dirent` (name
 /// NUL-terminated, d_type, d_namlen/d_reclen per platform, nonzero d_ino —
 /// some consumers skip zero-inode entries).
@@ -399,7 +429,10 @@ pub unsafe extern "C" fn open_impl(path: *const c_char, flags: c_int, mode: c_in
         return unsafe { plat::real_open()(path, flags, mode) };
     };
     match engine_call(|| route::vfs_open(p, flags)) {
-        Some(PathRoute::Vfs(fd)) => fd,
+        Some(PathRoute::Vfs(fd)) => {
+            fd_table_note(fd, flags & libc::O_CLOEXEC != 0);
+            fd
+        }
         Some(PathRoute::Denied(e)) => {
             set_errno(e);
             -1
@@ -448,7 +481,10 @@ pub unsafe extern "C" fn openat_impl(
         }
     };
     match engine_call(|| route::vfs_open(&routed, flags)) {
-        Some(PathRoute::Vfs(fd)) => fd,
+        Some(PathRoute::Vfs(fd)) => {
+            fd_table_note(fd, flags & libc::O_CLOEXEC != 0);
+            fd
+        }
         Some(PathRoute::Denied(e)) => {
             set_errno(e);
             -1
@@ -1132,6 +1168,7 @@ pub unsafe extern "C" fn __realpath_chk(
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     if route::is_memfs_fd(fd) {
+        fd_table_purge(fd);
         return match engine_call(|| route::vfs_close(fd)) {
             Some(Ok(())) => 0,
             Some(Err(e)) => {
@@ -1145,6 +1182,67 @@ pub unsafe extern "C" fn close(fd: c_int) -> c_int {
         };
     }
     unsafe { plat::real_close()(fd) }
+}
+
+/// Interposed `fcntl` (fd-flag dispatch). Only the descriptor commands
+/// are meaningful on a memfs fd: F_GETFD/F_SETFD read/write the shim's
+/// fd table; F_GETFL answers the truthful read-only status word (payload
+/// images are always ro, spec 11 — O_RDONLY, never O_APPEND/O_NONBLOCK);
+/// F_SETFL is an accepted no-op (a memfs read never blocks and there is
+/// no kernel status word to mutate). The dup class (F_DUPFD and kin) is
+/// NOT modeled — duplicating a memfs fd is the engine's to own, and no
+/// tier-1 consumer (the CPython/JDK boot paths) calls it: EINVAL, like
+/// every other unrecognized command on a LIVE memfs fd ("cmd is not
+/// valid" — the fd is open, so EBADF would lie). A flagged-but-closed fd
+/// is EBADF. Host fds pass through untouched.
+///
+/// ABI note: fcntl is variadic like open — on Darwin arm64 the third
+/// argument rides the STACK (the first variadic slot at [sp, 0]), so the
+/// macOS tuple binds the trampoline (sys/macos.rs), which hoists it into
+/// the fixed-parameter register before the Rust body runs. x86_64 Darwin
+/// and linux pass it in the register, so the fixed declaration is
+/// correct there.
+#[cfg_attr(target_os = "linux", no_mangle)]
+#[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
+pub unsafe extern "C" fn fcntl(fd: c_int, cmd: c_int, arg: c_int) -> c_int {
+    fcntl_impl(fd, cmd, arg)
+}
+
+/// The Rust body of the fcntl shim (entry point per ABI, see above).
+#[no_mangle]
+pub unsafe extern "C" fn fcntl_impl(fd: c_int, cmd: c_int, arg: c_int) -> c_int {
+    if !route::is_memfs_fd(fd) {
+        // SAFETY: forwarding the original arguments to the real fcntl.
+        return unsafe { plat::real_fcntl()(fd, cmd, arg) };
+    }
+    let live = FD_TABLE
+        .lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|m| m.get(&fd).copied());
+    let Some(cloexec) = live else {
+        set_errno(libc::EBADF);
+        return -1;
+    };
+    match cmd {
+        libc::F_GETFD => {
+            if cloexec {
+                libc::FD_CLOEXEC
+            } else {
+                0
+            }
+        }
+        libc::F_SETFD => {
+            fd_table_note(fd, arg & libc::FD_CLOEXEC != 0);
+            0
+        }
+        libc::F_GETFL => libc::O_RDONLY,
+        libc::F_SETFL => 0,
+        _ => {
+            set_errno(libc::EINVAL);
+            -1
+        }
+    }
 }
 
 /// Interposed `mkdir` (write-class: memfs → EROFS, host → policy-gated).

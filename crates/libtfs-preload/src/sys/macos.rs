@@ -82,18 +82,23 @@ core::arch::global_asm!(
     "_tebako_tramp_openat:",
     "    ldr w3, [sp]",
     "    b _openat_impl",
+    ".globl _tebako_tramp_fcntl",
+    "_tebako_tramp_fcntl:",
+    "    ldr w2, [sp]",
+    "    b _fcntl_impl",
 );
 
 #[cfg(target_arch = "aarch64")]
 unsafe extern "C" {
     fn tebako_tramp_open(path: *const c_char, flags: c_int, mode: c_int) -> c_int;
     fn tebako_tramp_openat(dirfd: c_int, path: *const c_char, flags: c_int, mode: c_int) -> c_int;
+    fn tebako_tramp_fcntl(fd: c_int, cmd: c_int, arg: c_int) -> c_int;
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-use {super::open as shim_open, super::openat as shim_openat};
+use {super::fcntl as shim_fcntl, super::open as shim_open, super::openat as shim_openat};
 #[cfg(target_arch = "aarch64")]
-use {tebako_tramp_open as shim_open, tebako_tramp_openat as shim_openat};
+use {tebako_tramp_fcntl as shim_fcntl, tebako_tramp_open as shim_open, tebako_tramp_openat as shim_openat};
 
 interpose!(
     INTERPOSE_OPEN,
@@ -214,6 +219,15 @@ interpose!(
     super::close,
     close_plain,
     unsafe extern "C" fn(c_int) -> c_int
+);
+// fcntl is variadic (a cmd-dependent third argument) — the open/openat
+// trampoline note applies verbatim on arm64. No $NOCANCEL twin exists.
+interpose!(
+    INTERPOSE_FCNTL,
+    real_fcntl,
+    shim_fcntl,
+    libc::fcntl,
+    unsafe extern "C" fn(c_int, c_int, ...) -> c_int
 );
 interpose!(
     INTERPOSE_MKDIR,
