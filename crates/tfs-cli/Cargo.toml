@@ -35,7 +35,7 @@ dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 # The in-process LimniFS writer for `mkimage --format limnifs` (spec 20
 # §6) — pure Rust, no `limni` binary anywhere. Floor: post-flip line
 # rides 0.2.65's format (see crates/tfs).
-limnifs-write = "0.3.6"
+limnifs-write = "0.3.33"
 libc = "0.2"
 
 # tfs per-target: the SquashFS backend (squashfs-tools-ng) is
@@ -66,4 +66,4 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 # the reader (spec 20 §5 constraint 1: no SharedInline handle anywhere)
 # — test-only, never linked into the shipped binary. Floor: see the
 # limnifs-write pin above (post-flip line is >= 0.3.0).
-limnifs-core = "0.3.6"
+limnifs-core = "0.3.33"

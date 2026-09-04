@@ -62,7 +62,7 @@ sqfs-sys = { version = "2.0.0", path = "../sqfs-sys", optional = true }
 # rides the flip: images pressed by >= 0.3.0 need a >= 0.3.0-reader
 # runtime and vice versa; sha256 is the anchor (spec 20 §8's
 # format-evolution rule).
-limnifs-core = { version = "0.3.6", optional = true }
+limnifs-core = { version = "0.3.33", optional = true }
 # The ENC stacking transform (spec 10, backends_enc): AES-256-GCM per-block
 # confidentiality with HKDF-SHA256 subtree keys, DEK grant envelopes via
 # tebako-signer's rnp PKESK wrap/unwrap, mlock'd+zeroized plaintext
@@ -111,5 +111,5 @@ crc32fast = "1"
 # LimniFS golden fixtures are written in-process (never a limni binary) —
 # test-only, never linked into the shipped library. Floor: see the
 # limnifs-core pin above (post-flip line is >= 0.3.0).
-limnifs-write = "0.3.6"
+limnifs-write = "0.3.33"
 
