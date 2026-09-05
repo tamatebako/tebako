@@ -159,6 +159,12 @@ enum DlSurface {
 pub struct FsContext {
     mounts: BTreeMap<i32, Mount>,
     fd_table: BTreeMap<i32, FdEntry>,
+    /// The dup class (tebako#534, spec 07 §8): alias internal fd → the
+    /// canonical internal fd holding the shared open-file description.
+    /// An alias carries no FdEntry of its own — every fd operation
+    /// resolves through the canonical number, so the description's
+    /// position is shared exactly like a POSIX dup.
+    fd_alias: BTreeMap<i32, i32>,
     dir_table: BTreeMap<usize, DirState>,
     next_handle: i32,
     next_fd: i32,
@@ -207,6 +213,7 @@ impl FsContext {
         FsContext {
             mounts: BTreeMap::new(),
             fd_table: BTreeMap::new(),
+            fd_alias: BTreeMap::new(),
             dir_table: BTreeMap::new(),
             next_handle: 0,
             next_fd: 1,
@@ -470,6 +477,9 @@ impl FsContext {
             trace_start.and_then(|_| self.mounts.get(&handle).map(|m| m.mount_point.clone()));
         let result = if self.mounts.contains_key(&handle) {
             self.fd_table.retain(|_, e| e.owner != handle);
+            // Aliases whose description died with the mount die too.
+            self.fd_alias
+                .retain(|_, canon| self.fd_table.contains_key(canon));
             self.dir_table.retain(|_, e| e.owner != handle);
             self.mounts.remove(&handle);
             if self.compat_handle == Some(handle) {
@@ -509,6 +519,7 @@ impl FsContext {
         }
         self.mounts.clear();
         self.fd_table.clear();
+        self.fd_alias.clear();
         self.dir_table.clear();
         self.next_fd = 1;
         self.next_dir_id = 1;
@@ -863,7 +874,11 @@ impl FsContext {
         }
         let owner = mount.handle;
         let trace_point = trace_start.map(|_| mount.mount_point.clone());
-        let fd = self.next_fd;
+        // Alias numbers (the dup class) are live fds too — skip them.
+        let mut fd = self.next_fd;
+        while self.fd_alias.contains_key(&fd) {
+            fd += 1;
+        }
         if fd > TEBAKO_FD_MAX {
             if let Some(start) = trace_start {
                 trace::emit(
@@ -874,7 +889,7 @@ impl FsContext {
             }
             return Err(libc::EMFILE);
         }
-        self.next_fd += 1;
+        self.next_fd = fd + 1;
         self.fd_table.insert(
             fd,
             FdEntry {
@@ -892,11 +907,18 @@ impl FsContext {
         Ok(fd | TEBAKO_FD_FLAG)
     }
 
+    /// The canonical internal number for an internal number: a dup alias
+    /// resolves to the description holder, anything else is its own
+    /// canonical.
+    fn canonical_fd(&self, internal: i32) -> i32 {
+        self.fd_alias.get(&internal).copied().unwrap_or(internal)
+    }
+
     fn lookup_fd(&self, fd: i32) -> Option<(i32, &FdEntry)> {
         if (fd & TEBAKO_FD_FLAG) == 0 {
             return None;
         }
-        let internal = fd & !TEBAKO_FD_FLAG;
+        let internal = self.canonical_fd(fd & !TEBAKO_FD_FLAG);
         self.fd_table.get(&internal).map(|e| (internal, e))
     }
 
@@ -904,7 +926,7 @@ impl FsContext {
         if (fd & TEBAKO_FD_FLAG) == 0 {
             return None;
         }
-        let internal = fd & !TEBAKO_FD_FLAG;
+        let internal = self.canonical_fd(fd & !TEBAKO_FD_FLAG);
         self.fd_table.get_mut(&internal).map(|e| (internal, e))
     }
 
@@ -965,15 +987,92 @@ impl FsContext {
         Ok(target)
     }
 
-    /// tebako_fs_close.
+    /// tebako_fs_close. An alias close drops only the alias (the
+    /// description lives on); closing the description holder while
+    /// aliases live PROMOTES the lowest-numbered alias — POSIX's "the
+    /// description dies with its last fd".
     pub fn close(&mut self, fd: i32) -> Result<(), i32> {
         if (fd & TEBAKO_FD_FLAG) == 0 {
             return Err(libc::EBADF);
         }
-        match self.fd_table.remove(&(fd & !TEBAKO_FD_FLAG)) {
-            Some(_) => Ok(()),
+        let internal = fd & !TEBAKO_FD_FLAG;
+        if self.fd_alias.remove(&internal).is_some() {
+            return Ok(());
+        }
+        match self.fd_table.remove(&internal) {
+            Some(entry) => {
+                let promoted = self
+                    .fd_alias
+                    .iter()
+                    .find(|(_, canon)| **canon == internal)
+                    .map(|(alias, _)| *alias);
+                if let Some(alias) = promoted {
+                    self.fd_alias.remove(&alias);
+                    // The remaining clones follow the description to its
+                    // new holder number.
+                    for canon in self.fd_alias.values_mut() {
+                        if *canon == internal {
+                            *canon = alias;
+                        }
+                    }
+                    self.fd_table.insert(alias, entry);
+                }
+                Ok(())
+            }
             None => Err(libc::EBADF),
         }
+    }
+
+    /// The dup class (tebako#534, spec 07 §8): clone `fd`'s open-file
+    /// description onto the lowest free internal number ≥ `min` (the
+    /// fcntl(F_DUPFD) shape; the shim's plain dup passes 0). The clone is
+    /// an alias record, not a second FdEntry — the description's
+    /// position is shared. Errors: EBADF (`fd` is not a live memfs fd),
+    /// EINVAL (negative `min` — the kernel's F_DUPFD answer), EMFILE
+    /// (the flagged fd space is exhausted).
+    pub fn dup(&mut self, fd: i32, min: i32) -> Result<i32, i32> {
+        let (canonical, _) = self.lookup_fd(fd).ok_or(libc::EBADF)?;
+        if min < 0 {
+            return Err(libc::EINVAL);
+        }
+        let mut n = min.max(1);
+        while self.fd_table.contains_key(&n) || self.fd_alias.contains_key(&n) {
+            n += 1;
+        }
+        if n > TEBAKO_FD_MAX {
+            return Err(libc::EMFILE);
+        }
+        self.fd_alias.insert(n, canonical);
+        Ok(n | TEBAKO_FD_FLAG)
+    }
+
+    /// dup2: `new` (a flagged number the shim chose) is atomically closed
+    /// when live and rebound as an alias of `old`'s description; the
+    /// target resolves to the SAME VFS file. `new == old` is the POSIX
+    /// no-op, EBADF-checked first. An unflagged `new` is EINVAL here —
+    /// the shim answers ENOTSUP for a HOST-numbered target before the
+    /// engine is consulted (a host number cannot carry the flag bit the
+    /// fd routing keys on, spec 07 §8).
+    pub fn dup2(&mut self, old: i32, new: i32) -> Result<i32, i32> {
+        let _ = self.lookup_fd(old).ok_or(libc::EBADF)?;
+        if new == old {
+            return Ok(new);
+        }
+        if (new & TEBAKO_FD_FLAG) == 0 {
+            return Err(libc::EINVAL);
+        }
+        let internal_new = new & !TEBAKO_FD_FLAG;
+        if internal_new == 0 {
+            return Err(libc::EINVAL);
+        }
+        // Close a live target with full alias/promotion semantics. In the
+        // edge where the target HELD old's description, the close
+        // promoted an alias — re-resolve through old afterwards so the
+        // rebind lands on the description wherever it now lives.
+        let _ = self.close(new);
+        let (canonical, _) = self.lookup_fd(old).ok_or(libc::EBADF)?;
+        self.fd_alias.insert(internal_new, canonical);
+        Ok(new)
     }
 
     // ---------------------------------------------------------------
@@ -2798,6 +2897,202 @@ mod tests {
         let bytes = writer.finish().unwrap().into_inner();
         std::fs::write(&path, bytes).unwrap();
         path
+    }
+
+    /// A context with the fixture zip mounted at /tfs: (ctx, handle).
+    fn ctx_with_fixture(dir: &std::path::Path) -> (FsContext, i32) {
+        let image = fixture_zip(dir);
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        let handle = ctx.mount_checked(mount).unwrap();
+        (ctx, handle)
+    }
+
+    #[test]
+    fn dup_shares_the_open_file_description() {
+        // tebako#534: a dup'd fd is the SAME open-file description — the
+        // offset is shared (libxml2's xmlInputFromFd reads through the
+        // clone and expects the original's position to move with it).
+        let dir = std::env::temp_dir().join(format!("tfs-dup-share-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, _h) = ctx_with_fixture(&dir);
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        let b = ctx.dup(a, 0).unwrap();
+        assert_ne!(a, b);
+        assert_eq!(b & TEBAKO_FD_FLAG, TEBAKO_FD_FLAG);
+        // "hush": read "hu" through the original…
+        let mut buf = [0u8; 2];
+        assert_eq!(ctx.read(a, &mut buf).unwrap(), 2);
+        assert_eq!(&buf, b"hu");
+        // …the clone continues at "sh": the position is shared.
+        assert_eq!(ctx.read(b, &mut buf).unwrap(), 2);
+        assert_eq!(&buf, b"sh");
+        // An lseek through the clone moves the original's position too.
+        assert_eq!(ctx.lseek(b, 0, libc::SEEK_SET).unwrap(), 0);
+        let mut buf = [0u8; 1];
+        assert_eq!(ctx.read(a, &mut buf).unwrap(), 1);
+        assert_eq!(&buf, b"h");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dup_answers_ebadf_on_host_and_dead_fds() {
+        let dir = std::env::temp_dir().join(format!("tfs-dup-ebadf-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, _h) = ctx_with_fixture(&dir);
+        // A host fd (no flag bit) is not the engine's to clone.
+        assert_eq!(ctx.dup(3, 0), Err(libc::EBADF));
+        // A flagged number nobody holds.
+        assert_eq!(ctx.dup(7 | TEBAKO_FD_FLAG, 0), Err(libc::EBADF));
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        ctx.close(a).unwrap();
+        assert_eq!(ctx.dup(a, 0), Err(libc::EBADF));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dup_min_is_honored_fcntl_shape() {
+        // fcntl(F_DUPFD, min): the clone lands on the lowest free internal
+        // number ≥ min; a negative min is EINVAL (the kernel's answer).
+        let dir = std::env::temp_dir().join(format!("tfs-dup-min-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, _h) = ctx_with_fixture(&dir);
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        let b = ctx.dup(a, 10).unwrap();
+        assert_eq!(b & !TEBAKO_FD_FLAG, 10);
+        let c = ctx.dup(a, 10).unwrap();
+        assert_eq!(c & !TEBAKO_FD_FLAG, 11);
+        assert_eq!(ctx.dup(a, -1), Err(libc::EINVAL));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn close_of_the_original_promotes_the_lowest_alias() {
+        // POSIX: the description dies with its LAST fd. Closing the
+        // original while clones live promotes the lowest-numbered clone
+        // to description holder; reads keep flowing through every clone.
+        let dir = std::env::temp_dir().join(format!("tfs-dup-promote-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, _h) = ctx_with_fixture(&dir);
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        let b = ctx.dup(a, 0).unwrap();
+        let c = ctx.dup(a, 0).unwrap();
+        ctx.close(a).unwrap();
+        let mut buf = [0u8; 2];
+        assert_eq!(ctx.read(c, &mut buf).unwrap(), 2, "alias c reads on");
+        assert_eq!(&buf, b"hu");
+        assert_eq!(ctx.read(b, &mut buf).unwrap(), 2, "promoted b reads on");
+        assert_eq!(&buf, b"sh");
+        // Closing the promoted holder promotes the next alias in turn.
+        ctx.close(b).unwrap();
+        assert_eq!(ctx.lseek(c, 0, libc::SEEK_SET).unwrap(), 0);
+        ctx.close(c).unwrap();
+        assert_eq!(ctx.read(c, &mut buf), Err(libc::EBADF));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn close_of_an_alias_keeps_the_original() {
+        let dir = std::env::temp_dir().join(format!("tfs-dup-closealias-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, _h) = ctx_with_fixture(&dir);
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        let b = ctx.dup(a, 0).unwrap();
+        ctx.close(b).unwrap();
+        let mut buf = [0u8; 1];
+        assert_eq!(ctx.read(a, &mut buf).unwrap(), 1, "the original reads on");
+        assert_eq!(ctx.close(b), Err(libc::EBADF), "a dead alias stays dead");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dup2_replaces_a_live_memfs_target() {
+        // The #534 regression pin: dup2 onto a live memfs fd closes the
+        // target's own description and rebinds the number to the
+        // SOURCE's — the target resolves to the same VFS file, sharing
+        // its position.
+        let dir = std::env::temp_dir().join(format!("tfs-dup2-target-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, _h) = ctx_with_fixture(&dir);
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        let b = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        let mut buf = [0u8; 1];
+        assert_eq!(ctx.read(a, &mut buf).unwrap(), 1);
+        assert_eq!(ctx.dup2(a, b), Ok(b));
+        // b now shares a's description: the next byte is "u", not "h".
+        assert_eq!(ctx.read(b, &mut buf).unwrap(), 1);
+        assert_eq!(&buf, b"u");
+        // b's own description died: closing the alias leaves a live.
+        ctx.close(b).unwrap();
+        assert_eq!(ctx.read(a, &mut buf).unwrap(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn dup2_fresh_and_unflagged_targets_and_the_noop() {
+        let dir = std::env::temp_dir().join(format!("tfs-dup2-misc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, _h) = ctx_with_fixture(&dir);
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        // dup2(a, a) is the POSIX no-op — still EBADF-checked.
+        assert_eq!(ctx.dup2(a, a), Ok(a));
+        // A fresh flagged number is aliased outright.
+        let n = 42 | TEBAKO_FD_FLAG;
+        assert_eq!(ctx.dup2(a, n), Ok(n));
+        let mut buf = [0u8; 1];
+        assert_eq!(ctx.read(n, &mut buf).unwrap(), 1);
+        // An unflagged target is EINVAL here (the shim answers ENOTSUP
+        // for a host-numbered target before the engine is consulted).
+        assert_eq!(ctx.dup2(a, 42), Err(libc::EINVAL));
+        // A dead source is EBADF, no-op shape or not.
+        ctx.close(n).unwrap();
+        assert_eq!(ctx.dup2(n, n), Err(libc::EBADF));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unmount_drops_aliases_with_their_description() {
+        let dir = std::env::temp_dir().join(format!("tfs-dup-unmount-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, h) = ctx_with_fixture(&dir);
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        let b = ctx.dup(a, 0).unwrap();
+        ctx.unmount_handle(h).unwrap();
+        let mut buf = [0u8; 1];
+        assert_eq!(ctx.read(a, &mut buf), Err(libc::EBADF));
+        assert_eq!(ctx.read(b, &mut buf), Err(libc::EBADF));
+        assert_eq!(ctx.dup(a, 0), Err(libc::EBADF));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn open_never_allocates_an_alias_number() {
+        // An alias number stays out of the open allocator's way even when
+        // it sits at next_fd.
+        let dir = std::env::temp_dir().join(format!("tfs-dup-alloc-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (mut ctx, _h) = ctx_with_fixture(&dir);
+        let a = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        let b = ctx.dup(a, 2).unwrap();
+        assert_eq!(b & !TEBAKO_FD_FLAG, 2);
+        let c = ctx.open("/tfs/data/secret.txt", libc::O_RDONLY).unwrap();
+        assert_eq!(c & !TEBAKO_FD_FLAG, 3, "open skips the alias at 2");
+        let d = ctx.dup(a, 0).unwrap();
+        assert_eq!(
+            d & !TEBAKO_FD_FLAG,
+            4,
+            "dup skips 1/2/3 (entry, alias, entry)"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

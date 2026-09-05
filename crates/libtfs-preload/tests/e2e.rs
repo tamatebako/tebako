@@ -162,6 +162,7 @@ fn build_fixtures() -> Option<Fixtures> {
         "mmap-probe",
         "close-probe",
         "fcntl-probe",
+        "dup-probe",
         "fork-exec",
         "alias-probe",
         "realpath-probe",
@@ -1173,6 +1174,26 @@ fn fcntl_on_a_memfs_fd() {
     let r = run(f, "fcntl-probe", &[path.as_str()], None);
     assert_eq!(r.rc, 0, "fcntl-probe failed, stderr: {}", r.stderr);
     assert!(r.stdout.contains("fcntl-probe:ok"), "stdout: {}", r.stdout);
+}
+
+/// tebako#534 — libxml2's `xmlInputFromFd` dup()s its fd unconditionally
+/// and every VFS-fed parse died EBADF (the xml2rfc feedstock's lxml
+/// compat shim is the workaround this fix retires). The probe pins the
+/// whole dup class end-to-end: dup of a memfs fd clones the open-file
+/// description (a read through the clone continues the ORIGINAL's
+/// position; an lseek through the clone moves it), dup clears FD_CLOEXEC
+/// while F_DUPFD_CLOEXEC sets it, dup2 onto a second live memfs fd
+/// rebinds the number to the source's description (the regression pin),
+/// dup2(fd, fd) is the liveness-checked no-op, a host-numbered dup2
+/// target is ENOTSUP (the named error), a dead fd is EBADF, and host
+/// fds pass through untouched.
+#[test]
+fn dup_family_on_a_memfs_fd() {
+    let Some(f) = fixtures() else { return };
+    let path = format!("{MOUNT}/data/secret.txt");
+    let r = run(f, "dup-probe", &[path.as_str()], None);
+    assert_eq!(r.rc, 0, "dup-probe failed, stderr: {}", r.stderr);
+    assert!(r.stdout.contains("dup-probe:ok"), "stdout: {}", r.stdout);
 }
 
 /// The 2026-08-22 fork/exec deadlock regression pin (runtime 0.16.4: a

@@ -252,6 +252,21 @@ pub fn vfs_close(fd: i32) -> Result<(), i32> {
     context().write().unwrap().close(fd)
 }
 
+/// The dup class (tebako#534): the engine clones the open-file
+/// description (the offset is SHARED) onto a fresh flagged fd; `min` is
+/// the fcntl(F_DUPFD) floor (0 for plain dup).
+pub fn vfs_dup(fd: i32, min: i32) -> Result<i32, i32> {
+    context().write().unwrap().dup(fd, min)
+}
+
+/// dup2 onto a memfs-flagged target number (the shim answers ENOTSUP
+/// for a host-numbered target before routing here): the engine
+/// atomically closes a live target and rebinds the number to the
+/// source's description.
+pub fn vfs_dup2(old: i32, new: i32) -> Result<i32, i32> {
+    context().write().unwrap().dup2(old, new)
+}
+
 pub fn vfs_closedir(id: usize) -> Result<(), i32> {
     context().write().unwrap().closedir(id)
 }
