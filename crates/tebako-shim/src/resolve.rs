@@ -3,12 +3,21 @@
 //! 0. argv0 is the selector: command name → the installed payload whose
 //!    manifest provides an entrypoint of that name (multi-command suites:
 //!    N shims → one payload, each entry resolved independently).
+//!
+//! 0.5. PROVIDER ROUTING (the 2026-09-05 amendment): the chain VALUE
+//!    grammar is `[payload@]version` (`tpkg::toolpin` is the SSOT parser).
+//!    A payload-qualified value makes the named payload THE provider; the
+//!    provider scan skips claims disabled at `<payload>@all` /
+//!    `<payload>@version`; a registry never routes commands.
+//!
 //! 1. Payload VERSION resolution, first match wins:
 //!    `TEBAKO_<TOOL>_VERSION` env → nearest `.tebako-tools.yaml` walking
 //!    up from cwd → user default (`~/.tebako/config.yaml` `defaults:`,
-//!    written by `tebako use`) → registry `default:` (spec 04 §2).
+//!    written by `tebako-shim use`) → registry `default:` (spec 04 §2).
 
 use std::path::{Path, PathBuf};
+
+use tpkg::toolpin::ToolPin;
 
 use crate::config;
 use crate::manifest::{self, Manifest, PayloadRecord};
@@ -38,6 +47,28 @@ impl std::fmt::Display for VersionSource {
     }
 }
 
+/// How the provider payload was chosen (spec 07 §2 step 0.5; `which` /
+/// `list` render it).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderKind {
+    /// The payload declares the command as its own entrypoint.
+    Own,
+    /// The payload EXPOSES the command through a spawn edge (spec 30/32).
+    Exposed,
+    /// A payload-qualified chain pin named this payload THE provider.
+    Pinned,
+}
+
+impl std::fmt::Display for ProviderKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ProviderKind::Own => f.write_str("own"),
+            ProviderKind::Exposed => f.write_str("exposed"),
+            ProviderKind::Pinned => f.write_str("pinned"),
+        }
+    }
+}
+
 /// The fully resolved dispatch target.
 #[derive(Debug)]
 pub struct Resolution {
@@ -48,6 +79,8 @@ pub struct Resolution {
     pub payload_name: String,
     pub version: String,
     pub source: VersionSource,
+    /// How the provider was chosen (spec 07 §2 step 0.5).
+    pub provider: ProviderKind,
     pub record: PayloadRecord,
     pub manifest: Manifest,
     /// spec 30 §3 + spec 32 §3: when the command resolved through the
@@ -90,14 +123,30 @@ enum Provider {
     Exposed(String),
 }
 
+/// The corrected collision hint (spec 07 §7, 2026-09-05 amendment): the
+/// routing verbs, not a dangling "remove one".
+fn routing_hint(tool: &str) -> String {
+    format!(
+        "pin `{tool}: <payload>@<version>` in .tebako-tools.yaml, or disable one claim (`tebako-shim disable {tool} --of <payload>`)"
+    )
+}
+
 /// Command name → payload name. Fast path: a payload of the same name.
 /// Suite path: scan every installed payload's manifest mirror for an
 /// entrypoint of this name (spec 07 §2.0 multi-command suites). Only when
 /// NO payload declares the entrypoint does the expose surface answer
-/// (spec 30 §3).
-fn providing_payload(home: &Path, tool: &str) -> Result<Provider, ShimError> {
+/// (spec 30 §3). The scan skips claims disabled at `all` / `<payload>@all`
+/// (spec 07 §2 step 0.5); the collision error fires among ENABLED claims
+/// only — a sole-but-disabled claim falls through to resolve_named's
+/// per-version refusal (the historical shape), several all-disabled
+/// claims answer the no-provider error.
+fn providing_payload(
+    home: &Path,
+    tool: &str,
+    disabled: &config::Disabled,
+) -> Result<Provider, ShimError> {
     manifest::check_path_component("command name", tool)?;
-    if home.join("payloads").join(tool).is_dir() {
+    if home.join("payloads").join(tool).is_dir() && !config::claim_disabled(disabled, tool, tool) {
         return Ok(Provider::Own(tool.to_string()));
     }
     let payloads_dir = home.join("payloads");
@@ -132,27 +181,47 @@ fn providing_payload(home: &Path, tool: &str) -> Result<Provider, ShimError> {
             }
         }
     }
-    match providers.len() {
-        1 => return Ok(Provider::Own(providers.pop().unwrap_or_default())),
-        n if n > 1 => {
+    let enabled: Vec<&String> = providers
+        .iter()
+        .filter(|p| !config::claim_disabled(disabled, tool, p))
+        .collect();
+    match (enabled.len(), providers.len()) {
+        (1, _) => return Ok(Provider::Own(enabled[0].clone())),
+        (0, 1) => return Ok(Provider::Own(providers[0].clone())),
+        (0, _) => {}
+        _ => {
             return fail(
                 EX_TEBAKO_MANIFEST,
                 format!(
-                    "command \"{tool}\" is provided by more than one installed payload ({}) — remove one, or pin the payload with .tebako-tools.yaml",
-                    providers.join(", ")
+                    "command \"{tool}\" is provided by more than one installed payload ({}) — {}",
+                    enabled
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    routing_hint(tool)
                 ),
             )
         }
-        _ => {}
     }
-    match exposers.len() {
-        0 => Err(no_provider(home, tool)),
-        1 => Ok(Provider::Exposed(exposers.pop().unwrap_or_default())),
+    let enabled_ex: Vec<&String> = exposers
+        .iter()
+        .filter(|p| !config::claim_disabled(disabled, tool, p))
+        .collect();
+    match (enabled_ex.len(), exposers.len()) {
+        (1, _) => Ok(Provider::Exposed(enabled_ex[0].clone())),
+        (0, 1) => Ok(Provider::Exposed(exposers[0].clone())),
+        (0, _) => Err(no_provider(home, tool)),
         _ => fail(
             EX_TEBAKO_MANIFEST,
             format!(
-                "command \"{tool}\" is exposed by more than one installed payload ({}) — remove one, or pin the payload with .tebako-tools.yaml",
-                exposers.join(", ")
+                "command \"{tool}\" is exposed by more than one installed payload ({}) — {}",
+                enabled_ex
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+                routing_hint(tool)
             ),
         ),
     }
@@ -216,11 +285,120 @@ fn project_pin(start: &Path, tool: &str) -> Result<Option<(String, PathBuf)>, Sh
     Ok(None)
 }
 
+/// The chain's first three links (env → project pin → config default),
+/// parsed as ONE `[payload@]version` value (the registry default is
+/// payload-keyed and stays in [`resolve_named`]). An unparseable value is
+/// a NAMED grammar error naming the link and value (spec 07 §0/§7 —
+/// spec 23 §14's env-parse rule extended to every link), never a silent
+/// skip.
+pub fn chain_pick(
+    tool: &str,
+    ctx: &Ctx,
+    cfg: &config::UserConfig,
+) -> Result<Option<(ToolPin, VersionSource)>, ShimError> {
+    let var = version_env_var(tool);
+    let raw: Option<(String, VersionSource)> =
+        if let Some(v) = ctx.env_get(&var).filter(|v| !v.is_empty()) {
+            Some((v.to_string(), VersionSource::Env(var.clone())))
+        } else if let Some((v, path)) = project_pin(&ctx.cwd, tool)? {
+            Some((v, VersionSource::ProjectFile(path)))
+        } else {
+            cfg.defaults
+                .get(tool)
+                .filter(|v| !v.is_empty())
+                .map(|v| (v.clone(), VersionSource::UserDefault))
+        };
+    match raw {
+        Some((value, source)) => {
+            let pin = ToolPin::parse(&value)
+                .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, format!("{source}: {e}")))?;
+            Ok(Some((pin, source)))
+        }
+        None => Ok(None),
+    }
+}
+
+/// The expose edge of `m` that names `tool` (spec 30 §3 + spec 32 §3).
+fn expose_edge(m: &Manifest, tool: &str) -> Option<tpkg::Requirement> {
+    m.requires()
+        .iter()
+        .find(|r| {
+            let expose = match r {
+                tpkg::Requirement::Runtime { expose, .. } => expose,
+                tpkg::Requirement::Executable { expose, .. } => expose,
+                _ => return false,
+            };
+            expose.iter().any(|e| e == tool)
+        })
+        .cloned()
+}
+
 /// Resolve the dispatch target for `tool` through the full chain.
 pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
-    match providing_payload(&ctx.home, tool)? {
+    let cfg = config::load_config(&ctx.home)?;
+    // The routing amendment reads the chain FIRST (spec 07 §2 step 0.5):
+    // a payload-qualified value won BOTH dimensions — the provider is the
+    // named payload, the version is the pin's, and the remaining links
+    // are not consulted for this dispatch.
+    if let Some((pin, source)) = chain_pick(tool, ctx, &cfg)? {
+        if let Some(payload_name) = pin.payload.clone() {
+            return resolve_pinned(tool, &payload_name, &pin, source, ctx);
+        }
+        // Unqualified: the value is a bare version — pre-seed today's
+        // flow (identical to the chain's first match, already parsed).
+        return resolve_scanned(tool, ctx, Some((pin.version, source)));
+    }
+    resolve_scanned(tool, ctx, None)
+}
+
+/// The qualified-pin route: the named payload IS the provider — it must
+/// be installed (resolve_named's existing named errors) and DECLARE or
+/// EXPOSE the command, else NotAProvider.
+fn resolve_pinned(
+    tool: &str,
+    payload_name: &str,
+    pin: &ToolPin,
+    source: VersionSource,
+    ctx: &Ctx,
+) -> Result<Resolution, ShimError> {
+    manifest::check_path_component("payload name", payload_name)?;
+    let mut res = resolve_named(
+        tool,
+        payload_name,
+        ctx,
+        Some((pin.version.clone(), source.clone())),
+    )?;
+    res.provider = ProviderKind::Pinned;
+    if res.manifest.entrypoint(tool).is_some() {
+        return Ok(res);
+    }
+    match expose_edge(&res.manifest, tool) {
+        Some(edge) => {
+            res.exposed = Some(edge);
+            Ok(res)
+        }
+        None => fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "pin \"{pin}\" (from {source}): payload \"{payload_name}\" {version} neither declares nor exposes the command \"{tool}\" (NotAProvider)\n  the qualified form pins a PROVIDER — name one of the payloads claiming \"{tool}\", or pin the bare version",
+                version = res.version,
+            ),
+        ),
+    }
+}
+
+/// Today's flow: the provider scan (fast path → suite scan → expose
+/// scan), with the amendment's disabled-claim skips.
+fn resolve_scanned(
+    tool: &str,
+    ctx: &Ctx,
+    preseed: Option<(String, VersionSource)>,
+) -> Result<Resolution, ShimError> {
+    let disabled = config::load_disabled(&ctx.home)?;
+    match providing_payload(&ctx.home, tool, &disabled)? {
         Provider::Own(payload_name) => {
-            let res = resolve_named(tool, &payload_name, ctx)?;
+            let mut res = resolve_named(tool, &payload_name, ctx, preseed)?;
+            res.provider = ProviderKind::Own;
             if res.manifest.entrypoint(tool).is_none() {
                 return fail(
                     EX_TEBAKO_MANIFEST,
@@ -234,23 +412,11 @@ pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
             Ok(res)
         }
         Provider::Exposed(payload_name) => {
-            let mut res = resolve_named(tool, &payload_name, ctx)?;
+            let mut res = resolve_named(tool, &payload_name, ctx, preseed)?;
+            res.provider = ProviderKind::Exposed;
             // The edge comes from the PICKED version's manifest — the
             // exposing scan established the payload, not the version.
-            let edge = res
-                .manifest
-                .requires()
-                .iter()
-                .find(|r| {
-                    let expose = match r {
-                        tpkg::Requirement::Runtime { expose, .. } => expose,
-                        tpkg::Requirement::Executable { expose, .. } => expose,
-                        _ => return false,
-                    };
-                    expose.iter().any(|e| e == tool)
-                })
-                .cloned();
-            match edge {
+            match expose_edge(&res.manifest, tool) {
                 Some(edge) => {
                     res.exposed = Some(edge);
                     Ok(res)
@@ -279,13 +445,22 @@ pub fn resolve_payload(payload_name: &str, ctx: &Ctx) -> Result<Resolution, Shim
     if !ctx.home.join("payloads").join(payload_name).is_dir() {
         return Err(no_provider(&ctx.home, payload_name));
     }
-    resolve_named(payload_name, payload_name, ctx)
+    let mut res = resolve_named(payload_name, payload_name, ctx, None)?;
+    res.provider = ProviderKind::Own;
+    Ok(res)
 }
 
 /// The shared resolution tail: version chain → disabled gate → record →
 /// mirror load. `tool` keys the version chain (env var, project pin,
-/// defaults); `payload_name` keys the store record.
-fn resolve_named(tool: &str, payload_name: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
+/// defaults); `payload_name` keys the store record. `preseed` carries an
+/// already-resolved (version, source) — the routing amendment's pin won
+/// the chain, so no link (registry default included) is consulted again.
+fn resolve_named(
+    tool: &str,
+    payload_name: &str,
+    ctx: &Ctx,
+    preseed: Option<(String, VersionSource)>,
+) -> Result<Resolution, ShimError> {
     manifest::check_path_component("payload name", payload_name)?;
     let installed = installed_versions(&ctx.home, payload_name)?;
     if installed.is_empty() {
@@ -300,31 +475,35 @@ fn resolve_named(tool: &str, payload_name: &str, ctx: &Ctx) -> Result<Resolution
 
     let cfg = config::load_config(&ctx.home)?;
 
-    // The chain, first match wins (spec 07 §2.1).
-    let mut picked: Option<(String, VersionSource)> = None;
+    // The chain, first match wins (spec 07 §2.1). A preseed (the
+    // amendment's pin) won it already; otherwise the four links run.
+    let mut picked: Option<(String, VersionSource)> = preseed;
 
-    // 1. TEBAKO_<TOOL>_VERSION
     let var = version_env_var(tool);
-    if let Some(version) = ctx.env_get(&var).filter(|v| !v.is_empty()) {
-        picked = Some((version.to_string(), VersionSource::Env(var.clone())));
-    }
-    // 2. nearest .tebako-tools.yaml walking up from cwd
     if picked.is_none() {
-        if let Some((version, path)) = project_pin(&ctx.cwd, tool)? {
-            picked = Some((version, VersionSource::ProjectFile(path)));
+        // 1. TEBAKO_<TOOL>_VERSION
+        if let Some(version) = ctx.env_get(&var).filter(|v| !v.is_empty()) {
+            picked = Some((version.to_string(), VersionSource::Env(var.clone())));
         }
-    }
-    // 3. user default (tebako use <tool>@<version>)
-    if picked.is_none() {
-        if let Some(version) = cfg.defaults.get(tool).filter(|v| !v.is_empty()) {
-            picked = Some((version.clone(), VersionSource::UserDefault));
+        // 2. nearest .tebako-tools.yaml walking up from cwd
+        if picked.is_none() {
+            if let Some((version, path)) = project_pin(&ctx.cwd, tool)? {
+                picked = Some((version, VersionSource::ProjectFile(path)));
+            }
         }
-    }
-    // 4. registry default
-    if picked.is_none() {
-        if let Some((version, reg)) = config::registry_default(&ctx.home, &cfg, payload_name, ctx)?
-        {
-            picked = Some((version, VersionSource::RegistryDefault(reg)));
+        // 3. user default (tebako-shim use <tool> <pin>)
+        if picked.is_none() {
+            if let Some(version) = cfg.defaults.get(tool).filter(|v| !v.is_empty()) {
+                picked = Some((version.clone(), VersionSource::UserDefault));
+            }
+        }
+        // 4. registry default
+        if picked.is_none() {
+            if let Some((version, reg)) =
+                config::registry_default(&ctx.home, &cfg, payload_name, ctx)?
+            {
+                picked = Some((version, VersionSource::RegistryDefault(reg)));
+            }
         }
     }
 
@@ -332,7 +511,7 @@ fn resolve_named(tool: &str, payload_name: &str, ctx: &Ctx) -> Result<Resolution
         ShimError::new(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "no version resolved for \"{tool}\" — the chain found nothing:\n  TEBAKO_{} env: unset\n  .tebako-tools.yaml from {}: none pins it\n  ~/.tebako/config.yaml defaults: none\n  registry default: none\n  pin a version (`tebako use {tool}@<version>`) or install one; installed: {}",
+                "no version resolved for \"{tool}\" — the chain found nothing:\n  TEBAKO_{} env: unset\n  .tebako-tools.yaml from {}: none pins it\n  ~/.tebako/config.yaml defaults: none\n  registry default: none\n  pin a version (`tebako-shim use {tool} <version>`) or install one; installed: {}",
                 var.trim_start_matches("TEBAKO_"),
                 ctx.cwd.display(),
                 installed.join(", ")
@@ -379,6 +558,7 @@ fn resolve_named(tool: &str, payload_name: &str, ctx: &Ctx) -> Result<Resolution
         payload_name: payload_name.to_string(),
         version,
         source,
+        provider: ProviderKind::Own, // the caller stamps the real kind
         record,
         manifest,
         exposed: None,

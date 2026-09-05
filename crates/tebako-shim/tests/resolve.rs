@@ -220,3 +220,237 @@ fn suite_commands_map_to_their_own_payload() {
         "/app/bin/beta"
     );
 }
+
+// ---------------------------------------------------------------------
+// The 2026-09-05 routing amendment (spec 07 §2 step 0.5): qualified
+// `[payload@]version` pins + per-payload disable route the PROVIDER.
+// ---------------------------------------------------------------------
+
+fn seed_two_providers(home: &std::path::Path) {
+    write_payload(
+        home,
+        "pandora",
+        "1.0.0",
+        &app_manifest("pandora", "1.0.0", &entrypoint_yaml(NATIVE_ENTRY, "pandoc")),
+    );
+    write_payload(
+        home,
+        "pandorc",
+        "1.2.0",
+        &app_manifest("pandorc", "1.2.0", &entrypoint_yaml(NATIVE_ENTRY, "pandoc")),
+    );
+}
+
+fn write_disabled(home: &std::path::Path, yaml: &str) {
+    let shims = home.join("shims");
+    std::fs::create_dir_all(&shims).unwrap();
+    std::fs::write(shims.join(".disabled.yaml"), yaml).unwrap();
+}
+
+#[test]
+fn two_providers_unqualified_is_the_collision_error_with_the_routing_hint() {
+    let tmp = TempDir::new("collision");
+    let home = tmp.path().join("home");
+    seed_two_providers(&home);
+    let err = resolve::resolve("pandoc", &ctx(&home, tmp.path())).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(err.message.contains("more than one"), "{}", err.message);
+    assert!(
+        err.message.contains("pandoc: <payload>@<version>"),
+        "{}",
+        err.message
+    );
+    assert!(
+        err.message
+            .contains("tebako-shim disable pandoc --of <payload>"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn a_qualified_project_pin_routes_the_named_provider() {
+    let tmp = TempDir::new("pin-project");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_two_providers(&home);
+    std::fs::write(proj.join(".tebako-tools.yaml"), "pandoc: pandorc@1.2.0\n").unwrap();
+
+    let res = resolve::resolve("pandoc", &ctx(&home, &proj)).unwrap();
+    assert_eq!(res.payload_name, "pandorc");
+    assert_eq!(res.version, "1.2.0");
+    assert!(matches!(res.source, VersionSource::ProjectFile(_)));
+    assert!(matches!(res.provider, resolve::ProviderKind::Pinned));
+}
+
+#[test]
+fn an_qualified_env_pin_overrides_the_project_pin() {
+    let tmp = TempDir::new("pin-env");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_two_providers(&home);
+    std::fs::write(proj.join(".tebako-tools.yaml"), "pandoc: pandorc@1.2.0\n").unwrap();
+    let mut ctx = ctx(&home, &proj);
+    ctx.env
+        .insert("TEBAKO_PANDOC_VERSION".into(), "pandora@1.0.0".into());
+
+    let res = resolve::resolve("pandoc", &ctx).unwrap();
+    assert_eq!(res.payload_name, "pandora");
+    assert_eq!(res.version, "1.0.0");
+    assert!(matches!(res.source, VersionSource::Env(_)));
+}
+
+#[test]
+fn a_pin_naming_a_non_provider_is_the_notaprovider_error() {
+    let tmp = TempDir::new("pin-notaprovider");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_two_providers(&home);
+    write_payload(
+        &home,
+        "othertools",
+        "9.9",
+        &app_manifest("othertools", "9.9", &entrypoint_yaml(NATIVE_ENTRY, "other")),
+    );
+    std::fs::write(proj.join(".tebako-tools.yaml"), "pandoc: othertools@9.9\n").unwrap();
+
+    let err = resolve::resolve("pandoc", &ctx(&home, &proj)).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(err.message.contains("othertools@9.9"), "{}", err.message);
+    assert!(err.message.contains("NotAProvider"), "{}", err.message);
+    assert!(err.message.contains("pandoc"), "{}", err.message);
+}
+
+#[test]
+fn a_pin_naming_an_uninstalled_version_is_the_not_installed_error() {
+    let tmp = TempDir::new("pin-uninstalled");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_two_providers(&home);
+    std::fs::write(proj.join(".tebako-tools.yaml"), "pandoc: pandorc@9.9.9\n").unwrap();
+
+    let err = resolve::resolve("pandoc", &ctx(&home, &proj)).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(err.message.contains("9.9.9"), "{}", err.message);
+    assert!(err.message.contains("not installed"), "{}", err.message);
+}
+
+#[test]
+fn an_unparseable_chain_value_is_the_named_grammar_error() {
+    let tmp = TempDir::new("pin-bad");
+    let home = tmp.path().join("home");
+    seed_metanorma(&home);
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env
+        .insert("TEBAKO_METANORMA_VERSION".into(), "metanorma@".into());
+    let err = resolve::resolve("metanorma", &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(
+        err.message.contains("TEBAKO_METANORMA_VERSION"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("metanorma@"), "{}", err.message);
+}
+
+#[test]
+fn disabling_all_but_one_claim_routes_without_a_pin() {
+    let tmp = TempDir::new("route-by-disable");
+    let home = tmp.path().join("home");
+    seed_two_providers(&home);
+    // `tebako-shim disable pandoc --of pandorc` writes exactly this.
+    write_disabled(&home, "pandoc:\n  - pandorc@all\n");
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env
+        .insert("TEBAKO_PANDOC_VERSION".into(), "1.0.0".into());
+
+    let res = resolve::resolve("pandoc", &ctx).unwrap();
+    assert_eq!(res.payload_name, "pandora");
+    assert_eq!(res.version, "1.0.0");
+    assert!(matches!(res.provider, resolve::ProviderKind::Own));
+}
+
+#[test]
+fn both_claims_disabled_is_the_no_provider_error() {
+    let tmp = TempDir::new("route-all-disabled");
+    let home = tmp.path().join("home");
+    seed_two_providers(&home);
+    write_disabled(&home, "pandoc:\n  - pandorc@all\n  - pandora@all\n");
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env
+        .insert("TEBAKO_PANDOC_VERSION".into(), "1.0.0".into());
+
+    let err = resolve::resolve("pandoc", &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(
+        err.message
+            .contains("no installed payload provides or exposes"),
+        "{}",
+        err.message
+    );
+}
+
+// spec 30 §3 exposers: the SAME routing surface (S9).
+
+const JAVA_EDGE: &str =
+    "requires:\n  - {kind: runtime, engine: java, constraint: \">= 21\", expose: [java]}\n";
+
+fn seed_two_exposers(home: &std::path::Path) {
+    for (name, version) in [("expa", "1.0.0"), ("expb", "2.0.0")] {
+        write_payload(
+            home,
+            name,
+            version,
+            &app_manifest_requires(
+                name,
+                version,
+                &entrypoint_yaml(NATIVE_ENTRY, name),
+                JAVA_EDGE,
+            ),
+        );
+    }
+}
+
+#[test]
+fn two_exposers_route_through_the_same_pin_and_disable_surface() {
+    let tmp = TempDir::new("route-exposed");
+    let home = tmp.path().join("home");
+    seed_two_exposers(&home);
+
+    // unqualified → the collision error with the routing hint
+    let err = resolve::resolve("java", &ctx(&home, tmp.path())).unwrap_err();
+    assert!(
+        err.message.contains("exposed by more than one"),
+        "{}",
+        err.message
+    );
+    assert!(
+        err.message
+            .contains("tebako-shim disable java --of <payload>"),
+        "{}",
+        err.message
+    );
+
+    // a qualified env pin routes the named exposer
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env
+        .insert("TEBAKO_JAVA_VERSION".into(), "expb@2.0.0".into());
+    let res = resolve::resolve("java", &ctx).unwrap();
+    assert_eq!(res.payload_name, "expb");
+    assert_eq!(res.version, "2.0.0");
+    assert!(matches!(res.provider, resolve::ProviderKind::Pinned));
+    assert!(res.exposed.is_some(), "the expose edge rides");
+
+    // disabling expb's claim routes to expa with a bare-version pin
+    write_disabled(&home, "java:\n  - expb@all\n");
+    let mut ctx2 = common::ctx(&home, tmp.path());
+    ctx2.env
+        .insert("TEBAKO_JAVA_VERSION".into(), "1.0.0".into());
+    let res = resolve::resolve("java", &ctx2).unwrap();
+    assert_eq!(res.payload_name, "expa");
+    assert!(matches!(res.provider, resolve::ProviderKind::Exposed));
+}
