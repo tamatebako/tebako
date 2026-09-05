@@ -1,12 +1,14 @@
 # Spec 32 — Payload as a spawned dependency
 
-**Status: PLANNED (drafted 2026-09-05; design-first per spec 14 — the
-implementation lands with the TODO.python/03 chain: `tpkg` (the
-`kind: executable` edge + schema_minor 5), `tebako-shim`
-(dispatch-time edge resolution + the spawn-lock payload rows),
-`tebako-cli` (install/compose arms + the expose shim registration),
-`tebako-driver` (the payload-spawn plan composition), `tebako-pkg`
-(the press-time cross-checks)).** Amends spec 03 §8 (the
+**Status: NORMATIVE (drafted 2026-09-05; implemented 2026-09-05 —
+`tpkg` (the `kind: executable` edge + schema_minor 5, the lock's
+payload rows, the payload-store SSOT), `tebako-shim` (dispatch-time
+edge resolution + the spawn-lock payload rows),
+`tebako-driver` (the payload-spawn plan composition + the hereditary
+jail ceiling), `tebako-bootstrap` (the lock's spawned payload-row
+resolution), `tebako-cli` (install/compose arms + the expose shim
+registration + the tightening export), `tebako-pkg`/`tebako-info` (the
+press-time two-level cross-checks + the render arms)).** Amends spec 03 §8 (the
 `kind: executable` edge gains the `expose:` spawn form), spec 23 §13.6
 (the lock's `spawned[]` rows gain the payload row), spec 30 §0 (the
 dispatch-case split becomes three-way). No wire-format change; no
@@ -142,7 +144,16 @@ with the payload case riding the SAME machinery:
   reads the provider's entrypoint declarations from the STORE
   MANIFEST MIRROR (the host-side `payloads/<name>/<version>.manifest.yaml`;
   embedded wins, else synthesized loudly — spec 05's mirror rule). No
-  image mounts at plan time.
+  image mounts at plan time. One completion path, locked: a record the
+  BOOTSTRAP seeded (lock-row resolution lands the image + the trust
+  anchor; the size-gated loader carries no image reader, so no mirror)
+  is completed ONCE at the first spawn resolution — the driver
+  scratch-mounts the provider image, reads the embedded manifest
+  (authoritative, spec 05 §3), and writes the mirror through the
+  store's tmp+rename discipline. This is the install-time extraction
+  deferred, not a plan-time read: the steady state stays mirror-only,
+  and the unpinned capability scan never takes this path (a scan
+  candidate without a mirror is the named damaged-record error).
 - **Argument carry-over (locked):** spec 30 §2's rule applies
   verbatim — an argument lexically resolving under one of the PARENT's
   mounts is carried by re-mounting that image in the child AT THE SAME
@@ -218,6 +229,13 @@ child carries no jail env at all. Default deny stands.
   (A child spawned from a jailed parent under `--no-host` runs
   host-blind even if its three manifests declare needs — the needs
   surface in the journal for the discovery loop, never as grants.)
+  The wire: `TEBAKO_JAIL_TIGHTENING` carries the parent's raw
+  user-tightening env spec (exported by the shim's dispatch and by
+  `tebako run` whenever a user tightening exists); the driver captures
+  it at boot and intersects it over every spawned child's union — a
+  `record` tightening dominates wholesale, mirroring
+  `tpkg::jail::effective` — and the plan's env-op block never deletes
+  the key, so the ceiling inherits onward to deeper spawns.
 - **Record-mode attribution.** The child's jail journal lines carry
   the `spawn-edge:<consumer>:<provider>` source, so
   `tfs needs --from-journal` (spec 24) attributes the child's records
