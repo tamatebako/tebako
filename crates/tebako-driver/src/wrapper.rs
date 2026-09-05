@@ -243,23 +243,32 @@ fn interpreter_vfs_path(
 /// The entrypoint's declared `args_default` (spec 03 §2.2), read from
 /// the app payload's own manifest — the FIRST `--tebako-image` triple's
 /// mount (spec 17 §1's entry base). Composed between the interpreter
-/// and the entry (spec 29 §1). No manifest, a non-app payload, or no
-/// entrypoint declaring this path all mean an empty list — the
-/// positional-entry form — never an error; a corrupt manifest stays the
-/// named 65 it is everywhere (the image lying).
+/// and the entry (spec 29 §1). The positional-entry form matches the
+/// declaration by PATH; a bare `--tebako-entry <name>` (spec 32 §2's
+/// spawned-payload child) matches by NAME. No manifest, a non-app
+/// payload, no entrypoint declaring the path/name, and the
+/// runtime-entrypoint bare form (spec 30 §2 — the tail bypasses the
+/// composition for it) all mean an empty list — never an error; a
+/// corrupt manifest stays the named 65 it is everywhere (the image
+/// lying).
 pub(crate) fn args_default(h: &Handoff, runtime_root: &str) -> Result<Vec<String>, DriverError> {
-    let entry_case = h.entry.as_deref().is_some_and(|e| e.contains('/'));
-    let (Some(first), Some(entry), true) = (h.images.first(), h.entry.as_deref(), entry_case)
-    else {
+    let (Some(first), Some(entry)) = (h.images.first(), h.entry.as_deref()) else {
         return Ok(Vec::new());
     };
+    if entry == "self" {
+        return Ok(Vec::new());
+    }
     let mount = qualify_mount(&first.mount, runtime_root);
     let Some(manifest_doc) = mounted_manifest_at(&mount)? else {
         return Ok(Vec::new());
     };
-    let spelled = format!("/{}", entry.trim_start_matches('/'));
     if let tpkg::Provides::App(app) = &manifest_doc.provides {
-        if let Some(ep) = app.entrypoints.iter().find(|ep| ep.path == spelled) {
+        if entry.contains('/') {
+            let spelled = format!("/{}", entry.trim_start_matches('/'));
+            if let Some(ep) = app.entrypoints.iter().find(|ep| ep.path == spelled) {
+                return Ok(ep.args_default.clone());
+            }
+        } else if let Some(ep) = app.entrypoints.iter().find(|ep| ep.name == entry) {
             return Ok(ep.args_default.clone());
         }
     }
@@ -389,6 +398,31 @@ pub fn run(argv: &[String], runtime_root: &str, env: &dyn Env) -> Result<BootAct
     }
 }
 
+/// The FIRST payload image's own entrypoint declaration of a bare name
+/// (spec 32 §2's wrapper case): the spawned-payload child leads its
+/// triples with the provider's image, and the provider's App manifest
+/// owns the bare name. `Ok(None)` on every gap (no image, no manifest,
+/// not an app, no such name) — the caller's runtime-entrypoint fallback
+/// (spec 30 §2); the shared boot already refused a name NEITHER surface
+/// declares, and verified the declared path exists.
+fn payload_entrypoint(
+    h: &Handoff,
+    runtime_root: &str,
+    name: &str,
+) -> Result<Option<tpkg::Entrypoint>, DriverError> {
+    let Some(first) = h.images.first() else {
+        return Ok(None);
+    };
+    let mount = qualify_mount(&first.mount, runtime_root);
+    let Some(manifest_doc) = mounted_manifest_at(&mount)? else {
+        return Ok(None);
+    };
+    let tpkg::Provides::App(app) = &manifest_doc.provides else {
+        return Ok(None);
+    };
+    Ok(app.entrypoints.iter().find(|e| e.name == name).cloned())
+}
+
 /// The env image's own runtime entrypoint declaration (spec 30 §2's
 /// wrapper case): the bare-name lookup against `runtimeProvides.
 /// entrypoints`. The shared boot already refused an undeclared name
@@ -461,27 +495,37 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
     // default and the boot's resolved-entry token entirely (the
     // declaration is the single owner; the linked pattern's boot arm
     // already composed the same resolution for the in-process case).
+    // spec 32 §2: the name the FIRST payload image's own App manifest
+    // declares is NOT this case — the spawned-payload child's entry is
+    // an in-image script the INTERPRETER runs, so it falls through to
+    // the composition below (the boot already resolved it against the
+    // provider's image and composed the declaration's args_default).
+    let mut bare_payload_entry = false;
     if let Some(name) = h.entry.as_deref() {
         if !name.contains('/') && name != "self" {
-            let ep = runtime_entrypoint(&outcome.runtime_root, name)?;
-            let program = materialize(
-                &join_mount(&outcome.runtime_root, &ep.path),
-                mech,
-                &outcome.runtime_root,
-            )?;
-            let mut argv = Vec::with_capacity(1 + ep.args_default.len() + h.user_args.len());
-            argv.push(program.clone());
-            argv.extend(ep.args_default.iter().cloned());
-            argv.extend(h.user_args.iter().cloned());
-            return Ok(BootAction::Launch(Launch { program, argv }));
+            if payload_entrypoint(h, &outcome.runtime_root, name)?.is_none() {
+                let ep = runtime_entrypoint(&outcome.runtime_root, name)?;
+                let program = materialize(
+                    &join_mount(&outcome.runtime_root, &ep.path),
+                    mech,
+                    &outcome.runtime_root,
+                )?;
+                let mut argv = Vec::with_capacity(1 + ep.args_default.len() + h.user_args.len());
+                argv.push(program.clone());
+                argv.extend(ep.args_default.iter().cloned());
+                argv.extend(h.user_args.iter().cloned());
+                return Ok(BootAction::Launch(Launch { program, argv }));
+            }
+            bare_payload_entry = true;
         }
     }
     let program = materialize(&vfs, mech, &outcome.runtime_root)?;
     let defaults = args_default(h, &outcome.runtime_root)?;
-    let entry_index = if h.entry.as_deref().is_some_and(|e| e.contains('/')) {
+    let entry_index = if h.entry.as_deref().is_some_and(|e| e.contains('/')) || bare_payload_entry {
         // [program, defaults…, ENTRY, user args…] — the boot composed
-        // the defaults into outcome.argv (tebako#503); the entry's
-        // index is fixed at composition.
+        // the defaults into outcome.argv (tebako#503; spec 32 §2's bare
+        // payload name composes identically); the entry's index is fixed
+        // at composition.
         Some(1 + defaults.len())
     } else {
         None
