@@ -34,7 +34,9 @@
 //! `fstatat` (+`fstatat64`/`__xstat`/`__lxstat`/`__fxstat`/`__fxstatat`/
 //! `__xstat64`/`__lxstat64`/`__fxstat64`/`__fxstatat64`/`statx`/
 //! `getdents64` and the LFS `open64`/`openat64`/`stat64`/`lstat64`/
-//! `fstat64`/`pread64` family on Linux — roadmap 39; the fortified
+//! `fstat64`/`pread64`/`lseek64`/`fcntl64` family on Linux — roadmap 39
+//! (fcntl64: glibc's `_FILE_OFFSET_BITS=64` header redirect, the gnu
+//! CPython boot's actual entry point — tebako#529); the fortified
 //! `__read_chk` and `__openat_2`, and `fopen64` — tebako#439:
 //! libcrypto's `o_fopen.c` defines `_FILE_OFFSET_BITS=64` itself on
 //! linux, so every `BIO_new_file`/`X509_LOOKUP_load_file` binds

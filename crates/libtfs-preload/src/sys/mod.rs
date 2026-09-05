@@ -1333,6 +1333,21 @@ pub unsafe extern "C" fn fcntl_impl(fd: c_int, cmd: c_int, arg: c_int) -> c_int 
     }
 }
 
+/// Linux: `fcntl64` (the LFS alias of `fcntl`). glibc's headers redirect
+/// fcntl→fcntl64 whenever `_FILE_OFFSET_BITS=64` — which CPython's
+/// pyconfig.h sets on every gnu build — so a gnu interpreter's PEP-446
+/// cloexec probe (`get_inheritable`, Python/fileutils.c) names fcntl64,
+/// never fcntl: unexported, the call bound glibc's real fcntl64 and the
+/// shim's synthetic fd died EBADF at init_fs_encoding (tebako#529, the
+/// python factory's gnu legs). Delegates like the other LFS aliases;
+/// the descriptor-command semantics (and the early-boot raw arm) live in
+/// `fcntl_impl`.
+#[cfg(target_os = "linux")]
+#[no_mangle]
+pub unsafe extern "C" fn fcntl64(fd: c_int, cmd: c_int, arg: c_int) -> c_int {
+    fcntl_impl(fd, cmd, arg)
+}
+
 /// Interposed `mkdir` (write-class: memfs → EROFS, host → policy-gated).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn mkdir(path: *const c_char, mode: libc::mode_t) -> c_int {

@@ -1160,7 +1160,11 @@ fn macos_plain_close_on_a_memfs_fd() {
 /// `encodings`, before any user code. The probe replays the exact
 /// sequence: O_CLOEXEC open → F_GETFD (bit set) → F_SETFD clear/set →
 /// F_GETFL (truthful read-only) → F_SETFL accepted no-op → read →
-/// close → EBADF on the dead fd → host-fd passthrough. Cross-platform:
+/// close → EBADF on the dead fd → host-fd passthrough; on linux the
+/// descriptor dance is replayed through `fcntl64` — glibc's headers
+/// redirect fcntl→fcntl64 under _FILE_OFFSET_BITS=64 (CPython's
+/// pyconfig.h sets it on every gnu build), so the gnu interpreter's
+/// probe names fcntl64, never fcntl (tebako#529). Cross-platform:
 /// fcntl's descriptor commands are plain POSIX.
 #[test]
 fn fcntl_on_a_memfs_fd() {
