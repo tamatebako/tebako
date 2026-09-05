@@ -186,9 +186,7 @@ pub fn derive(m: &PayloadManifest) -> Derived {
             Requirement::Runtime { engine, .. } => engine,
             // The executable-capability axis (spec 32) names the provider
             // pin when present, else the capability itself.
-            Requirement::Executable {
-                name, payload, ..
-            } => payload.as_ref().unwrap_or(name),
+            Requirement::Executable { name, payload, .. } => payload.as_ref().unwrap_or(name),
         };
         if !dependency_names.contains(name) {
             dependency_names.push(name.clone());

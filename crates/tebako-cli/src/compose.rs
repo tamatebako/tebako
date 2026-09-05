@@ -416,11 +416,7 @@ pub fn resolve_closure<T: Transport>(
                     let provider = match payload {
                         Some(p) => p.clone(),
                         None => compose_capability_provider(
-                            home,
-                            fetcher,
-                            &plan.name,
-                            name,
-                            constraint,
+                            home, fetcher, &plan.name, name, constraint,
                         )?,
                     };
                     let authored = doc.slices.iter().find(|s| s.name == provider);

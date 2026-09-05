@@ -1370,7 +1370,12 @@ fn provider_image(name: &str, version: &str, entrypoint: &str) -> Vec<u8> {
 /// A registry entry whose ENTRYPOINT mirror differs from the payload
 /// name (the capability-scan shape: the capability is the entrypoint,
 /// never the payload name — spec 32 §1).
-fn capability_registry_yaml(name: &str, version: &str, payload_ref: &str, entrypoint: &str) -> String {
+fn capability_registry_yaml(
+    name: &str,
+    version: &str,
+    payload_ref: &str,
+    entrypoint: &str,
+) -> String {
     format!(
         "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{entrypoint}]\n    default: {version}\n"
     )
@@ -1418,8 +1423,9 @@ fn install_executable_edge_installs_the_provider_and_registers_the_expose_shims(
         "{journal}"
     );
     assert!(
-        journal
-            .contains("event=provider-runtime-resolved provider=xml2rfc entrypoint=xml2rfc engine=ruby"),
+        journal.contains(
+            "event=provider-runtime-resolved provider=xml2rfc entrypoint=xml2rfc engine=ruby"
+        ),
         "{journal}"
     );
 }
@@ -1558,10 +1564,7 @@ fn install_executable_edge_mount_axis_installs_the_provider_without_spawn_checks
         "mn-registry.yaml",
         &registry_yaml("mn", "1.0", &consumer_ref, Some("1.0")),
     );
-    let provider_ref = fx.payload(
-        "pandoc-3.5.tfs",
-        &provider_image("pandoc", "3.5", "pandoc"),
-    );
+    let provider_ref = fx.payload("pandoc-3.5.tfs", &provider_image("pandoc", "3.5", "pandoc"));
     let provider_reg = fx.registry(
         "pandoc-registry.yaml",
         &registry_yaml("pandoc", "3.5", &provider_ref, Some("3.5")),
@@ -1580,5 +1583,8 @@ fn install_executable_edge_mount_axis_installs_the_provider_without_spawn_checks
     );
     // no expose ⇒ no runtime pre-stage (no cached ruby runtime exists
     // here — a pre-stage attempt would have failed the install)
-    assert!(!journal.contains("event=provider-runtime-resolved"), "{journal}");
+    assert!(
+        !journal.contains("event=provider-runtime-resolved"),
+        "{journal}"
+    );
 }

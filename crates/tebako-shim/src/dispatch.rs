@@ -113,7 +113,8 @@ fn dependency_mount(
             // the capability scan answers (DependencyNotFound /
             // AmbiguousProvider). Cache-only — install is the explicit
             // verb (the shim's dep-mount posture).
-            let provider = resolve_provider_payload(tool, name, payload.as_deref(), constraint, ctx)?;
+            let provider =
+                resolve_provider_payload(tool, name, payload.as_deref(), constraint, ctx)?;
             tebako_log::log!(
                 tebako_log::Level::Debug,
                 "shim",
@@ -526,12 +527,7 @@ pub fn plan(
             .image
             .clone()
             .expect("provider_spawn_pair post-asserts the env image");
-        let mounts = mounts_for(
-            &provider.image,
-            &provider.manifest.requires,
-            &res.tool,
-            ctx,
-        )?;
+        let mounts = mounts_for(&provider.image, &provider.manifest.requires, &res.tool, ctx)?;
         let mut argv = vec![pair.exe.to_string_lossy().into_owned()];
         for m in &mounts {
             argv.push("--tebako-image".to_string());
@@ -558,7 +554,10 @@ pub fn plan(
             &mut rows,
         )?;
         if !rows.is_empty() {
-            env.push((tpkg::runtime_store::SPAWN_LOCK_VAR.to_string(), rows.join(";")));
+            env.push((
+                tpkg::runtime_store::SPAWN_LOCK_VAR.to_string(),
+                rows.join(";"),
+            ));
         }
         // The dispatcher's jail (the consumer payload's needs ∩ the
         // user's tightening) always wins (spec 08 §2).

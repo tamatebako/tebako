@@ -396,11 +396,7 @@ pub fn parse_spawn_lock(value: &str) -> Result<Vec<SpawnLockEntry>, String> {
             let (engine, pair) = versions
                 .split_once('=')
                 .ok_or_else(|| format!("spawn-lock entry {entry:?} lacks the nested engine"))?;
-            (
-                Some((name.to_string(), pversion.to_string())),
-                engine,
-                pair,
-            )
+            (Some((name.to_string(), pversion.to_string())), engine, pair)
         } else {
             (None, subject, versions)
         };

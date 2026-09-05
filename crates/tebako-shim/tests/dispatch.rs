@@ -956,7 +956,11 @@ fn executable_edge_missing_provider_is_dependency_not_found() {
     pin_env(&mut ctx, "metanorma", "1.2.3");
 
     let err = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap_err();
-    assert!(err.message.contains("DependencyNotFound"), "{}", err.message);
+    assert!(
+        err.message.contains("DependencyNotFound"),
+        "{}",
+        err.message
+    );
     assert!(err.message.contains("tebako install"), "{}", err.message);
 }
 
@@ -1011,7 +1015,11 @@ fn executable_edge_runtime_less_match_is_a_named_error() {
         &home,
         "xml2rfc",
         "3.34.0",
-        &app_manifest("xml2rfc", "3.34.0", &entrypoint_yaml(NATIVE_ENTRY, "xml2rfc")),
+        &app_manifest(
+            "xml2rfc",
+            "3.34.0",
+            &entrypoint_yaml(NATIVE_ENTRY, "xml2rfc"),
+        ),
     );
     write_runtime(&home, "4.0.6", "0.16.0", true);
     let mut ctx = ctx(&home, tmp.path());

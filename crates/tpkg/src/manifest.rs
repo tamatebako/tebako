@@ -1146,10 +1146,10 @@ pub enum Requirement {
         expose: Vec<String>,
     },
     /// An executable-capability edge (`{kind: executable, name,
-    /// payload?, constraint, mount?, expose?, critical?}`) — spec 03 §8
-    /// + spec 32 §1 (schema_minor 5): an executable another payload
-    /// PROVIDES, exact-name matched against `provides.executables` ∪
-    /// `provides.entrypoints[].name`. `mount` and `expose` are the two
+    /// payload?, constraint, mount?, expose?, critical?}`) — spec 03
+    /// §8 and spec 32 §1 (schema_minor 5): an executable another
+    /// payload PROVIDES, exact-name matched against
+    /// `provides.executables` ∪ `provides.entrypoints[].name`. `mount` and `expose` are the two
     /// ORTHOGONAL surfaces: `mount` co-mounts the provider image at the
     /// consumer-declared path (the VFS surface); `expose` opens the
     /// SPAWN surface — each exposed name dispatches the provider's own

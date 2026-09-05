@@ -736,7 +736,9 @@ fn check_spawned_expose(expose: &[String]) -> Result<(), PackageManifestError> {
 /// top-level `spawned[]` rows (spec 30) and the nested runtime row of a
 /// spawned-payload row (spec 32 §6, where it spells the provider's own
 /// resolved language edge).
-fn validate_spawned_runtime_row(spawned: &LockedSpawnedRuntime) -> Result<(), PackageManifestError> {
+fn validate_spawned_runtime_row(
+    spawned: &LockedSpawnedRuntime,
+) -> Result<(), PackageManifestError> {
     check_non_empty(&spawned.engine, "lock.spawned[].engine must not be empty")?;
     check_non_empty(&spawned.version, "lock.spawned[].version must not be empty")?;
     check_non_empty(&spawned.tebako, "lock.spawned[].tebako must not be empty")?;
@@ -1415,8 +1417,7 @@ mod tests {
         assert!(text.contains("payload: xml2rfc"), "{text}");
         let back = PackageManifest::from_yaml(&text).unwrap();
         assert_eq!(back, m);
-        let Some(LockedSpawned::Payload(row)) = back.lock.as_ref().unwrap().spawned.get(1)
-        else {
+        let Some(LockedSpawned::Payload(row)) = back.lock.as_ref().unwrap().spawned.get(1) else {
             panic!("payload row, got {:?}", back.lock.as_ref().unwrap().spawned);
         };
         assert_eq!(row.payload, "xml2rfc");
@@ -1460,7 +1461,8 @@ mod tests {
         let mut lock = carried_lock();
         let mut row = spawned_xml2rfc();
         row.carry = false;
-        row.source = Some("tfs:github:tebako-packages/xml2rfc:3.34.0#xml2rfc-3.34.0.tfs".to_string());
+        row.source =
+            Some("tfs:github:tebako-packages/xml2rfc:3.34.0#xml2rfc-3.34.0.tfs".to_string());
         lock.spawned.push(LockedSpawned::Payload(row));
         assert!(bad(lock));
 
