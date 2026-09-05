@@ -49,6 +49,8 @@ const USAGE: &str = "Usage:
   tebako update-registries             refresh the dispatch-time registry cache
   tebako install <ref | name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
+  tebako shim <verb> …                 the dispatcher's management verbs (spec 07 §3;
+                                       ≡ tebako-shim <verb> …: list|use|enable|disable|which|doctor|install-shell|uninstall-shell)
   tebako info [topic] [--remote] [--json]
                                        the store/system surface (system|runtimes|payloads|shims|registries|store)
   tebako inspect <artifact> [flags]    payload/package introspection (spec 15);
@@ -156,6 +158,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "update-registries" => run_update_registries(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
+        "shim" => run_shim(rest),
         "info" => run_info(rest),
         "inspect" => run_inspect(rest),
         "publish" => run_publish(rest),
@@ -176,6 +179,40 @@ fn tebako_home() -> Result<PathBuf, CliExit> {
             i32::from(e.code),
         ))
     })
+}
+
+/// `tebako shim <verb> …` ≡ `tebako-shim <verb> …` (spec 07 §3's dual
+/// spelling): the shim crate is a library dependency (spec 14 §3 — no
+/// shell-outs), so the passthrough rebuilds argv with the shim's own
+/// argv0 and the management face answers (tebako-shim/src/main.rs's
+/// shape: Print → stdout + exit code; Exec is unreachable from the
+/// management verbs and maps to a named internal error, never an exec).
+fn run_shim(args: &[String]) -> Result<(), CliExit> {
+    let ctx = tebako_shim::Ctx::from_env()
+        .map_err(|e| CliExit::Error(TebakoError::new(e.message, i32::from(e.code))))?;
+    let mut argv: Vec<String> = Vec::with_capacity(args.len() + 1);
+    argv.push("tebako-shim".to_string());
+    argv.extend(args.iter().cloned());
+    match tebako_shim::run(&argv, &ctx) {
+        Ok(tebako_shim::Action::Print { text, code }) => {
+            print!("{text}");
+            if code != 0 {
+                return Err(CliExit::Error(TebakoError::new(
+                    format!("tebako shim: the verb exited with code {code}"),
+                    i32::from(code),
+                )));
+            }
+            Ok(())
+        }
+        Ok(tebako_shim::Action::Exec(_)) => Err(CliExit::Error(TebakoError::new(
+            "tebako shim: a management verb resolved to a dispatch plan — internal error (the dispatch face needs argv0 = the command name; invoke the shim link itself)",
+            74,
+        ))),
+        Err(e) => Err(CliExit::Error(TebakoError::new(
+            e.message,
+            i32::from(e.code),
+        ))),
+    }
 }
 
 /// `tebako info [topic] [--remote] [--json]` — the store/system surface.
