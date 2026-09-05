@@ -588,6 +588,12 @@ the shared row's `source:` is the press-resolved release download base,
 replayed verbatim — the same dodge shared slices already use, and the
 answer until the per-engine chain lands.
 
+A payload's expose-carrying `kind: executable` edge (spec 32) joins the
+SAME `spawned[]` list as a payload row: the provider payload's
+version/carry/image pins, with its own language edge's resolved runtime
+pair nested under `runtime:` (spec 32 §6's grammar). The dispatch lock
+export gains the payload row spelling (spec 32 §5).
+
 ## 14. The settings registry — one setting, three channels, one SSOT (owner-directed 2026-08-26, tebako#400)
 
 Every user-facing setting is declarable through up to THREE channels:
