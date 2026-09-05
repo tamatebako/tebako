@@ -1,0 +1,46 @@
+# Golden fixture — kind: app with a spec 32 executable edge (schema_minor 5)
+#
+# metanorma's ietf edge: `xml2rfc` is an executable the xml2rfc payload
+# PROVIDES (an app entrypoint carrying runtime_requirement on python). The
+# edge shows BOTH orthogonal axes (spec 32 §1): `mount` opens the VFS
+# surface (the provider image co-mounts at the consumer-declared path),
+# `expose` opens the SPAWN surface (each exposed name dispatches the
+# provider's own spec-17 dispatch as a child process). `critical: true`
+# is the schema evolution law's flag — the payload's function needs the
+# edge, so a reader predating schema_minor 5 must refuse, never skip.
+identity:
+  schema_version: 1
+  kind: app
+  name: metanorma
+  version: 1.2.3
+  producer: {tool: tebako-cli, tool_version: 2.1.10}
+  created: "2026-09-05T09:30:00Z"
+  source:
+    commit: 4f3c2b1a9d8e7f605a4b3c2d1e0f9a8b7c6d5e4f
+    builder: gha:run:20260905-1042
+  sbom: {ref: sbom/metanorma-1.2.3.spdx.json}
+  digest:
+    tree_hash: sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3
+    blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1
+  signing: {state: unsigned}
+  encryption: {state: none}
+provides:
+  entrypoints:
+    - name: metanorma
+      path: /__app__/bin/metanorma
+      runtime_requirement:
+        engine: ruby
+        constraint: ">= 3.3, < 5.0"
+  platforms: universal
+  capabilities: {exec: true, read: true}
+requires:
+  - kind: language
+    engine: ruby
+    constraint: "~> 3.3.0"
+  - kind: executable
+    name: xml2rfc                 # the capability — exact-name match
+    payload: xml2rfc              # the by-name provider pin
+    constraint: ">= 3.34"
+    mount: /opt/xml2rfc           # the VFS surface (co-mount, consumer-declared)
+    expose: [xml2rfc]             # the SPAWN surface (spec 32 §2)
+    critical: true                # the payload's function needs this edge

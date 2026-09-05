@@ -155,6 +155,7 @@ pub mod merkle;
 pub mod merkle_host;
 mod model;
 mod package;
+pub mod payload_store;
 mod region;
 pub mod runtime_store;
 pub mod settings;
@@ -192,8 +193,9 @@ pub use merkle::{
 pub use model::{Manifest, Slot, V2Extension};
 pub use package::{
     DigestPin, LockedArtifact, LockedRuntime, LockedSlice, LockedSpawned, LockedSpawnedArtifact,
-    MountMode, PackageEntry, PackageIdentity, PackageLock, PackageManifest, PackageManifestError,
-    PackageMount, Precedence, PACKAGE_SCHEMA_VERSION,
+    LockedSpawnedPayload, LockedSpawnedRuntime, MountMode, PackageEntry, PackageIdentity,
+    PackageLock, PackageManifest, PackageManifestError, PackageMount, Precedence,
+    PACKAGE_SCHEMA_VERSION,
 };
 pub use region::{resolve_slot_region, SlotRegion, SlotRegionError};
 

@@ -5,7 +5,7 @@
 
 use tpkg::*;
 
-const FIXTURES: [&str; 3] = ["runtime", "app-suite", "data"];
+const FIXTURES: [&str; 4] = ["runtime", "app-suite", "data", "executable-edge"];
 
 fn fixture_path(name: &str) -> String {
     format!(
@@ -396,6 +396,166 @@ fn runtime_edge_expose_never_collides_with_own_entrypoints() {
 }
 
 #[test]
+fn executable_edge_fixture_shape() {
+    // spec 32 §1 (schema_minor 5): the executable edge with BOTH
+    // orthogonal axes — mount (the VFS surface) AND expose (the spawn
+    // surface) — plus the provider pin and the critical flag.
+    let text = read(&fixture_path("executable-edge"));
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    assert_eq!(m.identity.kind, PayloadKind::App);
+    assert_eq!(m.requires.len(), 2);
+    let Requirement::Executable {
+        name,
+        payload,
+        constraint,
+        mount,
+        expose,
+        critical,
+    } = &m.requires[1]
+    else {
+        panic!("executable edge, got {:?}", m.requires[1]);
+    };
+    assert_eq!(name, "xml2rfc");
+    assert_eq!(payload.as_deref(), Some("xml2rfc"));
+    assert_eq!(constraint.as_str(), ">= 3.34");
+    assert_eq!(mount.as_deref(), Some("/opt/xml2rfc"));
+    assert_eq!(expose, &["xml2rfc".to_string()]);
+    assert!(critical);
+}
+
+#[test]
+fn executable_edge_is_schema_legal() {
+    // The spawn-only form (expose without mount — the xml2rfc dispatch
+    // without a VFS surface): the versioned JSON Schema admits it and
+    // the model round-trips it.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 2.1.10}\n  created: \"2026-09-05T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires:\n  - {kind: language, engine: ruby, constraint: \"~> 3.3.0\"}\n\
+        \x20 - {kind: executable, name: xml2rfc, constraint: \">= 3.34\", expose: [xml2rfc], critical: true}\n";
+    let m = PayloadManifest::from_yaml(text).unwrap();
+    let Some(Requirement::Executable {
+        name,
+        payload,
+        mount,
+        expose,
+        critical,
+        ..
+    }) = m.requires.get(1)
+    else {
+        panic!("executable edge, got {:?}", m.requires);
+    };
+    assert_eq!(name, "xml2rfc");
+    assert!(payload.is_none());
+    assert!(mount.is_none());
+    assert_eq!(expose, &["xml2rfc".to_string()]);
+    assert!(critical);
+    // …and the schema agrees (MECE cross-check).
+    let validator = schema_validator();
+    validator
+        .validate(&yaml_text_to_json(text))
+        .expect("the expose-only executable edge is schema-legal");
+    let back = PayloadManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, m);
+
+    // The mount-only form (the spec 03 §8 co-mount, unchanged): expose
+    // and critical stay omitted on the wire (never null / empty-list /
+    // false spellings).
+    let co_mount = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 2.1.10}\n  created: \"2026-09-05T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires: [{kind: executable, name: dot, payload: graphviz, constraint: \">= 2.40\", mount: /opt/graphviz}]\n";
+    let m = PayloadManifest::from_yaml(co_mount).unwrap();
+    let Some(Requirement::Executable {
+        expose, critical, ..
+    }) = m.requires.first()
+    else {
+        panic!("executable edge, got {:?}", m.requires);
+    };
+    assert!(expose.is_empty());
+    assert!(!critical);
+    let yaml = m.to_yaml().unwrap();
+    assert!(!yaml.contains("expose"), "omitted on the wire: {yaml}");
+    assert!(!yaml.contains("critical"), "omitted on the wire: {yaml}");
+    validator
+        .validate(&yaml_text_to_json(co_mount))
+        .expect("the mount-only executable edge is schema-legal");
+    let back = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(back, m);
+}
+
+#[test]
+fn executable_edge_requires_a_surface() {
+    // spec 32 §1: an edge with NEITHER mount nor expose declares a
+    // dependency that opens no surface — a named manifest error.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 2.1.10}\n  created: \"2026-09-05T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires: [{kind: executable, name: xml2rfc, constraint: \">= 3.34\"}]\n";
+    let err = PayloadManifest::from_yaml(text).unwrap_err();
+    assert!(
+        err.to_string().contains("neither mount nor expose"),
+        "a contentless executable edge is a named error: {err}"
+    );
+    // …but the schema stays silent — the neither/nor shape is not
+    // JSON-Schema-expressible without duplicating the variant; the model
+    // owns this refusal.
+    assert!(schema_validator().is_valid(&yaml_text_to_json(text)));
+}
+
+#[test]
+fn executable_edge_expose_requires_the_capability_name() {
+    // spec 32 §1: expose present requires name ∈ expose — the depended
+    // capability must itself be surfaced.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 2.1.10}\n  created: \"2026-09-05T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires: [{kind: executable, name: xml2rfc, constraint: \">= 3.34\", expose: [other-tool]}]\n";
+    let err = PayloadManifest::from_yaml(text).unwrap_err();
+    assert!(
+        err.to_string().contains("name ∈ expose"),
+        "an expose list without the capability name is a named error: {err}"
+    );
+    assert!(schema_validator().is_valid(&yaml_text_to_json(text)));
+}
+
+#[test]
+fn executable_edge_expose_never_collides_with_own_entrypoints() {
+    // spec 32 §1: the expose × own-entrypoint collision refusal is spec
+    // 30 §3's, extended to the executable edge's expose list.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 2.1.10}\n  created: \"2026-09-05T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: xml2rfc, path: /bin/xml2rfc}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires: [{kind: executable, name: xml2rfc, constraint: \">= 3.34\", expose: [xml2rfc]}]\n";
+    let err = PayloadManifest::from_yaml(text).unwrap_err();
+    assert!(
+        err.to_string().contains("collides"),
+        "the expose x own-entrypoint collision is a named error: {err}"
+    );
+    assert!(schema_validator().is_valid(&yaml_text_to_json(text)));
+}
+
+#[test]
 fn runtime_spawn_surface_is_schema_legal() {
     // spec 30 §2 (schema_minor 4): the additive spawn surface on the
     // runtime's own PROVIDES — `provides.entrypoints` (the app-entrypoint
@@ -696,7 +856,7 @@ fn unknown_keys_are_tolerated_annotations_preserved() {
 #[test]
 fn model_and_schema_agree_on_rejections() {
     let validator = schema_validator();
-    let cases: [(&str, &str); 10] = [
+    let cases: [(&str, &str); 13] = [
         // kind app with a data-shaped provides
         (
             "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
@@ -811,6 +971,46 @@ fn model_and_schema_agree_on_rejections() {
              requires: [{kind: runtime, engine: java, implementation: \"\", \
              constraint: \">= 21\"}]\n",
             "empty implementation",
+        ),
+        // spec 32 §1: the executable edge's expose entries ride the same
+        // bare-name grammar (schema pattern + model, MECE)
+        (
+            "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {entrypoints: [{name: x, path: /x}], platforms: universal, \
+             capabilities: {exec: true, read: true}}\n\
+             requires: [{kind: executable, name: xml2rfc, constraint: \">= 3.34\", \
+             expose: [/usr/bin/xml2rfc]}]\n",
+            "executable-edge expose entry with a path separator",
+        ),
+        // an empty expose entry on the executable edge
+        (
+            "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {entrypoints: [{name: x, path: /x}], platforms: universal, \
+             capabilities: {exec: true, read: true}}\n\
+             requires: [{kind: executable, name: xml2rfc, constraint: \">= 3.34\", \
+             expose: [\"\"]}]\n",
+            "executable-edge empty expose entry",
+        ),
+        // a repeated expose entry on the executable edge
+        (
+            "identity: {schema_version: 1, kind: app, name: x, version: \"1\", \
+             producer: {tool: t, tool_version: \"1\"}, created: now, \
+             digest: {tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\", \
+             blob_sha256: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}, \
+             signing: {state: unsigned}, encryption: {state: none}}\n\
+             provides: {entrypoints: [{name: x, path: /x}], platforms: universal, \
+             capabilities: {exec: true, read: true}}\n\
+             requires: [{kind: executable, name: xml2rfc, constraint: \">= 3.34\", \
+             expose: [xml2rfc, xml2rfc]}]\n",
+            "executable-edge duplicate expose entry",
         ),
     ];
     for (text, what) in cases {

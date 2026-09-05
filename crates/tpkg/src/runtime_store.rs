@@ -320,28 +320,55 @@ pub fn resolve_spawned(
 /// The `TEBAKO_SPAWN_LOCK` channel's variable name (spec 30 §3).
 pub const SPAWN_LOCK_VAR: &str = "TEBAKO_SPAWN_LOCK";
 
-/// One locked entry of the dispatch-time spawn pin: `engine` resolves to
-/// exactly `<lang_version>` of tebako `<tebako_version>` — the versions
-/// the dispatcher resolved, so a payload's spawned children run the SAME
-/// runtime the dispatch picked (never a newer cache arrival mid-run).
+/// One locked entry of the dispatch-time spawn pin (spec 30 §3, spec 32
+/// §5). Two MECE row shapes share the channel:
+///
+/// - **runtime row** — `payload: None`: `engine` resolves to exactly
+///   `<lang_version>` of tebako `<tebako_version>`.
+/// - **payload row** — `payload: Some((name, version))`: the pinned
+///   PROVIDER payload of an expose-carrying `kind: executable` edge; the
+///   entry's engine/version triple then nests the provider's OWN resolved
+///   runtime pair exactly as a runtime row spells it.
+///
+/// Either way the versions are the dispatcher's picks, so a payload's
+/// spawned children run the SAME artifacts the dispatch resolved (never
+/// a newer cache arrival mid-run).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SpawnLockEntry {
     pub engine: String,
     pub lang_version: String,
     pub tebako_version: String,
+    /// The payload row's provider pin (spec 32 §5): `(name, version)`.
+    pub payload: Option<(String, String)>,
 }
 
-/// The wire form of one lock entry: `engine=lang_version:tebako_version`.
-/// The alphabets (`[A-Za-z0-9._-]` — store entry names) keep the `=` `:`
-/// `;` delimiters unambiguous.
+/// The wire form of one runtime lock entry:
+/// `engine=lang_version:tebako_version`. The alphabets
+/// (`[A-Za-z0-9._-]` — store entry names) keep the `=` `:` `;`
+/// delimiters unambiguous.
 pub fn spawn_lock_entry(engine: &str, lang_version: &str, tebako_version: &str) -> String {
     format!("{engine}={lang_version}:{tebako_version}")
 }
 
-/// Parse the lock value: `;`-joined [`spawn_lock_entry`] forms. An empty
-/// value is no lock; a malformed entry fails the whole parse (the
-/// channel is machine-written — a torn value is a bug to surface, never
-/// to guess around).
+/// The wire form of one payload lock entry (spec 32 §5):
+/// `payload@payload_version=engine=lang_version:tebako_version` — the
+/// `@`-in-subject form is the MECE discriminator (`@` appears in neither
+/// engine names nor the runtime row's subject); the value nests the
+/// provider's resolved runtime pair exactly as a runtime row spells it.
+pub fn spawn_lock_payload_entry(
+    payload: &str,
+    payload_version: &str,
+    engine: &str,
+    lang_version: &str,
+    tebako_version: &str,
+) -> String {
+    format!("{payload}@{payload_version}={engine}={lang_version}:{tebako_version}")
+}
+
+/// Parse the lock value: `;`-joined [`spawn_lock_entry`] and
+/// [`spawn_lock_payload_entry`] forms. An empty value is no lock; a
+/// malformed entry fails the whole parse (the channel is machine-written
+/// — a torn value is a bug to surface, never to guess around).
 pub fn parse_spawn_lock(value: &str) -> Result<Vec<SpawnLockEntry>, String> {
     let mut out = Vec::new();
     for raw in value.split(';') {
@@ -349,19 +376,45 @@ pub fn parse_spawn_lock(value: &str) -> Result<Vec<SpawnLockEntry>, String> {
         if entry.is_empty() {
             continue;
         }
-        let (engine, versions) = entry
+        let (subject, versions) = entry
             .split_once('=')
             .ok_or_else(|| format!("spawn-lock entry {entry:?} lacks '='"))?;
-        let (lv, tv) = versions
+        // The `@`-in-subject discriminator (spec 32 §5): a subject
+        // carrying `@` is a payload row, and its value nests the
+        // provider's runtime pair (`engine=<lv>:<tv>`).
+        let (payload, engine, pair) = if subject.contains('@') {
+            let (name, pversion) = subject
+                .split_once('@')
+                .ok_or_else(|| format!("spawn-lock entry {entry:?} has a torn payload subject"))?;
+            let (engine, pair) = versions
+                .split_once('=')
+                .ok_or_else(|| format!("spawn-lock entry {entry:?} lacks the nested engine"))?;
+            (
+                Some((name.to_string(), pversion.to_string())),
+                engine,
+                pair,
+            )
+        } else {
+            (None, subject, versions)
+        };
+        let (lv, tv) = pair
             .split_once(':')
             .ok_or_else(|| format!("spawn-lock entry {entry:?} lacks '<lv>:<tv>'"))?;
         if engine.is_empty() || lv.is_empty() || tv.is_empty() {
             return Err(format!("spawn-lock entry {entry:?} has an empty segment"));
         }
+        if let Some((name, pversion)) = &payload {
+            if name.is_empty() || pversion.is_empty() {
+                return Err(format!(
+                    "spawn-lock entry {entry:?} has an empty payload segment"
+                ));
+            }
+        }
         out.push(SpawnLockEntry {
             engine: engine.to_string(),
             lang_version: lv.to_string(),
             tebako_version: tv.to_string(),
+            payload,
         });
     }
     Ok(out)
@@ -608,11 +661,13 @@ mod tests {
                     engine: "java".to_string(),
                     lang_version: "21.0.12".to_string(),
                     tebako_version: "0.3.0".to_string(),
+                    payload: None,
                 },
                 SpawnLockEntry {
                     engine: "ruby".to_string(),
                     lang_version: "3.3.12".to_string(),
                     tebako_version: "0.16.17".to_string(),
+                    payload: None,
                 },
             ]
         );
@@ -624,6 +679,37 @@ mod tests {
         assert!(parse_spawn_lock("java=21").is_err());
         assert!(parse_spawn_lock("=21:0.3.0").is_err());
         assert!(parse_spawn_lock("java=:0.3.0").is_err());
+    }
+
+    #[test]
+    fn spawn_lock_payload_rows_round_trip_and_reject_torn_values() {
+        // spec 32 §5: the payload row nests the provider's resolved
+        // runtime pair; the `@`-in-subject form is the MECE
+        // discriminator against the runtime row's bare-engine subject.
+        let wire = format!(
+            "{};{}",
+            spawn_lock_entry("java", "21.0.12", "0.3.0"),
+            spawn_lock_payload_entry("xml2rfc", "3.34.0", "python", "3.13.15", "2.1.10")
+        );
+        assert_eq!(
+            wire,
+            "java=21.0.12:0.3.0;xml2rfc@3.34.0=python=3.13.15:2.1.10"
+        );
+        let entries = parse_spawn_lock(&wire).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].payload, None);
+        assert_eq!(
+            entries[1].payload,
+            Some(("xml2rfc".to_string(), "3.34.0".to_string()))
+        );
+        assert_eq!(entries[1].engine, "python");
+        assert_eq!(entries[1].lang_version, "3.13.15");
+        assert_eq!(entries[1].tebako_version, "2.1.10");
+        // Torn payload rows fail the whole parse — never a guessed half-lock.
+        assert!(parse_spawn_lock("xml2rfc@3.34.0=3.13.15:2.1.10").is_err());
+        assert!(parse_spawn_lock("xml2rfc@=python=3.13.15:2.1.10").is_err());
+        assert!(parse_spawn_lock("@3.34.0=python=3.13.15:2.1.10").is_err());
+        assert!(parse_spawn_lock("xml2rfc@3.34.0=python=:2.1.10").is_err());
     }
 
     #[test]
