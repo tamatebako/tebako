@@ -3225,7 +3225,7 @@ fn spawned_image_asset(rr: &RuntimeRef, layout: &CacheLayout) -> String {
 fn spawned_entry_complete(
     rr: &RuntimeRef,
     layout: &CacheLayout,
-    row: &tpkg::LockedSpawned,
+    row: &tpkg::LockedSpawnedRuntime,
     self_path: &Path,
 ) -> Result<bool, BootError> {
     let what = format!("spawned runtime \"{}\" executable", row.engine);
@@ -3392,7 +3392,7 @@ fn stage_carried_spawned_facets(
     self_path: &Path,
     m: &tpkg::Manifest,
     layout: &CacheLayout,
-    row: &tpkg::LockedSpawned,
+    row: &tpkg::LockedSpawnedRuntime,
 ) -> Result<(), BootError> {
     // carry: true without the exe/image slots fails the lock's own
     // validation at manifest parse; guard anyway — never an unwrap on
@@ -3465,7 +3465,7 @@ fn stage_carried_spawned(
     self_path: &Path,
     m: &tpkg::Manifest,
     layout: &CacheLayout,
-    row: &tpkg::LockedSpawned,
+    row: &tpkg::LockedSpawnedRuntime,
     ux: &mut BootUx,
 ) -> Result<(), BootError> {
     // The exe stages as a whole-entry publish — the primary carried
@@ -3533,7 +3533,7 @@ fn download_spawned(
     runtime_ref: &str,
     rr: &RuntimeRef,
     layout: &CacheLayout,
-    row: &tpkg::LockedSpawned,
+    row: &tpkg::LockedSpawnedRuntime,
     ux: &mut BootUx,
 ) -> Result<(), BootError> {
     // validate() already rejects a shared row without fetch
@@ -3554,15 +3554,16 @@ fn download_spawned(
 }
 
 /// spec 30 §2's dispatch half for a self-contained package: every
-/// `lock.spawned[]` edge resolves into the machine runtime cache BEFORE
+/// `lock.spawned[]` edge resolves into the machine caches BEFORE
 /// handoff — a cache hit by recorded digest, the carried pair staged
 /// from its trailer slots, or the shared pair fetched from the lock's
 /// recorded coordinates — and the pins reach the driver as
-/// `TEBAKO_SPAWN_LOCK` (`;`-joined `engine=lang_version:tebako_version`
-/// entries, manifest order). The driver's spawn planner then resolves
-/// cache-only: a spawn NEVER downloads. `TEBAKO_OFFLINE=1` blocks only
-/// the fetch path (cache hits and carried staging move no network
-/// bytes).
+/// `TEBAKO_SPAWN_LOCK` (`;`-joined entries, manifest order: a runtime
+/// row spells `engine=lang_version:tebako_version`, a spec 32 payload
+/// row spells `payload@version=engine=lang_version:tebako_version`). The
+/// driver's spawn planner then resolves cache-only: a spawn NEVER
+/// downloads. `TEBAKO_OFFLINE=1` blocks only the fetch path (cache hits
+/// and carried staging move no network bytes).
 fn resolve_spawned_edges(
     self_path: &Path,
     m: &tpkg::Manifest,
@@ -3570,43 +3571,180 @@ fn resolve_spawned_edges(
 ) -> Result<Vec<String>, BootError> {
     let mut out = Vec::new();
     for row in &lock.spawned {
-        // The synthesized ref reuses the whole runtime-resolution
-        // grammar (store layout, index identity, contract gate):
-        // `engine@lang_version;tebako=<line>;image`.
-        let runtime_ref = format!("{}@{};tebako={};image", row.engine, row.version, row.tebako);
-        let rr = parse_runtime_ref(&runtime_ref)?;
-        let layout = cache_layout(&rr)?;
-        let mut ux = BootUx::new();
-        ux.prog.set_quiet(m.is_quiet_notices());
-        if spawned_entry_complete(&rr, &layout, row, self_path)? {
-            ux.cached(&rr);
-        } else {
-            if row.carry {
-                stage_carried_spawned(&runtime_ref, &rr, self_path, m, &layout, row, &mut ux)?;
-            } else {
-                download_spawned(&runtime_ref, &rr, &layout, row, &mut ux)?;
+        match row {
+            tpkg::LockedSpawned::Runtime(row) => {
+                resolve_spawned_runtime_row(self_path, m, row)?;
+                out.push(tpkg::runtime_store::spawn_lock_entry(
+                    &row.engine,
+                    &row.version,
+                    &row.tebako,
+                ));
             }
-            // Fail closed when the install left the entry short of the
-            // lock's pins (a moved release, a partial publish) — never
-            // hand the driver a spawn lock the store cannot honor.
-            if !spawned_entry_complete(&rr, &layout, row, self_path)? {
-                return fail(
-                    EX_TEBAKO_IO,
-                    format!(
-                        "the spawned runtime \"{}\" installed into {} but the entry is still incomplete against the lock's pins — remove that directory and run again; if it persists, the release moved under the press-time pins (re-press the package)",
-                        row.engine,
-                        layout.entry_dir.display()
-                    ),
-                );
+            tpkg::LockedSpawned::Payload(row) => {
+                // The nested pair first (the §13.6 runtime row), then the
+                // provider image into the payload cache — both must land
+                // before the row's pin may ride the spawn lock.
+                resolve_spawned_runtime_row(self_path, m, &row.runtime)?;
+                resolve_spawned_payload_image(self_path, m, row)?;
+                out.push(tpkg::runtime_store::spawn_lock_payload_entry(
+                    &row.payload,
+                    &row.version,
+                    &row.runtime.engine,
+                    &row.runtime.version,
+                    &row.runtime.tebako,
+                ));
             }
         }
-        out.push(tpkg::runtime_store::spawn_lock_entry(
-            &row.engine,
-            &row.version,
-            &row.tebako,
-        ));
     }
     Ok(out)
+}
+
+/// One spawned-runtime row's resolution (spec 23 §13.6): the synthesized
+/// ref reuses the whole runtime-resolution grammar (store layout, index
+/// identity, contract gate) — `engine@lang_version;tebako=<line>;image`.
+fn resolve_spawned_runtime_row(
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    row: &tpkg::LockedSpawnedRuntime,
+) -> Result<(), BootError> {
+    let runtime_ref = format!("{}@{};tebako={};image", row.engine, row.version, row.tebako);
+    let rr = parse_runtime_ref(&runtime_ref)?;
+    let layout = cache_layout(&rr)?;
+    let mut ux = BootUx::new();
+    ux.prog.set_quiet(m.is_quiet_notices());
+    if spawned_entry_complete(&rr, &layout, row, self_path)? {
+        ux.cached(&rr);
+    } else {
+        if row.carry {
+            stage_carried_spawned(&runtime_ref, &rr, self_path, m, &layout, row, &mut ux)?;
+        } else {
+            download_spawned(&runtime_ref, &rr, &layout, row, &mut ux)?;
+        }
+        // Fail closed when the install left the entry short of the
+        // lock's pins (a moved release, a partial publish) — never
+        // hand the driver a spawn lock the store cannot honor.
+        if !spawned_entry_complete(&rr, &layout, row, self_path)? {
+            return fail(
+                EX_TEBAKO_IO,
+                format!(
+                    "the spawned runtime \"{}\" installed into {} but the entry is still incomplete against the lock's pins — remove that directory and run again; if it persists, the release moved under the press-time pins (re-press the package)",
+                    row.engine,
+                    layout.entry_dir.display()
+                ),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The spawned PAYLOAD row's provider image (spec 32 §6): a cache hit by
+/// the locked digest, the carried image seeded from its trailer slot
+/// (the lazy-seed machinery — but FAIL-CLOSED here: this row is a
+/// dispatch requirement, not a best-effort share), or the shared image
+/// fetched from the lock's `source` reference by the locked digest
+/// (spec 23 §13.4's pinned-fetch discipline, resolve_locked_slice's).
+fn resolve_spawned_payload_image(
+    self_path: &Path,
+    m: &tpkg::Manifest,
+    row: &tpkg::LockedSpawnedPayload,
+) -> Result<(), BootError> {
+    let what = format!("spawned payload \"{}\"", row.payload);
+    let pin = pin_for_host(&row.image.sha256, &what, self_path)?;
+    let cache = tebako_resolve::PayloadCache::with_root(cache_root()?);
+    if row.carry {
+        let slot_ix = row.image.slot.ok_or_else(|| {
+            BootError::new(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "the lock of {} declares a carried spawned payload \"{}\" without its image slot — re-press the package",
+                    self_path.display(),
+                    row.payload
+                ),
+            )
+        })?;
+        let slot = slot_at(m, slot_ix, self_path)?;
+        let mut f = std::fs::File::open(self_path).map_err(|e| {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot read {}: {e}", self_path.display()),
+            )
+        })?;
+        f.seek(SeekFrom::Start(slot.offset)).map_err(|e| {
+            BootError::new(
+                EX_TEBAKO_IO,
+                format!("cannot read {}: {e}", self_path.display()),
+            )
+        })?;
+        let origin = format!("{} slot {slot_ix}", self_path.display());
+        return cache
+            .seed(
+                &row.payload,
+                &row.version,
+                pin,
+                &origin,
+                std::io::Read::take(f, slot.size),
+            )
+            .map_err(|e| {
+                BootError::new(
+                    EX_TEBAKO_IO,
+                    format!(
+                        "cannot stage the spawned payload \"{}\" into the payload cache: {e}",
+                        row.payload
+                    ),
+                )
+            })
+            .and_then(|outcome| match outcome {
+                tebako_resolve::SeedOutcome::Seeded
+                | tebako_resolve::SeedOutcome::AlreadySame => Ok(()),
+                tebako_resolve::SeedOutcome::Conflict { existing_sha256 } => fail(
+                    EX_TEBAKO_SHA,
+                    format!(
+                        "SHA256 mismatch for the {what} {} — refusing to execute\n  expected: {pin} (the press-time lock pin, spec 23 §13.4)\n  recorded: {existing_sha256} (the cached entry)\n  the cache holds {}@{} under a DIFFERENT digest — remove that entry and run again",
+                        row.version, row.payload, row.version
+                    ),
+                ),
+            });
+    }
+    let Some(source) = row.source.as_deref().filter(|s| !s.is_empty()) else {
+        return fail(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the lock's spawned payload \"{}\" rides the machine cache but carries no fetch coordinates (source:) — re-press the package with a current tebako",
+                row.payload
+            ),
+        );
+    };
+    let reference = tebako_resolve::Reference::parse(source).map_err(|e| {
+        BootError::new(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "the lock's spawned payload \"{}\" carries an unparsable source reference \"{source}\" ({e}) — re-press the package",
+                row.payload
+            ),
+        )
+    })?;
+    tebako_resolve::resolve_locked_slice(&cache, &row.payload, &row.version, pin, &reference)
+        .map_err(|e| match e {
+            tebako_resolve::ResolveError::Sha256Mismatch {
+                expected, actual, ..
+            } => BootError::new(
+                EX_TEBAKO_SHA,
+                format!(
+                    "SHA256 mismatch for the {what} {} — refusing to install or execute\n  expected: {expected} (the press-time lock pin, spec 23 §13.4)\n  actual:   {actual}\n  the cache was not touched",
+                    row.version
+                ),
+            ),
+            other => BootError::new(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "cannot resolve the spawned payload \"{}\" {} of {}: {other}\n  the lock's fetch coordinates: {source}",
+                    row.payload,
+                    row.version,
+                    self_path.display()
+                ),
+            ),
+        })?;
+    Ok(())
 }
 
 /// spec 05 §4's scoped lazy-seed exception (locked 2026-08-25,
@@ -4582,6 +4720,7 @@ mod spawned_tests {
 
     const EXE_BYTES: &[u8] = b"fake spawned java exe\n";
     const IMAGE_BYTES: &[u8] = b"fake spawned java image\n";
+    const PROVIDER_BYTES: &[u8] = b"fake xml2rfc payload image\n";
 
     fn dir(tag: &str) -> PathBuf {
         let dir =
@@ -4599,8 +4738,8 @@ mod spawned_tests {
     /// The row under test: a carried java edge, pins covering every host
     /// (DigestPin::One) — the triplet-map coverage rule itself is pinned
     /// by tpkg's package tests.
-    fn java_row(exe_sha: &str, image_sha: &str) -> tpkg::LockedSpawned {
-        tpkg::LockedSpawned {
+    fn java_row(exe_sha: &str, image_sha: &str) -> tpkg::LockedSpawnedRuntime {
+        tpkg::LockedSpawnedRuntime {
             engine: "java".to_string(),
             implementation: None,
             constraint: tpkg::Constraint::new(">= 21, < 26").unwrap(),
@@ -4649,9 +4788,10 @@ mod spawned_tests {
         )
     }
 
-    /// The fake package: padding + the exe bytes + the image bytes, with
-    /// the manifest's slots 1/2 naming those regions (slot 0 is the app
-    /// payload, never touched by the spawned path).
+    /// The fake package: padding + the exe bytes + the image bytes + the
+    /// provider payload image, with the manifest's slots 1/2/3 naming
+    /// those regions (slot 0 is the app payload, never touched by the
+    /// spawned path).
     fn fake_package(home: &Path) -> (PathBuf, tpkg::Manifest) {
         let pkg_path = home.join("fake-package");
         let mut bytes = vec![0u8; 64];
@@ -4659,6 +4799,8 @@ mod spawned_tests {
         let exe_offset = 64u64;
         let image_offset = exe_offset + EXE_BYTES.len() as u64;
         bytes.extend_from_slice(IMAGE_BYTES);
+        let provider_offset = image_offset + IMAGE_BYTES.len() as u64;
+        bytes.extend_from_slice(PROVIDER_BYTES);
         std::fs::write(&pkg_path, &bytes).unwrap();
         let m = tpkg::Manifest {
             slots: vec![
@@ -4673,10 +4815,34 @@ mod spawned_tests {
                     size: IMAGE_BYTES.len() as u64,
                     ..Default::default()
                 },
+                tpkg::Slot {
+                    offset: provider_offset,
+                    size: PROVIDER_BYTES.len() as u64,
+                    ..Default::default()
+                },
             ],
             ..Default::default()
         };
         (pkg_path, m)
+    }
+
+    /// A carried spawned-PAYLOAD row (spec 32 §6): the provider xml2rfc's
+    /// image at slot 3, the nested java pair at slots 1/2.
+    fn xml2rfc_row(exe_sha: &str, image_sha: &str, provider_sha: &str) -> tpkg::LockedSpawned {
+        tpkg::LockedSpawned::Payload(tpkg::LockedSpawnedPayload {
+            payload: "xml2rfc".to_string(),
+            constraint: tpkg::Constraint::new(">= 3.34").unwrap(),
+            expose: vec!["xml2rfc".to_string()],
+            version: "3.34.0".to_string(),
+            carry: true,
+            image: tpkg::LockedSpawnedArtifact {
+                slot: Some(3),
+                sha256: tpkg::DigestPin::One(provider_sha.to_string()),
+                install_as: None,
+            },
+            runtime: java_row(exe_sha, image_sha),
+            source: None,
+        })
     }
 
     #[test]
@@ -4857,7 +5023,10 @@ mod spawned_tests {
     /// The env user (TEBAKO_HOME) is ONE test so the process-wide
     /// variable never races a sibling: the full dispatch loop — carried
     /// staging through resolve_spawned_edges — exports the spec 30 §3
-    /// wire form in manifest order.
+    /// wire form in manifest order, and (spec 32 §6) the payload row
+    /// stages the nested runtime pair AND seeds the provider image into
+    /// the payload cache, exporting the `payload@version=engine=lv:tv`
+    /// wire form.
     #[test]
     fn resolve_spawned_edges_exports_the_spawn_lock() {
         let home = dir("lock-export");
@@ -4865,19 +5034,43 @@ mod spawned_tests {
         std::env::set_var("TEBAKO_HOME", &home);
         let exe_sha = sha_of(&home, "exe-bytes", EXE_BYTES);
         let image_sha = sha_of(&home, "image-bytes", IMAGE_BYTES);
+        let provider_sha = sha_of(&home, "provider-bytes", PROVIDER_BYTES);
         let (pkg, m) = fake_package(&home);
         let lock = tpkg::PackageLock {
             runtime: None,
             slices: vec![],
-            spawned: vec![java_row(&exe_sha, &image_sha)],
+            spawned: vec![
+                tpkg::LockedSpawned::Runtime(java_row(&exe_sha, &image_sha)),
+                xml2rfc_row(&exe_sha, &image_sha, &provider_sha),
+            ],
         };
 
         let entries = resolve_spawned_edges(&pkg, &m, &lock).unwrap();
-        assert_eq!(entries, vec!["java=21.0.12:2.1.5".to_string()]);
+        assert_eq!(
+            entries,
+            vec![
+                "java=21.0.12:2.1.5".to_string(),
+                "xml2rfc@3.34.0=java=21.0.12:2.1.5".to_string()
+            ]
+        );
+        // The provider image landed in the payload cache, digest-pinned
+        // (the driver's cache-only spawn resolution's record).
+        let cached = home.join("payloads/xml2rfc/3.34.0.tfs");
+        assert!(cached.is_file());
+        assert_eq!(std::fs::read(&cached).unwrap(), PROVIDER_BYTES);
+        let anchor = std::fs::read_to_string(home.join("payloads/xml2rfc/3.34.0.tfs.sha256"))
+            .unwrap();
+        assert!(anchor.starts_with(&provider_sha), "{anchor}");
 
-        // a cache-hit run re-exports the same pin without touching bytes
+        // a cache-hit run re-exports the same pins without touching bytes
         let entries = resolve_spawned_edges(&pkg, &m, &lock).unwrap();
-        assert_eq!(entries, vec!["java=21.0.12:2.1.5".to_string()]);
+        assert_eq!(
+            entries,
+            vec![
+                "java=21.0.12:2.1.5".to_string(),
+                "xml2rfc@3.34.0=java=21.0.12:2.1.5".to_string()
+            ]
+        );
 
         std::env::remove_var("TEBAKO_HOME");
         let _ = std::fs::remove_dir_all(&home);

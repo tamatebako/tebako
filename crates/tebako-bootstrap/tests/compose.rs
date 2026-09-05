@@ -711,7 +711,7 @@ fn a_carried_spawned_runtime_dispatches_and_exports_the_lock() {
             sha256: pin(&app),
             source: None,
         }],
-        spawned: vec![tpkg::LockedSpawned {
+        spawned: vec![tpkg::LockedSpawned::Runtime(tpkg::LockedSpawnedRuntime {
             engine: "java".to_string(),
             implementation: None,
             constraint: tpkg::Constraint::new(">= 21, < 26").unwrap(),
@@ -731,7 +731,7 @@ fn a_carried_spawned_runtime_dispatches_and_exports_the_lock() {
             },
             dll: None,
             source: None,
-        }],
+        })],
     };
     let pm = composed_pm(&runtime_ref, lock);
     let pkg = stitch_composed(
