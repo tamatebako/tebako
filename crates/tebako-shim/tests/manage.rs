@@ -31,6 +31,47 @@ fn seed(home: &std::path::Path) {
     write_runtime(home, "4.0.6", "0.16.0", false);
 }
 
+#[test]
+fn disabled_selectors_gain_the_payload_dimension() {
+    use tebako_shim::config::{claim_disabled, is_disabled, Disabled};
+    let mut disabled = Disabled::default();
+    // a bare version gates that version of ANY claim
+    disabled.insert("pandoc".to_string(), vec!["1.0".to_string()]);
+    assert!(is_disabled(&disabled, "pandoc", "anypayload", "1.0"));
+    assert!(!is_disabled(&disabled, "pandoc", "anypayload", "1.1"));
+    assert!(!claim_disabled(&disabled, "pandoc", "anypayload"));
+    // `all` gates every claim
+    disabled.insert("pandoc".to_string(), vec!["all".to_string()]);
+    assert!(is_disabled(&disabled, "pandoc", "p", "9.9"));
+    assert!(claim_disabled(&disabled, "pandoc", "p"));
+    // p@all gates only payload p's claim
+    disabled.insert("pandoc".to_string(), vec!["pandorc@all".to_string()]);
+    assert!(is_disabled(&disabled, "pandoc", "pandorc", "1.2.0"));
+    assert!(!is_disabled(&disabled, "pandoc", "pandora", "1.2.0"));
+    assert!(claim_disabled(&disabled, "pandoc", "pandorc"));
+    assert!(!claim_disabled(&disabled, "pandoc", "pandora"));
+    // p@1.0 gates exactly that pair (and is not a full-claim gate)
+    disabled.insert("pandoc".to_string(), vec!["pandorc@1.0".to_string()]);
+    assert!(is_disabled(&disabled, "pandoc", "pandorc", "1.0"));
+    assert!(!is_disabled(&disabled, "pandoc", "pandorc", "1.1"));
+    assert!(!claim_disabled(&disabled, "pandoc", "pandorc"));
+}
+
+#[test]
+fn an_unknown_selector_string_is_a_named_load_error() {
+    let tmp = TempDir::new("bad-selector");
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(home.join("shims")).unwrap();
+    std::fs::write(
+        home.join("shims").join(".disabled.yaml"),
+        "pandoc:\n  - \"bogus@\"\n",
+    )
+    .unwrap();
+    let err = tebako_shim::config::load_disabled(&home).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(err.message.contains("bogus@"), "{}", err.message);
+}
+
 fn pinned_ctx(home: &std::path::Path, cwd: &std::path::Path) -> Ctx {
     let mut ctx = ctx(home, cwd);
     ctx.env
