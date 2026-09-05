@@ -353,7 +353,7 @@ fn resolve_named(tool: &str, payload_name: &str, ctx: &Ctx) -> Result<Resolution
     }
 
     let disabled = config::load_disabled(&ctx.home)?;
-    if config::is_disabled(&disabled, tool, &version) {
+    if config::is_disabled(&disabled, tool, payload_name, &version) {
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(

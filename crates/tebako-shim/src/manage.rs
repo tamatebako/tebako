@@ -120,7 +120,9 @@ fn cmd_list(ctx: &Ctx) -> Result<Action, ShimError> {
             versions
                 .iter()
                 .map(|v| {
-                    let is_dis = tools.iter().any(|t| config::is_disabled(&disabled, t, v));
+                    let is_dis = tools
+                        .iter()
+                        .any(|t| config::is_disabled(&disabled, t, name, v));
                     if is_dis {
                         format!("{v} [disabled]")
                     } else {

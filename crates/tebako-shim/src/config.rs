@@ -258,7 +258,10 @@ pub fn registry_default(
 // disabled state (shim-managed; never interleaved with authored config)
 // ---------------------------------------------------------------------
 
-/// Tool name → list of disabled selectors: exact versions, or `all`.
+/// Tool name → list of disabled selectors (strings on disk; parsed
+/// through `tpkg::toolpin::DisableSelector`, the ONE grammar — spec 00
+/// invariant 10): `all`, a bare version, `payload@all`, or
+/// `payload@version` (spec 07 §0, the 2026-09-05 routing amendment).
 pub type Disabled = BTreeMap<String, Vec<String>>;
 
 pub fn disabled_path(home: &Path) -> PathBuf {
@@ -272,12 +275,26 @@ pub fn load_disabled(home: &Path) -> Result<Disabled, ShimError> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Disabled::default()),
         Err(e) => return fail(EX_TEBAKO_IO, format!("cannot read {}: {e}", path.display())),
     };
-    serde_yaml::from_str(&text).map_err(|e| {
+    let disabled: Disabled = serde_yaml::from_str(&text).map_err(|e| {
         ShimError::new(
             EX_TEBAKO_MANIFEST,
             format!("cannot parse {} ({e})", path.display()),
         )
-    })
+    })?;
+    // Every selector validates at LOAD (invariant 9 — an unknown string
+    // is a named error naming the file and entry, never silently
+    // ignored).
+    for (tool, selectors) in &disabled {
+        for selector in selectors {
+            tpkg::toolpin::DisableSelector::parse(selector).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!("{}: {tool}: {e}", path.display()),
+                )
+            })?;
+        }
+    }
+    Ok(disabled)
 }
 
 pub fn save_disabled(home: &Path, disabled: &Disabled) -> Result<(), ShimError> {
@@ -307,10 +324,33 @@ pub fn save_disabled(home: &Path, disabled: &Disabled) -> Result<(), ShimError> 
     })
 }
 
-pub fn is_disabled(disabled: &Disabled, tool: &str, version: &str) -> bool {
-    disabled
-        .get(tool)
-        .is_some_and(|selectors| selectors.iter().any(|s| s == "all" || s == version))
+/// Is the claim `payload` makes for `tool` at `version` gated?
+/// Selectors parse through `tpkg::toolpin::DisableSelector` (validated
+/// at load — a stored selector always parses).
+pub fn is_disabled(disabled: &Disabled, tool: &str, payload: &str, version: &str) -> bool {
+    disabled.get(tool).is_some_and(|selectors| {
+        selectors.iter().any(|s| {
+            tpkg::toolpin::DisableSelector::parse(s)
+                .is_ok_and(|sel| sel.matches(payload, version))
+        })
+    })
+}
+
+/// The provider scan's skip test: is the payload's WHOLE claim for
+/// `tool` gated? Only `all` and `<payload>@all` gate a whole claim —
+/// a version selector leaves the claim routable at its other versions.
+pub fn claim_disabled(disabled: &Disabled, tool: &str, payload: &str) -> bool {
+    disabled.get(tool).is_some_and(|selectors| {
+        selectors.iter().any(|s| {
+            matches!(
+                tpkg::toolpin::DisableSelector::parse(s),
+                Ok(tpkg::toolpin::DisableSelector::All)
+            ) || matches!(
+                tpkg::toolpin::DisableSelector::parse(s),
+                Ok(tpkg::toolpin::DisableSelector::PayloadAll(ref p)) if p == payload
+            )
+        })
+    })
 }
 
 #[cfg(test)]
