@@ -1,6 +1,16 @@
 # Spec 29 — The wrapper-exe driver pattern (repacked runtimes)
 
-**Status: PLANNED (drafted 2026-08-30).** Amends spec 17 §6 (the driver
+**Status: SHIPPED (drafted 2026-08-30; implemented 2026-09-05 —
+ecosystem TODO.java/03: `tebako-driver`'s `wrapper` module over the
+shared spec-17 boot (the linked pattern is byte-identical — golden
+parity pinned), the `tebako-runtime-launcher` exe (POSIX exec; windows
+spawn + wait + verbatim exit code), the process-level contract suite (a
+synthetic env image with a shell-script interpreter asserting the exec
+shape), the CI wrapper-size step, and the seven-platform release assets
+including both static-musl legs). Still PLANNED: the `seccomp-notify`
+visibility (spec 07 §8 tier 2a) — a declared
+`visibility: seccomp-notify` is a named boot error (65) until the tier
+lands.** Amends spec 17 §6 (the driver
 executes in two patterns) and spec 03 §2.2 (the runtime env image's
 `layout:` block gains the additive `interpreter` and `visibility` keys,
 schema_minor — the same class as `mount_root_override`). No wire-format
@@ -118,7 +128,7 @@ honors it or fails closed — never a silent fallback (invariant 9):
 | mechanism (spec 07 §8 tier) | what the wrapper does | platform reach / default |
 |---|---|---|
 | `preload` (tier 1 — THE POSIX DEFAULT) | materialize only the interpreter exe's load closure (spec 22 §2.1's walk); exec it with `LD_PRELOAD`/`DYLD_INSERT_LIBRARIES` armed on libtfs-preload + `TEBAKO_TFS_MOUNTS` (spec 22 §3) so the unmodified interpreter's libc IO resolves through the VFS — the env image stays MOUNTED, never extracted | linux + macOS dynamic interpreters (the JVM's libjava/libjli/libzip are in spec 07 §8's shipped coverage list) |
-| `seccomp-notify` (tier 2a) | the wrapper-as-executor installs the `SECCOMP_RET_USER_NOTIF` filter at spawn and serves the static interpreter's file syscalls from the mounts, enforcing the same `host_policy` | linux only; statically-linked interpreters |
+| `seccomp-notify` (tier 2a — **PLANNED**: a declared `seccomp-notify` is a named boot error 65 until the tier lands) | the wrapper-as-executor installs the `SECCOMP_RET_USER_NOTIF` filter at spawn and serves the static interpreter's file syscalls from the mounts, enforcing the same `host_policy` | linux only; statically-linked interpreters |
 | `exec-cache` (tier 2b — THE windows DEFAULT, universal fallback) | materialize the interpreter home tree from the mounted env image into the content-addressed exec cache (spec 22 §6), then spawn the host copy (a JVM needs no VFS once its home is materialized) | universal; the only windows answer (no interposition API) and the POSIX answer for statics without tier 2a |
 
 - The store artifact stays pristine in every mechanism: the exec cache
