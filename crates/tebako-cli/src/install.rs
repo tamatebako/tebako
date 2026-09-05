@@ -61,6 +61,7 @@ fn err(code: i32, message: impl Into<String>) -> TebakoError {
 pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
     let code = match &e {
         ResolveError::Reference(_) | ResolveError::GitPathRequired { .. } => EX_USAGE,
+        ResolveError::PruneNeedsSelector => EX_USAGE,
         ResolveError::Sha256Mismatch { .. } => EX_TEBAKO_SHA,
         ResolveError::NotFound { .. }
         | ResolveError::DownloadFailed { .. }

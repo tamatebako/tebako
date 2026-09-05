@@ -35,7 +35,9 @@ pub mod registry;
 pub mod store;
 pub mod transport;
 
-pub use cache::{default_cache_root, CacheEntry, InstallStatus, PayloadCache, SeedOutcome};
+pub use cache::{
+    default_cache_root, CacheEntry, InstallStatus, PayloadCache, ProtectedSet, SeedOutcome,
+};
 pub use contract::{ContractError, ContractSet};
 pub use error::{ReferenceError, RegistryError, ResolveError};
 pub use fetch::{sha256_hex, FetchedPayload, Fetcher};

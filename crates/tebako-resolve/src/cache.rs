@@ -89,6 +89,10 @@ pub struct CacheEntry {
     pub origin: Option<String>,
 }
 
+/// The prune protected set: exact `(name, version)` pairs prune never
+/// removes (`PayloadCache::prune`).
+pub type ProtectedSet = std::collections::BTreeSet<(String, String)>;
+
 /// The `payloads/` tree of the shared machine cache.
 pub struct PayloadCache {
     root: PathBuf,
@@ -217,7 +221,70 @@ impl PayloadCache {
         out
     }
 
-    /// Cache hit or install: fetch (via `fetch`), verify against
+    /// Prune cached payload versions (the payload arm of `cache prune`,
+    /// spec 15 §4): the same cutoff math as tebako-cli's runtime
+    /// `Resolver::prune` — `all` drops everything, `older_than_days`
+    /// drops entries whose artifact mtime is older than now − N days, and
+    /// one of the two is required ([`ResolveError::PruneNeedsSelector`]).
+    /// `(name, version)` pairs in `protected` are NEVER removed, even
+    /// under `all` (the locked rule: prune never strands a pin — the
+    /// caller builds the set from config defaults, disabled selectors,
+    /// and the per-name newest floor). Removal deletes the version's
+    /// whole record — `<v>.tfs`, the `.tfs.sha256`/`.tfs.origin` markers,
+    /// the `<v>.manifest.yaml` mirror, a materialized `<v>.tree/`, the
+    /// install lock — and the `<name>/` dir when it goes empty. Returns
+    /// the removed pairs in `list()` order (name, then version).
+    pub fn prune(
+        &self,
+        all: bool,
+        older_than_days: Option<u64>,
+        protected: &ProtectedSet,
+    ) -> Result<Vec<(String, String)>, ResolveError> {
+        if !all && older_than_days.is_none() {
+            return Err(ResolveError::PruneNeedsSelector);
+        }
+        let cutoff = older_than_days
+            .map(|d| std::time::SystemTime::now() - std::time::Duration::from_secs(d * 86_400));
+        let mut removed = Vec::new();
+        for entry in self.list() {
+            let key = (entry.name.clone(), entry.version.clone());
+            if protected.contains(&key) {
+                continue;
+            }
+            let installed_at = fs::metadata(&entry.path)
+                .and_then(|m| m.modified())
+                .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
+            if !(all || cutoff.is_some_and(|c| installed_at < c)) {
+                continue;
+            }
+            let dir = self.root.join("payloads").join(&entry.name);
+            // The artifact is 0444/readonly (item 30b) — clear the bit
+            // first so removal works where readonly blocks unlink.
+            make_writable(&entry.path).map_err(|e| cache_io("chmod", &entry.path, e))?;
+            for file in [
+                entry.path.clone(),
+                sha_marker(&entry.path),
+                origin_marker(&entry.path),
+                dir.join(format!("{}.manifest.yaml", entry.version)),
+                dir.join(format!(".install-{}.lock", entry.version)),
+            ] {
+                match fs::remove_file(&file) {
+                    Ok(()) => {}
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(e) => return Err(cache_io("pruning", &file, e)),
+                }
+            }
+            let tree = dir.join(format!("{}.tree", entry.version));
+            if tree.is_dir() {
+                fs::remove_dir_all(&tree).map_err(|e| cache_io("pruning", &tree, e))?;
+            }
+            // Only succeeds when nothing else remains under the name.
+            let _ = fs::remove_dir(&dir);
+            removed.push(key);
+        }
+        Ok(removed)
+    }
+
     /// `expected_sha256` when given (registry-supplied trust anchor), and
     /// place atomically under the per-entry flock. A digest mismatch
     /// deletes the download and caches nothing (spec 04 §3).
@@ -513,6 +580,39 @@ fn make_readonly(path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// The inverse of [`make_readonly`], for prune: 0644 on unix; on Windows
+/// the readonly attribute cleared (DeleteFile refuses a readonly file).
+#[cfg(unix)]
+fn make_writable(path: &Path) -> std::io::Result<()> {
+    use std::os::unix::fs::PermissionsExt as _;
+    let mut perms = std::fs::metadata(path)?.permissions();
+    perms.set_mode(0o644);
+    std::fs::set_permissions(path, perms)
+}
+
+#[cfg(windows)]
+fn make_writable(path: &Path) -> std::io::Result<()> {
+    use std::os::windows::ffi::OsStrExt as _;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileAttributesW, SetFileAttributesW, FILE_ATTRIBUTE_READONLY, INVALID_FILE_ATTRIBUTES,
+    };
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    unsafe {
+        let attrs = GetFileAttributesW(wide.as_ptr());
+        if attrs == INVALID_FILE_ATTRIBUTES {
+            return Err(std::io::Error::last_os_error());
+        }
+        if SetFileAttributesW(wide.as_ptr(), attrs & !FILE_ATTRIBUTE_READONLY) == 0 {
+            return Err(std::io::Error::last_os_error());
+        }
+    }
+    Ok(())
+}
+
 /// The per-entry lock pair, one shape on each platform (no op-value
 /// passing — named operations only):
 ///
@@ -586,6 +686,89 @@ mod tests {
             origin: "https://cdn.example.com/tool.tfs".to_string(),
             sha256: crate::fetch::sha256_hex(bytes),
         }
+    }
+
+    /// Backdate a file's mtime (prune-age fixtures). The same libc/Win32
+    /// pair this module's flock uses — no new dependency.
+    #[cfg(unix)]
+    fn set_age_days(path: &Path, days: u64) {
+        use std::os::unix::ffi::OsStrExt as _;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let at = libc::timespec {
+            tv_sec: now - (days * 86_400) as i64,
+            tv_nsec: 0,
+        };
+        let times = [at, at];
+        let c_path = std::ffi::CString::new(path.as_os_str().as_bytes()).unwrap();
+        // SAFETY: a valid NUL-terminated path and a two-element times array.
+        let rc = unsafe { libc::utimensat(libc::AT_FDCWD, c_path.as_ptr(), times.as_ptr(), 0) };
+        assert_eq!(rc, 0, "utimensat failed for {}", path.display());
+    }
+
+    /// Backdate a file's mtime (prune-age fixtures) — the Win32 arm.
+    #[cfg(windows)]
+    fn set_age_days(path: &Path, days: u64) {
+        use std::os::windows::ffi::OsStrExt as _;
+        use windows_sys::Win32::Foundation::{CloseHandle, FILETIME, INVALID_HANDLE_VALUE};
+        use windows_sys::Win32::Storage::FileSystem::{
+            CreateFileW, SetFileTime, FILE_ATTRIBUTE_NORMAL, FILE_WRITE_ATTRIBUTES, OPEN_EXISTING,
+        };
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let then = now - days * 86_400 + 11_644_473_600;
+        let ticks = (then as u128 * 10_000_000) as u64;
+        let ft = FILETIME {
+            dwLowDateTime: ticks as u32,
+            dwHighDateTime: (ticks >> 32) as u32,
+        };
+        let wide: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        // SAFETY: a valid wide path; the handle is checked and closed.
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                FILE_WRITE_ATTRIBUTES,
+                0,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                FILE_ATTRIBUTE_NORMAL,
+                std::ptr::null_mut(),
+            )
+        };
+        assert_ne!(handle, INVALID_HANDLE_VALUE);
+        // SAFETY: a live handle and a valid FILETIME.
+        let rc = unsafe { SetFileTime(handle, std::ptr::null(), std::ptr::null(), &ft) };
+        // SAFETY: a live handle.
+        unsafe { CloseHandle(handle) };
+        assert_ne!(rc, 0, "SetFileTime failed for {}", path.display());
+    }
+
+    fn install_aged(
+        cache: &PayloadCache,
+        root: &Path,
+        name: &str,
+        version: &str,
+        bytes: &[u8],
+        days: u64,
+    ) {
+        cache
+            .install(name, version, None, || Ok(fetched(bytes)))
+            .unwrap();
+        set_age_days(
+            &root
+                .join("payloads")
+                .join(name)
+                .join(format!("{version}.tfs")),
+            days,
+        );
     }
 
     #[test]
@@ -845,6 +1028,79 @@ mod tests {
             .unwrap();
         std::env::remove_var("TEBAKO_OFFLINE");
         assert_eq!(outcome, SeedOutcome::Seeded);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prune_requires_a_selector() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        let protected = std::collections::BTreeSet::new();
+        let err = cache.prune(false, None, &protected).unwrap_err();
+        assert!(matches!(err, ResolveError::PruneNeedsSelector));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prune_older_than_removes_only_old_unprotected_versions() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        install_aged(&cache, &root, "tool", "1.0", b"one", 40);
+        install_aged(&cache, &root, "tool", "2.0", b"two", 40);
+        install_aged(&cache, &root, "tool", "3.0", b"three", 1);
+        install_aged(&cache, &root, "other", "0.1", b"other", 40);
+        let protected: std::collections::BTreeSet<(String, String)> =
+            [("tool".to_string(), "2.0".to_string())]
+                .into_iter()
+                .collect();
+        let removed = cache.prune(false, Some(30), &protected).unwrap();
+        assert_eq!(
+            removed,
+            vec![
+                ("other".to_string(), "0.1".to_string()),
+                ("tool".to_string(), "1.0".to_string())
+            ]
+        );
+        // the protected and the fresh versions keep their full records
+        for v in ["2.0", "3.0"] {
+            assert!(root.join(format!("payloads/tool/{v}.tfs")).is_file());
+            assert!(root.join(format!("payloads/tool/{v}.tfs.sha256")).is_file());
+        }
+        assert!(!root.join("payloads/tool/1.0.tfs").exists());
+        assert!(!root.join("payloads/tool/1.0.tfs.sha256").exists());
+        assert!(!root.join("payloads/tool/1.0.tfs.origin").exists());
+        // a fully pruned name loses its directory
+        assert!(!root.join("payloads/other").exists());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn prune_all_respects_protected_and_removes_the_whole_record() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let root = scratch();
+        let cache = PayloadCache::with_root(&root);
+        install_aged(&cache, &root, "tool", "1.0", b"one", 0);
+        install_aged(&cache, &root, "tool", "2.0", b"two", 0);
+        // the record is more than the artifact: manifest mirror,
+        // materialized zero-runtime tree, install lock
+        fs::create_dir_all(root.join("payloads/tool/1.0.tree/local")).unwrap();
+        fs::write(root.join("payloads/tool/1.0.tree/local/x.rb"), b"x").unwrap();
+        fs::write(root.join("payloads/tool/1.0.manifest.yaml"), b"manifest").unwrap();
+        fs::write(root.join("payloads/tool/2.0.manifest.yaml"), b"manifest").unwrap();
+        let protected: std::collections::BTreeSet<(String, String)> =
+            [("tool".to_string(), "2.0".to_string())]
+                .into_iter()
+                .collect();
+        let removed = cache.prune(true, None, &protected).unwrap();
+        assert_eq!(removed, vec![("tool".to_string(), "1.0".to_string())]);
+        assert!(!root.join("payloads/tool/1.0.tfs").exists());
+        assert!(!root.join("payloads/tool/1.0.tree").exists());
+        assert!(!root.join("payloads/tool/1.0.manifest.yaml").exists());
+        assert!(!root.join("payloads/tool/.install-1.0.lock").exists());
+        assert!(root.join("payloads/tool/2.0.tfs").is_file());
+        assert!(root.join("payloads/tool/2.0.manifest.yaml").is_file());
         let _ = fs::remove_dir_all(&root);
     }
 }
