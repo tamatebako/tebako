@@ -267,12 +267,27 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    close(+the plain and $NOCANCEL spellings on x86_64 darwin — the libc
    crate maps `libc::close` to `close$NOCANCEL` there, C binaries
    (the JVM's libjava/libjli/libzip) import plain `close`; both route
-   to the shim)/fcntl(the descriptor commands on a memfs fd are served
+   to the shim)/dup/dup2(tebako#534 — libxml2's xmlInputFromFd calls
+   dup(fd) unconditionally, so every VFS fd died EBADF there: the clone
+   lands on a shim-managed flagged fd carrying the SAME open-file
+   description — the offset is shared, per POSIX; dup and
+   fcntl(F_DUPFD) leave FD_CLOEXEC off the clone, F_DUPFD_CLOEXEC sets
+   it; dup2 atomically closes a live memfs target and rebinds the
+   number to the source's description (the target resolves to the same
+   VFS file), and dup2(fd, fd) is the liveness-checked no-op; a memfs
+   source with a HOST-numbered dup2 target is the named error ENOTSUP
+   — the fd routing keys on the flag bit, so a host number can never
+   name a memfs description — never EBADF-by-default; a dead memfs fd
+   is EBADF, the kernel's own answer; host-numbered dup/dup2 sources
+   pass through untouched)/fcntl(the descriptor commands on a memfs fd
+   are served
    from the shim's own fd table — open/openat seed the close-on-exec
    bit from O_CLOEXEC, F_GETFD/F_SETFD read/write it, F_GETFL answers
    the truthful read-only status word, F_SETFL is an accepted no-op, a
-   flagged-but-closed fd is EBADF, the dup class (F_DUPFD and kin) is
-   EINVAL, host fds pass through untouched — CPython's io.FileIO boot
+   flagged-but-closed fd is EBADF, the dup-class commands
+   F_DUPFD/F_DUPFD_CLOEXEC clone the open-file description exactly
+   like the dup/dup2 shims above, host fds pass through untouched —
+   CPython's io.FileIO boot
    path fcntls every fresh source fd with raise=1, so unshimmed the
    interpreter died importing `encodings` before any user code)/mkdir/unlink/rename + dlopen + execve/posix_spawn/posix_spawnp
    + the realpath family (realpath, plus macOS's realpath$DARWIN_EXTSN;
@@ -320,6 +335,8 @@ The locked model is three tiers — **interposition-first, never FUSE**:
    and a fork child
    that execs re-enters a fresh shim through the inherited preload env,
    so the grandchild rule above is unaffected; not interposed: fork,
+   `dup3` (linux-only, no tier-1 consumer — its flags argument would
+   need the cloexec plumbing the POSIX dup class already has),
    `openat2` (glibc exposes no wrapper
    or symbol on linux-gnu — nothing to interpose; a raw `syscall(2)`
    caller bypasses userland interposition by construction), fstatat64 on
