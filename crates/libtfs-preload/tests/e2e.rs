@@ -734,6 +734,9 @@ fn jemalloc_init_mmap_does_not_deadlock() {
             "-Wl,--push-state,-Bstatic",
             "-ljemalloc",
             "-Wl,--pop-state",
+            // Ubuntu's prof-enabled libjemalloc.a references libm
+            // (prof.o/prof_data.o: log/exp/round) — -lm must follow it.
+            "-lm",
             "-lpthread",
             "-ldl",
         ])
