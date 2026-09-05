@@ -1265,6 +1265,7 @@ fn install_runtime_edge(
 /// ACTIVE exposed name (spec 07's argv0 model). Without the `payload:`
 /// pin the CAPABILITY scan answers ([`capability_provider`]); the edge
 /// joins the cycle chain like any toolkit/data edge (spec 18 §5.6 S32).
+#[allow(clippy::too_many_arguments)]
 fn install_executable_edge<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
@@ -1305,8 +1306,14 @@ fn install_executable_edge<T: Transport>(
     let version = match version {
         Some(v) => v,
         None => {
-            let plan =
-                plan_from_dependency_edge(home, fetcher, consumer, "executable", &provider, constraint)?;
+            let plan = plan_from_dependency_edge(
+                home,
+                fetcher,
+                consumer,
+                "executable",
+                &provider,
+                constraint,
+            )?;
             finish_install(home, fetcher, plan, shim_binary, chain)?.version
         }
     };

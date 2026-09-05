@@ -5058,8 +5058,8 @@ mod spawned_tests {
         let cached = home.join("payloads/xml2rfc/3.34.0.tfs");
         assert!(cached.is_file());
         assert_eq!(std::fs::read(&cached).unwrap(), PROVIDER_BYTES);
-        let anchor = std::fs::read_to_string(home.join("payloads/xml2rfc/3.34.0.tfs.sha256"))
-            .unwrap();
+        let anchor =
+            std::fs::read_to_string(home.join("payloads/xml2rfc/3.34.0.tfs.sha256")).unwrap();
         assert!(anchor.starts_with(&provider_sha), "{anchor}");
 
         // a cache-hit run re-exports the same pins without touching bytes

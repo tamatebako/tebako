@@ -224,7 +224,10 @@ mod tests {
     #[test]
     fn the_path_grammar_is_the_store_layout() {
         let home = Path::new("/h");
-        assert_eq!(payload_dir(home, "xml2rfc"), PathBuf::from("/h/payloads/xml2rfc"));
+        assert_eq!(
+            payload_dir(home, "xml2rfc"),
+            PathBuf::from("/h/payloads/xml2rfc")
+        );
         assert_eq!(
             image_path(home, "xml2rfc", "3.34.0"),
             PathBuf::from("/h/payloads/xml2rfc/3.34.0.tfs")
@@ -301,11 +304,7 @@ mod tests {
         std::fs::remove_file(sha_marker_path(&home, "xml2rfc", "3.34.0")).unwrap();
         assert!(get(&home, "xml2rfc", "3.34.0").unwrap().is_none());
         // A present-but-corrupt mirror is a named error, never a skip.
-        std::fs::write(
-            sha_marker_path(&home, "xml2rfc", "3.34.0"),
-            "0\n",
-        )
-        .unwrap();
+        std::fs::write(sha_marker_path(&home, "xml2rfc", "3.34.0"), "0\n").unwrap();
         std::fs::write(
             manifest_mirror_path(&home, "xml2rfc", "3.34.0"),
             "not: [a manifest\n",

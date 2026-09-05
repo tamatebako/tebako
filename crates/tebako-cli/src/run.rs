@@ -359,12 +359,10 @@ mod tests {
         // No flags: no tightening key at all (byte-identical legacy run).
         let p = parse_run_args(&args(&[&pkg])).unwrap();
         let plan = plan_run(&p).unwrap();
-        assert!(
-            !plan
-                .env
-                .iter()
-                .any(|(k, _)| k == tpkg::runtime_store::JAIL_TIGHTENING_VAR)
-        );
+        assert!(!plan
+            .env
+            .iter()
+            .any(|(k, _)| k == tpkg::runtime_store::JAIL_TIGHTENING_VAR));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

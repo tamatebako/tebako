@@ -1219,12 +1219,11 @@ pub fn boot_with_mount_modes(
                     v.extend(h.user_args.iter().cloned());
                     v
                 } else {
-                    let (resolved, defaults) = match resolve_payload_entrypoint(
-                        keyword, &h.images, &mounted,
-                    )? {
-                        Some(pair) => pair,
-                        None => resolve_runtime_entrypoint(keyword, runtime_root, &mounted)?,
-                    };
+                    let (resolved, defaults) =
+                        match resolve_payload_entrypoint(keyword, &h.images, &mounted)? {
+                            Some(pair) => pair,
+                            None => resolve_runtime_entrypoint(keyword, runtime_root, &mounted)?,
+                        };
                     let mut v = Vec::with_capacity(h.user_args.len() + defaults.len() + 2);
                     if let Some(program) = argv.first() {
                         v.push(program.clone());

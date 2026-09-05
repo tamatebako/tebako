@@ -258,14 +258,12 @@ pub(crate) fn capture(
         exposes.is_empty(),
         crate::driver::env_var(env, tpkg::runtime_store::JAIL_TIGHTENING_VAR),
     ) {
-        (false, Some(value)) => {
-            Some(HostJail::parse_env_spec(&value).map_err(|e| {
-                manifest(format!(
-                    "{}: {e} — the dispatcher's jail ceiling is torn (spec 32 §4)",
-                    tpkg::runtime_store::JAIL_TIGHTENING_VAR
-                ))
-            })?)
-        }
+        (false, Some(value)) => Some(HostJail::parse_env_spec(&value).map_err(|e| {
+            manifest(format!(
+                "{}: {e} — the dispatcher's jail ceiling is torn (spec 32 §4)",
+                tpkg::runtime_store::JAIL_TIGHTENING_VAR
+            ))
+        })?),
         _ => None,
     };
     *STATE.write().unwrap() = Some(SpawnState {
@@ -408,7 +406,17 @@ fn compose_plan(
             name: capability,
             payload: pin,
             constraint,
-        } => compose_payload_plan(state, name, capability, pin.as_deref(), constraint, args, carry, mount_var_keys, &home),
+        } => compose_payload_plan(
+            state,
+            name,
+            capability,
+            pin.as_deref(),
+            constraint,
+            args,
+            carry,
+            mount_var_keys,
+            &home,
+        ),
     }
 }
 
@@ -432,8 +440,15 @@ fn compose_payload_plan(
     mount_var_keys: &[String],
     home: &std::path::Path,
 ) -> Result<SpawnPlan, String> {
-    let (provider, locked_row) =
-        resolve_provider(home, command, capability, pin, constraint, &state.lock, &state.runtime_root)?;
+    let (provider, locked_row) = resolve_provider(
+        home,
+        command,
+        capability,
+        pin,
+        constraint,
+        &state.lock,
+        &state.runtime_root,
+    )?;
     // The exposed name must be a declared, runtime-carrying entrypoint of
     // the provider — validated even when the lock pins the pair (the
     // dispatcher's validation is not the driver's evidence).
@@ -441,9 +456,7 @@ fn compose_payload_plan(
     let expose: Vec<String> = state
         .exposes
         .iter()
-        .filter(|(_, e)| {
-            matches!(e, SpawnEdge::Payload { name, .. } if name == capability)
-        })
+        .filter(|(_, e)| matches!(e, SpawnEdge::Payload { name, .. } if name == capability))
         .map(|(n, _)| n.clone())
         .collect();
     let rt = nested_runtime(home, &provider, capability, &expose, locked_row.as_ref())?;
@@ -451,7 +464,7 @@ fn compose_payload_plan(
     let dep_mounts = provider_dep_mounts(home, &provider, &state.lock, &state.runtime_root)?;
     let mut exclude: Vec<String> = dep_mounts
         .iter()
-        .filter_map(|t| t.rsplitn(2, ':').next().map(str::to_string))
+        .filter_map(|t| t.rsplit(':').next().map(str::to_string))
         .collect();
     exclude.push("/".to_string());
     let (triples, args) = carry_mounts(state, args, carry, &exclude)?;
@@ -468,8 +481,15 @@ fn compose_payload_plan(
         .into_owned();
     let mut child_lock: Vec<String> = Vec::new();
     let mut visiting = vec![state.payload_name.clone(), provider.name.clone()];
-    compose_child_lock(home, &provider, &state.lock, &mut visiting, &mut child_lock, &state.runtime_root)
-        .map_err(|e| format!("spawn '{command}': {e}"))?;
+    compose_child_lock(
+        home,
+        &provider,
+        &state.lock,
+        &mut visiting,
+        &mut child_lock,
+        &state.runtime_root,
+    )
+    .map_err(|e| format!("spawn '{command}': {e}"))?;
     let provider_needs = match &provider.manifest.provides {
         Provides::App(app) => app.capabilities.host.clone(),
         _ => None,
@@ -498,7 +518,8 @@ fn compose_payload_plan(
         ));
     }
     let provider_image = provider.image.to_string_lossy().into_owned();
-    let mut argv = Vec::with_capacity(2 + (1 + dep_mounts.len() + triples.len()) * 2 + 2 + args.len());
+    let mut argv =
+        Vec::with_capacity(2 + (1 + dep_mounts.len() + triples.len()) * 2 + 2 + args.len());
     argv.push(rt.exe.to_string_lossy().into_owned());
     argv.push("--tebako-image".to_string());
     argv.push(format!("{provider_image}:0:/"));
@@ -905,7 +926,16 @@ fn provider_dep_mounts(
                 mount: Some(mount),
                 ..
             } => (
-                resolve_provider(home, name, name, payload.as_deref(), constraint, lock, runtime_root)?.0,
+                resolve_provider(
+                    home,
+                    name,
+                    name,
+                    payload.as_deref(),
+                    constraint,
+                    lock,
+                    runtime_root,
+                )?
+                .0,
                 mount,
             ),
             Requirement::Toolkit {
@@ -1016,8 +1046,15 @@ fn compose_child_lock(
                 expose,
                 ..
             } if !expose.is_empty() => {
-                let (nested, locked_row) =
-                    resolve_provider(home, name, name, payload.as_deref(), constraint, parent_lock, runtime_root)?;
+                let (nested, locked_row) = resolve_provider(
+                    home,
+                    name,
+                    name,
+                    payload.as_deref(),
+                    constraint,
+                    parent_lock,
+                    runtime_root,
+                )?;
                 if visiting.iter().any(|p| p == &nested.name) {
                     return Err(format!(
                         "spawn dependency cycle through provider payload '{}' ({}): the executable edges form a cycle — break it (spec 32 §2)",
@@ -1500,7 +1537,11 @@ mod tests {
             "java",
             "21.0.12",
             "0.3.0",
-            &runtime_manifest("java", "  entrypoints: [{name: java, path: /bin/java}]\n", ""),
+            &runtime_manifest(
+                "java",
+                "  entrypoints: [{name: java, path: /bin/java}]\n",
+                "",
+            ),
         );
         state_with(one_expose());
         let plan = plan(
@@ -1558,14 +1599,22 @@ mod tests {
             "java",
             "21.0.12",
             "0.3.0",
-            &runtime_manifest("java", "  entrypoints: [{name: java, path: /bin/java}]\n", ""),
+            &runtime_manifest(
+                "java",
+                "  entrypoints: [{name: java, path: /bin/java}]\n",
+                "",
+            ),
         );
         store_entry(
             &g.home,
             "java",
             "21.0.11",
             "0.3.0",
-            &runtime_manifest("java", "  entrypoints: [{name: java, path: /bin/java}]\n", ""),
+            &runtime_manifest(
+                "java",
+                "  entrypoints: [{name: java, path: /bin/java}]\n",
+                "",
+            ),
         );
         install_state(
             one_expose(),
@@ -1612,7 +1661,11 @@ mod tests {
             "java",
             "21.0.12",
             "0.3.0",
-            &runtime_manifest("java", "  entrypoints: [{name: java, path: /bin/java}]\n", ""),
+            &runtime_manifest(
+                "java",
+                "  entrypoints: [{name: java, path: /bin/java}]\n",
+                "",
+            ),
         );
         let mut exposes = one_expose();
         exposes.insert("jing".to_string(), edge(">= 21"));
@@ -1679,7 +1732,11 @@ mod tests {
             "java",
             "21.0.12",
             "0.3.0",
-            &runtime_manifest("java", "  entrypoints: [{name: java, path: /bin/java}]\n", ""),
+            &runtime_manifest(
+                "java",
+                "  entrypoints: [{name: java, path: /bin/java}]\n",
+                "",
+            ),
         );
         state_with(one_expose());
         // Two plans of the same edge both succeed — the scratch mount
@@ -1723,7 +1780,14 @@ mod tests {
         let g = guard("payload-plan");
         seed_python(&g.home);
         seed_xml2rfc(&g.home, "");
-        install_state(xml2rfc_expose(), "metanorma", None, Vec::new(), None, "/__tfs__");
+        install_state(
+            xml2rfc_expose(),
+            "metanorma",
+            None,
+            Vec::new(),
+            None,
+            "/__tfs__",
+        );
         let plan = plan("xml2rfc", &["--version".to_string()], &[])
             .unwrap()
             .expect("planned");
@@ -1805,7 +1869,14 @@ mod tests {
     #[test]
     fn the_payload_edge_names_its_resolution_failures() {
         let g = guard("payload-errors");
-        install_state(xml2rfc_expose(), "metanorma", None, Vec::new(), None, "/__tfs__");
+        install_state(
+            xml2rfc_expose(),
+            "metanorma",
+            None,
+            Vec::new(),
+            None,
+            "/__tfs__",
+        );
         // No provider installed: DependencyNotFound, never a download.
         let err = plan("xml2rfc", &[], &[]).unwrap_err();
         assert!(err.contains("DependencyNotFound"), "{err}");
@@ -1828,7 +1899,10 @@ mod tests {
         assert!(err.contains("xml2rfc-alt"), "{err}");
         // …and the pin is the escape hatch.
         let mut exposes = HashMap::new();
-        exposes.insert("xml2rfc".to_string(), payload_edge(Some("xml2rfc"), ">= 3.34"));
+        exposes.insert(
+            "xml2rfc".to_string(),
+            payload_edge(Some("xml2rfc"), ">= 3.34"),
+        );
         install_state(exposes, "metanorma", None, Vec::new(), None, "/__tfs__");
         let err = plan("xml2rfc", &[], &[]).unwrap_err();
         assert!(err.contains("no cached runtime"), "{err}");
@@ -1901,7 +1975,14 @@ mod tests {
                 "requires:\n  - kind: executable\n    name: xml2rfc\n    payload: xml2rfc\n    constraint: \">= 3.34\"\n    expose: [xml2rfc]\n",
             ),
         );
-        install_state(xml2rfc_expose(), "metanorma", None, Vec::new(), None, "/__tfs__");
+        install_state(
+            xml2rfc_expose(),
+            "metanorma",
+            None,
+            Vec::new(),
+            None,
+            "/__tfs__",
+        );
         let err = plan("xml2rfc", &[], &[]).unwrap_err();
         assert!(err.contains("cycle"), "{err}");
         assert!(err.contains("xml2rfc"), "{err}");
@@ -1918,7 +1999,11 @@ mod tests {
             "java",
             "21.0.12",
             "0.3.0",
-            &runtime_manifest("java", "  entrypoints: [{name: java, path: /bin/java}]\n", ""),
+            &runtime_manifest(
+                "java",
+                "  entrypoints: [{name: java, path: /bin/java}]\n",
+                "",
+            ),
         );
         install_state(
             one_expose(),
@@ -1994,7 +2079,14 @@ mod tests {
             tebako_version: "0.3.0".to_string(),
             payload: Some(("xml2rfc".to_string(), "3.34.0".to_string())),
         };
-        install_state(xml2rfc_expose(), "metanorma", None, vec![locked], None, "/__tfs__");
+        install_state(
+            xml2rfc_expose(),
+            "metanorma",
+            None,
+            vec![locked],
+            None,
+            "/__tfs__",
+        );
         let seeded = plan("xml2rfc", &[], &[]).unwrap().expect("planned");
         assert!(
             seeded.argv[2].ends_with("payloads/xml2rfc/3.34.0.tfs:0:/"),

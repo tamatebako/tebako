@@ -773,7 +773,7 @@ fn spawned_checks(
             let tpkg::LockedSpawned::Payload(p) = row else {
                 return false;
             };
-            payload_row_matches_edge(p, *name, &exec_edges)
+            payload_row_matches_edge(p, name, &exec_edges)
         });
         if !mirrored {
             checks.push(Check::fail(
@@ -809,7 +809,10 @@ fn payload_row_matches_edge(
         *name == edge_name
             && constraint.as_str() == row.constraint.as_str()
             && (pin.is_none() || *pin == Some(row.payload.as_str()))
-            && expose.iter().map(String::as_str).collect::<std::collections::BTreeSet<_>>()
+            && expose
+                .iter()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>()
                 == row
                     .expose
                     .iter()
