@@ -388,3 +388,332 @@ fn link_and_unlink_use_the_platform_shim_name() {
     assert_eq!(removed, vec![home.join("shims").join(want)]);
     assert!(!home.join("shims").join(want).exists());
 }
+
+// ---------------------------------------------------------------------
+// The verb surface of the 2026-09-05 routing amendment (spec 07 §3):
+// use / enable|disable --of / list --json / which provider / doctor.
+// ---------------------------------------------------------------------
+
+fn seed_two_providers(home: &std::path::Path) {
+    write_payload(
+        home,
+        "pandora",
+        "1.0.0",
+        &app_manifest("pandora", "1.0.0", &entrypoint_yaml(RUBY_ENTRY, "pandoc")),
+    );
+    write_payload(
+        home,
+        "pandorc",
+        "1.2.0",
+        &app_manifest("pandorc", "1.2.0", &entrypoint_yaml(RUBY_ENTRY, "pandoc")),
+    );
+    write_runtime(home, "4.0.6", "0.16.0", false);
+}
+
+#[test]
+fn use_writes_clears_and_preserves_the_authored_config() {
+    let tmp = TempDir::new("use-roundtrip");
+    let home = tmp.path().join("home");
+    write_config(
+        &home,
+        "registries:\n  - file:///opt/lib/tpkg-registry.yaml\ndefaults: {other: 9.9}\n",
+    );
+    let ctx = ctx(&home, tmp.path());
+
+    // use <tool> <pin> writes the qualified default
+    let (text, code) = printed(run_ok(
+        &[
+            "tebako-shim".into(),
+            "use".into(),
+            "pandoc".into(),
+            "pandorc@1.2.0".into(),
+        ],
+        &ctx,
+    ));
+    assert_eq!(code, 0, "{text}");
+    let cfg = tebako_shim::config::load_config(&home).unwrap();
+    assert_eq!(
+        cfg.defaults.get("pandoc").map(String::as_str),
+        Some("pandorc@1.2.0")
+    );
+    assert_eq!(cfg.defaults.get("other").map(String::as_str), Some("9.9"));
+    assert_eq!(
+        cfg.registries,
+        vec!["file:///opt/lib/tpkg-registry.yaml".to_string()]
+    );
+
+    // a second use edits in place
+    run_ok(
+        &[
+            "tebako-shim".into(),
+            "use".into(),
+            "pandoc".into(),
+            "1.0.0".into(),
+        ],
+        &ctx,
+    );
+    let cfg = tebako_shim::config::load_config(&home).unwrap();
+    assert_eq!(
+        cfg.defaults.get("pandoc").map(String::as_str),
+        Some("1.0.0")
+    );
+
+    // --clear removes exactly the key
+    run_ok(
+        &[
+            "tebako-shim".into(),
+            "use".into(),
+            "--clear".into(),
+            "pandoc".into(),
+        ],
+        &ctx,
+    );
+    let cfg = tebako_shim::config::load_config(&home).unwrap();
+    assert!(!cfg.defaults.contains_key("pandoc"));
+    assert_eq!(cfg.defaults.get("other").map(String::as_str), Some("9.9"));
+
+    // an unparseable pin is the named grammar error, and writes nothing
+    let err = tebako_shim::run(
+        &[
+            "tebako-shim".into(),
+            "use".into(),
+            "pandoc".into(),
+            "pandorc@".into(),
+        ],
+        &ctx,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST);
+    assert!(err.message.contains("pandorc@"), "{}", err.message);
+    let cfg = tebako_shim::config::load_config(&home).unwrap();
+    assert!(!cfg.defaults.contains_key("pandoc"));
+}
+
+#[test]
+fn use_runtime_writes_the_runtimes_preference() {
+    let tmp = TempDir::new("use-runtime");
+    let home = tmp.path().join("home");
+    let ctx = ctx(&home, tmp.path());
+
+    run_ok(
+        &[
+            "tebako-shim".into(),
+            "use".into(),
+            "--runtime".into(),
+            "ruby@3.4.2".into(),
+        ],
+        &ctx,
+    );
+    let cfg = tebako_shim::config::load_config(&home).unwrap();
+    assert_eq!(
+        cfg.runtimes.get("ruby").map(|r| r.version.as_str()),
+        Some("3.4.2")
+    );
+
+    // the full form pins the tebako (launcher abi) line too
+    run_ok(
+        &[
+            "tebako-shim".into(),
+            "use".into(),
+            "--runtime".into(),
+            "ruby@3.4.2:2.2.0".into(),
+        ],
+        &ctx,
+    );
+    let cfg = tebako_shim::config::load_config(&home).unwrap();
+    let pref = cfg.runtimes.get("ruby").expect("ruby pref");
+    assert_eq!(pref.version, "3.4.2");
+    assert_eq!(pref.tebako, "2.2.0");
+
+    // no engine is a usage error
+    let err = tebako_shim::run(
+        &[
+            "tebako-shim".into(),
+            "use".into(),
+            "--runtime".into(),
+            "3.4.2".into(),
+        ],
+        &ctx,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_USAGE);
+}
+
+#[test]
+fn disable_of_writes_the_qualified_selector() {
+    let tmp = TempDir::new("disable-of");
+    let home = tmp.path().join("home");
+    seed_two_providers(&home);
+    // the env pin lets enable's link-on-demand resolve (spec 07 §3)
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env
+        .insert("TEBAKO_PANDOC_VERSION".into(), "1.0.0".into());
+
+    // --of alone → payload@all
+    let (text, _) = printed(run_ok(
+        &[
+            "tebako-shim".into(),
+            "disable".into(),
+            "pandoc".into(),
+            "--of".into(),
+            "pandorc".into(),
+        ],
+        &ctx,
+    ));
+    assert!(text.contains("pandorc@all"), "{text}");
+    let disabled = tebako_shim::config::load_disabled(&home).unwrap();
+    assert_eq!(
+        disabled.get("pandoc"),
+        Some(&vec!["pandorc@all".to_string()])
+    );
+
+    // <tool>@<version> --of → payload@version
+    run_ok(
+        &[
+            "tebako-shim".into(),
+            "disable".into(),
+            "pandoc@1.2.0".into(),
+            "--of".into(),
+            "pandorc".into(),
+        ],
+        &ctx,
+    );
+    let disabled = tebako_shim::config::load_disabled(&home).unwrap();
+    assert_eq!(
+        disabled.get("pandoc"),
+        Some(&vec![
+            "pandorc@all".to_string(),
+            "pandorc@1.2.0".to_string()
+        ])
+    );
+
+    // enable drops exactly the computed selector
+    run_ok(
+        &[
+            "tebako-shim".into(),
+            "enable".into(),
+            "pandoc@1.2.0".into(),
+            "--of".into(),
+            "pandorc".into(),
+        ],
+        &ctx,
+    );
+    let disabled = tebako_shim::config::load_disabled(&home).unwrap();
+    assert_eq!(
+        disabled.get("pandoc"),
+        Some(&vec!["pandorc@all".to_string()])
+    );
+}
+
+#[test]
+fn list_json_is_a_machine_document_with_provider_fields() {
+    let tmp = TempDir::new("list-json");
+    let home = tmp.path().join("home");
+    seed(&home);
+    let ctx = pinned_ctx(&home, tmp.path());
+
+    let (text, code) = printed(run_ok(
+        &["tebako-shim".into(), "list".into(), "--json".into()],
+        &ctx,
+    ));
+    assert_eq!(code, 0, "{text}");
+    let doc = tebako_json::parse(&text).expect("list --json parses as JSON");
+    assert_eq!(doc.find("info_schema").and_then(|v| v.as_u64()), Some(1));
+    let commands = doc.find("commands").expect("commands");
+    let tebako_json::Value::Array(commands) = commands else {
+        panic!("commands is an array");
+    };
+    let cmd = commands
+        .iter()
+        .find(|c| c.find("name").and_then(|v| v.as_string()).as_deref() == Some("metanorma"))
+        .expect("the metanorma command entry");
+    assert_eq!(
+        cmd.find("provider").and_then(|v| v.as_string()).as_deref(),
+        Some("metanorma")
+    );
+    assert_eq!(
+        cmd.find("provider_kind")
+            .and_then(|v| v.as_string())
+            .as_deref(),
+        Some("own")
+    );
+    assert_eq!(
+        cmd.find("version").and_then(|v| v.as_string()).as_deref(),
+        Some("1.2.3")
+    );
+    assert!(
+        cmd.find("source")
+            .and_then(|v| v.as_string())
+            .is_some_and(|s| s.contains("TEBAKO_METANORMA_VERSION")),
+        "the source string"
+    );
+}
+
+#[test]
+fn which_names_the_provider_and_its_kind() {
+    let tmp = TempDir::new("which-provider");
+    let home = tmp.path().join("home");
+    seed(&home);
+    let ctx = pinned_ctx(&home, tmp.path());
+
+    let (text, code) = printed(run_ok(
+        &["tebako-shim".into(), "which".into(), "metanorma".into()],
+        &ctx,
+    ));
+    assert_eq!(code, 0);
+    assert!(text.contains("provider: metanorma (own)"), "{text}");
+}
+
+#[test]
+fn which_shows_the_qualified_source_when_pinned() {
+    let tmp = TempDir::new("which-pinned");
+    let home = tmp.path().join("home");
+    let proj = tmp.path().join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    seed_two_providers(&home);
+    std::fs::write(proj.join(".tebako-tools.yaml"), "pandoc: pandorc@1.2.0\n").unwrap();
+    let ctx = ctx(&home, &proj);
+
+    let (text, code) = printed(run_ok(
+        &["tebako-shim".into(), "which".into(), "pandoc".into()],
+        &ctx,
+    ));
+    assert_eq!(code, 0, "{text}");
+    assert!(text.contains("provider: pandorc (pinned)"), "{text}");
+    assert!(text.contains("pandorc@1.2.0"), "{text}");
+}
+
+#[test]
+fn doctor_reports_collisions_dangling_pins_and_disabled_but_pinned() {
+    let tmp = TempDir::new("doctor-routing");
+    let home = tmp.path().join("home");
+    seed_two_providers(&home);
+    let shims = home.join("shims");
+    std::fs::create_dir_all(&shims).unwrap();
+    std::fs::write(shims.join("pandoc"), b"shim link placeholder\n").unwrap();
+    std::fs::write(shims.join(".disabled.yaml"), "pandoc:\n  - pandora@1.0.0\n").unwrap();
+    write_config(
+        &home,
+        "defaults: {pandoc: \"pandora@1.0.0\", ghost: \"ghostcmd@9.9\"}\n",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "PATH".into(),
+        std::env::join_paths([&shims, std::path::Path::new("/usr/bin")])
+            .unwrap()
+            .to_string_lossy()
+            .into_owned(),
+    );
+
+    let (text, _code) = printed(run_ok(&["tebako-shim".into(), "doctor".into()], &ctx));
+    assert!(text.contains("more than one enabled"), "{text}");
+    assert!(text.contains("ghostcmd@9.9"), "{text}");
+    assert!(
+        text.contains("dangling") || text.contains("not installed"),
+        "{text}"
+    );
+    assert!(
+        text.contains("disabled") && text.contains("pandora@1.0.0"),
+        "{text}"
+    );
+}
