@@ -691,6 +691,98 @@ fn union_member_remount_does_not_deadlock() {
     assert_eq!(r.stdout.matches(SECRET).count(), 1, "stdout: {}", r.stdout);
 }
 
+/// Regression (tebako#527, the python-factory gnu boot hang): a
+/// `--export-dynamic` exe carrying a STATIC jemalloc (the spec 29 link
+/// unit's shape) exports malloc/calloc from its own dynamic table, so a
+/// pre-constructor allocation (libstdc++'s ctor, the shim's own) enters
+/// the exe's jemalloc — whose lazy `malloc_init_hard` holds the
+/// non-recursive `init_lock` while its setup RE-ENTERS the shim: the
+/// arena-base `pages_map` mmap AND `pages_boot`'s THP-probe
+/// open/read of /sys/kernel/mm/transparent_hugepage/*. Pre-fix each
+/// entry self-deadlocked the single thread — the mmap passthrough's lazy
+/// `dlsym(RTLD_NEXT, …)` allocates (glibc's _dl_find_object growth), and
+/// the open's engine path allocates (path normalization's Vec). The boot
+/// gate now bars the engine until the constructor's mounts are live and
+/// the thin-syscall bodies answer from the raw syscall layer — no
+/// engine, no dlsym, no allocation — so jemalloc's init completes and
+/// the probe reaches exit 0. The deadline must live INSIDE the test:
+/// `run`'s `cmd.output()` waits forever, and a wedge would otherwise
+/// burn CI's 180 s watchdog as an anonymous hang instead of a named
+/// assertion. Skips with a note when no static libjemalloc is linkable
+/// (the CI ubuntu leg installs libjemalloc-dev; the python-factory gnu
+/// legs remain the end-to-end pin). Linux-only: macOS's dyld never
+/// allocates under interpose resolution and ruby/musl never engage this
+/// path.
+#[cfg(target_os = "linux")]
+#[test]
+fn jemalloc_init_mmap_does_not_deadlock() {
+    let Some(f) = fixtures() else { return };
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/jemalloc-probe.c");
+    let bin = f.dir.join("bin").join("jemalloc-probe");
+    let o = Command::new("cc")
+        .arg("-O2")
+        .arg("-o")
+        .arg(&bin)
+        .arg(&src)
+        // The wedge's three ingredients, each verified necessary: the exe
+        // exports its symbols (so dlsym's calloc binds to the exe's
+        // jemalloc), jemalloc is STATIC (a shared one would init before
+        // the shim's constructor), and the shim is preloaded with a mount
+        // (so the constructor allocates).
+        .args([
+            "-Wl,--export-dynamic",
+            "-Wl,--push-state,-Bstatic",
+            "-ljemalloc",
+            "-Wl,--pop-state",
+            "-lpthread",
+            "-ldl",
+        ])
+        .output()
+        .unwrap();
+    if !o.status.success() {
+        let stderr = String::from_utf8_lossy(&o.stderr);
+        if stderr.contains("cannot find -ljemalloc") {
+            eprintln!("skip: no static libjemalloc to link against (apt: libjemalloc-dev)");
+            return;
+        }
+        panic!("cc failed for {}: {stderr}", src.display());
+    }
+    let mut child = Command::new(&bin)
+        .env(preload_var(), &f.shim)
+        .env("TEBAKO_TFS_MOUNTS", format!("{}:{MOUNT}", f.zip.display()))
+        .env_remove("TEBAKO_JAIL")
+        .env_remove("DYLD_PRINT_LIBRARIES")
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let status = loop {
+        if let Some(s) = child.try_wait().unwrap() {
+            break Some(s);
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            break None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    };
+    let Some(status) = status else {
+        panic!("jemalloc-probe wedged past 60 s — the tebako#527 init_lock deadlock is back");
+    };
+    let stderr = child
+        .stderr
+        .take()
+        .map(|mut e| {
+            let mut s = String::new();
+            use std::io::Read as _;
+            let _ = e.read_to_string(&mut s);
+            s
+        })
+        .unwrap_or_default();
+    assert_eq!(status.code(), Some(0), "stderr: {stderr}");
+}
+
 #[test]
 fn dlopen_memfs_library_via_dlmap2file() {
     let Some(f) = fixtures() else { return };

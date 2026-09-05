@@ -29,6 +29,14 @@
 //! `IN_FORK_CHILD` guard below) — a `pthread_atfork` child handler arms a
 //! process-global flag, and every engine entry in a fork child gets `None`
 //! (the same "pass through to the real libc" answer re-entrancy gets).
+//!
+//! Early boot: interposed calls can arrive BEFORE the constructor's
+//! mounts exist (an earlier-initialized dependency's constructor, or the
+//! host allocator's own first init probing open/mmap). The `BOOT_LIVE`
+//! gate bars the engine then (the same `None` answer), and on 64-bit
+//! linux the thin-syscall bodies answer from a raw syscall layer —
+//! nothing in the shim may allocate or dlsym inside the allocator's init
+//! (tebako#527; sys/linux.rs's module doc has the full chain).
 
 use std::cell::Cell;
 use std::collections::HashMap;
@@ -124,8 +132,9 @@ static INIT_PID: AtomicI32 = AtomicI32::new(0);
 
 /// True when the current process is not the one the shim initialized in
 /// (a fork/vfork child before its exec). The `p != 0` arm keeps calls
-/// made BEFORE the constructor ran (an early-loading dependency's own
-/// constructor) on the historical ungated path.
+/// made BEFORE the constructor ran pid-ungated; the boot gate
+/// (BOOT_LIVE) bars those from the engine on its own terms — a
+/// pre-constructor call is loader/ctor host IO by construction.
 fn in_foreign_process() -> bool {
     let p = INIT_PID.load(Ordering::Relaxed);
     // SAFETY: plain libc call; no glibc pid cache exists to go stale.
@@ -163,6 +172,56 @@ pub(crate) fn register_fork_guard() {
     }
 }
 
+// ---------------------------------------------------------------------
+// The boot gate (tebako#527 — sys/linux.rs's module doc has the full
+// deadlock chain)
+// ---------------------------------------------------------------------
+
+/// False until the constructor's mount pass completes. An interposed
+/// call arriving before that is loader/ctor/allocator host IO — the VFS
+/// mounts exist only after the constructor, so no engine answer can be
+/// needed yet. The gate bars the engine ([`engine_call`] answers None —
+/// every shim's "pass through to the real libc / fail safe" arm) and the
+/// thin-syscall bodies answer from sys/linux.rs's raw syscall layer
+/// instead, so NOTHING in the shim allocates or resolves a libc symbol
+/// while the host allocator's own first init may be mid-flight holding
+/// its non-recursive init lock. The static is process-fresh after exec,
+/// exactly like INIT_PID.
+static BOOT_LIVE: AtomicBool = AtomicBool::new(false);
+
+/// The boot gate's read side (Acquire pairs the constructor's Release
+/// store with the mounts' visibility).
+fn boot_live() -> bool {
+    BOOT_LIVE.load(Ordering::Acquire)
+}
+
+/// The early arm of a thin-syscall shim body: pre-gate, answer from the
+/// raw syscall layer and return — before ANY other body statement runs
+/// (an env lookup, a path normalize, a resolve_dirfd each allocates).
+/// Linux 64-bit only; every other platform compiles the arm away (macOS
+/// resolution is allocation-free interpose tuples; 32-bit linux keeps
+/// the historical resolution — no shipped runtime is 32-bit).
+macro_rules! boot_arm {
+    // A conditional arm first (the `if`-led form can never parse as the
+    // path-led one): faccessat — only the flags-less form has a raw
+    // answer; glibc's flags emulation is not ours to re-create.
+    (if $cond:expr; $raw:path, ($($arg:expr),*)) => {
+        #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+        if !boot_live() && $cond {
+            // SAFETY: forwarding the original arguments; the raw arm is
+            // the byte-identical passthrough (sys/linux.rs).
+            return unsafe { $raw($($arg),*) };
+        }
+    };
+    ($raw:path, ($($arg:expr),*)) => {
+        #[cfg(all(target_os = "linux", target_pointer_width = "64"))]
+        if !boot_live() {
+            // SAFETY: as above.
+            return unsafe { $raw($($arg),*) };
+        }
+    };
+}
+
 /// Run `f` (a route-layer engine call) unless this thread is already
 /// inside the engine: re-entrant calls (the engine's own host IO) get
 /// `None` and the shim passes them straight to the real implementation.
@@ -171,6 +230,12 @@ pub(crate) fn register_fork_guard() {
 /// the fail-safe reason on `IN_FORK_CHILD` above: the backends' worker
 /// threads do not survive `fork`, so an engine call there would wait on
 /// dead threads.
+///
+/// Pre-gate calls (before the constructor's mount pass completes) get
+/// `None` too — the boot gate: the engine's first entry would allocate
+/// into a host allocator whose own init may be mid-flight on this very
+/// thread (tebako#527), and no truthful VFS answer can be needed before
+/// the mounts exist.
 ///
 /// pub(crate) for the TEST seam: a test that calls the route layer
 /// directly must enter through this guard exactly like the shims do —
@@ -186,7 +251,7 @@ pub(crate) fn register_fork_guard() {
 /// binaries do not interpose in-process, so only Linux CI saw them).
 pub(crate) fn engine_call<T>(f: impl FnOnce() -> T) -> Option<T> {
     engine_call_inner(
-        IN_FORK_CHILD.load(Ordering::Relaxed) || in_foreign_process(),
+        IN_FORK_CHILD.load(Ordering::Relaxed) || in_foreign_process() || !boot_live(),
         f,
     )
 }
@@ -421,6 +486,7 @@ pub unsafe extern "C" fn open(path: *const c_char, flags: c_int, mode: c_int) ->
 /// The Rust body of the open shim (entry point per ABI, see above).
 #[no_mangle]
 pub unsafe extern "C" fn open_impl(path: *const c_char, flags: c_int, mode: c_int) -> c_int {
+    boot_arm!(plat::raw_open, (path, flags, mode));
     if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
         eprintln!("[preload] open flags={flags:#o} mode={mode:#o}");
     }
@@ -464,6 +530,7 @@ pub unsafe extern "C" fn openat_impl(
     flags: c_int,
     mode: c_int,
 ) -> c_int {
+    boot_arm!(plat::raw_openat, (dirfd, path, flags, mode));
     if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
         eprintln!("[preload] openat flags={flags:#o} mode={mode:#o}");
     }
@@ -533,18 +600,21 @@ unsafe fn stat_via(
 /// Interposed `stat`.
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn stat(path: *const c_char, st: *mut libc::stat) -> c_int {
+    boot_arm!(plat::raw_stat, (path, st));
     unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_stat()(o, s)) }
 }
 
 /// Interposed `lstat` (memfs has no symlink duality: lstat == stat).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn lstat(path: *const c_char, st: *mut libc::stat) -> c_int {
+    boot_arm!(plat::raw_lstat, (path, st));
     unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_lstat()(o, s)) }
 }
 
 /// Interposed `fstat` (fd-flag dispatch, no path).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn fstat(fd: c_int, st: *mut libc::stat) -> c_int {
+    boot_arm!(plat::raw_fstat, (fd, st));
     if route::is_memfs_fd(fd) {
         if st.is_null() {
             set_errno(libc::EFAULT);
@@ -578,6 +648,7 @@ pub unsafe extern "C" fn fstat(fd: c_int, st: *mut libc::stat) -> c_int {
 /// Interposed `access`.
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn access(path: *const c_char, mode: c_int) -> c_int {
+    boot_arm!(plat::raw_access, (path, mode));
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_access()(path, mode) };
     };
@@ -601,6 +672,7 @@ pub unsafe extern "C" fn faccessat(
     mode: c_int,
     flags: c_int,
 ) -> c_int {
+    boot_arm!(if flags == 0; plat::raw_faccessat, (dirfd, path, mode));
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_faccessat()(dirfd, path, mode, flags) };
     };
@@ -702,6 +774,7 @@ pub unsafe extern "C" fn closedir(dirp: *mut libc::DIR) -> c_int {
 /// Interposed `read` (fd-flag dispatch).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn read(fd: c_int, buf: *mut c_void, nbyte: usize) -> libc::ssize_t {
+    boot_arm!(plat::raw_read, (fd, buf, nbyte));
     if route::is_memfs_fd(fd) {
         if buf.is_null() && nbyte > 0 {
             set_errno(libc::EFAULT);
@@ -745,6 +818,10 @@ pub unsafe extern "C" fn __read_chk(
     nbyte: usize,
     buflen: usize,
 ) -> libc::ssize_t {
+    // The early arm keeps the fortify contract: the raw arm aborts
+    // (SIGABRT) on an overflow request, matching __chk_fail's never-
+    // return — glibc's own diagnostic print is cosmetic.
+    boot_arm!(plat::raw___read_chk, (fd, buf, nbyte, buflen));
     if !route::is_memfs_fd(fd) {
         return unsafe { plat::real___read_chk()(fd, buf, nbyte, buflen) };
     }
@@ -763,6 +840,7 @@ pub unsafe extern "C" fn pread(
     nbyte: usize,
     offset: libc::off_t,
 ) -> libc::ssize_t {
+    boot_arm!(plat::raw_pread, (fd, buf, nbyte, offset));
     if route::is_memfs_fd(fd) {
         if buf.is_null() && nbyte > 0 {
             set_errno(libc::EFAULT);
@@ -795,6 +873,7 @@ pub unsafe extern "C" fn pread(
 /// fseek on a memfs fd must stay on the VFS).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn lseek(fd: c_int, offset: libc::off_t, whence: c_int) -> libc::off_t {
+    boot_arm!(plat::raw_lseek, (fd, offset, whence));
     if route::is_memfs_fd(fd) {
         return match engine_call(|| route::vfs_lseek(fd, offset, whence)) {
             Some(Ok(pos)) => pos,
@@ -860,6 +939,7 @@ pub unsafe extern "C" fn __openat_2(dirfd: c_int, path: *const c_char, flags: c_
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn stat64(path: *const c_char, st: *mut libc::stat) -> c_int {
+    boot_arm!(plat::raw_stat, (path, st));
     unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_stat64()(o, s)) }
 }
 
@@ -867,6 +947,7 @@ pub unsafe extern "C" fn stat64(path: *const c_char, st: *mut libc::stat) -> c_i
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn lstat64(path: *const c_char, st: *mut libc::stat) -> c_int {
+    boot_arm!(plat::raw_lstat, (path, st));
     unsafe { stat_via(c_path(path), path, st, |o, s| plat::real_lstat64()(o, s)) }
 }
 
@@ -874,6 +955,7 @@ pub unsafe extern "C" fn lstat64(path: *const c_char, st: *mut libc::stat) -> c_
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn fstat64(fd: c_int, st: *mut libc::stat) -> c_int {
+    boot_arm!(plat::raw_fstat, (fd, st));
     if route::is_memfs_fd(fd) {
         if st.is_null() {
             set_errno(libc::EFAULT);
@@ -952,7 +1034,11 @@ unsafe fn mmap_memfs_or_host(
     // conventional anonymous companion) has every bit set, TEBAKO_FD_FLAG
     // included, so the bare bit test lies exactly as it does for AT_FDCWD
     // (route::resolve_at_strict's discipline). The JVM's very first
-    // PaX-check mmap is anonymous and died here.
+    // PaX-check mmap is anonymous and died here. The passthrough itself
+    // never resolves a libc symbol: `real_mmap` answers through the raw
+    // syscall (sys/linux.rs), so a call landing here mid-allocator-init
+    // (jemalloc's arena-base pages_map, tebako#527) cannot re-enter the
+    // allocator through dlsym.
     if fd < 0 || flags & libc::MAP_ANONYMOUS != 0 || !route::is_memfs_fd(fd) {
         return unsafe { plat::real_mmap()(addr, len, prot, flags, fd, offset) };
     }
@@ -1167,6 +1253,7 @@ pub unsafe extern "C" fn __realpath_chk(
 /// real close).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn close(fd: c_int) -> c_int {
+    boot_arm!(plat::raw_close, (fd));
     if route::is_memfs_fd(fd) {
         fd_table_purge(fd);
         return match engine_call(|| route::vfs_close(fd)) {
@@ -1211,6 +1298,7 @@ pub unsafe extern "C" fn fcntl(fd: c_int, cmd: c_int, arg: c_int) -> c_int {
 /// The Rust body of the fcntl shim (entry point per ABI, see above).
 #[no_mangle]
 pub unsafe extern "C" fn fcntl_impl(fd: c_int, cmd: c_int, arg: c_int) -> c_int {
+    boot_arm!(plat::raw_fcntl, (fd, cmd, arg));
     if !route::is_memfs_fd(fd) {
         // SAFETY: forwarding the original arguments to the real fcntl.
         return unsafe { plat::real_fcntl()(fd, cmd, arg) };
@@ -1248,6 +1336,7 @@ pub unsafe extern "C" fn fcntl_impl(fd: c_int, cmd: c_int, arg: c_int) -> c_int 
 /// Interposed `mkdir` (write-class: memfs → EROFS, host → policy-gated).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn mkdir(path: *const c_char, mode: libc::mode_t) -> c_int {
+    boot_arm!(plat::raw_mkdir, (path, mode));
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_mkdir()(path, mode) };
     };
@@ -1263,6 +1352,7 @@ pub unsafe extern "C" fn mkdir(path: *const c_char, mode: libc::mode_t) -> c_int
 /// Interposed `unlink` (write-class).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn unlink(path: *const c_char) -> c_int {
+    boot_arm!(plat::raw_unlink, (path));
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_unlink()(path) };
     };
@@ -1278,6 +1368,7 @@ pub unsafe extern "C" fn unlink(path: *const c_char) -> c_int {
 /// Interposed `rename` (write-class; both paths gated).
 #[cfg_attr(target_os = "linux", no_mangle)]
 pub unsafe extern "C" fn rename(old: *const c_char, new: *const c_char) -> c_int {
+    boot_arm!(plat::raw_rename, (old, new));
     let (Some(o), Some(n)) = (unsafe { c_path(old) }, unsafe { c_path(new) }) else {
         return unsafe { plat::real_rename()(old, new) };
     };
@@ -1423,6 +1514,7 @@ pub unsafe extern "C" fn fstatat(
     st: *mut libc::stat,
     flags: c_int,
 ) -> c_int {
+    boot_arm!(plat::raw_fstatat, (dirfd, path, st, flags));
     unsafe {
         fstatat_via(dirfd, path, st, || {
             plat::real_fstatat()(dirfd, path, st, flags)
@@ -1439,6 +1531,7 @@ pub unsafe extern "C" fn fstatat64(
     st: *mut libc::stat,
     flags: c_int,
 ) -> c_int {
+    boot_arm!(plat::raw_fstatat, (dirfd, path, st, flags));
     unsafe {
         fstatat_via(dirfd, path, st, || {
             plat::real_fstatat64()(dirfd, path, st, flags)
@@ -1460,6 +1553,7 @@ pub unsafe extern "C" fn statx(
     mask: libc::c_uint,
     stx: *mut statx_abi::statx,
 ) -> c_int {
+    boot_arm!(plat::raw_statx, (dirfd, path, flags, mask, stx));
     use tfs::backend::EntryType;
 
     let Some(p) = (unsafe { c_path(path) }) else {
@@ -1528,6 +1622,7 @@ pub unsafe extern "C" fn statx(
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn getdents64(fd: c_int, dirp: *mut c_void, count: usize) -> libc::ssize_t {
+    boot_arm!(plat::raw_getdents64, (fd, dirp, count));
     if route::is_memfs_fd(fd) {
         set_errno(libc::ENOTDIR);
         return -1;
@@ -1540,6 +1635,10 @@ pub unsafe extern "C" fn getdents64(fd: c_int, dirp: *mut c_void, count: usize) 
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn __xstat(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
+    // The early arm drops `ver`: 64-bit linux has one stat ABI (the *64
+    // delegation rationale below), so the raw stat IS every live ver's
+    // answer.
+    boot_arm!(plat::raw_stat, (path, st));
     unsafe {
         stat_via(c_path(path), path, st, |o, s| {
             plat::real___xstat()(ver, o, s)
@@ -1551,6 +1650,7 @@ pub unsafe extern "C" fn __xstat(ver: c_int, path: *const c_char, st: *mut libc:
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn __lxstat(ver: c_int, path: *const c_char, st: *mut libc::stat) -> c_int {
+    boot_arm!(plat::raw_lstat, (path, st));
     unsafe {
         stat_via(c_path(path), path, st, |o, s| {
             plat::real___lxstat()(ver, o, s)
@@ -1562,6 +1662,7 @@ pub unsafe extern "C" fn __lxstat(ver: c_int, path: *const c_char, st: *mut libc
 #[cfg(target_os = "linux")]
 #[no_mangle]
 pub unsafe extern "C" fn __fxstat(ver: c_int, fd: c_int, st: *mut libc::stat) -> c_int {
+    boot_arm!(plat::raw_fstat, (fd, st));
     if route::is_memfs_fd(fd) {
         if st.is_null() {
             set_errno(libc::EFAULT);
@@ -1602,6 +1703,7 @@ pub unsafe extern "C" fn __fxstatat(
     st: *mut libc::stat,
     flags: c_int,
 ) -> c_int {
+    boot_arm!(plat::raw_fstatat, (dirfd, path, st, flags));
     unsafe {
         fstatat_via(dirfd, path, st, || {
             plat::real___fxstatat()(ver, dirfd, path, st, flags)
@@ -1749,6 +1851,7 @@ pub unsafe extern "C" fn execve(
     argv: *const *mut c_char,
     envp: *const *mut c_char,
 ) -> c_int {
+    boot_arm!(plat::raw_execve, (path, argv, envp));
     let Some(p) = (unsafe { c_path(path) }) else {
         return unsafe { plat::real_execve()(path, argv, envp) };
     };
@@ -1906,6 +2009,10 @@ pub fn init() {
         // SAFETY: plain libc call.
         unsafe { libc::exit(crate::spec::EX_CONFIG) };
     }
+    // Open the boot gate LAST: only with the mounts live may interposed
+    // calls reach the engine; pre-gate calls take the raw early arms
+    // (tebako#527 — see BOOT_LIVE). Release pairs every boot_live() load.
+    BOOT_LIVE.store(true, Ordering::Release);
 }
 
 // ---------------------------------------------------------------------

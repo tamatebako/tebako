@@ -94,13 +94,17 @@ jobs:
         # the system libbz2.dylib identically). Until rnp-rs ≥ 0.1.10.
         # mono-complete: vcpkg's NuGet binary-cache provider drives
         # nuget.exe through mono on non-Windows (macos runners ship mono).
+        # libjemalloc-dev: the tebako#527 e2e regression probe links a
+        # STATIC jemalloc into an --export-dynamic exe (the spec 29 link
+        # unit's shape); without it that test skips and the linux-gnu
+        # init_lock deadlock loses its in-CI pin.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake ninja-build pkg-config \
             autoconf automake autoconf-archive libtool \
             curl zip unzip tar ca-certificates \
-            libbz2-dev mono-complete
+            libbz2-dev mono-complete libjemalloc-dev
 
       - name: Install native build tools (macos)
         if: runner.os == 'macOS'
