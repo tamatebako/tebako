@@ -43,7 +43,10 @@ const USAGE: &str = "Usage:
                [--runtime <exe> --runtime-image <env.tfs>]
                                        the payload's in-image acceptance checks (spec 26 §2)
   tebako cache list [--json]
-  tebako cache prune [--all] [--older-than Nd]
+  tebako cache prune [--runtimes] [--payloads] [--all] [--older-than Nd]
+                                       bare = runtimes only; the payload arm never
+                                       prunes a pinned or a name's newest version
+                                       (no opt-out — prune never strands a pin)
   tebako add-registry <ref>            register a tpkg-registry.yaml (spec 04 §2)
   tebako list-registries               list the registered registries
   tebako update-registries             refresh the dispatch-time registry cache
@@ -684,11 +687,15 @@ fn run_cache(args: &[String]) -> Result<(), CliExit> {
             Ok(())
         }
         "prune" => {
+            let mut runtimes = false;
+            let mut payloads = false;
             let mut all = false;
             let mut older_than: Option<String> = None;
             let mut i = 1;
             while i < args.len() {
                 match args[i].as_str() {
+                    "--runtimes" => runtimes = true,
+                    "--payloads" => payloads = true,
                     "--all" => all = true,
                     "--older-than" => {
                         i += 1;
@@ -701,7 +708,7 @@ fn run_cache(args: &[String]) -> Result<(), CliExit> {
                 }
                 i += 1;
             }
-            cache_prune(all, older_than.as_deref())?;
+            cache_prune(runtimes, payloads, all, older_than.as_deref())?;
             Ok(())
         }
         other => Err(CliExit::Usage(format!(
