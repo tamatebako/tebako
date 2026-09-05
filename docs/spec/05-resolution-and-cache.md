@@ -124,8 +124,19 @@ installs, pre-identity manifests).
   tree; press seeds its environment by extracting in-process through the
   TFS ABI and rebuilds per press.
 - `TEBAKO_OFFLINE=1` — cache hit or hard error.
-- `tebako cache list` / `cache prune [--all] [--older-than Nd]` manage
-  the cache.
+- `tebako cache list` (runtimes and payloads) / `cache prune
+  [--runtimes] [--payloads] [--all | --older-than Nd]` manage the cache.
+  Bare `cache prune` touches runtimes only; `--payloads` adds the
+  payload arm, which NEVER removes a pinned version — the protected set
+  (config `defaults:` pins through the spec 07 §2 toolpin grammar, exact
+  `payload@version` disable selectors, and each name's newest installed
+  version, the roll-forward floor) binds even under `--all`: prune never
+  strands a pin. Per-directory `.tebako-tools.yaml` pins are
+  dispatch-time state and invisible to prune (a reachable one prints the
+  caveat once). Removal deletes the version's whole record — the `.tfs`,
+  its `.sha256` / `.origin` markers, the `.manifest.yaml` mirror, a
+  materialized `.tree/`, the install lock — and the name dir when it
+  goes empty.
 - **A run is a run** (TODO.v2-1/12): executing a package NEVER installs
   its payload slices. `tebako install <path>` installs a local package's
   payload slices explicitly — trailer slot digests are the anchors for
