@@ -142,7 +142,16 @@ pub fn resolve_runtime(
     // pin: the release index on the default line picks the newest
     // interpreter satisfying the constraint for this platform.
     let (pref_owned, prefless) = match pref {
-        Some(p) => (p.clone(), false),
+        Some(p) => {
+            let mut p = p.clone();
+            if p.tebako.is_empty() {
+                // `tebako-shim use --runtime <engine>@<langver>` without
+                // `:<tebako>` pins the language version and follows the
+                // product default line (config.rs RuntimePref::tebako).
+                p.tebako = tebako_resolve::DEFAULT_TEBAKO_VERSION.to_string();
+            }
+            (p, false)
+        }
         None => (
             RuntimePref {
                 version: String::new(),

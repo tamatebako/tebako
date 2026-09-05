@@ -46,7 +46,11 @@ pub struct RuntimePref {
     pub version: String,
     /// The tebako (launcher) abi version the runtime was built with,
     /// e.g. `0.16.0` — the `<ver>` of the cache layout
-    /// `runtimes/<lang>-<lv>-<ver>-<triplet>/`.
+    /// `runtimes/<lang>-<lv>-<ver>-<triplet>/`. Absent/empty when written
+    /// by `tebako-shim use --runtime <engine>@<langver>` without the
+    /// `:<tebako>` part — readers treat it as the product default line
+    /// (tebako-resolve::DEFAULT_TEBAKO_VERSION).
+    #[serde(default)]
     pub tebako: String,
 }
 
@@ -230,6 +234,161 @@ pub fn set_runtime_prefs(
 }
 
 // ---------------------------------------------------------------------
+// the `tebako-shim use` write path (spec 07 §0/§3 — the authored-config
+// write verb beside add_registry; spec 07 §2 step 0.5 amendment)
+// ---------------------------------------------------------------------
+
+/// Load `~/.tebako/config.yaml` (missing → an empty mapping), apply
+/// `edit` to its root mapping, and write it back tmp + rename — the
+/// shared scaffolding of every authored-config write (structural
+/// surgery: keys preserved, comments not).
+fn edit_config(
+    home: &Path,
+    edit: impl FnOnce(&mut serde_yaml::Mapping) -> Result<(), ShimError>,
+) -> Result<(), ShimError> {
+    let path = config_path(home);
+    let mut root: serde_yaml::Value = match std::fs::read_to_string(&path) {
+        Ok(t) => serde_yaml::from_str(&t).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "cannot parse {} ({e}) — fix or remove it; run `tebako-shim doctor`",
+                    path.display()
+                ),
+            )
+        })?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            serde_yaml::Value::Mapping(serde_yaml::Mapping::new())
+        }
+        Err(e) => return fail(EX_TEBAKO_IO, format!("cannot read {}: {e}", path.display())),
+    };
+    let mapping = root.as_mapping_mut().ok_or_else(|| {
+        ShimError::new(
+            EX_TEBAKO_MANIFEST,
+            format!("{} must be a YAML mapping", path.display()),
+        )
+    })?;
+    edit(mapping)?;
+    let text = serde_yaml::to_string(&root).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot serialize {}: {e}", path.display()),
+        )
+    })?;
+    std::fs::create_dir_all(home).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot create {}: {e}", home.display()),
+        )
+    })?;
+    let tmp = home.join(format!("config.yaml.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, text).map_err(|e| {
+        ShimError::new(EX_TEBAKO_IO, format!("cannot write {}: {e}", tmp.display()))
+    })?;
+    std::fs::rename(&tmp, &path).map_err(|e| {
+        ShimError::new(
+            EX_TEBAKO_IO,
+            format!("cannot install {}: {e}", path.display()),
+        )
+    })?;
+    Ok(())
+}
+
+/// Set or clear (`None`) the user-default pin for `tool` — the
+/// `use <tool> <pin>` / `use --clear <tool>` write. The caller validates
+/// the pin against `tpkg::toolpin::ToolPin` BEFORE calling. Returns
+/// whether the file changed.
+pub fn set_default(home: &Path, tool: &str, pin: Option<&str>) -> Result<bool, ShimError> {
+    let mut changed = false;
+    edit_config(home, |mapping| {
+        let key = serde_yaml::Value::String("defaults".to_string());
+        match pin {
+            Some(pin) => {
+                let entry = mapping
+                    .entry(key)
+                    .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+                let defaults = entry.as_mapping_mut().ok_or_else(|| {
+                    ShimError::new(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "{}: `defaults` must be a mapping",
+                            config_path(home).display()
+                        ),
+                    )
+                })?;
+                let tool_key = serde_yaml::Value::String(tool.to_string());
+                let new = serde_yaml::Value::String(pin.to_string());
+                if defaults.get(&tool_key) != Some(&new) {
+                    defaults.insert(tool_key, new);
+                    changed = true;
+                }
+            }
+            None => {
+                if let Some(entry) = mapping.get_mut(&key) {
+                    let defaults = entry.as_mapping_mut().ok_or_else(|| {
+                        ShimError::new(
+                            EX_TEBAKO_MANIFEST,
+                            format!(
+                                "{}: `defaults` must be a mapping",
+                                config_path(home).display()
+                            ),
+                        )
+                    })?;
+                    changed = defaults
+                        .remove(serde_yaml::Value::String(tool.to_string()))
+                        .is_some();
+                }
+            }
+        }
+        Ok(())
+    })?;
+    Ok(changed)
+}
+
+/// The `use --runtime <engine>@<langver>[:<tebako>]` write: one engine's
+/// runtime preference. Without the `:<tebako>` part only `version` is
+/// written — the tebako line then follows the product default at read
+/// time (see [`RuntimePref::tebako`]).
+pub fn set_runtime_pref(
+    home: &Path,
+    engine: &str,
+    version: &str,
+    tebako: Option<&str>,
+) -> Result<(), ShimError> {
+    edit_config(home, |mapping| {
+        let key = serde_yaml::Value::String("runtimes".to_string());
+        let entry = mapping
+            .entry(key)
+            .or_insert_with(|| serde_yaml::Value::Mapping(serde_yaml::Mapping::new()));
+        let rt_map = entry.as_mapping_mut().ok_or_else(|| {
+            ShimError::new(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "{}: `runtimes` must be a mapping",
+                    config_path(home).display()
+                ),
+            )
+        })?;
+        let mut pref = serde_yaml::Mapping::new();
+        pref.insert(
+            serde_yaml::Value::String("version".to_string()),
+            serde_yaml::Value::String(version.to_string()),
+        );
+        if let Some(tebako) = tebako {
+            pref.insert(
+                serde_yaml::Value::String("tebako".to_string()),
+                serde_yaml::Value::String(tebako.to_string()),
+            );
+        }
+        rt_map.insert(
+            serde_yaml::Value::String(engine.to_string()),
+            serde_yaml::Value::Mapping(pref),
+        );
+        Ok(())
+    })
+}
+
+// ---------------------------------------------------------------------
 // the registry-default chain link (spec 07 §2.1, last resort)
 // ---------------------------------------------------------------------
 
@@ -330,8 +489,7 @@ pub fn save_disabled(home: &Path, disabled: &Disabled) -> Result<(), ShimError> 
 pub fn is_disabled(disabled: &Disabled, tool: &str, payload: &str, version: &str) -> bool {
     disabled.get(tool).is_some_and(|selectors| {
         selectors.iter().any(|s| {
-            tpkg::toolpin::DisableSelector::parse(s)
-                .is_ok_and(|sel| sel.matches(payload, version))
+            tpkg::toolpin::DisableSelector::parse(s).is_ok_and(|sel| sel.matches(payload, version))
         })
     })
 }

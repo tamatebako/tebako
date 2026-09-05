@@ -78,7 +78,9 @@ grammar:
       Per-engine runtime preference (the download fallback of spec 05 §5
       needs an exact ref), written by `tebako-shim use --runtime
       <engine>@<langver>[:<tebako>]` (MINOR 2 — the verb parses the
-      qualified form and writes this structured shape).
+      qualified form and writes this structured shape). `tebako` may be
+      ABSENT when written without the `:<tebako>` part — readers treat it
+      as the product default line.
       version = the language version (e.g. "4.0.6"); tebako = the tebako
       (launcher) abi version the runtime was built with — the <ver> of the
       cache layout runtimes/<lang>-<lv>-<ver>-<triplet>/.
