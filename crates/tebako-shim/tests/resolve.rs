@@ -454,3 +454,54 @@ fn two_exposers_route_through_the_same_pin_and_disable_surface() {
     assert_eq!(res.payload_name, "expa");
     assert!(matches!(res.provider, resolve::ProviderKind::Exposed));
 }
+
+#[test]
+fn provider_for_bare_default_reports_one_ambiguous_none() {
+    let tmp = TempDir::new("bare-provider");
+    let home = tmp.path().join("home");
+
+    // no payloads at all → None
+    assert!(matches!(
+        resolve::provider_for_bare_default(&home, "ghost").unwrap(),
+        resolve::BareProvider::None
+    ));
+
+    // one suite claim → One (the scan, not the own-name path)
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest("metanorma", "1.2.3", &entrypoint_yaml(NATIVE_ENTRY, "mn")),
+    );
+    match resolve::provider_for_bare_default(&home, "mn").unwrap() {
+        resolve::BareProvider::One(p) => assert_eq!(p, "metanorma"),
+        other => panic!("expected One, got {other:?}"),
+    }
+
+    // the own-name fast path: payloads/<tool>/ exists, no manifest needed
+    match resolve::provider_for_bare_default(&home, "metanorma").unwrap() {
+        resolve::BareProvider::One(p) => assert_eq!(p, "metanorma"),
+        other => panic!("expected One, got {other:?}"),
+    }
+
+    // a second claim → Ambiguous (sorted, deterministic)
+    write_payload(
+        &home,
+        "metanorma-b",
+        "2.0.0",
+        &app_manifest("metanorma-b", "2.0.0", &entrypoint_yaml(NATIVE_ENTRY, "mn")),
+    );
+    match resolve::provider_for_bare_default(&home, "mn").unwrap() {
+        resolve::BareProvider::Ambiguous(ps) => {
+            assert_eq!(ps, vec!["metanorma".to_string(), "metanorma-b".to_string()])
+        }
+        other => panic!("expected Ambiguous, got {other:?}"),
+    }
+
+    // disabling one claim disambiguates (the routing amendment's skip)
+    write_disabled(&home, "mn:\n  - metanorma-b@all\n");
+    match resolve::provider_for_bare_default(&home, "mn").unwrap() {
+        resolve::BareProvider::One(p) => assert_eq!(p, "metanorma"),
+        other => panic!("expected One, got {other:?}"),
+    }
+}

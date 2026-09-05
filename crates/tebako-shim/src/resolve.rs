@@ -140,19 +140,32 @@ fn routing_hint(tool: &str) -> String {
 /// only — a sole-but-disabled claim falls through to resolve_named's
 /// per-version refusal (the historical shape), several all-disabled
 /// claims answer the no-provider error.
-fn providing_payload(
+/// One pass over the installed payloads (the walks [`providing_payload`]
+/// and [`provider_for_bare_default`] share): the own-name fast path, the
+/// entrypoint claims, the expose claims — the scan skips NOTHING here;
+/// the callers apply the disabled-claim rules (spec 07 §2 step 0.5).
+/// `None` when the payloads dir does not exist at all.
+struct ClaimScan {
+    /// `payloads/<tool>/` exists and its claim is not disabled at
+    /// `all` / `<tool>@all` (the fast path).
+    own_fast: bool,
+    /// Payloads with an entrypoint claim (sorted, deterministic).
+    providers: Vec<String>,
+    /// Payloads with an expose claim (sorted, deterministic).
+    exposers: Vec<String>,
+}
+
+fn claim_scan(
     home: &Path,
     tool: &str,
     disabled: &config::Disabled,
-) -> Result<Provider, ShimError> {
-    manifest::check_path_component("command name", tool)?;
-    if home.join("payloads").join(tool).is_dir() && !config::claim_disabled(disabled, tool, tool) {
-        return Ok(Provider::Own(tool.to_string()));
-    }
+) -> Result<Option<ClaimScan>, ShimError> {
+    let own_fast =
+        home.join("payloads").join(tool).is_dir() && !config::claim_disabled(disabled, tool, tool);
     let payloads_dir = home.join("payloads");
     let rd = match std::fs::read_dir(&payloads_dir) {
         Ok(rd) => rd,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(no_provider(home, tool)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => {
             return fail(
                 crate::EX_TEBAKO_IO,
@@ -181,6 +194,29 @@ fn providing_payload(
             }
         }
     }
+    providers.sort();
+    exposers.sort();
+    Ok(Some(ClaimScan {
+        own_fast,
+        providers,
+        exposers,
+    }))
+}
+
+fn providing_payload(
+    home: &Path,
+    tool: &str,
+    disabled: &config::Disabled,
+) -> Result<Provider, ShimError> {
+    manifest::check_path_component("command name", tool)?;
+    let Some(scan) = claim_scan(home, tool, disabled)? else {
+        return Err(no_provider(home, tool));
+    };
+    if scan.own_fast {
+        return Ok(Provider::Own(tool.to_string()));
+    }
+    let providers = scan.providers;
+    let exposers = scan.exposers;
     let enabled: Vec<&String> = providers
         .iter()
         .filter(|p| !config::claim_disabled(disabled, tool, p))
@@ -224,6 +260,63 @@ fn providing_payload(
                 routing_hint(tool)
             ),
         ),
+    }
+}
+
+/// The prune-protection view of the provider scan (`tebako cache prune
+/// --payloads`): which payload a BARE `tool → version` default would
+/// dispatch to. Unlike dispatch, ambiguity and absence are DATA, never
+/// errors — the caller prints its note and protects nothing extra.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BareProvider {
+    /// Exactly one claim would answer (an enabled one, or the sole
+    /// disabled one — dispatch would name it in its refusal).
+    One(String),
+    /// Several enabled claims — the collision case; protect nothing
+    /// extra (the claims are sorted, deterministic).
+    Ambiguous(Vec<String>),
+    /// No payload claims the command.
+    None,
+}
+
+/// [`providing_payload`]'s scan (same disabled-claim rules, spec 07 §2
+/// step 0.5) with the dispatch errors flattened to [`BareProvider`].
+pub fn provider_for_bare_default(home: &Path, tool: &str) -> Result<BareProvider, ShimError> {
+    manifest::check_path_component("command name", tool)?;
+    let disabled = config::load_disabled(home)?;
+    let Some(scan) = claim_scan(home, tool, &disabled)? else {
+        return Ok(BareProvider::None);
+    };
+    if scan.own_fast {
+        return Ok(BareProvider::One(tool.to_string()));
+    }
+    let enabled: Vec<&String> = scan
+        .providers
+        .iter()
+        .filter(|p| !config::claim_disabled(&disabled, tool, p))
+        .collect();
+    match (enabled.len(), scan.providers.len()) {
+        (1, _) => return Ok(BareProvider::One(enabled[0].clone())),
+        (0, 1) => return Ok(BareProvider::One(scan.providers[0].clone())),
+        (n, _) if n >= 2 => {
+            return Ok(BareProvider::Ambiguous(
+                enabled.iter().map(|s| s.to_string()).collect(),
+            ))
+        }
+        _ => {}
+    }
+    let enabled_ex: Vec<&String> = scan
+        .exposers
+        .iter()
+        .filter(|p| !config::claim_disabled(&disabled, tool, p))
+        .collect();
+    match (enabled_ex.len(), scan.exposers.len()) {
+        (1, _) => Ok(BareProvider::One(enabled_ex[0].clone())),
+        (0, 1) => Ok(BareProvider::One(scan.exposers[0].clone())),
+        (0, _) => Ok(BareProvider::None),
+        _ => Ok(BareProvider::Ambiguous(
+            enabled_ex.iter().map(|s| s.to_string()).collect(),
+        )),
     }
 }
 

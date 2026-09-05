@@ -10,7 +10,7 @@
 //!                per-entry imaging + slots + the type-2 package manifest,
 //!                spec 03 §6)
 //!   tebako cache list
-//!   tebako cache prune [--all] [--older-than Nd]
+//!   tebako cache prune [--runtimes] [--payloads] [--all] [--older-than Nd]
 //!   tebako add-registry <ref>
 //!   tebako list-registries
 //!   tebako update-registries
@@ -1005,26 +1005,55 @@ fn clean_output(opts: &PressOptions) {
 pub fn cache_list() {
     let manager = Resolver::new();
     let entries = manager.entries();
+    let payloads = tebako_resolve::PayloadCache::with_root(&manager.cache_root).list();
     if entries.is_empty() {
         println!(
             "Runtime package cache is empty ({})",
             manager.cache_root.join("runtimes").display()
         );
+    } else {
+        let mut total = 0u64;
+        for entry in &entries {
+            total += entry.size_bytes;
+            println!(
+                "{:<44} {:>9}  {}",
+                entry.name,
+                human_size(entry.size_bytes),
+                human_age(entry.installed_at)
+            );
+        }
+        println!(
+            "{:<44} {:>9}",
+            format!("Total ({} package(s))", entries.len()),
+            human_size(total)
+        );
+    }
+    if payloads.is_empty() {
         return;
     }
+    // The payload section: the JSON form's fields (name/version/size)
+    // plus the age column the runtime lines carry.
+    println!(
+        "Payload cache ({}):",
+        manager.cache_root.join("payloads").display()
+    );
     let mut total = 0u64;
-    for entry in &entries {
-        total += entry.size_bytes;
+    for entry in &payloads {
+        let size = fs::metadata(&entry.path).map(|m| m.len()).unwrap_or(0);
+        total += size;
+        let installed_at = fs::metadata(&entry.path)
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         println!(
             "{:<44} {:>9}  {}",
-            entry.name,
-            human_size(entry.size_bytes),
-            human_age(entry.installed_at)
+            format!("{}@{}", entry.name, entry.version),
+            human_size(size),
+            human_age(installed_at)
         );
     }
     println!(
         "{:<44} {:>9}",
-        format!("Total ({} package(s))", entries.len()),
+        format!("Total ({} payload(s))", payloads.len()),
         human_size(total)
     );
 }
@@ -1105,21 +1134,160 @@ pub fn cache_list_json() {
     println!("{}", json_to_string(&doc));
 }
 
-pub fn cache_prune(all: bool, older_than: Option<&str>) -> Result<(), TebakoError> {
-    let manager = Resolver::new();
-    let removed = if all {
-        manager.prune(true, None)?
-    } else if let Some(days) = older_than.and_then(parse_days) {
-        manager.prune(false, Some(days))?
-    } else {
+/// `tebako cache prune [--runtimes] [--payloads] [--all | --older-than Nd]`.
+/// Bare (no area flags) prunes runtimes only — today's behavior,
+/// unchanged. The payload arm rides tebako-resolve's `PayloadCache::prune`
+/// with the protected set ALWAYS applied (no opt-out; `--all` respects it
+/// too — prune never strands a pin): config `defaults:` pins, exact
+/// `.disabled.yaml` `payload@version` selectors, and the newest installed
+/// version of every payload (the roll-forward floor).
+pub fn cache_prune(
+    runtimes: bool,
+    payloads: bool,
+    all: bool,
+    older_than: Option<&str>,
+) -> Result<(), TebakoError> {
+    let days = match (all, older_than) {
+        (true, _) => Some(None),
+        (false, Some(spec)) => parse_days(spec).map(Some),
+        (false, None) => None,
+    };
+    let Some(days) = days else {
         println!("Nothing to do: pass --all or --older-than Nd");
         return Ok(());
     };
-    for name in &removed {
-        println!("Removed {name}");
+    let manager = Resolver::new();
+    if project_pins_near_cwd() {
+        println!(
+            "project pins (.tebako-tools.yaml) are per-directory and not visible to prune — pinned-but-old versions may be removed and will re-fetch on next dispatch (offline: named error)."
+        );
     }
-    println!("{} cached runtime package(s) removed", removed.len());
+    if runtimes || !payloads {
+        let removed = manager.prune(all, days)?;
+        for name in &removed {
+            println!("Removed {name}");
+        }
+        println!("{} cached runtime package(s) removed", removed.len());
+    }
+    if payloads {
+        let (protected, notes) = protected_payload_versions(&manager.cache_root)?;
+        for note in &notes {
+            println!("{note}");
+        }
+        let cache = tebako_resolve::PayloadCache::with_root(&manager.cache_root);
+        let removed = cache
+            .prune(all, days, &protected)
+            .map_err(crate::install::map_resolve)?;
+        for (name, version) in &removed {
+            println!("Removed {name}@{version}");
+        }
+        println!("{} cached payload(s) removed", removed.len());
+    }
     Ok(())
+}
+
+/// The prune protected set (spec 07 §2's pins, the parts prune CAN see):
+/// config `defaults:` values through `tpkg::toolpin::ToolPin` (a
+/// qualified `payload@version` protects exactly that pair; a bare value
+/// protects `(provider, version)` only when the provider scan is
+/// unambiguous — otherwise a note and nothing extra), exact
+/// `payload@version` selectors from `.disabled.yaml`, and the newest
+/// installed version of every payload (the roll-forward floor). The env
+/// and per-directory `.tebako-tools.yaml` links are dispatch-time state
+/// and stay invisible (the caveat line covers them). Loading the pin
+/// state fails CLOSED: pruning without the pins could strand one.
+fn protected_payload_versions(
+    home: &Path,
+) -> Result<(tebako_resolve::ProtectedSet, Vec<String>), TebakoError> {
+    let mut protected = tebako_resolve::ProtectedSet::new();
+    let mut notes = Vec::new();
+
+    // The roll-forward floor: never prune a name's newest installed
+    // version (the dispatch default when nothing is pinned).
+    let entries = tebako_resolve::PayloadCache::with_root(home).list();
+    let mut by_name: std::collections::BTreeMap<&String, Vec<&String>> =
+        std::collections::BTreeMap::new();
+    for entry in &entries {
+        by_name.entry(&entry.name).or_default().push(&entry.version);
+    }
+    for (name, versions) in &by_name {
+        if let Some(newest) = tpkg::versions::newest(versions.iter().copied()) {
+            protected.insert((name.to_string(), newest));
+        }
+    }
+
+    // Config defaults (the user-pin link, `tebako shim use`).
+    let cfg = tebako_shim::config::load_config(home).map_err(|e| {
+        plain_error(format!(
+            "cannot build the prune protected set: {}",
+            e.message
+        ))
+    })?;
+    for (tool, value) in &cfg.defaults {
+        let pin = tpkg::toolpin::ToolPin::parse(value)
+            .map_err(|e| plain_error(format!("config.yaml default `{tool}: {e}")))?;
+        match pin.payload {
+            Some(payload) => {
+                protected.insert((payload, pin.version));
+            }
+            None => {
+                match tebako_shim::resolve::provider_for_bare_default(home, tool).map_err(|e| {
+                    plain_error(format!(
+                        "cannot build the prune protected set: {}",
+                        e.message
+                    ))
+                })? {
+                    tebako_shim::resolve::BareProvider::One(payload) => {
+                        protected.insert((payload, pin.version));
+                    }
+                    tebako_shim::resolve::BareProvider::Ambiguous(claims) => {
+                        notes.push(format!(
+                        "default `{tool}: {value}` is bare and more than one payload provides it ({}) — protecting nothing extra; pin `{tool}: <payload>@{version}` to protect exactly",
+                        claims.join(", "),
+                        version = pin.version,
+                    ));
+                    }
+                    tebako_shim::resolve::BareProvider::None => {}
+                }
+            }
+        }
+    }
+
+    // Exact `payload@version` disable selectors pin a version out of
+    // dispatch — keep those bytes too (`all` / `payload@all` / bare
+    // versions name no exact pair and protect nothing here).
+    let disabled = tebako_shim::config::load_disabled(home).map_err(|e| {
+        plain_error(format!(
+            "cannot build the prune protected set: {}",
+            e.message
+        ))
+    })?;
+    for selectors in disabled.values() {
+        for selector in selectors {
+            if let Ok(tpkg::toolpin::DisableSelector::PayloadVersion(p, v)) =
+                tpkg::toolpin::DisableSelector::parse(selector)
+            {
+                protected.insert((p, v));
+            }
+        }
+    }
+    Ok((protected, notes))
+}
+
+/// `.tebako-tools.yaml` reachable from the cwd (the shim's walk-up
+/// lookup direction): the caveat line prints once per prune.
+fn project_pins_near_cwd() -> bool {
+    let Ok(mut dir) = std::env::current_dir() else {
+        return false;
+    };
+    loop {
+        if dir.join(".tebako-tools.yaml").is_file() {
+            return true;
+        }
+        if !dir.pop() {
+            return false;
+        }
+    }
 }
 
 fn parse_days(spec: &str) -> Option<u64> {
