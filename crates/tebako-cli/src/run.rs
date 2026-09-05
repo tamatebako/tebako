@@ -145,7 +145,9 @@ fn package_jail(package: &Path) -> Result<Option<tpkg::HostJail>, TebakoError> {
 }
 
 /// Compose the run plan: package jail request ∩ user tightening, rendered
-/// to the TEBAKO_JAIL env pair. With `argument_files: auto-allowed` the
+/// to the TEBAKO_JAIL env pair; the raw user tightening additionally rides
+/// TEBAKO_JAIL_TIGHTENING so spawned children inherit it as their ceiling
+/// (spec 32 §4). With `argument_files: auto-allowed` the
 /// payload args naming existing files become read-only grants (resolved
 /// against this process's cwd, which the child inherits). The composed
 /// policy is bind-validated NOW — a grant naming a missing host path is a
@@ -161,6 +163,17 @@ pub fn plan_run(parsed: &RunArgs) -> Result<RunPlan, TebakoError> {
     let user = user_jail(parsed)?;
     let package = package_jail(&program)?;
     let mut env = Vec::new();
+    if let Some(user) = &user {
+        // spec 32 §4 (locked): operator tightening is HEREDITARY — the
+        // parent's user directives ride every spawned child as the
+        // ceiling over the child's own recomputed union. The driver's
+        // spawn plan intersects it in; it inherits onward to deeper
+        // spawns (the plan's env-op block never strips it).
+        env.push((
+            tpkg::runtime_store::JAIL_TIGHTENING_VAR.to_string(),
+            user.to_env_spec(&[]),
+        ));
+    }
     if let Some((jail, source)) = tpkg::jail::effective(package.as_ref(), user.as_ref()) {
         if !jail.is_trivially_open() {
             let arg_files = if jail.argument_files.auto {
@@ -320,5 +333,39 @@ mod tests {
         // A malformed grant is a named (130) error.
         let p = parse_run_args(&args(&["pkg", "--mount", "frob"])).unwrap();
         assert_eq!(user_jail(&p).unwrap_err().code, 130);
+    }
+
+    #[test]
+    fn plan_run_exports_the_hereditary_tightening() {
+        // spec 32 §4: the raw user tightening rides
+        // TEBAKO_JAIL_TIGHTENING so every spawned child inherits the
+        // ceiling over its own recomputed union.
+        let dir = std::env::temp_dir().join(format!("tebako-cli-run-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pkg = dir.join("pkg");
+        std::fs::write(&pkg, b"not-a-package\n").unwrap();
+        let pkg = pkg.to_string_lossy().into_owned();
+
+        let p = parse_run_args(&args(&[&pkg, "--jail", "deny"])).unwrap();
+        let plan = plan_run(&p).unwrap();
+        let tightening = plan
+            .env
+            .iter()
+            .find(|(k, _)| k == tpkg::runtime_store::JAIL_TIGHTENING_VAR)
+            .map(|(_, v)| v.clone());
+        assert_eq!(tightening, Some(tpkg::HostJail::deny().to_env_spec(&[])));
+        assert!(plan.env.iter().any(|(k, _)| k == "TEBAKO_JAIL"));
+
+        // No flags: no tightening key at all (byte-identical legacy run).
+        let p = parse_run_args(&args(&[&pkg])).unwrap();
+        let plan = plan_run(&p).unwrap();
+        assert!(
+            !plan
+                .env
+                .iter()
+                .any(|(k, _)| k == tpkg::runtime_store::JAIL_TIGHTENING_VAR)
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
