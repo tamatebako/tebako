@@ -196,6 +196,15 @@ need nobody declared is a denial with the needs-check record
 (spec 23 §8's record mode covers the discovery loop for spawned edges
 identically).
 
+The operator's tightening is HEREDITARY (spec 32 §4, locked there; the
+wire lands with spec 32's implementation): the parent's user directives
+ride `TEBAKO_JAIL_TIGHTENING` — the raw user-tightening env spec,
+exported by the shim's dispatch and by `tebako run` whenever a user
+tightening exists — captured by the driver at boot and intersected over
+every spawned child's recomputed union (a `record` tightening dominates
+wholesale, mirroring `tpkg::jail::effective`). The plan's env-op block
+never deletes the key, so the ceiling inherits onward to deeper spawns.
+
 ## 5. Failure modes (the host-fragility killer)
 
 - Depended runtime absent or incompatible at spawn: the resolver's
