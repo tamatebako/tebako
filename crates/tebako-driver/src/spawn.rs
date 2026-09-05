@@ -433,7 +433,7 @@ fn compose_payload_plan(
     home: &std::path::Path,
 ) -> Result<SpawnPlan, String> {
     let (provider, locked_row) =
-        resolve_provider(home, command, capability, pin, constraint, &state.lock)?;
+        resolve_provider(home, command, capability, pin, constraint, &state.lock, &state.runtime_root)?;
     // The exposed name must be a declared, runtime-carrying entrypoint of
     // the provider — validated even when the lock pins the pair (the
     // dispatcher's validation is not the driver's evidence).
@@ -448,7 +448,7 @@ fn compose_payload_plan(
         .collect();
     let rt = nested_runtime(home, &provider, capability, &expose, locked_row.as_ref())?;
     let facts = runtime_facts(&rt, &state.runtime_root)?;
-    let dep_mounts = provider_dep_mounts(home, &provider, &state.lock)?;
+    let dep_mounts = provider_dep_mounts(home, &provider, &state.lock, &state.runtime_root)?;
     let mut exclude: Vec<String> = dep_mounts
         .iter()
         .filter_map(|t| t.rsplitn(2, ':').next().map(str::to_string))
@@ -468,7 +468,7 @@ fn compose_payload_plan(
         .into_owned();
     let mut child_lock: Vec<String> = Vec::new();
     let mut visiting = vec![state.payload_name.clone(), provider.name.clone()];
-    compose_child_lock(home, &provider, &state.lock, &mut visiting, &mut child_lock)
+    compose_child_lock(home, &provider, &state.lock, &mut visiting, &mut child_lock, &state.runtime_root)
         .map_err(|e| format!("spawn '{command}': {e}"))?;
     let provider_needs = match &provider.manifest.provides {
         Provides::App(app) => app.capabilities.host.clone(),
@@ -576,6 +576,7 @@ fn resolve_edge(
 /// named errors (AmbiguousProvider escapes via the `payload:` pin).
 /// Returns the provider record and the matched lock row (its nested
 /// runtime pair pins the child's runtime).
+#[allow(clippy::too_many_arguments)]
 fn resolve_provider(
     home: &std::path::Path,
     command: &str,
@@ -583,6 +584,7 @@ fn resolve_provider(
     pin: Option<&str>,
     constraint: &tpkg::Constraint,
     lock: &[SpawnLockEntry],
+    runtime_root: &str,
 ) -> Result<(tpkg::payload_store::CachedPayload, Option<SpawnLockEntry>), String> {
     for row in lock {
         let Some((locked_name, locked_version)) = &row.payload else {
@@ -593,7 +595,7 @@ fn resolve_provider(
                 continue;
             }
         }
-        let record = tpkg::payload_store::get(home, locked_name, locked_version)
+        let record = provider_record(home, locked_name, locked_version, runtime_root)
             .map_err(|e| format!("spawn '{command}': {e}"))?
             .ok_or_else(|| {
                 format!(
@@ -618,7 +620,7 @@ fn resolve_provider(
                 constraint.as_str()
             ));
         };
-        let record = tpkg::payload_store::get(home, pin, version)
+        let record = provider_record(home, pin, version, runtime_root)
             .map_err(|e| format!("spawn '{command}': {e}"))?
             .ok_or_else(|| {
                 format!(
@@ -663,6 +665,125 @@ fn declares_capability(record: &tpkg::payload_store::CachedPayload, capability: 
         Provides::Toolkit(tk) => tk.executables.iter().any(|e| e.name == capability),
         _ => false,
     }
+}
+
+/// The payload record for the spawn plan (spec 32 §2): the store
+/// manifest mirror is the plan-time manifest source — with ONE
+/// completion step. A loader-seeded record (the bootstrap's spec 32 §6
+/// staging lands image + trust anchor; the loader carries no image
+/// reader) has no mirror yet: the FIRST spawn materializes it from the
+/// image's embedded manifest (spec 05 §3's "embedded wins", deferred —
+/// the embedded manifest IS the authoritative source the mirror copies;
+/// the one-time scratch read is the install-time extraction's
+/// stand-in, journaled, never a guessed synthesis). Steady state reads
+/// the mirror; no image mounts at plan time beyond that completion.
+/// The UNPINNED capability scan (`find_capability_providers`) stays
+/// mirror-only — a mirror-less record is its named damaged-record
+/// error; the loader flow always carries the lock row, so the spawn's
+/// own resolutions (locked and pinned) complete the record here.
+fn provider_record(
+    home: &std::path::Path,
+    name: &str,
+    version: &str,
+    runtime_root: &str,
+) -> Result<Option<tpkg::payload_store::CachedPayload>, String> {
+    let image = tpkg::payload_store::image_path(home, name, version);
+    let anchor = tpkg::payload_store::sha_marker_path(home, name, version);
+    let mirror = tpkg::payload_store::manifest_mirror_path(home, name, version);
+    if image.is_file() && anchor.is_file() && !mirror.is_file() {
+        materialize_mirror(name, version, &image, &mirror, runtime_root)?;
+    }
+    tpkg::payload_store::get(home, name, version)
+}
+
+/// The mirror materialization (see [`provider_record`]): scratch-mount
+/// the provider image under the runtime root (the runtime_facts dance,
+/// serialized on the same facts-cache mutex), read the embedded
+/// manifest through the VFS, validate it parses, then write the mirror
+/// tmp + rename read-only. Every failure is named — a carried provider
+/// image without an embedded manifest can never serve a spawn plan.
+fn materialize_mirror(
+    name: &str,
+    version: &str,
+    image: &std::path::Path,
+    mirror: &std::path::Path,
+    runtime_root: &str,
+) -> Result<(), String> {
+    let _facts = FACTS.lock().unwrap();
+    // A concurrent plan may have completed the record while this plan
+    // waited on the mutex — re-check before mounting.
+    if mirror.is_file() {
+        return Ok(());
+    }
+    let point = join_mount(runtime_root, SCRATCH_POINT);
+    let mount = tfs::mount::build_from_file(&image.to_string_lossy(), &point).map_err(|e| {
+        format!(
+            "cannot mount the payload image '{}' to read its embedded manifest: {}",
+            image.display(),
+            crate::driver::errno_text(e)
+        )
+    })?;
+    let handle = context()
+        .write()
+        .unwrap()
+        .mount_checked(mount)
+        .map_err(|e| {
+            format!(
+                "cannot mount the payload image '{}' at '{point}': {}",
+                image.display(),
+                crate::driver::errno_text(e)
+            )
+        })?;
+    let text = crate::driver::read_mounted_text(&join_mount(&point, tpkg::PAYLOAD_MANIFEST_PATH));
+    let _ = context().write().unwrap().unmount_handle(handle);
+    let text = text.map_err(|e| {
+        format!(
+            "the payload image '{}' carries no readable {} — the embedded manifest is the spawned payload's self-description (spec 32 §6): {}",
+            image.display(),
+            tpkg::PAYLOAD_MANIFEST_PATH,
+            crate::driver::errno_text(e)
+        )
+    })?;
+    tpkg::PayloadManifest::from_yaml(&text).map_err(|e| {
+        format!(
+            "corrupt {} in the payload image '{}' — the provider's self-description lies: {e}",
+            tpkg::PAYLOAD_MANIFEST_PATH,
+            image.display()
+        )
+    })?;
+    let tmp = mirror.with_file_name(format!(
+        "{}.tmp",
+        mirror
+            .file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "manifest.yaml".to_string())
+    ));
+    std::fs::write(&tmp, &text).map_err(|e| {
+        format!(
+            "cannot write the manifest mirror for {name} {version} ({}): {e}",
+            tmp.display()
+        )
+    })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt as _;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o444));
+    }
+    std::fs::rename(&tmp, mirror).map_err(|e| {
+        format!(
+            "cannot install the manifest mirror for {name} {version} ({}): {e}",
+            mirror.display()
+        )
+    })?;
+    tebako_log::log!(
+        tebako_log::Level::Debug,
+        "spawn",
+        "event=mirror-materialized payload={} version={} mirror={} — the loader-seeded record gained its mirror from the embedded manifest",
+        name,
+        version,
+        mirror.display()
+    );
+    Ok(())
 }
 
 /// The provider's entrypoint an exposed name dispatches to (spec 32 §1):
@@ -772,6 +893,7 @@ fn provider_dep_mounts(
     home: &std::path::Path,
     provider: &tpkg::payload_store::CachedPayload,
     lock: &[SpawnLockEntry],
+    runtime_root: &str,
 ) -> Result<Vec<String>, String> {
     let mut triples = Vec::new();
     for req in &provider.manifest.requires {
@@ -783,7 +905,7 @@ fn provider_dep_mounts(
                 mount: Some(mount),
                 ..
             } => (
-                resolve_provider(home, name, name, payload.as_deref(), constraint, lock)?.0,
+                resolve_provider(home, name, name, payload.as_deref(), constraint, lock, runtime_root)?.0,
                 mount,
             ),
             Requirement::Toolkit {
@@ -810,7 +932,7 @@ fn provider_dep_mounts(
                         provider.name
                     ));
                 };
-                let record = tpkg::payload_store::get(home, name, version)
+                let record = provider_record(home, name, version, runtime_root)
                     .map_err(|e| format!("provider '{}': {e}", provider.name))?
                     .ok_or_else(|| {
                         format!(
@@ -843,6 +965,7 @@ fn compose_child_lock(
     parent_lock: &[SpawnLockEntry],
     visiting: &mut Vec<String>,
     rows: &mut Vec<String>,
+    runtime_root: &str,
 ) -> Result<(), String> {
     for edge in &provider.manifest.requires {
         match edge {
@@ -894,7 +1017,7 @@ fn compose_child_lock(
                 ..
             } if !expose.is_empty() => {
                 let (nested, locked_row) =
-                    resolve_provider(home, name, name, payload.as_deref(), constraint, parent_lock)?;
+                    resolve_provider(home, name, name, payload.as_deref(), constraint, parent_lock, runtime_root)?;
                 if visiting.iter().any(|p| p == &nested.name) {
                     return Err(format!(
                         "spawn dependency cycle through provider payload '{}' ({}): the executable edges form a cycle — break it (spec 32 §2)",
@@ -914,7 +1037,7 @@ fn compose_child_lock(
                     rows.push(row);
                 }
                 visiting.push(nested.name.clone());
-                compose_child_lock(home, &nested, parent_lock, visiting, rows)?;
+                compose_child_lock(home, &nested, parent_lock, visiting, rows, runtime_root)?;
                 visiting.pop();
             }
             _ => {}
@@ -1840,5 +1963,67 @@ mod tests {
             op(&plan, "TEBAKO_JAIL_SOURCE").and_then(|v| v.as_deref()),
             Some("spawn-edge:metanorma:xml2rfc")
         );
+    }
+
+    /// spec 32 §6 meets spec 05 §3: the loader-seeded record (image +
+    /// trust anchor, NO mirror — the bootstrap carries no image reader)
+    /// completes on the first spawn: the mirror materializes from the
+    /// image's embedded manifest, then the plan reads it. The loader
+    /// flow always carries the lock row (the bootstrap exports it) — the
+    /// locked and pinned paths complete the record; the unpinned
+    /// capability scan stays mirror-only (a mirror-less record is the
+    /// scan's named damaged-record error, fail-closed).
+    #[test]
+    fn a_loader_seeded_record_materializes_its_mirror_from_the_image() {
+        let g = guard("mirror");
+        seed_python(&g.home);
+        let manifest = app_manifest(
+            "xml2rfc",
+            "3.34.0",
+            "{name: xml2rfc, path: /bin/xml2rfc, runtime_requirement: {engine: python, constraint: \">= 3.10\"}}",
+            "",
+        );
+        let dir = tpkg::payload_store::payload_dir(&g.home, "xml2rfc");
+        std::fs::create_dir_all(&dir).unwrap();
+        // A REAL image (the completion read scratch-mounts it) + anchor.
+        build_image(&dir.join("3.34.0.tfs"), &manifest);
+        std::fs::write(dir.join("3.34.0.tfs.sha256"), "0\n").unwrap();
+        let locked = SpawnLockEntry {
+            engine: "python".to_string(),
+            lang_version: "3.12.3".to_string(),
+            tebako_version: "0.3.0".to_string(),
+            payload: Some(("xml2rfc".to_string(), "3.34.0".to_string())),
+        };
+        install_state(xml2rfc_expose(), "metanorma", None, vec![locked], None, "/__tfs__");
+        let seeded = plan("xml2rfc", &[], &[]).unwrap().expect("planned");
+        assert!(
+            seeded.argv[2].ends_with("payloads/xml2rfc/3.34.0.tfs:0:/"),
+            "{:?}",
+            seeded.argv
+        );
+        // The mirror landed — the steady state reads it, no image mounts.
+        let mirror = tpkg::payload_store::manifest_mirror_path(&g.home, "xml2rfc", "3.34.0");
+        assert!(mirror.is_file());
+        let mirrored =
+            tpkg::PayloadManifest::from_yaml(&std::fs::read_to_string(mirror).unwrap()).unwrap();
+        assert_eq!(mirrored.identity.name, "xml2rfc");
+        // A mirror-less record whose image carries NO embedded manifest
+        // is a named error, never a guessed synthesis.
+        let dir2 = tpkg::payload_store::payload_dir(&g.home, "bare-prov");
+        std::fs::create_dir_all(&dir2).unwrap();
+        std::fs::write(dir2.join("1.0.0.tfs"), b"not an image").unwrap();
+        std::fs::write(dir2.join("1.0.0.tfs.sha256"), "0\n").unwrap();
+        let mut exposes = HashMap::new();
+        exposes.insert(
+            "xml2rfc".to_string(),
+            SpawnEdge::Payload {
+                name: "xml2rfc".to_string(),
+                payload: Some("bare-prov".to_string()),
+                constraint: tpkg::Constraint::new(">= 1.0").unwrap(),
+            },
+        );
+        install_state(exposes, "metanorma", None, Vec::new(), None, "/__tfs__");
+        let err = plan("xml2rfc", &[], &[]).unwrap_err();
+        assert!(err.contains("bare-prov"), "{err}");
     }
 }
