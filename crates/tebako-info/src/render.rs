@@ -251,6 +251,30 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 out.push_str(&line);
                 out.push('\n');
             }
+            Requirement::Executable {
+                name,
+                payload,
+                constraint,
+                mount,
+                expose,
+                critical,
+            } => {
+                let mut line = format!("    executable:{name}:{constraint}");
+                if let Some(p) = payload {
+                    line.push_str(&format!(" (payload: {p})"));
+                }
+                if let Some(m) = mount {
+                    line.push_str(&format!(" → {m}"));
+                }
+                if !expose.is_empty() {
+                    line.push_str(&format!(" exposes: {}", expose.join(", ")));
+                }
+                if *critical {
+                    line.push_str(" [critical]");
+                }
+                out.push_str(&line);
+                out.push('\n');
+            }
         }
     }
 }

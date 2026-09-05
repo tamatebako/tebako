@@ -184,6 +184,11 @@ pub fn derive(m: &PayloadManifest) -> Derived {
             // The spawned-runtime axis (spec 30) resolves through the
             // runtime index — the dependency list names the engine.
             Requirement::Runtime { engine, .. } => engine,
+            // The executable-capability axis (spec 32) names the provider
+            // pin when present, else the capability itself.
+            Requirement::Executable {
+                name, payload, ..
+            } => payload.as_ref().unwrap_or(name),
         };
         if !dependency_names.contains(name) {
             dependency_names.push(name.clone());
@@ -242,5 +247,17 @@ mod tests {
         assert_eq!(d.dependency_names, vec!["ruby", "gtk-layer"]);
         // Two distinct constraints → two verdicts (cache-independent).
         assert_eq!(d.runtime_compat.len(), 2);
+    }
+
+    #[test]
+    fn derive_names_the_executable_edge_provider() {
+        // spec 32 §1: the executable-capability axis names the provider
+        // pin when present, else the capability itself.
+        let m = PayloadManifest::from_yaml(include_str!(
+            "../../tpkg/tests/fixtures/manifests/executable-edge.yaml"
+        ))
+        .unwrap();
+        let d = derive(&m);
+        assert_eq!(d.dependency_names, vec!["ruby", "xml2rfc"]);
     }
 }
