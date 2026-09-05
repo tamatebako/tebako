@@ -16,7 +16,7 @@
 
 use tpkg::{Entrypoint, PayloadKind, PayloadManifest, Provides, Requirement};
 
-use crate::{fail, ShimError, EX_TEBAKO_MANIFEST};
+use crate::{ShimError, EX_TEBAKO_MANIFEST};
 
 /// A dispatchable command: the app entrypoint / toolkit executable
 /// view the dispatcher and installer consume (owned — the two source
@@ -224,12 +224,12 @@ pub struct PayloadRecord {
 }
 
 pub fn payload_record(home: &std::path::Path, name: &str, version: &str) -> PayloadRecord {
-    let dir = home.join("payloads").join(name);
+    // The path grammar is tpkg::payload_store's (the SSOT — invariant 10).
     PayloadRecord {
-        image: dir.join(format!("{version}.tfs")),
-        sha_marker: dir.join(format!("{version}.tfs.sha256")),
-        manifest_mirror: dir.join(format!("{version}.manifest.yaml")),
-        tree: dir.join(format!("{version}.tree")),
+        image: tpkg::payload_store::image_path(home, name, version),
+        sha_marker: tpkg::payload_store::sha_marker_path(home, name, version),
+        manifest_mirror: tpkg::payload_store::manifest_mirror_path(home, name, version),
+        tree: tpkg::payload_store::tree_path(home, name, version),
     }
 }
 
@@ -240,19 +240,8 @@ impl PayloadRecord {
 }
 
 /// Reject names/versions that would escape the cache layout (they become
-/// path components).
+/// path components). The grammar is `tpkg::payload_store`'s (the SSOT).
 pub fn check_path_component(what: &str, value: &str) -> Result<(), ShimError> {
-    if value.is_empty()
-        || value
-            .chars()
-            .any(|c| matches!(c, '/' | '\\' | ' ' | '\t' | '\r' | '\n'))
-        || value == "."
-        || value == ".."
-    {
-        return fail(
-            EX_TEBAKO_MANIFEST,
-            format!("invalid {what} \"{value}\" — it must be a single path component"),
-        );
-    }
-    Ok(())
+    tpkg::payload_store::check_component(what, value)
+        .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e))
 }

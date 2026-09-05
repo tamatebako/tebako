@@ -688,3 +688,406 @@ fn spawn_edge_requires_the_env_image_pair() {
         err.message
     );
 }
+
+// ---------------------------------------------------------------------
+// spec 32: spawned-payload edges — the co-mount axis, the dispatch-time
+// payload lock rows (§5), and the expose-name provider dispatch (§2/§3)
+// ---------------------------------------------------------------------
+
+/// A python-needing app entrypoint block (the xml2rfc provider's shape).
+const PYTHON_ENTRY: &str = "  entrypoints:\n    - name: TOOL\n      path: /app/bin/TOOL\n      runtime_requirement: {engine: python, constraint: \">= 3.10\"}\n";
+
+/// The consumer's executable edge, provider-pinned (metanorma's xml2rfc).
+const EXEC_EDGE: &str =
+    "requires:\n  - {kind: executable, name: xml2rfc, payload: xml2rfc, constraint: \">= 3.34\", expose: [xml2rfc], critical: true}\n";
+
+/// The unpinned form (capability resolution answers the provider).
+const EXEC_EDGE_UNPINNED: &str =
+    "requires:\n  - {kind: executable, name: xml2rfc, constraint: \">= 3.34\", expose: [xml2rfc]}\n";
+
+fn seed_xml2rfc_provider(home: &std::path::Path, name: &str, requires: &str) -> std::path::PathBuf {
+    write_payload(
+        home,
+        name,
+        "3.34.0",
+        &app_manifest_requires(
+            name,
+            "3.34.0",
+            &entrypoint_yaml(PYTHON_ENTRY, "xml2rfc"),
+            requires,
+        ),
+    )
+}
+
+#[test]
+fn executable_edge_co_mounts_on_the_mount_axis() {
+    // spec 32 §1: mount and expose are ORTHOGONAL — a mount-only
+    // executable edge co-mounts the provider image at the
+    // consumer-declared path and exports NO spawn-lock row.
+    let tmp = TempDir::new("exec-mount");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            "requires:\n  - {kind: executable, name: dot, payload: graphviz, constraint: \">= 2.40\", mount: /opt/graphviz}\n",
+        ),
+    );
+    let provider = write_payload(
+        &home,
+        "graphviz",
+        "2.40.1",
+        &app_manifest("graphviz", "2.40.1", &entrypoint_yaml(NATIVE_ENTRY, "dot")),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap();
+
+    assert_eq!(plan.mounts.len(), 2);
+    assert_eq!(plan.mounts[1].image, provider);
+    assert_eq!(plan.mounts[1].mount, "/opt/graphviz");
+    assert!(
+        env_get(&plan, "TEBAKO_SPAWN_LOCK").is_none(),
+        "a mount-only edge opens no spawn surface"
+    );
+}
+
+#[test]
+fn executable_edge_exports_the_payload_lock_row() {
+    // spec 32 §5: the expose-carrying executable edge pins the provider
+    // payload AND the provider's resolved runtime pair as the
+    // `<payload>@<version>=<engine>=<lv>:<tebako>` row.
+    let tmp = TempDir::new("exec-lock");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            EXEC_EDGE,
+        ),
+    );
+    seed_xml2rfc_provider(&home, "xml2rfc", "");
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    write_runtime_engine(&home, "python", "3.13.15", "2.1.10", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap();
+
+    // The edge is never a mount on its expose axis; the payload alone rides.
+    assert_eq!(plan.mounts.len(), 1);
+    assert_eq!(
+        env_get(&plan, "TEBAKO_SPAWN_LOCK"),
+        Some("xml2rfc@3.34.0=python=3.13.15:2.1.10")
+    );
+}
+
+#[test]
+fn executable_edge_lock_composes_transitively() {
+    // spec 32 §2: the provider's OWN spawn edges join the parent's lock
+    // (the spawned child has no loader — the transitive pins compose at
+    // dispatch).
+    let tmp = TempDir::new("exec-lock-deep");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            EXEC_EDGE,
+        ),
+    );
+    // The provider itself spawns a java runtime.
+    seed_xml2rfc_provider(&home, "xml2rfc", SPAWN_EDGE);
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    write_runtime_engine(&home, "python", "3.13.15", "2.1.10", true);
+    write_runtime_engine(&home, "java", "21.0.8", "0.3.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap();
+
+    assert_eq!(
+        env_get(&plan, "TEBAKO_SPAWN_LOCK"),
+        Some("xml2rfc@3.34.0=python=3.13.15:2.1.10;java=21.0.8:0.3.0")
+    );
+}
+
+#[test]
+fn exposed_executable_dispatches_the_provider_boot() {
+    // spec 32 §2/§3: invoking an EXPOSED name composes the provider
+    // payload's own managed dispatch as the child — the provider image
+    // co-mounts at /, the entry resolves against the provider's
+    // entrypoints, and the version chain keys on the CONSUMER (spec 07's
+    // argv0 model). The consumer payload is never mounted in the child.
+    //
+    // White-box note: once the provider is INSTALLED, spec 07 §2.0's
+    // own-claim precedence (a payload declaring the entrypoint beats an
+    // exposer) routes the shim to the provider's own record — the
+    // composition below is identical in shape either way (spec 32 §2).
+    // The Exposed arm answers when no installed payload declares the
+    // entrypoint; plan() is exercised directly with the edge resolve()
+    // would have captured.
+    let tmp = TempDir::new("exec-expose");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            EXEC_EDGE_UNPINNED,
+        ),
+    );
+    let provider_image = seed_xml2rfc_provider(&home, "xml2rfc-py", "");
+    let python = write_runtime_engine(&home, "python", "3.13.15", "2.1.10", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let mut res = tebako_shim::resolve::resolve("metanorma", &ctx).unwrap();
+    res.exposed = res
+        .manifest
+        .requires()
+        .iter()
+        .find(|r| matches!(r, tpkg::Requirement::Executable { .. }))
+        .cloned();
+    res.tool = "xml2rfc".to_string();
+
+    let plan = dispatch::plan(&res, &["--help".into()], &ctx, false, Vec::new()).unwrap();
+
+    assert_eq!(plan.program, python);
+    let expected: Vec<String> = vec![
+        python.to_string_lossy().into_owned(),
+        "--tebako-image".into(),
+        format!("{}:0:/", provider_image.display()),
+        "--tebako-entry".into(),
+        "xml2rfc".into(),
+        "--help".into(),
+    ];
+    assert_eq!(plan.argv, expected);
+    assert_eq!(plan.mounts.len(), 1);
+    assert_eq!(plan.mounts[0].image, provider_image);
+    let image = env_get(&plan, "TEBAKO_RUNTIME_IMAGE").expect("the env image rides");
+    assert!(image.ends_with(".tfs"), "the env image: {image}");
+    assert!(
+        env_get(&plan, "TEBAKO_SPAWN_LOCK").is_none(),
+        "a provider without spawn edges exports no child lock"
+    );
+}
+
+#[test]
+fn exposed_executable_child_lock_carries_the_providers_own_edges() {
+    // spec 32 §2 (locked): the child env SETS a fresh TEBAKO_SPAWN_LOCK
+    // carrying the provider's own resolved pins — the parent's lock is
+    // never inherited. (White-box on the Exposed arm — see the provider
+    // boot test's note.)
+    let tmp = TempDir::new("exec-expose-lock");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            EXEC_EDGE_UNPINNED,
+        ),
+    );
+    seed_xml2rfc_provider(&home, "xml2rfc-py", SPAWN_EDGE);
+    write_runtime_engine(&home, "python", "3.13.15", "2.1.10", true);
+    write_runtime_engine(&home, "java", "21.0.8", "0.3.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let mut res = tebako_shim::resolve::resolve("metanorma", &ctx).unwrap();
+    res.exposed = res
+        .manifest
+        .requires()
+        .iter()
+        .find(|r| matches!(r, tpkg::Requirement::Executable { .. }))
+        .cloned();
+    res.tool = "xml2rfc".to_string();
+
+    let plan = dispatch::plan(&res, &["--help".into()], &ctx, false, Vec::new()).unwrap();
+
+    assert_eq!(
+        env_get(&plan, "TEBAKO_SPAWN_LOCK"),
+        Some("java=21.0.8:0.3.0"),
+        "the child's fresh lock carries the provider's own pins"
+    );
+}
+
+#[test]
+fn executable_edge_missing_provider_is_dependency_not_found() {
+    // spec 32 §5/§7: dispatch is cache-only for provider payloads — a
+    // provider nobody installed is the named DependencyNotFound pointing
+    // at the install verb, never a download and never a host fallback.
+    let tmp = TempDir::new("exec-missing");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            EXEC_EDGE_UNPINNED,
+        ),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap_err();
+    assert!(err.message.contains("DependencyNotFound"), "{}", err.message);
+    assert!(err.message.contains("tebako install"), "{}", err.message);
+}
+
+#[test]
+fn executable_edge_ambiguous_provider_is_a_named_error() {
+    // spec 03 §8 × spec 32 §1: two installed payloads providing the
+    // capability is AmbiguousProvider — pin with `payload:`.
+    let tmp = TempDir::new("exec-ambig");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            EXEC_EDGE_UNPINNED,
+        ),
+    );
+    seed_xml2rfc_provider(&home, "xml2rfc-py", "");
+    seed_xml2rfc_provider(&home, "xml2rfc-alt", "");
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap_err();
+    assert!(err.message.contains("AmbiguousProvider"), "{}", err.message);
+    assert!(err.message.contains("payload:"), "{}", err.message);
+}
+
+#[test]
+fn executable_edge_runtime_less_match_is_a_named_error() {
+    // spec 32 §0/§1: an exposed name matching a runtime-less entry (a
+    // native entrypoint) is a named resolution error — never an
+    // exec-tier fallback.
+    let tmp = TempDir::new("exec-native");
+    let home = tmp.path().join("home");
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            EXEC_EDGE,
+        ),
+    );
+    // The provider's entrypoint carries NO runtime_requirement.
+    write_payload(
+        &home,
+        "xml2rfc",
+        "3.34.0",
+        &app_manifest("xml2rfc", "3.34.0", &entrypoint_yaml(NATIVE_ENTRY, "xml2rfc")),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap_err();
+    assert!(
+        err.message.contains("no runtime_requirement"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn executable_edge_cycle_is_a_named_error() {
+    // spec 32 §2: a cycle through spawn edges is the resolver's named
+    // cycle error, never a recursion trap.
+    let tmp = TempDir::new("exec-cycle");
+    let home = tmp.path().join("home");
+    // metanorma exposes xml2rfc (unpinned) …
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            EXEC_EDGE_UNPINNED,
+        ),
+    );
+    // … and the provider exposes metanorma back.
+    write_payload(
+        &home,
+        "xml2rfc-py",
+        "3.34.0",
+        &app_manifest_requires(
+            "xml2rfc-py",
+            "3.34.0",
+            &entrypoint_yaml(PYTHON_ENTRY, "xml2rfc"),
+            "requires:\n  - {kind: executable, name: metanorma, constraint: \">= 1\", expose: [metanorma]}\n",
+        ),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", true);
+    write_runtime_engine(&home, "python", "3.13.15", "2.1.10", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap_err();
+    assert!(err.message.contains("cycle"), "{}", err.message);
+}
+
+#[test]
+fn user_tightening_exports_the_hereditary_ceiling() {
+    // spec 32 §4 (locked): operator tightening is HEREDITARY — the
+    // parent's user directives ride TEBAKO_JAIL_TIGHTENING so every
+    // spawned child re-applies them as the ceiling.
+    let tmp = TempDir::new("jail-ceiling");
+    let home = tmp.path().join("home");
+    seed_tool(
+        &home,
+        "metanorma",
+        &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+        "1.2.3",
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &["--no-host".into()], &ctx).unwrap();
+    assert_eq!(
+        env_get(&plan, "TEBAKO_JAIL_TIGHTENING"),
+        Some("deny"),
+        "the tightening rides for spawned children"
+    );
+    // No flags: no ceiling channel at all.
+    let plan = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap();
+    assert_eq!(env_get(&plan, "TEBAKO_JAIL_TIGHTENING"), None);
+}

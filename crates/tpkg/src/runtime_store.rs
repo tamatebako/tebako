@@ -320,6 +320,13 @@ pub fn resolve_spawned(
 /// The `TEBAKO_SPAWN_LOCK` channel's variable name (spec 30 §3).
 pub const SPAWN_LOCK_VAR: &str = "TEBAKO_SPAWN_LOCK";
 
+/// The `TEBAKO_JAIL_TIGHTENING` channel's variable name (spec 32 §4):
+/// the dispatch surface's USER tightening (`--jail` / `--no-host` /
+/// `--mount`) exported as an env spec so every spawned child re-applies
+/// it as the hereditary ceiling over its own recomputed union — a
+/// spawned child never holds a grant the operator denied the parent.
+pub const JAIL_TIGHTENING_VAR: &str = "TEBAKO_JAIL_TIGHTENING";
+
 /// One locked entry of the dispatch-time spawn pin (spec 30 §3, spec 32
 /// §5). Two MECE row shapes share the channel:
 ///

@@ -50,10 +50,11 @@ pub struct Resolution {
     pub source: VersionSource,
     pub record: PayloadRecord,
     pub manifest: Manifest,
-    /// spec 30 §3: when the command resolved through the payload's
-    /// `expose` list rather than its own entrypoints, the runtime edge it
-    /// came through. plan() dispatches the RUNTIME's own boot for these
-    /// (the consumer payload is never mounted).
+    /// spec 30 §3 + spec 32 §3: when the command resolved through the
+    /// payload's `expose` list rather than its own entrypoints, the spawn
+    /// edge it came through (a runtime edge or an executable edge).
+    /// plan() composes the exposed dispatch for these — the consumer
+    /// payload itself is never the child's program.
     pub exposed: Option<tpkg::Requirement>,
 }
 
@@ -74,28 +75,11 @@ pub fn version_env_var(tool: &str) -> String {
 
 /// Installed payload versions: the `<version>.tfs` files under
 /// `~/.tebako/payloads/<name>/` (a version with no image is not
-/// installed, whatever else the record holds).
+/// installed, whatever else the record holds). The path grammar is
+/// `tpkg::payload_store`'s (the SSOT).
 pub fn installed_versions(home: &Path, payload_name: &str) -> Result<Vec<String>, ShimError> {
-    let dir = home.join("payloads").join(payload_name);
-    let rd = match std::fs::read_dir(&dir) {
-        Ok(rd) => rd,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(e) => {
-            return fail(
-                crate::EX_TEBAKO_IO,
-                format!("cannot read {}: {e}", dir.display()),
-            )
-        }
-    };
-    let mut versions = Vec::new();
-    for entry in rd.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if let Some(version) = name.strip_suffix(".tfs") {
-            versions.push(version.to_string());
-        }
-    }
-    versions.sort();
-    Ok(versions)
+    tpkg::payload_store::installed_versions(home, payload_name)
+        .map_err(|e| ShimError::new(crate::EX_TEBAKO_IO, e))
 }
 
 /// Who provides `tool`: a payload declaring it as an entrypoint (the own
@@ -174,14 +158,17 @@ fn providing_payload(home: &Path, tool: &str) -> Result<Provider, ShimError> {
     }
 }
 
-/// spec 30 §3: does the manifest's DEPENDS expose `tool` through a
-/// spawned-runtime edge?
+/// spec 30 §3 + spec 32 §3: does the manifest's DEPENDS expose `tool`
+/// through a spawn edge (a runtime edge's or an executable edge's
+/// `expose` list)?
 fn exposes(m: &Manifest, tool: &str) -> bool {
     m.requires().iter().any(|r| {
-        matches!(
-            r,
-            tpkg::Requirement::Runtime { expose, .. } if expose.iter().any(|e| e == tool)
-        )
+        let expose = match r {
+            tpkg::Requirement::Runtime { expose, .. } => expose,
+            tpkg::Requirement::Executable { expose, .. } => expose,
+            _ => return false,
+        };
+        expose.iter().any(|e| e == tool)
     })
 }
 
@@ -255,10 +242,12 @@ pub fn resolve(tool: &str, ctx: &Ctx) -> Result<Resolution, ShimError> {
                 .requires()
                 .iter()
                 .find(|r| {
-                    matches!(
-                        r,
-                        tpkg::Requirement::Runtime { expose, .. } if expose.iter().any(|e| e == tool)
-                    )
+                    let expose = match r {
+                        tpkg::Requirement::Runtime { expose, .. } => expose,
+                        tpkg::Requirement::Executable { expose, .. } => expose,
+                        _ => return false,
+                    };
+                    expose.iter().any(|e| e == tool)
                 })
                 .cloned();
             match edge {
