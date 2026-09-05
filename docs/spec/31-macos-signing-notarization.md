@@ -191,8 +191,8 @@ zip <stitched exe> && xcrun notarytool submit <zip> \
 
 Windows: Authenticode signing is a reputation input to SmartScreen, not a
 server-blessed gate — nothing here applies; a future Authenticode story
-would be its own spec riding the same sign-then-hash law. Linux: no
-platform gate at all.
+would be its own spec riding the same sign-then-hash law (queued: #542,
+TODO.v2-1/36 — Azure Artifact Signing). Linux: no platform gate at all.
 
 ## 8. Landing order
 
