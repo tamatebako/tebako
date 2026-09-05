@@ -18,6 +18,16 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#ifdef __linux__
+/* glibc's headers redirect fcntl→fcntl64 under _FILE_OFFSET_BITS=64 —
+ * which CPython's pyconfig.h sets on every gnu build — so a gnu
+ * interpreter's get_inheritable probe names fcntl64, never fcntl
+ * (tebako#529: the unexported alias bound glibc's real fcntl64 and the
+ * synthetic memfs fd died EBADF at init_fs_encoding). Declared by hand
+ * so no feature-test macro is needed. */
+extern int fcntl64(int fd, int cmd, ...);
+#endif
+
 int main(int argc, char **argv) {
     char buf[16];
     int fd, fl, hfd;
@@ -42,6 +52,18 @@ int main(int argc, char **argv) {
     if ((fl & O_ACCMODE) != O_RDONLY) { fprintf(stderr, "F_GETFL accmode: %#x\n", fl); return 71; }
     /* F_SETFL is an accepted no-op (a memfs read never blocks). */
     if (fcntl(fd, F_SETFL, O_NONBLOCK) != 0) { perror("fcntl(F_SETFL)"); return 72; }
+#ifdef __linux__
+    /* tebako#529: the same descriptor dance through the LFS alias —
+     * the gnu CPython binary's actual entry point. */
+    fl = fcntl64(fd, F_GETFD);
+    if (fl < 0 || !(fl & FD_CLOEXEC)) { perror("fcntl64(F_GETFD)"); return 79; }
+    if (fcntl64(fd, F_SETFD, 0) != 0) { perror("fcntl64(F_SETFD,0)"); return 80; }
+    fl = fcntl64(fd, F_GETFD);
+    if (fl != 0) { fprintf(stderr, "fcntl64 F_GETFD after clear: %#x\n", fl); return 81; }
+    fl = fcntl64(fd, F_GETFL);
+    if (fl < 0 || (fl & O_ACCMODE) != O_RDONLY) { fprintf(stderr, "fcntl64 F_GETFL: %#x\n", fl); return 82; }
+    if (fcntl64(fd, F_SETFD, FD_CLOEXEC) != 0) { perror("fcntl64(F_SETFD,CLOEXEC)"); return 83; }
+#endif
     /* The fd still reads after the flag dances. */
     if (read(fd, buf, sizeof(buf)) <= 0) { perror("read"); return 73; }
     if (close(fd) != 0) { perror("close"); return 74; }
