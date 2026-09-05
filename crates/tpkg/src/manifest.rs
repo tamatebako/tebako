@@ -1145,6 +1145,58 @@ pub enum Requirement {
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         expose: Vec<String>,
     },
+    /// An executable-capability edge (`{kind: executable, name,
+    /// payload?, constraint, mount?, expose?, critical?}`) — spec 03 §8
+    /// + spec 32 §1 (schema_minor 5): an executable another payload
+    /// PROVIDES, exact-name matched against `provides.executables` ∪
+    /// `provides.entrypoints[].name`. `mount` and `expose` are the two
+    /// ORTHOGONAL surfaces: `mount` co-mounts the provider image at the
+    /// consumer-declared path (the VFS surface); `expose` opens the
+    /// SPAWN surface — each exposed name dispatches the provider's own
+    /// spec-17 dispatch as a child process, and an exposed name never
+    /// takes the exec-tier path. `payload` is the by-name provider pin
+    /// (the AmbiguousProvider escape hatch); `critical` is the schema
+    /// evolution law's flag (a reader predating schema_minor 5 must
+    /// refuse the edge, never skip it silently).
+    Executable {
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        payload: Option<String>,
+        constraint: Constraint,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        mount: Option<String>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        expose: Vec<String>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        critical: bool,
+    },
+}
+
+/// Serde helper: `critical: false` is the default and stays off the wire.
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// The spawn-surface name grammar (spec 30 §1/§3, spec 32 §1 — one owner,
+/// both spawn-carrying edge kinds ride it): exposed entries are bare
+/// command names (no path separator, no drive qualifier — the
+/// library_aliases grammar), never repeated.
+fn check_expose_names(expose: &[String]) -> Result<(), ManifestError> {
+    let mut seen = std::collections::HashSet::new();
+    for e in expose {
+        check_non_empty(e, "requires[].expose[] must not be empty")?;
+        if e.bytes().any(|b| b == b'/' || b == b'\\' || b == b':') {
+            return Err(ManifestError::Invalid(
+                "requires[].expose[] must be a bare command name — no path separator, no drive qualifier (spec 30 §1)",
+            ));
+        }
+        if !seen.insert(e) {
+            return Err(ManifestError::Invalid(
+                "requires[].expose[] must not repeat a command name",
+            ));
+        }
+    }
+    Ok(())
 }
 
 impl Requirement {
@@ -1192,21 +1244,38 @@ impl Requirement {
                     )?;
                 }
                 // spec 30 §1/§3: exposed entries are bare command names
-                // (no path separator, no drive qualifier — the
-                // library_aliases grammar), never repeated.
-                let mut seen = std::collections::HashSet::new();
-                for e in expose {
-                    check_non_empty(e, "requires[].expose[] must not be empty")?;
-                    if e.bytes().any(|b| b == b'/' || b == b'\\' || b == b':') {
-                        return Err(ManifestError::Invalid(
-                            "requires[].expose[] must be a bare command name — no path separator, no drive qualifier (spec 30 §1)",
-                        ));
-                    }
-                    if !seen.insert(e) {
-                        return Err(ManifestError::Invalid(
-                            "requires[].expose[] must not repeat a command name",
-                        ));
-                    }
+                // (the shared spawn-surface grammar).
+                check_expose_names(expose)?;
+            }
+            Requirement::Executable {
+                name,
+                payload,
+                mount,
+                expose,
+                ..
+            } => {
+                check_non_empty(name, "requires[].name must not be empty")?;
+                if let Some(p) = payload {
+                    check_non_empty(p, "requires[].payload must not be empty when present")?;
+                }
+                if let Some(m) = mount {
+                    check_abs_path(m, "requires[].mount must be absolute (consumer-declared)")?;
+                }
+                // spec 32 §1: mount and expose are the orthogonal axes —
+                // an edge declaring NEITHER opens no surface and is a
+                // contentless dependency, a named error.
+                if mount.is_none() && expose.is_empty() {
+                    return Err(ManifestError::Invalid(
+                        "requires[] executable edge declares neither mount nor expose — a contentless edge opens no surface (spec 32 §1)",
+                    ));
+                }
+                // spec 32 §1: the spawn-surface grammar is spec 30 §1's,
+                // and the depended capability must itself be surfaced.
+                check_expose_names(expose)?;
+                if !expose.is_empty() && !expose.iter().any(|e| e == name) {
+                    return Err(ManifestError::Invalid(
+                        "requires[] executable edge with expose requires name ∈ expose — the depended capability must be surfaced (spec 32 §1)",
+                    ));
                 }
             }
         }
@@ -1773,14 +1842,18 @@ impl PayloadManifest {
         for req in &self.requires {
             req.validate()?;
         }
-        // spec 30 §3: an exposed depended-entry name never collides with
-        // the payload's OWN entrypoints — a named error at press (this
-        // cross-field rule is the model's; the JSON Schema cannot
-        // express the set intersection).
+        // spec 30 §3, extended one class by spec 32 §1: an exposed
+        // depended-entry name never collides with the payload's OWN
+        // entrypoints — a named error at press, whether the exposing edge
+        // is a runtime edge or an executable edge (this cross-field rule
+        // is the model's; the JSON Schema cannot express the set
+        // intersection).
         if let Provides::App(app) = &self.provides {
             for req in &self.requires {
-                let Requirement::Runtime { expose, .. } = req else {
-                    continue;
+                let expose = match req {
+                    Requirement::Runtime { expose, .. } => expose,
+                    Requirement::Executable { expose, .. } => expose,
+                    _ => continue,
                 };
                 for e in expose {
                     if app.entrypoints.iter().any(|ep| &ep.name == e) {
