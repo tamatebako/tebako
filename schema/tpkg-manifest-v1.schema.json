@@ -484,11 +484,13 @@
           "properties": {
             "kind": { "const": "executable" },
             "name": { "type": "string", "minLength": 1 },
+            "payload": { "type": "string", "minLength": 1, "description": "OPTIONAL by-name provider pin — the AmbiguousProvider escape hatch (spec 32 §1); press cross-checks the named payload provides the capability." },
             "constraint": { "$ref": "#/$defs/constraint" },
             "mount": { "$ref": "#/$defs/absPath" },
+            "critical": { "type": "boolean", "description": "The schema evolution law's critical flag: a reader that does not understand this entry refuses with a named error instead of skipping it. Producers mark a functionally required edge critical: true (spec 32 §1)." },
             "expose": {
               "type": "array",
-              "description": "spec 03 §8 + spec 32 §1 (schema_minor 5): the capability edge — resolution matches PROVIDES.executables exact-name (DependencyNotFound / AmbiguousProvider). expose ABSENT = spec 03 §8's co-mount form (mount consumer-declared); expose PRESENT = spec 32's spawned payload — the provider is NEVER co-mounted into the parent; each exposed name dispatches the provider's own spec-17 dispatch as a child. mount together with expose is a named manifest error (semantic, the tpkg validator); every exposed name must be a declared entrypoint of the resolved provider (press/install cross-check).",
+              "description": "spec 03 §8 + spec 32 §1 (schema_minor 5): the capability edge — exact-name resolution against provides.executables ∪ provides.entrypoints[].name (DependencyNotFound / AmbiguousProvider). mount and expose are ORTHOGONAL axes: mount opens the VFS surface (co-mount, consumer-declared); expose opens the spawn surface — each exposed name dispatches the provider's own spec-17 dispatch as a child, and exposed names never take the exec-tier path. Semantic rules (the tpkg validator): an edge with neither mount nor expose is a named manifest error; name ∈ expose is required; every exposed name must resolve to a runtime-carrying entrypoint of the provider (press/install cross-check).",
               "items": { "type": "string", "minLength": 1, "pattern": "^[^/\\\\:]+$" },
               "uniqueItems": true
             }
