@@ -404,6 +404,36 @@ fn requirement_json(r: &Requirement) -> Json {
             }
             Json::Object(out)
         }
+        Requirement::Executable {
+            name,
+            payload,
+            constraint,
+            mount,
+            expose,
+            critical,
+        } => {
+            let mut out = vec![
+                ("kind".to_string(), s("executable")),
+                ("name".to_string(), s(name)),
+                ("constraint".to_string(), s(constraint.as_str())),
+            ];
+            if let Some(p) = payload {
+                out.push(("payload".to_string(), s(p)));
+            }
+            if let Some(m) = mount {
+                out.push(("mount".to_string(), s(m)));
+            }
+            if !expose.is_empty() {
+                out.push((
+                    "expose".to_string(),
+                    Json::Array(expose.iter().map(|e| s(e)).collect()),
+                ));
+            }
+            if *critical {
+                out.push(("critical".to_string(), Json::Bool(true)));
+            }
+            Json::Object(out)
+        }
     }
 }
 
@@ -649,5 +679,44 @@ mod tests {
                 .as_deref(),
             Some("/usr/share/fonts")
         );
+    }
+
+    #[test]
+    fn executable_edge_maps_all_axes() {
+        // spec 32 §1 (schema_minor 5): the executable edge's two
+        // orthogonal axes plus the pin and the critical flag render 1:1.
+        let m = PayloadManifest::from_yaml(include_str!(
+            "../../tpkg/tests/fixtures/manifests/executable-edge.yaml"
+        ))
+        .unwrap();
+        let j = manifest_to_json(&m);
+        let Json::Array(reqs) = j.find("requires").unwrap() else {
+            panic!("requires must be an array");
+        };
+        let edge = reqs
+            .iter()
+            .find(|r| r.find("kind").unwrap().as_string().as_deref() == Some("executable"))
+            .expect("the fixture carries the executable edge");
+        assert_eq!(
+            edge.find("name").unwrap().as_string().as_deref(),
+            Some("xml2rfc")
+        );
+        assert_eq!(
+            edge.find("payload").unwrap().as_string().as_deref(),
+            Some("xml2rfc")
+        );
+        assert_eq!(
+            edge.find("constraint").unwrap().as_string().as_deref(),
+            Some(">= 3.34")
+        );
+        assert_eq!(
+            edge.find("mount").unwrap().as_string().as_deref(),
+            Some("/opt/xml2rfc")
+        );
+        let Json::Array(expose) = edge.find("expose").unwrap() else {
+            panic!("expose must be an array");
+        };
+        assert_eq!(expose[0].as_string().as_deref(), Some("xml2rfc"));
+        assert_eq!(edge.find("critical").unwrap(), &Json::Bool(true));
     }
 }

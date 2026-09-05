@@ -1296,3 +1296,231 @@ fn validate_spawned_carried_raw_exe_slot_skips_the_manifest_check() {
         "{out}"
     );
 }
+
+// ---------------------------------------------------------------------
+// validate: the L2 lock.spawned[] payload rows ↔ L1
+// requires[].kind: executable cross-check (spec 32 §6, spec 23 §13.6
+// amended)
+// ---------------------------------------------------------------------
+
+/// The spec-32 L1 shape: the `probe` entrypoint plus the expose-carrying
+/// xml2rfc executable edge (SPAWNED_APP_MANIFEST with the edge swapped).
+/// The same digest-agreement caveat applies — the spawned checks are
+/// asserted by their report lines.
+fn spawned32_app_manifest() -> String {
+    let swapped = SPAWNED_APP_MANIFEST.replace(
+        "  - kind: runtime\n    engine: java\n    constraint: \">= 21, < 26\"\n    expose: [java]\n",
+        "  - kind: executable\n    name: xml2rfc\n    payload: xml2rfc\n    constraint: \">= 3.0\"\n    expose: [xml2rfc]\n",
+    );
+    assert!(
+        swapped.contains("kind: executable"),
+        "the edge swap applied (replace is silent on a no-match)"
+    );
+    swapped
+}
+
+/// The lock block mirroring the L1 xml2rfc edge (a SHARED payload row:
+/// no slots, the press-resolved coordinates + pins; the nested runtime
+/// row is the provider's own language edge, resolved — spec 32 §6).
+const SPAWNED32_LOCK_YAML: &str = "lock:\n\
+     \x20 spawned:\n\
+     \x20   - payload: xml2rfc\n\
+     \x20     constraint: \">= 3.0\"\n\
+     \x20     expose: [xml2rfc]\n\
+     \x20     version: \"3.2.1\"\n\
+     \x20     carry: false\n\
+     \x20     image: {sha256: \"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc\"}\n\
+     \x20     runtime:\n\
+     \x20       engine: ruby\n\
+     \x20       constraint: \">= 3.3, < 5.0\"\n\
+     \x20       version: \"3.4.2\"\n\
+     \x20       tebako: \"2.1.6\"\n\
+     \x20       carry: false\n\
+     \x20       exe: {sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n\
+     \x20       image: {sha256: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n\
+     \x20       source: \"https://github.com/tamatebako/tebako-runtime-ruby/releases/download\"\n\
+     \x20     source: \"tfs:github:tebako-packages/xml2rfc\"\n";
+
+fn bundle_spawned32_app(w: &TempDir, home: &Path, pm_yaml: &str) -> PathBuf {
+    let manifest = spawned32_app_manifest();
+    let app = mk_image_files(
+        w,
+        "spawned32.tfs",
+        Some(&manifest),
+        &[("probe", b"#!/bin/sh\n")],
+    );
+    let pm = pm_file(w, pm_yaml);
+    let pkg =
+        w.0.join(format!("pkg-{}", COUNTER.fetch_add(1, Ordering::Relaxed)));
+    bundle(
+        home,
+        w,
+        &["--package-manifest", pm.to_str().unwrap()],
+        &[&app],
+        &pkg,
+    );
+    pkg
+}
+
+#[test]
+fn validate_spawned32_mirror_passes_when_the_lock_mirrors_the_edge() {
+    let w = TempDir::new("p32-ok");
+    let home = test_home("p32-ok");
+    let pkg = bundle_spawned32_app(&w, &home, &spawned_pm(SPAWNED32_LOCK_YAML));
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement (check 5), see above
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc]: ok — mirrors the L1 executable edge; the locked provider version 3.2.1 satisfies \">= 3.0\"\n"
+        ),
+        "{out}"
+    );
+    // the shared row's provider image is not inspectable at verify — the
+    // nested runtime mirror is skip-loud, never silent
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc].runtime: skip — the provider image is not inspectable here — the nested runtime mirror is unchecked (the locked version 3.4.2 satisfies the nested constraint \">= 3.3, < 5.0\")\n"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn validate_spawned32_unmirrored_edge_is_65() {
+    let w = TempDir::new("p32-miss");
+    let home = test_home("p32-miss");
+    // The lock without the payload row: the L1 xml2rfc edge would never
+    // resolve on the standalone path — named, fail-closed.
+    let pkg = bundle_spawned32_app(&w, &home, &spawned_pm(""));
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc]: FAILED — the app payload's L1 manifest declares this expose-carrying `kind: executable` edge but the lock carries no payload row"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn validate_spawned32_mirror_mismatches_are_65() {
+    let w = TempDir::new("p32-bad");
+    let home = test_home("p32-bad");
+    // The row's locked provider version does not satisfy the mirrored
+    // constraint.
+    let pkg = bundle_spawned32_app(
+        &w,
+        &home,
+        &spawned_pm(&SPAWNED32_LOCK_YAML.replace("version: \"3.2.1\"", "version: \"2.9.0\"")),
+    );
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // digest agreement masks the 65, see above
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc]: FAILED — the locked provider version 2.9.0 does not satisfy the mirrored constraint \">= 3.0\""
+        ),
+        "{out}"
+    );
+}
+
+/// The CARRIED spawned-payload layout (spec 32 §6): slot 1 is the
+/// provider image (a REAL image — the normal slot-manifest check
+/// applies), slots 2/3 the nested runtime pair (the exe RAW — never an
+/// image). The nested runtime row cross-checks against the provider
+/// image's own L1 language edge.
+fn bundle_spawned32_carried(w: &TempDir, home: &Path, nested_constraint: &str) -> PathBuf {
+    use sha2::{Digest, Sha256};
+    let sha256_hex = |p: &Path| format!("{:x}", Sha256::digest(std::fs::read(p).unwrap()));
+
+    let manifest = spawned32_app_manifest();
+    let app = mk_image_files(
+        w,
+        "spawned32.tfs",
+        Some(&manifest),
+        &[("probe", b"#!/bin/sh\n")],
+    );
+    let provider_manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: xml2rfc\n  version: 3.2.1\n  producer: {{tool: tebako-pkg, tool_version: 0.1.0}}\n  created: \"2026-08-01T00:00:00Z\"\n  digest:\n    tree_hash: sha256:{}\n    blob_sha256: {}\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: xml2rfc\n      path: /app/bin/xml2rfc\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: [aarch64-macos, x86_64-linux-gnu]\n  capabilities: {{exec: true, read: true}}\nrequires:\n  - kind: language\n    engine: ruby\n    constraint: \">= 3.3, < 5.0\"\n",
+        "d".repeat(64),
+        "e".repeat(64)
+    );
+    let provider = mk_image_files(
+        w,
+        "xml2rfc.tfs",
+        Some(&provider_manifest),
+        &[("app/bin/xml2rfc", b"#!/bin/sh\n")],
+    );
+    let exe = w.0.join("ruby-exe");
+    std::fs::write(&exe, b"\x7fELF raw wrapper bytes - never an image").unwrap();
+    let env = mk_image(w, "ruby-env.tfs", None);
+
+    let pm_yaml = spawned_pm(&format!(
+        "lock:\n  spawned:\n   - payload: xml2rfc\n     constraint: \">= 3.0\"\n     expose: [xml2rfc]\n     version: \"3.2.1\"\n     carry: true\n     image: {{slot: 1, sha256: \"{}\"}}\n     runtime:\n       engine: ruby\n       constraint: \"{nested_constraint}\"\n       version: \"3.4.2\"\n       tebako: \"2.1.6\"\n       carry: true\n       exe: {{slot: 2, sha256: \"{}\"}}\n       image: {{slot: 3, sha256: \"{}\"}}\n",
+        sha256_hex(&provider),
+        sha256_hex(&exe),
+        sha256_hex(&env)
+    ));
+    let pm = pm_file(w, &pm_yaml);
+    let pkg =
+        w.0.join(format!("pkg-{}", COUNTER.fetch_add(1, Ordering::Relaxed)));
+    bundle(
+        home,
+        w,
+        &["--package-manifest", pm.to_str().unwrap(), "--exact-mounts"],
+        &[&app, &provider, &exe, &env],
+        &pkg,
+    );
+    pkg
+}
+
+#[test]
+fn validate_spawned32_carried_provider_image_cross_checks_the_nested_runtime() {
+    let w = TempDir::new("p32-car");
+    let home = test_home("p32-car");
+    let pkg = bundle_spawned32_carried(&w, &home, ">= 3.3, < 5.0");
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // slot digest agreement, see above
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc]: ok — mirrors the L1 executable edge; the locked provider version 3.2.1 satisfies \">= 3.0\"\n"
+        ),
+        "{out}"
+    );
+    // the nested row mirrors the PROVIDER's L1 language edge (the
+    // two-level cross-check, spec 32 §6)
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc].runtime: ok — mirrors the provider's L1 language edge; the locked runtime 3.4.2 (2.1.6) satisfies \">= 3.3, < 5.0\"\n"
+        ),
+        "{out}"
+    );
+    // the nested runtime's RAW exe slot skips the manifest check
+    assert!(
+        out.contains(
+            "  slot[2] manifest: skip — spawned runtime artifact (raw bytes — never mounted; the trailer digest and the lock pin carry its identity)\n"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn validate_spawned32_nested_constraint_mirror_mismatch_is_65() {
+    let w = TempDir::new("p32-nest");
+    let home = test_home("p32-nest");
+    // The nested runtime constraint mirrors nothing the provider
+    // declares (3.4.2 satisfies it — the MIRROR is the failure).
+    let pkg = bundle_spawned32_carried(&w, &home, ">= 3.2");
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // slot digest agreement, see above
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc].runtime: FAILED — the nested runtime constraint mirror differs — the provider's L1 declares \">= 3.3, < 5.0\", the lock carries \">= 3.2\""
+        ),
+        "{out}"
+    );
+}

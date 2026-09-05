@@ -351,10 +351,18 @@ pub fn verify_package(
             .iter()
             .flat_map(|lock| lock.spawned.iter())
             .flat_map(|row| {
-                row.exe
+                // Runtime rows carry the pair's exe (+ dll) raw; payload
+                // rows (spec 32) carry the NESTED runtime pair's raw
+                // artifacts — the provider image itself is a real image
+                // and takes the normal slot-manifest check below.
+                let rt = match row {
+                    tpkg::LockedSpawned::Runtime(rt) => rt,
+                    tpkg::LockedSpawned::Payload(p) => &p.runtime,
+                };
+                rt.exe
                     .slot
                     .into_iter()
-                    .chain(row.dll.as_ref().and_then(|d| d.slot))
+                    .chain(rt.dll.as_ref().and_then(|d| d.slot))
             })
             .map(|s| s as usize)
             .collect(),
@@ -584,14 +592,20 @@ fn entry_checks(
 }
 
 /// The spawned-edge cross-check of [`verify_package`] (spec 30 §2, spec
-/// 23 §13.6; one check per L2 lock row plus one per unmirrored L1 edge,
-/// named `spawned[<engine>]`). The lock's `spawned[]` rows are the
-/// bootstrap's ONLY edge source (the size gate bars in-image reads), so
-/// press mirrors the app payload's L1 `requires[].kind: runtime` edges
+/// 32 §6, spec 23 §13.6; one check per L2 lock row plus one per
+/// unmirrored L1 edge, named `spawned[<engine|payload>]`). The lock's
+/// `spawned[]` rows are the bootstrap's ONLY edge source (the size gate
+/// bars in-image reads), so press mirrors the app payload's L1
+/// `requires[].kind: runtime` edges (runtime rows) and its
+/// expose-carrying `requires[].kind: executable` edges (payload rows)
 /// into them and this check pins the mirror both ways: every row mirrors
-/// an L1 edge (engine + implementation parity, the constraint verbatim,
-/// the locked version satisfying it, the expose set verbatim) and every
-/// L1 edge has its row. The mirror source is the PRIMARY entry's slot
+/// an L1 edge (runtime rows: engine + implementation parity; payload
+/// rows: the payload pin parity — the constraint verbatim, the locked
+/// version satisfying it, the expose set verbatim either way) and every
+/// L1 edge has its row. A payload row's NESTED runtime row mirrors the
+/// PROVIDER's L1 `kind: language` edge: cross-checked against the
+/// carried provider image's manifest when that slot is inspectable,
+/// skip-loud otherwise. The mirror source is the PRIMARY entry's slot
 /// image; a package whose app slot carries no usable L1 manifest skips —
 /// pre-manifest packages stay valid (the entry cross-check's rule).
 fn spawned_checks(
@@ -620,7 +634,7 @@ fn spawned_checks(
     let Some(l1) = usable else {
         for row in rows {
             checks.push(Check::skip(
-                format!("spawned[{}]", row.engine),
+                format!("spawned[{}]", spawned_label(row)),
                 "the app payload carries no usable L1 manifest — the spawned-edge mirror is unchecked"
                     .to_string(),
             ));
@@ -647,7 +661,35 @@ fn spawned_checks(
         })
         .collect();
 
+    // The spec-32 axis: expose-carrying `kind: executable` edges mirror
+    // into payload rows — (capability, provider pin, constraint, expose).
+    let exec_edges: Vec<(&str, Option<&str>, &tpkg::Constraint, &[String])> = l1
+        .requires
+        .iter()
+        .filter_map(|r| match r {
+            tpkg::Requirement::Executable {
+                name,
+                payload,
+                constraint,
+                expose,
+                ..
+            } if !expose.is_empty() => Some((
+                name.as_str(),
+                payload.as_deref(),
+                constraint,
+                expose.as_slice(),
+            )),
+            _ => None,
+        })
+        .collect();
+
     for row in rows {
+        let tpkg::LockedSpawned::Runtime(row) = row else {
+            if let tpkg::LockedSpawned::Payload(p) = row {
+                spawned_payload_check(p, &exec_edges, inspection, checks);
+            }
+            continue;
+        };
         let name = format!("spawned[{}]", row.engine);
         let edge = edges.iter().find(|(engine, implementation, ..)| {
             *engine == row.engine.as_str() && *implementation == row.implementation.as_deref()
@@ -712,7 +754,10 @@ fn spawned_checks(
 
     for (engine, implementation, ..) in &edges {
         let mirrored = rows.iter().any(|row| {
-            row.engine.as_str() == *engine && row.implementation.as_deref() == *implementation
+            let tpkg::LockedSpawned::Runtime(rt) = row else {
+                return false;
+            };
+            rt.engine.as_str() == *engine && rt.implementation.as_deref() == *implementation
         });
         if !mirrored {
             checks.push(Check::fail(
@@ -721,6 +766,175 @@ fn spawned_checks(
                 exit_code::MALFORMED,
             ));
         }
+    }
+
+    for (name, _, _, _) in &exec_edges {
+        let mirrored = rows.iter().any(|row| {
+            let tpkg::LockedSpawned::Payload(p) = row else {
+                return false;
+            };
+            payload_row_matches_edge(p, *name, &exec_edges)
+        });
+        if !mirrored {
+            checks.push(Check::fail(
+                format!("spawned[{name}]"),
+                "the app payload's L1 manifest declares this expose-carrying `kind: executable` edge but the lock carries no payload row — a standalone package would never resolve it; re-press with a current tebako".to_string(),
+                exit_code::MALFORMED,
+            ));
+        }
+    }
+}
+
+/// The check-line label of a spawned lock row: the engine for a runtime
+/// row (spec 30), the provider payload's name for a payload row
+/// (spec 32).
+fn spawned_label(row: &tpkg::LockedSpawned) -> &str {
+    match row {
+        tpkg::LockedSpawned::Runtime(rt) => rt.engine.as_str(),
+        tpkg::LockedSpawned::Payload(p) => p.payload.as_str(),
+    }
+}
+
+/// The mirror-identity rule of a payload row against the L1
+/// expose-carrying executable edges (spec 32 §6): the constraint
+/// verbatim, the expose SET verbatim, and the payload pin parity — an
+/// edge that names `payload:` must name THIS provider; an unpinned edge
+/// mirrors by capability + constraint + expose.
+fn payload_row_matches_edge(
+    row: &tpkg::LockedSpawnedPayload,
+    edge_name: &str,
+    edges: &[(&str, Option<&str>, &tpkg::Constraint, &[String])],
+) -> bool {
+    edges.iter().any(|(name, pin, constraint, expose)| {
+        *name == edge_name
+            && constraint.as_str() == row.constraint.as_str()
+            && (pin.is_none() || *pin == Some(row.payload.as_str()))
+            && expose.iter().map(String::as_str).collect::<std::collections::BTreeSet<_>>()
+                == row
+                    .expose
+                    .iter()
+                    .map(String::as_str)
+                    .collect::<std::collections::BTreeSet<_>>()
+    })
+}
+
+/// The per-row check of a spawned-PAYLOAD lock row (spec 32 §6): the row
+/// must mirror an expose-carrying L1 `kind: executable` edge (the
+/// [`payload_row_matches_edge`] rule) and the locked provider version
+/// must satisfy the mirrored constraint. The NESTED runtime row mirrors
+/// the PROVIDER's L1 `kind: language` edge: the locked version pair must
+/// satisfy the nested constraint, and the nested constraint is
+/// cross-checked against the carried provider image's own manifest when
+/// that slot is inspectable (skip-loud otherwise — a shared provider is
+/// resolved at dispatch, never at verify).
+fn spawned_payload_check(
+    row: &tpkg::LockedSpawnedPayload,
+    edges: &[(&str, Option<&str>, &tpkg::Constraint, &[String])],
+    inspection: &PackageInspection,
+    checks: &mut Vec<Check>,
+) {
+    let name = format!("spawned[{}]", row.payload);
+    if !edges
+        .iter()
+        .any(|(edge_name, ..)| payload_row_matches_edge(row, edge_name, edges))
+    {
+        checks.push(Check::fail(
+            name,
+            "the lock's spawned payload row mirrors no expose-carrying `kind: executable` edge of the app payload's L1 manifest — re-press with a current tebako".to_string(),
+            exit_code::MALFORMED,
+        ));
+        return;
+    }
+    if !tpkg::versions::from_validated(&row.constraint).matches(&row.version) {
+        checks.push(Check::fail(
+            name,
+            format!(
+                "the locked provider version {} does not satisfy the mirrored constraint \"{}\" — re-press with a current tebako",
+                row.version,
+                row.constraint.as_str()
+            ),
+            exit_code::MALFORMED,
+        ));
+        return;
+    }
+    checks.push(Check::pass(
+        name,
+        format!(
+            "mirrors the L1 executable edge; the locked provider version {} satisfies \"{}\"",
+            row.version,
+            row.constraint.as_str()
+        ),
+    ));
+
+    // The nested runtime row: the provider's OWN language edge, resolved
+    // (spec 32 §6). Version-pair satisfaction always; the constraint
+    // mirror cross-check when the provider image is inspectable here.
+    let rt = &row.runtime;
+    let rt_name = format!("spawned[{}].runtime", row.payload);
+    if !tpkg::versions::from_validated(&rt.constraint).matches(&rt.version) {
+        checks.push(Check::fail(
+            rt_name,
+            format!(
+                "the nested locked runtime version {} does not satisfy the nested constraint \"{}\" — re-press with a current tebako",
+                rt.version,
+                rt.constraint.as_str()
+            ),
+            exit_code::MALFORMED,
+        ));
+        return;
+    }
+    let provider_l1 = row
+        .image
+        .slot
+        .and_then(|slot| inspection.slots.get(slot as usize))
+        .and_then(|s| s.payload.as_ref())
+        .filter(|p| p.mount_error.is_none())
+        .and_then(|p| match (&p.manifest, &p.manifest_validation) {
+            (Some(m), None) => Some(m),
+            _ => None,
+        });
+    let Some(provider_l1) = provider_l1 else {
+        checks.push(Check::skip(
+            rt_name,
+            format!(
+                "the provider image is not inspectable here — the nested runtime mirror is unchecked (the locked version {} satisfies the nested constraint \"{}\")",
+                rt.version,
+                rt.constraint.as_str()
+            ),
+        ));
+        return;
+    };
+    let language_edge = provider_l1.requires.iter().find_map(|r| match r {
+        tpkg::Requirement::Language { engine, constraint } if *engine == rt.engine => {
+            Some(constraint)
+        }
+        _ => None,
+    });
+    match language_edge {
+        Some(c) if c.as_str() == rt.constraint.as_str() => checks.push(Check::pass(
+            rt_name,
+            format!(
+                "mirrors the provider's L1 language edge; the locked runtime {} ({}) satisfies \"{}\"",
+                rt.version, rt.tebako, rt.constraint.as_str()
+            ),
+        )),
+        Some(c) => checks.push(Check::fail(
+            rt_name,
+            format!(
+                "the nested runtime constraint mirror differs — the provider's L1 declares \"{}\", the lock carries \"{}\" — re-press with a current tebako",
+                c.as_str(),
+                rt.constraint.as_str()
+            ),
+            exit_code::MALFORMED,
+        )),
+        None => checks.push(Check::fail(
+            rt_name,
+            format!(
+                "the provider payload declares no `kind: language` edge for engine \"{}\" — the nested runtime row mirrors nothing — re-press with a current tebako",
+                rt.engine
+            ),
+            exit_code::MALFORMED,
+        )),
     }
 }
 
