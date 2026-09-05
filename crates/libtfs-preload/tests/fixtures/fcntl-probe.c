@@ -10,9 +10,9 @@
  * the seed), F_GETFL answers the truthful read-only status word,
  * F_SETFL is an accepted no-op, and a flagged-but-closed fd is EBADF —
  * the kernel's own answer. A host fd must pass through untouched.
- * The dup class (F_DUPFD and kin) is EINVAL by design (duplicating a
- * memfs fd is the engine's to own) and is deliberately not pinned
- * here. Cross-platform: fcntl's fd commands are plain POSIX. */
+ * The dup class (F_DUPFD/F_DUPFD_CLOEXEC) is now interposed too — the
+ * dup-probe fixture owns those pins (tebako#534). Cross-platform:
+ * fcntl's fd commands are plain POSIX. */
 #include <errno.h>
 #include <stdio.h>
 #include <fcntl.h>

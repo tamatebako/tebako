@@ -1271,17 +1271,90 @@ pub unsafe extern "C" fn close(fd: c_int) -> c_int {
     unsafe { plat::real_close()(fd) }
 }
 
+/// Interposed `dup` (fd-flag dispatch; tebako#534 — libxml2's
+/// xmlInputFromFd calls dup(fd) unconditionally, and every VFS fd died
+/// EBADF on it). A memfs fd clones its open-file description in the
+/// engine — the offset is SHARED (POSIX open-file-description
+/// semantics); the clone carries FD_CLOEXEC OFF, as dup guarantees.
+/// A host fd passes through untouched.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn dup(fd: c_int) -> c_int {
+    boot_arm!(plat::raw_dup, (fd));
+    if !route::is_memfs_fd(fd) {
+        // SAFETY: forwarding the original argument to the real dup.
+        return unsafe { plat::real_dup()(fd) };
+    }
+    match engine_call(|| route::vfs_dup(fd, 0)) {
+        Some(Ok(newfd)) => {
+            fd_table_note(newfd, false);
+            newfd
+        }
+        Some(Err(e)) => {
+            set_errno(e);
+            -1
+        }
+        None => {
+            set_errno(libc::EIO);
+            -1
+        }
+    }
+}
+
+/// Interposed `dup2` (fd-flag dispatch). A host-numbered SOURCE passes
+/// through to the real dup2 untouched (the target is then the kernel's
+/// business). A memfs source with a host-numbered TARGET is the
+/// genuinely impossible case: the fd routing keys on the
+/// `TEBAKO_FD_FLAG` bit, so a host number can never name a memfs
+/// description — ENOTSUP, the named error, never EBADF-by-default
+/// (spec 07 §8). A memfs-flagged target routes to the engine, which
+/// atomically closes a live target (full alias/promotion semantics) and
+/// rebinds the number to the source's description — the target then
+/// resolves to the SAME VFS file. `dup2(a, a)` is the POSIX no-op,
+/// liveness-checked by the engine (EBADF on a dead fd); FD_CLOEXEC on
+/// the target is cleared by dup2 and left alone by the no-op.
+#[cfg_attr(target_os = "linux", no_mangle)]
+pub unsafe extern "C" fn dup2(old: c_int, new: c_int) -> c_int {
+    boot_arm!(plat::raw_dup2, (old, new));
+    if !route::is_memfs_fd(old) {
+        // SAFETY: forwarding the original arguments to the real dup2.
+        return unsafe { plat::real_dup2()(old, new) };
+    }
+    if !route::is_memfs_fd(new) {
+        set_errno(libc::ENOTSUP);
+        return -1;
+    }
+    match engine_call(|| route::vfs_dup2(old, new)) {
+        Some(Ok(newfd)) => {
+            if newfd != old {
+                fd_table_purge(newfd);
+                fd_table_note(newfd, false);
+            }
+            newfd
+        }
+        Some(Err(e)) => {
+            set_errno(e);
+            -1
+        }
+        None => {
+            set_errno(libc::EIO);
+            -1
+        }
+    }
+}
+
 /// Interposed `fcntl` (fd-flag dispatch). Only the descriptor commands
 /// are meaningful on a memfs fd: F_GETFD/F_SETFD read/write the shim's
 /// fd table; F_GETFL answers the truthful read-only status word (payload
 /// images are always ro, spec 11 — O_RDONLY, never O_APPEND/O_NONBLOCK);
 /// F_SETFL is an accepted no-op (a memfs read never blocks and there is
-/// no kernel status word to mutate). The dup class (F_DUPFD and kin) is
-/// NOT modeled — duplicating a memfs fd is the engine's to own, and no
-/// tier-1 consumer (the CPython/JDK boot paths) calls it: EINVAL, like
-/// every other unrecognized command on a LIVE memfs fd ("cmd is not
-/// valid" — the fd is open, so EBADF would lie). A flagged-but-closed fd
-/// is EBADF. Host fds pass through untouched.
+/// no kernel status word to mutate). The dup class (tebako#534) is the
+/// engine's, like the dup/dup2 shims: F_DUPFD clones the open-file
+/// description onto the lowest free number ≥ arg (FD_CLOEXEC OFF, per
+/// POSIX), F_DUPFD_CLOEXEC does the same with FD_CLOEXEC ON — the clone
+/// is a shim-managed fd carrying the same VFS target, never an
+/// EBADF-by-default. Every other unrecognized command on a LIVE memfs fd
+/// is EINVAL ("cmd is not valid" — the fd is open, so EBADF would lie).
+/// A flagged-but-closed fd is EBADF. Host fds pass through untouched.
 ///
 /// ABI note: fcntl is variadic like open — on Darwin arm64 the third
 /// argument rides the STACK (the first variadic slot at [sp, 0]), so the
@@ -1326,6 +1399,20 @@ pub unsafe extern "C" fn fcntl_impl(fd: c_int, cmd: c_int, arg: c_int) -> c_int 
         }
         libc::F_GETFL => libc::O_RDONLY,
         libc::F_SETFL => 0,
+        libc::F_DUPFD | libc::F_DUPFD_CLOEXEC => match engine_call(|| route::vfs_dup(fd, arg)) {
+            Some(Ok(newfd)) => {
+                fd_table_note(newfd, cmd == libc::F_DUPFD_CLOEXEC);
+                newfd
+            }
+            Some(Err(e)) => {
+                set_errno(e);
+                -1
+            }
+            None => {
+                set_errno(libc::EIO);
+                -1
+            }
+        },
         _ => {
             set_errno(libc::EINVAL);
             -1

@@ -201,6 +201,23 @@ interpose!(
     libc::close,
     unsafe extern "C" fn(c_int) -> c_int
 );
+// dup/dup2 are NOT variadic — no arm64 trampoline needed (unlike
+// open/openat/fcntl): the tuples bind the Rust bodies directly on both
+// Darwin arches.
+interpose!(
+    INTERPOSE_DUP,
+    real_dup,
+    super::dup,
+    libc::dup,
+    unsafe extern "C" fn(c_int) -> c_int
+);
+interpose!(
+    INTERPOSE_DUP2,
+    real_dup2,
+    super::dup2,
+    libc::dup2,
+    unsafe extern "C" fn(c_int, c_int) -> c_int
+);
 // `close` vs `close$NOCANCEL` (x86_64): the libc crate maps `libc::close`
 // to `close$NOCANCEL` on x86_64 darwin (libc's unix/mod.rs `link_name`),
 // so the tuple above covers ONLY the NOCANCEL spelling there — while C

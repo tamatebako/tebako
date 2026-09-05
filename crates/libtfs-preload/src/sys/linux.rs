@@ -270,6 +270,12 @@ real_fn!(
     unsafe extern "C" fn(c_int, libc::off_t, c_int) -> libc::off_t
 );
 real_fn!(real_close, c"close", unsafe extern "C" fn(c_int) -> c_int);
+real_fn!(real_dup, c"dup", unsafe extern "C" fn(c_int) -> c_int);
+real_fn!(
+    real_dup2,
+    c"dup2",
+    unsafe extern "C" fn(c_int, c_int) -> c_int
+);
 real_fn!(
     real_fcntl,
     c"fcntl",
@@ -584,6 +590,18 @@ pub(super) unsafe fn raw_lseek(fd: c_int, offset: libc::off_t, whence: c_int) ->
 #[cfg(target_pointer_width = "64")]
 pub(super) unsafe fn raw_close(fd: c_int) -> c_int {
     unsafe { libc::syscall(libc::SYS_close, fd) as c_int }
+}
+
+/// `dup` via SYS_dup.
+#[cfg(target_pointer_width = "64")]
+pub(super) unsafe fn raw_dup(fd: c_int) -> c_int {
+    unsafe { libc::syscall(libc::SYS_dup, fd) as c_int }
+}
+
+/// `dup2` via SYS_dup2.
+#[cfg(target_pointer_width = "64")]
+pub(super) unsafe fn raw_dup2(old: c_int, new: c_int) -> c_int {
+    unsafe { libc::syscall(libc::SYS_dup2, old, new) as c_int }
 }
 
 /// `fcntl` via SYS_fcntl (64-bit fcntl == fcntl64). Forwards the shim's
