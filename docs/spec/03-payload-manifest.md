@@ -430,12 +430,16 @@ instead. The providing payload is mounted at the consumer-declared
 `mount`; its executables run per its own `exec_tier` (spec 07 §8).
 
 The edge gains the OPTIONAL `expose:` list (additive — schema_minor 5,
-spec 32): an expose-carrying executable edge is a SPAWNED payload
-dependency — the provider is never co-mounted into the parent; each
-exposed name dispatches the provider payload's own full spec-17
-dispatch as a child process (its own runtime edge, its own mounts,
-its own jail union). `mount:` is a named manifest error when `expose:`
-is present; every exposed name must be a declared entrypoint of the
-resolved provider (press/install cross-checked). The child plan, the
-spawn-lock row, the lock's `spawned[]` payload row, the shim surface,
-and the failure modes are spec 32 §2–§7's.
+spec 32): an expose-carrying executable edge gains the SPAWNED payload
+surface — each exposed name dispatches the provider payload's own full
+spec-17 dispatch as a child process (its own runtime edge, its own
+mounts, its own jail union). `mount` and `expose` are orthogonal axes
+(VFS surface vs spawn surface; both may hold together), the capability
+match widens to `provides.executables` ∪ `provides.entrypoints[].name`,
+and every exposed name must resolve to a runtime-carrying entrypoint of
+the resolved provider (press/install cross-checked — a runtime-less
+match is a named error, never an exec-tier fallback). An exposed name
+never takes the exec-tier path — the spawn dispatch owns it. The child
+plan, the spawn-lock row, the lock's `spawned[]` payload row, the shim
+surface, the jail interaction, and the failure modes are spec 32
+§2–§7's.
