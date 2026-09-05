@@ -633,3 +633,10 @@ The registry's citizens:
 
 Every NEW setting declares its channels in the registry first; existing
 channels migrate into the registry as they are touched.
+
+One family is explicitly NOT a citizen here: the per-tool version chain
+(`TEBAKO_<TOOL>_VERSION` → `.tebako-tools.yaml` → config `defaults:` →
+registry default) is a DYNAMIC family — an unbounded name set keyed by
+command name — with its own four-link chain owned by spec 07 (§2.1, the
+2026-09-05 routing amendment); it never enters this registry, so the two
+surfaces cannot drift into each other.

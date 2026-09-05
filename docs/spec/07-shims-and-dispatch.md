@@ -10,23 +10,43 @@ spec 04 §2), and the dispatch-time registry cache ships with roadmap 33
 tebako-resolve behind `~/.tebako/registries/<sha>.yaml` — 24 h TTL,
 `tebako update-registries`, `TEBAKO_OFFLINE` = cache-or-named-error;
 `tebako add-registry` primes the cache with the bytes it fetched).
-Still PLANNED: `tebako use` writing the user default (v1: author
-`~/.tebako/config.yaml` directly), jail application (spec 08), and a
+The 2026-09-05 routing amendment (qualified pins, per-payload disable,
+`tebako-shim use`) SHIPS with this spec's PR-A — the status lines below
+reflect it. Still PLANNED: jail application (spec 08), and a
 runtime registry (v1 downloads resolve through the `runtimes:` preference
 in `config.yaml` as the exact ref).
 
 ## 0. v1 concrete choices (normative where the sections above were open)
 
 - **Project pin file** `.tebako-tools.yaml` is a FLAT YAML mapping of
-  command name → version; a nearer file that does not pin the command
+  command name → pin; a nearer file that does not pin the command
   does not shadow a farther one that does.
-- **`~/.tebako/config.yaml` keys:** `defaults:` (command → version),
-  `registries:` (spec 04 refs), `runtimes:` (engine → `{version,
-  tebako, source?}` runtime preference; `source:` pins the engine's
-  download base — spec 05 §2's per-engine chain, PLANNED TODO.v2-1/30).
-  The shim never writes this file.
+- **The chain-value grammar (2026-09-05 amendment):** every link of the
+  version chain — `TEBAKO_<TOOL>_VERSION`, `.tebako-tools.yaml`,
+  `config.yaml defaults:` — carries `[payload@]version` (split on the
+  FIRST `@`; `tpkg::toolpin::ToolPin` is the ONE parser — spec 00
+  invariant 10). `payload@version` makes the named payload THE provider
+  (§2 step 0.5); bare `version` keeps today's scan. A payload-only pin
+  (`payload@`) does NOT exist — route-out rides disable, never an
+  incomplete link. An unparseable chain value is the NAMED grammar
+  error (`EX_TEBAKO_MANIFEST`, naming the link and value), never a
+  silent skip.
+- **`~/.tebako/config.yaml` keys:** `defaults:` (command →
+  `[payload@]version`), `registries:` (spec 04 refs), `runtimes:`
+  (engine → `{version, tebako, source?}` runtime preference; `source:`
+  pins the engine's download base — spec 05 §2's per-engine chain,
+  PLANNED TODO.v2-1/30). The shim never writes this file — except
+  through `tebako-shim use`, the explicit verb (tmp + rename, the same
+  discipline as `add-registry`; a structural edit that preserves keys,
+  not comments).
 - **Disabled state** is shim-managed state, not authored config:
-  `~/.tebako/shims/.disabled.yaml` (command → `[versions] | [all]`).
+  `~/.tebako/shims/.disabled.yaml` (command → selector list). The
+  selector grammar (2026-09-05 amendment — `tpkg::toolpin::
+  DisableSelector` is the ONE parser): `all` gates every claim of the
+  command; `version` gates that version of ANY claim; `payload@all`
+  gates the named payload's claim; `payload@version` gates exactly that
+  (payload, version) claim. An unknown selector string in the file is a
+  NAMED parse error at load, never silently ignored (invariant 9).
 - **Installed payload record** (the dispatcher-visible manifest mirror,
   spec 03 §4 tier 3 rationale): `payloads/<name>/<version>.tfs`,
   `<version>.tfs.sha256`, `<version>.manifest.yaml`.
@@ -59,6 +79,20 @@ four jobs:
   the thing on PATH that picks version + runtime per invocation and hands
   off.
 
+**Provider routing (2026-09-05 amendment):** two installed payloads may
+provide the SAME command (forks, alternative distributions, a suite and
+a standalone tool). Provider resolution consults two LOCAL surfaces —
+the version chain's payload-qualified pins (§2 step 0.5) and the
+disabled-state file's payload-qualified selectors — never the registry:
+a registry's `default:` stays payload-keyed, and a registry NEVER routes
+commands (routing is local state by design; a future registry
+`default_payload:` cold-start hint is a separate extension point, not
+this spec). The version chain itself is a DYNAMIC per-tool family
+(`TEBAKO_<TOOL>_VERSION` — an unbounded name set) with its own four-link
+chain (§2.1); it is NOT a citizen of spec 23 §14's settings registry
+(§14 owns FIXED-NAME press/machine knobs) — the two surfaces never drift
+into each other.
+
 **argv0 integrity (locked 2026-08-29):** command selection rides argv0 —
 the invoked name must reach the process as its own argv[0]. Symlinks,
 hardlinks, and byte copies preserve it. Wrapper generators that spawn the
@@ -77,10 +111,19 @@ per declared entrypoint name — never as re-exec wrappers.
    shims — each dispatches to its own image AND ITS OWN runtime
    requirement; two commands in one package may run different runtime
    versions simultaneously.
+0.5. **PROVIDER ROUTING (2026-09-05 amendment):** the chain VALUE grammar is
+   `[payload@]version` (`tpkg::toolpin` is the SSOT parser). A
+   payload-qualified value makes the named payload THE provider — it must
+   be installed and declare or expose the command, else the named
+   NotAProvider error. The provider scan skips claims disabled at
+   `<payload>@all` or `<payload>@version`, so disabling all-but-one claims
+   routes without a pin. Unqualified values fall through to today's scan
+   (payload-of-command-name fast path → suite scan → expose scan). A
+   registry never routes commands: routing is local state.
 1. **Payload VERSION resolution** (first match wins):
    `TEBAKO_<TOOL>_VERSION` env → nearest `.tebako-tools.yaml` walking up
-   from cwd (per-project pinning) → user default (`tebako use
-   <tool>@<version>`) → registry's `default`.
+   from cwd (per-project pinning) → user default (`tebako-shim use
+   <tool> <pin>`) → registry's `default`.
 2. **RUNTIME resolution:** the entrypoint's `runtime_requirement` →
    newest COMPATIBLE cached runtime (no download) → else download newest
    compatible (spec 05 §5). **Swapping runtimes needs no payload change**
@@ -110,8 +153,32 @@ per declared entrypoint name — never as re-exec wrappers.
   nothing. A one-off act never claims PATH names.
 - NO eval-init hook for switching: the dispatcher reads the project file
   itself (the mise model, not the rbenv `eval "$(… init -)"` model).
-- `tebako use / disable / list / doctor` manage shims
-  (link/remove/inspect/diagnose); enable/disable specific versions.
+- `tebako-shim use / disable / enable / list / which / doctor` manage
+  shims (link/remove/inspect/diagnose); enable/disable specific versions.
+  The verbs spell identically through the CLI: `tebako shim <verb> …` ≡
+  `tebako-shim <verb> …` (tebako-cli calls the shim crate as a library —
+  never a shell-out).
+  - **`use <tool> <pin>`** writes the user-default link
+    (`config.yaml defaults:` — the explicit authored-config write verb
+    beside `add-registry`, tmp + rename, keys preserved); the pin is the
+    `[payload@]version` grammar of §0. `use --clear <tool>` removes
+    exactly that key; `use --runtime <engine>@<langver>[:<tebako>]`
+    writes `runtimes:`.
+  - **`enable|disable <tool>[@<version>] [--of <payload>]`** edit the
+    disabled-state selectors of §0: bare → `all`; `@<version>` →
+    `version`; `--of <payload>` alone → `payload@all`; with
+    `@<version>` → `payload@version`.
+  - **`which <tool>`** names the provider payload and provider kind
+    (own / exposed / pinned) beside the version and its source.
+  - **`list [--json]`** shows per command the provider payload, provider
+    kind, resolved version + source, and disabled marks; `--json` emits
+    one `"info_schema": 1` document (mirroring `tebako cache list
+    --json`).
+  - **`doctor`** additionally reports: commands with MORE THAN ONE
+    enabled claim (collisions), dangling pins (project-file/config pins
+    naming an uninstalled payload or version), and disabled-but-pinned
+    conflicts. Doctor stays diagnose-only: findings print, the exit code
+    is unchanged (0 / 1 with problems).
   **Enable links on demand** (locked 2026-08-29): `enable <tool>` whose
   command is declared by an installed payload but was never linked
   (spec 03 §2.2's `active: false` default) materializes the shim link
@@ -149,6 +216,22 @@ signed `.tfs` per (version × ruby line) → registry → dispatcher).
   error, never a segfault.
 - Shim target payload missing/corrupt → named error pointing at
   `tebako doctor`.
+- More than one ENABLED claim for a command (2026-09-05 amendment) →
+  `EX_TEBAKO_MANIFEST`, naming every claiming payload; the hint names
+  the routing verbs: pin `<cmd>: <payload>@<version>` in
+  `.tebako-tools.yaml`, or disable one claim (`tebako-shim disable <cmd>
+  --of <payload>`).
+- A payload-qualified chain value whose payload is not installed, or is
+  installed but neither declares nor exposes the command → the
+  NotAProvider named error (`EX_TEBAKO_MANIFEST`), naming the pin, the
+  payload, and the chain link the pin came from.
+- A payload-only pin (`payload@`, empty version) → the grammar error
+  (`EX_TEBAKO_MANIFEST`, §0): route out with `tebako-shim disable <cmd>
+  --of <payload>`, never with an incomplete pin.
+- An unparseable chain value at ANY link (env, project file, config
+  default) → the grammar error, naming the link and the value (spec 23
+  §14's env-parse rule, extended to every chain link) — never a silent
+  skip to the next link.
 
 ## 8. Native exec from inside an image (the whole-chain model, locked)
 
