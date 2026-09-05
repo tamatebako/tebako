@@ -426,11 +426,13 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
         runtime: Some(lock_runtime),
         slices: lock_slices,
         // The D2 press does not yet mirror the app payload's L1
-        // `requires[].kind: runtime` edges (spec 30 §1) into lock rows —
-        // packages declaring spawned edges hand-author the lock's
+        // `requires[].kind: runtime` (spec 30 §1) or expose-carrying
+        // `requires[].kind: executable` (spec 32 §6) edges into lock
+        // rows — packages declaring spawned edges hand-author the lock's
         // `spawned[]` block (packed-mn) and `tebako-pkg validate`
-        // cross-checks the mirror. Auto-mirroring (press-time runtime
-        // resolution for the pick + pins) is the follow-up.
+        // cross-checks the mirror (both row shapes). Auto-mirroring
+        // (press-time runtime/payload resolution for the pick + pins) is
+        // the follow-up.
         spawned: Vec::new(),
     };
 

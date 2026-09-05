@@ -1049,7 +1049,10 @@ fn finish_install<T: Transport>(
 /// failing that, the newest registry version satisfying the edge's
 /// constraint, installed through the same fetch → verify → cache → walk
 /// tail. `kind: language` edges are the runtime axis — the dispatcher
-/// resolves them at run time, never here. An edge naming a payload
+/// resolves them at run time, never here; `kind: executable` edges
+/// (spec 32) resolve their PROVIDER payload through the same tail plus
+/// the expose-axis cross-check and shim registration
+/// ([`install_executable_edge`]). An edge naming a payload
 /// already on `chain` is a requires CYCLE (spec 18 §5.6 S32) — a named
 /// error, never the cache check's silent short-circuit.
 fn install_dependency_closure<T: Transport>(
@@ -1081,10 +1084,38 @@ fn install_dependency_closure<T: Transport>(
             )?;
             continue;
         }
+        // spec 32 §1/§3/§7: an executable-capability edge resolves the
+        // PROVIDER payload into the store (both axes), cross-checks the
+        // expose list against the installed provider's mirror, pre-stages
+        // the provider's runtime, and registers one shim per exposed name.
+        if let tpkg::Requirement::Executable {
+            name,
+            payload,
+            constraint,
+            expose,
+            ..
+        } = req
+        {
+            install_executable_edge(
+                home,
+                fetcher,
+                mirror,
+                name,
+                payload.as_deref(),
+                constraint,
+                expose,
+                shim_binary,
+                chain,
+            )?;
+            continue;
+        }
         let (kind, name, constraint) = match req {
             tpkg::Requirement::Language { .. } => continue,
             tpkg::Requirement::Runtime { .. } => {
                 unreachable!("runtime edges install above the tuple match")
+            }
+            tpkg::Requirement::Executable { .. } => {
+                unreachable!("executable edges install above the tuple match")
             }
             tpkg::Requirement::Toolkit {
                 name, constraint, ..
@@ -1219,6 +1250,240 @@ fn install_runtime_edge(
         );
     }
     Ok(())
+}
+
+/// Install one executable-capability edge (spec 32 §1/§3/§7): BOTH axes
+/// resolve the provider payload into the store — the newest CACHED
+/// satisfying version stands (the pin the user installed), else the
+/// newest registry version satisfying the edge's constraint through the
+/// same fetch → verify → cache → walk tail as toolkit/data edges. The
+/// `expose` axis additionally cross-checks every exposed name against the
+/// INSTALLED provider's manifest mirror (a declared entrypoint carrying
+/// `runtime_requirement` — the spec 26 §5 install-time cross-check
+/// class), pre-stages the provider's language runtime into runtimes/
+/// (dispatch would download it otherwise), and registers one shim per
+/// ACTIVE exposed name (spec 07's argv0 model). Without the `payload:`
+/// pin the CAPABILITY scan answers ([`capability_provider`]); the edge
+/// joins the cycle chain like any toolkit/data edge (spec 18 §5.6 S32).
+fn install_executable_edge<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+    consumer: &Manifest,
+    name: &str,
+    pin: Option<&str>,
+    constraint: &tpkg::Constraint,
+    expose: &[String],
+    shim_binary: Option<&Path>,
+    chain: &mut Vec<String>,
+) -> Result<(), TebakoError> {
+    let eval = versions::from_validated(constraint);
+    let provider = match pin {
+        Some(p) => p.to_string(),
+        None => capability_provider(home, fetcher, consumer, name, constraint)?,
+    };
+    if chain.iter().any(|n| n == &provider) {
+        let start = chain
+            .iter()
+            .position(|n| n == &provider)
+            .expect("membership checked");
+        let mut cycle: Vec<String> = chain[start..].to_vec();
+        cycle.push(provider.clone());
+        return Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "dependency cycle: {} (spec 18 §5.6 S32) — break the cycle in the payloads' requires: declarations",
+                cycle.join(" → ")
+            ),
+        ));
+    }
+    let installed = tebako_shim::resolve::installed_versions(home, &provider).map_err(map_shim)?;
+    let version = installed
+        .iter()
+        .filter(|v| eval.matches(v))
+        .max_by(|a, b| versions::compare(a, b))
+        .cloned();
+    let version = match version {
+        Some(v) => v,
+        None => {
+            let plan =
+                plan_from_dependency_edge(home, fetcher, consumer, "executable", &provider, constraint)?;
+            finish_install(home, fetcher, plan, shim_binary, chain)?.version
+        }
+    };
+    journal(
+        home,
+        &format!(
+            "event=executable-edge-resolved consumer={} capability={name} provider={provider} version={version}",
+            consumer.name()
+        ),
+    );
+    if expose.is_empty() {
+        return Ok(());
+    }
+
+    // The expose axis (spec 32 §7): the cross-check reads the INSTALLED
+    // provider's mirror — never the image (install keeps no image reader
+    // on this path; the mirror is the dispatcher-visible record, spec 07
+    // §0, written by the shared tail above).
+    let record = manifest::payload_record(home, &provider, &version);
+    let provider_mirror = Manifest::load(&record.manifest_mirror).map_err(map_shim)?;
+    let ctx = tebako_shim::Ctx {
+        home: home.to_path_buf(),
+        cwd: std::env::current_dir().map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?,
+        env: std::env::vars().collect(),
+    };
+    let mut names = Vec::new();
+    for exposed in expose {
+        let Some(ep) = provider_mirror
+            .entrypoints()
+            .iter()
+            .find(|e| &e.name == exposed)
+        else {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "{} {} requires executable {name} and exposes \"{exposed}\" but the provider payload {provider} {version} declares no such entrypoint (declared: {}) — fix the expose list or the provider's manifest (spec 32 §7)",
+                    consumer.name(),
+                    consumer.version(),
+                    provider_mirror
+                        .entrypoints()
+                        .iter()
+                        .map(|e| e.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        };
+        let Some(req) = &ep.runtime_requirement else {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "{} {} requires executable {name}: the provider's entrypoint \"{exposed}\" carries no runtime_requirement — a runtime-less entry has no spawn form, its surface is the exec tier (spec 32 §0/§1)",
+                    consumer.name(),
+                    consumer.version()
+                ),
+            ));
+        };
+        // Pre-staging the provider's runtime IS install's job (the
+        // dispatch would download it otherwise) — the same posture as
+        // install_runtime_edge.
+        let rt = tebako_shim::runtime::resolve_runtime_edge(
+            &req.engine,
+            None,
+            &req.constraint,
+            true,
+            &ctx,
+        )
+        .map_err(map_shim)?;
+        journal(
+            home,
+            &format!(
+                "event=provider-runtime-resolved provider={provider} entrypoint={exposed} engine={} lang_version={} tebako_version={}",
+                req.engine, rt.lang_version, rt.tebako_version
+            ),
+        );
+        if ep.is_active() {
+            names.push(exposed.clone());
+        }
+    }
+    if names.is_empty() {
+        return Ok(());
+    }
+    let binary = resolve_shim_binary(shim_binary)?;
+    let (_links, shim_notes) = manage::link_shims(home, &binary, &names).map_err(map_shim)?;
+    for note in shim_notes {
+        journal(
+            home,
+            &format!("event=spawn-shim-note provider={provider} note={note}"),
+        );
+    }
+    Ok(())
+}
+
+/// The provider NAME of an unpinned executable edge (spec 32 §1, spec 03
+/// §8): the installed mirrors' capability scan first (the pin the user
+/// installed stands), then the registered registries — the L3 mirror
+/// carries ENTRYPOINTS, not the executables list, so the registry scan
+/// matches the capability against `entrypoints[]`. More than one
+/// provider — cached or registry-listed — is AmbiguousProvider (pin the
+/// provider with `payload:`); zero is the named not-found listing the
+/// registries.
+fn capability_provider<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+    consumer: &Manifest,
+    name: &str,
+    constraint: &tpkg::Constraint,
+) -> Result<String, TebakoError> {
+    let declares = || {
+        format!(
+            "{} {} requires executable {name} ({constraint})",
+            consumer.name(),
+            consumer.version()
+        )
+    };
+    let candidates = tpkg::payload_store::find_capability_providers(home, name, constraint)
+        .map_err(|e| err(EX_TEBAKO_MANIFEST, e))?;
+    let mut names: Vec<String> = candidates.iter().map(|p| p.name.clone()).collect();
+    names.sort();
+    names.dedup();
+    match names.len() {
+        1 => return Ok(names.pop().expect("len == 1 checked")),
+        n if n > 1 => {
+            return Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "{} and it is provided by more than one installed payload ({}) (AmbiguousProvider)\n  pin the provider with `payload:` on the edge (spec 03 §8)",
+                    declares(),
+                    names.join(", ")
+                ),
+            ));
+        }
+        _ => {}
+    }
+    let eval = versions::from_validated(constraint);
+    let mut found: Vec<String> = Vec::new();
+    for reg_ref in &config::load_config(home).map_err(map_shim)?.registries {
+        let r = RegistryRef::parse(reg_ref).map_err(|e| {
+            err(
+                EX_TEBAKO_MANIFEST,
+                format!("registered registry '{reg_ref}' is invalid: {e}"),
+            )
+        })?;
+        let registry = fetcher.resolve_registry(&r).map_err(map_resolve)?;
+        for payload in &registry.payloads {
+            let provides = payload
+                .versions
+                .iter()
+                .any(|v| eval.matches(&v.version) && v.entrypoints.iter().any(|e| e == name));
+            if provides {
+                found.push(payload.name.clone());
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    match found.len() {
+        0 => {
+            let registries = registered_registries_listing(home)?;
+            Err(err(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "{} but no installed payload or registered registry provides it (DependencyNotFound)\n  registered registries:\n{registries}\n  register one with: tebako add-registry <ref>, or pin the provider with `payload:` on the edge (spec 03 §8)",
+                    declares()
+                ),
+            ))
+        }
+        1 => Ok(found.pop().expect("len == 1 checked")),
+        _ => Err(err(
+            EX_TEBAKO_MANIFEST,
+            format!(
+                "{} and it is provided by more than one registry payload ({}) (AmbiguousProvider)\n  pin the provider with `payload:` on the edge (spec 03 §8)",
+                declares(),
+                found.join(", ")
+            ),
+        )),
+    }
 }
 
 /// Materialize every zero-runtime entrypoint (no `runtime_requirement`)

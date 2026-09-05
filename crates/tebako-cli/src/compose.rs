@@ -16,7 +16,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 
-use tebako_resolve::registry::RegistryPlatforms;
+use tebako_resolve::registry::{RegistryPlatforms, RegistryRef};
 use tebako_resolve::{Fetcher, PayloadCache, ResolveError, Transport};
 use tebako_shim::versions;
 use tpkg::{ComposeDoc, ComposePreset, Constraint, Platform, Platforms};
@@ -397,6 +397,46 @@ pub fn resolve_closure<T: Transport>(
                 )));
             }
             for requirement in &manifest.requires {
+                // spec 32 §1: the executable edge's MOUNT axis co-mounts
+                // the provider payload like toolkit/data (below); an
+                // expose-only edge is NEVER co-mounted — it rides the
+                // embedded manifest verbatim and the lock's hand-authored
+                // spawned[] rows (the spec 30 §1 posture).
+                if let tpkg::Requirement::Executable {
+                    name,
+                    payload,
+                    constraint,
+                    mount,
+                    ..
+                } = requirement
+                {
+                    let Some(mount) = mount else {
+                        continue;
+                    };
+                    let provider = match payload {
+                        Some(p) => p.clone(),
+                        None => compose_capability_provider(
+                            home,
+                            fetcher,
+                            &plan.name,
+                            name,
+                            constraint,
+                        )?,
+                    };
+                    let authored = doc.slices.iter().find(|s| s.name == provider);
+                    deps.push(Pending {
+                        name: provider,
+                        requirement: Some(constraint.clone()),
+                        carry: match authored {
+                            Some(row) => row.carry.unwrap_or_else(|| preset.default_carry(false)),
+                            None => true,
+                        },
+                        mount: Some(mount.clone()),
+                        platforms: authored.and_then(|row| row.platforms.clone()),
+                        consumer: Some(plan.name.clone()),
+                    });
+                    continue;
+                }
                 let (name, constraint, mount) = match requirement {
                     // The runtime axes: the composition's runtime: row
                     // owns the language edge; a spawned-runtime edge
@@ -417,6 +457,9 @@ pub fn resolve_closure<T: Transport>(
                         constraint,
                         mount,
                     } => (name, constraint, mount),
+                    tpkg::Requirement::Executable { .. } => {
+                        unreachable!("executable edges resolve above the tuple match")
+                    }
                 };
                 let authored = doc.slices.iter().find(|s| &s.name == name);
                 deps.push(Pending {
@@ -447,6 +490,53 @@ pub fn resolve_closure<T: Transport>(
         work.extend(deps);
     }
     Ok(resolved)
+}
+
+/// The provider NAME of an unpinned executable edge at PRESS (spec 32
+/// §1, spec 03 §8): the registered registries' capability scan — the L3
+/// mirror carries ENTRYPOINTS, not the executables list, so the scan
+/// matches the capability against `entrypoints[]` of versions satisfying
+/// the edge's constraint. Zero providers is the named not-found; more
+/// than one is AmbiguousProvider — pin the provider with `payload:`.
+fn compose_capability_provider<T: Transport>(
+    home: &Path,
+    fetcher: &Fetcher<T>,
+    consumer: &str,
+    name: &str,
+    constraint: &Constraint,
+) -> Result<String, TebakoError> {
+    let eval = versions::from_validated(constraint);
+    let mut found: Vec<String> = Vec::new();
+    for reg_ref in &tebako_shim::config::load_config(home)
+        .map_err(install::map_shim)?
+        .registries
+    {
+        let r = RegistryRef::parse(reg_ref)
+            .map_err(|e| err(format!("registered registry '{reg_ref}' is invalid: {e}")))?;
+        let registry = fetcher.resolve_registry(&r).map_err(install::map_resolve)?;
+        for payload in &registry.payloads {
+            let provides = payload
+                .versions
+                .iter()
+                .any(|v| eval.matches(&v.version) && v.entrypoints.iter().any(|e| e == name));
+            if provides {
+                found.push(payload.name.clone());
+            }
+        }
+    }
+    found.sort();
+    found.dedup();
+    match found.len() {
+        0 => Err(err(format!(
+            "compose slice '{consumer}' requires executable {name} ({}) but no registered registry carries a provider — pin the provider with `payload:` on the edge or register one with: tebako add-registry <ref>",
+            constraint.as_str()
+        ))),
+        1 => Ok(found.pop().expect("len == 1 checked")),
+        _ => Err(err(format!(
+            "compose slice '{consumer}' requires executable {name} and it is provided by more than one registry payload ({}) (AmbiguousProvider) — pin the provider with `payload:` on the edge (spec 03 §8)",
+            found.join(", ")
+        ))),
+    }
 }
 
 /// The tebako home the compose closure resolves against — tebako-shim

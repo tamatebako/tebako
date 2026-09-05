@@ -634,3 +634,145 @@ fn resolve_closure_self_contained_carries_everything() {
     .unwrap();
     assert!(!slices[0].carry, "the authored verdict beats the preset");
 }
+
+// ---------------------------------------------------------------------
+// the executable edge (spec 32 §1) — the mount axis at press
+// ---------------------------------------------------------------------
+
+#[test]
+fn resolve_closure_executable_mount_axis_co_mounts_the_provider() {
+    // spec 32 §1: the mount axis co-mounts the provider like a
+    // toolkit/data edge; the pinned provider resolves by name and the
+    // consumer-declared mount flows into the lock row.
+    let fx = Fixture::new("execmount");
+    let a_image = image(
+        "app",
+        "appa",
+        "1.0",
+        "  - kind: executable\n    name: xml2rfc\n    payload: xml2rfc\n    constraint: \">= 3.0\"\n    mount: /opt/xml2rfc\n",
+    );
+    let b_image = image("app", "xml2rfc", "3.2.1", "");
+    let a_ref = fx.payload("appa-1.0.tfs", &a_image);
+    let b_ref = fx.payload("xml2rfc-3.2.1.tfs", &b_image);
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &registry_yaml("appa", "app", &[("1.0", &a_ref)], Some("1.0")),
+    ));
+    fx.register(&fx.registry(
+        "xml2rfc-registry.yaml",
+        &registry_yaml("xml2rfc", "app", &[("3.2.1", &b_ref)], Some("3.2.1")),
+    ));
+
+    let parsed = parse(&doc("slices:\n  - {name: appa, requirement: \"1.0\"}\n"));
+    let slices = compose::resolve_closure(
+        &fx.home,
+        &Fetcher::new(),
+        &parsed,
+        ComposePreset::SharedRuntime,
+        Platform::host(),
+    )
+    .unwrap();
+    assert_eq!(slices.len(), 2);
+    assert_eq!(slices[1].name, "xml2rfc");
+    assert_eq!(slices[1].version, "3.2.1");
+    assert!(slices[1].carry, "a discovered dep rides in the package");
+    assert_eq!(slices[1].mount.as_deref(), Some("/opt/xml2rfc"));
+}
+
+#[test]
+fn resolve_closure_executable_capability_scan_matches_the_entrypoint_mirror() {
+    // spec 32 §1 + spec 03 §8: unpinned — the registry capability scan
+    // matches the ENTRYPOINT mirror, never the payload name; exactly one
+    // provider resolves.
+    let fx = Fixture::new("execcap");
+    let a_image = image(
+        "app",
+        "appa",
+        "1.0",
+        "  - kind: executable\n    name: xml2rfc\n    constraint: \">= 3.0\"\n    mount: /opt/xml2rfc\n",
+    );
+    let b_image = image("app", "xml2rfc-pkg", "3.2.1", "");
+    let a_ref = fx.payload("appa-1.0.tfs", &a_image);
+    let b_ref = fx.payload("xml2rfc-pkg-3.2.1.tfs", &b_image);
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &registry_yaml("appa", "app", &[("1.0", &a_ref)], Some("1.0")),
+    ));
+    let b_reg = format!(
+        "schema_version: 1\npayloads:\n  - name: xml2rfc-pkg\n    kind: app\n    versions:\n      - version: 3.2.1\n        platforms: universal\n        release: {{ref: {b_ref}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n        entrypoints: [xml2rfc]\n    default: 3.2.1\n"
+    );
+    fx.register(&fx.registry("xml2rfc-registry.yaml", &b_reg));
+
+    let parsed = parse(&doc("slices:\n  - {name: appa, requirement: \"1.0\"}\n"));
+    let slices = compose::resolve_closure(
+        &fx.home,
+        &Fetcher::new(),
+        &parsed,
+        ComposePreset::SharedRuntime,
+        Platform::host(),
+    )
+    .unwrap();
+    assert_eq!(slices.len(), 2);
+    assert_eq!(slices[1].name, "xml2rfc-pkg");
+    assert_eq!(slices[1].mount.as_deref(), Some("/opt/xml2rfc"));
+}
+
+#[test]
+fn resolve_closure_executable_expose_only_is_never_co_mounted() {
+    // spec 32 §1: the expose axis is a SPAWN surface — no mount, no
+    // closure slice; the edge rides the embedded manifest into the lock's
+    // hand-authored spawned[] rows (the spec 30 §1 posture).
+    let fx = Fixture::new("execexpose");
+    let a_image = image(
+        "app",
+        "appa",
+        "1.0",
+        "  - kind: executable\n    name: xml2rfc\n    constraint: \">= 3.0\"\n    expose: [xml2rfc]\n",
+    );
+    let a_ref = fx.payload("appa-1.0.tfs", &a_image);
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &registry_yaml("appa", "app", &[("1.0", &a_ref)], Some("1.0")),
+    ));
+
+    let parsed = parse(&doc("slices:\n  - {name: appa, requirement: \"1.0\"}\n"));
+    let slices = compose::resolve_closure(
+        &fx.home,
+        &Fetcher::new(),
+        &parsed,
+        ComposePreset::SharedRuntime,
+        Platform::host(),
+    )
+    .unwrap();
+    assert_eq!(slices.len(), 1, "the expose axis adds no slice");
+}
+
+#[test]
+fn resolve_closure_executable_capability_without_a_provider_is_a_named_error() {
+    // spec 32 §1: zero registry providers is the named not-found — the
+    // `payload:` pin hint rides the message.
+    let fx = Fixture::new("execcapnone");
+    let a_image = image(
+        "app",
+        "appa",
+        "1.0",
+        "  - kind: executable\n    name: xml2rfc\n    constraint: \">= 3.0\"\n    mount: /opt/xml2rfc\n",
+    );
+    let a_ref = fx.payload("appa-1.0.tfs", &a_image);
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &registry_yaml("appa", "app", &[("1.0", &a_ref)], Some("1.0")),
+    ));
+
+    let parsed = parse(&doc("slices:\n  - {name: appa, requirement: \"1.0\"}\n"));
+    let err = compose::resolve_closure(
+        &fx.home,
+        &Fetcher::new(),
+        &parsed,
+        ComposePreset::SharedRuntime,
+        Platform::host(),
+    )
+    .unwrap_err();
+    assert!(err.message.contains("executable xml2rfc"), "{err:?}");
+    assert!(err.message.contains("payload:"), "{err:?}");
+}

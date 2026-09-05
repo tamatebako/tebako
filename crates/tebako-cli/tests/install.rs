@@ -1320,3 +1320,265 @@ fn install_runtime_edge_expose_outside_the_spawn_surface_is_a_named_error() {
         "{err:?}"
     );
 }
+
+// ---------------------------------------------------------------------
+// the executable-capability edge (spec 32 §1/§3/§7)
+// ---------------------------------------------------------------------
+
+/// A cached ruby runtime store entry (the expose axis's pre-stage
+/// resolves from the store — never a network fetch in these tests).
+fn cached_ruby_runtime(fx: &Fixture) {
+    let platform = tebako_shim::runtime::platform_string();
+    let dir = fx
+        .home
+        .join("runtimes")
+        .join(format!("ruby-3.4.2-0.3.0-{platform}"));
+    fs::create_dir_all(&dir).unwrap();
+    let exe = format!(
+        "tebako-runtime-0.3.0-3.4.2-{platform}{}",
+        tebako_shim::runtime::exe_suffix()
+    );
+    fs::write(dir.join(&exe), b"fake ruby runtime exe\n").unwrap();
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-ruby\n  version: \"3.4.2\"\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-08-31T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  provides: {{engine: ruby, version: \"3.4.2\", abi_line: \"3.4\", platform: aarch64-macos}}\n  built_from: {{src_sha256: {}, patch_set: v1}}\n  entrypoints:\n    - {{name: ruby, path: /bin/ruby}}\n  capabilities: {{exec: true, read: true, runtime: true}}\n",
+        sha(b'a'),
+        sha(b'b'),
+        sha(b'c')
+    );
+    let image = zip_image_with_manifest(&manifest);
+    let image_name = format!("tebako-runtime-0.3.0-3.4.2-{platform}.tfs");
+    fs::write(dir.join(&image_name), &image).unwrap();
+    fs::write(
+        dir.join(format!("{image_name}.sha256")),
+        format!("{}  {image_name}\n", sha256_hex(&image)),
+    )
+    .unwrap();
+}
+
+/// A provider app image (spec 32): an embedded kind:app manifest whose
+/// entrypoint carries a runtime_requirement — the expose cross-check
+/// reads it from the installed mirror.
+fn provider_image(name: &str, version: &str, entrypoint: &str) -> Vec<u8> {
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-08-31T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {entrypoint}\n      path: /app/bin/{entrypoint}\n      runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        sha(b'a'),
+        sha(b'b')
+    );
+    zip_image_with_manifest(&manifest)
+}
+
+/// A registry entry whose ENTRYPOINT mirror differs from the payload
+/// name (the capability-scan shape: the capability is the entrypoint,
+/// never the payload name — spec 32 §1).
+fn capability_registry_yaml(name: &str, version: &str, payload_ref: &str, entrypoint: &str) -> String {
+    format!(
+        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{entrypoint}]\n    default: {version}\n"
+    )
+}
+
+#[test]
+fn install_executable_edge_installs_the_provider_and_registers_the_expose_shims() {
+    // spec 32 §1/§3/§7: the pinned edge resolves the provider into
+    // payloads/, pre-stages the provider's runtime into runtimes/, and
+    // registers one shim per exposed name.
+    let fx = Fixture::new("execedge");
+    let consumer = app_image_with_requires(
+        "mn",
+        "1.0",
+        "  - kind: executable\n    name: xml2rfc\n    payload: xml2rfc\n    constraint: \">= 3.0\"\n    expose: [xml2rfc]\n",
+    );
+    let consumer_ref = fx.payload("mn-1.0.tfs", &consumer);
+    let consumer_reg = fx.registry(
+        "mn-registry.yaml",
+        &registry_yaml("mn", "1.0", &consumer_ref, Some("1.0")),
+    );
+    let provider_ref = fx.payload(
+        "xml2rfc-3.2.1.tfs",
+        &provider_image("xml2rfc", "3.2.1", "xml2rfc"),
+    );
+    let provider_reg = fx.registry(
+        "xml2rfc-registry.yaml",
+        &registry_yaml("xml2rfc", "3.2.1", &provider_ref, Some("3.2.1")),
+    );
+    install::add_registry(&fx.home, &consumer_reg).unwrap();
+    install::add_registry(&fx.home, &provider_reg).unwrap();
+    cached_ruby_runtime(&fx);
+
+    install::install(&fx.home, "mn", None, Some(&fx.shim_binary)).unwrap();
+
+    // the provider is a PAYLOAD (never a runtime); the exposed command is
+    // on PATH
+    assert!(fx.payloads_dir().join("xml2rfc/3.2.1.tfs").is_file());
+    assert!(shim_path(&fx.home, "xml2rfc").exists());
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains(
+            "event=executable-edge-resolved consumer=mn capability=xml2rfc provider=xml2rfc version=3.2.1"
+        ),
+        "{journal}"
+    );
+    assert!(
+        journal
+            .contains("event=provider-runtime-resolved provider=xml2rfc entrypoint=xml2rfc engine=ruby"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn install_executable_edge_capability_scan_resolves_the_unpinned_provider() {
+    // spec 32 §1 + spec 03 §8: no `payload:` pin — the capability scan
+    // answers (the registry's ENTRYPOINT mirror; exactly one provider).
+    let fx = Fixture::new("execedge-cap");
+    let consumer = app_image_with_requires(
+        "mn",
+        "1.0",
+        "  - kind: executable\n    name: xml2rfc\n    constraint: \">= 3.0\"\n    expose: [xml2rfc]\n",
+    );
+    let consumer_ref = fx.payload("mn-1.0.tfs", &consumer);
+    let consumer_reg = fx.registry(
+        "mn-registry.yaml",
+        &registry_yaml("mn", "1.0", &consumer_ref, Some("1.0")),
+    );
+    let provider_ref = fx.payload(
+        "xml2rfc-pkg-3.2.1.tfs",
+        &provider_image("xml2rfc-pkg", "3.2.1", "xml2rfc"),
+    );
+    let provider_reg = fx.registry(
+        "xml2rfc-registry.yaml",
+        &capability_registry_yaml("xml2rfc-pkg", "3.2.1", &provider_ref, "xml2rfc"),
+    );
+    install::add_registry(&fx.home, &consumer_reg).unwrap();
+    install::add_registry(&fx.home, &provider_reg).unwrap();
+    cached_ruby_runtime(&fx);
+
+    install::install(&fx.home, "mn", None, Some(&fx.shim_binary)).unwrap();
+
+    assert!(fx.payloads_dir().join("xml2rfc-pkg/3.2.1.tfs").is_file());
+    assert!(shim_path(&fx.home, "xml2rfc").exists());
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains("provider=xml2rfc-pkg version=3.2.1"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn install_executable_edge_ambiguous_provider_is_a_named_error() {
+    // spec 03 §8 + spec 32 §1: an unpinned capability with two registry
+    // providers never guesses — the `payload:` pin is the escape hatch.
+    let fx = Fixture::new("execedge-amb");
+    let consumer = app_image_with_requires(
+        "mn",
+        "1.0",
+        "  - kind: executable\n    name: xml2rfc\n    constraint: \">= 3.0\"\n    expose: [xml2rfc]\n",
+    );
+    let consumer_ref = fx.payload("mn-1.0.tfs", &consumer);
+    let consumer_reg = fx.registry(
+        "mn-registry.yaml",
+        &registry_yaml("mn", "1.0", &consumer_ref, Some("1.0")),
+    );
+    let a_ref = fx.payload(
+        "xml2rfc-a-3.2.1.tfs",
+        &provider_image("xml2rfc-a", "3.2.1", "xml2rfc"),
+    );
+    let a_reg = fx.registry(
+        "a-registry.yaml",
+        &capability_registry_yaml("xml2rfc-a", "3.2.1", &a_ref, "xml2rfc"),
+    );
+    let b_ref = fx.payload(
+        "xml2rfc-b-3.2.1.tfs",
+        &provider_image("xml2rfc-b", "3.2.1", "xml2rfc"),
+    );
+    let b_reg = fx.registry(
+        "b-registry.yaml",
+        &capability_registry_yaml("xml2rfc-b", "3.2.1", &b_ref, "xml2rfc"),
+    );
+    install::add_registry(&fx.home, &consumer_reg).unwrap();
+    install::add_registry(&fx.home, &a_reg).unwrap();
+    install::add_registry(&fx.home, &b_reg).unwrap();
+
+    let err = install::install(&fx.home, "mn", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(err.message.contains("AmbiguousProvider"), "{err:?}");
+    assert!(err.message.contains("xml2rfc-a"), "{err:?}");
+    assert!(err.message.contains("xml2rfc-b"), "{err:?}");
+    assert!(err.message.contains("payload:"), "{err:?}");
+    // neither provider was installed — the scan precedes any fetch
+    assert!(!fx.payloads_dir().join("xml2rfc-a").exists());
+    assert!(!fx.payloads_dir().join("xml2rfc-b").exists());
+}
+
+#[test]
+fn install_executable_edge_expose_outside_the_provider_surface_is_a_named_error() {
+    // spec 32 §7: exposing a name the provider never declares is the
+    // payload author's error — caught at install, before any user hits it.
+    let fx = Fixture::new("execedge-bad");
+    let consumer = app_image_with_requires(
+        "mn",
+        "1.0",
+        "  - kind: executable\n    name: xml2rfc\n    payload: xml2rfc\n    constraint: \">= 3.0\"\n    expose: [xml2rfc]\n",
+    );
+    let consumer_ref = fx.payload("mn-1.0.tfs", &consumer);
+    let consumer_reg = fx.registry(
+        "mn-registry.yaml",
+        &registry_yaml("mn", "1.0", &consumer_ref, Some("1.0")),
+    );
+    // the provider declares a DIFFERENT entrypoint
+    let provider_ref = fx.payload(
+        "xml2rfc-3.2.1.tfs",
+        &provider_image("xml2rfc", "3.2.1", "other"),
+    );
+    let provider_reg = fx.registry(
+        "xml2rfc-registry.yaml",
+        &capability_registry_yaml("xml2rfc", "3.2.1", &provider_ref, "other"),
+    );
+    install::add_registry(&fx.home, &consumer_reg).unwrap();
+    install::add_registry(&fx.home, &provider_reg).unwrap();
+
+    let err = install::install(&fx.home, "mn", None, Some(&fx.shim_binary)).unwrap_err();
+    assert!(
+        err.message.contains("declares no such entrypoint"),
+        "{err:?}"
+    );
+    assert!(err.message.contains("xml2rfc"), "{err:?}");
+}
+
+#[test]
+fn install_executable_edge_mount_axis_installs_the_provider_without_spawn_checks() {
+    // spec 32 §1: the mount axis alone co-mounts — the provider installs
+    // like a toolkit/data edge; no expose, no spawn-surface cross-check,
+    // no runtime pre-stage.
+    let fx = Fixture::new("execedge-mount");
+    let consumer = app_image_with_requires(
+        "mn",
+        "1.0",
+        "  - kind: executable\n    name: pandoc\n    payload: pandoc\n    constraint: \">= 3.0\"\n    mount: /opt/pandoc\n",
+    );
+    let consumer_ref = fx.payload("mn-1.0.tfs", &consumer);
+    let consumer_reg = fx.registry(
+        "mn-registry.yaml",
+        &registry_yaml("mn", "1.0", &consumer_ref, Some("1.0")),
+    );
+    let provider_ref = fx.payload(
+        "pandoc-3.5.tfs",
+        &provider_image("pandoc", "3.5", "pandoc"),
+    );
+    let provider_reg = fx.registry(
+        "pandoc-registry.yaml",
+        &registry_yaml("pandoc", "3.5", &provider_ref, Some("3.5")),
+    );
+    install::add_registry(&fx.home, &consumer_reg).unwrap();
+    install::add_registry(&fx.home, &provider_reg).unwrap();
+
+    install::install(&fx.home, "mn", None, Some(&fx.shim_binary)).unwrap();
+
+    assert!(fx.payloads_dir().join("pandoc/3.5.tfs").is_file());
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal
+            .contains("event=executable-edge-resolved consumer=mn capability=pandoc provider=pandoc version=3.5"),
+        "{journal}"
+    );
+    // no expose ⇒ no runtime pre-stage (no cached ruby runtime exists
+    // here — a pre-stage attempt would have failed the install)
+    assert!(!journal.contains("event=provider-runtime-resolved"), "{journal}");
+}
