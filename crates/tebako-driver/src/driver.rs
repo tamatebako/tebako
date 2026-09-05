@@ -944,6 +944,52 @@ fn resolve_entry(
     Ok(resolved)
 }
 
+/// spec 32 §2 (spec 17 §1's bare-name rule, the payload half): a bare
+/// `--tebako-entry <name>` names an entrypoint of the FIRST
+/// `--tebako-image` mount's own manifest when that payload is an app
+/// declaring it — the spawned-payload child leads its triples with the
+/// provider's image, so the provider's declarations own the bare name.
+/// `Ok(None)` when the first mount carries no readable manifest, is not
+/// an app payload, or declares no entrypoint of that name — the caller
+/// falls back to the env image's runtime surface (spec 30 §2). The order
+/// is unambiguous: spec 30 §1's collision refusal keeps an exposed name
+/// out of the parent's own entrypoints, so the two surfaces never both
+/// declare the name. A declared path absent from the mounted tree is the
+/// named 65 it is everywhere.
+fn resolve_payload_entrypoint(
+    name: &str,
+    images: &[ImageSpec],
+    mounted: &[MountedMember],
+) -> Result<Option<(String, Vec<String>)>, DriverError> {
+    let Some(first) = images.first() else {
+        return Ok(None);
+    };
+    let Some(manifest_doc) = mounted_manifest_at(&first.mount)? else {
+        return Ok(None);
+    };
+    let tpkg::Provides::App(app) = &manifest_doc.provides else {
+        return Ok(None);
+    };
+    let Some(ep) = app.entrypoints.iter().find(|e| e.name == name) else {
+        return Ok(None);
+    };
+    let resolved = join_mount(&first.mount, &ep.path);
+    if mounted.iter().any(|m| in_mount(&resolved, &m.point)) {
+        let mut ctx = context().write().unwrap();
+        match ctx.open(&resolved, libc::O_RDONLY) {
+            Ok(fd) => {
+                let _ = ctx.close(fd);
+            }
+            Err(_) => {
+                return Err(manifest(format!(
+                    "payload entrypoint '{name}' resolves to '{resolved}' but the path is absent from the mounted tree — the image's declaration lies (spec 32 §2)"
+                )));
+            }
+        }
+    }
+    Ok(Some((resolved, ep.args_default.clone())))
+}
+
 /// spec 30 §2 (spec 17 §1's bare-name rule): a bare `--tebako-entry
 /// <name>` other than the reserved `self` keyword names an entrypoint
 /// the ENV image's `runtimeProvides.entrypoints` declares. Resolved
@@ -1157,12 +1203,13 @@ pub fn boot_with_mount_modes(
             // A bare name (never a path): the reserved `self` keyword is
             // dropped (the deploy self-check re-enters the interpreter
             // with its own args). Any OTHER bare name names an
-            // entrypoint the ENV image's runtimeProvides declares
-            // (spec 17 §1's bare-name rule / spec 30 §2 — the
-            // spawned-runtime child boot: the parent's planner sends
-            // `--tebako-entry <name>` and the child resolves the
-            // declaration against its own env image, args_default
-            // included — the declaration is the single owner).
+            // entrypoint — the FIRST payload image's own declaration
+            // first (spec 32 §2: the spawned-payload child leads its
+            // triples with the provider's image; spec 17 §1's bare-name
+            // rule), else the ENV image's runtimeProvides (spec 30 §2 —
+            // the spawned-runtime child boot). Both compose the
+            // declaration's args_default — the declaration is the single
+            // owner.
             Some(keyword) if !keyword.contains('/') => {
                 if keyword == "self" {
                     let mut v = Vec::with_capacity(h.user_args.len() + 1);
@@ -1172,8 +1219,12 @@ pub fn boot_with_mount_modes(
                     v.extend(h.user_args.iter().cloned());
                     v
                 } else {
-                    let (resolved, defaults) =
-                        resolve_runtime_entrypoint(keyword, runtime_root, &mounted)?;
+                    let (resolved, defaults) = match resolve_payload_entrypoint(
+                        keyword, &h.images, &mounted,
+                    )? {
+                        Some(pair) => pair,
+                        None => resolve_runtime_entrypoint(keyword, runtime_root, &mounted)?,
+                    };
                     let mut v = Vec::with_capacity(h.user_args.len() + defaults.len() + 2);
                     if let Some(program) = argv.first() {
                         v.push(program.clone());

@@ -520,3 +520,114 @@ fn the_path_launcher_fails_closed_when_unresolved() {
     assert!(script.contains("exit 69"), "{script}");
     assert!(script.contains("never downloads"), "{script}");
 }
+
+// ---------------------------------------------------------------------
+// the spawned PAYLOAD child's bare-name arm (spec 32 §2): the FIRST
+// triple's own App manifest owns the bare name; the env image's
+// runtimeProvides is the fallback surface.
+// ---------------------------------------------------------------------
+
+/// The provider payload image: an app manifest declaring the `xml2rfc`
+/// entrypoint (path + args_default), no spawn edges.
+fn write_provider_image(dir: &Path) -> PathBuf {
+    let manifest = payload_manifest(
+        "app",
+        "xml2rfc",
+        "provides:\n  \
+         entrypoints: [{name: xml2rfc, path: /bin/xml2rfc, args_default: [\"--x\"]}]\n  \
+         platforms: universal\n  capabilities: {exec: true, read: true}",
+    );
+    let p = dir.join("xml2rfc.tfs");
+    build_zip(
+        &p,
+        &["bin/", "__tpkg__/"],
+        &[
+            ("bin/xml2rfc", b"#!/usr/bin/env python\n".as_slice()),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    p
+}
+
+#[test]
+fn the_bare_name_arm_prefers_the_first_payloads_declaration() {
+    let g = guard("bare-payload");
+    let env_image = write_env_image(g.tmp.path(), "[]");
+    let provider = write_provider_image(g.tmp.path());
+    let env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    let out = boot(
+        &argv(&[
+            "python",
+            "--tebako-image",
+            &format!("{}:-:/", provider.display()),
+            "--tebako-entry",
+            "xml2rfc",
+            "doc.xml",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    // The PROVIDER's declaration composes — argv0, the declaration's
+    // args_default, the resolved path, the user args (spec 32 §2); the
+    // env image's empty surface never enters.
+    assert_eq!(
+        out.argv,
+        argv(&["python", "--x", "/bin/xml2rfc", "doc.xml"])
+    );
+}
+
+#[test]
+fn the_bare_name_arm_falls_back_to_the_env_declaration() {
+    let g = guard("bare-fallback");
+    let env_image = write_env_image(
+        g.tmp.path(),
+        "[{name: pytool, path: /bin/tool, args_default: [\"--y\"]}]",
+    );
+    let provider = write_provider_image(g.tmp.path());
+    let env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    // The provider declares `xml2rfc` only; `pytool` is the env image's
+    // own runtime entrypoint (spec 30 §2's surface, untouched).
+    let out = boot(
+        &argv(&[
+            "python",
+            "--tebako-image",
+            &format!("{}:-:/", provider.display()),
+            "--tebako-entry",
+            "pytool",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+    assert_eq!(out.argv, argv(&["python", "--y", "/__tfs__/bin/tool"]));
+}
+
+#[test]
+fn the_bare_name_arm_refuses_a_name_neither_surface_declares() {
+    let g = guard("bare-neither");
+    let env_image = write_env_image(g.tmp.path(), "[]");
+    let provider = write_provider_image(g.tmp.path());
+    let env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    let err = boot(
+        &argv(&[
+            "python",
+            "--tebako-image",
+            &format!("{}:-:/", provider.display()),
+            "--tebako-entry",
+            "ghost",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err}");
+    assert!(err.message.contains("'ghost'"), "{err}");
+    assert!(
+        !context().read().unwrap().is_mounted(),
+        "a failed boot leaves nothing mounted"
+    );
+}
