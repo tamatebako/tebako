@@ -599,9 +599,26 @@ pub(super) unsafe fn raw_dup(fd: c_int) -> c_int {
 }
 
 /// `dup2` via SYS_dup2.
-#[cfg(target_pointer_width = "64")]
+#[cfg(all(target_pointer_width = "64", not(target_arch = "aarch64")))]
 pub(super) unsafe fn raw_dup2(old: c_int, new: c_int) -> c_int {
     unsafe { libc::syscall(libc::SYS_dup2, old, new) as c_int }
+}
+
+/// `dup2` via SYS_dup3 on aarch64-linux: the arm64 kernel never wired the
+/// dup2 syscall — libc spells `dup2` as `dup3(old, new, 0)`. `old == new`
+/// keeps the dup2 no-op semantics (a validity probe); dup3 answers EINVAL.
+#[cfg(all(target_pointer_width = "64", target_arch = "aarch64"))]
+pub(super) unsafe fn raw_dup2(old: c_int, new: c_int) -> c_int {
+    if old == new {
+        return unsafe {
+            if libc::syscall(libc::SYS_fcntl, old, libc::F_GETFD) >= 0 {
+                new
+            } else {
+                -1
+            }
+        };
+    }
+    unsafe { libc::syscall(libc::SYS_dup3, old, new, 0) as c_int }
 }
 
 /// `fcntl` via SYS_fcntl (64-bit fcntl == fcntl64). Forwards the shim's
