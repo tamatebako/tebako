@@ -3,9 +3,9 @@
 #
 # The user-authored configuration of the local store (~/.tebako), plus the
 # store's own layout marker. The dispatcher only READS config.yaml; the
-# one authored-config write the toolchain performs is `tebako
-# add-registry` (a structural edit, tmp + rename). Shim-managed state
-# (shims/.disabled.yaml) is kept OUT of the authored file.
+# authored-config writes the toolchain performs are `tebako add-registry`
+# and `tebako-shim use` (structural edits, tmp + rename). Shim-managed
+# state (shims/.disabled.yaml) is kept OUT of the authored file.
 #
 # SSOT: this file owns the grammar; the store-layout module (today:
 # crates/tebako-shim/src/config.rs — one model, parse + validate) mirrors
@@ -16,7 +16,7 @@
 
 schema: store-config
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 1 # MINOR — additive changes only (1: runtimes.*.source)
+schema_minor: 2 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them)
 status: normative
 owner: crates/tebako-shim (the config model of record) in tamatebako/tebako
 edge: C13 (everything local → store)
@@ -59,9 +59,14 @@ declaration:
 
 grammar:
   defaults:
-    type: map(command name → version string)
+    type: map(command name → [payload@]version pin string)
     required: false
-    notes: per-tool version pins, written by `tebako use <tool>@<version>` — the version chain's user-default link (S28)
+    notes: >-
+      Per-tool version pins, written by `tebako-shim use <tool> <pin>` —
+      the version chain's user-default link (S28). MINOR 2: the pin VALUE
+      is the [payload@]version qualified grammar (spec 07 §0/§2 step 0.5;
+      tpkg::toolpin::ToolPin is the ONE parser) — a payload-qualified
+      value makes the named payload THE provider.
   registries:
     type: list of string
     required: false
@@ -71,7 +76,9 @@ grammar:
     required: false
     notes: >-
       Per-engine runtime preference (the download fallback of spec 05 §5
-      needs an exact ref), written by `tebako use --runtime <engine>@<version>`.
+      needs an exact ref), written by `tebako-shim use --runtime
+      <engine>@<langver>[:<tebako>]` (MINOR 2 — the verb parses the
+      qualified form and writes this structured shape).
       version = the language version (e.g. "4.0.6"); tebako = the tebako
       (launcher) abi version the runtime was built with — the <ver> of the
       cache layout runtimes/<lang>-<lv>-<ver>-<triplet>/.
@@ -95,5 +102,10 @@ refusals:
     behavior: the named migration — never a silent mix
   - case: config.yaml unparseable
     behavior: named error ("fix or remove it") — the dispatcher never guesses
+  - case: an unparseable "[payload@]version" value in "defaults:"
+    behavior: >-
+      the NAMED grammar error at READ (EX_TEBAKO_MANIFEST, naming the
+      chain link and the value — spec 07 §0/§7), never a silent skip to
+      the next chain link
 
 deprecated: [] # no field is in a deprecation window

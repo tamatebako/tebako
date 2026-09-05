@@ -39,7 +39,7 @@ spec 02 §6).
 4. [04 — References and registries](04-references-and-registry.md) — MECE reference syntax
 5. [05 — Resolution and cache](05-resolution-and-cache.md) — runtime_ref, release index, machine cache
 6. [06 — Launcher ABI](06-launcher-abi.md) — bootstrap → runtime handoff, exit codes
-7. [07 — Shims and dispatch](07-shims-and-dispatch.md) — executable registration and version management
+7. [07 — Shims and dispatch](07-shims-and-dispatch.md) — executable registration and version management (+ the 2026-09-05 routing amendment)
 8. [08 — Jails](08-jails.md) — host-access policy, bind-mount semantics
 9. [09 — Trust and signing](09-trust-and-signing.md) — chain of trust, authenticated releases
 10. [10 — Encryption](10-encryption.md) — encrypted volumes, key model, PQC
