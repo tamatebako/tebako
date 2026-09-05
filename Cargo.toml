@@ -4,7 +4,7 @@ resolver = "2"
 members = ["crates/tpkg", "crates/tfs", "crates/sqfs-sys", "crates/tebako-pkg", "crates/tfs-cli", "crates/tebako-bootstrap", "crates/tebako-cli", "crates/tebako-http", "crates/tebako-signer", "crates/tebako-shim", "crates/tebako-json", "crates/tebako-resolve", "crates/tebako-term", "crates/tebako-info", "crates/libtfs-preload", "crates/tebako-driver", "crates/tebako-runtime-launcher", "crates/tebako-arscope", "crates/tebako-bench", "tests/contract"]
 
 [workspace.package]
-version = "2.1.8"
+version = "2.1.9"
 edition = "2021"
 rust-version = "1.79"
 license = "BSD-2-Clause"
