@@ -159,6 +159,7 @@ pub mod payload_store;
 mod region;
 pub mod runtime_store;
 pub mod settings;
+pub mod toolpin;
 pub mod versions;
 
 pub use codec::{
