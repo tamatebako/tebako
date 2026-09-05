@@ -477,6 +477,22 @@
               "uniqueItems": true
             }
           }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "name", "constraint"],
+          "properties": {
+            "kind": { "const": "executable" },
+            "name": { "type": "string", "minLength": 1 },
+            "constraint": { "$ref": "#/$defs/constraint" },
+            "mount": { "$ref": "#/$defs/absPath" },
+            "expose": {
+              "type": "array",
+              "description": "spec 03 §8 + spec 32 §1 (schema_minor 5): the capability edge — resolution matches PROVIDES.executables exact-name (DependencyNotFound / AmbiguousProvider). expose ABSENT = spec 03 §8's co-mount form (mount consumer-declared); expose PRESENT = spec 32's spawned payload — the provider is NEVER co-mounted into the parent; each exposed name dispatches the provider's own spec-17 dispatch as a child. mount together with expose is a named manifest error (semantic, the tpkg validator); every exposed name must be a declared entrypoint of the resolved provider (press/install cross-check).",
+              "items": { "type": "string", "minLength": 1, "pattern": "^[^/\\\\:]+$" },
+              "uniqueItems": true
+            }
+          }
         }
       ]
     }

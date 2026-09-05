@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 4 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime)
+schema_minor: 5 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -238,11 +238,12 @@ grammar:
     required: false
     notes: the MOUNT RULE — mount is declared HERE, in the consumer's manifest
     entry:
-      kind: {type: enum, values: [language, toolkit, data, runtime], required: true}
+      kind: {type: enum, values: [language, toolkit, data, runtime, executable], required: true}
       "language": {engine: "string, required", constraint: "string, required"}
       "toolkit": {name: "string, required", constraint: "string, required", triplets: "list of vcpkg triplets, optional", mount: "absolute path, optional"}
       "data": {name: "string, required", constraint: "string, required", mount: "absolute path, optional"}
       "runtime": {engine: "string, required", implementation: "string, optional", constraint: "string, required", expose: "list of bare command names (no path separator, no drive qualifier; never repeated), optional", notes: "spec 30 §1 (since schema_minor 4) — the spawned-runtime edge: the depended runtime resolves through the RUNTIME index into the store's runtimes/ area and is NEVER co-mounted (NO mount key exists on this edge); its exposed entries are spawned through spec 30 §2's dispatch. The expose x own-entrypoint collision refusal (spec 30 §3) is semantic (the tpkg validator) — not schema-expressible"}
+      "executable": {name: "string, required", constraint: "string, required", mount: "absolute path, optional", expose: "list of bare command names (no path separator, no drive qualifier; never repeated), optional", notes: "spec 03 §8 + spec 32 §1 (since schema_minor 5) — the capability edge: resolution matches PROVIDES.executables exact-name (DependencyNotFound / AmbiguousProvider). expose ABSENT = spec 03 §8's co-mount form (mount is consumer-declared); expose PRESENT = spec 32's spawned payload — the provider is NEVER co-mounted into the parent and each exposed name dispatches the provider's own spec-17 dispatch as a child (mount present together with expose is a named manifest error — semantic, the tpkg validator; every exposed name must be a declared entrypoint of the resolved provider — press/install cross-check, the tebako#494 class; the expose x own-entrypoint collision refusal is spec 30 §3's, extended). Producers mark the spawn form critical: true (the evolution law's critical flag)"}
   materialize:
     type: list of absolute in-image paths
     required: false
@@ -351,5 +352,9 @@ refusals:
     behavior: named structural error at parse — an authoring ambiguity, never a silent winner (the map's own deserializer refuses)
   - case: a malformed checks block otherwise (bad name grammar, relative entry, absolute expect.files, '..' components, non-positive timeout, a when value outside windows/macos/linux) (schema_minor 3)
     behavior: named validation error at press/`tfs validate` (exit 65), never discovered at run time (spec 26 §7)
+  - case: "mount: declared on an expose-carrying kind: executable edge, or expose: declared on a kind other than runtime/executable (schema_minor 5)"
+    behavior: named validation error at parse (exit 65) — the spawn form carries no mount (spec 32 §1), and expose lives on spawned edges only
+  - case: "an expose name on a kind: executable edge that is not a declared entrypoint of the resolved provider payload (schema_minor 5)"
+    behavior: named validation error at press/install (the tebako#494 cross-check class); at spawn, the outruns rule's named spawn error (spec 32 §7)
 
 deprecated: [] # no field is in a deprecation window

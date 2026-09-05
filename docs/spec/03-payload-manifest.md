@@ -428,3 +428,14 @@ than one → named `AmbiguousProvider` listing candidates (payload,
 version, source registry) — the user pins with a payload-kind edge
 instead. The providing payload is mounted at the consumer-declared
 `mount`; its executables run per its own `exec_tier` (spec 07 §8).
+
+The edge gains the OPTIONAL `expose:` list (additive — schema_minor 5,
+spec 32): an expose-carrying executable edge is a SPAWNED payload
+dependency — the provider is never co-mounted into the parent; each
+exposed name dispatches the provider payload's own full spec-17
+dispatch as a child process (its own runtime edge, its own mounts,
+its own jail union). `mount:` is a named manifest error when `expose:`
+is present; every exposed name must be a declared entrypoint of the
+resolved provider (press/install cross-checked). The child plan, the
+spawn-lock row, the lock's `spawned[]` payload row, the shim surface,
+and the failure modes are spec 32 §2–§7's.

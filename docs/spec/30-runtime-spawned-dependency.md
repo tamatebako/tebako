@@ -28,6 +28,11 @@ java edge (mn2pdf/jing), retiring the openjdk toolkit-slice conventions
   itself — the TODO.jruby/01 spec — and it reuses spec 29's wrapper for
   the OWNER runtime.
 
+(Sibling case, not a fourth kind: a payload spawning ANOTHER PAYLOAD's
+entry through that payload's own runtime edge — the `kind: executable`
+edge's `expose:` form — is spec 32. It reuses THIS spec's machinery
+unchanged; only the plan composition widens.)
+
 ## 1. The dependency edge (spec 03 §2.3 amendment)
 
 `requires:` gains the kind-runtime edge:
