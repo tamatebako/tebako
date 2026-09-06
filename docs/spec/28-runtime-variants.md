@@ -262,7 +262,7 @@ same law applies to every future multi-implementation language.
   rides the release-line preference (`;tebako=`) or per-entry pins
   (spec 17). A payload needing jvm-mode interop declares that edge in
   DEPENDS (spec 03 §2.3), where the runtime-on-runtime composition spec
-  pins it (TODO.jruby/01, TODO.truffleruby/03).
+  pins it (spec 33).
 
 ## 9. CLI and info surface (spec 15 amendment)
 

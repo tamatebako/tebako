@@ -209,5 +209,5 @@ which pattern a runtime uses.
   entrypoint `args_default`).
 - A runtime whose process owner is ANOTHER runtime (jruby on java,
   truffleruby-jvm on graalvm) is NOT this pattern: it is
-  runtime-on-runtime composition (ecosystem TODO.jruby/01), which rides
-  spec 03 DEPENDS and reuses this wrapper for the OWNER runtime.
+  runtime-on-runtime composition (spec 33), which rides spec 03 DEPENDS
+  and reuses this wrapper for the OWNER runtime.

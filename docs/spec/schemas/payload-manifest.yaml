@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 5 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose)
+schema_minor: 6 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -184,6 +184,22 @@ grammar:
             name: {type: string, required: true, notes: the command name a consumer's expose list names}
             path: {type: string, required: true, notes: absolute in-image path}
             args_default: {type: list of string, required: false}
+        on_runtime:
+          type: map
+          required: false
+          since: schema_minor 6
+          notes: >-
+            spec 33 (runtime-on-runtime): REQUIRED iff this runtime declares
+            an owner edge — a requires entry {kind: runtime, …} WITHOUT
+            expose: — and FORBIDDEN otherwise (both directions are named
+            manifest errors: the composition declares its rewrite or it is
+            not a composition). mount declares where THIS runtime's env
+            image mounts on the owner's boot; argv_template composes between
+            the owner's interpreter token and the entry (spec 33 §3).
+          fields:
+            mount: {type: string, required: true, notes: "POSIX-absolute, spec 17 §1's uniform namespace; never /; colliding with an occupied point is the boot's EEXIST"}
+            argv_template: {type: list of string, required: true, notes: "the single placeholder is {mount} — expanded to this boot's effective mount point (drive-qualified on windows); an unknown placeholder or a post-expansion escape of the mount is a named boot error (65)"}
+            owner_contract: {type: string, required: false, notes: "constraint on the owner's contract_version (fail-closed, exit 75 class); default \">= 2\""}
         capabilities:
           type: map
           required: true
@@ -242,7 +258,7 @@ grammar:
       "language": {engine: "string, required", constraint: "string, required"}
       "toolkit": {name: "string, required", constraint: "string, required", triplets: "list of vcpkg triplets, optional", mount: "absolute path, optional"}
       "data": {name: "string, required", constraint: "string, required", mount: "absolute path, optional"}
-      "runtime": {engine: "string, required", implementation: "string, optional", constraint: "string, required", expose: "list of bare command names (no path separator, no drive qualifier; never repeated), optional", notes: "spec 30 §1 (since schema_minor 4) — the spawned-runtime edge: the depended runtime resolves through the RUNTIME index into the store's runtimes/ area and is NEVER co-mounted (NO mount key exists on this edge); its exposed entries are spawned through spec 30 §2's dispatch. The expose x own-entrypoint collision refusal (spec 30 §3) is semantic (the tpkg validator) — not schema-expressible"}
+      "runtime": {engine: "string, required", implementation: "string, optional", constraint: "string, required", expose: "list of bare command names (no path separator, no drive qualifier; never repeated), optional", notes: "spec 30 §1 (since schema_minor 4) — the spawned-runtime edge: the depended runtime resolves through the RUNTIME index into the store's runtimes/ area and is NEVER co-mounted (NO mount key exists on this edge); its exposed entries are spawned through spec 30 §2's dispatch. The expose x own-entrypoint collision refusal (spec 30 §3) is semantic (the tpkg validator) — not schema-expressible. When the DECLARING payload is kind: runtime and expose is ABSENT, the edge is an OWNER edge (spec 33, since schema_minor 6): the depended runtime owns the boot's process and the declarer's provides carries on_runtime — semantic, not schema-expressible"}
       "executable": {name: "string, required", payload: "string, optional", constraint: "string, required", mount: "absolute path, optional", expose: "list of bare command names (no path separator, no drive qualifier; never repeated), optional", critical: "boolean, optional", notes: "spec 03 §8 + spec 32 §1 (since schema_minor 5) — the capability edge: exact-name resolution against provides.executables ∪ provides.entrypoints[].name (DependencyNotFound / AmbiguousProvider; payload: pins the provider by name). mount and expose are ORTHOGONAL axes: mount opens the VFS surface (co-mount, consumer-declared), expose opens the spawn surface (spec 32 §2 — each exposed name dispatches the provider's own spec-17 dispatch as a child; exposed names never take the exec-tier path). Semantic (the tpkg validator), not schema-expressible: an edge with neither mount nor expose is a named manifest error; name ∈ expose is required; every exposed name must resolve to a runtime-carrying entrypoint of the provider (press/install cross-check, the tebako#494 class); the expose x own-entrypoint collision refusal is spec 30 §3's, extended. Producers mark a functionally required edge critical: true (the evolution law's critical flag)"}
   materialize:
     type: list of absolute in-image paths
@@ -358,5 +374,9 @@ refusals:
     behavior: named validation error at parse (exit 65) — expose lives on spawned edges only, and the depended capability must be surfaced (spec 32 §1)
   - case: "an expose name on a kind: executable edge that does not resolve to a runtime-carrying entrypoint of the resolved provider payload (schema_minor 5)"
     behavior: named validation error at press/install (the tebako#494 cross-check class; a runtime-less match is authoring confusion, never an exec-tier fallback); at spawn, the outruns rule's named spawn error (spec 32 §7)
+  - case: "on_runtime present without an owner edge, an owner edge (kind: runtime declared BY a kind: runtime payload, expose absent) without on_runtime, or two owner edges on one payload (schema_minor 6)"
+    behavior: named manifest error at press/`tfs validate` (exit 65) — the composition declares its rewrite or it is not a composition (spec 33 §2/§4)
+  - case: "on_runtime.mount spelled /, carrying '..' components, or argv_template holding an unknown placeholder or a path escaping the mount after expansion (schema_minor 6)"
+    behavior: named validation error at parse, resp. a named boot error (exit 65) — the template is data, never guessed (spec 33 §2)
 
 deprecated: [] # no field is in a deprecation window

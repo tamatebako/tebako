@@ -26,7 +26,9 @@ learns which pattern a runtime uses.
   (`format_id = TPKG_FORMAT_RUNTIME`) is never mounted. (The image-era
   `TEBAKO_RUNTIME_IMAGE` case is a bare path mounted whole — the `-`
   semantics without a triple.)
-- **Mount order:** the env image first, then payload triples in argv
+- **Mount order:** the env image first — on a runtime-on-runtime boot
+  (spec 33) the OWNER's env image, immediately followed by the DEPENDING
+  runtime's env image as the first triple — then payload triples in argv
   order; the table is longest-prefix and nested mounts are legal; any
   failure unmounts everything — never a partial mount.
 - **The uniform VFS namespace (locked 2026-08-06):** declared mount
@@ -88,7 +90,13 @@ learns which pattern a runtime uses.
 - `--tebako-entry` separates loader args from user args; `argv0` is the
   entrypoint inside the mounted tree, resolved against the FIRST
   `--tebako-image` mount (the app payload) — or against the runtime root
-  when no image spec is given. The driver verifies the entry's presence
+  when no image spec is given. On a runtime-on-runtime boot (spec 33)
+  the FIRST triple is the depending runtime's env image: the entry
+  resolves against the first triple whose mounted manifest is not that
+  env image — with no payload triples, against the depending runtime's
+  own mount (the self-boot smoke form) — and a bare NAME resolves
+  against the DEPENDING runtime's `provides.entrypoints`, not the env
+  image's. The driver verifies the entry's presence
   against the mounts the boot itself established (named error 65 when
   absent); an entry outside them belongs to the interpreter's own
   startup. A bare NAME (no `/`) is the keyword form. `self` is the
