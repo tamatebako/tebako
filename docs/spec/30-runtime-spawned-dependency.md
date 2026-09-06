@@ -25,8 +25,8 @@ java edge (mn2pdf/jing), retiring the openjdk toolkit-slice conventions
 - **Runtime-on-runtime (NOT this spec):** the depended runtime OWNS the
   process and the depending runtime contributes an env image (jruby on
   java, truffleruby-jvm on graalvm). That is composition of the boot
-  itself — the TODO.jruby/01 spec — and it reuses spec 29's wrapper for
-  the OWNER runtime.
+  itself — spec 33 — and it reuses spec 29's wrapper for the OWNER
+  runtime.
 
 (Sibling case, not a fourth kind: a payload spawning ANOTHER PAYLOAD's
 entry through that payload's own runtime edge — the `kind: executable`

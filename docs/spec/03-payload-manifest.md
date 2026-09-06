@@ -174,7 +174,11 @@ requires:
   depended runtime is dispatched as a CHILD process through its
   store-resident wrapper (never co-mounted, never materialized);
   resolution placement, the spawn wire, the jail union, and the shim
-  surface are spec 30 §2–§5's.
+  surface are spec 30 §2–§5's. EXCEPTION: when the DECLARING payload is
+  itself `kind: runtime` and the edge carries NO `expose:`, the edge is
+  an OWNER edge — runtime-on-runtime composition (spec 33): the depended
+  runtime owns the boot's process, and the declarer contributes a second
+  env image plus the `on_runtime` argv template.
 - **MOUNT RULE (locked):** the mount point is declared in the CONSUMER's
   manifest (docker-compose volume semantics): the consumer's code knows
   where it looks for things; the provider never dictates its mount

@@ -242,7 +242,9 @@ run`/`press` up front) computes, IN ORDER:
    block is a named manifest error).
 2. **Needs union**: every slice's D1 `needs.host`, platform-filtered,
    symbolic atoms resolved at bind time. Conflict rules per §2. The
-   runtime's release-manifest needs union identically.
+   runtime's release-manifest needs union identically — on a
+   runtime-on-runtime boot (spec 33) BOTH the owner's and the depending
+   runtime's manifests union identically.
 3. **Compose with the running configuration**: `effective = needs-union
    ∪ mounts ∪ operator-grants`, then apply the operator tightening
    (`policy`, `--no-host`, explicit denies) as the intersecting scope
