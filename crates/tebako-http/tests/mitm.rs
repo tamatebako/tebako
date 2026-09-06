@@ -187,20 +187,47 @@ impl OsStoreInstall {
         Ok(Self { undo })
     }
 
+    /// Bounded, never-interactive: a trust-store tool that wants a GUI
+    /// authorization (a locked keychain on a headless runner) must become
+    /// a named skip, not a hung CI leg (the v1 of this fixture hung
+    /// macos-14 + windows-latest for 4 h on exactly that).
     fn run(argv: &[String]) -> Result<(), String> {
-        let out = std::process::Command::new(&argv[0])
+        let mut child = std::process::Command::new(&argv[0])
             .args(&argv[1..])
-            .output()
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
             .map_err(|e| format!("{}: {e}", argv[0]))?;
-        if out.status.success() {
-            Ok(())
-        } else {
-            Err(format!(
-                "{}: status {} — {}",
-                argv[0],
-                out.status,
-                String::from_utf8_lossy(&out.stderr)
-            ))
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+        loop {
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    let mut stderr = String::new();
+                    if let Some(mut pipe) = child.stderr.take() {
+                        use std::io::Read as _;
+                        let _ = pipe.read_to_string(&mut stderr);
+                    }
+                    return if status.success() {
+                        Ok(())
+                    } else {
+                        Err(format!("{}: status {status} — {stderr}", argv[0]))
+                    };
+                }
+                Ok(None) if std::time::Instant::now() < deadline => {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Ok(None) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!(
+                        "{}: timed out after 20 s (a locked keychain / interactive \
+                         authorization prompt reads as a skip here)",
+                        argv[0]
+                    ));
+                }
+                Err(e) => return Err(format!("{}: {e}", argv[0])),
+            }
         }
     }
 }
