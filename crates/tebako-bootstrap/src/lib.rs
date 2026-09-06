@@ -731,9 +731,13 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
                 }
                 std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
             }
-            Err(tebako_http::FetchError::DownloadFailed(_)) => {
+            // Deterministic config answers (a set proxy/CA env on this
+            // compiled-out build) share this arm; the terminal failure
+            // names the transport cause on stderr.
+            Err(e) => {
                 attempts += 1;
                 if attempts >= 3 {
+                    eprintln!("tebako-bootstrap: download failed: {e}");
                     return Err(());
                 }
             }
@@ -762,9 +766,13 @@ fn fetch_text(url: &str, local: bool) -> Result<String, ()> {
                 }
                 std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
             }
-            Err(tebako_http::FetchError::DownloadFailed(_)) => {
+            // Deterministic config answers (a set proxy/CA env on this
+            // compiled-out build) share this arm; the terminal failure
+            // names the transport cause on stderr.
+            Err(e) => {
                 attempts += 1;
                 if attempts >= 3 {
+                    eprintln!("tebako-bootstrap: download failed: {e}");
                     return Err(());
                 }
             }
@@ -872,10 +880,11 @@ fn fetch_asset(
                 }
                 std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
             }
-            Err(tebako_http::FetchError::DownloadFailed(_)) => {
+            Err(e) => {
                 prog.download_abort();
                 attempts += 1;
                 if attempts >= 3 {
+                    eprintln!("tebako-bootstrap: download failed: {e}");
                     return Err(());
                 }
             }

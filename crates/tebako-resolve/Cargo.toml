@@ -11,16 +11,23 @@ keywords = ["tebako", "resolve", "reference", "cache", "registry"]
 categories = ["data-structures", "filesystem", "parser-implementations"]
 
 [features]
-default = ["git"]
+default = ["git", "network"]
 # `tfs+git:` payload references via gitoxide (spec 04 §3) — the ONLY
 # consumer of gix/reqwest (and of this crate's own rustls provider
 # selection; tebako-http always brings its own). tebako-bootstrap links
 # this crate with default-features = false: the loader never fetches git
 # references, and keeping the git stack out holds its 3 MiB size gate.
 git = ["dep:gix", "dep:reqwest", "dep:rustls"]
+# Enterprise networking (TODO.v2-1/33): proxy honoring + additive trust
+# anchors, forwarded to tebako-http. Off in the bootstrap (same gate),
+# where a set proxy/CA env is the named NetworkingCompiledOut error.
+network = ["tebako-http/network"]
 
 [dependencies]
-tebako-http = { version = "2.0.0", path = "../tebako-http" }
+# default-features = false so the bootstrap chain never pulls
+# tebako-http's `network` back in through feature unification (the
+# toolchain builds it back on via this crate's own `network` default).
+tebako-http = { version = "2.0.0", path = "../tebako-http", default-features = false }
 # Release-API JSON responses are parsed with the workspace's own minimal
 # JSON parser — no serde in the release-API stack, no native deps
 # (tebako-pkg proper pulls the imaging stack; the parser alone lives in

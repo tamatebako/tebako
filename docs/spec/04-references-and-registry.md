@@ -147,3 +147,68 @@ payloads:
   invisible. `TEBAKO_OFFLINE=1`: cache hit or hard error.
 - Digest mismatch → the named sha error (exit 70); nothing enters the
   cache.
+
+## 4. Enterprise networking — proxies and trust anchors (2026-09-06 amendment)
+
+Every fetch the loader or the toolchain makes rides ONE client
+(`tebako-http::build_agent`); the policy below is resolved once per
+process from the environment merged over the `network:` section of
+`~/.tebako/config.yaml` — **env wins per key** — and installed before
+the first request (agent construction caches the transport). The
+resolution is journaled (`event=network-config …`) with proxy
+credentials REDACTED (`http://***@host:port`). There is no verify-off
+spelling, and there never will be.
+
+**Proxy.**
+
+- Env: `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY` (both
+  cases), the de-facto grammar: comma list, suffix match, `*`;
+  localhost is always direct. Config mirror: `network.proxy: <url>`.
+- Precedence: env → config → direct. Credentials ride the URL
+  (`http://user:pass@host:port`) — the only auth spelling.
+- HTTPS rides CONNECT through the proxy; TLS terminates at the TARGET.
+  An inspecting proxy re-encrypts — that is what the trust half below
+  is for.
+- Named errors, never a silent fallback: `ProxyUrlInvalid`,
+  `ProxySchemeUnsupported` (no SOCKS), `ProxyAuthRequired` (a 407 the
+  URL's credentials did not satisfy). Configuration errors are
+  deterministic: retry loops return them immediately, never as
+  `IndexUnavailable`, never retried.
+
+**Trust anchors** — three spellings, all fail-closed:
+
+1. `webpki` (default, unchanged): the bundled Mozilla roots.
+2. `platform`: the OS store (GPO/MDM-pushed enterprise roots) — env
+   `TEBAKO_TLS_PLATFORM_ROOTS` (since v2.0.0) or
+   `network.tls_roots: platform`.
+3. Additive: `network.extra_ca: [<pem>…]` / `TEBAKO_EXTRA_CA`
+   (os-path-list separator) — the PEMs parse at client build INTO the
+   bundled store (never instead of it). Combining `platform` with
+   `extra_ca` is the named `ExtraCaWithPlatformRoots` error (the OS
+   verifier trusts exactly the OS store — push the CA there instead).
+   A malformed or unreadable PEM is `ExtraCaMalformed` /
+   `ExtraCaUnreadable` at startup — never a silently skipped file.
+
+**Capability gating** (§3's general rule applied): `network` is a
+cargo feature on tebako-http — default ON for the toolchain, OFF for
+the size-gated bootstrap. Compiled out, a set proxy env or
+`TEBAKO_EXTRA_CA` fails closed with the named `NetworkingCompiledOut`
+error identifying the variable; the bootstrap never silently ignores a
+policy the operator asked for. `TEBAKO_TLS_PLATFORM_ROOTS` is NOT part
+of the feature — the platform-verifier opt-in shipped in v2.0.0 and
+stays always-on in every build, bootstrap included. The config mirror
+is read by the toolchain (shim / CLI) at startup; the size-gated
+bootstrap reads env policy only — enterprise fleets push policy as
+system env (GPO/MDM), which both channels honor.
+
+```yaml
+# ~/.tebako/config.yaml — every key optional; env wins per key
+network:
+  proxy: http://user:pass@proxy.corp:3128  # CONNECT proxy
+  tls_roots: platform                       # default: webpki
+  extra_ca: [/etc/pki/corp-root.pem]        # additive; not with platform
+```
+
+The payload side (a packaged Ruby/Python process making its OWN TLS
+connections) is out of the loader's scope: it rides the runtime's
+`SSL_CERT_FILE` semantics — spec 22 §4.

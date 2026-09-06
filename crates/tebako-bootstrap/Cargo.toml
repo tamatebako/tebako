@@ -13,7 +13,12 @@ categories = ["filesystem", "no-std"]
 [dependencies]
 tpkg = { version = "2.0.0", path = "../tpkg" }
 tebako-signer = { version = "2.0.0", path = "../tebako-signer", optional = true }
-tebako-http = { version = "2.0.0", path = "../tebako-http" }
+# default-features = false drops the `network` feature (proxy honoring +
+# additive CAs): the size-gated bootstrap answers a set proxy/CA env with
+# the named NetworkingCompiledOut error; the full toolchain fetches
+# through enterprise networks and the bootstrap rides the warm store
+# those installs produce.
+tebako-http = { version = "2.0.0", path = "../tebako-http", default-features = false }
 # Shared-slice resolution + cache seeding (spec 23 §13, spec 05 §4):
 # default-features = false drops the git adapter (gix/reqwest) — the
 # bootstrap resolves `tfs:`/`https:`/`file://` lock sources only.

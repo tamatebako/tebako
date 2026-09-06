@@ -642,9 +642,10 @@ fn fetch_url(url: &str, local: bool, out: &Path) -> Result<(), ()> {
                 }
                 std::thread::sleep(tebako_http::throttle_backoff(throttles, retry_after));
             }
-            Err(tebako_http::FetchError::DownloadFailed(_)) => {
+            Err(e) => {
                 attempts += 1;
                 if attempts >= 3 {
+                    eprintln!("tebako-shim: download failed: {e}");
                     return Err(());
                 }
             }

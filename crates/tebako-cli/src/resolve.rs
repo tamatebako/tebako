@@ -345,6 +345,10 @@ impl Resolver {
                 let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&msg)));
             }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&e.to_string())));
+            }
         }
         let actual = sha256_file_hex(&tmp)
             .ok_or_else(|| packaging_error(121, Some(&format!("cannot hash {}", tmp.display()))))?;
@@ -428,6 +432,10 @@ impl Resolver {
             Err(FetchError::DownloadFailed(msg)) => {
                 let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&msg)));
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                return Err(packaging_error(122, Some(&e.to_string())));
             }
         }
         let actual = sha256_file_hex(&tmp)
@@ -759,6 +767,9 @@ impl Resolver {
                     Err(FetchError::DownloadFailed(msg)) => {
                         return Err(packaging_error(122, Some(&msg)));
                     }
+                    Err(e) => {
+                        return Err(packaging_error(122, Some(&e.to_string())));
+                    }
                 },
                 Err(FetchError::IndexUnavailable(_)) => tried.push(url),
                 Err(e @ FetchError::Throttled { .. }) => {
@@ -767,6 +778,7 @@ impl Resolver {
                 Err(FetchError::DownloadFailed(msg)) => {
                     return Err(packaging_error(122, Some(&msg)))
                 }
+                Err(e) => return Err(packaging_error(122, Some(&e.to_string()))),
             }
         }
         Err(packaging_error(
@@ -848,6 +860,9 @@ impl Resolver {
             Err(FetchError::DownloadFailed(msg)) => {
                 return Err(packaging_error(122, Some(&msg)));
             }
+            Err(e) => {
+                return Err(packaging_error(122, Some(&e.to_string())));
+            }
         };
         match self.parse_shard(&body, ruby_version, platform, tebako_version) {
             Ok(entry) => {
@@ -867,6 +882,7 @@ impl Resolver {
                 Err(packaging_error(122, Some(&e.to_string())))
             }
             Err(FetchError::DownloadFailed(msg)) => Err(packaging_error(122, Some(&msg))),
+            Err(e) => Err(packaging_error(122, Some(&e.to_string()))),
         }
     }
 
@@ -1018,6 +1034,10 @@ impl Resolver {
             Err(FetchError::DownloadFailed(msg)) => {
                 let _ = fs::remove_file(&tmp);
                 Err(packaging_error(122, Some(&msg)))
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                Err(packaging_error(122, Some(&e.to_string())))
             }
         }
     }
@@ -1321,6 +1341,9 @@ impl BootstrapResolver {
                     Err(FetchError::DownloadFailed(msg)) => {
                         return Err(packaging_error(140, Some(&msg)));
                     }
+                    Err(e) => {
+                        return Err(packaging_error(140, Some(&e.to_string())));
+                    }
                 },
                 Err(FetchError::IndexUnavailable(_)) => tried.push(url),
                 Err(e @ FetchError::Throttled { .. }) => {
@@ -1329,6 +1352,7 @@ impl BootstrapResolver {
                 Err(FetchError::DownloadFailed(msg)) => {
                     return Err(packaging_error(140, Some(&msg)))
                 }
+                Err(e) => return Err(packaging_error(140, Some(&e.to_string()))),
             }
         }
         Err(packaging_error(
@@ -1380,6 +1404,9 @@ impl BootstrapResolver {
                     Err(FetchError::DownloadFailed(msg)) => {
                         return Err(packaging_error(140, Some(&msg)));
                     }
+                    Err(e) => {
+                        return Err(packaging_error(140, Some(&e.to_string())));
+                    }
                 },
                 Err(FetchError::IndexUnavailable(_)) => tried.push(url),
                 Err(e @ FetchError::Throttled { .. }) => {
@@ -1388,6 +1415,7 @@ impl BootstrapResolver {
                 Err(FetchError::DownloadFailed(msg)) => {
                     return Err(packaging_error(140, Some(&msg)));
                 }
+                Err(e) => return Err(packaging_error(140, Some(&e.to_string()))),
             }
         }
         Ok(None)
@@ -1519,6 +1547,10 @@ impl BootstrapResolver {
             Err(FetchError::DownloadFailed(msg)) => {
                 let _ = fs::remove_file(&tmp);
                 Err(packaging_error(140, Some(&msg)))
+            }
+            Err(e) => {
+                let _ = fs::remove_file(&tmp);
+                Err(packaging_error(140, Some(&e.to_string())))
             }
         }
     }
