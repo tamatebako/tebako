@@ -38,6 +38,27 @@ pub struct UserConfig {
     /// preference names it until the runtime registry ships).
     #[serde(default)]
     pub runtimes: BTreeMap<String, RuntimePref>,
+    /// Enterprise networking (TODO.v2-1/33, spec 04 amendment): proxy +
+    /// trust anchors. Env wins per key; see [`install_network_config`].
+    #[serde(default)]
+    pub network: NetworkSection,
+}
+
+/// The `network:` section of `~/.tebako/config.yaml` — all keys optional.
+/// These are the config MIRRORS of the env spellings; the environment
+/// always wins per key (merge in `tebako_http::netconfig`).
+#[derive(Debug, Default, Deserialize)]
+pub struct NetworkSection {
+    /// `network.proxy: http://[user[:pass]@]host[:port]` — the explicit
+    /// (CONNECT) proxy; NO_PROXY env still applies on top.
+    pub proxy: Option<String>,
+    /// `network.tls_roots: platform` — the OS store (GPO/MDM-pushed
+    /// enterprise roots). Absent/`webpki` = the bundled Mozilla roots.
+    pub tls_roots: Option<String>,
+    /// `network.extra_ca: [/path/ca.pem, …]` — PEMs added TO the bundled
+    /// store (never instead of it; combine with `platform` = named error).
+    #[serde(default)]
+    pub extra_ca: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, serde::Serialize)]
@@ -74,6 +95,64 @@ pub fn load_config(home: &Path) -> Result<UserConfig, ShimError> {
             ),
         )
     })
+}
+
+// ---------------------------------------------------------------------
+// enterprise networking (TODO.v2-1/33): install the effective config
+// ---------------------------------------------------------------------
+
+/// Resolve the `network:` section under the environment and install it
+/// as tebako-http's process-global config. Every binary that fetches
+/// calls this at startup, before the first request (agent construction
+/// caches the transport). Audit lines land in the journal — the loud
+/// record the trust story requires; best-effort, like every journal
+/// write. A malformed section is a named error at startup, never a
+/// silent fallback.
+pub fn install_network_config(home: &Path) -> Result<(), ShimError> {
+    let cfg = load_config(home)?;
+    let roots = match cfg.network.tls_roots.as_deref() {
+        None => None,
+        Some("platform") => Some(tebako_http::netconfig::TlsRoots::Platform),
+        Some("webpki") => Some(tebako_http::netconfig::TlsRoots::WebPki),
+        Some(other) => {
+            return fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "config.yaml network.tls_roots: `{other}` — expected `platform` or `webpki`"
+                ),
+            )
+        }
+    };
+    let effective = tebako_http::netconfig::NetworkConfig::from_env().merge_file(
+        cfg.network.proxy,
+        roots,
+        cfg.network.extra_ca,
+        &config_path(home),
+    );
+    effective
+        .validate()
+        .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
+    if !effective.audit.is_empty() {
+        // Local append (the shim carries no tfs dep); same best-effort
+        // discipline as tfs::journal — the answer never depends on the
+        // record.
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(home.join("journal.log"))
+        {
+            use std::io::Write as _;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            for line in &effective.audit {
+                let _ = f.write_all(format!("{now} event=network-config {line}\n").as_bytes());
+            }
+        }
+    }
+    tebako_http::set_network_config(effective);
+    Ok(())
 }
 
 // ---------------------------------------------------------------------
@@ -572,6 +651,83 @@ mod tests {
         assert!(
             err.message.contains("`runtimes` must be a mapping"),
             "{err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn network_section_parses_all_keys() {
+        let home = fresh_home("netparse");
+        std::fs::write(
+            config_path(&home),
+            "network:\n  proxy: http://proxy.corp:3128\n  tls_roots: platform\n  extra_ca: [/etc/pki/corp.pem]\n",
+        )
+        .unwrap();
+        let cfg = load_config(&home).unwrap();
+        assert_eq!(cfg.network.proxy.as_deref(), Some("http://proxy.corp:3128"));
+        assert_eq!(cfg.network.tls_roots.as_deref(), Some("platform"));
+        assert_eq!(
+            cfg.network.extra_ca,
+            vec![PathBuf::from("/etc/pki/corp.pem")]
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn install_network_config_rejects_an_unknown_tls_roots() {
+        let home = fresh_home("netbadroots");
+        std::fs::write(config_path(&home), "network:\n  tls_roots: corporate\n").unwrap();
+        let err = install_network_config(&home).unwrap_err();
+        assert!(err.message.contains("corporate"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn install_network_config_rejects_extra_ca_with_platform_roots() {
+        let home = fresh_home("netconflict");
+        std::fs::write(
+            config_path(&home),
+            "network:\n  tls_roots: platform\n  extra_ca: [/etc/pki/corp.pem]\n",
+        )
+        .unwrap();
+        let err = install_network_config(&home).unwrap_err();
+        assert!(
+            err.message.contains("cannot combine with extra_ca"),
+            "{err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn install_network_config_rejects_a_malformed_proxy() {
+        let home = fresh_home("netbadproxy");
+        std::fs::write(config_path(&home), "network:\n  proxy: \"not a url\"\n").unwrap();
+        let err = install_network_config(&home).unwrap_err();
+        assert!(err.message.contains("invalid proxy URL"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn install_network_config_audits_a_redacted_proxy() {
+        let home = fresh_home("netaudit");
+        std::fs::write(
+            config_path(&home),
+            "network:\n  proxy: http://user:secret@proxy.corp:3128\n",
+        )
+        .unwrap();
+        install_network_config(&home).unwrap();
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        let line = journal
+            .lines()
+            .find(|l| l.contains("event=network-config") && l.contains("proxy="))
+            .unwrap_or_else(|| panic!("no proxy audit line in {journal}"));
+        assert!(line.contains("proxy=http://***@proxy.corp:3128"), "{line}");
+        assert!(!line.contains("secret"), "{line}");
+        // The process-global config carries the real spelling.
+        let g = tebako_http::network_config();
+        assert_eq!(
+            g.proxy_url.as_deref(),
+            Some("http://user:secret@proxy.corp:3128")
         );
         let _ = std::fs::remove_dir_all(&home);
     }

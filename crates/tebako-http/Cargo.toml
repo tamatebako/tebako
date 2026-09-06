@@ -10,6 +10,22 @@ homepage.workspace = true
 keywords = ["tebako", "https", "download"]
 categories = ["web-programming::http-client"]
 
+# `network` (TODO.v2-1/33, spec 04 amendment): proxy honoring +
+# additive trust anchors. Default ON for the toolchain; the size-gated
+# bootstrap builds with default-features = false and answers a set
+# proxy/CA env with the named NetworkingCompiledOut error.
+[features]
+default = ["network"]
+network = ["dep:webpki-root-certs", "dep:rustls-pemfile"]
+
+[dependencies]
+# Full-cert DER form of the Mozilla bundle (the additive store's base;
+# ureq's own WebPki variant uses the anchor form, which cannot compose).
+webpki-root-certs = { version = "1", optional = true }
+# Multi-block PEM splitting for extra_ca files (a corporate export often
+# carries root + intermediates).
+rustls-pemfile = { version = "2", optional = true }
+
 # The rustls crypto provider is platform-split: ring everywhere EXCEPT
 # windows-gnu — ring 0.17 has no windows-gnu support (its C fails to
 # compile under mingw), so the gnu target rides aws-lc-rs instead (a
@@ -27,6 +43,32 @@ ureq = { version = "3", default-features = false, features = [
 ] }
 # Same rustls surface ureq asks for (std/tls12/logging), provider
 # aws_lc_rs instead of ring.
+rustls = { version = "0.23", default-features = false, features = [
+    "std",
+    "tls12",
+    "logging",
+    "aws_lc_rs",
+] }
+
+[dev-dependencies]
+# NO_PROXY grammar property tests (netconfig).
+proptest = "1"
+
+# The MITM fixture's server side (tests/mitm.rs) — test-only, never
+# shipped. The provider split mirrors the main deps: ring everywhere
+# EXCEPT windows-gnu (its C fails under mingw), which rides aws-lc-rs.
+# Explicit providers both ways: rustls 0.23's default is aws-lc-rs and
+# the unified test build would otherwise carry BOTH providers (ureq's
+# `rustls` feature pulls ring), which breaks auto-detection.
+[target.'cfg(not(all(windows, target_env = "gnu")))'.dev-dependencies]
+rustls = { version = "0.23", default-features = false, features = [
+    "std",
+    "tls12",
+    "logging",
+    "ring",
+] }
+
+[target.'cfg(all(windows, target_env = "gnu"))'.dev-dependencies]
 rustls = { version = "0.23", default-features = false, features = [
     "std",
     "tls12",

@@ -20,6 +20,11 @@ use std::fmt;
 use std::sync::OnceLock;
 use std::time::Duration;
 
+#[cfg(feature = "network")]
+pub mod netconfig;
+#[cfg(feature = "network")]
+pub use netconfig::{global as network_config, set_global as set_network_config};
+
 /// Redirects followed before giving up (the gem's REDIRECT_LIMIT).
 pub const REDIRECT_LIMIT: u32 = 5;
 /// Connect timeout (the gem's open_timeout).
@@ -37,7 +42,7 @@ pub const PLATFORM_ROOTS_ENV: &str = "TEBAKO_TLS_PLATFORM_ROOTS";
 /// tens of MB). Still bounded against memory exhaustion.
 pub const MAX_BODY_SIZE: u64 = 512 * 1024 * 1024;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FetchError {
     /// The requested object is missing (HTTP 404 / ENOENT on file://);
     /// try the next index name.
@@ -54,6 +59,20 @@ pub enum FetchError {
     },
     /// A download failed at the transport or HTTP layer.
     DownloadFailed(String),
+    /// The proxy demanded authentication (HTTP 407). The credentials
+    /// ride the proxy URL (`http://user:pass@host:port`) or the
+    /// `network.proxy` config value.
+    ProxyAuthRequired(String),
+    /// The network config failed validation (bad proxy URL, unreadable
+    /// or malformed extra-CA PEM, platform+additive conflict).
+    #[cfg(feature = "network")]
+    NetConfig(netconfig::NetConfigError),
+    /// Proxy/TLS-anchor env or config is set but this binary was built
+    /// without the `network` feature (the size-gated bootstrap) — the
+    /// enterprise-networking knobs are honored by the full toolchain
+    /// (`tebako`, `tebako-shim`); the bootstrap resolves from the warm
+    /// store those installs produce.
+    NetworkingCompiledOut(String),
 }
 
 impl fmt::Display for FetchError {
@@ -69,28 +88,66 @@ impl fmt::Display for FetchError {
                 None => write!(f, "throttled ({status})"),
             },
             FetchError::DownloadFailed(why) => write!(f, "{why}"),
+            FetchError::ProxyAuthRequired(url) => write!(
+                f,
+                "proxy authentication required (407) fetching {url} — credentials ride \
+                 the proxy URL (http://user:pass@host:port) or network.proxy in \
+                 ~/.tebako/config.yaml"
+            ),
+            FetchError::NetworkingCompiledOut(what) => write!(
+                f,
+                "{what} is set but this binary has the enterprise-networking feature \
+                 compiled out — use the full toolchain (tebako / tebako-shim) to fetch \
+                 through proxies or with custom CAs, or pre-seed the store"
+            ),
+            #[cfg(feature = "network")]
+            FetchError::NetConfig(e) => write!(f, "{e}"),
         }
     }
 }
 
 impl std::error::Error for FetchError {}
 
-fn build_agent(global_timeout: Duration) -> ureq::Agent {
-    let root_certs = if std::env::var_os(PLATFORM_ROOTS_ENV).is_some() {
-        ureq::tls::RootCerts::PlatformVerifier
-    } else {
-        ureq::tls::RootCerts::WebPki
-    };
+#[cfg(feature = "network")]
+impl From<netconfig::NetConfigError> for FetchError {
+    fn from(e: netconfig::NetConfigError) -> Self {
+        FetchError::NetConfig(e)
+    }
+}
+
+/// The TlsConfig for a chosen root store; the windows-gnu provider swap
+/// (ring does not compile under mingw — ureq is built
+/// `rustls-no-provider` there) applies to every variant uniformly.
+fn tls_config_for(root_certs: ureq::tls::RootCerts) -> ureq::tls::TlsConfig {
     let tls_builder = ureq::tls::TlsConfig::builder().root_certs(root_certs);
-    // windows-gnu: ureq is built `rustls-no-provider` (ring does not
-    // compile under mingw), so the provider must be named explicitly —
-    // ureq's documented aws-lc-rs swap.
     #[cfg(all(windows, target_env = "gnu"))]
     let tls_builder = tls_builder.unversioned_rustls_crypto_provider(std::sync::Arc::new(
         rustls::crypto::aws_lc_rs::default_provider(),
     ));
-    let tls = tls_builder.build();
-    ureq::Agent::config_builder()
+    tls_builder.build()
+}
+
+/// With the `network` feature, the effective [`netconfig::NetworkConfig`]
+/// (env over the config file's `network:` section) drives the transport:
+/// explicit or env proxy, and the trust-anchor choice (bundled webpki /
+/// platform verifier / bundled + extra PEMs). Validation failures are
+/// named errors at first use — never a silent fallback to direct/plain.
+#[cfg(feature = "network")]
+fn build_agent(global_timeout: Duration) -> Result<ureq::Agent, FetchError> {
+    agent_with_config(&netconfig::global(), global_timeout)
+}
+
+/// Testing seam: an agent on an EXPLICIT network config, bypassing the
+/// process global (the MITM fixture's scenarios share one process —
+/// the OnceLock-cached agent can't serve them all).
+#[cfg(feature = "network")]
+#[doc(hidden)]
+pub fn agent_with_config(
+    cfg: &netconfig::NetworkConfig,
+    global_timeout: Duration,
+) -> Result<ureq::Agent, FetchError> {
+    let tls = tls_config_for(netconfig::resolve_roots(cfg)?);
+    let mut builder = ureq::Agent::config_builder()
         .tls_config(tls)
         .https_only(true)
         .max_redirects(REDIRECT_LIMIT)
@@ -98,14 +155,70 @@ fn build_agent(global_timeout: Duration) -> ureq::Agent {
         .timeout_global(Some(global_timeout))
         // statuses are mapped by the caller: the rate-limit headers
         // ride the RESPONSE, and ureq's StatusCode error drops them.
-        .http_status_as_error(false)
-        .build()
-        .into()
+        .http_status_as_error(false);
+    if let Some(proxy) = netconfig::resolve_proxy(cfg)? {
+        builder = builder.proxy(Some(proxy));
+    }
+    Ok(builder.build().into())
 }
 
-fn agent() -> &'static ureq::Agent {
-    static AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-    AGENT.get_or_init(|| build_agent(GLOBAL_TIMEOUT))
+/// Without the feature (the size-gated bootstrap) the transport is
+/// exactly the pre-feature behavior: bundled roots, or the platform
+/// verifier via `TEBAKO_TLS_PLATFORM_ROOTS`; no proxy, no extra CAs.
+#[cfg(not(feature = "network"))]
+fn build_agent(global_timeout: Duration) -> Result<ureq::Agent, FetchError> {
+    let root_certs = if std::env::var_os(PLATFORM_ROOTS_ENV).is_some() {
+        ureq::tls::RootCerts::PlatformVerifier
+    } else {
+        ureq::tls::RootCerts::WebPki
+    };
+    Ok(ureq::Agent::config_builder()
+        .tls_config(tls_config_for(root_certs))
+        .https_only(true)
+        .max_redirects(REDIRECT_LIMIT)
+        .timeout_connect(Some(CONNECT_TIMEOUT))
+        .timeout_global(Some(global_timeout))
+        .http_status_as_error(false)
+        .build()
+        .into())
+}
+
+/// The feature-off guard: a proxy/custom-CA env on a compiled-out binary
+/// is a named error at first use, not a connect failure nor (worse) a
+/// silently direct fetch.
+#[cfg(not(feature = "network"))]
+fn network_guard() -> Result<(), FetchError> {
+    for var in [
+        "HTTPS_PROXY",
+        "https_proxy",
+        "HTTP_PROXY",
+        "http_proxy",
+        "ALL_PROXY",
+        "all_proxy",
+    ] {
+        if std::env::var_os(var).is_some() {
+            return Err(FetchError::NetworkingCompiledOut(var.to_string()));
+        }
+    }
+    if std::env::var_os("TEBAKO_EXTRA_CA").is_some() {
+        return Err(FetchError::NetworkingCompiledOut(
+            "TEBAKO_EXTRA_CA".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(feature = "network")]
+fn network_guard() -> Result<(), FetchError> {
+    Ok(())
+}
+
+fn agent() -> Result<&'static ureq::Agent, FetchError> {
+    static AGENT: OnceLock<Result<ureq::Agent, FetchError>> = OnceLock::new();
+    AGENT
+        .get_or_init(|| build_agent(GLOBAL_TIMEOUT))
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 /// The upload channel (release assets): 100 MB+ payloads on a degraded
@@ -113,9 +226,12 @@ fn agent() -> &'static ureq::Agent {
 /// publish died at it, 2026-08-10; the factory's publish learned the
 /// same lesson the same night). Bounded but generous — 30 min covers a
 /// 150 MB asset at ~100 KB/s.
-fn upload_agent() -> &'static ureq::Agent {
-    static UPLOAD_AGENT: OnceLock<ureq::Agent> = OnceLock::new();
-    UPLOAD_AGENT.get_or_init(|| build_agent(UPLOAD_TIMEOUT))
+fn upload_agent() -> Result<&'static ureq::Agent, FetchError> {
+    static UPLOAD_AGENT: OnceLock<Result<ureq::Agent, FetchError>> = OnceLock::new();
+    UPLOAD_AGENT
+        .get_or_init(|| build_agent(UPLOAD_TIMEOUT))
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 /// Seconds from a Retry-After header value (delta-seconds form; the
@@ -189,6 +305,9 @@ fn classify(
     }
     if status == 404 {
         return Err(FetchError::IndexUnavailable(url.to_string()));
+    }
+    if status == 407 {
+        return Err(FetchError::ProxyAuthRequired(url.to_string()));
     }
     if status == 429 || (status == 403 && throttle_hint(&response).is_some()) {
         return Err(FetchError::Throttled {
@@ -265,7 +384,8 @@ pub fn get_bearer(url: &str, bearer: Option<&str>) -> Result<Vec<u8>, FetchError
             "refusing non-HTTPS URL {url} (https:// and file:// are supported)"
         )));
     }
-    let mut req = agent().get(url);
+    network_guard()?;
+    let mut req = agent()?.get(url);
     if let Some(token) = bearer {
         req = req.header("Authorization", &format!("Bearer {token}"));
     }
@@ -305,7 +425,8 @@ pub fn get_with_progress(
         )));
     }
     use std::io::Read as _;
-    let response = agent().get(url).call().map_err(map_ureq_error(url))?;
+    network_guard()?;
+    let response = agent()?.get(url).call().map_err(map_ureq_error(url))?;
     let mut response = classify(response, url)?;
     let content_length = response.body().content_length();
     let mut reader = response
@@ -353,7 +474,8 @@ pub fn post(
     bearer: Option<&str>,
 ) -> Result<Vec<u8>, FetchError> {
     require_https(url)?;
-    let mut req = upload_agent()
+    network_guard()?;
+    let mut req = upload_agent()?
         .post(url)
         .header("Content-Type", content_type)
         .header("Accept", "application/vnd.github+json")
@@ -376,7 +498,8 @@ pub fn post(
 /// already gone — replacement stays idempotent).
 pub fn delete(url: &str, bearer: Option<&str>) -> Result<(), FetchError> {
     require_https(url)?;
-    let mut req = agent()
+    network_guard()?;
+    let mut req = agent()?
         .delete(url)
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "tebako");

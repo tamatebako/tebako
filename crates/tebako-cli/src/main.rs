@@ -102,6 +102,14 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         println!("{USAGE}");
         return Ok(());
     }
+    // Enterprise networking (TODO.v2-1/33): the network: section of
+    // ~/.tebako/config.yaml under the env, installed before any fetch;
+    // a malformed section is the named startup error. Runs after the
+    // version/help early-outs so those never depend on config health.
+    if let Some(home) = tfs::journal::tebako_home_dir() {
+        tebako_shim::config::install_network_config(&home)
+            .map_err(|e| CliExit::Error(TebakoError::new(e.message, e.code.into())))?;
+    }
 
     let subcommand = args[0].as_str();
     let rest = &args[1..];

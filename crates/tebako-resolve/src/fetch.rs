@@ -136,6 +136,19 @@ impl<T: Transport> Fetcher<T> {
                 origin: url.to_string(),
                 reason,
             },
+            // TODO.v2-1/33's named networking failures ride their own
+            // messages; never NotFound (no next-index walk).
+            FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_) => {
+                ResolveError::DownloadFailed {
+                    origin: url.to_string(),
+                    reason: e.to_string(),
+                }
+            }
+            #[cfg(feature = "network")]
+            FetchError::NetConfig(_) => ResolveError::DownloadFailed {
+                origin: url.to_string(),
+                reason: e.to_string(),
+            },
         })
     }
 

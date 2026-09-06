@@ -500,6 +500,7 @@ fn fetch_error(e: FetchError, url: &str) -> TebakoError {
         e @ FetchError::Throttled { .. } => {
             packaging_error(122, Some(&format!("{e} fetching {url}")))
         }
+        e => packaging_error(122, Some(&format!("{e} fetching {url}"))),
     }
 }
 

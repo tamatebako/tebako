@@ -133,6 +133,20 @@ fn map_fetch(url: &str, e: FetchError) -> ResolveError {
             origin: url.to_string(),
             reason: msg,
         },
+        // The enterprise-networking failures (TODO.v2-1/33) are download
+        // failures carrying their own named messages — never NotFound
+        // (they must not walk the next-index chain).
+        FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_) => {
+            ResolveError::DownloadFailed {
+                origin: url.to_string(),
+                reason: e.to_string(),
+            }
+        }
+        #[cfg(feature = "network")]
+        FetchError::NetConfig(_) => ResolveError::DownloadFailed {
+            origin: url.to_string(),
+            reason: e.to_string(),
+        },
     }
 }
 

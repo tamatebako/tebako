@@ -57,6 +57,16 @@ impl Transport for HttpTransport {
                     }
                     std::thread::sleep(RETRY_DELAY);
                 }
+                // TODO.v2-1/33's named networking failures are
+                // deterministic configuration answers — retried never,
+                // surfaced verbatim.
+                Err(
+                    e @ (FetchError::ProxyAuthRequired(_) | FetchError::NetworkingCompiledOut(_)),
+                ) => {
+                    return Err(e);
+                }
+                #[cfg(feature = "network")]
+                Err(e @ FetchError::NetConfig(_)) => return Err(e),
             }
         }
     }
