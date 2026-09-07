@@ -134,6 +134,14 @@ pub struct BootOutcome {
     pub argv: Vec<String>,
     pub layout: Option<crate::layout::ImageLayout>,
     pub runtime_root: String,
+    /// The runtime-on-runtime composition (spec 33) when the first
+    /// triple's mounted manifest declared it: the wrapper tail composes
+    /// and bridges around this. `None` on every other boot.
+    pub on_runtime: Option<crate::on_runtime::OnRuntimeMeta>,
+    /// The resolved entry's index in [`Self::argv`] when this boot
+    /// composed one (the path/bare-name entry arms) — the wrapper tail's
+    /// exec-cache bridge target. `None` on the entry-less forms.
+    pub entry_index: Option<usize>,
 }
 
 /// The mount-mode source (spec 17 §1, locked 2026-08-04): mount
@@ -406,8 +414,8 @@ fn resolve_image_inner(
 /// One established member of the boot's mount table: the point and a
 /// human-readable member description for the union journal (spec 17 §1:
 /// the union set — point + members + precedence — is journaled at boot).
-struct MountedMember {
-    point: String,
+pub(crate) struct MountedMember {
+    pub(crate) point: String,
     desc: String,
 }
 
@@ -796,7 +804,7 @@ fn apply_jail(env: &dyn Env) -> Result<(), DriverError> {
     Ok(())
 }
 
-fn in_mount(path: &str, mount_point: &str) -> bool {
+pub(crate) fn in_mount(path: &str, mount_point: &str) -> bool {
     let mp = mount_point.trim_end_matches('/');
     mp.is_empty() || path == mp || path.starts_with(&format!("{mp}/"))
 }
@@ -915,18 +923,13 @@ fn export_mount_vars(images: &[ImageSpec], env: &dyn Env) -> Result<Vec<String>,
 /// to the interpreter's own startup, not to the handoff).
 fn resolve_entry(
     h: &Handoff,
-    runtime_root: &str,
+    base: &str,
     mounted: &[MountedMember],
 ) -> Result<String, DriverError> {
     let entry = h
         .entry
         .as_deref()
         .ok_or_else(|| manifest("--tebako-entry is required when --tebako-image is given"))?;
-    let base = h
-        .images
-        .first()
-        .map(|i| i.mount.as_str())
-        .unwrap_or(runtime_root);
     let resolved = join_mount(base, entry);
     if mounted.iter().any(|m| in_mount(&resolved, &m.point)) {
         let mut ctx = context().write().unwrap();
@@ -1141,6 +1144,8 @@ pub fn boot_with_mount_modes(
                 argv: v,
                 layout: declaration,
                 runtime_root: runtime_root.to_string(),
+                on_runtime: None,
+                entry_index: None,
             })
         })();
         if result.is_err() {
@@ -1177,6 +1182,18 @@ pub fn boot_with_mount_modes(
             crate::alias::register(&alias_boot);
             crate::alias::export_path(env, &alias_boot.dirs);
         }
+        // spec 33 §1: discover the runtime-on-runtime composition from
+        // the FIRST triple's mounted manifest (the depending runtime's
+        // env image leads the triples at its declared mount). The
+        // remaining triples — ordinarily the app payload — are the boot's
+        // entry/spawn surface; the depending image itself is neither (its
+        // own spawned edges stay its standalone-boot surface, unchanged).
+        let on_runtime = crate::on_runtime::discover(&h.images, runtime_root)?;
+        let app_images: &[ImageSpec] = if on_runtime.is_some() {
+            h.images.get(1..).unwrap_or(&[])
+        } else {
+            &h.images[..]
+        };
         // The mounts are established — publish the discovery surface
         // (spec 22 §6; v2-1/20), capture the spawned-runtime edges
         // (spec 30 §2 — the expose map the FFI planner and the §3
@@ -1185,10 +1202,14 @@ pub fn boot_with_mount_modes(
         // tier embeds the shim's materialized copy when one is
         // delivered, so injection runs first).
         let mount_keys = export_mount_vars(&h.images, env)?;
-        crate::spawn::capture(&h.images, env, runtime_root, mount_keys)?;
+        crate::spawn::capture(app_images, env, runtime_root, mount_keys)?;
         let shim_host = crate::injection::export(env, declaration.as_ref(), runtime_root)?;
         crate::path_env::export(&h.images, env, shim_host.as_deref())?;
-        let rewritten = match h.entry.as_deref() {
+        let template: &[String] = on_runtime
+            .as_ref()
+            .map(|on| on.template.as_slice())
+            .unwrap_or(&[]);
+        let (rewritten, entry_index) = match h.entry.as_deref() {
             // No entry: the interpreter starts with its own args (the
             // bare `--tebako-image` invocation — the deploy-driver
             // smoke; v1 behavior).
@@ -1198,18 +1219,22 @@ pub fn boot_with_mount_modes(
                     v.push(program.clone());
                 }
                 v.extend(h.interpreter_args.iter().cloned());
-                v
+                (v, None)
             }
             // A bare name (never a path): the reserved `self` keyword is
             // dropped (the deploy self-check re-enters the interpreter
             // with its own args). Any OTHER bare name names an
-            // entrypoint — the FIRST payload image's own declaration
-            // first (spec 32 §2: the spawned-payload child leads its
-            // triples with the provider's image; spec 17 §1's bare-name
-            // rule), else the ENV image's runtimeProvides (spec 30 §2 —
-            // the spawned-runtime child boot). Both compose the
-            // declaration's args_default — the declaration is the single
-            // owner.
+            // entrypoint — on a runtime-on-runtime boot the DEPENDING
+            // runtime's own declaration (spec 33 §3: the user-facing
+            // commands are the depending runtime's; the owner's
+            // entrypoints stay spawn-only), else the FIRST payload
+            // image's own declaration (spec 32 §2: the spawned-payload
+            // child leads its triples with the provider's image; spec 17
+            // §1's bare-name rule), else the ENV image's
+            // runtimeProvides (spec 30 §2 — the spawned-runtime child
+            // boot). All compose the declaration's args_default — the
+            // declaration is the single owner; the composition boot
+            // composes the template FIRST (spec 33 §3).
             Some(keyword) if !keyword.contains('/') => {
                 if keyword == "self" {
                     let mut v = Vec::with_capacity(h.user_args.len() + 1);
@@ -1217,50 +1242,88 @@ pub fn boot_with_mount_modes(
                         v.push(program.clone());
                     }
                     v.extend(h.user_args.iter().cloned());
-                    v
+                    (v, None)
                 } else {
-                    let (resolved, defaults) =
-                        match resolve_payload_entrypoint(keyword, &h.images, &mounted)? {
+                    let (resolved, defaults) = match &on_runtime {
+                        Some(on) => crate::on_runtime::dep_entrypoint(keyword, on, &mounted)?,
+                        None => match resolve_payload_entrypoint(keyword, &h.images, &mounted)? {
                             Some(pair) => pair,
                             None => resolve_runtime_entrypoint(keyword, runtime_root, &mounted)?,
-                        };
-                    let mut v = Vec::with_capacity(h.user_args.len() + defaults.len() + 2);
+                        },
+                    };
+                    let mut v =
+                        Vec::with_capacity(h.user_args.len() + template.len() + defaults.len() + 2);
                     if let Some(program) = argv.first() {
                         v.push(program.clone());
                     }
+                    v.extend(template.iter().cloned());
+                    let index = v.len() + defaults.len();
                     v.extend(defaults);
                     v.push(resolved);
                     v.extend(h.user_args.iter().cloned());
-                    v
+                    (v, Some(index))
                 }
             }
-            Some(_) => {
-                let resolved = resolve_entry(&h, runtime_root, &mounted)?;
+            Some(entry) => {
+                // spec 33 §1's amendment: on a runtime-on-runtime boot
+                // the entry resolves against the first NON-depending
+                // mount (ordinarily the app payload), falling back to
+                // the depending runtime's own mount on the self-boot
+                // smoke form — and the entry-directed args_default come
+                // from the depending runtime's manifest (the single
+                // owner), never the app payload's.
+                let (resolved, defaults) = match &on_runtime {
+                    Some(on) => (
+                        resolve_entry(&h, crate::on_runtime::entry_base(on, app_images), &mounted)?,
+                        crate::on_runtime::dep_args_default(on, entry)?,
+                    ),
+                    None => (
+                        resolve_entry(
+                            &h,
+                            h.images
+                                .first()
+                                .map(|i| i.mount.as_str())
+                                .unwrap_or(runtime_root),
+                            &mounted,
+                        )?,
+                        crate::wrapper::args_default(&h, runtime_root)?,
+                    ),
+                };
                 // spec 17 §1 / tebako#503: the entrypoint's declared
                 // `args_default` composes between the interpreter and the
                 // resolved entry — the runtime side is its single owner
                 // (the shim appends it only in the zero-runtime case,
                 // where no driver exists). The rewritten argv keeps the
                 // interpreter's convention: argv[0] (the program name)
-                // first, then the defaults, then the resolved entry as
-                // the script, then the user's args verbatim. Dropping
-                // argv[0] makes the interpreter treat the entry as its
-                // own name and the first user arg as the script.
-                let defaults = crate::wrapper::args_default(&h, runtime_root)?;
-                let mut v = Vec::with_capacity(h.user_args.len() + defaults.len() + 2);
+                // first, then the composition template when present
+                // (spec 33 §3), then the defaults, then the resolved
+                // entry as the script, then the user's args verbatim.
+                // Dropping argv[0] makes the interpreter treat the entry
+                // as its own name and the first user arg as the script.
+                let mut v =
+                    Vec::with_capacity(h.user_args.len() + template.len() + defaults.len() + 2);
                 if let Some(program) = argv.first() {
                     v.push(program.clone());
                 }
+                v.extend(template.iter().cloned());
+                let index = v.len() + defaults.len();
                 v.extend(defaults);
                 v.push(resolved);
                 v.extend(h.user_args.iter().cloned());
-                v
+                (v, Some(index))
             }
         };
         Ok(BootOutcome {
             argv: rewritten,
             layout: declaration,
             runtime_root: runtime_root.to_string(),
+            on_runtime: on_runtime
+                .as_ref()
+                .map(|on| crate::on_runtime::OnRuntimeMeta {
+                    template_len: on.template.len(),
+                    mount: on.mount.clone(),
+                }),
+            entry_index,
         })
     })();
     if result.is_err() {

@@ -341,12 +341,22 @@ fn bridge_entry(
     mech: Mechanism,
     entry_index: Option<usize>,
 ) -> Result<(), DriverError> {
-    if mech != Mechanism::ExecCache {
-        return Ok(());
-    }
     let Some(index) = entry_index else {
         return Ok(());
     };
+    bridge_token(launch, mech, index)
+}
+
+/// The per-token bridge (spec 29 §3, extended by spec 33 §3): index
+/// `index` of `launch.argv`, when an embedded (VFS) path, is
+/// materialized to its host twin under exec-cache — the entry itself,
+/// and the runtime-on-runtime composition template's tokens (the jar
+/// lives in the DEPENDING runtime's image). Non-embedded tokens pass
+/// verbatim.
+fn bridge_token(launch: &mut Launch, mech: Mechanism, index: usize) -> Result<(), DriverError> {
+    if mech != Mechanism::ExecCache {
+        return Ok(());
+    }
     let Some(token) = launch.argv.get(index).cloned() else {
         return Ok(());
     };
@@ -375,6 +385,49 @@ fn bridge_entry(
                 ))
             }
         })?;
+    Ok(())
+}
+
+/// The compound template token's bridge (spec 33 §3): a token EMBEDDING
+/// the depending mount inside a larger argument (`-D…home={mount}`,
+/// `--module-path={mount}/…`) cannot ride the per-token path bridge —
+/// the token is not a path. Under exec-cache the mount's materialized
+/// home-tree root splices in place of the VFS spelling: the host-plain
+/// owner reads the home arbitrarily, so the whole tree is the honest
+/// unit and the depending image must carry the home annotation
+/// (`identity.annotations.java_home`, spec 22 §3) — an unannotated image
+/// answers the per-file closure walk, which cannot serve those reads, so
+/// the boot refuses by name (65) instead of handing the owner a partial
+/// home. Tokens not addressing the mount never reach here.
+fn bridge_template_compound(
+    launch: &mut Launch,
+    mech: Mechanism,
+    index: usize,
+    mount: &str,
+) -> Result<(), DriverError> {
+    if mech != Mechanism::ExecCache {
+        return Ok(());
+    }
+    let Some(token) = launch.argv.get(index).cloned() else {
+        return Ok(());
+    };
+    let host = {
+        let mut ctx = context().write().unwrap();
+        if cfg!(windows) {
+            ctx.exec_materialize_for_spawn(mount)
+        } else {
+            ctx.exec_materialize(mount)
+        }
+    };
+    let host = host
+        .map(|c| c.to_string_lossy().into_owned())
+        .map_err(|e| {
+            manifest(format!(
+                "on_runtime.argv_template token '{token}' embeds the depending runtime's mount '{mount}' but the image does not materialize as a home tree ({}) — the depending image must carry identity.annotations.java_home marking its root a tool home (spec 33 §3, spec 22 §3); a per-file closure cannot serve the host-plain owner's reads",
+                errno_text(e)
+            ))
+        })?;
+    launch.argv[index] = token.replace(mount, &host);
     Ok(())
 }
 
@@ -500,10 +553,16 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
     // an in-image script the INTERPRETER runs, so it falls through to
     // the composition below (the boot already resolved it against the
     // provider's image and composed the declaration's args_default).
-    let mut bare_payload_entry = false;
-    if let Some(name) = h.entry.as_deref() {
-        if !name.contains('/') && name != "self" {
-            if payload_entrypoint(h, &outcome.runtime_root, name)?.is_none() {
+    // spec 33 §3: on a runtime-on-runtime boot there is NO
+    // direct-program form — the boot already resolved the bare name
+    // against the DEPENDING runtime's entrypoints and composed it
+    // through the template; the owner's own entrypoints stay spawn-only.
+    if outcome.on_runtime.is_none() {
+        if let Some(name) = h.entry.as_deref() {
+            if !name.contains('/')
+                && name != "self"
+                && payload_entrypoint(h, &outcome.runtime_root, name)?.is_none()
+            {
                 let ep = runtime_entrypoint(&outcome.runtime_root, name)?;
                 let program = materialize(
                     &join_mount(&outcome.runtime_root, &ep.path),
@@ -516,22 +575,30 @@ fn tail(h: &Handoff, outcome: &BootOutcome, env: &dyn Env) -> Result<BootAction,
                 argv.extend(h.user_args.iter().cloned());
                 return Ok(BootAction::Launch(Launch { program, argv }));
             }
-            bare_payload_entry = true;
         }
     }
     let program = materialize(&vfs, mech, &outcome.runtime_root)?;
-    let defaults = args_default(h, &outcome.runtime_root)?;
-    let entry_index = if h.entry.as_deref().is_some_and(|e| e.contains('/')) || bare_payload_entry {
-        // [program, defaults…, ENTRY, user args…] — the boot composed
-        // the defaults into outcome.argv (tebako#503; spec 32 §2's bare
-        // payload name composes identically); the entry's index is fixed
-        // at composition.
-        Some(1 + defaults.len())
-    } else {
-        None
-    };
     let mut launch = compose(program, outcome);
-    bridge_entry(&mut launch, mech, entry_index)?;
+    // spec 33 §3: the composition template's VFS tokens bridge to their
+    // host twins under exec-cache exactly like the entry — the jar lives
+    // in the DEPENDING runtime's image, and the host-plain owner cannot
+    // read the VFS. A token EMBEDDING the mount in a larger argument
+    // (`-D…home={mount}`, `--module-path={mount}/…`) splices the mount's
+    // materialized home-tree root instead.
+    if let Some(meta) = &outcome.on_runtime {
+        for index in 1..=meta.template_len {
+            let Some(token) = launch.argv.get(index).cloned() else {
+                continue;
+            };
+            let path_form = token == meta.mount || token.starts_with(&format!("{}/", meta.mount));
+            if token.contains(&meta.mount) && !path_form {
+                bridge_template_compound(&mut launch, mech, index, &meta.mount)?;
+            } else {
+                bridge_token(&mut launch, mech, index)?;
+            }
+        }
+    }
+    bridge_entry(&mut launch, mech, outcome.entry_index)?;
     Ok(BootAction::Launch(launch))
 }
 
@@ -654,6 +721,8 @@ mod tests {
             ],
             layout: None,
             runtime_root: "/__tfs__".to_string(),
+            on_runtime: None,
+            entry_index: None,
         };
         let launch = compose("/cache/java".to_string(), &outcome);
         assert_eq!(launch.program, "/cache/java");
@@ -663,6 +732,8 @@ mod tests {
             argv: vec!["wrapper".to_string(), "--version".to_string()],
             layout: None,
             runtime_root: "/__tfs__".to_string(),
+            on_runtime: None,
+            entry_index: None,
         };
         let launch = compose("/cache/java".to_string(), &outcome);
         assert_eq!(launch.argv, vec!["/cache/java", "--version"]);

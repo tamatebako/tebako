@@ -795,6 +795,70 @@ pub struct EngineProvides {
     pub implementation: Option<String>,
 }
 
+/// The runtime-on-runtime composition block (spec 33 §2 — additive,
+/// schema_minor 6; old readers ignore it, new readers enforce): a
+/// `kind: runtime` payload carrying an OWNER edge (an expose-less
+/// `requires` entry of `kind: runtime`) declares here how its env image
+/// composes onto the owner's boot — where the image mounts and the argv
+/// between the owner's interpreter token and the entry. REQUIRED iff the
+/// owner edge exists (the coupling is the manifest-level validator's —
+/// the JSON Schema cannot express it).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OnRuntime {
+    /// Where THIS runtime's env image mounts on the owner's boot —
+    /// POSIX-absolute (spec 17 §1's uniform namespace), never `/`.
+    pub mount: String,
+    /// The argv between the owner's interpreter token and the entry
+    /// (spec 33 §3): strings, the single placeholder `{mount}` expanding
+    /// to this boot's effective mount point at boot time (driver-side —
+    /// an unknown placeholder or a post-expansion escape of the mount is
+    /// the named boot error 65 there).
+    pub argv_template: Vec<String>,
+    /// The constraint the owner's `contract_version` must satisfy
+    /// (fail-closed at dispatch, the exit-75 class). Absent = the
+    /// default `>= 2`, applied at negotiation — never written back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner_contract: Option<Constraint>,
+}
+
+impl OnRuntime {
+    /// The default owner-contract constraint (spec 33 §2): contract 2 is
+    /// the spec-17 widened grammar the composition's wire rides.
+    pub const DEFAULT_OWNER_CONTRACT: &'static str = ">= 2";
+
+    /// The effective owner-contract constraint (the declared one, else
+    /// [`Self::DEFAULT_OWNER_CONTRACT`]).
+    pub fn owner_contract(&self) -> Constraint {
+        self.owner_contract
+            .clone()
+            .unwrap_or_else(|| Constraint::new(Self::DEFAULT_OWNER_CONTRACT).unwrap())
+    }
+
+    fn validate(&self) -> Result<(), ManifestError> {
+        check_abs_path(
+            &self.mount,
+            "provides.on_runtime.mount must be absolute (spec 17 §1's uniform namespace)",
+        )?;
+        if self.mount == "/" {
+            return Err(ManifestError::Invalid(
+                "provides.on_runtime.mount must not be \"/\" — the depending runtime's env image never mounts over the owner's root (spec 33 §2)",
+            ));
+        }
+        if self.argv_template.is_empty() {
+            return Err(ManifestError::Invalid(
+                "provides.on_runtime.argv_template must not be empty — the template is the composition's rewrite (spec 33 §2)",
+            ));
+        }
+        for token in &self.argv_template {
+            check_non_empty(
+                token,
+                "provides.on_runtime.argv_template[] must not be empty",
+            )?;
+        }
+        Ok(())
+    }
+}
+
 /// Runtime provenance (`built_from: {src_sha256, patch_set}`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuiltFrom {
@@ -824,6 +888,12 @@ pub struct RuntimeProvides {
     /// only as the primary co-mounted runtime.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entrypoints: Vec<Entrypoint>,
+    /// The runtime-on-runtime composition block (spec 33 §2 — additive,
+    /// schema_minor 6): present iff this runtime declares an owner edge
+    /// (the coupling validates at the manifest level). Old readers
+    /// ignore the key — and find no owner edge to act on either.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub on_runtime: Option<OnRuntime>,
     pub capabilities: Capabilities,
 }
 
@@ -1034,6 +1104,9 @@ impl RuntimeProvides {
             return Err(ManifestError::Invalid(
                 "provides.env keys must not be empty",
             ));
+        }
+        if let Some(on) = &self.on_runtime {
+            on.validate()?;
         }
         let caps = &self.capabilities;
         if !caps.exec || !caps.read || caps.runtime != Some(true) {
@@ -1841,6 +1914,40 @@ impl PayloadManifest {
         self.provides.validate()?;
         for req in &self.requires {
             req.validate()?;
+        }
+        // spec 33 §1/§2 (schema_minor 6): the on_runtime coupling. On a
+        // kind:runtime payload an expose-less `kind: runtime` requires
+        // entry is an OWNER edge — at most one, and the
+        // `provides.on_runtime` block exists iff one does (both
+        // directions named errors: the composition declares its rewrite
+        // or it is not a composition). On a NON-runtime payload an
+        // expose-less runtime edge is spec 30's ordinary dependency (it
+        // surfaces no shim names) — never an owner edge, and no block
+        // can exist (the field lives on RuntimeProvides only).
+        if let Provides::Runtime(rt) = &self.provides {
+            let owner_edges = self
+                .requires
+                .iter()
+                .filter(|r| matches!(r, Requirement::Runtime { expose, .. } if expose.is_empty()))
+                .count();
+            if owner_edges > 1 {
+                return Err(ManifestError::Invalid(
+                    "requires[] carries more than one owner edge (expose-less entries of kind: runtime) — a runtime composes on at most one owner; a runtime needing two process owners is two payloads (spec 33 §1)",
+                ));
+            }
+            match (owner_edges, &rt.on_runtime) {
+                (1, None) => {
+                    return Err(ManifestError::Invalid(
+                        "a kind: runtime payload with an owner edge (an expose-less requires entry of kind: runtime) must declare provides.on_runtime — the composition declares its rewrite or it is not a composition (spec 33 §2)",
+                    ));
+                }
+                (0, Some(_)) => {
+                    return Err(ManifestError::Invalid(
+                        "provides.on_runtime requires exactly one owner edge (an expose-less requires entry of kind: runtime) — the block declares the composition the edge names (spec 33 §2)",
+                    ));
+                }
+                _ => {}
+            }
         }
         // spec 30 §3, extended one class by spec 32 §1: an exposed
         // depended-entry name never collides with the payload's OWN

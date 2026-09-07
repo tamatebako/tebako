@@ -1800,7 +1800,10 @@ impl FsContext {
     /// twin of `path` inside that tree. A home's data files
     /// (lib/modules, lib/jvm.cfg) never ride a linked-library closure,
     /// so the closure walk's answer boots a java that cannot find its
-    /// boot class path (the metanorma dogfood's jing failure). Any
+    /// boot class path (the metanorma dogfood's jing failure). The
+    /// mount ROOT itself answers the tree root (never EISDIR) — spec 33
+    /// §3's template bridge splices it for tokens naming the depending
+    /// runtime's mount (`-D…home={mount}`). Any
     /// other mount answers via dlmap2file's closure walk, unchanged.
     /// The `exec` trace event (spec 25 §2): `routed:<host>` with the
     /// `route` detail (`home-tree` | `dlmap-closure`), `host` on the
@@ -1861,16 +1864,6 @@ impl FsContext {
             }
             return result;
         };
-        if rel.is_empty() {
-            if let Some(start) = trace_start {
-                trace::emit(
-                    trace::Event::new(op, &normalized, format!("error:{}", libc::EISDIR))
-                        .with_errno(libc::EISDIR)
-                        .dur(start),
-                );
-            }
-            return Err(libc::EISDIR);
-        }
         let root = match self.home_tree_root(handle) {
             Ok(root) => root,
             Err(e) => {
@@ -1907,7 +1900,15 @@ impl FsContext {
                 return Err(e);
             }
         }
-        let host = root.join(&rel);
+        // spec 33 §3: the mount ROOT itself answers the tree root (the
+        // depending runtime's home is the template's `{mount}` expansion
+        // unit) — `root.join("")` would trail a separator the splice
+        // then doubles.
+        let host = if rel.is_empty() {
+            root.clone()
+        } else {
+            root.join(&rel)
+        };
         let result =
             std::ffi::CString::new(host.to_string_lossy().into_owned()).map_err(|_| libc::EIO);
         if let Some(start) = trace_start {
@@ -3518,6 +3519,45 @@ mod tests {
 
         // Idempotent within the process: a second exec reuses the tree.
         let again = ctx.exec_materialize("/tfs/bin/tool").unwrap();
+        assert_eq!(again, answer);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exec_materialize_answers_the_tree_root_for_the_home_mount_root() {
+        // spec 33 §3's bridge: a runtime-on-runtime template token naming
+        // the depending mount ROOT (the `-Dorg.graalvm.language.ruby.home=
+        // {mount}` form) materializes the whole home tree and answers its
+        // root — the host-plain owner reads the home arbitrarily, so the
+        // tree is the honest unit; EISDIR is never the answer.
+        let dir = std::env::temp_dir().join(format!("tfs-home-root-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_home_zip(&dir, true);
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/tfs").unwrap();
+        let text = answer.to_string_lossy().into_owned();
+        let root = std::path::PathBuf::from(&text);
+        assert!(root.is_dir(), "the home tree root lands: {root:?}");
+        assert!(
+            !text.ends_with(std::path::MAIN_SEPARATOR),
+            "the root answer carries no trailing separator (template splices append their own): {text:?}"
+        );
+        assert_eq!(
+            std::fs::read(root.join("bin/tool")).unwrap(),
+            b"#!/bin/fake\n"
+        );
+        assert_eq!(
+            std::fs::read(root.join("lib/modules")).unwrap(),
+            b"jimage-bytes"
+        );
+
+        // Idempotent within the process: the tree extracts once.
+        let again = ctx.exec_materialize("/tfs").unwrap();
         assert_eq!(again, answer);
 
         let _ = std::fs::remove_dir_all(&dir);

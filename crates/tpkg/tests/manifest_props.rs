@@ -316,6 +316,7 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
                 },
                 env,
                 entrypoints: Vec::new(),
+                on_runtime: None,
                 capabilities: Capabilities {
                     exec: true,
                     read: true,

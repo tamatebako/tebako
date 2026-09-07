@@ -787,3 +787,463 @@ fn linked_and_wrapper_boots_compose_identically() {
     assert_eq!(wrapper_tail, linked_tail, "the rewritten argv tails");
     assert_eq!(launch.argv[1], "-jar", "the entrypoint's args_default");
 }
+
+// ---------------------------------------------------------------------
+// spec 33: the runtime-on-runtime boot — the owner provides the process
+// (its env image rides TEBAKO_RUNTIME_IMAGE), the depending runtime's
+// env image leads the triples at its declared mount, and the driver
+// discovers the composition from that image's on_runtime block.
+// ---------------------------------------------------------------------
+
+/// The depending runtime's env image: kind runtime carrying the owner
+/// edge + the on_runtime block (mount `declared_mount`, the jruby-shaped
+/// template), an entrypoint with its own args_default, and the files the
+/// template/entrypoint name.
+fn write_dep_runtime_image(dir: &Path, declared_mount: &str) -> PathBuf {
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-jruby\n  version: 9.4.8.0\n  \
+         producer: {{tool: t, tool_version: \"1\"}}\n  \
+         created: \"2026-09-07T00:00:00Z\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  \
+         provides: {{engine: ruby, implementation: jruby, version: 9.4.8.0, abi_line: \"9.4\", platform: aarch64-macos}}\n  \
+         built_from: {{src_sha256: {z}, patch_set: v2.4.0}}\n  \
+         entrypoints: [{{name: jruby, path: /bin/jruby, args_default: [\"-X+O\"]}}]\n  \
+         on_runtime:\n    \
+         mount: {declared_mount}\n    \
+         argv_template: [\"-classpath\", \"{{mount}}/lib/jruby.jar\", \"org.jruby.Main\"]\n  \
+         capabilities: {{exec: true, read: true, runtime: true}}\n\
+         requires:\n  - {{kind: runtime, engine: java, constraint: \">= 21\"}}\n",
+        z = "0".repeat(64)
+    );
+    let p = dir.join("jruby-env.tfs");
+    build_zip(
+        &p,
+        &["bin/", "lib/", "__tpkg__/"],
+        &[
+            ("bin/jruby", b"#!/bin/sh\necho jruby\n".as_slice()),
+            ("lib/jruby.jar", b"jar bytes\n".as_slice()),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    p
+}
+
+/// The dep image with a caller-authored template (the failure-matrix
+/// cases). Files: the jar + bin/jruby as above.
+fn write_dep_runtime_image_template(dir: &Path, template: &str) -> PathBuf {
+    let manifest = format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-jruby\n  version: 9.4.8.0\n  \
+         producer: {{tool: t, tool_version: \"1\"}}\n  \
+         created: \"2026-09-07T00:00:00Z\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  \
+         provides: {{engine: ruby, implementation: jruby, version: 9.4.8.0, abi_line: \"9.4\", platform: aarch64-macos}}\n  \
+         built_from: {{src_sha256: {z}, patch_set: v2.4.0}}\n  \
+         on_runtime:\n    \
+         mount: /__runners__/jruby\n    \
+         argv_template: {template}\n  \
+         capabilities: {{exec: true, read: true, runtime: true}}\n\
+         requires:\n  - {{kind: runtime, engine: java, constraint: \">= 21\"}}\n",
+        z = "0".repeat(64)
+    );
+    let p = dir.join("jruby-env.tfs");
+    build_zip(
+        &p,
+        &["bin/", "lib/", "__tpkg__/"],
+        &[
+            ("bin/jruby", b"#!/bin/sh\necho jruby\n".as_slice()),
+            ("lib/jruby.jar", b"jar bytes\n".as_slice()),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    p
+}
+
+#[test]
+fn on_runtime_composes_template_then_entry_under_the_owner() {
+    let g = guard("onrt-compose");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image(g.path(), "/__runners__/jruby");
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/__runners__/jruby", dep.display()),
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "/bin/app",
+                "user1",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+
+    // [owner interpreter, template…, entry, user args…] (spec 33 §3) —
+    // the APP payload's own args_default (["-jar"]) does NOT compose:
+    // entry-directed defaults belong to the depending runtime's manifest
+    // on this boot (the single-owner rule).
+    assert_eq!(launch.argv.len(), 6, "{:?}", launch.argv);
+    assert_eq!(launch.argv[0], launch.program);
+    assert_eq!(launch.argv[1], "-classpath");
+    assert_eq!(launch.argv[3], "org.jruby.Main");
+    // The template's jar token lives in the depending image — the
+    // host-plain owner (exec-cache) receives its materialized host twin.
+    assert_eq!(std::fs::read(&launch.argv[2]).unwrap(), b"jar bytes\n");
+    // The entry resolved against the APP payload (the second triple —
+    // the first non-depending mount), bridged the same way.
+    assert_eq!(
+        std::fs::read(&launch.argv[4]).unwrap(),
+        b"#!/usr/bin/env java\necho app\n"
+    );
+    assert_eq!(launch.argv[5], "user1");
+    assert_eq!(std::fs::read(&launch.program).unwrap(), STUB);
+}
+
+#[test]
+fn on_runtime_bare_name_resolves_against_the_depending_runtime() {
+    let g = guard("onrt-bare");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image(g.path(), "/__runners__/jruby");
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/__runners__/jruby", dep.display()),
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "jruby",
+                "-v",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+
+    // The bare name is the depending runtime's user-facing command
+    // (spec 33 §3): its declared path + args_default compose THROUGH the
+    // template — never the direct-program form (that belongs to
+    // owner-pattern boots).
+    assert_eq!(launch.argv.len(), 7, "{:?}", launch.argv);
+    assert_eq!(launch.argv[1], "-classpath");
+    assert_eq!(launch.argv[3], "org.jruby.Main");
+    assert_eq!(launch.argv[4], "-X+O");
+    assert_eq!(
+        std::fs::read(&launch.argv[5]).unwrap(),
+        b"#!/bin/sh\necho jruby\n"
+    );
+    assert_eq!(launch.argv[6], "-v");
+}
+
+#[test]
+fn on_runtime_self_boot_resolves_against_the_depending_mount() {
+    // No payload triples: the entry resolves against the depending
+    // runtime's own mount (the runtime's self-boot smoke form).
+    let g = guard("onrt-self");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image(g.path(), "/__runners__/jruby");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/__runners__/jruby", dep.display()),
+                "--tebako-entry",
+                "/bin/jruby",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+
+    // The path form matches the depending runtime's declared entrypoint —
+    // its args_default composes after the template (single owner).
+    assert_eq!(launch.argv.len(), 6, "{:?}", launch.argv);
+    assert_eq!(launch.argv[1], "-classpath");
+    assert_eq!(launch.argv[3], "org.jruby.Main");
+    assert_eq!(launch.argv[4], "-X+O");
+    assert_eq!(
+        std::fs::read(&launch.argv[5]).unwrap(),
+        b"#!/bin/sh\necho jruby\n"
+    );
+}
+
+#[test]
+fn on_runtime_unknown_placeholder_is_a_named_boot_error() {
+    let g = guard("onrt-badph");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image_template(g.path(), "[\"{home}/lib/jruby.jar\"]");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = run(
+        &argv(&[
+            "tebako-runtime-launcher",
+            "--tebako-image",
+            &format!("{}:-:/__runners__/jruby", dep.display()),
+            "--tebako-entry",
+            "/bin/jruby",
+        ]),
+        WRAPPER_RUNTIME_ROOT,
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err}");
+    assert!(err.message.contains("{home}"), "{err}");
+    assert!(err.message.contains("argv_template"), "{err}");
+}
+
+#[test]
+fn on_runtime_template_escape_is_a_named_boot_error() {
+    let g = guard("onrt-escape");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image_template(g.path(), "[\"{mount}/../evil.jar\"]");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = run(
+        &argv(&[
+            "tebako-runtime-launcher",
+            "--tebako-image",
+            &format!("{}:-:/__runners__/jruby", dep.display()),
+            "--tebako-entry",
+            "/bin/jruby",
+        ]),
+        WRAPPER_RUNTIME_ROOT,
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err}");
+    assert!(err.message.contains("argv_template"), "{err}");
+}
+
+#[test]
+fn on_runtime_mount_mismatch_is_the_shard_lying() {
+    // The loader composed the triple at /__runners__/other but the
+    // mounted image declares /__runners__/jruby — the release-index
+    // mirror contradicts the in-image authority (spec 33 §1's
+    // cross-check): a named 65, never a guessed-around composition.
+    let g = guard("onrt-lie");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image(g.path(), "/__runners__/jruby");
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = run(
+        &argv(&[
+            "tebako-runtime-launcher",
+            "--tebako-image",
+            &format!("{}:-:/__runners__/other", dep.display()),
+            "--tebako-entry",
+            "/bin/jruby",
+        ]),
+        WRAPPER_RUNTIME_ROOT,
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err}");
+    assert!(err.message.contains("on_runtime"), "{err}");
+    assert!(err.message.contains("/__runners__/jruby"), "{err}");
+}
+
+/// The depending runtime's env image WITH the home annotation
+/// (`identity.annotations.java_home`, spec 22 §3's whole-tree signal)
+/// and a caller-authored template — the truffleruby-jvm shape: a
+/// compound `-D…home={mount}` token plus a `--module-path {mount}/…`
+/// pair. Files: the module jar + the entrypoint script.
+fn write_dep_runtime_image_home(dir: &Path, template: &str) -> PathBuf {
+    let manifest = format!(
+        "identity:\n  annotations:\n    java_home: \"/\"\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-truffleruby-jvm\n  version: 34.0.1\n  \
+         producer: {{tool: t, tool_version: \"1\"}}\n  \
+         created: \"2026-09-07T00:00:00Z\"\n  \
+         digest: {{tree_hash: sha256:{z}, blob_sha256: {z}}}\n  \
+         signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+         provides:\n  \
+         provides: {{engine: ruby, implementation: truffleruby, version: 34.0.1, abi_line: \"34\", platform: aarch64-macos}}\n  \
+         built_from: {{src_sha256: {z}, patch_set: v2.4.0}}\n  \
+         entrypoints: [{{name: ruby, path: /bin/ruby}}]\n  \
+         on_runtime:\n    \
+         mount: /__runners__/truffleruby\n    \
+         argv_template: {template}\n  \
+         capabilities: {{exec: true, read: true, runtime: true}}\n\
+         requires:\n  - {{kind: runtime, engine: java, implementation: graalvm, constraint: \">= 24\"}}\n",
+        z = "0".repeat(64)
+    );
+    let p = dir.join("truffleruby-env.tfs");
+    build_zip(
+        &p,
+        &["bin/", "modules/", "__tpkg__/"],
+        &[
+            ("bin/ruby", b"#!/bin/sh\necho truffleruby\n".as_slice()),
+            ("modules/truffleruby.jar", b"jar bytes\n".as_slice()),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    p
+}
+
+#[test]
+fn on_runtime_compound_token_splices_the_home_tree_root() {
+    // The truffleruby-jvm launch line (spec 33 §3's worked shape): the
+    // compound `-D…home={mount}` token embeds the depending mount inside
+    // a larger argument; the host-plain owner (java) cannot read the VFS,
+    // so the mount's materialized home-tree root splices in place.
+    let g = guard("onrt-compound");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image_home(
+        g.path(),
+        "[\"-Dorg.graalvm.language.ruby.home={mount}\", \"--module-path\", \"{mount}/modules\", \"-m\", \"dev.truffleruby.launcher/org.truffleruby.launcher.RubyLauncher\"]",
+    );
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/__runners__/truffleruby", dep.display()),
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "/bin/app",
+                "user1",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+
+    assert_eq!(launch.argv.len(), 8, "{:?}", launch.argv);
+    // The compound token: prefix verbatim, the mount spliced to the
+    // whole-tree root — and the tree carries the home's files.
+    let root = launch.argv[1]
+        .strip_prefix("-Dorg.graalvm.language.ruby.home=")
+        .expect("the -D prefix rides verbatim");
+    assert!(
+        root.contains("tebako-home-"),
+        "the splice answers the home-tree root, not the VFS spelling: {root}"
+    );
+    let root = std::path::PathBuf::from(root);
+    assert_eq!(
+        std::fs::read(root.join("modules/truffleruby.jar")).unwrap(),
+        b"jar bytes\n"
+    );
+    assert_eq!(
+        std::fs::read(root.join("bin/ruby")).unwrap(),
+        b"#!/bin/sh\necho truffleruby\n"
+    );
+    // The pure-path template token answers its host twin inside the same
+    // tree; flags and class names pass verbatim.
+    assert_eq!(launch.argv[2], "--module-path");
+    assert_eq!(
+        std::path::PathBuf::from(&launch.argv[3]),
+        root.join("modules"),
+        "the module path is the tree's own modules dir"
+    );
+    assert_eq!(launch.argv[4], "-m");
+    assert_eq!(
+        launch.argv[5],
+        "dev.truffleruby.launcher/org.truffleruby.launcher.RubyLauncher"
+    );
+    // The entry (app payload) bridges as before; user args ride last.
+    assert_eq!(
+        std::fs::read(&launch.argv[6]).unwrap(),
+        b"#!/usr/bin/env java\necho app\n"
+    );
+    assert_eq!(launch.argv[7], "user1");
+}
+
+#[test]
+fn on_runtime_bare_mount_token_answers_the_home_tree_root() {
+    // The whole-token `{mount}` form splices the same tree root (never
+    // EISDIR) — the dep home IS the argument here.
+    let g = guard("onrt-baremount");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image_home(g.path(), "[\"{mount}\"]");
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let launch = launch_of(
+        run(
+            &argv(&[
+                "tebako-runtime-launcher",
+                "--tebako-image",
+                &format!("{}:-:/__runners__/truffleruby", dep.display()),
+                "--tebako-image",
+                &format!("{}:-:/", app.display()),
+                "--tebako-entry",
+                "/bin/app",
+            ]),
+            WRAPPER_RUNTIME_ROOT,
+            &env,
+        )
+        .unwrap(),
+    );
+
+    assert_eq!(launch.argv.len(), 3, "{:?}", launch.argv);
+    let root = std::path::PathBuf::from(&launch.argv[1]);
+    assert!(root.is_dir(), "the tree root lands: {root:?}");
+    assert_eq!(
+        std::fs::read(root.join("bin/ruby")).unwrap(),
+        b"#!/bin/sh\necho truffleruby\n"
+    );
+}
+
+#[test]
+fn on_runtime_compound_token_without_the_home_annotation_is_a_named_error() {
+    // The compound token on an UNANNOTATED image: a per-file closure
+    // cannot serve a host-plain owner's arbitrary home reads — a named
+    // 65 demanding the annotation, never a partial answer.
+    let g = guard("onrt-nohome");
+    let env_image = write_env_image(g.path(), EXEC_CACHE, false);
+    let dep = write_dep_runtime_image_template(
+        g.path(),
+        "[\"-Dorg.graalvm.language.ruby.home={mount}\", \"{mount}/lib/jruby.jar\"]",
+    );
+    let app = write_app_image(g.path());
+    let mut env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+
+    let err = run(
+        &argv(&[
+            "tebako-runtime-launcher",
+            "--tebako-image",
+            &format!("{}:-:/__runners__/jruby", dep.display()),
+            "--tebako-image",
+            &format!("{}:-:/", app.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        WRAPPER_RUNTIME_ROOT,
+        &env,
+    )
+    .unwrap_err();
+    assert_eq!(err.code, 65, "{err}");
+    assert!(err.message.contains("argv_template"), "{err}");
+    assert!(err.message.contains("java_home"), "{err}");
+}

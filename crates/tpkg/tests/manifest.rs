@@ -1062,3 +1062,183 @@ fn spec_03_smoke_examples_parse() {
     assert_eq!(name, "iso-codes");
     assert_eq!(mount.as_deref(), Some("/__app__/share/iso-codes"));
 }
+
+// ---------------------------------------------------------------------
+// spec 33 (schema_minor 6): the on_runtime block — runtime-on-runtime
+// composition (the owner edge is an expose-less kind:runtime requires
+// on a kind:runtime payload).
+// ---------------------------------------------------------------------
+
+/// A jruby-style depending runtime manifest. `provides_extra` rides at
+/// the provides-level indent (the on_runtime block or nothing);
+/// `requires_block` at the top level ("" or "requires:\n  - …\n").
+fn on_runtime_manifest(provides_extra: &str, requires_block: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-jruby\n  version: 9.4.8.0\n\
+        \x20 producer: {{tool: tebako-cli, tool_version: 2.5.0}}\n  created: \"2026-09-07T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+        provides:\n  provides: {{engine: ruby, implementation: jruby, version: 9.4.8.0, abi_line: \"9.4\", platform: aarch64-macos}}\n\
+        \x20 built_from: {{src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v2.4.0}}\n\
+        {provides_extra}\
+        \x20 capabilities: {{exec: true, read: true, runtime: true}}\n\
+        {requires_block}"
+    )
+}
+
+const ON_RUNTIME_BLOCK: &str = "  on_runtime:\n    mount: /__runners__/jruby\n    argv_template: [\"-classpath\", \"{mount}/lib/jruby.jar\", \"org.jruby.Main\"]\n    owner_contract: \">= 2\"\n";
+const OWNER_EDGE: &str = "requires:\n  - {kind: runtime, engine: java, constraint: \">= 21\"}\n";
+
+#[test]
+fn on_runtime_block_is_schema_legal() {
+    // spec 33 §2 (schema_minor 6): the additive on_runtime block under
+    // RuntimeProvides — the owner edge present, the block declaring the
+    // composition. The versioned JSON Schema admits it and the model
+    // round-trips it.
+    let text = on_runtime_manifest(ON_RUNTIME_BLOCK, OWNER_EDGE);
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    let Provides::Runtime(rt) = &m.provides else {
+        panic!("runtime provides, got {:?}", m.provides)
+    };
+    let on = rt.on_runtime.as_ref().expect("the on_runtime block parses");
+    assert_eq!(on.mount, "/__runners__/jruby");
+    assert_eq!(
+        on.argv_template,
+        vec![
+            "-classpath".to_string(),
+            "{mount}/lib/jruby.jar".to_string(),
+            "org.jruby.Main".to_string()
+        ]
+    );
+    assert_eq!(on.owner_contract.as_ref().map(|c| c.as_str()), Some(">= 2"));
+    // …and the schema agrees (MECE cross-check).
+    let validator = schema_validator();
+    validator
+        .validate(&yaml_text_to_json(&text))
+        .expect("on_runtime: is schema-legal");
+    let back = PayloadManifest::from_yaml(&m.to_yaml().unwrap()).unwrap();
+    assert_eq!(back, m);
+
+    // owner_contract omitted: the model keeps it absent (the ">= 2"
+    // default applies at negotiation, not at parse) and off the wire.
+    let block =
+        "  on_runtime:\n    mount: /__runners__/jruby\n    argv_template: [\"org.jruby.Main\"]\n";
+    let text = on_runtime_manifest(block, OWNER_EDGE);
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    let Provides::Runtime(rt) = &m.provides else {
+        panic!("runtime provides")
+    };
+    let on = rt.on_runtime.as_ref().expect("the on_runtime block parses");
+    assert!(on.owner_contract.is_none());
+    let wire = m.to_yaml().unwrap();
+    assert!(!wire.contains("owner_contract"), "{wire}");
+    assert!(wire.contains("on_runtime:"), "{wire}");
+    let back = PayloadManifest::from_yaml(&wire).unwrap();
+    assert_eq!(back, m);
+
+    // The block absent (an ordinary runtime) stays absent on the wire —
+    // a reader predating schema_minor 6 never sees the key.
+    let plain = on_runtime_manifest("", "");
+    let m = PayloadManifest::from_yaml(&plain).unwrap();
+    let Provides::Runtime(rt) = &m.provides else {
+        panic!("runtime provides")
+    };
+    assert!(rt.on_runtime.is_none());
+    let wire = m.to_yaml().unwrap();
+    assert!(!wire.contains("on_runtime"), "{wire}");
+}
+
+#[test]
+fn on_runtime_without_owner_edge_is_a_named_error() {
+    // spec 33 §2: the block is FORBIDDEN without the owner edge — the
+    // composition declares its rewrite or it is not a composition.
+    let text = on_runtime_manifest(ON_RUNTIME_BLOCK, "");
+    let err = PayloadManifest::from_yaml(&text).unwrap_err();
+    assert!(
+        err.to_string().contains("on_runtime"),
+        "the error names the key: {err}"
+    );
+}
+
+#[test]
+fn owner_edge_without_on_runtime_is_a_named_error() {
+    // spec 33 §2: an expose-less kind:runtime edge on a kind:runtime
+    // payload is an owner edge, and the owner edge REQUIRES the block.
+    let text = on_runtime_manifest("", OWNER_EDGE);
+    let err = PayloadManifest::from_yaml(&text).unwrap_err();
+    assert!(
+        err.to_string().contains("on_runtime"),
+        "the error names the missing block: {err}"
+    );
+}
+
+#[test]
+fn two_owner_edges_are_a_named_error() {
+    // spec 33 §1: at most ONE owner edge per payload — a runtime needing
+    // two process owners is two payloads.
+    let text = on_runtime_manifest(
+        ON_RUNTIME_BLOCK,
+        "requires:\n  - {kind: runtime, engine: java, constraint: \">= 21\"}\n  - {kind: runtime, engine: python, constraint: \">= 3.11\"}\n",
+    );
+    let err = PayloadManifest::from_yaml(&text).unwrap_err();
+    assert!(
+        err.to_string().contains("one owner edge") || err.to_string().contains("at most one"),
+        "the error names the cardinality: {err}"
+    );
+}
+
+#[test]
+fn spawned_edges_are_not_owner_edges() {
+    // spec 33 §1: a runtime MAY additionally carry spec-30 spawned edges
+    // (expose: present) — they never count toward the owner cardinality,
+    // and a runtime with ONLY a spawned edge declares no on_runtime.
+    let spawned_only = on_runtime_manifest(
+        "",
+        "requires:\n  - {kind: runtime, engine: java, constraint: \">= 21\", expose: [java]}\n",
+    );
+    PayloadManifest::from_yaml(&spawned_only).expect("a spawned edge alone needs no block");
+    let both = on_runtime_manifest(
+        ON_RUNTIME_BLOCK,
+        "requires:\n  - {kind: runtime, engine: java, constraint: \">= 21\"}\n  - {kind: runtime, engine: python, constraint: \">= 3.11\", expose: [python]}\n",
+    );
+    PayloadManifest::from_yaml(&both).expect("owner edge + spawned edge + block is legal");
+}
+
+#[test]
+fn on_runtime_field_validation() {
+    let cases = [
+        (
+            // mount must be POSIX-absolute
+            "  on_runtime:\n    mount: runners/jruby\n    argv_template: [\"org.jruby.Main\"]\n",
+            "absolute",
+        ),
+        (
+            // mount: / is invalid at validation (spec 33 §2)
+            "  on_runtime:\n    mount: /\n    argv_template: [\"org.jruby.Main\"]\n",
+            "must not be \"/\"",
+        ),
+        (
+            // the template must not be empty
+            "  on_runtime:\n    mount: /__runners__/jruby\n    argv_template: []\n",
+            "argv_template",
+        ),
+        (
+            // template elements must not be empty strings
+            "  on_runtime:\n    mount: /__runners__/jruby\n    argv_template: [\"-classpath\", \"\"]\n",
+            "argv_template",
+        ),
+    ];
+    for (block, want) in cases {
+        let text = on_runtime_manifest(block, OWNER_EDGE);
+        let err = PayloadManifest::from_yaml(&text).unwrap_err();
+        assert!(err.to_string().contains(want), "case wants '{want}': {err}");
+    }
+    // owner_contract must parse as a constraint (the model's type
+    // refuses garbage at deserialize).
+    let text = on_runtime_manifest(
+        "  on_runtime:\n    mount: /__runners__/jruby\n    argv_template: [\"org.jruby.Main\"]\n    owner_contract: \"bogus\"\n",
+        OWNER_EDGE,
+    );
+    assert!(PayloadManifest::from_yaml(&text).is_err());
+}
