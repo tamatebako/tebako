@@ -177,6 +177,140 @@ pub fn entry_meta(entry_dir: &Path, exe_name: &str, key: &str) -> Option<String>
     })
 }
 
+/// The cached index entry's `contract_version` (spec 18) as a version
+/// string — the factory index writes it as a JSON NUMBER; the string
+/// spelling reads too. `None` when the mirror, the entry, or the key is
+/// absent (the pre-era signal — the caller's negotiation decides what
+/// absence means; spec 33 §4 fails it closed).
+pub fn entry_contract_version(entry_dir: &Path, exe_name: &str) -> Option<String> {
+    let text = std::fs::read_to_string(entry_dir.join("manifest.json")).ok()?;
+    let parsed = tebako_json::parse(&text).ok()?;
+    let tebako_json::Value::Array(entries) = &parsed else {
+        return None;
+    };
+    entries.iter().find_map(|entry| {
+        (entry
+            .find("filename")
+            .and_then(|f| f.as_string())
+            .as_deref()
+            == Some(exe_name))
+        .then(|| {
+            entry.find("contract_version").and_then(|v| match v {
+                tebako_json::Value::Number(n) => Some(n.clone()),
+                tebako_json::Value::String(s) => Some(s.clone()),
+                _ => None,
+            })
+        })
+        .flatten()
+    })
+}
+
+// ---------------------------------------------------------------------
+// spec 33 §1: the on_runtime release-index mirror
+// ---------------------------------------------------------------------
+
+/// The `on_runtime` key of a cached release-index entry (spec 33 §1):
+/// the depending runtime's owner edge + mount + owner-contract, flowed
+/// verbatim from the factory's release index. The in-image L1 block
+/// stays the sole authority — the DRIVER cross-checks this mirror
+/// against it at boot (a disagreement is "the release is lying", the
+/// named boot error 65); the loader side (no image reader) plans the
+/// composition from this mirror alone.
+#[derive(Debug, Clone)]
+pub struct OnRuntimeMirror {
+    /// The owner runtime's engine (`java`, …).
+    pub engine: String,
+    /// The owner runtime's implementation requirement (`graalvm`, …);
+    /// `None` = any implementation of the engine satisfies the edge.
+    pub implementation: Option<String>,
+    /// The owner runtime's language-version constraint.
+    pub constraint: crate::manifest::Constraint,
+    /// Where the depending runtime's env image mounts on the owner's
+    /// boot (the `--tebako-image <dep>:-:<mount>` triple's point).
+    pub mount: String,
+    /// The declared owner-contract constraint; `None` = the spec 33 §2
+    /// default, applied at negotiation, never written back.
+    pub owner_contract: Option<crate::manifest::Constraint>,
+}
+
+impl OnRuntimeMirror {
+    /// The effective owner-contract constraint (the declared one, else
+    /// [`crate::manifest::OnRuntime::DEFAULT_OWNER_CONTRACT`]).
+    pub fn owner_contract(&self) -> crate::manifest::Constraint {
+        self.owner_contract.clone().unwrap_or_else(|| {
+            crate::manifest::Constraint::new(crate::manifest::OnRuntime::DEFAULT_OWNER_CONTRACT)
+                .unwrap()
+        })
+    }
+}
+
+/// The `on_runtime` mirror of the cached index entry for the exe
+/// `exe_name` (spec 33 §1): `None` when the mirror file, the entry, or
+/// the key is absent (every pre-spec-33 runtime — no composition, the
+/// same compat window as [`entry_meta`]). A PRESENT but malformed key
+/// is the named error: the shard the resolution already trusted is
+/// lying — never a guessed composition.
+pub fn on_runtime_mirror(
+    entry_dir: &Path,
+    exe_name: &str,
+) -> Result<Option<OnRuntimeMirror>, String> {
+    let Ok(text) = std::fs::read_to_string(entry_dir.join("manifest.json")) else {
+        return Ok(None);
+    };
+    let Ok(parsed) = tebako_json::parse(&text) else {
+        return Ok(None);
+    };
+    let tebako_json::Value::Array(entries) = &parsed else {
+        return Ok(None);
+    };
+    let Some(entry) = entries
+        .iter()
+        .find(|e| e.find("filename").and_then(|f| f.as_string()).as_deref() == Some(exe_name))
+    else {
+        return Ok(None);
+    };
+    let Some(key) = entry.find("on_runtime") else {
+        return Ok(None);
+    };
+    let bad = |why: String| {
+        format!("the cached release index's on_runtime for {exe_name}: {why} (spec 33 §1)")
+    };
+    if !matches!(key, tebako_json::Value::Object(_)) {
+        return Err(bad("must be a map".to_string()));
+    }
+    let required = |name: &str| -> Result<String, String> {
+        key.find(name)
+            .and_then(|v| v.as_string())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| bad(format!("{name} is required")))
+    };
+    let parse_constraint =
+        |name: &str, src: String| -> Result<crate::manifest::Constraint, String> {
+            crate::manifest::Constraint::new(&src)
+                .map_err(|e| bad(format!("{name} is not a constraint: {e}")))
+        };
+    let engine = required("engine")?;
+    let implementation = key
+        .find("implementation")
+        .and_then(|v| v.as_string())
+        .filter(|s| !s.is_empty());
+    let constraint = parse_constraint("constraint", required("constraint")?)?;
+    let mount = required("mount")?;
+    let owner_contract = key
+        .find("owner_contract")
+        .and_then(|v| v.as_string())
+        .filter(|s| !s.is_empty())
+        .map(|s| parse_constraint("owner_contract", s))
+        .transpose()?;
+    Ok(Some(OnRuntimeMirror {
+        engine,
+        implementation,
+        constraint,
+        mount,
+        owner_contract,
+    }))
+}
+
 /// One store entry dir → a [`CachedRuntime`] when it is well-formed
 /// (parseable name for this platform, exe present); `None` otherwise.
 /// Lenient by design: malformed entries are invisible to resolution
@@ -523,10 +657,21 @@ mod tests {
         with_image: bool,
         index_entry: Option<String>,
     ) {
+        fixture_entry_engine(home, "java", lv, ver, with_image, index_entry)
+    }
+
+    fn fixture_entry_engine(
+        home: &Path,
+        engine: &str,
+        lv: &str,
+        ver: &str,
+        with_image: bool,
+        index_entry: Option<String>,
+    ) {
         let platform = platform_string();
         let dir = home
             .join("runtimes")
-            .join(format!("java-{lv}-{ver}-{platform}"));
+            .join(format!("{engine}-{lv}-{ver}-{platform}"));
         std::fs::create_dir_all(&dir).unwrap();
         let exe = entry_exe_name(lv, ver, platform);
         std::fs::write(dir.join(&exe), b"exe").unwrap();
@@ -766,5 +911,226 @@ mod tests {
         assert_eq!(home, PathBuf::from("C:/App/Local\\tebako"));
         // Nothing resolveable is a named error, never a guess.
         assert!(tebako_home(|_| None).is_err());
+    }
+
+    #[test]
+    fn entry_contract_version_reads_the_numeric_and_string_spellings() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-contract-version-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        let platform = platform_string();
+        let exe = entry_exe_name("25.0.4.1", "2.4.1", platform);
+        // the factory index's spelling: a JSON NUMBER
+        fixture_entry(
+            &tmp,
+            "25.0.4.1",
+            "2.4.1",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{exe}\", \"contract_version\": 2}}"
+            )),
+        );
+        let dir = tmp
+            .join("runtimes")
+            .join(format!("java-25.0.4.1-2.4.1-{platform}"));
+        assert_eq!(entry_contract_version(&dir, &exe).as_deref(), Some("2"));
+        // the string spelling reads too
+        fixture_entry(
+            &tmp,
+            "21.0.12",
+            "0.3.0",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{}\", \"contract_version\": \"1\"}}",
+                entry_exe_name("21.0.12", "0.3.0", platform)
+            )),
+        );
+        let dir2 = tmp
+            .join("runtimes")
+            .join(format!("java-21.0.12-0.3.0-{platform}"));
+        let exe2 = entry_exe_name("21.0.12", "0.3.0", platform);
+        assert_eq!(entry_contract_version(&dir2, &exe2).as_deref(), Some("1"));
+        // absent key, absent entry, absent mirror: the pre-era None
+        let exe3 = entry_exe_name("21.0.11", "0.3.0", platform);
+        fixture_entry(&tmp, "21.0.11", "0.3.0", true, None);
+        let dir3 = tmp
+            .join("runtimes")
+            .join(format!("java-21.0.11-0.3.0-{platform}"));
+        assert_eq!(entry_contract_version(&dir3, &exe3), None);
+        assert_eq!(entry_contract_version(&dir3, "never-released"), None);
+        assert_eq!(entry_contract_version(&tmp.join("runtimes"), &exe3), None);
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // -----------------------------------------------------------------
+    // spec 33 §1: the on_runtime release-index mirror
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn on_runtime_mirror_parses_the_full_shape() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-on-runtime-mirror-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        let platform = platform_string();
+        let exe = entry_exe_name("34.0.1", "2.4.0", platform);
+        // the truffleruby shape: the DEPENDING runtime is a ruby engine
+        // whose on_runtime edge names the java owner
+        fixture_entry_engine(
+            &tmp,
+            "ruby",
+            "34.0.1",
+            "2.4.0",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{exe}\", \"on_runtime\": {{\"engine\": \"java\", \"implementation\": \"graalvm\", \"constraint\": \">= 24\", \"mount\": \"/__runners__/truffleruby\", \"owner_contract\": \">= 2\"}}}}"
+            )),
+        );
+        let mirror = on_runtime_mirror(
+            &tmp.join("runtimes")
+                .join(format!("ruby-34.0.1-2.4.0-{platform}")),
+            &exe,
+        )
+        .unwrap()
+        .expect("the mirror parses");
+        assert_eq!(mirror.engine, "java");
+        assert_eq!(mirror.implementation.as_deref(), Some("graalvm"));
+        assert_eq!(mirror.constraint.as_str(), ">= 24");
+        assert_eq!(mirror.mount, "/__runners__/truffleruby");
+        assert_eq!(mirror.owner_contract().as_str(), ">= 2");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn on_runtime_mirror_minimal_and_absent() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-on-runtime-min-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        let platform = platform_string();
+        let exe = entry_exe_name("9.4.8.0", "2.4.0", platform);
+        // minimal: no implementation, no owner_contract — the ">= 2"
+        // default applies at negotiation, never written back
+        // (the jruby shape: a ruby engine riding a java owner)
+        fixture_entry_engine(
+            &tmp,
+            "ruby",
+            "9.4.8.0",
+            "2.4.0",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{exe}\", \"on_runtime\": {{\"engine\": \"java\", \"constraint\": \">= 21\", \"mount\": \"/__runners__/jruby\"}}}}"
+            )),
+        );
+        let dir = tmp
+            .join("runtimes")
+            .join(format!("ruby-9.4.8.0-2.4.0-{platform}"));
+        let mirror = on_runtime_mirror(&dir, &exe)
+            .unwrap()
+            .expect("minimal parses");
+        assert_eq!(mirror.implementation, None);
+        assert_eq!(
+            mirror.owner_contract().as_str(),
+            crate::manifest::OnRuntime::DEFAULT_OWNER_CONTRACT
+        );
+        // the key absent: no composition (every pre-spec-33 runtime)
+        fixture_entry(&tmp, "21.0.12", "0.3.0", true, None);
+        let platform2 = platform_string();
+        let exe2 = entry_exe_name("21.0.12", "0.3.0", platform2);
+        assert!(on_runtime_mirror(
+            &tmp.join("runtimes")
+                .join(format!("java-21.0.12-0.3.0-{platform2}")),
+            &exe2
+        )
+        .unwrap()
+        .is_none());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn on_runtime_mirror_malformed_is_a_named_error() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-on-runtime-bad-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        let platform = platform_string();
+        // the key not a map
+        let exe = entry_exe_name("9.4.8.0", "2.4.0", platform);
+        fixture_entry(
+            &tmp,
+            "9.4.8.0",
+            "2.4.0",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{exe}\", \"on_runtime\": \"garbage\"}}"
+            )),
+        );
+        let dir = tmp
+            .join("runtimes")
+            .join(format!("java-9.4.8.0-2.4.0-{platform}"));
+        let err = on_runtime_mirror(&dir, &exe).unwrap_err();
+        assert!(err.contains("on_runtime"), "{err}");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        // engine missing
+        let tmp2 = std::env::temp_dir().join(format!(
+            "tpkg-on-runtime-bad2-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        fixture_entry(
+            &tmp2,
+            "9.4.8.0",
+            "2.4.0",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{exe}\", \"on_runtime\": {{\"constraint\": \">= 21\", \"mount\": \"/x\"}}}}"
+            )),
+        );
+        let dir2 = tmp2
+            .join("runtimes")
+            .join(format!("java-9.4.8.0-2.4.0-{platform}"));
+        let err = on_runtime_mirror(&dir2, &exe).unwrap_err();
+        assert!(err.contains("engine"), "{err}");
+        let _ = std::fs::remove_dir_all(&tmp2);
+
+        // a constraint that is not a constraint
+        let tmp3 = std::env::temp_dir().join(format!(
+            "tpkg-on-runtime-bad3-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        fixture_entry(
+            &tmp3,
+            "9.4.8.0",
+            "2.4.0",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{exe}\", \"on_runtime\": {{\"engine\": \"java\", \"constraint\": \"bogus\", \"mount\": \"/x\"}}}}"
+            )),
+        );
+        let dir3 = tmp3
+            .join("runtimes")
+            .join(format!("java-9.4.8.0-2.4.0-{platform}"));
+        let err = on_runtime_mirror(&dir3, &exe).unwrap_err();
+        assert!(err.contains("constraint"), "{err}");
+        let _ = std::fs::remove_dir_all(&tmp3);
     }
 }

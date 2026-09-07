@@ -368,3 +368,27 @@ pub fn write_runtime_engine_meta(
     .expect("manifest.json");
     exe
 }
+
+/// `write_runtime_engine` plus a release-index shard whose entry carries
+/// verbatim extra JSON keys (spec 33 fixtures: the `on_runtime` mirror on
+/// the depending runtime; `contract_version` + `implementation` on the
+/// owner). `extra_json` is spliced after `"filename": "<exe>"` — lead
+/// with a comma (`, "on_runtime": {…}`).
+pub fn write_runtime_engine_shard(
+    home: &Path,
+    engine: &str,
+    lv: &str,
+    ver: &str,
+    with_image: bool,
+    extra_json: &str,
+) -> PathBuf {
+    let exe = write_runtime_engine(home, engine, lv, ver, with_image);
+    let dir = exe.parent().expect("runtime entry dir").to_path_buf();
+    let exe_name = exe.file_name().expect("exe name").to_string_lossy();
+    std::fs::write(
+        dir.join("manifest.json"),
+        format!("[{{\"filename\": \"{exe_name}\"{extra_json}}}]\n"),
+    )
+    .expect("manifest.json");
+    exe
+}

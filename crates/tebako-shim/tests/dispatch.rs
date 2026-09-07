@@ -1099,3 +1099,168 @@ fn user_tightening_exports_the_hereditary_ceiling() {
     let plan = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap();
     assert_eq!(env_get(&plan, "TEBAKO_JAIL_TIGHTENING"), None);
 }
+
+// ---------------------------------------------------------------------
+// spec 33: runtime-on-runtime composition (the managed-mode handoff)
+// ---------------------------------------------------------------------
+
+/// The truffleruby shape (spec 33 §7): a ruby-engine DEPENDING runtime
+/// whose release-index shard mirrors the on_runtime block — the owner
+/// edge java:graalvm >= 24, the mount, the owner_contract constraint.
+const TR_ON_RUNTIME_SHARD: &str = ", \"on_runtime\": {\"engine\": \"java\", \"implementation\": \"graalvm\", \"constraint\": \">= 24\", \"mount\": \"/__runners__/truffleruby\", \"owner_contract\": \">= 2\"}";
+
+fn tr_entry(tool: &str) -> String {
+    format!("  entrypoints:\n    - name: {tool}\n      path: /app/bin/{tool}\n      runtime_requirement: {{engine: ruby, constraint: \">= 34\"}}\n")
+}
+
+#[test]
+fn on_runtime_dispatch_composes_the_owner_handoff() {
+    let tmp = TempDir::new("on-runtime-handoff");
+    let home = tmp.path().join("home");
+    let image = seed_tool(&home, "metanorma", &tr_entry("metanorma"), "1.2.3");
+    let dep_exe =
+        write_runtime_engine_shard(&home, "ruby", "34.0.1", "2.4.0", true, TR_ON_RUNTIME_SHARD);
+    let dep_image = dep_exe
+        .parent()
+        .unwrap()
+        .join(format!("tebako-runtime-2.4.0-34.0.1-{}.tfs", platform()));
+    let owner_exe = write_runtime_engine_shard(
+        &home,
+        "java",
+        "25.0.4.1",
+        "2.4.1",
+        true,
+        ", \"contract_version\": 2, \"implementation\": \"graalvm\"",
+    );
+    let owner_image = owner_exe
+        .parent()
+        .unwrap()
+        .join(format!("tebako-runtime-2.4.1-25.0.4.1-{}.tfs", platform()));
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan =
+        dispatch::dispatch("metanorma", &["compile".into(), "doc.xml".into()], &ctx).unwrap();
+
+    // The OWNER's exe is the program; the depending runtime's exe never
+    // runs — its env image co-mounts at the declared point, the first
+    // triple (spec 33 §7's discovery order), ahead of the payload stack.
+    assert_eq!(plan.program, owner_exe);
+    let expected: Vec<String> = vec![
+        owner_exe.to_string_lossy().into_owned(),
+        "--tebako-image".into(),
+        format!("{}:0:/__runners__/truffleruby", dep_image.display()),
+        "--tebako-image".into(),
+        format!("{}:0:/", image.display()),
+        "--tebako-entry".into(),
+        "/app/bin/metanorma".into(),
+        "compile".into(),
+        "doc.xml".into(),
+    ];
+    assert_eq!(plan.argv, expected);
+    // The OWNER's env image rides TEBAKO_RUNTIME_IMAGE (never the dep's).
+    assert_eq!(
+        env_get(&plan, "TEBAKO_RUNTIME_IMAGE").map(String::from),
+        Some(owner_image.to_string_lossy().into_owned())
+    );
+    // The plan's mount set is the full composition: dep image at its
+    // declared mount, then the payload at /.
+    assert_eq!(plan.mounts.len(), 2);
+    assert_eq!(plan.mounts[0].mount, "/__runners__/truffleruby");
+    assert_eq!(plan.mounts[0].image, dep_image);
+    assert_eq!(plan.mounts[1].mount, "/");
+    match plan.runtime {
+        RuntimeResolution::Ready(rt) => assert_eq!(rt.engine, "java"),
+        _ => panic!("the owner runtime is the plan's resolution"),
+    }
+}
+
+#[test]
+fn on_runtime_owner_contract_mismatch_fails_closed_75() {
+    for (owner_extra, want_named) in [
+        (
+            ", \"contract_version\": 1, \"implementation\": \"graalvm\"",
+            "contract_version 1",
+        ),
+        (", \"implementation\": \"graalvm\"", "no contract_version"),
+    ] {
+        let tmp = TempDir::new("on-runtime-contract");
+        let home = tmp.path().join("home");
+        seed_tool(&home, "metanorma", &tr_entry("metanorma"), "1.2.3");
+        write_runtime_engine_shard(&home, "ruby", "34.0.1", "2.4.0", true, TR_ON_RUNTIME_SHARD);
+        write_runtime_engine_shard(&home, "java", "25.0.4.1", "2.4.1", true, owner_extra);
+        let mut ctx = ctx(&home, tmp.path());
+        pin_env(&mut ctx, "metanorma", "1.2.3");
+
+        let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+        assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT, "{err:?}");
+        assert!(err.message.contains(">= 2"), "{}", err.message);
+        assert!(err.message.contains(want_named), "{}", err.message);
+    }
+}
+
+#[test]
+fn on_runtime_owner_unresolvable_is_the_named_69() {
+    let tmp = TempDir::new("on-runtime-offline");
+    let home = tmp.path().join("home");
+    seed_tool(&home, "metanorma", &tr_entry("metanorma"), "1.2.3");
+    write_runtime_engine_shard(&home, "ruby", "34.0.1", "2.4.0", true, TR_ON_RUNTIME_SHARD);
+    // NO java runtime cached; TEBAKO_OFFLINE refuses the download.
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+    ctx.env
+        .insert("TEBAKO_OFFLINE".to_string(), "1".to_string());
+
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE, "{err:?}");
+    assert!(err.message.contains("java"), "{}", err.message);
+}
+
+#[test]
+fn on_runtime_dep_without_image_is_a_named_error() {
+    let tmp = TempDir::new("on-runtime-no-image");
+    let home = tmp.path().join("home");
+    seed_tool(&home, "metanorma", &tr_entry("metanorma"), "1.2.3");
+    // The shard says on_runtime but the dep's env image pair never
+    // installed — the composition needs the image (it is what mounts).
+    write_runtime_engine_shard(&home, "ruby", "34.0.1", "2.4.0", false, TR_ON_RUNTIME_SHARD);
+    write_runtime_engine_shard(
+        &home,
+        "java",
+        "25.0.4.1",
+        "2.4.1",
+        true,
+        ", \"contract_version\": 2, \"implementation\": \"graalvm\"",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE, "{err:?}");
+    assert!(
+        err.message.contains("no verified env image"),
+        "{}",
+        err.message
+    );
+}
+
+#[test]
+fn on_runtime_malformed_shard_is_a_manifest_error() {
+    let tmp = TempDir::new("on-runtime-bad-shard");
+    let home = tmp.path().join("home");
+    seed_tool(&home, "metanorma", &tr_entry("metanorma"), "1.2.3");
+    write_runtime_engine_shard(
+        &home,
+        "ruby",
+        "34.0.1",
+        "2.4.0",
+        true,
+        ", \"on_runtime\": \"garbage\"",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_MANIFEST, "{err:?}");
+    assert!(err.message.contains("on_runtime"), "{}", err.message);
+}

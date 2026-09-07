@@ -579,7 +579,7 @@ pub fn plan(
             ),
         )
     })?;
-    let mounts = compose_mounts(res, ctx)?;
+    let mut mounts = compose_mounts(res, ctx)?;
     let runtime =
         runtime::resolve_runtime(entry.runtime_requirement.as_ref(), allow_download, ctx)?;
     tebako_log::log!(
@@ -602,24 +602,90 @@ pub fn plan(
 
     let mut argv: Vec<String> = Vec::new();
     let mut env: Vec<(String, String)> = Vec::new();
-    let program = match &runtime {
+    let (program, runtime) = match runtime {
         RuntimeResolution::Ready(rt) => {
-            argv.push(rt.exe.to_string_lossy().into_owned());
-            for m in &mounts {
-                argv.push("--tebako-image".to_string());
-                argv.push(m.triple());
+            // spec 33 §1/§7: the resolved runtime's cached release-index
+            // shard may mirror an on_runtime block — then the OWNER's exe
+            // is the program and the depending runtime's env image
+            // co-mounts at the declared point as the FIRST triple (the
+            // driver-side discovery order), ahead of the payload stack.
+            let exe_name = rt
+                .exe
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let mirror = tpkg::runtime_store::on_runtime_mirror(&rt.dir, &exe_name)
+                .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e))?;
+            match mirror {
+                Some(mirror) => {
+                    let Some(dep_image) = rt.image.clone() else {
+                        return fail(
+                            EX_TEBAKO_UNAVAILABLE,
+                            format!(
+                                "the resolved {} runtime {} (tebako {}) declares on_runtime but carries no verified env image — the composition needs the image pair; re-install it with `tebako install`",
+                                rt.engine, rt.lang_version, rt.tebako_version
+                            ),
+                        );
+                    };
+                    let owner = runtime::resolve_owner(&mirror, allow_download, ctx)?;
+                    let owner_image = owner
+                        .image
+                        .clone()
+                        .expect("resolve_runtime_edge post-asserts the env image");
+                    tebako_log::log!(
+                        tebako_log::Level::Debug,
+                        "shim",
+                        "on_runtime: dep={} {} (tebako {}) owner={} {} (tebako {}) mount={}",
+                        rt.engine,
+                        rt.lang_version,
+                        rt.tebako_version,
+                        owner.engine,
+                        owner.lang_version,
+                        owner.tebako_version,
+                        mirror.mount
+                    );
+                    argv.push(owner.exe.to_string_lossy().into_owned());
+                    argv.push("--tebako-image".to_string());
+                    argv.push(format!("{}:0:{}", dep_image.display(), mirror.mount));
+                    for m in &mounts {
+                        argv.push("--tebako-image".to_string());
+                        argv.push(m.triple());
+                    }
+                    argv.push("--tebako-entry".to_string());
+                    argv.push(entry.path.clone());
+                    env.push((
+                        "TEBAKO_RUNTIME_IMAGE".to_string(),
+                        owner_image.to_string_lossy().into_owned(),
+                    ));
+                    mounts.insert(
+                        0,
+                        MountSpec {
+                            image: dep_image,
+                            slot: 0,
+                            mount: mirror.mount.clone(),
+                        },
+                    );
+                    (owner.exe.clone(), RuntimeResolution::Ready(Box::new(owner)))
+                }
+                None => {
+                    argv.push(rt.exe.to_string_lossy().into_owned());
+                    for m in &mounts {
+                        argv.push("--tebako-image".to_string());
+                        argv.push(m.triple());
+                    }
+                    argv.push("--tebako-entry".to_string());
+                    argv.push(entry.path.clone());
+                    if let Some(image) = &rt.image {
+                        // spec 06 §2: image-era drivers mount the env image; v1
+                        // runtimes ignore it (graceful degradation).
+                        env.push((
+                            "TEBAKO_RUNTIME_IMAGE".to_string(),
+                            image.to_string_lossy().into_owned(),
+                        ));
+                    }
+                    (rt.exe.clone(), RuntimeResolution::Ready(rt))
+                }
             }
-            argv.push("--tebako-entry".to_string());
-            argv.push(entry.path.clone());
-            if let Some(image) = &rt.image {
-                // spec 06 §2: image-era drivers mount the env image; v1
-                // runtimes ignore it (graceful degradation).
-                env.push((
-                    "TEBAKO_RUNTIME_IMAGE".to_string(),
-                    image.to_string_lossy().into_owned(),
-                ));
-            }
-            rt.exe.clone()
         }
         RuntimeResolution::Zero => {
             // Zero-runtime: the install-time materialization is the
@@ -651,7 +717,7 @@ pub fn plan(
             // path. The runtime path's driver composes them between the
             // interpreter and the entry instead (spec 17 §1).
             argv.extend(entry.args_default.iter().cloned());
-            entry_host
+            (entry_host, RuntimeResolution::Zero)
         }
     };
     argv.extend(user_args.iter().cloned());

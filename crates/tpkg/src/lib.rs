@@ -183,8 +183,8 @@ pub use manifest::{
     check_check_name, checks_map, AppProvides, BuiltFrom, Capabilities, Check, CheckEntry,
     CheckExpect, CheckNeed, CheckPlatform, CheckRequires, Constraint, DataProvides, Digest,
     Encryption, EncryptionPart, EncryptionState, EngineProvides, Entrypoint, Identity,
-    LibraryAlias, ManifestError, MountSemantics, PayloadKind, PayloadManifest, Platform, Platforms,
-    Producer, Provides, Requirement, RuntimeProvides, RuntimeRequirement, Sbom, Signing,
+    LibraryAlias, ManifestError, MountSemantics, OnRuntime, PayloadKind, PayloadManifest, Platform,
+    Platforms, Producer, Provides, Requirement, RuntimeProvides, RuntimeRequirement, Sbom, Signing,
     SigningMechanism, SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides,
     PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };

@@ -1,6 +1,10 @@
 # Spec 33 — Runtime-on-runtime composition
 
-**Status: PLANNED (drafted 2026-09-07 — ecosystem TODO.jruby/01).**
+**Status: PLANNED (drafted 2026-09-07 — ecosystem TODO.jruby/01;
+managed-mode dispatch ships with tebako v2.5.0; the press/lock row and
+the standalone (bootstrap) composition ride spec 23 §13.6's
+implementation — until then a press against an on_runtime runtime fails
+closed at boot, never silently).**
 Amends spec 03 §2.3 (the `kind: runtime` edge's discriminator), spec 17
 §1 (mount order and entry resolution gain the depending-runtime clause),
 spec 23 §6 (the needs union covers both runtimes), spec 28 §8 (the
@@ -47,6 +51,24 @@ resolution chain.
   spec 05 §2/§5 chain exactly like a primary runtime (per-engine
   download base, cache-first, share-once into `runtimes/`), and
   version-locks at press per spec 23 §4 like any edge.
+- **The loader's read rides the cached release-index shard.** The shim
+  carries no image reader (its lean-linker rule stands); what it needs
+  at plan time — the owner edge's `{engine, implementation?,
+  constraint}`, the depending runtime's declared `mount`, and
+  `owner_contract` — mirrors onto the runtime's release-index entry as
+  the additive `on_runtime` key (JSON:
+  `{engine, implementation?, constraint, mount, owner_contract?}`),
+  authored by the factory from the very L1 block it wrote into the
+  image (one author moment, spec 00 §10). This is the established flow
+  of every dispatch-needed runtime facet (`contract_version`, `abi`,
+  `implementation`, `mount_root`): the in-image L1 block stays the sole
+  AUTHORITY; the shard is its mirror. The driver cross-checks at boot:
+  the mounted first triple's in-image `on_runtime` must exist and its
+  declared `mount` must equal the triple's mount point — a shard that
+  outruns or contradicts the image is the release lying, a named boot
+  error (65), never a guessed-around composition. A runtime whose shard
+  carries no `on_runtime` key boots exactly as before (every runtime
+  predating this spec).
 - **At dispatch the OWNER provides the process.** Its exe (the spec-29
   wrapper, or a linked exe) receives the spec-17 wire; the depending
   runtime contributes its env image. The loader composes the handoff:
@@ -105,6 +127,26 @@ provides:
   qualified on windows per spec 17 §1's qualification rule). An unknown
   `{…}` placeholder, or a template element that after expansion escapes
   the depending runtime's mount, is a named boot error (65).
+- **The bridge law (the owner is host-plain).** A template token
+  addressing `{mount}` is read by the OWNER's interpreter — a host
+  process that cannot see the VFS. Under exec-cache materialization
+  (spec 29 §3) the token bridges to its host twin; two forms exist:
+  - *Path tokens* — the token IS the mount or a path under it
+    (`{mount}`, `{mount}/modules/truffleruby.jar`): the per-token bridge
+    answers the materialized host twin. On a home-annotated image
+    (`identity.annotations.java_home`, spec 22 §3's whole-tree signal)
+    the whole tree extracts once and the bare `{mount}` root answers the
+    tree root (never EISDIR); on an unannotated image the per-file
+    closure copy answers (the jruby single-jar shape), and the bare-root
+    form is §4's named error.
+  - *Compound tokens* — the mount is embedded in a larger argument
+    (`-Dorg.graalvm.language.ruby.home={mount}`,
+    `--module-path={mount}/modules`): the materialized home-tree ROOT
+    splices in place of the mount spelling. This REQUIRES the home
+    annotation — a per-file closure cannot serve a home the owner reads
+    arbitrarily — so a depending runtime whose template carries a
+    compound token MUST annotate; an unannotated image is §4's named
+    error, never a partial home.
 - The template is DATA, not code: the driver and the wrapper crate carry
   no per-runtime knowledge (spec 29 §7's law extends — no per-runtime
   argv hardcoding either). jruby's classpath, truffleruby's launcher
@@ -149,6 +191,11 @@ they stay spawnable through spec 30 edges, unchanged.
   class, naming both contract versions.
 - `on_runtime.mount` colliding at boot: EEXIST, unmount everything,
   named error (spec 17 §1's law) — never a partial mount.
+- A compound template token (§2's bridge law) on an image WITHOUT the
+  home annotation: named boot error 65 naming the token and
+  `identity.annotations.java_home` — the release must declare the
+  whole-tree home; the closure walk never substitutes for it. The bare
+  `{mount}` root token on an unannotated image is the same named error.
 - A malformed `on_runtime` block (unknown placeholder, escaping
   template path, `mount: /`): named boot error 65 naming the key.
   Shape violations — the block without an owner edge, an owner edge
@@ -165,7 +212,11 @@ they stay spawnable through spec 30 edges, unchanged.
 - **Jail:** the needs union (spec 23 §6 step 2) gains the DEPENDING
   runtime's release-manifest needs beside the owner's — one union, one
   effective policy, computed before exec; the owner and the depending
-  runtime run in ONE process under ONE policy.
+  runtime run in ONE process under ONE policy. (The runtime-needs half
+  of spec 23 §6 step 2 is itself unshipped — today's primary boot
+  carries the payload's needs ∩ the operator tightening. When the
+  primary union lands, the on_runtime boot unions both runtimes
+  identically; this spec adds no second mechanism.)
 - **Spawn lock:** untouched. The owner resolution is a primary-class
   resolution, not a spawned edge; `TEBAKO_SPAWN_LOCK` keeps spec 30 §2's
   semantics for the payload's OWN spawned edges, and spec 30 §2's
@@ -180,6 +231,13 @@ they stay spawnable through spec 30 edges, unchanged.
   At run time the loader resolves the row into the store per §13.6
   (carried → slot install + digest-verify; shared → cache-hit on the
   locked identity else fetch+verify), then composes §1's handoff.
+  (Spec 23 §13.6's lock is itself unshipped — this row rides it. Until
+  it lands, pressing against an on_runtime runtime produces a package
+  whose boot fails closed: the standalone bootstrap hands the depending
+  runtime's own exe+image to the wrapper, the first triple is the APP
+  payload — no `on_runtime` discovery fires — and the depending image's
+  `layout.interpreter` refusal is the named 65. Never a silent wrong
+  boot.)
 - **Store:** UNCHANGED layout. The owner and the depending runtime are
   ordinary `runtimes/` entries; share-once holds in both directions (N
   depending runtimes share one owner; M payloads share the depending
@@ -200,9 +258,24 @@ store the named error of §4, never a slow silent run.
 
 ## 7. Worked example — truffleruby-jvm on graalvm
 
-The depending runtime's manifest (excerpt):
+The depending runtime's manifest (excerpt) — the template is the line
+the upstream JVM distribution's own launch verifies (each Truffle
+language home reaches the runtime through its
+`org.graalvm.language.<id>.home` system property — ruby's own, and
+sulong's at `lib/sulong` for the C-extension machinery; TruffleRuby's
+`RubyLauncher` is the module `dev.truffleruby.launcher`). The first
+token is the libgraal rule: the
+truffle-runtime jar JNI-links the OWNER's libgraal only when the two are
+the exact same GraalVM build, so an unpinned owner runs the Java-side
+Graal compiler instead (a recipe that pins its owner to the matching
+labsjdk build drops the token):
 
 ```yaml
+identity:
+  annotations:
+    java_home: "/"        # the image root IS the tool home (§2's bridge
+                          # law): the whole tree materializes for the
+                          # host-plain owner
 requires:
   - {kind: runtime, engine: java, implementation: graalvm, constraint: ">= 24"}
 provides:
@@ -210,14 +283,22 @@ provides:
              language_version: "3.4", abi_line: "34", platform: aarch64-macos}
   on_runtime:
     mount: /__runners__/truffleruby
-    argv_template: ["-classpath", "{mount}/lib/truffleruby.jar", "org.truffleruby.Main"]
+    argv_template:
+      - "-XX:-UseJVMCINativeLibrary"
+      - "-Dorg.graalvm.language.ruby.home={mount}"
+      - "-Dorg.graalvm.language.llvm.home={mount}/lib/sulong"
+      - "--module-path"
+      - "{mount}/modules"
+      - "-m"
+      - "dev.truffleruby.launcher/org.truffleruby.launcher.RubyLauncher"
 ```
 
 Dispatch of a payload whose `runtime_requirement` is
 `{engine: ruby, implementation: truffleruby, constraint: "~> 34"}`:
 
-1. The shim resolves the truffleruby-jvm runtime (spec 05 §5), reads its
-   L1 mirror, finds the owner edge.
+1. The shim resolves the truffleruby-jvm runtime (spec 05 §5), reads the
+   cached release-index shard's `on_runtime` mirror (§1 — the L1 block's
+   plan-time facet), finds the owner edge.
 2. It resolves `java:graalvm >= 24` — cache hit or download; a
    temurin-only store is the spec 28 §8 implementation named error.
 3. It checks the owner's `contract_version` against `owner_contract`
@@ -229,15 +310,24 @@ Dispatch of a payload whose `runtime_requirement` is
 5. The wrapper mounts the graalvm env first, then truffleruby's env,
    then the payload; discovers `on_runtime` in the first triple's
    mounted manifest; composes
-   `[java, -classpath, /__runners__/truffleruby/lib/truffleruby.jar,
-   org.truffleruby.Main, <entry>, <args…>]`; execs java.
+   `[java, -XX:-UseJVMCINativeLibrary,
+   -Dorg.graalvm.language.ruby.home=<home tree root>,
+   -Dorg.graalvm.language.llvm.home=<home tree root>/lib/sulong,
+   --module-path, <home tree root>/modules, -m,
+   dev.truffleruby.launcher/org.truffleruby.launcher.RubyLauncher,
+   <entry>, <args…>]` with the `{mount}` tokens bridged to the
+   materialized home tree (§2's bridge law); execs java.
 
 One process, one policy, two env images, zero per-runtime code.
 
 ## 8. Non-goals
 
 - No new wire token, no trailer change, no registry grammar change, no
-  third artifact class.
+  third artifact class. (The additive `on_runtime` key on the factory
+  release-INDEX entry — §1's shard mirror — is not the registry: it is
+  the same established facet flow as `contract_version` / `abi` /
+  `implementation` / `mount_root`, with the in-image L1 block the sole
+  authority and the driver cross-checking at boot.)
 - No multi-owner composition: one boot, at most one owner edge. A
   runtime needing two process owners is two payloads.
 - No owner edges on non-runtime payloads — that surface is spec 30/32's,

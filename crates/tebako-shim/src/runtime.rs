@@ -322,6 +322,54 @@ pub fn resolve_runtime_edge(
     Ok(*rt)
 }
 
+/// spec 33 §4: the on_runtime composition's OWNER pick — the depending
+/// runtime's shard-mirrored edge (spec 33 §1) resolved through the
+/// spawned-edge machinery (a primary-class resolution: cache-first; a
+/// miss rides the primary download machinery; the implementation axis
+/// re-asserts), then the owner-contract negotiation, fail-closed with
+/// the exit-75 class naming both sides — never a guessed-around boot.
+pub fn resolve_owner(
+    mirror: &tpkg::runtime_store::OnRuntimeMirror,
+    allow_download: bool,
+    ctx: &Ctx,
+) -> Result<CachedRuntime, ShimError> {
+    let owner = resolve_runtime_edge(
+        &mirror.engine,
+        mirror.implementation.as_deref(),
+        &mirror.constraint,
+        allow_download,
+        ctx,
+    )?;
+    let exe_name = owner
+        .exe
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let declared = tpkg::runtime_store::entry_contract_version(&owner.dir, &exe_name);
+    let want = mirror.owner_contract();
+    let satisfied = declared
+        .as_deref()
+        .is_some_and(|v| versions::from_validated(&want).matches(v));
+    if satisfied {
+        return Ok(owner);
+    }
+    fail(
+        EX_TEBAKO_CONTRACT,
+        format!(
+            "the resolved {} runtime {} (tebako {}) cannot own this composition: it declares {} but the depending runtime requires owner_contract \"{}\" (spec 33 §4)\n  install a {} runtime whose release declares a satisfying contract_version",
+            mirror.engine,
+            owner.lang_version,
+            owner.tebako_version,
+            match &declared {
+                Some(v) => format!("contract_version {v}"),
+                None => "no contract_version (a pre-era release)".to_string(),
+            },
+            want.as_str(),
+            mirror.engine,
+        ),
+    )
+}
+
 /// The release index's availability facet for `platform` (spec 13 §2a —
 /// the locked entry shape declares `{engine}_version` + `platform` +
 /// `tebako_version`): the `(lang_version, tebako_version)` of every
