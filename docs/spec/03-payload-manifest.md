@@ -56,6 +56,10 @@ entrypoints:                          # ARRAY — multi-entry suites; N=1 for si
       # range for pure-language; abi-line "~> 3.3.0" for native-extension payloads.
       # engine names the LANGUAGE — mri/jruby/truffleruby are all `ruby`;
       # the OPTIONAL `implementation:` narrows to one (spec 28 §8).
+      # The value may ALSO be a LIST of such maps — `any_of` semantics,
+      # OR in declaration order — when the admissible set differs per
+      # implementation (spec 28 §8); an entry without `implementation:`
+      # matches at the language level (the runtime's language_version).
     # native-extension entrypoints ALSO pin the implementation and the
     # platform line:
     runtime_requirement: {engine: ruby, implementation: mri, constraint: "~> 3.3.0", abi: "arm64-darwin-23"}

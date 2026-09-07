@@ -558,8 +558,9 @@ no preload shim to deliver and no injection var to re-arm, so the tier
 IS the delivery): the driver materializes each dependency's declared
 executables through the exec cache via the same `exec_materialize`
 routing the spawn surface uses — a mount whose in-image manifest
-carries the home annotation (`identity.annotations.java_home`, the
-SSOT for "my home tree must run beside me") extracts WHOLE once per
+carries the home annotation (`identity.annotations.home`, the
+SSOT for "my home tree must run beside me" — the already-shipped
+`java_home` spelling reads as its back-compat alias) extracts WHOLE once per
 boot and answers the executable's in-tree host twin (a JVM's
 `lib/modules`, `jvm.dll`, `jmods/` never ride a linked-library
 closure, so only the tree answer boots a working java); any other
@@ -872,6 +873,21 @@ Payload authors and runtime factories may rely on, forever:
   ambiguity — a named boot error, never a silent winner. The value is
   the physical mount point (drive-qualified on windows),
   re-rooting-proof.
+- **The home annotation.** `identity.annotations.home: "/"` declares the
+  image root IS a runtime/tool home (a JRE's `bin/java` probes
+  `lib/jvm.cfg` relative to its own real path): every materialization
+  surface (the exec cache, install-time zero-runtime extraction, spec
+  33's template bridge) extracts the mount WHOLE once, never the
+  per-file closure — the closure walk only ever sees linked binaries,
+  never the home's data files. The rule is not runtime-specific: an
+  unpatched-interpreter PAYLOAD (a truffleruby/jruby app whose entries
+  derive sibling paths from `__dir__` — no tebako patch set rewires
+  those reads) declares the same annotation on its own payload manifest,
+  the value the mount-relative home dir, and its mount extracts whole
+  the same way. The key is runtime-neutral by
+  construction; `identity.annotations.java_home` is the already-shipped
+  spelling and reads as the exact alias (spec 18's evolution law — the
+  openjdk images carrying it keep working).
 - **Dependency `PATH` wiring.** The handoff env's `PATH` leads with the
   launcher dir (`<exec-cache-leaf>/wrap-bin/`, when the shim is
   delivered — §3.2's host-launcher tier) followed by every co-mounted
