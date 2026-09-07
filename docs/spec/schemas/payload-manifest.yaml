@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 6 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime)
+schema_minor: 7 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -132,7 +132,14 @@ grammar:
       annotations:
         type: map
         required: false
-        notes: free-form k/v; preserved on round-trip
+        notes: >-
+          free-form k/v; preserved on round-trip. One reserved-reading key:
+          `home: "/"` declares the image root a runtime/tool home — every
+          materialization surface extracts the mount WHOLE (spec 22 §6).
+          The key is kind-agnostic: an unpatched-interpreter PAYLOAD whose
+          entries derive sibling paths from `__dir__` declares it too, the
+          value the mount-relative home dir;
+          `java_home` is the already-shipped back-compat alias for it.
   provides:
     type: kind-specialized map (bound to identity.kind at parse time)
     required: true
@@ -147,12 +154,24 @@ grammar:
             path: {type: string, required: true, notes: absolute in-image path}
             args_default: {type: list of string, required: false}
             runtime_requirement:
-              type: map
+              type: "map | list of maps (one-or-many — since schema_minor 7)"
               required: false
-              notes: omit entirely for native / zero-runtime entrypoints (spec 03 §2.2 locked)
+              notes: >-
+                omit entirely for native / zero-runtime entrypoints (spec 03
+                §2.2 locked). The LIST form is spec 28 §8's `any_of` — OR in
+                declaration order — for pure-language payloads whose
+                admissible set differs per implementation; every entry names
+                the SAME engine, and the list is never empty (both named
+                manifest errors). An `abi:` in force REQUIRES
+                `implementation:` on that entry and FORBIDS the list form —
+                an ABI is per-implementation by construction (named manifest
+                errors, spec 28 §8). A reader predating schema_minor 7 fails
+                the LIST spelling's parse — the correct refusal (never a
+                guessed entry).
               fields:
                 engine: {type: string, required: true}
                 constraint: {type: string, required: true, notes: "range for pure-language (\">= 3.3, < 5.0\"); abi-line for native-extension (\"~> 3.3.0\")"}
+                implementation: {type: string, required: false, notes: "since schema_minor 7 (spec 28 §8) — narrows to one implementation, matched against the runtime's OWN version line; an entry WITHOUT it matches at the language level (the runtime's language_version, falling back to version on pre-field shards)"}
                 abi: {type: string, required: false, notes: "the runtime's platform string the native extensions were built against (ruby: Gem::Platform.local.to_s)"}
         platforms: {type: "\"universal\" | list of vcpkg triplets", required: true, notes: "spec 03 §3 axis; aarch64-windows-ucrt reserved"}
         capabilities:
@@ -169,6 +188,7 @@ grammar:
             abi_line: {type: string, required: true, notes: "the abi line this build satisfies (e.g. \"4.0\")"}
             platform: {type: vcpkg triplet, required: true}
             implementation: {type: string, required: false, notes: "the engine implementation this build is (spec 28 §8 — mri / jruby / truffleruby); the spawn edge's implementation filter"}
+            language_version: {type: string, required: false, notes: "since schema_minor 7 (spec 28 §8) — the language level the runtime implements (jruby 9.4 → \"3.1\"; for mri it equals version); absent on manifests that predate the field — the compat window: eligible, never a match failure of its own"}
         built_from:
           type: map
           required: true

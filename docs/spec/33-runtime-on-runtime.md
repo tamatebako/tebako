@@ -134,7 +134,7 @@ provides:
   - *Path tokens* — the token IS the mount or a path under it
     (`{mount}`, `{mount}/modules/truffleruby.jar`): the per-token bridge
     answers the materialized host twin. On a home-annotated image
-    (`identity.annotations.java_home`, spec 22 §3's whole-tree signal)
+    (`identity.annotations.home`, spec 22 §3's whole-tree signal)
     the whole tree extracts once and the bare `{mount}` root answers the
     tree root (never EISDIR); on an unannotated image the per-file
     closure copy answers (the jruby single-jar shape), and the bare-root
@@ -189,11 +189,24 @@ they stay spawnable through spec 30 edges, unchanged.
 - The owner's `contract_version` not satisfying `owner_contract`
   (default `>= 2`): fail-closed at dispatch, the exit-75 negotiation
   class, naming both contract versions.
+- The owner's LAUNCHER LINE predating the composition rule — the owner
+  shard's `tebako_version` below 2.5.0, the first line implementing §1's
+  amended entry rule (proven 2026-09-07: a pre-2.5.0 driver joins
+  `--tebako-entry` onto the FIRST `--tebako-image` mount, which in a
+  composition is the depending runtime's env image — a confusing
+  entry-not-found, never the composition): fail-closed at dispatch, the
+  exit-75 negotiation class, naming the owner ref AND its line.
+  `owner_contract` cannot discriminate here (2.4.0 and 2.5.0 both speak
+  contract 2), so the line gate is a VERSION compare riding the shard's
+  `tebako_version`, and it runs BEFORE the contract negotiation — a
+  pre-2.5.0 owner's contract answer is not composition-meaningful. The
+  gate fires only when an `on_runtime` edge is in force: a pre-2.5.0
+  runtime serving an ordinary (non-composition) dispatch is unaffected.
 - `on_runtime.mount` colliding at boot: EEXIST, unmount everything,
   named error (spec 17 §1's law) — never a partial mount.
 - A compound template token (§2's bridge law) on an image WITHOUT the
   home annotation: named boot error 65 naming the token and
-  `identity.annotations.java_home` — the release must declare the
+  `identity.annotations.home` — the release must declare the
   whole-tree home; the closure walk never substitutes for it. The bare
   `{mount}` root token on an unannotated image is the same named error.
 - A malformed `on_runtime` block (unknown placeholder, escaping
@@ -273,9 +286,10 @@ labsjdk build drops the token):
 ```yaml
 identity:
   annotations:
-    java_home: "/"        # the image root IS the tool home (§2's bridge
+    home: "/"             # the image root IS the tool home (§2's bridge
                           # law): the whole tree materializes for the
-                          # host-plain owner
+                          # host-plain owner (`java_home` is the
+                          # back-compat alias, spec 22 §6)
 requires:
   - {kind: runtime, engine: java, implementation: graalvm, constraint: ">= 24"}
 provides:

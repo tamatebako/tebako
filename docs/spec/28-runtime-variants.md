@@ -3,7 +3,12 @@
 **Status: PLANNED (drafted 2026-08-26; revised 2026-08-30 — the
 language/implementation split: `engine` names the LANGUAGE, so mri,
 jruby and truffleruby are all `ruby`, and the optional `implementation`
-sub-axis distinguishes them).** Amends spec 03 §2 (the requirement and
+sub-axis distinguishes them). §8's implementation-axis pieces SHIP
+incrementally ahead of the variant machinery: the `implementation` axis
+on edges and shards (spec 30, v2.4.0), and — with the axis-polish batch
+— `provides.language_version`, the `any_of` list form of
+`runtime_requirement`, and its native-extension rules. The variant
+dimension (§1–§7, §9) remains PLANNED.** Amends spec 03 §2 (the requirement and
 `provides` grammars), spec 04 §2 (registry), spec 05 §3/§5 (store
 layout, selection), spec 07 §0/§2/§4 (the selection chains), spec 23 §3
 (the D2 `runtime:` key alignment), spec 15 (the info surface). No
@@ -246,7 +251,10 @@ same law applies to every future multi-implementation language.
   The payload still stores as the ONE `universal` variant; the
   selector's implementation picks among the `any_of` entries at
   runtime-resolution time, and an implementation matching no entry is
-  the §4 rule-2 named error.
+  the §4 rule-2 named error. Every entry of one requirement names the
+  SAME engine — the implementation is a sub-axis of the requirement,
+  never a second engine axis: a mixed-engine list and an empty list
+  are both named MANIFEST errors, never a guessed union.
 - A NATIVE-extension payload (an `abi:` in force) is locked to ONE
   implementation's ABI by construction: `implementation` is REQUIRED
   alongside `abi` — a native requirement without it is a named manifest

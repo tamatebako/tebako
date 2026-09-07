@@ -15,7 +15,7 @@
 
 schema: tpkg-registry
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 1 # MINOR — additive changes only (1: engine/implementation on kind:runtime entries)
+schema_minor: 2 # MINOR — additive changes only (1: engine/implementation on kind:runtime entries, 2: the version-level implementation compat read documented + the runtime_requirement mirror's implementation key)
 status: normative
 owner: crates/tebako-resolve (the model) in tamatebako/tebako
 edge: C8 (loader → registry), C12 (everything → registries)
@@ -69,13 +69,14 @@ grammar:
       name: {type: string, required: true, notes: single non-empty path component (a cache key)}
       kind: {type: enum, values: [app, data, toolkit, runtime, language], required: true}
       engine: {type: string, required: false, notes: "REQUIRED when kind: runtime (MINOR 1) — the edge-discovery key (spec 30 §1): kind:runtime edges resolve by (engine, implementation?, constraint); a runtime entry without engine: is pre-discovery legacy and invisible to edges"}
-      implementation: {type: string, required: false, notes: "spec 28 §8's implementation axis (e.g. temurin); an edge naming an implementation matches only entries carrying the same value"}
+      implementation: {type: string, required: false, notes: "spec 28 §8's implementation axis (e.g. temurin); an edge naming an implementation matches only entries carrying the same value. Compat read (MINOR 2): registries published before MINOR 1 carried `implementation` at VERSION level — that spelling is read when the payload-level key is absent and every version carrying it agrees; it never wins over the payload-level key"}
       versions:
         type: list
         required: true
         notes: N>=1; versions unique per payload
         entry:
           version: {type: string, required: true}
+          implementation: {type: string, required: false, notes: "the pre-MINOR-1 spelling of the payload-level axis (MINOR 2's compat read) — never authored anew; payload-level wins when both are present"}
           platforms:
             type: "\"universal\" | map(vcpkg triplet → {artifact, sha256})"
             required: true
@@ -103,6 +104,7 @@ grammar:
               engine: {type: string, required: true}
               constraint: {type: string, required: true}
               abi: {type: string, required: false, notes: "the runtime's platform string for native-extension payloads (resolution checks BOTH lines)"}
+              implementation: {type: string, required: false, notes: "spec 28 §8 (MINOR 2) — the mirror of the L1 entry's implementation key; REQUIRED in the mirror when abi is present (an abi is per-implementation), absent for pure-language payloads. The mirror stays the single-map form: an L1 any_of list mirrors its first entry (the full set rides the embedded manifest L1)"}
           entrypoints:
             type: list of string
             required: false
