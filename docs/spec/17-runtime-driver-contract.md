@@ -200,6 +200,34 @@ mount      = "/" *path-char              ; a VFS-absolute mount point
   over the env image at the runtime root never reached spawned
   children).
 
+### 2.2 Interpreter-option env (`interp_env`, PLANNED — tebako#559)
+
+The spec 07 §9.1 chain's product is ordinary process env, not a driver
+wire var: the dispatcher (the shim in managed mode, the bootstrap in
+standalone) computes the effective interpreter-option map and exports
+each winning key BEFORE the exec/handoff, so the interpreter's own
+option processing reads it at boot (`RUBY_YJIT_ENABLE`, `PYTHON_JIT`,
+`JAVA_TOOL_OPTIONS`, …). Consequences on this contract:
+
+- **The driver applies nothing and never touches these vars.** They are
+  not `TEBAKO_*` control vars, not in the M7 scrub list, and not
+  rewritten by any boot pass — a value the driver finds set is the
+  chain's outcome by construction.
+- **Boot order is safe by construction:** the driver's boot exports
+  (the §2 table's own vars) and the materialization passes all run
+  before the interpreter initializes, and none of them name an
+  interp_env key (the manifest grammar forbids `TEBAKO_*` there — spec
+  03 §2.7).
+- **Spawned children (specs 30/32)** inherit the parent process's
+  environ, so a spawned entrypoint sees the parent's effective map. A
+  spawned PROVIDER's own L1 `interp_env` does NOT apply on that path in
+  this phase (the driver merges nothing) — that axis is a later
+  amendment; a payload needing it is dispatched through the shim, which
+  runs the full §9.1 chain.
+- The auditability requirement is served at dispatch: the effective map
+  and each key's provenance layer render through the spec 15 §4
+  surface; no per-run journal entry exists in this phase.
+
 ## 3. File IO semantics
 
 The runtime's IO MUST route mounted paths through the TFS layer

@@ -18,7 +18,7 @@
 
 schema: payload-manifest
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 7 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key)
+schema_minor: 8 # MINOR — additive changes only (1: materialize, 2: library_aliases, 3: checks, 4: requires kind runtime, 5: requires kind executable + expose, 6: on_runtime, 7: language_version on runtime provides + the runtime_requirement any_of list form and its implementation key, 8: interp_env)
 status: normative
 owner: crates/tpkg (the model) in tamatebako/tebako
 edge: C7 (driver → payload images), C10 (executable payload → runtime), C11 (feature payload → consumers)
@@ -362,6 +362,31 @@ grammar:
       A malformed block is a named error at press/`tfs validate` (exit
       65), never discovered at run time (spec 26 §7). Old readers ignore
       the key (unknown-field rule).
+  interp_env:
+    type: map of ENV key → string value
+    required: false
+    since: schema_minor 8
+    key: "[A-Z_][A-Z0-9_]* — the shell-safe env-name grammar; a key outside it is a named manifest error at press/`tfs validate` (exit 65)"
+    notes: >-
+      tebako#559 (PLANNED) — INTERPRETER-OPTION defaults owned by the
+      slice author (RUBY_YJIT_ENABLE, PYTHON_JIT, JAVA_TOOL_OPTIONS, …):
+      values the dispatcher exports into the runtime process at dispatch
+      so the interpreter reads them at its own boot. MECE against
+      provides' `env:` (the runtime kind's composed process-env
+      defaults): interp_env is the per-SLICE packaging-time channel
+      subject to the spec 07 §9 five-layer chain (user env > user config
+      > package manifest > payload manifest > interpreter built-in);
+      it is NEVER path-class (path composition stays spec 07 §9's rule
+      on `env:`) and never carries the TEBAKO_* control namespace (those
+      vars are dispatcher/driver-owned — a TEBAKO_* key here is a named
+      manifest error). Values are literal strings: no expansion, no
+      command execution, no reference grammar — additive and declarative
+      by construction. A malformed block (non-string value, empty key)
+      is a named manifest error at press/`tfs validate` (exit 65),
+      never discovered at run time. Old readers ignore the key
+      (unknown-field rule): a pre-minor-8 dispatcher simply ships the
+      interpreter's built-in default — the declaration is a default,
+      never a requirement.
 
 refusals:
   - case: identity.schema_version missing

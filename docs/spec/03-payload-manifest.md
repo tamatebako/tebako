@@ -273,6 +273,40 @@ the engine, the three moments, SKIP/FAIL discipline — are spec 26; the
 grammar is registered in
 `docs/spec/schemas/payload-manifest.yaml`.
 
+### 2.7 INTERP ENV (`interp_env:`, additive — schema_minor 8) — PLANNED (tebako#559)
+
+```yaml
+interp_env:
+  RUBY_YJIT_ENABLE: "1"          # interpreter-option defaults, literal strings
+  RUBY_GC_HEAP_FREE_SLOTS: "500000"
+```
+
+A top-level map (any kind may declare; old readers ignore it under the
+unknown-field rule) carrying **interpreter-option defaults the slice
+author owns**: what options the interpreter starts with is a
+packaging-time decision (the runtime/payload slice developer's), with
+the local user always able to override. The dispatcher exports each
+merged key into the runtime process's environment at dispatch, so the
+interpreter reads it at its own boot (ruby's `RUBY_YJIT_ENABLE`, python's
+`PYTHON_JIT`, the JVM family's option vars — the channel is generic, never
+a ruby wart).
+
+MECE against the existing env surfaces: `provides.env:` (runtime kind)
+is the runtime's COMPOSED process-env defaults (path-class included,
+spec 07 §9); `interp_env:` is the per-slice interpreter-OPTION channel —
+scalar only, never path-class, never a `TEBAKO_*` control var (those are
+dispatcher/driver-owned; both violations are named manifest errors).
+Values are literal strings: no expansion, no execution, no references —
+additive and declarative by construction; a malformed block is a named
+validation error at press / `tfs validate` (exit 65), never discovered
+at run time.
+
+The composition chain and the override order live in spec 07 §9; the
+driver-side application rule in spec 17 §2.2; the audit surface in
+spec 15 §4. A declaration is a DEFAULT, never a requirement: a
+pre-minor-8 consumer ignores the key and ships the interpreter's
+built-in behavior.
+
 ## 3. Platform axis (locked, vcpkg-triplet form)
 
 `platforms` is EITHER `"universal"` (pure-ruby/data) OR an explicit list:
@@ -325,6 +359,9 @@ entries:                          # one per invocable command (N=1 for simple ap
     slot: 0                       # which payload image
     entrypoint: metanorma         # which PROVIDES entrypoint inside it
     runtime_ref: ruby@3.4.2;tebako=0.15.9   # per-entry — suites/multi-runtime
+    interp_env: {RUBY_YJIT_ENABLE: "1"}     # PLANNED (tebako#559): the press-time
+                                  # composition of slot 0's L1 interp_env,
+                                  # packager-refined (spec 07 §9's chain)
   - name: mn2pdf
     slot: 1
     entrypoint: mn2pdf
@@ -358,6 +395,18 @@ lock:                             # the press-time composition lock (spec 23 §4
   validate` (tebako#494). Two entries MAY share one slot — same image,
   different in-image entrypoints: the multi-command single-payload form
   (one app slice carrying several CLIs, e.g. metanorma + fontist).
+- `entries[].interp_env` (PLANNED, tebako#559 — §2.7's L2 face): the
+  press-time COMPOSITION of the slot payload's L1 `interp_env` with the
+  packager's refinement (a packager key wins over the same L1 key; L1
+  keys pass through untouched otherwise). The mirror exists because the
+  size-gated bootstrap reads no image bytes: the standalone dispatcher
+  consumes exactly this block, never the in-image L1. `tebako-pkg
+  validate` cross-checks the composition against the slot's L1 (every
+  L1 key present with its declared or the refined value; a dropped L1
+  key is a named validation error, the tebako#494 class) — the block is
+  a faithful mirror plus declared overrides, never an independent
+  authority. Managed dispatch (registry payloads, no L2) reads the
+  store's L1 manifest mirror instead (spec 07 §9's chain).
 - v1-era packages without the block behave exactly as today (stub.rb /
   local conventions); the block is additive.
 - `mounts` is optional; a slot without a `mounts` row mounts
