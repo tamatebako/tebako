@@ -191,7 +191,10 @@ per declared entrypoint name — never as re-exec wrappers.
 
 - User config: `~/.tebako/config.yaml` (YAML — the locked convention;
   supersedes the earlier `config.json` note). Contents: defaults,
-  registries, runtime preferences.
+  registries, runtime preferences. (PLANNED — tebako#559: a per-tool
+  `env:` map, store-config schema minor 3 — the user-config layer of
+  the §9.1 interp_env chain, set by hand or by `tebako-shim env`; never
+  written implicitly by a dispatch.)
 - Project pins: `.tebako-tools.yaml` at any directory — the dispatcher
   walks up from cwd; nearest wins.
 
@@ -406,3 +409,36 @@ app) composes by RULE, never by accident:
   host vars pass through unless the jail says otherwise.
 - Per-entrypoint overrides (suite entries, spec 03 §6) apply last for
   that entry only.
+
+### 9.1 The interp_env chain (PLANNED — tebako#559; spec 03 §2.7)
+
+Interpreter-option defaults compose by their own chain, parallel to the
+rules above and NEVER through the M7 scrub (interp_env keys are
+interpreter options, not rubygems semantics — they are never scrubbed).
+Per dispatched entry, per declared key, FIRST SET wins, highest layer
+first:
+
+1. **User process env** — the operator's invocation environment. A key
+   already set there is the user's explicit choice: it always wins and
+   is never rewritten.
+2. **User config** — `~/.tebako/config.yaml`'s per-tool `env:` map
+   (spec 07 §4; store-config schema minor 3): the operator's standing
+   local policy for one tool.
+3. **Package manifest** — `entries[].interp_env` (spec 03 §6), the
+   standalone/package form only: the packager's press-time refinement
+   (already composed with the slice's L1 declarations by the press).
+   Managed dispatch has no L2 — this layer is absent there by
+   construction.
+4. **Payload manifest** — the slice author's L1 `interp_env:` (spec 03
+   §2.7), read from the store's manifest mirror in managed dispatch.
+5. **Interpreter built-in** — what the interpreter does when nothing
+   declares the key (the declaration is a default, never a
+   requirement).
+
+The dispatcher computes the effective map at dispatch and exports each
+winning key that is NOT already in the process env (layer 1's win is
+passive: the variable is simply there). No key is ever scrubbed,
+rewritten, or guessed; an unset-declared key stays unset (never a
+synthesized "0"). The effective map and each key's provenance layer are
+reportable through the spec 15 §4 surface — resolution is auditable,
+never silent.

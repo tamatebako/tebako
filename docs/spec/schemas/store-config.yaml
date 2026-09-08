@@ -16,7 +16,7 @@
 
 schema: store-config
 schema_version: 1 # MAJOR — breaking changes only
-schema_minor: 2 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them)
+schema_minor: 3 # MINOR — additive changes only (1: runtimes.*.source; 2: defaults/runtimes accept the [payload@]version qualified grammar — tebako-shim use writes them; 3: env per-tool interpreter-option maps — tebako#559)
 status: normative
 owner: crates/tebako-shim (the config model of record) in tamatebako/tebako
 edge: C13 (everything local → store)
@@ -87,6 +87,20 @@ grammar:
       source (MINOR 1, PLANNED — TODO.v2-1/30) = the per-engine download
       base override (https or file://), the first channel of spec 05 §2's
       per-engine base chain; absent → the chain's lower channels answer.
+  env:
+    type: map(command name → map(ENV key → string value))
+    required: false
+    notes: >-
+      MINOR 3 (PLANNED — tebako#559): the operator's standing per-tool
+      interpreter-option policy — layer 2 of the spec 07 §9.1 interp_env
+      chain (user env > this map > package manifest > payload manifest >
+      interpreter built-in). Keyed by command name, the same axis
+      `defaults:` uses (a k/v SETTINGS map, not multiplicity data);
+      inner keys obey the spec 03 §2.7 grammar ([A-Z_][A-Z0-9_]*, never
+      TEBAKO_*; an offending key is the NAMED grammar error at READ,
+      never a silent skip). Written by hand or by `tebako-shim env
+      <tool> KEY=VALUE` / `--unset`; a dispatch NEVER writes it
+      implicitly.
 
 store_layout_marker:
   path: ~/.tebako/layout-version

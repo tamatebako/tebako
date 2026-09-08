@@ -132,6 +132,11 @@ Two verbs on the product CLI (both SHIPPED; `--json` on every view,
     versions, default).
   - `shims` — each registered command's dispatch preview: the payload,
     version, and runtime it would run today (read-only resolution).
+    (PLANNED — tebako#559: the preview gains the effective interp_env
+    map — every declared interpreter-option key with its winning value
+    and its provenance layer: `env` / `config` / `package` / `payload`
+    / `built-in`, the spec 07 §9.1 chain rendered; a key no layer
+    declares renders `built-in` with no value.)
   - `registries` — registered registries and their dispatch-cache
     freshness (fresh/stale/missing/local).
   - `store` — disk usage by section (runtimes/payloads/shims/tmp/…).
