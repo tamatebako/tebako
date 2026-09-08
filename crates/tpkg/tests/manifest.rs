@@ -310,17 +310,37 @@ fn any_of_mixed_engines_is_a_named_manifest_error() {
 }
 
 #[test]
-fn abi_without_implementation_is_a_named_manifest_error() {
+fn abi_without_implementation_is_a_named_authoring_error() {
     // spec 28 §8: an ABI is per-implementation by construction — a native
-    // requirement must name its implementation.
+    // requirement must name its implementation. The rule disciplines NEW
+    // authoring only: `tebako publish` (the registry-emission gate) is the
+    // enforcement point (tebako#556).
     let text = app_with_requirement(
         "      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\", abi: arm64-darwin-23}\n",
     );
-    let err = PayloadManifest::from_yaml(&text).unwrap_err();
+    let err = PayloadManifest::from_yaml_authoring(&text).unwrap_err();
     assert!(
-        err.to_string().contains("requires implementation"),
-        "abi without implementation is named: {err}"
+        err.to_string().contains("requires implementation")
+            && err.to_string().contains("authoring rule"),
+        "abi without implementation is named at publish: {err}"
     );
+}
+
+#[test]
+fn pre_axis_abi_without_implementation_stays_dispatchable() {
+    // tebako#556 (the schema evolution law, spec 18 §3): pre-axis published
+    // manifests (metanorma 1.16.9-*, xml2rfc 3.34.0) declare `abi` without
+    // `implementation` — a MINOR-era reader tightening that invalidates
+    // them is forbidden. The consumer arm accepts the same document the
+    // authoring gate refuses above.
+    let text = app_with_requirement(
+        "      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\", abi: arm64-darwin-23}\n",
+    );
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    let yaml = m.to_yaml().unwrap();
+    let reparsed = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(reparsed, m);
+    assert!(schema_validator().is_valid(&yaml_text_to_json(&text)));
 }
 
 #[test]
@@ -348,6 +368,9 @@ fn native_requirement_with_implementation_round_trips() {
     let yaml = m.to_yaml().unwrap();
     let reparsed = PayloadManifest::from_yaml(&yaml).unwrap();
     assert_eq!(reparsed, m);
+    // …and the authoring gate accepts the shape it demands
+    // (implementation + abi on the one entry)
+    PayloadManifest::from_yaml_authoring(&text).unwrap();
     assert!(schema_validator().is_valid(&yaml_text_to_json(&text)));
 }
 

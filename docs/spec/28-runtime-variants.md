@@ -257,13 +257,23 @@ same law applies to every future multi-implementation language.
   are both named MANIFEST errors, never a guessed union.
 - A NATIVE-extension payload (an `abi:` in force) is locked to ONE
   implementation's ABI by construction: `implementation` is REQUIRED
-  alongside `abi` — a native requirement without it is a named manifest
-  error — and the list form is forbidden (a second implementation means
-  a second build, i.e. a second VARIANT: `{engine: ruby,
-  implementation: mri, constraint: "~> 3.3.0", abi: …}` → variant id
-  `ruby-mri-3.3`; the truffleruby build of the same payload version is
-  a sibling variant `ruby-truffleruby-24.1`, published when its
+  alongside `abi` — and the list form is forbidden (a second
+  implementation means a second build, i.e. a second VARIANT: `{engine:
+  ruby, implementation: mri, constraint: "~> 3.3.0", abi: …}` → variant
+  id `ruby-mri-3.3`; the truffleruby build of the same payload version
+  is a sibling variant `ruby-truffleruby-24.1`, published when its
   toolchain exists — TODO.truffleruby).
+  **The enforcement point is PUBLISH** (2026-09-08, tebako#556): the
+  abi⇒implementation rule is an AUTHORING rule — `tebako publish` (the
+  registry-emission gate) refuses the document with a named manifest
+  error, so nothing authoring-dirty becomes resolvable. It is NOT a
+  consumer rule: manifests published before the axis landed (metanorma
+  1.16.9-*, xml2rfc 3.34.0) declare `abi` without `implementation`, and
+  the schema evolution law (spec 18 §3) forbids a reader tightening
+  that invalidates them — dispatch/install/check/compose parse them
+  through the compat window (an `implementation`-less entry matches at
+  the language level). The list-form ban, by contrast, is a parse-shape
+  rule and stays a consumer named error.
 - truffleruby's native and jvm modes are two runtime ARTIFACTS of one
   implementation (they differ in which dependencies they can host, not
   in the language they speak): mode is NOT a selector axis — selection

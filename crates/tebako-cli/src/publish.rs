@@ -732,7 +732,7 @@ pub fn publish_full(
                 ),
             )
         })?;
-    let embedded = tpkg::PayloadManifest::from_yaml(&manifest_text).map_err(|e| {
+    let embedded = tpkg::PayloadManifest::from_yaml_authoring(&manifest_text).map_err(|e| {
         err(
             EX_TEBAKO_MANIFEST,
             format!(
@@ -800,7 +800,7 @@ pub fn publish_full(
     for input in opts.payloads.iter().skip(1) {
         // every triplet's manifest must agree (the registry mirrors ONE set)
         if let Some(text) = image_manifest::read_embedded_manifest(&input.path)? {
-            let other = tpkg::PayloadManifest::from_yaml(&text).map_err(|e| {
+            let other = tpkg::PayloadManifest::from_yaml_authoring(&text).map_err(|e| {
                 err(
                     EX_TEBAKO_MANIFEST,
                     format!(
