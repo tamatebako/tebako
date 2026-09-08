@@ -247,7 +247,7 @@ fn inspect_payload_summary_and_sections() {
     };
     let (out, _) = tebako_cli::inspect::inspect(&image, &opts).unwrap();
     assert!(out.contains("entrypoint app → /bin/app"), "{out}");
-    assert!(out.contains("runtime: ruby ~> 3.3.0"), "{out}");
+    assert!(out.contains("runtime: ruby mri ~> 3.3.0"), "{out}");
     assert!(out.contains("abi arm64-darwin-23"), "{out}");
 }
 
