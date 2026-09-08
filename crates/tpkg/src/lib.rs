@@ -184,7 +184,8 @@ pub use manifest::{
     CheckExpect, CheckNeed, CheckPlatform, CheckRequires, Constraint, DataProvides, Digest,
     Encryption, EncryptionPart, EncryptionState, EngineProvides, Entrypoint, Identity,
     LibraryAlias, ManifestError, MountSemantics, OnRuntime, PayloadKind, PayloadManifest, Platform,
-    Platforms, Producer, Provides, Requirement, RuntimeProvides, RuntimeRequirement, Sbom, Signing,
+    Platforms, Producer, Provides, Requirement, RuntimeProvides, RuntimeRequirement,
+    RuntimeRequirements, Sbom, Signing,
     SigningMechanism, SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides,
     PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };

@@ -357,7 +357,8 @@ pub fn vfs_rewinddir(id: usize) -> Result<(), i32> {
 
 /// execve/posix_spawn of a MEMFS path (roadmap 39): materialize through
 /// the engine's exec answer (`exec_materialize` — a home-layout mount
-/// (the in-image manifest's `java_home` annotation) extracts WHOLE once
+/// (the in-image manifest's `home` annotation, or the shipped
+/// `java_home` alias) extracts WHOLE once
 /// per process so the tool's self-relative data files (lib/modules,
 /// lib/jvm.cfg) exist next to the binary; any other mount rides the
 /// dlmap2file closure walk) and force the exec bit (zip-family backends

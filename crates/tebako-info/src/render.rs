@@ -128,9 +128,22 @@ fn provides_section(m: &PayloadManifest, out: &mut String) {
                     line.push_str(&format!("  args: {}", ep.args_default.join(" ")));
                 }
                 match &ep.runtime_requirement {
-                    Some(req) => {
-                        line.push_str(&format!("  runtime: {} {}", req.engine, req.constraint));
-                        if let Some(abi) = &req.abi {
+                    Some(reqs) => {
+                        // spec 28 §8: the single-entry render stays the
+                        // pre-list spelling; the `any_of` list joins its
+                        // entries " | ", an implementation-narrowed entry
+                        // named `<implementation> <constraint>`.
+                        let entries = reqs
+                            .entries()
+                            .iter()
+                            .map(|r| match &r.implementation {
+                                Some(imp) => format!("{imp} {}", r.constraint),
+                                None => r.constraint.to_string(),
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" | ");
+                        line.push_str(&format!("  runtime: {} {entries}", reqs.engine()));
+                        if let Some(abi) = reqs.entries().iter().find_map(|r| r.abi.as_deref()) {
                             line.push_str(&format!(", abi {abi}"));
                         }
                     }

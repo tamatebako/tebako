@@ -468,7 +468,7 @@ fn shims(home: &Path, json: bool) -> Result<String, TebakoError> {
                 res.manifest
                     .entrypoint(&name)
                     .and_then(|e| e.runtime_requirement)
-                    .map(|r| format!(" (runtime: {} {})", r.engine, r.constraint))
+                    .map(|r| format!(" (runtime: {} {})", r.engine(), r))
                     .unwrap_or_default()
             ),
             Err(e) => format!(

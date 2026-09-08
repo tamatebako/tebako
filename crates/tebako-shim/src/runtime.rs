@@ -22,10 +22,10 @@
 use std::io::Read;
 use std::path::Path;
 
-use tpkg::RuntimeRequirement;
+use tpkg::{RuntimeRequirement, RuntimeRequirements};
 
 use crate::config::{self, RuntimePref};
-use crate::versions::{self, Constraint};
+use crate::versions;
 use crate::{
     fail, Ctx, ShimError, EX_TEBAKO_CONTRACT, EX_TEBAKO_IO, EX_TEBAKO_SHA, EX_TEBAKO_UNAVAILABLE,
 };
@@ -38,7 +38,10 @@ const LOCK_POLL_MS: u64 = 200;
 // The store grammar, the cache scan, and the version machinery moved to
 // tpkg (spec 00 §10 — one owner, every consumer flows): the shim's
 // resolution/download layers below build on these re-exports.
-use tpkg::runtime_store::{entry_asset_names, entry_filename, entry_meta, release_index_entry};
+use tpkg::runtime_store::{
+    entry_asset_names, entry_filename, entry_matches, entry_meta, newest_compatible_any,
+    release_index_entry,
+};
 pub use tpkg::runtime_store::{
     exe_suffix, newest_compatible, platform_string, scan_all_cached, scan_cached, CachedRuntime,
 };
@@ -59,37 +62,31 @@ pub enum RuntimeResolution {
 }
 
 pub fn resolve_runtime(
-    requirement: Option<&RuntimeRequirement>,
+    requirement: Option<&RuntimeRequirements>,
     allow_download: bool,
     ctx: &Ctx,
 ) -> Result<RuntimeResolution, ShimError> {
-    let Some(req) = requirement else {
+    let Some(reqs) = requirement else {
         return Ok(RuntimeResolution::Zero);
     };
-    // The constraint was validated at manifest parse (tpkg::Constraint) —
-    // the dispatcher only evaluates it against cached/offered versions.
-    let constraint = versions::from_validated(&req.constraint);
-    let cached = scan_cached(&ctx.home, &req.engine);
+    // The constraints were validated at manifest parse (tpkg::Constraint) —
+    // the dispatcher only evaluates them against cached/offered versions.
+    // spec 28 §8: a LIST requirement is `any_of` — the newest cache entry
+    // matching ANY entry wins (an implementation-narrowed entry matches
+    // the runtime's own version line; a language-level entry matches the
+    // runtime's `language_version`, falling back to its version on
+    // pre-field shards — see tpkg::runtime_store::entry_matches).
+    let cached = scan_cached(&ctx.home, reqs.engine());
+    if let Some(hit) = newest_compatible_any(&cached, reqs) {
+        return Ok(RuntimeResolution::Ready(Box::new(hit)));
+    }
     // The abi line (spec 05 §5): a native-extension payload matches only
     // runtimes carrying ITS platform string. A runtime whose release
     // predates the field (abi: None) stays eligible — the compat window,
-    // never a match failure of its own.
-    let abi_compatible = |c: &CachedRuntime| {
-        req.abi.as_ref().map_or(true, |want| {
-            c.abi.as_ref().map_or(true, |have| have == want)
-        })
-    };
-    if let Some(hit) = newest_compatible(
-        &cached
-            .iter()
-            .filter(|c| abi_compatible(c))
-            .cloned()
-            .collect::<Vec<_>>(),
-        &constraint,
-    ) {
-        return Ok(RuntimeResolution::Ready(Box::new(hit)));
-    }
-    let abi_note = match &req.abi {
+    // never a match failure of its own. (The validator forbids `abi` on
+    // the list form, so at most one entry carries one.)
+    let want_abi = reqs.entries().iter().find_map(|r| r.abi.as_deref());
+    let abi_note = match want_abi {
         Some(want)
             if cached
                 .iter()
@@ -108,6 +105,7 @@ pub fn resolve_runtime(
         }
         _ => String::new(),
     };
+    let described = reqs.to_string();
 
     // No compatible cached runtime. The download target: the release
     // index's pick on the configured preference's line (config.yaml
@@ -115,20 +113,24 @@ pub fn resolve_runtime(
     // preference configured, on the product default line
     // (tebako-resolve::DEFAULT_TEBAKO_VERSION).
     let cfg = config::load_config(&ctx.home)?;
-    let pref = cfg.runtimes.get(&req.engine);
+    let pref = cfg.runtimes.get(reqs.engine());
     let cached_note = if cached.is_empty() {
-        format!("no cached {} runtimes for this platform", req.engine)
+        format!("no cached {} runtimes for this platform", reqs.engine())
     } else {
         format!(
             "cached {} runtimes ({}) do not satisfy \"{}\"{}{}",
-            req.engine,
+            reqs.engine(),
             cached
                 .iter()
                 .map(|c| c.lang_version.as_str())
                 .collect::<Vec<_>>()
                 .join(", "),
-            constraint.source(),
-            if constraint.source().contains("~>") {
+            described,
+            if reqs
+                .entries()
+                .iter()
+                .any(|r| r.constraint.as_str().contains("~>"))
+            {
                 " — a native-extension payload locks to its ABI line; a newer line needs a new payload build"
             } else {
                 ""
@@ -161,15 +163,24 @@ pub fn resolve_runtime(
         ),
     };
     let pref = &pref_owned;
-    if !prefless && !constraint.matches(&pref.version) {
+    // The pin names the runtime's OWN version line (it names the release
+    // asset): satisfied when ANY entry's constraint matches it (spec 28
+    // §8 — a payload admitting an implementation carries that
+    // implementation's own-line entry alongside any language-level one).
+    if !prefless
+        && !reqs
+            .entries()
+            .iter()
+            .any(|r| versions::from_validated(&r.constraint).matches(&pref.version))
+    {
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
                 "runtime preference {}@{} does not satisfy \"{}\": {cached_note}\n  re-pin the preference (`tebako use --runtime {}@<version>`) or rebuild the payload against a newer ABI line",
-                req.engine,
+                reqs.engine(),
                 pref.version,
-                constraint.source(),
-                req.engine
+                described,
+                reqs.engine()
             ),
         );
     }
@@ -179,9 +190,9 @@ pub fn resolve_runtime(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
                     "no compatible runtime for {} \"{}\": {cached_note}\n  and no runtime preference is configured — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
-                    req.engine,
-                    constraint.source(),
-                    req.engine
+                    reqs.engine(),
+                    described,
+                    reqs.engine()
                 ),
             );
         }
@@ -189,9 +200,9 @@ pub fn resolve_runtime(
             EX_TEBAKO_UNAVAILABLE,
             format!(
                 "no compatible cached runtime for {} \"{}\" (would download {}@{}): {cached_note}",
-                req.engine,
-                constraint.source(),
-                req.engine,
+                reqs.engine(),
+                described,
+                reqs.engine(),
                 pref.version
             ),
         );
@@ -202,7 +213,7 @@ pub fn resolve_runtime(
     // with nothing satisfiable fails here with the named
     // platform-availability error; anything unreadable leaves the pin
     // the target (all pin-path behaviors unchanged).
-    let target = match index_selected_target(req, &constraint, pref, ctx)? {
+    let target = match index_selected_target(reqs, pref, ctx)? {
         Some(pick) => pick,
         None if !prefless => pref.clone(),
         None => {
@@ -210,26 +221,44 @@ pub fn resolve_runtime(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
                     "no compatible runtime for {} \"{}\": {cached_note}\n  and no runtime preference is configured, and the default-line release index did not read — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
-                    req.engine,
-                    constraint.source(),
-                    req.engine
+                    reqs.engine(),
+                    described,
+                    reqs.engine()
                 ),
             );
         }
     };
-    let rt = download_runtime(&req.engine, &target, ctx)?;
+    let rt = download_runtime(reqs.engine(), &target, ctx)?;
     // The downloaded runtime's abi line must satisfy the payload too —
     // the release index carries it (abi: None is the compat window).
-    if let (Some(want), Some(have)) = (&req.abi, &rt.abi) {
-        if want != have {
-            return fail(
-                EX_TEBAKO_UNAVAILABLE,
-                format!(
-                    "downloaded runtime {}@{} carries abi \"{have}\" but the payload requires \"{want}\" — the payload was built against a different platform line; rebuild the payload or pin a matching runtime",
-                    req.engine, target.version
-                ),
-            );
+    // The single-entry native shape keeps its exact named error.
+    if let [req] = reqs.entries() {
+        if let (Some(want), Some(have)) = (&req.abi, &rt.abi) {
+            if want != have {
+                return fail(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "downloaded runtime {}@{} carries abi \"{have}\" but the payload requires \"{want}\" — the payload was built against a different platform line; rebuild the payload or pin a matching runtime",
+                        reqs.engine(), target.version
+                    ),
+                );
+            }
         }
+    }
+    // spec 28 §8: SOME entry must match the downloaded shard on the
+    // shard's own keys — the index's availability row is advisory; a
+    // disagreement (implementation / language_version) is the release
+    // lying, named, never a guessed boot.
+    if !reqs.entries().iter().any(|r| entry_matches(&rt, r)) {
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "downloaded runtime {}@{} matches no entry of the requirement \"{}\" — the release index's availability row disagrees with the shard's own keys; report the release",
+                reqs.engine(),
+                target.version,
+                described
+            ),
+        );
     }
     Ok(RuntimeResolution::Ready(Box::new(rt)))
 }
@@ -294,9 +323,12 @@ pub fn resolve_runtime_edge(
     let req = RuntimeRequirement {
         engine: engine.to_string(),
         constraint: constraint.clone(),
+        implementation: implementation.map(str::to_string),
         abi: None,
     };
-    let RuntimeResolution::Ready(rt) = resolve_runtime(Some(&req), allow_download, ctx)? else {
+    let RuntimeResolution::Ready(rt) =
+        resolve_runtime(Some(&RuntimeRequirements::one(req)), allow_download, ctx)?
+    else {
         unreachable!("a requirement was passed — never Zero");
     };
     if rt.image.is_none() {
@@ -326,8 +358,10 @@ pub fn resolve_runtime_edge(
 /// runtime's shard-mirrored edge (spec 33 §1) resolved through the
 /// spawned-edge machinery (a primary-class resolution: cache-first; a
 /// miss rides the primary download machinery; the implementation axis
-/// re-asserts), then the owner-contract negotiation, fail-closed with
-/// the exit-75 class naming both sides — never a guessed-around boot.
+/// re-asserts), then TWO fail-closed gates of the exit-75 class: the
+/// owner's launcher line must implement spec 33's entry rule (tebako
+/// >= 2.5.0) and its declared contract must satisfy the depending
+/// runtime's owner_contract — never a guessed-around boot.
 pub fn resolve_owner(
     mirror: &tpkg::runtime_store::OnRuntimeMirror,
     allow_download: bool,
@@ -345,6 +379,23 @@ pub fn resolve_owner(
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
+    // spec 33 §4's first fail-closed gate: the owner must sit on a
+    // launcher line implementing spec 33's entry rule (tebako >= 2.5.0)
+    // — an older line mis-joins the entry onto the depending runtime's
+    // env image. The shard index entry's own tebako_version meta wins
+    // when the release declares it; otherwise the shard's recorded
+    // tebako version IS the line.
+    let line = tpkg::runtime_store::entry_meta(&owner.dir, &exe_name, "tebako_version")
+        .unwrap_or_else(|| owner.tebako_version.clone());
+    if versions::compare(&line, "2.5.0") == std::cmp::Ordering::Less {
+        return fail(
+            EX_TEBAKO_CONTRACT,
+            format!(
+                "the resolved {} runtime {} (tebako {}) cannot own this composition: launcher line {line} predates tebako 2.5.0, the first line implementing spec 33's entry rule — the composition would mis-join the entry onto the depending runtime's env image\n  install a {} runtime on tebako >= 2.5.0",
+                mirror.engine, owner.lang_version, owner.tebako_version, mirror.engine
+            ),
+        );
+    }
     let declared = tpkg::runtime_store::entry_contract_version(&owner.dir, &exe_name);
     let want = mirror.owner_contract();
     let satisfied = declared
@@ -370,18 +421,24 @@ pub fn resolve_owner(
     )
 }
 
-/// The release index's availability facet for `platform` (spec 13 §2a —
-/// the locked entry shape declares `{engine}_version` + `platform` +
-/// `tebako_version`): the `(lang_version, tebako_version)` of every
-/// entry released for this platform. `None` when NO entry declares the
-/// availability keys at all — an index that predates them is
+/// One availability row of the release index (spec 13 §2a — the locked
+/// entry shape declares `{engine}_version` + `platform` +
+/// `tebako_version`; spec 28 §8 adds the optional `language_version` /
+/// `implementation` keys — absent on indices that predate them, the
+/// compat window).
+struct ReleasedEntry {
+    lang_version: String,
+    tebako_version: Option<String>,
+    language_version: Option<String>,
+    implementation: Option<String>,
+}
+
+/// The release index's availability facet for `platform` (spec 13 §2a):
+/// every entry released for this platform. `None` when NO entry declares
+/// the availability keys at all — an index that predates them is
 /// uninformative (the config pin stays the target), never an
 /// availability verdict.
-fn released_versions(
-    text: &str,
-    engine: &str,
-    platform: &str,
-) -> Option<Vec<(String, Option<String>)>> {
+fn released_versions(text: &str, engine: &str, platform: &str) -> Option<Vec<ReleasedEntry>> {
     let parsed = tebako_json::parse(text).ok()?;
     let tebako_json::Value::Array(entries) = &parsed else {
         return None;
@@ -398,10 +455,12 @@ fn released_versions(
         };
         keyed = true;
         if entry_platform == platform {
-            released.push((
+            released.push(ReleasedEntry {
                 lang_version,
-                entry.find("tebako_version").and_then(|v| v.as_string()),
-            ));
+                tebako_version: entry.find("tebako_version").and_then(|v| v.as_string()),
+                language_version: entry.find("language_version").and_then(|v| v.as_string()),
+                implementation: entry.find("implementation").and_then(|v| v.as_string()),
+            });
         }
     }
     keyed.then_some(released)
@@ -409,8 +468,13 @@ fn released_versions(
 
 /// The download-target selection on a cache miss: consult the release
 /// index of the pin's tebako line (`v{pref.tebako}/manifest.json`) for
-/// the newest interpreter version that both satisfies `constraint` and
-/// is released for this platform. Three outcomes:
+/// the newest interpreter version that both satisfies the requirement
+/// and is released for this platform. spec 28 §8: a row matches when ANY
+/// entry of the `any_of` list matches it — an implementation-narrowed
+/// entry filters on the row's `implementation` key (absent = the compat
+/// window) and matches the row's OWN version; a language-level entry
+/// matches the row's `language_version`, falling back to
+/// `{engine}_version` on pre-field rows. Three outcomes:
 ///
 /// - `Ok(None)` — the index did not read or carries no availability
 ///   keys (and always in offline mode, which never fetches): the config
@@ -423,8 +487,7 @@ fn released_versions(
 ///   platform that trails the payload's needs — e.g. windows-ucrt64
 ///   released only through ruby 3.2.x — is a diagnosis, never a 404).
 fn index_selected_target(
-    req: &RuntimeRequirement,
-    constraint: &Constraint,
+    reqs: &RuntimeRequirements,
     pref: &RuntimePref,
     ctx: &Ctx,
 ) -> Result<Option<RuntimePref>, ShimError> {
@@ -449,26 +512,49 @@ fn index_selected_target(
     let Some(text) = text else {
         return Ok(None);
     };
-    let Some(released) = released_versions(&text, &req.engine, platform) else {
+    let Some(released) = released_versions(&text, reqs.engine(), platform) else {
         return Ok(None);
     };
-    if let Some((version, tebako)) = released
+    let row_matches = |e: &ReleasedEntry| {
+        reqs.entries().iter().any(|r| {
+            let impl_ok = match &r.implementation {
+                None => true,
+                Some(want) => e.implementation.as_deref().map_or(true, |have| have == want),
+            };
+            if !impl_ok {
+                return false;
+            }
+            let line = if r.implementation.is_some() {
+                &e.lang_version
+            } else {
+                e.language_version.as_ref().unwrap_or(&e.lang_version)
+            };
+            versions::from_validated(&r.constraint).matches(line)
+        })
+    };
+    if let Some(pick) = released
         .iter()
-        .filter(|(version, _)| constraint.matches(version))
+        .filter(|e| row_matches(e))
         .max_by(|a, b| {
-            versions::compare(&a.0, &b.0).then_with(|| {
-                versions::compare(a.1.as_deref().unwrap_or(""), b.1.as_deref().unwrap_or(""))
+            versions::compare(&a.lang_version, &b.lang_version).then_with(|| {
+                versions::compare(
+                    a.tebako_version.as_deref().unwrap_or(""),
+                    b.tebako_version.as_deref().unwrap_or(""),
+                )
             })
         })
     {
         return Ok(Some(RuntimePref {
-            version: version.clone(),
-            tebako: tebako.clone().unwrap_or_else(|| pref.tebako.clone()),
+            version: pick.lang_version.clone(),
+            tebako: pick
+                .tebako_version
+                .clone()
+                .unwrap_or_else(|| pref.tebako.clone()),
         }));
     }
     let mut known: Vec<&str> = released
         .iter()
-        .map(|(version, _)| version.as_str())
+        .map(|e| e.lang_version.as_str())
         .collect();
     known.sort_by(|a, b| versions::compare(a, b));
     known.dedup();
@@ -481,9 +567,9 @@ fn index_selected_target(
         EX_TEBAKO_UNAVAILABLE,
         format!(
             "no released {} runtime for {platform} satisfies \"{}\"\n  released for {platform}: {known}\n  this payload needs a newer {} than this platform provides yet",
-            req.engine,
-            constraint.source(),
-            req.engine
+            reqs.engine(),
+            reqs.to_string(),
+            reqs.engine()
         ),
     )
 }
@@ -985,6 +1071,7 @@ fn download_runtime(
                 .then(|| entry_dir.join(&image_asset)),
             abi: entry_meta(&entry_dir, &asset, "abi"),
             implementation: entry_meta(&entry_dir, &asset, "implementation"),
+            language_version: entry_meta(&entry_dir, &asset, "language_version"),
         });
     }
 
@@ -1048,6 +1135,7 @@ fn download_runtime(
                 .then(|| entry_dir.join(&image_asset)),
             abi: entry_meta(&entry_dir, &asset, "abi"),
             implementation: entry_meta(&entry_dir, &asset, "implementation"),
+            language_version: entry_meta(&entry_dir, &asset, "language_version"),
         });
     }
 
@@ -1234,6 +1322,7 @@ fn download_runtime(
                     .then(|| entry_dir.join(&image_asset)),
                 abi: entry_meta(&entry_dir, &asset, "abi"),
                 implementation: entry_meta(&entry_dir, &asset, "implementation"),
+                language_version: entry_meta(&entry_dir, &asset, "language_version"),
                 dir: entry_dir,
             })
         }
@@ -1274,6 +1363,7 @@ fn download_runtime(
                 image: has_image.then(|| entry_dir.join(&image_asset)),
                 abi: entry_meta(&entry_dir, &asset, "abi"),
                 implementation: entry_meta(&entry_dir, &asset, "implementation"),
+                language_version: entry_meta(&entry_dir, &asset, "language_version"),
                 dir: entry_dir,
             })
         }

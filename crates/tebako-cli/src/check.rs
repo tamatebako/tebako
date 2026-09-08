@@ -65,7 +65,7 @@ use tebako_shim::runtime::{self, RuntimeResolution};
 use tebako_shim::{Ctx, ShimError};
 use tpkg::{
     Check, CheckEntry, CheckPlatform, Constraint, HostJail, JailAccess, JailMount, PayloadManifest,
-    RuntimeRequirement,
+    RuntimeRequirement, RuntimeRequirements,
 };
 
 use crate::error::{packaging_error, plain_error, TebakoError};
@@ -293,7 +293,7 @@ enum ExecCtx {
     /// mounted, the doc's policy/mounts/needs the base jail. The
     /// resolution is boxed (it dwarfs the other variants).
     Composition {
-        requirement: Option<RuntimeRequirement>,
+        requirement: Option<RuntimeRequirements>,
         runtime: Option<Box<RuntimeResolution>>,
         mounts: Vec<MountSpec>,
         base_jail: Option<HostJail>,
@@ -1041,7 +1041,7 @@ fn load_composition(path: &Path, ctx: &Ctx) -> Result<CheckTarget, TebakoError> 
     // The runtime requirement: the doc's `runtime:` block, else the
     // entrypoint's own requirement (the dispatch rule, spec 23 §6).
     let requirement = match &doc.runtime {
-        Some(rt) => Some(RuntimeRequirement {
+        Some(rt) => Some(RuntimeRequirements::one(RuntimeRequirement {
             engine: rt.name.clone(),
             constraint: Constraint::new(&rt.requirement).map_err(|e| {
                 doc_err(format!(
@@ -1049,8 +1049,9 @@ fn load_composition(path: &Path, ctx: &Ctx) -> Result<CheckTarget, TebakoError> 
                     rt.requirement
                 ))
             })?,
+            implementation: None,
             abi: None,
-        }),
+        })),
         None => provider.and_then(|p| {
             slices[p].manifest.as_ref().and_then(|(m, _)| {
                 tebako_shim::manifest::Manifest::from_payload_manifest(m.clone())
@@ -1061,8 +1062,8 @@ fn load_composition(path: &Path, ctx: &Ctx) -> Result<CheckTarget, TebakoError> 
             })
         }),
     };
-    if let Some(req) = &requirement {
-        caps.insert(req.engine.clone());
+    if let Some(reqs) = &requirement {
+        caps.insert(reqs.engine().to_string());
     }
 
     // The base policy: the doc's mounts + needs as grants; deny by

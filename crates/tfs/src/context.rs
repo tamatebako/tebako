@@ -178,8 +178,8 @@ pub struct FsContext {
     /// live for the process run and are removed at teardown (atexit).
     dl_cache: BTreeMap<String, std::path::PathBuf>,
     /// The home-layout verdict per mount handle (the in-image manifest's
-    /// `identity.annotations.java_home`), memoized on first exec probe —
-    /// see `exec_materialize`.
+    /// `identity.annotations.home`, or the shipped `java_home` alias),
+    /// memoized on first exec probe — see `exec_materialize`.
     home_memos: BTreeMap<i32, bool>,
     /// The home mounts whose whole tree already materialized into the
     /// dl tmpdir this process run (extract once per mount).
@@ -1794,8 +1794,11 @@ impl FsContext {
 
     /// The exec surface's answer for a memfs path (the preload's
     /// execve routing): a mount whose in-image manifest
-    /// declares the home annotation (`identity.annotations.java_home` —
-    /// the payload root IS a tool home, spec 03's free-form annotations)
+    /// declares the home annotation (`identity.annotations.home`, or the
+    /// shipped `java_home` alias — the payload root IS a tool home,
+    /// spec 03's free-form annotations; kind-agnostic — an
+    /// unpatched-interpreter payload whose entries derive sibling paths
+    /// from `__dir__` declares it too, spec 22 §6)
     /// materializes WHOLE once per process and the answer is the host
     /// twin of `path` inside that tree. A home's data files
     /// (lib/modules, lib/jvm.cfg) never ride a linked-library closure,
@@ -1923,9 +1926,16 @@ impl FsContext {
     }
 
     /// The mount's home-layout verdict, memoized per handle: the
-    /// in-image manifest carries `identity.annotations.java_home` with
-    /// a string value (the whole mount tree materializes — the shim's
-    /// install-time reading of the same annotation, #388). The read is
+    /// in-image manifest carries the home annotation —
+    /// `identity.annotations.home` (the runtime-neutral key, spec 22 §6)
+    /// or the already-shipped back-compat alias
+    /// `identity.annotations.java_home` (#548) — with a string value
+    /// naming the mount-relative home dir (the whole mount tree
+    /// materializes — the shim's install-time
+    /// reading of the same annotation, #388). The read is kind-agnostic:
+    /// a runtime's env image and an unpatched-interpreter PAYLOAD whose
+    /// entries derive sibling paths from `__dir__` (spec 22 §6 — the
+    /// bench-2b finding) answer identically. The read itself is
     /// a tolerant value walk, never the validating model parse: a
     /// schema newer than this runtime must still answer (spec 03's
     /// compat rule — consumers ignore what they predate). An absent,
@@ -1968,15 +1978,17 @@ impl FsContext {
             })
             .and_then(|text| serde_yml::from_str::<serde_yml::Value>(&text).ok())
             .and_then(|yaml| {
-                let result = yaml
-                    .get("identity")?
-                    .get("annotations")?
-                    .get("java_home")?
+                let annotations = yaml.get("identity")?.get("annotations")?;
+                // spec 22 §6's whole-tree signal: the runtime-neutral
+                // `home` key, else the shipped `java_home` alias (#548).
+                let result = annotations
+                    .get("home")
+                    .or_else(|| annotations.get("java_home"))?
                     .as_str()
                     .map(str::to_owned);
                 if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
                     eprintln!(
-                        "[tfs] mount_is_home: handle={} java_home={:?}",
+                        "[tfs] mount_is_home: handle={} home={:?}",
                         handle, result
                     );
                 }
@@ -2728,6 +2740,15 @@ fn create_dl_tmpdir() -> Option<std::path::PathBuf> {
         .filter(|v| !v.is_empty())
         .map(std::path::PathBuf::from)
         .unwrap_or_else(std::env::temp_dir);
+    create_dl_tmpdir_under(base)
+}
+
+/// The base-keyed body of [`create_dl_tmpdir`], split out so the
+/// rebasing test exercises the naming/creation WITHOUT the process
+/// env: a `set_var("TEBAKO_EXEC_CACHE")` in one threaded test races
+/// every concurrent materialization into a tree the mutator then
+/// removes (the exec_materialize home-key flake).
+fn create_dl_tmpdir_under(base: std::path::PathBuf) -> Option<std::path::PathBuf> {
     // The named exec-cache root may not exist yet — the driver names it,
     // the first materialization creates it.
     std::fs::create_dir_all(&base).ok()?;
@@ -3460,13 +3481,13 @@ mod tests {
 
     /// A zip with explicit dir entries (the zip backend's readdir is
     /// explicit-only) carrying a fake tool home: bin/tool + lib/modules,
-    /// and the in-image manifest when `with_annotation` (the tolerant
-    /// exec probe reads only identity.annotations.java_home).
-    fn fixture_home_zip(dir: &std::path::Path, with_annotation: bool) -> std::path::PathBuf {
-        let name = if with_annotation {
-            "home.zip"
-        } else {
-            "plain.zip"
+    /// and the in-image manifest when `annotation` names a home key (the
+    /// tolerant exec probe reads `identity.annotations.home`, else the
+    /// shipped `java_home` alias — spec 22 §6, #548).
+    fn fixture_home_zip(dir: &std::path::Path, annotation: Option<&str>) -> std::path::PathBuf {
+        let name = match annotation {
+            Some(key) => format!("home-{key}.zip"),
+            None => "plain.zip".to_string(),
         };
         let path = dir.join(name);
         let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
@@ -3474,12 +3495,12 @@ mod tests {
         for d in ["__tpkg__/", "bin/", "lib/"] {
             writer.add_directory(d, options).unwrap();
         }
-        if with_annotation {
+        if let Some(key) = annotation {
             writer
                 .start_file("__tpkg__/manifest.yaml", options)
                 .unwrap();
             writer
-                .write_all(b"identity:\n  annotations:\n    java_home: \"/\"\n")
+                .write_all(format!("identity:\n  annotations:\n    {key}: \"/\"\n").as_bytes())
                 .unwrap();
         }
         writer.start_file("bin/tool", options).unwrap();
@@ -3496,7 +3517,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tfs-home-exec-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let image = fixture_home_zip(&dir, true);
+        let image = fixture_home_zip(&dir, Some("java_home"));
         let mut ctx = FsContext::new();
         let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
         ctx.mount_checked(mount).unwrap();
@@ -3525,6 +3546,92 @@ mod tests {
     }
 
     #[test]
+    fn exec_materialize_treats_the_neutral_home_key_as_the_whole_tree_signal() {
+        // spec 22 §6 (#548): `identity.annotations.home` is the
+        // runtime-neutral spelling of the home annotation — a ruby home
+        // is not a java_home. Either key triggers; the alias keeps the
+        // already-shipped openjdk images working.
+        let dir = std::env::temp_dir().join(format!("tfs-home-neutral-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let image = fixture_home_zip(&dir, Some("home"));
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/tfs/bin/tool").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(host.is_file(), "the exec twin lands: {host:?}");
+        assert!(
+            host.to_string_lossy().contains("tebako-home-"),
+            "the neutral home key answers from the whole-tree root: {host:?}"
+        );
+        let root = host.parent().unwrap().parent().unwrap();
+        assert_eq!(
+            std::fs::read(root.join("lib/modules")).unwrap(),
+            b"jimage-bytes"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn exec_materialize_treats_a_payload_home_annotation_as_the_whole_tree_signal() {
+        // spec 22 §6 (#548, the bench-2b finding): the home annotation is
+        // kind-agnostic — an unpatched-interpreter PAYLOAD (a
+        // truffleruby/jruby app whose entries derive sibling paths from
+        // __dir__) declares it on its own payload manifest with a
+        // mount-relative value, and its mount extracts whole the same way.
+        let dir = std::env::temp_dir().join(format!("tfs-home-payload-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("payload-home.zip");
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default();
+        // Every level carries its explicit record — the zip backend's
+        // read_dir (C++ parity) enumerates explicit "name/" entries
+        // only; implicit parents are never synthesized.
+        for d in ["__tpkg__/", "app/", "app/bin/", "app/lib/"] {
+            writer.add_directory(d, options).unwrap();
+        }
+        writer
+            .start_file("__tpkg__/manifest.yaml", options)
+            .unwrap();
+        writer
+            .write_all(b"identity:\n  kind: app\n  annotations:\n    home: /app\n")
+            .unwrap();
+        writer.start_file("app/bin/tool", options).unwrap();
+        writer.write_all(b"#!/bin/fake\n").unwrap();
+        writer.start_file("app/lib/data.txt", options).unwrap();
+        writer.write_all(b"sibling-bytes").unwrap();
+        let bytes = writer.finish().unwrap().into_inner();
+        std::fs::write(&path, bytes).unwrap();
+
+        let mut ctx = FsContext::new();
+        let mount = crate::mount::build_from_file(path.to_str().unwrap(), "/tfs").unwrap();
+        ctx.mount_checked(mount).unwrap();
+
+        let answer = ctx.exec_materialize("/tfs/app/bin/tool").unwrap();
+        let host = std::path::PathBuf::from(answer.to_string_lossy().into_owned());
+        assert!(
+            host.is_file(),
+            "the payload entry's exec twin lands: {host:?}"
+        );
+        assert!(
+            host.to_string_lossy().contains("tebako-home-"),
+            "a payload home answers from the whole-tree root: {host:?}"
+        );
+        // The __dir__ case: the entry's derived sibling landed with it.
+        let root = host.parent().unwrap().parent().unwrap().parent().unwrap();
+        assert_eq!(
+            std::fs::read(root.join("app/lib/data.txt")).unwrap(),
+            b"sibling-bytes"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn exec_materialize_answers_the_tree_root_for_the_home_mount_root() {
         // spec 33 §3's bridge: a runtime-on-runtime template token naming
         // the depending mount ROOT (the `-Dorg.graalvm.language.ruby.home=
@@ -3534,7 +3641,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tfs-home-root-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let image = fixture_home_zip(&dir, true);
+        let image = fixture_home_zip(&dir, Some("java_home"));
         let mut ctx = FsContext::new();
         let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
         ctx.mount_checked(mount).unwrap();
@@ -3568,13 +3675,15 @@ mod tests {
         // spec 22 §6: when the driver named TEBAKO_EXEC_CACHE, the
         // closure walk's extractions live UNDER it — in the same
         // tebako-dl-<hex> per-process leaf (the dlmap-prefix redirect
-        // and the exit cleanup are untouched).
+        // and the exit cleanup are untouched). The base-taking body is
+        // exercised directly: the env var is process-wide, and a
+        // set_var here raced every concurrent materialization into a
+        // tree this test then removed (the exec_materialize home-key
+        // flake); the wrapper's env read is the four-line glue above.
         let base =
             std::env::temp_dir().join(format!("tebako-exec-cache-ut-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
-        std::env::set_var("TEBAKO_EXEC_CACHE", &base);
-        let dir = create_dl_tmpdir();
-        std::env::remove_var("TEBAKO_EXEC_CACHE");
+        let dir = create_dl_tmpdir_under(base.clone());
         let dir = dir.expect("the tmpdir is created");
         assert!(
             dir.starts_with(&base),
@@ -3595,7 +3704,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tfs-plain-exec-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let image = fixture_home_zip(&dir, false);
+        let image = fixture_home_zip(&dir, None);
         let mut ctx = FsContext::new();
         let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
         ctx.mount_checked(mount).unwrap();
@@ -3629,7 +3738,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tfs-dlmap-jail-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let image = fixture_home_zip(&dir, false);
+        let image = fixture_home_zip(&dir, None);
         let mut ctx = FsContext::new();
         let mount = crate::mount::build_from_file(image.to_str().unwrap(), "/tfs").unwrap();
         ctx.mount_checked(mount).unwrap();
@@ -3672,7 +3781,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("tfs-dlmap-rec-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let image = fixture_home_zip(&dir, false);
+        let image = fixture_home_zip(&dir, None);
         let log = dir.join("journal.log");
         let journal = std::fs::OpenOptions::new()
             .create(true)

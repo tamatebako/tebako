@@ -48,7 +48,7 @@ impl Fixture {
         // the mirror (the dispatcher-visible record)
         let mirror = match kind {
             "app" => format!(
-                "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \"~> 3.3.0\", abi: \"arm64-darwin-23\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+                "identity:\n  schema_version: 1\n  kind: app\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \"~> 3.3.0\", implementation: mri, abi: \"arm64-darwin-23\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
                 "0".repeat(64),
                 "0".repeat(64)
             ),
@@ -110,7 +110,7 @@ impl Drop for Fixture {
 /// A zip image with an embedded manifest (the tfs zip backend reads it).
 fn zip_image_with_manifest(name: &str, version: &str, kind: &str) -> Vec<u8> {
     let manifest = format!(
-        "identity:\n  schema_version: 1\n  kind: {kind}\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \"~> 3.3.0\", abi: \"arm64-darwin-23\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        "identity:\n  schema_version: 1\n  kind: {kind}\n  name: {name}\n  version: {version}\n  producer: {{tool: tebako, tool_version: 0.15.9}}\n  created: \"2026-07-26T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: {name}\n      path: /bin/{name}\n      runtime_requirement: {{engine: ruby, constraint: \"~> 3.3.0\", implementation: mri, abi: \"arm64-darwin-23\"}}\n  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
         "0".repeat(64),
         "0".repeat(64)
     );

@@ -63,6 +63,12 @@ pub struct CachedRuntime {
     /// (the same compat-window rule as `abi`: eligible, never a match
     /// failure of its own).
     pub implementation: Option<String>,
+    /// The language level this build implements (spec 28 §8 — jruby 9.4 →
+    /// `"3.1"`) from the release index's `language_version` key; `None`
+    /// for releases that predate the field — a language-level requirement
+    /// entry then matches `lang_version` itself (the compat window: for
+    /// mri the two are equal by construction).
+    pub language_version: Option<String>,
 }
 
 /// Parse a cache entry directory name `<lang>-<lv>-<ver>-<triplet>`:
@@ -341,6 +347,7 @@ fn scan_entry(
         image,
         abi: entry_meta(entry_dir, &exe_name, "abi"),
         implementation: entry_meta(entry_dir, &exe_name, "implementation"),
+        language_version: entry_meta(entry_dir, &exe_name, "language_version"),
     };
     Some((lang, lv, ver, rt))
 }
@@ -444,6 +451,67 @@ pub fn resolve_spawned(
         .filter(|c| c.image.is_some() && implementation_matches(c, implementation))
         .collect();
     newest_compatible(&cached, constraint)
+}
+
+/// One requirement entry against one cache entry (spec 28 §8): the
+/// implementation axis (the compat-window rule of
+/// [`implementation_matches`]), the abi axis re-asserted (both sides
+/// `Option` — a pre-field cache entry stays eligible, never a match
+/// failure of its own), then the version line: an
+/// implementation-narrowed entry matches the runtime's OWN version; a
+/// language-level entry matches the runtime's `language_version`,
+/// falling back to its version on pre-field shards.
+pub fn entry_matches(cached: &CachedRuntime, req: &crate::manifest::RuntimeRequirement) -> bool {
+    if !implementation_matches(cached, req.implementation.as_deref()) {
+        return false;
+    }
+    if let (Some(want), Some(have)) = (&req.abi, &cached.abi) {
+        if want != have {
+            return false;
+        }
+    }
+    let line = if req.implementation.is_some() {
+        &cached.lang_version
+    } else {
+        cached
+            .language_version
+            .as_deref()
+            .unwrap_or(&cached.lang_version)
+    };
+    versions::from_validated(&req.constraint).matches(line)
+}
+
+/// The newest cached runtime matching ANY entry of `reqs` (spec 28 §8's
+/// `any_of` pick — the entries are OR-ed; newest by (language version,
+/// tebako version) as in [`newest_compatible`]).
+pub fn newest_compatible_any(
+    cached: &[CachedRuntime],
+    reqs: &crate::manifest::RuntimeRequirements,
+) -> Option<CachedRuntime> {
+    cached
+        .iter()
+        .filter(|c| reqs.entries().iter().any(|r| entry_matches(c, r)))
+        .max_by(|a, b| {
+            versions::compare(&a.lang_version, &b.lang_version)
+                .then_with(|| versions::compare(&a.tebako_version, &b.tebako_version))
+        })
+        .cloned()
+}
+
+/// The `any_of` spawn pick (spec 28 §8 over spec 30 §1's rule): the
+/// newest cache entry matching ANY entry of the requirement list, the
+/// env image still required. Single-entry requirements answer exactly
+/// what [`resolve_spawned`] answers for the same axes on pre-field
+/// shards.
+pub fn resolve_spawned_any(
+    home: &Path,
+    reqs: &crate::manifest::RuntimeRequirements,
+) -> Option<CachedRuntime> {
+    let cached: Vec<CachedRuntime> = scan_cached(home, reqs.engine())
+        .into_iter()
+        .filter(|c| c.image.is_some())
+        .collect();
+    newest_compatible_any(&cached, reqs)
 }
 
 // ---------------------------------------------------------------------
@@ -769,6 +837,163 @@ mod tests {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
+    /// spec 28 §8 fixtures: a truffleruby shard (the implementation +
+    /// language_version + abi keys) and a pre-field mri shard (no keys —
+    /// the compat window), plus an imageless newest shard that never
+    /// serves a spawn.
+    fn spec28_shards(home: &Path) {
+        let platform = platform_string();
+        fixture_entry_engine(
+            home,
+            "ruby",
+            "34.0.1",
+            "0.4.0",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{}\", \"implementation\": \"truffleruby\", \"language_version\": \"3.4\", \"abi\": \"arm64-darwin-23\"}}",
+                entry_exe_name("34.0.1", "0.4.0", platform)
+            )),
+        );
+        fixture_entry_engine(home, "ruby", "3.4.2", "0.4.0", true, None);
+        fixture_entry_engine(
+            home,
+            "ruby",
+            "35.0.0",
+            "0.4.0",
+            false,
+            Some(format!(
+                "{{\"filename\": \"{}\", \"implementation\": \"truffleruby\", \"language_version\": \"3.5\"}}",
+                entry_exe_name("35.0.0", "0.4.0", platform)
+            )),
+        );
+    }
+
+    fn req28(
+        implementation: Option<&str>,
+        constraint: &str,
+    ) -> crate::manifest::RuntimeRequirement {
+        crate::manifest::RuntimeRequirement {
+            engine: "ruby".to_string(),
+            constraint: crate::Constraint::new(constraint).unwrap(),
+            implementation: implementation.map(str::to_string),
+            abi: None,
+        }
+    }
+
+    #[test]
+    fn entry_matches_reads_the_language_version_line() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-runtime-store-entry-matches-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        spec28_shards(&tmp);
+        let cached = scan_cached(&tmp, "ruby");
+        let truffle = cached.iter().find(|c| c.lang_version == "34.0.1").unwrap();
+        assert_eq!(truffle.implementation.as_deref(), Some("truffleruby"));
+        assert_eq!(truffle.language_version.as_deref(), Some("3.4"));
+        let mri = cached.iter().find(|c| c.lang_version == "3.4.2").unwrap();
+        assert_eq!(mri.language_version, None);
+
+        // A language-level entry matches the shard's language_version —
+        // truffleruby 34.0.1 speaks ruby 3.4…
+        let language = req28(None, ">= 3.3, < 5.0");
+        assert!(entry_matches(truffle, &language));
+        assert!(entry_matches(mri, &language));
+        // …and never the shard's OWN version when language_version
+        // exists: 34.0.1 is not "< 5.0", yet the entry matched above;
+        // ">= 34" reads the language line and fails.
+        assert!(!entry_matches(truffle, &req28(None, ">= 34")));
+        // On a pre-field shard the fallback IS the own version (for mri
+        // the two lines are one).
+        assert!(entry_matches(mri, &req28(None, "~> 3.4")));
+
+        // An implementation-narrowed entry matches the OWN version line…
+        assert!(entry_matches(truffle, &req28(Some("truffleruby"), "~> 34.0")));
+        // …never the language line…
+        assert!(!entry_matches(
+            truffle,
+            &req28(Some("truffleruby"), ">= 3.3, < 5.0")
+        ));
+        // …and filters the implementation axis (mri declares none — the
+        // compat window keeps it eligible on its own line, but "~> 34.0"
+        // is not 3.4.2; a named implementation on a DECLARING shard must
+        // agree).
+        assert!(!entry_matches(mri, &req28(Some("truffleruby"), "~> 34.0")));
+        assert!(!entry_matches(
+            truffle,
+            &req28(Some("jruby"), ">= 3.3, < 5.0")
+        ));
+        // The compat window: a named implementation nobody declares stays
+        // eligible on a pre-key shard (implementation_matches's rule).
+        assert!(entry_matches(mri, &req28(Some("jruby"), "~> 3.4")));
+
+        // The abi axis re-asserts: only the shard carrying the payload's
+        // platform string matches (both sides Some); a pre-field shard
+        // (abi: None) stays eligible.
+        let native = |abi: &str| crate::manifest::RuntimeRequirement {
+            abi: Some(abi.to_string()),
+            ..req28(Some("truffleruby"), "~> 34.0")
+        };
+        assert!(entry_matches(truffle, &native("arm64-darwin-23")));
+        assert!(!entry_matches(truffle, &native("x86_64-linux-gnu")));
+        // A pre-key shard stays eligible through the abi axis too: the
+        // same axes on mri's OWN line ("~> 3.4" reads 3.4.2 — the
+        // implementation-named compat window plus abi: None both stay
+        // eligible) match mri and never the truffleruby shard, whose
+        // own line is 34.0.1.
+        let native_mri = |abi: &str| crate::manifest::RuntimeRequirement {
+            abi: Some(abi.to_string()),
+            ..req28(Some("truffleruby"), "~> 3.4")
+        };
+        assert!(entry_matches(mri, &native_mri("arm64-darwin-23")));
+        assert!(!entry_matches(truffle, &native_mri("arm64-darwin-23")));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn resolve_spawned_any_picks_the_newest_match_across_the_any_of_entries() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-runtime-store-spawned-any-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        spec28_shards(&tmp);
+        // any_of: the language level OR truffleruby's own line — both
+        // imaged shards admit (truffleruby via either entry, mri via the
+        // language entry); newest by (language version, tebako version)
+        // wins, and the imageless 35.0.0 never serves a spawn.
+        let list = crate::manifest::RuntimeRequirements::many(vec![
+            req28(None, ">= 3.3, < 5.0"),
+            req28(Some("truffleruby"), "~> 34.0"),
+        ]);
+        let pick = resolve_spawned_any(&tmp, &list).unwrap();
+        assert_eq!(pick.lang_version, "34.0.1");
+        // A requirement no entry satisfies is no answer (never a guess).
+        let none = crate::manifest::RuntimeRequirements::many(vec![
+            req28(None, ">= 5.0"),
+            req28(Some("jruby"), "~> 9.5"),
+        ]);
+        assert!(resolve_spawned_any(&tmp, &none).is_none());
+        // The single-entry form diverges from resolve_spawned exactly
+        // where spec 28 §8 says it must: the language-level entry reads
+        // the shard's language_version line, so "3.4" on truffleruby
+        // 34.0.1 matches "~> 3.4" and the newest MATCH is the
+        // truffleruby shard — while resolve_spawned reads the own line
+        // only and stays on mri 3.4.2.
+        let single = crate::manifest::RuntimeRequirements::one(req28(None, "~> 3.4"));
+        let pick = resolve_spawned_any(&tmp, &single).unwrap();
+        assert_eq!(pick.lang_version, "34.0.1");
+        let c = versions::from_validated(&crate::Constraint::new("~> 3.4").unwrap());
+        let own_line = resolve_spawned(&tmp, "ruby", None, &c).unwrap();
+        assert_eq!(own_line.lang_version, "3.4.2");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
     #[test]
     fn newest_compatible_ties_break_on_the_tebako_version() {
         let mk = |lv: &str, ver: &str| CachedRuntime {
@@ -780,6 +1005,7 @@ mod tests {
             image: None,
             abi: None,
             implementation: None,
+            language_version: None,
         };
         let cached = vec![
             mk("3.3.12", "0.16.5"),

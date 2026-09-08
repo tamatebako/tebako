@@ -312,11 +312,11 @@ fn provider_spawn_pair(
     let mut picked: Option<tpkg::runtime_store::CachedRuntime> = None;
     for exposed in expose {
         let entry = provider_spawn_entrypoint(provider, edge_name, exposed)?;
-        let req = entry
+        let reqs = entry
             .runtime_requirement
             .as_ref()
             .expect("provider_spawn_entrypoint post-asserts runtime_requirement");
-        let rt = match runtime::resolve_runtime(Some(req), allow_download, ctx)? {
+        let rt = match runtime::resolve_runtime(Some(reqs), allow_download, ctx)? {
             runtime::RuntimeResolution::Ready(rt) => *rt,
             runtime::RuntimeResolution::Zero => {
                 unreachable!("a requirement was passed — never Zero")
@@ -327,7 +327,7 @@ fn provider_spawn_pair(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
                     "the resolved {} runtime {} (tebako {}) carries no verified env image — a spawned payload needs the image pair; re-install it with `tebako install`",
-                    req.engine, rt.lang_version, rt.tebako_version
+                    reqs.engine(), rt.lang_version, rt.tebako_version
                 ),
             );
         }

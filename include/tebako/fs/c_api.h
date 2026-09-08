@@ -740,8 +740,9 @@ char* tebako_fs_dlmap2file(const char* path);
  *
  * The exec surface's answer, with the same ownership/lifetime contract
  * as tebako_fs_dlmap2file(). A path inside a home-layout mount (the
- * in-image manifest's identity.annotations.java_home — the payload
- * root IS a tool home) materializes the mount's WHOLE tree once per
+ * in-image manifest's identity.annotations.home, or the shipped
+ * java_home alias — the payload root IS a tool home) materializes the
+ * mount's WHOLE tree once per
  * process and the returned path is the host twin inside that tree: a
  * home's data files (lib/modules, lib/jvm.cfg) never ride a
  * linked-library dependency closure, so the dlmap2file answer boots a

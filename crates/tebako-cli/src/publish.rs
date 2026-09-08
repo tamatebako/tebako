@@ -762,10 +762,24 @@ pub fn publish_full(
                 app.entrypoints
                     .first()
                     .and_then(|e| e.runtime_requirement.as_ref())
-                    .map(|r| RegistryRuntimeRequirement {
-                        engine: r.engine.clone(),
-                        constraint: r.constraint.as_str().to_string(),
-                        abi: r.abi.clone(),
+                    .map(|reqs| {
+                        // The L3 mirror stays the single-map form (spec 28
+                        // §8: the list is L1 grammar only): an `any_of`
+                        // list mirrors its FIRST entry; the full set rides
+                        // the embedded manifest.
+                        let r = &reqs.entries()[0];
+                        if reqs.entries().len() > 1 {
+                            notes.push(format!(
+                                "{}: the runtime_requirement any_of list mirrors its first entry in the registry; the full set rides the embedded manifest (spec 28 §8)",
+                                embedded.identity.name
+                            ));
+                        }
+                        RegistryRuntimeRequirement {
+                            engine: r.engine.clone(),
+                            constraint: r.constraint.as_str().to_string(),
+                            implementation: r.implementation.clone(),
+                            abi: r.abi.clone(),
+                        }
                     }),
             ),
             tpkg::Provides::Toolkit(toolkit) => (
@@ -897,6 +911,11 @@ pub fn publish_full(
     });
     let version_entry = RegistryVersion {
         version: version.clone(),
+        // `tebako publish` ships apps/toolkits/data; the runtime axis
+        // keys (spec 30 §1, spec 28 §8) are feedstock-templated, never
+        // authored here — and the version-level implementation spelling
+        // is the pre-MINOR-1 compat read, never authored anew.
+        implementation: None,
         platforms,
         release: ReleaseRef {
             r#ref: release_ref.clone(),
@@ -1084,6 +1103,8 @@ fn upsert_registry(
         None => registry.payloads.push(RegistryPayload {
             name: name.to_string(),
             kind,
+            engine: None,
+            implementation: None,
             versions: vec![entry],
             default: Some(version),
         }),

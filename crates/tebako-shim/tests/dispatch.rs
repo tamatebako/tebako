@@ -1128,14 +1128,14 @@ fn on_runtime_dispatch_composes_the_owner_handoff() {
         &home,
         "java",
         "25.0.4.1",
-        "2.4.1",
+        "2.5.0",
         true,
         ", \"contract_version\": 2, \"implementation\": \"graalvm\"",
     );
     let owner_image = owner_exe
         .parent()
         .unwrap()
-        .join(format!("tebako-runtime-2.4.1-25.0.4.1-{}.tfs", platform()));
+        .join(format!("tebako-runtime-2.5.0-25.0.4.1-{}.tfs", platform()));
     let mut ctx = ctx(&home, tmp.path());
     pin_env(&mut ctx, "metanorma", "1.2.3");
 
@@ -1188,7 +1188,9 @@ fn on_runtime_owner_contract_mismatch_fails_closed_75() {
         let home = tmp.path().join("home");
         seed_tool(&home, "metanorma", &tr_entry("metanorma"), "1.2.3");
         write_runtime_engine_shard(&home, "ruby", "34.0.1", "2.4.0", true, TR_ON_RUNTIME_SHARD);
-        write_runtime_engine_shard(&home, "java", "25.0.4.1", "2.4.1", true, owner_extra);
+        // The owner sits on the 2.5.0 line so the LINE gate passes and
+        // the CONTRACT gate is the one that fires.
+        write_runtime_engine_shard(&home, "java", "25.0.4.1", "2.5.0", true, owner_extra);
         let mut ctx = ctx(&home, tmp.path());
         pin_env(&mut ctx, "metanorma", "1.2.3");
 
@@ -1197,6 +1199,56 @@ fn on_runtime_owner_contract_mismatch_fails_closed_75() {
         assert!(err.message.contains(">= 2"), "{}", err.message);
         assert!(err.message.contains(want_named), "{}", err.message);
     }
+}
+
+#[test]
+fn on_runtime_owner_line_predating_2_5_fails_closed_75() {
+    // spec 33 §4's first gate: the owner's launcher line predates tebako
+    // 2.5.0 — the first line implementing spec 33's entry rule — so the
+    // composition would mis-join the entry onto the depending runtime's
+    // env image. Fail closed naming the owner AND its line, even when
+    // the declared contract would satisfy.
+    let tmp = TempDir::new("on-runtime-old-line");
+    let home = tmp.path().join("home");
+    seed_tool(&home, "metanorma", &tr_entry("metanorma"), "1.2.3");
+    write_runtime_engine_shard(&home, "ruby", "34.0.1", "2.4.0", true, TR_ON_RUNTIME_SHARD);
+    write_runtime_engine_shard(
+        &home,
+        "java",
+        "25.0.4.1",
+        "2.4.1",
+        true,
+        ", \"contract_version\": 2, \"implementation\": \"graalvm\"",
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let err = dispatch::dispatch("metanorma", &[], &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_CONTRACT, "{err:?}");
+    assert!(err.message.contains("java"), "{}", err.message);
+    assert!(err.message.contains("25.0.4.1"), "{}", err.message);
+    assert!(err.message.contains("2.4.1"), "{}", err.message);
+    assert!(err.message.contains("2.5.0"), "{}", err.message);
+    assert!(err.message.contains("spec 33's entry rule"), "{}", err.message);
+}
+
+#[test]
+fn a_plain_dispatch_on_a_pre_2_5_line_runtime_is_unaffected() {
+    // The line gate is the composition OWNER's gate: a payload riding
+    // its own pre-2.5-line runtime (no on_runtime composition anywhere)
+    // dispatches exactly as before.
+    let tmp = TempDir::new("plain-pre-2-5");
+    let home = tmp.path().join("home");
+    let image = seed_tool(&home, "metanorma", &tr_entry("metanorma"), "1.2.3");
+    let exe = write_runtime(&home, "34.0.1", "2.4.0", true);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &["compile".into()], &ctx).unwrap();
+    assert_eq!(plan.program, exe);
+    assert_eq!(plan.mounts.len(), 1);
+    assert_eq!(plan.mounts[0].mount, "/");
+    assert_eq!(plan.mounts[0].image, image);
 }
 
 #[test]
@@ -1228,7 +1280,7 @@ fn on_runtime_dep_without_image_is_a_named_error() {
         &home,
         "java",
         "25.0.4.1",
-        "2.4.1",
+        "2.5.0",
         true,
         ", \"contract_version\": 2, \"implementation\": \"graalvm\"",
     );

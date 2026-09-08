@@ -395,7 +395,8 @@ fn bridge_token(launch: &mut Launch, mech: Mechanism, index: usize) -> Result<()
 /// home-tree root splices in place of the VFS spelling: the host-plain
 /// owner reads the home arbitrarily, so the whole tree is the honest
 /// unit and the depending image must carry the home annotation
-/// (`identity.annotations.java_home`, spec 22 §3) — an unannotated image
+/// (`identity.annotations.home`, spec 22 §3 — the shipped `java_home`
+/// spelling reads as its alias) — an unannotated image
 /// answers the per-file closure walk, which cannot serve those reads, so
 /// the boot refuses by name (65) instead of handing the owner a partial
 /// home. Tokens not addressing the mount never reach here.
@@ -423,7 +424,7 @@ fn bridge_template_compound(
         .map(|c| c.to_string_lossy().into_owned())
         .map_err(|e| {
             manifest(format!(
-                "on_runtime.argv_template token '{token}' embeds the depending runtime's mount '{mount}' but the image does not materialize as a home tree ({}) — the depending image must carry identity.annotations.java_home marking its root a tool home (spec 33 §3, spec 22 §3); a per-file closure cannot serve the host-plain owner's reads",
+                "on_runtime.argv_template token '{token}' embeds the depending runtime's mount '{mount}' but the image does not materialize as a home tree ({}) — the depending image must carry identity.annotations.home (or the legacy java_home spelling) marking its root a tool home (spec 33 §3, spec 22 §3); a per-file closure cannot serve the host-plain owner's reads",
                 errno_text(e)
             ))
         })?;

@@ -34,7 +34,8 @@
 //! The windows host tier (armed unconditionally — no preload shim
 //! exists on the platform): each declared dependency executable is
 //! materialized through the exec cache's exec routing — whole-tree for
-//! a home-layout mount (the in-image `java_home` annotation), the file
+//! a home-layout mount (the in-image `home` annotation, or the shipped
+//! `java_home` alias), the file
 //! itself otherwise — and the materialized parent dirs LEAD the PATH
 //! prepend, so the child's own CreateProcess search resolves the bare
 //! name with no interception. The materialized child runs plain-host:
@@ -236,7 +237,8 @@ fn materialize_launchers(
         for (base, vfs) in &launches {
             // The SAME home-tree routing decision a spawn makes (Rule E2 /
             // §3.2 — the windows host tier's call): a home-annotated mount
-            // (the JDK shape, `annotations.java_home`) materializes its
+            // (the JDK shape, `annotations.home` or the shipped
+            // `java_home` alias) materializes its
             // whole tree and the wrapper execs the home copy. The closure
             // mirror would strand the binary's self-located prefix — a
             // materialized JVM's java.home without conf/ dies at JCE boot
@@ -319,7 +321,8 @@ fn expose_failure_text(message: &str) -> String {
 
 /// The windows host tier (spec 22 §3.2): materialize each declared
 /// dependency executable through the exec cache's own exec routing —
-/// a home-layout mount (the in-image `java_home` annotation) extracts
+/// a home-layout mount (the in-image `home` annotation, or the shipped
+/// `java_home` alias) extracts
 /// WHOLE once per boot and answers the executable's in-tree host twin
 /// (a JVM's lib/modules and jmods never ride a linked-library closure);
 /// any other mount answers the file itself, whose DLL bare-name loads

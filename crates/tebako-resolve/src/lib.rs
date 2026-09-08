@@ -165,6 +165,10 @@ mod tests {
 
     #[test]
     fn locked_slice_hit_requires_the_anchor_to_equal_the_pin() {
+        // install() consults the process-wide TEBAKO_OFFLINE gate —
+        // serialize with the env-mutating tests like the siblings below.
+        let _guard = TEST_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("TEBAKO_OFFLINE");
         let root = scratch();
         let cache = PayloadCache::with_root(&root);
         let pin = sha256_hex(b"payload");

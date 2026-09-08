@@ -790,7 +790,7 @@ fn read_runtime_entry(
     let engine = app_entrypoints(mirror)
         .first()
         .and_then(|e| e.runtime_requirement.as_ref())
-        .map(|r| r.engine.clone())
+        .map(|r| r.engine().to_string())
         .unwrap_or_else(|| "ruby".to_string());
     let dir = layout.store().join("runtimes");
     let mut found: Vec<PathBuf> = Vec::new();

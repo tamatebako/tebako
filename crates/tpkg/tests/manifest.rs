@@ -152,12 +152,16 @@ fn app_suite_fixture_shape() {
     };
     assert_eq!(e1.name, "metanorma");
     assert_eq!(
-        e1.runtime_requirement.as_ref().unwrap().constraint.as_str(),
+        e1.runtime_requirement.as_ref().unwrap().entries()[0]
+            .constraint
+            .as_str(),
         ">= 3.3, < 5.0"
     );
     assert_eq!(e2.name, "metanorma-nokogiri");
     assert_eq!(
-        e2.runtime_requirement.as_ref().unwrap().constraint.as_str(),
+        e2.runtime_requirement.as_ref().unwrap().entries()[0]
+            .constraint
+            .as_str(),
         "~> 3.3.0"
     );
     assert_eq!(e1.args_default, vec!["--format", "pretty"]);
@@ -219,6 +223,132 @@ fn native_entrypoints_omit_runtime_requirement() {
     );
     // …and the schema agrees (MECE cross-check)
     assert!(schema_validator().is_valid(&yaml_text_to_json(text)));
+}
+
+/// An app manifest carrying `req_yaml` as the entrypoint's
+/// runtime_requirement lines (indented for the provides.entrypoints
+/// item — trailing newline included).
+fn app_with_requirement(req_yaml: &str) -> String {
+    format!(
+        "identity:\n  schema_version: 1\n  kind: app\n  name: app\n  version: \"1.0\"\n  producer: {{tool: test, tool_version: \"1\"}}\n  created: \"2026-09-07T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:{}\"\n    blob_sha256: \"{}\"\n  signing: {{state: unsigned}}\n  encryption: {{state: none}}\nprovides:\n  entrypoints:\n    - name: app\n      path: /bin/app\n{req_yaml}  platforms: universal\n  capabilities: {{exec: true, read: true}}\n",
+        "a".repeat(64),
+        "b".repeat(64)
+    )
+}
+
+#[test]
+fn any_of_requirement_list_parses_and_round_trips() {
+    // spec 28 §8 (schema_minor 7): the list form is `any_of` — OR in
+    // declaration order — for pure-language payloads whose admissible set
+    // differs per implementation.
+    let text = app_with_requirement(
+        "      runtime_requirement:\n        - {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n        - {engine: ruby, implementation: jruby, constraint: \"~> 9.5\"}\n",
+    );
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    let Provides::App(app) = &m.provides else {
+        panic!("app provides, got {:?}", m.provides)
+    };
+    let reqs = app.entrypoints[0].runtime_requirement.as_ref().unwrap();
+    assert_eq!(reqs.entries().len(), 2);
+    assert_eq!(reqs.engine(), "ruby");
+    assert_eq!(reqs.entries()[0].implementation, None);
+    assert_eq!(reqs.entries()[0].constraint.as_str(), ">= 3.3, < 5.0");
+    assert_eq!(reqs.entries()[1].implementation.as_deref(), Some("jruby"));
+    assert_eq!(reqs.entries()[1].constraint.as_str(), "~> 9.5");
+    assert_eq!(reqs.to_string(), ">= 3.3, < 5.0 | ~> 9.5");
+    // The list serializes as a list and re-parses to the same model…
+    let yaml = m.to_yaml().unwrap();
+    let reparsed = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(reparsed, m);
+    // …and the JSON schema admits the list (MECE cross-check).
+    assert!(schema_validator().is_valid(&yaml_text_to_json(&text)));
+}
+
+#[test]
+fn the_single_requirement_map_never_sprouts_a_list() {
+    // The long-standing single-map spelling: one entry serializes as the
+    // bare map — existing manifests round-trip byte-shape-identically and
+    // pre-schema_minor-7 readers keep parsing them.
+    let text = app_with_requirement(
+        "      runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n",
+    );
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    let yaml = m.to_yaml().unwrap();
+    assert!(
+        !yaml.contains("- engine:"),
+        "a bare map, never a one-element list: {yaml}"
+    );
+    let reparsed = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(reparsed, m);
+    assert!(schema_validator().is_valid(&yaml_text_to_json(&text)));
+    assert!(schema_validator().is_valid(&yaml_text_to_json(&yaml)));
+}
+
+#[test]
+fn any_of_empty_list_is_a_named_manifest_error() {
+    let text = app_with_requirement("      runtime_requirement: []\n");
+    let err = PayloadManifest::from_yaml(&text).unwrap_err();
+    assert!(
+        err.to_string().contains("must not be empty"),
+        "the empty list is named: {err}"
+    );
+}
+
+#[test]
+fn any_of_mixed_engines_is_a_named_manifest_error() {
+    // spec 28 §8: the implementation is a sub-axis of the requirement —
+    // every entry names the SAME engine; a mixed-engine list is never a
+    // guessed union.
+    let text = app_with_requirement(
+        "      runtime_requirement:\n        - {engine: ruby, constraint: \">= 3.3\"}\n        - {engine: python, constraint: \">= 3.11\"}\n",
+    );
+    let err = PayloadManifest::from_yaml(&text).unwrap_err();
+    assert!(
+        err.to_string().contains("SAME engine"),
+        "the mixed-engine list is named: {err}"
+    );
+}
+
+#[test]
+fn abi_without_implementation_is_a_named_manifest_error() {
+    // spec 28 §8: an ABI is per-implementation by construction — a native
+    // requirement must name its implementation.
+    let text = app_with_requirement(
+        "      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\", abi: arm64-darwin-23}\n",
+    );
+    let err = PayloadManifest::from_yaml(&text).unwrap_err();
+    assert!(
+        err.to_string().contains("requires implementation"),
+        "abi without implementation is named: {err}"
+    );
+}
+
+#[test]
+fn any_of_list_with_abi_is_a_named_manifest_error() {
+    // spec 28 §8: a second implementation means a second build — the list
+    // form is forbidden for a native-extension requirement.
+    let text = app_with_requirement(
+        "      runtime_requirement:\n        - {engine: ruby, implementation: mri, constraint: \"~> 3.3.0\", abi: arm64-darwin-23}\n        - {engine: ruby, constraint: \">= 3.3\"}\n",
+    );
+    let err = PayloadManifest::from_yaml(&text).unwrap_err();
+    assert!(
+        err.to_string().contains("list form is forbidden"),
+        "the abi-carrying list is named: {err}"
+    );
+}
+
+#[test]
+fn native_requirement_with_implementation_round_trips() {
+    // The native shape spec 28 §8 locks: implementation + abi on the one
+    // entry, matched against the runtime's own version line.
+    let text = app_with_requirement(
+        "      runtime_requirement: {engine: ruby, implementation: mri, constraint: \"~> 3.3.0\", abi: arm64-darwin-23}\n",
+    );
+    let m = PayloadManifest::from_yaml(&text).unwrap();
+    let yaml = m.to_yaml().unwrap();
+    let reparsed = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(reparsed, m);
+    assert!(schema_validator().is_valid(&yaml_text_to_json(&text)));
 }
 
 #[test]
@@ -663,6 +793,72 @@ fn runtime_provides_rejects_empty_implementation() {
         err.to_string()
             .contains("provides.provides[].implementation must not be empty"),
         "an empty implementation is a named error: {err}"
+    );
+    assert!(!schema_validator().is_valid(&yaml_text_to_json(text)));
+}
+
+#[test]
+fn engine_provides_language_version_parses_and_round_trips() {
+    // spec 28 §8 (schema_minor 7): `language_version` is the language
+    // level the build implements (jruby 9.4 → "3.1"; for mri it equals
+    // version) — what a language-level requirement entry matches.
+    // Additive: absent on pre-field manifests, omitted on the wire.
+    let with = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-jruby\n  version: \"9.4.8\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-09-07T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: ruby, implementation: jruby, version: \"9.4.8\", language_version: \"3.1\", abi_line: \"9.4\", platform: aarch64-macos}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n";
+    let m = PayloadManifest::from_yaml(with).unwrap();
+    let Provides::Runtime(rt) = &m.provides else {
+        panic!("runtime provides, got {:?}", m.provides)
+    };
+    assert_eq!(rt.provides[0].language_version.as_deref(), Some("3.1"));
+    let yaml = m.to_yaml().unwrap();
+    assert!(yaml.contains("language_version"), "emitted: {yaml}");
+    let reparsed = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(reparsed, m);
+    assert!(schema_validator().is_valid(&yaml_text_to_json(with)));
+
+    // The compat window: a manifest predating the field parses, and the
+    // key stays omitted on the wire.
+    let without = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-ruby\n  version: \"4.0.6\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-09-07T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: ruby, version: \"4.0.6\", abi_line: \"4.0\", platform: aarch64-macos}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n";
+    let m2 = PayloadManifest::from_yaml(without).unwrap();
+    let Provides::Runtime(rt2) = &m2.provides else {
+        panic!("runtime provides, got {:?}", m2.provides)
+    };
+    assert_eq!(rt2.provides[0].language_version, None);
+    assert!(
+        !m2.to_yaml().unwrap().contains("language_version"),
+        "absent stays omitted"
+    );
+    assert!(schema_validator().is_valid(&yaml_text_to_json(without)));
+}
+
+#[test]
+fn runtime_provides_rejects_empty_language_version() {
+    let text = "identity:\n  schema_version: 1\n  kind: runtime\n  name: tebako-runtime-jruby\n  version: \"9.4.8\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 0.16.0}\n  created: \"2026-09-07T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  provides: {engine: ruby, implementation: jruby, version: \"9.4.8\", language_version: \"\", abi_line: \"9.4\", platform: aarch64-macos}\n\
+        \x20 built_from: {src_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1, patch_set: v0.2.8}\n\
+        \x20 capabilities: {exec: true, read: true, runtime: true}\n";
+    let err = PayloadManifest::from_yaml(text).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("provides.provides[].language_version must not be empty"),
+        "an empty language_version is a named error: {err}"
     );
     assert!(!schema_validator().is_valid(&yaml_text_to_json(text)));
 }
