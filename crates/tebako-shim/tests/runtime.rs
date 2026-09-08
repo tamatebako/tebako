@@ -752,9 +752,7 @@ fn any_of_admits_a_shard_by_its_language_version() {
         },
         req_impl("jruby", "~> 9.5"),
     ]);
-    let rt = ready(
-        runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap(),
-    );
+    let rt = ready(runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap());
     // Both shards match the language entry; newest by the version pair
     // wins.
     assert_eq!(rt.lang_version, "34.0.1");
@@ -807,9 +805,7 @@ fn an_implementation_entry_matches_only_its_own_line() {
     write_runtime_spec28(&home, "34.0.1", "0.16.0", "truffleruby", "3.4");
     write_runtime_spec28(&home, "9.5.0", "0.16.0", "jruby", "3.4");
     let reqs = RuntimeRequirements::one(req_impl("jruby", "~> 9.5"));
-    let rt = ready(
-        runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap(),
-    );
+    let rt = ready(runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap());
     assert_eq!(rt.lang_version, "9.5.0");
     // …and the truffleruby shard's language version is NOT read for an
     // implementation entry: `>= 3.3` against jruby's own line fails.

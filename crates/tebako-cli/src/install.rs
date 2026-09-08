@@ -916,17 +916,14 @@ pub(crate) fn plan_from_registry_entry(
         expected_sha256,
         signature: entry.signature.clone(),
         entrypoints: entry.entrypoints.clone(),
-        runtime_requirement: entry
-            .runtime_requirement
-            .as_ref()
-            .map(|r| {
-                (
-                    r.engine.clone(),
-                    r.constraint.clone(),
-                    r.implementation.clone(),
-                    r.abi.clone(),
-                )
-            }),
+        runtime_requirement: entry.runtime_requirement.as_ref().map(|r| {
+            (
+                r.engine.clone(),
+                r.constraint.clone(),
+                r.implementation.clone(),
+                r.abi.clone(),
+            )
+        }),
         strict_identity: true,
     })
 }

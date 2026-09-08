@@ -1987,10 +1987,7 @@ impl FsContext {
                     .as_str()
                     .map(str::to_owned);
                 if std::env::var_os("TEBAKO_DEBUG_TFS").is_some() {
-                    eprintln!(
-                        "[tfs] mount_is_home: handle={} home={:?}",
-                        handle, result
-                    );
+                    eprintln!("[tfs] mount_is_home: handle={} home={:?}", handle, result);
                 }
                 result
             })

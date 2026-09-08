@@ -1229,7 +1229,11 @@ fn on_runtime_owner_line_predating_2_5_fails_closed_75() {
     assert!(err.message.contains("25.0.4.1"), "{}", err.message);
     assert!(err.message.contains("2.4.1"), "{}", err.message);
     assert!(err.message.contains("2.5.0"), "{}", err.message);
-    assert!(err.message.contains("spec 33's entry rule"), "{}", err.message);
+    assert!(
+        err.message.contains("spec 33's entry rule"),
+        "{}",
+        err.message
+    );
 }
 
 #[test]
