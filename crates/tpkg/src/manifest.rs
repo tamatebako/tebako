@@ -720,20 +720,105 @@ impl Capabilities {
     }
 }
 
-/// An entrypoint's runtime requirement (`{engine, constraint, abi?}`):
-/// a range like `">= 3.3, < 5.0"` for pure payloads, an abi-line like
-/// `"~> 3.3.0"` for native-extension ones (spec 03 §2.2). `abi` is the
-/// runtime's own platform string the payload's native extensions were
-/// built against (ruby: `Gem::Platform.local.to_s`, e.g.
-/// `arm64-darwin-23`); present iff the payload carries native extensions
-/// — the version line and the platform line are orthogonal constraints
-/// and resolution checks both (spec 05 §5).
+/// One runtime-requirement entry (`{engine, constraint,
+/// implementation?, abi?}`): a range like `">= 3.3, < 5.0"` for pure
+/// payloads, an abi-line like `"~> 3.3.0"` for native-extension ones
+/// (spec 03 §2.2). `implementation` (spec 28 §8) narrows the entry to
+/// one implementation of the engine — the constraint then matches the
+/// runtime's OWN version line; absent, the entry matches at the
+/// language level (the runtime's `language_version`, falling back to
+/// its `version` on pre-field shards). `abi` is the runtime's own
+/// platform string the payload's native extensions were built against
+/// (ruby: `Gem::Platform.local.to_s`, e.g. `arm64-darwin-23`); present
+/// iff the payload carries native extensions — the version line and the
+/// platform line are orthogonal constraints and resolution checks both
+/// (spec 05 §5). An `abi` in force REQUIRES `implementation` (an ABI is
+/// per-implementation by construction — the validator enforces).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeRequirement {
     pub engine: String,
     pub constraint: Constraint,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub abi: Option<String>,
+}
+
+/// The `runtime_requirement` value (spec 28 §8, schema_minor 7): ONE
+/// requirement map (the long-standing spelling) or a LIST of maps —
+/// `any_of`, OR in declaration order — for pure-language payloads whose
+/// admissible set differs per implementation. Every entry names the
+/// SAME engine and the list is never empty (both named manifest errors,
+/// enforced at validate). The single-entry form serializes as the bare
+/// map, so existing manifests round-trip byte-identically.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeRequirements(Vec<RuntimeRequirement>);
+
+impl RuntimeRequirements {
+    /// A single-entry requirement (the N=1 spelling).
+    pub fn one(req: RuntimeRequirement) -> Self {
+        Self(vec![req])
+    }
+
+    /// The `any_of` list form (spec 28 §8) from entries — the non-empty
+    /// and same-engine rules are the manifest validator's; this is the
+    /// in-memory spelling (tests, synthesized manifests).
+    pub fn many(entries: Vec<RuntimeRequirement>) -> Self {
+        Self(entries)
+    }
+
+    /// The entries in declaration order (never empty post-validation).
+    pub fn entries(&self) -> &[RuntimeRequirement] {
+        &self.0
+    }
+
+    /// The shared engine (validation pins every entry to the SAME engine
+    /// — the implementation is a sub-axis of the requirement, never a
+    /// second engine axis). Callers hold a validated manifest; an
+    /// unvalidated empty vec would panic here, so validation runs first.
+    pub fn engine(&self) -> &str {
+        &self.0[0].engine
+    }
+}
+
+impl Serialize for RuntimeRequirements {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        if let [one] = self.0.as_slice() {
+            one.serialize(s)
+        } else {
+            self.0.serialize(s)
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeRequirements {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Repr {
+            One(RuntimeRequirement),
+            Many(Vec<RuntimeRequirement>),
+        }
+        Ok(Self(match Repr::deserialize(d)? {
+            Repr::One(one) => vec![one],
+            Repr::Many(many) => many,
+        }))
+    }
+}
+
+impl fmt::Display for RuntimeRequirements {
+    /// The constraint source for one entry; `"c1" | "c2"` for the
+    /// `any_of` list (callers add their own quoting).
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(
+            &self
+                .entries()
+                .iter()
+                .map(|r| r.constraint.as_str())
+                .collect::<Vec<_>>()
+                .join(" | "),
+        )
+    }
 }
 
 /// One entrypoint of an app (spec 03 §2.2 — the ARRAY allows multi-entry
@@ -748,9 +833,10 @@ pub struct Entrypoint {
     pub args_default: Vec<String>,
     /// `None` = a native / self-contained entrypoint: zero-runtime
     /// dispatch (spec 03 §2.2 locked — the dispatcher mounts zero runtime
-    /// payloads). Omit the key entirely on the wire for those.
+    /// payloads). Omit the key entirely on the wire for those. The value
+    /// is one requirement map or (spec 28 §8) the `any_of` list.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runtime_requirement: Option<RuntimeRequirement>,
+    pub runtime_requirement: Option<RuntimeRequirements>,
     /// The payload's default PATH exposure (spec 03 §2.2 completeness):
     /// `Some(false)` = declared and dispatchable (`tebako shim enable`
     /// links it on demand) but NOT registered at install. Absent/true =
@@ -793,6 +879,14 @@ pub struct EngineProvides {
     /// failure of its own).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub implementation: Option<String>,
+    /// The language level this build implements (spec 28 §8 — jruby 9.4 →
+    /// `"3.1"`; for mri it equals `version`): what a language-level
+    /// requirement entry (one WITHOUT `implementation`) matches. Additive
+    /// — absent on manifests that predate the field (the compat window:
+    /// eligible, never a match failure of its own; matchers fall back to
+    /// `version`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language_version: Option<String>,
 }
 
 /// The runtime-on-runtime composition block (spec 33 §2 — additive,
@@ -1001,16 +1095,45 @@ impl AppProvides {
                 &ep.path,
                 "provides.entrypoints[].path must be absolute (inside the image)",
             )?;
-            if let Some(req) = &ep.runtime_requirement {
-                check_non_empty(
-                    &req.engine,
-                    "provides.entrypoints[].runtime_requirement.engine must not be empty",
-                )?;
-                if let Some(abi) = &req.abi {
+            if let Some(reqs) = &ep.runtime_requirement {
+                if reqs.entries().is_empty() {
+                    return Err(ManifestError::Invalid(
+                        "provides.entrypoints[].runtime_requirement list must not be empty (spec 28 §8)",
+                    ));
+                }
+                let engine = reqs.engine();
+                for req in reqs.entries() {
                     check_non_empty(
-                        abi,
-                        "provides.entrypoints[].runtime_requirement.abi must not be empty when present",
+                        &req.engine,
+                        "provides.entrypoints[].runtime_requirement.engine must not be empty",
                     )?;
+                    if req.engine != engine {
+                        return Err(ManifestError::Invalid(
+                            "provides.entrypoints[].runtime_requirement: every entry of the list names the SAME engine (spec 28 §8 — the implementation is a sub-axis, never a second engine axis)",
+                        ));
+                    }
+                    if let Some(implementation) = &req.implementation {
+                        check_non_empty(
+                            implementation,
+                            "provides.entrypoints[].runtime_requirement.implementation must not be empty when present",
+                        )?;
+                    }
+                    if let Some(abi) = &req.abi {
+                        check_non_empty(
+                            abi,
+                            "provides.entrypoints[].runtime_requirement.abi must not be empty when present",
+                        )?;
+                        if req.implementation.is_none() {
+                            return Err(ManifestError::Invalid(
+                                "provides.entrypoints[].runtime_requirement: an abi in force requires implementation (an ABI is per-implementation by construction, spec 28 §8)",
+                            ));
+                        }
+                    }
+                }
+                if reqs.entries().len() > 1 && reqs.entries().iter().any(|r| r.abi.is_some()) {
+                    return Err(ManifestError::Invalid(
+                        "provides.entrypoints[].runtime_requirement: the list form is forbidden for a native-extension requirement (a second implementation means a second build — one entry per variant, spec 28 §8)",
+                    ));
                 }
             }
         }
@@ -1072,6 +1195,12 @@ impl RuntimeProvides {
                 check_non_empty(
                     implementation,
                     "provides.provides[].implementation must not be empty when present",
+                )?;
+            }
+            if let Some(language_version) = &ep.language_version {
+                check_non_empty(
+                    language_version,
+                    "provides.provides[].language_version must not be empty when present",
                 )?;
             }
             if ep.platform.is_reserved() {
@@ -2295,11 +2424,12 @@ mod tests {
                 name: "x".into(),
                 path: "/x".into(),
                 args_default: vec![],
-                runtime_requirement: Some(RuntimeRequirement {
+                runtime_requirement: Some(RuntimeRequirements::one(RuntimeRequirement {
                     engine: "ruby".into(),
                     constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
+                    implementation: None,
                     abi: None,
-                }),
+                })),
                 active: None,
             }],
             platforms: Platforms::Universal,
@@ -2319,11 +2449,12 @@ mod tests {
                 name: "x".into(),
                 path: "/x".into(),
                 args_default: vec![],
-                runtime_requirement: Some(RuntimeRequirement {
+                runtime_requirement: Some(RuntimeRequirements::one(RuntimeRequirement {
                     engine: "ruby".into(),
                     constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
+                    implementation: None,
                     abi: None,
-                }),
+                })),
                 active: None,
             }],
             platforms: Platforms::Universal,

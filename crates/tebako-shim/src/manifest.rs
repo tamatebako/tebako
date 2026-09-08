@@ -26,7 +26,7 @@ pub struct Dispatchable {
     pub name: String,
     pub path: String,
     pub args_default: Vec<String>,
-    pub runtime_requirement: Option<tpkg::RuntimeRequirement>,
+    pub runtime_requirement: Option<tpkg::RuntimeRequirements>,
     /// The payload's default PATH exposure (spec 03 §2.2 `active`):
     /// install links only active dispatchables; an inactive one is still
     /// declared — `tebako shim enable <name>` links it on demand.
@@ -142,17 +142,23 @@ impl Manifest {
         &self.inner.requires
     }
 
-    /// The home-layout annotation (`identity.annotations.java_home` —
-    /// spec 03's free-form annotations): a payload whose root IS a
-    /// runtime home (a JRE — its bin/java probes lib/jvm.cfg relative
-    /// to its own real path) materializes WHOLE at install; the
-    /// exec-closure walk only ever sees linked binaries, never the
-    /// home's data files (the openjdk jvm.cfg miss, dogfood-found).
+    /// The home-layout annotation (`identity.annotations.home` — the
+    /// runtime-neutral key; the shipped `java_home` spelling reads as
+    /// its alias, #548 — spec 03's free-form annotations): a payload
+    /// whose root IS a runtime home (a JRE — its bin/java probes
+    /// lib/jvm.cfg relative to its own real path) materializes WHOLE at
+    /// install; the exec-closure walk only ever sees linked binaries,
+    /// never the home's data files (the openjdk jvm.cfg miss,
+    /// dogfood-found). Kind-agnostic (spec 22 §6): an
+    /// unpatched-interpreter payload whose entries derive sibling paths
+    /// from `__dir__` declares it too, the value the mount-relative home
+    /// dir.
     pub fn home_layout(&self) -> Option<&str> {
         self.inner
             .identity
             .annotations
-            .get("java_home")
+            .get("home")
+            .or_else(|| self.inner.identity.annotations.get("java_home"))
             .and_then(|v| v.as_str())
     }
 

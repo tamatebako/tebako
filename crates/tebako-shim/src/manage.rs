@@ -653,14 +653,17 @@ fn cmd_which(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
             );
         }
         RuntimeResolution::Ready(rt) => {
-            let req = entry
+            let reqs = entry
                 .runtime_requirement
                 .as_ref()
                 .expect("Ready implies a requirement");
             let _ = writeln!(
                 out,
                 "runtime: {} \"{}\" → {} {} (cached)",
-                req.engine, req.constraint, rt.engine, rt.lang_version
+                reqs.engine(),
+                reqs,
+                rt.engine,
+                rt.lang_version
             );
             let _ = writeln!(out, "  exe: {}", rt.exe.display());
             if let Some(image) = &rt.image {

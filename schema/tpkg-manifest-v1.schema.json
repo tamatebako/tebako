@@ -334,7 +334,9 @@
       "required": ["engine", "constraint"],
       "properties": {
         "engine": { "type": "string", "minLength": 1 },
-        "constraint": { "$ref": "#/$defs/constraint" }
+        "constraint": { "$ref": "#/$defs/constraint" },
+        "implementation": { "type": "string", "minLength": 1, "description": "spec 28 §8 (payload-manifest schema_minor 7): narrows the entry to one implementation of the engine — the constraint then matches the runtime's OWN version line. Absent = a language-level entry (matches the runtime's language_version, falling back to version on pre-field shards). REQUIRED when abi is present; the abi⇒implementation coupling, the same-engine rule, and the non-empty-list rule are semantic (the tpkg validator)." },
+        "abi": { "type": "string", "minLength": 1, "description": "The runtime's own platform string the payload's native extensions were built against (spec 05 §5; ruby: Gem::Platform.local.to_s). Present iff the payload carries native extensions; an abi in force forbids the list form (spec 28 §8 — semantic, the tpkg validator)." }
       }
     },
     "appProvides": {
@@ -351,7 +353,13 @@
               "name": { "type": "string", "minLength": 1, "description": "The command name (the shim registers under this)." },
               "path": { "$ref": "#/$defs/absPath" },
               "args_default": { "type": "array", "items": { "type": "string" } },
-              "runtime_requirement": { "$ref": "#/$defs/runtimeRequirement" }
+              "runtime_requirement": {
+                "description": "spec 28 §8 (payload-manifest schema_minor 7): one requirement map, or the `any_of` list of maps (OR in declaration order — pure-language payloads whose admissible set differs per implementation; every entry names the SAME engine and the list is never empty, both semantic rules enforced by the tpkg validator). A reader predating schema_minor 7 fails the LIST spelling's parse — the correct refusal.",
+                "oneOf": [
+                  { "$ref": "#/$defs/runtimeRequirement" },
+                  { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/runtimeRequirement" } }
+                ]
+              }
             }
           }
         },
@@ -367,7 +375,8 @@
         "version": { "type": "string", "minLength": 1 },
         "abi_line": { "type": "string", "minLength": 1 },
         "platform": { "$ref": "#/$defs/platformTriplet" },
-        "implementation": { "type": "string", "minLength": 1, "description": "The engine implementation this build is (spec 28 §8 — mri / jruby / truffleruby); the spawn edge's implementation filter. Additive; absent = single-implementation engine or a pre-field manifest." }
+        "implementation": { "type": "string", "minLength": 1, "description": "The engine implementation this build is (spec 28 §8 — mri / jruby / truffleruby); the spawn edge's implementation filter. Additive; absent = single-implementation engine or a pre-field manifest." },
+        "language_version": { "type": "string", "minLength": 1, "description": "The language level this build implements (spec 28 §8, payload-manifest schema_minor 7 — jruby 9.4 → \"3.1\"; for mri it equals version): what a language-level requirement entry (one without implementation) matches. Additive; absent on pre-field manifests — matchers fall back to version." }
       }
     },
     "runtimeProvides": {

@@ -250,14 +250,26 @@ fn provides_json(p: &Provides) -> Json {
                             ];
                             // omitted for native entrypoints (the YAML key
                             // is omitted too — spec 03 §2.2)
-                            if let Some(req) = &e.runtime_requirement {
-                                obj.push((
-                                    "runtime_requirement".to_string(),
-                                    Json::Object(vec![
-                                        ("engine".to_string(), s(&req.engine)),
-                                        ("constraint".to_string(), s(req.constraint.as_str())),
-                                    ]),
-                                ));
+                            if let Some(reqs) = &e.runtime_requirement {
+                                // spec 28 §8: one entry keeps the pre-list
+                                // object shape; the `any_of` list renders
+                                // as an array of entry objects.
+                                let entry_json = |r: &tpkg::RuntimeRequirement| {
+                                    let mut o = vec![
+                                        ("engine".to_string(), s(&r.engine)),
+                                        ("constraint".to_string(), s(r.constraint.as_str())),
+                                    ];
+                                    if let Some(imp) = &r.implementation {
+                                        o.push(("implementation".to_string(), s(imp)));
+                                    }
+                                    Json::Object(o)
+                                };
+                                let value = if let [one] = reqs.entries() {
+                                    entry_json(one)
+                                } else {
+                                    Json::Array(reqs.entries().iter().map(entry_json).collect())
+                                };
+                                obj.push(("runtime_requirement".to_string(), value));
                             }
                             Json::Object(obj)
                         })

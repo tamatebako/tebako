@@ -6,14 +6,15 @@ mod common;
 
 use common::*;
 use tebako_shim::runtime::{self, RuntimeResolution};
-use tpkg::{Constraint, RuntimeRequirement};
+use tpkg::{Constraint, RuntimeRequirement, RuntimeRequirements};
 
-fn req(constraint: &str) -> RuntimeRequirement {
-    RuntimeRequirement {
+fn req(constraint: &str) -> RuntimeRequirements {
+    RuntimeRequirements::one(RuntimeRequirement {
         engine: "ruby".to_string(),
         constraint: Constraint::new(constraint).expect("test constraint parses"),
+        implementation: None,
         abi: None,
-    }
+    })
 }
 
 fn ready(res: RuntimeResolution) -> runtime::CachedRuntime {
@@ -633,12 +634,16 @@ fn a_multi_package_manifest_verifies_against_the_right_entry() {
 // runtime's own platform string, orthogonally to the version line)
 // ---------------------------------------------------------------------
 
-fn req_abi(constraint: &str, abi: &str) -> RuntimeRequirement {
-    RuntimeRequirement {
+fn req_abi(constraint: &str, abi: &str) -> RuntimeRequirements {
+    // Built directly (bypassing the manifest validator's
+    // abi⇒implementation coupling, spec 28 §8): these tests exercise the
+    // abi filter axis alone.
+    RuntimeRequirements::one(RuntimeRequirement {
         engine: "ruby".to_string(),
         constraint: Constraint::new(constraint).expect("test constraint parses"),
+        implementation: None,
         abi: Some(abi.to_string()),
-    }
+    })
 }
 
 #[test]
@@ -693,6 +698,148 @@ fn a_runtime_without_an_abi_line_stays_eligible() {
         .unwrap(),
     );
     assert_eq!(rt.lang_version, "3.3.7");
+}
+
+// ---------------------------------------------------------------------
+// the any_of requirement (spec 28 §8): the list form ORs its entries —
+// a language-level entry matches the shard's language_version (falling
+// back to its own version on pre-field shards), an
+// implementation-narrowed entry the shard's OWN version line.
+// ---------------------------------------------------------------------
+
+/// A cached ruby shard carrying the spec 28 §8 index keys
+/// (implementation / language_version) — the any_of fixtures.
+fn write_runtime_spec28(
+    home: &std::path::Path,
+    lv: &str,
+    ver: &str,
+    implementation: &str,
+    lang: &str,
+) {
+    write_runtime_engine_shard(
+        home,
+        "ruby",
+        lv,
+        ver,
+        false,
+        &format!(", \"implementation\": \"{implementation}\", \"language_version\": \"{lang}\""),
+    );
+}
+
+fn req_impl(implementation: &str, constraint: &str) -> RuntimeRequirement {
+    RuntimeRequirement {
+        engine: "ruby".to_string(),
+        constraint: Constraint::new(constraint).expect("test constraint parses"),
+        implementation: Some(implementation.to_string()),
+        abi: None,
+    }
+}
+
+#[test]
+fn any_of_admits_a_shard_by_its_language_version() {
+    // truffleruby 34.0.1 speaks ruby 3.4: the language entry
+    // `>= 3.3, < 5.0` admits it though its OWN version is out of range.
+    let tmp = TempDir::new("anyof-language");
+    let home = tmp.path().join("home");
+    write_runtime(&home, "3.4.2", "0.16.0", false);
+    write_runtime_spec28(&home, "34.0.1", "0.16.0", "truffleruby", "3.4");
+    let reqs = RuntimeRequirements::many(vec![
+        RuntimeRequirement {
+            engine: "ruby".to_string(),
+            constraint: Constraint::new(">= 3.3, < 5.0").unwrap(),
+            implementation: None,
+            abi: None,
+        },
+        req_impl("jruby", "~> 9.5"),
+    ]);
+    let rt = ready(
+        runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap(),
+    );
+    // Both shards match the language entry; newest by the version pair
+    // wins.
+    assert_eq!(rt.lang_version, "34.0.1");
+}
+
+#[test]
+fn a_language_entry_never_reads_the_own_version_of_a_keyed_shard() {
+    // The SAME language constraint against ONLY the truffleruby shard:
+    // language_version 3.4 satisfies it even though 34.0.1 would not.
+    let tmp = TempDir::new("anyof-language-only");
+    let home = tmp.path().join("home");
+    write_runtime_spec28(&home, "34.0.1", "0.16.0", "truffleruby", "3.4");
+    let rt = ready(
+        runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), false, &ctx(&home, tmp.path()))
+            .unwrap(),
+    );
+    assert_eq!(rt.lang_version, "34.0.1");
+}
+
+#[test]
+fn a_language_entry_falls_back_to_the_own_version_on_pre_field_shards() {
+    // No language_version key (today's shards): the entry reads the own
+    // version — 34.0.1 is not "< 5.0", so nothing matches.
+    let tmp = TempDir::new("anyof-fallback");
+    let home = tmp.path().join("home");
+    write_runtime_engine_shard(
+        &home,
+        "ruby",
+        "34.0.1",
+        "0.16.0",
+        false,
+        ", \"implementation\": \"truffleruby\"",
+    );
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 34.0.1\n    tebako: 0.16.0\n",
+    );
+    let err = runtime::resolve_runtime(Some(&req(">= 3.3, < 5.0")), false, &ctx(&home, tmp.path()))
+        .unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    assert!(err.message.contains("34.0.1"), "{}", err.message);
+}
+
+#[test]
+fn an_implementation_entry_matches_only_its_own_line() {
+    // jruby's entry `~> 9.5` matches jruby shards (own line), not the
+    // truffleruby shard beside it.
+    let tmp = TempDir::new("anyof-impl");
+    let home = tmp.path().join("home");
+    write_runtime_spec28(&home, "34.0.1", "0.16.0", "truffleruby", "3.4");
+    write_runtime_spec28(&home, "9.5.0", "0.16.0", "jruby", "3.4");
+    let reqs = RuntimeRequirements::one(req_impl("jruby", "~> 9.5"));
+    let rt = ready(
+        runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap(),
+    );
+    assert_eq!(rt.lang_version, "9.5.0");
+    // …and the truffleruby shard's language version is NOT read for an
+    // implementation entry: `>= 3.3` against jruby's own line fails.
+    let reqs = RuntimeRequirements::one(req_impl("jruby", ">= 3.3, < 5.0"));
+    write_config(
+        &home,
+        "runtimes:\n  ruby:\n    version: 9.5.0\n    tebako: 0.16.0\n",
+    );
+    let err = runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+}
+
+#[test]
+fn any_of_zero_match_names_every_entry() {
+    let tmp = TempDir::new("anyof-zero");
+    let home = tmp.path().join("home");
+    write_runtime(&home, "3.4.2", "0.16.0", false);
+    let reqs = RuntimeRequirements::many(vec![
+        RuntimeRequirement {
+            engine: "ruby".to_string(),
+            constraint: Constraint::new(">= 5.0").unwrap(),
+            implementation: None,
+            abi: None,
+        },
+        req_impl("jruby", "~> 9.5"),
+    ]);
+    let err = runtime::resolve_runtime(Some(&reqs), false, &ctx(&home, tmp.path())).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    assert!(err.message.contains(">= 5.0"), "{}", err.message);
+    assert!(err.message.contains("~> 9.5"), "{}", err.message);
 }
 
 // ---------------------------------------------------------------------

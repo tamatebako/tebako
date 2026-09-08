@@ -60,6 +60,17 @@ pub struct Registry {
 pub struct RegistryPayload {
     pub name: String,
     pub kind: PayloadKind,
+    /// The engine a `kind: runtime` entry serves (spec 30 §1's
+    /// edge-discovery key, schema MINOR 1): edges resolve runtimes by
+    /// (engine, implementation?, constraint). Absent on a runtime entry
+    /// = pre-discovery legacy — resolvable by name, invisible to edges.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine: Option<String>,
+    /// spec 28 §8's implementation axis (e.g. temurin): an edge naming
+    /// an implementation matches only entries carrying the same value.
+    /// Wins over the version-level compat spelling (MINOR 2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<String>,
     pub versions: Vec<RegistryVersion>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default: Option<String>,
@@ -69,6 +80,11 @@ pub struct RegistryPayload {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RegistryVersion {
     pub version: String,
+    /// The pre-MINOR-1 spelling of the payload-level `implementation`
+    /// axis (MINOR 2's compat read) — never authored anew; the
+    /// payload-level key wins when both are present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<String>,
     pub platforms: RegistryPlatforms,
     /// The payload's release home — a spec 04 §1 reference (any class;
     /// per-triplet `platforms` require a service release, since artifact
@@ -124,15 +140,20 @@ pub struct SignaturePin {
     pub asc: String,
 }
 
-/// `runtime_requirement: {engine: …, constraint: …, abi?}` (optional
-/// mirror). `abi` is the runtime's platform string a native-extension
-/// payload was built against (ruby: `Gem::Platform.local.to_s`) — the
-/// resolution checks BOTH the version line and the platform line
-/// (spec 05 §5); absent means pure-language (the version line alone).
+/// `runtime_requirement: {engine: …, constraint: …, implementation?,
+/// abi?}` (optional mirror). `abi` is the runtime's platform string a
+/// native-extension payload was built against (ruby:
+/// `Gem::Platform.local.to_s`) — the resolution checks BOTH the version
+/// line and the platform line (spec 05 §5); absent means pure-language
+/// (the version line alone). `implementation` (spec 28 §8) mirrors the
+/// L1 entry's implementation axis — REQUIRED in the mirror when `abi`
+/// is present (an abi is per-implementation by construction).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RegistryRuntimeRequirement {
     pub engine: String,
     pub constraint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub abi: Option<String>,
 }
@@ -226,6 +247,29 @@ impl Registry {
         self.payloads.iter().find(|p| p.name == name)
     }
 
+    /// The `kind: runtime` entries serving `engine` (spec 30 §1's edge
+    /// discovery): an entry without the payload-level `engine` key is
+    /// pre-discovery legacy — resolvable by name, invisible here.
+    /// `Some(w)` narrows to the implementation axis (spec 28 §8 — an
+    /// edge naming an implementation matches only entries carrying the
+    /// same value, MINOR 2's compat read included); `None` lists every
+    /// entry of the engine.
+    pub fn runtime_entries(
+        &self,
+        engine: &str,
+        implementation: Option<&str>,
+    ) -> Vec<&RegistryPayload> {
+        self.payloads
+            .iter()
+            .filter(|p| p.kind == PayloadKind::Runtime)
+            .filter(|p| p.engine() == Some(engine))
+            .filter(|p| match implementation {
+                Some(w) => p.implementation() == Some(w),
+                None => true,
+            })
+            .collect()
+    }
+
     fn validate(&self) -> Result<(), RegistryError> {
         match self.schema_version {
             // spec 18 C8/S46: no `schema_version` is an era-1 document —
@@ -259,6 +303,22 @@ impl Registry {
 impl RegistryPayload {
     fn validate(&self) -> Result<(), RegistryError> {
         check_path_safe("payload name", &self.name)?;
+        if let Some(engine) = &self.engine {
+            if engine.is_empty() {
+                return Err(invalid_entry(format!(
+                    "payload '{}' engine must not be empty",
+                    self.name
+                )));
+            }
+        }
+        if let Some(implementation) = &self.implementation {
+            if implementation.is_empty() {
+                return Err(invalid_entry(format!(
+                    "payload '{}' implementation must not be empty",
+                    self.name
+                )));
+            }
+        }
         if self.versions.is_empty() {
             return Err(invalid_entry(format!(
                 "payload '{}' lists no versions",
@@ -296,11 +356,40 @@ impl RegistryPayload {
     pub fn default_version(&self) -> Option<&RegistryVersion> {
         self.default.as_deref().and_then(|d| self.version(d))
     }
+
+    /// The engine axis (the payload-level key; spec 30 §1).
+    pub fn engine(&self) -> Option<&str> {
+        self.engine.as_deref()
+    }
+
+    /// The implementation axis (spec 28 §8): the payload-level key wins;
+    /// absent there, MINOR 2's compat read — the version-level spelling
+    /// when every version carrying one AGREES (a disagreement is no
+    /// axis, never a guess).
+    pub fn implementation(&self) -> Option<&str> {
+        if let Some(implementation) = &self.implementation {
+            return Some(implementation);
+        }
+        let mut carried = self
+            .versions
+            .iter()
+            .filter_map(|v| v.implementation.as_deref());
+        let first = carried.next()?;
+        carried.all(|i| i == first).then_some(first)
+    }
 }
 
 impl RegistryVersion {
     fn validate(&self, payload: &RegistryPayload) -> Result<(), RegistryError> {
         check_path_safe("version", &self.version)?;
+        if let Some(implementation) = &self.implementation {
+            if implementation.is_empty() {
+                return Err(invalid_entry(format!(
+                    "payload '{}' {} implementation must not be empty",
+                    payload.name, self.version
+                )));
+            }
+        }
         let release = Reference::parse(&self.release.r#ref).map_err(|e| {
             invalid_entry(format!(
                 "payload '{}' {} release.ref does not parse: {e}",
@@ -896,6 +985,169 @@ payloads:
             assert!(
                 err.to_string().contains(needle),
                 "{bad}: expected '{needle}' in: {err}"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------
+    // The registry runtime axis (spec 30 §1's edge-discovery key, spec
+    // 28 §8's implementation axis; schema MINOR 1/2).
+    // -----------------------------------------------------------------
+
+    const RUNTIME_AXIS: &str = r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-ruby
+    kind: runtime
+    engine: ruby
+    versions:
+      - {version: '3.4.2-0.4.0', platforms: universal, release: {ref: tfs:github:tamatebako/tebako-runtime-ruby:3.4.2-0.4.0}}
+  - name: tebako-runtime-java-temurin
+    kind: runtime
+    engine: java
+    implementation: temurin
+    versions:
+      - {version: '21.0.12-0.4.0', platforms: universal, release: {ref: tfs:github:tamatebako/tebako-runtime-java:21.0.12-0.4.0}}
+  - name: tebako-runtime-java-zulu
+    kind: runtime
+    engine: java
+    implementation: zulu
+    versions:
+      - {version: '21.0.11-0.4.0', platforms: universal, release: {ref: tfs:github:tamatebako/tebako-runtime-java:21.0.11-0.4.0}}
+  - name: legacy-runtime
+    kind: runtime
+    versions:
+      - {version: '1.0', platforms: universal, release: {ref: tfs:github:acme/legacy-runtime:1.0}}
+  - name: version-keyed
+    kind: runtime
+    engine: java
+    versions:
+      - {version: '21.0.1', implementation: temurin, platforms: universal, release: {ref: tfs:github:acme/version-keyed:21.0.1}}
+      - {version: '21.0.2', implementation: temurin, platforms: universal, release: {ref: tfs:github:acme/version-keyed:21.0.2}}
+  - name: disagreeing
+    kind: runtime
+    engine: java
+    versions:
+      - {version: '21.0.1', implementation: temurin, platforms: universal, release: {ref: tfs:github:acme/disagreeing:21.0.1}}
+      - {version: '21.0.2', implementation: zulu, platforms: universal, release: {ref: tfs:github:acme/disagreeing:21.0.2}}
+  - name: both-spellings
+    kind: runtime
+    engine: java
+    implementation: zulu
+    versions:
+      - {version: '21.0.1', implementation: temurin, platforms: universal, release: {ref: tfs:github:acme/both-spellings:21.0.1}}
+"#;
+
+    fn entry_names(entries: Vec<&RegistryPayload>) -> Vec<&str> {
+        entries.iter().map(|p| p.name.as_str()).collect()
+    }
+
+    #[test]
+    fn the_payload_level_engine_and_implementation_keys_parse_and_round_trip() {
+        let registry = Registry::from_yaml(RUNTIME_AXIS).unwrap();
+        let temurin = registry.payload("tebako-runtime-java-temurin").unwrap();
+        assert_eq!(temurin.engine(), Some("java"));
+        assert_eq!(temurin.implementation(), Some("temurin"));
+        let ruby = registry.payload("tebako-runtime-ruby").unwrap();
+        assert_eq!(ruby.engine(), Some("ruby"));
+        assert_eq!(ruby.implementation(), None);
+        // the keys survive the write/read round-trip
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+    }
+
+    #[test]
+    fn the_version_level_implementation_is_the_minor_2_compat_read() {
+        let registry = Registry::from_yaml(RUNTIME_AXIS).unwrap();
+        // every version carrying the key AGREES → the payload reads it
+        assert_eq!(
+            registry.payload("version-keyed").unwrap().implementation(),
+            Some("temurin")
+        );
+        // a disagreement across versions is no axis, never a guess
+        assert_eq!(
+            registry.payload("disagreeing").unwrap().implementation(),
+            None
+        );
+        // the payload-level key wins over the version-level spelling
+        assert_eq!(
+            registry.payload("both-spellings").unwrap().implementation(),
+            Some("zulu")
+        );
+    }
+
+    #[test]
+    fn an_engine_less_runtime_resolves_by_name_but_stays_invisible_to_edges() {
+        let registry = Registry::from_yaml(RUNTIME_AXIS).unwrap();
+        // pre-discovery legacy: payload() still resolves it…
+        let legacy = registry.payload("legacy-runtime").unwrap();
+        assert_eq!(legacy.kind, PayloadKind::Runtime);
+        assert_eq!(legacy.engine(), None);
+        // …and no edge listing ever contains it
+        for engine in ["ruby", "java"] {
+            for implementation in [None, Some("temurin")] {
+                assert!(
+                    !entry_names(registry.runtime_entries(engine, implementation))
+                        .contains(&"legacy-runtime"),
+                    "legacy-runtime leaked into runtime_entries({engine}, {implementation:?})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn runtime_entries_filters_the_engine_and_implementation_axes() {
+        let registry = Registry::from_yaml(RUNTIME_AXIS).unwrap();
+        // the engine axis alone lists every edge-visible entry serving it
+        assert_eq!(
+            entry_names(registry.runtime_entries("java", None)),
+            vec![
+                "tebako-runtime-java-temurin",
+                "tebako-runtime-java-zulu",
+                "version-keyed",
+                "disagreeing",
+                "both-spellings",
+            ]
+        );
+        assert_eq!(
+            entry_names(registry.runtime_entries("ruby", None)),
+            vec!["tebako-runtime-ruby"]
+        );
+        // an edge naming an implementation matches only entries carrying
+        // the same value — payload-level and (agreeing) compat-read alike;
+        // a disagreement (None) never matches a named implementation
+        assert_eq!(
+            entry_names(registry.runtime_entries("java", Some("temurin"))),
+            vec!["tebako-runtime-java-temurin", "version-keyed"]
+        );
+        assert_eq!(
+            entry_names(registry.runtime_entries("java", Some("zulu"))),
+            vec!["tebako-runtime-java-zulu", "both-spellings"]
+        );
+        // an unknown engine is no answer, never a guess
+        assert!(registry.runtime_entries("python", None).is_empty());
+    }
+
+    #[test]
+    fn the_runtime_axis_keys_are_non_empty_when_present() {
+        for (yaml, needle) in [
+            (
+                "schema_version: 1\npayloads:\n  - {name: x, kind: runtime, engine: '', versions: [{version: '1.0', platforms: universal, release: {ref: file:///m/a.tfs}}]}\n",
+                "engine must not be empty",
+            ),
+            (
+                "schema_version: 1\npayloads:\n  - {name: x, kind: runtime, implementation: '', versions: [{version: '1.0', platforms: universal, release: {ref: file:///m/a.tfs}}]}\n",
+                "implementation must not be empty",
+            ),
+            (
+                "schema_version: 1\npayloads:\n  - {name: x, kind: runtime, versions: [{version: '1.0', implementation: '', platforms: universal, release: {ref: file:///m/a.tfs}}]}\n",
+                "implementation must not be empty",
+            ),
+        ] {
+            let err = Registry::from_yaml(yaml).unwrap_err();
+            assert!(
+                err.to_string().contains(needle),
+                "expected '{needle}' in: {err}"
             );
         }
     }

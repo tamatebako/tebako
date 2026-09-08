@@ -219,9 +219,9 @@ pub(crate) struct InstallPlan {
     /// Registry-declared entrypoint names (the ref form has none and
     /// falls back to the payload name).
     pub(crate) entrypoints: Vec<String>,
-    /// engine + constraint + the optional abi line (native-extension
-    /// payloads, spec 05 §5)
-    runtime_requirement: Option<(String, String, Option<String>)>,
+    /// engine + constraint + the optional implementation (spec 28 §8) and
+    /// abi line (native-extension payloads, spec 05 §5)
+    runtime_requirement: Option<(String, String, Option<String>, Option<String>)>,
     /// Name form: the embedded manifest MUST agree with the registry's
     /// name/version (the registry is the trust source).
     strict_identity: bool,
@@ -919,7 +919,14 @@ pub(crate) fn plan_from_registry_entry(
         runtime_requirement: entry
             .runtime_requirement
             .as_ref()
-            .map(|r| (r.engine.clone(), r.constraint.clone(), r.abi.clone())),
+            .map(|r| {
+                (
+                    r.engine.clone(),
+                    r.constraint.clone(),
+                    r.implementation.clone(),
+                    r.abi.clone(),
+                )
+            }),
         strict_identity: true,
     })
 }
@@ -1362,7 +1369,7 @@ fn install_executable_edge<T: Transport>(
                 ),
             ));
         };
-        let Some(req) = &ep.runtime_requirement else {
+        let Some(reqs) = &ep.runtime_requirement else {
             return Err(err(
                 EX_TEBAKO_MANIFEST,
                 format!(
@@ -1374,10 +1381,13 @@ fn install_executable_edge<T: Transport>(
         };
         // Pre-staging the provider's runtime IS install's job (the
         // dispatch would download it otherwise) — the same posture as
-        // install_runtime_edge.
+        // install_runtime_edge. An any_of requirement pre-stages by its
+        // FIRST entry (the L3 mirror's convention, spec 28 §8); the
+        // dispatch's own any-of resolution covers the rest.
+        let req = &reqs.entries()[0];
         let rt = tebako_shim::runtime::resolve_runtime_edge(
             &req.engine,
-            None,
+            req.implementation.as_deref(),
             &req.constraint,
             true,
             &ctx,
@@ -1500,7 +1510,8 @@ fn capability_provider<T: Transport>(
 /// dispatcher execs it without linking tfs (spec 07 §2 — install is
 /// the materialization verb; a run never extracts).
 ///
-/// A payload declaring a home layout (`annotations.java_home` — the
+/// A payload declaring a home layout (`annotations.home`, or the shipped
+/// `java_home` alias — the
 /// root IS a runtime home: a JRE's bin/java probes lib/jvm.cfg relative
 /// to its own real path) materializes WHOLE: the closure walk only
 /// ever sees linked binaries, never the home's data files (the openjdk
@@ -1616,16 +1627,19 @@ fn synthesize_manifest(
     plan: &InstallPlan,
 ) -> Result<tpkg::PayloadManifest, TebakoError> {
     let requirement = match &plan.runtime_requirement {
-        Some((engine, constraint, abi)) => Some(tpkg::RuntimeRequirement {
-            engine: engine.clone(),
-            constraint: tpkg::Constraint::new(constraint).map_err(|e| {
-                err(
-                    EX_TEBAKO_MANIFEST,
-                    format!("the registry's runtime_requirement constraint is invalid: {e}"),
-                )
-            })?,
-            abi: abi.clone(),
-        }),
+        Some((engine, constraint, implementation, abi)) => {
+            Some(tpkg::RuntimeRequirements::one(tpkg::RuntimeRequirement {
+                engine: engine.clone(),
+                constraint: tpkg::Constraint::new(constraint).map_err(|e| {
+                    err(
+                        EX_TEBAKO_MANIFEST,
+                        format!("the registry's runtime_requirement constraint is invalid: {e}"),
+                    )
+                })?,
+                implementation: implementation.clone(),
+                abi: abi.clone(),
+            }))
+        }
         None => None,
     };
     let provides = match plan.kind {

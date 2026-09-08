@@ -284,14 +284,14 @@ fn build_fixtures() -> Option<Fixtures> {
 
     // The fork-exec image (DWARFS backend — its block-cache worker pool is
     // the fork hazard the guard exists for). Contents matter: an in-image
-    // `__tpkg__/manifest.yaml` WITHOUT the java_home annotation (the exec
+    // `__tpkg__/manifest.yaml` WITHOUT the home annotation (the exec
     // materialization probe reads exactly this file), plus one data file.
     let dwarfs_path = dir.join("img.dwarfs");
     {
         let src = dir.join("dwarfs-src");
         std::fs::create_dir_all(src.join("__tpkg__")).unwrap();
         std::fs::create_dir_all(src.join("data")).unwrap();
-        // A minimal valid payload manifest WITHOUT the java_home
+        // A minimal valid payload manifest WITHOUT the home
         // annotation (the exec materialization probe reads exactly this
         // file; the tolerant walk answers false → the closure walk).
         let manifest = [

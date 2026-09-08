@@ -179,7 +179,7 @@ eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee  tebako-0.2.5-l
 fn fake_payload_home(dir: &Path) -> acquire::PayloadHome {
     let image = dir.join("metanorma-1.16.9-macos-arm64.tfs");
     std::fs::write(&image, b"DWARFS-fake-payload-bytes").unwrap();
-    let mirror_yaml = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1.16.9\"\n  producer: {tool: test, tool_version: \"1\"}\n  created: \"2026-08-25T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n    blob_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n  signing: {state: unsigned}\n  encryption: {state: none}\nprovides:\n  entrypoints:\n    - name: metanorma\n      path: /__tebako__/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\", abi: arm64-darwin-23}\n  platforms: universal\n  capabilities: {exec: true, read: true}\n";
+    let mirror_yaml = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1.16.9\"\n  producer: {tool: test, tool_version: \"1\"}\n  created: \"2026-08-25T00:00:00Z\"\n  digest:\n    tree_hash: \"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"\n    blob_sha256: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n  signing: {state: unsigned}\n  encryption: {state: none}\nprovides:\n  entrypoints:\n    - name: metanorma\n      path: /__tebako__/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \"~> 3.3.0\", implementation: mri, abi: arm64-darwin-23}\n  platforms: universal\n  capabilities: {exec: true, read: true}\n";
     acquire::PayloadHome {
         name: "metanorma".to_string(),
         version: "1.16.9".to_string(),

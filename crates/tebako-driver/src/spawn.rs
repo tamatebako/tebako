@@ -867,26 +867,41 @@ fn nested_runtime(
     let mut picked: Option<CachedRuntime> = None;
     for exposed in expose {
         let entry = provider_entrypoint(provider, capability, exposed)?;
-        let req = entry
+        let reqs = entry
             .runtime_requirement
             .as_ref()
             .expect("provider_entrypoint post-asserts runtime_requirement");
-        let constraint = tpkg::versions::from_validated(&req.constraint);
-        let rt = tpkg::runtime_store::resolve_spawned(home, &req.engine, None, &constraint)
-            .ok_or_else(|| {
-                format!(
-                    "executable edge '{capability}': no cached runtime satisfies engine '{}' ('{}') for provider {} {} — a spawn never downloads: `tebako install` the runtime ahead, or dispatch through the shim (spec 32 §2)",
-                    req.engine, req.constraint.as_str(), provider.name, provider.version
-                )
-            })?;
-        if let (Some(want), Some(got)) = (&req.abi, &rt.abi) {
-            if want != got {
-                return Err(format!(
-                    "executable edge '{capability}': the exposed entry '{exposed}' requires abi '{want}' but the cached {} runtime is '{got}' — a spawn never downloads: `tebako install` a matching runtime (spec 32 §2)",
-                    req.engine
-                ));
+        // spec 28 §8: the newest cached runtime matching ANY entry of the
+        // requirement (the abi axis rides entry_matches inside).
+        let rt = tpkg::runtime_store::resolve_spawned_any(home, reqs).ok_or_else(|| {
+            // The abi diagnosis (spec 05 §5): a single native requirement
+            // whose version line matches a cached shard but whose abi does
+            // not gets the specific message, never the bare zero-match one.
+            if let [req] = reqs.entries() {
+                if let Some(want) = &req.abi {
+                    let constraint = tpkg::versions::from_validated(&req.constraint);
+                    if let Some(rt) = tpkg::runtime_store::resolve_spawned(
+                        home,
+                        &req.engine,
+                        req.implementation.as_deref(),
+                        &constraint,
+                    ) {
+                        if let Some(got) = &rt.abi {
+                            if got != want {
+                                return format!(
+                                    "executable edge '{capability}': the exposed entry '{exposed}' requires abi '{want}' but the cached {} runtime is '{got}' — a spawn never downloads: `tebako install` a matching runtime (spec 32 §2)",
+                                    req.engine
+                                );
+                            }
+                        }
+                    }
+                }
             }
-        }
+            format!(
+                "executable edge '{capability}': no cached runtime satisfies engine '{}' ('{}') for provider {} {} — a spawn never downloads: `tebako install` the runtime ahead, or dispatch through the shim (spec 32 §2)",
+                reqs.engine(), reqs, provider.name, provider.version
+            )
+        })?;
         match &picked {
             None => picked = Some(rt),
             Some(p)

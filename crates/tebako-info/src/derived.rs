@@ -144,12 +144,16 @@ pub fn derive(m: &PayloadManifest) -> Derived {
             shims.push(ep.name.clone());
             // Native entrypoints (no runtime_requirement, spec 03 §2.2)
             // declare no runtime compatibility axis.
-            let Some(req) = &ep.runtime_requirement else {
+            let Some(reqs) = &ep.runtime_requirement else {
                 continue;
             };
-            let pair = (req.engine.clone(), req.constraint.clone());
-            if !requirements.contains(&pair) {
-                requirements.push(pair);
+            // spec 28 §8: the `any_of` list flattens — one compat row per
+            // admissible entry.
+            for r in reqs.entries() {
+                let pair = (r.engine.clone(), r.constraint.clone());
+                if !requirements.contains(&pair) {
+                    requirements.push(pair);
+                }
             }
         }
     }
