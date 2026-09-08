@@ -911,7 +911,10 @@ mod tests {
         assert!(entry_matches(mri, &req28(None, "~> 3.4")));
 
         // An implementation-narrowed entry matches the OWN version line…
-        assert!(entry_matches(truffle, &req28(Some("truffleruby"), "~> 34.0")));
+        assert!(entry_matches(
+            truffle,
+            &req28(Some("truffleruby"), "~> 34.0")
+        ));
         // …never the language line…
         assert!(!entry_matches(
             truffle,

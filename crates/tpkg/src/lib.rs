@@ -185,9 +185,8 @@ pub use manifest::{
     Encryption, EncryptionPart, EncryptionState, EngineProvides, Entrypoint, Identity,
     LibraryAlias, ManifestError, MountSemantics, OnRuntime, PayloadKind, PayloadManifest, Platform,
     Platforms, Producer, Provides, Requirement, RuntimeProvides, RuntimeRequirement,
-    RuntimeRequirements, Sbom, Signing,
-    SigningMechanism, SigningState, Source, ToolkitExecutable, ToolkitLibrary, ToolkitProvides,
-    PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
+    RuntimeRequirements, Sbom, Signing, SigningMechanism, SigningState, Source, ToolkitExecutable,
+    ToolkitLibrary, ToolkitProvides, PAYLOAD_MANIFEST_PATH, PAYLOAD_SCHEMA_VERSION,
 };
 pub use merkle::{
     render_tree_hash, tree_digest, Child, FileHasher, MerkleDigest, NodeKind, TreeWalk,

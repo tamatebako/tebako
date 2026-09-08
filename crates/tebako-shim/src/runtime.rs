@@ -519,7 +519,10 @@ fn index_selected_target(
         reqs.entries().iter().any(|r| {
             let impl_ok = match &r.implementation {
                 None => true,
-                Some(want) => e.implementation.as_deref().map_or(true, |have| have == want),
+                Some(want) => e
+                    .implementation
+                    .as_deref()
+                    .map_or(true, |have| have == want),
             };
             if !impl_ok {
                 return false;
@@ -532,18 +535,14 @@ fn index_selected_target(
             versions::from_validated(&r.constraint).matches(line)
         })
     };
-    if let Some(pick) = released
-        .iter()
-        .filter(|e| row_matches(e))
-        .max_by(|a, b| {
-            versions::compare(&a.lang_version, &b.lang_version).then_with(|| {
-                versions::compare(
-                    a.tebako_version.as_deref().unwrap_or(""),
-                    b.tebako_version.as_deref().unwrap_or(""),
-                )
-            })
+    if let Some(pick) = released.iter().filter(|e| row_matches(e)).max_by(|a, b| {
+        versions::compare(&a.lang_version, &b.lang_version).then_with(|| {
+            versions::compare(
+                a.tebako_version.as_deref().unwrap_or(""),
+                b.tebako_version.as_deref().unwrap_or(""),
+            )
         })
-    {
+    }) {
         return Ok(Some(RuntimePref {
             version: pick.lang_version.clone(),
             tebako: pick
@@ -552,10 +551,7 @@ fn index_selected_target(
                 .unwrap_or_else(|| pref.tebako.clone()),
         }));
     }
-    let mut known: Vec<&str> = released
-        .iter()
-        .map(|e| e.lang_version.as_str())
-        .collect();
+    let mut known: Vec<&str> = released.iter().map(|e| e.lang_version.as_str()).collect();
     known.sort_by(|a, b| versions::compare(a, b));
     known.dedup();
     let known = if known.is_empty() {
