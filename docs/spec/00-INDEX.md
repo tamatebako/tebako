@@ -37,7 +37,7 @@ spec 02 §6).
 2. [02 — tpkg wire format](02-tpkg-wire-format.md) — byte-exact container spec
 3. [03 — Payload manifest](03-payload-manifest.md) — IDENTITY / PROVIDES / DEPENDS
 4. [04 — References and registries](04-references-and-registry.md) — MECE reference syntax (+ the 2026-09-06 enterprise-networking amendment)
-5. [05 — Resolution and cache](05-resolution-and-cache.md) — runtime_ref, release index, machine cache
+5. [05 — Resolution and cache](05-resolution-and-cache.md) — runtime_ref, release index, machine cache (+ the 2026-09-08 python wheel-tag mapping)
 6. [06 — Launcher ABI](06-launcher-abi.md) — bootstrap → runtime handoff, exit codes
 7. [07 — Shims and dispatch](07-shims-and-dispatch.md) — executable registration and version management (+ the 2026-09-05 routing amendment)
 8. [08 — Jails](08-jails.md) — host-access policy, bind-mount semantics

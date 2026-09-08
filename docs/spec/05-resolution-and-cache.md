@@ -219,3 +219,54 @@ per-implementation by construction; a native requirement naming no
 implementation is a named manifest error (spec 03 §2.2). Compatibility
 never crosses implementations silently: the chosen runtime's
 implementation is journaled with the resolution event.
+
+**The python wheel-tag mapping (`engine: python` — locked 2026-09-08;
+TODO.python/04).** Python native extensions carry CPython's own two-tag
+compatibility grammar (the PEP 425/600 wheel tags). Tebako does not
+invent a second grammar — it maps that one onto the two-dimensional ABI
+line above, once, here; the resolver and the factory REFERENCE this
+table and never re-derive it in code comments.
+
+- **Version line.** The wheel ABI tag `cp3X` (`cp311`, `cp312`, …) IS
+  the version line `~> 3.X.0`: a native-extension payload baked against
+  CPython 3.X declares `runtime_requirement: {engine: python,
+  constraint: "~> 3.X.0", abi: <the built-against runtime's abi>}`.
+  Pure-python payloads take the range form exactly as ruby's
+  pure-language case (xml2rfc's `requires_python >= 3.10` is the first
+  instance).
+- **The stable ABI (`abi3`) is a bake-time concern, never a resolver
+  concern (locked).** An upstream `cp3Y-abi3` wheel is compatible with
+  every CPython line `>= 3.Y`; the factory consumes that width by baking
+  the abi3 wheel into EACH targeted (line × triplet) payload variant.
+  The baked variant records the TARGET runtime's line and `abi` exactly
+  like a line-specific build — the resolver's grammar gains no `abi3`
+  case and the compatibility width never leaks into the wire.
+- **Platform line.** The python runtime's published `abi` key (spec 13)
+  is the CPython extension-suffix stem (sysconfig `EXT_SUFFIX` without
+  the leading dot), e.g. `cpython-312-x86_64-linux-gnu.so`. The payload
+  records the built-against runtime's `abi` verbatim; comparison is the
+  exact-string rule above, unchanged. macOS's suffix is arch-neutral
+  (`cpython-312-darwin.so`) — the arch axis rides the triplet alone
+  there; no second arch axis is ever introduced.
+- **Wheel platform tags ↔ triplets** — the one table:
+
+  | wheel platform tag (PEP 425/600) | tebako triplet |
+  |----------------------------------|----------------|
+  | `manylinux_*_x86_64`             | `linux-gnu-x86_64` |
+  | `manylinux_*_aarch64`            | `linux-gnu-arm64` |
+  | `musllinux_*_x86_64`             | `linux-musl-x86_64` |
+  | `musllinux_*_aarch64`            | `linux-musl-arm64` |
+  | `macosx_*_x86_64`                | `macos-x86_64` |
+  | `macosx_*_arm64`                 | `macos-arm64` |
+  | `macosx_*_universal2`            | split per-arch at bake time — the payload stays per-triplet |
+  | `win_amd64` / `win_arm64`        | RESERVED — the windows python runtime is TODO.python/05; readers MUST NOT guess a mapping |
+
+  The musllinux-vs-manylinux (libc) distinction rides the triplet axis
+  ONLY (`linux-musl` vs `linux-gnu`) — no wheel-tag axis, no libc key,
+  no ad-hoc second axis anywhere in the grammar. A tag's policy version
+  (`manylinux_2_28`, `musllinux_1_2`, …) is a build-floor statement
+  consumed at bake time, never a resolution axis: a runtime built
+  against any floor serves its triplet.
+- **Wrong line = the named compatibility error** on either axis,
+  unchanged (never a segfault): the python instance names the selector
+  and lists the available cached variants per spec 28 §4/§10.
