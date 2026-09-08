@@ -1,0 +1,20 @@
+name: sign-probe
+on:
+  push:
+    branches: [ci/sign-probe]
+permissions: {}
+jobs:
+  probe:
+    runs-on: macos-15
+    env:
+      APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+      APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+      APPLE_ASC_KEY_P8: ${{ secrets.APPLE_ASC_KEY_P8 }}
+      APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+      APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      TEBAKO_CI_PAT_TOKEN: ${{ secrets.TEBAKO_CI_PAT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: credential end-to-end pre-flight (tebako#522 / spec 31)
+        run: bash ci/sign-probe.sh
