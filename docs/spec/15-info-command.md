@@ -116,7 +116,10 @@ Two verbs on the product CLI (both SHIPPED; `--json` on every view,
   presence), the section flags (`--manifest/--provides/--requires/
   --platforms/--slot N/--backend-json`), `--json`, and `--verify` with
   the §5 exit codes. The entrypoint line names the abi line when the
-  manifest declares it (`runtime: ruby ~> 3.3.0, abi arm64-darwin-23`).
+  manifest declares it (`runtime: ruby ~> 3.3.0, abi arm64-darwin-23`),
+  and an implementation-narrowed requirement renders its entries as
+  `<implementation> <constraint>` (`runtime: ruby mri ~> 3.3.0, abi
+  arm64-darwin-23`; an `any_of` list joins its entries ` | `).
 - **`tebako info [topic]`** — the machine view of the STORE and, with
   `--remote`, of the world:
   - `system` (bare) — tebako version, platform, home, cached counts,

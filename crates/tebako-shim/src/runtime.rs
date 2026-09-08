@@ -360,7 +360,7 @@ pub fn resolve_runtime_edge(
 /// miss rides the primary download machinery; the implementation axis
 /// re-asserts), then TWO fail-closed gates of the exit-75 class: the
 /// owner's launcher line must implement spec 33's entry rule (tebako
-/// >= 2.5.0) and its declared contract must satisfy the depending
+/// 2.5.0 or later) and its declared contract must satisfy the depending
 /// runtime's owner_contract — never a guessed-around boot.
 pub fn resolve_owner(
     mirror: &tpkg::runtime_store::OnRuntimeMirror,
@@ -562,9 +562,8 @@ fn index_selected_target(
     fail(
         EX_TEBAKO_UNAVAILABLE,
         format!(
-            "no released {} runtime for {platform} satisfies \"{}\"\n  released for {platform}: {known}\n  this payload needs a newer {} than this platform provides yet",
+            "no released {} runtime for {platform} satisfies \"{reqs}\"\n  released for {platform}: {known}\n  this payload needs a newer {} than this platform provides yet",
             reqs.engine(),
-            reqs.to_string(),
             reqs.engine()
         ),
     )
