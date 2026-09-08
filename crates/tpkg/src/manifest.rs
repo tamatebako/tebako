@@ -733,7 +733,10 @@ impl Capabilities {
 /// iff the payload carries native extensions — the version line and the
 /// platform line are orthogonal constraints and resolution checks both
 /// (spec 05 §5). An `abi` in force REQUIRES `implementation` (an ABI is
-/// per-implementation by construction — the validator enforces).
+/// per-implementation by construction) — an AUTHORING rule, enforced by
+/// `PayloadManifest::validate_authoring` at press/publish; consumers
+/// never refuse a pre-axis published manifest over it (tebako#556, the
+/// schema evolution law).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RuntimeRequirement {
     pub engine: String,
@@ -1123,11 +1126,10 @@ impl AppProvides {
                             abi,
                             "provides.entrypoints[].runtime_requirement.abi must not be empty when present",
                         )?;
-                        if req.implementation.is_none() {
-                            return Err(ManifestError::Invalid(
-                                "provides.entrypoints[].runtime_requirement: an abi in force requires implementation (an ABI is per-implementation by construction, spec 28 §8)",
-                            ));
-                        }
+                        // The abi⇒implementation refusal lives in
+                        // `validate_authoring` — an authoring rule, never a
+                        // consumer refusal of a pre-axis published manifest
+                        // (tebako#556, the schema evolution law).
                     }
                 }
                 if reqs.entries().len() > 1 && reqs.entries().iter().any(|r| r.abi.is_some()) {
@@ -2004,9 +2006,51 @@ impl<'de> Deserialize<'de> for PayloadManifest {
 
 impl PayloadManifest {
     /// Parse and validate a payload manifest from YAML text.
+    ///
+    /// This is the CONSUMER arm (dispatch/install/spawn/info): it never
+    /// refuses a published, previously valid artifact — the schema
+    /// evolution law (spec 18 §3) forbids a MINOR-era reader tightening
+    /// that invalidates pre-existing documents (tebako#556). Rules that
+    /// discipline NEW authoring live in [`Self::validate_authoring`].
     pub fn from_yaml(text: &str) -> Result<PayloadManifest, ManifestError> {
         let manifest: PayloadManifest = serde_yml::from_str(text)?;
         manifest.validate()?;
+        Ok(manifest)
+    }
+
+    /// The PRODUCER arm (`tebako publish` — the registry-emission gate):
+    /// everything `validate()` checks, plus the authoring rules that a
+    /// pre-axis published manifest legitimately violates and must
+    /// therefore never hit a consumer path. First such rule (spec 28
+    /// §8): an `abi` in force REQUIRES `implementation` — an ABI is
+    /// per-implementation by construction. Pre-axis artifacts
+    /// (metanorma 1.16.9-*, xml2rfc 3.34.0) declare `abi` without it and
+    /// stay dispatchable, installable, checkable, and composable through
+    /// the compat window; anything newly PUBLISHED must name the
+    /// implementation (nothing authoring-dirty becomes resolvable).
+    pub fn validate_authoring(&self) -> Result<(), ManifestError> {
+        self.validate()?;
+        if let Provides::App(app) = &self.provides {
+            for ep in &app.entrypoints {
+                if let Some(reqs) = &ep.runtime_requirement {
+                    for req in reqs.entries() {
+                        if req.abi.is_some() && req.implementation.is_none() {
+                            return Err(ManifestError::Invalid(
+                                "provides.entrypoints[].runtime_requirement: an abi in force requires implementation (an ABI is per-implementation by construction, spec 28 §8 — authoring rule, enforced at press/publish; pre-axis published manifests stay dispatchable)",
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse + the authoring validation (the producer arm of
+    /// [`Self::from_yaml`]) — the publish call shape.
+    pub fn from_yaml_authoring(text: &str) -> Result<PayloadManifest, ManifestError> {
+        let manifest: PayloadManifest = serde_yml::from_str(text)?;
+        manifest.validate_authoring()?;
         Ok(manifest)
     }
 

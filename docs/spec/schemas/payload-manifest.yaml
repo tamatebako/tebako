@@ -164,10 +164,14 @@ grammar:
                 the SAME engine, and the list is never empty (both named
                 manifest errors). An `abi:` in force REQUIRES
                 `implementation:` on that entry and FORBIDS the list form —
-                an ABI is per-implementation by construction (named manifest
-                errors, spec 28 §8). A reader predating schema_minor 7 fails
-                the LIST spelling's parse — the correct refusal (never a
-                guessed entry).
+                an ABI is per-implementation by construction (spec 28 §8).
+                The FORBIDS is a consumer named manifest error; the
+                REQUIRES is an AUTHORING rule enforced at press/publish
+                (tebako#556, spec 18 §3: pre-axis published manifests that
+                declare abi without implementation stay dispatchable
+                through the compat window). A reader predating schema_minor
+                7 fails the LIST spelling's parse — the correct refusal
+                (never a guessed entry).
               fields:
                 engine: {type: string, required: true}
                 constraint: {type: string, required: true, notes: "range for pure-language (\">= 3.3, < 5.0\"); abi-line for native-extension (\"~> 3.3.0\")"}
