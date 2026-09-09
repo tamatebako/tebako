@@ -10,7 +10,7 @@ step() { echo; echo "=== $*"; }
 fail() { echo "SIGN-PROBE FAIL: $*" >&2; exit 1; }
 
 step "1. fetch the artifacts (bootstrap 2.5.0 + ruby runtime 0.16.22-4.0.6)"
-gh release download v2.5.0 --repo tamatebako/tebako \
+GH_TOKEN="$TEBAKO_CI_PAT_TOKEN" gh release download v2.5.0 --repo tamatebako/tebako \
   --pattern 'tebako-bootstrap-2.5.0-macos-arm64*' --dir . --clobber
 GH_TOKEN="$TEBAKO_CI_PAT_TOKEN" gh release download v0.16.22 \
   --repo tamatebako/tebako-runtime-ruby \
