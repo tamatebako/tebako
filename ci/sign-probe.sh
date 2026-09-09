@@ -22,12 +22,16 @@ chmod +x tebako-bootstrap-2.5.0-macos-arm64 tebako-runtime-0.16.22-4.0.6-macos-a
 
 step "2. keychain + identity"
 printf '%s' "$APPLE_DEVELOPER_ID_P12" | base64 -d > devid.p12
-security create-keychain -p probe-kc-pass probe.keychain
-security unlock-keychain -p probe-kc-pass probe.keychain
-security import devid.p12 -k probe.keychain -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" \
+KC="$RUNNER_TEMP/probe.keychain"
+security create-keychain -p probe-kc-pass "$KC"
+security unlock-keychain -p probe-kc-pass "$KC"
+# codesign resolves identities through the user search list — a freshly
+# created keychain is not on it (the attempt-2 "item could not be found").
+security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+security import devid.p12 -k "$KC" -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" \
   -T /usr/bin/codesign -T /usr/bin/security
-security set-key-partition-list -S apple-tool:,apple: -k probe-kc-pass probe.keychain >/dev/null
-IDENT=$(security find-identity -v -p codesigning probe.keychain | grep -o '"Developer ID Application[^"]*"' | tr -d '"' | head -1)
+security set-key-partition-list -S apple-tool:,apple: -k probe-kc-pass "$KC" >/dev/null
+IDENT=$(security find-identity -v -p codesigning "$KC" | grep -o '"Developer ID Application[^"]*"' | tr -d '"' | head -1)
 [ -n "$IDENT" ] || fail "no Developer ID Application identity in the p12"
 echo "identity: $IDENT"
 
@@ -51,9 +55,9 @@ RUBY_ZJIT_ENABLE=1 ./tebako-runtime-0.16.22-4.0.6-macos-arm64 \
 cat baseline.boot.txt
 
 step "5. codesign (hardened runtime; runtime exe gets the entitlements)"
-codesign --force --options runtime --timestamp --keychain probe.keychain \
+codesign --force --options runtime --timestamp --keychain "$KC" \
   --sign "$IDENT" tebako-bootstrap-2.5.0-macos-arm64
-codesign --force --options runtime --timestamp --keychain probe.keychain \
+codesign --force --options runtime --timestamp --keychain "$KC" \
   --entitlements runtime.entitlements --sign "$IDENT" tebako-runtime-0.16.22-4.0.6-macos-arm64
 codesign --verify --deep --strict --verbose=1 tebako-bootstrap-2.5.0-macos-arm64
 codesign --verify --deep --strict --verbose=1 tebako-runtime-0.16.22-4.0.6-macos-arm64
