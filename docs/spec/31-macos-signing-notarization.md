@@ -1,7 +1,10 @@
 # Spec 31 — macOS signing and notarization
 
-**Status: PLANNED (drafted 2026-09-04; implementation lands per §8's
-order).** Amends spec 03 §2 (the L1 manifest gains the `signing:` block),
+**Status: PARTIAL — §5's org pipelines (tebako release legs + factory
+runtime leg, gated on `APPLE_SIGNING_ENABLED`) and the §6.3 probe-proven
+notarization gate landed 2026-09-09; §2–§4 (the tpkg `signing:` block,
+press entitlement merge, the publisher pipeline) remain PLANNED
+(drafted 2026-09-04).** Amends spec 03 §2 (the L1 manifest gains the `signing:` block),
 spec 23 §2 (a second non-host sibling declaration) and §4 (press merges
 the entitlement union). No wire-format change; no trailer change; no
 change to spec 09's trust layer — Apple signing and tebako payload
@@ -178,9 +181,19 @@ zip <stitched exe> && xcrun notarytool submit <zip> \
 2. **The JIT canary** — with `allow-jit` merged, `RUBY_YJIT_ENABLE=1
    <signed runtime> -e 'abort unless RubyVM::YJIT.enabled?'` passes on
    arm64 (TODO.yjit/01's phase-0 probe, re-run against the signed exe).
-3. **The notarization gate** — `spctl -a -vv -t execute <exe>` and
-   `xcrun stapler validate <zip>` (where stapled) pass in the release
-   workflow before SHA256SUMS is computed.
+3. **The notarization gate** — for bare CLI Mach-Os, `codesign --verify
+   --strict --check-notarization -R=notarized <exe>` plus a
+   quarantine-xattr exec canary (each notarized binary is left marked
+   `com.apple.quarantine`, so the leg's own ship gate / boot smoke runs
+   it under Gatekeeper's exact download path) pass in the release
+   workflow before SHA256SUMS is computed. `spctl -a -vv -t execute` is
+   NOT the gate for standalone executables: it is bundle-oriented and
+   rejects bare CLI Mach-Os BY DESIGN ("the code is valid but does not
+   seem to be an app") regardless of notarization state — proven by the
+   spec-31 sign-probe (tebako#522, run 34319254822). Stapling likewise
+   exists only for pkg/dmg containers: `xcrun stapler validate` applies
+   where a stapled container ships, never to a bare exe (its ticket is
+   online-only, resolved by Gatekeeper at first exec).
 4. **Press validation** — `--platform macos-*` with a runtime slice and
    no `disable-library-validation` in the merged set after derivation is
    unreachable (§3 derives it); an unknown entitlement id fails the

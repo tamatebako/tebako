@@ -1,8 +1,9 @@
 #!/bin/bash
 # stage.sh — stage the six release binaries for one platform, strip
-# them, publish the size table, gate the bootstrap size, and write the
-# sha/size fragments the finalize job merges into SHA256SUMS +
-# manifest.json.
+# them, sign them (macOS only, spec 31 §5: BEFORE the digests below —
+# sign-then-hash is mandatory), publish the size table, gate the
+# bootstrap size, and write the sha/size fragments the finalize job
+# merges into SHA256SUMS + manifest.json.
 #
 # Required env: VERSION (release version, tag minus v), PLATFORM (the
 # tebako platform id, e.g. macos-arm64). Optional: TARGET (defaults to
@@ -45,6 +46,10 @@ for tool in $TOOLS; do
   cp "$src" "$dest"
   if [ "$(uname -s)" = "Darwin" ]; then
     strip -S "$dest" 2>/dev/null || true
+    # Spec 31 §5: sign the final bytes BEFORE the sha256 fragment is
+    # written below — SHA256SUMS/sidecars must anchor the SIGNED bytes.
+    # Loud no-op when the leg's enablement gate is disarmed.
+    bash ci/macos-sign-one.sh "$dest"
   else
     strip "$dest" 2>/dev/null || true
   fi
