@@ -5,6 +5,18 @@ the expanded procedure behind spec 09 §7. Executed **once**, offline,
 by the project owner, before signed releases ship. Everything here is
 deliberate, rehearsed, and witnessed; nothing is improvised.
 
+> **Execution record (2026-09-09).** The ceremony was executed in
+> classical-only form: the Ed25519 root
+> `9E210CA8E9FDE9E6587740B2EFC3C250F7862A48` exists offline with an
+> X25519 encryption subkey, the tool-generated self-revocation
+> certificate is pre-made, the sign/verify drill passed, and the CI
+> signing subkey is wired into the org secrets. Items 2 (the PQC root),
+> 3 (the successor statement), and the ML-KEM half of 5 below remain
+> PLANNED — they wait on the tebako-crypto toolkit's ML-DSA/ML-KEM line
+> (roadmap 72). Hardware-token storage also remains the target; the
+> executed ceremony used software storage on the ceremony machine. The
+> full deviation record lives with the offline key store.
+
 The ceremony produces, in order:
 
 1. The **classical root** — Ed25519 OpenPGP keypair (the day-one anchor).

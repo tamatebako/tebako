@@ -2,8 +2,10 @@
 
 Normative specification of integrity and authenticity for every binary
 part: bootstrap, runtime payloads, data payloads, and release indexes.
-Status: signing machinery SHIPPED (M29 phase 2); key ceremony/ops PARTIAL
-(roadmap 10).
+Status: signing machinery SHIPPED (M29 phase 2); the classical root key
+ceremony EXECUTED 2026-09-09 (§7); release signing SHIPPED — the
+finalize job signs every released part and the release indexes behind
+`TEBAKO_RELEASE_SIGNING_ENABLED` (§6).
 
 > **Rollout phase — unverified-first (roadmap 72).** The shipped
 > tebako-bootstrap is built WITHOUT OpenPGP verification (the
@@ -100,14 +102,26 @@ and `tebako-pkg verify` (Trusted/Untrusted/Invalid per artifact).
 Factory release flows invoke `tebako-pkg sign` in CI (secrets-held
 armored root export; the private key never leaves CI secrets/hardware).
 
-## 7. Remaining ceremony (roadmap 10)
+## 7. Ceremony status (roadmap 10)
 
-Production root key ceremony (offline, hardware-held) →
-`EMBEDDED_ROOT_FINGERPRINT` filled → fingerprint published on tebako.org →
-CI secrets wired → revocation drill rehearsed. The operational runbook —
-dual-root (Ed25519 classical + ML-DSA-65 PQC), pre-made successor and
-revocation statements, day-one ML-KEM encryption subkey, hardware
-storage, and the rehearsal — is `docs/root-ceremony.md` (roadmap 36).
+The production root key ceremony was executed 2026-09-09: the classical
+Ed25519 root `9E210CA8E9FDE9E6587740B2EFC3C250F7862A48` exists in the
+offline store, `EMBEDDED_ROOT_FINGERPRINT` is filled, the fingerprint
+and public key are published on tebako.org (the trust-anchor page and
+`/.well-known/tebako-key.asc`), the CI secrets are wired (the finalize
+job signs releases behind `TEBAKO_RELEASE_SIGNING_ENABLED`), and the
+sign/verify drill was rehearsed against a released tebako-pkg before
+go-live (trusted and tamper-invalid both proven).
+
+Recorded deviations from the `docs/root-ceremony.md` runbook (roadmap
+36), each with its follow-up: no PQC root and no pre-made successor
+statement yet (the rnp line in use lacks ML-DSA — lands with the
+tebako-crypto toolkit, roadmap 72); the CI signing-subkey export is
+unprotected (tebako-signer passphrase-unlock follow-up); software
+storage in place of hardware tokens; the encryption subkey is X25519 in
+place of day-one ML-KEM; the revocation certificate is the
+tool-generated self-revocation. The full deviation record lives with
+the offline key store.
 
 ## 8. Revocation (locked 2026-07-27)
 
