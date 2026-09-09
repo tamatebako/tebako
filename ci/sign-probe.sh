@@ -92,8 +92,12 @@ xcrun notarytool submit probe.zip --key AuthKey.p8 --key-id "$APPLE_ASC_KEY_ID" 
 grep -q 'status: Accepted' notary.txt || { xcrun notarytool log "$(grep -m1 -oE '[0-9a-f-]{36}' notary.txt)" --key AuthKey.p8 --key-id "$APPLE_ASC_KEY_ID" --issuer "$APPLE_ASC_ISSUER_ID" 2>&1 | tail -20; fail "notarytool not Accepted"; }
 
 step "8. staple + Gatekeeper assess"
-xcrun stapler staple tebako-bootstrap-2.5.0-macos-arm64
-xcrun stapler staple tebako-runtime-0.16.22-4.0.6-macos-arm64
+# stapler cannot attach tickets to bare Mach-O binaries ("incapable of working
+# with Document files") — stapling exists for bundles/pkg/dmg containers.
+# Gatekeeper still assesses our binaries as Notarized Developer ID ONLINE via
+# the accepted submission ticket (that assessment is the credential proof).
+# If offline-stapled distribution ever matters, the artifact shape would have
+# to change to a .pkg container — not our three-part exe model.
 spctl -a -vvv -t execute tebako-bootstrap-2.5.0-macos-arm64 2>&1 | tee spctl.boot.txt
 spctl -a -vvv -t execute tebako-runtime-0.16.22-4.0.6-macos-arm64 2>&1 | tee spctl.rt.txt
 grep -q 'source=Notarized Developer ID' spctl.boot.txt || fail "bootstrap not Notarized Developer ID"
