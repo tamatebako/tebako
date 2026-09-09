@@ -1501,11 +1501,11 @@ fn install_payload(
 
 /// The tamatebako release root-of-trust fingerprint, compile-time
 /// embedded in the bootstrap (item 29 point 1: the root fingerprint is
-/// published on tebako.org AND embedded in the artifacts). Empty until
-/// the release key ceremony fills it at release time;
-/// `TEBAKO_TRUSTED_ROOT` (a fingerprint) extends/overrides it for
-/// development.
-pub const EMBEDDED_ROOT_FINGERPRINT: &str = "";
+/// published on tebako.org AND embedded in the artifacts). Filled by the
+/// 2026-09-09 root ceremony (the classical Ed25519 root —
+/// docs/root-ceremony.md); `TEBAKO_TRUSTED_ROOT` (a fingerprint)
+/// extends/overrides it for development.
+pub const EMBEDDED_ROOT_FINGERPRINT: &str = "9E210CA8E9FDE9E6587740B2EFC3C250F7862A48";
 
 /// A trusted root: fingerprint plus optionally-bundled public key bytes
 /// (an env override may point at an armored public key file).

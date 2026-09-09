@@ -36,9 +36,13 @@
 # exes imported ucrt64 DLLs and died before main on stock Windows with
 # build-success as the only gate).
 #
-# Unsigned-first: SHA256SUMS + manifest.json ship from day one; detached
-# signatures slot in later (item 29 phase 2) by signing SHA256SUMS and
-# uploading .asc files — no restructuring.
+# Release signing (spec 09 §2): unsigned stays first-class, but when the
+# repo variable TEBAKO_RELEASE_SIGNING_ENABLED=true the finalize job signs
+# every released part (one detached .asc per artifact) plus SHA256SUMS and
+# manifest.json with the release signing subkey (the
+# TEBAKO_RELEASE_SIGNING_KEY secret), using the PREVIOUS release's pinned,
+# sha256-verified tebako-pkg — a release is never the first execution of
+# its own bits. Armed + a missing secret is a fast named failure.
 #
 # macOS signing (spec 31 §5): the macOS legs codesign (Developer ID
 # Application, hardened runtime) the staged binaries BEFORE their sha256
@@ -674,6 +678,27 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Spec 09 §2: detached OpenPGP signatures — one .asc per released
+      # part + signed SHA256SUMS/manifest.json — made by the PREVIOUS
+      # release's pinned, sha256-verified tebako-pkg (lib/sign-release.sh).
+      # TEBAKO_RELEASE_SIGNING_ENABLED=true arms the gate; armed + a
+      # missing TEBAKO_RELEASE_SIGNING_KEY secret is a fast named failure;
+      # disarmed ships unsigned (unsigned stays first-class — spec 09 §3).
+      - name: Sign the release assets (spec 09)
+        if: needs.prepare.outputs.upload_url != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.prepare.outputs.tag_name }}
+          TEBAKO_RELEASE_SIGNING_ENABLED: ${{ vars.TEBAKO_RELEASE_SIGNING_ENABLED }}
+          TEBAKO_RELEASE_SIGNING_KEY: ${{ secrets.TEBAKO_RELEASE_SIGNING_KEY }}
+        run: bash .github/workflows/lib/sign-release.sh
+
+      - name: Upload detached signatures
+        if: needs.prepare.outputs.upload_url != '' && vars.TEBAKO_RELEASE_SIGNING_ENABLED == 'true'
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" out/signatures/*.asc --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       # item 11's completeness gate: the release job fails unless every
       # expected asset actually landed (partial-upload race class).
       - name: Completeness gate
@@ -681,8 +706,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
+          TEBAKO_RELEASE_SIGNING_ENABLED: ${{ vars.TEBAKO_RELEASE_SIGNING_ENABLED }}
         run: |
           EXPECTED=$(( 6 * 7 + 7 + 2 + 6 * 7 ))   # 6 tools x 7 platforms (incl. windows-ucrt64; +tebako-runtime-launcher, the spec-29 wrapper exe) + 7 link-unit tarballs + SHA256SUMS + manifest.json + 42 per-asset sidecars (tebako#493)
+          if [ "${TEBAKO_RELEASE_SIGNING_ENABLED:-}" = "true" ]; then
+            EXPECTED=$(( EXPECTED + 6 * 7 + 7 + 2 ))   # + one .asc per released part (42 tools + 7 link-units) + SHA256SUMS.asc + manifest.json.asc (spec 09 §2)
+          fi
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort
