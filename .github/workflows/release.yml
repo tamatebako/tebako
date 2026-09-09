@@ -40,6 +40,14 @@
 # signatures slot in later (item 29 phase 2) by signing SHA256SUMS and
 # uploading .asc files — no restructuring.
 #
+# macOS signing (spec 31 §5): the macOS legs codesign (Developer ID
+# Application, hardened runtime) the staged binaries BEFORE their sha256
+# fragments are written, then notarize + quarantine-mark them so the leg's
+# own ship gate is the Gatekeeper exec canary. The legs run unsigned BY
+# DESIGN (spec 00 invariant 7) unless the repo variable
+# APPLE_SIGNING_ENABLED=true arms the gate; armed + a missing APPLE_*
+# secret is a fast named failure, never a partial release.
+#
 # Windows (ucrt64) ships from the `windows` job (the five binaries,
 # platform id windows-ucrt64 per the spec 03 §3 axis) and the
 # `windows-link-unit` job (the factory's staticlib input).
@@ -240,15 +248,46 @@ jobs:
             -p tebako-runtime-launcher \
             -p tfs -p tebako-driver -p libtfs-preload
 
-      - name: Stage, strip, size-gate
+      # Spec 31 §5: arm Apple signing when the repo variable
+      # APPLE_SIGNING_ENABLED=true is set (unsigned stays first-class
+      # otherwise — the stage/notarize steps below then no-op/skip).
+      - name: Set up Apple signing (spec 31 enablement gate)
+        working-directory: tebako-rs
+        env:
+          APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED }}
+          APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash ci/macos-sign-setup.sh
+
+      - name: Stage, strip, sign, size-gate
         working-directory: tebako-rs
         env:
           VERSION: ${{ needs.prepare.outputs.version }}
           PLATFORM: ${{ matrix.platform }}
+          # For macos-sign-one.sh's TeamIdentifier assert (armed legs).
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: bash .github/workflows/lib/stage.sh
 
+      # Notarize the SIGNED staged binaries and quarantine-mark every one:
+      # the ship gate right after then smokes them under the exact
+      # Gatekeeper path a user's download takes (bare Mach-O keeps an
+      # online ticket — stapling/spctl are bundle-only by design).
+      - name: Notarize the staged binaries (spec 31)
+        if: vars.APPLE_SIGNING_ENABLED == 'true'
+        working-directory: tebako-rs
+        env:
+          APPLE_ASC_KEY_P8: ${{ secrets.APPLE_ASC_KEY_P8 }}
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: bash ci/macos-notarize.sh out/*-"$VERSION-$PLATFORM"
+
       # The ship gate BEFORE any upload: bare-launch smoke (plain run on
-      # the runner) + the otool -L whitelist (/usr/lib + /System only).
+      # the runner — with the notarized binaries' quarantine marks in
+      # place when the spec 31 gate is armed) + the otool -L whitelist
+      # (/usr/lib + /System only).
       - name: Ship gate (bare-launch smoke + dylib audit)
         working-directory: tebako-rs
         env:
