@@ -70,7 +70,7 @@ codesign -d --entitlements :- tebako-runtime-0.16.22-4.0.6-macos-arm64 \
   > embedded.entitlements.xml 2> embedded.entitlements.err || true
 echo "--- embedded entitlements (stdout) ---"; cat embedded.entitlements.xml
 echo "--- embedded entitlements (stderr) ---"; cat embedded.entitlements.err
-TRUES=$(grep -c '<true/>' embedded.entitlements.xml || true)
+TRUES=$(grep -o '<true/>' embedded.entitlements.xml | wc -l | tr -d ' ')
 echo "embedded <true/> count: $TRUES"
 [ "$TRUES" = "2" ] || fail "entitlements not embedded"
 
