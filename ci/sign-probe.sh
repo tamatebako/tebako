@@ -91,21 +91,25 @@ xcrun notarytool submit probe.zip --key AuthKey.p8 --key-id "$APPLE_ASC_KEY_ID" 
   --issuer "$APPLE_ASC_ISSUER_ID" --wait --timeout 20m | tee notary.txt
 grep -q 'status: Accepted' notary.txt || { xcrun notarytool log "$(grep -m1 -oE '[0-9a-f-]{36}' notary.txt)" --key AuthKey.p8 --key-id "$APPLE_ASC_KEY_ID" --issuer "$APPLE_ASC_ISSUER_ID" 2>&1 | tail -20; fail "notarytool not Accepted"; }
 
-step "8. staple + Gatekeeper assess"
-# stapler cannot attach tickets to bare Mach-O binaries ("incapable of working
-# with Document files") — stapling exists for bundles/pkg/dmg containers.
-# Gatekeeper still assesses our binaries as Notarized Developer ID ONLINE via
-# the accepted submission ticket (that assessment is the credential proof).
-# If offline-stapled distribution ever matters, the artifact shape would have
-# to change to a .pkg container — not our three-part exe model.
-spctl -a -vvv -t execute tebako-bootstrap-2.5.0-macos-arm64 2>&1 | tee spctl.boot.txt
-spctl -a -vvv -t execute tebako-runtime-0.16.22-4.0.6-macos-arm64 2>&1 | tee spctl.rt.txt
-grep -q 'source=Notarized Developer ID' spctl.boot.txt || fail "bootstrap not Notarized Developer ID"
-grep -q 'source=Notarized Developer ID' spctl.rt.txt || fail "runtime exe not Notarized Developer ID"
+step "8. Gatekeeper assess (bare-Mach-O path)"
+# spctl -t execute rejects bare CLI Mach-Os BY DESIGN ("the code is valid but
+# does not seem to be an app") regardless of notarization — spctl is
+# bundle-oriented. For standalone executables Apple keeps an ONLINE ticket
+# (stapling is unsupported): the documented verification is codesign's
+# notarization check, plus a real quarantined-exec canary (a stock-mac user
+# running a downloaded copy).
+codesign --verify --strict --check-notarization -R=notarized tebako-bootstrap-2.5.0-macos-arm64
+codesign --verify --strict --check-notarization -R=notarized tebako-runtime-0.16.22-4.0.6-macos-arm64
+xattr -w com.apple.quarantine '0081;00000000;Safari;' tebako-bootstrap-2.5.0-macos-arm64
+xattr -w com.apple.quarantine '0081;00000000;Safari;' tebako-runtime-0.16.22-4.0.6-macos-arm64
+./tebako-bootstrap-2.5.0-macos-arm64 --version > quaran.boot.txt 2>&1 || echo "bootstrap rc=$?" >> quaran.boot.txt
+grep -q 'carries no tebako manifest trailer' quaran.boot.txt \
+  || { cat quaran.boot.txt; fail "quarantined bootstrap did not reach the loader (Gatekeeper blocked a NOTARIZED binary)"; }
+echo "quarantine-exec canary OK (notarized binary runs under the quarantine xattr)"
 
-step "9. functional post-notary (stapled)"
+step "9. functional post-notary"
 RUBY_YJIT_ENABLE=1 ./tebako-runtime-0.16.22-4.0.6-macos-arm64 \
-  -e 'puts "stapled yjit=#{RubyVM::YJIT.enabled?}"' | grep -q 'yjit=true' || fail "yjit died post-staple"
+  -e 'puts "postnotary yjit=#{RubyVM::YJIT.enabled?}"' | grep -q 'yjit=true' || fail "yjit died post-notary"
 
 echo
-echo "SIGN-PROBE PASS: credentials valid; sign->notarize->staple->assess green; yjit/zjit alive on the signed runtime"
+echo "SIGN-PROBE PASS: credentials valid; sign->notarize->assess(quarantine-exec) green; yjit/zjit alive on the signed runtime"
