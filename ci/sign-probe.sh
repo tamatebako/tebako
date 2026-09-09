@@ -55,13 +55,24 @@ RUBY_ZJIT_ENABLE=1 ./tebako-runtime-0.16.22-4.0.6-macos-arm64 \
 cat baseline.boot.txt
 
 step "5. codesign (hardened runtime; runtime exe gets the entitlements)"
+# sign by cert SHA-1, never by name — a duplicate identity in any search-listed
+# keychain makes name resolution ambiguous (proven locally on the owner's box).
+HASH=$(security find-identity -v -p codesigning "$KC" | awk '/Developer ID Application/ {print $2; exit}')
+[ -n "$HASH" ] || fail "no Developer ID codesigning hash"
+echo "signing with cert hash: ${HASH:0:10}…"
 codesign --force --options runtime --timestamp --keychain "$KC" \
-  --sign "$IDENT" tebako-bootstrap-2.5.0-macos-arm64
+  --sign "$HASH" tebako-bootstrap-2.5.0-macos-arm64
 codesign --force --options runtime --timestamp --keychain "$KC" \
-  --entitlements runtime.entitlements --sign "$IDENT" tebako-runtime-0.16.22-4.0.6-macos-arm64
+  --entitlements runtime.entitlements --sign "$HASH" tebako-runtime-0.16.22-4.0.6-macos-arm64
 codesign --verify --deep --strict --verbose=1 tebako-bootstrap-2.5.0-macos-arm64
 codesign --verify --deep --strict --verbose=1 tebako-runtime-0.16.22-4.0.6-macos-arm64
-codesign -d --entitlements :- tebako-runtime-0.16.22-4.0.6-macos-arm64 2>/dev/null | grep -c 'true' | grep -q '^2$' || fail "entitlements not embedded"
+codesign -d --entitlements :- tebako-runtime-0.16.22-4.0.6-macos-arm64 \
+  > embedded.entitlements.xml 2> embedded.entitlements.err || true
+echo "--- embedded entitlements (stdout) ---"; cat embedded.entitlements.xml
+echo "--- embedded entitlements (stderr) ---"; cat embedded.entitlements.err
+TRUES=$(grep -c '<true/>' embedded.entitlements.xml || true)
+echo "embedded <true/> count: $TRUES"
+[ "$TRUES" = "2" ] || fail "entitlements not embedded"
 
 step "6. functional on SIGNED binaries (pre-notary)"
 RUBY_YJIT_ENABLE=1 ./tebako-runtime-0.16.22-4.0.6-macos-arm64 \
