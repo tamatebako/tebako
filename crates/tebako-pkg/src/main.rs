@@ -656,7 +656,7 @@ fn cmd_verify(rest: &[String]) -> ExitCode {
     if a.positional.is_empty() {
         return fail(
             "verify",
-            "usage: tebako-pkg verify [--keyring <path>] <artifact...>",
+            "usage: tebako-pkg verify [--key-file <path>] <artifact...>",
         );
     }
     let keyring = match &a.key_file {

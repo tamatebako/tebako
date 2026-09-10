@@ -93,7 +93,16 @@ impl From<TebakoError> for CliExit {
 }
 
 fn run(args: &[String]) -> Result<(), CliExit> {
-    if args.iter().any(|a| a == "--version" || a == "-v") {
+    // The global --version is a LEAD-position flag only: publish has its
+    // own value-taking --version, and an any-position scan swallowed it
+    // (`tebako publish --version 2.12 …` printed the banner and exited 0
+    // having done nothing). --help keeps the any-position form — no
+    // subcommand takes it as a value, and `tebako <cmd> --help` printing
+    // the global usage is the kinder behavior.
+    if matches!(
+        args.first().map(|a| a.as_str()),
+        Some("--version") | Some("-v")
+    ) {
         println!("{VERSION_BANNER}");
         return Ok(());
     }
