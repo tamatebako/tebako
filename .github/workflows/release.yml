@@ -847,6 +847,11 @@ jobs:
   # toolshim and BOTAN_CONFIGURE_CC for tebako-signer's vendored Botan);
   # all build/stage logic lives in ci/windows-gnu-release.sh. The platform
   # id is windows-ucrt64 per the spec 03 §3 axis (tpkg::Platform owns it).
+  # Spec 34: when WINDOWS_SIGNING_ENABLED=true the staged PEs are
+  # Authenticode-signed between stage and the ship gate (azure/login OIDC
+  # + Azure/artifact-signing-action), signtool-verified (§7.1/§7.2), and
+  # the sha/size fragments re-hashed over the SIGNED bytes (sign-then-hash,
+  # §1.3). Gate off: the leg ships unsigned, byte-identically to before.
   # ==========================================================================
   windows:
     name: Windows binaries (ucrt64)
@@ -855,6 +860,14 @@ jobs:
       # packages:write populates the org's GitHub Packages vcpkg binary
       # cache (ci/vcpkg-nuget-cache.sh).
       packages: write
+      # id-token:write is the spec 34 §3 OIDC boundary — the Entra
+      # federated credential issues Azure tokens only to a job of this
+      # repo running in the windows-signing environment. The signing
+      # steps below are gated on WINDOWS_SIGNING_ENABLED: unsigned runs
+      # carry the environment but never request a token.
+      id-token: write
+    # Spec 34 §5's attestation boundary (see the id-token note above).
+    environment: windows-signing
     runs-on: windows-latest
     needs: prepare
     steps:
@@ -927,13 +940,145 @@ jobs:
           PLATFORM: windows-ucrt64
         run: bash ci/windows-gnu-release.sh
 
+      # Spec 34 §4: arm Windows Authenticode signing when the repo
+      # variable WINDOWS_SIGNING_ENABLED=true is set (unsigned stays
+      # first-class otherwise — spec 00 invariant 7 — and every signing
+      # step below skips, shipping byte-identically to the unsigned
+      # flow). Armed but any §3 secret/variable absent is a FAST named
+      # failure before any signing call, never a partial release (§7.5).
+      - name: Arm check — Windows signing (spec 34 §4)
+        id: signgate
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_ENDPOINT: ${{ vars.AZURE_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_SIGNING_ACCOUNT_NAME }}
+          AZURE_SIGNING_CERT_PROFILE: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
+        run: bash ci/windows-sign-gate.sh
+
+      # OIDC workload-identity federation (spec 34 §3): no stored client
+      # secret anywhere; the federated credential is scoped to this repo
+      # × the windows-signing environment this job runs in.
+      - name: Azure login (OIDC, spec 34 §5)
+        if: steps.signgate.outputs.armed == 'true'
+        uses: azure/login@v2 # TODO(sha-pin): pin on first armed run
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      # Signs the staged PE artifacts IN PLACE; the re-hash step below
+      # re-anchors the fragments to the signed bytes (sign-then-hash,
+      # spec 34 §1.3). The account input is `signing-account-name` — spec
+      # 34 §5's `trusted-signing-account-name` is the deprecated alias at
+      # this action's @v1 (deviation from the spec's draft shape).
+      - name: Sign the staged PE artifacts (spec 34 §5)
+        if: steps.signgate.outputs.armed == 'true'
+        uses: Azure/artifact-signing-action@v1 # TODO(sha-pin): pin on first armed run
+        with:
+          endpoint: ${{ vars.AZURE_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
+          files-folder: tebako-rs/out
+          # The enumeration gate (§7.3): everything PE in the staging dir
+          # signs by EXTENSION, never a name list — a new tool binary
+          # must not ship unsigned by omission.
+          files-folder-filter: exe,dll
+          file-digest: SHA256
+          # §1.4: the RFC 3161 countersignature is mandatory (the action's
+          # default timestamp server; set explicitly per spec).
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: tebako toolchain (tamatebako)
+
+      - name: Verify the signatures (spec 34 §7.1/§7.2)
+        if: steps.signgate.outputs.armed == 'true'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # §7.3: enumerate the staged PE set by EXTENSION, never a name
+          # list.
+          $exes = @(Get-ChildItem -Path 'tebako-rs/out' -Filter '*.exe' -File)
+          if ($exes.Count -eq 0) {
+            Write-Host "::error::spec 34 §7.3: no staged .exe artifacts under tebako-rs/out"
+            exit 1
+          }
+          # signtool.exe: the action's cached BuildTools first (the
+          # TrustedSigning module still owns that directory name at
+          # action @v1; the ArtifactSigning spelling is kept as a
+          # forward-compat fallback), then the runner image's Windows
+          # Kits; newest path first.
+          $signtool = @(
+            Get-ChildItem -Path "$env:LOCALAPPDATA\TrustedSigning\Microsoft.Windows.SDK.BuildTools" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue
+            Get-ChildItem -Path "$env:LOCALAPPDATA\ArtifactSigning\Microsoft.Windows.SDK.BuildTools" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue
+            Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue
+          ) | Where-Object { $_.FullName -match '\\x64\\' } |
+              Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) {
+            Write-Host "::error::spec 34 §7.1: signtool.exe not found (action BuildTools cache and Windows Kits both empty)"
+            exit 1
+          }
+          Write-Host "signtool: $($signtool.FullName)"
+          $failed = $false
+          foreach ($exe in $exes) {
+            Write-Host "== signtool verify /pa /v $($exe.Name)"
+            $out = & $signtool.FullName verify /pa /v $exe.FullName 2>&1 | Out-String
+            Write-Host $out
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::spec 34 §7.1: signtool verify /pa FAILED for $($exe.Name)"
+              $failed = $true
+              continue
+            }
+            # §7.2/§1.4: the RFC 3161 countersignature is mandatory — an
+            # untimestamped signature fails the leg, never a warning.
+            if ($out -notmatch 'signature is timestamped' -and $out -notmatch 'RFC ?3161') {
+              Write-Host "::error::spec 34 §7.2: no RFC 3161 timestamp countersignature in signtool output for $($exe.Name)"
+              $failed = $true
+              continue
+            }
+            $sig = Get-AuthenticodeSignature $exe.FullName
+            if ($sig.Status -ne 'Valid') {
+              Write-Host "::error::spec 34 §7.1: Get-AuthenticodeSignature status '$($sig.Status)' (not Valid) for $($exe.Name)"
+              $failed = $true
+              continue
+            }
+            if ($null -eq $sig.TimeStamperCertificate) {
+              Write-Host "::error::spec 34 §7.2: Get-AuthenticodeSignature reports no TimeStamperCertificate for $($exe.Name)"
+              $failed = $true
+              continue
+            }
+            Write-Host "signed+timestamped: $($exe.Name) — $($sig.SignerCertificate.Subject)"
+          }
+          if ($failed) { exit 1 }
+
+      # Spec 34 §1.3 (sign-then-hash): stage.sh hashed the UNSIGNED bytes
+      # (Windows signing is a workflow action — it cannot run inside
+      # stage.sh the way macos-sign-one.sh does on the macOS legs), so
+      # the fragments finalize merges into SHA256SUMS + manifest.json +
+      # the .sha256 sidecars MUST be recomputed over the SIGNED bytes.
+      # Gate-off runs skip this and keep stage.sh's hashes — byte-
+      # identical to today.
+      - name: Re-hash the signed binaries (spec 34 §1.3)
+        if: steps.signgate.outputs.armed == 'true'
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: windows-ucrt64
+        run: bash ci/windows-sign-refrag.sh
+
       # The ship gate BEFORE any upload: the PE import audit (the
       # windows-gnu-import-gate delegation — inbox DLLs only;
       # libstdc++-6.dll/libwinpthread-1.dll = FAIL) and the bare-launch
       # smoke with PATH scrubbed to System32+Windows — what a user
       # machine actually looks like (no msys2/ucrt64/Git bin dirs; the
       # 0.1.1 exes only survived because ucrt64/bin sat on the runner's
-      # PATH).
+      # PATH). When the spec 34 gate is armed this runs on the SIGNED
+      # exes — the on-platform proof the signed artifacts run.
       - name: Ship gate (clean-PATH smoke + PE import audit)
         working-directory: tebako-rs
         shell: bash
