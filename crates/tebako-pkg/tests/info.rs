@@ -1165,7 +1165,7 @@ const SPAWNED_LOCK_YAML: &str = "lock:\n\
      \x20     carry: false\n\
      \x20     exe: {sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n\
      \x20     image: {sha256: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n\
-     \x20     source: \"https://github.com/tebako-packages/openjdk/releases/download\"\n";
+     \x20     source: \"https://github.com/tamatebako/tebako-runtime-openjdk/releases/download\"\n";
 
 fn bundle_spawned_app(w: &TempDir, home: &Path, pm_yaml: &str) -> PathBuf {
     let app = mk_image_files(
