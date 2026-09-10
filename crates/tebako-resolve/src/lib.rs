@@ -76,8 +76,13 @@ pub use transport::{HttpTransport, Transport};
 /// `kind: runtime` DEPENDS edge — a pref-less resolution landing on an
 /// older line fails closed at the payload's first dispatch with the
 /// driver's named manifest error, so the default line must never trail
-/// the newest published factory line.
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.18";
+/// the newest published factory line. From 0.16.22 the runtimes link
+/// the v2.3.0 driver unit: the grammar also accepts the spec-32
+/// `kind: executable` edge (the xml2rfc leg of metanorma's requires
+/// block) — reproduced against the published 0.16.18 macos-arm64 exe:
+/// "unknown variant `executable` … the payload's self-description
+/// lies".
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.22";
 
 /// Fetch `reference` (pin-verified at the fetch boundary) and install it
 /// as `payloads/<name>/<version>.tfs` — or return the existing entry.
