@@ -172,3 +172,28 @@ fn chain_rejects_untrusted_and_invalid_links() {
 
     let _ = s1_secret;
 }
+
+#[test]
+fn embedded_root_consts_are_coherent() {
+    // ROOT_PUBLIC_KEY must dearmor and carry ROOT_FINGERPRINT as its
+    // primary — the two consts are one ceremony record (spec 09 §2).
+    let bytes = rnp::dearmor_bytes(tebako_signer::ROOT_PUBLIC_KEY.as_bytes())
+        .expect("ROOT_PUBLIC_KEY dearmors");
+    let ctx = rnp::Context::new().unwrap();
+    ctx.load_keys(rnp::KeyringFormat::Gpg, &bytes, rnp::LoadSaveFlags::PUBLIC)
+        .unwrap();
+    let fps: Vec<String> = ctx
+        .identifiers(rnp::IdentifierKind::Fingerprint)
+        .unwrap()
+        .collect();
+    assert!(
+        fps.iter()
+            .any(|fp| fp.eq_ignore_ascii_case(tebako_signer::ROOT_FINGERPRINT)),
+        "ROOT_PUBLIC_KEY must carry ROOT_FINGERPRINT: {fps:?}"
+    );
+    // The signing subkey rides along (the CI release-signing identity).
+    assert!(
+        fps.len() >= 2,
+        "the root export must include its subkeys: {fps:?}"
+    );
+}

@@ -904,6 +904,10 @@ pub fn publish_full(
         )
     };
     let signature = key.as_ref().map(|key| SignaturePin {
+        // The pin names the signing key's PRIMARY keyid — the identity
+        // (spec 09 §9), not the rotating subkey instrument: a signature
+        // issuing from a signing subkey resolves to its primary through
+        // the keyring at install time.
         keyid: key.keyid_hex(),
         // universal: the exact asc; per-triplet: the convention asc of the
         // first artifact (the installer derives <selected-artifact>.asc).

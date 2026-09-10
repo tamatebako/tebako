@@ -1505,6 +1505,13 @@ fn install_payload(
 /// 2026-09-09 root ceremony (the classical Ed25519 root —
 /// docs/root-ceremony.md); `TEBAKO_TRUSTED_ROOT` (a fingerprint)
 /// extends/overrides it for development.
+///
+/// This literal stays local: the bootstrap builds WITHOUT tebako-signer
+/// when `openpgp-verify` is off. tebako-signer's `ROOT_FINGERPRINT` /
+/// `ROOT_PUBLIC_KEY` are the signer's copy of the same ceremony record;
+/// tebako-cli's tests assert the two fingerprints agree (spec 00 §10's
+/// parity-assertion form of SSOT — the release chains cannot flow one
+/// constant across the optional-dependency boundary).
 pub const EMBEDDED_ROOT_FINGERPRINT: &str = "9E210CA8E9FDE9E6587740B2EFC3C250F7862A48";
 
 /// A trusted root: fingerprint plus optionally-bundled public key bytes

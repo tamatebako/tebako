@@ -112,3 +112,49 @@ fn export_binary_public(public_key: &[u8]) -> Result<Vec<u8>, SignerError> {
     key.export(rnp::ExportFlags::PUBLIC | rnp::ExportFlags::SUBKEYS)
         .map_err(|e| SignerError::Trust(e.to_string()))
 }
+
+/// The keyid (16 lowercase hex) of the PRIMARY key that `issuer_keyid`
+/// belongs to in this keyring: the issuer itself when it IS a primary,
+/// `Ok(None)` when the keyring holds no such key. Registry signature pins
+/// name the signing key's PRIMARY keyid (spec 09 §9 — the identity, not
+/// the rotating subkey instrument); verification resolves a signature's
+/// issuer through this before comparing.
+pub fn primary_keyid_of(keyring: &[u8], issuer_keyid: &str) -> Result<Option<String>, SignerError> {
+    let ctx = Context::new().map_err(|e| SignerError::Verify(e.to_string()))?;
+    if !keyring.is_empty() {
+        ctx.load_keys(KeyringFormat::Gpg, keyring, LoadSaveFlags::PUBLIC)
+            .map_err(|e| SignerError::Verify(format!("cannot load the keyring: {e}")))?;
+    }
+    let want = issuer_keyid.to_lowercase();
+    // Membership first: librnp's locate-by-keyid does not reliably answer
+    // "absent" (an all-zero keyid comes back as SOME key handle) — the
+    // crate's established pattern (sign.rs's keyring_has_keyid) iterates
+    // the keyring's keyids instead.
+    let mut ids = ctx
+        .identifiers(rnp::IdentifierKind::Keyid)
+        .map_err(|e| SignerError::Verify(e.to_string()))?;
+    if !ids.any(|id| id.to_lowercase() == want) {
+        return Ok(None);
+    }
+    let Some(key) = ctx
+        .find_key(rnp::KeyIdentifier::Keyid(&want))
+        .map_err(|e| SignerError::Verify(format!("cannot look up keyid {want}: {e}")))?
+    else {
+        return Ok(None);
+    };
+    // On a PRIMARY key librnp's rnp_key_get_primary_fprint answers
+    // BadParameters (there is no primary above it): like an empty value,
+    // that means the issuer is its own primary.
+    let primary_fp = match key.primary_fprint() {
+        Ok(Some(fp)) => fp,
+        Ok(None) => key
+            .fingerprint()
+            .map_err(|e| SignerError::Verify(e.to_string()))?,
+        Err(e) if e.kind() == rnp::ErrorKind::BadParameters => key
+            .fingerprint()
+            .map_err(|e| SignerError::Verify(e.to_string()))?,
+        Err(e) => return Err(SignerError::Verify(e.to_string())),
+    };
+    let keyid = crate::keys::keyid_bytes_from_fingerprint(&primary_fp)?;
+    Ok(Some(crate::keys::hex_lower(&keyid)))
+}

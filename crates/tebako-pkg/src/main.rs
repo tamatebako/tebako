@@ -538,11 +538,22 @@ fn resolve_signing_key(a: &Args, home: &Path) -> Result<tebako_signer::PressKey,
     }
 }
 
-fn sign_artifact(artifact: &Path, press: &tebako_signer::PressKey) -> Result<String, String> {
+fn sign_artifact(
+    artifact: &Path,
+    press: &tebako_signer::PressKey,
+) -> Result<(String, Option<String>), String> {
     let data = std::fs::read(artifact)
         .map_err(|_| format!("cannot read artifact: {}", artifact.display()))?;
     let sig = tebako_signer::sign_detached(&data, &press.secret_key, &press.fingerprint)
         .map_err(|e| e.to_string())?;
+    // The signature's actual issuer: the signing SUBKEY when the key has
+    // one (rnp selects it for a certify-only primary). Registry signature
+    // pins name the PRIMARY (spec 09 §9); the issuer is reported for
+    // transparency, and the install-time check resolves it back.
+    let issuer = tebako_signer::signature_issuer_fingerprint(&sig)
+        .ok()
+        .and_then(|fp| tebako_signer::keyid_bytes_from_fingerprint(&fp).ok())
+        .map(|b| tebako_signer::hex_lower(&b));
     let armored = rnp::armor_bytes(&sig, rnp::ops::ArmorType::Signature)
         .map_err(|e| format!("cannot armor the signature: {e}"))?;
     let asc = artifact.with_file_name(format!(
@@ -557,7 +568,7 @@ fn sign_artifact(artifact: &Path, press: &tebako_signer::PressKey) -> Result<Str
         use sha2::Digest;
         sha2::Sha256::digest(&data)
     };
-    Ok(tebako_signer::hex_lower(&digest))
+    Ok((tebako_signer::hex_lower(&digest), issuer))
 }
 
 fn cmd_sign(rest: &[String]) -> ExitCode {
@@ -584,15 +595,17 @@ fn cmd_sign(rest: &[String]) -> ExitCode {
     }
 
     let mut entries = Vec::new();
+    let mut issuer = None;
     for artifact in &a.positional {
         let path = Path::new(artifact);
         match sign_artifact(path, &press) {
-            Ok(digest) => {
+            Ok((digest, iss)) => {
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_default();
                 entries.push(format!("{digest}  {name}"));
+                issuer = issuer.or(iss);
             }
             Err(e) => return fail("sign", &e),
         }
@@ -626,6 +639,12 @@ fn cmd_sign(rest: &[String]) -> ExitCode {
         a.positional.len(),
         press.keyid_hex()
     );
+    if let Some(issuer) = issuer.filter(|i| *i != press.keyid_hex()) {
+        println!(
+            "signing subkey keyid: {issuer} (registry signature pins name the primary {})",
+            press.keyid_hex()
+        );
+    }
     ExitCode::SUCCESS
 }
 
