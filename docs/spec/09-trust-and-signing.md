@@ -34,7 +34,14 @@ tebako validates below it — see spec 12 §5.
    rnp-rs — the ONE signature mechanism for trailers, manifests, and
    release indexes alike: one keyring, one verify path). Root fingerprint
    published on tebako.org AND embedded in the loader/CLI at release time
-   (`EMBEDDED_ROOT_FINGERPRINT`; dev override `TEBAKO_TRUSTED_ROOT`).
+   (`EMBEDDED_ROOT_FINGERPRINT`; dev override `TEBAKO_TRUSTED_ROOT`). The
+   CLI additionally embeds the root PUBLIC KEY
+   (`tebako_signer::ROOT_PUBLIC_KEY`, byte-identical with
+   `https://www.tebako.org/.well-known/tebako-key.asc`), so first-party
+   signature verification needs no key distribution at all (§9's
+   zero-interaction rule); the size-gated bootstrap stays
+   fingerprint-only, the public key reaching its keyrings through the
+   normal channels.
 2. **Production (releases):** every released part (runtime payloads,
    bootstrap, src tarballs, libraries) ships a detached `.asc` per
    artifact PLUS a signed release manifest — one verify path for all.
@@ -80,7 +87,11 @@ tebako validates below it — see spec 12 §5.
 
 - **Press time:** the CLI verifies release signatures before using any
   part (fail closed). Trusted keyring in `$TEBAKO_HOME`; our root key
-  embedded; additional keys TOFU-registered with a named prompt.
+  embedded (the fingerprint in the loader, the full public key in the
+  CLI); additional keys TOFU-registered with a named prompt.
+- **Install time:** registry-pinned payload signatures verify against the
+  trusted keyring PLUS the embedded root public key — a tamatebako-signed
+  payload verifies Trusted on a fresh machine, no registration step.
 - **First run:** the loader verifies the trailer signature against the
   keyring, then each slot's sha256 before mounting/extracting (streaming,
   one pass at install time; the trust-anchor marker avoids re-hashing
@@ -186,6 +197,20 @@ A key mismatch fails closed (`SignerKeyChanged`, exit 72) and displays
 both fingerprints; a valid successor chain (§8 rotation) forwards
 automatically after displaying the chain proof, re-pinning the new key.
 
+**A signature pin names the PRIMARY keyid — the identity, not the
+instrument.** A well-formed release key signs data with a signing SUBKEY
+(a certify-only primary never signs; the 2026-09-09 root is this shape),
+so the signature's issuer keyid is the subkey's, while the identity a
+registry pins is the primary's (its low 64 bits, 16 lowercase hex).
+Verification therefore resolves the verified issuer to its primary
+through the keyring before comparing (`tebako_signer::primary_keyid_of`);
+a pin naming the issuer subkey directly also matches (exact compare
+first). Consequence: rotating the signing SUBKEY under an unchanged
+primary never invalidates existing registry pins. Publishers pin the
+primary — `tebako-pkg sign` and `tebako publish` both report it (the
+sign line names the primary keyid; when a subkey did the signing, the
+issuer is reported alongside for transparency).
+
 **Per artifact class:**
 
 - Registry index: verified against the pinned registry key on every
@@ -254,7 +279,9 @@ rotate` creates + signs + publishes a successor statement in one command
 [planned]; revocation follows §8 [format locked].
 
 **User ergonomics.** First-party: zero interaction, ever (embedded
-root). Third-party: one informed consent per author (the TOFU prompt),
+root — the CLI carries the root public key, so first-party artifacts
+verify Trusted on a fresh machine). Third-party: one informed consent
+per author (the TOFU prompt),
 then silent verification forever. `tebako trust list|show|remove`
 manage the trust store [planned]; `tebako doctor` re-verifies installed
 artifacts against pinned keys [roadmap 50]. Unverified artifacts always

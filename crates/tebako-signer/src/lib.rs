@@ -33,14 +33,19 @@ pub use envelope::{
     envelope_recipients, public_key_from_secret, public_key_keyid, unwrap_dek, wrap_dek,
 };
 pub use error::SignerError;
-pub use keyring::{register_trusted, trusted_keyring_bytes, trusted_keyring_path, RegisterOutcome};
+pub use keyring::{
+    primary_keyid_of, register_trusted, trusted_keyring_bytes, trusted_keyring_path,
+    RegisterOutcome,
+};
 pub use keys::{
     default_home, hex_lower, keyid_bytes_from_fingerprint, press_key_from_secret_bytes,
     press_local_key, secret_key_by_keyid, PressKey,
 };
 pub use root::{
     apply_successor_chain, parse_successor_statement, short_fingerprint, sign_successor_statement,
-    successor_chain_path, verify_successor_statement, SuccessorStatement, STATEMENT_FORMAT,
+    successor_chain_path, trusted_root_override_key, verification_keyring,
+    verify_successor_statement, SuccessorStatement, ROOT_FINGERPRINT, ROOT_PUBLIC_KEY,
+    STATEMENT_FORMAT,
 };
 pub use sign::{
     dearmor_bytes, sign_detached, signature_issuer_fingerprint, verify_detached,

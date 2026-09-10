@@ -90,11 +90,13 @@ pub struct RegistryVersion {
     /// per-triplet `platforms` require a service release, since artifact
     /// names only exist there).
     pub release: ReleaseRef,
-    /// Opt-in OpenPGP signature of the artifact (spec 09): the signer
-    /// keyid (16 lowercase hex) and the detached `.asc` — an asset name
-    /// within the same release, or a full reference. One signature covers
-    /// exactly one artifact, so per-triplet releases carry one asc per
-    /// artifact by convention (`<artifact>.asc`) and the installer
+    /// Opt-in OpenPGP signature of the artifact (spec 09): the signing
+    /// key's PRIMARY keyid (16 lowercase hex — the identity, not the
+    /// instrument; a signature issuing from a signing subkey resolves to
+    /// its primary at verification) and the detached `.asc` — an asset
+    /// name within the same release, or a full reference. One signature
+    /// covers exactly one artifact, so per-triplet releases carry one asc
+    /// per artifact by convention (`<artifact>.asc`) and the installer
     /// verifies the SELECTED artifact against its own asc; `asc` names
     /// the exact asset only for universal payloads.
     #[serde(default, skip_serializing_if = "Option::is_none")]

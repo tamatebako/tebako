@@ -678,6 +678,97 @@ fn unsigned_entry_installs_with_the_legacy_warn_and_journal_line() {
 }
 
 // ---------------------------------------------------------------------
+// subkeyed signers (the release-key shape): the pin names the PRIMARY
+// ---------------------------------------------------------------------
+
+/// The release-key shape as a checked-in fixture: a certify-only Ed25519
+/// primary with a signing Ed25519 subkey (spec 09 §9 — the signature
+/// issues from the subkey, the registry pins the primary). librnp's own
+/// keygen cannot mint a certify-only primary (allows_sign stays true), so
+/// the fixture was minted with gpg; the regeneration recipe lives beside
+/// it in tebako-signer's tests/fixtures/README.md.
+const SUBKEYED_SECRET: &str =
+    include_str!("../../tebako-signer/tests/fixtures/subkeyed-release-shape.key.asc");
+const SUBKEYED_PUBLIC: &str =
+    include_str!("../../tebako-signer/tests/fixtures/subkeyed-release-shape.pub.asc");
+const SUBKEYED_PRIMARY_FP: &str = "58CF65380FB5C5A8FA7239DD50849A8E5658E47A";
+const SUBKEYED_SUBKEY_KEYID: &str = "2d6df607dfc5aad5";
+
+fn low16(fp: &str) -> String {
+    tebako_signer::hex_lower(&tebako_signer::keyid_bytes_from_fingerprint(fp).unwrap())
+}
+
+#[test]
+fn subkeyed_signer_verifies_against_the_primary_pin() {
+    let fx = Fixture::new("sig5");
+    let payload_ref = fx.payload("app-1.0.tfs", b"signed-bytes");
+    let asc = tebako_signer::sign_detached(
+        b"signed-bytes",
+        SUBKEYED_SECRET.as_bytes(),
+        SUBKEYED_PRIMARY_FP,
+    )
+    .unwrap();
+    let issuer_keyid = low16(&tebako_signer::signature_issuer_fingerprint(&asc).unwrap());
+    assert_eq!(
+        issuer_keyid, SUBKEYED_SUBKEY_KEYID,
+        "the signature must issue from the subkey"
+    );
+    let primary_keyid = low16(SUBKEYED_PRIMARY_FP);
+    let asc_ref = fx.payload("app-1.0.tfs.asc", &asc);
+    tebako_signer::register_trusted(&fx.home, SUBKEYED_PUBLIC.as_bytes()).unwrap();
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &signed_registry(&payload_ref, &asc_ref, &primary_keyid),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    // The outcome reports the verified ISSUER (the fact); the pin named
+    // the primary (the identity) and matched through the resolution.
+    assert_eq!(out.signer.as_deref(), Some(issuer_keyid.as_str()));
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains("event=payload-signature-trusted"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn pin_naming_another_primary_is_the_named_mismatch() {
+    let fx = Fixture::new("sig6");
+    let payload_ref = fx.payload("app-1.0.tfs", b"signed-bytes");
+    let asc = tebako_signer::sign_detached(
+        b"signed-bytes",
+        SUBKEYED_SECRET.as_bytes(),
+        SUBKEYED_PRIMARY_FP,
+    )
+    .unwrap();
+    let asc_ref = fx.payload("app-1.0.tfs.asc", &asc);
+    tebako_signer::register_trusted(&fx.home, SUBKEYED_PUBLIC.as_bytes()).unwrap();
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &signed_registry(&payload_ref, &asc_ref, "0123456789abcdef"),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 71, "{err:?}");
+    assert!(err.message.contains("registry pins"), "{err:?}");
+    assert!(!fx.payloads_dir().join("app/1.0.tfs").exists());
+}
+
+#[test]
+fn embedded_root_fingerprint_matches_the_signer_const() {
+    // spec 00 §10's parity assertion: the bootstrap keeps its own literal
+    // (it builds without tebako-signer when openpgp-verify is off); the
+    // two are one ceremony record and must never drift.
+    assert_eq!(
+        tebako_bootstrap::EMBEDDED_ROOT_FINGERPRINT,
+        tebako_signer::ROOT_FINGERPRINT
+    );
+}
+
+// ---------------------------------------------------------------------
 // the embedded manifest (tier 1, authoritative)
 // ---------------------------------------------------------------------
 

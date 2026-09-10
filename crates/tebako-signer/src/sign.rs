@@ -112,7 +112,10 @@ pub fn verify_detached(
             let Some(sig) = signatures.first() else {
                 return Ok(VerifyOutcome::Invalid(None));
             };
-            let keyid = sig.keyid().unwrap_or_default();
+            // librnp reports keyids upper-case; tebako's keyid grammar is
+            // lower-case hex everywhere (registry pins, the journal, the
+            // hint path below) — canonicalize at the boundary.
+            let keyid = sig.keyid().unwrap_or_default().to_ascii_lowercase();
             match sig.status() {
                 rnp::SignatureStatus::Valid => Ok(VerifyOutcome::Trusted(keyid)),
                 rnp::SignatureStatus::Unknown => {

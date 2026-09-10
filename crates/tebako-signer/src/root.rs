@@ -280,3 +280,78 @@ pub fn short_fingerprint(fp: &str) -> String {
         fp.to_string()
     }
 }
+
+// ---------------------------------------------------------------------
+// The embedded first-party root (spec 09 §2 + §9)
+// ---------------------------------------------------------------------
+
+/// The tamatebako release root fingerprint (spec 09 §2) — the SSOT for
+/// the value the bootstrap carries as `EMBEDDED_ROOT_FINGERPRINT`. The
+/// bootstrap keeps its own literal (it builds WITHOUT this crate when
+/// `openpgp-verify` is off); tebako-cli's tests assert the two agree.
+pub const ROOT_FINGERPRINT: &str = "9E210CA8E9FDE9E6587740B2EFC3C250F7862A48";
+
+/// The armored root public key (the classical Ed25519 primary plus its
+/// signing and encryption subkeys) — byte-identical with
+/// `https://www.tebako.org/.well-known/tebako-key.asc`. The CLI folds
+/// this into every payload-signature verification (spec 09 §9:
+/// first-party verification is zero-interaction — the key is embedded,
+/// never fetched). The size-gated bootstrap stays fingerprint-only.
+pub const ROOT_PUBLIC_KEY: &str = r#"-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEaqEttxYJKwYBBAHaRw8BAQdAQ9aJGss4ei8aArTRLHeUtOgAz1zlnw+JRu8Y
+6HuGRcO0LXRhbWF0ZWJha28gcm9vdCAoY2xhc3NpY2FsKSA8cm9vdEB0ZWJha28u
+b3JnPoivBBMWCgBXFiEEniEMqOn96eZYd0Cy78PCUPeGKkgFAmqhLbcbFIAAAAAA
+BAAObWFudTIsMi41KzEuMTIsMCwzAhsBBQsJCAcCAiICBhUKCQgLAgQWAgMBAh4H
+AheAAAoJEO/DwlD3hipIH1IA/j/VFOmgaiPQMVtioApA2MHywksYwEm+PTwlNGwB
+QbGiAP41hDmHUQXhOKUFshzxjsA03R3eDwu8QoB6qtc71tY1DrgzBGqhLfsWCSsG
+AQQB2kcPAQEHQJnJ/w917M45IsuTicHF8AUuoRlOS1lOG+NoLRZfpVn2iQELBBgW
+CgA8FiEEniEMqOn96eZYd0Cy78PCUPeGKkgFAmqhLfsbFIAAAAAABAAObWFudTIs
+Mi41KzEuMTIsMCwzAhsCAIEJEO/DwlD3hipIdiAEGRYKAB0WIQTkVZIau8Pn2blz
+K/56Q31zgqPPWgUCaqEt+wAKCRB6Q31zgqPPWnXiAQC22wIPOaGgGuBvAytHmEwO
+Phvhel6PktQUND+DYDcapAEA3GqCPkmH2xa9pFiuP9nWb15cmsQh2jFuuWB6OB6G
+hQStsAD/SCuSbO/S9u0J4ubcBBAPZ0irYNHUWYMvBi0I47W0SbwA/RAcmoAyfDzr
+wvm1aEaAkxZRXK4PsQw/u/RLwDPMpLwJuDgEaqEt/RIKKwYBBAGXVQEFAQEHQL+M
+G3+rmdDRuAejNTXPYcHdg+Gk/Gvy0anBmhrjMzo2AwEIB4iUBBgWCgA8FiEEniEM
+qOn96eZYd0Cy78PCUPeGKkgFAmqhLf0bFIAAAAAABAAObWFudTIsMi41KzEuMTIs
+MCwzAhsMAAoJEO/DwlD3hipIW04A/303fBIF0M+48T9tzzTz/hXyqpzPgNxZV1JJ
+6Yv2Bpg5AQC29iNf9hj7wp93ZMzIDOVyUFhtk5NGTwT5G66NxP/UCw==
+=jH00
+-----END PGP PUBLIC KEY BLOCK-----
+"#;
+
+/// The keyring a payload-signature verification runs against (spec 09
+/// §9's zero-interaction rule for first-party artifacts): the user's
+/// trusted keyring, the embedded root public key, and the
+/// `TEBAKO_TRUSTED_ROOT` dev override's bundled key when it names a file.
+pub fn verification_keyring(home: &std::path::Path) -> Result<Vec<u8>, SignerError> {
+    let mut ring = crate::keyring::trusted_keyring_bytes(home)?;
+    // The embedded const is ours and the tests prove it dearmors; a
+    // failure here can only be memory corruption — skip defensively,
+    // never fail an install over it.
+    if let Ok(root) = rnp::dearmor_bytes(ROOT_PUBLIC_KEY.as_bytes()) {
+        ring.extend_from_slice(&root);
+    }
+    if let Some(extra) = trusted_root_override_key(std::env::var("TEBAKO_TRUSTED_ROOT").ok()) {
+        ring.extend_from_slice(&extra);
+    }
+    Ok(ring)
+}
+
+/// The `TEBAKO_TRUSTED_ROOT` dev override's bundled public key: when the
+/// value names an existing file, its (possibly armored) bytes join the
+/// verification keyring; a bare fingerprint names a key the trusted
+/// keyring must already hold (the bootstrap's grammar, mirrored).
+pub fn trusted_root_override_key(value: Option<String>) -> Option<Vec<u8>> {
+    let v = value?;
+    let v = v.trim();
+    if v.is_empty() {
+        return None;
+    }
+    let path = std::path::Path::new(v);
+    if !path.is_file() {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    Some(rnp::dearmor_bytes(&bytes).unwrap_or(bytes))
+}

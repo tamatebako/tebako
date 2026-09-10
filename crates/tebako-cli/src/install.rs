@@ -1827,30 +1827,44 @@ fn verify_signature<T: Transport>(
 
     let asc_ref = signature_reference(sig, &plan.reference)?;
     let asc = fetcher.fetch(&asc_ref).map_err(map_resolve)?;
+    // spec 09 §9's zero-interaction rule: the verification keyring is the
+    // user's trusted keyring PLUS the embedded tamatebako root public key
+    // (and the TEBAKO_TRUSTED_ROOT dev override's bundled key) — a
+    // first-party signature verifies Trusted on a fresh machine.
     let keyring =
-        tebako_signer::trusted_keyring_bytes(home).map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?;
+        tebako_signer::verification_keyring(home).map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?;
     let outcome = tebako_signer::verify_detached_full(&keyring, &fetched.bytes, &asc.bytes)
         .map_err(|e| err(EX_TEBAKO_SIGNATURE, e.to_string()))?;
     match outcome {
         tebako_signer::VerifyOutcome::Trusted(keyid) => {
-            if !keyid.eq_ignore_ascii_case(&sig.keyid) {
+            // The pin names the signing key's PRIMARY keyid (the identity,
+            // spec 09 §9); the signature may issue from a signing subkey —
+            // resolve the issuer to its primary through the keyring before
+            // comparing, so a subkey rotation never invalidates the pin.
+            let issuer = keyid.to_ascii_lowercase();
+            let pin = sig.keyid.to_ascii_lowercase();
+            let primary = tebako_signer::primary_keyid_of(&keyring, &issuer)
+                .map_err(|e| err(EX_TEBAKO_SIGNATURE, e.to_string()))?;
+            if issuer != pin && primary.as_deref() != Some(pin.as_str()) {
+                let primary_note = primary
+                    .as_deref()
+                    .map_or_else(String::new, |p| format!(" (primary {p})"));
                 return Err(err(
                     EX_TEBAKO_SIGNATURE,
                     format!(
-                        "{} is signed by {keyid} but the registry pins {} — refusing to install; nothing was cached",
-                        fetched.origin, sig.keyid
+                        "{} is signed by {issuer}{primary_note} but the registry pins {pin} — refusing to install; nothing was cached",
+                        fetched.origin
                     ),
                 ));
             }
-            let keyid = keyid.to_ascii_lowercase();
             journal(
                 home,
                 &format!(
-                    "event=payload-signature-trusted origin={} signer={keyid}",
+                    "event=payload-signature-trusted origin={} signer={issuer}",
                     fetched.origin
                 ),
             );
-            Ok(Some(keyid))
+            Ok(Some(issuer))
         }
         tebako_signer::VerifyOutcome::Untrusted(keyid) => Err(err(
             EX_TEBAKO_TRUST,

@@ -115,3 +115,89 @@ fn second_key_is_untrusted_until_registered() {
     cleanup(&home_a);
     cleanup(&home_b);
 }
+
+// ---------------------------------------------------------------------
+// Subkeyed signers (the release-key shape: [C] primary + [S] subkey)
+// ---------------------------------------------------------------------
+
+// The checked-in fixture — see tests/fixtures/README.md for why this is
+// not an in-process mint (librnp's keygen leaves an EdDSA primary
+// signing-capable regardless of usage flags; gpg's honors them).
+const SUBKEYED_SECRET: &str = include_str!("fixtures/subkeyed-release-shape.key.asc");
+const SUBKEYED_PUBLIC: &str = include_str!("fixtures/subkeyed-release-shape.pub.asc");
+const SUBKEYED_PRIMARY_FP: &str = "58CF65380FB5C5A8FA7239DD50849A8E5658E47A";
+const SUBKEYED_PRIMARY_KEYID: &str = "50849a8e5658e47a";
+const SUBKEYED_SUBKEY_FP: &str = "2B09411497507C279F85F41E2D6DF607DFC5AAD5";
+const SUBKEYED_SUBKEY_KEYID: &str = "2d6df607dfc5aad5";
+
+#[test]
+fn subkeyed_signer_issues_from_the_subkey_and_resolves_to_the_primary() {
+    // Signing selects the signing subkey (a certify-only primary never
+    // signs): the signature's issuer is NOT the primary.
+    let sig = sign_detached(MSG, SUBKEYED_SECRET.as_bytes(), SUBKEYED_PRIMARY_FP).expect("sign");
+    let issuer_fp = tebako_signer::signature_issuer_fingerprint(&sig).unwrap();
+    assert_eq!(issuer_fp, SUBKEYED_SUBKEY_FP, "the issuer is the subkey");
+    let primary_keyid = tebako_signer::press_key_from_secret_bytes(SUBKEYED_SECRET.as_bytes())
+        .unwrap()
+        .keyid;
+
+    // The signature verifies Trusted against the registered public key…
+    let home = scratch("subkeyed");
+    register_trusted(&home, SUBKEYED_PUBLIC.as_bytes()).unwrap();
+    let keyring = trusted_keyring_bytes(&home).unwrap();
+    let outcome = verify_detached(&keyring, MSG, &sig, &primary_keyid).expect("verify");
+    match outcome {
+        VerifyOutcome::Trusted(signer) => assert_eq!(signer, SUBKEYED_SUBKEY_KEYID),
+        other => panic!("expected Trusted, got {other:?}"),
+    }
+
+    // …and the issuer resolves back to the PRIMARY keyid — the identity a
+    // registry signature pin names (spec 09 §9).
+    let resolved = tebako_signer::primary_keyid_of(&keyring, SUBKEYED_SUBKEY_KEYID).unwrap();
+    assert_eq!(resolved.as_deref(), Some(SUBKEYED_PRIMARY_KEYID));
+    // A primary resolves to itself; an unknown keyid resolves to None.
+    let self_resolved = tebako_signer::primary_keyid_of(&keyring, SUBKEYED_PRIMARY_KEYID).unwrap();
+    assert_eq!(self_resolved.as_deref(), Some(SUBKEYED_PRIMARY_KEYID));
+    assert_eq!(
+        tebako_signer::primary_keyid_of(&keyring, "0000000000000000").unwrap(),
+        None
+    );
+
+    cleanup(&home);
+}
+
+#[test]
+fn verification_keyring_folds_the_embedded_root_and_the_override() {
+    let home = scratch("vkeyring");
+    // Fresh home: the trusted keyring is empty, yet the verification
+    // keyring already trusts the embedded tamatebako root.
+    let ring = tebako_signer::verification_keyring(&home).unwrap();
+    let ctx = rnp::Context::new().unwrap();
+    ctx.load_keys(rnp::KeyringFormat::Gpg, &ring, rnp::LoadSaveFlags::PUBLIC)
+        .unwrap();
+    let fps: Vec<String> = ctx
+        .identifiers(rnp::IdentifierKind::Fingerprint)
+        .unwrap()
+        .collect();
+    assert!(
+        fps.iter()
+            .any(|fp| fp.eq_ignore_ascii_case(tebako_signer::ROOT_FINGERPRINT)),
+        "the embedded root must verify without any registration: {fps:?}"
+    );
+
+    // The TEBAKO_TRUSTED_ROOT dev override (a path to an armored public
+    // key) folds its key in too — the grammar the bootstrap documents.
+    let key_path = home.join("override.pub");
+    std::fs::write(&key_path, SUBKEYED_PUBLIC).unwrap();
+    let folded =
+        tebako_signer::trusted_root_override_key(Some(key_path.to_string_lossy().into_owned()));
+    assert!(folded.is_some());
+    // A bare fingerprint names a keyring-held key — no file, no bytes.
+    assert!(
+        tebako_signer::trusted_root_override_key(Some(SUBKEYED_PRIMARY_FP.to_string())).is_none()
+    );
+    assert!(tebako_signer::trusted_root_override_key(None).is_none());
+    assert!(tebako_signer::trusted_root_override_key(Some(String::new())).is_none());
+
+    cleanup(&home);
+}
