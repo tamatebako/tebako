@@ -1270,7 +1270,7 @@ mod tests {
                 sha('b'),
             )])),
             source: Some(
-                "tfs:github:tebako-packages/openjdk-feedstock:21.0.5#openjdk-21.0.5-macos-arm64.tfs"
+                "tfs:github:tamatebako/tebako-runtime-openjdk:21.0.5#openjdk-21.0.5-macos-arm64.tfs"
                     .to_string(),
             ),
         }
@@ -1346,7 +1346,7 @@ mod tests {
             },
             dll: None,
             source: Some(
-                "tfs:github:tebako-packages/openjdk:2.1.5#tebako-runtime-2.1.5-21.0.12-macos-arm64.tfs"
+                "tfs:github:tamatebako/tebako-runtime-openjdk:2.1.5#tebako-runtime-2.1.5-21.0.12-macos-arm64.tfs"
                     .to_string(),
             ),
         }

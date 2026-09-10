@@ -25,7 +25,7 @@ SUMMARY="${GITHUB_STEP_SUMMARY:-/dev/null}"
 # table — this script must also run under bash 3.2 / POSIX sh, which
 # have no `declare -A`). tebako-shim is the dispatcher (TODO.testing/07).
 # tebako-runtime-launcher is the spec-29 wrapper exe (the repacked-
-# runtime ship form — tebako-packages/openjdk#23's download).
+# runtime ship form — tamatebako/tebako-runtime-openjdk#23's download).
 TOOLS="tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher"
 
 mkdir -p out "fragments/frag-$PLATFORM"
