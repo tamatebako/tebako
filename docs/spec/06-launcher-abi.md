@@ -59,7 +59,8 @@ republish of v1-era runtimes needed.
 4. Resolve the runtime per spec 05 §5 — negotiating the contract version
    (§6) fail-closed before any checksum acceptance.
 5. Image-era: ensure `<asset>.tfs` + trust markers in the cache entry
-   (fetch + verify on miss), install read-only.
+   (fetch + verify on miss — authenticity per spec 09 §4's runtime-fetch
+   point first, then sha256 integrity as today), install read-only.
 6. Exec the handoff. Never returns on success.
 
 ## 4. Exit codes (named, stable)

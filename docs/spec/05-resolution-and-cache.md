@@ -87,8 +87,12 @@ recorded for the failure message.
   An edge no channel answers is a NAMED error enumerating the channels
   tried (never a silent query of a base that hosts no such engine — a
   wrong-line 404 is diagnosed as what it is).
-- Signing of the index itself: spec 09 §5 (signed manifest closes the
-  same-channel-MITM gap).
+- Signing of the index and the artifacts it names: spec 09 §5 (every
+  consumable index form signed — the same-channel-MITM gap closes) and
+  spec 09 §4's runtime-fetch verification point (the per-artifact
+  `signature` check, the unsigned-line semantics, the exit codes). The
+  fetch journal records the verification strength alongside the base and
+  the channel that supplied it.
 
 ## 3. Machine cache layout (`~/.tebako`)
 

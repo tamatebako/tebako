@@ -54,13 +54,20 @@ publish invocation writes ONLY its own payload assets plus the metadata
 that describes them — the per-asset `<asset>.sha256` sidecar (coreutils
 `<sha>  <file>`, hashed from the local bytes) and the per-package
 `<stem>.manifest.json` shard (the entry below, served standalone, every
-sha field re-anchored to the served bytes). The monoliths
-(`manifest.json`, `SHA256SUMS.txt`) and the release notes are DERIVED
-conveniences written by a single finalize pass from the release's own
-shards plus the asset listing's server-computed digests — never a job's
-local merge (the 2026-08-29 incident: four platform jobs racing the two
-shared monoliths wedged an asset name server-side). Payload assets stay
-byte-immutable; metadata is derivable and converges (digest-match skip,
+sha field re-anchored to the served bytes; on signing-enabled lines the
+shard also declares each artifact's `signature` block — the `.asc`
+spellings are the factory's to declare, written at publish). The
+monoliths (`manifest.json`, `SHA256SUMS.txt`) and the release notes are
+DERIVED conveniences written by a single finalize pass from the
+release's own shards plus the asset listing's server-computed digests —
+never a job's local merge (the 2026-08-29 incident: four platform jobs
+racing the two shared monoliths wedged an asset name server-side). The
+finalize pass also signs (spec 09 §5, behind the signing flag): every
+payload asset's `<asset>.asc`, every shard's `<stem>.manifest.json.asc`,
+and the monoliths' `manifest.json.asc` / `SHA256SUMS.txt.asc` — a
+signature the shard declares but the finalize pass does not produce
+fails the release, never ships. Payload assets stay byte-immutable;
+metadata is derivable and converges (digest-match skip,
 loud replace on drift). Sidecars and shards are the authority; the
 resolver reads them first (spec 05 §2).
 
@@ -73,7 +80,10 @@ resolver reads them first (spec 05 §2).
   "filename": "tebako-runtime-0.16.0-3.3.7-macos-arm64",
   "sha256": "…", "size_bytes": 38683544,
   "abi": "arm64-darwin-23",
-  "image": {"filename": "….tfs", "sha256": "…", "size_bytes": 7658081}
+  "signature": {"keyid": "efc3c250f7862a48",
+                "asc": "tebako-runtime-0.16.0-3.3.7-macos-arm64.asc"},
+  "image": {"filename": "….tfs", "sha256": "…", "size_bytes": 7658081,
+            "signature": {"keyid": "efc3c250f7862a48", "asc": "….tfs.asc"}}
 }
 ```
 
@@ -85,6 +95,18 @@ resolver reads them first (spec 05 §2).
 - The image nests under `image` (name + sha + size); the exe's own
   digest is the entry's `sha256`. `contract_version` negotiates the
   launcher semantics (spec 17).
+- `signature` (additive, opt-in per artifact — spec 09 §5): the exe
+  carries the entry-level `signature`, the env image `image.signature`,
+  a windows `dll` its own — each `{keyid, asc}` mirroring the registry
+  model (spec 04 §2): `keyid` the signer's 16-lowercase-hex PRIMARY
+  keyid (spec 09 §9's primary-vs-subkey rule), `asc` the detached
+  sidecar's exact asset name within the same release (declared by the
+  factory, flowed verbatim — consumers never synthesize it, exactly like
+  `filename`). Absent marks a pre-signing release line — keep-forever
+  (§8), installable under spec 09 §4's unsigned-fetch rule. Present ⇒
+  the named `.asc` exists in the same release: a declaration without its
+  signature asset is an invalid signing state (spec 09 §4 — exit 71 at
+  fetch, and the publish fails before that, above).
 
 ## 3. Drift loop (SHIPPED pending PR merge: ruby#41, runtime-ruby#17)
 
