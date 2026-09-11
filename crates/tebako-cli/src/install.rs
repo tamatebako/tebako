@@ -1850,9 +1850,9 @@ fn verify_signature<T: Transport>(
                     .as_deref()
                     .map_or_else(String::new, |p| format!(" (primary {p})"));
                 return Err(err(
-                    EX_TEBAKO_SIGNATURE,
+                    EX_TEBAKO_TRUST,
                     format!(
-                        "{} is signed by {issuer}{primary_note} but the registry pins {pin} — refusing to install; nothing was cached",
+                        "{} is signed by {issuer}{primary_note} but the registry pins {pin} — the signer key changed (spec 09 §9 SignerKeyChanged); refusing to install; nothing was cached",
                         fetched.origin
                     ),
                 ));

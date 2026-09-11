@@ -752,8 +752,9 @@ fn pin_naming_another_primary_is_the_named_mismatch() {
     install::add_registry(&fx.home, &reg_ref).unwrap();
 
     let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
-    assert_eq!(err.code, 71, "{err:?}");
+    assert_eq!(err.code, 72, "{err:?}");
     assert!(err.message.contains("registry pins"), "{err:?}");
+    assert!(err.message.contains("the signer key changed"), "{err:?}");
     assert!(!fx.payloads_dir().join("app/1.0.tfs").exists());
 }
 
