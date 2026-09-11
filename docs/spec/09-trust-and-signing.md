@@ -5,7 +5,10 @@ part: bootstrap, runtime payloads, data payloads, and release indexes.
 Status: signing machinery SHIPPED (M29 phase 2); the classical root key
 ceremony EXECUTED 2026-09-09 (§7); release signing SHIPPED — the
 finalize job signs every released part and the release indexes behind
-`TEBAKO_RELEASE_SIGNING_ENABLED` (§6).
+`TEBAKO_RELEASE_SIGNING_ENABLED` (§6). Runtime FETCH-TIME verification
+(§4's resolve-path point, §5's signed index forms, spec 13 §2a's
+per-artifact `signature`) is PLANNED — roadmap 80/G1: until it lands,
+runtime release signatures are out-of-band only.
 
 > **Rollout phase — unverified-first (roadmap 72).** The shipped
 > tebako-bootstrap is built WITHOUT OpenPGP verification (the
@@ -92,6 +95,28 @@ tebako validates below it — see spec 12 §5.
 - **Install time:** registry-pinned payload signatures verify against the
   trusted keyring PLUS the embedded root public key — a tamatebako-signed
   payload verifies Trusted on a fresh machine, no registration step.
+- **Runtime fetch (resolve time — tebako-resolve, the one code path
+  behind the shim's dispatch, the CLI's install/press, and the
+  bootstrap's runtime download; PLANNED — roadmap 80/G1):** the resolver
+  verifies the consumed index form's detached signature (§5) BEFORE
+  trusting its digests, then verifies each fetched artifact whose entry
+  declares `signature` (spec 13 §2a) — always strict: an invalid
+  signature → exit 71; a signer keyid whose primary is not in the
+  trusted keyring → exit 72; a declared `.asc` that does not fetch →
+  exit 71 (a signing declaration without its signature asset is an
+  invalid signing state, never a skip). The sha256 check then runs as
+  today (exit 70). An entry with NO signature anywhere (a pre-signing
+  release line — those releases are keep-forever, spec 13 §8) is
+  accepted with a loud stderr warning + audit journal
+  (`event=unsigned-runtime-fetch`) on every fetch — the download moment
+  IS the trust decision here (§9's two-models rule) — and refused with
+  exit 71 under `TEBAKO_REQUIRE_SIGNED=1`. A bootstrap built without
+  `openpgp-verify` treats declared runtime signatures exactly as it
+  treats signed trailers (spec 06 §3): loud UNVERIFIED warning +
+  journal, sha256 enforced as integrity-only, exit 71 under
+  `TEBAKO_REQUIRE_SIGNED=1` naming the missing capability. The store
+  markers keep their spec 05 §4 semantics — verification happens at
+  fetch/install, never per run.
 - **First run:** the loader verifies the trailer signature against the
   keyring, then each slot's sha256 before mounting/extracting (streaming,
   one pass at install time; the trust-anchor marker avoids re-hashing
@@ -102,9 +127,25 @@ tebako validates below it — see spec 12 §5.
 
 ## 5. Release index authentication
 
-`manifest.json` is signed (detached `.asc`); resolvers verify the index
-signature before trusting its hashes — closing the gap where a MITM swaps
-both package and unsigned manifest. Same keyring, same verify path.
+Every index form a resolver can consume ships a detached `.asc` from the
+factory's release key, and the resolver verifies the signature of the
+form it consumed BEFORE trusting its hashes — closing the gap where a
+MITM swaps both package and unsigned manifest. Same keyring, same verify
+path. Per runtime factory release (spec 13 §2a): each per-package shard
+`<stem>.manifest.json` ships `<stem>.manifest.json.asc` (the sidecar-era
+authority is signed first), the derived monoliths ship
+`manifest.json.asc` and `SHA256SUMS.txt.asc`, and every payload asset
+(the interpreter exe, the env image, a windows dll) ships its own
+`<asset>.asc`. The entry's `signature: {keyid, asc}` fields name the
+per-artifact sidecars — the same SSOT rule as `filename`: the factory
+declares the spellings, consumers flow them verbatim and never
+synthesize. `keyid` names the signer's PRIMARY keyid (§9's
+primary-vs-subkey rule). All of it is additive: pre-signing releases
+carry none of it and stay installable under §4's unsigned-fetch rule
+(keep-forever, spec 13 §8); a release that declares a `signature` for an
+artifact MUST ship that `.asc` — a declaration without its signature
+asset is an invalid signing state (§4: exit 71 at fetch, and the
+factory's publish fails before that, spec 13 §2a).
 
 ## 6. Tooling
 
@@ -218,6 +259,13 @@ issuer is reported alongside for transparency).
 - Payload slices: signed trailer verified against the author's pinned
   key; per-slot digests chain off it (§4).
 - Runtime slices (tamatebako): the embedded root — nothing to register.
+- Runtime slices (third-party — discovered through a registry's
+  `kind: runtime` entry, spec 05 §2's registry-derived base): the
+  publishing registry's pinned key — the channel that supplied the
+  download base also anchors the key, so a third-party runtime adds no
+  ceremony past the add-registry TOFU. The entry's `signature.keyid`
+  must resolve to that pinned primary (mismatch → `SignerKeyChanged`,
+  exit 72).
 - Third-party fat/slim binaries: verified at install/import against the
   pinned author key (the same verify path); the author may ALSO
   OS-codesign with their own Developer ID — Apple/Microsoft gates then
