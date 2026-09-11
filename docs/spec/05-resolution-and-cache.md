@@ -62,9 +62,10 @@ recorded for the failure message.
   (coreutils `<sha>  <file>` — the store marker's exact shape). The
   sidecar is the per-asset pin; the shard's sha fields are re-anchored
   to the served bytes at publish time.
-- **The download base is PER-ENGINE** (the chain below is PLANNED —
-  TODO.v2-1/30; today a single base serves all engines, with
-  `TEBAKO_RUNTIME_MIRROR` as the only override). First hit wins, and
+- **The download base is PER-ENGINE** (the chain below is SHIPPED in
+  tebako-shim's dispatch-time fetch — tebako#567; the CLI's press-time
+  resolver and the bootstrap consult `TEBAKO_RUNTIME_MIRROR` + the
+  default base only). First hit wins, and
   every download journals the base AND the channel that supplied it:
   1. `runtimes: {<engine>: {source: <base>}}` — the authored config pin
      (spec 07 §0; most specific: an operator who pins an engine's

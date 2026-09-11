@@ -1928,15 +1928,17 @@ fn signature_reference(sig: &SignaturePin, release: &Reference) -> Result<Refere
 }
 
 /// `TEBAKO_REQUIRE_SIGNED` truthiness (mirrors the bootstrap's rule:
-/// set and not "0").
-fn require_signed() -> bool {
+/// set and not "0"). pub(crate): the runtime resolver (resolve.rs)
+/// applies the same rule to the runtime fetch (spec 09 §4 G1).
+pub(crate) fn require_signed() -> bool {
     std::env::var("TEBAKO_REQUIRE_SIGNED").is_ok_and(|v| !v.is_empty() && v != "0")
 }
 
 /// Append one line to the audit journal (<home>/journal.log), mirroring
 /// the bootstrap's convention. Best-effort: journaling never fails the
-/// install.
-fn journal(home: &Path, line: &str) {
+/// install. pub(crate): the runtime resolver journals the runtime
+/// fetch's trust outcomes through the same line (spec 09 §4 G1).
+pub(crate) fn journal(home: &Path, line: &str) {
     use std::io::Write;
     let _ = std::fs::create_dir_all(home);
     let now = std::time::SystemTime::now()

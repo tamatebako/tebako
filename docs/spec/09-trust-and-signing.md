@@ -7,8 +7,12 @@ ceremony EXECUTED 2026-09-09 (§7); release signing SHIPPED — the
 finalize job signs every released part and the release indexes behind
 `TEBAKO_RELEASE_SIGNING_ENABLED` (§6). Runtime FETCH-TIME verification
 (§4's resolve-path point, §5's signed index forms, spec 13 §2a's
-per-artifact `signature`) is PLANNED — roadmap 80/G1: until it lands,
-runtime release signatures are out-of-band only.
+per-artifact `signature`) is SHIPPED in the CLI's press-time resolver
+and the shim's dispatch-time fetch (roadmap 80/G1, tebako#567's chain);
+the bootstrap's first-run runtime download is the remaining leg
+(PLANNED — until it lands, the bootstrap verifies sha256 only and never
+reads `signature` declarations: the pre-G1 behavior, landing together
+with the `openpgp-verify` capability flip of the rollout note below).
 
 > **Rollout phase — unverified-first (roadmap 72).** The shipped
 > tebako-bootstrap is built WITHOUT OpenPGP verification (the
@@ -95,9 +99,10 @@ tebako validates below it — see spec 12 §5.
 - **Install time:** registry-pinned payload signatures verify against the
   trusted keyring PLUS the embedded root public key — a tamatebako-signed
   payload verifies Trusted on a fresh machine, no registration step.
-- **Runtime fetch (resolve time — tebako-resolve, the one code path
-  behind the shim's dispatch, the CLI's install/press, and the
-  bootstrap's runtime download; PLANNED — roadmap 80/G1):** the resolver
+- **Runtime fetch (resolve time — the per-binary fetch paths: the
+  shim's dispatch-time download and the CLI's press-time resolver SHIPPED
+  (roadmap 80/G1); the bootstrap's runtime download is the remaining
+  leg, PLANNED):** the resolver
   verifies the consumed index form's detached signature (§5) BEFORE
   trusting its digests, then verifies each fetched artifact whose entry
   declares `signature` (spec 13 §2a) — always strict: an invalid

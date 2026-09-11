@@ -38,6 +38,10 @@ serde_yaml = "0.9"
 # In-process HTTP for runtime downloads (spec 00 invariant 1) — the same
 # crate the bootstrap resolves through.
 tebako-http = { version = "2.0.0", path = "../tebako-http" }
+# Runtime fetch-time OpenPGP verification (spec 09 §4 — roadmap 80's G1):
+# the consumed index form's detached .asc and every declared per-artifact
+# signature verify at download. No size gate here (unlike the bootstrap).
+tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
 libc = "0.2"
 sha2 = "0.10"
 

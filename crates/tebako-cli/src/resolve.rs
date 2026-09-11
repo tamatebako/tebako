@@ -13,6 +13,17 @@
 //! into place with an atomic rename, so partial downloads never poison the
 //! cache.
 //!
+//! G1 (spec 09 §4/§5): the fetch is signature-verified at the index
+//! boundary whenever the release carries detached `.asc` siblings (the
+//! per-package shard's, manifest.json's, or SHA256SUMS.txt's — the first
+//! TRUSTED form wins; a verified form beats an unsigned one regardless of
+//! the index's preference order), and a `signature:` block declared on
+//! the entry or a facet (spec 13 §2a) verifies against the downloaded
+//! bytes BEFORE the sha256 check. An unverifiable fetch is accepted
+//! LOUDLY (stderr + audit journal); TEBAKO_REQUIRE_SIGNED=1 refuses it
+//! (exit 71) before any asset downloads. An invalid signature exits 71;
+//! an untrusted signer or a changed signer key exits 72.
+//!
 //! The gem's BootstrapManager half is ported for the RUST bootstrap only
 //! (spec 19 §4): [`BootstrapResolver`] resolves the per-triplet
 //! tebako-bootstrap published with the product's own releases
@@ -35,6 +46,7 @@ use std::path::{Path, PathBuf};
 use sha2::Digest;
 
 use tebako_pkg::{json_parse, JsonValue};
+use tpkg::runtime_store::EntrySignature;
 
 use crate::error::{packaging_error, TebakoError};
 use crate::fetch::{fetch_bytes, fetch_text, FetchError};
@@ -83,6 +95,11 @@ pub struct IndexEntry {
     pub platform: Option<String>,
     pub filename: String,
     pub sha256: String,
+    /// The entry's declared detached-signature block (spec 13 §2a):
+    /// the signer pin + the `.asc` asset name within the same release.
+    /// Absent on the pre-signing keep-forever line and on any
+    /// SHA256SUMS-derived entry (the sums form carries no signatures).
+    pub signature: Option<EntrySignature>,
     /// The runtime image sibling (item 30b): `<asset>.tfs` from the
     /// manifest's additive `image` key or the SHA256SUMS line.
     pub image: Option<ImageRef>,
@@ -91,23 +108,27 @@ pub struct IndexEntry {
     pub dll: Option<DllRef>,
 }
 
-/// A resolved runtime image reference (filename + expected sha256).
+/// A resolved runtime image reference (filename + expected sha256 +
+/// the declared signature block when the manifest carries one).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ImageRef {
     pub filename: String,
     pub sha256: String,
+    pub signature: Option<EntrySignature>,
 }
 
 /// A resolved ruby DLL reference (tebako-runtime-ruby#40): the release
 /// asset (`filename` — unique per leg), the PE name it installs under
 /// (`install_as` — two same-ABI legs share it; the SHA256SUMS index form
 /// carries no PE name, so a sums-derived ref cannot be installed), and the
-/// expected sha256.
+/// expected sha256 (+ the declared signature block when the manifest
+/// carries one — the sums form carries none).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DllRef {
     pub filename: String,
     pub install_as: Option<String>,
     pub sha256: String,
+    pub signature: Option<EntrySignature>,
 }
 
 /// The release index plus its raw card text — the entries and, when the
@@ -115,6 +136,47 @@ pub struct DllRef {
 /// monolithic manifest.json), the card the spec 18 contract gate reads
 /// (tebako#493).
 type IndexAndCard = (Vec<IndexEntry>, Option<String>);
+
+/// Whether the consumed release-index form was signature-verified at the
+/// fetch boundary (spec 09 §4/§5, roadmap 80 G1): the detached `.asc`
+/// sibling of the shard / manifest.json / SHA256SUMS.txt verified
+/// TRUSTED against the keyring (the signer's resolved PRIMARY keyid
+/// rides along for the audit journal), or no form carried a verifiable
+/// signature.
+#[derive(Debug)]
+enum IndexTrust {
+    Unverified,
+    Verified { signer: String },
+}
+
+impl IndexTrust {
+    fn signer(&self) -> Option<&str> {
+        match self {
+            IndexTrust::Unverified => None,
+            IndexTrust::Verified { signer } => Some(signer),
+        }
+    }
+}
+
+/// The fetched release index: the entries, the raw card when the form
+/// was a JSON card (the contract gate reads it), and the form's trust
+/// outcome (G1).
+struct FetchedIndex {
+    entries: Vec<IndexEntry>,
+    card: Option<String>,
+    trust: IndexTrust,
+}
+
+/// One release-index form's parse outcome: the form cannot serve the
+/// request (fall through to the next form — the pre-G1 IndexUnavailable
+/// semantics), or it carries a TORN `signature` block (spec 13 §2a —
+/// FATAL, exit 65: an index lying about its trust anchors never falls
+/// through to an unsigned form, spec 00 §9).
+#[derive(Debug)]
+enum ParseFail {
+    Unavailable(String),
+    Torn(String),
+}
 
 /// The outcome of resolving a runtime: the interpreter plus, when the
 /// release is image-era, its runtime image reference.
@@ -201,40 +263,65 @@ impl Resolver {
                 image: image_marker(),
             });
         }
-        self.with_entry_lock(
-            &dir,
-            &self.entry_ref(ruby_version, platform, tebako_version),
-            || {
-                if !executable.is_file() {
-                    let entry = self.install(&dir, ruby_version, platform, tebako_version)?;
-                    if let Some(image) = entry.image.clone() {
-                        self.install_image(&dir, &image, tebako_version)?;
-                    }
-                    if let Some(dll) = entry.dll.clone() {
-                        self.install_dll(&dir, &dll, tebako_version)?;
-                    }
-                    return Ok(());
+        let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
+        self.with_entry_lock(&dir, &entry_ref, || {
+            if !executable.is_file() {
+                let (entry, trust, mut signers) =
+                    self.install(&dir, ruby_version, platform, tebako_version)?;
+                if let Some(signer) = trust.signer() {
+                    signers.push(signer.to_string());
                 }
-                // The exe is cached but its image marker is missing (an
-                // entry installed before the image era, or a partial
-                // wipe): backfill the image from the release index so the
-                // entry is complete again.
-                if image_marker().is_none() {
-                    let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
-                    self.offline_check(&entry_ref, tebako_version)?;
-                    let (index, card) = self.fetch_index(ruby_version, platform, tebako_version)?;
-                    let entry = self.find_entry(&index, ruby_version, platform, tebako_version)?;
-                    contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
-                    if let Some(image) = entry.image.clone() {
-                        self.install_image(&dir, &image, tebako_version)?;
-                    }
-                    if let Some(dll) = entry.dll.clone() {
-                        self.install_dll(&dir, &dll, tebako_version)?;
-                    }
+                if let Some(image) = entry.image.clone() {
+                    signers.extend(self.install_image(&dir, &image, tebako_version)?);
                 }
-                Ok(())
-            },
-        )?;
+                if let Some(dll) = entry.dll.clone() {
+                    signers.extend(self.install_dll(&dir, &dll, tebako_version)?);
+                }
+                self.journal_verified(&entry_ref, &signers);
+                return Ok(());
+            }
+            // The exe is cached but its image marker is missing (an
+            // entry installed before the image era, or a partial
+            // wipe): backfill the image from the release index so the
+            // entry is complete again.
+            if image_marker().is_none() {
+                self.offline_check(&entry_ref, tebako_version)?;
+                let fetched = self.fetch_index(ruby_version, platform, tebako_version)?;
+                let entry =
+                    self.find_entry(&fetched.entries, ruby_version, platform, tebako_version)?;
+                contract_gate(&entry_ref, fetched.card.as_deref(), &entry.filename)?;
+                if matches!(fetched.trust, IndexTrust::Unverified) {
+                    // The backfill fetches only the facets — the
+                    // unsigned rule keys on THEIR declared
+                    // signatures (the exe is already cached).
+                    let declared = entry
+                        .image
+                        .as_ref()
+                        .and_then(|i| i.signature.as_ref())
+                        .is_some()
+                        || entry
+                            .dll
+                            .as_ref()
+                            .and_then(|d| d.signature.as_ref())
+                            .is_some();
+                    self.unsigned_gate(&entry_ref, declared, crate::install::require_signed())?;
+                }
+                let mut signers: Vec<String> = fetched
+                    .trust
+                    .signer()
+                    .map(|s| s.to_string())
+                    .into_iter()
+                    .collect();
+                if let Some(image) = entry.image.clone() {
+                    signers.extend(self.install_image(&dir, &image, tebako_version)?);
+                }
+                if let Some(dll) = entry.dll.clone() {
+                    signers.extend(self.install_dll(&dir, &dll, tebako_version)?);
+                }
+                self.journal_verified(&entry_ref, &signers);
+            }
+            Ok(())
+        })?;
         // The install placed the exe under the index spelling and the
         // index rode into the entry — the name flows from it now.
         let executable =
@@ -303,52 +390,61 @@ impl Resolver {
         let marker = fs::read_to_string(dir.join(format!("{filename}.sha256"))).ok()?;
         let sha256 = marker.split_whitespace().next()?.to_string();
         if sha256.len() == 64 {
-            Some(ImageRef { filename, sha256 })
+            // The trusted marker proves the sha256 gate passed at install
+            // — the declared-signature check ran then, never per run.
+            Some(ImageRef {
+                filename,
+                sha256,
+                signature: None,
+            })
         } else {
             None
         }
     }
 
     /// Download + verify + install the runtime image (0444 + trusted
-    /// markers), sharing the bootstrap's cache layout (item 30b). Called
-    /// with the entry lock already held.
+    /// markers), sharing the bootstrap's cache layout (item 30b). A
+    /// declared `signature:` block verifies against the downloaded bytes
+    /// BEFORE the sha256 check (G1, spec 09 §4); the verified signer
+    /// rides back for the audit journal. Called with the entry lock
+    /// already held.
     fn install_image(
         &self,
         dir: &Path,
         image: &ImageRef,
         tebako_version: &str,
-    ) -> Result<(), TebakoError> {
+    ) -> Result<Option<String>, TebakoError> {
         let image_path = dir.join(&image.filename);
         let marker = dir.join(format!("{}.sha256", image.filename));
         if image_path.is_file() && marker.is_file() {
-            return Ok(());
+            return Ok(None);
         }
         let url = self.package_url(&image.filename, tebako_version);
         let tmp_dir = self.cache_root.join(TMP_DIR);
         let tmp = tmp_dir.join(format!("{}.{}.part", image.filename, std::process::id()));
-        match fetch_bytes(&url) {
-            Ok(bytes) => {
-                if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
-                    let _ = fs::remove_file(&tmp);
-                    return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
-                }
-            }
+        let bytes = match fetch_bytes(&url) {
+            Ok(bytes) => bytes,
             Err(FetchError::IndexUnavailable(_)) => {
-                let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&format!("{url}: not found"))));
             }
             Err(e @ FetchError::Throttled { .. }) => {
-                let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&e.to_string())));
             }
             Err(FetchError::DownloadFailed(msg)) => {
-                let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&msg)));
             }
             Err(e) => {
-                let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&e.to_string())));
             }
+        };
+        let signer = image
+            .signature
+            .as_ref()
+            .map(|sig| self.verify_declared(&bytes, &image.filename, sig, tebako_version))
+            .transpose()?;
+        if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
+            let _ = fs::remove_file(&tmp);
+            return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
         }
         let actual = sha256_file_hex(&tmp)
             .ok_or_else(|| packaging_error(121, Some(&format!("cannot hash {}", tmp.display()))))?;
@@ -374,7 +470,7 @@ impl Resolver {
             format!("{url}\n"),
         )
         .map_err(err)?;
-        Ok(())
+        Ok(signer)
     }
 
     /// Download + verify + install the windows ruby DLL
@@ -382,18 +478,19 @@ impl Resolver {
     /// the PE name the exe and the extension .so's import (never the asset
     /// name: assets are unique per leg, two same-ABI legs share the PE
     /// name) — read-only with `<install_as>.sha256`/`<install_as>.origin`
-    /// trusted markers, the image's exact discipline. A ref without an
-    /// `install_as` (the SHA256SUMS index form carries no PE name) is not
-    /// installable: the dll facet is manifest-keyed. Called with the entry
-    /// lock already held.
+    /// trusted markers, the image's exact discipline (declared signature
+    /// before the sha256 check; the verified signer rides back for the
+    /// audit journal). A ref without an `install_as` (the SHA256SUMS index
+    /// form carries no PE name) is not installable: the dll facet is
+    /// manifest-keyed. Called with the entry lock already held.
     fn install_dll(
         &self,
         dir: &Path,
         dll: &DllRef,
         tebako_version: &str,
-    ) -> Result<(), TebakoError> {
+    ) -> Result<Option<String>, TebakoError> {
         let Some(install_as) = dll.install_as.as_deref() else {
-            return Ok(());
+            return Ok(None);
         };
         // The PE name writes a file into the cache entry — a separator
         // would escape it; refuse by name, never install.
@@ -409,34 +506,34 @@ impl Resolver {
         let dll_path = dir.join(install_as);
         let marker = dir.join(format!("{install_as}.sha256"));
         if dll_path.is_file() && marker.is_file() {
-            return Ok(());
+            return Ok(None);
         }
         let url = self.package_url(&dll.filename, tebako_version);
         let tmp_dir = self.cache_root.join(TMP_DIR);
         let tmp = tmp_dir.join(format!("{}.{}.part", dll.filename, std::process::id()));
-        match fetch_bytes(&url) {
-            Ok(bytes) => {
-                if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
-                    let _ = fs::remove_file(&tmp);
-                    return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
-                }
-            }
+        let bytes = match fetch_bytes(&url) {
+            Ok(bytes) => bytes,
             Err(FetchError::IndexUnavailable(_)) => {
-                let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&format!("{url}: not found"))));
             }
             Err(e @ FetchError::Throttled { .. }) => {
-                let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&e.to_string())));
             }
             Err(FetchError::DownloadFailed(msg)) => {
-                let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&msg)));
             }
             Err(e) => {
-                let _ = fs::remove_file(&tmp);
                 return Err(packaging_error(122, Some(&e.to_string())));
             }
+        };
+        let signer = dll
+            .signature
+            .as_ref()
+            .map(|sig| self.verify_declared(&bytes, &dll.filename, sig, tebako_version))
+            .transpose()?;
+        if let Err(e) = crate::fetch::write_tmp(&tmp, &bytes) {
+            let _ = fs::remove_file(&tmp);
+            return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
         }
         let actual = sha256_file_hex(&tmp)
             .ok_or_else(|| packaging_error(121, Some(&format!("cannot hash {}", tmp.display()))))?;
@@ -458,7 +555,7 @@ impl Resolver {
         fs::rename(&tmp, &dll_path).map_err(err)?;
         fs::write(&marker, format!("{expected}  {install_as}\n")).map_err(err)?;
         fs::write(dir.join(format!("{install_as}.origin")), format!("{url}\n")).map_err(err)?;
-        Ok(())
+        Ok(signer)
     }
 
     /// Extract the runtime package's filesystem layout next to the cached
@@ -619,15 +716,42 @@ impl Resolver {
         ruby_version: &str,
         platform: &str,
         tebako_version: &str,
-    ) -> Result<IndexEntry, TebakoError> {
+    ) -> Result<(IndexEntry, IndexTrust, Vec<String>), TebakoError> {
         let entry_ref = self.entry_ref(ruby_version, platform, tebako_version);
         self.offline_check(&entry_ref, tebako_version)?;
-        let (index, card) = self.fetch_index(ruby_version, platform, tebako_version)?;
-        let entry = self.find_entry(&index, ruby_version, platform, tebako_version)?;
+        let fetched = self.fetch_index(ruby_version, platform, tebako_version)?;
+        let entry = self.find_entry(&fetched.entries, ruby_version, platform, tebako_version)?;
         // spec 18 C2: the release card gates BEFORE the runtime download.
-        contract_gate(&entry_ref, card.as_deref(), &entry.filename)?;
+        contract_gate(&entry_ref, fetched.card.as_deref(), &entry.filename)?;
+        // G1 (spec 09 §4): the unsigned rule decides BEFORE any asset
+        // downloads — a declared signature on any artifact this run
+        // installs counts as signed coverage.
+        if matches!(fetched.trust, IndexTrust::Unverified) {
+            let declared = entry.signature.is_some()
+                || entry
+                    .image
+                    .as_ref()
+                    .and_then(|i| i.signature.as_ref())
+                    .is_some()
+                || entry
+                    .dll
+                    .as_ref()
+                    .and_then(|d| d.signature.as_ref())
+                    .is_some();
+            self.unsigned_gate(&entry_ref, declared, crate::install::require_signed())?;
+        }
         let url = self.package_url(&entry.filename, tebako_version);
-        let tmp = self.download(&url, &entry.filename)?;
+        let (tmp, bytes) = self.download(&url, &entry.filename)?;
+        let mut signers = Vec::new();
+        if let Some(sig) = &entry.signature {
+            match self.verify_declared(&bytes, &entry.filename, sig, tebako_version) {
+                Ok(signer) => signers.push(signer),
+                Err(e) => {
+                    let _ = fs::remove_file(&tmp);
+                    return Err(e);
+                }
+            }
+        }
         self.verify(&tmp, entry)?;
         // The exe installs under the index entry's `filename` verbatim
         // (spec 05 §2 SSOT; tebako#456 — the factory publishes windows
@@ -635,13 +759,14 @@ impl Resolver {
         // entry so every consumer flows the spelling from it.
         let executable = dir.join(&entry.filename);
         self.place(&tmp, &executable, entry, &url)?;
-        if let Some(card) = &card {
+        if let Some(card) = &fetched.card {
             let card_path = dir.join("manifest.json");
             fs::write(&card_path, card).map_err(|e| {
                 crate::error::plain_error(format!("{e} installing {}", card_path.display()))
             })?;
         }
-        Ok(entry.clone())
+        let entry = entry.clone();
+        Ok((entry, fetched.trust, signers))
     }
 
     fn offline(&self) -> bool {
@@ -734,12 +859,19 @@ impl Resolver {
     /// The release index plus, when it parsed from a JSON card (the
     /// per-package shard or the monolithic manifest.json), the raw card
     /// text (the spec 18 contract gate reads it ahead of the download —
-    /// no second fetch of the index).
+    /// no second fetch of the index), plus the form's trust outcome.
     ///
-    /// Preference order (tebako#493; spec 05 §2): the per-package shard
-    /// `<stem>.manifest.json` — the sidecar-era authority, one small
-    /// object carrying exactly this triple's entry — then the derived
-    /// monoliths (`manifest.json`, then `SHA256SUMS.txt`). The fallbacks
+    /// G1 (spec 09 §4/§5) runs as a trust scan FIRST
+    /// ([`Self::fetch_verified_index`]): every index form's detached
+    /// `.asc` sibling is probed in the index's preference order and the
+    /// first form whose signature verifies TRUSTED is the consumed form
+    /// — a verified form beats an unsigned one regardless of preference
+    /// order. Only when NO form carries a verifiable signature does the
+    /// legacy chain run (the per-package shard `<stem>.manifest.json` —
+    /// the sidecar-era authority, one small object carrying exactly this
+    /// triple's entry — then the derived monoliths `manifest.json`, then
+    /// `SHA256SUMS.txt`; tebako#493, spec 05 §2), and its outcome is
+    /// Unverified: the caller applies the unsigned rule. The fallbacks
     /// stay forever: pre-shard releases are immutable and remain
     /// installable (invariant 7).
     fn fetch_index(
@@ -747,10 +879,21 @@ impl Resolver {
         ruby_version: &str,
         platform: &str,
         tebako_version: &str,
-    ) -> Result<IndexAndCard, TebakoError> {
+    ) -> Result<FetchedIndex, TebakoError> {
         let mut tried: Vec<String> = Vec::new();
-        if let Some(pair) = self.fetch_shard(ruby_version, platform, tebako_version, &mut tried)? {
-            return Ok(pair);
+        if let Some(verified) =
+            self.fetch_verified_index(ruby_version, platform, tebako_version, &mut tried)?
+        {
+            return Ok(verified);
+        }
+        if let Some((entries, card)) =
+            self.fetch_shard(ruby_version, platform, tebako_version, &mut tried)?
+        {
+            return Ok(FetchedIndex {
+                entries,
+                card,
+                trust: IndexTrust::Unverified,
+            });
         }
         for name in INDEX_FILES {
             let url = self.index_url(name, tebako_version);
@@ -758,18 +901,14 @@ impl Resolver {
                 Ok(body) => match self.parse_index(name, &body, tebako_version) {
                     Ok(entries) => {
                         let card = (*name == "manifest.json").then_some(body);
-                        return Ok((entries, card));
+                        return Ok(FetchedIndex {
+                            entries,
+                            card,
+                            trust: IndexTrust::Unverified,
+                        });
                     }
-                    Err(FetchError::IndexUnavailable(_)) => tried.push(url),
-                    Err(e @ FetchError::Throttled { .. }) => {
-                        return Err(packaging_error(122, Some(&e.to_string())));
-                    }
-                    Err(FetchError::DownloadFailed(msg)) => {
-                        return Err(packaging_error(122, Some(&msg)));
-                    }
-                    Err(e) => {
-                        return Err(packaging_error(122, Some(&e.to_string())));
-                    }
+                    Err(ParseFail::Unavailable(msg)) => tried.push(format!("{url} ({msg})")),
+                    Err(ParseFail::Torn(msg)) => return Err(TebakoError::new(msg, 65)),
                 },
                 Err(FetchError::IndexUnavailable(_)) => tried.push(url),
                 Err(e @ FetchError::Throttled { .. }) => {
@@ -792,12 +931,133 @@ impl Resolver {
         ))
     }
 
+    /// The G1 trust scan (spec 09 §4/§5): each index form's detached
+    /// `.asc` sibling is probed in the index's preference order (the
+    /// per-package shard, then INDEX_FILES); the FIRST form whose
+    /// signature verifies TRUSTED against the keyring is the consumed
+    /// form — entries AND the contract card come from those verified
+    /// bytes. A present `.asc` that does not verify is a hard 71 (the
+    /// signed bytes are corrupt or tampered); one whose signer is not
+    /// in the keyring is a hard 72 (register the publisher's key
+    /// first); neither falls through to an unsigned form. A form
+    /// without an `.asc` is skipped here and left for the legacy chain.
+    /// `Ok(None)` = nothing verifiable.
+    fn fetch_verified_index(
+        &self,
+        ruby_version: &str,
+        platform: &str,
+        tebako_version: &str,
+        tried: &mut Vec<String>,
+    ) -> Result<Option<FetchedIndex>, TebakoError> {
+        let shard =
+            format!("tebako-runtime-{tebako_version}-{ruby_version}-{platform}.manifest.json");
+        let mut forms: Vec<&str> = vec![shard.as_str()];
+        forms.extend(INDEX_FILES);
+        let mut keyring: Option<Vec<u8>> = None;
+        for name in forms {
+            let asc_url = self.index_url(&format!("{name}.asc"), tebako_version);
+            let asc = match fetch_bytes(&asc_url) {
+                Ok(bytes) => bytes,
+                Err(FetchError::IndexUnavailable(_)) => continue,
+                Err(e @ FetchError::Throttled { .. }) => {
+                    return Err(packaging_error(122, Some(&e.to_string())));
+                }
+                Err(FetchError::DownloadFailed(msg)) => {
+                    return Err(packaging_error(122, Some(&msg)));
+                }
+                Err(e) => return Err(packaging_error(122, Some(&e.to_string()))),
+            };
+            let url = self.index_url(name, tebako_version);
+            let body = match fetch_text(&url) {
+                Ok(body) => body,
+                Err(FetchError::IndexUnavailable(_)) => {
+                    tried.push(url);
+                    continue;
+                }
+                Err(e @ FetchError::Throttled { .. }) => {
+                    return Err(packaging_error(122, Some(&e.to_string())));
+                }
+                Err(FetchError::DownloadFailed(msg)) => {
+                    return Err(packaging_error(122, Some(&msg)));
+                }
+                Err(e) => return Err(packaging_error(122, Some(&e.to_string()))),
+            };
+            if keyring.is_none() {
+                keyring = Some(self.keyring()?);
+            }
+            let keyring = keyring.as_deref().expect("built above");
+            let signer = match tebako_signer::verify_detached_full(keyring, body.as_bytes(), &asc) {
+                Ok(tebako_signer::VerifyOutcome::Trusted(signer)) => {
+                    // The signature may issue from a signing subkey —
+                    // the identity that journals is the resolved
+                    // PRIMARY keyid (spec 09 §9).
+                    let signer = signer.to_ascii_lowercase();
+                    tebako_signer::primary_keyid_of(keyring, &signer)
+                        .map_err(|e| TebakoError::new(format!("{name}.asc: {e}"), 71))?
+                        .unwrap_or(signer)
+                }
+                Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) => {
+                    return Err(TebakoError::new(
+                        format!(
+                            "the {RELEASE_NAME} release index {name} (v{tebako_version}) is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
+                        ),
+                        72,
+                    ));
+                }
+                Ok(tebako_signer::VerifyOutcome::Invalid(keyid)) => {
+                    return Err(TebakoError::new(
+                        format!(
+                            "the {RELEASE_NAME} release index {name} (v{tebako_version}) carries a signature that does not verify (signer {}) — the index or its signature is corrupt; nothing was cached",
+                            keyid.unwrap_or_else(|| "unknown".to_string())
+                        ),
+                        71,
+                    ));
+                }
+                Err(e) => {
+                    return Err(TebakoError::new(
+                        format!("cannot verify the release index signature {name}.asc: {e}"),
+                        71,
+                    ));
+                }
+            };
+            let parsed: Result<IndexAndCard, ParseFail> = if name == shard.as_str() {
+                self.parse_shard(&body, ruby_version, platform, tebako_version)
+                    .map(|entry| (vec![entry], Some(format!("[{body}]"))))
+            } else {
+                self.parse_index(name, &body, tebako_version)
+                    .map(|entries| (entries, (name == "manifest.json").then_some(body)))
+            };
+            match parsed {
+                Ok((entries, card)) => {
+                    crate::install::journal(
+                        &self.cache_root,
+                        &format!("event=runtime-index-verified form={name} signer={signer}"),
+                    );
+                    return Ok(Some(FetchedIndex {
+                        entries,
+                        card,
+                        trust: IndexTrust::Verified { signer },
+                    }));
+                }
+                // A verified form that cannot serve this request (the
+                // shard declares another triple) falls through like any
+                // unusable form — a later form may still verify.
+                Err(ParseFail::Unavailable(msg)) => {
+                    tried.push(format!("{url} ({msg})"));
+                    continue;
+                }
+                Err(ParseFail::Torn(msg)) => return Err(TebakoError::new(msg, 65)),
+            }
+        }
+        Ok(None)
+    }
+
     fn parse_index(
         &self,
         name: &str,
         body: &str,
         tebako_version: &str,
-    ) -> Result<Vec<IndexEntry>, FetchError> {
+    ) -> Result<Vec<IndexEntry>, ParseFail> {
         if name == "manifest.json" {
             self.parse_manifest(body, tebako_version)
         } else {
@@ -811,25 +1071,26 @@ impl Resolver {
         &self,
         body: &str,
         tebako_version: &str,
-    ) -> Result<Vec<IndexEntry>, FetchError> {
-        let data = json_parse(body).map_err(|_| {
-            FetchError::IndexUnavailable("manifest.json is not valid JSON".to_string())
-        })?;
+    ) -> Result<Vec<IndexEntry>, ParseFail> {
+        let data = json_parse(body)
+            .map_err(|_| ParseFail::Unavailable("manifest.json is not valid JSON".to_string()))?;
         let JsonValue::Array(items) = data else {
-            return Err(FetchError::IndexUnavailable(
+            return Err(ParseFail::Unavailable(
                 "manifest.json is not an array".to_string(),
             ));
         };
-        Ok(items
-            .iter()
-            .filter(|e| {
-                e.find("tebako_version")
-                    .and_then(|v| v.as_string())
-                    .as_deref()
-                    == Some(tebako_version)
-            })
-            .filter_map(entry_from_json)
-            .collect())
+        let mut out = Vec::new();
+        for e in items.iter().filter(|e| {
+            e.find("tebako_version")
+                .and_then(|v| v.as_string())
+                .as_deref()
+                == Some(tebako_version)
+        }) {
+            if let Some(entry) = entry_from_json(e)? {
+                out.push(entry);
+            }
+        }
+        Ok(out)
     }
 
     /// Preference 1 of the sidecar era (tebako#493): the per-package
@@ -874,15 +1135,11 @@ impl Resolver {
                 let card = format!("[{body}]");
                 Ok(Some((vec![entry], Some(card))))
             }
-            Err(FetchError::IndexUnavailable(_)) => {
-                tried.push(url);
+            Err(ParseFail::Unavailable(msg)) => {
+                tried.push(format!("{url} ({msg})"));
                 Ok(None)
             }
-            Err(e @ FetchError::Throttled { .. }) => {
-                Err(packaging_error(122, Some(&e.to_string())))
-            }
-            Err(FetchError::DownloadFailed(msg)) => Err(packaging_error(122, Some(&msg))),
-            Err(e) => Err(packaging_error(122, Some(&e.to_string()))),
+            Err(ParseFail::Torn(msg)) => Err(TebakoError::new(msg, 65)),
         }
     }
 
@@ -898,12 +1155,12 @@ impl Resolver {
         ruby_version: &str,
         platform: &str,
         tebako_version: &str,
-    ) -> Result<IndexEntry, FetchError> {
+    ) -> Result<IndexEntry, ParseFail> {
         let data = json_parse(body).map_err(|_| {
-            FetchError::IndexUnavailable("the package shard is not valid JSON".to_string())
+            ParseFail::Unavailable("the package shard is not valid JSON".to_string())
         })?;
         if !matches!(data, JsonValue::Object(_)) {
-            return Err(FetchError::IndexUnavailable(
+            return Err(ParseFail::Unavailable(
                 "the package shard is not an object".to_string(),
             ));
         }
@@ -912,7 +1169,7 @@ impl Resolver {
             || declares("ruby_version").as_deref() != Some(ruby_version)
             || declares("platform").as_deref() != Some(platform)
         {
-            return Err(FetchError::IndexUnavailable(format!(
+            return Err(ParseFail::Unavailable(format!(
                 "the package shard declares {}/{}/{} — requested {}/{}/{}",
                 declares("tebako_version").as_deref().unwrap_or("?"),
                 declares("ruby_version").as_deref().unwrap_or("?"),
@@ -922,8 +1179,8 @@ impl Resolver {
                 platform
             )));
         }
-        entry_from_json(&data).ok_or_else(|| {
-            FetchError::IndexUnavailable("the package shard carries no filename/sha256".to_string())
+        entry_from_json(&data)?.ok_or_else(|| {
+            ParseFail::Unavailable("the package shard carries no filename/sha256".to_string())
         })
     }
 
@@ -973,6 +1230,7 @@ impl Resolver {
                 platform: Some(platform),
                 filename: file.to_string(),
                 sha256: sha256.to_ascii_lowercase(),
+                signature: None,
                 image: None,
                 dll: None,
             });
@@ -988,6 +1246,7 @@ impl Resolver {
                 entry.image = Some(ImageRef {
                     filename: filename.to_string(),
                     sha256: sha256.to_ascii_lowercase(),
+                    signature: None,
                 });
             }
         }
@@ -1003,13 +1262,17 @@ impl Resolver {
                     filename: filename.to_string(),
                     install_as: None,
                     sha256: sha256.to_ascii_lowercase(),
+                    signature: None,
                 });
             }
         }
         out
     }
 
-    fn download(&self, url: &str, filename: &str) -> Result<PathBuf, TebakoError> {
+    /// Fetch `url` into the store's tmp/ dir; returns the tmp path AND
+    /// the bytes (a declared `signature:` block verifies against the
+    /// bytes in memory — before they are ever re-read from disk).
+    fn download(&self, url: &str, filename: &str) -> Result<(PathBuf, Vec<u8>), TebakoError> {
         let tmp_dir = self.cache_root.join(TMP_DIR);
         fs::create_dir_all(&tmp_dir).map_err(|e| {
             crate::error::plain_error(format!("{e} creating {}", tmp_dir.display()))
@@ -1021,7 +1284,7 @@ impl Resolver {
                     let _ = fs::remove_file(&tmp);
                     return Err(packaging_error(122, Some(&format!("{e} writing {url}"))));
                 }
-                Ok(tmp)
+                Ok((tmp, bytes))
             }
             Err(FetchError::IndexUnavailable(_)) => {
                 let _ = fs::remove_file(&tmp);
@@ -1040,6 +1303,147 @@ impl Resolver {
                 Err(packaging_error(122, Some(&e.to_string())))
             }
         }
+    }
+
+    // ---- trust (spec 09 §4/§5, roadmap 80 G1) ------------------------
+
+    /// The spec 09 §9 zero-interaction keyring: the user's trusted
+    /// keyring plus the embedded tamatebako root (and the
+    /// TEBAKO_TRUSTED_ROOT dev override). Built lazily: an unsigned
+    /// release never touches it.
+    fn keyring(&self) -> Result<Vec<u8>, TebakoError> {
+        tebako_signer::verification_keyring(&self.cache_root).map_err(|e| {
+            TebakoError::new(format!("cannot build the verification keyring: {e}"), 74)
+        })
+    }
+
+    /// Verify one artifact's declared `signature:` block (spec 13 §2a)
+    /// against its downloaded bytes BEFORE the sha256 check: the `.asc`
+    /// fetches from the same release, the signer must be in the keyring
+    /// AND be the pinned key (a signing subkey pins by its resolved
+    /// PRIMARY keyid, spec 09 §9). Returns the primary keyid that
+    /// verified (the audit journal's signer identity).
+    fn verify_declared(
+        &self,
+        bytes: &[u8],
+        asset: &str,
+        sig: &EntrySignature,
+        tebako_version: &str,
+    ) -> Result<String, TebakoError> {
+        // The asc names a sibling asset of the same release — a
+        // separator would escape it; refuse by name, never fetch.
+        if sig.asc.contains('/') || sig.asc.contains('\\') {
+            return Err(TebakoError::new(
+                format!(
+                    "{asset} declares a signature asset (\"{}\") that is not a bare file name",
+                    sig.asc
+                ),
+                65,
+            ));
+        }
+        let asc_url = self.package_url(&sig.asc, tebako_version);
+        let asc = fetch_bytes(&asc_url).map_err(|e| {
+            TebakoError::new(
+                format!("{asset} declares a signature but {asc_url} did not fetch: {e}"),
+                71,
+            )
+        })?;
+        let keyring = self.keyring()?;
+        let issuer = match tebako_signer::verify_detached_full(&keyring, bytes, &asc) {
+            Ok(tebako_signer::VerifyOutcome::Trusted(issuer)) => issuer.to_ascii_lowercase(),
+            Ok(tebako_signer::VerifyOutcome::Untrusted(keyid)) => {
+                return Err(TebakoError::new(
+                    format!(
+                        "{asset} is signed by {keyid}, which is not in the trusted keyring — register the publisher's key (~/.tebako/keyring/trusted.pgp), then retry; nothing was cached"
+                    ),
+                    72,
+                ));
+            }
+            Ok(tebako_signer::VerifyOutcome::Invalid(keyid)) => {
+                return Err(TebakoError::new(
+                    format!(
+                        "{asset} carries a signature that does not verify (signer {}) — the download or its signature is corrupt; nothing was cached",
+                        keyid.unwrap_or_else(|| "unknown".to_string())
+                    ),
+                    71,
+                ));
+            }
+            Err(e) => {
+                return Err(TebakoError::new(
+                    format!("cannot verify the declared signature of {asset}: {e}"),
+                    71,
+                ));
+            }
+        };
+        // The signature may issue from a signing subkey — the identity
+        // the pin names is the resolved PRIMARY keyid (spec 09 §9).
+        let primary = tebako_signer::primary_keyid_of(&keyring, &issuer)
+            .map_err(|e| TebakoError::new(format!("{asset}: {e}"), 71))?;
+        let pin = sig.keyid.to_ascii_lowercase();
+        if issuer != pin && primary.as_deref() != Some(pin.as_str()) {
+            return Err(TebakoError::new(
+                format!(
+                    "{asset} declares signer {pin} but was signed by {issuer} — the signer key changed; nothing was cached"
+                ),
+                72,
+            ));
+        }
+        Ok(primary.unwrap_or(issuer))
+    }
+
+    /// The spec 09 §5 unsigned rule, applied when the release index
+    /// could not be verified and BEFORE any asset downloads: a declared
+    /// signature on any artifact this run installs counts as signed
+    /// coverage; TEBAKO_REQUIRE_SIGNED=1 refuses the unsigned fetch
+    /// (exit 71, nothing cached); otherwise the fetch proceeds LOUDLY
+    /// (stderr + the audit journal).
+    fn unsigned_gate(
+        &self,
+        entry_ref: &str,
+        declared: bool,
+        require_signed: bool,
+    ) -> Result<(), TebakoError> {
+        if declared {
+            return Ok(());
+        }
+        if require_signed {
+            return Err(TebakoError::new(
+                format!(
+                    "{entry_ref} is unsigned — the release index carries no verifiable signature and no artifact declares one — and TEBAKO_REQUIRE_SIGNED=1 is set — refusing to fetch; nothing was cached"
+                ),
+                71,
+            ));
+        }
+        eprintln!(
+            "tebako: warning: {entry_ref} is unsigned (the release carries no verifiable signature) — installing with sha256 verification only; set TEBAKO_REQUIRE_SIGNED=1 to refuse unsigned runtimes"
+        );
+        crate::install::journal(
+            &self.cache_root,
+            &format!(
+                "event=unsigned-runtime-fetch runtime_ref={entry_ref} mirror={}",
+                self.mirror
+            ),
+        );
+        Ok(())
+    }
+
+    /// Journal the verified signers of one runtime fetch (the index
+    /// form's plus every declared artifact's), one deduped line.
+    fn journal_verified(&self, entry_ref: &str, signers: &[String]) {
+        if signers.is_empty() {
+            return;
+        }
+        let mut signers = signers.to_vec();
+        signers.sort();
+        signers.dedup();
+        crate::install::journal(
+            &self.cache_root,
+            &format!(
+                "event=runtime-fetch-verified runtime_ref={entry_ref} mirror={} signer={}",
+                self.mirror,
+                signers.join(",")
+            ),
+        );
     }
 
     // ---- locking ---------------------------------------------------------
@@ -1081,39 +1485,66 @@ impl Resolver {
 /// identity (`filename`, `sha256` — both mandatory, anything less is no
 /// entry) plus the additive facets (the env image; the windows ruby DLL,
 /// tebako-runtime-ruby#40 — absent on every POSIX entry, ignored by
-/// consumers that predate it). Shared by the monolithic manifest's array
-/// items and the per-package shard (tebako#493).
-fn entry_from_json(e: &JsonValue) -> Option<IndexEntry> {
-    let filename = e.find("filename").and_then(|v| v.as_string())?;
-    let sha256 = e
-        .find("sha256")
-        .and_then(|v| v.as_string())?
-        .to_ascii_lowercase();
-    Some(IndexEntry {
+/// consumers that predate it) and the declared signature blocks (spec 13
+/// §2a — a PRESENT but torn block is fatal, never a silent downgrade to
+/// unsigned). Shared by the monolithic manifest's array items and the
+/// per-package shard (tebako#493).
+fn entry_from_json(e: &JsonValue) -> Result<Option<IndexEntry>, ParseFail> {
+    let Some(filename) = e.find("filename").and_then(|v| v.as_string()) else {
+        return Ok(None);
+    };
+    let Some(sha256) = e.find("sha256").and_then(|v| v.as_string()) else {
+        return Ok(None);
+    };
+    let image = match e.find("image") {
+        Some(img) => {
+            let filename = img.find("filename").and_then(|v| v.as_string());
+            let sha256 = img.find("sha256").and_then(|v| v.as_string());
+            match (filename, sha256) {
+                (Some(filename), Some(sha256)) => Some(ImageRef {
+                    filename,
+                    sha256: sha256.to_ascii_lowercase(),
+                    signature: declared_signature(e, Some("image"))?,
+                }),
+                _ => None,
+            }
+        }
+        None => None,
+    };
+    let dll = match e.find("dll") {
+        Some(d) => {
+            let filename = d.find("filename").and_then(|v| v.as_string());
+            let sha256 = d.find("sha256").and_then(|v| v.as_string());
+            match (filename, sha256) {
+                (Some(filename), Some(sha256)) => Some(DllRef {
+                    filename,
+                    install_as: d.find("install_as").and_then(|v| v.as_string()),
+                    sha256: sha256.to_ascii_lowercase(),
+                    signature: declared_signature(e, Some("dll"))?,
+                }),
+                _ => None,
+            }
+        }
+        None => None,
+    };
+    Ok(Some(IndexEntry {
         ruby_version: e.find("ruby_version").and_then(|v| v.as_string()),
         platform: e.find("platform").and_then(|v| v.as_string()),
         filename,
-        sha256,
-        image: e.find("image").and_then(|img| {
-            Some(ImageRef {
-                filename: img.find("filename").and_then(|v| v.as_string())?,
-                sha256: img
-                    .find("sha256")
-                    .and_then(|v| v.as_string())?
-                    .to_ascii_lowercase(),
-            })
-        }),
-        dll: e.find("dll").and_then(|d| {
-            Some(DllRef {
-                filename: d.find("filename").and_then(|v| v.as_string())?,
-                install_as: d.find("install_as").and_then(|v| v.as_string()),
-                sha256: d
-                    .find("sha256")
-                    .and_then(|v| v.as_string())?
-                    .to_ascii_lowercase(),
-            })
-        }),
-    })
+        sha256: sha256.to_ascii_lowercase(),
+        signature: declared_signature(e, None)?,
+        image,
+        dll,
+    }))
+}
+
+/// The declared signature block of one entry facet (spec 13 §2a) — the
+/// tpkg helper's torn-block error is fatal here (`ParseFail::Torn`).
+fn declared_signature(
+    entry: &JsonValue,
+    facet: Option<&str>,
+) -> Result<Option<EntrySignature>, ParseFail> {
+    tpkg::runtime_store::entry_signature(entry, facet).map_err(ParseFail::Torn)
 }
 
 // ---------------------------------------------------------------------
@@ -1878,7 +2309,7 @@ mod tests {
     fn manifest_runtime_rejects_object() {
         let r = Resolver::new();
         let err = r.parse_manifest("{\"assets\":[]}", "0.15.9").unwrap_err();
-        assert!(matches!(err, FetchError::IndexUnavailable(_)));
+        assert!(matches!(err, ParseFail::Unavailable(_)));
     }
 
     #[test]
@@ -2251,17 +2682,17 @@ mod tests {
         let err = r
             .parse_shard("[{}]", "3.3.12", "windows-ucrt64", "0.16.17")
             .unwrap_err();
-        assert!(matches!(err, FetchError::IndexUnavailable(_)));
+        assert!(matches!(err, ParseFail::Unavailable(_)));
         // a triple mismatch cannot serve the request
         let err = r
             .parse_shard(body, "3.4.10", "windows-ucrt64", "0.16.17")
             .unwrap_err();
-        assert!(matches!(err, FetchError::IndexUnavailable(_)));
+        assert!(matches!(err, ParseFail::Unavailable(_)));
         // unparseable
         let err = r
             .parse_shard("{", "3.3.12", "windows-ucrt64", "0.16.17")
             .unwrap_err();
-        assert!(matches!(err, FetchError::IndexUnavailable(_)));
+        assert!(matches!(err, ParseFail::Unavailable(_)));
     }
 
     #[test]
@@ -2686,6 +3117,347 @@ mod tests {
         let r = boot_resolver(&cache, &mirror, false);
         let path = r.resolve("macos-arm64").unwrap();
         assert!(path.is_file());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    // ---- roadmap 80 G1: the signed runtime fetch (spec 09 §4/§5) -------
+
+    const G1_TAG: &str = "0.16.30";
+    const G1_RUBY: &str = "3.3.12";
+    const G1_PLATFORM: &str = "macos-arm64";
+
+    fn g1_exe() -> String {
+        format!("tebako-runtime-{G1_TAG}-{G1_RUBY}-{G1_PLATFORM}")
+    }
+
+    fn g1_image() -> String {
+        format!("{}.tfs", g1_exe())
+    }
+
+    fn g1_dll() -> String {
+        format!("{}.dll", g1_exe())
+    }
+
+    fn g1_entry_dir(cache: &Path) -> PathBuf {
+        cache
+            .join("runtimes")
+            .join(format!("ruby-{G1_RUBY}-{G1_TAG}-{G1_PLATFORM}"))
+    }
+
+    fn g1_journal(cache: &Path) -> String {
+        fs::read_to_string(cache.join("journal.log")).unwrap_or_default()
+    }
+
+    /// A scratch (cache root, release mirror, press key) triple: the
+    /// exe/image/dll assets at v0.16.30 and a fresh press-local key that
+    /// is NOT yet in the cache's trusted keyring — each test composes
+    /// its own trust shape.
+    fn g1_mirror(tag: &str) -> (PathBuf, PathBuf, tebako_signer::PressKey) {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-resolve-g1-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let cache = dir.join("home");
+        let release = dir.join("mirror").join(format!("v{G1_TAG}"));
+        fs::create_dir_all(&release).unwrap();
+        let key = tebako_signer::press_local_key(&dir.join("press")).unwrap();
+        fs::write(release.join(g1_exe()), b"fake runtime exe\n").unwrap();
+        fs::write(release.join(g1_image()), b"fake env image\n").unwrap();
+        fs::write(release.join(g1_dll()), b"fake ruby dll\n").unwrap();
+        (cache, dir.join("mirror"), key)
+    }
+
+    /// Write one detached `.asc` sibling for a release asset, signed by
+    /// `key` over the asset's CURRENT bytes.
+    fn g1_sign_file(release: &Path, key: &tebako_signer::PressKey, name: &str) {
+        let bytes = fs::read(release.join(name)).unwrap();
+        let asc = tebako_signer::sign_detached(&bytes, &key.secret_key, &key.fingerprint).unwrap();
+        fs::write(release.join(format!("{name}.asc")), asc).unwrap();
+    }
+
+    /// Write the release's era-2 manifest.json (the contract set +
+    /// exe/image/dll facets). `signed` attaches the declared `signature:`
+    /// blocks (spec 13 §2a — entry + image + dll) and writes every
+    /// `<asset>.asc` sibling, all by `key`.
+    fn g1_write_manifest(release: &Path, key: &tebako_signer::PressKey, signed: bool) {
+        let keyid = hex_lower(&key.keyid);
+        let block = |name: &str| -> String {
+            if !signed {
+                return String::new();
+            }
+            g1_sign_file(release, key, name);
+            format!(r#","signature":{{"keyid":"{keyid}","asc":"{name}.asc"}}"#)
+        };
+        let manifest = format!(
+            r#"[{{"tebako_version":"{G1_TAG}","contract_era":2,"contract_version":2,"mount_root":"/__tfs__","ruby_version":"{G1_RUBY}","platform":"{G1_PLATFORM}","filename":"{}","sha256":"{}"{},"image":{{"filename":"{}","sha256":"{}"{}}},"dll":{{"filename":"{}","install_as":"libruby-x.dll","sha256":"{}"{}}}}}]"#,
+            g1_exe(),
+            sha256_file_hex(&release.join(g1_exe())).unwrap(),
+            block(&g1_exe()),
+            g1_image(),
+            sha256_file_hex(&release.join(g1_image())).unwrap(),
+            block(&g1_image()),
+            g1_dll(),
+            sha256_file_hex(&release.join(g1_dll())).unwrap(),
+            block(&g1_dll()),
+        );
+        fs::write(release.join("manifest.json"), manifest).unwrap();
+    }
+
+    #[test]
+    fn g1_signed_release_verifies_and_journals_every_signer() {
+        let (cache, mirror, key) = g1_mirror("happy");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        g1_write_manifest(&release, &key, true);
+        g1_sign_file(&release, &key, "manifest.json");
+        tebako_signer::register_trusted(&cache, &key.public_key).unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        let resolved = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap();
+        assert!(resolved.executable.is_file());
+        let dir = g1_entry_dir(&cache);
+        assert!(dir.join(g1_image()).is_file());
+        assert!(dir.join("libruby-x.dll").is_file());
+        let journal = g1_journal(&cache);
+        let keyid = hex_lower(&key.keyid);
+        assert!(
+            journal.contains(&format!(
+                "event=runtime-index-verified form=manifest.json signer={keyid}"
+            )),
+            "{journal}"
+        );
+        assert!(
+            journal.contains(&format!(
+                "event=runtime-fetch-verified runtime_ref=ruby@{G1_RUBY} (tebako {G1_TAG}, {G1_PLATFORM})"
+            )),
+            "{journal}"
+        );
+        assert!(journal.contains(&format!("signer={keyid}")), "{journal}");
+        assert!(!journal.contains("unsigned-runtime-fetch"), "{journal}");
+        // a cache hit re-resolves without the mirror (a run is a run)
+        fs::remove_dir_all(&mirror).unwrap();
+        r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap();
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_untrusted_index_signer_is_a_named_72() {
+        let (cache, mirror, key) = g1_mirror("untrusted");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        g1_write_manifest(&release, &key, true);
+        g1_sign_file(&release, &key, "manifest.json");
+        // the signing key is NOT registered — nothing trusts it
+        let r = dll_resolver(&cache, &mirror);
+        let err = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap_err();
+        assert_eq!(err.code, 72);
+        assert!(
+            err.message.contains("not in the trusted keyring"),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message.contains(&hex_lower(&key.keyid)),
+            "the untrusted signer is named: {}",
+            err.message
+        );
+        assert!(!g1_entry_dir(&cache).join(g1_exe()).exists());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_tampered_exe_fails_the_signature_before_the_sha() {
+        let (cache, mirror, key) = g1_mirror("tampered-exe");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        g1_write_manifest(&release, &key, true);
+        g1_sign_file(&release, &key, "manifest.json");
+        tebako_signer::register_trusted(&cache, &key.public_key).unwrap();
+        // tamper the exe AFTER its .asc was written — the manifest's
+        // declared sha now also mismatches, but the signature check runs
+        // FIRST (spec 09 §4)
+        fs::write(release.join(g1_exe()), b"evil exe\n").unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        let err = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap_err();
+        assert_eq!(err.code, 71);
+        assert!(err.message.contains("does not verify"), "{}", err.message);
+        assert!(!g1_entry_dir(&cache).join(g1_exe()).exists());
+        let journal = g1_journal(&cache);
+        assert!(!journal.contains("runtime-fetch-verified"), "{journal}");
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_a_declared_signature_whose_asc_is_missing_is_a_named_71() {
+        let (cache, mirror, key) = g1_mirror("missing-asc");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        g1_write_manifest(&release, &key, true);
+        g1_sign_file(&release, &key, "manifest.json");
+        tebako_signer::register_trusted(&cache, &key.public_key).unwrap();
+        // the exe's declared .asc vanishes from the release
+        fs::remove_file(release.join(format!("{}.asc", g1_exe()))).unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        let err = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap_err();
+        assert_eq!(err.code, 71);
+        assert!(err.message.contains("did not fetch"), "{}", err.message);
+        assert!(
+            err.message.contains(&format!("{}.asc", g1_exe())),
+            "the missing asset is named: {}",
+            err.message
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_a_changed_signer_key_is_a_named_72() {
+        let (cache, mirror, key) = g1_mirror("key-pin");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        g1_write_manifest(&release, &key, true);
+        tebako_signer::register_trusted(&cache, &key.public_key).unwrap();
+        // the manifest's pin no longer names the signing key (the index
+        // itself is honestly re-signed — the LIE is inside the card)
+        let manifest_path = release.join("manifest.json");
+        let pinned = fs::read_to_string(&manifest_path)
+            .unwrap()
+            .replace(&hex_lower(&key.keyid), &"0".repeat(16));
+        fs::write(&manifest_path, pinned).unwrap();
+        g1_sign_file(&release, &key, "manifest.json");
+        let r = dll_resolver(&cache, &mirror);
+        let err = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap_err();
+        assert_eq!(err.code, 72);
+        assert!(
+            err.message.contains("the signer key changed"),
+            "{}",
+            err.message
+        );
+        assert!(!g1_entry_dir(&cache).join(g1_exe()).exists());
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_an_unsigned_release_installs_loudly() {
+        let (cache, mirror, _key) = g1_mirror("unsigned");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        // no signature blocks, no .asc siblings — the pre-signing shape
+        g1_write_manifest(&release, &_key, false);
+        let r = dll_resolver(&cache, &mirror);
+        let resolved = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap();
+        assert!(resolved.executable.is_file());
+        let journal = g1_journal(&cache);
+        assert!(
+            journal.contains(&format!(
+                "event=unsigned-runtime-fetch runtime_ref=ruby@{G1_RUBY} (tebako {G1_TAG}, {G1_PLATFORM})"
+            )),
+            "{journal}"
+        );
+        assert!(!journal.contains("runtime-fetch-verified"), "{journal}");
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_unsigned_gate_matrix() {
+        let dir =
+            std::env::temp_dir().join(format!("tebako-resolve-g1-gate-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        let r = Resolver {
+            cache_root: dir.join("home"),
+            mirror: "file:///nowhere".to_string(),
+            lock_timeout: LOCK_TIMEOUT,
+        };
+        // a declared signature counts as signed coverage, always
+        r.unsigned_gate("ruby@x", true, true).unwrap();
+        r.unsigned_gate("ruby@x", true, false).unwrap();
+        // unsigned + not required: a loud pass (stderr + the journal)
+        r.unsigned_gate("ruby@x", false, false).unwrap();
+        let journal = g1_journal(&r.cache_root);
+        assert!(
+            journal.contains("event=unsigned-runtime-fetch runtime_ref=ruby@x"),
+            "{journal}"
+        );
+        // unsigned + TEBAKO_REQUIRE_SIGNED: refused before any download
+        let err = r.unsigned_gate("ruby@x", false, true).unwrap_err();
+        assert_eq!(err.code, 71);
+        assert!(
+            err.message.contains("TEBAKO_REQUIRE_SIGNED=1"),
+            "{}",
+            err.message
+        );
+        assert!(
+            err.message.contains("nothing was cached"),
+            "{}",
+            err.message
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn g1_a_tampered_index_is_a_named_71() {
+        let (cache, mirror, key) = g1_mirror("tampered-index");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        g1_write_manifest(&release, &key, true);
+        g1_sign_file(&release, &key, "manifest.json");
+        tebako_signer::register_trusted(&cache, &key.public_key).unwrap();
+        // tamper the index AFTER its .asc was written
+        let manifest_path = release.join("manifest.json");
+        let body = fs::read_to_string(&manifest_path)
+            .unwrap()
+            .replace("3.3.12", "3.3.99");
+        fs::write(&manifest_path, body).unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        let err = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap_err();
+        assert_eq!(err.code, 71);
+        assert!(err.message.contains("does not verify"), "{}", err.message);
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_a_verified_form_beats_an_unsigned_one_regardless_of_preference() {
+        let (cache, mirror, key) = g1_mirror("verified-wins");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        g1_write_manifest(&release, &key, true);
+        g1_sign_file(&release, &key, "manifest.json");
+        tebako_signer::register_trusted(&cache, &key.public_key).unwrap();
+        // the shard (the preference-1 form) is UNSIGNED and POISONED —
+        // its image sha would fail the install with 121 if it were read
+        let shard = format!(
+            r#"{{"tebako_version":"{G1_TAG}","contract_era":2,"contract_version":2,"mount_root":"/__tfs__","ruby_version":"{G1_RUBY}","platform":"{G1_PLATFORM}","filename":"{}","sha256":"{}","image":{{"filename":"{}","sha256":"{}"}}}}"#,
+            g1_exe(),
+            sha256_file_hex(&release.join(g1_exe())).unwrap(),
+            g1_image(),
+            "f".repeat(64),
+        );
+        fs::write(release.join(format!("{}.manifest.json", g1_exe())), shard).unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap();
+        let journal = g1_journal(&cache);
+        assert!(
+            journal.contains("event=runtime-index-verified form=manifest.json"),
+            "{journal}"
+        );
+        let _ = fs::remove_dir_all(cache.parent().unwrap());
+    }
+
+    #[test]
+    fn g1_a_signed_sums_only_release_still_fails_the_contract_gate() {
+        let (cache, mirror, key) = g1_mirror("sums-only");
+        let release = mirror.join(format!("v{G1_TAG}"));
+        // no manifest.json, no shard — SHA256SUMS.txt carries the entry,
+        // and it IS signed (the verified index form)
+        let sums = format!(
+            "{}  {}\n{}  {}\n",
+            sha256_file_hex(&release.join(g1_exe())).unwrap(),
+            g1_exe(),
+            sha256_file_hex(&release.join(g1_image())).unwrap(),
+            g1_image(),
+        );
+        fs::write(release.join("SHA256SUMS.txt"), sums).unwrap();
+        g1_sign_file(&release, &key, "SHA256SUMS.txt");
+        tebako_signer::register_trusted(&cache, &key.public_key).unwrap();
+        let r = dll_resolver(&cache, &mirror);
+        let err = r.resolve_runtime(G1_RUBY, G1_PLATFORM, G1_TAG).unwrap_err();
+        // the sums form carries no contract card — pre-era, exit 75
+        assert_eq!(err.code, 75);
+        assert!(err.message.contains("pre-era"), "{}", err.message);
+        let journal = g1_journal(&cache);
+        assert!(
+            journal.contains("event=runtime-index-verified form=SHA256SUMS.txt"),
+            "{journal}"
+        );
         let _ = fs::remove_dir_all(cache.parent().unwrap());
     }
 }

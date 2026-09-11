@@ -73,6 +73,13 @@ pub struct RuntimePref {
     /// (tebako-resolve::DEFAULT_TEBAKO_VERSION).
     #[serde(default)]
     pub tebako: String,
+    /// The per-engine download base pin (spec 05 §2's channel 1, #567):
+    /// a release download base URL this engine's runtimes resolve from,
+    /// ahead of `TEBAKO_RUNTIME_MIRROR` (a differing mirror value is
+    /// shadowed — loud + journaled). Absent = the rest of the chain
+    /// (mirror env → registry-derived → the ruby default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 pub fn config_path(home: &Path) -> PathBuf {
@@ -609,6 +616,7 @@ mod tests {
         RuntimePref {
             version: version.to_string(),
             tebako: tebako.to_string(),
+            source: None,
         }
     }
 

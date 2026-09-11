@@ -133,6 +133,53 @@ pub fn entry_filename(entry: &tebako_json::Value, facet: Option<&str>) -> Option
         .filter(|s| !s.is_empty())
 }
 
+/// The parsed `signature` block of a release-index entry (spec 13 §2a):
+/// the signing key's PRIMARY keyid (16 lowercase hex — spec 09 §9's
+/// identity-not-instrument rule) + the exact `.asc` asset name within the
+/// same release.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntrySignature {
+    pub keyid: String,
+    pub asc: String,
+}
+
+/// The `signature` block of the entry itself (`facet: None`) or of a
+/// facet object (`image` / `dll`). `Ok(None)` = the key is absent — the
+/// pre-signing keep-forever line (spec 13 §2a). A PRESENT but torn block
+/// (not a map, empty/absent `keyid` or `asc`) is the named error: an
+/// index the fetch path already trusted is lying about its trust anchors
+/// — never a silent downgrade to the unsigned rule (spec 00 §9).
+pub fn entry_signature(
+    entry: &tebako_json::Value,
+    facet: Option<&str>,
+) -> Result<Option<EntrySignature>, String> {
+    let node = match facet {
+        Some(f) => entry.find(f),
+        None => Some(entry),
+    };
+    let Some(node) = node else { return Ok(None) };
+    let Some(sig) = node.find("signature") else {
+        return Ok(None);
+    };
+    let where_ = match facet {
+        Some(f) => format!("the entry's {f}.signature"),
+        None => "the entry's signature".to_string(),
+    };
+    if !matches!(sig, tebako_json::Value::Object(_)) {
+        return Err(format!("{where_} must be a map (spec 13 §2a)"));
+    }
+    let field = |name: &str| -> Result<String, String> {
+        sig.find(name)
+            .and_then(|v| v.as_string())
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| format!("{where_} lacks a usable {name} (spec 13 §2a)"))
+    };
+    Ok(Some(EntrySignature {
+        keyid: field("keyid")?,
+        asc: field("asc")?,
+    }))
+}
+
 /// The exe / env-image names for a cache entry: flow the cached release
 /// index verbatim when it names this identity, else the synthesized
 /// fallback (`{name}.exe` on windows, `{name}` on posix — spec 05 §2's
@@ -1193,6 +1240,62 @@ mod tests {
         assert_eq!(entry_contract_version(&dir3, "never-released"), None);
         assert_eq!(entry_contract_version(&tmp.join("runtimes"), &exe3), None);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // -----------------------------------------------------------------
+    // spec 13 §2a: the per-artifact signature block
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn entry_signature_reads_the_entry_and_facet_blocks() {
+        let parsed = tebako_json::parse(
+            r#"[{"filename": "exe",
+                 "signature": {"keyid": "efc3c250f7862a48", "asc": "exe.asc"},
+                 "image": {"filename": "img.tfs",
+                            "signature": {"keyid": "efc3c250f7862a48", "asc": "img.tfs.asc"}},
+                 "dll": {"filename": "d.dll"}}]"#,
+        )
+        .unwrap();
+        let tebako_json::Value::Array(entries) = &parsed else {
+            panic!("an array parses");
+        };
+        let entry = &entries[0];
+        let exe_sig = entry_signature(entry, None).unwrap().expect("declared");
+        assert_eq!(exe_sig.keyid, "efc3c250f7862a48");
+        assert_eq!(exe_sig.asc, "exe.asc");
+        let img_sig = entry_signature(entry, Some("image"))
+            .unwrap()
+            .expect("declared");
+        assert_eq!(img_sig.asc, "img.tfs.asc");
+        // Absent key (entry-level on a facet, whole entry without it):
+        // the pre-signing keep-forever line — Ok(None), never an error.
+        assert_eq!(entry_signature(entry, Some("dll")).unwrap(), None);
+        let bare = tebako_json::parse(r#"[{"filename": "old-exe"}]"#).unwrap();
+        let tebako_json::Value::Array(entries) = &bare else {
+            panic!("an array parses");
+        };
+        assert_eq!(entry_signature(&entries[0], None).unwrap(), None);
+        assert_eq!(entry_signature(&entries[0], Some("image")).unwrap(), None);
+    }
+
+    #[test]
+    fn entry_signature_torn_blocks_are_named_errors() {
+        let parsed = tebako_json::parse(
+            r#"[{"filename": "exe", "signature": "garbage"},
+                 {"filename": "exe2", "signature": {"keyid": "efc3c250f7862a48"}},
+                 {"filename": "exe3", "image": {"signature": {"keyid": "", "asc": "x.asc"}}}]"#,
+        )
+        .unwrap();
+        let tebako_json::Value::Array(entries) = &parsed else {
+            panic!("an array parses");
+        };
+        let err = entry_signature(&entries[0], None).unwrap_err();
+        assert!(err.contains("must be a map"), "{err}");
+        let err = entry_signature(&entries[1], None).unwrap_err();
+        assert!(err.contains("asc"), "{err}");
+        let err = entry_signature(&entries[2], Some("image")).unwrap_err();
+        assert!(err.contains("image.signature"), "{err}");
+        assert!(err.contains("keyid"), "{err}");
     }
 
     // -----------------------------------------------------------------

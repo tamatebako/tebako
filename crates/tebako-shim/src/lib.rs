@@ -22,7 +22,10 @@
 //! Discipline: no async, no clap, no logging framework; hand-rolled argv;
 //! named errors and exit codes (spec 06 §4 reused); cache-install mirrors
 //! the bootstrap's flock / tmp+rename / trust-marker discipline (spec 05
-//! §4) without linking the bootstrap crate (which drags in rnp).
+//! §4). Runtime fetch-time OpenPGP verification (spec 09 §4, roadmap 80's
+//! G1) links tebako-signer directly — the shim carries no size gate, so
+//! unlike the bootstrap it verifies with the full keyring machinery
+//! (trusted keyring + embedded root + `TEBAKO_TRUSTED_ROOT` override).
 //!
 //! The dispatch-time registry-default link resolves EVERY registry form
 //! of spec 04 §2 through tebako-resolve (service contents API, pinned
@@ -64,6 +67,14 @@ pub const EX_USAGE: u8 = 64;
 pub const EX_TEBAKO_MANIFEST: u8 = 65;
 pub const EX_TEBAKO_UNAVAILABLE: u8 = 69;
 pub const EX_TEBAKO_SHA: u8 = 70;
+/// spec 06 §4: an invalid signature on a fetched runtime artifact (or an
+/// unsigned fetch under `TEBAKO_REQUIRE_SIGNED=1`) — spec 09 §4's strict
+/// rule, G1 (roadmap 80).
+pub const EX_TEBAKO_SIGNATURE: u8 = 71;
+/// spec 06 §4: the signer of a fetched runtime artifact is not in the
+/// trusted keyring, or the verified signer is not the key the index
+/// entry / registry pins (spec 09 §4/§9's SignerKeyChanged).
+pub const EX_TEBAKO_TRUST: u8 = 72;
 pub const EX_TEBAKO_IO: u8 = 74;
 /// The runtime release declares a contract this shim does not speak —
 /// or none at all (spec 18 C2/S11/S12): a pre-era release manifest, a
