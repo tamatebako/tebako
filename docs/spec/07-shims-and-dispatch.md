@@ -35,7 +35,8 @@ in `config.yaml` as the exact ref).
   `[payload@]version`), `registries:` (spec 04 refs), `runtimes:`
   (engine → `{version, tebako, source?}` runtime preference; `source:`
   pins the engine's download base — spec 05 §2's per-engine chain,
-  PLANNED TODO.v2-1/30). The shim never writes this file — except
+  SHIPPED in the shim's dispatch-time fetch, tebako#567). The shim never
+  writes this file — except
   through `tebako-shim use`, the explicit verb (tmp + rename, the same
   discipline as `add-registry`; a structural edit that preserves keys,
   not comments).
