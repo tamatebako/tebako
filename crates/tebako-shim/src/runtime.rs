@@ -16,8 +16,23 @@
 //! contract refusal; tebako-resolve::contract owns the reader),
 //! manifest.json-primary / SHA256SUMS-fallback checksum extraction,
 //! `TEBAKO_RUNTIME_MIRROR` / `TEBAKO_OFFLINE` — reimplemented
-//! here rather than linked: the bootstrap crate drags in rnp, and the
-//! shim stays pure-Rust + tebako-http.
+//! here rather than linked from the bootstrap crate.
+//!
+//! Two extensions over the bootstrap's path live here:
+//!
+//! - **The per-engine download source chain** (spec 05 §2, tebako#567):
+//!   config `runtimes: {<engine>: {source:}}` → `TEBAKO_RUNTIME_MIRROR` →
+//!   the registered registries' `kind: runtime` entries (the release.ref
+//!   derives the base AND the tag) → the product default (ruby only —
+//!   a non-ruby engine no channel answers is the named error enumerating
+//!   the channels).
+//! - **Fetch-time OpenPGP verification** (spec 09 §4, roadmap 80's G1):
+//!   the consumed index form's detached `.asc` verifies BEFORE its
+//!   digests are trusted; every artifact whose entry DECLARES
+//!   `signature:` (spec 13 §2a) verifies against it. Strict: invalid →
+//!   71, untrusted signer / pin mismatch → 72; an unsigned release is
+//!   first-class (loud + journaled) except under
+//!   `TEBAKO_REQUIRE_SIGNED=1` (71).
 
 use std::io::Read;
 use std::path::Path;
@@ -27,7 +42,8 @@ use tpkg::{RuntimeRequirement, RuntimeRequirements};
 use crate::config::{self, RuntimePref};
 use crate::versions;
 use crate::{
-    fail, Ctx, ShimError, EX_TEBAKO_CONTRACT, EX_TEBAKO_IO, EX_TEBAKO_SHA, EX_TEBAKO_UNAVAILABLE,
+    fail, Ctx, ShimError, EX_TEBAKO_CONTRACT, EX_TEBAKO_IO, EX_TEBAKO_MANIFEST, EX_TEBAKO_SHA,
+    EX_TEBAKO_SIGNATURE, EX_TEBAKO_TRUST, EX_TEBAKO_UNAVAILABLE,
 };
 
 const DEFAULT_RELEASES_BASE: &str =
@@ -39,8 +55,8 @@ const LOCK_POLL_MS: u64 = 200;
 // tpkg (spec 00 §10 — one owner, every consumer flows): the shim's
 // resolution/download layers below build on these re-exports.
 use tpkg::runtime_store::{
-    entry_asset_names, entry_filename, entry_matches, entry_meta, newest_compatible_any,
-    release_index_entry,
+    entry_asset_names, entry_filename, entry_matches, entry_meta, entry_signature,
+    newest_compatible_any, release_index_entry, EntrySignature,
 };
 pub use tpkg::runtime_store::{
     exe_suffix, newest_compatible, platform_string, scan_all_cached, scan_cached, CachedRuntime,
@@ -158,6 +174,7 @@ pub fn resolve_runtime(
             RuntimePref {
                 version: String::new(),
                 tebako: tebako_resolve::DEFAULT_TEBAKO_VERSION.to_string(),
+                source: None,
             },
             true,
         ),
@@ -213,7 +230,12 @@ pub fn resolve_runtime(
     // with nothing satisfiable fails here with the named
     // platform-availability error; anything unreadable leaves the pin
     // the target (all pin-path behaviors unchanged).
-    let target = match index_selected_target(reqs, pref, ctx)? {
+    // The per-engine download source (spec 05 §2's four-channel chain,
+    // tebako#567) — computed once per download, threaded through the
+    // index probe and the fetch. Every download journals the base and the
+    // channel that supplied it.
+    let source = runtime_source(reqs, (!prefless).then_some(pref), &cfg, ctx)?;
+    let target = match index_selected_target(reqs, pref, &source, ctx)? {
         Some(pick) => pick,
         None if !prefless => pref.clone(),
         None => {
@@ -228,7 +250,7 @@ pub fn resolve_runtime(
             );
         }
     };
-    let rt = download_runtime(reqs.engine(), &target, ctx)?;
+    let rt = download_runtime(reqs.engine(), &target, &source, ctx)?;
     // The downloaded runtime's abi line must satisfy the payload too —
     // the release index carries it (abi: None is the compat window).
     // The single-entry native shape keeps its exact named error.
@@ -489,15 +511,19 @@ fn released_versions(text: &str, engine: &str, platform: &str) -> Option<Vec<Rel
 fn index_selected_target(
     reqs: &RuntimeRequirements,
     pref: &RuntimePref,
+    source: &RuntimeSource,
     ctx: &Ctx,
 ) -> Result<Option<RuntimePref>, ShimError> {
     if offline_mode(ctx) {
         return Ok(None);
     }
     let platform = platform_string();
-    let base_raw = releases_base(ctx);
-    let base = skip_file_scheme(&base_raw).to_string();
-    let local = base_is_local(&base_raw);
+    let base = skip_file_scheme(&source.base).to_string();
+    let local = base_is_local(&source.base);
+    // The release tag the URLs ride: the channel-3 registry pin verbatim
+    // (its release.ref names it — the openjdk v2.5.1 shape, where the tag
+    // is NOT the rows' tebako line), else the probed line's `v<tebako>`.
+    let tag = source.tag_for(&pref.tebako);
     let probe = ctx
         .home
         .join("tmp")
@@ -507,9 +533,26 @@ fn index_selected_target(
         // store dirs under the install lock and names the IO failure.
         return Ok(None);
     }
-    let text = fetch_manifest_text(&base, local, &pref.tebako, &probe);
+    let text = fetch_manifest_text(&base, local, &tag, &probe);
     let _ = std::fs::remove_dir_all(&probe);
     let Some(text) = text else {
+        // A registry-pinned tag (channel 3) has no fallback line: the
+        // registry named THIS release — an unreadable index there is the
+        // named error, never a silent drop to the preference's line.
+        if let Some(tag) = &source.tag {
+            return fail(
+                EX_TEBAKO_UNAVAILABLE,
+                format!(
+                    "the registry-derived {} runtime release {} carries no readable release index at {}/{}/manifest.json\n  the registry named this release for \"{}\" — fix the registry entry or pin `runtimes: {{{}: {{source: …}}}}` to override it",
+                    reqs.engine(),
+                    tag,
+                    source.base,
+                    tag,
+                    reqs,
+                    reqs.engine()
+                ),
+            );
+        }
         return Ok(None);
     };
     let Some(released) = released_versions(&text, reqs.engine(), platform) else {
@@ -549,6 +592,7 @@ fn index_selected_target(
                 .tebako_version
                 .clone()
                 .unwrap_or_else(|| pref.tebako.clone()),
+            source: None,
         }));
     }
     let mut known: Vec<&str> = released.iter().map(|e| e.lang_version.as_str()).collect();
@@ -578,11 +622,234 @@ fn offline_mode(ctx: &Ctx) -> bool {
         .is_some_and(|v| !v.is_empty() && v != "0")
 }
 
-fn releases_base(ctx: &Ctx) -> String {
-    ctx.env_get("TEBAKO_RUNTIME_MIRROR")
-        .filter(|v| !v.is_empty())
-        .unwrap_or(DEFAULT_RELEASES_BASE)
-        .to_string()
+/// The per-engine download source (spec 05 §2's chain — tebako#567): the
+/// release download base, the tag the URLs ride, the chain channel that
+/// supplied them (journaled per fetch), and — channel 3 only — the
+/// registry entry's signature pin (spec 09 §9).
+#[derive(Debug)]
+struct RuntimeSource {
+    /// The release download base (`{base}/{tag}/<asset>` URLs).
+    base: String,
+    /// The pinned release tag. `None` = `v<tebako>` of the line being
+    /// read (the factory convention: the probed line for the index, the
+    /// pick's own line for the assets). `Some` pins ONE tag for every
+    /// fetch — channel 3's registry-derived form, where the registry
+    /// names the release and a row's `tebako_version` stays the identity
+    /// line (the openjdk v2.5.1 shape: tag v2.5.1, rows on tebako 2.5.0).
+    tag: Option<String>,
+    /// The chain channel that supplied this source (spec 05 §2's journal
+    /// requirement): `config-source` / `mirror-env` / `registry` /
+    /// `default`.
+    channel: &'static str,
+    /// Channel 3's registry signature pin (spec 09 §9): the PRIMARY keyid
+    /// the verified signer of the index/artifacts must resolve to.
+    signer_pin: Option<String>,
+}
+
+impl RuntimeSource {
+    /// The tag a fetch on tebako line `tebako_line` rides.
+    fn tag_for(&self, tebako_line: &str) -> String {
+        self.tag
+            .clone()
+            .unwrap_or_else(|| format!("v{tebako_line}"))
+    }
+}
+
+/// Append one line to the audit journal (`~/.tebako/journal.log`) —
+/// best-effort, like every journal write: the answer never depends on
+/// the record.
+fn journal(home: &Path, line: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(home.join("journal.log"))
+    {
+        use std::io::Write as _;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let _ = f.write_all(format!("{now} {line}\n").as_bytes());
+    }
+}
+
+/// `TEBAKO_REQUIRE_SIGNED=1` (spec 09 §4): set, non-empty, not "0".
+fn require_signed(ctx: &Ctx) -> bool {
+    ctx.env_get("TEBAKO_REQUIRE_SIGNED")
+        .is_some_and(|v| !v.is_empty() && v != "0")
+}
+
+/// The per-engine download-source chain (spec 05 §2, tebako#567) — first
+/// hit wins:
+///
+/// 1. the config pin's `source:` (a differing `TEBAKO_RUNTIME_MIRROR` is
+///    shadowed — loud + journaled);
+/// 2. `TEBAKO_RUNTIME_MIRROR` (the operator's global override);
+/// 3. the registered registries' `kind: runtime` entries whose `engine`
+///    (+ `implementation` when the edge names one) matches, with a
+///    version satisfying the edge — the base AND the tag derive from
+///    that version's `release.ref` (the zero-config path);
+/// 4. the product default — the ruby factory, RUBY ONLY: a non-ruby
+///    engine no channel answers is the named error enumerating the
+///    channels (the #567 closeout).
+fn runtime_source(
+    reqs: &RuntimeRequirements,
+    config_pref: Option<&RuntimePref>,
+    cfg: &config::UserConfig,
+    ctx: &Ctx,
+) -> Result<RuntimeSource, ShimError> {
+    let engine = reqs.engine();
+    let mirror = ctx
+        .env_get("TEBAKO_RUNTIME_MIRROR")
+        .filter(|v| !v.is_empty());
+    // Channel 1: the config pin's declared source.
+    if let Some(base) = config_pref.and_then(|p| p.source.as_deref()) {
+        if let Some(mirror) = mirror.filter(|m| *m != base) {
+            // The pin shadows the operator's mirror for this engine —
+            // never silently (spec 05 §2).
+            eprintln!(
+                "tebako-shim: warning: the {engine} runtime source: pin ({base}) shadows TEBAKO_RUNTIME_MIRROR ({mirror}) for this engine"
+            );
+            journal(
+                &ctx.home,
+                &format!(
+                    "event=runtime-source-shadow engine={engine} source={base} shadowed_mirror={mirror}"
+                ),
+            );
+        }
+        return Ok(RuntimeSource {
+            base: base.to_string(),
+            tag: None,
+            channel: "config-source",
+            signer_pin: None,
+        });
+    }
+    // Channel 2: the operator's global mirror.
+    if let Some(mirror) = mirror {
+        return Ok(RuntimeSource {
+            base: mirror.to_string(),
+            tag: None,
+            channel: "mirror-env",
+            signer_pin: None,
+        });
+    }
+    // Channel 3: the registered registries (the zero-config path).
+    if let Some(source) = registry_derived_source(reqs, cfg, ctx) {
+        return Ok(source);
+    }
+    // Channel 4: the product default — the ruby factory hosts ruby only.
+    if engine == "ruby" {
+        return Ok(RuntimeSource {
+            base: DEFAULT_RELEASES_BASE.to_string(),
+            tag: None,
+            channel: "default",
+            signer_pin: None,
+        });
+    }
+    fail(
+        EX_TEBAKO_UNAVAILABLE,
+        format!(
+            "no download source for {engine} runtimes — every channel of the per-engine chain (spec 05 §2) came up empty:\n  1. config.yaml `runtimes: {{{engine}: {{source: …}}}}` — not set\n  2. TEBAKO_RUNTIME_MIRROR — not set\n  3. the registered registries — none lists a `kind: runtime` entry for engine \"{engine}\" with a version satisfying \"{reqs}\"\n  4. the product default — hosts ruby runtimes only\n  register the registry that publishes the {engine} runtime (`tebako add-registry`), or pin a source"
+        ),
+    )
+}
+
+/// Channel 3: the registry-derived source. Scans the configured
+/// registries IN ORDER; the first `kind: runtime` entry matching the
+/// engine (+ the edge's implementation when named) with a version
+/// satisfying the requirement answers — the base + tag derive from that
+/// version's `release.ref`. Only GitHub service refs derive a
+/// `{base}/{tag}` download root (the runtime fetch grammar); other ref
+/// classes skip with a journal note. A registry that does not resolve is
+/// journaled and skipped — it cannot answer, and a later channel still
+/// can (the failure is named in the no-channel error's enumeration).
+fn registry_derived_source(
+    reqs: &RuntimeRequirements,
+    cfg: &config::UserConfig,
+    ctx: &Ctx,
+) -> Option<RuntimeSource> {
+    let engine = reqs.engine();
+    let implementation = reqs
+        .entries()
+        .iter()
+        .find_map(|r| r.implementation.as_deref());
+    for reg_ref in &cfg.registries {
+        let registry = match crate::regcache::registry_for(&ctx.home, reg_ref, ctx) {
+            Ok(r) => r,
+            Err(e) => {
+                journal(
+                    &ctx.home,
+                    &format!(
+                        "event=runtime-source-registry-error engine={engine} registry={reg_ref} error={e:?}"
+                    ),
+                );
+                continue;
+            }
+        };
+        for entry in registry.runtime_entries(engine, implementation) {
+            // The newest registry version satisfying ANY entry of the
+            // `any_of` requirement answers where this engine lives.
+            let pick = entry
+                .versions
+                .iter()
+                .filter(|v| {
+                    reqs.entries()
+                        .iter()
+                        .any(|r| versions::from_validated(&r.constraint).matches(&v.version))
+                })
+                .max_by(|a, b| versions::compare(&a.version, &b.version));
+            let Some(version) = pick else { continue };
+            let derived = match tebako_resolve::Reference::parse(&version.release.r#ref) {
+                Ok(tebako_resolve::Reference::Service {
+                    service: tebako_resolve::Service::Github,
+                    owner,
+                    repo,
+                    version: tag,
+                    ..
+                }) => Some(RuntimeSource {
+                    base: format!("https://github.com/{owner}/{repo}/releases/download"),
+                    tag: Some(tag),
+                    channel: "registry",
+                    signer_pin: version.signature.as_ref().map(|s| s.keyid.clone()),
+                }),
+                // A non-GitHub release.ref cannot spell the `{base}/{tag}`
+                // download root the runtime fetch rides — journaled, never
+                // guessed.
+                Ok(other) => {
+                    journal(
+                        &ctx.home,
+                        &format!(
+                            "event=runtime-source-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=release-ref-class-{}-not-a-download-base",
+                            entry.name,
+                            version.version,
+                            match &other {
+                                tebako_resolve::Reference::Service { service, .. } =>
+                                    service.name(),
+                                tebako_resolve::Reference::Git { .. } => "git",
+                                tebako_resolve::Reference::Https { .. } => "https",
+                                tebako_resolve::Reference::File { .. } => "file",
+                            }
+                        ),
+                    );
+                    None
+                }
+                Err(e) => {
+                    journal(
+                        &ctx.home,
+                        &format!(
+                            "event=runtime-source-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=bad-release-ref error={e}",
+                            entry.name, version.version
+                        ),
+                    );
+                    None
+                }
+            };
+            if derived.is_some() {
+                return derived;
+            }
+        }
+    }
+    None
 }
 
 fn base_is_local(base: &str) -> bool {
@@ -863,17 +1130,13 @@ fn sha_from_sums(text: &str, asset: &str) -> Result<String, ()> {
     Err(())
 }
 
-/// Fetch the release index (`manifest.json`) into the tmp staging dir
-/// and return its text. `None` when it does not exist or does not read —
-/// the caller decides what that means (spec 18: the pre-era signal).
-fn fetch_manifest_text(base: &str, local: bool, abi: &str, tmp_dir: &Path) -> Option<String> {
+/// Fetch the release index (`manifest.json`) at release tag `tag` into
+/// the tmp staging dir and return its text. `None` when it does not
+/// exist or does not read — the caller decides what that means (spec 18:
+/// the pre-era signal).
+fn fetch_manifest_text(base: &str, local: bool, tag: &str, tmp_dir: &Path) -> Option<String> {
     let manifest_tmp = tmp_dir.join("manifest.json");
-    fetch_url(
-        &format!("{base}/v{abi}/manifest.json"),
-        local,
-        &manifest_tmp,
-    )
-    .ok()?;
+    fetch_url(&format!("{base}/{tag}/manifest.json"), local, &manifest_tmp).ok()?;
     std::fs::read_to_string(&manifest_tmp).ok()
 }
 
@@ -908,23 +1171,72 @@ fn contract_gate(
     }
 }
 
-/// The expected checksum for an asset: manifest.json primary,
-/// SHA256SUMS.txt fallback (the bootstrap's exact order). Returns the
-/// optional sha plus the two diagnostic indices so the caller names the
-/// failure itself — an absent entry is data, not an error (the v1-era
-/// image rule needs it). `manifest_text` is the already-fetched release
-/// index when the caller holds it (the contract gate reads it first);
-/// `None` fetches it here.
+/// Which release-index form the G1 verification (spec 09 §4) trusted for
+/// this fetch — the digests come from THAT form and no other (an
+/// unverified form's digests are never consulted once a form verified).
+enum IndexTrust {
+    /// No form carried a verifiable signature — the pre-signing
+    /// keep-forever line: manifest primary, SHA256SUMS fallback (the
+    /// behavior that predates G1), the unsigned rule applies.
+    Unverified,
+    /// manifest.json verified (the signer's resolved PRIMARY keyid).
+    VerifiedManifest(String),
+    /// Only SHA256SUMS.txt verified — digests from it; the contract card
+    /// has no trusted carrier (the caller refuses 75).
+    VerifiedSums {
+        text: String,
+        #[allow(dead_code)]
+        signer: String,
+    },
+}
+
+impl IndexTrust {
+    /// The verified signer (resolved PRIMARY keyid), when any form
+    /// verified.
+    fn signer(&self) -> Option<&str> {
+        match self {
+            IndexTrust::Unverified => None,
+            IndexTrust::VerifiedManifest(signer) => Some(signer),
+            IndexTrust::VerifiedSums { signer, .. } => Some(signer),
+        }
+    }
+}
+
+/// The expected checksum for an asset: the VERIFIED index form's digests
+/// when a form verified (spec 09 §4 — never an unverified fallback);
+/// otherwise manifest.json primary, SHA256SUMS.txt fallback (the
+/// bootstrap's exact order). Returns the optional sha plus the two
+/// diagnostic indices so the caller names the failure itself — an absent
+/// entry is data, not an error (the v1-era image rule needs it).
+/// `manifest_text` is the already-fetched release index when the caller
+/// holds it (the contract gate reads it first); `None` fetches it here
+/// (unverified chain only).
 #[allow(clippy::too_many_arguments)]
 fn expected_checksum(
     base: &str,
     local: bool,
-    abi: &str,
+    tag: &str,
     asset: &str,
     tmp_dir: &Path,
     manifest_text: Option<&str>,
+    trust: &IndexTrust,
 ) -> Result<(Option<String>, (usize, usize)), ShimError> {
-    let sums_url = format!("{base}/v{abi}/SHA256SUMS.txt");
+    // The verified chains read the consumed form's digests and nothing
+    // else — an unverified form is never consulted once a form verified.
+    match trust {
+        IndexTrust::VerifiedManifest(_) => {
+            let expected = manifest_text.and_then(|t| sha_from_manifest(t, asset).ok());
+            let diag = if expected.is_some() { 4 } else { 3 };
+            return Ok((expected, (diag, 0)));
+        }
+        IndexTrust::VerifiedSums { text, .. } => {
+            let expected = sha_from_sums(text, asset).ok();
+            let diag = if expected.is_some() { 4 } else { 3 };
+            return Ok((expected, (0, diag)));
+        }
+        IndexTrust::Unverified => {}
+    }
+    let sums_url = format!("{base}/{tag}/SHA256SUMS.txt");
     let mut expected = None;
     let mut diag_manifest = 1;
     let owned_text;
@@ -935,13 +1247,7 @@ fn expected_checksum(
         }
         None => {
             let manifest_tmp = tmp_dir.join("manifest.json");
-            if fetch_url(
-                &format!("{base}/v{abi}/manifest.json"),
-                local,
-                &manifest_tmp,
-            )
-            .is_ok()
-            {
+            if fetch_url(&format!("{base}/{tag}/manifest.json"), local, &manifest_tmp).is_ok() {
                 diag_manifest = 2;
                 owned_text = std::fs::read_to_string(&manifest_tmp).ok();
                 if owned_text.is_some() {
@@ -977,17 +1283,226 @@ fn expected_checksum(
     Ok((expected, (diag_manifest, diag_sums)))
 }
 
-/// Download + verify + atomically install one asset into an entry staging
-/// dir. Returns the verified sha256.
-fn install_asset(
-    url: &str,
+/// The G1 fetch-time verification context (spec 09 §4): the keyring this
+/// fetch verifies against — the user's trusted keyring + the embedded
+/// first-party root + the `TEBAKO_TRUSTED_ROOT` dev override (the CLI's
+/// payload-install keyring, mirrored key-for-key) — plus the channel-3
+/// registry signature pin (spec 09 §9) when the source came from a
+/// registry.
+struct FetchTrust {
+    keyring: Vec<u8>,
+    signer_pin: Option<String>,
+}
+
+impl FetchTrust {
+    fn build(source: &RuntimeSource, ctx: &Ctx) -> Result<FetchTrust, ShimError> {
+        let mut keyring = tebako_signer::trusted_keyring_bytes(&ctx.home).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_IO,
+                format!("cannot read the trusted keyring: {e}"),
+            )
+        })?;
+        let root = tebako_signer::dearmor_bytes(tebako_signer::ROOT_PUBLIC_KEY.as_bytes())
+            .map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_IO,
+                    format!("the embedded root key does not dearmor: {e}"),
+                )
+            })?;
+        keyring.extend_from_slice(&root);
+        if let Some(extra) = tebako_signer::trusted_root_override_key(
+            ctx.env_get("TEBAKO_TRUSTED_ROOT").map(str::to_string),
+        ) {
+            keyring.extend_from_slice(&extra);
+        }
+        Ok(FetchTrust {
+            keyring,
+            signer_pin: source.signer_pin.clone(),
+        })
+    }
+
+    /// Verify one detached-signature pair (spec 09 §4's strict rule):
+    /// Invalid → 71; Untrusted (the signer is not in the trusted
+    /// keyring) → 72; Trusted → the declared keyid (the entry's
+    /// `signature.keyid`, the PRIMARY per spec 13 §2a) and the channel-3
+    /// registry pin re-assert — a mismatch is SignerKeyChanged, 72.
+    /// Returns the resolved PRIMARY keyid of the verified signer.
+    fn verify_detached(
+        &self,
+        what: &str,
+        bytes: &[u8],
+        asc: &[u8],
+        declared_keyid: Option<&str>,
+    ) -> Result<String, ShimError> {
+        let outcome =
+            tebako_signer::verify_detached_full(&self.keyring, bytes, asc).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_SIGNATURE,
+                    format!("cannot verify the signature on {what}: {e}"),
+                )
+            })?;
+        let issuer = match outcome {
+            tebako_signer::VerifyOutcome::Trusted(keyid) => keyid,
+            tebako_signer::VerifyOutcome::Untrusted(keyid) => {
+                return fail(
+                    EX_TEBAKO_TRUST,
+                    format!(
+                        "{what} is signed by {keyid}, which is not in the trusted keyring — refusing to install or execute\n  if you trust this signer, register its public key with `tebako key import`"
+                    ),
+                );
+            }
+            tebako_signer::VerifyOutcome::Invalid(keyid) => {
+                return fail(
+                    EX_TEBAKO_SIGNATURE,
+                    format!(
+                        "invalid signature on {what}{} — refusing to install or execute\n  the download was deleted; the cache was not touched",
+                        keyid.map(|k| format!(" (issuer {k})")).unwrap_or_default()
+                    ),
+                );
+            }
+        };
+        let primary = tebako_signer::primary_keyid_of(&self.keyring, &issuer)
+            .map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_SIGNATURE,
+                    format!("cannot resolve the signer of {what}: {e}"),
+                )
+            })?
+            .unwrap_or_else(|| issuer.clone());
+        // The entry pin (spec 13 §2a) and the channel-3 registry pin
+        // (spec 09 §9) both name PRIMARY keyids; a signature issuing
+        // from a signing SUBKEY resolves to its primary before the
+        // compare.
+        for (pin, origin) in [
+            (declared_keyid, "the release index entry declares"),
+            (self.signer_pin.as_deref(), "the registry pins"),
+        ] {
+            if let Some(want) = pin {
+                let want = want.to_lowercase();
+                if issuer != want && primary != want {
+                    return fail(
+                        EX_TEBAKO_TRUST,
+                        format!(
+                            "{what} is signed by {primary}, but {origin} {want} — the signer key changed (spec 09 §9); refusing to install or execute"
+                        ),
+                    );
+                }
+            }
+        }
+        Ok(primary)
+    }
+
+    /// The per-artifact leg (spec 09 §4): fetch the declared `.asc` (a
+    /// DECLARED asc that does not fetch → 71) and verify the downloaded
+    /// bytes BEFORE the sha256 check. Returns the verified signer's
+    /// resolved PRIMARY keyid.
+    fn verify_asset(
+        &self,
+        dir_url: &str,
+        local: bool,
+        tmp_dir: &Path,
+        asset_path: &Path,
+        asset: &str,
+        declared: &EntrySignature,
+    ) -> Result<String, ShimError> {
+        // The asc names an exact asset within the same release — a bare
+        // file name, never a path (spec 13 §2a).
+        if declared.asc.contains('/') || declared.asc.contains('\\') {
+            return fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "the release index's signature.asc for {asset} (\"{}\") is not a bare asset name — the release is malformed",
+                    declared.asc
+                ),
+            );
+        }
+        let asc_url = format!("{dir_url}/{}", declared.asc);
+        let asc_tmp = tmp_dir.join(&declared.asc);
+        if fetch_url(&asc_url, local, &asc_tmp).is_err() {
+            return fail(
+                EX_TEBAKO_SIGNATURE,
+                format!(
+                    "the release index declares signature \"{}\" for {asset} but it did not fetch from {asc_url} — a declared signature that does not fetch is refused (spec 09 §4)",
+                    declared.asc
+                ),
+            );
+        }
+        let asc = std::fs::read(&asc_tmp).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_IO,
+                format!(
+                    "cannot read the fetched signature {}: {e}",
+                    asc_tmp.display()
+                ),
+            )
+        })?;
+        let bytes = std::fs::read(asset_path).map_err(|e| {
+            ShimError::new(
+                EX_TEBAKO_IO,
+                format!("cannot read the downloaded {}: {e}", asset_path.display()),
+            )
+        })?;
+        self.verify_detached(asset, &bytes, &asc, Some(&declared.keyid))
+    }
+}
+
+/// The index-trust resolution (spec 09 §4): probe the path's index forms
+/// in preference order (manifest.json → SHA256SUMS.txt); the FIRST form
+/// whose detached `.asc` verifies is the consumed form — its digests
+/// alone are trusted from that point. A present asc that verifies
+/// Invalid → 71, a signer outside the trusted keyring → 72 (strict); an
+/// ABSENT asc moves to the next form — the unsigned rule decides after.
+fn verify_index(
+    trust: &FetchTrust,
+    base: &str,
     local: bool,
-    asset: &str,
+    tag: &str,
+    manifest_text: &str,
+    tmp_dir: &Path,
+) -> Result<IndexTrust, ShimError> {
+    let fetch_opt = |name: &str| -> Option<Vec<u8>> {
+        let tmp = tmp_dir.join(name);
+        fetch_url(&format!("{base}/{tag}/{name}"), local, &tmp).ok()?;
+        std::fs::read(&tmp).ok()
+    };
+    if let Some(asc) = fetch_opt("manifest.json.asc") {
+        let signer =
+            trust.verify_detached("manifest.json", manifest_text.as_bytes(), &asc, None)?;
+        return Ok(IndexTrust::VerifiedManifest(signer));
+    }
+    if let Some(asc) = fetch_opt("SHA256SUMS.txt.asc") {
+        // A dangling asc over an unfetchable body is not a verified form
+        // — the unsigned rule decides.
+        let Some(sums) = fetch_opt("SHA256SUMS.txt").and_then(|b| String::from_utf8(b).ok()) else {
+            return Ok(IndexTrust::Unverified);
+        };
+        let signer = trust.verify_detached("SHA256SUMS.txt", sums.as_bytes(), &asc, None)?;
+        return Ok(IndexTrust::VerifiedSums { text: sums, signer });
+    }
+    Ok(IndexTrust::Unverified)
+}
+
+/// Download + verify + atomically install one asset into an entry staging
+/// dir. The spec 09 §4 order: the DECLARED signature verifies first
+/// (invalid → 71, untrusted signer / pin mismatch → 72), then the sha256
+/// (70). `fetch_name` is the release-asset spelling (the URL's last
+/// segment); `install_name` the name it stages under (the windows dll
+/// facet's PE name — everywhere else the two are one). Returns the
+/// verified sha256 plus the verified signer's PRIMARY keyid when a
+/// signature was declared and verified.
+#[allow(clippy::too_many_arguments)]
+fn install_asset(
+    dir_url: &str,
+    local: bool,
+    fetch_name: &str,
+    install_name: &str,
     tmp_dir: &Path,
     expected: &str,
-) -> Result<String, ShimError> {
-    let tmp_asset = tmp_dir.join(asset);
-    if fetch_url(url, local, &tmp_asset).is_err() {
+    sig: Option<(&EntrySignature, &FetchTrust)>,
+) -> Result<(String, Option<String>), ShimError> {
+    let url = format!("{dir_url}/{fetch_name}");
+    let tmp_asset = tmp_dir.join(install_name);
+    if fetch_url(&url, local, &tmp_asset).is_err() {
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
@@ -995,6 +1510,12 @@ fn install_asset(
             ),
         );
     }
+    let signer = match sig {
+        Some((declared, trust)) => {
+            Some(trust.verify_asset(dir_url, local, tmp_dir, &tmp_asset, fetch_name, declared)?)
+        }
+        None => None,
+    };
     let actual = sha256_file_hex(&tmp_asset).map_err(|e| {
         ShimError::new(
             EX_TEBAKO_IO,
@@ -1006,12 +1527,12 @@ fn install_asset(
         return fail(
             EX_TEBAKO_SHA,
             format!(
-                "SHA256 mismatch for downloaded runtime {asset} — refusing to install or execute\n  expected: {} (from the release index)\n  actual:   {actual}\n  the download was deleted; the cache was not touched",
+                "SHA256 mismatch for downloaded runtime {fetch_name} — refusing to install or execute\n  expected: {} (from the release index)\n  actual:   {actual}\n  the download was deleted; the cache was not touched",
                 expected.to_lowercase()
             ),
         );
     }
-    Ok(actual)
+    Ok((actual, signer))
 }
 
 /// What the staging step produced: a fresh install (the staged names)
@@ -1037,6 +1558,7 @@ enum StageOutcome {
 fn download_runtime(
     engine: &str,
     pref: &RuntimePref,
+    source: &RuntimeSource,
     ctx: &Ctx,
 ) -> Result<CachedRuntime, ShimError> {
     let platform = platform_string();
@@ -1070,9 +1592,13 @@ fn download_runtime(
         });
     }
 
-    let base_raw = releases_base(ctx);
-    let base = skip_file_scheme(&base_raw).to_string();
-    let local = base_is_local(&base_raw);
+    let base = skip_file_scheme(&source.base).to_string();
+    let local = base_is_local(&source.base);
+    // The release tag every fetch of this download rides (spec 05 §2):
+    // channel 3 pins the registry-named tag; the other channels ride the
+    // pick's own tebako line (the factory's `v<tebako>` convention).
+    let tag = source.tag_for(&pref.tebako);
+    let dir_url = format!("{base}/{tag}");
 
     if offline_mode(ctx) {
         return fail(
@@ -1151,8 +1677,8 @@ fn download_runtime(
         // a contract refusal never downloads a byte of the runtime. No
         // readable manifest is the same pre-era signal (no old-path
         // readers; the SHA256SUMS fallback covers checksums only).
-        let manifest_url = format!("{base}/v{}/manifest.json", pref.tebako);
-        let manifest_text = fetch_manifest_text(&base, local, &pref.tebako, &tmp_dir).ok_or_else(|| {
+        let manifest_url = format!("{dir_url}/manifest.json");
+        let manifest_text = fetch_manifest_text(&base, local, &tag, &tmp_dir).ok_or_else(|| {
             ShimError::new(
                 EX_TEBAKO_CONTRACT,
                 format!(
@@ -1180,6 +1706,69 @@ fn download_runtime(
         if file_exists(&entry_dir.join(&asset)) {
             return Ok(StageOutcome::Raced { asset, image_asset });
         }
+
+        // G1 (spec 09 §4): the consumed index form's detached signature
+        // verifies BEFORE its digests are trusted — and before any asset
+        // byte downloads.
+        let trust = FetchTrust::build(source, ctx)?;
+        let index_trust = verify_index(&trust, &base, local, &tag, &manifest_text, &tmp_dir)?;
+
+        // The declared per-artifact signatures (spec 13 §2a): a PRESENT
+        // but torn block is the named error — never a silent downgrade
+        // to the unsigned rule.
+        let declared_sig = |facet: Option<&str>| -> Result<Option<EntrySignature>, ShimError> {
+            entry_match
+                .map(|e| entry_signature(e, facet))
+                .transpose()
+                .map(Option::flatten)
+                .map_err(|m| {
+                    ShimError::new(
+                        EX_TEBAKO_MANIFEST,
+                        format!("runtime \"{runtime_ref}\": the release index's {m}"),
+                    )
+                })
+        };
+        let exe_sig = declared_sig(None)?;
+        let image_sig = declared_sig(Some("image"))?;
+        let dll_sig = declared_sig(Some("dll"))?;
+
+        // The unsigned rule (spec 09 §4): no verified index form AND no
+        // declared per-artifact signature — the pre-signing keep-forever
+        // line. Loud + journaled on EVERY fetch; refused (71) under
+        // TEBAKO_REQUIRE_SIGNED=1 — before a byte of the runtime moves.
+        let any_declared = exe_sig.is_some() || image_sig.is_some() || dll_sig.is_some();
+        if index_trust.signer().is_none() && !any_declared {
+            if require_signed(ctx) {
+                return fail(
+                    EX_TEBAKO_SIGNATURE,
+                    format!(
+                        "runtime \"{runtime_ref}\" is unsigned — no signed release index form and no declared per-artifact signature — and TEBAKO_REQUIRE_SIGNED=1 is set: refusing to install or execute\n  unset TEBAKO_REQUIRE_SIGNED to accept the unsigned fetch (it is journaled), or pin a signed runtime release"
+                    ),
+                );
+            }
+            eprintln!(
+                "tebako-shim: warning: runtime \"{runtime_ref}\" is unsigned — no verifiable signature on the release; the sha256 digest is the only integrity anchor (spec 09 §4's pre-signing keep-forever line)"
+            );
+            journal(
+                &ctx.home,
+                &format!(
+                    "event=unsigned-runtime-fetch runtime_ref={runtime_ref} base={} channel={}",
+                    source.base, source.channel
+                ),
+            );
+        }
+
+        // The contract card rides the CONSUMED index form: a sums-only
+        // verified fetch has no trusted card carrier — the spec 18 C2
+        // refusal (75), never a card read from an unverified manifest.
+        if matches!(index_trust, IndexTrust::VerifiedSums { .. }) {
+            return fail(
+                EX_TEBAKO_CONTRACT,
+                format!(
+                    "runtime \"{runtime_ref}\": only SHA256SUMS.txt verified — manifest.json is unsigned, so no trusted release contract card exists — refusing to install or execute (spec 09 §4 + spec 18 C2)\n  a spec-conformant factory signs every index form (spec 13 §2a); report the release"
+                ),
+            );
+        }
         contract_gate(
             &runtime_ref,
             &manifest_text,
@@ -1191,14 +1780,14 @@ fn download_runtime(
         )?;
 
         // executable
-        let exe_url = format!("{base}/v{}/{asset}", pref.tebako);
         let (exe_sha, (diag_m, diag_s)) = expected_checksum(
             &base,
             local,
-            &pref.tebako,
+            &tag,
             &asset,
             &tmp_dir,
             Some(&manifest_text),
+            &index_trust,
         )?;
         const DIAG: [&str; 5] = [
             "not tried",
@@ -1211,12 +1800,26 @@ fn download_runtime(
             ShimError::new(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
-                    "no checksum for {asset} in the release\n  tried: {base}/v{abi}/manifest.json ({})\n         {base}/v{abi}/SHA256SUMS.txt ({})",
-                    DIAG[diag_m], DIAG[diag_s], abi = pref.tebako
+                    "no checksum for {asset} in the release\n  tried: {dir_url}/manifest.json ({})\n         {dir_url}/SHA256SUMS.txt ({})",
+                    DIAG[diag_m], DIAG[diag_s]
                 ),
             )
         })?;
-        let actual = install_asset(&exe_url, local, &asset, &tmp_dir, &expected)?;
+        let mut signers: Vec<String> = index_trust
+            .signer()
+            .map(str::to_string)
+            .into_iter()
+            .collect();
+        let (actual, exe_signer) = install_asset(
+            &dir_url,
+            local,
+            &asset,
+            &asset,
+            &tmp_dir,
+            &expected,
+            exe_sig.as_ref().map(|s| (s, &trust)),
+        )?;
+        signers.extend(exe_signer);
         make_executable(&tmp_dir.join(&asset));
         // image-era runtime image: same mirror/offline/verify rules —
         // when the release index carries it. The image is optional only
@@ -1237,15 +1840,23 @@ fn download_runtime(
         let (image_sha, _) = expected_checksum(
             &base,
             local,
-            &pref.tebako,
+            &tag,
             &image_asset,
             &tmp_dir,
             Some(&manifest_text),
+            &index_trust,
         )?;
         let has_image = if let Some(image_expected) = image_sha {
-            let image_url = format!("{base}/v{}/{image_asset}", pref.tebako);
-            let image_actual =
-                install_asset(&image_url, local, &image_asset, &tmp_dir, &image_expected)?;
+            let (image_actual, image_signer) = install_asset(
+                &dir_url,
+                local,
+                &image_asset,
+                &image_asset,
+                &tmp_dir,
+                &image_expected,
+                image_sig.as_ref().map(|s| (s, &trust)),
+            )?;
+            signers.extend(image_signer);
             make_readonly(&tmp_dir.join(&image_asset));
             let _ = std::fs::write(
                 tmp_dir.join(format!("{image_asset}.sha256")),
@@ -1253,7 +1864,7 @@ fn download_runtime(
             );
             let _ = std::fs::write(
                 tmp_dir.join(format!("{image_asset}.origin")),
-                format!("runtime_ref={runtime_ref}\nurl={image_url}\nsha256={image_actual}\n"),
+                format!("runtime_ref={runtime_ref}\nurl={dir_url}/{image_asset}\nsha256={image_actual}\n"),
             );
             true
         } else {
@@ -1278,8 +1889,16 @@ fn download_runtime(
                     ),
                 );
             }
-            let dll_url = format!("{base}/v{}/{dll_asset}", pref.tebako);
-            let dll_actual = install_asset(&dll_url, local, &install_as, &tmp_dir, &dll_expected)?;
+            let (dll_actual, dll_signer) = install_asset(
+                &dir_url,
+                local,
+                &dll_asset,
+                &install_as,
+                &tmp_dir,
+                &dll_expected,
+                dll_sig.as_ref().map(|s| (s, &trust)),
+            )?;
+            signers.extend(dll_signer);
             make_readonly(&tmp_dir.join(&install_as));
             let _ = std::fs::write(
                 tmp_dir.join(format!("{install_as}.sha256")),
@@ -1287,14 +1906,29 @@ fn download_runtime(
             );
             let _ = std::fs::write(
                 tmp_dir.join(format!("{install_as}.origin")),
-                format!("runtime_ref={runtime_ref}\nurl={dll_url}\nsha256={dll_actual}\n"),
+                format!("runtime_ref={runtime_ref}\nurl={dir_url}/{dll_asset}\nsha256={dll_actual}\n"),
             );
         }
         let _ = std::fs::write(tmp_dir.join("sha256"), format!("{actual}  {asset}\n"));
         let _ = std::fs::write(
             tmp_dir.join("origin"),
-            format!("runtime_ref={runtime_ref}\nurl={exe_url}\nsha256={actual}\n"),
+            format!("runtime_ref={runtime_ref}\nurl={dir_url}/{asset}\nsha256={actual}\n"),
         );
+        // spec 05 §2's journal rule: every download records the base, the
+        // channel that supplied it, and the verification strength.
+        if !signers.is_empty() {
+            signers.sort();
+            signers.dedup();
+            journal(
+                &ctx.home,
+                &format!(
+                    "event=runtime-fetch-verified runtime_ref={runtime_ref} base={} channel={} signer={}",
+                    source.base,
+                    source.channel,
+                    signers.join(",")
+                ),
+            );
+        }
         Ok(StageOutcome::Installed {
             has_image,
             asset,
@@ -1367,5 +2001,279 @@ fn download_runtime(
             lock_release(lock);
             Err(e)
         }
+    }
+}
+
+// ---------------------------------------------------------------------
+// unit tests: the per-engine download-source chain (spec 05 §2, #567)
+// ---------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::UserConfig;
+    use std::path::PathBuf;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn temp_home(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "tebako-shim-runtime-test-{tag}-{}-{}",
+            std::process::id(),
+            COUNTER.fetch_add(1, Ordering::SeqCst)
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn test_ctx(home: &Path) -> Ctx {
+        Ctx {
+            home: home.to_path_buf(),
+            cwd: home.to_path_buf(),
+            env: std::collections::BTreeMap::new(),
+        }
+    }
+
+    fn reqs(engine: &str, constraint: &str) -> RuntimeRequirements {
+        RuntimeRequirements::one(RuntimeRequirement {
+            engine: engine.to_string(),
+            constraint: tpkg::Constraint::new(constraint).unwrap(),
+            implementation: None,
+            abi: None,
+        })
+    }
+
+    fn pref(version: &str, tebako: &str, source: Option<&str>) -> RuntimePref {
+        RuntimePref {
+            version: version.to_string(),
+            tebako: tebako.to_string(),
+            source: source.map(str::to_string),
+        }
+    }
+
+    /// Write a registry file and return its `file://` ref.
+    fn registry_ref(home: &Path, name: &str, yaml: &str) -> String {
+        let path = home.join(name);
+        std::fs::write(&path, yaml).unwrap();
+        tebako_http::file_url(&path)
+    }
+
+    const OPENJDK_REGISTRY: &str = r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-openjdk
+    kind: runtime
+    engine: java
+    implementation: temurin
+    versions:
+      - version: '21.0.11'
+        platforms: universal
+        release: {ref: 'tfs:github:tamatebako/tebako-runtime-openjdk:v2.5.0'}
+      - version: '21.0.12'
+        platforms: universal
+        release: {ref: 'tfs:github:tamatebako/tebako-runtime-openjdk:v2.5.1'}
+        signature: {keyid: 'efc3c250f7862a48', asc: 'openjdk-21.0.12-universal.tfs.asc'}
+"#;
+
+    #[test]
+    fn config_source_wins_and_shadows_a_differing_mirror() {
+        let home = temp_home("chain-source");
+        let mut ctx = test_ctx(&home);
+        ctx.env.insert(
+            "TEBAKO_RUNTIME_MIRROR".to_string(),
+            "https://mirror.invalid/releases".to_string(),
+        );
+        let p = pref(
+            "21.0.12",
+            "2.5.0",
+            Some("https://pinned.example.com/releases"),
+        );
+        let cfg = UserConfig::default();
+        let source = runtime_source(&reqs("java", ">= 21"), Some(&p), &cfg, &ctx).unwrap();
+        assert_eq!(source.base, "https://pinned.example.com/releases");
+        assert_eq!(source.channel, "config-source");
+        assert_eq!(source.tag, None, "a bare base pin rides the tebako line");
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(
+            journal.contains("event=runtime-source-shadow engine=java"),
+            "{journal}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_mirror_env_is_channel_2() {
+        let home = temp_home("chain-mirror");
+        let mut ctx = test_ctx(&home);
+        ctx.env.insert(
+            "TEBAKO_RUNTIME_MIRROR".to_string(),
+            "https://mirror.invalid/releases".to_string(),
+        );
+        let p = pref("21.0.12", "2.5.0", None);
+        let cfg = UserConfig::default();
+        let source = runtime_source(&reqs("java", ">= 21"), Some(&p), &cfg, &ctx).unwrap();
+        assert_eq!(source.base, "https://mirror.invalid/releases");
+        assert_eq!(source.channel, "mirror-env");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_channel_derives_base_tag_and_pin() {
+        // The golden openjdk v2.5.1 shape: the registry version's
+        // release.ref names the TAG (v2.5.1) while the rows ride their
+        // own tebako line (2.5.0) — the tag is decoupled from the
+        // identity line.
+        let home = temp_home("chain-registry");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", OPENJDK_REGISTRY);
+        let cfg = UserConfig {
+            registries: vec![reg],
+            ..UserConfig::default()
+        };
+        let source = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap();
+        assert_eq!(source.channel, "registry");
+        assert_eq!(
+            source.base,
+            "https://github.com/tamatebako/tebako-runtime-openjdk/releases/download"
+        );
+        assert_eq!(
+            source.tag.as_deref(),
+            Some("v2.5.1"),
+            "the newest SATISFYING version's tag"
+        );
+        assert_eq!(source.signer_pin.as_deref(), Some("efc3c250f7862a48"));
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_channel_matches_the_constraint_and_the_implementation() {
+        let home = temp_home("chain-registry-match");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", OPENJDK_REGISTRY);
+        let cfg = UserConfig {
+            registries: vec![reg],
+            ..UserConfig::default()
+        };
+        // A constraint no registry version satisfies: the channel does
+        // not answer (the named no-channel error for a non-ruby engine).
+        let err = runtime_source(&reqs("java", ">= 25"), None, &cfg, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(err.message.contains("no download source"), "{err:?}");
+        // An implementation the registry entry does not carry: same.
+        let req = RuntimeRequirements::one(RuntimeRequirement {
+            engine: "java".to_string(),
+            constraint: tpkg::Constraint::new(">= 21").unwrap(),
+            implementation: Some("graalvm".to_string()),
+            abi: None,
+        });
+        let err = runtime_source(&req, None, &cfg, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn an_engine_less_runtime_entry_stays_invisible_to_the_chain() {
+        // The openjdk golden gap: a `kind: runtime` entry without the
+        // payload-level `engine:` key is pre-discovery legacy — resolvable
+        // by name, never an edge answer.
+        let home = temp_home("chain-engineless");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-openjdk
+    kind: runtime
+    versions:
+      - version: '21.0.12'
+        platforms: universal
+        release: {ref: 'tfs:github:tamatebako/tebako-runtime-openjdk:v2.5.1'}
+"#,
+        );
+        let cfg = UserConfig {
+            registries: vec![reg],
+            ..UserConfig::default()
+        };
+        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(err.message.contains("kind: runtime"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_non_github_release_ref_is_journaled_and_skipped() {
+        let home = temp_home("chain-nongithub");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(
+            &home,
+            "tpkg-registry.yaml",
+            r#"
+schema_version: 1
+payloads:
+  - name: tebako-runtime-python
+    kind: runtime
+    engine: python
+    versions:
+      - version: '3.13.5'
+        platforms: universal
+        release: {ref: 'tfs:gitlab:acme/tebako-runtime-python:v0.3.0'}
+"#,
+        );
+        let cfg = UserConfig {
+            registries: vec![reg],
+            ..UserConfig::default()
+        };
+        let err = runtime_source(&reqs("python", ">= 3.13"), None, &cfg, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(
+            journal.contains("event=runtime-source-registry-skip engine=python"),
+            "{journal}"
+        );
+        assert!(journal.contains("gitlab"), "{journal}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_default_channel_serves_ruby_only() {
+        let home = temp_home("chain-default");
+        let ctx = test_ctx(&home);
+        let cfg = UserConfig::default();
+        let source = runtime_source(&reqs("ruby", ">= 3.3"), None, &cfg, &ctx).unwrap();
+        assert_eq!(source.channel, "default");
+        assert_eq!(source.base, DEFAULT_RELEASES_BASE);
+        assert_eq!(source.tag, None);
+        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        for channel in [
+            "source:",
+            "TEBAKO_RUNTIME_MIRROR",
+            "kind: runtime",
+            "hosts ruby runtimes only",
+        ] {
+            assert!(err.message.contains(channel), "{channel} — {err:?}");
+        }
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn tag_for_rides_the_line_unless_pinned() {
+        let unpinned = RuntimeSource {
+            base: "https://x".to_string(),
+            tag: None,
+            channel: "default",
+            signer_pin: None,
+        };
+        assert_eq!(unpinned.tag_for("0.16.22"), "v0.16.22");
+        let pinned = RuntimeSource {
+            base: "https://x".to_string(),
+            tag: Some("v2.5.1".to_string()),
+            channel: "registry",
+            signer_pin: None,
+        };
+        assert_eq!(pinned.tag_for("2.5.0"), "v2.5.1");
     }
 }
