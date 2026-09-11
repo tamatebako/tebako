@@ -965,7 +965,7 @@ jobs:
       # × the windows-signing environment this job runs in.
       - name: Azure login (OIDC, spec 34 §5)
         if: steps.signgate.outputs.armed == 'true'
-        uses: azure/login@v2 # TODO(sha-pin): pin on first armed run
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2 (sha-pinned 2026-09-11; proven on armed dry-run 34490242097)
         with:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
@@ -978,7 +978,7 @@ jobs:
       # this action's @v1 (deviation from the spec's draft shape).
       - name: Sign the staged PE artifacts (spec 34 §5)
         if: steps.signgate.outputs.armed == 'true'
-        uses: Azure/artifact-signing-action@v1 # TODO(sha-pin): pin on first armed run
+        uses: Azure/artifact-signing-action@b443cf8ea4124818d2ea9f043cba29fc3ec47b16 # v1 (sha-pinned 2026-09-11; proven on armed dry-run 34490242097)
         with:
           endpoint: ${{ vars.AZURE_ENDPOINT }}
           signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT_NAME }}
