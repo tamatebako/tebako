@@ -309,16 +309,14 @@ pub fn synthesize(
             // the entrypoint/runtime-dep note. The spawn surface (T2:
             // the preload's posix_spawn path) reports the same grammar
             // and joins exec here.
-            "exec" | "spawn" => {
-                if verdict == "host" && Path::new(&path).is_absolute() {
-                    host_execs
-                        .entry(path.clone())
-                        .or_insert(Observation {
-                            count: 0,
-                            first_ts: String::new(),
-                        })
-                        .record(&ts);
-                }
+            "exec" | "spawn" if verdict == "host" && Path::new(&path).is_absolute() => {
+                host_execs
+                    .entry(path.clone())
+                    .or_insert(Observation {
+                        count: 0,
+                        first_ts: String::new(),
+                    })
+                    .record(&ts);
             }
             _ => {}
         }

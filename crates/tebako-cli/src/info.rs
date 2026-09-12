@@ -561,7 +561,7 @@ fn store(home: &Path, json: bool) -> Result<String, TebakoError> {
         .map(|s| (s.to_string(), dir_size(&home.join(s))))
         .collect();
     let total: u64 = sizes.iter().map(|(_, n)| *n).sum();
-    sizes.sort_by(|a, b| b.1.cmp(&a.1));
+    sizes.sort_by_key(|a| std::cmp::Reverse(a.1));
     if json {
         return Ok(json_str(&obj(vec![
             ("info_schema", tebako_json::Value::Number("1".into())),

@@ -405,14 +405,14 @@ fn trust_section(home: &Path, env: &std::collections::BTreeMap<String, String>) 
                     let Some(version) = fname.strip_suffix(".manifest.yaml") else {
                         continue;
                     };
-                    match tebako_shim::manifest::Manifest::load(&f.path()) {
-                        Ok(m) => match m.payload_manifest().identity.signing.state {
+                    // a corrupt mirror is the dispatch section's finding
+                    if let Ok(m) = tebako_shim::manifest::Manifest::load(&f.path()) {
+                        match m.payload_manifest().identity.signing.state {
                             tpkg::SigningState::Signed => signed += 1,
                             tpkg::SigningState::Unsigned => {
                                 unsigned.push(format!("{name} {version}"))
                             }
-                        },
-                        Err(_) => {} // a corrupt mirror is the dispatch section's finding
+                        }
                     }
                 }
             }
