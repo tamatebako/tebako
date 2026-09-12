@@ -81,6 +81,7 @@ pub mod run;
 pub mod runner;
 pub mod scenario;
 pub mod sdk;
+pub mod spawn;
 pub mod strip;
 pub mod suite;
 pub mod trace;
@@ -278,6 +279,15 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
     // exactly what press tested (spec 23 §4).
     let mut compose_slices: Vec<compose::ComposeSlice> = Vec::new();
     let mut runtime_carried = opts.mode == PressMode::Fat;
+    // The spawn walk's (preset, home) inputs (spec 23 §13.6): the compose
+    // document's resolved pair when one drives the press; else the
+    // --mode-derived preset and a lazily resolved store home (a spawn-less
+    // plain press never pays for it).
+    let mut spawn_preset = match opts.mode {
+        PressMode::Fat => tpkg::ComposePreset::SelfContained,
+        _ => tpkg::ComposePreset::SharedRuntime,
+    };
+    let mut spawn_home: Option<PathBuf> = None;
     if let Some(doc) = &compose_doc {
         let mut doc = doc.clone();
         let preset = if opts.mode_explicit {
@@ -306,6 +316,8 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
             .runtime
             .carry
             .unwrap_or_else(|| preset.default_carry(true));
+        spawn_preset = preset;
+        spawn_home = Some(home);
     }
 
     let mut images: Vec<(PathBuf, String, u32)> = vec![(
@@ -422,18 +434,30 @@ pub fn press(opts: &PressOptions) -> Result<PathBuf, TebakoError> {
             source: Some(s.source.clone()),
         });
     }
+    // The lock's spawned rows (spec 23 §13.6, spec 30 §2, spec 32 §6):
+    // press walks the app image's L1 `requires:` — every kind: runtime
+    // edge and every expose-carrying kind: executable edge — resolves
+    // each exactly as managed dispatch would, and pins the carried bytes
+    // (the slots follow the app/slice/carried-runtime slots in walk
+    // order). A spawn-less app image composes no rows and never resolves
+    // the store home; `tebako-pkg validate` cross-checks the mirror.
+    let spawn = spawn::resolve_spawned_edges(
+        || match spawn_home {
+            Some(home) => Ok(home),
+            None => compose::tebako_home(),
+        },
+        &tebako_resolve::Fetcher::new(),
+        &app_image,
+        &stem,
+        spawn_preset,
+        install::host_platform()?,
+        images.len() as u32,
+    )?;
+    images.extend(spawn.images);
     let lock = tpkg::PackageLock {
         runtime: Some(lock_runtime),
         slices: lock_slices,
-        // The D2 press does not yet mirror the app payload's L1
-        // `requires[].kind: runtime` (spec 30 §1) or expose-carrying
-        // `requires[].kind: executable` (spec 32 §6) edges into lock
-        // rows — packages declaring spawned edges hand-author the lock's
-        // `spawned[]` block (packed-mn) and `tebako-pkg validate`
-        // cross-checks the mirror (both row shapes). Auto-mirroring
-        // (press-time runtime/payload resolution for the pick + pins) is
-        // the follow-up.
-        spawned: Vec::new(),
+        spawned: spawn.rows,
     };
 
     let mut runtime_ref = format!("ruby@{ruby_ver};tebako={}", opts.tebako_version);

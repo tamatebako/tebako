@@ -259,6 +259,62 @@ pub fn entry_contract_version(entry_dir: &Path, exe_name: &str) -> Option<String
 }
 
 // ---------------------------------------------------------------------
+// the windows dll facet (tebako-runtime-ruby#40) — one grammar, read here
+// ---------------------------------------------------------------------
+
+/// The release index's `dll` facet of the exe entry `exe_name`
+/// (tebako-runtime-ruby#40 — the additive `dll` key, windows packages
+/// only): the dll asset's `filename`, the bare PE name it installs under
+/// next to the exe (`install_as` — the factory's RubyVersion#msys_dll_name
+/// is its single owner; never derived), and the pinned `sha256`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntryDll {
+    pub filename: String,
+    pub install_as: String,
+    pub sha256: String,
+}
+
+/// Parse the `dll` facet out of a release-index text for the exe entry
+/// `exe_name`. `None` when the entry carries no `dll` key (every POSIX
+/// entry) or the key is incomplete — the facet is manifest-keyed.
+pub fn entry_dll_from_index(text: &str, exe_name: &str) -> Option<EntryDll> {
+    let parsed = tebako_json::parse(text).ok()?;
+    let tebako_json::Value::Array(entries) = &parsed else {
+        return None;
+    };
+    entries.iter().find_map(|entry| {
+        if entry
+            .find("filename")
+            .and_then(|f| f.as_string())
+            .as_deref()
+            != Some(exe_name)
+        {
+            return None;
+        }
+        let dll = entry.find("dll")?;
+        let filename = dll.find("filename").and_then(|v| v.as_string())?;
+        let install_as = dll.find("install_as").and_then(|v| v.as_string())?;
+        let sha256 = dll.find("sha256").and_then(|v| v.as_string())?;
+        Some(EntryDll {
+            filename,
+            install_as,
+            sha256,
+        })
+    })
+}
+
+/// The cached entry's dll facet (`<entry_dir>/manifest.json` + the exe
+/// entry's `dll` key); `None` when the entry has no cached index mirror,
+/// no entry for the exe, or no complete facet. A carried-staged cache
+/// entry (spec 23 §13.6's lock install) carries no index, so its dll
+/// records nowhere — the press that carried it already pinned the bytes
+/// in the lock row.
+pub fn entry_dll(entry_dir: &Path, exe_name: &str) -> Option<EntryDll> {
+    let text = std::fs::read_to_string(entry_dir.join("manifest.json")).ok()?;
+    entry_dll_from_index(&text, exe_name)
+}
+
+// ---------------------------------------------------------------------
 // spec 33 §1: the on_runtime release-index mirror
 // ---------------------------------------------------------------------
 
@@ -1464,5 +1520,71 @@ mod tests {
         let err = on_runtime_mirror(&dir3, &exe).unwrap_err();
         assert!(err.contains("constraint"), "{err}");
         let _ = std::fs::remove_dir_all(&tmp3);
+    }
+
+    // -----------------------------------------------------------------
+    // the windows dll facet grammar (tebako-runtime-ruby#40)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn entry_dll_from_index_reads_the_complete_facet_only() {
+        let index = r#"[
+            {"filename": "exe-a", "dll": {"filename": "ruby340.dll",
+                "install_as": "x64-ucrt-ruby340.dll",
+                "sha256": "aa"}},
+            {"filename": "exe-b", "dll": {"filename": "d.dll", "install_as": "d.dll"}},
+            {"filename": "exe-c"}
+        ]"#;
+        let dll = entry_dll_from_index(index, "exe-a").expect("the full facet reads");
+        assert_eq!(
+            dll,
+            EntryDll {
+                filename: "ruby340.dll".to_string(),
+                install_as: "x64-ucrt-ruby340.dll".to_string(),
+                sha256: "aa".to_string(),
+            }
+        );
+        // An incomplete facet (no sha256) and an entry without the key
+        // both read as None — never a guessed half-facet.
+        assert_eq!(entry_dll_from_index(index, "exe-b"), None);
+        assert_eq!(entry_dll_from_index(index, "exe-c"), None);
+        assert_eq!(entry_dll_from_index(index, "exe-never-released"), None);
+        assert_eq!(entry_dll_from_index("not json", "exe-a"), None);
+    }
+
+    #[test]
+    fn entry_dll_reads_the_cached_index_mirror() {
+        let tmp = std::env::temp_dir().join(format!(
+            "tpkg-entry-dll-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+        ));
+        let platform = platform_string();
+        let exe = entry_exe_name("4.0.6", "0.16.6", platform);
+        fixture_entry(
+            &tmp,
+            "4.0.6",
+            "0.16.6",
+            true,
+            Some(format!(
+                "{{\"filename\": \"{exe}\", \"dll\": {{\"filename\": \"ruby406.dll\", \"install_as\": \"x64-ucrt-ruby406.dll\", \"sha256\": \"bb\"}}}}"
+            )),
+        );
+        let dir = tmp
+            .join("runtimes")
+            .join(format!("java-4.0.6-0.16.6-{platform}"));
+        let dll = entry_dll(&dir, &exe).expect("the mirror's facet reads");
+        assert_eq!(dll.install_as, "x64-ucrt-ruby406.dll");
+        assert_eq!(dll.sha256, "bb");
+        // No cached index (the carried-staged entry): no dll recorded.
+        fixture_entry(&tmp, "4.0.5", "0.16.6", true, None);
+        let staged = tmp
+            .join("runtimes")
+            .join(format!("java-4.0.5-0.16.6-{platform}"));
+        let staged_exe = entry_exe_name("4.0.5", "0.16.6", platform);
+        assert_eq!(entry_dll(&staged, &staged_exe), None);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

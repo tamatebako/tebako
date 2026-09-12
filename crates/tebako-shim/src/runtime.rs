@@ -55,8 +55,8 @@ const LOCK_POLL_MS: u64 = 200;
 // tpkg (spec 00 §10 — one owner, every consumer flows): the shim's
 // resolution/download layers below build on these re-exports.
 use tpkg::runtime_store::{
-    entry_asset_names, entry_filename, entry_matches, entry_meta, entry_signature,
-    newest_compatible_any, release_index_entry, EntrySignature,
+    entry_asset_names, entry_dll_from_index, entry_filename, entry_matches, entry_meta,
+    entry_signature, newest_compatible_any, release_index_entry, EntrySignature,
 };
 pub use tpkg::runtime_store::{
     exe_suffix, newest_compatible, platform_string, scan_all_cached, scan_cached, CachedRuntime,
@@ -1084,34 +1084,13 @@ fn sha_from_manifest(text: &str, asset: &str) -> Result<String, ()> {
     Err(())
 }
 
-/// The release manifest's ruby DLL facet for the exe entry `asset`
-/// (tebako-runtime-ruby#40 — the additive `dll` key, windows packages
-/// only): `(dll asset filename, install_as, sha256)`. `None` when the
-/// entry carries no `dll` key (every POSIX entry) or the key is
-/// incomplete — the facet is manifest-keyed: the PE name (`install_as`)
-/// exists only there, never derived (the factory's
-/// RubyVersion#msys_dll_name is its single owner).
-fn dll_from_manifest(text: &str, asset: &str) -> Option<(String, String, String)> {
-    let parsed = tebako_json::parse(text).ok()?;
-    let tebako_json::Value::Array(entries) = &parsed else {
-        return None;
-    };
-    entries.iter().find_map(|entry| {
-        if entry
-            .find("filename")
-            .and_then(|f| f.as_string())
-            .as_deref()
-            != Some(asset)
-        {
-            return None;
-        }
-        let dll = entry.find("dll")?;
-        let filename = dll.find("filename").and_then(|v| v.as_string())?;
-        let install_as = dll.find("install_as").and_then(|v| v.as_string())?;
-        let sha256 = dll.find("sha256").and_then(|v| v.as_string())?;
-        Some((filename, install_as, sha256))
-    })
-}
+// The release manifest's ruby DLL facet (tebako-runtime-ruby#40 — the
+// additive `dll` key, windows packages only) is parsed in tpkg
+// (`runtime_store::entry_dll_from_index`, the single grammar owner): the
+// shim reads it at download, the press's spawned-row walk from the
+// cached index. The PE name (`install_as`) exists only in the manifest,
+// never derived (the factory's RubyVersion#msys_dll_name is its single
+// owner).
 
 /// SHA256SUMS.txt fallback: "<64hex><spaces>[*]<filename>" per line.
 #[allow(clippy::result_unit_err)]
@@ -1879,8 +1858,12 @@ fn download_runtime(
         // gate (the exe entry governs its additive facets); a
         // contract-complete entry with no `dll` key installs the exe
         // alone (every POSIX release).
-        if let Some((dll_asset, install_as, dll_expected)) = dll_from_manifest(&manifest_text, &asset)
-        {
+        if let Some(dll_facet) = entry_dll_from_index(&manifest_text, &asset) {
+            let tpkg::runtime_store::EntryDll {
+                filename: dll_asset,
+                install_as,
+                sha256: dll_expected,
+            } = dll_facet;
             if install_as.contains('/') || install_as.contains('\\') {
                 return fail(
                     EX_TEBAKO_UNAVAILABLE,

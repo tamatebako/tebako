@@ -4,7 +4,8 @@
 `tpkg` (the `kind: runtime` edge + schema_minor 4 + the runtime-store
 scan), `tebako-shim` (dispatch-time edge resolution + the
 `TEBAKO_SPAWN_LOCK` export), `tebako-cli` (install/compose arms + the
-expose shim registration), `tebako-info` (render arms),
+expose shim registration + the press-time `spawned[]` row composition),
+`tebako-info` (render arms),
 `tebako-driver` (the spawn map, the plan FFI, the PATH launchers, the
 jail union)).** Amends spec 03 §2.3 (DEPENDS
 gains the kind-runtime edge), spec 07 §1/§2 (the spawn surface and shim

@@ -11,8 +11,14 @@ replayed under deny with zero hand edits and zero unexpected denials.
 spectrum: per-slice `carry`, the `self-contained`/`shared-runtime`
 presets, and the `platforms:` coverage assertion. The lock substrate
 (§4's rows, §13.1's carry verdicts, `claimed_slots`, shared-slice
-resolution, lazy-seed) is IMPLEMENTED; §13.6's spawned-runtime rows land
-with the standalone-dispatch PR (spec 30 §2's bootstrap half).**
+resolution, lazy-seed) is IMPLEMENTED; §13.6's spawned rows are
+IMPLEMENTED too (2026-09-12): `tebako press` auto-composes them from
+the app image's L1 edges (spec 30's `kind: runtime` and spec 32's
+expose-carrying `kind: executable`) on both press paths, with the
+expose/collision/duplicate checks named in §13.6; `tebako-pkg validate`
+cross-checks the mirror and pins the carried slot bytes. Hand-authoring
+the `spawned[]` block (packed-mn) stays legal — the schema and the
+loader semantics are untouched.**
 
 A tebako run is a composition of one runtime (exe + env image) and N
 payload slices, executed under one host-access policy. This spec makes
@@ -572,6 +578,33 @@ lock:
       # the digest pins stand, per §13.3's universal-or-triplet-map
       # shape.
 ```
+
+**Press composes the rows (implemented 2026-09-12, tebako-cli's
+press).** `tebako press` walks the app image's L1 `requires:` — every
+`kind: runtime` edge (spec 30), and every `kind: executable` edge with
+a non-empty `expose:` (spec 32) — in manifest order, resolves each
+edge exactly as managed dispatch would (spec 05 §5's chain at press
+time: the runtime pair through the machine runtime store with download
+allowed, the provider payload through the registries into the payload
+cache), and emits one `spawned[]` row per edge, slots assigned in walk
+order after the app/slice/carried-runtime slots. The walk refuses, with
+a named press error: an exposed name the depended image's own manifest
+does not declare (the expose check of spec 30 §2 / spec 32 §6); an
+exposed name colliding with the app payload's own entrypoints
+(spec 30 §3 / spec 32 §1 — the L1 manifest validator owns the refusal;
+the walk's parse surfaces it); two edges resolving to the same row target
+(the same engine+implementation, or the same provider payload); a
+`kind: executable` edge whose exposed entrypoints are runtime-less
+(spec 32 §0 — the exec tier has no spawn form) or whose provider
+carries no language edge for the nested runtime pick. `carry` rides the
+preset's defaults (§13.2), exactly like the slice rows. A row the
+preset leaves SHARED splits by kind: a shared RUNTIME row is a named
+press error — press resolves runtimes through the machine store and
+records no replayable `source:`, so the row would not reproduce on
+another machine; the error advises `--mode=self-contained` (hand-author
+the row when a shared spawned runtime is genuinely wanted — the packed-mn
+channel). A shared PAYLOAD row records its registry `source:` and stays
+expressible, though no current preset produces one.
 
 Run time reads ONE block: the loader resolves each row into the store's
 `runtimes/` area — carried → slot extract + digest-verify + install;

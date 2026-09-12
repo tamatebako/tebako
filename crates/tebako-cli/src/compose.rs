@@ -400,8 +400,8 @@ pub fn resolve_closure<T: Transport>(
                 // spec 32 §1: the executable edge's MOUNT axis co-mounts
                 // the provider payload like toolkit/data (below); an
                 // expose-only edge is NEVER co-mounted — it rides the
-                // embedded manifest verbatim and the lock's hand-authored
-                // spawned[] rows (the spec 30 §1 posture).
+                // spawn walk's lock.spawned[] row (spec 23 §13.6,
+                // src/spawn.rs).
                 if let tpkg::Requirement::Executable {
                     name,
                     payload,
@@ -436,9 +436,8 @@ pub fn resolve_closure<T: Transport>(
                 let (name, constraint, mount) = match requirement {
                     // The runtime axes: the composition's runtime: row
                     // owns the language edge; a spawned-runtime edge
-                    // (spec 30) is NEVER co-mounted — it rides the
-                    // embedded manifest verbatim and resolves at
-                    // dispatch/spawn, not at compose.
+                    // (spec 30) is NEVER co-mounted — the spawn walk
+                    // (spec 23 §13.6, src/spawn.rs) composes its lock row.
                     tpkg::Requirement::Language { .. } | tpkg::Requirement::Runtime { .. } => {
                         continue
                     }
@@ -494,7 +493,9 @@ pub fn resolve_closure<T: Transport>(
 /// matches the capability against `entrypoints[]` of versions satisfying
 /// the edge's constraint. Zero providers is the named not-found; more
 /// than one is AmbiguousProvider — pin the provider with `payload:`.
-fn compose_capability_provider<T: Transport>(
+/// `pub(crate)`: the spawn walk (spec 23 §13.6) resolves the same answer
+/// for the lock's payload rows.
+pub(crate) fn compose_capability_provider<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     consumer: &str,

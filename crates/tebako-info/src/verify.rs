@@ -343,7 +343,8 @@ pub fn verify_package(
     // claims as `exe`/`dll` carry RAW BYTES (a wrapper exe / a PE dll —
     // never an image): no mount, no manifest check (spec 23 §13.6,
     // spec 30 §2). The byte identity rides the trailer slot digest
-    // (check 2) and the lock's digest pin.
+    // (check 2) and the lock's digest pin, verified against the slot
+    // bytes by section 6's spawned[] digest checks.
     let pm_result = trailer.package_manifest();
     let raw_slots: std::collections::BTreeSet<usize> = match &pm_result {
         Ok(Some(pm)) => pm
@@ -378,7 +379,7 @@ pub fn verify_package(
         if raw_slots.contains(&slot.index) {
             checks.push(Check::skip(
                 name,
-                "spawned runtime artifact (raw bytes — never mounted; the trailer digest and the lock pin carry its identity)",
+                "spawned runtime artifact (raw bytes — never mounted; the lock pin is verified against the slot bytes by the spawned[] digest checks)",
             ));
             continue;
         }
@@ -446,7 +447,7 @@ pub fn verify_package(
         Ok(None) => {}
         Ok(Some(pm)) => {
             entry_checks(binary, &pm, &inspection, &mut checks)?;
-            spawned_checks(&pm, &inspection, &mut checks);
+            spawned_checks(binary, &pm, &inspection, &mut checks)?;
         }
     }
 
@@ -591,6 +592,131 @@ fn entry_checks(
     Ok(())
 }
 
+/// The spawned-edge checks of [`verify_package`] (spec 30 §2, spec 32
+/// §6, spec 23 §13.6): the MIRROR cross-check ([`spawned_mirror_checks`]
+/// — one check per L2 lock row plus one per unmirrored L1 edge) plus the
+/// DIGEST pins ([`spawned_artifact_digests`] — every carried artifact's
+/// lock pin verified against its slot's bytes; the digest checks are
+/// independent of the app payload's L1 usability and run either way).
+fn spawned_checks(
+    binary: &Path,
+    pm: &tpkg::PackageManifest,
+    inspection: &PackageInspection,
+    checks: &mut Vec<Check>,
+) -> Result<(), InfoError> {
+    spawned_mirror_checks(pm, inspection, checks);
+    let rows: &[tpkg::LockedSpawned] = match pm.lock.as_ref() {
+        Some(lock) => &lock.spawned,
+        None => &[],
+    };
+    for row in rows {
+        match row {
+            tpkg::LockedSpawned::Runtime(rt) => {
+                spawned_runtime_digests(
+                    binary,
+                    inspection,
+                    checks,
+                    &format!("spawned[{}]", rt.engine),
+                    rt,
+                )?;
+            }
+            tpkg::LockedSpawned::Payload(p) => {
+                spawned_artifact_digests(
+                    binary,
+                    inspection,
+                    checks,
+                    &format!("spawned[{}]", p.payload),
+                    vec![("image", &p.image)],
+                )?;
+                spawned_runtime_digests(
+                    binary,
+                    inspection,
+                    checks,
+                    &format!("spawned[{}].runtime", p.payload),
+                    &p.runtime,
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The per-runtime-row digest checks (spec 23 §13.6): exe + image + the
+/// windows dll facet when the row carries one.
+fn spawned_runtime_digests(
+    binary: &Path,
+    inspection: &PackageInspection,
+    checks: &mut Vec<Check>,
+    label: &str,
+    row: &tpkg::LockedSpawnedRuntime,
+) -> Result<(), InfoError> {
+    let mut facets: Vec<(&str, &tpkg::LockedSpawnedArtifact)> =
+        vec![("exe", &row.exe), ("image", &row.image)];
+    if let Some(dll) = &row.dll {
+        facets.push(("dll", dll));
+    }
+    spawned_artifact_digests(binary, inspection, checks, label, facets)
+}
+
+/// The lock pin of each carried spawned artifact against its slot's
+/// bytes (spec 23 §13.6's pin rule over §13.3's coverage rule), one
+/// check per artifact named `<label>.<facet> digest`. A shared artifact
+/// (no slot) is dispatch-resolved and emits no check; a per-triplet pin
+/// not covering the host skips LOUD (the host's bytes stay unchecked).
+fn spawned_artifact_digests(
+    binary: &Path,
+    inspection: &PackageInspection,
+    checks: &mut Vec<Check>,
+    label: &str,
+    artifacts: Vec<(&str, &tpkg::LockedSpawnedArtifact)>,
+) -> Result<(), InfoError> {
+    let host = tpkg::Platform::host();
+    for (facet, artifact) in artifacts {
+        let name = format!("{label}.{facet} digest");
+        let Some(slot) = artifact.slot else {
+            continue;
+        };
+        let Some(s) = inspection.slots.get(slot as usize) else {
+            checks.push(Check::fail(
+                name,
+                format!(
+                    "names slot {slot} but the package carries {} slot(s)",
+                    inspection.slots.len()
+                ),
+                exit_code::MALFORMED,
+            ));
+            continue;
+        };
+        let Some(want) = artifact.sha256.for_host(host) else {
+            checks.push(Check::skip(
+                name,
+                format!(
+                    "the lock pin covers no {} row — the host's slot bytes are unchecked (spec 23 §13.3)",
+                    host.release_asset_name()
+                ),
+            ));
+            continue;
+        };
+        let actual = hex(&sha256_region(binary, s.offset, s.size)?);
+        if actual == want {
+            checks.push(Check::pass(
+                name,
+                format!("the lock pin matches the slot {slot} bytes"),
+            ));
+        } else {
+            checks.push(Check::fail(
+                name,
+                format!(
+                    "the lock pin {}… != the slot {slot} bytes {actual}",
+                    &want[..8.min(want.len())]
+                ),
+                exit_code::DIGEST,
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// The spawned-edge cross-check of [`verify_package`] (spec 30 §2, spec
 /// 32 §6, spec 23 §13.6; one check per L2 lock row plus one per
 /// unmirrored L1 edge, named `spawned[<engine|payload>]`). The lock's
@@ -608,7 +734,7 @@ fn entry_checks(
 /// skip-loud otherwise. The mirror source is the PRIMARY entry's slot
 /// image; a package whose app slot carries no usable L1 manifest skips —
 /// pre-manifest packages stay valid (the entry cross-check's rule).
-fn spawned_checks(
+fn spawned_mirror_checks(
     pm: &tpkg::PackageManifest,
     inspection: &PackageInspection,
     checks: &mut Vec<Check>,
