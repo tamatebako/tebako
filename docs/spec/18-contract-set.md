@@ -400,8 +400,11 @@ behavior. (S-numbers are the e2e/test ids to implement.)
 - **S46** no `schema_version` → era-1 refusal ("republish the
   registry").
 - **S47** entry abi has no host match → filtered, named if empty.
-- **S48** registry unreachable, cache older than 24 h TTL → named error
-  (exists).
+- **S48** registry unreachable, cache older than 24 h TTL → the stale
+  cache SERVES with a loud stderr warning + journal line
+  (`event=stale-registry-serve`; spec 05 §4, roadmap 86) — the trust
+  anchor is the artifact's `.sha256`/`.asc` at fetch time, never the
+  registry's freshness; cache ABSENT → named error (exists).
 
 ### 5.10 Factory
 - **S49** tarball without `tebako-mount-root` → exit 132.

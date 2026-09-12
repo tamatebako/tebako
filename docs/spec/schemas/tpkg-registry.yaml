@@ -119,6 +119,6 @@ refusals:
   - case: entry abi has no host match (S47)
     behavior: filtered; named error when nothing remains
   - case: registry unreachable and the cache older than the 24 h TTL (S48)
-    behavior: named error (TEBAKO_OFFLINE=1 = cache-or-named-error)
+    behavior: the stale cache serves with a loud stderr warning + journal line (spec 05 §4, roadmap 86); cache ABSENT stays the named error (TEBAKO_OFFLINE=1 = cache-or-named-error)
 
 deprecated: [] # no field is in a deprecation window

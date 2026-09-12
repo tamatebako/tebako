@@ -14,6 +14,11 @@
 //! - fresh cache (age < [`REGISTRY_TTL`], 24 h) → read the cache, no fetch;
 //! - stale/missing cache, online → fetch through tebako-resolve, publish
 //!   tmp + rename, then read;
+//! - stale cache + fetch FAILED → serve the stale cache LOUD (stderr +
+//!   journal `event=stale-registry-serve`; spec 05 §4, roadmap 86) —
+//!   the trust anchor is the artifact's `.sha256`/`.asc` at fetch time,
+//!   never the registry's freshness; a MISSING cache + fetch failed
+//!   stays the named error;
 //! - `TEBAKO_OFFLINE` → the cache (ANY age) or a named error — never a
 //!   fetch attempt;
 //! - `file://` refs (and hand-authored plain paths) read directly, no
@@ -248,12 +253,35 @@ pub fn registry_for_with<T: Transport>(
         return parse_registry(&bytes, &format!("the dispatch cache {}", cache.display()));
     }
 
-    // Stale or missing: fetch, publish, read.
-    let bytes = fetcher
-        .fetch_registry(&parsed)
-        .map_err(|e| map_resolve(home, &canonical, e))?;
-    prime_unchecked(home, &canonical, &bytes)?;
-    parse_registry(&bytes, &canonical)
+    // Stale or missing: fetch, publish, read. A PRESENT-but-stale cache
+    // whose refresh failed serves LOUD (spec 05 §4's stale-serve,
+    // roadmap 86); a MISSING cache keeps the named error.
+    match fetcher.fetch_registry(&parsed) {
+        Ok(bytes) => {
+            prime_unchecked(home, &canonical, &bytes)?;
+            parse_registry(&bytes, &canonical)
+        }
+        Err(e) if cache.is_file() => {
+            // spec 05 §4 (locked): NOT a silent fallback — the trust
+            // anchor is the artifact's .sha256/.asc verified at fetch
+            // time, never the registry's freshness.
+            eprintln!(
+                "tebako-shim: warning: serving stale registry {canonical} — fetch failed: {e}"
+            );
+            crate::runtime::journal(
+                home,
+                &format!("event=stale-registry-serve ref={canonical} error={e}"),
+            );
+            let bytes = std::fs::read(&cache).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_IO,
+                    format!("cannot read the cached registry {}: {e}", cache.display()),
+                )
+            })?;
+            parse_registry(&bytes, &format!("the dispatch cache {}", cache.display()))
+        }
+        Err(e) => Err(map_resolve(home, &canonical, e)),
+    }
 }
 
 /// What [`refresh`] did with one registry ref.

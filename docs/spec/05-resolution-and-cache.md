@@ -107,6 +107,7 @@ runtimes/<lang>-<lv>-<ver>-<triplet>/
 payloads/<name>/<version>.tfs                 # registry payloads (0444)
 payloads/<name>/<version>.tfs.sha256          # trust anchor
 shims/                                        # spec 07
+registries/<sha>.yaml (+.fetched-at)          # dispatch-time registry cache (24 h TTL, spec 07; §4's stale-serve)
 config.yaml                                   # spec 07 (YAML — never JSON)
 keys/                                         # press-local signing keys (spec 09)
 ```
@@ -129,6 +130,19 @@ installs, pre-identity manifests).
   tree; press seeds its environment by extracting in-process through the
   TFS ABI and rebuilds per press.
 - `TEBAKO_OFFLINE=1` — cache hit or hard error.
+- **Stale-registry serve on fetch failure (locked 2026-09-12, roadmap
+  86):** the dispatch-time registry cache (`registries/<sha>.yaml` +
+  `.fetched-at`, 24 h TTL — spec 07) degrades LOUD, never hard: cache
+  PRESENT but stale + the refresh fetch failed → the stale cache
+  SERVES, with a stderr warning and a journal line
+  (`event=stale-registry-serve`, naming the ref and the fetch error);
+  cache ABSENT + fetch fails → the named resolution error, unchanged;
+  a fresh cache and a successful refresh are unchanged.
+  `TEBAKO_OFFLINE=1` stays cache-or-named-error, unchanged. This is NOT
+  a silent fallback: the registry is an index — the trust anchor is the
+  artifact's `.sha256` / `.asc` verified at fetch time, never the
+  registry's freshness, and a stale index can name only artifacts whose
+  own anchors still verify at install.
 - `tebako cache list` (runtimes and payloads) / `cache prune
   [--runtimes] [--payloads] [--all | --older-than Nd]` manage the cache.
   Bare `cache prune` touches runtimes only; `--payloads` adds the
