@@ -38,14 +38,7 @@ const HOST_KEY: &str = "host";
 /// layering forbids importing it from tebako-resolve).
 fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::Digest as _;
-    let digest = sha2::Sha256::digest(bytes);
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(64);
-    for b in digest {
-        out.push(HEX[(b >> 4) as usize] as char);
-        out.push(HEX[(b & 0xf) as usize] as char);
-    }
-    out
+    hex(&sha2::Sha256::digest(bytes))
 }
 
 /// The 16-hex identity of an image file: the store sidecar when present
@@ -56,6 +49,19 @@ pub fn image_key(image: &Path) -> String {
         return hex;
     }
     sha256_hex(image.to_string_lossy().as_bytes())[..16].to_string()
+}
+
+/// Lowercase hex of a digest — split from [`sha256_hex`] so incremental
+/// hashers (the trust bridge's merge-input key, materialize.rs) render
+/// through the same one copy.
+pub(crate) fn hex(digest: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(digest.len() * 2);
+    for b in digest {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0xf) as usize] as char);
+    }
+    out
 }
 
 /// First 16 chars of the sidecar's leading 64-hex token, when the

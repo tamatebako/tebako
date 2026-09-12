@@ -658,7 +658,7 @@ impl RuntimeSource {
 /// Append one line to the audit journal (`~/.tebako/journal.log`) —
 /// best-effort, like every journal write: the answer never depends on
 /// the record.
-fn journal(home: &Path, line: &str) {
+pub(crate) fn journal(home: &Path, line: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
