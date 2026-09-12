@@ -231,9 +231,10 @@ The locked rules:
    the platform leg's sign-then-hash fragments before wrapping — a
    corrupted or stale input fails the leg, named.
 3. **Sign-then-hash extends to containers** (spec 34 §1.3): the
-   installer fragments hash the FINAL signed container bytes; finalize
-   folds them into SHA256SUMS / sidecars / manifest.json's `installers`
-   array like any other released part, and spec 09's release signing
+   installer fragments hash the FINAL signed container bytes; the leg's
+   own publish invocation writes their `.sha256` sidecars and shards
+   (the consumer-derived index carries them in `installers`)
+   like any other released part, and spec 09's release signing
    covers them (one .asc per container).
 4. **Install rehearsal is the ship gate, always**: msiexec install → the
    installed `tebako --version` runs → uninstall clean; `installer -pkg`

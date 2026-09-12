@@ -51,8 +51,9 @@ tebako ecosystem: who published this payload, may my machine load it.
 Authenticode is the **OS platform plane**: may this PE execute on a
 Windows host under SmartScreen/AppLocker/WDAC/AV scrutiny. Neither
 substitutes for the other; a package may carry either, both, or neither.
-This spec changes nothing about spec 09 (shipped: the release finalize
-sign step, the trust anchor, the `.well-known` publication).
+This spec changes nothing about spec 09 (shipped: per-leg release
+signing behind `TEBAKO_RELEASE_SIGNING_ENABLED`, the trust anchor, the
+`.well-known` publication).
 
 ### 1.1 Payloads are data; Windows never sees them
 
@@ -77,8 +78,9 @@ other plane.)
 ### 1.3 Sign-then-hash is mandatory
 
 Signing embeds a timestamped countersignature; digests must cover the
-final signed bytes. Every Windows leg signs BEFORE the finalize job
-computes SHA256SUMS / manifest.json / `.sha256` sidecars — the pin flow
+final signed bytes. Every Windows leg signs BEFORE its own publish
+invocation computes the `.sha256` sidecars and the shard (spec 13 §2a —
+the post-de-rendezvous shape) — the pin flow
 (factory contract.yml, feedstock versions.yaml mirrors) hashes signed
 bytes. A workflow that hashes unsigned bytes and signs after is a bug on
 arrival (spec 31 §5's law, restated for the Windows legs).
@@ -139,7 +141,8 @@ remains the default everywhere else (development branches, forked runs).
 The gate flips per repo only when the secrets exist AND this spec's legs
 have landed — the same discipline as `APPLE_SIGNING_ENABLED` (spec 31
 §5). The parity gates compare unsigned bytes, so signing legs run AFTER
-the gates' inputs are built and BEFORE the finalize hashes (§1.3).
+the gates' inputs are built and BEFORE the publish invocation hashes
+(§1.3).
 
 ## 5. The tebako-org pipeline (tebako + factory releases)
 
@@ -158,7 +161,7 @@ windows leg (windows-2022 runner):
       timestamp-rfc3161: http://timestamp.acs.microsoft.com
       timestamp-digest: SHA256
   - verify: signtool verify /pa /v <each signed artifact>   # §7.1, §7.2
-  … finalize: SHA256SUMS / manifest.json / .sha256 sidecars …
+  … publish: per-asset .sha256 sidecar + <stem>.manifest.json shard + .asc (spec 13 §2a) …
 ```
 
 - **tebako release**: every PE asset of the release — the bootstrap, the
@@ -189,7 +192,8 @@ same step. The action shape is §5's, unchanged.
    countersignature is present (§1.4); an untimestamped signature fails
    the leg.
 3. **The enumeration gate** — the staged set is enumerated by extension;
-   a PE artifact that reached finalize unsigned fails the release.
+   a PE artifact that reached its publish invocation unsigned fails the
+   release.
 4. **The gate-off parity tier** — with `WINDOWS_SIGNING_ENABLED` unset
    the legs skip cleanly and the release ships unsigned exactly as today
    (no behavior change, proven by CI on the spec's own PR).

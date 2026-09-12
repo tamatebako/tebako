@@ -3,9 +3,11 @@
 Normative specification of integrity and authenticity for every binary
 part: bootstrap, runtime payloads, data payloads, and release indexes.
 Status: signing machinery SHIPPED (M29 phase 2); the classical root key
-ceremony EXECUTED 2026-09-09 (§7); release signing SHIPPED — the
-finalize job signs every released part and the release indexes behind
-`TEBAKO_RELEASE_SIGNING_ENABLED` (§6). Runtime FETCH-TIME verification
+ceremony EXECUTED 2026-09-09 (§7); release signing SHIPPED — each
+platform leg's publish invocation signs its own released parts and index
+shards behind
+`TEBAKO_RELEASE_SIGNING_ENABLED` (§6; the finalize-pass sign step was
+retired by spec 13 §2a's de-rendezvous, 2026-09-12). Runtime FETCH-TIME verification
 (§4's resolve-path point, §5's signed index forms, spec 13 §2a's
 per-artifact `signature`) is SHIPPED in the CLI's press-time resolver
 and the shim's dispatch-time fetch (roadmap 80/G1, tebako#567's chain);
@@ -138,10 +140,16 @@ form it consumed BEFORE trusting its hashes — closing the gap where a
 MITM swaps both package and unsigned manifest. Same keyring, same verify
 path. Per runtime factory release (spec 13 §2a): each per-package shard
 `<stem>.manifest.json` ships `<stem>.manifest.json.asc` (the sidecar-era
-authority is signed first), the derived monoliths ship
-`manifest.json.asc` and `SHA256SUMS.txt.asc`, and every payload asset
+authority is signed first), every per-asset `<asset>.sha256` sidecar
+ships `<asset>.sha256.asc`, and every payload asset
 (the interpreter exe, the env image, a windows dll) ships its own
-`<asset>.asc`. The entry's `signature: {keyid, asc}` fields name the
+`<asset>.asc`. **No artifact is ever "covered by" another artifact's
+signature** (2026-09-12, roadmap 85): every served name carries its own
+`.asc` on signing-enabled lines, signed by the invocation holding the
+fresh bytes. The monoliths are never release assets (spec 13 §2a's
+de-rendezvous), so no `manifest.json.asc` / `SHA256SUMS.txt.asc` exist
+on a release; a consumer-side derived index verifies by re-derivation
+from the signed shards. The entry's `signature: {keyid, asc}` fields name the
 per-artifact sidecars — the same SSOT rule as `filename`: the factory
 declares the spellings, consumers flow them verbatim and never
 synthesize. `keyid` names the signer's PRIMARY keyid (§9's

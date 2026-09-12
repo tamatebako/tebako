@@ -99,6 +99,12 @@ payloads:
 
 - The registry MIRRORS only resolution-relevant fields (spec 03 §4 tier 3)
   — the dispatcher resolves without downloading every payload.
+- **`status: withdrawn` (additive, 2026-09-12, roadmap 85):** the entry
+  is YANKED — resolvers refuse it with a named `WithdrawnPayload` error
+  (never a silent skip, never a fallback to it), and listing surfaces
+  render it as withdrawn. Release assets are immutable (spec 13 §2a's
+  immutability rule): withdrawal is the ONLY remedy for a bad published
+  artifact, and the fix ships as a new version line.
 - **Host-triplet selection happens HERE, declaratively**: the dispatcher
   reads `platforms[host_triplet].artifact` (or `universal`), fetches THAT
   artifact from the named release. Never adapter-side guessing.
