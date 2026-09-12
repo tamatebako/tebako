@@ -367,6 +367,59 @@ fn the_boot_captures_and_the_ffi_plans_with_carried_mounts() {
 }
 
 #[test]
+fn a_platform_skipped_edge_registers_no_expose() {
+    // spec 03 §2.3 (schema_minor 9): a spawn edge whose triplets: list
+    // does not cover this host registers NO exposed names — the FFI
+    // planner passes the name through untouched (host-by-default).
+    let g = guard("edge-skip");
+    store_entry(&g.tmp.path().join("home"), "21.0.12", "0.3.0");
+    let skipped = tpkg::Platform::ALL
+        .iter()
+        .find(|p| **p != tpkg::Platform::host() && !p.is_reserved())
+        .unwrap()
+        .as_triplet();
+    let env_image = write_env_image(g.tmp.path(), "[{name: java, path: /bin/java}]");
+    let manifest = payload_manifest(
+        "app",
+        "metanorma",
+        &format!(
+            "provides:\n  \
+             entrypoints: [{{name: app, path: /bin/app}}]\n  \
+             platforms: universal\n  capabilities: {{exec: true, read: true}}\n\
+             requires:\n  \
+             - {{kind: runtime, engine: java, constraint: \">= 21\", expose: [java], triplets: [{skipped}]}}"
+        ),
+    );
+    let app = g.tmp.path().join("app.tfs");
+    build_zip(
+        &app,
+        &["bin/", "__tpkg__/"],
+        &[
+            ("bin/app", b"x".as_slice()),
+            ("__tpkg__/manifest.yaml", manifest.as_bytes()),
+        ],
+    );
+    let env = MapEnv::new();
+    env.set("TEBAKO_RUNTIME_IMAGE", env_image.display().to_string());
+    boot(
+        &argv(&[
+            "app",
+            "--tebako-image",
+            &format!("{}:-:/", app.display()),
+            "--tebako-entry",
+            "/bin/app",
+        ]),
+        "/__tfs__",
+        &env,
+    )
+    .unwrap();
+
+    let (rc, plan) = ffi_plan("java", &[]);
+    assert_eq!(rc, 0);
+    assert!(plan.is_none(), "the skipped edge's name passes through");
+}
+
+#[test]
 fn a_duplicate_expose_name_is_a_named_65() {
     let g = guard("dup");
     let env_image = write_env_image(g.tmp.path(), "[]");

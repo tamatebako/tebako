@@ -97,6 +97,11 @@ fn dependency_mount(
     tool: &str,
     ctx: &Ctx,
 ) -> Result<Option<MountSpec>, ShimError> {
+    // spec 03 §2.3: a platform-skipped edge contributes NO mount — the
+    // loud note fires once per dispatch in plan()'s walk, never here.
+    if !req.covers_host(tpkg::Platform::host()) {
+        return Ok(None);
+    }
     let (kind, name, constraint, mount) = match req {
         Requirement::Language { .. } | Requirement::Runtime { .. } => return Ok(None),
         Requirement::Executable {
@@ -139,6 +144,7 @@ fn dependency_mount(
             name,
             constraint,
             mount,
+            ..
         } => ("data", name, constraint, mount),
     };
     let Some(mount) = mount else {
@@ -372,6 +378,12 @@ fn compose_spawn_lock(
     rows: &mut Vec<String>,
 ) -> Result<(), ShimError> {
     for edge in requires {
+        // spec 03 §2.3: a platform-skipped edge contributes NO spawn-lock
+        // row (the loud note fired in plan()'s own walk for the consumer;
+        // provider edges were noted at install).
+        if !edge.covers_host(tpkg::Platform::host()) {
+            continue;
+        }
         match edge {
             Requirement::Runtime {
                 engine,
@@ -584,6 +596,16 @@ pub fn plan(
             ),
         )
     })?;
+    // spec 03 §2.3: the platform-skipped edges of the dispatching payload
+    // note themselves LOUDLY once per dispatch (journal + stderr) — the
+    // mount and spawn-lock walks below then skip them structurally.
+    let host = tpkg::Platform::host();
+    for edge in res.manifest.requires() {
+        if !edge.covers_host(host) {
+            crate::runtime::journal(&ctx.home, &edge.platform_skip_journal(host));
+            eprintln!("tebako-shim: note: {}", edge.platform_skip_note(host));
+        }
+    }
     let mut mounts = compose_mounts(res, ctx)?;
     let runtime =
         runtime::resolve_runtime(entry.runtime_requirement.as_ref(), allow_download, ctx)?;

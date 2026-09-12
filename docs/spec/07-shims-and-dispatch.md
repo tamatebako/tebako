@@ -9,7 +9,9 @@ spec 04 §2), and the dispatch-time registry cache ships with roadmap 33
 (the registry-default chain link resolves every registry form through
 tebako-resolve behind `~/.tebako/registries/<sha>.yaml` — 24 h TTL,
 `tebako update-registries`, `TEBAKO_OFFLINE` = cache-or-named-error;
-`tebako add-registry` primes the cache with the bytes it fetched).
+`tebako add-registry` primes the cache with the bytes it fetched; a
+STALE cache + a failed refresh serves the stale bytes LOUD — stderr +
+journal — rather than failing, spec 05 §4's stale-serve, roadmap 86).
 The 2026-09-05 routing amendment (qualified pins, per-payload disable,
 `tebako-shim use`) SHIPS with this spec's PR-A — the status lines below
 reflect it. Still PLANNED: jail application (spec 08), and a
@@ -236,6 +238,11 @@ signed `.tfs` per (version × ruby line) → registry → dispatcher).
   default) → the grammar error, naming the link and the value (spec 23
   §14's env-parse rule, extended to every chain link) — never a silent
   skip to the next link.
+- A command whose only claims ride platform-skipped edges (spec 03 §2.3,
+  schema_minor 9 — the edge's `triplets:` list does not cover this
+  host) → the named "not available on this platform" refusal
+  (`EX_TEBAKO_UNAVAILABLE`, 69), naming the claiming payloads — never
+  the generic no-provider error, never a silent fallback.
 
 ## 8. Native exec from inside an image (the whole-chain model, locked)
 

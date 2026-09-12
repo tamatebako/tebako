@@ -69,6 +69,11 @@ requires:
     expose: [xml2rfc]         # OPTIONAL — the spawn surface (§2)
     critical: true            # the evolution law's flag — REQUIRED when the
                               # payload's function needs this edge
+    triplets: [aarch64-macos] # OPTIONAL — spec 03 §2.3's per-edge platform
+                              # conditioning (schema_minor 9): a non-covering
+                              # host SKIPS the edge regardless of critical:
+                              # (critical governs reader-era refusal, never
+                              # platform reach)
 ```
 
 The two OPTIONAL keys are **orthogonal axes** (invariant 4): `mount`

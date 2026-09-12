@@ -269,3 +269,106 @@ fn registry_default_resolves_through_a_remote_registry() {
     let payload = registry.payload("metanorma").unwrap();
     assert_eq!(payload.default.as_deref(), Some("1.2.3"));
 }
+
+/// A newer registry revision (the fetch side of the stale→fresh proof).
+const REGISTRY_YAML_V2: &str = "schema_version: 1\npayloads:\n  - name: metanorma\n    kind: app\n    default: 1.2.4\n    versions:\n      - version: 1.2.4\n        platforms: universal\n        release: {ref: file:///metanorma-1.2.4.tfs}\n        entrypoints: [metanorma]\n";
+
+/// A transport whose every GET fails (the airgapped day-2 shape).
+fn failing_fetcher() -> (Fetcher<MockTransport>, std::rc::Rc<Cell<u64>>) {
+    let hits = std::rc::Rc::new(Cell::new(0));
+    (
+        Fetcher::with_transport(MockTransport::with(&[], hits.clone())),
+        hits,
+    )
+}
+
+/// Backdate the cache's fetched-at marker beyond the TTL.
+fn backdate_beyond_ttl(home: &std::path::Path) {
+    std::fs::write(
+        fetched_at_file(home),
+        format!("{}\n", now() - regcache::REGISTRY_TTL_SECS - 60),
+    )
+    .unwrap();
+}
+
+#[test]
+fn stale_cache_and_a_failed_fetch_serves_the_stale_bytes_loud() {
+    // spec 05 §4 (roadmap 86): cache PRESENT but stale + the refresh
+    // fetch failed → the stale cache SERVES, loud (stderr + journal) —
+    // the trust anchor is the artifact's .sha256/.asc at fetch time,
+    // never the registry's freshness.
+    let tmp = TempDir::new("regcache-stale-serve");
+    let home = tmp.path().join("home");
+    let (fetcher, _) = github_fetcher(REGISTRY_YAML);
+    regcache::registry_for_with(&home, GITHUB_REF, &fetcher, false, now()).unwrap();
+    backdate_beyond_ttl(&home);
+
+    let (failing, hits) = failing_fetcher();
+    let registry = regcache::registry_for_with(&home, GITHUB_REF, &failing, false, now()).unwrap();
+    // …the STALE bytes served (the primed 1.2.3 registry)…
+    assert_eq!(
+        registry.payload("metanorma").unwrap().default.as_deref(),
+        Some("1.2.3")
+    );
+    assert!(hits.get() > 0, "the refresh was attempted first");
+    // …LOUD: the journal line names the event, the ref, the failure…
+    let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+    assert!(journal.contains("event=stale-registry-serve"), "{journal}");
+    assert!(journal.contains("ref=tfs:github:o/r"), "{journal}");
+    assert!(journal.contains("error="), "{journal}");
+    // …and the cache is neither clobbered nor renewed.
+    let at: u64 = std::fs::read_to_string(fetched_at_file(&home))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert!(
+        now().saturating_sub(at) > regcache::REGISTRY_TTL_SECS,
+        "the stale marker stays stale"
+    );
+    assert!(std::fs::read_to_string(cached_file(&home))
+        .unwrap()
+        .contains("1.2.3"));
+}
+
+#[test]
+fn missing_cache_and_a_failed_fetch_is_the_named_error() {
+    // Cache ABSENT + fetch failed: unchanged — the named resolution
+    // error, no stale-serve journal line.
+    let tmp = TempDir::new("regcache-absent-fail");
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let (failing, hits) = failing_fetcher();
+    let err = regcache::registry_for_with(&home, GITHUB_REF, &failing, false, now()).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE);
+    assert!(
+        err.message.contains("cannot resolve registry"),
+        "{}",
+        err.message
+    );
+    assert!(hits.get() > 0, "the fetch was attempted");
+    assert!(
+        !home.join("journal.log").exists(),
+        "no stale-serve journal line without a cache"
+    );
+}
+
+#[test]
+fn stale_cache_and_a_successful_fetch_serves_the_fresh_bytes() {
+    // The healthy path is unchanged: a stale cache refetches and the
+    // FRESH bytes serve (no stale-serve journal line).
+    let tmp = TempDir::new("regcache-stale-fresh");
+    let home = tmp.path().join("home");
+    let (fetcher, _) = github_fetcher(REGISTRY_YAML);
+    regcache::registry_for_with(&home, GITHUB_REF, &fetcher, false, now()).unwrap();
+    backdate_beyond_ttl(&home);
+
+    let (fetcher, _) = github_fetcher(REGISTRY_YAML_V2);
+    let registry = regcache::registry_for_with(&home, GITHUB_REF, &fetcher, false, now()).unwrap();
+    assert_eq!(
+        registry.payload("metanorma").unwrap().default.as_deref(),
+        Some("1.2.4"),
+        "the refreshed bytes serve"
+    );
+    assert!(!home.join("journal.log").exists());
+}

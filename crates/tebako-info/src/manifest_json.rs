@@ -350,9 +350,20 @@ fn provides_json(p: &Provides) -> Json {
     }
 }
 
+fn push_triplets(out: &mut Vec<(String, Json)>, triplets: &Option<Vec<tpkg::Platform>>) {
+    if let Some(ts) = triplets {
+        out.push((
+            "triplets".to_string(),
+            Json::Array(ts.iter().map(|t| s(t.as_triplet())).collect()),
+        ));
+    }
+}
+
 fn requirement_json(r: &Requirement) -> Json {
     match r {
-        Requirement::Language { engine, constraint } => Json::Object(vec![
+        Requirement::Language {
+            engine, constraint, ..
+        } => Json::Object(vec![
             ("kind".to_string(), s("language")),
             ("engine".to_string(), s(engine)),
             ("constraint".to_string(), s(constraint.as_str())),
@@ -368,12 +379,7 @@ fn requirement_json(r: &Requirement) -> Json {
                 ("name".to_string(), s(name)),
                 ("constraint".to_string(), s(constraint.as_str())),
             ];
-            if let Some(ts) = triplets {
-                out.push((
-                    "triplets".to_string(),
-                    Json::Array(ts.iter().map(|t| s(t.as_triplet())).collect()),
-                ));
-            }
+            push_triplets(&mut out, triplets);
             if let Some(m) = mount {
                 out.push(("mount".to_string(), s(m)));
             }
@@ -382,6 +388,7 @@ fn requirement_json(r: &Requirement) -> Json {
         Requirement::Data {
             name,
             constraint,
+            triplets,
             mount,
         } => {
             let mut out = vec![
@@ -389,6 +396,7 @@ fn requirement_json(r: &Requirement) -> Json {
                 ("name".to_string(), s(name)),
                 ("constraint".to_string(), s(constraint.as_str())),
             ];
+            push_triplets(&mut out, triplets);
             if let Some(m) = mount {
                 out.push(("mount".to_string(), s(m)));
             }
@@ -399,6 +407,7 @@ fn requirement_json(r: &Requirement) -> Json {
             implementation,
             constraint,
             expose,
+            triplets,
         } => {
             let mut out = vec![
                 ("kind".to_string(), s("runtime")),
@@ -414,6 +423,7 @@ fn requirement_json(r: &Requirement) -> Json {
                     Json::Array(expose.iter().map(|e| s(e)).collect()),
                 ));
             }
+            push_triplets(&mut out, triplets);
             Json::Object(out)
         }
         Requirement::Executable {
@@ -423,6 +433,7 @@ fn requirement_json(r: &Requirement) -> Json {
             mount,
             expose,
             critical,
+            triplets,
         } => {
             let mut out = vec![
                 ("kind".to_string(), s("executable")),
@@ -444,6 +455,7 @@ fn requirement_json(r: &Requirement) -> Json {
             if *critical {
                 out.push(("critical".to_string(), Json::Bool(true)));
             }
+            push_triplets(&mut out, triplets);
             Json::Object(out)
         }
     }

@@ -176,6 +176,7 @@ fn app_suite_fixture_shape() {
         Requirement::Language {
             engine: "ruby".into(),
             constraint: Constraint::new("~> 3.3.0").unwrap(),
+            triplets: None,
         }
     );
     let Requirement::Toolkit {
@@ -564,6 +565,7 @@ fn executable_edge_fixture_shape() {
         mount,
         expose,
         critical,
+        triplets,
     } = &m.requires[1]
     else {
         panic!("executable edge, got {:?}", m.requires[1]);
@@ -574,6 +576,7 @@ fn executable_edge_fixture_shape() {
     assert_eq!(mount.as_deref(), Some("/opt/xml2rfc"));
     assert_eq!(expose, &["xml2rfc".to_string()]);
     assert!(critical);
+    assert!(triplets.is_none());
 }
 
 #[test]
@@ -706,6 +709,173 @@ fn executable_edge_expose_never_collides_with_own_entrypoints() {
         "the expose x own-entrypoint collision is a named error: {err}"
     );
     assert!(schema_validator().is_valid(&yaml_text_to_json(text)));
+}
+
+#[test]
+fn edge_triplets_generalize_beyond_toolkit() {
+    // spec 03 §2.3 (schema_minor 9, roadmap 86): the toolkit edge's
+    // `triplets:` conditioning generalizes to the data, runtime, and
+    // executable edges — one spelling per axis (payload-level coverage
+    // stays `platforms:`).
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 2.1.10}\n  created: \"2026-09-12T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires:\n\
+        \x20 - {kind: language, engine: ruby, constraint: \"~> 3.3.0\"}\n\
+        \x20 - {kind: data, name: iso-codes, constraint: \">= 2024.1\", triplets: [x86_64-linux-gnu, aarch64-linux-gnu], mount: /__app__/share/iso-codes}\n\
+        \x20 - {kind: runtime, engine: java, constraint: \">= 21\", expose: [java], triplets: [x86_64-windows-ucrt]}\n\
+        \x20 - {kind: executable, name: xml2rfc, constraint: \">= 3.34\", expose: [xml2rfc], critical: true, triplets: [aarch64-macos]}\n";
+    let m = PayloadManifest::from_yaml(text).unwrap();
+    assert_eq!(m.requires.len(), 4);
+    let Requirement::Data {
+        triplets: data_ts, ..
+    } = &m.requires[1]
+    else {
+        panic!("data edge, got {:?}", m.requires[1]);
+    };
+    assert_eq!(
+        data_ts.as_deref(),
+        Some(&[Platform::X86_64LinuxGnu, Platform::Aarch64LinuxGnu][..])
+    );
+    let Requirement::Runtime {
+        triplets: rt_ts, ..
+    } = &m.requires[2]
+    else {
+        panic!("runtime edge, got {:?}", m.requires[2]);
+    };
+    assert_eq!(rt_ts.as_deref(), Some(&[Platform::X86_64WindowsUcrt][..]));
+    let Requirement::Executable {
+        triplets: ex_ts, ..
+    } = &m.requires[3]
+    else {
+        panic!("executable edge, got {:?}", m.requires[3]);
+    };
+    assert_eq!(ex_ts.as_deref(), Some(&[Platform::Aarch64Macos][..]));
+    // …and the schema agrees (MECE cross-check), and the model
+    // round-trips the fields.
+    schema_validator()
+        .validate(&yaml_text_to_json(text))
+        .expect("per-edge triplets are schema-legal on data/runtime/executable");
+    let yaml = m.to_yaml().unwrap();
+    let back = PayloadManifest::from_yaml(&yaml).unwrap();
+    assert_eq!(back, m);
+}
+
+#[test]
+fn language_edge_forbids_triplets() {
+    // spec 03 §2.3: a skipped language edge would boot a payload with no
+    // runtime — platform reach is the payload-level `platforms:` axis's
+    // statement; the key on a language edge is a NAMED parse error
+    // steering the author there.
+    let text = "identity:\n  schema_version: 1\n  kind: app\n  name: metanorma\n  version: \"1\"\n\
+        \x20 producer: {tool: tebako-cli, tool_version: 2.1.10}\n  created: \"2026-09-12T00:00:00Z\"\n\
+        \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+        \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+        \x20 signing: {state: unsigned}\n  encryption: {state: none}\n\
+        provides:\n  entrypoints:\n    - {name: metanorma, path: /bin/metanorma}\n\
+        \x20 platforms: universal\n  capabilities: {exec: true, read: true}\n\
+        requires: [{kind: language, engine: ruby, constraint: \"~> 3.3.0\", triplets: [aarch64-macos]}]\n";
+    let err = PayloadManifest::from_yaml(text).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("not allowed on a kind: language edge"),
+        "triplets on a language edge is a named error: {err}"
+    );
+    assert!(
+        err.to_string().contains("platforms:"),
+        "the refusal steers to the payload-level axis: {err}"
+    );
+}
+
+#[test]
+fn edge_triplets_list_grammar_holds_on_the_new_arms() {
+    // The toolkit edge's list grammar (non-empty, no duplicates, no
+    // reserved triplet) applies verbatim to the generalized arms.
+    for edge in [
+        "{kind: data, name: d, constraint: \">= 1\", mount: /d, triplets: []}",
+        "{kind: data, name: d, constraint: \">= 1\", mount: /d, triplets: [aarch64-macos, aarch64-macos]}",
+        "{kind: data, name: d, constraint: \">= 1\", mount: /d, triplets: [aarch64-windows-ucrt]}",
+        "{kind: runtime, engine: java, constraint: \">= 21\", triplets: []}",
+        "{kind: executable, name: x, constraint: \">= 1\", mount: /x, triplets: [x86_64-linux-gnu, x86_64-linux-gnu]}",
+        "{kind: toolkit, name: t, constraint: \">= 1\", triplets: [aarch64-windows-ucrt]}",
+    ] {
+        let text = format!(
+            "identity:\n  schema_version: 1\n  kind: app\n  name: m\n  version: \"1\"\n\
+            \x20 producer: {{tool: tebako-cli, tool_version: 2.1.10}}\n  created: \"2026-09-12T00:00:00Z\"\n\
+            \x20 digest:\n    tree_hash: \"sha256:650f8ad9527c28dbb8ae43270215e4ef64c884cea06bec289918b060f3b69ee3\"\n\
+            \x20   blob_sha256: 7a5eb4446074d0193468f1a24cf5a94e4748cf1f033b0fdfcb8bfbaa901a81e1\n\
+            \x20 signing: {{state: unsigned}}\n  encryption: {{state: none}}\n\
+            provides:\n  entrypoints:\n    - {{name: m, path: /bin/m}}\n\
+            \x20 platforms: universal\n  capabilities: {{exec: true, read: true}}\n\
+            requires: [{edge}]\n",
+        );
+        let err = PayloadManifest::from_yaml(&text).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("triplets") || msg.contains("platform triplet"),
+            "{edge}: a named list-grammar error, got {msg}"
+        );
+    }
+}
+
+#[test]
+fn covers_host_semantics() {
+    // spec 03 §2.3: absent = universal (byte-identical with pre-minor-9
+    // behavior); a listed edge covers the listed hosts only.
+    let universal = Requirement::Data {
+        name: "d".into(),
+        constraint: Constraint::new(">= 1").unwrap(),
+        triplets: None,
+        mount: None,
+    };
+    assert!(universal.triplets().is_none());
+    for p in Platform::ALL {
+        assert!(universal.covers_host(p), "universal covers {p}");
+    }
+    let listed = Requirement::Data {
+        name: "d".into(),
+        constraint: Constraint::new(">= 1").unwrap(),
+        triplets: Some(vec![Platform::Aarch64Macos]),
+        mount: None,
+    };
+    assert!(listed.covers_host(Platform::Aarch64Macos));
+    assert!(!listed.covers_host(Platform::X86_64LinuxGnu));
+    // The language edge never conditions (validate refuses the key).
+    let language = Requirement::Language {
+        engine: "ruby".into(),
+        constraint: Constraint::new("~> 3.3.0").unwrap(),
+        triplets: None,
+    };
+    assert!(language.triplets().is_none());
+    assert!(language.covers_host(Platform::X86_64WindowsUcrt));
+    // The skip note and journal line name the edge and the host through
+    // ONE spelling (spec 00 invariant 10).
+    assert_eq!(listed.edge_label(), "data:d");
+    let note = listed.platform_skip_note(Platform::X86_64LinuxGnu);
+    assert!(note.contains("data:d"), "{note}");
+    assert!(note.contains("x86_64-linux-gnu"), "{note}");
+    assert!(note.contains("aarch64-macos"), "{note}");
+    let journal = listed.platform_skip_journal(Platform::X86_64LinuxGnu);
+    assert_eq!(
+        journal,
+        "event=edge-platform-skip edge=data:d host=x86_64-linux-gnu"
+    );
+}
+
+#[test]
+fn absent_triplets_stay_off_the_wire() {
+    // The additive-field law: edges without triplets serialize exactly
+    // as before — no `triplets: null`, no empty list.
+    let m = PayloadManifest::from_yaml(&read(&fixture_path("executable-edge"))).unwrap();
+    let yaml = m.to_yaml().unwrap();
+    assert!(
+        !yaml.contains("triplets"),
+        "an unconditioned edge emits no triplets key: {yaml}"
+    );
 }
 
 #[test]

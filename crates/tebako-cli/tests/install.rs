@@ -1142,6 +1142,65 @@ fn install_walks_the_requires_closure_and_installs_the_deps() {
 }
 
 #[test]
+fn install_skips_an_edge_not_covering_this_host() {
+    // spec 03 §2.3 (schema_minor 9): a requires edge whose triplets: list
+    // does not cover this host is SKIPPED — never resolved, never
+    // fetched, never installed — and the skip is journaled loudly. The
+    // skipped dep's registry is deliberately NEVER registered: any
+    // resolution attempt would fail the test by name.
+    let fx = Fixture::new("depwalk-skip");
+    let skipped = Platform::ALL
+        .iter()
+        .find(|p| **p != Platform::host() && !p.is_reserved())
+        .unwrap()
+        .as_triplet();
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        &format!(
+            "  - kind: data\n    name: fonts\n    constraint: \">= 2\"\n    triplets: [{skipped}]\n    mount: /opt/fonts\n  - kind: data\n    name: iso-codes\n    constraint: \">= 2024.1\"\n    mount: /opt/iso\n"
+        ),
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    let iso_ref = fx.payload("iso-codes-2025.2.tfs", &data_image("iso-codes", "2025.2"));
+    let iso_reg = fx.registry(
+        "iso-codes-registry.yaml",
+        &versions_registry_yaml("iso-codes", "data", &[("2025.2", &iso_ref)]),
+    );
+
+    install::add_registry(&fx.home, &app_reg).unwrap();
+    install::add_registry(&fx.home, &iso_reg).unwrap();
+
+    let out = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.commands, vec!["app"]);
+
+    // the covering edge installed; the skipped edge left no trace in the
+    // store
+    assert!(fx.payloads_dir().join("iso-codes/2025.2.tfs").is_file());
+    assert!(
+        !fx.payloads_dir().join("fonts").exists(),
+        "the skipped edge never installs"
+    );
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains("event=edge-platform-skip edge=data:fonts"),
+        "{journal}"
+    );
+    assert!(
+        journal.contains(&format!("host={}", Platform::host().as_triplet())),
+        "{journal}"
+    );
+    assert!(
+        !journal.contains("event=edge-platform-skip edge=data:iso-codes"),
+        "the covering edge is not skipped: {journal}"
+    );
+}
+
+#[test]
 fn dep_walk_requires_cycle_is_a_named_error() {
     // spec 18 §5.6 S32: A requires B and B requires A — the named cycle
     // error at install, never the cache check's silent short-circuit.

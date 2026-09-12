@@ -102,12 +102,20 @@ where
 
     let mut edges: Vec<SpawnEdge> = Vec::new();
     for requirement in &manifest.requires {
+        // spec 03 §2.3 (schema_minor 9): an edge whose triplets: list
+        // does not cover the press's target host contributes NO spawned
+        // row and NO exposed name — the skip is loud, never an error.
+        if !requirement.covers_host(host) {
+            eprintln!("tebako: note: {}", requirement.platform_skip_note(host));
+            continue;
+        }
         match requirement {
             tpkg::Requirement::Runtime {
                 engine,
                 implementation,
                 constraint,
                 expose,
+                ..
             } => {
                 // The lock's own validator refuses two rows for one
                 // engine+implementation — press refuses to compose them
@@ -660,9 +668,11 @@ fn spawned_payload_row<T: Transport>(
         .requires
         .iter()
         .find_map(|r| match r {
-            tpkg::Requirement::Language { engine: e, constraint } if *e == engine => {
-                Some(constraint)
-            }
+            tpkg::Requirement::Language {
+                engine: e,
+                constraint,
+                ..
+            } if *e == engine => Some(constraint),
             _ => None,
         })
         .ok_or_else(|| {

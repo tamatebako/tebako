@@ -397,6 +397,14 @@ pub fn resolve_closure<T: Transport>(
                 )));
             }
             for requirement in &manifest.requires {
+                // spec 03 §2.3 (schema_minor 9): an edge whose triplets:
+                // list does not cover the compose's target host
+                // contributes NO dependency row — the skip is loud,
+                // never an error.
+                if !requirement.covers_host(host) {
+                    eprintln!("tebako: note: {}", requirement.platform_skip_note(host));
+                    continue;
+                }
                 // spec 32 §1: the executable edge's MOUNT axis co-mounts
                 // the provider payload like toolkit/data (below); an
                 // expose-only edge is NEVER co-mounted — it rides the
@@ -451,6 +459,7 @@ pub fn resolve_closure<T: Transport>(
                         name,
                         constraint,
                         mount,
+                        ..
                     } => (name, constraint, mount),
                     tpkg::Requirement::Executable { .. } => {
                         unreachable!("executable edges resolve above the tuple match")

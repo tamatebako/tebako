@@ -1312,12 +1312,21 @@ mod one_or_many {
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Requirement {
     /// A language-runtime edge (`{kind: language, engine, constraint}`).
+    /// FORBIDS `triplets` (spec 03 §2.3, schema_minor 9): a skipped
+    /// language edge would boot a payload with no runtime — platform
+    /// reach of the runtime is the payload-level `platforms:` axis's
+    /// statement. The field exists so a manifest carrying the key is a
+    /// NAMED parse-time refusal (validate), never a silently ignored
+    /// unknown key.
     Language {
         engine: String,
         constraint: Constraint,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        triplets: Option<Vec<Platform>>,
     },
     /// A native toolkit layer (`{kind: toolkit, name, constraint,
-    /// triplets?, mount?}`); `triplets` says where the dep ships.
+    /// triplets?, mount?}`); `triplets` conditions the edge per host
+    /// (spec 03 §2.3).
     Toolkit {
         name: String,
         constraint: Constraint,
@@ -1326,21 +1335,26 @@ pub enum Requirement {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         mount: Option<String>,
     },
-    /// A data-payload edge (`{kind: data, name, constraint, mount?}`).
+    /// A data-payload edge (`{kind: data, name, constraint, triplets?,
+    /// mount?}`).
     Data {
         name: String,
         constraint: Constraint,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        triplets: Option<Vec<Platform>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         mount: Option<String>,
     },
     /// A spawned-runtime edge (`{kind: runtime, engine,
-    /// implementation?, constraint, expose?}`) — spec 30 §1
+    /// implementation?, constraint, expose?, triplets?}`) — spec 30 §1
     /// (schema_minor 4): the depended runtime resolves through the
     /// RUNTIME index into the store's runtimes/ area and is NEVER
     /// co-mounted; its exposed entrypoints are spawned through the §2
     /// dispatch. `implementation` narrows the engine axis (spec 28 §8);
     /// `expose` names the depended entries the payload surfaces (the §3
     /// shim surface) — bare command names, like library_aliases names.
+    /// `triplets` (schema_minor 9) conditions the whole edge — resolve,
+    /// spawn surface, exposed names — per host (spec 03 §2.3).
     Runtime {
         engine: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1348,9 +1362,11 @@ pub enum Requirement {
         constraint: Constraint,
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         expose: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        triplets: Option<Vec<Platform>>,
     },
     /// An executable-capability edge (`{kind: executable, name,
-    /// payload?, constraint, mount?, expose?, critical?}`) — spec 03
+    /// payload?, constraint, mount?, expose?, critical?, triplets?}`) — spec 03
     /// §8 and spec 32 §1 (schema_minor 5): an executable another
     /// payload PROVIDES, exact-name matched against
     /// `provides.executables` ∪ `provides.entrypoints[].name`. `mount` and `expose` are the two
@@ -1361,7 +1377,10 @@ pub enum Requirement {
     /// takes the exec-tier path. `payload` is the by-name provider pin
     /// (the AmbiguousProvider escape hatch); `critical` is the schema
     /// evolution law's flag (a reader predating schema_minor 5 must
-    /// refuse the edge, never skip it silently).
+    /// refuse the edge, never skip it silently). `triplets`
+    /// (schema_minor 9) conditions the edge per host (spec 03 §2.3);
+    /// the skip applies regardless of `critical` — `critical` governs
+    /// reader-ERA refusal, never platform reach.
     Executable {
         name: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1373,6 +1392,8 @@ pub enum Requirement {
         expose: Vec<String>,
         #[serde(default, skip_serializing_if = "is_false")]
         critical: bool,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        triplets: Option<Vec<Platform>>,
     },
 }
 
@@ -1403,11 +1424,97 @@ fn check_expose_names(expose: &[String]) -> Result<(), ManifestError> {
     Ok(())
 }
 
+/// Shared per-edge `triplets` checks (spec 03 §2.3, schema_minor 9):
+/// non-empty when present, then the §3 list grammar (no reserved
+/// triplet, no duplicates).
+fn check_edge_triplets(triplets: &Option<Vec<Platform>>) -> Result<(), ManifestError> {
+    if let Some(ts) = triplets {
+        if ts.is_empty() {
+            return Err(ManifestError::Invalid(
+                "requires[].triplets must not be empty when present",
+            ));
+        }
+        check_platforms(ts)?;
+    }
+    Ok(())
+}
+
 impl Requirement {
+    /// The edge's OPTIONAL platform conditioning (spec 03 §2.3,
+    /// schema_minor 9): `None` = universal — the edge resolves on every
+    /// host. A validated `kind: language` edge always returns `None`
+    /// (the kind refuses the key at parse).
+    pub fn triplets(&self) -> Option<&[Platform]> {
+        match self {
+            Requirement::Language { triplets, .. }
+            | Requirement::Toolkit { triplets, .. }
+            | Requirement::Data { triplets, .. }
+            | Requirement::Runtime { triplets, .. }
+            | Requirement::Executable { triplets, .. } => triplets.as_deref(),
+        }
+    }
+
+    /// True when this edge resolves on `host`: a universal edge covers
+    /// every host; a listed edge covers the listed hosts only. A
+    /// non-covering edge is SKIPPED — loud and journaled, never an
+    /// error (spec 03 §2.3).
+    pub fn covers_host(&self, host: Platform) -> bool {
+        self.triplets().map_or(true, |ts| ts.contains(&host))
+    }
+
+    /// The edge's display identity (`data:iso-codes`, `runtime:java`, …)
+    /// — the skip notes and journals name the edge through this ONE
+    /// spelling (spec 00 invariant 10).
+    pub fn edge_label(&self) -> String {
+        match self {
+            Requirement::Language { engine, .. } => format!("language:{engine}"),
+            Requirement::Toolkit { name, .. } => format!("toolkit:{name}"),
+            Requirement::Data { name, .. } => format!("data:{name}"),
+            Requirement::Runtime { engine, .. } => format!("runtime:{engine}"),
+            Requirement::Executable { name, .. } => format!("executable:{name}"),
+        }
+    }
+
+    /// The loud skip note (spec 03 §2.3): every consumer phrases the
+    /// skip identically; the channel (stderr note / journal line) is the
+    /// consumer's. Only meaningful for a non-covering edge — callers
+    /// gate on [`covers_host`](Self::covers_host).
+    pub fn platform_skip_note(&self, host: Platform) -> String {
+        let covers = self
+            .triplets()
+            .map(|ts| {
+                ts.iter()
+                    .map(|t| t.as_triplet())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            })
+            .unwrap_or_default();
+        format!(
+            "skipping dependency edge {} — not available on this platform ({host}); the edge covers: {covers} (spec 03 §2.3)",
+            self.edge_label()
+        )
+    }
+
+    /// The journal line for the skip (spec 03 §2.3): the shim/store
+    /// journal convention, `event=<name> k=v …`.
+    pub fn platform_skip_journal(&self, host: Platform) -> String {
+        format!(
+            "event=edge-platform-skip edge={} host={host}",
+            self.edge_label()
+        )
+    }
+
     fn validate(&self) -> Result<(), ManifestError> {
         match self {
-            Requirement::Language { engine, .. } => {
+            Requirement::Language {
+                engine, triplets, ..
+            } => {
                 check_non_empty(engine, "requires[].engine must not be empty")?;
+                if triplets.is_some() {
+                    return Err(ManifestError::Invalid(
+                        "requires[].triplets is not allowed on a kind: language edge — platform reach of the runtime is the payload-level platforms: axis's statement (spec 03 §2.3)",
+                    ));
+                }
             }
             Requirement::Toolkit {
                 name,
@@ -1416,20 +1523,19 @@ impl Requirement {
                 ..
             } => {
                 check_non_empty(name, "requires[].name must not be empty")?;
-                if let Some(ts) = triplets {
-                    if ts.is_empty() {
-                        return Err(ManifestError::Invalid(
-                            "requires[].triplets must not be empty when present",
-                        ));
-                    }
-                    check_platforms(ts)?;
-                }
+                check_edge_triplets(triplets)?;
                 if let Some(m) = mount {
                     check_abs_path(m, "requires[].mount must be absolute (consumer-declared)")?;
                 }
             }
-            Requirement::Data { name, mount, .. } => {
+            Requirement::Data {
+                name,
+                triplets,
+                mount,
+                ..
+            } => {
                 check_non_empty(name, "requires[].name must not be empty")?;
+                check_edge_triplets(triplets)?;
                 if let Some(m) = mount {
                     check_abs_path(m, "requires[].mount must be absolute (consumer-declared)")?;
                 }
@@ -1438,6 +1544,7 @@ impl Requirement {
                 engine,
                 implementation,
                 expose,
+                triplets,
                 ..
             } => {
                 check_non_empty(engine, "requires[].engine must not be empty")?;
@@ -1447,6 +1554,7 @@ impl Requirement {
                         "requires[].implementation must not be empty when present",
                     )?;
                 }
+                check_edge_triplets(triplets)?;
                 // spec 30 §1/§3: exposed entries are bare command names
                 // (the shared spawn-surface grammar).
                 check_expose_names(expose)?;
@@ -1456,12 +1564,14 @@ impl Requirement {
                 payload,
                 mount,
                 expose,
+                triplets,
                 ..
             } => {
                 check_non_empty(name, "requires[].name must not be empty")?;
                 if let Some(p) = payload {
                     check_non_empty(p, "requires[].payload must not be empty when present")?;
                 }
+                check_edge_triplets(triplets)?;
                 if let Some(m) = mount {
                     check_abs_path(m, "requires[].mount must be absolute (consumer-declared)")?;
                 }

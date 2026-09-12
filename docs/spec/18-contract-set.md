@@ -380,6 +380,13 @@ behavior. (S-numbers are the e2e/test ids to implement.)
   is the pin, never fresh semver (spec 23 §4/§13).
 - **S64** crash mid-lazy-seed → tmp+rename keeps the partial seed
   invisible; the run is unaffected; the next run re-seeds (spec 05 §4).
+- **S65** a `requires:` edge whose `triplets:` list does not cover the
+  host (spec 03 §2.3, schema_minor 9, roadmap 86) → the edge is SKIPPED
+  (no resolve/fetch/install/lock row/mount/spawn surface) with a loud
+  journaled note (`event=edge-platform-skip`), never an error; dispatch
+  of its exposed name → the named "not available on this platform"
+  refusal (exit 69), never a silent fallback. `kind: language` carrying
+  `triplets:` → named parse error steering to `platforms:`.
 
 ### 5.7 Press × inputs
 - **S38** `TEBAKO_BOOTSTRAP` override with an era-1 bootstrap binary →
@@ -400,8 +407,11 @@ behavior. (S-numbers are the e2e/test ids to implement.)
 - **S46** no `schema_version` → era-1 refusal ("republish the
   registry").
 - **S47** entry abi has no host match → filtered, named if empty.
-- **S48** registry unreachable, cache older than 24 h TTL → named error
-  (exists).
+- **S48** registry unreachable, cache older than 24 h TTL → the stale
+  cache SERVES with a loud stderr warning + journal line
+  (`event=stale-registry-serve`; spec 05 §4, roadmap 86) — the trust
+  anchor is the artifact's `.sha256`/`.asc` at fetch time, never the
+  registry's freshness; cache ABSENT → named error (exists).
 
 ### 5.10 Factory
 - **S49** tarball without `tebako-mount-root` → exit 132.
@@ -518,5 +528,5 @@ tebako publish
 | 9 | registry `schema_version` enforce (publish validates, resolve refuses) | tebako-cli + resolve |
 | 10 | factory `nm` provenance assert; exit 132 | tebako-runtime-ruby |
 | 11 | feedstock product pin (post-2.0 tag) | tebako-packages |
-| 12 | scenario catalog → e2e suite (S1–S61) | tebako-rs + factory |
+| 12 | scenario catalog → e2e suite (S1–S65) | tebako-rs + factory |
 | 13 | `tebako info` embeds `artifact-info.yaml` in the bootstrap binary (S38) | tebako-rs release |

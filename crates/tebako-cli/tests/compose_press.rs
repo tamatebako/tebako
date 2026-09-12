@@ -405,6 +405,82 @@ fn resolve_closure_walks_the_requires_edges_and_the_doc_verdict_stands() {
 }
 
 #[test]
+fn resolve_closure_skips_an_edge_not_covering_the_target_host() {
+    // spec 03 §2.3 (schema_minor 9): a requires edge whose triplets: list
+    // does not cover the compose's target host contributes NO dependency
+    // row — never resolved, never carried, never in the lock. toolb's
+    // registry is deliberately NEVER registered: any resolution attempt
+    // on the skipped edge would fail by name.
+    let fx = Fixture::new("edge-skip");
+    let skipped = Platform::ALL
+        .iter()
+        .find(|p| **p != Platform::host() && !p.is_reserved())
+        .unwrap()
+        .as_triplet();
+    let host = Platform::host().as_triplet();
+    let appa_image = image(
+        "app",
+        "appa",
+        "1.0",
+        &format!("  - kind: toolkit\n    name: toolb\n    constraint: \">= 1.0\"\n    triplets: [{skipped}]\n    mount: /opt/toolb\n"),
+    );
+    let appc_image = image(
+        "app",
+        "appc",
+        "1.0",
+        &format!("  - kind: toolkit\n    name: toolb\n    constraint: \">= 1.0\"\n    triplets: [{host}]\n    mount: /opt/toolb\n"),
+    );
+    let toolb_image = image("toolkit", "toolb", "1.4", "");
+    let appa_ref = fx.payload("appa-1.0.tfs", &appa_image);
+    let appc_ref = fx.payload("appc-1.0.tfs", &appc_image);
+    let toolb_ref = fx.payload("toolb-1.4.tfs", &toolb_image);
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &registry_yaml("appa", "app", &[("1.0", &appa_ref)], Some("1.0")),
+    ));
+    fx.register(&fx.registry(
+        "appc-registry.yaml",
+        &registry_yaml("appc", "app", &[("1.0", &appc_ref)], Some("1.0")),
+    ));
+    fx.register(&fx.registry(
+        "toolb-registry.yaml",
+        &registry_yaml("toolb", "toolkit", &[("1.4", &toolb_ref)], Some("1.4")),
+    ));
+
+    // the skipped edge: the closure is the app alone
+    let parsed = parse(&doc("slices:\n  - {name: appa, requirement: \"1.0\"}\n"));
+    let slices = compose::resolve_closure(
+        &fx.home,
+        &Fetcher::new(),
+        &parsed,
+        ComposePreset::SharedRuntime,
+        Platform::host(),
+    )
+    .unwrap();
+    assert_eq!(
+        slices.len(),
+        1,
+        "the skipped edge contributes no dependency row"
+    );
+    assert_eq!(slices[0].name, "appa");
+
+    // the covering edge: the closure resolves the dep exactly as an
+    // unconditioned edge would
+    let parsed = parse(&doc("slices:\n  - {name: appc, requirement: \"1.0\"}\n"));
+    let slices = compose::resolve_closure(
+        &fx.home,
+        &Fetcher::new(),
+        &parsed,
+        ComposePreset::SharedRuntime,
+        Platform::host(),
+    )
+    .unwrap();
+    assert_eq!(slices.len(), 2, "the covering edge resolves");
+    assert_eq!(slices[1].name, "toolb");
+    assert_eq!(slices[1].mount.as_deref(), Some("/opt/toolb"));
+}
+
+#[test]
 fn resolve_closure_re_encounter_must_agree_on_the_version() {
     let fx = Fixture::new("reencounter");
     let a_image = image(

@@ -131,7 +131,10 @@ tebako use metanorma@1.2.2                # instant rollback
 - ~~the dispatch-time registry cache~~ — SHIPPED (33): the shim resolves
   every registry form at dispatch behind
   `~/.tebako/registries/<sha>.yaml` (24 h TTL), `tebako
-  update-registries`, `TEBAKO_OFFLINE` = cache-or-named-error.
+  update-registries`, `TEBAKO_OFFLINE` = cache-or-named-error; a stale
+  cache + a failed refresh serves the stale bytes loud (stderr +
+  journal — spec 05 §4, roadmap 86), never a hard error while a cache
+  exists.
 - ~~`tebako publish` helper~~ — SHIPPED (41): press-output payloads →
   optional sign (per-artifact `<artifact>.asc`, the `<keyid, asc>`
   registry pin) → upload to the referenced GitHub release (in-process
