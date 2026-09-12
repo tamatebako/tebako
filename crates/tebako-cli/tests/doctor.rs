@@ -50,7 +50,7 @@ impl Fixture {
 
     /// The same record with an explicit `identity.signing` block.
     fn payload_with_signing(&self, name: &str, version: &str, signing: &str) -> PathBuf {
-        let dir = self.home.join(format!("payloads/{name}"));
+        let dir = self.home.join("payloads").join(name);
         fs::create_dir_all(&dir).unwrap();
         let image = dir.join(format!("{version}.tfs"));
         fs::write(&image, format!("the {name} {version} image bytes\n")).unwrap();
