@@ -365,7 +365,7 @@ mod tests {
             Some("-Xmx1g -Djavax.net.ssl.trustStoreType=Windows-ROOT")
         );
         // The user's own truststore config is never stomped.
-        let ctx = ctx(
+        let ctx = mk_ctx(
             &home,
             &[(JAVA_TOOL_OPTIONS, "-Djavax.net.ssl.trustStore=C:/corp.p12")],
         );

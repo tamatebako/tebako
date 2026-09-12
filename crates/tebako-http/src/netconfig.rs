@@ -94,9 +94,10 @@ pub enum NetConfigError {
     ExtraCaUnreadable { path: PathBuf, why: String },
     /// An `extra_ca` file holds no parseable certificate block.
     ExtraCaMalformed { path: PathBuf, why: String },
-    /// An `extra_ca` path cannot join the OS path-list env form (it
-    /// contains the separator itself) — the spec 17 §2.3 wire cannot
-    /// convey it, and a dropped entry is never silent.
+    /// An `extra_ca` path cannot join the OS path-list env form (it holds
+    /// the separator — or a quote on Windows, which has no quoting
+    /// escape) — the spec 17 §2.3 wire cannot convey it, and a dropped
+    /// entry is never silent.
     ExtraCaNotEnvExpressible { path: PathBuf },
 }
 
@@ -130,7 +131,8 @@ impl fmt::Display for NetConfigError {
             ),
             NetConfigError::ExtraCaNotEnvExpressible { path } => write!(
                 f,
-                "extra CA {} contains the OS path-list separator and cannot ride the \
+                "extra CA {} has no OS path-list spelling (it holds the list \
+                 separator, or a quote on Windows) and cannot ride the \
                  {EXTRA_CA_ENV} env form (spec 17 §2.3's wire) — move the file",
                 path.display()
             ),
@@ -376,13 +378,14 @@ pub fn trust_bridge_env_from(cfg: &NetworkConfig) -> Result<Vec<(String, String)
     }
     if !cfg.extra_ca.is_empty() {
         let joined = std::env::join_paths(&cfg.extra_ca).map_err(|_| {
-            // join_paths fails exactly when a path contains the list
-            // separator (`:` unix / `;` windows) — name that entry.
-            let sep = if cfg!(windows) { ';' } else { ':' };
+            // join_paths fails exactly when a path has no list spelling:
+            // a `:` on unix; a `"` on windows (a `;` there quotes fine).
+            // Name the culprit entry — a dropped CA is never silent.
+            let bad = if cfg!(windows) { '"' } else { ':' };
             let path = cfg
                 .extra_ca
                 .iter()
-                .find(|p| p.as_os_str().to_string_lossy().contains(sep))
+                .find(|p| p.as_os_str().to_string_lossy().contains(bad))
                 .cloned()
                 .unwrap_or_default();
             NetConfigError::ExtraCaNotEnvExpressible { path }
@@ -563,11 +566,17 @@ wVYzxWmIj2VzW7jBacDLSIXvtFG6/Q7Zi5uJkatP7H6F\n\
 
     #[test]
     fn the_trust_bridge_refuses_an_unexpressible_extra_ca() {
-        // A path containing the list separator cannot ride the env form —
-        // a named error, never a silently dropped CA.
-        let sep = if cfg!(windows) { ';' } else { ':' };
+        // A path with no OS path-list spelling cannot ride the env form —
+        // a named error, never a silently dropped CA. The unexpressible
+        // char is platform truth: `:` on unix; `"` on windows (a `;`
+        // there is quoted by join_paths and round-trips fine).
+        let bad = if cfg!(windows) {
+            "/weird\"ca.pem"
+        } else {
+            "/weird:ca.pem"
+        };
         let cfg = NetworkConfig {
-            extra_ca: vec![PathBuf::from(format!("/weird{sep}ca.pem"))],
+            extra_ca: vec![PathBuf::from(bad)],
             ..Default::default()
         };
         let err = trust_bridge_env_from(&cfg).unwrap_err();
@@ -575,7 +584,7 @@ wVYzxWmIj2VzW7jBacDLSIXvtFG6/Q7Zi5uJkatP7H6F\n\
             err,
             NetConfigError::ExtraCaNotEnvExpressible { .. }
         ));
-        assert!(err.to_string().contains(&format!("{sep}")), "{err}");
+        assert!(err.to_string().contains("weird"), "{err}");
     }
 
     #[test]

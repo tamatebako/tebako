@@ -496,9 +496,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let pkg = plain_package(&dir, "pkg");
         let pkg = pkg.to_string_lossy().into_owned();
-        let sep = if cfg!(windows) { ';' } else { ':' };
+        // The unexpressible char is platform truth: `:` on unix, `"` on
+        // windows (a `;` there is quoted by join_paths and round-trips).
+        let bad = if cfg!(windows) { '"' } else { ':' };
         let cfg = NetworkConfig {
-            extra_ca: vec![PathBuf::from(format!("/etc/pki/corp{sep}odd.pem"))],
+            extra_ca: vec![PathBuf::from(format!("/etc/pki/corp{bad}odd.pem"))],
             ..Default::default()
         };
         let p = parse_run_args(&args(&[&pkg])).unwrap();
