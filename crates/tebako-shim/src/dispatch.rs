@@ -442,12 +442,17 @@ fn compose_spawn_lock(
 }
 
 /// The full dispatch (spec 07 §2): resolve payload version → resolve
-/// runtime → compose the mount set → the ABI v1 exec plan.
+/// runtime → compose the mount set → the ABI v1 exec plan. The trust
+/// bridge (spec 17 §2.3) applies to the composed plan: the resolved
+/// netconfig verdict rides the handoff env, and the java plane gets its
+/// dispatcher-side append.
 pub fn dispatch(tool: &str, user_args: &[String], ctx: &Ctx) -> Result<ExecPlan, ShimError> {
     let res = resolve::resolve(tool, ctx)?;
     let (flags, args) = parse_jail_flags(user_args)?;
     let jail_env = compose_jail_env(&res, &flags, &args, ctx)?;
-    plan(&res, &args, ctx, true, jail_env)
+    let mut plan = plan(&res, &args, ctx, true, jail_env)?;
+    crate::trust::apply(&mut plan, ctx)?;
+    Ok(plan)
 }
 
 /// The plan behind [`dispatch`], parameterized so `which` can resolve

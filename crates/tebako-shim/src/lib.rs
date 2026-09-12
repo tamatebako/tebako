@@ -56,6 +56,7 @@ pub mod resolve;
 pub mod runtime;
 pub mod shell;
 pub mod shell_windows;
+pub mod trust;
 pub mod versions;
 
 use std::collections::BTreeMap;

@@ -32,6 +32,15 @@ libc = "0.2"
 # fallback (spec 22 §6, exec_cache.rs) hashes on every platform — sha2
 # is unconditional.
 sha2 = "0.10"
+# The spec 17 §2.3 trust bridge (materialize.rs): platform mode merges
+# the ENUMERATED OS trust store into the image's cert bundle — the
+# driver is not size-gated, so the spec blesses rustls-native-certs;
+# additive mode's extra_ca PEMs parse through rustls-pemfile (the same
+# crate and parse rule as tebako-http's netconfig); the enumerated DER
+# blocks PEM-encode through base64ct.
+rustls-native-certs = "0.8"
+rustls-pemfile = "2"
+base64ct = { version = "1", features = ["alloc"] }
 
 # The mounts land in the same process-global context the C ABI serves —
 # the libtfs-preload pattern (a native Rust consumer of the engine).

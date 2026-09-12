@@ -412,6 +412,13 @@ pub fn trace_run(parsed: &TraceRunArgs) -> Result<(), TebakoError> {
     }
     let capture = parsed.capture.clone().unwrap_or_else(default_capture);
 
+    // The trust bridge (spec 17 §2.3): the resolved netconfig verdict
+    // rides the handoff env so the package's driver materializes the
+    // merged cert bundle. Conveyance only — this surface composes no
+    // spawn-lock, so the java-plane append does not apply here.
+    let trust_env =
+        tebako_http::netconfig::trust_bridge_env().map_err(|e| plain_error(e.to_string()))?;
+
     // Spawn + wait on BOTH platforms (the synthesis runs after the
     // payload, so the unix execve replacement of `tebako run` is not
     // available here). stdio is inherited: the payload runs as if direct.
@@ -419,6 +426,7 @@ pub fn trace_run(parsed: &TraceRunArgs) -> Result<(), TebakoError> {
         .args(&parsed.args)
         .env(tfs::trace::TRACE_ENV, &capture)
         .env("TEBAKO_JAIL", "record")
+        .envs(trust_env)
         .status()
         .map_err(|e| {
             plain_error(format!(
