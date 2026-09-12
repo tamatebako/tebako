@@ -686,7 +686,29 @@ fn cmd_which(args: &[String], ctx: &Ctx) -> Result<Action, ShimError> {
 // doctor
 // ---------------------------------------------------------------------
 
-fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
+/// The structured doctor report (spec 35 §5): `tebako doctor`
+/// (tebako-cli) renders its dispatch section from this; `tebako-shim
+/// doctor`'s text output renders from the same report — one check set,
+/// two renderers.
+pub struct DoctorReport {
+    /// Healthy / informational lines (rendered as `ok: …`).
+    pub notes: Vec<String>,
+    /// Findings (rendered as `problem: …`).
+    pub problems: Vec<String>,
+}
+
+impl DoctorReport {
+    /// The exit code the finding set maps to (spec 35 §4): 0 clean,
+    /// 1 problems found.
+    pub fn code(&self) -> u8 {
+        if self.problems.is_empty() { 0 } else { 1 }
+    }
+}
+
+/// The dispatch-plane checks (spec 35 §2): PATH, shim links, payload
+/// records, config parse, registry freshness, runtime entries, routing
+/// health. Read-only.
+pub fn doctor_report(ctx: &Ctx) -> DoctorReport {
     let mut problems: Vec<String> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
 
@@ -815,18 +837,27 @@ fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
     // dangling pins, disabled-but-pinned conflicts.
     doctor_routing(ctx, &mut problems);
 
+    DoctorReport { notes, problems }
+}
+
+fn cmd_doctor(ctx: &Ctx) -> Result<Action, ShimError> {
+    let report = doctor_report(ctx);
     let mut out = String::new();
-    for note in &notes {
+    for note in &report.notes {
         let _ = writeln!(out, "ok: {note}");
     }
-    if problems.is_empty() {
+    if report.problems.is_empty() {
         let _ = writeln!(out, "tebako-shim doctor: no problems found");
         Ok(Action::Print { text: out, code: 0 })
     } else {
-        for p in &problems {
+        for p in &report.problems {
             let _ = writeln!(out, "problem: {p}");
         }
-        let _ = writeln!(out, "tebako-shim doctor: {} problem(s)", problems.len());
+        let _ = writeln!(
+            out,
+            "tebako-shim doctor: {} problem(s)",
+            report.problems.len()
+        );
         Ok(Action::Print { text: out, code: 1 })
     }
 }

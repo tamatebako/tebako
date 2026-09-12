@@ -162,6 +162,81 @@ pub fn agent_with_config(
     Ok(builder.build().into())
 }
 
+/// The spec 35 §3 TLS probe verdict (tebako doctor's network section).
+#[cfg(feature = "network")]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TlsProbe {
+    /// The served chain verifies under the effective configuration.
+    EffectiveOk,
+    /// The effective roots reject the chain but the PLATFORM verifier
+    /// accepts it — a TLS-intercepting proxy (or an enterprise root the
+    /// bundled store does not carry) is in the path.
+    PlatformOnly,
+    /// Neither the effective nor the platform roots accept the chain.
+    NeitherTrusted,
+    /// The host did not answer at all (DNS/connect/timeout/proxy) — a
+    /// network condition, not a trust finding.
+    Unreachable(String),
+}
+
+/// One HTTPS GET against `https://<host>/` under `effective`, and — only
+/// when the effective roots reject the chain — a second under the
+/// platform verifier. Diagnostic only (spec 35 §3): read-only (the
+/// response body is dropped unread), no state changes. The platform leg
+/// keeps the effective proxy and drops `extra_ca` (platform+additive is
+/// a validation conflict by rule; the comparison is roots-vs-roots).
+#[cfg(feature = "network")]
+pub fn probe_tls(host: &str, effective: &netconfig::NetworkConfig, timeout: Duration) -> TlsProbe {
+    let attempt = |cfg: &netconfig::NetworkConfig| -> Result<(), ureq::Error> {
+        let agent = agent_with_config(cfg, timeout)
+            .map_err(|e| ureq::Error::Io(std::io::Error::other(e.to_string())))?;
+        // http_status_as_error(false) is set on the testing-seam agent:
+        // ANY HTTP response means the handshake (the probe's subject)
+        // completed. The body is never read.
+        agent
+            .get(&format!("https://{host}/"))
+            .call()
+            .map(|_| ())
+    };
+    match attempt(effective) {
+        Ok(()) => TlsProbe::EffectiveOk,
+        Err(e) if !is_cert_rejection(&e) => TlsProbe::Unreachable(format!("{e}")),
+        Err(_first_leg) => {
+            if effective.tls_roots == netconfig::TlsRoots::Platform {
+                return TlsProbe::NeitherTrusted;
+            }
+            let platform = netconfig::NetworkConfig {
+                proxy_url: effective.proxy_url.clone(),
+                tls_roots: netconfig::TlsRoots::Platform,
+                extra_ca: Vec::new(),
+                audit: Vec::new(),
+            };
+            match attempt(&platform) {
+                Ok(()) => TlsProbe::PlatformOnly,
+                Err(pe) if is_cert_rejection(&pe) => TlsProbe::NeitherTrusted,
+                Err(pe) => TlsProbe::Unreachable(format!("{pe}")),
+            }
+        }
+    }
+}
+
+/// ureq surfaces a TLS handshake failure as `Error::Io` with the rustls
+/// error as the inner cause (rustls's `From<rustls::Error> for
+/// io::Error` is `InvalidData`). The platform verifier's rejections land
+/// in the same `InvalidCertificate` shape.
+#[cfg(feature = "network")]
+fn is_cert_rejection(e: &ureq::Error) -> bool {
+    if let ureq::Error::Io(io) = e {
+        if let Some(inner) = io.get_ref() {
+            if let Some(re) = inner.downcast_ref::<rustls::Error>() {
+                return matches!(re, rustls::Error::InvalidCertificate(_));
+            }
+        }
+        return format!("{io}").contains("certificate");
+    }
+    false
+}
+
 /// Without the feature (the size-gated bootstrap) the transport is
 /// exactly the pre-feature behavior: bundled roots, or the platform
 /// verifier via `TEBAKO_TLS_PLATFORM_ROOTS`; no proxy, no extra CAs.

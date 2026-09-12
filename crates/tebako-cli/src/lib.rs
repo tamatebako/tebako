@@ -66,6 +66,7 @@ pub mod bundle;
 pub mod check;
 pub mod compose;
 pub mod contract;
+pub mod doctor;
 pub mod deploy;
 pub mod error;
 pub mod fetch;

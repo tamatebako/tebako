@@ -108,14 +108,13 @@ pub fn load_config(home: &Path) -> Result<UserConfig, ShimError> {
 // enterprise networking (TODO.v2-1/33): install the effective config
 // ---------------------------------------------------------------------
 
-/// Resolve the `network:` section under the environment and install it
-/// as tebako-http's process-global config. Every binary that fetches
-/// calls this at startup, before the first request (agent construction
-/// caches the transport). Audit lines land in the journal — the loud
-/// record the trust story requires; best-effort, like every journal
-/// write. A malformed section is a named error at startup, never a
-/// silent fallback.
-pub fn install_network_config(home: &Path) -> Result<(), ShimError> {
+/// Resolve the effective network config — env over the config file's
+/// `network:` section — WITHOUT installing it (spec 35's doctor reads
+/// this; the fetching binaries install via [`install_network_config`]).
+/// A malformed section is the same named error either way.
+pub fn effective_network_config(
+    home: &Path,
+) -> Result<tebako_http::netconfig::NetworkConfig, ShimError> {
     let cfg = load_config(home)?;
     let roots = match cfg.network.tls_roots.as_deref() {
         None => None,
@@ -139,6 +138,18 @@ pub fn install_network_config(home: &Path) -> Result<(), ShimError> {
     effective
         .validate()
         .map_err(|e| ShimError::new(EX_TEBAKO_MANIFEST, e.to_string()))?;
+    Ok(effective)
+}
+
+/// Resolve the `network:` section under the environment and install it
+/// as tebako-http's process-global config. Every binary that fetches
+/// calls this at startup, before the first request (agent construction
+/// caches the transport). Audit lines land in the journal — the loud
+/// record the trust story requires; best-effort, like every journal
+/// write. A malformed section is a named error at startup, never a
+/// silent fallback.
+pub fn install_network_config(home: &Path) -> Result<(), ShimError> {
+    let effective = effective_network_config(home)?;
     if !effective.audit.is_empty() {
         // Local append (the shim carries no tfs dep); same best-effort
         // discipline as tfs::journal — the answer never depends on the
