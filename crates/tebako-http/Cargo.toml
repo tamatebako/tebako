@@ -34,6 +34,16 @@ rustls-pemfile = { version = "2", optional = true }
 # the provider explicitly on the TlsConfig.
 [target.'cfg(not(all(windows, target_env = "gnu")))'.dependencies]
 ureq = { version = "3", default-features = false, features = ["rustls", "platform-verifier"] }
+# Named directly (not just via ureq) for the doctor's TLS probe
+# (spec 35 §3): classifying a handshake failure means downcasting the
+# io error's cause to rustls::Error. ring — the provider ureq's `rustls`
+# feature already pulls here; no second provider enters the build.
+rustls = { version = "0.23", default-features = false, features = [
+    "std",
+    "tls12",
+    "logging",
+    "ring",
+] }
 
 [target.'cfg(all(windows, target_env = "gnu"))'.dependencies]
 ureq = { version = "3", default-features = false, features = [
