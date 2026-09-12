@@ -60,6 +60,9 @@ const USAGE: &str = "Usage:
                                        ≡ tebako-shim <verb> …: list|use|enable|disable|which|doctor|install-shell|uninstall-shell)
   tebako info [topic] [--remote] [--json]
                                        the store/system surface (system|runtimes|payloads|shims|registries|store)
+  tebako doctor [--json]               the spec 35 diagnostics surface (store / dispatch /
+                                       network / trust / registries — read-only;
+                                       exit 0 healthy / 1 problems)
   tebako inspect <artifact> [flags]    payload/package introspection (spec 15);
                                        --contract prints the spec-18 contract card
                                        (era, contract versions, mount_root, abi, trust + verdict)
@@ -119,9 +122,15 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     // ~/.tebako/config.yaml under the env, installed before any fetch;
     // a malformed section is the named startup error. Runs after the
     // version/help early-outs so those never depend on config health.
-    if let Some(home) = tfs::journal::tebako_home_dir() {
-        tebako_shim::config::install_network_config(&home)
-            .map_err(|e| CliExit::Error(TebakoError::new(e.message, e.code.into())))?;
+    // `doctor` is read-only end to end (spec 35 §1) and this install
+    // JOURNALS, so the verb skips it — the network section reports the
+    // effective configuration instead of installing it.
+    let read_only = args.first().map(|a| a.as_str()) == Some("doctor");
+    if !read_only {
+        if let Some(home) = tfs::journal::tebako_home_dir() {
+            tebako_shim::config::install_network_config(&home)
+                .map_err(|e| CliExit::Error(TebakoError::new(e.message, e.code.into())))?;
+        }
     }
 
     let subcommand = args[0].as_str();
@@ -133,6 +142,8 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     // (spec 25 §6.3's parity clause). `trace import` likewise: its
     // stdout is the converted retrace JSON document (spec 25 §6.2); and
     // `trace explain`'s stdout is the diagnosis report alone (§5).
+    // `doctor --json` is a machine contract too (spec 35 §4's
+    // doctor_schema document).
     let machine_stdout = (subcommand == "cache"
         && rest.first().map(|a| a.as_str()) == Some("list")
         && rest.iter().any(|a| a == "--json"))
@@ -140,7 +151,8 @@ fn run(args: &[String]) -> Result<(), CliExit> {
             && matches!(
                 rest.first().map(|a| a.as_str()),
                 Some("cover" | "import" | "explain")
-            ));
+            ))
+        || (subcommand == "doctor" && rest.iter().any(|a| a == "--json"));
     if machine_stdout {
         eprintln!("{VERSION_BANNER}");
     } else {
@@ -150,20 +162,24 @@ fn run(args: &[String]) -> Result<(), CliExit> {
     // every store-touching verb (S41: a newer stamp is the upgrade
     // refusal; S42: a pre-versioning store is stamped and the named
     // migration announced on stderr — tebako-resolve::store owns both).
-    if let Ok(home) = tebako_home() {
-        match tebako_resolve::store::check_once(&home) {
-            Ok(tebako_resolve::store::LayoutCheck::Migrated) => {
-                eprintln!(
-                    "tebako: note: {}",
-                    tebako_resolve::store::migration_message(&home)
-                );
-            }
-            Ok(_) => {}
-            Err(e) => {
-                return Err(CliExit::Error(tebako_cli::error::TebakoError::new(
-                    e.to_string(),
-                    74,
-                )));
+    // `doctor` skips it: the check can STAMP/MIGRATE, and the store
+    // section's job is to REPORT the stamp it finds, not to move it.
+    if !read_only {
+        if let Ok(home) = tebako_home() {
+            match tebako_resolve::store::check_once(&home) {
+                Ok(tebako_resolve::store::LayoutCheck::Migrated) => {
+                    eprintln!(
+                        "tebako: note: {}",
+                        tebako_resolve::store::migration_message(&home)
+                    );
+                }
+                Ok(_) => {}
+                Err(e) => {
+                    return Err(CliExit::Error(tebako_cli::error::TebakoError::new(
+                        e.to_string(),
+                        74,
+                    )));
+                }
             }
         }
     }
@@ -185,6 +201,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "bundle" => run_bundle(rest),
         "shim" => run_shim(rest),
         "info" => run_info(rest),
+        "doctor" => run_doctor(rest),
         "inspect" => run_inspect(rest),
         "publish" => run_publish(rest),
         "clean" | "setup" | "hash" => Err(CliExit::Usage(format!(
@@ -258,6 +275,34 @@ fn run_info(args: &[String]) -> Result<(), CliExit> {
         }
     }
     let (out, code) = tebako_cli::info::run(&tebako_home()?, topic, remote, json)?;
+    print!("{out}");
+    if code != 0 {
+        std::process::exit(code);
+    }
+    Ok(())
+}
+
+/// `tebako doctor [--json]` — the spec 35 diagnostics surface. Read-only
+/// end to end: the startup mutations (network-config install, the layout
+/// stamp check) are skipped for it above, and the sections report what
+/// they find. TEBAKO_OFFLINE skips the network probes. The exit code IS
+/// the verdict (0 healthy / 1 problems) — process::exit, run_info's
+/// pattern.
+fn run_doctor(args: &[String]) -> Result<(), CliExit> {
+    let mut json = false;
+    for arg in args {
+        match arg.as_str() {
+            "--json" => json = true,
+            other => {
+                return Err(CliExit::Usage(format!(
+                    "unknown doctor option '{other}' (usage: tebako doctor [--json])"
+                )))
+            }
+        }
+    }
+    let offline = std::env::var_os("TEBAKO_OFFLINE").is_some();
+    let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    let (out, code) = tebako_cli::doctor::run(&tebako_home()?, json, offline, &env)?;
     print!("{out}");
     if code != 0 {
         std::process::exit(code);
