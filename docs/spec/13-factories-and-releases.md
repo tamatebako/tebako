@@ -23,8 +23,9 @@ RUNTIME FACTORY: tebako-runtime-ruby
             + per-asset <asset>.sha256 sidecars + per-package
               <stem>.manifest.json shards (the sidecar-era authority,
               spec 05 §2)
-            + manifest.json + SHA256SUMS (derived monoliths, forever)
-            (+ signatures, spec 09)
+            + per-artifact .asc on signing-enabled lines (spec 09 §5)
+            (no monolith release assets — manifest.json / SHA256SUMS
+              are derived consumer-side, spec 13 §2a)
    │  consumed by
    ▼
 PRODUCT: tebako-rs
@@ -49,26 +50,47 @@ dwarfs-t (C++ format lib) → releases → dwarfs-rs (FFI crate) → tebako-rs
 ## 2a. The release-index entry (manifest.json, locked)
 
 One entry per runtime PACKAGE (the executable), additive forever.
-**Publish shape (tebako#493, locked 2026-08-30):** each platform's
-publish invocation writes ONLY its own payload assets plus the metadata
-that describes them — the per-asset `<asset>.sha256` sidecar (coreutils
+**Publish shape (tebako#493, locked 2026-08-30; the finalize pass
+DELETED 2026-09-12, roadmap 85):** each platform's publish invocation
+writes ONLY its own payload assets plus the write-once metadata that
+describes them — the per-asset `<asset>.sha256` sidecar (coreutils
 `<sha>  <file>`, hashed from the local bytes) and the per-package
 `<stem>.manifest.json` shard (the entry below, served standalone, every
 sha field re-anchored to the served bytes; on signing-enabled lines the
 shard also declares each artifact's `signature` block — the `.asc`
-spellings are the factory's to declare, written at publish). The
-monoliths (`manifest.json`, `SHA256SUMS.txt`) and the release notes are
-DERIVED conveniences written by a single finalize pass from the
-release's own shards plus the asset listing's server-computed digests —
-never a job's local merge (the 2026-08-29 incident: four platform jobs
-racing the two shared monoliths wedged an asset name server-side). The
-finalize pass also signs (spec 09 §5, behind the signing flag): every
-payload asset's `<asset>.asc`, every shard's `<stem>.manifest.json.asc`,
-and the monoliths' `manifest.json.asc` / `SHA256SUMS.txt.asc` — a
-signature the shard declares but the finalize pass does not produce
-fails the release, never ships. Payload assets stay byte-immutable;
-metadata is derivable and converges (digest-match skip,
-loud replace on drift). Sidecars and shards are the authority; the
+spellings are the factory's to declare, written at publish) — and, on
+signing-enabled lines, signs them IN THE SAME INVOCATION (spec 09 §5):
+every payload asset's `<asset>.asc`, every shard's
+`<stem>.manifest.json.asc`, every sidecar's `<asset>.sha256.asc`. A
+signature a shard declares but the invocation does not produce fails
+the leg, never ships.
+
+**No shared mutable name exists.** The monoliths (`manifest.json`,
+`SHA256SUMS.txt`) are NEVER release assets: they are derivable
+conveniences computed consumer-side from the asset listing plus the
+shards (`tebako-pkg release-index`), for humans and audit only. A
+MISSING monolith is therefore the normal state of a live release, and a
+STALE one cannot exist — nothing on the release has a second writer.
+Release notes are written once at release creation and never rewritten.
+This kills the rendezvous: the 2026-08-29 wedge (four platform jobs
+racing two shared monoliths) and the 2026-09-12 wedge (the finalize
+pass burning the full metadata budget on GitHub's deleted-asset-name
+422 — the delete-then-re-upload convergence loop sustaining the very
+reservation it waited out) are the same physics: aggregation forces
+mutation, mutation forces delete-then-replace, replace is the wedge.
+
+**The immutability rule (locked 2026-09-12).** Every release asset name
+is write-once. A bad asset is never deleted-and-replaced: the registry
+entry gets `status: withdrawn` (spec 04 §2 — resolvers refuse it by
+name) and the fix ships as the next patch line. Completeness is a
+QUERY, not a gate: the expected matrix ⊆ the listed names, each with
+sidecar + shard + `.asc` (the audit mode computes it read-only), and
+the publication event is the in-repo `tpkg-registry.yaml` commit — git
+arbitrates concurrency, never release-asset mutation.
+
+Payload assets stay byte-immutable; the per-leg metadata is write-once
+by construction (identical content on a re-run is a digest-match skip —
+a re-run never replaces). Sidecars and shards are the authority; the
 resolver reads them first (spec 05 §2).
 
 ```json

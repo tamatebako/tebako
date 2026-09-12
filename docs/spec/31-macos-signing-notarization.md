@@ -160,9 +160,10 @@ zip <stitched exe> && xcrun notarytool submit <zip> \
 
 - **Sign-then-hash is mandatory.** Signing embeds a timestamp; digests
   must cover the final signed bytes. Every macOS leg signs and notarizes
-  BEFORE the finalize job computes SHA256SUMS/manifest.json — the pin
+  BEFORE its own publish invocation computes the `.sha256` sidecar and
+  the shard (spec 13 §2a — the post-de-rendezvous shape; the pin
   flow (factory contract.yml, feedstock versions.yaml mirrors) hashes
-  signed bytes. A workflow that hashes unsigned bytes and signs after is
+  signed bytes). A workflow that hashes unsigned bytes and signs after is
   a bug on arrival.
 - Runtime exes (factory macOS legs) sign with the §3-derived runtime
   profile (`disable-library-validation` + `allow-jit` when the build has

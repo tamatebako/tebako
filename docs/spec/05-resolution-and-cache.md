@@ -26,7 +26,13 @@ preference order is the per-package shard → the derived monolith → the
 line index. The fallbacks stay forever — pre-shard releases are
 immutable and remain installable (invariant 7); a missing, unreadable,
 or triple-mismatched shard falls through to the next form with the URL
-recorded for the failure message.
+recorded for the failure message. Post-2026-09-12 release lines ship no
+monolith at all (spec 13 §2a's de-rendezvous, roadmap 85): on them the
+shard-first order never misses, and the monolith + line-index forms
+exist only for the immutable pre-de-rendezvous releases. Range
+enumeration (choosing the newest COMPATIBLE version line) flows through
+the factory's in-repo L3 registry (spec 04 §2), never through a release
+monolith.
 
 - `<stem>.manifest.json` — the **per-package shard**, the sidecar-era
   authority. The stem is the exe asset's own name
