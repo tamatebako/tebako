@@ -120,7 +120,73 @@ metanorma --version
 tebako use metanorma@1.2.2                # instant rollback
 ```
 
-## 6. Implementation gaps (roadmap 28)
+## 6. Offline application bundles (`tebako bundle`)
+
+Persona B's airgapped half (roadmap 82/83 — BSH's SCCM class): an
+installer-facing tree composed ENTIRELY from the canonical published
+artifacts, pre-positioned so the target machine may never see the
+network.
+
+```
+tebako bundle <name[@ver]> --output <dir> [--config <org.yaml>] [--archive tar.gz]
+```
+
+The two hard rules:
+
+1. **Canonical bytes, never rebuilt.** Payloads and runtimes stage
+   through the store's own machinery (registry resolution, sha256 +
+   signature verification per the trust rules of §4) — the bundle is a
+   PRE-SEEDED store, byte-identical with what the registries published.
+2. **Configurability lives in the rendered `config.yaml`, never in
+   rebuilt bytes.** The `--config` org overlay layers the spec 04
+   `network:` block (proxy / tls_roots / extra_ca), per-engine runtime
+   preferences, per-tool defaults, and extra registries over the
+   builder's own config.
+
+Layout (`<out>` is created by the verb; an occupied path is a named
+usage error, exit 65 — a bundle never overwrites):
+
+```
+<out>/bin/          the platform's CLI tool set (tebako, tebako-shim,
+                    tfs, tebako-pkg — copied from beside the running
+                    exe; a partial set is a named error, exit 65)
+<out>/home/         the staged TEBAKO_HOME, verbatim store grammar:
+                    payloads/, runtimes/, registries/ caches, shims/,
+                    config.yaml, journal.log
+<out>/BUNDLE.yaml   the descriptor (schema_version 1): payload identity,
+                    platform, the staged runtimes, the command list an
+                    installer materializes onto PATH
+```
+
+Staging semantics:
+
+- The payload installs through `tebako install`'s own path — the eager
+  closure (dependencies, spawned-edge runtimes, spec 30/32) included.
+- The PRIMARY runtime is additionally **warmed**: install alone leaves
+  the payload's own `kind: language` edge to first dispatch, which an
+  offline machine cannot do — the bundle resolves it at stage time
+  through the dispatch resolver (cache → pins → mirror → registries →
+  default, spec 05 §2).
+- After staging, `runtimes:` in the shipped config is **re-pinned from
+  the staged reality** (one pin per staged engine, newest line): the
+  bundle's config never names a runtime it does not carry. An operator
+  pin for an engine the bundle did not stage survives verbatim.
+- Unix shims are rewritten to the bundle-relative
+  `../../bin/tebako-shim` — the tree relocates as one piece; windows
+  shims are byte copies and self-contained already.
+- The whole tree stages under `<parent>/.bundle-staging-<pid>` and
+  renames into place: a failed bundle never leaves a half-tree.
+- `--archive tar.gz` packs the tree next to itself (symlinks preserved —
+  they ARE the dispatch surface). The zip form is PLANNED (it lands
+  with the windows installer templates); requesting it is a named error.
+
+Bundles build for the HOST platform only — a cross-target bundle is the
+per-platform CI leg's output, not a flag. The installer's side: drop the
+tree, point `TEBAKO_HOME` at `home/` (or relocate its contents into the
+user store), put `bin/` + `home/shims/` on PATH. Trust verification
+happened at stage time; the target machine verifies nothing new.
+
+## 7. Implementation gaps (roadmap 28)
 
 - ~~`tpkg-registry.yaml` fetch/listing (the resolver tail of item 07)~~ —
   SHIPPED (28.1): the registry model + resolution in tebako-resolve and
