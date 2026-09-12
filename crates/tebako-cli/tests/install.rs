@@ -1745,3 +1745,88 @@ fn install_executable_edge_mount_axis_installs_the_provider_without_spawn_checks
         "{journal}"
     );
 }
+
+// ---------------------------------------------------------------------
+// withdrawn registry rows (spec 04 §2 — a selected withdrawn row is a
+// named refusal, never a silent skip, never a fallback to it)
+// ---------------------------------------------------------------------
+
+/// A registry whose newest version (and default) is `status: withdrawn`.
+fn withdrawn_registry_yaml(name: &str, ok_ref: &str, bad_ref: &str) -> String {
+    format!(
+        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: {ok_ref}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{name}]\n      - version: 1.1\n        status: withdrawn\n        platforms: universal\n        release: {{ref: {bad_ref}}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{name}]\n    default: 1.1\n"
+    )
+}
+
+#[test]
+fn withdrawn_selected_version_is_a_named_refusal() {
+    let fx = Fixture::new("withdrawn");
+    let ok_ref = fx.payload("app-1.0.tfs", b"v1.0-bytes");
+    let bad_ref = fx.payload("app-1.1.tfs", b"v1.1-yanked-bytes");
+    let reg_ref = fx.registry(
+        "tpkg-registry.yaml",
+        &withdrawn_registry_yaml("app", &ok_ref, &bad_ref),
+    );
+    install::add_registry(&fx.home, &reg_ref).unwrap();
+
+    // exact pin of the withdrawn row → WithdrawnPayload, exit 69
+    let err = install::install(&fx.home, "app@1.1", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 69, "{err:?}");
+    assert!(err.message.contains("WithdrawnPayload"), "{err:?}");
+    assert!(
+        err.message.contains("'app' version '1.1'"),
+        "the refusal names the payload and version: {err:?}"
+    );
+
+    // the default IS the withdrawn row → the same refusal (never a
+    // fallback to the yanked bytes)
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 69, "{err:?}");
+    assert!(err.message.contains("WithdrawnPayload"), "{err:?}");
+
+    // nothing was fetched or cached from the yanked line
+    assert!(!fx.payloads_dir().join("app").exists());
+
+    // a non-selected withdrawn row is inert: pinning the healthy version
+    // installs it
+    let out = install::install(&fx.home, "app@1.0", None, Some(&fx.shim_binary)).unwrap();
+    assert_eq!(out.version, "1.0");
+    assert_eq!(fs::read(&out.path).unwrap(), b"v1.0-bytes");
+}
+
+#[test]
+fn dep_walk_newest_satisfying_withdrawn_is_the_named_refusal() {
+    // The dependency edge picks the newest satisfying version
+    // status-blind; when that pick is withdrawn the refusal surfaces
+    // — never a silent skip to an older one.
+    let fx = Fixture::new("depwithdrawn");
+    let i130 = fx.payload("inkscape-1.3.0.tfs", &toolkit_image("inkscape", "1.3.0"));
+    let i140 = fx.payload("inkscape-1.4.0.tfs", &toolkit_image("inkscape", "1.4.0"));
+    let yaml = format!(
+        "schema_version: 1\npayloads:\n  - name: inkscape\n    kind: toolkit\n    versions:\n      - version: 1.3.0\n        platforms: universal\n        release: {{ref: {i130}}}\n      - version: 1.4.0\n        status: withdrawn\n        platforms: universal\n        release: {{ref: {i140}}}\n"
+    );
+    let inkscape_reg = fx.registry("inkscape-registry.yaml", &yaml);
+    install::add_registry(&fx.home, &inkscape_reg).unwrap();
+
+    let app_image = app_image_with_requires(
+        "app",
+        "1.0",
+        "  - kind: toolkit\n    name: inkscape\n    constraint: \">= 1.3\"\n    mount: /opt/inkscape\n",
+    );
+    let app_ref = fx.payload("app-1.0.tfs", &app_image);
+    let app_reg = fx.registry(
+        "app-registry.yaml",
+        &registry_yaml("app", "1.0", &app_ref, Some("1.0")),
+    );
+    install::add_registry(&fx.home, &app_reg).unwrap();
+
+    let err = install::install(&fx.home, "app", None, Some(&fx.shim_binary)).unwrap_err();
+    assert_eq!(err.code, 69, "{err:?}");
+    assert!(err.message.contains("WithdrawnPayload"), "{err:?}");
+    assert!(
+        err.message.contains("'inkscape' version '1.4.0'"),
+        "{err:?}"
+    );
+    // the older satisfying version was NOT silently installed instead
+    assert!(!fx.payloads_dir().join("inkscape/1.3.0.tfs").exists());
+}

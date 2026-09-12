@@ -15,6 +15,10 @@ tpkg = { version = "2.0.0", path = "../tpkg" }
 tebako-json = { version = "2.0.0", path = "../tebako-json" }
 tebako-info = { version = "2.0.0", path = "../tebako-info" }
 tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
+# release-index reads a release's asset space (spec 04 references, service
+# adapters). default-features = false drops the git stack (gix/reqwest) —
+# this verb only lists release assets; `network` keeps proxy honoring.
+tebako-resolve = { version = "2.0.0", path = "../tebako-resolve", default-features = false, features = ["network"] }
 rnp = { package = "rnp-rs", version = "0.1.15", features = ["vendored"] }
 libc = "0.2"
 sha2 = "0.10"

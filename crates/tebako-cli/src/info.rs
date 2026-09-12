@@ -274,9 +274,33 @@ fn remote_runtimes() -> Result<Vec<String>, TebakoError> {
         let manifest_url = format!(
             "https://github.com/tamatebako/tebako-runtime-ruby/releases/download/{tag}/manifest.json"
         );
-        let Ok(manifest) = tebako_http::get_text(&manifest_url) else {
-            lines.push(format!("{tag}: (no manifest.json)"));
-            continue;
+        let manifest = match tebako_http::get_text(&manifest_url) {
+            Ok(m) => m,
+            Err(tebako_http::FetchError::IndexUnavailable(_)) => {
+                // Roadmap 85: a post-85 release line publishes per-artifact
+                // shards and no manifest.json monolith — say so (and how
+                // many shards the release carries) instead of the bare
+                // "no manifest.json".
+                let shards = match release.find("assets") {
+                    Some(tebako_json::Value::Array(items)) => items
+                        .iter()
+                        .filter(|a| {
+                            a.find("name")
+                                .and_then(|n| n.as_string())
+                                .is_some_and(|n| n.ends_with(".manifest.json"))
+                        })
+                        .count(),
+                    _ => 0,
+                };
+                lines.push(format!(
+                    "{tag}: (post-85 line — no monolith; {shards} shards)"
+                ));
+                continue;
+            }
+            Err(_) => {
+                lines.push(format!("{tag}: (no manifest.json)"));
+                continue;
+            }
         };
         let Ok(parsed) = tebako_json::parse(&manifest) else {
             lines.push(format!("{tag}: (unparseable manifest.json)"));
@@ -417,7 +441,19 @@ fn remote_payloads(home: &Path) -> Result<Vec<(String, String)>, TebakoError> {
             .map_err(|e| err(EX_TEBAKO_IO, e.to_string()))?;
         let mut lines = String::new();
         for p in &registry.payloads {
-            let versions: Vec<&str> = p.versions.iter().map(|v| v.version.as_str()).collect();
+            // spec 04 §2: listing surfaces render withdrawn rows (marked),
+            // they never hide them.
+            let versions: Vec<String> = p
+                .versions
+                .iter()
+                .map(|v| {
+                    if v.is_withdrawn() {
+                        format!("{} (withdrawn)", v.version)
+                    } else {
+                        v.version.clone()
+                    }
+                })
+                .collect();
             let default = p.default.as_deref().unwrap_or("-");
             lines.push_str(&format!(
                 "{} ({:?}): versions {}{}\n",

@@ -109,6 +109,14 @@ pub struct RegistryVersion {
     /// becomes a registered shim at install.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub entrypoints: Vec<String>,
+    /// spec 04 §2's withdrawal axis (roadmap 85): `status: withdrawn`
+    /// marks the row YANKED (release assets are immutable — withdrawal is
+    /// the only remedy for a bad published artifact). An `Option<String>`,
+    /// not an enum, for forward tolerance: unknown values parse and are
+    /// inert; [`RegistryVersion::is_withdrawn`] names the one value with
+    /// refusal semantics.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// The platform axis (spec 04 §2): EITHER the bare string `universal`
@@ -528,6 +536,13 @@ impl RegistryVersion {
             RegistryPlatforms::Universal => Vec::new(),
             RegistryPlatforms::PerTriplet(map) => map.keys().copied().collect(),
         }
+    }
+
+    /// spec 04 §2 (roadmap 85): the row is yanked (`status: withdrawn`) —
+    /// resolvers refuse it by name ([`RegistryError::Withdrawn`]), never a
+    /// silent skip, never a fallback to it.
+    pub fn is_withdrawn(&self) -> bool {
+        self.status.as_deref() == Some("withdrawn")
     }
 }
 
@@ -1152,5 +1167,64 @@ payloads:
                 "expected '{needle}' in: {err}"
             );
         }
+    }
+
+    // -----------------------------------------------------------------
+    // The withdrawal axis (spec 04 §2, roadmap 85)
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn a_withdrawn_row_parses_flags_and_round_trips() {
+        let yaml = r#"
+schema_version: 1
+payloads:
+  - name: metanorma
+    kind: app
+    versions:
+      - {version: 1.2.3, status: withdrawn, platforms: universal, release: {ref: tfs:github:o/m:1.2.3}, entrypoints: [metanorma]}
+      - {version: 1.2.4, platforms: universal, release: {ref: tfs:github:o/m:1.2.4}, entrypoints: [metanorma]}
+    default: 1.2.4
+"#;
+        let registry = Registry::from_yaml(yaml).unwrap();
+        let m = registry.payload("metanorma").unwrap();
+        assert!(m.version("1.2.3").unwrap().is_withdrawn());
+        assert!(!m.version("1.2.4").unwrap().is_withdrawn());
+        // the key survives the write/read round-trip
+        let again = Registry::from_yaml(&registry.to_yaml().unwrap()).unwrap();
+        assert_eq!(registry, again);
+    }
+
+    #[test]
+    fn an_unknown_status_is_forward_tolerant_and_inert() {
+        // Option<String>, not an enum: a status this build predates parses
+        // and carries no refusal semantics.
+        let yaml = r#"
+schema_version: 1
+payloads:
+  - name: tool
+    kind: app
+    versions:
+      - {version: 2.0, status: deprecated, platforms: universal, release: {ref: tfs:github:o/tool:2.0}, entrypoints: [tool]}
+"#;
+        let registry = Registry::from_yaml(yaml).unwrap();
+        let v = registry.payload("tool").unwrap().version("2.0").unwrap();
+        assert_eq!(v.status.as_deref(), Some("deprecated"));
+        assert!(!v.is_withdrawn());
+    }
+
+    #[test]
+    fn the_withdrawn_error_names_the_payload_and_version() {
+        let err = RegistryError::Withdrawn {
+            payload: "metanorma".to_string(),
+            version: "1.2.3".to_string(),
+        };
+        let msg = err.to_string();
+        assert!(msg.contains("WithdrawnPayload"), "{msg}");
+        assert!(msg.contains("metanorma"), "{msg}");
+        assert!(msg.contains("1.2.3"), "{msg}");
+        assert!(msg.contains("status: withdrawn"), "{msg}");
+        // the L3 wrapper carries it through verbatim
+        let wrapped = ResolveError::from(err);
+        assert!(wrapped.to_string().contains("WithdrawnPayload"));
     }
 }

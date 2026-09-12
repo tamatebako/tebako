@@ -14,7 +14,9 @@
 //! flock (120 s), tmp + rename install, `sha256`/`origin` trust markers,
 //! read-only image, the spec 18 C2 release-card gate (pre-download
 //! contract refusal; tebako-resolve::contract owns the reader),
-//! manifest.json-primary / SHA256SUMS-fallback checksum extraction,
+//! spec 05 §2's shard-first index order (the per-package
+//! `<stem>.manifest.json` shard, then the manifest.json monolith, then
+//! the SHA256SUMS line index — the fallbacks stay forever, invariant 7),
 //! `TEBAKO_RUNTIME_MIRROR` / `TEBAKO_OFFLINE` — reimplemented
 //! here rather than linked from the bootstrap crate.
 //!
@@ -235,14 +237,17 @@ pub fn resolve_runtime(
     // index probe and the fetch. Every download journals the base and the
     // channel that supplied it.
     let source = runtime_source(reqs, (!prefless).then_some(pref), &cfg, ctx)?;
-    let target = match index_selected_target(reqs, pref, &source, ctx)? {
+    // The pick may REDIRECT the source: the registry-first enumeration
+    // (spec 05 §2, roadmap 85) names each version's own release (base +
+    // tag + signature pin ride the picked row).
+    let (target, source) = match index_selected_target(reqs, pref, &source, ctx)? {
         Some(pick) => pick,
-        None if !prefless => pref.clone(),
+        None if !prefless => (pref.clone(), source),
         None => {
             return fail(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
-                    "no compatible runtime for {} \"{}\": {cached_note}\n  and no runtime preference is configured, and the default-line release index did not read — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
+                    "no compatible runtime for {} \"{}\": {cached_note}\n  and no runtime preference is configured, and neither the factory registry nor the default-line release index read — set `runtimes: {{{}: {{version: …, tebako: …}}}}` in ~/.tebako/config.yaml, or pre-seed the cache",
                     reqs.engine(),
                     described,
                     reqs.engine()
@@ -488,34 +493,45 @@ fn released_versions(text: &str, engine: &str, platform: &str) -> Option<Vec<Rel
     keyed.then_some(released)
 }
 
-/// The download-target selection on a cache miss: consult the release
-/// index of the pin's tebako line (`v{pref.tebako}/manifest.json`) for
-/// the newest interpreter version that both satisfies the requirement
-/// and is released for this platform. spec 28 §8: a row matches when ANY
-/// entry of the `any_of` list matches it — an implementation-narrowed
-/// entry filters on the row's `implementation` key (absent = the compat
-/// window) and matches the row's OWN version; a language-level entry
-/// matches the row's `language_version`, falling back to
-/// `{engine}_version` on pre-field rows. Three outcomes:
+/// The download-target selection on a cache miss (spec 05 §2's order,
+/// roadmap 85): the factory's in-repo L3 registry first (range
+/// enumeration flows through it, never through a release monolith —
+/// post-2026-09-12 release lines ship no monolith at all), then the
+/// immutable pre-85 fallback: the release index of the pin's tebako line
+/// (`v{pref.tebako}/manifest.json`). Both pick the newest interpreter
+/// version that satisfies the requirement and is released for this
+/// platform; a registry pick redirects the source to the picked row's
+/// own release (base + tag + signature pin ride the row, spec 05 §2).
+/// spec 28 §8: a row matches when ANY entry of the `any_of` list matches
+/// it — the monolith facet applies the row's `implementation` /
+/// `language_version` keys; the registry facet's `runtime_entries` call
+/// already filtered the implementation axis, so its row versions match
+/// directly. Three outcomes:
 ///
-/// - `Ok(None)` — the index did not read or carries no availability
-///   keys (and always in offline mode, which never fetches): the config
-///   pin stays the target and every pin-path behavior is unchanged;
-/// - `Ok(Some(target))` — the index's pick (the entry's own
+/// - `Ok(None)` — neither facet was informative (unreadable registry AND
+///   an unreadable or availability-keyless index; always in offline
+///   mode, which never fetches): the config pin stays the target and
+///   every pin-path behavior is unchanged;
+/// - `Ok(Some((target, source)))` — the pick (the registry row's own
+///   release, or the monolith's pick with the entry's own
 ///   `tebako_version` when declared, else the pin's line);
-/// - `Err` — the index read fine and NOTHING released for this platform
+/// - `Err` — a facet read fine and NOTHING it releases for this platform
 ///   satisfies the constraint: the named platform-availability error
-///   naming the platform, the constraint, and what IS released (a
-///   platform that trails the payload's needs — e.g. windows-ucrt64
-///   released only through ruby 3.2.x — is a diagnosis, never a 404).
+///   naming the platform, the constraint, and what IS released (the
+///   registry's list carries `(withdrawn)` marks) — or the selected
+///   registry row is withdrawn: the named WithdrawnPayload refusal
+///   (spec 04 §2, never a silent skip).
 fn index_selected_target(
     reqs: &RuntimeRequirements,
     pref: &RuntimePref,
     source: &RuntimeSource,
     ctx: &Ctx,
-) -> Result<Option<RuntimePref>, ShimError> {
+) -> Result<Option<(RuntimePref, RuntimeSource)>, ShimError> {
     if offline_mode(ctx) {
         return Ok(None);
+    }
+    if let Some(pick) = registry_selected_target(reqs, source, ctx)? {
+        return Ok(Some(pick));
     }
     let platform = platform_string();
     let base = skip_file_scheme(&source.base).to_string();
@@ -586,14 +602,17 @@ fn index_selected_target(
             )
         })
     }) {
-        return Ok(Some(RuntimePref {
-            version: pick.lang_version.clone(),
-            tebako: pick
-                .tebako_version
-                .clone()
-                .unwrap_or_else(|| pref.tebako.clone()),
-            source: None,
-        }));
+        return Ok(Some((
+            RuntimePref {
+                version: pick.lang_version.clone(),
+                tebako: pick
+                    .tebako_version
+                    .clone()
+                    .unwrap_or_else(|| pref.tebako.clone()),
+                source: None,
+            },
+            source.clone(),
+        )));
     }
     let mut known: Vec<&str> = released.iter().map(|e| e.lang_version.as_str()).collect();
     known.sort_by(|a, b| versions::compare(a, b));
@@ -613,6 +632,232 @@ fn index_selected_target(
     )
 }
 
+/// `https://github.com/<owner>/<repo>/releases/download` →
+/// `(owner, repo)` — the base shape a factory registry ref derives from
+/// (spec 05 §2: the in-repo L3 registry of the SAME project the download
+/// base names). Any other base shape cannot name a registry: None.
+fn github_owner_repo(base: &str) -> Option<(String, String)> {
+    let rest = base.strip_prefix("https://github.com/")?;
+    let rest = rest.strip_suffix("/releases/download")?;
+    let (owner, repo) = rest.split_once('/')?;
+    if owner.is_empty() || repo.is_empty() || repo.contains('/') {
+        return None;
+    }
+    Some((owner.to_string(), repo.to_string()))
+}
+
+/// The row's tebako line from its declared artifact's stem (spec 05 §2
+/// SSOT — the factory's `tebako-runtime-<tebako>-<lang>-<platform>`
+/// spelling is flowed, never re-derived elsewhere): strip the
+/// `tebako-runtime-` prefix, the `.tfs` payload suffix, and the
+/// `-<lang>-<release-asset-platform>` tail; what remains is the line.
+/// `None` when the artifact does not carry the spelling (the caller
+/// falls back to the release tag).
+fn tebako_line_from_artifact(
+    artifact: &str,
+    lang_version: &str,
+    host: tpkg::Platform,
+) -> Option<String> {
+    let stem = artifact.strip_suffix(".tfs").unwrap_or(artifact);
+    let rest = stem.strip_prefix("tebako-runtime-")?;
+    let suffix = format!("-{lang_version}-{}", host.release_asset_name());
+    let line = rest.strip_suffix(&suffix)?;
+    (!line.is_empty()).then(|| line.to_string())
+}
+
+/// spec 05 §2's registry facet of the download-target selection
+/// (roadmap 85): derive the factory's in-repo L3 registry
+/// (`tfs:github:<owner>/<repo>`) from the download base — every channel,
+/// uniform — and enumerate its `kind: runtime` entries for the engine.
+/// An unreadable registry is journaled and uninformative (`Ok(None)` —
+/// the monolith probe decides, invariant 7's fallback); a registry with
+/// no runtime entries for the engine is uninformative the same way. A
+/// READABLE, informative registry is authoritative: host-covered rows
+/// (`platforms:` selects this host) matching any constraint entry
+/// compete newest-first on (version, tebako line); a selected withdrawn
+/// row is the named WithdrawnPayload refusal; nothing satisfying is the
+/// named platform-availability error listing the host-covered rows with
+/// their `(withdrawn)` marks.
+fn registry_selected_target(
+    reqs: &RuntimeRequirements,
+    source: &RuntimeSource,
+    ctx: &Ctx,
+) -> Result<Option<(RuntimePref, RuntimeSource)>, ShimError> {
+    let Some((owner, repo)) = github_owner_repo(&source.base) else {
+        return Ok(None);
+    };
+    let engine = reqs.engine();
+    let reg_ref = format!("tfs:github:{owner}/{repo}");
+    let registry = match crate::regcache::registry_for(&ctx.home, &reg_ref, ctx) {
+        Ok(r) => r,
+        Err(e) => {
+            journal(
+                &ctx.home,
+                &format!(
+                    "event=runtime-index-registry-error engine={engine} registry={reg_ref} error={e:?}"
+                ),
+            );
+            return Ok(None);
+        }
+    };
+    let implementation = reqs
+        .entries()
+        .iter()
+        .find_map(|r| r.implementation.as_deref());
+    let entries = registry.runtime_entries(engine, implementation);
+    if entries.is_empty() {
+        return Ok(None);
+    }
+    let host = tpkg::Platform::host();
+    let platform = platform_string();
+    /// One host-covered, constraint-satisfying registry row.
+    struct Candidate {
+        payload: String,
+        lang_version: String,
+        tebako: String,
+        base: String,
+        tag: String,
+        signer_pin: Option<String>,
+        withdrawn: bool,
+    }
+    let mut candidates: Vec<Candidate> = Vec::new();
+    // Every host-covered row, satisfying or not — the availability
+    // error's "released for <platform>" listing (withdrawn rows marked).
+    let mut declared: Vec<(String, bool)> = Vec::new();
+    for entry in entries {
+        for row in &entry.versions {
+            let Some(selection) = row.select(host) else {
+                continue;
+            };
+            declared.push((row.version.clone(), row.is_withdrawn()));
+            let satisfied = reqs
+                .entries()
+                .iter()
+                .any(|r| versions::from_validated(&r.constraint).matches(&row.version));
+            if !satisfied {
+                continue;
+            }
+            // The row's release.ref names where THIS version lives —
+            // github service refs only (the runtime fetch grammar); any
+            // other class is journaled and skipped, never guessed.
+            let (base, tag) = match tebako_resolve::Reference::parse(&row.release.r#ref) {
+                Ok(tebako_resolve::Reference::Service {
+                    service: tebako_resolve::Service::Github,
+                    owner,
+                    repo,
+                    version: tag,
+                    ..
+                }) => (
+                    format!("https://github.com/{owner}/{repo}/releases/download"),
+                    tag,
+                ),
+                Ok(other) => {
+                    journal(
+                        &ctx.home,
+                        &format!(
+                            "event=runtime-index-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=release-ref-class-{}-not-a-download-base",
+                            entry.name,
+                            row.version,
+                            match &other {
+                                tebako_resolve::Reference::Service { service, .. } =>
+                                    service.name(),
+                                tebako_resolve::Reference::Git { .. } => "git",
+                                tebako_resolve::Reference::Https { .. } => "https",
+                                tebako_resolve::Reference::File { .. } => "file",
+                            }
+                        ),
+                    );
+                    continue;
+                }
+                Err(e) => {
+                    journal(
+                        &ctx.home,
+                        &format!(
+                            "event=runtime-index-registry-skip engine={engine} registry={reg_ref} entry={} version={} reason=bad-release-ref error={e}",
+                            entry.name, row.version
+                        ),
+                    );
+                    continue;
+                }
+            };
+            // The row's tebako line: the declared artifact's stem (the
+            // openjdk v2.5.1 shape — tag v2.5.1, rows riding tebako
+            // 2.5.0), else the tag minus its 'v' (the factory convention
+            // `v<tebako>`).
+            let from_tag = tag.strip_prefix('v').unwrap_or(&tag).to_string();
+            let tebako = match &selection {
+                tebako_resolve::registry::PlatformSelection::Selected { artifact, .. } => {
+                    tebako_line_from_artifact(artifact, &row.version, host).unwrap_or(from_tag)
+                }
+                tebako_resolve::registry::PlatformSelection::Universal => from_tag,
+            };
+            candidates.push(Candidate {
+                payload: entry.name.clone(),
+                lang_version: row.version.clone(),
+                tebako,
+                base,
+                tag,
+                signer_pin: row.signature.as_ref().map(|s| s.keyid.clone()),
+                withdrawn: row.is_withdrawn(),
+            });
+        }
+    }
+    let pick = candidates.into_iter().max_by(|a, b| {
+        versions::compare(&a.lang_version, &b.lang_version)
+            .then_with(|| versions::compare(&a.tebako, &b.tebako))
+    });
+    let Some(pick) = pick else {
+        declared.sort_by(|a, b| versions::compare(&a.0, &b.0));
+        declared.dedup();
+        let known = if declared.is_empty() {
+            "nothing".to_string()
+        } else {
+            declared
+                .iter()
+                .map(|(v, w)| {
+                    if *w {
+                        format!("{v} (withdrawn)")
+                    } else {
+                        v.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            format!(
+                "no released {engine} runtime for {platform} satisfies \"{reqs}\"\n  released for {platform}: {known}\n  this payload needs a newer {engine} than this platform provides yet"
+            ),
+        );
+    };
+    // spec 04 §2: the SELECTED row's withdrawal is a named refusal —
+    // never a silent skip to an older row, never a fallback to it.
+    if pick.withdrawn {
+        return fail(
+            EX_TEBAKO_UNAVAILABLE,
+            tebako_resolve::RegistryError::Withdrawn {
+                payload: pick.payload,
+                version: pick.lang_version,
+            }
+            .to_string(),
+        );
+    }
+    Ok(Some((
+        RuntimePref {
+            version: pick.lang_version,
+            tebako: pick.tebako,
+            source: None,
+        },
+        RuntimeSource {
+            base: pick.base,
+            tag: Some(pick.tag),
+            channel: source.channel,
+            signer_pin: pick.signer_pin,
+        },
+    )))
+}
+
 // ---------------------------------------------------------------------
 // download — the bootstrap discipline, reimplemented (see module docs)
 // ---------------------------------------------------------------------
@@ -626,7 +871,7 @@ fn offline_mode(ctx: &Ctx) -> bool {
 /// release download base, the tag the URLs ride, the chain channel that
 /// supplied them (journaled per fetch), and — channel 3 only — the
 /// registry entry's signature pin (spec 09 §9).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct RuntimeSource {
     /// The release download base (`{base}/{tag}/<asset>` URLs).
     base: String,
@@ -734,7 +979,7 @@ fn runtime_source(
         });
     }
     // Channel 3: the registered registries (the zero-config path).
-    if let Some(source) = registry_derived_source(reqs, cfg, ctx) {
+    if let Some(source) = registry_derived_source(reqs, cfg, ctx)? {
         return Ok(source);
     }
     // Channel 4: the product default — the ruby factory hosts ruby only.
@@ -763,11 +1008,13 @@ fn runtime_source(
 /// classes skip with a journal note. A registry that does not resolve is
 /// journaled and skipped — it cannot answer, and a later channel still
 /// can (the failure is named in the no-channel error's enumeration).
+/// spec 04 §2: the pick is status-blind — a SELECTED withdrawn row is
+/// the named WithdrawnPayload refusal, never a silent skip.
 fn registry_derived_source(
     reqs: &RuntimeRequirements,
     cfg: &config::UserConfig,
     ctx: &Ctx,
-) -> Option<RuntimeSource> {
+) -> Result<Option<RuntimeSource>, ShimError> {
     let engine = reqs.engine();
     let implementation = reqs
         .entries()
@@ -799,6 +1046,16 @@ fn registry_derived_source(
                 })
                 .max_by(|a, b| versions::compare(&a.version, &b.version));
             let Some(version) = pick else { continue };
+            if version.is_withdrawn() {
+                return fail(
+                    EX_TEBAKO_UNAVAILABLE,
+                    tebako_resolve::RegistryError::Withdrawn {
+                        payload: entry.name.clone(),
+                        version: version.version.clone(),
+                    }
+                    .to_string(),
+                );
+            }
             let derived = match tebako_resolve::Reference::parse(&version.release.r#ref) {
                 Ok(tebako_resolve::Reference::Service {
                     service: tebako_resolve::Service::Github,
@@ -845,11 +1102,11 @@ fn registry_derived_source(
                 }
             };
             if derived.is_some() {
-                return derived;
+                return Ok(derived);
             }
         }
     }
-    None
+    Ok(None)
 }
 
 fn base_is_local(base: &str) -> bool {
@@ -1181,85 +1438,93 @@ impl IndexTrust {
     }
 }
 
+/// The fetch coordinates an expected-checksum lookup serves: the
+/// asset-in-release identity plus the already-acquired index card and
+/// its trust verdict.
+struct ChecksumQuery<'a> {
+    base: &'a str,
+    local: bool,
+    tag: &'a str,
+    asset: &'a str,
+    tmp_dir: &'a Path,
+    index_text: &'a str,
+    /// Marks which card slot the diagnostics report against.
+    from_shard: bool,
+    trust: &'a IndexTrust,
+}
+
+/// The lookup's answer: the optional sha plus the three diagnostic
+/// indices (shard, manifest, sums) so the caller names the failure
+/// itself — an absent entry is data, not an error (the v1-era image
+/// rule needs it).
+struct ChecksumAnswer {
+    sha: Option<String>,
+    diags: (usize, usize, usize),
+}
+
 /// The expected checksum for an asset: the VERIFIED index form's digests
 /// when a form verified (spec 09 §4 — never an unverified fallback);
-/// otherwise manifest.json primary, SHA256SUMS.txt fallback (the
-/// bootstrap's exact order). Returns the optional sha plus the two
-/// diagnostic indices so the caller names the failure itself — an absent
-/// entry is data, not an error (the v1-era image rule needs it).
-/// `manifest_text` is the already-fetched release index when the caller
-/// holds it (the contract gate reads it first); `None` fetches it here
-/// (unverified chain only).
-#[allow(clippy::too_many_arguments)]
-fn expected_checksum(
-    base: &str,
-    local: bool,
-    tag: &str,
-    asset: &str,
-    tmp_dir: &Path,
-    manifest_text: Option<&str>,
-    trust: &IndexTrust,
-) -> Result<(Option<String>, (usize, usize)), ShimError> {
+/// otherwise the consumed release card (shard or monolith — already in
+/// hand from the acquisition) primary, SHA256SUMS.txt fallback (the
+/// bootstrap's exact order).
+fn expected_checksum(q: &ChecksumQuery) -> Result<ChecksumAnswer, ShimError> {
     // The verified chains read the consumed form's digests and nothing
     // else — an unverified form is never consulted once a form verified.
-    match trust {
+    match q.trust {
         IndexTrust::VerifiedManifest(_) => {
-            let expected = manifest_text.and_then(|t| sha_from_manifest(t, asset).ok());
+            let expected = sha_from_manifest(q.index_text, q.asset).ok();
             let diag = if expected.is_some() { 4 } else { 3 };
-            return Ok((expected, (diag, 0)));
+            return Ok(ChecksumAnswer {
+                sha: expected,
+                diags: if q.from_shard {
+                    (diag, 0, 0)
+                } else {
+                    (0, diag, 0)
+                },
+            });
         }
         IndexTrust::VerifiedSums { text, .. } => {
-            let expected = sha_from_sums(text, asset).ok();
+            let expected = sha_from_sums(text, q.asset).ok();
             let diag = if expected.is_some() { 4 } else { 3 };
-            return Ok((expected, (0, diag)));
+            return Ok(ChecksumAnswer {
+                sha: expected,
+                diags: (0, 0, diag),
+            });
         }
         IndexTrust::Unverified => {}
     }
-    let sums_url = format!("{base}/{tag}/SHA256SUMS.txt");
-    let mut expected = None;
-    let mut diag_manifest = 1;
-    let owned_text;
-    let text = match manifest_text {
-        Some(text) => {
-            diag_manifest = 3;
-            text
-        }
-        None => {
-            let manifest_tmp = tmp_dir.join("manifest.json");
-            if fetch_url(&format!("{base}/{tag}/manifest.json"), local, &manifest_tmp).is_ok() {
-                diag_manifest = 2;
-                owned_text = std::fs::read_to_string(&manifest_tmp).ok();
-                if owned_text.is_some() {
-                    diag_manifest = 3;
-                }
-                owned_text.as_deref().unwrap_or("")
-            } else {
-                ""
-            }
-        }
+    let mut expected = sha_from_manifest(q.index_text, q.asset).ok();
+    let diag_card = if expected.is_some() { 4 } else { 3 };
+    let (diag_shard, diag_manifest) = if q.from_shard {
+        (diag_card, 0)
+    } else {
+        (0, diag_card)
     };
-    if diag_manifest == 3 {
-        if let Ok(sha) = sha_from_manifest(text, asset) {
-            diag_manifest = 4;
-            expected = Some(sha);
-        }
-    }
     let mut diag_sums = 0;
     if expected.is_none() {
         diag_sums = 1;
-        let sums_tmp = tmp_dir.join("SHA256SUMS.txt");
-        if fetch_url(&sums_url, local, &sums_tmp).is_ok() {
+        let sums_tmp = q.tmp_dir.join("SHA256SUMS.txt");
+        if fetch_url(
+            &format!("{}/{}/SHA256SUMS.txt", q.base, q.tag),
+            q.local,
+            &sums_tmp,
+        )
+        .is_ok()
+        {
             diag_sums = 2;
             if let Ok(text) = std::fs::read_to_string(&sums_tmp) {
                 diag_sums = 3;
-                if let Ok(sha) = sha_from_sums(&text, asset) {
+                if let Ok(sha) = sha_from_sums(&text, q.asset) {
                     diag_sums = 4;
                     expected = Some(sha);
                 }
             }
         }
     }
-    Ok((expected, (diag_manifest, diag_sums)))
+    Ok(ChecksumAnswer {
+        sha: expected,
+        diags: (diag_shard, diag_manifest, diag_sums),
+    })
 }
 
 /// The G1 fetch-time verification context (spec 09 §4): the keyring this
@@ -1425,40 +1690,158 @@ impl FetchTrust {
     }
 }
 
-/// The index-trust resolution (spec 09 §4): probe the path's index forms
-/// in preference order (manifest.json → SHA256SUMS.txt); the FIRST form
-/// whose detached `.asc` verifies is the consumed form — its digests
-/// alone are trusted from that point. A present asc that verifies
-/// Invalid → 71, a signer outside the trusted keyring → 72 (strict); an
-/// ABSENT asc moves to the next form — the unsigned rule decides after.
-fn verify_index(
+/// What the shard-first index acquisition (spec 05 §2, roadmap 85)
+/// consumed: the release-card text (a consumed shard NORMALIZED to the
+/// one-entry array shape every card reader speaks — the store's cached
+/// `manifest.json`, `release_index_entry`, `sha_from_manifest`), the
+/// trust verdict of the consumed form, and which form served.
+struct AcquiredIndex {
+    text: String,
+    trust: IndexTrust,
+    from_shard: bool,
+}
+
+/// The index-trust resolution + acquisition (spec 09 §4 + spec 05 §2's
+/// shard-first order): the trust scan probes each form's detached `.asc`
+/// in preference order — `<stem>.manifest.json` → `manifest.json` →
+/// `SHA256SUMS.txt` — and the FIRST form whose asc verifies over its
+/// served bytes is the consumed form, its digests alone trusted from
+/// that point (strict: Invalid → 71, an untrusted signer → 72). An asc
+/// whose own body does not fetch skips the form; a verified but
+/// triple-mismatched shard falls through to the next form with its URL
+/// recorded for the failure message. With no verifiable form the
+/// unsigned chain consumes the shard when it reads AND names the
+/// requested identity triple, else the monolith; no readable card form
+/// at all is the spec 18 C2 pre-era refusal (75) naming every URL tried.
+#[allow(clippy::too_many_arguments)]
+fn acquire_index(
     trust: &FetchTrust,
     base: &str,
     local: bool,
     tag: &str,
-    manifest_text: &str,
+    stem: &str,
+    engine: &str,
+    lang_version: &str,
+    tebako_version: &str,
+    platform: &str,
+    runtime_ref: &str,
     tmp_dir: &Path,
-) -> Result<IndexTrust, ShimError> {
+) -> Result<AcquiredIndex, ShimError> {
+    let dir_url = format!("{base}/{tag}");
+    let shard_name = format!("{stem}.manifest.json");
+    let shard_url = format!("{dir_url}/{shard_name}");
+    let manifest_url = format!("{dir_url}/manifest.json");
     let fetch_opt = |name: &str| -> Option<Vec<u8>> {
         let tmp = tmp_dir.join(name);
-        fetch_url(&format!("{base}/{tag}/{name}"), local, &tmp).ok()?;
+        fetch_url(&format!("{dir_url}/{name}"), local, &tmp).ok()?;
         std::fs::read(&tmp).ok()
     };
+    // The shard serves only when it names the requested identity triple
+    // (spec 05 §2: a triple-mismatched shard is not this package's card).
+    // The consumed text normalizes to the array shape at the boundary.
+    let shard_card = |body: &[u8]| -> Option<String> {
+        let body = String::from_utf8(body.to_vec()).ok()?;
+        let card = format!("[{}]", body.trim_end());
+        let parsed = tebako_json::parse(&card).ok()?;
+        release_index_entry(&parsed, engine, lang_version, tebako_version, platform)?;
+        Some(card)
+    };
+    // Why the shard was not consumed (recorded for the failure message).
+    let mut shard_note: Option<String> = None;
+
+    // The trust scan — the first TRUSTED form wins.
+    if let Some(asc) = fetch_opt(&format!("{shard_name}.asc")) {
+        match fetch_opt(&shard_name) {
+            Some(body) => {
+                let signer = trust.verify_detached(&shard_name, &body, &asc, None)?;
+                match shard_card(&body) {
+                    Some(card) => {
+                        return Ok(AcquiredIndex {
+                            text: card,
+                            trust: IndexTrust::VerifiedManifest(signer),
+                            from_shard: true,
+                        });
+                    }
+                    None => {
+                        shard_note = Some(format!(
+                            "the shard {shard_url} verified but names another identity triple"
+                        ));
+                    }
+                }
+            }
+            None => {
+                shard_note = Some(format!(
+                    "the shard's signature fetched but {shard_url} did not"
+                ));
+            }
+        }
+    }
     if let Some(asc) = fetch_opt("manifest.json.asc") {
-        let signer =
-            trust.verify_detached("manifest.json", manifest_text.as_bytes(), &asc, None)?;
-        return Ok(IndexTrust::VerifiedManifest(signer));
+        // A dangling asc over an unfetchable body is not a verified form
+        // — the next form is probed.
+        if let Some(body) = fetch_opt("manifest.json") {
+            let signer = trust.verify_detached("manifest.json", &body, &asc, None)?;
+            let text = String::from_utf8(body).map_err(|e| {
+                ShimError::new(
+                    EX_TEBAKO_MANIFEST,
+                    format!("the verified manifest.json at {manifest_url} is not UTF-8: {e}"),
+                )
+            })?;
+            return Ok(AcquiredIndex {
+                text,
+                trust: IndexTrust::VerifiedManifest(signer),
+                from_shard: false,
+            });
+        }
     }
     if let Some(asc) = fetch_opt("SHA256SUMS.txt.asc") {
-        // A dangling asc over an unfetchable body is not a verified form
-        // — the unsigned rule decides.
-        let Some(sums) = fetch_opt("SHA256SUMS.txt").and_then(|b| String::from_utf8(b).ok()) else {
-            return Ok(IndexTrust::Unverified);
-        };
-        let signer = trust.verify_detached("SHA256SUMS.txt", sums.as_bytes(), &asc, None)?;
-        return Ok(IndexTrust::VerifiedSums { text: sums, signer });
+        if let Some(sums) = fetch_opt("SHA256SUMS.txt").and_then(|b| String::from_utf8(b).ok()) {
+            let signer = trust.verify_detached("SHA256SUMS.txt", sums.as_bytes(), &asc, None)?;
+            return Ok(AcquiredIndex {
+                text: String::new(),
+                trust: IndexTrust::VerifiedSums { text: sums, signer },
+                from_shard: false,
+            });
+        }
     }
-    Ok(IndexTrust::Unverified)
+
+    // The unsigned chain (the pre-signing keep-forever line): shard
+    // first, the monolith next — a skipped shard (its own asc proved it
+    // is not this package's card) is not reconsidered here.
+    if shard_note.is_none() {
+        if let Some(body) = fetch_opt(&shard_name) {
+            match shard_card(&body) {
+                Some(card) => {
+                    return Ok(AcquiredIndex {
+                        text: card,
+                        trust: IndexTrust::Unverified,
+                        from_shard: true,
+                    });
+                }
+                None => {
+                    shard_note = Some(format!(
+                        "the shard {shard_url} does not name the requested identity triple ({engine}_version={lang_version} tebako_version={tebako_version} platform={platform})"
+                    ));
+                }
+            }
+        }
+    }
+    if let Some(bytes) = fetch_opt("manifest.json") {
+        if let Ok(text) = String::from_utf8(bytes) {
+            return Ok(AcquiredIndex {
+                text,
+                trust: IndexTrust::Unverified,
+                from_shard: false,
+            });
+        }
+    }
+    let mut msg = format!(
+        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+    );
+    if let Some(note) = &shard_note {
+        msg.push_str(&format!("\n  shard: {note}"));
+    }
+    fail(EX_TEBAKO_CONTRACT, msg)
 }
 
 /// Download + verify + atomically install one asset into an entry staging
@@ -1653,18 +2036,39 @@ fn download_runtime(
     let fallback_image = image_asset.clone();
     let result: Result<StageOutcome, ShimError> = result.and_then(|()| {
         // spec 18 C2: the release card gates BEFORE any asset download —
-        // a contract refusal never downloads a byte of the runtime. No
-        // readable manifest is the same pre-era signal (no old-path
-        // readers; the SHA256SUMS fallback covers checksums only).
-        let manifest_url = format!("{dir_url}/manifest.json");
-        let manifest_text = fetch_manifest_text(&base, local, &tag, &tmp_dir).ok_or_else(|| {
-            ShimError::new(
-                EX_TEBAKO_CONTRACT,
-                format!(
-                    "runtime \"{runtime_ref}\" is pre-era — no readable release manifest at {manifest_url} — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
-                ),
-            )
-        })?;
+        // a contract refusal never downloads a byte of the runtime. The
+        // card's acquisition is spec 05 §2's shard-first order (roadmap
+        // 85): the per-package shard `<stem>.manifest.json`, then the
+        // manifest.json monolith — the trust scan (G1, spec 09 §4)
+        // verifies each form's detached asc BEFORE its bytes are
+        // consumed, and no readable card form is the pre-era signal (75)
+        // naming every URL tried.
+        let stem = format!("tebako-runtime-{}-{}-{platform}", pref.tebako, pref.version);
+        let trust = FetchTrust::build(source, ctx)?;
+        let acquired = acquire_index(
+            &trust,
+            &base,
+            local,
+            &tag,
+            &stem,
+            engine,
+            &pref.version,
+            &pref.tebako,
+            platform,
+            &runtime_ref,
+            &tmp_dir,
+        )?;
+        let from_shard = acquired.from_shard;
+        let index_trust = acquired.trust;
+        let manifest_text = acquired.text;
+        if from_shard {
+            // The store's cached card keeps the array shape every card
+            // reader speaks (entry_asset_names / entry_meta / the
+            // contract re-reads parse manifest.json as an array); the
+            // raw shard file is not part of the store entry.
+            let _ = std::fs::write(tmp_dir.join("manifest.json"), &manifest_text);
+            let _ = std::fs::remove_file(tmp_dir.join(format!("{stem}.manifest.json")));
+        }
         // The entry's `filename` is the ONLY authoritative asset
         // spelling (spec 05 §2 SSOT; tebako#456): match the identity
         // triple (`tebako_version` + `{engine}_version` + `platform`)
@@ -1685,12 +2089,6 @@ fn download_runtime(
         if file_exists(&entry_dir.join(&asset)) {
             return Ok(StageOutcome::Raced { asset, image_asset });
         }
-
-        // G1 (spec 09 §4): the consumed index form's detached signature
-        // verifies BEFORE its digests are trusted — and before any asset
-        // byte downloads.
-        let trust = FetchTrust::build(source, ctx)?;
-        let index_trust = verify_index(&trust, &base, local, &tag, &manifest_text, &tmp_dir)?;
 
         // The declared per-artifact signatures (spec 13 §2a): a PRESENT
         // but torn block is the named error — never a silent downgrade
@@ -1759,15 +2157,17 @@ fn download_runtime(
         )?;
 
         // executable
-        let (exe_sha, (diag_m, diag_s)) = expected_checksum(
-            &base,
+        let exe = expected_checksum(&ChecksumQuery {
+            base: &base,
             local,
-            &tag,
-            &asset,
-            &tmp_dir,
-            Some(&manifest_text),
-            &index_trust,
-        )?;
+            tag: &tag,
+            asset: &asset,
+            tmp_dir: &tmp_dir,
+            index_text: &manifest_text,
+            from_shard,
+            trust: &index_trust,
+        })?;
+        let (diag_sh, diag_m, diag_s) = exe.diags;
         const DIAG: [&str; 5] = [
             "not tried",
             "download failed",
@@ -1775,12 +2175,12 @@ fn download_runtime(
             "no matching entry",
             "ok",
         ];
-        let expected = exe_sha.ok_or_else(|| {
+        let expected = exe.sha.ok_or_else(|| {
             ShimError::new(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
-                    "no checksum for {asset} in the release\n  tried: {dir_url}/manifest.json ({})\n         {dir_url}/SHA256SUMS.txt ({})",
-                    DIAG[diag_m], DIAG[diag_s]
+                    "no checksum for {asset} in the release\n  tried: {dir_url}/{stem}.manifest.json ({})\n         {dir_url}/manifest.json ({})\n         {dir_url}/SHA256SUMS.txt ({})",
+                    DIAG[diag_sh], DIAG[diag_m], DIAG[diag_s]
                 ),
             )
         })?;
@@ -1816,16 +2216,17 @@ fn download_runtime(
             &pref.tebako,
             platform,
         )?;
-        let (image_sha, _) = expected_checksum(
-            &base,
+        let image = expected_checksum(&ChecksumQuery {
+            base: &base,
             local,
-            &tag,
-            &image_asset,
-            &tmp_dir,
-            Some(&manifest_text),
-            &index_trust,
-        )?;
-        let has_image = if let Some(image_expected) = image_sha {
+            tag: &tag,
+            asset: &image_asset,
+            tmp_dir: &tmp_dir,
+            index_text: &manifest_text,
+            from_shard,
+            trust: &index_trust,
+        })?;
+        let has_image = if let Some(image_expected) = image.sha {
             let (image_actual, image_signer) = install_asset(
                 &dir_url,
                 local,
@@ -2258,5 +2659,241 @@ payloads:
             signer_pin: None,
         };
         assert_eq!(pinned.tag_for("2.5.0"), "v2.5.1");
+    }
+
+    // ---- the registry facet of the index selection (spec 05 §2, roadmap 85) ----
+
+    fn sha64(c: char) -> String {
+        c.to_string().repeat(64)
+    }
+
+    /// A shard-era factory registry (the openjdk shape): two versions
+    /// riding tebako line 2.5.0, the newer published under release tag
+    /// v2.5.1 (the tag is NOT the rows' tebako line), host-covered
+    /// per-triplet rows; `withdraw_newer` yanks 21.0.12.
+    fn shard_era_registry(withdraw_newer: bool) -> String {
+        let host = tpkg::Platform::host();
+        let triplet = host.as_triplet();
+        let asset = host.release_asset_name();
+        let status = if withdraw_newer {
+            "        status: withdrawn\n"
+        } else {
+            ""
+        };
+        format!(
+            "schema_version: 1\npayloads:\n  - name: tebako-runtime-openjdk\n    kind: runtime\n    engine: java\n    implementation: temurin\n    versions:\n      - version: '21.0.11'\n        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-21.0.11-{asset}.tfs, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-openjdk:v2.5.0'}}\n      - version: '21.0.12'\n{status}        platforms:\n          {triplet}: {{artifact: tebako-runtime-2.5.0-21.0.12-{asset}.tfs, sha256: '{}'}}\n        release: {{ref: 'tfs:github:acme/tebako-runtime-openjdk:v2.5.1'}}\n        signature: {{keyid: 'efc3c250f7862a48', asc: 'tebako-runtime-2.5.0-21.0.12-{asset}.tfs.asc'}}\n",
+            sha64('a'),
+            sha64('b'),
+        )
+    }
+
+    fn github_source() -> RuntimeSource {
+        RuntimeSource {
+            base: "https://github.com/acme/tebako-runtime-openjdk/releases/download".to_string(),
+            tag: Some("v2.5.1".to_string()),
+            channel: "registry",
+            signer_pin: None,
+        }
+    }
+
+    #[test]
+    fn github_owner_repo_parses_only_the_release_download_base() {
+        assert_eq!(
+            github_owner_repo("https://github.com/acme/tebako-runtime-openjdk/releases/download"),
+            Some(("acme".to_string(), "tebako-runtime-openjdk".to_string()))
+        );
+        assert_eq!(github_owner_repo("https://mirror.invalid/releases"), None);
+        assert_eq!(github_owner_repo("https://github.com/acme/repo"), None);
+        assert_eq!(
+            github_owner_repo("https://github.com/a/b/c/releases/download"),
+            None
+        );
+        assert_eq!(github_owner_repo("file:///tmp/mirror"), None);
+    }
+
+    #[test]
+    fn tebako_line_from_artifact_reads_the_stem() {
+        let host = tpkg::Platform::host();
+        let asset = host.release_asset_name();
+        assert_eq!(
+            tebako_line_from_artifact(
+                &format!("tebako-runtime-2.5.0-21.0.12-{asset}.tfs"),
+                "21.0.12",
+                host
+            ),
+            Some("2.5.0".to_string())
+        );
+        // a non-factory spelling carries no line
+        assert_eq!(
+            tebako_line_from_artifact("openjdk-21.tar.gz", "21.0.12", host),
+            None
+        );
+    }
+
+    #[test]
+    fn the_registry_facet_picks_the_newest_satisfying_row() {
+        let home = temp_home("regfacet-pick");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-openjdk",
+            shard_era_registry(false).as_bytes(),
+        )
+        .unwrap();
+        let (pref, source) =
+            registry_selected_target(&reqs("java", ">= 21"), &github_source(), &ctx)
+                .unwrap()
+                .expect("an informative registry picks");
+        assert_eq!(pref.version, "21.0.12");
+        // the tebako line flows from the artifact stem — NOT the tag
+        // (the openjdk v2.5.1 shape: tag v2.5.1, rows on tebako 2.5.0)
+        assert_eq!(pref.tebako, "2.5.0");
+        assert_eq!(
+            source.base,
+            "https://github.com/acme/tebako-runtime-openjdk/releases/download"
+        );
+        assert_eq!(source.tag.as_deref(), Some("v2.5.1"));
+        assert_eq!(source.signer_pin.as_deref(), Some("efc3c250f7862a48"));
+        assert_eq!(source.channel, "registry");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_refuses_a_withdrawn_pick_by_name() {
+        let home = temp_home("regfacet-withdrawn");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-openjdk",
+            shard_era_registry(true).as_bytes(),
+        )
+        .unwrap();
+        let err =
+            registry_selected_target(&reqs("java", ">= 21"), &github_source(), &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(err.message.contains("WithdrawnPayload"), "{err:?}");
+        assert!(err.message.contains("21.0.12"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn a_withdrawn_non_selected_row_is_inert() {
+        let home = temp_home("regfacet-inert");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-openjdk",
+            shard_era_registry(true).as_bytes(),
+        )
+        .unwrap();
+        // the constraint excludes the withdrawn 21.0.12 — the healthy
+        // 21.0.11 picks without a murmur
+        let (pref, _) =
+            registry_selected_target(&reqs("java", ">= 21, < 21.0.12"), &github_source(), &ctx)
+                .unwrap()
+                .expect("the healthy row picks");
+        assert_eq!(pref.version, "21.0.11");
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_availability_error_marks_withdrawn_rows() {
+        let home = temp_home("regfacet-avail");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-openjdk",
+            shard_era_registry(true).as_bytes(),
+        )
+        .unwrap();
+        let err =
+            registry_selected_target(&reqs("java", ">= 25"), &github_source(), &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        let platform = platform_string();
+        assert!(
+            err.message.contains(&format!(
+                "no released java runtime for {platform} satisfies"
+            )),
+            "{err:?}"
+        );
+        assert!(
+            err.message.contains(&format!(
+                "released for {platform}: 21.0.11, 21.0.12 (withdrawn)"
+            )),
+            "{err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_is_uninformative_without_runtime_entries() {
+        let home = temp_home("regfacet-empty");
+        let ctx = test_ctx(&home);
+        crate::regcache::prime(
+            &home,
+            "tfs:github:acme/tebako-runtime-openjdk",
+            b"schema_version: 1\npayloads: []\n",
+        )
+        .unwrap();
+        assert!(
+            registry_selected_target(&reqs("java", ">= 21"), &github_source(), &ctx)
+                .unwrap()
+                .is_none()
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn the_registry_facet_ignores_a_non_github_base() {
+        let home = temp_home("regfacet-nongh");
+        let ctx = test_ctx(&home);
+        let source = RuntimeSource {
+            base: "https://mirror.invalid/releases".to_string(),
+            tag: None,
+            channel: "mirror-env",
+            signer_pin: None,
+        };
+        assert!(
+            registry_selected_target(&reqs("java", ">= 21"), &source, &ctx)
+                .unwrap()
+                .is_none()
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn an_unreadable_registry_is_journaled_and_uninformative() {
+        let home = temp_home("regfacet-unreadable");
+        let mut ctx = test_ctx(&home);
+        // nothing primed + offline: the registry cannot read
+        ctx.env
+            .insert("TEBAKO_OFFLINE".to_string(), "1".to_string());
+        assert!(
+            registry_selected_target(&reqs("java", ">= 21"), &github_source(), &ctx)
+                .unwrap()
+                .is_none()
+        );
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(
+            journal.contains("event=runtime-index-registry-error engine=java"),
+            "{journal}"
+        );
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn channel_3_refuses_a_withdrawn_pick_by_name() {
+        let home = temp_home("chain-registry-withdrawn");
+        let ctx = test_ctx(&home);
+        let reg = registry_ref(&home, "tpkg-registry.yaml", &shard_era_registry(true));
+        let cfg = UserConfig {
+            registries: vec![reg],
+            ..UserConfig::default()
+        };
+        let err = runtime_source(&reqs("java", ">= 21"), None, &cfg, &ctx).unwrap_err();
+        assert_eq!(err.code, EX_TEBAKO_UNAVAILABLE);
+        assert!(err.message.contains("WithdrawnPayload"), "{err:?}");
+        assert!(err.message.contains("21.0.12"), "{err:?}");
+        let _ = std::fs::remove_dir_all(&home);
     }
 }
