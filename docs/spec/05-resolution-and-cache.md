@@ -223,6 +223,24 @@ their platform string as the per-package `abi` key in the release index
 eligible (the compat window — a payload's abi check never fails against
 an unknown line).
 
+**Version ordering (the plain-wins rule — the single owner is
+`tpkg::versions::compare`; every consumer flows it).** Versions are
+dot-separated components, missing components zero. Within one component:
+a leading numeric prefix compares numerically (`1.10 > 1.9`); at an
+equal prefix a PLAIN component ranks ABOVE a suffixed one
+(`3.13.15 > 3.13.15-jit` — semver's release > prerelease rule), so a
+factory's build variant (a `-jit`, `-debug`, … line) never silently
+outranks its plain twin in a newest-satisfying pick; two suffixes order
+lexicographically; a component without a numeric prefix falls back to
+whole-component string order. Constraint MATCHING is unaffected: a
+variant version still satisfies an open constraint, so a platform where
+ONLY the variant exists still resolves — the variant simply never wins
+a max pick against the plain twin. A variant is SELECTED through the pin
+surface (the config `version:` pin, the registry default), which names
+versions exactly and never compares; the constraint grammar itself
+(spec 03) admits only plain dot-decimal clauses, so a suffixed clause
+stays a named parse error.
+
 **The implementation axis (spec 28 §8):** `engine` names the LANGUAGE —
 mri, jruby and truffleruby are all `engine: ruby`, told apart by the
 runtime's `provides.implementation`. A requirement WITHOUT
