@@ -21,6 +21,7 @@ FRAG=fragments
 mkdir -p out/sidecars
 : > out/SHA256SUMS
 for platform_dir in "$FRAG"/frag-*; do
+  case "$platform_dir" in */frag-installers-*) continue ;; esac   # installer frags: their own section below
   platform="${platform_dir##*/frag-}"
   exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
   for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
@@ -30,6 +31,25 @@ for platform_dir in "$FRAG"/frag-*; do
     echo "$sha  $name" > "out/sidecars/${name}.sha256"
   done
 done
+
+# ---- installer fragments (roadmap 83, spec 16 §7) -------------------------
+# The installer legs upload frag-installers-<platform>/ dirs holding one
+# <asset>.sha256 + <asset>.size per SHIPPED installer container (asset
+# names are complete: tebako-setup-<VERSION>-<platform>.{msi,pkg}). A leg
+# whose signing gate was disarmed ships nothing and uploads a .disabled
+# marker instead — the glob simply finds no hashes. Installers get the
+# same SHA256SUMS line + sidecar treatment as every released part.
+for installer_dir in "$FRAG"/frag-installers-*/; do
+  [ -d "$installer_dir" ] || continue
+  for shafile in "$installer_dir"*.sha256; do
+    [ -e "$shafile" ] || continue
+    asset=$(basename "$shafile" .sha256)
+    sha=$(cat "$shafile")
+    echo "$sha  $asset" >> out/SHA256SUMS
+    echo "$sha  $asset" > "out/sidecars/${asset}.sha256"
+  done
+done
+
 sort -k2 -o out/SHA256SUMS out/SHA256SUMS
 
 # ---- manifest.json ------------------------------------------------------
@@ -46,6 +66,7 @@ sort -k2 -o out/SHA256SUMS out/SHA256SUMS
 jq_entries() {
   local tool="$1"
   for platform_dir in "$FRAG"/frag-*; do
+    case "$platform_dir" in */frag-installers-*) continue ;; esac
     platform="${platform_dir##*/frag-}"
     [ -f "$platform_dir/${tool}-${platform}.sha256" ] || continue
     exe=""; case "$platform" in windows-*) exe=".exe" ;; esac
@@ -67,6 +88,30 @@ cli_json=$(jq_entries tebako | jq -s 'sort_by(.platform)')
 shim_json=$(jq_entries tebako-shim | jq -s 'sort_by(.platform)')
 launcher_json=$(jq_entries tebako-runtime-launcher | jq -s 'sort_by(.platform)')
 
+# Installers (roadmap 83): platform parsed out of the asset name
+# (tebako-setup-<VERSION>-<platform>.<ext>); empty array when no leg
+# shipped (gates disarmed — the key is always present, the array may be
+# empty: additive schema, old readers ignore it).
+installers_json=$(
+  for installer_dir in "$FRAG"/frag-installers-*/; do
+    [ -d "$installer_dir" ] || continue
+    for shafile in "$installer_dir"*.sha256; do
+      [ -e "$shafile" ] || continue
+      asset=$(basename "$shafile" .sha256)
+      sha=$(cat "$shafile")
+      size=$(cat "$installer_dir/$asset.size")
+      stem="${asset%.*}"                      # strip .msi / .pkg
+      platform="${stem#*-setup-"$VERSION"-}"  # strip <name>-setup-<VERSION>-
+      jq -cn \
+        --arg platform "$platform" \
+        --arg file "$asset" \
+        --arg sha256 "$sha" \
+        --argjson size_bytes "$size" \
+        '{platform: $platform, file: $file, sha256: $sha256, size_bytes: $size_bytes}'
+    done
+  done | jq -s 'sort_by(.platform)'
+)
+
 jq -n \
   --arg version "$VERSION" \
   --argjson assets "$bootstrap_json" \
@@ -75,10 +120,12 @@ jq -n \
   --argjson cli "$cli_json" \
   --argjson shim "$shim_json" \
   --argjson launcher "$launcher_json" \
+  --argjson installers "$installers_json" \
   '{
     name: "tebako-rs",
     version: $version,
     assets: $assets,
+    installers: $installers,
     tools: {
       "tfs": $tfs,
       "tebako-pkg": $pkg,
@@ -100,11 +147,19 @@ cat out/manifest.json
   echo ""
   echo "| platform | binary | size (bytes) |"
   echo "|---|---|---|"
-  for platform_dir in $(ls -d "$FRAG"/frag-* | sort); do
+  for platform_dir in $(ls -d "$FRAG"/frag-* | grep -v '/frag-installers-' | sort); do
     platform="${platform_dir##*/frag-}"
     for tool in tebako-bootstrap tfs tebako-pkg tebako tebako-shim tebako-runtime-launcher; do
       size=$(cat "$platform_dir/${tool}-${platform}.size")
       echo "| $platform | $tool | $size |"
+    done
+  done
+  for installer_dir in "$FRAG"/frag-installers-*/; do
+    [ -d "$installer_dir" ] || continue
+    for sizefile in "$installer_dir"*.size; do
+      [ -e "$sizefile" ] || continue
+      asset=$(basename "$sizefile" .size)
+      echo "| installer | $asset | $(cat "$sizefile") |"
     done
   done
   echo ""

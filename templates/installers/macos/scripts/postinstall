@@ -1,0 +1,11 @@
+#!/bin/bash
+# postinstall — put the installed bin dir on PATH via /etc/paths.d
+# (SIP-safe, MDM-friendly, picked up by path_helper for every NEW login
+# shell). Tokens rendered by ci/macos-pkg-build.sh:
+#   @INSTALL_ROOT@   e.g. /opt/tebako
+#   @PRODUCT_NAME@   e.g. tebako
+# Per-user state (the ~/.tebako store, the shims dir) is created by the
+# CLI itself at first use — the pkg installs NO per-user files.
+set -e
+printf '%s\n' "@INSTALL_ROOT@/bin" > "/etc/paths.d/@PRODUCT_NAME@"
+chmod 644 "/etc/paths.d/@PRODUCT_NAME@"
