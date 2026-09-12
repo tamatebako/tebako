@@ -777,6 +777,7 @@ fn spawned_mirror_checks(
                 implementation,
                 constraint,
                 expose,
+                ..
             } => Some((
                 engine.as_str(),
                 implementation.as_deref(),
@@ -1034,9 +1035,9 @@ fn spawned_payload_check(
         return;
     };
     let language_edge = provider_l1.requires.iter().find_map(|r| match r {
-        tpkg::Requirement::Language { engine, constraint } if *engine == rt.engine => {
-            Some(constraint)
-        }
+        tpkg::Requirement::Language {
+            engine, constraint, ..
+        } if *engine == rt.engine => Some(constraint),
         _ => None,
     });
     match language_edge {

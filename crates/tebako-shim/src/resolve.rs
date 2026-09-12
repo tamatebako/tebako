@@ -153,6 +153,10 @@ struct ClaimScan {
     providers: Vec<String>,
     /// Payloads with an expose claim (sorted, deterministic).
     exposers: Vec<String>,
+    /// Payloads whose ONLY expose claim is a platform-skipped edge
+    /// (spec 03 §2.3) — inert on this host, remembered so the refusal
+    /// can name the real cause (exit 69).
+    skipped_exposers: Vec<String>,
 }
 
 fn claim_scan(
@@ -175,6 +179,7 @@ fn claim_scan(
     };
     let mut providers = Vec::new();
     let mut exposers = Vec::new();
+    let mut skipped_exposers = Vec::new();
     for entry in rd.flatten() {
         if !entry.path().is_dir() {
             continue;
@@ -191,15 +196,24 @@ fn claim_scan(
                     exposers.push(name.clone());
                     break;
                 }
+                // spec 03 §2.3: an expose claim through a platform-skipped
+                // edge claims nothing on this host — remembered only so
+                // the refusal names the real cause.
+                if !skipped_exposers.contains(&name) && skipped_expose_edge(&m, tool).is_some() {
+                    skipped_exposers.push(name.clone());
+                    break;
+                }
             }
         }
     }
     providers.sort();
     exposers.sort();
+    skipped_exposers.sort();
     Ok(Some(ClaimScan {
         own_fast,
         providers,
         exposers,
+        skipped_exposers,
     }))
 }
 
@@ -217,6 +231,7 @@ fn providing_payload(
     }
     let providers = scan.providers;
     let exposers = scan.exposers;
+    let skipped_exposers = scan.skipped_exposers;
     let enabled: Vec<&String> = providers
         .iter()
         .filter(|p| !config::claim_disabled(disabled, tool, p))
@@ -247,6 +262,12 @@ fn providing_payload(
     match (enabled_ex.len(), exposers.len()) {
         (1, _) => Ok(Provider::Exposed(enabled_ex[0].clone())),
         (0, 1) => Ok(Provider::Exposed(exposers[0].clone())),
+        // spec 03 §2.3: when the command's only claims ride
+        // platform-skipped edges, the refusal says so by name (exit 69)
+        // — never the generic no-provider error, never a fallback.
+        (0, _) if !skipped_exposers.is_empty() => {
+            Err(platform_skipped_provider(tool, &skipped_exposers))
+        }
         (0, _) => Err(no_provider(home, tool)),
         _ => fail(
             EX_TEBAKO_MANIFEST,
@@ -322,16 +343,25 @@ pub fn provider_for_bare_default(home: &Path, tool: &str) -> Result<BareProvider
 
 /// spec 30 §3 + spec 32 §3: does the manifest's DEPENDS expose `tool`
 /// through a spawn edge (a runtime edge's or an executable edge's
-/// `expose` list)?
+/// `expose` list) THAT COVERS THIS HOST? A platform-skipped edge claims
+/// nothing here (spec 03 §2.3).
 fn exposes(m: &Manifest, tool: &str) -> bool {
-    m.requires().iter().any(|r| {
-        let expose = match r {
-            tpkg::Requirement::Runtime { expose, .. } => expose,
-            tpkg::Requirement::Executable { expose, .. } => expose,
-            _ => return false,
-        };
-        expose.iter().any(|e| e == tool)
-    })
+    let host = tpkg::Platform::host();
+    m.requires()
+        .iter()
+        .any(|r| r.covers_host(host) && edge_exposes(r, tool))
+}
+
+/// The spawn-surface claim of one edge: true when the edge is
+/// spawn-carrying (runtime / executable) and its `expose` list names
+/// `tool`.
+fn edge_exposes(r: &tpkg::Requirement, tool: &str) -> bool {
+    let expose = match r {
+        tpkg::Requirement::Runtime { expose, .. } => expose,
+        tpkg::Requirement::Executable { expose, .. } => expose,
+        _ => return false,
+    };
+    expose.iter().any(|e| e == tool)
 }
 
 fn no_provider(home: &Path, tool: &str) -> ShimError {
@@ -411,19 +441,40 @@ pub fn chain_pick(
     }
 }
 
-/// The expose edge of `m` that names `tool` (spec 30 §3 + spec 32 §3).
+/// The expose edge of `m` that names `tool` (spec 30 §3 + spec 32 §3)
+/// AND covers this host (spec 03 §2.3 — a platform-skipped edge's names
+/// are inert here).
 fn expose_edge(m: &Manifest, tool: &str) -> Option<tpkg::Requirement> {
+    let host = tpkg::Platform::host();
     m.requires()
         .iter()
-        .find(|r| {
-            let expose = match r {
-                tpkg::Requirement::Runtime { expose, .. } => expose,
-                tpkg::Requirement::Executable { expose, .. } => expose,
-                _ => return false,
-            };
-            expose.iter().any(|e| e == tool)
-        })
+        .find(|r| r.covers_host(host) && edge_exposes(r, tool))
         .cloned()
+}
+
+/// The platform-skipped expose edge naming `tool`, when one exists
+/// (spec 03 §2.3): dispatching a skipped edge's command is the named
+/// "not available on this platform" error (exit 69), never a silent
+/// fallback to another provider.
+fn skipped_expose_edge(m: &Manifest, tool: &str) -> Option<tpkg::Requirement> {
+    let host = tpkg::Platform::host();
+    m.requires()
+        .iter()
+        .find(|r| !r.covers_host(host) && edge_exposes(r, tool))
+        .cloned()
+}
+
+/// The named error for a dispatch whose only claims are platform-skipped
+/// expose edges (spec 03 §2.3) — exit 69, the hosts and payloads named.
+fn platform_skipped_provider(tool: &str, skipped: &[String]) -> ShimError {
+    ShimError::new(
+        EX_TEBAKO_UNAVAILABLE,
+        format!(
+            "\"{tool}\" is not available on this platform ({}) — {} exposes it only through a dependency edge conditioned to other triplets (spec 03 §2.3)\n  the skip is by the edge's triplets: declaration; install a build covering this host, or pick another command",
+            tpkg::Platform::host(),
+            skipped.join(", ")
+        ),
+    )
 }
 
 /// Resolve the dispatch target for `tool` through the full chain.
@@ -470,13 +521,28 @@ fn resolve_pinned(
             res.exposed = Some(edge);
             Ok(res)
         }
-        None => fail(
-            EX_TEBAKO_MANIFEST,
-            format!(
-                "pin \"{pin}\" (from {source}): payload \"{payload_name}\" {version} neither declares nor exposes the command \"{tool}\" (NotAProvider)\n  the qualified form pins a PROVIDER — name one of the payloads claiming \"{tool}\", or pin the bare version",
-                version = res.version,
-            ),
-        ),
+        None => {
+            // spec 03 §2.3: a skipped edge's name is the named
+            // platform refusal (exit 69), not NotAProvider.
+            if let Some(edge) = skipped_expose_edge(&res.manifest, tool) {
+                return fail(
+                    EX_TEBAKO_UNAVAILABLE,
+                    format!(
+                        "pin \"{pin}\" (from {source}): payload \"{payload_name}\" {version} exposes \"{tool}\" only through the edge {} — the command is not available on this platform ({}) (spec 03 §2.3)",
+                        edge.edge_label(),
+                        tpkg::Platform::host(),
+                        version = res.version,
+                    ),
+                );
+            }
+            fail(
+                EX_TEBAKO_MANIFEST,
+                format!(
+                    "pin \"{pin}\" (from {source}): payload \"{payload_name}\" {version} neither declares nor exposes the command \"{tool}\" (NotAProvider)\n  the qualified form pins a PROVIDER — name one of the payloads claiming \"{tool}\", or pin the bare version",
+                    version = res.version,
+                ),
+            )
+        }
     }
 }
 
@@ -514,15 +580,31 @@ fn resolve_scanned(
                     res.exposed = Some(edge);
                     Ok(res)
                 }
-                None => fail(
-                    EX_TEBAKO_MANIFEST,
-                    format!(
-                        "payload \"{payload_name}\" {version} does not expose \"{tool}\" (another installed version does)\n  pin the exposing version with .tebako-tools.yaml or {}",
-                        version_env_var(tool),
-                        payload_name = res.payload_name,
-                        version = res.version,
-                    ),
-                ),
+                None => {
+                    // spec 03 §2.3: the picked version's claim rides a
+                    // platform-skipped edge — the named platform refusal
+                    // (exit 69), not the version-mismatch error.
+                    if skipped_expose_edge(&res.manifest, tool).is_some() {
+                        return fail(
+                            EX_TEBAKO_UNAVAILABLE,
+                            format!(
+                                "payload \"{payload_name}\" {version} exposes \"{tool}\" only through a platform-skipped edge — the command is not available on this platform ({}) (spec 03 §2.3)",
+                                tpkg::Platform::host(),
+                                payload_name = res.payload_name,
+                                version = res.version,
+                            ),
+                        );
+                    }
+                    fail(
+                        EX_TEBAKO_MANIFEST,
+                        format!(
+                            "payload \"{payload_name}\" {version} does not expose \"{tool}\" (another installed version does)\n  pin the exposing version with .tebako-tools.yaml or {}",
+                            version_env_var(tool),
+                            payload_name = res.payload_name,
+                            version = res.version,
+                        ),
+                    )
+                }
             }
         }
     }

@@ -448,7 +448,8 @@
             "kind": { "const": "language" },
             "engine": { "type": "string", "minLength": 1 },
             "constraint": { "$ref": "#/$defs/constraint" }
-          }
+          },
+          "description": "The language-runtime edge. FORBIDS triplets (schema_minor 9, semantic — the tpkg validator): a skipped language edge would boot a payload with no runtime; platform reach is the payload-level platforms: axis's statement."
         },
         {
           "type": "object",
@@ -468,6 +469,7 @@
             "kind": { "const": "data" },
             "name": { "type": "string", "minLength": 1 },
             "constraint": { "$ref": "#/$defs/constraint" },
+            "triplets": { "$ref": "#/$defs/platformList", "description": "spec 03 §2.3 (schema_minor 9): per-edge platform conditioning — the edge resolves on the listed hosts only; a non-covering host SKIPS the edge (no resolve/fetch/install/lock row/mount; loud + journaled, never an error). Absent = universal (byte-identical with pre-minor-9 behavior)." },
             "mount": { "$ref": "#/$defs/absPath" }
           }
         },
@@ -479,6 +481,7 @@
             "engine": { "type": "string", "minLength": 1 },
             "implementation": { "type": "string", "minLength": 1 },
             "constraint": { "$ref": "#/$defs/constraint" },
+            "triplets": { "$ref": "#/$defs/platformList", "description": "spec 03 §2.3 (schema_minor 9): per-edge platform conditioning — a non-covering host SKIPS the edge: no resolve, no spawn surface, no exposed names (loud + journaled, never an error). Absent = universal." },
             "expose": {
               "type": "array",
               "description": "spec 30 §1/§3 (schema_minor 4): the depended runtime's entries this payload surfaces — bare command names (no path separator, no drive qualifier), never repeated. The depended runtime resolves through the runtime index and is NEVER co-mounted (no mount key exists on this edge).",
@@ -497,6 +500,7 @@
             "constraint": { "$ref": "#/$defs/constraint" },
             "mount": { "$ref": "#/$defs/absPath" },
             "critical": { "type": "boolean", "description": "The schema evolution law's critical flag: a reader that does not understand this entry refuses with a named error instead of skipping it. Producers mark a functionally required edge critical: true (spec 32 §1)." },
+            "triplets": { "$ref": "#/$defs/platformList", "description": "spec 03 §2.3 (schema_minor 9): per-edge platform conditioning — a non-covering host SKIPS the edge (both axes: no co-mount, no spawn surface; loud + journaled, never an error). Absent = universal. The skip applies regardless of critical: true — critical governs reader-ERA refusal, never platform reach." },
             "expose": {
               "type": "array",
               "description": "spec 03 §8 + spec 32 §1 (schema_minor 5): the capability edge — exact-name resolution against provides.executables ∪ provides.entrypoints[].name (DependencyNotFound / AmbiguousProvider). mount and expose are ORTHOGONAL axes: mount opens the VFS surface (co-mount, consumer-declared); expose opens the spawn surface — each exposed name dispatches the provider's own spec-17 dispatch as a child, and exposed names never take the exec-tier path. Semantic rules (the tpkg validator): an edge with neither mount nor expose is a named manifest error; name ∈ expose is required; every exposed name must resolve to a runtime-carrying entrypoint of the provider (press/install cross-check).",

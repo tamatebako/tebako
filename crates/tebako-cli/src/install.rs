@@ -1067,7 +1067,17 @@ fn install_dependency_closure<T: Transport>(
     shim_binary: Option<&Path>,
     chain: &mut Vec<String>,
 ) -> Result<(), TebakoError> {
+    let host = tpkg::Platform::host();
     for req in mirror.requires() {
+        // spec 03 §2.3 (schema_minor 9): an edge whose triplets: list
+        // does not cover this host is SKIPPED — no resolve, no fetch, no
+        // install row, no shim registration; the skip is loud (journal +
+        // stderr), never an error.
+        if !req.covers_host(host) {
+            journal(home, &req.platform_skip_journal(host));
+            eprintln!("tebako: note: {}", req.platform_skip_note(host));
+            continue;
+        }
         // spec 30 §1/§3: a spawned-runtime edge installs the RUNTIME into
         // the store (never a payload in the closure walk), verifies the
         // expose list against the runtime's own spawn surface, and
@@ -1077,6 +1087,7 @@ fn install_dependency_closure<T: Transport>(
             implementation,
             constraint,
             expose,
+            ..
         } = req
         {
             install_runtime_edge(

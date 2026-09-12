@@ -235,6 +235,186 @@ fn missing_dependency_is_a_named_error() {
     assert!(err.message.contains("gtk-layer"), "{}", err.message);
 }
 
+/// A triplet on the spec 03 §3 axis that is NOT this host (the
+/// platform-negative case's pick).
+fn non_host_triplet() -> String {
+    tpkg::Platform::ALL
+        .iter()
+        .find(|p| **p != tpkg::Platform::host() && !p.is_reserved())
+        .unwrap()
+        .as_triplet()
+        .to_string()
+}
+
+#[test]
+fn platform_skipped_data_edge_contributes_no_mount_and_no_error() {
+    // spec 03 §2.3 (schema_minor 9): an edge whose triplets: list does
+    // not cover this host is SKIPPED — no mount, no resolution, and no
+    // missing-dependency error (nothing is installed for the dep; an
+    // unskipped edge would fail by name). The skip is journaled.
+    let tmp = TempDir::new("edge-skip-mount");
+    let home = tmp.path().join("home");
+    let skipped = non_host_triplet();
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            "  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n",
+            &format!("requires:\n  - kind: data\n    name: iso-codes\n    constraint: \">= 2024.1\"\n    triplets: [{skipped}]\n    mount: /__app__/share/iso-codes\n"),
+        ),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &[], &ctx).unwrap();
+    assert_eq!(plan.mounts.len(), 1, "the skipped edge mounts nothing");
+    assert_eq!(plan.mounts[0].mount, "/");
+    let journal = std::fs::read_to_string(home.join("journal.log")).expect("the skip journals");
+    assert!(
+        journal.contains("event=edge-platform-skip edge=data:iso-codes"),
+        "{journal}"
+    );
+    assert!(
+        journal.contains(&format!("host={}", tpkg::Platform::host().as_triplet())),
+        "{journal}"
+    );
+}
+
+#[test]
+fn covering_data_edge_mounts_as_before() {
+    // A triplets: list that COVERS the host is not a skip — the dep
+    // resolves exactly like an unconditioned edge.
+    let tmp = TempDir::new("edge-cover-mount");
+    let home = tmp.path().join("home");
+    let host = tpkg::Platform::host().as_triplet();
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            "  entrypoints:\n    - name: metanorma\n      path: /app/bin/metanorma\n      runtime_requirement: {engine: ruby, constraint: \">= 3.3, < 5.0\"}\n",
+            &format!("requires:\n  - kind: data\n    name: iso-codes\n    constraint: \">= 2024.1\"\n    triplets: [{host}]\n    mount: /__app__/share/iso-codes\n"),
+        ),
+    );
+    let dep = write_payload(
+        &home,
+        "iso-codes",
+        "2025.2",
+        &data_manifest("iso-codes", "2025.2"),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &[], &ctx).unwrap();
+    assert_eq!(plan.mounts.len(), 2, "the covering edge mounts");
+    assert_eq!(plan.mounts[1].image, dep);
+    if let Ok(journal) = std::fs::read_to_string(home.join("journal.log")) {
+        assert!(
+            !journal.contains("event=edge-platform-skip"),
+            "no skip is journaled for a covering edge: {journal}"
+        );
+    }
+}
+
+#[test]
+fn platform_skipped_spawn_edge_exports_no_lock_row() {
+    // spec 03 §2.3 + spec 30 §4: a skipped spawned-runtime edge
+    // contributes NO TEBAKO_SPAWN_LOCK row and registers no exposed
+    // names — note the java runtime is deliberately NOT in the store:
+    // any resolution attempt on the edge would fail loudly.
+    let tmp = TempDir::new("edge-skip-spawn");
+    let home = tmp.path().join("home");
+    let skipped = non_host_triplet();
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            &format!("requires:\n  - {{kind: runtime, engine: java, constraint: \">= 21\", expose: [java], triplets: [{skipped}]}}\n"),
+        ),
+    );
+    write_runtime(&home, "4.0.6", "0.16.0", false);
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "metanorma", "1.2.3");
+
+    let plan = dispatch::dispatch("metanorma", &[], &ctx).unwrap();
+    assert!(
+        env_get(&plan, "TEBAKO_SPAWN_LOCK").is_none(),
+        "the skipped spawn edge exports no lock row"
+    );
+    assert_eq!(plan.mounts.len(), 1, "spawn edges never co-mount");
+}
+
+#[test]
+fn dispatching_a_platform_skipped_exposed_name_is_exit_69() {
+    // spec 03 §2.3: the skipped edge's exposed name registers NO claim
+    // on this host; dispatching it is the named "not available on this
+    // platform" refusal (exit 69) naming the claiming payload — never
+    // the generic no-provider error, never a silent fallback.
+    let tmp = TempDir::new("edge-skip-expose");
+    let home = tmp.path().join("home");
+    let skipped = non_host_triplet();
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            &format!("requires:\n  - {{kind: executable, name: xml2rfc, constraint: \">= 3.34\", expose: [xml2rfc], triplets: [{skipped}]}}\n"),
+        ),
+    );
+    let ctx = ctx(&home, tmp.path());
+
+    let err = dispatch::dispatch("xml2rfc", &["--help".into()], &ctx).unwrap_err();
+    assert_eq!(err.code, tebako_shim::EX_TEBAKO_UNAVAILABLE, "{err:?}");
+    assert!(
+        err.message.contains("not available on this platform"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("metanorma"), "{}", err.message);
+}
+
+#[test]
+fn covering_expose_edge_routes_as_before() {
+    // The covering expose claim routes exactly like an unconditioned
+    // one: the scan answers Exposed and the edge rides the resolution.
+    let tmp = TempDir::new("edge-cover-expose");
+    let home = tmp.path().join("home");
+    let host = tpkg::Platform::host().as_triplet();
+    write_payload(
+        &home,
+        "metanorma",
+        "1.2.3",
+        &app_manifest_requires(
+            "metanorma",
+            "1.2.3",
+            &entrypoint_yaml(RUBY_ENTRY, "metanorma"),
+            &format!("requires:\n  - {{kind: executable, name: xml2rfc, constraint: \">= 3.34\", expose: [xml2rfc], triplets: [{host}]}}\n"),
+        ),
+    );
+    let mut ctx = ctx(&home, tmp.path());
+    pin_env(&mut ctx, "xml2rfc", "1.2.3");
+
+    let res = tebako_shim::resolve::resolve("xml2rfc", &ctx).unwrap();
+    let Some(tpkg::Requirement::Executable { expose, .. }) = &res.exposed else {
+        panic!("the covering edge rides the resolution: {res:?}");
+    };
+    assert_eq!(expose, &["xml2rfc".to_string()]);
+}
+
 #[test]
 fn which_mode_never_downloads() {
     let tmp = TempDir::new("which-no-download");

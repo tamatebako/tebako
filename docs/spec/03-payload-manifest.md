@@ -155,7 +155,9 @@ requires:
   - kind: toolkit             # a native toolkit layer
     name: gtk-layer
     constraint: ">= 3.24, < 3.25"
-    triplets: [aarch64-macos, x86_64-linux-gnu]   # where this dep ships
+    triplets: [aarch64-macos, x86_64-linux-gnu]   # resolves on these hosts
+                                                  # only — skipped elsewhere
+                                                  # (the per-edge rule below)
     mount: /__layers__/gtk
   - kind: data
     name: iso-codes
@@ -194,6 +196,41 @@ requires:
   → verify → cache (0444 + markers) → compose the mount stack with the
   manifest's declared env → exec. The SAME signed `.tfs` artifact type at
   every graph level — one coherent algebra.
+- **PER-EDGE PLATFORM CONDITIONING (`triplets:`, additive — schema_minor
+  9, locked 2026-09-12, roadmap 86):** every edge kind EXCEPT
+  `kind: language` accepts the OPTIONAL `triplets:` list — the §3 axis's
+  vcpkg-form triplets, non-empty, no duplicates, no reserved triplet
+  (validated at parse). This generalizes the toolkit edge's existing
+  spelling to `data`, `runtime`, and `executable` edges — one spelling
+  per axis (spec 00 invariant 10): payload-level coverage is
+  `platforms:`, edge-level conditioning is `triplets:`.
+  - **Absent = universal.** An edge without `triplets:` resolves on
+    every host — byte-identical with pre-minor-9 behavior.
+  - A host outside the list SKIPS the edge: no resolution, no fetch, no
+    install row, no lock row, no mount, no spawn surface, no
+    exposed-name registration. The skip is LOUD — one journal line
+    (`event=edge-platform-skip`, the shim's journal convention) plus a
+    stderr note at press / install / dispatch — never silent, never an
+    error. A multi-host compose (spec 23) evaluates coverage per target
+    host: the edge lands in the lock rows of the covering hosts only.
+  - A skipped edge's exposed commands are absent from the shim surface
+    on the skipping host; dispatching one anyway (a stale shim, a
+    hand-written invocation) is a named error — "not available on this
+    platform", exit 69 — never a silent fallback to another provider.
+  - **`kind: language` FORBIDS the key** — a skipped language edge would
+    boot a payload with no runtime, an incoherent composition; the
+    payload-level `platforms:` axis already owns "where this payload
+    runs". A language edge carrying `triplets:` is a named manifest
+    error at parse, steering the author to `platforms:`.
+  - **`critical:` interaction:** the skip applies regardless of
+    `critical: true` — `critical` governs reader-ERA refusal (a
+    pre-minor reader must refuse an edge it cannot interpret), never
+    platform reach. "This host must have the dep" is said with
+    `platforms:` on the payload, not with `critical` on the edge.
+  - Reader compatibility: a pre-minor-9 reader ignores `triplets:` on
+    non-toolkit edges (the unknown-field rule) and resolves the edge
+    universally — the safe direction: an extra dependency resolved,
+    never a needed dependency skipped.
 
 ### 2.4 MATERIALIZE (`materialize:`, additive — schema_minor 1)
 

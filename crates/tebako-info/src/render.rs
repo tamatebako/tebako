@@ -207,11 +207,25 @@ fn provides_section(m: &PayloadManifest, out: &mut String) {
     }
 }
 
+fn render_triplets(line: &mut String, triplets: &Option<Vec<tpkg::Platform>>) {
+    if let Some(ts) = triplets {
+        line.push_str(&format!(
+            " (triplets: {})",
+            ts.iter()
+                .map(|t| t.as_triplet())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+}
+
 fn requires_section(m: &PayloadManifest, out: &mut String) {
     out.push_str("  requires:\n");
     for req in &m.requires {
         match req {
-            Requirement::Language { engine, constraint } => {
+            Requirement::Language {
+                engine, constraint, ..
+            } => {
                 out.push_str(&format!("    language:{engine}:{constraint}\n"));
             }
             Requirement::Toolkit {
@@ -224,27 +238,21 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 if let Some(m) = mount {
                     line.push_str(&format!(" → {m}"));
                 }
-                if let Some(ts) = triplets {
-                    line.push_str(&format!(
-                        " (triplets: {})",
-                        ts.iter()
-                            .map(|t| t.as_triplet())
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    ));
-                }
+                render_triplets(&mut line, triplets);
                 out.push_str(&line);
                 out.push('\n');
             }
             Requirement::Data {
                 name,
                 constraint,
+                triplets,
                 mount,
             } => {
                 let mut line = format!("    data:{name}:{constraint}");
                 if let Some(m) = mount {
                     line.push_str(&format!(" → {m}"));
                 }
+                render_triplets(&mut line, triplets);
                 out.push_str(&line);
                 out.push('\n');
             }
@@ -253,6 +261,7 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 implementation,
                 constraint,
                 expose,
+                triplets,
             } => {
                 let mut line = format!("    runtime:{engine}:{constraint}");
                 if let Some(imp) = implementation {
@@ -261,6 +270,7 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 if !expose.is_empty() {
                     line.push_str(&format!(" exposes: {}", expose.join(", ")));
                 }
+                render_triplets(&mut line, triplets);
                 out.push_str(&line);
                 out.push('\n');
             }
@@ -271,6 +281,7 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 mount,
                 expose,
                 critical,
+                triplets,
             } => {
                 let mut line = format!("    executable:{name}:{constraint}");
                 if let Some(p) = payload {
@@ -285,6 +296,7 @@ fn requires_section(m: &PayloadManifest, out: &mut String) {
                 if *critical {
                     line.push_str(" [critical]");
                 }
+                render_triplets(&mut line, triplets);
                 out.push_str(&line);
                 out.push('\n');
             }

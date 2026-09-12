@@ -275,6 +275,41 @@ fn runtime_edge_composes_the_carried_row_field_by_field() {
 }
 
 #[test]
+fn platform_conditioned_edges_skip_or_compose_per_the_target_host() {
+    // spec 03 §2.3 (schema_minor 9): a spawn edge whose triplets: list
+    // does not cover the press's target host contributes NO spawned row
+    // and NO carried bytes — the java runtime is deliberately NOT in the
+    // store: any resolution attempt on the skipped edge would fail by
+    // name. The covering list composes exactly as an unconditioned edge.
+    let fx = Fixture::new("edge-skip");
+    let skipped = Platform::ALL
+        .iter()
+        .find(|p| **p != Platform::host() && !p.is_reserved())
+        .unwrap()
+        .as_triplet();
+    let app = app_image(
+        &fx,
+        &app_image_with_requires(&format!(
+            "  - kind: runtime\n    engine: java\n    constraint: \">= 21\"\n    expose: [java]\n    triplets: [{skipped}]\n"
+        )),
+    );
+    let plan = walk(&fx, &app).unwrap();
+    assert!(plan.rows.is_empty(), "the skipped edge composes no row");
+    assert!(plan.images.is_empty(), "the skipped edge carries no bytes");
+
+    let host = Platform::host().as_triplet();
+    let app = app_image(
+        &fx,
+        &app_image_with_requires(&format!(
+            "  - kind: runtime\n    engine: java\n    constraint: \">= 21\"\n    expose: [java]\n    triplets: [{host}]\n"
+        )),
+    );
+    let _ = cached_java_runtime(&fx, &["java", "keytool"], None);
+    let plan = walk(&fx, &app).unwrap();
+    assert_eq!(plan.rows.len(), 1, "the covering edge composes its row");
+}
+
+#[test]
 fn runtime_edge_without_expose_still_composes_a_row() {
     // The row mirrors the edge whether or not it exposes names (the
     // validate reverse check requires a row for EVERY runtime edge).

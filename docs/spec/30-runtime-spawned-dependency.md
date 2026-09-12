@@ -45,6 +45,11 @@ requires:
     implementation: temurin           # OPTIONAL (spec 28 §8)
     constraint: ">= 21"               # the spec 05 §5 version classes
     expose: [java, keytool]           # OPTIONAL — §3's shim surface
+    triplets: [x86_64-linux-gnu]      # OPTIONAL — spec 03 §2.3's per-edge
+                                      # platform conditioning (schema_minor 9):
+                                      # a non-covering host SKIPS the edge
+                                      # (no resolve, no spawn surface, no
+                                      # exposed names) — loud, never an error
 ```
 
 Resolution treats the edge like any dependency — but the artifact

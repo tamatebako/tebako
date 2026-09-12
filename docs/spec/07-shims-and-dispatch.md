@@ -238,6 +238,11 @@ signed `.tfs` per (version × ruby line) → registry → dispatcher).
   default) → the grammar error, naming the link and the value (spec 23
   §14's env-parse rule, extended to every chain link) — never a silent
   skip to the next link.
+- A command whose only claims ride platform-skipped edges (spec 03 §2.3,
+  schema_minor 9 — the edge's `triplets:` list does not cover this
+  host) → the named "not available on this platform" refusal
+  (`EX_TEBAKO_UNAVAILABLE`, 69), naming the claiming payloads — never
+  the generic no-provider error, never a silent fallback.
 
 ## 8. Native exec from inside an image (the whole-chain model, locked)
 

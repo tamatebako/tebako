@@ -189,13 +189,21 @@ pub(crate) fn capture(
         return Ok(());
     };
     let mut exposes: HashMap<String, SpawnEdge> = HashMap::new();
+    let host = tpkg::Platform::host();
     for req in &manifest_doc.requires {
+        // spec 03 §2.3: a platform-skipped edge registers NO exposed
+        // names on this host — the skip is loud, never an error.
+        if !req.covers_host(host) {
+            eprintln!("tebako-driver: note: {}", req.platform_skip_note(host));
+            continue;
+        }
         let (expose, edge) = match req {
             Requirement::Runtime {
                 engine,
                 implementation,
                 constraint,
                 expose,
+                ..
             } => (
                 expose,
                 SpawnEdge::Runtime {
@@ -932,7 +940,13 @@ fn provider_dep_mounts(
     runtime_root: &str,
 ) -> Result<Vec<String>, String> {
     let mut triples = Vec::new();
+    let host = tpkg::Platform::host();
     for req in &provider.manifest.requires {
+        // spec 03 §2.3: a platform-skipped edge contributes no mount
+        // (noted at install; silent here).
+        if !req.covers_host(host) {
+            continue;
+        }
         let (dep, mount) = match req {
             Requirement::Executable {
                 name,
@@ -963,6 +977,7 @@ fn provider_dep_mounts(
                 name,
                 constraint,
                 mount: Some(mount),
+                ..
             } => {
                 let evaluable = tpkg::versions::from_validated(constraint);
                 let installed = tpkg::payload_store::installed_versions(home, name)
@@ -1013,6 +1028,11 @@ fn compose_child_lock(
     runtime_root: &str,
 ) -> Result<(), String> {
     for edge in &provider.manifest.requires {
+        // spec 03 §2.3: a platform-skipped edge contributes no lock row
+        // (noted at install; silent here).
+        if !edge.covers_host(tpkg::Platform::host()) {
+            continue;
+        }
         match edge {
             Requirement::Runtime {
                 engine,

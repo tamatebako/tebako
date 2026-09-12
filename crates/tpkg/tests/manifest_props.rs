@@ -372,8 +372,13 @@ fn arb_provides(kind: PayloadKind) -> impl Strategy<Value = Provides> {
 
 fn arb_requirement() -> impl Strategy<Value = Requirement> {
     prop_oneof![
-        (arb_name(), arb_constraint())
-            .prop_map(|(engine, constraint)| { Requirement::Language { engine, constraint } }),
+        (arb_name(), arb_constraint()).prop_map(|(engine, constraint)| {
+            Requirement::Language {
+                engine,
+                constraint,
+                triplets: None,
+            }
+        }),
         (arb_name(), arb_constraint(), arb_triplets(), arb_path()).prop_map(
             |(name, constraint, triplets, mount)| Requirement::Toolkit {
                 name,
@@ -382,13 +387,14 @@ fn arb_requirement() -> impl Strategy<Value = Requirement> {
                 mount: Some(mount),
             }
         ),
-        (arb_name(), arb_constraint(), arb_path()).prop_map(|(name, constraint, mount)| {
-            Requirement::Data {
+        (arb_name(), arb_constraint(), arb_triplets(), arb_path()).prop_map(
+            |(name, constraint, triplets, mount)| Requirement::Data {
                 name,
                 constraint,
+                triplets: Some(triplets),
                 mount: Some(mount),
             }
-        }),
+        ),
     ]
 }
 

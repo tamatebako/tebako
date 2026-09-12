@@ -863,6 +863,11 @@ fn doctor_routing(ctx: &Ctx, problems: &mut Vec<String>) {
                         claim(&e.name);
                     }
                     for r in m.requires() {
+                        // spec 03 §2.3: a platform-skipped edge claims
+                        // nothing on this host — it cannot collide.
+                        if !r.covers_host(tpkg::Platform::host()) {
+                            continue;
+                        }
                         let expose = match r {
                             tpkg::Requirement::Runtime { expose, .. } => expose,
                             tpkg::Requirement::Executable { expose, .. } => expose,
