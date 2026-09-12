@@ -193,10 +193,7 @@ pub fn probe_tls(host: &str, effective: &netconfig::NetworkConfig, timeout: Dura
         // http_status_as_error(false) is set on the testing-seam agent:
         // ANY HTTP response means the handshake (the probe's subject)
         // completed. The body is never read.
-        agent
-            .get(&format!("https://{host}/"))
-            .call()
-            .map(|_| ())
+        agent.get(&format!("https://{host}/")).call().map(|_| ())
     };
     match attempt(effective) {
         Ok(()) => TlsProbe::EffectiveOk,

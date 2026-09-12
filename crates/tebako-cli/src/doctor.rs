@@ -110,7 +110,8 @@ fn disk_free(path: &Path) -> Option<u64> {
     use std::os::unix::ffi::OsStrExt as _;
     let c = std::ffi::CString::new(path.as_os_str().as_bytes()).ok()?;
     let mut stat: libc::statfs = unsafe { std::mem::zeroed() };
-    (unsafe { libc::statfs(c.as_ptr(), &mut stat) } == 0).then(|| stat.f_bavail * stat.f_bsize as u64)
+    (unsafe { libc::statfs(c.as_ptr(), &mut stat) } == 0)
+        .then(|| stat.f_bavail * stat.f_bsize as u64)
 }
 
 #[cfg(windows)]
@@ -119,9 +120,15 @@ fn disk_free(path: &Path) -> Option<u64> {
     use windows_sys::Win32::Storage::FileSystem::GetDiskFreeSpaceExW;
     let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
     let mut free: u64 = 0;
-    (unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut free, std::ptr::null_mut(), std::ptr::null_mut()) }
-        != 0)
-    .then_some(free)
+    (unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    } != 0)
+        .then_some(free)
 }
 
 /// The 120 s install flock (spec 05 §4): a lock older than that with no
@@ -212,9 +219,7 @@ fn store_section(home: &Path) -> Section {
             "disk headroom: {} MiB free — runtimes are tens of MiB each",
             free >> 20
         )),
-        Some(free) if free < (5 << 30) => {
-            s.note(format!("disk headroom: {} GiB free", free >> 30))
-        }
+        Some(free) if free < (5 << 30) => s.note(format!("disk headroom: {} GiB free", free >> 30)),
         Some(free) => s.ok(format!("disk headroom: {} GiB free", free >> 30)),
         None => s.note("disk headroom: probe unavailable on this platform"),
     }
@@ -278,7 +283,9 @@ fn store_section(home: &Path) -> Section {
         }
     }
     if verified > 0 {
-        s.ok(format!("{verified} artifact(s) verified against their trust anchors"));
+        s.ok(format!(
+            "{verified} artifact(s) verified against their trust anchors"
+        ));
     }
     s
 }
@@ -457,7 +464,9 @@ fn registries_section(home: &Path, offline: bool) -> Section {
                 } else if offline {
                     s.note(format!("{reg}: remote (reachability skipped — offline)"));
                 } else {
-                    s.ok(format!("{reg}: remote (transport probed in the network section)"));
+                    s.ok(format!(
+                        "{reg}: remote (transport probed in the network section)"
+                    ));
                 }
             }
         }
@@ -510,10 +519,7 @@ pub fn run(
     if json {
         use tebako_json::Value as J;
         let doc = J::Object(vec![
-            (
-                "doctor_schema".to_string(),
-                J::Number("1".to_string()),
-            ),
+            ("doctor_schema".to_string(), J::Number("1".to_string())),
             (
                 "sections".to_string(),
                 J::Array(
@@ -540,10 +546,7 @@ pub fn run(
                                                             .to_string(),
                                                         ),
                                                     ),
-                                                    (
-                                                        "text".to_string(),
-                                                        J::String(f.text.clone()),
-                                                    ),
+                                                    ("text".to_string(), J::String(f.text.clone())),
                                                 ])
                                             })
                                             .collect(),
@@ -554,10 +557,7 @@ pub fn run(
                         .collect(),
                 ),
             ),
-            (
-                "problems".to_string(),
-                J::Number(problems.to_string()),
-            ),
+            ("problems".to_string(), J::Number(problems.to_string())),
         ]);
         out.push_str(&tebako_json::to_string(&doc));
         out.push('\n');

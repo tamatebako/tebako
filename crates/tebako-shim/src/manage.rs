@@ -701,7 +701,11 @@ impl DoctorReport {
     /// The exit code the finding set maps to (spec 35 §4): 0 clean,
     /// 1 problems found.
     pub fn code(&self) -> u8 {
-        if self.problems.is_empty() { 0 } else { 1 }
+        if self.problems.is_empty() {
+            0
+        } else {
+            1
+        }
     }
 }
 

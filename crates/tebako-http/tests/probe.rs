@@ -23,12 +23,7 @@ fn probe_tls_accepts_the_chain_with_extra_ca() {
     let port = common::spawn_tls_server();
     let host = format!("127.0.0.1:{port}");
     let ca = common::fixtures_dir().join("ca.pem");
-    let cfg = NetworkConfig::default().merge_file(
-        None,
-        None,
-        vec![ca],
-        Path::new("probe-fixture"),
-    );
+    let cfg = NetworkConfig::default().merge_file(None, None, vec![ca], Path::new("probe-fixture"));
     assert_eq!(
         tebako_http::probe_tls(&host, &cfg, TIMEOUT),
         TlsProbe::EffectiveOk
