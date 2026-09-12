@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  distribution.xml — productbuild distribution for the system pkg
+  installer (roadmap 83, spec 16 §7 / spec 31 §5a). Tokens rendered by
+  ci/macos-pkg-build.sh (productbuild has no bind mechanism — sed is the
+  template engine, and every token MUST be substituted: a literal @TOKEN@
+  in the rendered file fails the build gate):
+
+    @PRODUCT_NAME@    e.g. tebako
+    @VERSION@         the release version (tag minus v)
+    @ORG_ID@          reverse-DNS org prefix, e.g. org.tamatebako
+                      (client: org.metanorma — one prefix per publisher)
+    @MIN_MACOS@       minimum macOS, e.g. 12.0
+
+  The component pkg reference: <PRODUCT_NAME>-component.pkg, built by
+  pkgbuild from the staged root (binaries at opt/<name>/bin) with the
+  postinstall that writes /etc/paths.d/<name>.
+-->
+<installer-gui-script minSpecVersion="2">
+  <title>@PRODUCT_NAME@</title>
+  <organization>@ORG_ID@</organization>
+  <domains enable_localSystem="true"/>
+  <options customize="never" require-scripts="true" rootVolumeOnly="true"/>
+  <volume-check>
+    <allowed-os-versions>
+      <os-version min="@MIN_MACOS@"/>
+    </allowed-os-versions>
+  </volume-check>
+  <choices-outline>
+    <line choice="default">
+      <line choice="@ORG_ID@.@PRODUCT_NAME@"/>
+    </line>
+  </choices-outline>
+  <choice id="default"/>
+  <choice id="@ORG_ID@.@PRODUCT_NAME@" visible="false">
+    <pkg-ref id="@ORG_ID@.@PRODUCT_NAME@.pkg"/>
+  </choice>
+  <pkg-ref id="@ORG_ID@.@PRODUCT_NAME@.pkg" version="@VERSION@" onConclusion="none">@PRODUCT_NAME@-component.pkg</pkg-ref>
+</installer-gui-script>

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  tebako.wxs — WiX v4/v5 source for the system MSI installer (roadmap 83,
+  spec 16 §7). ONE template serves both identities: the tamatebako release
+  pipeline binds its own values (Case A); a client (packed-mn class) binds
+  its own product name / manufacturer / upgrade code against the same file
+  (Case B — no fork, spec 00 invariant 10: the template is the SSOT).
+
+  Required -d binds (all five — a missing bind fails the wix build loudly):
+    ProductName     e.g. tebako                      (MSI ProductName; also the Program Files dir name)
+    ProductVersion  MSI-safe major.minor.patch       (semver 3-part; MSI ignores a 4th field)
+    Manufacturer    e.g. tamatebako                  (registry key root: HKLM\Software\<Manufacturer>\<ProductName>)
+    UpgradeCode     a GUID, LOCKED FOREVER per product line (MajorUpgrade pairs on it;
+                    a client MUST mint its own — reusing tebako's makes the two
+                    products upgrade-collide on the same machine)
+    BinDir          directory holding the exes to install (ALL *.exe land in
+                    <root>\bin — curated by the caller's staging, spec 34 §7.3's
+                    enumeration-by-extension applies to what the caller stages)
+
+  Layout installed (per-machine):
+    %ProgramFiles%\<ProductName>\bin\*.exe
+    PATH (system, part=last) gains <root>\bin
+    HKLM\Software\<Manufacturer>\<ProductName> InstallDir = <root>
+
+  Per-user data stays per-user: the store is ~/.tebako (TEBAKO_HOME honored);
+  the MSI installs NO user-scope state and needs none.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="$(var.ProductName)"
+           Manufacturer="$(var.Manufacturer)"
+           Version="$(var.ProductVersion)"
+           UpgradeCode="$(var.UpgradeCode)"
+           Scope="perMachine"
+           InstallerVersion="500"
+           Compressed="yes">
+
+    <MajorUpgrade Schedule="afterInstallInitialize"
+                  DowngradeErrorMessage="A newer version of [ProductName] is already installed. Uninstall it first, or install the newer build over this one." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- PATH append, system scope, non-permanent (uninstall removes it).
+         The RegistryValue is the component KeyPath: an Environment row
+         alone leaves the component without a key path (ICE38). -->
+    <Component Id="PathEnvironment" Directory="BINFOLDER">
+      <Environment Id="TebakoPathEnvironment"
+                   Name="PATH"
+                   Action="set"
+                   Part="last"
+                   System="yes"
+                   Permanent="no"
+                   Value="[BINFOLDER]" />
+      <RegistryValue Root="HKLM"
+                     Key="Software\$(var.Manufacturer)\$(var.ProductName)"
+                     Name="InstallDir"
+                     Type="string"
+                     Value="[INSTALLFOLDER]"
+                     KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

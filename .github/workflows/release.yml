@@ -52,6 +52,16 @@
 # APPLE_SIGNING_ENABLED=true arms the gate; armed + a missing APPLE_*
 # secret is a fast named failure, never a partial release.
 #
+# Installer containers (roadmap 83, spec 16 §7): the installer-msi /
+# installer-pkg legs build the system MSI/pkg from THIS release's own
+# signed bytes (downloaded back from the release, verified against the
+# platform legs' sign-then-hash fragments), sign the CONTAINER on its own
+# plane (Azure Artifact Signing for the MSI; Developer ID Installer +
+# notarize + staple for the pkg), and gate on a real install rehearsal.
+# The container SHIPS only when its signing plane is armed — an unsigned
+# installer never lands on the release (the loose binaries remain the
+# unsigned-first-class path).
+#
 # Windows (ucrt64) ships from the `windows` job (the five binaries,
 # platform id windows-ucrt64 per the spec 03 §3 axis) and the
 # `windows-link-unit` job (the factory's staticlib input).
@@ -639,7 +649,7 @@ jobs:
     permissions:
       contents: write
     runs-on: ubuntu-24.04
-    needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit, windows]
+    needs: [prepare, macos, linux-gnu, linux-musl, windows-link-unit, windows, installer-msi, installer-pkg]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -691,6 +701,12 @@ jobs:
           TAG: ${{ needs.prepare.outputs.tag_name }}
           TEBAKO_RELEASE_SIGNING_ENABLED: ${{ vars.TEBAKO_RELEASE_SIGNING_ENABLED }}
           TEBAKO_RELEASE_SIGNING_KEY: ${{ secrets.TEBAKO_RELEASE_SIGNING_KEY }}
+          # roadmap 83: the installer containers join the signed part set
+          # exactly when their OS planes armed them (same gate vars the
+          # installer legs ship on — sign-release.sh derives its counts).
+          WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
+          APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED }}
+          APPLE_INSTALLER_SIGNING_ENABLED: ${{ vars.APPLE_INSTALLER_SIGNING_ENABLED }}
         run: bash .github/workflows/lib/sign-release.sh
 
       - name: Upload detached signatures
@@ -700,17 +716,31 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # item 11's completeness gate: the release job fails unless every
-      # expected asset actually landed (partial-upload race class).
+      # expected asset actually landed (partial-upload race class). The
+      # installer containers (roadmap 83) add their assets + sidecars +
+      # .asc's exactly when their signing planes armed them (the same
+      # gate vars the installer legs ship on — never a name list).
       - name: Completeness gate
         if: needs.prepare.outputs.upload_url != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag_name }}
           TEBAKO_RELEASE_SIGNING_ENABLED: ${{ vars.TEBAKO_RELEASE_SIGNING_ENABLED }}
+          WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
+          APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED }}
+          APPLE_INSTALLER_SIGNING_ENABLED: ${{ vars.APPLE_INSTALLER_SIGNING_ENABLED }}
         run: |
           EXPECTED=$(( 6 * 7 + 7 + 2 + 6 * 7 ))   # 6 tools x 7 platforms (incl. windows-ucrt64; +tebako-runtime-launcher, the spec-29 wrapper exe) + 7 link-unit tarballs + SHA256SUMS + manifest.json + 42 per-asset sidecars (tebako#493)
+          INSTALLERS=0
+          if [ "${WINDOWS_SIGNING_ENABLED:-}" = "true" ]; then
+            INSTALLERS=$(( INSTALLERS + 1 ))   # the MSI (ships signed-only — the container gate)
+          fi
+          if [ "${APPLE_INSTALLER_SIGNING_ENABLED:-}" = "true" ] && [ "${APPLE_SIGNING_ENABLED:-}" = "true" ]; then
+            INSTALLERS=$(( INSTALLERS + 2 ))   # the two pkgs (signed + notarized + stapled, or nothing)
+          fi
+          EXPECTED=$(( EXPECTED + INSTALLERS * 2 ))   # each installer asset + its .sha256 sidecar
           if [ "${TEBAKO_RELEASE_SIGNING_ENABLED:-}" = "true" ]; then
-            EXPECTED=$(( EXPECTED + 6 * 7 + 7 + 2 ))   # + one .asc per released part (42 tools + 7 link-units) + SHA256SUMS.asc + manifest.json.asc (spec 09 §2)
+            EXPECTED=$(( EXPECTED + 6 * 7 + 7 + 2 + INSTALLERS ))   # + one .asc per released part (42 tools + 7 link-units + the installers) + SHA256SUMS.asc + manifest.json.asc (spec 09 §2)
           fi
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
@@ -1139,3 +1169,275 @@ jobs:
         run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-runtime-launcher-${{ needs.prepare.outputs.version }}-windows-ucrt64.exe" --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ==========================================================================
+  # Installer containers (roadmap 83, spec 16 §7): the system MSI + pkg,
+  # built from THIS release's own signed bytes (downloaded back from the
+  # release + verified against the platform legs' sign-then-hash fragments).
+  # The build runs on every release (the templates' CI signal); the
+  # CONTAINER ships only when its signing plane is armed — an unsigned
+  # installer is a trap for exactly the audience containers serve (the
+  # loose binaries remain the unsigned-first-class path, spec 00
+  # invariant 7). No job-level if: a skipped need would skip finalize.
+  # ==========================================================================
+  installer-msi:
+    name: Windows MSI installer
+    permissions:
+      contents: write
+      # id-token:write is the spec 34 §3 OIDC boundary (see the windows
+      # job's note) — the same windows-signing environment federates
+      # this leg's Azure token.
+      id-token: write
+    environment: windows-signing
+    runs-on: windows-latest
+    needs: [prepare, windows]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tebako-rs
+
+      - name: Arm check — Windows signing (spec 34 §4)
+        id: signgate
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_ENDPOINT: ${{ vars.AZURE_ENDPOINT }}
+          AZURE_SIGNING_ACCOUNT_NAME: ${{ vars.AZURE_SIGNING_ACCOUNT_NAME }}
+          AZURE_SIGNING_CERT_PROFILE: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
+        run: bash ci/windows-sign-gate.sh
+
+      # The MSI wraps THIS release's bytes: download the four PATH tools
+      # back from the release (the windows leg uploaded them) and verify
+      # each against the leg's sign-then-hash fragments (ci script).
+      - name: Download this release's windows-ucrt64 tools
+        if: needs.prepare.outputs.upload_url != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p staged
+          for tool in tebako tebako-shim tfs tebako-pkg; do
+            gh release download "${{ needs.prepare.outputs.tag_name }}" --dir staged --clobber \
+              --pattern "${tool}-${VERSION}-windows-ucrt64.exe"
+          done
+
+      - name: Download the windows-ucrt64 fragments (sign-then-hash anchors)
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: frag-windows-ucrt64
+          path: fragments/frag-windows-ucrt64
+
+      - name: Set up WiX v5
+        if: needs.prepare.outputs.upload_url != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet tool install --global wix --version 5.0.2
+          echo "$USERPROFILE/.dotnet/tools" >> "$GITHUB_PATH"
+          wix --version
+
+      - name: Build the MSI (unsigned — the Azure step signs in place)
+        if: needs.prepare.outputs.upload_url != ''
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SRC_DIR: ${{ github.workspace }}/staged
+          FRAG_DIR: ${{ github.workspace }}/fragments/frag-windows-ucrt64
+          # The tebako product line's UpgradeCode — LOCKED FOREVER (MSI
+          # upgrades pair on it). Generated 2026-09-12; a client build
+          # binds its OWN (templates/installers/README.md).
+          MSI_UPGRADE_CODE: 9A404514-715E-44F6-B02E-B800845759A9
+        run: bash ci/windows-msi-build.sh build
+
+      - name: Azure login (OIDC, spec 34 §5)
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2 (sha-pinned 2026-09-11)
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Sign the MSI (spec 34 §5 — Azure Artifact Signing signs MSI natively)
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        uses: Azure/artifact-signing-action@b443cf8ea4124818d2ea9f043cba29fc3ec47b16 # v1 (sha-pinned 2026-09-11)
+        with:
+          endpoint: ${{ vars.AZURE_ENDPOINT }}
+          signing-account-name: ${{ vars.AZURE_SIGNING_ACCOUNT_NAME }}
+          certificate-profile-name: ${{ vars.AZURE_SIGNING_CERT_PROFILE }}
+          files-folder: tebako-rs/out
+          files-folder-filter: msi
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: tebako installer (tamatebako)
+
+      - name: Verify the MSI signature (spec 34 §7.1/§7.2)
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = @(Get-ChildItem -Path 'tebako-rs/out' -Filter '*.msi' -File)
+          if ($msi.Count -ne 1) { Write-Host "::error::expected exactly 1 MSI under tebako-rs/out, found $($msi.Count)"; exit 1 }
+          $signtool = @(
+            Get-ChildItem -Path "$env:LOCALAPPDATA\TrustedSigning\Microsoft.Windows.SDK.BuildTools" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue
+            Get-ChildItem -Path "$env:LOCALAPPDATA\ArtifactSigning\Microsoft.Windows.SDK.BuildTools" -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue
+            Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue
+          ) | Where-Object { $_.FullName -match '\\x64\\' } |
+              Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $signtool) { Write-Host "::error::spec 34 §7.1: signtool.exe not found"; exit 1 }
+          $out = & $signtool.FullName verify /pa /v $msi[0].FullName 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::signtool verify /pa FAILED for the MSI"; exit 1 }
+          if ($out -notmatch 'signature is timestamped' -and $out -notmatch 'RFC ?3161') { Write-Host "::error::no RFC 3161 countersignature on the MSI (§7.2)"; exit 1 }
+          $sig = Get-AuthenticodeSignature $msi[0].FullName
+          if ($sig.Status -ne 'Valid') { Write-Host "::error::Get-AuthenticodeSignature status '$($sig.Status)'"; exit 1 }
+          if ($null -eq $sig.TimeStamperCertificate) { Write-Host "::error::no TimeStamperCertificate on the MSI"; exit 1 }
+          Write-Host "MSI signed+timestamped: $($sig.SignerCertificate.Subject)"
+
+      - name: Frag over the FINAL bytes (sign-then-hash, spec 34 §1.3)
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        working-directory: tebako-rs
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SRC_DIR: ${{ github.workspace }}/staged
+        run: bash ci/windows-msi-build.sh frag
+
+      # The install rehearsal gates ALWAYS (signed or not — it proves the
+      # template's MSI actually installs, the PATH/bindings land, and the
+      # installed tool runs; a broken wxs fails HERE, never on a user box).
+      - name: Install rehearsal (msiexec round-trip)
+        if: needs.prepare.outputs.upload_url != ''
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $msi = @(Get-ChildItem -Path 'tebako-rs/out' -Filter '*.msi' -File)
+          if ($msi.Count -ne 1) { Write-Host "::error::expected exactly 1 MSI under tebako-rs/out"; exit 1 }
+          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList '/i', $msi[0].FullName, '/qn', '/norestart'
+          if ($p.ExitCode -ne 0) { Write-Host "::error::msiexec /i failed: $($p.ExitCode)"; exit 1 }
+          & 'C:\Program Files\tebako\bin\tebako.exe' --version
+          if ($LASTEXITCODE -ne 0) { Write-Host "::error::installed tebako.exe --version failed"; exit 1 }
+          $p = Start-Process msiexec.exe -Wait -PassThru -ArgumentList '/x', $msi[0].FullName, '/qn', '/norestart'
+          if ($p.ExitCode -ne 0) { Write-Host "::error::msiexec /x failed: $($p.ExitCode)"; exit 1 }
+          if (Test-Path 'C:\Program Files\tebako') { Write-Host "::error::uninstall left C:\Program Files\tebako"; exit 1 }
+          Write-Host 'install rehearsal OK (install → run → uninstall, clean)'
+
+      - name: Upload the MSI
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-setup-${{ needs.prepare.outputs.version }}-windows-ucrt64.msi" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mark the installer frag as not-shipped (gate disarmed or dry run)
+        if: steps.signgate.outputs.armed != 'true' || needs.prepare.outputs.upload_url == ''
+        working-directory: tebako-rs
+        shell: bash
+        run: |
+          mkdir -p fragments/frag-installers-windows-ucrt64
+          echo "no MSI shipped this run (gate disarmed or dry run)" > fragments/frag-installers-windows-ucrt64/.disabled
+
+      - name: Upload installer fragment artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frag-installers-windows-ucrt64
+          path: tebako-rs/fragments/frag-installers-windows-ucrt64
+          if-no-files-found: error
+
+  installer-pkg:
+    name: macOS pkg installer (${{ matrix.platform }})
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            platform: macos-arm64
+          - os: macos-15-intel
+            platform: macos-x86_64
+    runs-on: ${{ matrix.os }}
+    needs: [prepare, macos]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: tebako-rs
+
+      # The spec 31 §5a gate: Developer ID **Installer** cert (a DIFFERENT
+      # cert from the Application one), requires the §5 notary plane armed
+      # beside it — a signed-but-unnotarized pkg never ships.
+      - name: Set up Apple installer signing (spec 31 §5a enablement gate)
+        id: signgate
+        working-directory: tebako-rs
+        env:
+          APPLE_INSTALLER_SIGNING_ENABLED: ${{ vars.APPLE_INSTALLER_SIGNING_ENABLED }}
+          APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED }}
+          APPLE_DEVELOPER_ID_INSTALLER_P12: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12 }}
+          APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD }}
+        run: bash ci/macos-sign-setup-installer.sh
+
+      - name: Download this release's ${{ matrix.platform }} tools
+        if: needs.prepare.outputs.upload_url != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          mkdir -p staged
+          for tool in tebako tebako-shim tfs tebako-pkg; do
+            gh release download "${{ needs.prepare.outputs.tag_name }}" --dir staged --clobber \
+              --pattern "${tool}-${VERSION}-${PLATFORM}"
+          done
+
+      - name: Download the ${{ matrix.platform }} fragments (sign-then-hash anchors)
+        if: needs.prepare.outputs.upload_url != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: frag-${{ matrix.platform }}
+          path: fragments/frag-${{ matrix.platform }}
+
+      # Build → [armed] productsign + notarize + STAPLE → ship gates →
+      # install rehearsal (always) → frag (armed only). All in-script —
+      # signing is in-script on macOS (the sign-then-hash law holds by
+      # construction).
+      - name: Build + sign + notarize + rehearse the pkg
+        if: needs.prepare.outputs.upload_url != ''
+        working-directory: tebako-rs
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+          SRC_DIR: ${{ github.workspace }}/staged
+          FRAG_DIR: ${{ github.workspace }}/fragments/frag-${{ matrix.platform }}
+          APPLE_INSTALLER_SIGNING_ENABLED: ${{ vars.APPLE_INSTALLER_SIGNING_ENABLED }}
+          APPLE_ASC_KEY_P8: ${{ secrets.APPLE_ASC_KEY_P8 }}
+          APPLE_ASC_KEY_ID: ${{ secrets.APPLE_ASC_KEY_ID }}
+          APPLE_ASC_ISSUER_ID: ${{ secrets.APPLE_ASC_ISSUER_ID }}
+        run: bash ci/macos-pkg-build.sh
+
+      - name: Upload the pkg
+        if: steps.signgate.outputs.armed == 'true' && needs.prepare.outputs.upload_url != ''
+        run: gh release upload "${{ needs.prepare.outputs.tag_name }}" "tebako-rs/out/tebako-setup-${{ needs.prepare.outputs.version }}-${{ matrix.platform }}.pkg" --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Mark the installer frag as not-shipped (gate disarmed or dry run)
+        if: steps.signgate.outputs.armed != 'true' || needs.prepare.outputs.upload_url == ''
+        working-directory: tebako-rs
+        run: |
+          mkdir -p fragments/frag-installers-${{ matrix.platform }}
+          echo "no pkg shipped this run (gate disarmed or dry run)" > fragments/frag-installers-${{ matrix.platform }}/.disabled
+
+      - name: Upload installer fragment artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: frag-installers-${{ matrix.platform }}
+          path: tebako-rs/fragments/frag-installers-${{ matrix.platform }}
+          if-no-files-found: error

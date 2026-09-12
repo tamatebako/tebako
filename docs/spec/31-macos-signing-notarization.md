@@ -2,7 +2,10 @@
 
 **Status: PARTIAL — §5's org pipelines (tebako release legs + factory
 runtime leg, gated on `APPLE_SIGNING_ENABLED`) and the §6.3 probe-proven
-notarization gate landed 2026-09-09; §2–§4 (the tpkg `signing:` block,
+notarization gate landed 2026-09-09; §5a (the pkg installer leg —
+Developer ID Installer + productsign + staple) spec'd 2026-09-12 with its
+pipeline in roadmap 83 PR-2, awaiting the owner-provisioned Installer
+certificate and its first armed release; §2–§4 (the tpkg `signing:` block,
 press entitlement merge, the publisher pipeline) remain PLANNED
 (drafted 2026-09-04).** Amends spec 03 §2 (the L1 manifest gains the `signing:` block),
 spec 23 §2 (a second non-host sibling declaration) and §4 (press merges
@@ -147,8 +150,9 @@ zip <stitched exe> && xcrun notarytool submit <zip> \
 - Notarytool latency (minutes) belongs in publish pipelines, never in
   press or in run paths.
 - Stapling: bare exes cannot be stapled; notarize the distribution zip
-  (Gatekeeper also resolves tickets online). A pkg/dmg wrapper for
-  stapled offline UX is optional polish, docs-level.
+  (Gatekeeper also resolves tickets online). The pkg/dmg wrapper that CAN
+  carry the offline ticket is §5a's installer leg, no longer optional
+  polish.
 - The composite action `tamatebako/tebako//actions/sign-notarize`
   packages exactly this sequence; the feedstock template inherits it.
 
@@ -172,6 +176,44 @@ zip <stitched exe> && xcrun notarytool submit <zip> \
   release. Required secrets: the Developer ID Application certificate
   (p12 + password), the App Store Connect API key (.p8, key id, issuer
   id).
+
+## 5a. The pkg installer leg (roadmap 83 — the system pkg)
+
+The OS-native pkg container is its own signing surface, layered OVER §5's
+signed+notarized Mach-Os (the installer-over-signed-binaries stack —
+spec 16 §7's three surfaces):
+
+- **A DIFFERENT certificate.** The pkg container authenticates with a
+  **Developer ID Installer** identity via `productsign` — §5's Developer
+  ID **Application** certificate cannot productsign, and Apple issues the
+  two as separate types (a reused CSR across the two requests is
+  rejected; each needs its own). Setup mirrors §5's keychain discipline
+  (`ci/macos-sign-setup-installer.sh`: throwaway keychain, import, sign
+  by HASH, never by name).
+- **Gating:** the repo variable `APPLE_INSTALLER_SIGNING_ENABLED=true`
+  arms the pkg leg's productsign; the leg REQUIRES §5's
+  `APPLE_SIGNING_ENABLED` armed beside it — a signed-but-unnotarized pkg
+  is a named misconfiguration, never shipped. Secrets:
+  `APPLE_DEVELOPER_ID_INSTALLER_P12` +
+  `APPLE_DEVELOPER_ID_INSTALLER_P12_PASSWORD` beside §5's set.
+- **Notarize + STAPLE.** The pkg goes through notarytool like any Mach-O
+  zip, but unlike a bare exe a pkg CARRIES the stapled ticket — `xcrun
+  stapler staple` makes the stapled pkg pass Gatekeeper **offline** (the
+  §6.3 note's "stapling exists only for pkg/dmg containers" becomes
+  load-bearing here). This is the macOS first-run answer for managed
+  machines.
+- **Content:** the release's own signed bytes only — the leg downloads
+  this release's four PATH tools back from the release and verifies each
+  against the macOS leg's sign-then-hash fragments before wrapping
+  (spec 16 §7 rule 2). Install root `/opt/tebako`, PATH via
+  `/etc/paths.d/tebako` (SIP-safe), no user-scope files.
+- **Ship gates (all in-leg, before upload):** `pkgutil
+  --check-signature` names the Installer identity; `xcrun stapler
+  validate`; `spctl --assess -t install -v` — for a pkg this IS the
+  right assessment (unlike §6.3's bare-exe carve-out); and ALWAYS (armed
+  or not) a real `installer -pkg -target /` rehearsal proving the payload
+  lands and the installed tool runs. A disarmed leg still builds +
+  rehearses the pkg (the template's CI signal) and ships NOTHING.
 
 ## 6. Acceptance (fail-closed, one CI tier each)
 
@@ -199,6 +241,13 @@ zip <stitched exe> && xcrun notarytool submit <zip> \
    unreachable (§3 derives it); an unknown entitlement id fails the
    manifest validation with the named error; entitlement flags on
    non-macOS targets are a named press error.
+5. **The pkg gates (§5a)** — on an armed leg, in-leg before upload:
+   `pkgutil --check-signature` names the Developer ID **Installer**
+   identity (never the Application one), `xcrun stapler validate` proves
+   the stapled ticket, `spctl --assess -t install -v` accepts
+   (`source=Notarized Developer ID`), and the `installer -pkg -target /`
+   rehearsal runs the installed tool. The §5a wire-up's proving run is
+   roadmap 83's first armed release.
 
 ## 7. The other platforms (comparison, non-normative)
 
