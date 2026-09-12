@@ -52,6 +52,10 @@ const USAGE: &str = "Usage:
   tebako update-registries             refresh the dispatch-time registry cache
   tebako install <ref | name[@ver]>    install a payload + register its shims
   tebako uninstall <name>              remove a payload's shims and cache entry
+  tebako bundle <name[@ver]> --output <dir> [--config <org.yaml>] [--archive tar.gz]
+                                       an offline bundle: the payload closure + its
+                                       runtimes + registry caches + the CLI tool set,
+                                       pre-staged for an installer (spec 16 §6)
   tebako shim <verb> …                 the dispatcher's management verbs (spec 07 §3;
                                        ≡ tebako-shim <verb> …: list|use|enable|disable|which|doctor|install-shell|uninstall-shell)
   tebako info [topic] [--remote] [--json]
@@ -178,6 +182,7 @@ fn run(args: &[String]) -> Result<(), CliExit> {
         "update-registries" => run_update_registries(rest),
         "install" => run_install(rest),
         "uninstall" => run_uninstall(rest),
+        "bundle" => run_bundle(rest),
         "shim" => run_shim(rest),
         "info" => run_info(rest),
         "inspect" => run_inspect(rest),
@@ -474,6 +479,88 @@ fn run_uninstall(args: &[String]) -> Result<(), CliExit> {
     println!("removed {} ({})", outcome.name, outcome.versions.join(", "));
     for shim in &outcome.shims_removed {
         println!("  unlinked {}", shim.display());
+    }
+    Ok(())
+}
+
+/// `tebako bundle` (spec 16 §6): the offline application bundle — the
+/// payload closure + its runtime closure + registry caches + the
+/// platform's CLI tool set, staged from the builder's own TEBAKO_HOME
+/// (its registry registrations and runtime preferences seed the bundle's
+/// config; `--config` layers the org overlay) into `<out>/{bin,home}` +
+/// BUNDLE.yaml, optionally packed (`--archive tar.gz`).
+fn run_bundle(args: &[String]) -> Result<(), CliExit> {
+    const USAGE_BUNDLE: &str = "usage: tebako bundle <name[@version]> --output <dir> [--config <org.yaml>] [--archive tar.gz]";
+    let mut target: Option<String> = None;
+    let mut output: Option<String> = None;
+    let mut overlay: Option<String> = None;
+    let mut archive: Option<tebako_cli::bundle::ArchiveFormat> = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--output" | "-o" | "--config" | "--archive" => {
+                let flag = args[i].as_str();
+                i += 1;
+                let Some(value) = args.get(i) else {
+                    return Err(CliExit::Usage(USAGE_BUNDLE.to_string()));
+                };
+                match flag {
+                    "--config" => overlay = Some(value.clone()),
+                    "--archive" => {
+                        archive = Some(
+                            tebako_cli::bundle::ArchiveFormat::parse(value)
+                                .map_err(CliExit::Error)?,
+                        );
+                    }
+                    _ => output = Some(value.clone()),
+                }
+            }
+            other if target.is_none() && !other.starts_with('-') => {
+                target = Some(other.to_string());
+            }
+            _ => return Err(CliExit::Usage(USAGE_BUNDLE.to_string())),
+        }
+        i += 1;
+    }
+    let (Some(target), Some(output)) = (target, output) else {
+        return Err(CliExit::Usage(USAGE_BUNDLE.to_string()));
+    };
+    // The tool set ships beside the running exe (a full CLI installation
+    // is the bundle's source — bundle refuses a partial set by name).
+    let exe = std::env::current_exe().map_err(|e| {
+        CliExit::Error(TebakoError::new(
+            format!("cannot locate the tebako exe: {e}"),
+            65,
+        ))
+    })?;
+    let tools_dir = exe
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
+    let outcome = tebako_cli::bundle::bundle(&tebako_cli::bundle::BundleRequest {
+        builder_home: &tebako_home()?,
+        tools_dir: &tools_dir,
+        target: &target,
+        output: std::path::Path::new(&output),
+        overlay: overlay.as_deref().map(std::path::Path::new),
+        archive,
+        env: &env,
+    })?;
+    println!(
+        "bundled {} {} -> {}",
+        outcome.payload.0,
+        outcome.payload.1,
+        outcome.dir.display()
+    );
+    for (engine, lang, tebako) in &outcome.runtimes {
+        println!("  runtime {engine} {lang} (tebako {tebako})");
+    }
+    for command in &outcome.commands {
+        println!("  command {command}");
+    }
+    if let Some(archive) = &outcome.archive {
+        println!("  archive {}", archive.display());
     }
     Ok(())
 }
