@@ -56,6 +56,11 @@ pub enum RegistryError {
     /// Semantic validation failure (bad schema_version, dangling default,
     /// malformed sha256, …).
     Invalid { reason: String },
+    /// spec 04 §2 (roadmap 85): the selected version row carries
+    /// `status: withdrawn` — the publisher YANKED it. Resolvers refuse by
+    /// name: never a silent skip, never a fallback to it; release assets
+    /// are immutable, so the fix ships as a new version line.
+    Withdrawn { payload: String, version: String },
 }
 
 /// The registry reference forms, spelled out in every
@@ -80,6 +85,10 @@ impl fmt::Display for RegistryError {
                 write!(f, "cannot parse the registry yaml: {reason}")
             }
             RegistryError::Invalid { reason } => write!(f, "invalid registry: {reason}"),
+            RegistryError::Withdrawn { payload, version } => write!(
+                f,
+                "WithdrawnPayload: '{payload}' version '{version}' is withdrawn (status: withdrawn) — the publisher yanked it; release assets are immutable, so the fix ships as a new version line (spec 04 §2)"
+            ),
         }
     }
 }

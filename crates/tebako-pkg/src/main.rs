@@ -15,6 +15,7 @@
 //! tebako-pkg insert-image <binary> <img[:mountpoint]>
 //! tebako-pkg remove-image <binary> <slot>
 //! tebako-pkg set-runtime <binary> <runtime-file>
+//! tebako-pkg release-index <release-ref> [--out <dir>] [--check]
 //! ```
 //!
 //! Exit codes: 0 success, 1 any error; `info --verify` and `validate`
@@ -56,6 +57,7 @@ fn main() -> ExitCode {
         "set-runtime" => cmd_set_runtime(rest),
         "sign" => cmd_sign(rest),
         "verify" => cmd_verify(rest),
+        "release-index" => cmd_release_index(rest),
         other => {
             eprintln!("Error: Unknown command: {other}");
             eprintln!("Use 'tebako-pkg help' for usage information");
@@ -90,6 +92,9 @@ struct Args {
     verify: bool,
     require_signed: bool,
     depth: Option<String>,
+    /// release-index --check: audit the published monoliths against the
+    /// shard-derived index (read-only).
+    check: bool,
 }
 
 impl Args {
@@ -119,6 +124,7 @@ impl Args {
                 "--json" => a.json = true,
                 "--verify" => a.verify = true,
                 "--require-signed" => a.require_signed = true,
+                "--check" => a.check = true,
                 "--slot" => a.slot = Some(take_value(&mut i)?),
                 "--depth" => a.depth = Some(take_value(&mut i)?),
                 "--sign" => {
@@ -138,7 +144,7 @@ impl Args {
                     a.sign = Some(SignRequest::Keyid(v));
                 }
                 "--image" => a.images.push(take_value(&mut i)?),
-                "-o" | "--output" => a.output = Some(take_value(&mut i)?),
+                "-o" | "--output" | "--out" => a.output = Some(take_value(&mut i)?),
                 "--runtime-ref" => a.runtime_ref = Some(take_value(&mut i)?),
                 "--package-manifest" => a.package_manifest = Some(take_value(&mut i)?),
                 "--launcher-abi" => {
@@ -498,6 +504,9 @@ fn print_help() {
     println!("  set-runtime   Replace the bootstrap portion of a package (in place)");
     println!("  sign          Sign artifacts (detached .asc per artifact + signed SHA256SUMS)");
     println!("  verify        Verify artifacts against the trusted keyring");
+    println!("  release-index Derive the monolithic manifest.json + SHA256SUMS.txt from a");
+    println!("                release's per-identity shard cards; --check audits published");
+    println!("                monoliths against the derivation (read-only, exit 1 on drift)");
     println!("  help          Show this help\n");
     println!("Signing is OPT-IN: packages are unsigned unless `bundle --sign[=keyid]`");
     println!("is given (--sign uses the press-local key, generated on first use;");
@@ -717,6 +726,75 @@ fn cmd_verify(rest: &[String]) -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+// ---------------------------------------------------------------------
+// release-index (roadmap 85 §5): derive the monolithic manifest.json +
+// SHA256SUMS.txt a release's shard cards stand in for, or --check the
+// published monoliths against that derivation (read-only audit).
+// ---------------------------------------------------------------------
+
+fn cmd_release_index(rest: &[String]) -> ExitCode {
+    let a = match Args::parse(rest) {
+        Ok(a) => a,
+        Err(e) => return fail("release-index", &e),
+    };
+    if let Err(e) = a.need_positional(
+        1,
+        "tebako-pkg release-index <release-ref> [--out <dir>] [--check]",
+    ) {
+        return fail("release-index", &e);
+    }
+    let space = match tebako_pkg::release_index::open_release(&a.positional[0]) {
+        Ok(s) => s,
+        Err(e) => return fail("release-index", &e),
+    };
+    let derived = match tebako_pkg::release_index::derive(space.as_ref()) {
+        Ok(d) => d,
+        Err(e) => return fail("release-index", &e),
+    };
+    if a.check {
+        // Audit-only: --out is ignored; nothing is written.
+        return match tebako_pkg::release_index::check(space.as_ref(), &derived) {
+            Ok(Some(report)) => {
+                print!("{report}");
+                ExitCode::SUCCESS
+            }
+            Ok(None) => {
+                println!("no monoliths to check against (post-85 line)");
+                ExitCode::SUCCESS
+            }
+            Err(e) => fail("release-index", &e),
+        };
+    }
+    if let Some(out) = &a.output {
+        let dir = Path::new(out);
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            return fail(
+                "release-index",
+                &format!("cannot create output directory {out}: {e}"),
+            );
+        }
+        for (name, text) in [
+            ("manifest.json", &derived.manifest_json),
+            ("SHA256SUMS.txt", &derived.sha256sums_txt),
+        ] {
+            if let Err(e) = std::fs::write(dir.join(name), text) {
+                return fail("release-index", &format!("cannot write {out}/{name}: {e}"));
+            }
+        }
+        println!(
+            "wrote manifest.json + SHA256SUMS.txt ({} entries) to {}",
+            derived.entries,
+            dir.display()
+        );
+        return ExitCode::SUCCESS;
+    }
+    print!(
+        "# manifest.json\n{}# SHA256SUMS.txt\n{}",
+        derived.manifest_json, derived.sha256sums_txt
+    );
+    ExitCode::SUCCESS
 }
 
 // Keep PathBuf import used (some signatures may evolve).

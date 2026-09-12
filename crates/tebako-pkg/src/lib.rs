@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 
 use tpkg::{Crc32, Manifest, Slot, TpkgError};
 
+pub mod release_index;
+
 pub use tebako_json::{
     escape as json_escape, parse as json_parse, to_string as json_to_string, Value as JsonValue,
 };

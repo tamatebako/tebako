@@ -920,6 +920,9 @@ pub fn publish_full(
         // authored here — and the version-level implementation spelling
         // is the pre-MINOR-1 compat read, never authored anew.
         implementation: None,
+        // `status: withdrawn` is authored by hand in the registry (a
+        // yank is a registry edit, spec 04 §2) — publish never sets it.
+        status: None,
         platforms,
         release: ReleaseRef {
             r#ref: release_ref.clone(),

@@ -34,7 +34,8 @@ use tebako_resolve::registry::{
     PlatformSelection, RegistryPayload, RegistryRef, RegistryVersion, SignaturePin,
 };
 use tebako_resolve::{
-    FetchedPayload, Fetcher, InstallStatus, PayloadCache, Reference, ResolveError, Transport,
+    FetchedPayload, Fetcher, InstallStatus, PayloadCache, Reference, RegistryError, ResolveError,
+    Transport,
 };
 use tebako_shim::config::{self, AddRegistryOutcome};
 use tebako_shim::manifest::{self, Manifest, PayloadRecord};
@@ -71,6 +72,9 @@ pub(crate) fn map_resolve(e: ResolveError) -> TebakoError {
         | ResolveError::Git { .. }
         | ResolveError::GitAdapterDisabled { .. }
         | ResolveError::Offline { .. } => EX_TEBAKO_UNAVAILABLE,
+        // spec 04 §2's withdrawn refusal is the availability class (the
+        // yanked version is not available), never a manifest malformation.
+        ResolveError::Registry(RegistryError::Withdrawn { .. }) => EX_TEBAKO_UNAVAILABLE,
         ResolveError::Registry(_) | ResolveError::InvalidCacheKey { .. } => EX_TEBAKO_MANIFEST,
         ResolveError::LockTimeout { .. } | ResolveError::CacheIo { .. } => EX_TEBAKO_IO,
     };
@@ -873,6 +877,20 @@ pub(crate) fn plan_from_registry_entry(
             )
         })?,
     };
+
+    // spec 04 §2: the SELECTED row's `status: withdrawn` is a named
+    // refusal — never a silent skip, never a fallback to it. Non-selected
+    // withdrawn rows are inert (selection is status-blind).
+    if entry.is_withdrawn() {
+        return Err(err(
+            EX_TEBAKO_UNAVAILABLE,
+            RegistryError::Withdrawn {
+                payload: name.clone(),
+                version: entry.version.clone(),
+            }
+            .to_string(),
+        ));
+    }
 
     let reference = Reference::parse(&entry.release.r#ref)
         .map_err(|e| err(EX_TEBAKO_MANIFEST, e.to_string()))?;

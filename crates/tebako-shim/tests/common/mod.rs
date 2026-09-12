@@ -392,3 +392,82 @@ pub fn write_runtime_engine_shard(
     .expect("manifest.json");
     exe
 }
+
+/// A shard-era (roadmap 85, spec 05 §2) file:// release mirror: the
+/// per-package shard `<stem>.manifest.json` (ONE manifest-entry object,
+/// never an array) + per-asset `<asset>.sha256` sidecars, and NO
+/// monoliths (no manifest.json, no SHA256SUMS.txt — the post-85 line).
+/// When `key` is Some the shard and both assets carry their detached
+/// ascs and the shard entry declares the per-asset `signature` blocks
+/// (spec 13 §2a's shape, one-entry deep). `tag` is the release directory
+/// — decoupled from the row's tebako line (the openjdk v2.5.1 shape).
+/// Returns the release directory.
+#[allow(clippy::too_many_arguments)]
+pub fn write_shard_release(
+    root: &Path,
+    engine: &str,
+    lv: &str,
+    tebako: &str,
+    tag: &str,
+    key: Option<&tebako_signer::PressKey>,
+    declared_keyid: Option<&str>,
+) -> PathBuf {
+    let platform = platform();
+    let dir = root.join(tag);
+    std::fs::create_dir_all(&dir).expect("mirror dir");
+    let asset_base = format!("tebako-runtime-{tebako}-{lv}-{platform}");
+    let exe_name = format!("{asset_base}{}", tebako_shim::runtime::exe_suffix());
+    let image_name = format!("{asset_base}.tfs");
+    let exe_bytes = format!("shard-era runtime exe {lv}\n");
+    let image_bytes = format!("shard-era runtime image {lv}\n");
+    let exe_sha = sha256_hex(exe_bytes.as_bytes());
+    let image_sha = sha256_hex(image_bytes.as_bytes());
+    std::fs::write(dir.join(&exe_name), &exe_bytes).expect("exe");
+    std::fs::write(dir.join(&image_name), &image_bytes).expect("image");
+    std::fs::write(
+        dir.join(format!("{exe_name}.sha256")),
+        format!("{exe_sha}  {exe_name}\n"),
+    )
+    .expect("exe sidecar");
+    std::fs::write(
+        dir.join(format!("{image_name}.sha256")),
+        format!("{image_sha}  {image_name}\n"),
+    )
+    .expect("image sidecar");
+    let declared = key.map(|k| {
+        declared_keyid
+            .map(str::to_string)
+            .unwrap_or_else(|| tebako_signer::hex_lower(&k.keyid))
+    });
+    let signature_block = |asc: &str| match &declared {
+        Some(keyid) => format!(", \"signature\": {{\"keyid\": \"{keyid}\", \"asc\": \"{asc}\"}}"),
+        None => String::new(),
+    };
+    let shard = format!(
+        "{{\"tebako_version\": \"{tebako}\", \"contract_era\": 2, \"contract_version\": 2, \"mount_root\": \"/__tfs__\", \"{engine}_version\": \"{lv}\", \"platform\": \"{platform}\", \"filename\": \"{exe_name}\", \"sha256\": \"{exe_sha}\"{}, \"image\": {{\"filename\": \"{image_name}\", \"sha256\": \"{image_sha}\"{}}}}}\n",
+        signature_block(&format!("{exe_name}.asc")),
+        signature_block(&format!("{image_name}.asc")),
+    );
+    std::fs::write(dir.join(format!("{asset_base}.manifest.json")), &shard).expect("shard");
+    if let Some(k) = key {
+        let sign = |data: &[u8]| {
+            tebako_signer::sign_detached(data, &k.secret_key, &k.fingerprint).expect("sign")
+        };
+        std::fs::write(
+            dir.join(format!("{asset_base}.manifest.json.asc")),
+            sign(shard.as_bytes()),
+        )
+        .expect("shard asc");
+        std::fs::write(
+            dir.join(format!("{exe_name}.asc")),
+            sign(exe_bytes.as_bytes()),
+        )
+        .expect("exe asc");
+        std::fs::write(
+            dir.join(format!("{image_name}.asc")),
+            sign(image_bytes.as_bytes()),
+        )
+        .expect("image asc");
+    }
+    dir
+}

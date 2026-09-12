@@ -18,7 +18,9 @@
 //!    payload extraction (SHA256-verified against the ;sha256= parameter of
 //!    runtime_ref), else a download from the tebako-runtime-ruby releases
 //!    (or $TEBAKO_RUNTIME_MIRROR), SHA256-verified against the release
-//!    manifest.json (SHA256SUMS.txt fallback), atomically installed
+//!    index — read shard-first (the per-identity `<stem>.manifest.json`,
+//!    spec 05 §2), the release-wide manifest.json as the forever fallback
+//!    (spec 00 invariant 7), SHA256SUMS.txt last — atomically installed
 //!    (tmp + rename) under a per-entry lock;
 //!
 //! 5b. item 30b: when the ref carries the bare `;image` flag, also resolve
@@ -2177,18 +2179,32 @@ fn download_executable(
     // triple, never by a synthesized name — carries the authoritative
     // asset spelling, flowed verbatim into the URL, the cache layout, and
     // the contract gate below. Fetched ahead of the install lock (a pure
-    // mirror read): the spelling decides the staging and cache paths. No
-    // readable manifest at all is the pre-era signal (spec 18 C2; the
-    // SHA256SUMS fallback covers checksums only, never the gate).
-    let Ok(manifest_text) = fetch_text(&manifest_url, local) else {
-        return fail(
-            EX_TEBAKO_CONTRACT,
-            format!(
-                "runtime \"{runtime_ref}\" is pre-era — no readable release manifest at {manifest_url} — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
-            ),
-        );
-    };
+    // mirror read): the spelling decides the staging and cache paths.
+    // Read shard-first (roadmap 85): the per-identity `<stem>.manifest.json`
+    // card is the primary form, the release-wide monolith the forever
+    // fallback (spec 00 invariant 7). A shard serves only when it declares
+    // THIS identity (a rebuilt release's different triple never shadows);
+    // it is then normalized to the one-element array shape the cached card
+    // carries. No readable index at all is the pre-era signal (spec 18 C2;
+    // the SHA256SUMS fallback covers checksums only, never the gate).
     let id = ReleaseIdentity::of(rr, platform_string());
+    let shard_url = format!("{base}/v{}/{}.manifest.json", rr.abi, layout.asset_base);
+    let (manifest_text, card_url) = match fetch_text(&shard_url, local) {
+        Ok(shard) if id.entry(&shard).is_some() => {
+            (format!("[{}]", shard.trim_end()), shard_url.clone())
+        }
+        _ => match fetch_text(&manifest_url, local) {
+            Ok(text) => (text, manifest_url.clone()),
+            Err(()) => {
+                return fail(
+                    EX_TEBAKO_CONTRACT,
+                    format!(
+                        "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                    ),
+                );
+            }
+        },
+    };
     let asset = id
         .entry(&manifest_text)
         .map(|e| e.filename)
@@ -2273,7 +2289,7 @@ fn download_executable(
         return fail(
             EX_TEBAKO_UNAVAILABLE,
             format!(
-                "cannot resolve runtime \"{runtime_ref}\": no checksum for {asset} in the release\n  tried: {manifest_url} ({})\n         {sums_url} ({})",
+                "cannot resolve runtime \"{runtime_ref}\": no checksum for {asset} in the release\n  tried: {card_url} ({})\n         {sums_url} ({})",
                 DIAG_NAMES[diag_manifest], DIAG_NAMES[diag_sums]
             ),
         );
@@ -2301,7 +2317,7 @@ fn download_executable(
         return fail(
             EX_TEBAKO_SHA,
             format!(
-                "SHA256 mismatch for downloaded runtime {asset} — refusing to install or execute\n  expected: {expected} (from {manifest_url})\n  actual:   {actual}\n  the download was deleted; the cache was not touched"
+                "SHA256 mismatch for downloaded runtime {asset} — refusing to install or execute\n  expected: {expected} (from {card_url})\n  actual:   {actual}\n  the download was deleted; the cache was not touched"
             ),
         );
     }
@@ -2319,8 +2335,10 @@ fn download_executable(
 // ---------------------------------------------------------------------
 
 /// Resolve the runtime image into the executable's cache entry: download
-/// (same mirror/offline rules), verify against the release index
-/// (manifest.json `image` key primary, SHA256SUMS line fallback),
+/// (same mirror/offline rules), verify against the release index — read
+/// shard-first (the per-identity `<stem>.manifest.json`, roadmap 85), the
+/// release-wide manifest.json the forever fallback (spec 00 invariant 7),
+/// the entry's `image` key primary, SHA256SUMS line fallback — then
 /// install read-only with `<image>.sha256`/`<image>.origin` trusted
 /// markers. The image is never extracted into the cache.
 ///
@@ -2428,25 +2446,39 @@ fn resolve_image(
     // spec 18 C2: the release card gates BEFORE the image download (the
     // image is additive metadata of the exe's package entry — the entry
     // anchored by the executable's filename governs it, the same gate
-    // the executable path applies). No readable manifest is the same
-    // pre-era signal.
+    // the executable path applies). No readable index at all is the same
+    // pre-era signal. Read shard-first (roadmap 85): the per-identity
+    // `<stem>.manifest.json` primary, the release-wide monolith the
+    // forever fallback (spec 00 invariant 7); a shard serves only when it
+    // declares THIS identity, then normalizes to the array shape.
     let manifest_tmp = tmp_dir.join("manifest.json");
-    let manifest_text = if fetch_url(&manifest_url, local, &manifest_tmp).is_ok() {
-        std::fs::read_to_string(&manifest_tmp).ok()
-    } else {
-        None
-    };
-    let Some(manifest_text) = manifest_text else {
-        return Err(fail_image(
-            lock,
-            &image_asset,
-            BootError::new(
-                EX_TEBAKO_CONTRACT,
-                format!(
-                    "runtime \"{runtime_ref}\" is pre-era — no readable release manifest at {manifest_url} — refusing to install or execute\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
-                ),
-            ),
-        ));
+    let shard_url = format!("{base}/v{}/{}.manifest.json", rr.abi, layout.asset_base);
+    let shard = fetch_url(&shard_url, local, &manifest_tmp)
+        .ok()
+        .and_then(|()| std::fs::read_to_string(&manifest_tmp).ok())
+        .filter(|text| id.entry(text).is_some());
+    let (manifest_text, card_url) = match shard {
+        Some(text) => (format!("[{}]", text.trim_end()), shard_url.clone()),
+        None => {
+            let monolith = fetch_url(&manifest_url, local, &manifest_tmp)
+                .ok()
+                .and_then(|()| std::fs::read_to_string(&manifest_tmp).ok());
+            match monolith {
+                Some(text) => (text, manifest_url.clone()),
+                None => {
+                    return Err(fail_image(
+                        lock,
+                        &image_asset,
+                        BootError::new(
+                            EX_TEBAKO_CONTRACT,
+                            format!(
+                                "runtime \"{runtime_ref}\" is pre-era — no readable release index for it\n  tried: {shard_url}\n         {manifest_url}\n  the release was built by a pre-contract factory; rebuild it with the current tebako-runtime-ruby (spec 18 C2), or pin a runtime that declares its contract"
+                            ),
+                        ),
+                    ));
+                }
+            }
+        }
     };
 
     // spec 05 §2: the identity-matched entry anchors the gate by ITS
@@ -2532,7 +2564,7 @@ fn resolve_image(
             BootError::new(
                 EX_TEBAKO_UNAVAILABLE,
                 format!(
-                    "cannot resolve runtime image \"{runtime_ref}\": no checksum for {image_asset} in the release\n  tried: {manifest_url} ({})\n         {sums_url} ({})",
+                    "cannot resolve runtime image \"{runtime_ref}\": no checksum for {image_asset} in the release\n  tried: {card_url} ({})\n         {sums_url} ({})",
                     DIAG_NAMES[diag_manifest], DIAG_NAMES[diag_sums]
                 ),
             ),
@@ -2561,7 +2593,7 @@ fn resolve_image(
             BootError::new(
                 EX_TEBAKO_SHA,
                 format!(
-                    "SHA256 mismatch for downloaded runtime image {image_asset} — refusing to install or execute\n  expected: {expected} (from {manifest_url})\n  actual:   {actual}\n  the download was deleted; the cache was not touched"
+                    "SHA256 mismatch for downloaded runtime image {image_asset} — refusing to install or execute\n  expected: {expected} (from {card_url})\n  actual:   {actual}\n  the download was deleted; the cache was not touched"
                 ),
             ),
         ));
