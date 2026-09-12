@@ -1396,6 +1396,13 @@ fn run_exec(
     let jail_env = check_jail_env(target, check, scratch.path(), parsed.record, ctx)
         .map_err(CheckStep::Fail)?;
     plan.env.extend(jail_env);
+    // The trust bridge (spec 17 §2.3): the resolved netconfig verdict
+    // rides the handoff env so the package's driver materializes the
+    // merged cert bundle. Conveyance only — this surface composes no
+    // spawn-lock, so the java-plane append does not apply here.
+    plan.env.extend(
+        tebako_http::netconfig::trust_bridge_env().map_err(|e| CheckStep::Fail(e.to_string()))?,
+    );
     let outcome = run_child(&plan, scratch.path(), check.timeout).map_err(CheckStep::Fail)?;
     if outcome.timed_out {
         return Ok(Verdict::Fail {

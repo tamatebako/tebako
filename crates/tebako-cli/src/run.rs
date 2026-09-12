@@ -117,10 +117,10 @@ fn user_jail(parsed: &RunArgs) -> Result<Option<tpkg::HostJail>, TebakoError> {
         .map_err(|e| packaging_error(130, Some(&e.to_string())))
 }
 
-/// The package's jail request (the type-2 block's `jail:`); `None` for a
-/// block-less or trailer-less package (classic bundles dispatch with the
-/// user's tightening alone).
-fn package_jail(package: &Path) -> Result<Option<tpkg::HostJail>, TebakoError> {
+/// The package's type-2 manifest block; `None` for a block-less or
+/// trailer-less package (classic bundles dispatch with the user's
+/// tightening alone).
+fn package_manifest(package: &Path) -> Result<Option<tpkg::PackageManifest>, TebakoError> {
     let mut f = std::fs::File::open(package).map_err(|e| {
         plain_error(format!(
             "cannot open the package {}: {e}",
@@ -129,7 +129,7 @@ fn package_jail(package: &Path) -> Result<Option<tpkg::HostJail>, TebakoError> {
     })?;
     match tpkg::read_from(&mut f) {
         Ok(m) => match m.package_manifest() {
-            Ok(pm) => Ok(pm.and_then(|pm| pm.jail)),
+            Ok(pm) => Ok(pm),
             Err(e) => Err(plain_error(format!(
                 "invalid package manifest (extension block type 2) in {}: {e}",
                 package.display()
@@ -153,6 +153,32 @@ fn package_jail(package: &Path) -> Result<Option<tpkg::HostJail>, TebakoError> {
 /// policy is bind-validated NOW — a grant naming a missing host path is a
 /// named error here, not a surprise inside the package.
 pub fn plan_run(parsed: &RunArgs) -> Result<RunPlan, TebakoError> {
+    let java_opts = std::env::var(tebako_shim::trust::JAVA_TOOL_OPTIONS).ok();
+    let home = tfs::journal::tebako_home_dir();
+    plan_run_with(
+        parsed,
+        &tebako_http::netconfig::global(),
+        java_opts.as_deref(),
+        home.as_deref(),
+    )
+}
+
+/// [`plan_run`] on an explicit netconfig / `JAVA_TOOL_OPTIONS` / home
+/// (the hermetic form — the process-global reads live in [`plan_run`]).
+///
+/// The trust bridge (spec 17 §2.3): the resolved netconfig verdict rides
+/// the handoff env so the package's bootstrap → driver path materializes
+/// the merged cert bundle, and a spawned java row gets the dispatcher-side
+/// `JAVA_TOOL_OPTIONS` append (windows + platform mode) — the JVM is a
+/// spawned child, never a driver boot. The package's own runtime engine is
+/// the bootstrap's resolution (the lock's `LockedRuntime` carries no
+/// engine), so the java question is over the lock's `spawned[]` rows.
+pub(crate) fn plan_run_with(
+    parsed: &RunArgs,
+    netcfg: &tebako_http::netconfig::NetworkConfig,
+    java_opts: Option<&str>,
+    home: Option<&Path>,
+) -> Result<RunPlan, TebakoError> {
     let program = PathBuf::from(&parsed.package);
     if !program.is_file() {
         return Err(packaging_error(
@@ -161,7 +187,7 @@ pub fn plan_run(parsed: &RunArgs) -> Result<RunPlan, TebakoError> {
         ));
     }
     let user = user_jail(parsed)?;
-    let package = package_jail(&program)?;
+    let manifest = package_manifest(&program)?;
     let mut env = Vec::new();
     if let Some(user) = &user {
         // spec 32 §4 (locked): operator tightening is HEREDITARY — the
@@ -174,7 +200,10 @@ pub fn plan_run(parsed: &RunArgs) -> Result<RunPlan, TebakoError> {
             user.to_env_spec(&[]),
         ));
     }
-    if let Some((jail, source)) = tpkg::jail::effective(package.as_ref(), user.as_ref()) {
+    if let Some((jail, source)) = tpkg::jail::effective(
+        manifest.as_ref().and_then(|pm| pm.jail.as_ref()),
+        user.as_ref(),
+    ) {
         if !jail.is_trivially_open() {
             let arg_files = if jail.argument_files.auto {
                 tpkg::jail::resolve_argument_files(&parsed.args)
@@ -185,6 +214,26 @@ pub fn plan_run(parsed: &RunArgs) -> Result<RunPlan, TebakoError> {
             validate_binds(&spec)?;
             env.push(("TEBAKO_JAIL".to_string(), spec));
             env.push(("TEBAKO_JAIL_SOURCE".to_string(), source.to_string()));
+        }
+    }
+    // The conveyance (every plane): a malformed-for-the-wire extra_ca is
+    // the named 65-class config error here, not a surprise at boot.
+    env.extend(
+        tebako_http::netconfig::trust_bridge_env_from(netcfg)
+            .map_err(|e| TebakoError::new(e.to_string(), 65))?,
+    );
+    let spawned_java = manifest
+        .as_ref()
+        .and_then(|pm| pm.lock.as_ref())
+        .is_some_and(|lock| tebako_shim::trust::spawned_rows_have_java(&lock.spawned));
+    if spawned_java {
+        if cfg!(windows) && netcfg.tls_roots == tebako_http::netconfig::TlsRoots::Platform {
+            if let Some(merged) = tebako_shim::trust::java_tool_options_merge(java_opts) {
+                env.push((tebako_shim::trust::JAVA_TOOL_OPTIONS.to_string(), merged));
+            }
+        }
+        if !netcfg.extra_ca.is_empty() {
+            tebako_shim::trust::journal_java_gap(home, "tebako");
         }
     }
     Ok(RunPlan {
@@ -364,6 +413,198 @@ mod tests {
             .iter()
             .any(|(k, _)| k == tpkg::runtime_store::JAIL_TIGHTENING_VAR));
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    use tebako_http::netconfig::{NetworkConfig, TlsRoots};
+
+    /// A package carrying a `lock.spawned[]` java row (spec 23 §13.6's
+    /// shared-row shape: no slots, the press-resolved coordinates + pins).
+    const JAVA_SPAWNED_PM: &str = "schema_version: 1\n\
+         package: {name: mn, version: 1.0.0, producer: {tool: tebako-cli, tool_version: 2.7.0}, created: 2026-09-12T00:00:00Z}\n\
+         entries:\n  - {name: probe, slot: 0, entrypoint: probe, runtime_ref: ruby@3.4.2;tebako=0.15.9}\n\
+         lock:\n  spawned:\n   - engine: java\n     constraint: \">= 21, < 26\"\n     expose: [java]\n     version: \"21.0.12\"\n     tebako: \"2.1.5\"\n     carry: false\n     exe: {sha256: \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}\n     image: {sha256: \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\"}\n     source: \"https://github.com/tamatebako/tebako-runtime-openjdk/releases/download\"\n";
+
+    fn package_with_manifest(dir: &std::path::Path, name: &str, pm_yaml: &str) -> PathBuf {
+        let pkg = dir.join(name);
+        std::fs::write(&pkg, vec![0u8; 100]).unwrap();
+        let mut m = tpkg::Manifest::default();
+        m.slots
+            .push(tpkg::Slot::new(0, 100, tpkg::TPKG_FORMAT_ZIP, "/m"));
+        let pm = tpkg::PackageManifest::from_yaml(pm_yaml).unwrap();
+        m.set_package_manifest(&pm).unwrap();
+        let mut f = std::fs::OpenOptions::new().append(true).open(&pkg).unwrap();
+        tpkg::write_to(&mut f, &m).unwrap();
+        pkg
+    }
+
+    fn plain_package(dir: &std::path::Path, name: &str) -> PathBuf {
+        let pkg = dir.join(name);
+        std::fs::write(&pkg, b"not-a-package\n").unwrap();
+        pkg
+    }
+
+    #[test]
+    fn plan_run_conveys_the_resolved_netconfig_verdict() {
+        let dir = std::env::temp_dir().join(format!("tebako-cli-run-trust-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pkg = plain_package(&dir, "pkg");
+        let pkg = pkg.to_string_lossy().into_owned();
+
+        // The default verdict exports nothing (byte-identical legacy run).
+        let p = parse_run_args(&args(&[&pkg])).unwrap();
+        let plan = plan_run_with(&p, &NetworkConfig::default(), None, None).unwrap();
+        assert!(!plan
+            .env
+            .iter()
+            .any(|(k, _)| k == tebako_http::PLATFORM_ROOTS_ENV
+                || k == tebako_http::netconfig::EXTRA_CA_ENV));
+
+        // Platform mode conveys the marker.
+        let cfg = NetworkConfig {
+            tls_roots: TlsRoots::Platform,
+            ..Default::default()
+        };
+        let plan = plan_run_with(&p, &cfg, None, None).unwrap();
+        assert_eq!(
+            plan.env
+                .iter()
+                .find(|(k, _)| k == tebako_http::PLATFORM_ROOTS_ENV)
+                .map(|(_, v)| v.as_str()),
+            Some("1")
+        );
+
+        // extra_ca conveys the joined paths.
+        let cfg = NetworkConfig {
+            extra_ca: vec![PathBuf::from("/etc/pki/corp.pem")],
+            ..Default::default()
+        };
+        let plan = plan_run_with(&p, &cfg, None, None).unwrap();
+        assert_eq!(
+            plan.env
+                .iter()
+                .find(|(k, _)| k == tebako_http::netconfig::EXTRA_CA_ENV)
+                .map(|(_, v)| v.as_str()),
+            Some("/etc/pki/corp.pem")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_run_refuses_an_unexpressible_extra_ca() {
+        let dir = std::env::temp_dir().join(format!("tebako-cli-run-badca-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pkg = plain_package(&dir, "pkg");
+        let pkg = pkg.to_string_lossy().into_owned();
+        // The unexpressible char is platform truth: `:` on unix, `"` on
+        // windows (a `;` there is quoted by join_paths and round-trips).
+        let bad = if cfg!(windows) { '"' } else { ':' };
+        let cfg = NetworkConfig {
+            extra_ca: vec![PathBuf::from(format!("/etc/pki/corp{bad}odd.pem"))],
+            ..Default::default()
+        };
+        let p = parse_run_args(&args(&[&pkg])).unwrap();
+        let err = plan_run_with(&p, &cfg, None, None).unwrap_err();
+        assert_eq!(err.code, 65, "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn plan_run_bridges_the_spawned_java_row_on_windows_platform_mode() {
+        let dir = std::env::temp_dir().join(format!("tebako-cli-run-java-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pkg = package_with_manifest(&dir, "pkg-java", JAVA_SPAWNED_PM);
+        let pkg = pkg.to_string_lossy().into_owned();
+        let cfg = NetworkConfig {
+            tls_roots: TlsRoots::Platform,
+            ..Default::default()
+        };
+        let p = parse_run_args(&args(&[&pkg])).unwrap();
+        let plan = plan_run_with(&p, &cfg, Some("-Xmx1g"), None).unwrap();
+        assert_eq!(
+            plan.env
+                .iter()
+                .find(|(k, _)| k == tebako_shim::trust::JAVA_TOOL_OPTIONS)
+                .map(|(_, v)| v.as_str()),
+            Some("-Xmx1g -Djavax.net.ssl.trustStoreType=Windows-ROOT")
+        );
+        // The user's own truststore config is never stomped.
+        let plan = plan_run_with(
+            &p,
+            &cfg,
+            Some("-Djavax.net.ssl.trustStore=C:/corp.p12"),
+            None,
+        )
+        .unwrap();
+        assert!(!plan
+            .env
+            .iter()
+            .any(|(k, _)| k == tebako_shim::trust::JAVA_TOOL_OPTIONS));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn plan_run_appends_nothing_for_the_java_plane_on_posix() {
+        // The windows-only append is exactly that (the spec names no
+        // POSIX java bridge) — the conveyance still rides.
+        let dir = std::env::temp_dir().join(format!("tebako-cli-run-java-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pkg = package_with_manifest(&dir, "pkg-java", JAVA_SPAWNED_PM);
+        let pkg = pkg.to_string_lossy().into_owned();
+        let cfg = NetworkConfig {
+            tls_roots: TlsRoots::Platform,
+            ..Default::default()
+        };
+        let p = parse_run_args(&args(&[&pkg])).unwrap();
+        let plan = plan_run_with(&p, &cfg, Some("-Xmx1g"), None).unwrap();
+        assert!(!plan
+            .env
+            .iter()
+            .any(|(k, _)| k == tebako_shim::trust::JAVA_TOOL_OPTIONS));
+        assert!(plan
+            .env
+            .iter()
+            .any(|(k, _)| k == tebako_http::PLATFORM_ROOTS_ENV));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn plan_run_journals_the_extra_ca_java_gap() {
+        let dir = std::env::temp_dir().join(format!("tebako-cli-run-gap-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let home = dir.join("home");
+        std::fs::create_dir_all(&home).unwrap();
+        let pkg = package_with_manifest(&dir, "pkg-java", JAVA_SPAWNED_PM);
+        let pkg = pkg.to_string_lossy().into_owned();
+        let cfg = NetworkConfig {
+            extra_ca: vec![PathBuf::from("/etc/pki/corp.pem")],
+            ..Default::default()
+        };
+        let p = parse_run_args(&args(&[&pkg])).unwrap();
+        let plan = plan_run_with(&p, &cfg, None, Some(&home)).unwrap();
+        // The additive verdict still conveys (the driver merges it for
+        // the openssl-fashioned planes)…
+        assert!(plan
+            .env
+            .iter()
+            .any(|(k, _)| k == tebako_http::netconfig::EXTRA_CA_ENV));
+        // …and the gap is journaled by name.
+        let journal = std::fs::read_to_string(home.join("journal.log")).unwrap();
+        assert!(
+            journal.contains("event=trust-bridge-java-gap mode=extra-ca"),
+            "{journal}"
+        );
+
+        // No java row in force → no gap line.
+        let home2 = dir.join("home2");
+        std::fs::create_dir_all(&home2).unwrap();
+        let pkg2 = plain_package(&dir, "pkg-plain");
+        let pkg2 = pkg2.to_string_lossy().into_owned();
+        let p2 = parse_run_args(&args(&[&pkg2])).unwrap();
+        plan_run_with(&p2, &cfg, None, Some(&home2)).unwrap();
+        assert!(!home2.join("journal.log").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -26,6 +26,11 @@
 //! Every resolution produces audit lines ([`NetworkConfig::audit`]) — the
 //! installing binary journals them (the loud record the trust story
 //! requires).
+//!
+//! The resolved verdict also leaves the loader plane: [`trust_bridge_env_from`]
+//! renders it as the handoff env pairs of spec 17 §2.3 (env inheritance is
+//! the wire; this module owns both spellings), so the runtime's own TLS
+//! stacks follow the same resolution.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -89,6 +94,11 @@ pub enum NetConfigError {
     ExtraCaUnreadable { path: PathBuf, why: String },
     /// An `extra_ca` file holds no parseable certificate block.
     ExtraCaMalformed { path: PathBuf, why: String },
+    /// An `extra_ca` path cannot join the OS path-list env form (it holds
+    /// the separator — or a quote on Windows, which has no quoting
+    /// escape) — the spec 17 §2.3 wire cannot convey it, and a dropped
+    /// entry is never silent.
+    ExtraCaNotEnvExpressible { path: PathBuf },
 }
 
 impl fmt::Display for NetConfigError {
@@ -117,6 +127,13 @@ impl fmt::Display for NetConfigError {
                 f,
                 "no certificate block parses from extra CA {}: {why} — expected PEM \
                  (-----BEGIN CERTIFICATE-----)",
+                path.display()
+            ),
+            NetConfigError::ExtraCaNotEnvExpressible { path } => write!(
+                f,
+                "extra CA {} has no OS path-list spelling (it holds the list \
+                 separator, or a quote on Windows) and cannot ride the \
+                 {EXTRA_CA_ENV} env form (spec 17 §2.3's wire) — move the file",
                 path.display()
             ),
         }
@@ -346,6 +363,49 @@ fn load_pem_certs(path: &Path) -> Result<Vec<Certificate<'static>>, NetConfigErr
     Ok(certs)
 }
 
+/// The trust bridge's wire form (spec 17 §2.3): the RESOLVED verdict as
+/// the handoff env pairs a dispatcher exports to the runtime's driver —
+/// env inheritance is the wire, and this module is the single owner of
+/// both spellings. Platform mode exports `TEBAKO_TLS_PLATFORM_ROOTS=1`
+/// (its read is presence-based; the value never matters); additive mode
+/// exports the `extra_ca` list in the OS path-list form (the driver
+/// splits it back with `std::env::split_paths`). A path that cannot join
+/// the list form is a named error — a dropped CA is never silent.
+pub fn trust_bridge_env_from(cfg: &NetworkConfig) -> Result<Vec<(String, String)>, NetConfigError> {
+    let mut out = Vec::new();
+    if cfg.tls_roots == TlsRoots::Platform {
+        out.push((crate::PLATFORM_ROOTS_ENV.to_string(), "1".to_string()));
+    }
+    if !cfg.extra_ca.is_empty() {
+        let joined = std::env::join_paths(&cfg.extra_ca).map_err(|_| {
+            // join_paths fails exactly when a path has no list spelling:
+            // a `:` on unix; a `"` on windows (a `;` there quotes fine).
+            // Name the culprit entry — a dropped CA is never silent.
+            let bad = if cfg!(windows) { '"' } else { ':' };
+            let path = cfg
+                .extra_ca
+                .iter()
+                .find(|p| p.as_os_str().to_string_lossy().contains(bad))
+                .cloned()
+                .unwrap_or_default();
+            NetConfigError::ExtraCaNotEnvExpressible { path }
+        })?;
+        out.push((
+            EXTRA_CA_ENV.to_string(),
+            joined.to_string_lossy().into_owned(),
+        ));
+    }
+    Ok(out)
+}
+
+/// The process-global form of [`trust_bridge_env_from`] — the installing
+/// binary resolved the effective config at startup
+/// ([`set_global`]); every dispatch surface extends its handoff env
+/// with these pairs.
+pub fn trust_bridge_env() -> Result<Vec<(String, String)>, NetConfigError> {
+    trust_bridge_env_from(&global())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -475,6 +535,56 @@ wVYzxWmIj2VzW7jBacDLSIXvtFG6/Q7Zi5uJkatP7H6F\n\
             other => panic!("expected additive Specific roots, got {other:?}"),
         }
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_trust_bridge_wire_carries_only_the_verdict() {
+        // The default resolution exports nothing (byte-identical legacy
+        // handoffs — the driver's bare-cert path stays).
+        let cfg = NetworkConfig::default();
+        assert!(trust_bridge_env_from(&cfg).unwrap().is_empty());
+        // Platform mode exports the presence-based marker.
+        let cfg = NetworkConfig {
+            tls_roots: TlsRoots::Platform,
+            ..Default::default()
+        };
+        assert_eq!(
+            trust_bridge_env_from(&cfg).unwrap(),
+            vec![(crate::PLATFORM_ROOTS_ENV.to_string(), "1".to_string())]
+        );
+        // Additive mode exports the OS path-list form, re-splittable.
+        let cfg = NetworkConfig {
+            extra_ca: vec![PathBuf::from("/etc/pki/corp.pem")],
+            ..Default::default()
+        };
+        let env = trust_bridge_env_from(&cfg).unwrap();
+        let (key, value) = env.iter().find(|(k, _)| k == EXTRA_CA_ENV).unwrap();
+        assert_eq!(key, EXTRA_CA_ENV);
+        let back: Vec<PathBuf> = std::env::split_paths(value).collect();
+        assert_eq!(back, cfg.extra_ca);
+    }
+
+    #[test]
+    fn the_trust_bridge_refuses_an_unexpressible_extra_ca() {
+        // A path with no OS path-list spelling cannot ride the env form —
+        // a named error, never a silently dropped CA. The unexpressible
+        // char is platform truth: `:` on unix; `"` on windows (a `;`
+        // there is quoted by join_paths and round-trips fine).
+        let bad = if cfg!(windows) {
+            "/weird\"ca.pem"
+        } else {
+            "/weird:ca.pem"
+        };
+        let cfg = NetworkConfig {
+            extra_ca: vec![PathBuf::from(bad)],
+            ..Default::default()
+        };
+        let err = trust_bridge_env_from(&cfg).unwrap_err();
+        assert!(matches!(
+            err,
+            NetConfigError::ExtraCaNotEnvExpressible { .. }
+        ));
+        assert!(err.to_string().contains("weird"), "{err}");
     }
 
     #[test]
