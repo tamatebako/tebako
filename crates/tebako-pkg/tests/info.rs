@@ -1243,56 +1243,135 @@ fn validate_spawned_mirror_mismatches_are_65() {
 }
 
 /// The CARRIED spawned-runtime layout (packed-mn's 4-slot shape, spec 30
-/// §1/§2): slot 1 is the RAW wrapper exe — never an image. validate must
-/// skip its manifest check (the packed-mn#254 gate failure: slot[1]
-/// manifest FAILED with "cannot mount the image (errno 22)").
-#[test]
-fn validate_spawned_carried_raw_exe_slot_skips_the_manifest_check() {
+/// §1/§2): slot 1 is the RAW wrapper exe — never an image, slot 2 the env
+/// image. `exe_pin`/`image_pin` override the lock's DigestPin YAML
+/// fragments (a quoted digest or a per-triplet map); `None` pins the real
+/// sha256 of the carried bytes.
+fn bundle_spawned_carried_runtime(
+    w: &TempDir,
+    home: &Path,
+    exe_pin: Option<String>,
+    image_pin: Option<String>,
+) -> PathBuf {
     use sha2::{Digest, Sha256};
     let sha256_hex = |p: &Path| format!("{:x}", Sha256::digest(std::fs::read(p).unwrap()));
 
-    let w = TempDir::new("psp-raw");
-    let home = test_home("psp-raw");
     let app = mk_image_files(
-        &w,
+        w,
         "spawned.tfs",
         Some(SPAWNED_APP_MANIFEST),
         &[("probe", b"#!/bin/sh\n")],
     );
     let exe = w.0.join("java-exe");
     std::fs::write(&exe, b"\x7fELF raw wrapper bytes - never an image").unwrap();
-    let env = mk_image(&w, "java-env.tfs", None);
+    let env = mk_image(w, "java-env.tfs", None);
+    let exe_pin = exe_pin.unwrap_or_else(|| format!("\"{}\"", sha256_hex(&exe)));
+    let image_pin = image_pin.unwrap_or_else(|| format!("\"{}\"", sha256_hex(&env)));
 
     let pm_yaml = spawned_pm(&format!(
-        "lock:\n  spawned:\n   - engine: java\n     constraint: \">= 21, < 26\"\n     expose: [java]\n     version: \"21.0.12\"\n     tebako: \"2.1.6\"\n     carry: true\n     exe: {{slot: 1, sha256: \"{}\"}}\n     image: {{slot: 2, sha256: \"{}\"}}\n",
-        sha256_hex(&exe),
-        sha256_hex(&env)
+        "lock:\n  spawned:\n   - engine: java\n     constraint: \">= 21, < 26\"\n     expose: [java]\n     version: \"21.0.12\"\n     tebako: \"2.1.6\"\n     carry: true\n     exe: {{slot: 1, sha256: {exe_pin}}}\n     image: {{slot: 2, sha256: {image_pin}}}\n"
     ));
-    let pm = pm_file(&w, &pm_yaml);
+    let pm = pm_file(w, &pm_yaml);
     let pkg =
         w.0.join(format!("pkg-{}", COUNTER.fetch_add(1, Ordering::Relaxed)));
     bundle(
-        &home,
-        &w,
+        home,
+        w,
         &["--package-manifest", pm.to_str().unwrap(), "--exact-mounts"],
         &[&app, &exe, &env],
         &pkg,
     );
+    pkg
+}
+
+/// validate must skip the RAW exe slot's manifest check (the
+/// packed-mn#254 gate failure: slot[1] manifest FAILED with "cannot
+/// mount the image (errno 22)") and verify the lock's digest pins
+/// against the slot bytes (spec 23 §13.6).
+#[test]
+fn validate_spawned_carried_raw_exe_slot_skips_the_manifest_check() {
+    let w = TempDir::new("psp-raw");
+    let home = test_home("psp-raw");
+    let pkg = bundle_spawned_carried_runtime(&w, &home, None, None);
 
     let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
     assert_eq!(rc, 70, "{out}"); // slot 0 digest agreement, see above
     assert!(
         out.contains(
-            "  slot[1] manifest: skip — spawned runtime artifact (raw bytes — never mounted; the trailer digest and the lock pin carry its identity)\n"
+            "  slot[1] manifest: skip — spawned runtime artifact (raw bytes — never mounted; the lock pin is verified against the slot bytes by the spawned[] digest checks)\n"
         ),
         "{out}"
     );
     assert!(!out.contains("slot[1] manifest: FAILED"), "{out}");
+    // The lock pins verify against the slot bytes.
+    assert!(
+        out.contains("  spawned[java].exe digest: ok — the lock pin matches the slot 1 bytes\n"),
+        "{out}"
+    );
+    assert!(
+        out.contains("  spawned[java].image digest: ok — the lock pin matches the slot 2 bytes\n"),
+        "{out}"
+    );
     // The lock row still mirrors the L1 edge — the cross-check stands.
     assert!(
         out.contains(
             "  spawned[java]: ok — mirrors the L1 edge; the locked version 21.0.12 satisfies \">= 21, < 26\"\n"
         ),
+        "{out}"
+    );
+}
+
+/// A carried artifact whose lock pin disagrees with the slot bytes fails
+/// DIGEST (spec 23 §13.6's pin rule over §13.3's coverage rule) — named
+/// per facet.
+#[test]
+fn validate_spawned_carried_exe_pin_mismatch_is_70() {
+    let w = TempDir::new("psp-flip");
+    let home = test_home("psp-flip");
+    let pkg =
+        bundle_spawned_carried_runtime(&w, &home, Some(format!("\"{}\"", "a".repeat(64))), None);
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}");
+    assert!(
+        out.contains(
+            "  spawned[java].exe digest: FAILED — the lock pin aaaaaaaa… != the slot 1 bytes "
+        ),
+        "{out}"
+    );
+    // The image facet's pin still verifies.
+    assert!(
+        out.contains("  spawned[java].image digest: ok — the lock pin matches the slot 2 bytes\n"),
+        "{out}"
+    );
+}
+
+/// A per-triplet pin that covers no host row skips LOUD — the host's
+/// slot bytes stay unchecked, never silently passed (spec 23 §13.3).
+#[test]
+fn validate_spawned_carried_per_triplet_pin_without_the_host_row_skips_loud() {
+    let w = TempDir::new("psp-tri");
+    let home = test_home("psp-tri");
+    let other = tpkg::Platform::ALL
+        .iter()
+        .copied()
+        .find(|p| *p != tpkg::Platform::host())
+        .unwrap();
+    let exe_pin = format!("{{{}: \"{}\"}}", other.release_asset_name(), "b".repeat(64));
+    let pkg = bundle_spawned_carried_runtime(&w, &home, Some(exe_pin), None);
+
+    let (rc, out, _) = run(&["validate", pkg.to_str().unwrap()], &w.0, &home);
+    assert_eq!(rc, 70, "{out}"); // slot 0 digest agreement, see above
+    assert!(
+        out.contains(&format!(
+            "  spawned[java].exe digest: skip — the lock pin covers no {} row — the host's slot bytes are unchecked (spec 23 §13.3)\n",
+            tpkg::Platform::host().release_asset_name()
+        )),
+        "{out}"
+    );
+    // The image facet's host-covering pin still verifies.
+    assert!(
+        out.contains("  spawned[java].image digest: ok — the lock pin matches the slot 2 bytes\n"),
         "{out}"
     );
 }
@@ -1501,7 +1580,26 @@ fn validate_spawned32_carried_provider_image_cross_checks_the_nested_runtime() {
     // the nested runtime's RAW exe slot skips the manifest check
     assert!(
         out.contains(
-            "  slot[2] manifest: skip — spawned runtime artifact (raw bytes — never mounted; the trailer digest and the lock pin carry its identity)\n"
+            "  slot[2] manifest: skip — spawned runtime artifact (raw bytes — never mounted; the lock pin is verified against the slot bytes by the spawned[] digest checks)\n"
+        ),
+        "{out}"
+    );
+    // The carried artifacts' lock pins verify against the slot bytes.
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc].image digest: ok — the lock pin matches the slot 1 bytes\n"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc].runtime.exe digest: ok — the lock pin matches the slot 2 bytes\n"
+        ),
+        "{out}"
+    );
+    assert!(
+        out.contains(
+            "  spawned[xml2rfc].runtime.image digest: ok — the lock pin matches the slot 3 bytes\n"
         ),
         "{out}"
     );

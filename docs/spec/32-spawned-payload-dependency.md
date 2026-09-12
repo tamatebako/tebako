@@ -7,7 +7,8 @@ edge resolution + the spawn-lock payload rows),
 `tebako-driver` (the payload-spawn plan composition + the hereditary
 jail ceiling), `tebako-bootstrap` (the lock's spawned payload-row
 resolution), `tebako-cli` (install/compose arms + the expose shim
-registration + the tightening export), `tebako-pkg`/`tebako-info` (the
+registration + the tightening export + the press-time `spawned[]` row
+composition), `tebako-pkg`/`tebako-info` (the
 press-time two-level cross-checks + the render arms)).** Amends spec 03 §8 (the
 `kind: executable` edge gains the `expose:` spawn form), spec 23 §13.6
 (the lock's `spawned[]` rows gain the payload row), spec 30 §0 (the

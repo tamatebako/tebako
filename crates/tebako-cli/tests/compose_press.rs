@@ -721,7 +721,8 @@ fn resolve_closure_executable_capability_scan_matches_the_entrypoint_mirror() {
 fn resolve_closure_executable_expose_only_is_never_co_mounted() {
     // spec 32 §1: the expose axis is a SPAWN surface — no mount, no
     // closure slice; the edge rides the embedded manifest into the lock's
-    // hand-authored spawned[] rows (the spec 30 §1 posture).
+    // spawned[] rows (the press's spawn walk composes them, spec 23
+    // §13.6).
     let fx = Fixture::new("execexpose");
     let a_image = image(
         "app",
