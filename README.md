@@ -152,6 +152,7 @@ payloads (inkscape & co.) are feedstocks in the
 | `tebako install <ref\|name@ver>` | install a payload from a registry + register its shims |
 | `tebako info [topic]` | the store/system surface: system, runtimes, payloads, shims, registries, store (`--remote` adds what the world offers; `--json` everywhere) |
 | `tebako inspect <artifact>` | payload/package introspection: manifest, provides, requires, platforms, verify (strict), JSON |
+| `tebako doctor [--json]` | the diagnostics surface: store / dispatch / network / trust / registries — read-only, exit 0 healthy / 1 problems (spec 35) |
 | `tebako use / list / doctor` | manage shims, versions, and health |
 | `tebako publish` | press → sign → upload → registry → tap formula (developer flow) |
 | `tebako-pkg` | tpkg trailer surgery: bundle/unbundle/reassemble/insert/remove/info/validate/sign/verify |
