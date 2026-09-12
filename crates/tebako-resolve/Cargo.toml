@@ -17,7 +17,7 @@ default = ["git", "network"]
 # selection; tebako-http always brings its own). tebako-bootstrap links
 # this crate with default-features = false: the loader never fetches git
 # references, and keeping the git stack out holds its 3 MiB size gate.
-git = ["dep:gix", "dep:reqwest", "dep:rustls"]
+git = ["dep:gix", "dep:reqwest", "dep:rustls", "dep:jiff"]
 # Enterprise networking (TODO.v2-1/33): proxy honoring + additive trust
 # anchors, forwarded to tebako-http. Off in the bootstrap (same gate),
 # where a set proxy/CA env is the named NetworkingCompiledOut error.
@@ -59,6 +59,14 @@ gix = { version = "0.87", default-features = false, optional = true, features = 
     "revision",
 ] }
 reqwest = { version = "0.13", default-features = false, optional = true, features = ["rustls-no-provider"] }
+# jiff 0.2.36 (2026-09-12) shipped broken: its lib.rs doc-includes
+# (COMPARE/DESIGN/PLATFORM/CHANGELOG.md) escape the package root — the
+# published .crate lacks the files, so every fresh resolution fails to
+# compile (the workspace Cargo.lock is gitignored — resolutions float,
+# owner rule). Bound the float via the `git` feature (jiff enters only
+# through gix-date) until upstream yanks or fixes; dropping the bound is
+# the bump branch's job.
+jiff = { version = ">=0.2, <=0.2.35", optional = true }
 
 [target.'cfg(not(all(windows, target_env = "gnu")))'.dependencies]
 rustls = { version = "0.23", default-features = false, optional = true, features = ["ring", "std", "tls12", "logging"] }
@@ -80,6 +88,9 @@ proptest = "1"
 # The git fixtures are built with gix itself — no git CLI anywhere, tests
 # included (spec 14 §3).
 gix = { version = "0.87", default-features = false, features = ["sha1"] }
+# Test builds pull gix non-optionally: the jiff bound (above) must hold
+# here too or `cargo test` on a fresh checkout floats to broken 0.2.36.
+jiff = { version = ">=0.2, <=0.2.35" }
 
 # The per-entry cache flock on Windows (cache.rs — LockFileEx on one byte
 # at offset 0, the tebako-bootstrap platform.rs shape). Unix uses libc's
