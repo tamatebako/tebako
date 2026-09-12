@@ -63,13 +63,27 @@ chmod +x "$PKG"
 
 # ---- the parts to sign ---------------------------------------------------
 # Everything on the release except the indexes (SHA256SUMS, manifest.json)
-# and the derived .sha256 sidecars. Exactly 49 parts: 6 tools x 7
-# platforms + 7 link-unit tarballs (the completeness gate's arithmetic).
+# and the derived .sha256 sidecars. 49 base parts (6 tools x 7 platforms +
+# 7 link-unit tarballs) + the installer containers (roadmap 83) EXACTLY
+# when their OS planes armed them: the MSI ships signed-only
+# (WINDOWS_SIGNING_ENABLED), the pkgs signed+notarized+stapled or not at
+# all (APPLE_INSTALLER_SIGNING_ENABLED + APPLE_SIGNING_ENABLED) — the same
+# gate vars the installer legs ship on, so the count never drifts from
+# the release's real content.
+INSTALLER_PARTS=0
+if [ "${WINDOWS_SIGNING_ENABLED:-}" = "true" ]; then
+  INSTALLER_PARTS=$(( INSTALLER_PARTS + 1 ))
+fi
+if [ "${APPLE_INSTALLER_SIGNING_ENABLED:-}" = "true" ] && [ "${APPLE_SIGNING_ENABLED:-}" = "true" ]; then
+  INSTALLER_PARTS=$(( INSTALLER_PARTS + 2 ))
+fi
+EXPECTED_PARTS=$(( 49 + INSTALLER_PARTS ))
+EXPECTED_SIGS=$(( 51 + INSTALLER_PARTS ))
 gh release download "$TAG" --dir "$WORK/assets" --clobber
 mapfile -t PARTS < <(find "$WORK/assets" -maxdepth 1 -type f \
   ! -name 'SHA256SUMS' ! -name 'manifest.json' ! -name '*.sha256' | sort)
-if [ "${#PARTS[@]}" -ne 49 ]; then
-  echo "NAMED FAILURE: expected 49 released parts to sign, found ${#PARTS[@]}" >&2
+if [ "${#PARTS[@]}" -ne "$EXPECTED_PARTS" ]; then
+  echo "NAMED FAILURE: expected $EXPECTED_PARTS released parts to sign (49 + $INSTALLER_PARTS installers), found ${#PARTS[@]}" >&2
   printf '  %s\n' "${PARTS[@]}" >&2
   exit 1
 fi
@@ -91,8 +105,8 @@ fi
 mv "$WORK"/assets/*.asc out/signatures/
 mv out/SHA256SUMS.asc out/manifest.json.asc out/signatures/
 COUNT=$(ls out/signatures/*.asc | wc -l)
-if [ "$COUNT" -ne 51 ]; then
-  echo "NAMED FAILURE: expected 51 signatures (49 parts + SHA256SUMS.asc + manifest.json.asc), have $COUNT" >&2
+if [ "$COUNT" -ne "$EXPECTED_SIGS" ]; then
+  echo "NAMED FAILURE: expected $EXPECTED_SIGS signatures ($EXPECTED_PARTS parts + SHA256SUMS.asc + manifest.json.asc), have $COUNT" >&2
   exit 1
 fi
 echo "signed: $COUNT signatures in out/signatures/"

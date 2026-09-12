@@ -78,9 +78,8 @@ tebako install tfs+https://cdn.example.com/app.tfs?sha256=<hex>
 
 ### 3.4 Windows
 
-winget/scoop manifests pointing at the same standalone binaries (same
-template approach as brew taps); the tebako CLI itself follows once the
-Windows leg ships (roadmap 02).
+winget/scoop manifests ride the system MSI (§7) — the same template
+approach as brew taps, one container, no channel forks the binaries.
 
 ## 4. Trust per channel (locked)
 
@@ -186,7 +185,70 @@ tree, point `TEBAKO_HOME` at `home/` (or relocate its contents into the
 user store), put `bin/` + `home/shims/` on PATH. Trust verification
 happened at stage time; the target machine verifies nothing new.
 
-## 7. Implementation gaps (roadmap 28)
+## 7. Installer packages (MSI / pkg) — roadmap 83
+
+The OS-native installer is a CONTAINER over already-published bytes, for
+the audience a curl|sh or a brew tap does not reach (managed fleets,
+MDM/SCCM/Jamf, first-run-warn-free downloads). Two orthogonal axes:
+
+**WHO ships (identity).** The same parameterized templates
+(`templates/installers/`) serve the tebako system installer (Case A — the
+tamatebako identity) and a client product (Case B — packed-mn class — the
+client's own Azure Trusted Signing account, Apple Developer ID
+certificates, and OpenPGP key; no tamatebako identity leaks into a client
+product). Every installer carries THREE independently verified signature
+surfaces: the container (Authenticode / Developer ID Installer), the
+binaries inside (the release's already-signed exes), and the tebako-plane
+payload signatures for any staged content (spec 09).
+
+**WHAT ships (content shape).**
+
+| Shape | Content | Network at install | Network at first run | For |
+|---|---|---|---|---|
+| Tool-only | the 4 PATH tools (tebako, tebako-shim, tfs, tebako-pkg), signed | — | per-use (runtimes/payloads) | **tebako the system** |
+| Fat exe | self-contained preset (runtime as a slot) | — | — | single-runtime apps only |
+| Bundle | §6's pre-seeded store inside the container | — | — | **apps with spawned-runtime edges (metanorma)** |
+| Web bootstrapper | container that runs `tebako install` post-install | required | — | online convenience |
+
+A fat exe cannot carry spawned runtimes (metanorma spawns java + python
+as SEPARATE runtimes; no exe slot carries them) — the bundle is the
+installer content for serious apps. The system installer needs no
+fat/lean decision at all: the tool ships no payloads by construction.
+
+The locked rules:
+
+1. **Containers ship signed-only.** The MSI ships exactly when spec 34's
+   `WINDOWS_SIGNING_ENABLED` armed the pipeline (Azure Artifact Signing
+   signs MSI natively); the pkg ships exactly when spec 31 §5a's
+   `APPLE_INSTALLER_SIGNING_ENABLED` AND §5's `APPLE_SIGNING_ENABLED` are
+   both armed (a signed-but-unnotarized pkg never ships). Unsigned-first
+   (invariant 7) continues to cover the loose binaries; an unsigned
+   installer CONTAINER is a trap for exactly the audience containers
+   serve, so the legs build + rehearse it always (the template's CI
+   signal) and ship it never-unarmed.
+2. **Container content = the release's own bytes.** The legs download
+   this release's tools back from the release and verify each against
+   the platform leg's sign-then-hash fragments before wrapping — a
+   corrupted or stale input fails the leg, named.
+3. **Sign-then-hash extends to containers** (spec 34 §1.3): the
+   installer fragments hash the FINAL signed container bytes; finalize
+   folds them into SHA256SUMS / sidecars / manifest.json's `installers`
+   array like any other released part, and spec 09's release signing
+   covers them (one .asc per container).
+4. **Install rehearsal is the ship gate, always**: msiexec install → the
+   installed `tebako --version` runs → uninstall clean; `installer -pkg`
+   → payload lands + `/etc/paths.d` entry written → the installed tool
+   runs. A broken template fails the leg, never a user machine.
+5. Per-machine install root only (`Program Files\<product>`,
+   `/opt/<product>`); per-user state (the `~/.tebako` store, shims)
+   stays per-user — the installers install NO user-scope files. PATH
+   lands system-wide (MSI Environment row / `/etc/paths.d`), removed on
+   uninstall.
+6. winget/scoop (roadmap 28's §3.4) ride the MSI asset; brew and
+   install.sh stay the developer paths. No channel forks the binaries —
+   every channel ships the SAME signed bytes.
+
+## 8. Implementation gaps (roadmap 28)
 
 - ~~`tpkg-registry.yaml` fetch/listing (the resolver tail of item 07)~~ —
   SHIPPED (28.1): the registry model + resolution in tebako-resolve and
