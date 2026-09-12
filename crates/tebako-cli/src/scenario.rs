@@ -12,7 +12,12 @@ use crate::error::{packaging_error, plain_error, TebakoError};
 /// differentiation (gem's Tebako::BUNDLER_VERSION).
 pub const BUNDLER_MIN_VERSION: &str = "2.4.22";
 
-pub const DEFAULT_RUBY_VERSION: &str = "3.3.7";
+/// The default ruby pairs with `tebako_resolve::DEFAULT_TEBAKO_VERSION`:
+/// the default line must PUBLISH this version (resolution of a version a
+/// line does not carry is the named exit-120 error with the available set
+/// — the pairing is exercised by the press e2e suite). The 0.16.23 line
+/// carries 3.1.6 / 3.2.11 / 3.3.12 / 3.4.10 / 4.0.6.
+pub const DEFAULT_RUBY_VERSION: &str = "3.3.12";
 pub const MIN_RUBY_VERSION_WINDOWS: &str = "3.1.6";
 
 /// Ruby versions the CLI can press packages for (the prebuilt runtime

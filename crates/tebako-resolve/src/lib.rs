@@ -81,8 +81,12 @@ pub use transport::{HttpTransport, Transport};
 /// `kind: executable` edge (the xml2rfc leg of metanorma's requires
 /// block) — reproduced against the published 0.16.18 macos-arm64 exe:
 /// "unknown variant `executable` … the payload's self-description
-/// lies".
-pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.22";
+/// lies". From 0.16.23 every factory artifact is SIGNED (the spec 09
+/// plane armed factory-side; `TEBAKO_REQUIRE_SIGNED=1` resolves this
+/// line and refuses 0.16.22's unsigned one) and the line adds ruby
+/// 4.0.6 — the ruby 4 flavor's runtime source. Same v2.3.0 driver
+/// unit as 0.16.22 (contract 2, unchanged).
+pub const DEFAULT_TEBAKO_VERSION: &str = "0.16.23";
 
 /// Fetch `reference` (pin-verified at the fetch boundary) and install it
 /// as `payloads/<name>/<version>.tfs` — or return the existing entry.
