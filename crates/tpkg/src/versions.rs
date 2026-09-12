@@ -262,7 +262,7 @@ mod tests {
         assert!(c.matches("3.13.15-jit"));
         assert!(!c.matches("3.14.0"));
         // …but the max pick among satisfiers is the plain twin.
-        let vs = vec!["3.13.15-jit".to_string(), "3.13.15".to_string()];
+        let vs = ["3.13.15-jit".to_string(), "3.13.15".to_string()];
         let pick = vs
             .iter()
             .filter(|v| c.matches(v))
