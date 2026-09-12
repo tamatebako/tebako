@@ -134,6 +134,28 @@ fn no_preference_downloads_the_index_pick_on_the_default_line() {
 }
 
 #[test]
+fn the_index_pick_prefers_the_plain_twin_over_a_variant_suffix() {
+    // spec 05 §5's plain-wins rule (roadmap 88): an index carrying
+    // plain + variant twins of one version resolves the open constraint
+    // to the PLAIN — a factory's `-jit` build never silently outranks
+    // its plain twin (the metanorma 1.16.9-11 publish failure).
+    let tmp = TempDir::new("plain-wins-index-pick");
+    let home = tmp.path().join("home");
+    let mirror = tmp.path().join("mirror");
+    let line = tebako_resolve::DEFAULT_TEBAKO_VERSION;
+    write_release_index(&mirror, line, &["3.13.15", "3.13.15-jit"]);
+    let mut ctx = ctx(&home, tmp.path());
+    ctx.env.insert(
+        "TEBAKO_RUNTIME_MIRROR".into(),
+        tebako_http::file_url(&mirror),
+    );
+
+    let rt = ready(runtime::resolve_runtime(Some(&req("~> 3.13.0")), true, &ctx).unwrap());
+    assert_eq!(rt.lang_version, "3.13.15");
+    assert!(rt.exe.is_file());
+}
+
+#[test]
 fn no_preference_and_an_index_without_a_satisfier_is_the_platform_error() {
     let tmp = TempDir::new("prefless-unsatisfiable");
     let home = tmp.path().join("home");

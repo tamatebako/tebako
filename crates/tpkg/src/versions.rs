@@ -9,9 +9,20 @@
 //!   `~> 3.3.0` means `>= 3.3.0, < 3.4`; `~> 3.3` means `>= 3.3, < 4`).
 //!
 //! Hand-rolled (no semver crate): the loaders keep bootstrap size
-//! discipline. Versions are dot-separated components; numeric components
-//! compare numerically, anything else lexicographically, missing
-//! components are zero.
+//! discipline. Versions are dot-separated components; missing components
+//! are zero. Within one component (spec 05 §5's ordering rule): a leading
+//! numeric prefix compares numerically (`1.10 > 1.9`); at an equal prefix
+//! a PLAIN component ranks ABOVE a suffixed one (`3.13.15 > 3.13.15-jit`
+//! — semver's release > prerelease rule, so a factory's build variant
+//! never silently outranks its plain twin in a newest-satisfying pick);
+//! two suffixes order lexicographically; a component without a numeric
+//! prefix falls back to whole-component string order. Constraint MATCHING
+//! is unaffected by the ordering rule: a variant version still satisfies
+//! an open constraint (a platform where ONLY the variant exists still
+//! resolves) — it just never wins a max pick against the plain twin. A
+//! variant is SELECTED through the pin surface (config `version:`, the
+//! registry default), which names versions exactly; the constraint
+//! grammar itself (spec 03) admits only plain dot-decimal clauses.
 //!
 //! Constraint GRAMMAR is not re-implemented here: [`Constraint`] (the
 //! manifest model) validates at parse (spec 03 — the unified model), and
@@ -33,14 +44,35 @@ fn components(v: &str) -> Vec<&str> {
     v.split('.').collect()
 }
 
+/// Split a component into its leading numeric prefix and the optional
+/// non-numeric suffix (`15-jit` → `(15, Some("-jit"))`, `15` →
+/// `(15, None)`). A component with no leading digit (or a prefix too big
+/// for u64) has no numeric prefix and falls back to string order.
+fn numeric_prefix(c: &str) -> Option<(u64, Option<&str>)> {
+    let digits = c.bytes().take_while(|b| b.is_ascii_digit()).count();
+    if digits == 0 {
+        return None;
+    }
+    let (num, rest) = c.split_at(digits);
+    let n = num.parse::<u64>().ok()?;
+    Some((n, if rest.is_empty() { None } else { Some(rest) }))
+}
+
 fn compare_component(a: &str, b: &str) -> Ordering {
-    match (a.parse::<u64>(), b.parse::<u64>()) {
-        (Ok(x), Ok(y)) => x.cmp(&y),
+    match (numeric_prefix(a), numeric_prefix(b)) {
+        (Some((x, sx)), Some((y, sy))) => x.cmp(&y).then_with(|| match (sx, sy) {
+            (None, None) => Ordering::Equal,
+            // The plain-wins rule (spec 05 §5): release > prerelease.
+            (None, Some(_)) => Ordering::Greater,
+            (Some(_), None) => Ordering::Less,
+            (Some(s), Some(t)) => s.cmp(t),
+        }),
         _ => a.cmp(b),
     }
 }
 
-/// Compare two dotted versions (`1.2` == `1.2.0`, `1.10` > `1.9`).
+/// Compare two dotted versions (`1.2` == `1.2.0`, `1.10` > `1.9`,
+/// `3.13.15` > `3.13.15-jit` — the plain-wins rule, spec 05 §5).
 pub fn compare(a: &str, b: &str) -> Ordering {
     let (ca, cb) = (components(a), components(b));
     for i in 0..ca.len().max(cb.len()) {
@@ -194,6 +226,53 @@ mod tests {
         assert_eq!(compare("1.10", "1.9"), Ordering::Greater);
         assert!(compare("3.3.5", "3.4.0") == Ordering::Less);
         assert_eq!(compare("4.0.6", "4.0.6"), Ordering::Equal);
+    }
+
+    #[test]
+    fn plain_wins_over_a_variant_suffix() {
+        // spec 05 §5: at an equal numeric prefix, plain ranks ABOVE
+        // suffixed (semver's release > prerelease rule) — a factory's
+        // build variant never outranks its plain twin in a max pick.
+        assert_eq!(compare("3.13.15", "3.13.15-jit"), Ordering::Greater);
+        assert_eq!(compare("3.13.15-jit", "3.13.15"), Ordering::Less);
+        assert_eq!(compare("3.13.15-jit", "3.13.15-jit"), Ordering::Equal);
+        // two suffixes order lexicographically
+        assert_eq!(compare("3.13.15-a", "3.13.15-jit"), Ordering::Less);
+        // numeric dominance is unchanged across the suffix boundary
+        assert_eq!(compare("3.13.16-jit", "3.13.15"), Ordering::Greater);
+        assert_eq!(compare("3.13.15-jit", "3.13.16"), Ordering::Less);
+        assert_eq!(compare("1.10", "1.9"), Ordering::Greater);
+        // a component with no numeric prefix keeps whole-string order
+        assert_eq!(compare("1.2.rc1", "1.2.rc2"), Ordering::Less);
+        // and the max pick over twins lands on the plain
+        let vs = vec![
+            "3.13.15-jit".to_string(),
+            "3.13.15".to_string(),
+            "3.13.9".to_string(),
+        ];
+        assert_eq!(newest(&vs).as_deref(), Some("3.13.15"));
+    }
+
+    #[test]
+    fn variant_matching_is_unchanged_only_the_pick_changes() {
+        // An open constraint still MATCHES the variant (a platform where
+        // only the variant exists still resolves)…
+        let c = parse_constraint("~> 3.13.0").unwrap();
+        assert!(c.matches("3.13.15"));
+        assert!(c.matches("3.13.15-jit"));
+        assert!(!c.matches("3.14.0"));
+        // …but the max pick among satisfiers is the plain twin.
+        let vs = ["3.13.15-jit".to_string(), "3.13.15".to_string()];
+        let pick = vs
+            .iter()
+            .filter(|v| c.matches(v))
+            .max_by(|a, b| compare(a, b));
+        assert_eq!(pick.map(String::as_str), Some("3.13.15"));
+        // The constraint grammar (spec 03) admits only plain dot-decimal
+        // clauses — a suffixed pin is a named parse error there; variant
+        // selection rides the pin surface (config `version:`, registry
+        // default), which names versions exactly and never compares.
+        assert!(parse_constraint("= 3.13.15-jit").is_err());
     }
 
     #[test]
