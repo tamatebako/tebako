@@ -228,6 +228,52 @@ option processing reads it at boot (`RUBY_YJIT_ENABLE`, `PYTHON_JIT`,
   and each key's provenance layer render through the spec 15 §4
   surface; no per-run journal entry exists in this phase.
 
+### 2.3 The trust bridge (roadmap 81, PLANNED)
+
+The loader plane's network configuration (spec 04's `network:` grammar —
+the single resolution owner) already trusts the enterprise proxy story
+for its OWN fetches: `tls_roots: platform` / `TEBAKO_TLS_PLATFORM_ROOTS`
+(the OS store, where the GPO/MDM-pushed proxy CA lives) and additive
+`extra_ca:` / `TEBAKO_EXTRA_CA` (org PEMs parsed into the bundled
+roots). This subsection is the bridge that makes the RUNTIME's TLS
+stacks follow the same resolution — one config, every plane; the
+canonical runtime images stay pristine (trust material flows at run
+time, never a per-org rebuild).
+
+- **The wire.** The dispatcher (shim / bootstrap) resolves netconfig
+  ONCE per process and conveys the verdict to the driver by exporting
+  `TEBAKO_TLS_PLATFORM_ROOTS` / `TEBAKO_EXTRA_CA` into the handoff env —
+  env inheritance is the wire (spec 00 §10: no second hand-written
+  copy, no second config read in the driver).
+- **The PEM planes (ruby / python / everything openssl- or
+  curl-fashioned).** When either var is in force, the driver's cert
+  convention (§2's `SSL_CERT_FILE` row, spec 22 §4) materializes a
+  MERGED bundle instead of the image's bare `cert.pem`: the image roots
+  + the enumerated platform store (rustls-native-certs; the driver is
+  not size-gated) in platform mode, or the image roots + the parsed
+  `extra_ca` PEMs in additive mode. The merged bundle lives under the
+  same resources cache with the same digest discipline (spec 22 §4's
+  write-once + per-boot rehash), content-keyed by the merge inputs.
+  Precedence is the §2 row's unchanged: a user's real host-path
+  `SSL_CERT_FILE` always wins; the stale in-VFS spelling is still
+  rewritten. Platform + additive simultaneously is the netconfig
+  layer's named error, never the driver's.
+- **The java plane.** The JVM is a spawned child (spec 30), not a
+  driver boot — its bridge rides the §2.2 interp_env chain on the
+  dispatcher side: in platform mode on windows the chain additively
+  appends `-Djavax.net.ssl.trustStoreType=Windows-ROOT` to
+  `JAVA_TOOL_OPTIONS` (the JVM trusts the OS store natively; additive
+  merge, never a stomp). The `extra_ca`-on-java shape (a materialized
+  PKCS12 truststore + `-Djavax.net.ssl.trustStore`) is the open
+  sub-item of roadmap 81 — until it lands, `extra_ca` with a spawned
+  java edge in force yields a loud journal line naming the gap, never
+  a silent partial-trust boot.
+- **Fail closed.** A malformed `extra_ca` PEM, an unenumerable
+  platform store, or an unwritable merge destination is a named boot
+  error (65 class) — never a silent fall back to the image bundle
+  alone, which would surface as inscrutable TLS errors deep in the
+  payload. There is no verify-off spelling.
+
 ## 3. File IO semantics
 
 The runtime's IO MUST route mounted paths through the TFS layer

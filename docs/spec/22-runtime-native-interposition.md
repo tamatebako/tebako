@@ -781,7 +781,13 @@ env-surface exception is the cert convention (`ssl/cert.pem`): the
 driver — the single owner of where the materialized copy landed —
 exports `SSL_CERT_FILE` at boot per spec 17 §2's table (an image-side
 default pointing at the in-VFS spelling is unreadable by libcrypto's
-native CRT IO on the store-less boot, the #437 failure).
+native CRT IO on the store-less boot, the #437 failure). When the
+handoff env carries the loader's network resolution
+(`TEBAKO_TLS_PLATFORM_ROOTS` / `TEBAKO_EXTRA_CA`), the materialized
+cert is the MERGED bundle of spec 17 §2.3 (image roots + platform
+store or extra PEMs) — a derived resource under this section's same
+write-once / per-boot-rehash discipline, content-keyed by the merge
+inputs.
 
 **Rule R3.** Materialization is whole-file, read-only, and verified.
 The mechanics (locked):
