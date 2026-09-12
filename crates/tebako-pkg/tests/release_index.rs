@@ -133,7 +133,7 @@ impl Fixture {
     }
 
     fn url(dir: &Path) -> String {
-        format!("file://{}", dir.display())
+        tebako_http::file_url(dir)
     }
 }
 

@@ -36,6 +36,10 @@ tfs = { version = "2.0.0", path = "../tfs", default-features = false, features =
 tebako-contract-tests = { version = "2.0.0", path = "../../tests/contract" }
 tebako-bootstrap = { version = "2.0.0", path = "../tebako-bootstrap" }
 tebako-signer = { version = "2.0.0", path = "../tebako-signer" }
+# The canonical file:// URL constructor (three slashes, forward slashes)
+# for the release-index fixtures — hand-rolling `file://{path}` is only
+# accidentally right on unix.
+tebako-http = { version = "2.0.0", path = "../tebako-http" }
 # In-process dwarfs-t writer for manifest-carrying image fixtures.
 dwarfs-t = { version = "0.1.0", path = "../../../dwarfs-rs/dwarfs" }
 
