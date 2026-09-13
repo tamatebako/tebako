@@ -38,6 +38,27 @@
                   DowngradeErrorMessage="A newer version of [ProductName] is already installed. Uninstall it first, or install the newer build over this one." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- The install tree the components below reference (the v5 idiom:
+         StandardDirectory, not a hand-nested TARGETDIR chain). -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="$(var.ProductName)">
+        <Directory Id="BINFOLDER" Name="bin" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Every staged exe lands in bin (the caller curates WHAT is staged —
+         spec 34 §7.3). $(var.BinDir) arrives ABSOLUTE from the build
+         script: WiX resolves relative authoring paths against this file's
+         directory, never the caller's cwd. -->
+    <ComponentGroup Id="BinFiles" Directory="BINFOLDER">
+      <Files Include="$(var.BinDir)\*.exe" />
+    </ComponentGroup>
+
+    <Feature Id="Main" Level="1">
+      <ComponentGroupRef Id="BinFiles" />
+      <ComponentRef Id="PathEnvironment" />
+    </Feature>
+
     <!-- PATH append, system scope, non-permanent (uninstall removes it).
          The RegistryValue is the component KeyPath: an Environment row
          alone leaves the component without a key path (ICE38). -->

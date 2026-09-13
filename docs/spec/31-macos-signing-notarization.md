@@ -229,7 +229,14 @@ spec 16 §7's three surfaces):
    quarantine-xattr exec canary (each notarized binary is left marked
    `com.apple.quarantine`, so the leg's own ship gate / boot smoke runs
    it under Gatekeeper's exact download path) pass in the release
-   workflow before SHA256SUMS is computed. `spctl -a -vv -t execute` is
+   workflow before SHA256SUMS is computed. The check POLLS with a
+   bounded budget: the notary service's `Accepted` verdict precedes
+   online-ticket visibility by seconds-to-minutes (the v2.8.1 x86_64
+   leg failed 3 s after `Accepted` while arm64's passed 1 s after, the
+   identical script and identity having passed both legs in v2.8.0) —
+   `stapler staple` on the pkg path polls the same way. A ticket that
+   never becomes visible fails the leg, named, never a user box.
+   `spctl -a -vv -t execute` is
    NOT the gate for standalone executables: it is bundle-oriented and
    rejects bare CLI Mach-Os BY DESIGN ("the code is valid but does not
    seem to be an app") regardless of notarization state — proven by the
