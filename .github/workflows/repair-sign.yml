@@ -1,0 +1,65 @@
+name: repair-sign
+
+# The v2.8.x lesson: when a tag's first-contact signing fails AFTER the
+# release's assets are published, the release must be repairable under its
+# own number — release assets are immutable and tags move forward only, so
+# a re-tag is never the fix. This workflow re-runs the spec 09 signing pass
+# (lib/sign-release.sh) against an already-published release and adds ONLY
+# the missing .asc assets; it never touches the existing ones. It is
+# idempotent: a partial earlier signing pass (some .asc uploaded, then a
+# failure) re-runs cleanly.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag whose signatures are missing or incomplete (e.g. v2.8.2)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  repair-sign:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Sign the release assets (spec 09)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          TEBAKO_RELEASE_SIGNING_ENABLED: ${{ vars.TEBAKO_RELEASE_SIGNING_ENABLED }}
+          TEBAKO_RELEASE_SIGNING_KEY: ${{ secrets.TEBAKO_RELEASE_SIGNING_KEY }}
+          # The same gate vars the installer legs ship on — sign-release.sh
+          # and the completeness gate derive their counts from them.
+          WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
+          APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED }}
+          APPLE_INSTALLER_SIGNING_ENABLED: ${{ vars.APPLE_INSTALLER_SIGNING_ENABLED }}
+        run: bash .github/workflows/lib/sign-release.sh
+
+      - name: Upload detached signatures
+        if: vars.TEBAKO_RELEASE_SIGNING_ENABLED == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # --clobber: an earlier partial pass may already have uploaded some
+        # .asc files — overwriting them with byte-identical re-signatures is
+        # the intended repair.
+        run: gh release upload "${{ inputs.tag }}" out/signatures/*.asc --clobber
+
+      - name: Completeness gate
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          TEBAKO_RELEASE_SIGNING_ENABLED: ${{ vars.TEBAKO_RELEASE_SIGNING_ENABLED }}
+          WINDOWS_SIGNING_ENABLED: ${{ vars.WINDOWS_SIGNING_ENABLED }}
+          APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED }}
+          APPLE_INSTALLER_SIGNING_ENABLED: ${{ vars.APPLE_INSTALLER_SIGNING_ENABLED }}
+        run: |
+          source .github/workflows/lib/release-counts.sh
+          EXPECTED=$(release_expected_assets)
+          COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
+          echo "release assets: $COUNT / $EXPECTED expected"
+          gh release view "$TAG" --json assets --jq '.assets[].name' | sort
+          test "$COUNT" -eq "$EXPECTED"
