@@ -772,18 +772,11 @@ jobs:
           APPLE_SIGNING_ENABLED: ${{ vars.APPLE_SIGNING_ENABLED }}
           APPLE_INSTALLER_SIGNING_ENABLED: ${{ vars.APPLE_INSTALLER_SIGNING_ENABLED }}
         run: |
-          EXPECTED=$(( 6 * 7 + 7 + 2 + 6 * 7 ))   # 6 tools x 7 platforms (incl. windows-ucrt64; +tebako-runtime-launcher, the spec-29 wrapper exe) + 7 link-unit tarballs + SHA256SUMS + manifest.json + 42 per-asset sidecars (tebako#493)
-          INSTALLERS=0
-          if [ "${WINDOWS_SIGNING_ENABLED:-}" = "true" ]; then
-            INSTALLERS=$(( INSTALLERS + 1 ))   # the MSI (ships signed-only — the container gate)
-          fi
-          if [ "${APPLE_INSTALLER_SIGNING_ENABLED:-}" = "true" ] && [ "${APPLE_SIGNING_ENABLED:-}" = "true" ]; then
-            INSTALLERS=$(( INSTALLERS + 2 ))   # the two pkgs (signed + notarized + stapled, or nothing)
-          fi
-          EXPECTED=$(( EXPECTED + INSTALLERS * 2 ))   # each installer asset + its .sha256 sidecar
-          if [ "${TEBAKO_RELEASE_SIGNING_ENABLED:-}" = "true" ]; then
-            EXPECTED=$(( EXPECTED + 6 * 7 + 7 + 2 + INSTALLERS ))   # + one .asc per released part (42 tools + 7 link-units + the installers) + SHA256SUMS.asc + manifest.json.asc (spec 09 §2)
-          fi
+          # The arithmetic's single owner is lib/release-counts.sh (shared
+          # with lib/sign-release.sh and repair-sign.yml) — never re-derive
+          # the numbers inline here.
+          source .github/workflows/lib/release-counts.sh
+          EXPECTED=$(release_expected_assets)
           COUNT=$(gh release view "$TAG" --json assets --jq '.assets | length')
           echo "release assets: $COUNT / $EXPECTED expected"
           gh release view "$TAG" --json assets --jq '.assets[].name' | sort
