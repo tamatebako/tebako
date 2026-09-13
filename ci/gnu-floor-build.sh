@@ -38,7 +38,22 @@ git config --global --add safe.directory '*'
 # libclang (v10) is too old for the current bindgen; llvm.org publishes
 # clang-19 for focal (the same version the musl leg uses).
 echo "== clang-19 (llvm.org apt) =="
-curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o /usr/share/keyrings/llvm.gpg
+# apt.llvm.org flakes on connection setup (curl: (7) — a v2.8.x release
+# rerun died here before any artifact wrote): retry with backoff, then
+# fail loud instead of letting the pipe's exit status vanish into the
+# dearmor.
+for attempt in 1 2 3 4 5; do
+  if curl -fsSL --retry 3 --retry-all-errors https://apt.llvm.org/llvm-snapshot.gpg.key \
+       | gpg --dearmor -o /usr/share/keyrings/llvm.gpg; then
+    break
+  fi
+  echo "llvm.org key fetch attempt $attempt failed — backing off $(( attempt * 15 ))s"
+  sleep $(( attempt * 15 ))
+done
+if [ ! -s /usr/share/keyrings/llvm.gpg ]; then
+  echo "NAMED FAILURE: could not fetch the llvm.org apt key after 5 attempts" >&2
+  exit 1
+fi
 echo "deb [signed-by=/usr/share/keyrings/llvm.gpg] http://apt.llvm.org/focal/ llvm-toolchain-focal-19 main" \
   > /etc/apt/sources.list.d/llvm19.list
 apt-get update -qq
