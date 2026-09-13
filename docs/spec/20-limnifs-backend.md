@@ -337,16 +337,15 @@ Each hook names its owning spec; none is a commitment of this spec.
   adapter mounts LOCAL bytes only (§4's four mount-source kinds).
   Recorded.
 - **Delta updates via content-addressed dedup.** `DropId` sharing across
-  image versions makes `TODO.deferred/03` (payload delta updates)
-  structural rather than bolted-on; its re-entry criteria are unchanged,
+  image versions makes payload delta updates structural rather than
+  bolted-on; their re-entry criteria are unchanged,
   as is the store's byte-identical rule. Recorded.
 
 ## 8. Parity and acceptance
 
 **Golden expectations** (spec 00 invariant 8) — the dwarfs backend is the
 parity oracle. Same tree in → same logical VFS answers out; byte-identity
-is per-backend, semantics are shared (the backend-pair parity class of
-`TODO.prepublish/09`):
+is per-backend, semantics are shared (the backend-pair parity class):
 
 - `stat`/`readdir`/`pread`/`read_link` semantics per §4, including mtime
   truncation (limnifs `mtime_ns` → `RawStat` seconds), direct-children

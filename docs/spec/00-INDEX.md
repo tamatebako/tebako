@@ -1,8 +1,8 @@
 # Tebako Specifications — Index
 
 This directory is the **normative specification set** for the tebako
-packaging and loading ecosystem. It supersedes prose in READMEs and the
-historical `TODO.restructure/` plans. Code that disagrees with these specs
+packaging and loading ecosystem. It supersedes prose in READMEs and
+historical plans. Code that disagrees with these specs
 is wrong; a spec that disagrees with shipped, tested reality is stale —
 fix one of them in the same PR. Unshipped behavior is marked **PLANNED**;
 partial coverage **PARTIAL**; shipped and tested **SHIPPED**.
@@ -62,7 +62,7 @@ spec 02 §6).
 29. [29 — The wrapper-exe driver pattern](29-wrapper-exe-driver.md) — the spec-17 driver as a standalone tebako-owned exe for repacked runtimes (openjdk, truffleruby): the wire-identical wrapper, the `layout.interpreter` declaration, kernel visibility via spec 07 §8's locked tiers (preload / seccomp-notify / exec-cache — never FUSE), failure and size discipline (SHIPPED — the seccomp-notify tier PLANNED)
 30. [30 — Runtime as a spawned dependency](30-runtime-spawned-dependency.md) — the kind-runtime DEPENDS edge: a payload spawns another runtime's entries through the dispatcher (never a co-mounted VFS java, never a host fallback): the store-resident wrapper dispatch, argument carry-over by re-mount, the `expose:` shim surface, union-of-needs jails (NORMATIVE)
 31. [31 — macOS signing and notarization](31-macos-signing-notarization.md) — the Gatekeeper artifact plane: payloads are data (never assessed), stitch-then-sign, the derived entitlement vocabulary + press merge, sign-then-hash, the tebako-org and publisher pipelines (PLANNED)
-32. [32 — Payload as a spawned dependency](32-spawned-payload-dependency.md) — the `kind: executable` DEPENDS edge's `expose:` form (schema_minor 5): a payload spawns another PAYLOAD's entries as a child through the provider's own full spec-17 dispatch (its own runtime edge, its own mounts, three-way jail union) — spec 30's machinery reused, never duplicated; the hermetic all-platform answer to interpreter-needing console scripts (xml2rfc; kills the host-python convention, PROGRESS/25) (NORMATIVE)
+32. [32 — Payload as a spawned dependency](32-spawned-payload-dependency.md) — the `kind: executable` DEPENDS edge's `expose:` form (schema_minor 5): a payload spawns another PAYLOAD's entries as a child through the provider's own full spec-17 dispatch (its own runtime edge, its own mounts, three-way jail union) — spec 30's machinery reused, never duplicated; the hermetic all-platform answer to interpreter-needing console scripts (xml2rfc; kills the host-python convention) (NORMATIVE)
 33. [33 — Runtime-on-runtime composition](33-runtime-on-runtime.md) — a `kind: runtime` payload's OWNER edge: the depended runtime owns the process (its spec-29 wrapper + env image), the depending runtime contributes a second env image + the manifest-declared argv template (jruby on java, truffleruby-jvm on graalvm); no new wire token, no third artifact class (PARTIAL — the managed-mode dispatch SHIPPED, incl. §4's owner-line fail-closed; the press/lock row and the standalone composition ride spec 23 §13.6, PLANNED)
 34. [34 — Windows Authenticode signing](34-windows-authenticode-signing.md) — the Windows trust plane: SmartScreen/MOTW vs AppLocker/WDAC vs AV (no server-blessed gate), the artifact plane table, stitch-then-sign and sign-then-hash, mandatory RFC 3161 timestamping, the Azure Artifact Signing decision record, the OIDC trust inventory + `WINDOWS_SIGNING_ENABLED` gate, the org/publisher pipelines (PLANNED — Azure procurement in flight)
 35. [35 — Diagnostics](35-diagnostics.md) — `tebako doctor`: the five-section read-only diagnostic surface (store / dispatch / network-TLS / trust / registries), the TLS-interception naming verdict, the structured shim-report composition rule, the `doctor_schema` JSON contract (PROPOSED)

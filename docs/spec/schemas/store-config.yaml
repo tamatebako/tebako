@@ -84,7 +84,7 @@ grammar:
       version = the language version (e.g. "4.0.6"); tebako = the tebako
       (launcher) abi version the runtime was built with — the <ver> of the
       cache layout runtimes/<lang>-<lv>-<ver>-<triplet>/.
-      source (MINOR 1, PLANNED — TODO.v2-1/30) = the per-engine download
+      source (MINOR 1, PLANNED) = the per-engine download
       base override (https or file://), the first channel of spec 05 §2's
       per-engine base chain; absent → the chain's lower channels answer.
   env:

@@ -36,7 +36,7 @@ republish of v1-era runtimes needed.
 
 1. Read own trailer (spec 02; absent → classic-bundle error path).
 2. Require `launcher_abi == 1` (else exit 66).
-2a. **`--tebako-install` verb (TODO.v2-1/12):** after the chain + ABI
+2a. **`--tebako-install` verb:** after the chain + ABI
    gates — the package's `TPKG_FLAG_NO_INSTALL` refuses (exit 76); any
    other package answers with the named guidance to
    `tebako install <path>` (exit 76 — the manifest read needs the TFS

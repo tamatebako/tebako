@@ -159,7 +159,7 @@ Ratification locks this section.
   (spec 20 §5) removes the C++ OFFS toolchain but NOT botan while ENC
   ships in the driver — recorded as the concrete prize if §7's gates
   are ever met. Honest cost: Windows ENC stays dark while rnp's mingw
-  build is unproven (TODO.v2-1/08) — the strongest future argument for
+  build is unproven — the strongest future argument for
   the §7 envelope gate, not a reason to admit it early.
 - **Author UX / trust store:** one key type, one keyring, one verify
   path — §4.1.

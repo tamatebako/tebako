@@ -102,7 +102,7 @@ signing:
       - id: disable-library-validation
         why: "native extension .bundles materialize unsigned from the image"
       - id: allow-jit
-        why: "YJIT (spec: TODO.yjit) — MAP_JIT on arm64"
+        why: "YJIT — MAP_JIT on arm64"
 ```
 
 - `id:` is drawn from the CLOSED vocabulary of §3 — an unknown id is a
@@ -223,7 +223,7 @@ spec 16 §7's three surfaces):
    signature: `code signature … invalid` / dlopen refusal.
 2. **The JIT canary** — with `allow-jit` merged, `RUBY_YJIT_ENABLE=1
    <signed runtime> -e 'abort unless RubyVM::YJIT.enabled?'` passes on
-   arm64 (TODO.yjit/01's phase-0 probe, re-run against the signed exe).
+   arm64 (the phase-0 probe, re-run against the signed exe).
 3. **The notarization gate** — for bare CLI Mach-Os, `codesign --verify
    --strict --check-notarization -R=notarized <exe>` plus a
    quarantine-xattr exec canary (each notarized binary is left marked
@@ -262,7 +262,7 @@ spec 16 §7's three surfaces):
 Windows: Authenticode signing is a reputation input to SmartScreen, not a
 server-blessed gate — nothing here applies; the Authenticode story is its
 own spec riding the same sign-then-hash law (spec 34 — Azure Artifact
-Signing; #542, TODO.v2-1/36). Linux: no platform gate at all.
+Signing; #542). Linux: no platform gate at all.
 
 ## 8. Landing order
 

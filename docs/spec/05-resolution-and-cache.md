@@ -162,7 +162,7 @@ installs, pre-identity manifests).
   its `.sha256` / `.origin` markers, the `.manifest.yaml` mirror, a
   materialized `.tree/`, the install lock — and the name dir when it
   goes empty.
-- **A run is a run** (TODO.v2-1/12): executing a package NEVER installs
+- **A run is a run**: executing a package NEVER installs
   its payload slices. `tebako install <path>` installs a local package's
   payload slices explicitly — trailer slot digests are the anchors for
   signed (v2) packages, the computed digest for unsigned ones (the run's
@@ -263,8 +263,8 @@ implementation is a named manifest error (spec 03 §2.2). Compatibility
 never crosses implementations silently: the chosen runtime's
 implementation is journaled with the resolution event.
 
-**The python wheel-tag mapping (`engine: python` — locked 2026-09-08;
-TODO.python/04).** Python native extensions carry CPython's own two-tag
+**The python wheel-tag mapping (`engine: python` — locked 2026-09-08).**
+Python native extensions carry CPython's own two-tag
 compatibility grammar (the PEP 425/600 wheel tags). Tebako does not
 invent a second grammar — it maps that one onto the two-dimensional ABI
 line above, once, here; the resolver and the factory REFERENCE this
@@ -302,7 +302,7 @@ table and never re-derive it in code comments.
   | `macosx_*_x86_64`                | `macos-x86_64` |
   | `macosx_*_arm64`                 | `macos-arm64` |
   | `macosx_*_universal2`            | split per-arch at bake time — the payload stays per-triplet |
-  | `win_amd64` / `win_arm64`        | RESERVED — the windows python runtime is TODO.python/05; readers MUST NOT guess a mapping |
+  | `win_amd64` / `win_arm64`        | RESERVED — the windows python runtime is not yet shipped; readers MUST NOT guess a mapping |
 
   The musllinux-vs-manylinux (libc) distinction rides the triplet axis
   ONLY (`linux-musl` vs `linux-gnu`) — no wheel-tag axis, no libc key,

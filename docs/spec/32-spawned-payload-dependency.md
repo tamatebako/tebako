@@ -15,10 +15,8 @@ press-time two-level cross-checks + the render arms)).** Amends spec 03 §8 (the
 dispatch-case split becomes three-way). No wire-format change; no
 trailer change. Requires spec 30 (the whole spawn machinery is reused,
 never duplicated) and spec 29 (the depended runtime's exe is the
-wrapper). First instance: metanorma's xml2rfc edge (TODO.python/03),
-retiring the host-python convention whose fragility is the chocolatey
-python313/1603 saga (PROGRESS/25) and whose universality analysis is
-PROGRESS/27 §6.
+wrapper). First instance: metanorma's xml2rfc edge,
+retiring the fragile host-python convention.
 
 ## 0. The three dependency dispatch cases (MECE, forever)
 
@@ -351,7 +349,7 @@ Every spec 30 §5 mode applies, generalized; the payload case adds:
   With `TEBAKO_OFFLINE=1`, cache-or-named-error.
 - The provider's runtime absent or incompatible — including the
   ABI-line mismatch class (spec 28; a native-wheel provider on the
-  wrong interpreter line, TODO.python/04's named error) — is the
+  wrong interpreter line draws the named error) — is the
   resolver's named error, never a segfault, before the child exists.
 - An `expose:`d entry whose provider resolves but whose name is
   undeclared in the provider's `provides.entrypoints`: a named
@@ -366,8 +364,7 @@ Every spec 30 §5 mode applies, generalized; the payload case adds:
   named manifest error at parse.
 - NEVER a silent host fallback: an expose-listed spawn that cannot
   resolve through tebako fails named; falling through to a system
-  python is the bug class this spec exists to kill (PROGRESS/25's
-  chocolatey python313/1603 saga is the standing example).
+  python is the bug class this spec exists to kill.
 - The provider runtime's `contract_version` is negotiated fail-closed
   by the child's boot exactly as for a primary runtime (spec 06 §6;
   exit 75).
@@ -381,7 +378,7 @@ Every spec 30 §5 mode applies, generalized; the payload case adds:
   to `provides.executables` ∪ `provides.entrypoints[].name`; `mount`
   and `expose` are the two orthogonal surfaces (co-mount per §8's
   original semantics, spawn per THIS spec).
-- The host-python xml2rfc convention (PROGRESS/25) is retired:
+- The host-python xml2rfc convention is retired:
   metanorma's ietf edge becomes a hermetic spawned payload, identical
   on all four platform classes, offline-capable with a warm cache.
 - The POSIX-only toolkit-mount + shell-script fallback is REJECTED

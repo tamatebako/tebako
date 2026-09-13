@@ -13,16 +13,14 @@ registration), spec 23 §11 (the java question re-settled: java promotes
 to a runtime). No wire-format change; no trailer change. Requires
 spec 29: the depended runtime's exe is the wrapper — a host-resident
 store binary the kernel can exec directly. First instance: metanorma's
-java edge (mn2pdf/jing), retiring the openjdk toolkit-slice conventions
-(PROGRESS/19).
+java edge (mn2pdf/jing), retiring the openjdk toolkit-slice conventions.
 
 ## 0. The two kinds of "a runtime needs a runtime" (MECE, forever)
 
 - **Spawned dependency (THIS spec):** the parent's process stays owned
   by its own runtime; the depended runtime runs as a CHILD process,
-  dispatched through tebako. File/stdio/loopback interchange only
-  (PROGRESS/27 §1's governing law — no in-process cross-runtime
-  embedding, ever).
+  dispatched through tebako. File/stdio/loopback interchange only — no
+  in-process cross-runtime embedding, ever.
 - **Runtime-on-runtime (NOT this spec):** the depended runtime OWNS the
   process and the depending runtime contributes an env image (jruby on
   java, truffleruby-jvm on graalvm). That is composition of the boot
@@ -89,8 +87,8 @@ Two spellings, one semantics; both live:
   strings pass through UNREWRITTEN. On the exec-cache visibility class
   (windows), where the child cannot serve in-VFS reads, the argument's
   file is materialized to the exec cache and the argument rewritten to
-  the host path — the shipped ruby-windows behavior (PROGRESS/19's
-  option (b)) is this rule's first instance.
+  the host path — the shipped ruby-windows behavior is this rule's
+  first instance.
 - **Operator-mediated:** `tebako run <name>:<entry> -- <args…>` — the
   generic verb, pinned for runtime entries: `<name>` is the runtime
   payload's name (e.g. `openjdk`), `<entry>` one of its declared
@@ -223,8 +221,7 @@ never deletes the key, so the ceiling inherits onward to deeper spawns.
   class).
 - NEVER a silent host fallback: a depended-runtime spawn that cannot
   resolve through tebako fails named; falling through to a system
-  java/python is the bug class this spec exists to kill (the chocolatey
-  python313 saga, PROGRESS/25, is the standing example).
+  java/python is the bug class this spec exists to kill.
 - The depended runtime's `contract_version` is negotiated fail-closed
   by the dispatcher exactly as for a primary runtime (spec 06 §6;
   exit 75).
@@ -243,7 +240,7 @@ never deletes the key, so the ceiling inherits onward to deeper spawns.
 ## 6. What this settles and retires
 
 - spec 23 §11 is RE-settled: java is no longer only a payload slice —
-  the openjdk runtime promotion (TODO.java/04) makes it a
+  the openjdk runtime promotion makes it a
   `kind: runtime` payload consumed through THIS spec's edge. The
   toolkit-slice form stays legal for library-layer cases (spec 03's
   `kind: toolkit`); the spawn-a-JVM case routes here.

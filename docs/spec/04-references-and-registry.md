@@ -116,7 +116,7 @@ payloads:
   mirrored coverage — checked fail-closed against it — and NEVER
   extends it.
 - **`kind: runtime` entries are edge-discoverable** (schema MINOR 1;
-  PLANNED — TODO.v2-1/30): the entry carries `engine:` (+ optional
+  PLANNED): the entry carries `engine:` (+ optional
   `implementation:`), and a payload's `kind: runtime` DEPENDS edge
   (spec 30 §1) discovers it by (engine, implementation?, constraint);
   the matched version's `release.ref` derives the download base

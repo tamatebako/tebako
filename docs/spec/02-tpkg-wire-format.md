@@ -66,7 +66,7 @@ trust enforcement is a reader capability, not a format barrier.
 Canonical signed bytes: `slot table ‖ digests ‖ keyid ‖ header` —
 everything except the signature and its length field.
 
-## 5. The installability flag (bit2 `NO_INSTALL`; TODO.v2-1/12)
+## 5. The installability flag (bit2 `NO_INSTALL`)
 
 A run is a run — a plain execution never writes payload slices into the
 local store, with exactly one scoped exception: the lazy seed of spec 05
