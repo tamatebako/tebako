@@ -94,7 +94,15 @@ class ArCrossDeduper
         f
       end
       FileUtils.rm_f(path)
-      system(@ar, "rc", path, *files, exception: true)
+      # Append in argv-bounded batches: the windows-gnu closure's member
+      # count (thousands of objects, ~70 chars of tmpdir path each)
+      # exceeds CreateProcess's 32 KiB command line when passed in one
+      # argv (E2BIG on the v2.8.0 ucrt64 leg). ar rc appends, and the
+      # %05d_ prefixes keep member names unique, so batching is a pure
+      # append — no ar flavor differences to sniff.
+      files.each_slice(200) do |batch|
+        system(@ar, "rc", path, *batch, exception: true)
+      end
       system(@ranlib, path, exception: true)
     end
   end
