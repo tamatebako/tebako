@@ -1420,6 +1420,7 @@ jobs:
         with:
           name: frag-installers-windows-ucrt64
           path: tebako-rs/fragments/frag-installers-windows-ucrt64
+          include-hidden-files: true
           if-no-files-found: error
 
   installer-pkg:
@@ -1524,4 +1525,5 @@ jobs:
         with:
           name: frag-installers-${{ matrix.platform }}
           path: tebako-rs/fragments/frag-installers-${{ matrix.platform }}
+          include-hidden-files: true
           if-no-files-found: error
