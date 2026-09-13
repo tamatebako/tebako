@@ -149,7 +149,7 @@ per declared entrypoint name — never as re-exec wrappers.
   managed BEGIN/END block into the right startup file
   (`.profile`/`.bash_profile`/`.bashrc`/`.zshrc`/`.cshrc`) prepending the
   shim dir; idempotent; `uninstall-shell` removes exactly its block.
-- **Shim links are always an explicit act** (TODO.v2-1/12): registry
+- **Shim links are always an explicit act**: registry
   installs register the payload's `provides` (that IS the install's
   point); a local-package install (`tebako install <path>`) links only
   with the explicit `--shims`; a run — of any package, ever — links

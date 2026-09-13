@@ -57,7 +57,7 @@ model is honest per format — no uniform-RW pretense:
 | FAT | ✓ (PLANNED) | ✓ (PLANNED) | mkfs |
 
 **Per-platform backend availability** (build-time, gated per-target in
-the consumers — TODO.v2-1/02): dwarfs-t, zip, and the tar family build
+the consumers): dwarfs-t, zip, and the tar family build
 EVERYWHERE; squashfs is POSIX-only (squashfs-tools-ng is
 autotools/vcpkg-`!windows`), so Windows builds ship without it. A mount
 attempt against a gated-off backend fails with the NAMED `ENOTSUP` —

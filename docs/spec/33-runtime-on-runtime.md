@@ -1,6 +1,6 @@
 # Spec 33 — Runtime-on-runtime composition
 
-**Status: PLANNED (drafted 2026-09-07 — ecosystem TODO.jruby/01;
+**Status: PLANNED (drafted 2026-09-07;
 managed-mode dispatch ships with tebako v2.5.0; the press/lock row and
 the standalone (bootstrap) composition ride spec 23 §13.6's
 implementation — until then a press against an on_runtime runtime fails
@@ -12,8 +12,8 @@ mode bullet's pointer lands here), spec 29 §7 (the non-goal is defined
 here), spec 30 §0 (the second kind's home). No wire-format change; no
 trailer change; no registry change. The L1 manifest change is ADDITIVE
 (the `on_runtime` block — payload-manifest schema_minor 6). First
-instances: truffleruby-jvm on graalvm (TODO.truffleruby/03), jruby on
-java (TODO.jruby/02).
+instances: truffleruby-jvm on graalvm, jruby on
+java.
 
 ## 0. The problem, and the MECE table that settles it
 
@@ -346,7 +346,7 @@ One process, one policy, two env images, zero per-runtime code.
   runtime needing two process owners is two payloads.
 - No owner edges on non-runtime payloads — that surface is spec 30/32's,
   unchanged.
-- The PROGRESS/27 §1 law stands and is not in tension: spec 30's
+- The no-in-process-cross-runtime law stands and is not in tension: spec 30's
   file/stdio/loopback rule governs INTERCHANGE BETWEEN two runtimes;
   here the owner runs the depending runtime's language IN-PROCESS as its
   own interpreter (one JVM, one language-facing runtime) — no

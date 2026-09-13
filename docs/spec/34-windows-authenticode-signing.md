@@ -7,8 +7,8 @@ federated credentials + org secrets wired — the CI legs of §5 land per
 behavior — Authenticode is the OS platform trust plane; tebako payload
 signing is untouched (§1.0). Spec 31 §7 names this document: "a future
 Authenticode story would be its own spec riding the same sign-then-hash
-law." Full design context: ecosystem TODO.v2-1/36; the forcing case is
-the enterprise MSI (TODO.v2-1/35). Raised by the owner question
+law." The forcing case is
+the enterprise MSI (planned). Raised by the owner question
 2026-09-05: "don't we need windows signing to have tebako work on
 windows?" — answer: **no to run, yes to enterprise-deploy** (§0).
 
@@ -40,7 +40,7 @@ The artifact plane splits exactly as spec 31 §0's does:
 | env `.tfs` image | **data** | no | — |
 | payload `.tfs` slices | **data** | no | — |
 | stitched self-contained package | PE (bootstrap + slots) | yes — **post-stitch only** (§1.2) | **the app publisher** |
-| MSI envelope (TODO.v2-1/35) | PE (msi) | yes | **the app publisher** |
+| MSI envelope (planned) | PE (msi) | yes | **the app publisher** |
 
 ## 1. The execution-model consequences (normative)
 
@@ -95,7 +95,7 @@ signature is an acceptance failure (§7.2), not a warning.
 
 ## 2. The signing-technology decision (decision record)
 
-**DECISION: Azure Artifact Signing** (formerly Trusted Signing), driven
+**Decision: Azure Artifact Signing** (formerly Trusted Signing), driven
 from GitHub Actions with OIDC workload-identity federation — no stored
 client secret, no hardware token.
 
@@ -121,7 +121,7 @@ Org **variables** (same repo set): `AZURE_ENDPOINT` (wired
 2026-09-09), `AZURE_SIGNING_ACCOUNT_NAME`, `AZURE_SIGNING_CERT_PROFILE`.
 Endpoint, account, and profile names are configuration, not credentials
 — they identify public resources and appear in workflow logs; they live
-as variables, not secrets. (This supersedes TODO.v2-1/36's draft
+as variables, not secrets. (This supersedes the draft
 runbook, which listed them as secrets.)
 
 Azure side: one Entra app registration holding the **Artifact Signing
@@ -181,7 +181,7 @@ bootstrap and runtime exes; the payload is data (§1.1). Fat
 (self-contained) apps sign the stitched exe **post-stitch** (§1.2) with
 the **publisher's own** Artifact Signing profile or EV/OV identity —
 metanorma/ribose for packed-mn, never the tebako org's identity; secrets
-live in the publisher's org. The MSI envelope (TODO.v2-1/35) signs in the
+live in the publisher's org. The MSI envelope signs in the
 same step. The action shape is §5's, unchanged.
 
 ## 7. Acceptance (fail-closed, one CI tier each)
@@ -201,7 +201,7 @@ same step. The action shape is §5's, unchanged.
    secret/variable absent: named step error before any signing call.
 6. **Reputation evidence (non-gating)** — SmartScreen/AppLocker behavior
    of the signed artifacts is documented over the first releases (the
-   TODO.v2-1/35 policy-locked VM install is the publisher-side proof).
+   policy-locked VM install is the publisher-side proof).
 
 ## 8. Landing order
 
@@ -213,4 +213,4 @@ same step. The action shape is §5's, unchanged.
    first — they ship today; tebako-runtime-python's when the msys port
    lands).
 4. The packed-mn publisher leg (its own org's profile; the MSI is the
-   forcing case, TODO.v2-1/35).
+   forcing case).

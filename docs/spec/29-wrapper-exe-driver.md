@@ -1,7 +1,7 @@
 # Spec 29 — The wrapper-exe driver pattern (repacked runtimes)
 
 **Status: SHIPPED (drafted 2026-08-30; implemented 2026-09-05 —
-ecosystem TODO.java/03: `tebako-driver`'s `wrapper` module over the
+`tebako-driver`'s `wrapper` module over the
 shared spec-17 boot (the linked pattern is byte-identical — golden
 parity pinned), the `tebako-runtime-launcher` exe (POSIX exec; windows
 spawn + wait + verbatim exit code), the process-level contract suite (a
@@ -15,7 +15,7 @@ executes in two patterns) and spec 03 §2.2 (the runtime env image's
 `layout:` block gains the additive `interpreter` and `visibility` keys,
 schema_minor — the same class as `mount_root_override`). No wire-format
 change; no trailer change; no registry change. First instance: the
-openjdk runtime promotion (ecosystem TODO.java/04); the pattern is the
+openjdk runtime promotion; the pattern is the
 standing answer for every runtime tebako does not compile from source.
 
 ## 0. The problem
@@ -118,7 +118,7 @@ mount is invisible to the kernel. The wrapper therefore cannot exec the
 interpreter out of the mount directly; the interpreter's own reads of
 its home tree (jmods, `libjvm`, gem homes) need a defined answer; and
 the interpreter's CHILDREN never see in-process mounts at all (the
-PROGRESS/19 spawn class). The mechanisms are spec 07 §8's locked tiers,
+spawn class). The mechanisms are spec 07 §8's locked tiers,
 applied to the runtime's own interpreter — **interposition-first, never
 FUSE** (spec 07 §8's locked law stands: FUSE stays the `tfs mount`
 human convenience, never on the exec path). A runtime declares ONE
@@ -150,7 +150,7 @@ honors it or fails closed — never a silent fallback (invariant 9):
   ordinary host processes; VFS-resident tools they spawn reach them
   through the spec 17 §2 PATH composition (launcher dir → dependency bin
   dirs → alias dirs) plus the declarative materialization that shipped
-  for ruby-windows (PROGRESS/19's option (b)). Under `preload`/
+  for ruby-windows. Under `preload`/
   `seccomp-notify`, descendants re-enter the VFS per spec 22 §3 / the
   tier-2a env propagation — the wrapper arms the machinery identically
   to the linked driver.
@@ -180,7 +180,7 @@ honors it or fails closed — never a silent fallback (invariant 9):
   wrapper embeds the driver plus the TFS backends; the release ships it
   per-platform like the other tools — static-musl and the gnu-floor
   build on linux targets, platform-native elsewhere (the openjdk
-  promotion, TODO.java/04, consumes the per-platform assets) — the
+  promotion consumes the per-platform assets) — the
   audience rule is unchanged (nothing of ours compiles on a user's
   machine).
 - Rust discipline per spec 14: `#![forbid(unsafe_code)]` outside the FFI

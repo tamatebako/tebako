@@ -262,7 +262,7 @@ same law applies to every future multi-implementation language.
   ruby, implementation: mri, constraint: "~> 3.3.0", abi: …}` → variant
   id `ruby-mri-3.3`; the truffleruby build of the same payload version
   is a sibling variant `ruby-truffleruby-24.1`, published when its
-  toolchain exists — TODO.truffleruby).
+  toolchain exists).
   **The enforcement point is PUBLISH** (2026-09-08, tebako#556): the
   abi⇒implementation rule is an AUTHORING rule — `tebako publish` (the
   registry-emission gate) refuses the document with a named manifest
