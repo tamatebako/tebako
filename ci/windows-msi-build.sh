@@ -38,8 +38,11 @@ TOOLS="tebako tebako-shim tfs tebako-pkg"
 ASSET="${PRODUCT_NAME}-setup-${VERSION}-${PLATFORM}.msi"
 
 sha256_of() {
-  if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1
-  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+  # stdin, not a path argument: GNU coreutils *sum escape-flag a path
+  # containing backslashes by prefixing the OUTPUT LINE with '\' (the
+  # v2.8.0 MSI leg: SRC_DIR's D:\a\… spelling made got="\<hash>" ≠ want).
+  if command -v sha256sum >/dev/null 2>&1; then sha256sum < "$1" | cut -d' ' -f1
+  else shasum -a 256 < "$1" | cut -d' ' -f1; fi
 }
 
 case "$MODE" in

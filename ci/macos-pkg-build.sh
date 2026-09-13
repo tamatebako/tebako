@@ -67,7 +67,12 @@ if grep -qE '@(PRODUCT_NAME|VERSION|ORG_ID|MIN_MACOS|INSTALL_ROOT)@' build/distr
 fi
 
 # ---- 3. pkgbuild → productbuild ------------------------------------------
-pkgbuild --root "pkg-root$INSTALL_ROOT" --install-location / \
+# --root is pkg-root, not pkg-root$INSTALL_ROOT: the payload must KEEP its
+# opt/<name>/bin prefix under --install-location / (landing at
+# /opt/<name>/bin on the data volume). Rooting at the INSTALL_ROOT subdir
+# drops that prefix and the payload lands at /bin — the sealed system
+# volume, which installer(8) refuses outright (the v2.8.0 legs).
+pkgbuild --root pkg-root --install-location / \
   --identifier "$ORG_ID.$PRODUCT_NAME.pkg" --version "$VERSION" \
   --scripts build/scripts \
   "build/$PRODUCT_NAME-component.pkg"
