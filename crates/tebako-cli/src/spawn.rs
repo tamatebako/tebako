@@ -526,6 +526,10 @@ fn spawned_payload_row<T: Transport>(
             let fetched = fetcher
                 .fetch(&install_plan.reference)
                 .map_err(install::map_resolve)?;
+            // spec 09 §4's press-time point: the declared signature
+            // verifies BEFORE the bytes enter the cache and before the
+            // lock row pins their digest (the compose closure's rule).
+            install::verify_signature(home, fetcher, &fetched, &install_plan)?;
             let (cached, _status) = cache
                 .install(
                     &install_plan.name,

@@ -1827,7 +1827,12 @@ fn resolve_shim_binary(explicit: Option<&Path>) -> Result<PathBuf, TebakoError> 
 /// Returns the verified signer keyid. `None` signature → the spec 09 §3
 /// v1-legacy rule (loud warn + audit line; `TEBAKO_REQUIRE_SIGNED=1`
 /// hard-fails).
-fn verify_signature<T: Transport>(
+///
+/// The ONE consumer-side policy point for registry payload fetches
+/// (spec 09 §4): `finish_install` runs it at install time; the press
+/// paths (compose.rs's closure, spawn.rs's provider fetch) run it before
+/// the bytes enter the cache and before the lock pins their digest.
+pub(crate) fn verify_signature<T: Transport>(
     home: &Path,
     fetcher: &Fetcher<T>,
     fetched: &FetchedPayload,

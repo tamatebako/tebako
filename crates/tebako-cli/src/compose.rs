@@ -340,8 +340,12 @@ pub fn resolve_closure<T: Transport>(
             install::plan_from_registry_entry(&reg_ref, &payload, Some(&version), Some(host))?;
 
         // Fetch → verify → cache: a hit stands on its trust anchor
-        // (spec 05 §4); a miss fetches and verifies BEFORE anything
-        // enters the cache. No mirrors/shims — press is not install.
+        // (spec 05 §4); a miss fetches, verifies the entry's declared
+        // signature (spec 09 §4's press-time point — fail-closed BEFORE
+        // the bytes enter the cache and before the lock pins their
+        // digest; unsigned rides the loud + journaled rule), then
+        // installs against the sha256 anchor. No mirrors/shims — press
+        // is not install.
         let cached = match cache
             .get(&plan.name, &plan.version)
             .map_err(install::map_resolve)?
@@ -356,6 +360,7 @@ pub fn resolve_closure<T: Transport>(
                 let fetched = fetcher
                     .fetch(&plan.reference)
                     .map_err(install::map_resolve)?;
+                install::verify_signature(home, fetcher, &fetched, &plan)?;
                 let (cached, _status) = cache
                     .install(
                         &plan.name,

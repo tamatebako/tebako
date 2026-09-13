@@ -709,3 +709,126 @@ fn toolkit_only_requires_compose_no_rows() {
     assert!(plan.rows.is_empty());
     assert!(plan.images.is_empty());
 }
+
+// ---------------------------------------------------------------------
+// signatures at press time (spec 09 §4's press-time point, spec 32 §6):
+// the provider payload's declared signature verifies BEFORE the bytes
+// enter the cache and before the spawned[] row pins their digest.
+// ---------------------------------------------------------------------
+
+/// The provider registry document carrying a signature pin (the
+/// full-reference asc form).
+fn signed_provider_registry_yaml(
+    name: &str,
+    version: &str,
+    payload_ref: &str,
+    entrypoint: &str,
+    keyid: &str,
+    asc_ref: &str,
+) -> String {
+    format!(
+        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        signature: {{keyid: \"{keyid}\", asc: \"{asc_ref}\"}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.1\"}}\n        entrypoints: [{entrypoint}]\n    default: {version}\n"
+    )
+}
+
+/// The signed payload-edge fixture: the provider registered at 3.2.1 with
+/// a signature pin, its key minted on (and trusted by) the fixture home,
+/// the ruby runtime cached for the nested row. Returns the provider bytes.
+fn signed_payload_fixture(fx: &Fixture) -> Vec<u8> {
+    let provider_bytes = provider_image("xml2rfc", "3.2.1", "xml2rfc", Some("~> 3.4"));
+    let key = tebako_signer::press_local_key(&fx.home).unwrap();
+    let asc =
+        tebako_signer::sign_detached(&provider_bytes, &key.secret_key, &key.fingerprint).unwrap();
+    let provider_ref = fx.mirror_file("xml2rfc-3.2.1.tfs", &provider_bytes);
+    let asc_ref = fx.mirror_file("xml2rfc-3.2.1.tfs.asc", &asc);
+    let keyid = tebako_signer::hex_lower(&key.keyid);
+    tebako_signer::register_trusted(&fx.home, &key.public_key).unwrap();
+    let registry_ref = fx.mirror_file(
+        "xml2rfc-registry.yaml",
+        signed_provider_registry_yaml(
+            "xml2rfc",
+            "3.2.1",
+            &provider_ref,
+            "xml2rfc",
+            &keyid,
+            &asc_ref,
+        )
+        .as_bytes(),
+    );
+    fx.register(&[registry_ref]);
+    cached_ruby_runtime(fx);
+    provider_bytes
+}
+
+const SPAWN_EDGE: &str =
+    "  - kind: executable\n    name: xml2rfc\n    payload: xml2rfc\n    constraint: \">= 3.0\"\n    expose: [xml2rfc]\n";
+
+#[test]
+fn payload_edge_signed_provider_verifies_and_journals_the_signer() {
+    let fx = Fixture::new("payload-signed");
+    let provider_bytes = signed_payload_fixture(&fx);
+    let app = app_image(&fx, &app_image_with_requires(SPAWN_EDGE));
+
+    let plan = walk(&fx, &app).unwrap();
+
+    assert_eq!(plan.rows.len(), 1);
+    let tpkg::LockedSpawned::Payload(row) = &plan.rows[0] else {
+        panic!("a payload row: {:?}", plan.rows[0]);
+    };
+    assert_eq!(
+        row.image.sha256,
+        tpkg::DigestPin::One(sha256_hex(&provider_bytes)),
+        "the verified bytes' digest is what the lock pins"
+    );
+    let journal = fs::read_to_string(fx.home.join("journal.log")).unwrap();
+    assert!(
+        journal.contains("event=payload-signature-trusted"),
+        "{journal}"
+    );
+}
+
+#[test]
+fn payload_edge_tampered_provider_fails_closed_before_caching() {
+    // the signature covers bytes other than the ones the release serves —
+    // the named signature error, nothing cached, no lock row. The refusal
+    // fires before the nested runtime row resolves, so the runtime store
+    // stays empty on purpose.
+    let fx = Fixture::new("payload-sigbad");
+    let provider_bytes = provider_image("xml2rfc", "3.2.1", "xml2rfc", Some("~> 3.4"));
+    let key = tebako_signer::press_local_key(&fx.home).unwrap();
+    let asc = tebako_signer::sign_detached(
+        b"attacker-controlled-bytes",
+        &key.secret_key,
+        &key.fingerprint,
+    )
+    .unwrap();
+    let provider_ref = fx.mirror_file("xml2rfc-3.2.1.tfs", &provider_bytes);
+    let asc_ref = fx.mirror_file("xml2rfc-3.2.1.tfs.asc", &asc);
+    let keyid = tebako_signer::hex_lower(&key.keyid);
+    tebako_signer::register_trusted(&fx.home, &key.public_key).unwrap();
+    let registry_ref = fx.mirror_file(
+        "xml2rfc-registry.yaml",
+        signed_provider_registry_yaml(
+            "xml2rfc",
+            "3.2.1",
+            &provider_ref,
+            "xml2rfc",
+            &keyid,
+            &asc_ref,
+        )
+        .as_bytes(),
+    );
+    fx.register(&[registry_ref]);
+    let app = app_image(&fx, &app_image_with_requires(SPAWN_EDGE));
+
+    let err = walk(&fx, &app).unwrap_err();
+    assert_eq!(err.code, 71, "{err:?}");
+    assert!(
+        err.message.contains("signature verification failed"),
+        "{err}"
+    );
+    assert!(
+        !fx.home.join("payloads/xml2rfc/3.2.1.tfs").exists(),
+        "nothing was cached"
+    );
+}
