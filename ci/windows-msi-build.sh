@@ -66,13 +66,18 @@ case "$MODE" in
     echo "staged + verified against the leg's signed-byte fragments: $TOOLS"
     mkdir -p out
     command -v wix >/dev/null 2>&1 || { echo "::error::wix (WiX v5 dotnet tool) not on PATH — the workflow installs it"; exit 1; }
+    # BinDir must be ABSOLUTE and WINDOWS-spelled: WiX resolves relative
+    # authoring paths against the .wxs's directory, and a Git-Bash $PWD
+    # ("/d/a/…") is not a path a native .NET tool can open.
+    BIN_BINDIR="$PWD/msi-input"
+    command -v cygpath >/dev/null 2>&1 && BIN_BINDIR=$(cygpath -w "$BIN_BINDIR")
     wix build -arch x64 \
       templates/installers/windows/tebako.wxs \
       -d "ProductName=$PRODUCT_NAME" \
       -d "ProductVersion=$VERSION" \
       -d "Manufacturer=$MANUFACTURER" \
       -d "UpgradeCode=$MSI_UPGRADE_CODE" \
-      -d "BinDir=msi-input" \
+      -d "BinDir=$BIN_BINDIR" \
       -o "out/$ASSET"
     echo "built: out/$ASSET (unsigned — the Azure step signs in place when armed)"
     ;;

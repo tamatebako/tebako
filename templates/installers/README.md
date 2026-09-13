@@ -25,7 +25,7 @@ staged *.exe> -o <name>.msi`
 | ProductVersion | release version (3-part) | theirs |
 | Manufacturer | `tamatebako` | yes (registry key root) |
 | UpgradeCode | `9A404514-715E-44F6-B02E-B800845759A9` (generated 2026-09-12, LOCKED — never edit) | **yes — mint a new GUID and lock it forever** |
-| BinDir | the release's signed exes | their staged bundle bin/ |
+| BinDir | the release's signed exes (ABSOLUTE path — WiX resolves relative authoring against the .wxs's directory) | their staged bundle bin/ (absolute) |
 
 Everything in `BinDir/*.exe` installs to `%ProgramFiles%\<ProductName>\bin`
 and the system PATH gains that dir (part=last, removed on uninstall).

@@ -30,8 +30,21 @@ grep -q 'status: Accepted' "$work/notary.txt" || {
     --key "$work/AuthKey.p8" --key-id "$APPLE_ASC_KEY_ID" --issuer "$APPLE_ASC_ISSUER_ID" 2>&1 | tail -20
   echo "::error::notarytool did not Accept the submission"; exit 1; }
 
+# Accepted ≠ ticket-visible: the online ticket store lags the submission
+# verdict by seconds-to-minutes (v2.8.1: the x86_64 leg's -R=notarized
+# check failed 3 s after Accepted while arm64's passed 1 s after — the
+# identical script and identity passed both legs in v2.8.0). Poll per
+# binary until the ticket resolves or the budget is gone: a notarization
+# that never lands still fails THIS leg, named, never a user box.
+budget=300
 for bin in "$@"; do
-  codesign --verify --strict --check-notarization -R=notarized "$bin"
+  deadline=$(( $(date +%s) + budget ))
+  until codesign --verify --strict --check-notarization -R=notarized "$bin"; do
+    [ "$(date +%s)" -lt "$deadline" ] || { echo "::error::notarization ticket never became visible for $bin within ${budget}s"; exit 1; }
+    echo "notarization ticket not yet visible for $bin — polling again in 10 s"
+    sleep 10
+  done
   xattr -w com.apple.quarantine '0081;00000000;Safari;' "$bin"
+  echo "verified + quarantine-marked: $bin"
 done
 echo "notarized + quarantine-marked: $# binaries (the ship gate is the exec canary)"

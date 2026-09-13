@@ -102,7 +102,14 @@ if [ "${APPLE_INSTALLER_SIGNING_ENABLED:-false}" = "true" ]; then
     xcrun notarytool log "$(grep -m1 -oE '[0-9a-f-]{36}' "$work/notary.txt")" \
       --key "$work/AuthKey.p8" --key-id "$APPLE_ASC_KEY_ID" --issuer "$APPLE_ASC_ISSUER_ID" 2>&1 | tail -20
     echo "::error::notarytool did not Accept the pkg"; exit 1; }
-  xcrun stapler staple "out/$ASSET"
+  # staple fetches the online ticket — the same Accepted≠visible race as
+  # the binaries' notarization check: bounded poll, then a named failure.
+  staple_deadline=$(( $(date +%s) + 300 ))
+  until xcrun stapler staple "out/$ASSET"; do
+    [ "$(date +%s)" -lt "$staple_deadline" ] || { echo "::error::stapler could not fetch the ticket for $ASSET within 300s"; exit 1; }
+    echo "ticket not yet fetchable for $ASSET — polling again in 10 s"
+    sleep 10
+  done
   xcrun stapler validate "out/$ASSET"
   # §6.3a: the pkg's assessment IS the right spctl gate (unlike bare
   # exes): notarized + stapled must Assess accepted, source=Notarized
