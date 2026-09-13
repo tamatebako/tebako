@@ -853,3 +853,227 @@ fn resolve_closure_executable_capability_without_a_provider_is_a_named_error() {
     assert!(err.message.contains("executable xml2rfc"), "{err:?}");
     assert!(err.message.contains("payload:"), "{err:?}");
 }
+
+// ---------------------------------------------------------------------
+// signatures at press time (spec 09 §4's press-time point): a declared
+// `signature` verifies BEFORE the bytes enter the cache and before the
+// lock pins their digest; unsigned rides the loud + journaled rule.
+// ---------------------------------------------------------------------
+
+/// A registry document whose selected version carries a signature pin
+/// (the full-reference asc form).
+fn signed_registry_yaml(
+    name: &str,
+    version: &str,
+    payload_ref: &str,
+    keyid: &str,
+    asc_ref: &str,
+) -> String {
+    format!(
+        "schema_version: 1\npayloads:\n  - name: {name}\n    kind: app\n    versions:\n      - version: {version}\n        platforms: universal\n        release: {{ref: {payload_ref}}}\n        signature: {{keyid: \"{keyid}\", asc: \"{asc_ref}\"}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n        entrypoints: [{name}]\n    default: {version}\n"
+    )
+}
+
+/// Mint the fixture home's press-local key, sign `sign_over`, and mirror
+/// the payload bytes + the detached signature. Returns the payload ref,
+/// the asc ref, the signer keyid, and the public key (for registration).
+fn signed_payload(
+    fx: &Fixture,
+    file: &str,
+    bytes: &[u8],
+    sign_over: &[u8],
+) -> (String, String, String, Vec<u8>) {
+    let key = tebako_signer::press_local_key(&fx.home).unwrap();
+    let asc = tebako_signer::sign_detached(sign_over, &key.secret_key, &key.fingerprint).unwrap();
+    let payload_ref = fx.payload(file, bytes);
+    let asc_ref = fx.payload(&format!("{file}.asc"), &asc);
+    (
+        payload_ref,
+        asc_ref,
+        tebako_signer::hex_lower(&key.keyid),
+        key.public_key.clone(),
+    )
+}
+
+fn journal(fx: &Fixture) -> String {
+    fs::read_to_string(fx.home.join("journal.log")).unwrap_or_default()
+}
+
+fn closure_of(
+    fx: &Fixture,
+    doc_yaml: &str,
+) -> Result<Vec<compose::ComposeSlice>, tebako_cli::error::TebakoError> {
+    let parsed = parse(&doc(doc_yaml));
+    compose::resolve_closure(
+        &fx.home,
+        &Fetcher::new(),
+        &parsed,
+        ComposePreset::SharedRuntime,
+        Platform::host(),
+    )
+}
+
+#[test]
+fn signed_slice_verifies_before_caching_and_journals_the_signer() {
+    let fx = Fixture::new("signok");
+    let img = image("app", "appa", "1.0", "");
+    let (payload_ref, asc_ref, keyid, public) = signed_payload(&fx, "appa-1.0.tfs", &img, &img);
+    tebako_signer::register_trusted(&fx.home, &public).unwrap();
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &signed_registry_yaml("appa", "1.0", &payload_ref, &keyid, &asc_ref),
+    ));
+
+    let slices = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n").unwrap();
+    assert_eq!(slices.len(), 1);
+    assert_eq!(slices[0].pin, tpkg::DigestPin::One(sha256_hex(&img)));
+    assert!(slices[0].cache_path.is_file());
+    let journal = journal(&fx);
+    assert!(
+        journal.contains("event=payload-signature-trusted"),
+        "{journal}"
+    );
+    assert!(journal.contains(&format!("signer={keyid}")), "{journal}");
+}
+
+#[test]
+fn signed_slice_with_tampered_bytes_fails_closed_before_caching() {
+    // the registry line, the bytes, AND the digest pin all swapped
+    // together (the attacker holds the channel) — the signature over
+    // DIFFERENT content is what fails closed, by name.
+    let fx = Fixture::new("sigbad");
+    let img = image("app", "appa", "1.0", "");
+    let (payload_ref, asc_ref, keyid, public) =
+        signed_payload(&fx, "appa-1.0.tfs", &img, b"attacker-controlled-bytes");
+    tebako_signer::register_trusted(&fx.home, &public).unwrap();
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &signed_registry_yaml("appa", "1.0", &payload_ref, &keyid, &asc_ref),
+    ));
+
+    let err = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n").unwrap_err();
+    assert_eq!(err.code, 71, "{err:?}");
+    assert!(
+        err.message.contains("signature verification failed"),
+        "{err}"
+    );
+    assert!(
+        !fx.home.join("payloads/appa/1.0.tfs").exists(),
+        "nothing was cached"
+    );
+}
+
+#[test]
+fn true_signature_over_swapped_bytes_fails_closed() {
+    // the vice-versa tamper: the asc is VALID — over the release's
+    // original bytes — but the served payload was swapped afterwards.
+    let fx = Fixture::new("sigswap");
+    let img = image("app", "appa", "1.0", "");
+    let (payload_ref, asc_ref, keyid, public) = signed_payload(&fx, "appa-1.0.tfs", &img, &img);
+    tebako_signer::register_trusted(&fx.home, &public).unwrap();
+    fs::write(fx.mirror.join("appa-1.0.tfs"), b"swapped-after-signing").unwrap();
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &signed_registry_yaml("appa", "1.0", &payload_ref, &keyid, &asc_ref),
+    ));
+
+    let err = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n").unwrap_err();
+    assert_eq!(err.code, 71, "{err:?}");
+    assert!(
+        err.message.contains("signature verification failed"),
+        "{err}"
+    );
+    assert!(
+        !fx.home.join("payloads/appa/1.0.tfs").exists(),
+        "nothing was cached"
+    );
+}
+
+#[test]
+fn sha_pinned_slice_with_swapped_bytes_fails_at_the_fetch_boundary() {
+    // the integrity direction: the reference pins the original digest and
+    // the served bytes were swapped — the sha256 anchor fails closed
+    // (exit 70) before the signature step is even reached.
+    let fx = Fixture::new("shaswap");
+    let img = image("app", "appa", "1.0", "");
+    let payload_ref = format!(
+        "{}?sha256={}",
+        fx.payload("appa-1.0.tfs", &img),
+        sha256_hex(&img)
+    );
+    fs::write(fx.mirror.join("appa-1.0.tfs"), b"swapped-after-pinning").unwrap();
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &format!(
+            "schema_version: 1\npayloads:\n  - name: appa\n    kind: app\n    versions:\n      - version: 1.0\n        platforms: universal\n        release: {{ref: \"{payload_ref}\"}}\n        runtime_requirement: {{engine: ruby, constraint: \">= 3.3, < 5.0\"}}\n        entrypoints: [appa]\n    default: 1.0\n"
+        ),
+    ));
+
+    let err = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n").unwrap_err();
+    assert_eq!(err.code, 70, "{err:?}");
+    assert!(
+        !fx.home.join("payloads/appa/1.0.tfs").exists(),
+        "nothing was cached"
+    );
+}
+
+#[test]
+fn signed_slice_from_an_untrusted_key_fails_closed() {
+    let fx = Fixture::new("signuntrusted");
+    let img = image("app", "appa", "1.0", "");
+    // the key is never registered — not in the trusted keyring
+    let (payload_ref, asc_ref, keyid, _public) = signed_payload(&fx, "appa-1.0.tfs", &img, &img);
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &signed_registry_yaml("appa", "1.0", &payload_ref, &keyid, &asc_ref),
+    ));
+
+    let err = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n").unwrap_err();
+    assert_eq!(err.code, 72, "{err:?}");
+    assert!(err.message.contains("not in the trusted keyring"), "{err}");
+    assert!(
+        !fx.home.join("payloads/appa/1.0.tfs").exists(),
+        "nothing was cached"
+    );
+}
+
+#[test]
+fn signed_slice_with_a_changed_signer_pin_fails_closed() {
+    // spec 09 §9's continuity rule: the entry pins a DIFFERENT primary
+    // keyid than the verified signer's — SignerKeyChanged, exit 72.
+    let fx = Fixture::new("sigchanged");
+    let img = image("app", "appa", "1.0", "");
+    let (payload_ref, asc_ref, _keyid, public) = signed_payload(&fx, "appa-1.0.tfs", &img, &img);
+    tebako_signer::register_trusted(&fx.home, &public).unwrap();
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &signed_registry_yaml("appa", "1.0", &payload_ref, "ffffffffffffffff", &asc_ref),
+    ));
+
+    let err = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n").unwrap_err();
+    assert_eq!(err.code, 72, "{err:?}");
+    assert!(err.message.contains("signer key changed"), "{err}");
+    assert!(
+        !fx.home.join("payloads/appa/1.0.tfs").exists(),
+        "nothing was cached"
+    );
+}
+
+#[test]
+fn unsigned_slice_presses_with_the_legacy_warn_and_journal_line() {
+    let fx = Fixture::new("signnone");
+    let img = image("app", "appa", "1.0", "");
+    let payload_ref = fx.payload("appa-1.0.tfs", &img);
+    fx.register(&fx.registry(
+        "appa-registry.yaml",
+        &registry_yaml("appa", "app", &[("1.0", &payload_ref)], Some("1.0")),
+    ));
+
+    let slices = closure_of(&fx, "slices:\n  - {name: appa, requirement: \"1.0\"}\n").unwrap();
+    assert_eq!(slices.len(), 1);
+    let journal = journal(&fx);
+    assert!(
+        journal.contains("event=legacy-unsigned-accepted"),
+        "{journal}"
+    );
+}

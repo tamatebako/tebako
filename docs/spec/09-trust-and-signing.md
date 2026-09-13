@@ -15,6 +15,9 @@ the bootstrap's first-run runtime download is the remaining leg
 (PLANNED — until it lands, the bootstrap verifies sha256 only and never
 reads `signature` declarations: the pre-G1 behavior, landing together
 with the `openpgp-verify` capability flip of the rollout note below).
+Payload verification (§4's install-time point, extended 2026-09-13 to
+the press-time compose-closure and spawn-walk payload fetches) is
+SHIPPED; the store-side anchor stays the `.sha256` sidecar.
 
 > **Rollout phase — unverified-first (roadmap 72).** The shipped
 > tebako-bootstrap is built WITHOUT OpenPGP verification (the
@@ -97,7 +100,21 @@ tebako validates below it — see spec 12 §5.
 - **Press time:** the CLI verifies release signatures before using any
   part (fail closed). Trusted keyring in `$TEBAKO_HOME`; our root key
   embedded (the fingerprint in the loader, the full public key in the
-  CLI); additional keys TOFU-registered with a named prompt.
+  CLI); additional keys TOFU-registered with a named prompt. The point
+  covers every part a press CONSUMES: the runtime pair (the runtime-fetch
+  point's press leg, above) and every registry payload the compose
+  closure (spec 23 §13) or the spawn walk (spec 23 §13.6, spec 32 §6)
+  fetches — a declared `signature` verifies BEFORE the bytes enter the
+  payload cache and before the press pins their digest into the lock, so
+  a tampered slice can never be laundered into a lock pin that downstream
+  installs and runs then trust. The matrix is the install-time point's,
+  unchanged: signed verifies strict (71 invalid / 72 untrusted / 72
+  signer-key-changed); unsigned warns loud + journals
+  (`event=legacy-unsigned-accepted`) and fails closed (71) under
+  `TEBAKO_REQUIRE_SIGNED=1`; a cache hit stands on its trust anchor
+  (spec 05 §4 — verified when the bytes entered, never re-verified per
+  use). This is spec 23 §13.4's trust uniformity made literal: carried
+  and shared slices pass the same gate at the same moment.
 - **Install time:** registry-pinned payload signatures verify against the
   trusted keyring PLUS the embedded root public key — a tamatebako-signed
   payload verifies Trusted on a fresh machine, no registration step.
