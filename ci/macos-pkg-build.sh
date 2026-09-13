@@ -56,7 +56,11 @@ done
 echo "staged + verified against the leg's signed-byte fragments: $TOOLS"
 
 # ---- 2. render the template tokens (productbuild has no binds) ----------
-sed -e "s/@PRODUCT_NAME@/$PRODUCT_NAME/g" -e "s/@VERSION@/$VERSION/g" \
+# pkgbuild/productbuild versions are numeric triplets — a roadmap-89
+# rehearsal's VERSION is a PR ref ("590-merge"), not a product version.
+PKG_VERSION="$VERSION"
+[[ "$PKG_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || PKG_VERSION="0.0.0"
+sed -e "s/@PRODUCT_NAME@/$PRODUCT_NAME/g" -e "s/@VERSION@/$PKG_VERSION/g" \
     -e "s/@ORG_ID@/$ORG_ID/g" -e "s/@MIN_MACOS@/$MIN_MACOS/g" \
     templates/installers/macos/distribution.xml > build/distribution.xml
 sed -e "s/@PRODUCT_NAME@/$PRODUCT_NAME/g" -e "s|@INSTALL_ROOT@|$INSTALL_ROOT|g" \
@@ -73,7 +77,7 @@ fi
 # drops that prefix and the payload lands at /bin — the sealed system
 # volume, which installer(8) refuses outright (the v2.8.0 legs).
 pkgbuild --root pkg-root --install-location / \
-  --identifier "$ORG_ID.$PRODUCT_NAME.pkg" --version "$VERSION" \
+  --identifier "$ORG_ID.$PRODUCT_NAME.pkg" --version "$PKG_VERSION" \
   --scripts build/scripts \
   "build/$PRODUCT_NAME-component.pkg"
 productbuild --distribution build/distribution.xml \

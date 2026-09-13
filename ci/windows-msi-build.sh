@@ -66,6 +66,11 @@ case "$MODE" in
     echo "staged + verified against the leg's signed-byte fragments: $TOOLS"
     mkdir -p out
     command -v wix >/dev/null 2>&1 || { echo "::error::wix (WiX v5 dotnet tool) not on PATH — the workflow installs it"; exit 1; }
+    # MSI ProductVersion is a strict numeric triplet — a roadmap-89
+    # rehearsal's VERSION is a PR ref ("590-merge"), not a product
+    # version. The rehearsal MSI installs/uninstalls the same either way.
+    MSI_VERSION="$VERSION"
+    [[ "$MSI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || MSI_VERSION="0.0.0"
     # BinDir must be ABSOLUTE and WINDOWS-spelled: WiX resolves relative
     # authoring paths against the .wxs's directory, and a Git-Bash $PWD
     # ("/d/a/…") is not a path a native .NET tool can open.
@@ -74,7 +79,7 @@ case "$MODE" in
     wix build -arch x64 \
       templates/installers/windows/tebako.wxs \
       -d "ProductName=$PRODUCT_NAME" \
-      -d "ProductVersion=$VERSION" \
+      -d "ProductVersion=$MSI_VERSION" \
       -d "Manufacturer=$MANUFACTURER" \
       -d "UpgradeCode=$MSI_UPGRADE_CODE" \
       -d "BinDir=$BIN_BINDIR" \
