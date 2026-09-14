@@ -677,7 +677,9 @@ mod tests {
         let fresh = r#"{"assets":[
             {"name":"r-v1.tfs","browser_download_url":"https://dl/r-v1.tfs"}]}"#;
         let t = SeqTransport::with(&[stale, fresh]);
-        let got = GithubAdapter.asset_named(&t, "o", "r", "v1", "r-v1.tfs").unwrap();
+        let got = GithubAdapter
+            .asset_named(&t, "o", "r", "v1", "r-v1.tfs")
+            .unwrap();
         assert_eq!(
             got,
             Some(("r-v1.tfs".to_string(), "https://dl/r-v1.tfs".to_string()))

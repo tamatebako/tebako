@@ -2845,11 +2845,7 @@ payloads:
         );
         // a single-dash version splits uniquely when the stem witnesses it
         assert_eq!(
-            split_line_id(
-                &format!("tebako-runtime-2-1-{asset}.tfs"),
-                "1-2",
-                host
-            ),
+            split_line_id(&format!("tebako-runtime-2-1-{asset}.tfs"), "1-2", host),
             Some(("1".to_string(), "2".to_string()))
         );
     }
@@ -2885,9 +2881,10 @@ payloads:
             channel: "default",
             signer_pin: None,
         };
-        let (pref, source) = registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
-            .unwrap()
-            .expect("an informative registry picks");
+        let (pref, source) =
+            registry_selected_target(&reqs("ruby", ">= 3.3, < 5.0"), &source, &ctx)
+                .unwrap()
+                .expect("an informative registry picks");
         // the bare language version + the line — the download composes
         // tebako-runtime-0.16.23-4.0.6-<platform> from these
         assert_eq!(pref.version, "4.0.6");
